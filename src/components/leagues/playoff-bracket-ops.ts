@@ -78,7 +78,7 @@ export const SEEDED_BEFORE_CORRECTION_COPY = 'Seeded before a late correction �
 export const SEEDED_BEFORE_CORRECTION_TITLE =
   'The seeds frozen on this round differ from the final standings: a stat correction moved a rank after the round had been played, and a played round is never rewritten (§23.4).'
 export const COMMISH_DOOR_PENDING_COPY =
-  'Bracket edits arrive with the commissioner console — every edit will need a reason and is posted to the league’s audit log.'
+  'Results are corrected on the matchup page — open the game there with override mode on. Every change is posted to the league’s audit log.'
 export const TBD_LABEL = 'TBD'
 export const ROLLOVER_EVENT_PREFIX = 'When Week'
 
@@ -319,21 +319,19 @@ export function correctionsCloseDisplay(
 // ---------------------------------------------------------------------------
 
 export interface CommishDoor {
-  key: 'seeds' | 'results'
+  key: 'results'
   label: string
 }
 
 /** §10 / §16.2: "commish edit affordances (seeds/results) routed through
- *  commish-action-modal". The modal is M6's; the doors render for the
- *  commissioner and open the pending-by-name state (a row the commissioner
- *  writes WITH seeds is the engine's; one without is a foreign row —
- *  D318(5)). A manager sees no door. */
+ *  commish-action-modal". The SEEDS door is REAL since M6A L.E1.16 — the
+ *  hand-pick control (`bracket-hand-pick-panel.tsx`, `commish_edit_bracket`)
+ *  — so it no longer renders as a pending door. The results door stays
+ *  pending by name here: results are corrected on the matchup page
+ *  (L.E1.12). A manager sees no door. */
 export function commishDoors(myRole: string | null | undefined): CommishDoor[] {
   if (myRole !== 'commissioner') return []
-  return [
-    { key: 'seeds', label: 'Edit seeds' },
-    { key: 'results', label: 'Edit a result' },
-  ]
+  return [{ key: 'results', label: 'Edit a result' }]
 }
 
 // ---------------------------------------------------------------------------

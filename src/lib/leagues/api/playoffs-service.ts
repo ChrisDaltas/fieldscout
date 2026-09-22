@@ -67,6 +67,10 @@ export interface BracketGameWeek {
   status: string
   result: string | null
   is_overridden: boolean
+  /** M6A L.E1.16 (migration 134): the `commissioner_actions` receipt of the
+   *  hand-pick that set this round's pairings, NULL when the engine paired
+   *  it. Optional for documents read before 134. */
+  hand_picked_action_id?: string | null
 }
 
 /** One pairing of a round. `away_team_id NULL` is a bye (rider (i)); the

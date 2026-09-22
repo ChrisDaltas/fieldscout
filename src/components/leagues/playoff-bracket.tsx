@@ -7,7 +7,10 @@ import { Button } from '@/components/ui/button'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { BracketGame, BracketRound, PlayoffBracket as PlayoffBracketDoc, ProjectedPair } from '@/lib/leagues/api/playoffs-service'
 import { cn } from '@/lib/utils'
+import { useOverrideMode } from '@/stores/commish-override-store'
 
+import { HAND_PICKED_BADGE, HAND_PICK_OPEN_LABEL, gameHandPickable, gameHandPicked } from './bracket-hand-pick-ops'
+import { BracketHandPickTools } from './bracket-hand-pick-panel'
 import { Crest, TeamNameLink } from './league-cells'
 import { CHAMPION_UNRECORDED_COPY } from './league-home-season-ops'
 import {
@@ -68,6 +71,17 @@ import {
  * States (§16.5.4) are the HOST'S: this component renders a document.
  * Elevation: cards rest flat under the 1px ink border; the winner and the
  * viewer's own franchise are FILLS (`bg-accent-soft`), never shadows.
+ *
+ * **The commissioner's hand-pick (M6A L.E1.16, §11.5 "Bracket is
+ * commissioner-editable").** For a commissioner on the full mount (not the
+ * hero's `compact` trim) the bracket carries `BracketHandPickTools` — the
+ * one override-mode switch over the shared store — and, while the mode is
+ * on, every built game 134 would accept (`gameHandPickable`: not final, no
+ * written score / result / override) shows a "Change pairing" door that
+ * opens that game's panel under the bracket. A hand-picked round's games
+ * carry the ✸ hand-picked badge (118's `hand_picked_action_id`). The
+ * "Edit a result" door stays pending by name: results are corrected on the
+ * matchup page (L.E1.12).
  */
 export function PlayoffBracket({
   doc,
@@ -95,6 +109,21 @@ export function PlayoffBracket({
   const close = correctionsCloseDisplay(doc, leagueTimeZone)
   const doors = compact ? [] : commishDoors(myRole)
   const foreign = foreignRowsCopy(foreignRowsOf(doc))
+  const handPick = !compact && myRole === 'commissioner' && doc.kind === 'bracket'
+  const overrideMode = useOverrideMode(doc.league_id)
+  // The game whose panel is open, by its first row's id — the document is
+  // re-read after a save, so the game is looked up fresh on every render.
+  const [pickingId, setPickingId] = useState<string | null>(null)
+  const picking =
+    handPick && pickingId
+      ? (() => {
+          for (const round of doc.round_list) {
+            const game = round.games.find((g) => g.weeks[0]?.matchup_id === pickingId)
+            if (game) return { round, game }
+          }
+          return null
+        })()
+      : null
 
   if (doc.kind !== 'bracket') {
     return (
@@ -179,7 +208,15 @@ export function PlayoffBracket({
                 >
                   {round.built
                     ? round.games.map((game, i) => (
-                        <BuiltGame key={i} leagueId={doc.league_id} game={game} teamNames={teamNames} myTeamId={myTeamId} />
+                        <BuiltGame
+                          key={i}
+                          leagueId={doc.league_id}
+                          game={game}
+                          teamNames={teamNames}
+                          myTeamId={myTeamId}
+                          onPick={handPick && overrideMode && gameHandPickable(game) ? () => setPickingId(game.weeks[0]?.matchup_id ?? null) : null}
+                          picking={picking?.game === game}
+                        />
                       ))
                     : Array.from({ length: tbdSlots(round) }, (_, i) => <TbdGame key={i} />)}
                 </RoundColumn>
@@ -187,6 +224,9 @@ export function PlayoffBracket({
             })}
       </div>
 
+      {handPick && (
+        <BracketHandPickTools leagueId={doc.league_id} round={picking?.round ?? null} game={picking?.game ?? null} teamNames={teamNames} onClose={() => setPickingId(null)} />
+      )}
       {doors.length > 0 && <CommishDoors doors={doors} />}
     </section>
   )
@@ -308,7 +348,24 @@ function ProjectedGame({ leagueId, pair, teamNames, myTeamId }: { leagueId: stri
   )
 }
 
-function BuiltGame({ leagueId, game, teamNames, myTeamId }: { leagueId: string; game: BracketGame; teamNames: ReadonlyMap<string, string>; myTeamId: string | null }) {
+function BuiltGame({
+  leagueId,
+  game,
+  teamNames,
+  myTeamId,
+  onPick = null,
+  picking = false,
+}: {
+  leagueId: string
+  game: BracketGame
+  teamNames: ReadonlyMap<string, string>
+  myTeamId: string | null
+  /** The commissioner's door, present only while override mode is on and
+   *  134 would accept the game (a scored game gets none — rule (h)). */
+  onPick?: (() => void) | null
+  /** This game's panel is the open one — a resting state, carried by fill. */
+  picking?: boolean
+}) {
   const verdict = verdictCopy(game)
   const played = gamePlayed(game)
   const homeCells = game.weeks.map((w) => formatBracketScore(w.home_score, w.status))
@@ -316,7 +373,14 @@ function BuiltGame({ leagueId, game, teamNames, myTeamId }: { leagueId: string; 
   const bye = game.away_team_id === null
   const total = (t: number, cells: string[]) => (played ? (game.weeks.length > 1 ? formatTotal(t) : cells[0]) : '—')
   return (
-    <div className="rounded-sm border border-ink bg-white" data-game={game.decided_by} data-final={game.final ? '' : undefined} data-played={played ? '' : undefined}>
+    <div
+      className={cn('rounded-sm border bg-white', picking ? 'border-accent' : 'border-ink')}
+      data-game={game.decided_by}
+      data-final={game.final ? '' : undefined}
+      data-played={played ? '' : undefined}
+      data-hand-picked={gameHandPicked(game) ? '' : undefined}
+      data-picking={picking ? '' : undefined}
+    >
       <div className="divide-y divide-n-4">
         <TeamLine
           seed={game.home_seed}
@@ -359,6 +423,16 @@ function BuiltGame({ leagueId, game, teamNames, myTeamId }: { leagueId: string; 
           <Badge variant="stroke" className="text-[9px]">
             ✸ commissioner-adjusted
           </Badge>
+        )}
+        {gameHandPicked(game) && (
+          <Badge variant="stroke-purple" className="text-[9px]" data-hand-picked-badge>
+            {HAND_PICKED_BADGE}
+          </Badge>
+        )}
+        {onPick && (
+          <Button variant="stroke" size="sm" className="ml-auto" onClick={onPick} aria-pressed={picking} data-hand-pick-open>
+            {HAND_PICK_OPEN_LABEL}
+          </Button>
         )}
         {game.weeks.length > 1 && (
           <span className="text-[10px] font-medium text-n-3">
