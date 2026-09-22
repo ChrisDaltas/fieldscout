@@ -5779,6 +5779,8 @@ Fresh `npx supabase db reset` over **001–130** (from the main repo via `--work
 
 - **R1084 · nit · the pin's `newestDefining` regex matches only the literal `CREATE OR REPLACE FUNCTION (public\.)?fn\(`** (`season-invariants.test.ts:759`) — a future definer written `CREATE FUNCTION`, lower-case or with extra whitespace would be skipped and the pin would keep reading 125. Correct at head 133. Not taken — follow-up: case-insensitive, `(OR REPLACE )?`, `\s+` between tokens.
 
+**L.E1.16 RE-REVIEW (PR #310, fix round `83df622..2113efe`, fresh reviewer, 2026-09-21) — CLEAN, no new finding.** Migration 134 byte-untouched (the diff touches only 082, the overrides stack suite and PROGRESS). R1085 verified: §L's L3 is a REAL `playoff_weeks_per_round = 2` league whose round-1 rows the engine built on weeks 7–8 through the shared job instants (L1/L1b/L1c/L1d pin the premise); the reviewer re-ran the step-(14) one-week-scope probe in a rolled-back txn — 9 red, ALL §L (120, 121, 127–130, 132, 133, 135), cells 1–115 untouched, `commish_edit_bracket` md5 identical after rollback. R1087 verified on a `regular`, two-team row with 131:1070's byte-identical message; the drop-`p_away` break reds it. R1086/R1088 docs present; nothing else flipped. Gates: 082 135/135, `test:db` 83 / 6534, vitest 14/14, type-check, eslint. No hosted access.
+
 ## 7. Session log
 
 *One line per session: date, session type, what shipped, what's next. Newest on top. Keep entries short — this is a changelog, not a diary; detail belongs in commit messages and PRs.*
