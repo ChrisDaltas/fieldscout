@@ -259,12 +259,17 @@ describe('override MODE on the matchup page — one switch, every week state, co
     expect(ready).not.toMatch(/<button[^>]*\sdisabled=""[^>]*data-save-scores/)
   })
 
-  it('a BYE row: the mode still switches, and the block says by name why neither arm is offered (F366)', () => {
+  it('a BYE row (F366, fixed): the mode switches, the panel offers the HOME score alone — no away field, no winner arm — and the bye line says why', () => {
     const on = renderPage({ overrideMode: true, week: weekDoc({ matchups: [{ ...M1, away_team_id: null, away_score: null }] }) })
     expect(on).toContain('data-override-toggle="on"')
+    expect(on).toContain('data-override-panel')
+    expect(on).toContain('data-score-input="home"')
+    expect(on).not.toContain('data-score-input="away"')
+    expect(on).not.toContain('data-override-arm="result"')
+    expect(on).not.toContain('data-declare-winner')
     expect(on).toContain('data-override-bye')
     expect(on).toContain(BYE_ROW_COPY)
-    expect(on).not.toContain('data-override-panel')
+    expect(BYE_ROW_COPY).not.toMatch(/yet|not available/)
   })
 })
 

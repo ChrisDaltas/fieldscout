@@ -106,6 +106,9 @@ const ACTION = {
   moveMember: 'b0200000-0000-4000-8000-000000000033',
   roster: 'b0200000-0000-4000-8000-000000000041',
   rosterNoReason: 'b0200000-0000-4000-8000-000000000042',
+  scoreBye: 'b0200000-0000-4000-8000-000000000014',
+  scoreByeWrong: 'b0200000-0000-4000-8000-000000000015',
+  scoreHalfOnTwoTeam: 'b0200000-0000-4000-8000-000000000016',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -417,6 +420,55 @@ describe('POST …/commish/score — commishEditScore over the real RPC', () => 
 // ---------------------------------------------------------------------------
 // 2. /commish/result → commish_set_result (126)
 // ---------------------------------------------------------------------------
+
+describe('POST …/commish/score — a BYE ROW through the route (F366, fixed by L.E1.16)', () => {
+  it('a real bye row: `away_score: null` LANDS as the home score alone — 200, the document is a bye document, the stored row carries the number with away NULL, one receipt; a NUMBER for the away side on the same row is 126’s own 22023 (400), verbatim; and the DANGEROUS quadrant — `away_score: null` on a TWO-team row — is 131’s "takes BOTH scores" 22023 (400), verbatim, zero receipts (R1087)', async () => {
+    // THE DANGEROUS QUADRANT (R1087): the nullable `away_score` that F366
+    // opened for a bye must NOT let half a correction through on a row that
+    // HAS an away side — 131:1066-1071 refuses it by name (`is_overridden` is
+    // one flag on the whole ROW, D342). The null reaches the RPC as
+    // `p_away: null` (present, not dropped), which is what makes the verb's
+    // own refusal the one that answers.
+    const twoTeam = (await weekRows(4))[0]
+    expect(twoTeam.away_team_id).not.toBeNull()
+    const half = await commishEditScore(commishClient, leagueId, { matchup_id: twoTeam.id, home_score: 55.5, away_score: null, action_id: ACTION.scoreHalfOnTwoTeam })
+    expect(half.status).toBe(400)
+    expect(errorText(half)).toBe('commish_edit_score: the score arm takes BOTH scores — `is_overridden` is one flag on the whole ROW (§22.2, D342), so half a correction would freeze the other team\'s stale number in place. Send p_home and p_away together')
+    expect(await receiptsFor(ACTION.scoreHalfOnTwoTeam)).toHaveLength(0)
+    const { data: untouched } = await service.from('matchups').select('is_overridden').eq('id', twoTeam.id).single()
+    expect(untouched).toStrictEqual({ is_overridden: false })
+
+    // v1 regular-season schedules carry no bye (111), so one is planted in
+    // week 4 (as a `secondary` row — the team already has a regular home
+    // row there, 109:182) the way the engine writes a playoff bye (away NULL, no away
+    // score) — the shape 131:1047-1062 gates on. The PREMISE (rule 14(c)):
+    // the row really has no away side.
+    const { data: bye, error: byeError } = await service
+      .from('matchups')
+      .insert({ league_id: leagueId, season: SYNTHETIC_SEASON, week: 4, round_type: 'secondary', home_team_id: commishTeamId, away_team_id: null, home_score: 0, away_score: null, status: 'scheduled' })
+      .select('id, away_team_id')
+      .single()
+    if (byeError) throw new Error(`bye row insert: ${byeError.message}`)
+    expect(bye.away_team_id).toBeNull()
+
+    const wrong = await commishEditScore(commishClient, leagueId, { matchup_id: bye.id, home_score: 77.7, away_score: 1, action_id: ACTION.scoreByeWrong })
+    expect(wrong.status).toBe(400)
+    expect(errorText(wrong)).toBe(`commish_edit_score: matchup ${bye.id} is a BYE — there is no away side to score; send p_away as null`)
+    expect(await receiptsFor(ACTION.scoreByeWrong)).toHaveLength(0)
+
+    const res = await commishEditScore(commishClient, leagueId, { matchup_id: bye.id, home_score: 77.7, away_score: null, action_id: ACTION.scoreBye })
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { away_team_id: string | null; home_score: number; away_score: number | null; no_changes: boolean; verb: string }
+    expect(body.verb).toBe('commish_edit_score')
+    expect(body.away_team_id).toBeNull()
+    expect(body.home_score).toBe(77.7)
+    expect(body.away_score).toBeNull()
+    expect(body.no_changes).toBe(false)
+    const { data: stored } = await service.from('matchups').select('home_score, away_score, is_overridden').eq('id', bye.id).single()
+    expect(stored).toStrictEqual({ home_score: 77.7, away_score: null, is_overridden: true })
+    expect(await receiptsFor(ACTION.scoreBye)).toHaveLength(1)
+  })
+})
 
 describe('POST …/commish/result — commishSetResult over the real RPC', () => {
   it('a commissioner sets the HOME side as winner of a week-3 matchup WITH a reason: 200, `result: home`, scores untouched, one receipt', async () => {

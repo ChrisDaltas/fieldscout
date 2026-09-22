@@ -223,6 +223,51 @@ export type Database = {
           },
         ]
       }
+      commish_bracket_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          matchup_id: string
+          result: Json
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          matchup_id: string
+          result: Json
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          matchup_id?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_bracket_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_bracket_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commish_lineup_actions: {
         Row: {
           action_id: string
@@ -2356,6 +2401,7 @@ export type Database = {
           is_overridden: boolean
           league_id: string
           override_action_id: string | null
+          pairing_set_by_action_id: string | null
           result: string | null
           round_type: string
           season: number
@@ -2375,6 +2421,7 @@ export type Database = {
           is_overridden?: boolean
           league_id: string
           override_action_id?: string | null
+          pairing_set_by_action_id?: string | null
           result?: string | null
           round_type?: string
           season: number
@@ -2394,6 +2441,7 @@ export type Database = {
           is_overridden?: boolean
           league_id?: string
           override_action_id?: string | null
+          pairing_set_by_action_id?: string | null
           result?: string | null
           round_type?: string
           season?: number
@@ -2433,6 +2481,13 @@ export type Database = {
           {
             foreignKeyName: "matchups_override_action_id_fkey"
             columns: ["override_action_id"]
+            isOneToOne: false
+            referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matchups_pairing_set_by_action_id_fkey"
+            columns: ["pairing_set_by_action_id"]
             isOneToOne: false
             referencedRelation: "commissioner_actions"
             referencedColumns: ["id"]
@@ -4119,6 +4174,29 @@ export type Database = {
           p_reason: string
           p_rescore: boolean
           p_value: Json
+        }
+        Returns: Json
+      }
+      commish_edit_bracket: {
+        Args: {
+          p_action_id?: string
+          p_away?: string
+          p_home: string
+          p_league_id: string
+          p_matchup_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      commish_edit_bracket_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_away: string
+          p_home: string
+          p_league_id: string
+          p_matchup_id: string
+          p_reason: string
         }
         Returns: Json
       }

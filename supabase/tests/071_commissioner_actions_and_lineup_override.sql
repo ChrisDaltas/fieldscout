@@ -145,8 +145,8 @@ select ok(
   (select count(*)::int from pg_constraint c join pg_class t on t.oid = c.conrelid
    join pg_class f on f.oid = c.confrelid
    where c.contype = 'f' and f.relname = 'commissioner_actions'
-     and t.relname in ('matchups', 'transactions', 'league_weeks')) = 3,
-  'all THREE parked FKs land with the table: matchups.override_action_id (109:169), transactions.related_action_id (109:249), league_weeks.reopened_by_action_id (056:68)');
+     and t.relname in ('matchups', 'transactions', 'league_weeks')) = 4,
+  'all THREE parked FKs land with the table: matchups.override_action_id (109:169), transactions.related_action_id (109:249), league_weeks.reopened_by_action_id (056:68) — plus 134''s matchups.pairing_set_by_action_id (M6A L.E1.16): four FKs from those three tables');
 
 -- ---------------------------------------------------------------------------
 -- B. Fixtures (postgres context — before any JWT claims)

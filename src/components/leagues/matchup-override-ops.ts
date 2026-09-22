@@ -29,15 +29,14 @@ export const BOTH_SCORES_COPY =
 export const DECLARE_WINNER_COPY =
   'Or leave the numbers alone and declare the winner. For a tie, save equal scores instead.'
 /**
- * A BYE row (no away side). 126 refuses BOTH arms through today's routes: the
- * result arm by design (`131:1052-1057` — a bye has no winner), and the score
- * arm because the verb wants `p_away` NULL (`131:1058-1062`) while the
- * `/commish/score` schema requires a number — PROGRESS F366, the route's to
- * fix. Until then the panel says so by name instead of offering a Save that
- * can only be refused.
+ * A BYE row (no away side). The result arm is refused by design
+ * (`131:1052-1057` — a bye has no winner) and is not offered; the SCORE arm
+ * is the team's points alone, sent with `away_score: null` (PROGRESS F366,
+ * fixed by L.E1.16: the schema is nullable and the service sends
+ * `p_away: null`, which is what `131:1058-1062` asks for). This line sits
+ * where the declare-a-winner arm would be.
  */
-export const BYE_ROW_COPY =
-  'This is a bye — there is no opponent, so there is no winner to declare, and correcting a bye’s score isn’t available from this screen yet.'
+export const BYE_ROW_COPY = 'This is a bye — there is no opponent and no winner to declare. Only the team’s score can be corrected.'
 
 // ---------------------------------------------------------------------------
 // The consequence copy — §4 rule 15: never a bare "Saved."
@@ -140,7 +139,7 @@ export function shownScoreDraft(typed: string | null, stored: number | null): st
 }
 
 export type ScoreGate =
-  | { ok: true; home: number; away: number }
+  | { ok: true; home: number; away: number | null } // away null = a BYE row (F366)
   | { ok: false; why: string }
 
 /**
@@ -151,12 +150,13 @@ export type ScoreGate =
  * is the verb's to decide across every dimension it can change (the flag
  * included — §4 rule 12), and it answers `no_changes` by name.
  *
- * A bye row never reaches this gate — the panel renders `BYE_ROW_COPY`
- * instead of the form (F366).
+ * A BYE row (`awayName` null) is gated on the home number alone (F366).
  */
-export function scoreGate(args: { homeDraft: string; awayDraft: string; homeName: string; awayName: string }): ScoreGate {
+export function scoreGate(args: { homeDraft: string; awayDraft: string; homeName: string; awayName: string | null }): ScoreGate {
   const home = parseScoreDraft(args.homeDraft)
   if (home === null) return { ok: false, why: `Enter ${args.homeName}’s score as a number (up to two decimals) to save.` }
+  // A BYE row (F366): there is no away side — the gate is the home number alone.
+  if (args.awayName === null) return { ok: true, home, away: null }
   const away = parseScoreDraft(args.awayDraft)
   if (away === null) return { ok: false, why: `Enter ${args.awayName}’s score as a number (up to two decimals) to save.` }
   return { ok: true, home, away }

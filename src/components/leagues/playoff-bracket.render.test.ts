@@ -42,6 +42,10 @@ import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import type { LiveScoringFlags } from '@/lib/sync/ingest-flags'
 
+import { useOverrideMode } from '@/stores/commish-override-store'
+
+import { HAND_PICKED_BADGE, HAND_PICK_BAR_OFF_COPY, HAND_PICK_BAR_ON_COPY, HAND_PICK_NO_CHANGES_COPY, STOOD_DOWN_COPY } from './bracket-hand-pick-ops'
+import { BracketHandPickPanelView } from './bracket-hand-pick-panel'
 import { LeagueHomeStates } from './league-home-states'
 import {
   AWAITING_BUILD_COPY,
@@ -70,6 +74,13 @@ import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 import { PROJECTED_COPY } from './standings-table-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 
+// Zustand v5 serves its INITIAL state as the server snapshot in a static
+// render, so the mode is switched through the hook (the matchup-override
+// rig's move), never through the store.
+vi.mock('@/stores/commish-override-store', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
+  return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }
+})
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-commish' }, profile: { username: 'chris' } }),
 }))
@@ -413,19 +424,89 @@ describe('the no-bracket kinds (Q39 (C)/(D)): the standings ARE the playoff', ()
 // ---------------------------------------------------------------------------
 
 describe('commissioner edit affordances (§10.1 / §16.2) — the doors, routed to the pending-by-name state', () => {
-  it('the commissioner sees the two doors (seeds, results); a manager sees none', () => {
+  it('the commissioner sees the results door pending and the REAL hand-pick switch (L.E1.16); a manager sees neither', () => {
     const commish = renderTab({ bracket: BUILT_DOC })
-    expect(commish).toContain('data-commish-door="seeds"')
+    expect(commish).not.toContain('data-commish-door="seeds"') // retired: the seeds door is the hand-pick control now
     expect(commish).toContain('data-commish-door="results"')
+    expect(commish).toContain('data-bracket-hand-pick')
+    expect(commish).toContain('data-override-toggle="off"')
     expect(commish).not.toContain('data-commish-door-pending') // closed until pressed
     const manager = renderTab({ bracket: BUILT_DOC, detail: detailWith({}, 'manager') })
     expect(manager).not.toContain('data-commish-doors')
+    expect(manager).not.toContain('data-bracket-hand-pick')
   })
 
-  it('the door’s copy names the modal’s law — a reason, an audit entry — and carries no ledger code', () => {
-    expect(COMMISH_DOOR_PENDING_COPY).toMatch(/reason/)
+  it('the door’s copy names where results are corrected and the audit entry — NO reason law (Q66) — and carries no ledger code', () => {
+    expect(COMMISH_DOOR_PENDING_COPY).not.toMatch(/reason/)
     expect(COMMISH_DOOR_PENDING_COPY).toMatch(/audit/)
     expect(COMMISH_DOOR_PENDING_COPY).not.toMatch(/\b[QEF]\d+\b|L\.D\d|M6/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The hand-pick (M6A L.E1.16) — override mode on/off, the doors per game,
+// the badge, the panel view
+// ---------------------------------------------------------------------------
+
+describe('the commissioner’s playoff hand-pick (§11.5, L.E1.16)', () => {
+  it('override mode OFF: the switch is present, no game carries a "Change pairing" door', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(false)
+    const html = renderTab({ bracket: BUILT_UNPLAYED_DOC })
+    expect(html).toContain('data-override-mode="off"')
+    expect(html).not.toContain('data-hand-pick-open')
+  })
+
+  it('override mode ON: the round-2 UNPLAYED games carry the door; the round-1 FINAL / scored games do not (rule (h): a control 134 would refuse is not offered)', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const html = renderTab({ bracket: BUILT_UNPLAYED_DOC })
+      expect(html).toContain('data-override-mode="on"')
+      expect(between(html, 'data-round="1"', 'data-round="2"')).not.toContain('data-hand-pick-open')
+      expect(between(html, 'data-round="2"', 'data-round="3"').match(/data-hand-pick-open/g)).toHaveLength(2)
+    } finally {
+      vi.mocked(useOverrideMode).mockReturnValue(false)
+    }
+  })
+
+  it('a hand-picked round’s games carry the ✸ hand-picked badge from 118’s week entry; the engine’s do not', () => {
+    const marked = {
+      ...BUILT_UNPLAYED_DOC,
+      round_list: BUILT_UNPLAYED_DOC.round_list.map((r, i) =>
+        i === 1 ? { ...r, games: r.games.map((g) => ({ ...g, weeks: g.weeks.map((w) => ({ ...w, hand_picked_action_id: 'aa000000-0000-4000-8000-000000000001' })) })) } : r,
+      ),
+    }
+    const html = renderTab({ bracket: marked })
+    expect(between(html, 'data-round="2"', 'data-round="3"').match(/data-hand-picked-badge/g)).toHaveLength(2)
+    expect(between(html, 'data-round="1"', 'data-round="2"')).not.toContain('data-hand-picked-badge')
+    expect(html).toContain(HAND_PICKED_BADGE)
+  })
+
+  it('the panel view: the entrants in seed order on both selects plus a Bye on away; Save waits by name on an unchanged draft; the refusal is VERBATIM; the stand-down outcome says what the engine will no longer do', () => {
+    const round = BUILT_UNPLAYED_DOC.round_list[1]
+    const game = round.games[0]
+    const props = { round, game, teamNames: BRACKET_NAMES, pending: false, outcome: null, refusal: null, onDraft: () => {}, onSave: () => {}, onClose: () => {} }
+    const unchanged = renderToStaticMarkup(createElement(BracketHandPickPanelView, { ...props, draft: { homeTeamId: game.home_team_id, awayTeamId: game.away_team_id } }))
+    expect(unchanged).toContain('data-hand-pick-panel')
+    expect(unchanged).toContain('data-hand-pick-gate')
+    expect(unchanged).toContain('That is already the pairing.')
+    expect(unchanged).toMatch(/disabled=""[^>]*data-hand-pick-save/)
+    const changed = renderToStaticMarkup(createElement(BracketHandPickPanelView, { ...props, draft: { homeTeamId: game.home_team_id, awayTeamId: null } }))
+    expect(changed).not.toContain('data-hand-pick-gate')
+    expect(changed).not.toMatch(/disabled=""[^>]*data-hand-pick-save/)
+    const refused = renderToStaticMarkup(createElement(BracketHandPickPanelView, { ...props, draft: { homeTeamId: game.home_team_id, awayTeamId: null }, refusal: 'commish_edit_bracket: team x is not in round 2 of league y — the round’s entrants are the 4 teams seeded on its rows' }))
+    expect(refused).toContain('data-hand-pick-refusal')
+    expect(refused).toContain('is not in round 2')
+    const landed = renderToStaticMarkup(createElement(BracketHandPickPanelView, { ...props, draft: { homeTeamId: game.home_team_id, awayTeamId: null }, outcome: { no_changes: false, bypassed: ['week_status_gate:16:live', 'bracket_sync_rebuild:stood_down'] } }))
+    expect(landed).toContain('data-hand-pick-outcome="stood_down"')
+    expect(landed).toContain(STOOD_DOWN_COPY)
+    expect(landed).toContain('data-hand-pick-bypassed')
+    expect(landed).toContain('week_status_gate:16:live')
+    expect(landed).not.toContain('This change walked past: bracket_sync_rebuild')
+    const noop = renderToStaticMarkup(createElement(BracketHandPickPanelView, { ...props, draft: { homeTeamId: game.home_team_id, awayTeamId: null }, outcome: { no_changes: true, bypassed: [] } }))
+    expect(noop).toContain('data-hand-pick-outcome="no_changes"')
+    for (const copy of [HAND_PICK_BAR_OFF_COPY, HAND_PICK_BAR_ON_COPY, STOOD_DOWN_COPY, HAND_PICK_NO_CHANGES_COPY]) {
+      expect(copy).not.toMatch(/\b[QEF]\d+\b|L\.[DE]\d|M6|134/)
+    }
   })
 })
 

@@ -154,9 +154,28 @@ F336**, builds F334's second half, mints **F373** (knock-on overrides are not
 modelled) and **F374** (the season gate is RED today on an
 `allow_illegal_lineups = false` league because the restored pool carries real
 `Out` QBs — whoever next runs `test:gate:m4` meets it), records **D368**), so
-the next takeable task is **`L.E1.16`** — `commish_edit_bracket`, hand-picked
-playoff matchups (F360; a schema task — measure the heads, D161). **F366**
-(a bye row's score through `/commish/score`) rides with or before it.
+the next takeable task was **`L.E1.16`** — `commish_edit_bracket`, hand-picked
+playoff matchups (F360). **`L.E1.16` is LANDED 2026-09-21** (migration **134**
++ pgTAP **082** `plan(115)`, `/commish/bracket`, the bracket hand-pick
+control in override mode; **F366** discharged in its own commit; discharges
+F360, mints F377, records D370) — **and it was M6A's LAST PLANNED TASK: the
+§6 list (L.E1.1–L.E1.17) is COMPLETE.**
+
+**NEXT — M6A CLOSEOUT, not a `L.E1.*` task.** There is no unbuilt task in
+tasks-M6A §6. What remains before the pointer moves to the next milestone:
+(1) **Chris's rulings** — Q60–Q64 (still open in PROGRESS §3) and the
+F377 read (a "confirm as played" act for a round under R839's hourly
+WARNING?); (2) **the M6A exit-criteria gate** per tasks-M6A §8 (a Reviewer /
+gate session, not a Builder task); (3) **the open M6A ledger rows**, each
+small and filed with its shape — F361 (the M4 panel hint), F363 (the retire
+verb's reason gate), F368, F370, F371 (League Home's activity feed), F372
+(REFERENCES / TRIGGER / MAINTAIN grants), F373–F376 (the synthetic gate's
+recorded blindnesses), F377; (4) ⚠ **`npx supabase db push` for 125–134**
+(hosted tops out at 124; every M6A verb except 123's is unpushed). After the
+closeout the delivery plan's next milestone is **M5** (trades / FAAB —
+D352 / F340), which needs its own Architect breakdown before the loop can
+take it. A `/build-next` that reads this file and finds no task should say
+so and stop — this is the header's own rule.
 ⚠ **Chris owes `npx supabase db push` for migrations 125–132** (hosted tops
 out at 124; 131 re-defines 123's verb, which IS in production; until 132 is
 pushed the hosted Remix preview still answers `reason_required = NOT free` —
@@ -164,11 +183,11 @@ harmless, the modal no longer reads it as a gate).
 **`L.E1.17` (INSERTED BY RULING — Chris 2026-09-21, the repo went public) is
 BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
 mints F372, records D367. It did NOT move the pointer (then `L.E1.14`);
-L.E1.14's own PR moved it to `L.E1.16`.** ⚠ **The push debt is now 125–133, and production
+L.E1.14's own PR moved it to `L.E1.16`.** ⚠ **The push debt is now 125–134, and production
 is NOT protected against the F349 TRUNCATE grant until Chris runs
 `npx supabase db push`.**
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
-L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's, L.E1.13's and L.E1.14's own sessions.*
+L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's, L.E1.13's, L.E1.14's and L.E1.16's own sessions — L.E1.16's moved it to the CLOSEOUT, there being no task left.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
 > HEADER WARNS ABOUT.** Every task from L.E1.2 through L.E1.5 advanced this
 > pointer inside its own PR, so a fresh `/build-next` reading this file first —

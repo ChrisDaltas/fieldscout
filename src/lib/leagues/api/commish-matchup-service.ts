@@ -80,11 +80,16 @@ export const optionalReason = z
 const score = z.number().finite()
 
 /** `POST …/commish/score` — the SCORE arm: BOTH scores, always (126:766-770,
- *  D342 — `is_overridden` is one flag on the whole row). */
+ *  D342 — `is_overridden` is one flag on the whole row). On a BYE ROW there
+ *  is no away side to score: `away_score` is `null` there and is sent as
+ *  `p_away: null`, which is what 131:1058-1062 requires (PROGRESS F366 —
+ *  before this the arm the verb's own bye refusal points the commissioner
+ *  to was unreachable from the route). A bye is SAID (`null`), never
+ *  implied by omission — the schema stays strict. */
 export const commishEditScoreInputSchema = z.strictObject({
   matchup_id: normalizedUuid,
   home_score: score,
-  away_score: score,
+  away_score: score.nullable(),
   action_id: normalizedUuid,
   reason: optionalReason,
 })
@@ -180,11 +185,14 @@ export async function commishEditScore(
   // 126 adds (league first, action_id last — 123:1279-1286's posture). An
   // absent reason is OMITTED, not sent as null: the RPC's `p_reason` DEFAULTS
   // to NULL and typegen prints it optional (`p_reason?: string`).
+  // `p_away` is sent PRESENT even when null (a bye — F366): the RPC has no
+  // default for it, and typegen prints `number` only because 126 declares
+  // no DEFAULT; the null is what the verb reads as "no away side".
   const { data, error } = await supabase.rpc('commish_edit_score', {
     p_league_id: leagueId,
     p_matchup_id: matchup_id,
     p_home: home_score,
-    p_away: away_score,
+    p_away: away_score as unknown as number,
     ...(reason === undefined ? {} : { p_reason: reason }),
     p_action_id: action_id,
   })
@@ -198,15 +206,21 @@ export async function commishEditScore(
   // ORIGINAL document (of either verb) with no error. Identity here is the
   // matchup, the verb, and both numbers — `home_score`/`away_score` are what
   // 126 wrote (`v_new_home`/`v_new_away` = p_home/p_away on the score arm,
-  // 126:787-789). The away number is compared only when the row HAS an away
-  // side: on a BYE row 126 keeps the stored NULL regardless of `p_away`.
+  // 126:787-789). The away side is compared by SHAPE first (F366): a bye
+  // submit (`away_score` null) must come back as a bye document
+  // (`away_team_id` null — 131:1058-1062 REFUSES a non-null p_away on a
+  // bye, so a bye document for a two-team submit, or the reverse, can only
+  // be a replay of another submit), then by number when the row has an
+  // away side.
   const result = (data ?? {}) as ResultShape
+  const byeSubmit = away_score === null
   if (
     result.matchup_id !== matchup_id ||
     result.action_id !== action_id ||
     result.verb !== 'commish_edit_score' ||
     Number(result.home_score) !== home_score ||
-    (result.away_team_id !== null && Number(result.away_score) !== away_score)
+    (result.away_team_id === null) !== byeSubmit ||
+    (!byeSubmit && Number(result.away_score) !== away_score)
   ) {
     return { status: 409, body: { error: COMMISH_MATCHUP_ACTION_ID_REUSED_MESSAGE } }
   }

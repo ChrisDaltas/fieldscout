@@ -272,8 +272,8 @@ describe('seededBeforeCorrection — the view derives the marker the engine does
 // ---------------------------------------------------------------------------
 
 describe('commissioner doors (§10.1 / §16.2) and names', () => {
-  it('two doors for the commissioner — seeds and results — none for a manager or a viewer without a role', () => {
-    expect(commishDoors('commissioner').map((d) => d.key)).toEqual(['seeds', 'results'])
+  it('ONE pending door for the commissioner — results (the seeds door became the real hand-pick control, L.E1.16) — none for a manager or a viewer without a role', () => {
+    expect(commishDoors('commissioner').map((d) => d.key)).toEqual(['results'])
     expect(commishDoors('manager')).toEqual([])
     expect(commishDoors(null)).toEqual([])
   })

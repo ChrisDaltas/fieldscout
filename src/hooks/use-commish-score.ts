@@ -41,7 +41,8 @@ export interface CommishEditScoreInput {
   /** The matchup's week — the invalidation target, NOT sent on the wire. */
   week: number
   homeScore: number
-  awayScore: number
+  /** Null on a BYE row — there is no away side to score (F366). */
+  awayScore: number | null
   /** Optional (Q66). Blank is dropped before the wire. */
   reason?: string
 }
@@ -51,7 +52,7 @@ export interface CommishEditScoreInput {
 export interface CommishEditScoreVariables {
   matchup_id: string
   home_score: number
-  away_score: number
+  away_score: number | null
   action_id: string
   reason?: string
   week: number
