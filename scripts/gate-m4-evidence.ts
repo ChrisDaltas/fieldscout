@@ -240,6 +240,13 @@ function main(): void {
     if (!(report.unmanagedSeats >= 1)) {
       fail(problems, `${scenario}: ZERO unmanaged seats — invariant 8 (unmanaged-seat-autopilot) asserted nothing`)
     }
+    // R1079: seats are not the premise — seat-WEEKS asserted are.
+    if (!(report.unmanagedSeatWeeksAsserted >= 1)) {
+      fail(
+        problems,
+        `${scenario}: invariant 8 asserted on ${String(report.unmanagedSeatWeeksAsserted)} unmanaged seat-week(s) — every driven week was still 'upcoming', so it asserted nothing`,
+      )
+    }
     if (autopiloted !== report.unmanagedSeats) {
       fail(problems, `${scenario}: the server seated ${autopiloted} of ${report.unmanagedSeats} unmanaged seat(s) at week 1`)
     }

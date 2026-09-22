@@ -123,6 +123,7 @@ import {
   classifyHeldWeeks,
   startersOfMap,
   sweepSeasonAudit,
+  countUnmanagedSeatWeeksAsserted,
   type AuditAutopilotUnfillable,
   type AuditCommissionerAction,
   type AuditFinalCell,
@@ -361,6 +362,7 @@ export async function runSeasonSim(
     provenance: { statRows: 0, synthetic: 0, foreign: 0 },
     poolRows: 0,
     unmanagedSeats: 0,
+    unmanagedSeatWeeksAsserted: 0,
     lawfulOverride: null,
     externalCalls: 0,
     workerErrors: [],
@@ -537,6 +539,7 @@ export async function runSeasonSim(
       // never reached `seedLineups` still says how many seats it should have
       // watched.
       report.unmanagedSeats += audit.unmanagedSeats.length
+      report.unmanagedSeatWeeksAsserted += countUnmanagedSeatWeeksAsserted(audit)
       const result: SeasonLeagueResult = {
         leagueLabel: state.label,
         leagueId: state.leagueId,
@@ -591,10 +594,13 @@ export async function runSeasonSim(
     // (§4 rule 14(c)). Invariant 8 over zero unmanaged seats, and invariant
     // 6's provenance arm over zero overrides, both pass having asserted
     // nothing — so each absence is a run PROBLEM, not a green.
-    if (report.unmanagedSeats < 1) {
+    // R1079: the premise is SEAT-WEEKS ASSERTED, not seats — with every driven
+    // week still 'upcoming' invariant 8 iterates seats and asserts nothing.
+    if (report.unmanagedSeatWeeksAsserted < 1) {
       report.problems.push(
-        `AUTOPILOT PREMISE: the run carries ${report.unmanagedSeats} unmanaged seat(s) — invariant 8 ` +
-          `(unmanaged-seat-autopilot) iterated NOTHING, so this run says nothing about §7.2.1(c). A season plan ` +
+        `AUTOPILOT PREMISE: invariant 8 (unmanaged-seat-autopilot) asserted on ${report.unmanagedSeatWeeksAsserted} ` +
+          `unmanaged seat-week(s) (${report.unmanagedSeats} unmanaged seat(s) × the driven weeks that OPENED) — ` +
+          `it iterated NOTHING, so this run says nothing about §7.2.1(c). A season plan ` +
           `seats min(teams, ${BOT_POOL_SIZE}) bots and fills the rest with placeholders: use --teams mixed or a size above ${BOT_POOL_SIZE}.`,
       )
     }
@@ -1488,13 +1494,29 @@ async function readKickoff(service: Supabase, gameId: string): Promise<string | 
  * What one `lineup_lock_tick` pass said about autopilot (125 H4), kept on the
  * league: WHICH seat-weeks the SERVER says it wrote (`autopiloted[]` — the
  * transcript's `reportedByTick`), and WHICH slots it named unfillable and why
- * (`autopilot_unfillable[]` — invariant 8's one excuse). The LATEST pass wins
- * per `team|week|slot`: a slot the tick could not fill at 12:58 and filled at
- * 12:59 is filled, and the stored map — not this record — is what the
- * invariant reads for that.
+ * (`autopilot_unfillable[]` — invariant 8's one excuse).
+ *
+ * THE LATEST EVALUATING PASS WINS, WHOLESALE (R1076). A pass that evaluates
+ * the league's unmanaged seats reports their unfillable slots "whether or not
+ * anything was written" (125:1027-1032) — so that pass's list IS the current
+ * truth for the week, and a slot named at pass N and absent at pass N+1 is NO
+ * LONGER NAMED. The week's entries are therefore REPLACED per pass, never
+ * merged: a `set()`-only absorb kept a stale excuse forever.
+ *
+ * A pass that evaluated NO seat says nothing about any slot, and the tick
+ * says so itself in `autopilot_reason` (125:1102-1124) — the kill switch, a
+ * current week that has closed out of `live`, or every seat declined. Such a
+ * pass leaves the record alone: its empty `autopilot_unfillable[]` is "I did
+ * not look", never "every slot is fillable now" (§4 rule 15).
  */
-function absorbAutopilotReport(data: unknown, league: LeagueState, tickWeek: number): void {
-  const doc = (data ?? {}) as { autopiloted?: unknown; autopilot_unfillable?: unknown }
+export const AUTOPILOT_PASS_EVALUATED_NOTHING: readonly string[] = [
+  'disabled_by_system_flag:autopilot_disabled',
+  'every_unmanaged_looking_seat_declined_no_league_members_row',
+  'no_unmanaged_seats_in_a_live_current_week',
+]
+
+export function absorbAutopilotReport(data: unknown, league: LeagueState, tickWeek: number): void {
+  const doc = (data ?? {}) as { autopiloted?: unknown; autopilot_unfillable?: unknown; autopilot_reason?: unknown }
   if (Array.isArray(doc.autopiloted)) {
     for (const raw of doc.autopiloted) {
       const e = (raw ?? {}) as { league_id?: unknown; team_id?: unknown; week?: unknown }
@@ -1502,8 +1524,14 @@ function absorbAutopilotReport(data: unknown, league: LeagueState, tickWeek: num
       league.autopilotedSeatWeeks.add(`${e.team_id}|${Number(e.week)}`)
     }
   }
-  if (Array.isArray(doc.autopilot_unfillable)) {
+  const evaluatedNothing =
+    typeof doc.autopilot_reason === 'string' && AUTOPILOT_PASS_EVALUATED_NOTHING.includes(doc.autopilot_reason)
+  if (Array.isArray(doc.autopilot_unfillable) && !evaluatedNothing) {
     const teamIds = new Set(league.teams.map((t) => t.id))
+    // R1076 — REPLACE, never merge: drop the week's previous entries first.
+    for (const [key, entry] of [...league.autopilotUnfillable]) {
+      if (entry.week === tickWeek) league.autopilotUnfillable.delete(key)
+    }
     for (const raw of doc.autopilot_unfillable) {
       const e = (raw ?? {}) as { team_id?: unknown; slot?: unknown; reason?: unknown }
       if (typeof e.team_id !== 'string' || typeof e.slot !== 'string' || !teamIds.has(e.team_id)) continue
@@ -2645,7 +2673,7 @@ export async function collectSeasonAudit(
   // false red (or hide a duplicate id).
   const { data: actionRows, error: actionError } = await service
     .from('commissioner_actions')
-    .select('id, target_type, target_id')
+    .select('id, action_type, target_type, target_id, after')
     .eq('league_id', state.leagueId)
     .order('id')
   throwIfError(actionError, `${state.label}: audit commissioner_actions`)
@@ -2657,8 +2685,10 @@ export async function collectSeasonAudit(
   }
   const commissionerActions: AuditCommissionerAction[] = (actionRows ?? []).map((r) => ({
     id: r.id,
+    action_type: r.action_type,
     target_type: r.target_type,
     target_id: r.target_id,
+    after: r.after,
   }))
 
   // ---- Invariant 8's seats: read from `league_members` (D339) -------------
@@ -3390,7 +3420,8 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
     )
   }
   lines.push(
-    `UNMANAGED SEATS (invariant 8's premise, must be >= 1): ${report.unmanagedSeats} across the run · ` +
+    `UNMANAGED SEAT-WEEKS ASSERTED (invariant 8's premise, must be >= 1): ${report.unmanagedSeatWeeksAsserted} ` +
+      `over ${report.unmanagedSeats} unmanaged seat(s) across the run · ` +
       `${report.leagues.reduce((n, l) => n + l.lineupsAutopiloted, 0)} seated by the server at week 1`,
   )
   lines.push(

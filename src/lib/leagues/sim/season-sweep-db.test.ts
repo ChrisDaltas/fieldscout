@@ -46,6 +46,7 @@ import { defaultsForTeamCount, splitSettings } from '../settings/league-settings
 import { systemTime } from '../time/time-provider'
 
 import {
+  parseRenderedCell,
   sweepSeasonAudit,
   type SeasonAudit,
   type SeasonInvariantFailure,
@@ -105,6 +106,14 @@ let commishClient: SupabaseClient<Database>
 let commishId: string
 let leagueId: string
 let teamIds: string[] = []
+/** R1082: index into `teamIds` of the ONE seat carrying a `league_members`
+ *  row with `user_id NULL` — the shape arm (c) actually seats. */
+const PLACEHOLDER_SEAT = 1
+let tickReport: {
+  autopiloted?: Array<{ team_id?: string; week?: number }>
+  skipped?: Array<{ team_id?: string; reason?: string }>
+  autopilot_unfillable?: unknown[]
+} = {}
 let state: LeagueState
 
 function must<T>(res: { data: T; error: { message: string } | null }, what: string): T {
@@ -264,6 +273,17 @@ beforeAll(async () => {
     'extra teams',
   )
   teamIds = [first.id, ...extra.map((t) => t.id)]
+  // R1082 — Seat 2 is the PRODUCTION unmanaged shape: a `league_members` row
+  // with `user_id NULL` (063:459-465's placeholder, column for column). It is
+  // the ONLY shape arm (c) seats; seats 3-8 keep no member row at all (D339's
+  // unsafe direction, which arm (c) DECLINES). The fixture now carries both.
+  must(
+    await service
+      .from('league_members')
+      .insert({ league_id: leagueId, user_id: null, team_id: teamIds[PLACEHOLDER_SEAT]!, role: 'manager', is_placeholder: true, faab_balance: 100 })
+      .select('id'),
+    'placeholder league_members row',
+  )
 
   must(await service.from('players').insert(PLAYERS).select('id'), 'players insert')
   must(
@@ -335,6 +355,9 @@ beforeAll(async () => {
   // ---- Drive the week through the REAL machinery -------------------------
   await job('league_week_advance', new Date(Date.parse(WEEK1_STARTS) + MINUTE_MS).toISOString())
   for (const [i, teamId] of teamIds.entries()) {
+    // R1082: the placeholder seat is seated by NOBODY here — the SERVER's
+    // arm (c) does it, through the real tick, just below.
+    if (i === PLACEHOLDER_SEAT) continue
     const { error } = await commishClient.rpc('set_lineup', {
       p_league_id: leagueId,
       p_team_id: teamId,
@@ -344,6 +367,12 @@ beforeAll(async () => {
       p_reason: 'season-sweep fixture: seating every franchise for the driven week',
     })
     if (error) throw new Error(`set_lineup(seat ${i + 1}): ${error.message}`)
+  }
+  {
+    const at = new Date(Date.parse(WEEK1_STARTS) + 2 * MINUTE_MS).toISOString()
+    const { data, error } = await service.rpc('lineup_lock_tick', { p_now: at, p_league_id: leagueId })
+    if (error) throw new Error(`lineup_lock_tick(${at}): ${error.message}`)
+    tickReport = (data ?? {}) as typeof tickReport
   }
   // Stat lines, then the PRODUCTION worker over the PRODUCTION queue — no
   // hand-written matchup UPDATE exists in this fixture.
@@ -872,11 +901,31 @@ describe('7 — zero unhandled worker errors (§23.2)', () => {
 describe('8 — unmanaged seats are seated by the SERVER (M6A L.E1.14; §7.2.1(c); F335)', () => {
   it('PREMISE: the fixture carries unmanaged seats, and the sweep is green while every one of them holds a full map', async () => {
     const a = await audit()
-    // Seats 2-8 are inserted with no `league_members` row at all (the
-    // fixture's `teams` INSERT) — D339's UNSAFE shape, which the collector
-    // must LIST rather than drop. Seat 1 is the commissioner's own.
+    // Seat 1 is the commissioner's own. Seat 2 carries a `league_members` row
+    // with `user_id NULL` — the PRODUCTION shape, the only one arm (c) seats
+    // (R1082). Seats 3-8 have no member row at all — D339's UNSAFE shape,
+    // which the collector must LIST rather than drop.
     expect(a.unmanagedSeats.map((s) => s.team_id).sort()).toEqual([...teamIds.slice(1)].sort())
-    expect(a.unmanagedSeats.every((s) => s.shape === 'no_member_row')).toBe(true)
+    const shapeOf = new Map(a.unmanagedSeats.map((s) => [s.team_id, s.shape]))
+    const placeholder = teamIds[PLACEHOLDER_SEAT]!
+    expect(shapeOf.get(placeholder)).toBe('member_row_user_id_null')
+    expect(teamIds.slice(2).map((t) => shapeOf.get(t))).toEqual(Array.from({ length: SEATS - 2 }, () => 'no_member_row'))
+    // BOTH shapes are present …
+    expect(new Set(shapeOf.values())).toEqual(new Set(['member_row_user_id_null', 'no_member_row']))
+    // … and BOTH hold a full starting map — by DIFFERENT hands. The
+    // placeholder was seated by the SERVER: the fixture never called
+    // `set_lineup` for it, and the real tick NAMED it in `autopiloted[]`.
+    expect((tickReport.autopiloted ?? []).map((e) => e.team_id)).toEqual([placeholder])
+    expect(tickReport.autopilot_unfillable ?? []).toEqual([])
+    // The six no-member-row seats were DECLINED by that same pass, by name
+    // (they hold a map only because the fixture's commissioner set one).
+    expect(
+      (tickReport.skipped ?? []).filter((e) => e.reason === 'no_league_members_row').map((e) => e.team_id).sort(),
+    ).toEqual([...teamIds.slice(2)].sort())
+    for (const seat of a.unmanagedSeats) {
+      const lineup = a.lineups.find((l) => l.team_id === seat.team_id && l.week === WEEK)
+      expect(Object.keys(lineup?.slot_map ?? {}).sort(), seat.team_id).toEqual(['qb:0', 'rb:0'])
+    }
     expect(a.unmanagedSeats.every((s) => s.roster.length === 2)).toBe(true)
     expect(a.startingSlots.map((s) => s.key)).toEqual(['qb:0', 'rb:0'])
     expect(sweepSeasonAudit(a).filter((f) => f.invariant === 'unmanaged-seat-autopilot')).toEqual([])
@@ -1019,9 +1068,21 @@ describe('6 — provenance, LIVE: a real commish_edit_score on a FINAL cell (M6A
     expect(moved[0]!.baselines[1]!.licensed_by).toBe(receipt)
     expect(moved[0]!.baselines[1]!.rendered).toContain('overridden=true')
     expect(moved[0]!.at_end).toBe(moved[0]!.baselines[1]!.rendered)
-    expect(a.commissionerActions.filter((r) => r.id === receipt)).toEqual([
-      { id: receipt, target_type: 'matchup', target_id: top.m.id },
-    ])
+    // R1077: the REAL receipt's shape — printed once, so the PR shows what
+    // the comparison is actually run against — and its `after` EQUALS the
+    // cell numerically.
+    const licence = a.commissionerActions.filter((r) => r.id === receipt)
+    console.log(`R1077 real receipt: ${JSON.stringify(licence)}\nR1077 post-event cell: ${moved[0]!.baselines[1]!.rendered}`)
+    expect(licence).toHaveLength(1)
+    expect(licence[0]).toMatchObject({ id: receipt, action_type: 'edit_score', target_type: 'matchup', target_id: top.m.id })
+    const after = licence[0]!.after as { home_score: unknown; away_score: unknown; result: unknown }
+    expect(Number(after.home_score)).toBe(top.side === 'home' ? top.score + 1 : top.m.home_score)
+    expect(Number(after.away_score)).toBe(top.side === 'away' ? top.score + 1 : top.m.away_score)
+    expect(parseRenderedCell(moved[0]!.baselines[1]!.rendered)).toEqual({
+      home: Number(after.home_score),
+      away: Number(after.away_score),
+      result: after.result,
+    })
     expect(sweepSeasonAudit(a)).toEqual([])
   })
 

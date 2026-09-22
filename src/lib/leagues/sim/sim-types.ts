@@ -446,6 +446,13 @@ export interface SeasonRunReport {
    */
   unmanagedSeats: number
   /**
+   * R1079 — the premise invariant 8 ACTUALLY needs: (unmanaged seat, OPENED
+   * driven week) pairs it asserted on. Seats alone are not it — a run whose
+   * every driven week is still `upcoming` carries seats and asserts nothing.
+   * 0 is a run PROBLEM.
+   */
+  unmanagedSeatWeeksAsserted: number
+  /**
    * D345 — invariant 6's provenance arm, measured: the ONE lawful commissioner
    * override the run injected on a final cell, or null. null with a finalized
    * week is a run PROBLEM (the arm asserted nothing).

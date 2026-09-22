@@ -189,8 +189,106 @@ export interface AuditFinalCell {
  *  ledger (§12.12; D336's `target_type` / `target_id`). */
 export interface AuditCommissionerAction {
   id: string
+  /** `commissioner_actions.action_type`. Only 126's two matchup verbs may
+   *  license a final cell — see `FINAL_CELL_LICENSING_ACTION_TYPES` (R1077). */
+  action_type: string
   target_type: string | null
   target_id: string | null
+  /** The receipt's `after` document, as stored (126:878-882 / 131:1180-1184:
+   *  `{home_score, away_score, result, …}`). `unknown` on purpose: the
+   *  invariant PARSES it and a malformed receipt fails by name (R1077). */
+  after: unknown
+}
+
+/**
+ * The ONLY `action_type` values that may lawfully move a final matchup cell:
+ * 126's shared internal maps `commish_edit_score` → `edit_score` and
+ * `commish_set_result` → `set_result` (`126:663`, re-stated at `131:968`).
+ * Any other verb's receipt — however well-aimed its `target_id` — licenses
+ * nothing here (R1077).
+ */
+export const FINAL_CELL_LICENSING_ACTION_TYPES: readonly string[] = ['edit_score', 'set_result']
+
+/**
+ * The three REASON strings `lineup_autopilot_internal` emits into
+ * `unfillable[]` (`125:637-643`), as `prefix + UPPER(slot) + suffix`. Pinned
+ * against the migration's FILE TEXT by `season-invariants.test.ts`, so a
+ * wording change in a later migration reds a test instead of silently
+ * un-excusing — or over-excusing — a slot (R1076).
+ */
+export const AUTOPILOT_UNFILLABLE_REASONS = {
+  /** THE ONLY ARM INVARIANT 8 EXCUSES: a healthy candidate does not exist and
+   *  the league forbids seating an unhealthy one. */
+  forbidsIllegal: { prefix: 'no healthy eligible player at ', suffix: '; league forbids illegal lineups' },
+  /** Never excused: the harness ticks before any kickoff. */
+  lockedOut: { prefix: 'no unlocked eligible player at ', suffix: "; every candidate's game had kicked off" },
+  /** Never excused beside a bench witness: the witness refutes it. */
+  nobodyEligible: { prefix: 'no eligible player at ', suffix: ' on the roster' },
+} as const
+
+/** True iff `reason` is 125's "league forbids illegal lineups" arm. */
+export function isForbidsIllegalReason(reason: string): boolean {
+  const { prefix, suffix } = AUTOPILOT_UNFILLABLE_REASONS.forbidsIllegal
+  return reason.startsWith(prefix) && reason.endsWith(suffix) && reason.length > prefix.length + suffix.length
+}
+
+/**
+ * The matchup columns of a cell rendering (`season-runner.ts` `renderCells`:
+ * `home=<n> away=<n> result=<s> status=…`). `null` when the rendering does
+ * not carry them — which, for a LICENSED baseline, is itself a failure.
+ */
+export function parseRenderedCell(
+  rendered: string,
+): { home: number | null; away: number | null; result: string | null } | null {
+  const m = /^home=(\S+) away=(\S+) result=(\S+)(?: |$)/.exec(rendered)
+  if (m === null) return null
+  const num = (raw: string): number | null | undefined => {
+    if (raw === 'null') return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : undefined
+  }
+  const home = num(m[1]!)
+  const away = num(m[2]!)
+  if (home === undefined || away === undefined) return null
+  return { home, away, result: m[3] === 'null' ? null : m[3]! }
+}
+
+/** Why a receipt's `after` does NOT equal the observed cell, or `null` when it
+ *  does. Scores compare NUMERICALLY at cent precision (PostgREST renders a
+ *  NUMERIC as a JSON number — `12.5`, never `12.50` — while a JSONB `after`
+ *  keeps the verb's own scale). */
+function afterMismatch(after: unknown, rendered: string): string | null {
+  const cell = parseRenderedCell(rendered)
+  if (cell === null) return `the post-event rendering carries no home/away/result to compare`
+  if (after === null || typeof after !== 'object' || Array.isArray(after)) {
+    return `the receipt's \`after\` is ${after === null ? 'NULL' : `not an object (${JSON.stringify(after)})`}`
+  }
+  const doc = after as Record<string, unknown>
+  const score = (raw: unknown): number | null | undefined => {
+    if (raw === null) return null
+    if (typeof raw !== 'number' && typeof raw !== 'string') return undefined
+    if (typeof raw === 'string' && raw.trim() === '') return undefined
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : undefined
+  }
+  const diffs: string[] = []
+  for (const [side, key, seen] of [
+    ['home', 'home_score', cell.home],
+    ['away', 'away_score', cell.away],
+  ] as const) {
+    const said = key in doc ? score(doc[key]) : undefined
+    if (said === undefined) diffs.push(`after.${key} is missing or not numeric (${JSON.stringify(doc[key])})`)
+    else if (said === null || seen === null ? said !== seen : Math.round(said * 100) !== Math.round(seen * 100)) {
+      diffs.push(`${side}: receipt says ${String(said)}, the cell reads ${String(seen)}`)
+    }
+  }
+  const saidResult = 'result' in doc ? doc.result : undefined
+  if (saidResult !== null && typeof saidResult !== 'string') {
+    diffs.push(`after.result is missing or not a string (${JSON.stringify(saidResult)})`)
+  } else if (saidResult !== cell.result) {
+    diffs.push(`result: receipt says ${String(saidResult)}, the cell reads ${String(cell.result)}`)
+  }
+  return diffs.length === 0 ? null : diffs.join('; ')
 }
 
 /** A starting-slot INSTANCE of the league (`<slot_key>:<index>`), as stored. */
@@ -674,7 +772,10 @@ export function checkPointsForOnce(a: SeasonAudit): SeasonInvariantFailure[] {
  *       `commissioner_actions` row, and that row's target must be THIS
  *       matchup (`target_type = 'matchup'`, `target_id = matchup_id`) — a
  *       missing row fails, a duplicated id fails, a row aimed at a different
- *       matchup fails, and one receipt cannot license two baselines;
+ *       matchup fails, and one receipt cannot license two baselines. The row
+ *       must ALSO be one of 126's two matchup verbs (`edit_score` /
+ *       `set_result`) and its `after` must EQUAL the post-event cell's
+ *       home / away / result, compared numerically (R1077);
  *   (c) a later baseline with `licensed_by = null` is DRIFT BETWEEN
  *       BASELINES — the cell was not byte-identical between the previous
  *       baseline and the instant just before the audited event — and fails;
@@ -766,6 +867,38 @@ export function checkFinalCellsImmutable(a: SeasonAudit): SeasonInvariantFailure
         )
         continue
       }
+      // THE RECEIPT MUST SAY WHAT THE CELL NOW READS (R1077) — BEGIN. Binding
+      // id + target alone let a licensed cell read ANYTHING: the receipt has
+      // to be one of the two verbs that may move a final cell, and its `after`
+      // has to EQUAL the post-event home/away/result.
+      if (!FINAL_CELL_LICENSING_ACTION_TYPES.includes(licence.action_type)) {
+        out.push(
+          fail(
+            a,
+            'final-cell-immutable',
+            cell.week,
+            `${where} was re-baselined [${prior.rendered}] → [${next.rendered}] under licence ${next.licensed_by}, ` +
+              `but that audit row's action_type is '${licence.action_type}' — only ` +
+              `${FINAL_CELL_LICENSING_ACTION_TYPES.join(' / ')} (126:663) may move a final cell (R1077)`,
+          ),
+        )
+        continue
+      }
+      const mismatch = afterMismatch(licence.after, next.rendered)
+      if (mismatch !== null) {
+        out.push(
+          fail(
+            a,
+            'final-cell-immutable',
+            cell.week,
+            `${where} was re-baselined [${prior.rendered}] → [${next.rendered}] under licence ${next.licensed_by}, ` +
+              `but the receipt's AFTER does not equal the cell — ${mismatch}. A receipt licenses the value it ` +
+              `RECORDED, not whatever the cell reads next (§12.12; R1077)`,
+          ),
+        )
+        continue
+      }
+      // THE RECEIPT MUST SAY WHAT THE CELL NOW READS (R1077) — END.
       spent.add(next.licensed_by)
     }
     const last = cell.baselines[cell.baselines.length - 1]!
@@ -811,10 +944,13 @@ export function checkNoWorkerErrors(a: SeasonAudit): SeasonInvariantFailure[] {
  *     length-one augmenting path, so no maximum matching leaves it — and
  *     nothing here says WHICH player should start where.
  *
- * THE ONE EXCUSE, and it needs BOTH halves: the league stores
+ * THE ONE EXCUSE, and it needs ALL THREE halves: the league stores
  * `allow_illegal_lineups = false` (125 item 4c — a blocking designation or a
- * bye is a HARD filter on seating someone new) AND the tick itself NAMED that
- * slot in `autopilot_unfillable[]` for that team-week. A league that allows
+ * bye is a HARD filter on seating someone new), the tick's LATEST pass over
+ * that team-week NAMED that slot in `autopilot_unfillable[]`, AND the reason
+ * it gave is 125's "no healthy eligible player …; league forbids illegal
+ * lineups" arm (`isForbidsIllegalReason` — R1076). The other two reasons
+ * (locked out / nobody eligible) excuse nothing. A league that allows
  * illegal lineups has no excuse at all (125 seats the unhealthy tail LAST
  * rather than leave a zero), and a slot the server never named is never
  * excused — "nothing happened" is not "it worked".
@@ -824,20 +960,59 @@ export function checkNoWorkerErrors(a: SeasonAudit): SeasonInvariantFailure[] {
  * any kickoff, so a locked-out seat in a sim run means the tick did not run
  * when it should have.
  *
- * PREMISE (§4 rule 14(c)): over zero unmanaged seats this returns `[]` having
- * asserted nothing. The RUNNER therefore counts the run's unmanaged seats and
- * makes zero a run PROBLEM (`season-runner.ts`); this function stays pure.
+ * KNOWN LIMIT (F376, measured): 125 tests a candidate's LOCK before his
+ * health (`125:549-557`), so the slot it named "forbids illegal lineups" at
+ * the week-open pass is re-worded "every candidate's game had kicked off" at
+ * every pass after that kickoff — and the latest evaluating pass is the one
+ * judged. An OFF league whose seat has a blocked ONLY-candidate is therefore
+ * red here after kickoff. That world is F374's (the live pool's
+ * `players.status` leaking into the sim); it is REPORTED, not excused.
+ *
+ * NO WITNESS IS NOT A PASS (R1078): an unmanaged seat with an EMPTY roster,
+ * or one carrying a player whose position the audit could not resolve (`''`),
+ * cannot produce a bench witness for any slot — so it FAILS by name instead
+ * of walking through green.
+ *
+ * PREMISE (§4 rule 14(c)): over zero unmanaged SEAT-WEEKS this returns `[]`
+ * having asserted nothing — zero seats, or seats whose every driven week is
+ * still `upcoming` (R1079). `countUnmanagedSeatWeeksAsserted` is that count;
+ * the RUNNER sums it and makes zero a run PROBLEM (`season-runner.ts`).
  */
 export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
-  const driven = new Set(a.weeksDriven)
-  const openedWeeks = a.weeks.filter((w) => driven.has(w.week) && w.status !== 'upcoming').map((w) => w.week)
-  const named = new Set(a.autopilotUnfillable.map((u) => `${u.team_id}|${u.week}|${u.slot}`))
+  const openedWeeks = openedDrivenWeeks(a)
+  // R1076: ONLY the "league forbids illegal lineups" arm is an excuse.
+  const named = new Set(
+    a.autopilotUnfillable.filter((u) => isForbidsIllegalReason(u.reason)).map((u) => `${u.team_id}|${u.week}|${u.slot}`),
+  )
+  const namedOtherwise = new Map(
+    a.autopilotUnfillable
+      .filter((u) => !isForbidsIllegalReason(u.reason))
+      .map((u) => [`${u.team_id}|${u.week}|${u.slot}`, u.reason] as const),
+  )
   for (const seat of a.unmanagedSeats) {
     const shapeNote =
       seat.shape === 'no_member_row'
         ? ' [this team has NO league_members row at all — arm (c) DECLINES such a seat by name (125, D339), so nothing will ever seat it]'
         : ''
+    // R1078: a seat that can produce NO witness must not pass for want of one.
+    const unresolved = seat.roster.filter((p) => p.position === '')
+    if (openedWeeks.length > 0 && (seat.roster.length === 0 || unresolved.length > 0)) {
+      out.push(
+        fail(
+          a,
+          'unmanaged-seat-autopilot',
+          openedWeeks[0]!,
+          seat.roster.length === 0
+            ? `unmanaged team ${seat.team_id} has an EMPTY roster — no bench witness can exist, so this invariant ` +
+                `could assert nothing about the seat; an empty seat in a driven league is a harness fault, never a pass (R1078)${shapeNote}`
+            : `unmanaged team ${seat.team_id} rosters player(s) with NO resolvable position ` +
+                `(${unresolved.map((p) => p.player_id).join(', ')}) — they can witness no slot, so an empty slot beside ` +
+                `them would pass unseen (R1078)${shapeNote}`,
+        ),
+      )
+      continue
+    }
     for (const week of openedWeeks) {
       const lineup = a.lineups.find((l) => l.team_id === seat.team_id && l.week === week)
       if (lineup === undefined) {
@@ -863,7 +1038,11 @@ export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantF
         const witnesses = bench.filter((p) => slot.eligible.includes(p.position))
         if (witnesses.length === 0) continue // nobody on the roster could take it — lawful; F288's run PROBLEM names the key
         if (!a.allowIllegalLineups && named.has(`${seat.team_id}|${week}|${slot.key}`)) continue
-        shortfall.push(`${slot.key} (eligible and unstarted: ${witnesses.map((p) => p.player_id).join(', ')})`)
+        const other = namedOtherwise.get(`${seat.team_id}|${week}|${slot.key}`)
+        shortfall.push(
+          `${slot.key} (eligible and unstarted: ${witnesses.map((p) => p.player_id).join(', ')}` +
+            `${other === undefined ? '' : `; the tick named it with a reason that excuses NOTHING: "${other}"`})`,
+        )
       }
       if (shortfall.length === 0) continue
       out.push(
@@ -876,12 +1055,23 @@ export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantF
                 `scores a zero (spec:185; F334). Unfilled: ${shortfall.join('; ')}${shapeNote}`
             : `unmanaged team ${seat.team_id} week ${week}: starting slot(s) left empty that the roster could fill — ` +
                 `${shortfall.join('; ')}` +
-                `${a.allowIllegalLineups ? '' : ' — and the tick never named them in autopilot_unfillable[]'}${shapeNote}`,
+                `${a.allowIllegalLineups ? '' : " — and the tick's latest pass never named them in autopilot_unfillable[] with the 'league forbids illegal lineups' reason"}${shapeNote}`,
         ),
       )
     }
   }
   return out
+}
+
+/** The driven weeks that have OPENED — the only weeks invariant 8 asserts on. */
+export function openedDrivenWeeks(a: SeasonAudit): number[] {
+  const driven = new Set(a.weeksDriven)
+  return a.weeks.filter((w) => driven.has(w.week) && w.status !== 'upcoming').map((w) => w.week)
+}
+
+/** Invariant 8's premise: the (seat, week) pairs it actually asserts on. */
+export function countUnmanagedSeatWeeksAsserted(a: SeasonAudit): number {
+  return a.unmanagedSeats.length * openedDrivenWeeks(a).length
 }
 
 // ── Held weeks: CLASSIFIED, never counted (Q37) ─────────────────────────────
