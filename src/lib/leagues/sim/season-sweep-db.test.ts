@@ -46,11 +46,18 @@ import { defaultsForTeamCount, splitSettings } from '../settings/league-settings
 import { systemTime } from '../time/time-provider'
 
 import {
+  parseRenderedCell,
   sweepSeasonAudit,
   type SeasonAudit,
   type SeasonInvariantFailure,
 } from './season-invariants'
-import { collectSeasonAudit, readLeagueState, snapshotNewlyFinal, type LeagueState } from './season-runner'
+import {
+  collectSeasonAudit,
+  readLeagueState,
+  rebaselineAroundAuditedEvent,
+  snapshotNewlyFinal,
+  type LeagueState,
+} from './season-runner'
 import { seedSyntheticSeason, SYNTHETIC_SEASON } from './synthetic-season'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -99,6 +106,14 @@ let commishClient: SupabaseClient<Database>
 let commishId: string
 let leagueId: string
 let teamIds: string[] = []
+/** R1082: index into `teamIds` of the ONE seat carrying a `league_members`
+ *  row with `user_id NULL` — the shape arm (c) actually seats. */
+const PLACEHOLDER_SEAT = 1
+let tickReport: {
+  autopiloted?: Array<{ team_id?: string; week?: number }>
+  skipped?: Array<{ team_id?: string; reason?: string }>
+  autopilot_unfillable?: unknown[]
+} = {}
 let state: LeagueState
 
 function must<T>(res: { data: T; error: { message: string } | null }, what: string): T {
@@ -258,6 +273,17 @@ beforeAll(async () => {
     'extra teams',
   )
   teamIds = [first.id, ...extra.map((t) => t.id)]
+  // R1082 — Seat 2 is the PRODUCTION unmanaged shape: a `league_members` row
+  // with `user_id NULL` (063:459-465's placeholder, column for column). It is
+  // the ONLY shape arm (c) seats; seats 3-8 keep no member row at all (D339's
+  // unsafe direction, which arm (c) DECLINES). The fixture now carries both.
+  must(
+    await service
+      .from('league_members')
+      .insert({ league_id: leagueId, user_id: null, team_id: teamIds[PLACEHOLDER_SEAT]!, role: 'manager', is_placeholder: true, faab_balance: 100 })
+      .select('id'),
+    'placeholder league_members row',
+  )
 
   must(await service.from('players').insert(PLAYERS).select('id'), 'players insert')
   must(
@@ -329,6 +355,9 @@ beforeAll(async () => {
   // ---- Drive the week through the REAL machinery -------------------------
   await job('league_week_advance', new Date(Date.parse(WEEK1_STARTS) + MINUTE_MS).toISOString())
   for (const [i, teamId] of teamIds.entries()) {
+    // R1082: the placeholder seat is seated by NOBODY here — the SERVER's
+    // arm (c) does it, through the real tick, just below.
+    if (i === PLACEHOLDER_SEAT) continue
     const { error } = await commishClient.rpc('set_lineup', {
       p_league_id: leagueId,
       p_team_id: teamId,
@@ -338,6 +367,12 @@ beforeAll(async () => {
       p_reason: 'season-sweep fixture: seating every franchise for the driven week',
     })
     if (error) throw new Error(`set_lineup(seat ${i + 1}): ${error.message}`)
+  }
+  {
+    const at = new Date(Date.parse(WEEK1_STARTS) + 2 * MINUTE_MS).toISOString()
+    const { data, error } = await service.rpc('lineup_lock_tick', { p_now: at, p_league_id: leagueId })
+    if (error) throw new Error(`lineup_lock_tick(${at}): ${error.message}`)
+    tickReport = (data ?? {}) as typeof tickReport
   }
   // Stat lines, then the PRODUCTION worker over the PRODUCTION queue — no
   // hand-written matchup UPDATE exists in this fixture.
@@ -861,4 +896,206 @@ describe('7 — zero unhandled worker errors (§23.2)', () => {
     )
     expect(await sweep()).toEqual([])
   }, 60_000)
+})
+
+describe('8 — unmanaged seats are seated by the SERVER (M6A L.E1.14; §7.2.1(c); F335)', () => {
+  it('PREMISE: the fixture carries unmanaged seats, and the sweep is green while every one of them holds a full map', async () => {
+    const a = await audit()
+    // Seat 1 is the commissioner's own. Seat 2 carries a `league_members` row
+    // with `user_id NULL` — the PRODUCTION shape, the only one arm (c) seats
+    // (R1082). Seats 3-8 have no member row at all — D339's UNSAFE shape,
+    // which the collector must LIST rather than drop.
+    expect(a.unmanagedSeats.map((s) => s.team_id).sort()).toEqual([...teamIds.slice(1)].sort())
+    const shapeOf = new Map(a.unmanagedSeats.map((s) => [s.team_id, s.shape]))
+    const placeholder = teamIds[PLACEHOLDER_SEAT]!
+    expect(shapeOf.get(placeholder)).toBe('member_row_user_id_null')
+    expect(teamIds.slice(2).map((t) => shapeOf.get(t))).toEqual(Array.from({ length: SEATS - 2 }, () => 'no_member_row'))
+    // BOTH shapes are present …
+    expect(new Set(shapeOf.values())).toEqual(new Set(['member_row_user_id_null', 'no_member_row']))
+    // … and BOTH hold a full starting map — by DIFFERENT hands. The
+    // placeholder was seated by the SERVER: the fixture never called
+    // `set_lineup` for it, and the real tick NAMED it in `autopiloted[]`.
+    expect((tickReport.autopiloted ?? []).map((e) => e.team_id)).toEqual([placeholder])
+    expect(tickReport.autopilot_unfillable ?? []).toEqual([])
+    // The six no-member-row seats were DECLINED by that same pass, by name
+    // (they hold a map only because the fixture's commissioner set one).
+    expect(
+      (tickReport.skipped ?? []).filter((e) => e.reason === 'no_league_members_row').map((e) => e.team_id).sort(),
+    ).toEqual([...teamIds.slice(2)].sort())
+    for (const seat of a.unmanagedSeats) {
+      const lineup = a.lineups.find((l) => l.team_id === seat.team_id && l.week === WEEK)
+      expect(Object.keys(lineup?.slot_map ?? {}).sort(), seat.team_id).toEqual(['qb:0', 'rb:0'])
+    }
+    expect(a.unmanagedSeats.every((s) => s.roster.length === 2)).toBe(true)
+    expect(a.startingSlots.map((s) => s.key)).toEqual(['qb:0', 'rb:0'])
+    expect(sweepSeasonAudit(a).filter((f) => f.invariant === 'unmanaged-seat-autopilot')).toEqual([])
+  })
+
+  it('an unmanaged seat left with an EMPTY map reddens the sweep by team, week and slot key, and reverts clean', async () => {
+    const { data: before } = await service
+      .from('team_lineups')
+      .select('slot_map')
+      .eq('team_id', teamIds[3]!)
+      .eq('season', SYNTHETIC_SEASON)
+      .eq('week', WEEK)
+      .single()
+    must(
+      await service
+        .from('team_lineups')
+        .update({ slot_map: {} })
+        .eq('team_id', teamIds[3]!)
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', WEEK)
+        .select('id'),
+      'plant: an unmanaged seat nobody seated',
+    )
+    const failures = (await sweep()).filter((f) => f.invariant === 'unmanaged-seat-autopilot')
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.week).toBe(WEEK)
+    expect(failures[0]!.detail).toContain(teamIds[3]!)
+    expect(failures[0]!.detail).toContain('EMPTY')
+    expect(failures[0]!.detail).toContain('qb:0')
+    expect(failures[0]!.detail).toContain('vitest-ss-rb-4')
+    expect(failures[0]!.detail).toContain('DECLINES') // the no-member-row shape says why nothing will ever seat it
+
+    must(
+      await service
+        .from('team_lineups')
+        .update({ slot_map: before!.slot_map })
+        .eq('team_id', teamIds[3]!)
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', WEEK)
+        .select('id'),
+      'revert: the unmanaged seat',
+    )
+    expect(await sweep()).toEqual([])
+  })
+
+  it('the SAME empty map on the MANAGED seat is not this invariant\'s finding', async () => {
+    const { data: before } = await service
+      .from('team_lineups')
+      .select('slot_map')
+      .eq('team_id', teamIds[0]!)
+      .eq('season', SYNTHETIC_SEASON)
+      .eq('week', WEEK)
+      .single()
+    must(
+      await service
+        .from('team_lineups')
+        .update({ slot_map: {} })
+        .eq('team_id', teamIds[0]!)
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', WEEK)
+        .select('id'),
+      'plant: the managed seat empties its own lineup',
+    )
+    expect((await sweep()).filter((f) => f.invariant === 'unmanaged-seat-autopilot')).toEqual([])
+    must(
+      await service
+        .from('team_lineups')
+        .update({ slot_map: before!.slot_map })
+        .eq('team_id', teamIds[0]!)
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', WEEK)
+        .select('id'),
+      'revert: the managed seat',
+    )
+    expect(await sweep()).toEqual([])
+  })
+})
+
+/**
+ * LAST IN THE FILE ON PURPOSE: a commissioner override cannot be taken back
+ * (`is_overridden` is one-way by design), so everything above runs against
+ * the un-overridden fixture and this block owns the league from here on.
+ */
+describe('6 — provenance, LIVE: a real commish_edit_score on a FINAL cell (M6A L.E1.14; D345; F336)', () => {
+  const ACTION_OVERRIDE = 'ad600000-0000-4000-8000-000000000201'
+  const ACTION_UNBASELINED = 'ad600000-0000-4000-8000-000000000202'
+
+  async function finalMatchups(): Promise<Array<{ id: string; home_score: number; away_score: number }>> {
+    const rows = need(
+      await service
+        .from('matchups')
+        .select('id, home_score, away_score')
+        .eq('league_id', leagueId)
+        .eq('week', WEEK)
+        .order('id'),
+      'final matchups',
+    )
+    return rows.map((r) => ({ id: r.id, home_score: Number(r.home_score), away_score: Number(r.away_score) }))
+  }
+
+  async function editScore(matchupId: string, home: number, away: number, actionId: string): Promise<string> {
+    const { data, error } = await commishClient.rpc('commish_edit_score', {
+      p_league_id: leagueId,
+      p_matchup_id: matchupId,
+      p_home: home,
+      p_away: away,
+      p_action_id: actionId,
+    })
+    if (error) throw new Error(`commish_edit_score: ${error.message}`)
+    const receipt = (data as { commissioner_action_id?: unknown } | null)?.commissioner_action_id
+    if (typeof receipt !== 'string') throw new Error(`commish_edit_score returned no receipt: ${JSON.stringify(data)}`)
+    return receipt
+  }
+
+  it('a lawful override wrapped in the re-baseline path SURVIVES the sweep — and only ITS cell moved', async () => {
+    const rows = await finalMatchups()
+    // The strictly-highest scorer +1: the result and the median both stand
+    // (season-runner.ts `injectLawfulOverride`'s own choice, for its reason).
+    const sides = rows.flatMap((m) => [
+      { m, side: 'home' as const, score: m.home_score },
+      { m, side: 'away' as const, score: m.away_score },
+    ])
+    sides.sort((x, y) => y.score - x.score)
+    const top = sides[0]!
+    expect(top.score).toBeGreaterThan(sides[1]!.score)
+    const receipt = await rebaselineAroundAuditedEvent(service, state, WEEK, () =>
+      editScore(
+        top.m.id,
+        top.side === 'home' ? top.score + 1 : top.m.home_score,
+        top.side === 'away' ? top.score + 1 : top.m.away_score,
+        ACTION_OVERRIDE,
+      ),
+    )
+    expect(receipt).not.toBeNull()
+
+    const a = await audit()
+    const moved = a.finalCells.filter((c) => c.baselines.length > 1)
+    expect(moved.map((c) => c.matchup_id)).toEqual([top.m.id])
+    expect(moved[0]!.baselines).toHaveLength(2)
+    expect(moved[0]!.baselines[1]!.licensed_by).toBe(receipt)
+    expect(moved[0]!.baselines[1]!.rendered).toContain('overridden=true')
+    expect(moved[0]!.at_end).toBe(moved[0]!.baselines[1]!.rendered)
+    // R1077: the REAL receipt's shape — printed once, so the PR shows what
+    // the comparison is actually run against — and its `after` EQUALS the
+    // cell numerically.
+    const licence = a.commissionerActions.filter((r) => r.id === receipt)
+    console.log(`R1077 real receipt: ${JSON.stringify(licence)}\nR1077 post-event cell: ${moved[0]!.baselines[1]!.rendered}`)
+    expect(licence).toHaveLength(1)
+    expect(licence[0]).toMatchObject({ id: receipt, action_type: 'edit_score', target_type: 'matchup', target_id: top.m.id })
+    const after = licence[0]!.after as { home_score: unknown; away_score: unknown; result: unknown }
+    expect(Number(after.home_score)).toBe(top.side === 'home' ? top.score + 1 : top.m.home_score)
+    expect(Number(after.away_score)).toBe(top.side === 'away' ? top.score + 1 : top.m.away_score)
+    expect(parseRenderedCell(moved[0]!.baselines[1]!.rendered)).toEqual({
+      home: Number(after.home_score),
+      away: Number(after.away_score),
+      result: after.result,
+    })
+    expect(sweepSeasonAudit(a)).toEqual([])
+  })
+
+  it('the SAME lawful verb with NO re-baseline still reddens — an audit row alone licenses nothing', async () => {
+    const rows = await finalMatchups()
+    const a0 = await audit()
+    const untouched = rows.find((m) => a0.finalCells.some((c) => c.matchup_id === m.id && c.baselines.length === 1))!
+    // A real, audited, commissioner-made change — but the provenance record
+    // was never told. The cell moved past its last baseline: red, by name.
+    await editScore(untouched.id, untouched.home_score + 0.5, untouched.away_score + 0.5, ACTION_UNBASELINED)
+    const failures = (await sweep()).filter((f) => f.invariant === 'final-cell-immutable')
+    expect(failures.length).toBeGreaterThan(0)
+    expect(failures.some((f) => f.detail.includes(untouched.id))).toBe(true)
+    expect(failures.every((f) => f.week === WEEK)).toBe(true)
+  })
 })

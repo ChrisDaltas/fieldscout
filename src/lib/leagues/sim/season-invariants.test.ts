@@ -10,6 +10,9 @@
  * is why its falsifiability lives here and is DECLARED rather than shipped
  * decorative (D267; `season-invariants.ts`'s banner).
  */
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -20,7 +23,14 @@ import {
   checkPointsForOnce,
   checkPoolMirror,
   checkStandingsRecompute,
+  checkUnmanagedSeatsAutopiloted,
   classifyHeldWeeks,
+  countUnmanagedSeatWeeksAsserted,
+  AUTOPILOT_UNFILLABLE_REASONS,
+  FINAL_CELL_LICENSING_ACTION_TYPES,
+  isForbidsIllegalReason,
+  parseRenderedCell,
+  type AuditCommissionerAction,
   SEASON_INVARIANTS,
   startersOfMap,
   sweepSeasonAudit,
@@ -28,11 +38,14 @@ import {
   type SeasonAudit,
 } from './season-invariants'
 import {
+  absorbAutopilotReport,
+  AUTOPILOT_PASS_EVALUATED_NOTHING,
   BLOCKING_DESIGNATIONS,
   chooseStarterSlots,
   classifyReconcileAlert,
   lawfulBracketSkip,
   simDesignation,
+  type LeagueState,
 } from './season-runner'
 
 /**
@@ -55,6 +68,12 @@ function greenAudit(): SeasonAudit {
       { team_id: 'A', player_id: 'p2' },
       { team_id: 'B', player_id: 'p3' },
       { team_id: 'B', player_id: 'p4' },
+      // Team C is the UNMANAGED seat (M6A L.E1.14): it has no standings /
+      // results rows here because invariants 3 and 5 are pinned on A and B;
+      // what it carries is a roster and a server-written lineup.
+      { team_id: 'C', player_id: 'p5' },
+      { team_id: 'C', player_id: 'p6' },
+      { team_id: 'C', player_id: 'p10' },
     ],
     pool: [
       { player_id: 'p1', state: 'rostered' },
@@ -78,6 +97,13 @@ function greenAudit(): SeasonAudit {
         ir_keys: ['ir1'],
         fit: { unplaced: [], rearranged: false },
       },
+      {
+        team_id: 'C',
+        week: 1,
+        slot_map: { 'qb:0': 'p5', 'rb:0': 'p6' },
+        ir_keys: ['ir1'],
+        fit: { unplaced: [], rearranged: false },
+      },
     ],
     standings: [
       { team_id: 'A', points_for: 21.5 },
@@ -88,7 +114,33 @@ function greenAudit(): SeasonAudit {
       { team_id: 'B', week: 1, points: 18.25, is_final: true },
     ],
     weeks: [{ week: 1, status: 'final' }],
-    finalCells: [{ week: 1, matchup_id: 'm1', at_final: 'home=21.50 away=18.25', at_end: 'home=21.50 away=18.25' }],
+    finalCells: [
+      {
+        week: 1,
+        matchup_id: 'm1',
+        at_final: 'home=21.50 away=18.25',
+        at_end: 'home=21.50 away=18.25',
+        baselines: [{ rendered: 'home=21.50 away=18.25', licensed_by: null }],
+      },
+    ],
+    commissionerActions: [],
+    allowIllegalLineups: true,
+    startingSlots: [
+      { key: 'qb:0', eligible: ['QB'] },
+      { key: 'rb:0', eligible: ['RB'] },
+    ],
+    unmanagedSeats: [
+      {
+        team_id: 'C',
+        shape: 'member_row_user_id_null',
+        roster: [
+          { player_id: 'p5', position: 'QB' },
+          { player_id: 'p6', position: 'RB' },
+          { player_id: 'p10', position: 'RB' }, // the bench — a second RB behind a filled RB slot
+        ],
+      },
+    ],
+    autopilotUnfillable: [],
     rebuilds: [
       {
         week: 1,
@@ -111,7 +163,7 @@ describe('the in-season sweep — green on a consistent season, and every failur
     expect(sweepSeasonAudit(greenAudit())).toEqual([])
   })
 
-  it('the seven invariant names are the row\'s seven, in the row\'s order', () => {
+  it('the invariant names are the row\'s seven in the row\'s order, then M6A L.E1.14\'s eighth', () => {
     expect(SEASON_INVARIANTS).toEqual([
       'exclusivity',
       'lineup-legality',
@@ -120,6 +172,7 @@ describe('the in-season sweep — green on a consistent season, and every failur
       'pf-once-per-week',
       'final-cell-immutable',
       'zero-worker-errors',
+      'unmanaged-seat-autopilot',
     ])
   })
 })
@@ -391,6 +444,193 @@ describe('6 — zero final-cell rewrites (§23.4; D295(b))', () => {
   })
 })
 
+/**
+ * D345 / F336 (M6A L.E1.14 item 3) — invariant 6 is TAUGHT provenance, never
+ * exempted. `overriddenAudit()` is the ONE lawful shape; every `it()` below
+ * it mutates exactly one field of that shape.
+ */
+describe('6 — provenance: a lawful override is ACCOUNTED FOR, never skipped (D345; F336)', () => {
+  // The runner's real rendering shape (`renderCells`): PostgREST hands a
+  // NUMERIC back as a JSON number, so the cell reads `22.5`, while the
+  // receipt's JSONB `after` keeps the verb's own scale (`22.50`) — R1077's
+  // comparison is NUMERIC for exactly that reason.
+  const MOVED = 'home=22.5 away=18.25 result=home status=final overridden=true results=[]'
+  const receipt = (over: Partial<AuditCommissionerAction> = {}): AuditCommissionerAction => ({
+    id: 'act-1',
+    action_type: 'edit_score',
+    target_type: 'matchup',
+    target_id: 'm1',
+    after: { home_score: 22.5, away_score: 18.25, result: 'home' },
+    ...over,
+  })
+
+  function overriddenAudit(): SeasonAudit {
+    const a = greenAudit()
+    a.finalCells[0]!.baselines = [
+      { rendered: 'home=21.50 away=18.25', licensed_by: null },
+      { rendered: MOVED, licensed_by: 'act-1' },
+    ]
+    a.finalCells[0]!.at_end = MOVED
+    a.commissionerActions = [receipt()]
+    return a
+  }
+
+  it('a cell that moves WITH a matching audit row passes', () => {
+    expect(checkFinalCellsImmutable(overriddenAudit())).toEqual([])
+    expect(sweepSeasonAudit(overriddenAudit())).toEqual([])
+  })
+
+  it('the same movement with NO audit row still FAILS', () => {
+    const a = overriddenAudit()
+    a.commissionerActions = []
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.invariant).toBe('final-cell-immutable')
+    expect(failures[0]!.week).toBe(1)
+    expect(failures[0]!.detail).toContain('NO audit row')
+    expect(failures[0]!.detail).toContain('act-1')
+  })
+
+  it('a movement whose audit row targets a DIFFERENT matchup FAILS', () => {
+    const a = overriddenAudit()
+    a.commissionerActions = [receipt({ target_id: 'm2' })]
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('DIFFERENT target')
+    expect(failures[0]!.detail).toContain('matchup m2')
+  })
+
+  it('two consecutive baselines differing byte-wise BETWEEN re-baselines FAIL — a re-baseline cannot launder drift', () => {
+    const a = overriddenAudit()
+    // The runner re-read the cell just before the audited event and it had
+    // already moved: that rendering is recorded with no licence.
+    a.finalCells[0]!.baselines = [
+      { rendered: 'home=21.50 away=18.25', licensed_by: null },
+      { rendered: 'home=21.75 away=18.25', licensed_by: null },
+      { rendered: MOVED, licensed_by: 'act-1' },
+    ]
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('DRIFTED BETWEEN BASELINES')
+    expect(failures[0]!.detail).toContain('home=21.75')
+  })
+
+  it('a cell that moves again AFTER its licensed baseline fails against THAT baseline', () => {
+    const a = overriddenAudit()
+    a.finalCells[0]!.at_end = 'home=30.00 away=18.25'
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('last audited baseline')
+    expect(failures[0]!.detail).toContain('home=30.00')
+  })
+
+  it('an audit row of another target TYPE carrying the matchup\'s id does not license it', () => {
+    const a = overriddenAudit()
+    a.commissionerActions = [receipt({ target_type: 'player' })]
+    expect(checkFinalCellsImmutable(a)).toHaveLength(1)
+  })
+
+  it('one receipt cannot license TWO baseline changes of a cell', () => {
+    const a = overriddenAudit()
+    a.finalCells[0]!.baselines = [
+      ...a.finalCells[0]!.baselines,
+      { rendered: 'home=23.50 away=18.25', licensed_by: 'act-1' },
+    ]
+    a.finalCells[0]!.at_end = 'home=23.50 away=18.25'
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('spent TWICE')
+  })
+
+  it('a duplicated audit id is not "exactly one" row', () => {
+    const a = overriddenAudit()
+    a.commissionerActions = [...a.commissionerActions, receipt()]
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('2 commissioner_actions row(s)')
+  })
+
+  // ── R1077: the licence binds the VERB and the VALUE, not just id + target ──
+  it('R1077 — a receipt of the WRONG action_type licenses nothing, however well-aimed', () => {
+    for (const action_type of ['edit_lineup', 'change_setting', 'force_add_drop']) {
+      const a = overriddenAudit()
+      a.commissionerActions = [receipt({ action_type })]
+      const failures = checkFinalCellsImmutable(a)
+      expect(failures).toHaveLength(1)
+      expect(failures[0]!.detail).toContain(`action_type is '${action_type}'`)
+      expect(failures[0]!.detail).toContain('edit_score / set_result')
+    }
+    expect(FINAL_CELL_LICENSING_ACTION_TYPES).toEqual(['edit_score', 'set_result'])
+    const viaResult = overriddenAudit()
+    viaResult.commissionerActions = [receipt({ action_type: 'set_result' })]
+    expect(checkFinalCellsImmutable(viaResult)).toEqual([])
+  })
+
+  it("R1077 — the reviewer's probe: a licensed baseline reading home=0 away=999 away under a receipt that said otherwise FAILS", () => {
+    const a = overriddenAudit()
+    const forged = 'home=0 away=999 result=away status=final overridden=true results=[]'
+    a.finalCells[0]!.baselines[1] = { rendered: forged, licensed_by: 'act-1' }
+    a.finalCells[0]!.at_end = forged
+    const failures = checkFinalCellsImmutable(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain("receipt's AFTER does not equal the cell")
+    expect(failures[0]!.detail).toContain('home: receipt says 22.5, the cell reads 0')
+    expect(failures[0]!.detail).toContain('away: receipt says 18.25, the cell reads 999')
+    expect(failures[0]!.detail).toContain('result: receipt says home, the cell reads away')
+  })
+
+  it('R1077 — each of home / away / result is compared ALONE, and a malformed `after` is a failure, never a pass', () => {
+    for (const after of [
+      { home_score: 22.51, away_score: 18.25, result: 'home' },
+      { home_score: 22.5, away_score: 18.26, result: 'home' },
+      { home_score: 22.5, away_score: 18.25, result: 'tie' },
+      { home_score: 22.5, away_score: 18.25 },
+      { away_score: 18.25, result: 'home' },
+      null,
+      'home=22.5',
+      [],
+    ]) {
+      const a = overriddenAudit()
+      a.commissionerActions = [receipt({ after })]
+      expect(checkFinalCellsImmutable(a), JSON.stringify(after)).toHaveLength(1)
+    }
+  })
+
+  it('R1077 — the comparison is NUMERIC: 22.50 / "22.50" / 22.5 are one score, and a NULL score equals only NULL', () => {
+    for (const home_score of [22.5, '22.50', '22.5']) {
+      const a = overriddenAudit()
+      a.commissionerActions = [receipt({ after: { home_score, away_score: '18.250', result: 'home' } })]
+      expect(checkFinalCellsImmutable(a), String(home_score)).toEqual([])
+    }
+    const bye = overriddenAudit()
+    const byeCell = 'home=30 away=null result=null status=final overridden=true results=[]'
+    bye.finalCells[0]!.baselines[1] = { rendered: byeCell, licensed_by: 'act-1' }
+    bye.finalCells[0]!.at_end = byeCell
+    bye.commissionerActions = [receipt({ after: { home_score: 30, away_score: null, result: null } })]
+    expect(checkFinalCellsImmutable(bye)).toEqual([])
+    bye.commissionerActions = [receipt({ after: { home_score: 30, away_score: 0, result: null } })]
+    expect(checkFinalCellsImmutable(bye)).toHaveLength(1)
+  })
+
+  it('R1077 — a licensed rendering that carries no home/away/result cannot be compared, so it FAILS', () => {
+    const a = overriddenAudit()
+    a.finalCells[0]!.baselines[1] = { rendered: 'results=[A=1/win]', licensed_by: 'act-1' }
+    a.finalCells[0]!.at_end = 'results=[A=1/win]'
+    expect(checkFinalCellsImmutable(a)[0]!.detail).toContain('carries no home/away/result')
+    expect(parseRenderedCell(MOVED)).toEqual({ home: 22.5, away: 18.25, result: 'home' })
+    expect(parseRenderedCell('home=abc away=1 result=tie status=final')).toBeNull()
+  })
+
+  it('a provenance record whose first baseline is not the unlicensed at-finalize rendering is malformed', () => {
+    const a = greenAudit()
+    a.finalCells[0]!.baselines = []
+    expect(checkFinalCellsImmutable(a)[0]!.detail).toContain('malformed')
+    const b = greenAudit()
+    b.finalCells[0]!.baselines = [{ rendered: 'home=21.50 away=18.25', licensed_by: 'act-1' }]
+    expect(checkFinalCellsImmutable(b)[0]!.detail).toContain('malformed')
+  })
+})
+
 describe('7 — zero unhandled worker errors (§23.2)', () => {
   it('every worker error becomes one failure carrying league context', () => {
     const a = greenAudit()
@@ -398,6 +638,270 @@ describe('7 — zero unhandled worker errors (§23.2)', () => {
     const failures = checkNoWorkerErrors(a)
     expect(failures).toHaveLength(2)
     expect(failures.every((f) => f.leagueId === 'league-1')).toBe(true)
+  })
+})
+
+describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/F335)', () => {
+  it('an unmanaged seat the server never seated — an EMPTY map — names the team, the week and every slot', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.lineups[2]!.fit = null
+    const failures = checkUnmanagedSeatsAutopiloted(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.invariant).toBe('unmanaged-seat-autopilot')
+    expect(failures[0]!.week).toBe(1)
+    expect(failures[0]!.detail).toContain('team C')
+    expect(failures[0]!.detail).toContain('EMPTY')
+    expect(failures[0]!.detail).toContain('qb:0')
+    expect(failures[0]!.detail).toContain('rb:0')
+  })
+
+  it('ONE empty slot beside an eligible unstarted player is a shortfall, named by slot key and by witness', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+    const failures = checkUnmanagedSeatsAutopiloted(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('rb:0')
+    expect(failures[0]!.detail).toContain('p6')
+    expect(failures[0]!.detail).not.toContain('qb:0')
+  })
+
+  it('an unmanaged seat with NO team_lineups row at all fails (D354)', () => {
+    const a = greenAudit()
+    a.lineups = a.lineups.slice(0, 2)
+    const failures = checkUnmanagedSeatsAutopiloted(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('NO team_lineups row')
+  })
+
+  it('an empty slot NOBODY on the roster could take is lawful — the witness, not the emptiness, is the failure', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = { 'rb:0': 'p6' }
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, roster: a.unmanagedSeats[0]!.roster.filter((p) => p.position !== 'QB') }]
+    expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
+  })
+
+  const FORBIDS = 'no healthy eligible player at RB; league forbids illegal lineups'
+  const LOCKED_OUT = "no unlocked eligible player at RB; every candidate's game had kicked off"
+  const NOBODY = 'no eligible player at RB on the roster'
+
+  it('the ONE excuse needs BOTH halves — the league forbids illegal lineups AND the tick named the slot', () => {
+    const shortfall = (): SeasonAudit => {
+      const a = greenAudit()
+      a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+      return a
+    }
+    const namedOnly = shortfall()
+    namedOnly.autopilotUnfillable = [{ team_id: 'C', week: 1, slot: 'rb:0', reason: FORBIDS }]
+    expect(checkUnmanagedSeatsAutopiloted(namedOnly)).toHaveLength(1) // allow_illegal_lineups is TRUE: no excuse exists
+
+    const offOnly = shortfall()
+    offOnly.allowIllegalLineups = false
+    const offFailures = checkUnmanagedSeatsAutopiloted(offOnly)
+    expect(offFailures).toHaveLength(1) // the server said nothing about the slot
+    expect(offFailures[0]!.detail).toContain('never named them in autopilot_unfillable[]')
+
+    const both = shortfall()
+    both.allowIllegalLineups = false
+    both.autopilotUnfillable = [{ team_id: 'C', week: 1, slot: 'rb:0', reason: FORBIDS }]
+    expect(checkUnmanagedSeatsAutopiloted(both)).toEqual([])
+
+    const wrongWeek = shortfall()
+    wrongWeek.allowIllegalLineups = false
+    wrongWeek.autopilotUnfillable = [{ team_id: 'C', week: 2, slot: 'rb:0', reason: FORBIDS }]
+    expect(checkUnmanagedSeatsAutopiloted(wrongWeek)).toHaveLength(1)
+  })
+
+  // ── R1076: the excuse is the REASON, not merely being named ───────────────
+  const offShortfall = (reason: string): SeasonAudit => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+    a.allowIllegalLineups = false
+    a.autopilotUnfillable = [{ team_id: 'C', week: 1, slot: 'rb:0', reason }]
+    return a
+  }
+
+  it('R1076 — a LOCKED-OUT slot in an OFF league is NOT excused (the harness ticks before any kickoff)', () => {
+    const failures = checkUnmanagedSeatsAutopiloted(offShortfall(LOCKED_OUT))
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('rb:0')
+    expect(failures[0]!.detail).toContain('excuses NOTHING')
+    expect(failures[0]!.detail).toContain(LOCKED_OUT)
+  })
+
+  it("R1076 — a 'no eligible player' reason beside a bench witness is NOT excused (the witness refutes it)", () => {
+    const failures = checkUnmanagedSeatsAutopiloted(offShortfall(NOBODY))
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain(NOBODY)
+    // …and the control: the SAME audit with the one lawful reason is green.
+    expect(checkUnmanagedSeatsAutopiloted(offShortfall(FORBIDS))).toEqual([])
+  })
+
+  it('R1076 — the reason is matched on BOTH ends: a look-alike, a bare prefix and an empty reason excuse nothing', () => {
+    for (const reason of ['no healthy eligible player at RB', '; league forbids illegal lineups', '', '(no reason given)']) {
+      expect(isForbidsIllegalReason(reason), reason).toBe(false)
+      expect(checkUnmanagedSeatsAutopiloted(offShortfall(reason)), reason).toHaveLength(1)
+    }
+    expect(isForbidsIllegalReason(FORBIDS)).toBe(true)
+    expect(isForbidsIllegalReason(LOCKED_OUT)).toBe(false)
+    expect(isForbidsIllegalReason(NOBODY)).toBe(false)
+  })
+
+  it("R1076 — 125's three reason strings and the tick's three 'evaluated nothing' reasons are pinned to the MIGRATION'S FILE TEXT", () => {
+    // The NEWEST migration that defines each function — a later CREATE OR
+    // REPLACE that rewords a reason must red THIS cell, not silently
+    // un-excuse (or over-excuse) a slot.
+    const dir = path.resolve(process.cwd(), 'supabase/migrations')
+    const newestDefining = (fn: string): string => {
+      const files = readdirSync(dir)
+        .filter((f) => f.endsWith('.sql'))
+        .sort()
+        .filter((f) => new RegExp(`CREATE OR REPLACE FUNCTION (public\\.)?${fn}\\(`).test(readFileSync(path.join(dir, f), 'utf8')))
+      expect(files.length, fn).toBeGreaterThan(0)
+      return readFileSync(path.join(dir, files[files.length - 1]!), 'utf8')
+    }
+    const chooser = newestDefining('lineup_autopilot_internal')
+    const sql = (text: string): string => `'${text.replace(/'/g, "''")}'`
+    for (const arm of Object.values(AUTOPILOT_UNFILLABLE_REASONS)) {
+      expect(chooser, arm.prefix).toContain(`${sql(arm.prefix)} || upper(v_e ->> 'slot') || ${sql(arm.suffix)}`)
+    }
+    // Exactly three reason arms exist — a FOURTH would be unclassified here.
+    expect(chooser.match(/\|\| upper\(v_e ->> 'slot'\) \|\|/g)).toHaveLength(3)
+    const tick = newestDefining('lineup_lock_tick')
+    for (const reason of AUTOPILOT_PASS_EVALUATED_NOTHING) expect(tick, reason).toContain(`'${reason}'`)
+  })
+
+  it('R1076 — a slot named at pass N and ABSENT at pass N+1 is no longer excused (the absorb REPLACES a team-week wholesale)', () => {
+    const league = {
+      leagueId: 'L1',
+      teams: [{ id: 'C' }],
+      autopilotUnfillable: new Map(),
+      autopilotedSeatWeeks: new Set<string>(),
+    } as unknown as LeagueState
+    const audit = (): SeasonAudit => {
+      const a = greenAudit()
+      a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+      a.allowIllegalLineups = false
+      a.autopilotUnfillable = [...league.autopilotUnfillable.values()]
+      return a
+    }
+    // pass N: named with the lawful reason ⇒ excused.
+    absorbAutopilotReport({ autopilot_unfillable: [{ team_id: 'C', slot: 'rb:0', reason: FORBIDS }], autopilot_reason: 'nothing_fillable' }, league, 1)
+    expect(checkUnmanagedSeatsAutopiloted(audit())).toEqual([])
+    // a pass that evaluated NOTHING (the week closed out of 'live') says
+    // nothing about any slot: its empty array is "I did not look".
+    absorbAutopilotReport({ autopilot_unfillable: [], autopilot_reason: 'no_unmanaged_seats_in_a_live_current_week' }, league, 1)
+    expect(checkUnmanagedSeatsAutopiloted(audit())).toEqual([])
+    // a pass over ANOTHER week does not touch week 1's record.
+    absorbAutopilotReport({ autopilot_unfillable: [], autopilot_reason: null }, league, 2)
+    expect(checkUnmanagedSeatsAutopiloted(audit())).toEqual([])
+    // pass N+1 EVALUATED the seat and no longer names the slot ⇒ not excused.
+    absorbAutopilotReport({ autopilot_unfillable: [], autopilot_reason: null }, league, 1)
+    expect(league.autopilotUnfillable.size).toBe(0)
+    const failures = checkUnmanagedSeatsAutopiloted(audit())
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('rb:0')
+  })
+
+  // ── R1078: no witness is not a pass ───────────────────────────────────────
+  it('R1078 — an unmanaged seat with an EMPTY roster FAILS instead of passing for want of a witness', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, roster: [] }]
+    const failures = checkUnmanagedSeatsAutopiloted(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('team C')
+    expect(failures[0]!.detail).toContain('EMPTY roster')
+  })
+
+  it("R1078 — a rostered player whose position did not resolve ('') FAILS by player id, even beside a full map", () => {
+    const a = greenAudit()
+    a.unmanagedSeats = [
+      { ...a.unmanagedSeats[0]!, roster: a.unmanagedSeats[0]!.roster.map((p) => (p.player_id === 'p10' ? { ...p, position: '' } : p)) },
+    ]
+    const failures = checkUnmanagedSeatsAutopiloted(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('NO resolvable position')
+    expect(failures[0]!.detail).toContain('p10')
+  })
+
+  // ── R1079: the premise is seat-WEEKS asserted ─────────────────────────────
+  it("R1079 — with every driven week still 'upcoming' the premise reads ZERO although a seat exists", () => {
+    const a = greenAudit()
+    expect(countUnmanagedSeatWeeksAsserted(a)).toBe(1)
+    a.weeks = [{ week: 1, status: 'upcoming' }]
+    expect(a.unmanagedSeats).toHaveLength(1)
+    expect(countUnmanagedSeatWeeksAsserted(a)).toBe(0)
+    const undriven = greenAudit()
+    undriven.weeksDriven = []
+    expect(countUnmanagedSeatWeeksAsserted(undriven)).toBe(0)
+    const two = greenAudit()
+    two.weeksDriven = [1, 2]
+    two.weeks = [{ week: 1, status: 'final' }, { week: 2, status: 'live' }, { week: 3, status: 'live' }]
+    expect(countUnmanagedSeatWeeksAsserted(two)).toBe(2)
+    // …and the RUNNER's premise gate reads THIS count, not the seat count.
+    const runner = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/sim/season-runner.ts'), 'utf8')
+    expect(runner).toContain('if (report.unmanagedSeatWeeksAsserted < 1) {')
+    expect(runner).not.toContain('if (report.unmanagedSeats < 1) {')
+    expect(runner).toContain('report.unmanagedSeatWeeksAsserted += countUnmanagedSeatWeeksAsserted(audit)')
+  })
+
+  it('a week that has not OPENED yet is not asserted on; a MANAGED team\'s empty map is not this invariant\'s', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.weeks = [{ week: 1, status: 'upcoming' }]
+    expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
+
+    const b = greenAudit()
+    b.lineups[0]!.slot_map = {} // team A has a manager
+    expect(checkUnmanagedSeatsAutopiloted(b)).toEqual([])
+  })
+
+  it('a team with NO league_members row is listed and fails with the reason the server will never seat it', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, shape: 'no_member_row' }]
+    const failures = checkUnmanagedSeatsAutopiloted(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('DECLINES')
+  })
+
+  it('PREMISE: over ZERO unmanaged seats the check asserts nothing — which is why the RUNNER makes zero a problem', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.unmanagedSeats = []
+    expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
+  })
+
+  it('an IR occupant is not a bench witness', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = { 'qb:0': 'p5', 'ir1:0': 'p6' }
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, roster: a.unmanagedSeats[0]!.roster.filter((p) => p.player_id !== 'p10') }]
+    expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
+  })
+})
+
+describe('F335 — the harness never does the server\'s job again (source pins over season-runner.ts)', () => {
+  const source = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/sim/season-runner.ts'), 'utf8')
+  // Comments are stripped first: the docblocks QUOTE the struck fallback.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  it('`seedLineups` has NO commissioner fallback — an unmanaged seat is never set by the harness', () => {
+    expect(code).not.toMatch(/\?\?\s*commishClient/)
+    // …and the ONE `setLineup` call the runner makes carries no `reason`
+    // (the commissioner arm's argument): it is a manager's own door only.
+    const calls = code.match(/await setLineup\([\s\S]*?\n {6}\}\)/g) ?? []
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain('setLineup(manager,')
+    expect(calls[0]).not.toContain('reason')
+  })
+
+  it('invariant 6 is never exempted for an overridden cell (D345 pre-refuses it)', () => {
+    const invariants = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/sim/season-invariants.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    expect(invariants).not.toMatch(/is_overridden/)
+    expect(invariants).not.toMatch(/overridden\s*\)\s*continue/)
   })
 })
 

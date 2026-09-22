@@ -225,6 +225,38 @@ function main(): void {
     if (emptySlots !== 0) fail(problems, `${scenario}: ${emptySlots} starting slot(s) left empty (F288)`)
     if (seated !== teams) fail(problems, `${scenario}: ${seated} of ${teams} franchises seated a week-1 lineup`)
 
+    // ---- M6A L.E1.14: WHICH HAND seated them, and the two premises --------
+    // (F335 / D345). `seated === teams` above can no longer be satisfied by
+    // the harness alone: it sets MANAGED seats only, so every unmanaged seat
+    // in that total was seated by the server's autopilot or not at all. The
+    // runner already makes both absences a run PROBLEM; they are named here
+    // independently so a refactor of `runSeasonSim` cannot un-enforce them
+    // (the R949 posture).
+    const autopiloted = report.leagues.reduce((n, l) => n + l.lineupsAutopiloted, 0)
+    console.log(
+      `   AUTOPILOT: ${report.unmanagedSeats} unmanaged seat(s) in the run · ${autopiloted} seated by the SERVER at ` +
+        `week 1 · ${seated - autopiloted} set by the harness through a manager's own door`,
+    )
+    if (!(report.unmanagedSeats >= 1)) {
+      fail(problems, `${scenario}: ZERO unmanaged seats — invariant 8 (unmanaged-seat-autopilot) asserted nothing`)
+    }
+    // R1079: seats are not the premise — seat-WEEKS asserted are.
+    if (!(report.unmanagedSeatWeeksAsserted >= 1)) {
+      fail(
+        problems,
+        `${scenario}: invariant 8 asserted on ${String(report.unmanagedSeatWeeksAsserted)} unmanaged seat-week(s) — every driven week was still 'upcoming', so it asserted nothing`,
+      )
+    }
+    if (autopiloted !== report.unmanagedSeats) {
+      fail(problems, `${scenario}: the server seated ${autopiloted} of ${report.unmanagedSeats} unmanaged seat(s) at week 1`)
+    }
+    console.log(
+      `   LAWFUL OVERRIDE (D345): ${report.lawfulOverride === null || report.lawfulOverride === undefined ? 'NONE' : `${report.lawfulOverride.leagueLabel} — ${report.lawfulOverride.detail}`}`,
+    )
+    if (report.lawfulOverride === null || report.lawfulOverride === undefined) {
+      fail(problems, `${scenario}: no lawful override was injected — invariant 6's provenance arm asserted nothing`)
+    }
+
     // ---- D299 matrix coverage ---------------------------------------------
     const modes = new Set(report.leagues.map((l) => l.scheduleMode))
     const offLeagues = report.leagues.filter((l) => !l.allowIllegalLineups)
