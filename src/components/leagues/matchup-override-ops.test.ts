@@ -156,4 +156,11 @@ describe('scoreGate — why Save is disabled is SAID (standing rule (h))', () =>
   it('an UNCHANGED pair is NOT gated here — the no-op is the verb’s to name (`no_changes`), across every dimension', () => {
     expect(scoreGate({ ...names, homeDraft: '71.5', awayDraft: '35' }).ok).toBe(true)
   })
+
+  it('a BYE row (F366): the home number alone gates Save, away is null regardless of what the (absent) field held, and a missing home still names the team', () => {
+    expect(scoreGate({ homeName: 'Alpha', awayName: null, homeDraft: '71.5', awayDraft: 'ignored' })).toStrictEqual({ ok: true, home: 71.5, away: null })
+    const home = scoreGate({ homeName: 'Alpha', awayName: null, homeDraft: '', awayDraft: '' })
+    expect(home.ok).toBe(false)
+    expect(!home.ok && home.why).toContain('Alpha')
+  })
 })

@@ -40,7 +40,8 @@ import { OverrideModeBar } from './override-mode-bar'
  * "look here" tokens (fill + border; never a shadow — CLAUDE.md).
  *
  * **Both scores together** (D342 — `is_overridden` is one flag on the row),
- * and a declare-a-winner arm. **There is NO reason input and the request
+ * and a declare-a-winner arm. **A BYE row** (F366, fixed by L.E1.16) shows
+ * the home score alone and no winner arm — the bye line says why. **There is NO reason input and the request
  * carries none** (Q66 / F343): since migration 131 the verbs store NULL and
  * still write the receipt and the §10.3 post.
  *
@@ -92,14 +93,7 @@ export function MatchupOverrideTools({
       <OverrideModeBar on={overrideMode} busy={pending !== null} onToggle={(next) => (next ? enter(leagueId) : exit())}>
         {overrideMode ? OVERRIDE_BAR_ON_COPY : OVERRIDE_BAR_OFF_COPY}
       </OverrideModeBar>
-      {overrideMode && awayName === null && (
-        // A BYE: neither arm can land through today's routes (F366) — said by
-        // name rather than offered as a Save that can only be refused.
-        <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-ink" data-override-bye>
-          {BYE_ROW_COPY}
-        </p>
-      )}
-      {overrideMode && awayName !== null && (
+      {overrideMode && (
         <MatchupOverridePanelView
           homeName={homeName}
           awayName={awayName}
@@ -148,7 +142,8 @@ export function MatchupOverridePanelView({
   onDeclareWinner,
 }: {
   homeName: string
-  awayName: string
+  /** Null on a BYE row: one score field, no winner arm (F366). */
+  awayName: string | null
   homeDraft: string
   awayDraft: string
   onHomeDraft: (text: string) => void
@@ -183,9 +178,11 @@ export function MatchupOverridePanelView({
       >
         <div className="grid gap-2 sm:grid-cols-2">
           <ScoreField id={`${id}-home`} label={`${homeName} score`} value={homeDraft} onChange={onHomeDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="home" />
-          <ScoreField id={`${id}-away`} label={`${awayName} score`} value={awayDraft} onChange={onAwayDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="away" />
+          {awayName !== null && (
+            <ScoreField id={`${id}-away`} label={`${awayName} score`} value={awayDraft} onChange={onAwayDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="away" />
+          )}
         </div>
-        <p className="text-[11px] font-medium text-n-3">{BOTH_SCORES_COPY}</p>
+        {awayName !== null && <p className="text-[11px] font-medium text-n-3">{BOTH_SCORES_COPY}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" variant="blue" size="sm" disabled={!gate.ok || pending !== null} data-save-scores>
             {pending === 'score' ? 'Saving…' : 'Save scores'}
@@ -199,22 +196,30 @@ export function MatchupOverridePanelView({
         </div>
       </form>
 
-      <div className="flex flex-col gap-2 border-t border-n-4 pt-3" data-override-arm="result">
-        <p className="text-[11px] font-medium text-n-3">{DECLARE_WINNER_COPY}</p>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('home')} data-declare-winner="home">
-            {`Declare ${homeName} the winner`}
-          </Button>
-          <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('away')} data-declare-winner="away">
-            {`Declare ${awayName} the winner`}
-          </Button>
-          {pending === 'result' && (
-            <span role="status" className="self-center text-[11px] font-semibold text-n-3">
-              Saving…
-            </span>
-          )}
+      {awayName === null ? (
+        // A BYE (F366): no winner arm — the result arm is refused by design
+        // (131:1052-1057); the score arm above is the team's points alone.
+        <p role="status" className="border-t border-n-4 pt-3 text-[11px] font-medium text-n-3" data-override-bye>
+          {BYE_ROW_COPY}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2 border-t border-n-4 pt-3" data-override-arm="result">
+          <p className="text-[11px] font-medium text-n-3">{DECLARE_WINNER_COPY}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('home')} data-declare-winner="home">
+              {`Declare ${homeName} the winner`}
+            </Button>
+            <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('away')} data-declare-winner="away">
+              {`Declare ${awayName} the winner`}
+            </Button>
+            {pending === 'result' && (
+              <span role="status" className="self-center text-[11px] font-semibold text-n-3">
+                Saving…
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* The verb's refusal, VERBATIM — that text is the UX. */}
       {refusal && (

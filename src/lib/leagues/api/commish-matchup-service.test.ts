@@ -233,10 +233,18 @@ describe('commishEditScore — the RPC call, the mapper, the F65(b) guard', () =
     }
   })
 
-  it('F65(b), the BYE arm: on a row with no away side 126 keeps the stored NULL away score, and that is not a mismatch', async () => {
+  it('F366 — the BYE arm: `away_score: null` is accepted, sent as `p_away: null` (present), and a bye document answers it 200; a two-team submit answered by a bye document (or the reverse) is a 409, never a 200 for a correction nobody made', async () => {
     const bye = { ...scoreResult, away_team_id: null, away_score: null }
-    const { client } = rpcDouble({ data: bye, error: null })
-    expect((await commishEditScore(client, LEAGUE, scoreBody)).status).toBe(200)
+    const { client, rpc } = rpcDouble({ data: bye, error: null })
+    expect((await commishEditScore(client, LEAGUE, { ...scoreBody, away_score: null })).status).toBe(200)
+    expect(rpc.mock.calls[0][1]).toHaveProperty('p_away', null)
+    expect((await commishEditScore(client, LEAGUE, scoreBody)).status).toBe(409)
+    const { client: twoTeam } = rpcDouble({ data: scoreResult, error: null })
+    expect((await commishEditScore(twoTeam, LEAGUE, { ...scoreBody, away_score: null })).status).toBe(409)
+    // An ABSENT away is still refused: a bye is said, never implied.
+    const absent: Partial<typeof scoreBody> = { ...scoreBody }
+    delete absent.away_score
+    expect(commishEditScoreInputSchema.safeParse(absent).success).toBe(false)
   })
 })
 

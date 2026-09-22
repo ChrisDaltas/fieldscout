@@ -106,6 +106,8 @@ const ACTION = {
   moveMember: 'b0200000-0000-4000-8000-000000000033',
   roster: 'b0200000-0000-4000-8000-000000000041',
   rosterNoReason: 'b0200000-0000-4000-8000-000000000042',
+  scoreBye: 'b0200000-0000-4000-8000-000000000014',
+  scoreByeWrong: 'b0200000-0000-4000-8000-000000000015',
 } as const
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -417,6 +419,40 @@ describe('POST …/commish/score — commishEditScore over the real RPC', () => 
 // ---------------------------------------------------------------------------
 // 2. /commish/result → commish_set_result (126)
 // ---------------------------------------------------------------------------
+
+describe('POST …/commish/score — a BYE ROW through the route (F366, fixed by L.E1.16)', () => {
+  it('a real bye row: `away_score: null` LANDS as the home score alone — 200, the document is a bye document, the stored row carries the number with away NULL, one receipt; a NUMBER for the away side on the same row is 126’s own 22023 (400), verbatim', async () => {
+    // v1 regular-season schedules carry no bye (111), so one is planted in
+    // week 4 (as a `secondary` row — the team already has a regular home
+    // row there, 109:182) the way the engine writes a playoff bye (away NULL, no away
+    // score) — the shape 131:1047-1062 gates on. The PREMISE (rule 14(c)):
+    // the row really has no away side.
+    const { data: bye, error: byeError } = await service
+      .from('matchups')
+      .insert({ league_id: leagueId, season: SYNTHETIC_SEASON, week: 4, round_type: 'secondary', home_team_id: commishTeamId, away_team_id: null, home_score: 0, away_score: null, status: 'scheduled' })
+      .select('id, away_team_id')
+      .single()
+    if (byeError) throw new Error(`bye row insert: ${byeError.message}`)
+    expect(bye.away_team_id).toBeNull()
+
+    const wrong = await commishEditScore(commishClient, leagueId, { matchup_id: bye.id, home_score: 77.7, away_score: 1, action_id: ACTION.scoreByeWrong })
+    expect(wrong.status).toBe(400)
+    expect(errorText(wrong)).toBe(`commish_edit_score: matchup ${bye.id} is a BYE — there is no away side to score; send p_away as null`)
+    expect(await receiptsFor(ACTION.scoreByeWrong)).toHaveLength(0)
+
+    const res = await commishEditScore(commishClient, leagueId, { matchup_id: bye.id, home_score: 77.7, away_score: null, action_id: ACTION.scoreBye })
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { away_team_id: string | null; home_score: number; away_score: number | null; no_changes: boolean; verb: string }
+    expect(body.verb).toBe('commish_edit_score')
+    expect(body.away_team_id).toBeNull()
+    expect(body.home_score).toBe(77.7)
+    expect(body.away_score).toBeNull()
+    expect(body.no_changes).toBe(false)
+    const { data: stored } = await service.from('matchups').select('home_score, away_score, is_overridden').eq('id', bye.id).single()
+    expect(stored).toStrictEqual({ home_score: 77.7, away_score: null, is_overridden: true })
+    expect(await receiptsFor(ACTION.scoreBye)).toHaveLength(1)
+  })
+})
 
 describe('POST …/commish/result — commishSetResult over the real RPC', () => {
   it('a commissioner sets the HOME side as winner of a week-3 matchup WITH a reason: 200, `result: home`, scores untouched, one receipt', async () => {
