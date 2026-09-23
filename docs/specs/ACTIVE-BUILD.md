@@ -170,8 +170,8 @@ gate session, not a Builder task); (3) **the open M6A ledger rows**, each
 small and filed with its shape — F361 (the M4 panel hint), F363 (the retire
 verb's reason gate), F368, F370, F371 (League Home's activity feed), F372
 (REFERENCES / TRIGGER / MAINTAIN grants), F373–F376 (the synthetic gate's
-recorded blindnesses), F377; (4) ⚠ **`npx supabase db push` for 125–134**
-(hosted tops out at 124; every M6A verb except 123's is unpushed). After the
+recorded blindnesses), F377; (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
+reads 124–134 applied, 0 of 73 `public` tables grant TRUNCATE to anon/authenticated, the M6A verbs present. After the
 closeout the delivery plan's next milestone is **M5** (trades / FAAB —
 D352 / F340), which needs its own Architect breakdown before the loop can
 take it. A `/build-next` that reads this file and finds no task should say
@@ -183,9 +183,9 @@ harmless, the modal no longer reads it as a gate).
 **`L.E1.17` (INSERTED BY RULING — Chris 2026-09-21, the repo went public) is
 BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
 mints F372, records D367. It did NOT move the pointer (then `L.E1.14`);
-L.E1.14's own PR moved it to `L.E1.16`.** ⚠ **The push debt is now 125–134, and production
+L.E1.14's own PR moved it to `L.E1.16`.** ~~⚠ **The push debt is now 125–134, and production
 is NOT protected against the F349 TRUNCATE grant until Chris runs
-`npx supabase db push`.**
+`npx supabase db push`.**~~ **PUSHED 2026-09-23 — no push debt; production is at 134.**
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
 L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's, L.E1.13's, L.E1.14's and L.E1.16's own sessions — L.E1.16's moved it to the CLOSEOUT, there being no task left.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN

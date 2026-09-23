@@ -5781,6 +5781,8 @@ Fresh `npx supabase db reset` over **001–130** (from the main repo via `--work
 
 **L.E1.16 RE-REVIEW (PR #310, fix round `83df622..2113efe`, fresh reviewer, 2026-09-21) — CLEAN, no new finding.** Migration 134 byte-untouched (the diff touches only 082, the overrides stack suite and PROGRESS). R1085 verified: §L's L3 is a REAL `playoff_weeks_per_round = 2` league whose round-1 rows the engine built on weeks 7–8 through the shared job instants (L1/L1b/L1c/L1d pin the premise); the reviewer re-ran the step-(14) one-week-scope probe in a rolled-back txn — 9 red, ALL §L (120, 121, 127–130, 132, 133, 135), cells 1–115 untouched, `commish_edit_bracket` md5 identical after rollback. R1087 verified on a `regular`, two-team row with 131:1070's byte-identical message; the drop-`p_away` break reds it. R1086/R1088 docs present; nothing else flipped. Gates: 082 135/135, `test:db` 83 / 6534, vitest 14/14, type-check, eslint. No hosted access.
 
+**PRODUCTION PUSH 2026-09-23 — migrations 125–134 applied by `npx supabase db push`** (dry-run first: exactly 125–134, no seeds). Measured after, read-only: `schema_migrations` reads 124–134; **0 of 73 `public` tables grant TRUNCATE to `anon`/`authenticated` (F349 now closed IN PRODUCTION, 133's postcondition passed)**; the M6A verbs present. The first attempt stalled on a macOS Keychain prompt for the CLI's access token, not on the database (production showed no active sessions and nothing half-applied). **Push debt: none.**
+
 ## 7. Session log
 
 *One line per session: date, session type, what shipped, what's next. Newest on top. Keep entries short — this is a changelog, not a diary; detail belongs in commit messages and PRs.*
