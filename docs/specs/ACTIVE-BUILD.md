@@ -161,7 +161,21 @@ control in override mode; **F366** discharged in its own commit; discharges
 F360, mints F377, records D370) — **and it was M6A's LAST PLANNED TASK: the
 §6 list (L.E1.1–L.E1.17) is COMPLETE.**
 
-**NEXT TAKEABLE TASK: `L.E1.18`** — Q61: refuse a score / result override
+**`L.E1.18` is LANDED 2026-09-27** (migration **135** + pgTAP **083** `plan(75)`, pgTAP 074 re-cut,
+`GET /commish/matchup-lock`, the matchup panel gate — Q61 as ruled: no score /
+result override while any starter on either team is still playing; a final week
+always editable. **Measured first:** the signal is `nfl_games.status = 'final'`
+from `ingestWeek` (no cancelled value is ever written — Q37 / F243 inherited).
+Discharges **F378**, mints **F383**, records **D372**; spec **v2.16.43** (fold-back).
+**⚠ PUSH DEBT: 135** — production is at 134; until Chris runs
+`npx supabase db push`, production still accepts a live-week score edit.)
+
+**NEXT TAKEABLE TASK: `L.E1.19`** — weekly projections sync (Sleeper), the first
+third of Q62 (PROGRESS **F379**; tasks-M6A §6's 2026-09-27 amendment). Then
+L.E1.20 → L.E1.24 in numeric order. Heads after L.E1.18: **135 / 083** —
+re-measure at task time (D161).
+
+~~**NEXT TAKEABLE TASK: `L.E1.18`**~~ *(advanced by L.E1.18's own PR)* — Q61: refuse a score / result override
 while the matchup's games are in progress (tasks-M6A §6's **2026-09-27
 amendment**; PROGRESS **F378**). **M6A IS REOPENED for ~~six~~ seven ruling tasks,
 L.E1.18 → L.E1.24, taken in numeric order** (edges: L.E1.20 needs L.E1.19,
@@ -207,7 +221,7 @@ BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
 mints F372, records D367. It did NOT move the pointer (then `L.E1.14`);
 L.E1.14's own PR moved it to `L.E1.16`.** ~~⚠ **The push debt is now 125–134, and production
 is NOT protected against the F349 TRUNCATE grant until Chris runs
-`npx supabase db push`.**~~ **PUSHED 2026-09-23 — no push debt; production is at 134.**
+`npx supabase db push`.**~~ **PUSHED 2026-09-23 — no push debt; production is at 134.** **[2026-09-27: L.E1.18 adds 135 — push debt 135.]**
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
 L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's, L.E1.13's, L.E1.14's and L.E1.16's own sessions — L.E1.16's moved it to the CLOSEOUT, there being no task left.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN
