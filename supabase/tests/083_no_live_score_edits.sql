@@ -24,7 +24,10 @@
 --   * BREAK PROBES (the task's five), each shown RED by name in the PR:
 --     delete the refusal ⇒ A1/A2 red; count only the HOME side ⇒ D1/D2 red;
 --     count the bench too ⇒ C8/C9 red; treat a bye starter as unfinished ⇒
---     E1/E2 red; move the refusal above the replay read ⇒ J2 reds. Every
+--     E1/E2 red; move the refusal above the replay read ⇒ J2 reds. PR #313's
+--     fix round (R1097) adds a sixth: delete the helper's `lineup_not_set`
+--     arm (the pre-fix inner-join reading, where a MISSING lineup row read as
+--     "no starters") ⇒ N2a, N4a/N4b, N5a/N5b red. Every
 --     LANDING cell is a `lives_ok` plus a row read, so a probe that makes a
 --     landing raise reds that cell BY NAME instead of aborting the suite.
 -- ============================================================================
@@ -34,7 +37,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(75);
+select plan(86);
 
 -- ---------------------------------------------------------------------------
 -- F. FORM PINS — the helper, the read door, the verb's hunks (D137), and the
@@ -137,7 +140,9 @@ insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, statu
  ('lk-w5-phidal', 2026, 5, 'PHI', 'DAL', now() - interval '20 days', 'final'),
  -- WEEK 6 (live): no game has started.
  ('lk-w6-kcbuf',  2026, 6, 'KC',  'BUF', now() - interval '13 days', 'scheduled'),
- ('lk-w6-phidal', 2026, 6, 'PHI', 'DAL', now() - interval '13 days', 'scheduled');
+ ('lk-w6-phidal', 2026, 6, 'PHI', 'DAL', now() - interval '13 days', 'scheduled'),
+ -- WEEK 8 (UPCOMING — R1097): one game, not yet played.
+ ('lk-w8-kcbuf',  2026, 8, 'KC',  'BUF', now() + interval '8 days', 'scheduled');
  -- WEEK 7 (live): ZERO game rows.
 
 insert into players (id, full_name, position, team, status) values
@@ -206,7 +211,11 @@ insert into team_lineups (team_id, season, week, starters, bench, slot_map) valu
  ('c6000000-0000-4000-8000-000000000002', 2026, 5, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-buf1"}'),
  ('c6000000-0000-4000-8000-000000000001', 2026, 6, '[]', '[]', '{"qb:0": "lk-kc1"}'),
  ('c6000000-0000-4000-8000-000000000002', 2026, 6, '[]', '[]', '{"qb:0": "lk-dal1"}'),
+ -- R1097: T3 has a week-6 lineup (GB's QB — a bye, no game); T4 has NONE.
+ ('c6000000-0000-4000-8000-000000000003', 2026, 6, '[]', '[]', '{"qb:0": "lk-gb1"}'),
  ('c6000000-0000-4000-8000-000000000001', 2026, 7, '[]', '[]', '{"qb:0": "lk-kc1"}');
+ -- (T2 has NO week-7 row until §N inserts one; NO team has a week-8 row, nor
+ --  T3/T4 a week-3 row.)
 
 insert into matchups (id, league_id, season, week, round_type, home_team_id, away_team_id,
                       home_score, away_score, status, result) values
@@ -236,7 +245,13 @@ insert into matchups (id, league_id, season, week, round_type, home_team_id, awa
  ('d6000000-0000-4000-8000-000000000062', 'b6000000-0000-4000-8000-000000000001', 2026, 6, 'regular',
   'c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004', 0, 0, 'live', null),
  ('d6000000-0000-4000-8000-000000000071', 'b6000000-0000-4000-8000-000000000001', 2026, 7, 'regular',
-  'c6000000-0000-4000-8000-000000000001', 'c6000000-0000-4000-8000-000000000002', 0, 0, 'live', null);
+  'c6000000-0000-4000-8000-000000000001', 'c6000000-0000-4000-8000-000000000002', 0, 0, 'live', null),
+ -- R1097: an UPCOMING week's matchup (no lineup rows yet) and a FINAL week's
+ -- matchup with no lineup rows.
+ ('d6000000-0000-4000-8000-000000000081', 'b6000000-0000-4000-8000-000000000001', 2026, 8, 'regular',
+  'c6000000-0000-4000-8000-000000000001', 'c6000000-0000-4000-8000-000000000002', 0, 0, 'scheduled', null),
+ ('d6000000-0000-4000-8000-000000000032', 'b6000000-0000-4000-8000-000000000001', 2026, 3, 'regular',
+  'c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004', 50.00, 40.00, 'final', 'home');
 
 -- PREMISES, BY VALUE (rule 14(c)).
 select is(
@@ -437,8 +452,9 @@ select is(
   'week_final', 'I4 (i) …and the helper names why the final week passed: `week_final`, not a per-starter verdict');
 
 -- ---------------------------------------------------------------------------
--- N. (f) NO GAME STARTED ⇒ refused; ZERO game rows ⇒ refused; no starter has
---    a game ⇒ editable, and says so.
+-- N. (f) NO GAME STARTED ⇒ refused; ZERO game rows ⇒ refused; a side with NO
+--    LINEUP ROW ⇒ refused outside a final week (R1097); a SET lineup with no
+--    starter who has a game ⇒ editable, and says so.
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -448,6 +464,20 @@ select throws_ok(
   'P0001',
   'commish_edit_score: This matchup can be corrected once every starter''s game has finished — not finished yet: LK Dallas QB (DAL), LK Kansas QB (KC)',
   'N1 (f) a week in which NO game has started is refused — every starter named ("before any starter has finished there is nothing scored anyway")');
+reset role;
+select row_eq(
+  $$ select (h ->> 'editable')::boolean, h ->> 'why', h ->> 'message'
+     from (select public.commish_matchup_edit_lock_internal('b6000000-0000-4000-8000-000000000001',
+                    'd6000000-0000-4000-8000-000000000071') as h) x $$,
+  row(false, 'lineup_not_set'::text,
+      'This matchup can be corrected once every starter''s game has finished — no lineup set yet: LK T2; not finished yet: LK Kansas QB (KC)'::text)::record,
+  'N2a (R1097) T2 has NO week-7 lineup row: NOT editable, `lineup_not_set` — and when a side also has a starter not finished the ONE sentence names both, the missing lineup first');
+-- T2 sets an EMPTY week-7 lineup — an existing row with no starters — so N2
+-- below is judged on T1's KC QB alone.
+insert into team_lineups (team_id, season, week, starters, bench, slot_map) values
+ ('c6000000-0000-4000-8000-000000000002', 2026, 7, '[]', '[]', '{}');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
   $$ select commish_edit_score('b6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000071',
        1, 2, null, 'e6000000-0000-4000-8000-00000000000d'::uuid) $$,
@@ -459,12 +489,85 @@ select is(
   (select public.commish_matchup_edit_lock_internal('b6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000071')
      -> 'still_playing' -> 0 ->> 'game_status'),
   'no_game_rows', 'N3 …and says WHY: `no_game_rows`');
+
+-- N4 (R1097 RE-CUT — formerly "NO stored lineup on either side is editable
+-- AT ONCE", the reading the fix round removed). Matchup …62, LIVE week 6:
+-- T3 has a lineup (GB's QB, a bye — no game), T4 has NO row.
+select is(
+  (select string_agg(tl.team_id::text || '=' || tl.slot_map::text, ' ' order by tl.team_id)
+   from team_lineups tl where tl.season = 2026 and tl.week = 6
+     and tl.team_id in ('c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004')),
+  'c6000000-0000-4000-8000-000000000003={"qb:0": "lk-gb1"}',
+  'N4 PREMISE (R1097): on LIVE week 6, matchup …62''s HOME side (T3) has a stored lineup whose one starter is on bye, and its AWAY side (T4) has NO lineup row at all');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select commish_edit_score('b6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000062',
+       1, 2, null, 'e6000000-0000-4000-8000-000000000030'::uuid) $$,
+  'P0001',
+  'commish_edit_score: This matchup can be corrected once every starter''s game has finished — no lineup set yet: LK T4',
+  'N4a (R1097) a LIVE week where ONE side has no lineup row is REFUSED, naming that team — a missing row is NOT "no starters"');
+reset role;
+select row_eq(
+  $$ select h ->> 'why', h -> 'no_lineup' -> 0 ->> 'side', h -> 'no_lineup' -> 0 ->> 'team_name', jsonb_array_length(h -> 'no_lineup')
+     from (select public.commish_matchup_edit_lock_internal('b6000000-0000-4000-8000-000000000001',
+                    'd6000000-0000-4000-8000-000000000062') as h) x $$,
+  row('lineup_not_set'::text, 'away'::text, 'LK T4'::text, 1)::record,
+  'N4b (R1097) …the helper says `lineup_not_set` and names the ONE side with no row (away, LK T4) — the scoring worker''s held-by-name posture (F241(b))');
+-- THE ADJACENT PAIR: T4 now SETS an empty lineup — the ONLY change.
+insert into team_lineups (team_id, season, week, starters, bench, slot_map) values
+ ('c6000000-0000-4000-8000-000000000004', 2026, 6, '[]', '[]', '{}');
 select row_eq(
   $$ select (h ->> 'editable')::boolean, h ->> 'why', (h ->> 'starters')::int
      from (select public.commish_matchup_edit_lock_internal('b6000000-0000-4000-8000-000000000001',
                     'd6000000-0000-4000-8000-000000000062') as h) x $$,
-  row(true, 'no_starter_game'::text, 0)::record,
-  'N4 a matchup with NO stored lineup on either side is editable AT ONCE — and the helper says `no_starter_game`, so a vacuous yes is never read as "every game is final"');
+  row(true, 'no_starter_game'::text, 1)::record,
+  'N4c (R1097) …the instant T4''s row EXISTS (empty) the same matchup is editable: both lineups are SET and no starter has a game (a bye QB, an empty slot) — `no_starter_game`, as ruled; a vacuous yes is named, never read as "every game is final"');
+
+-- N5 (R1097) an UPCOMING week, no lineup rows yet — the reviewer's case.
+select row_eq(
+  $$ select (select status from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 8),
+            (select count(*)::int from team_lineups where season = 2026 and week = 8
+               and team_id in ('c6000000-0000-4000-8000-000000000001', 'c6000000-0000-4000-8000-000000000002')),
+            (select string_agg(g.id || ':' || g.status, ' ') from nfl_games g where g.season = 2026 and g.week = 8) $$,
+  row('upcoming'::text, 0, 'lk-w8-kcbuf:scheduled'::text)::record,
+  'N5 PREMISE (R1097): week 8 is UPCOMING, neither T1 nor T2 has a week-8 lineup row, and its one game is `scheduled`');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select commish_edit_score('b6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000081',
+       99, 0, null, 'e6000000-0000-4000-8000-000000000031'::uuid) $$,
+  'P0001',
+  'commish_edit_score: This matchup can be corrected once every starter''s game has finished — no lineup set yet: LK T1, LK T2',
+  'N5a (R1097) an UPCOMING week''s matchup, before any lineup row exists, is REFUSED naming both teams — the 99/0 pre-game override that froze live scoring for the week cannot land');
+reset role;
+select row_eq(
+  $$ select (h ->> 'editable')::boolean, h ->> 'why', m.is_overridden, m.home_score
+     from (select public.commish_matchup_edit_lock_internal('b6000000-0000-4000-8000-000000000001',
+                    'd6000000-0000-4000-8000-000000000081') as h) x
+     cross join matchups m where m.id = 'd6000000-0000-4000-8000-000000000081' $$,
+  row(false, 'lineup_not_set'::text, false, 0::numeric)::record,
+  'N5b (R1097) …the helper says `lineup_not_set`, and the row is untouched: not overridden, score 0');
+
+-- N6 (R1097) a FINAL week with NO lineup rows is still editable — final wins.
+select is(
+  (select count(*)::int from team_lineups where season = 2026 and week = 3
+     and team_id in ('c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004')),
+  0, 'N6 PREMISE (R1097): neither T3 nor T4 has a week-3 lineup row');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select commish_edit_score('b6000000-0000-4000-8000-000000000001', 'd6000000-0000-4000-8000-000000000032',
+       51, 40, null, 'e6000000-0000-4000-8000-000000000032'::uuid) $$,
+  'N6a (R1097) a FINAL week''s matchup with no lineup row on either side LANDS — a final week is always editable (R1092''s precedence sits above the missing-row arm)');
+reset role;
+select row_eq(
+  $$ select h ->> 'why', m.home_score
+     from (select public.commish_matchup_edit_lock_internal('b6000000-0000-4000-8000-000000000001',
+                    'd6000000-0000-4000-8000-000000000032') as h) x
+     cross join matchups m where m.id = 'd6000000-0000-4000-8000-000000000032' $$,
+  row('week_final'::text, 51.00::numeric)::record,
+  'N6b (R1097) …the helper says `week_final`, and the row carries 51.00');
 
 -- ---------------------------------------------------------------------------
 -- B. (b) THE BOUNDARY'S OTHER SIDE: the SAME matchup as §A, after the ONE
@@ -595,11 +698,11 @@ select is(
 reset role;
 select is(
   (select count(*)::int from commissioner_actions where league_id = 'b6000000-0000-4000-8000-000000000001'),
-  8, 'R4 EIGHT receipts in the league: C8, E1, G2, H1, I2, I3, B2, R3 — every landing wrote one, every refusal (A1, A2, D1, G1, H2, N1, N2, J1) and the no-op (R2) none');
+  9, 'R4 NINE receipts in the league: C8, E1, G2, H1, I2, I3, N6a, B2, R3 — every landing wrote one, every refusal (A1, A2, D1, G1, H2, N1, N2, N4a, N5a, J1) and the no-op (R2) none');
 select is(
   (select count(*)::int from commish_matchup_actions m
    join matchups mm on mm.id = m.matchup_id where mm.league_id = 'b6000000-0000-4000-8000-000000000001'),
-  9, 'R5 NINE ledger rows: the eight landings and the no-op — the refusals consumed no action_id');
+  10, 'R5 TEN ledger rows: the nine landings and the no-op — the refusals consumed no action_id');
 
 -- ---------------------------------------------------------------------------
 -- S. SOURCE PINS on the helper — the break probes' targets, stated so the
@@ -613,6 +716,12 @@ select ok(
   (select prosrc like '%public.team_lineups tl%' and prosrc not like '%league_rosters%'
    from pg_proc where oid = 'public.commish_matchup_edit_lock_internal(uuid,uuid)'::regprocedure),
   'S2 the helper reads STARTERS from the stored slot_map and never the roster (the (c) probe''s target)');
+select ok(
+  (select prosrc like '%WHEN v.lineups_missing > 0 THEN%'
+          and strpos(prosrc, 'WHEN v.lineups_missing > 0 THEN') > strpos(prosrc, 'WHEN v.week_status = ''final'' THEN')
+          and strpos(prosrc, 'WHEN v.lineups_missing > 0 THEN') < strpos(prosrc, 'WHEN v.not_finished > 0 THEN')
+   from pg_proc where oid = 'public.commish_matchup_edit_lock_internal(uuid,uuid)'::regprocedure),
+  'S4 (R1097) the missing-lineup arm sits BELOW the final-week precedence and ABOVE the per-starter arms (the sixth probe''s target)');
 select ok(
   (select prosrc like '%g.status IS NOT DISTINCT FROM ''postponed''%' and prosrc like '%g.kickoff_at >= b.next_starts_at%'
    from pg_proc where oid = 'public.commish_matchup_edit_lock_internal(uuid,uuid)'::regprocedure),

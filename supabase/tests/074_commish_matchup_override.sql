@@ -78,7 +78,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(127);
+select plan(128);
 
 -- ---------------------------------------------------------------------------
 -- A. THE SECURITY CLAIM, FIRST (D344). Read the banner note before touching
@@ -290,7 +290,22 @@ select 'b5000000-0000-4000-8000-000000000001', 2026, g from generate_series(3, 1
 -- 135: d5…41's two stored week-4 lineups (one QB slot each; the league has no IR spot).
 insert into team_lineups (team_id, season, week, starters, bench, slot_map) values
  ('c5000000-0000-4000-8000-000000000001', 2026, 4, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
- ('c5000000-0000-4000-8000-000000000002', 2026, 4, '[]', '[]', '{"qb:0": "mo-buf-qb"}');
+ ('c5000000-0000-4000-8000-000000000002', 2026, 4, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
+-- RE-CUT BY PR #313's FIX ROUND (R1097): outside a FINAL week a side with NO
+-- lineup row is NOT finished (`lineup_not_set`), so every non-final row a cell
+-- below edits now carries STORED lineups whose starters' games are FINAL —
+-- the bye row d5…42 (week 4, Sunday's KC game) and all four week-5 rows
+-- (correction window, KC/BUF final). C5c asserts each lands for the ruled
+-- reason (`every_starter_finished`), never vacuously.
+ ('c5000000-0000-4000-8000-000000000003', 2026, 4, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000001', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000002', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
+ ('c5000000-0000-4000-8000-000000000003', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000004', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
+ ('c5000000-0000-4000-8000-000000000005', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000006', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
+ ('c5000000-0000-4000-8000-000000000007', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000008', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}');
 -- The F4 guard (§12.17) refuses a skipped step, so each week is WALKED to its
 -- status rather than assigned one: upcoming → live → correction_window → final.
 update league_weeks set status = 'live'              where league_id = 'b5000000-0000-4000-8000-000000000001' and week in (3, 4, 5);
@@ -354,6 +369,11 @@ select is(
   (select string_agg(g.id || ':' || g.status, ' ' order by g.id) from nfl_games g where g.season = 2026 and g.week = 4),
   'mo-w4-mon:live mo-w4-sun:final',
   'C5b PREMISE: …while week 4''s Monday game is still LIVE — the league-week is still being scored, which is the one live-week window in which the override flag is load-bearing (the ruled note at 135''s flag)');
+select is(
+  (select string_agg(right(m.id::text, 2) || ':' || (public.commish_matchup_edit_lock_internal(m.league_id, m.id) ->> 'why'), ' ' order by m.id)
+   from matchups m where m.league_id = 'b5000000-0000-4000-8000-000000000001' and m.week in (4, 5)),
+  '41:every_starter_finished 42:every_starter_finished 51:every_starter_finished 52:every_starter_finished 53:every_starter_finished 54:every_starter_finished',
+  'C5c PREMISE (R1097 re-cut): EVERY week-4 and week-5 row this suite edits is editable because both sides'' STORED starters have finished — not because a lineup row is missing (a missing row is `lineup_not_set` and REFUSES since the fix round)');
 
 -- ---------------------------------------------------------------------------
 -- D. THE REASON GATE AND THE ARM REFUSALS — every one BY NAME.

@@ -78,7 +78,20 @@
 --     slot-key prefix is NOT an IR spot key (`roster_settings.ir_slots[].key`)
 --     — the scoring worker's own reading (`startersOf` / `irKeysOf`,
 --     score-week-worker.ts). Bench players are not in the map and never
---     count. A side with no lineup row has no starters.
+--     count.
+--   * A SIDE WITH NO LINEUP ROW (R1097, PR #313 fix round): outside a FINAL
+--     week, a side with NO `team_lineups` row for (season, week) is NOT
+--     finished — `why = 'lineup_not_set'`, refused, the team named. Lineup
+--     rows only appear once a week opens (D293's auto-carry, 116's
+--     `lineup_carry_internal`), so reading a missing row as "no starters"
+--     made every UPCOMING week's matchup editable before any game and let
+--     the override freeze its live scoring for the week. This mirrors the
+--     scoring worker's own posture — a team with no lineup row holds the
+--     week BY NAME (`score-week-worker.ts`, F241(b)); it is never "nothing to
+--     wait for". An EXISTING row whose slots are all empty is different: it
+--     is a set lineup with no starters, and stays `no_starter_game` as ruled.
+--     A missing row takes precedence over unfinished starters in `why`; the
+--     sentence names both when both hold.
 --   * A STARTER'S GAME: the `nfl_games` rows of (season, week) whose home or
 --     away club is his `players.team` (112's join), MINUS any that has left
 --     the week (above). NO such row (a bye, a postponed-out game, a NULL
@@ -90,15 +103,18 @@
 --     falls back to the week datum, 112:396-405) and §23.2's (zero rows is
 --     the emptiest partial data). Loud, never "nothing to wait for".
 --   * A matchup whose starters ALL have no game (every one on bye / an empty
---     lineup / no lineup row) is EDITABLE AT ONCE — there is nothing to
---     finish. The document says which (`why = 'no_starter_game'`), so a
+--     stored lineup) is EDITABLE AT ONCE — there is nothing to
+--     finish (a MISSING lineup row is not this case — above). The document says which (`why = 'no_starter_game'`), so a
 --     vacuous "editable" is never mistaken for "every game is final".
 --   * A BYE ROW (`away_team_id IS NULL`) is judged on its one side.
 --   * The refusal (P0001) names every unfinished starter, in plain words:
 --     "This matchup can be corrected once every starter's game has finished
 --     — not finished yet: <name> (<club>), …" — F368's lesson, no migration
 --     line cites in copy that reaches a screen. Ordered by that game's
---     kickoff, then name, then player id.
+--     kickoff, then name, then player id. A side with no lineup row is named
+--     by its team ("— no lineup set yet: <team>", home first), and when both
+--     hold the two clauses are joined: "— no lineup set yet: <team>; not
+--     finished yet: <name> (<club>)".
 --
 -- WHAT THIS MIGRATION DOES
 --   1. `commish_matchup_edit_lock_internal(league, matchup)` — NEW. The
@@ -151,6 +167,13 @@
 -- is pushed, production still ACCEPTS a live-week score edit (F378's state).
 -- WAIVERS: none. R6 / D38 not engaged (nothing backfilled, no CHECK
 -- tightened, no data rewritten).
+--
+-- EDITED IN PLACE (PR #313's fix round, R1097, 2026-09-27): 135 had NOT been
+-- pushed to production when the review found the missing-lineup-row hole, so
+-- the fix lands in this file rather than as a 136 — house precedent: 129 was
+-- edited in place while unpushed. Only §1 (the helper) and this banner
+-- changed; §2 (the read door) and §3 (the internal's three hunks against
+-- 131:911-1322) are byte-identical to the reviewed text.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -186,6 +209,17 @@ AS $$
     SELECT m.home_team_id AS team_id, 'home'::text AS side FROM m
     UNION ALL
     SELECT m.away_team_id, 'away'::text FROM m WHERE m.away_team_id IS NOT NULL
+  ),
+  -- R1097: a side with NO stored lineup row for the week. Outside a FINAL
+  -- week it is NOT finished (`lineup_not_set`) — never "no starters".
+  no_lineup AS (
+    SELECT s.team_id, s.side, COALESCE(t.name, s.team_id::text) AS team_name
+    FROM sides s
+    CROSS JOIN m
+    LEFT JOIN public.teams t ON t.id = s.team_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.team_lineups tl
+      WHERE tl.team_id = s.team_id AND tl.season = m.season AND tl.week = m.week)
   ),
   starters AS (
     SELECT s.team_id, s.side, e.key AS slot, e.value #>> '{}' AS player_id
@@ -266,27 +300,44 @@ AS $$
          FROM unfinished u) AS still_playing,
       (SELECT string_agg(u.name || ' (' || COALESCE(u.nfl_team, 'no team') || ')', ', '
                 ORDER BY u.open_kickoff NULLS LAST, u.name, u.player_id)
-         FROM unfinished u) AS names
+         FROM unfinished u) AS names,
+      (SELECT count(*)::int FROM no_lineup) AS lineups_missing,
+      (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'team_id',   nl.team_id,
+                'side',      nl.side,
+                'team_name', nl.team_name)
+              ORDER BY nl.side = 'away', nl.team_id), '[]'::jsonb)
+         FROM no_lineup nl) AS no_lineup,
+      (SELECT string_agg(nl.team_name, ', ' ORDER BY nl.side = 'away', nl.team_id)
+         FROM no_lineup nl) AS no_lineup_names
   )
   SELECT CASE
     -- PRECEDENCE (R1092): a FINAL week is always editable.
     WHEN v.week_status = 'final' THEN jsonb_build_object(
       'editable', TRUE, 'why', 'week_final', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', 0,
-      'still_playing', '[]'::jsonb, 'message', NULL)
+      'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb, 'message', NULL)
+    -- R1097: a side with NO lineup row is NOT finished (never "no starters").
+    WHEN v.lineups_missing > 0 THEN jsonb_build_object(
+      'editable', FALSE, 'why', 'lineup_not_set', 'week_status', v.week_status,
+      'starters', v.starters, 'finished', v.finished, 'not_finished', v.not_finished,
+      'still_playing', v.still_playing, 'no_lineup', v.no_lineup,
+      'message', 'This matchup can be corrected once every starter''s game has finished — '
+                 || concat_ws('; ', 'no lineup set yet: ' || v.no_lineup_names,
+                                    'not finished yet: ' || v.names))
     WHEN v.not_finished > 0 THEN jsonb_build_object(
       'editable', FALSE, 'why', 'starters_not_finished', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', v.not_finished,
-      'still_playing', v.still_playing,
+      'still_playing', v.still_playing, 'no_lineup', '[]'::jsonb,
       'message', 'This matchup can be corrected once every starter''s game has finished — not finished yet: ' || v.names)
     WHEN v.finished > 0 THEN jsonb_build_object(
       'editable', TRUE, 'why', 'every_starter_finished', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', 0,
-      'still_playing', '[]'::jsonb, 'message', NULL)
+      'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb, 'message', NULL)
     ELSE jsonb_build_object(
       'editable', TRUE, 'why', 'no_starter_game', 'week_status', v.week_status,
       'starters', v.starters, 'finished', 0, 'not_finished', 0,
-      'still_playing', '[]'::jsonb, 'message', NULL)
+      'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb, 'message', NULL)
   END
   FROM verdict v;
 $$;

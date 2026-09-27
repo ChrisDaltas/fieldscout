@@ -178,7 +178,7 @@ describe('overrideLockState — Q61 (135): the controls wait for the server’s 
     expect(overrideLockState({ data: { editable: true, message: null }, error: null })).toStrictEqual({ kind: 'open' })
   })
 
-  it('a FAILED read is `unknown` — said, and the controls stay reachable because the verb re-decides at submit', () => {
+  it('a FAILED read is `unknown` — said (the panel then offers NO control, R1098; matchup-override.render.test.ts)', () => {
     const out = overrideLockState({ data: undefined, error: new Error('Only this league’s commissioner can correct a matchup’s score or result.') })
     expect(out.kind).toBe('unknown')
     expect(out.kind === 'unknown' && out.message).toContain('Only this league’s commissioner')

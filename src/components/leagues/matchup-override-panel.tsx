@@ -59,9 +59,11 @@ import { OverrideModeBar } from './override-mode-bar'
  * While any starter on either team is still playing the panel offers no
  * score or winner control and shows the server's one line naming who; it
  * asks the server (`useCommishMatchupEditLock` — the SAME SQL helper the
- * verbs refuse on) and never works the rule out itself. If that read fails
- * the controls are offered and the failure is said: the verb re-decides at
- * submit, and its refusal renders verbatim.
+ * verbs refuse on) and never works the rule out itself. The same holds when a
+ * side has no lineup set yet (`lineup_not_set`, R1097): the server's line,
+ * verbatim. If that read FAILS the failure is said as an alert and still NO
+ * control is offered (R1098) — nothing is offered until the server has said
+ * the matchup is editable.
  *
  * The mount is gated on the viewer's commissioner role by the page; the
  * server is the authority (126's in-body 42501).
@@ -186,8 +188,9 @@ export function MatchupOverridePanelView({
     <section className="flex flex-col gap-3 rounded-sm border border-ink bg-white px-3 py-3" aria-label={OVERRIDE_PANEL_TITLE} data-override-panel>
       <h3 className="text-[12px] font-bold text-ink">{OVERRIDE_PANEL_TITLE}</h3>
 
-      {/* Q61 (135): no controls while a starter is still playing, and none
-          before the server has answered. The server's line, verbatim. */}
+      {/* Q61 (135): no controls while a starter is still playing or a side
+          has no lineup set, none before the server has answered, and none
+          when the read failed (R1098). The server's line, verbatim. */}
       {lock.kind === 'checking' && (
         <p role="status" className="text-[11px] font-semibold text-n-3" data-override-lock="checking">
           {LOCK_CHECKING_COPY}
@@ -203,7 +206,7 @@ export function MatchupOverridePanelView({
           {lock.message}
         </p>
       )}
-      {(lock.kind === 'open' || lock.kind === 'unknown') && (
+      {lock.kind === 'open' && (
         <>
           <form
             className="flex flex-col gap-2"

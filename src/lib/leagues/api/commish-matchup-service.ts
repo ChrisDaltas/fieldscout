@@ -307,13 +307,25 @@ export interface CommishMatchupEditLock {
   season: number
   week: number
   editable: boolean
-  why: 'week_final' | 'starters_not_finished' | 'every_starter_finished' | 'no_starter_game'
+  /** `lineup_not_set` (R1097): outside a final week a side with NO lineup row
+   *  is not finished — never read as "no starters". */
+  why: 'week_final' | 'lineup_not_set' | 'starters_not_finished' | 'every_starter_finished' | 'no_starter_game'
   week_status: 'upcoming' | 'live' | 'correction_window' | 'final' | null
   starters: number
   finished: number
   not_finished: number
   still_playing: CommishMatchupStillPlaying[]
+  /** The sides with no lineup row for the week (home first); empty unless
+   *  `why` is `lineup_not_set`. */
+  no_lineup: CommishMatchupNoLineup[]
   message: string | null
+}
+
+/** One side with no stored lineup row for the week (135's helper, verbatim). */
+export interface CommishMatchupNoLineup {
+  team_id: string
+  side: 'home' | 'away'
+  team_name: string
 }
 
 export const commishMatchupEditLockQuerySchema = z.strictObject({

@@ -325,6 +325,7 @@ describe('readCommishMatchupEditLock — GET …/commish/matchup-lock (135’s r
     finished: 3,
     not_finished: 1,
     still_playing: [{ team_id: HOME, side: 'home', slot: 'wr:0', player_id: 'p1', name: 'LK Monday Jet', nfl_team: 'NYJ', game_status: 'live', kickoff_at: null }],
+    no_lineup: [],
     message: 'This matchup can be corrected once every starter’s game has finished — not finished yet: LK Monday Jet (NYJ)',
   }
 

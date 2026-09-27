@@ -33,9 +33,19 @@
  * Requires the local stack — D59(5) precedent; FAILS loudly when the stack
  * is down, never skips (§4.3).
  *
- * CALENDAR (F215/F226): the league is on `SYNTHETIC_SEASON` (2099) with NO
- * game rows placed; the synthetic players' made-up NFL teams have no game in
- * any week, so no lock is ever read and no clock is read anywhere here.
+ * CALENDAR (F215/F226): the league is on `SYNTHETIC_SEASON` (2099). The
+ * synthetic MOVER / FREE AGENT's made-up NFL teams have no game in any week
+ * except §5's one VCA row, so no lineup lock is ever read and no clock is
+ * read anywhere here.
+ *
+ * Q61 (135) + PR #313's fix round (R1097): an override outside a FINAL week
+ * lands only once every starter on both sides has finished, and a side with
+ * NO lineup row is NOT finished. Every league week here is `upcoming`, so
+ * weeks 2-4 (the weeks §1-§3 correct) get a STORED lineup for every team
+ * starting the suite's own STARTER (club VCS), whose one game in each of
+ * those weeks is `final` — asserted in `beforeAll` as the lock read's
+ * `every_starter_finished`, so every landing cell below lands for the ruled
+ * reason, never on a missing lineup.
  *
  * Determinism: FIXED emails/usernames/action_ids + cleanup-first. Action-id
  * prefix `b02` — this suite owns it (the D108(14) registry: af0–aff, b00,
@@ -90,9 +100,13 @@ const MEMBER = {
 const PLAYERS = [
   { id: 'vitest-co-mover', full_name: 'Vitest CO Mover', position: 'WR', team: 'VCA', status: 'Active' },
   { id: 'vitest-co-fa', full_name: 'Vitest CO Free Agent', position: 'RB', team: 'VCB', status: 'Active' },
+  // R1097: the starter every team's STORED week-2/3/4 lineup names (club VCS,
+  // whose game in each of those weeks is FINAL). Rostered nowhere.
+  { id: 'vitest-co-starter', full_name: 'Vitest CO Starter', position: 'WR', team: 'VCS', status: 'Active' },
 ] as const
 const MOVER = 'vitest-co-mover'
 const FREE_AGENT = 'vitest-co-fa'
+const STARTER = 'vitest-co-starter'
 
 const ACTION = {
   league: 'b0200000-0000-4000-8000-000000000001',
@@ -112,11 +126,15 @@ const ACTION = {
   scoreHalfOnTwoTeam: 'b0200000-0000-4000-8000-000000000016',
   scoreStillPlaying: 'b0200000-0000-4000-8000-000000000017',
   scoreAfterFinal: 'b0200000-0000-4000-8000-000000000018',
+  scoreNoLineup: 'b0200000-0000-4000-8000-000000000019',
 } as const
 
 /** L.E1.18 (Q61, migration 135): the ONE game row this suite writes — on the
  *  suite's own made-up clubs, deleted in cleanup. */
 const Q61_GAME_ID = 'vitest-co-q61-game'
+/** R1097: the weeks §1-§3 correct, and their FINAL VCS game rows. */
+const FINISHED_WEEKS = [2, 3, 4] as const
+const FINISHED_GAME_IDS = FINISHED_WEEKS.map((w) => `vitest-co-q61-final-w${w}`)
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -165,7 +183,7 @@ async function cleanup(): Promise<void> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
   }
-  const { error: gameError } = await service.from('nfl_games').delete().eq('id', Q61_GAME_ID)
+  const { error: gameError } = await service.from('nfl_games').delete().in('id', [Q61_GAME_ID, ...FINISHED_GAME_IDS])
   if (gameError) throw new Error(`cleanup nfl_games: ${gameError.message}`)
   const { error: playersError } = await service
     .from('players')
@@ -319,6 +337,28 @@ beforeAll(async () => {
   if (poolError) throw new Error(`league_player_pool insert: ${poolError.message}`)
   expect(await rosterTeamOf(MOVER)).toStrictEqual([commishTeamId])
   expect(await rosterTeamOf(FREE_AGENT)).toStrictEqual([])
+
+  // R1097 (PR #313's fix round): weeks 2-4 get a STORED lineup for every team
+  // starting STARTER, and STARTER's club plays one FINAL game in each.
+  const { data: allTeams, error: allTeamsError } = await service.from('teams').select('id').eq('league_id', leagueId)
+  if (allTeamsError) throw new Error(`teams read: ${allTeamsError.message}`)
+  expect(allTeams).toHaveLength(TEAM_COUNT)
+  const { error: finishedGamesError } = await service.from('nfl_games').insert(
+    FINISHED_WEEKS.map((w, i) => ({ id: FINISHED_GAME_IDS[i], season: SYNTHETIC_SEASON, week: w, home_team: 'VCS', away_team: 'VCY', kickoff_at: `2099-09-${String(10 + 7 * i).padStart(2, '0')}T18:00:00Z`, status: 'final' })),
+  )
+  if (finishedGamesError) throw new Error(`nfl_games insert: ${finishedGamesError.message}`)
+  const { error: lineupsError } = await service.from('team_lineups').insert(
+    FINISHED_WEEKS.flatMap((w) => allTeams!.map((t) => ({ team_id: t.id, season: SYNTHETIC_SEASON, week: w, starters: [], bench: [], slot_map: { 'wr:0': STARTER } }))),
+  )
+  if (lineupsError) throw new Error(`team_lineups insert: ${lineupsError.message}`)
+  // THE PREMISE, by value (rule 14(c)): a week-2, a week-3 and a week-4 row
+  // are editable because every starter FINISHED — not vacuously.
+  for (const w of FINISHED_WEEKS) {
+    const probe = (await weekRows(w))[0]
+    const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: probe.id })
+    expect(lock.status, errorText(lock)).toBe(200)
+    expect(lock.body).toMatchObject({ editable: true, why: 'every_starter_finished', starters: 2, finished: 2 })
+  }
 }, 60_000)
 
 afterAll(async () => {
@@ -693,6 +733,7 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
   let target: MatchupRow
   let week: number
   const SERVER_LINE = 'This matchup can be corrected once every starter\'s game has finished — not finished yet: Vitest CO Mover (VCA)'
+  let opponentName: string
 
   beforeAll(async () => {
     // The LAST regular week — no earlier cell in this file touches it.
@@ -717,6 +758,27 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
       .from('nfl_games')
       .insert({ id: Q61_GAME_ID, season: SYNTHETIC_SEASON, week, home_team: 'VCA', away_team: 'VCZ', kickoff_at: '2099-12-20T18:00:00Z', status: 'live' })
     if (gameError) throw new Error(`nfl_games insert: ${gameError.message}`)
+    const opponentId = target.home_team_id === commishTeamId ? target.away_team_id! : target.home_team_id
+    const { data: opponent, error: opponentError } = await service.from('teams').select('name').eq('id', opponentId).single()
+    if (opponentError) throw new Error(`opponent read: ${opponentError.message}`)
+    opponentName = opponent.name
+  })
+
+  it('R1097: while the OPPONENT has NO lineup row the read says `lineup_not_set` and the route refuses 409 with the server’s sentence verbatim — naming the team AND the starter still playing; then the opponent sets an EMPTY lineup (the only change)', async () => {
+    const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
+    expect(lock.status, errorText(lock)).toBe(200)
+    const doc = lock.body as { editable: boolean; why: string; message: string | null }
+    const combined = `This matchup can be corrected once every starter's game has finished — no lineup set yet: ${opponentName}; not finished yet: Vitest CO Mover (VCA)`
+    expect(doc).toMatchObject({ editable: false, why: 'lineup_not_set', message: combined })
+    const res = await commishEditScore(commishClient, leagueId, { matchup_id: target.id, home_score: 10, away_score: 11, action_id: ACTION.scoreNoLineup })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(`commish_edit_score: ${combined}`)
+    expect(await receiptsFor(ACTION.scoreNoLineup)).toHaveLength(0)
+    const opponentId = target.home_team_id === commishTeamId ? target.away_team_id! : target.home_team_id
+    const { error } = await service
+      .from('team_lineups')
+      .insert({ team_id: opponentId, season: SYNTHETIC_SEASON, week, starters: [], bench: [], slot_map: {} })
+    if (error) throw new Error(`team_lineups insert: ${error.message}`)
   })
 
   it('PREMISE: a real two-team row of the commissioner’s, and its starter’s game reads `live`', async () => {

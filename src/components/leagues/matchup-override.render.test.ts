@@ -146,8 +146,8 @@ function between(html: string, from: string, to: string): string {
 }
 
 /** 135's read document for one matchup (the fields the panel reads). */
-function lockDoc(matchupId: string, editable: boolean, message: string | null = null) {
-  return { league_id: LEAGUE, matchup_id: matchupId, season: 2099, week: 1, editable, why: editable ? 'every_starter_finished' : 'starters_not_finished', week_status: 'live', starters: 2, finished: editable ? 2 : 1, not_finished: editable ? 0 : 1, still_playing: [], message }
+function lockDoc(matchupId: string, editable: boolean, message: string | null = null, why?: string) {
+  return { league_id: LEAGUE, matchup_id: matchupId, season: 2099, week: 1, editable, why: why ?? (editable ? 'every_starter_finished' : 'starters_not_finished'), week_status: 'live', starters: 2, finished: editable ? 2 : 1, not_finished: editable ? 0 : 1, still_playing: [], no_lineup: [], message }
 }
 
 function renderPage(
@@ -422,6 +422,18 @@ describe('Q61 — no score or winner control while a starter is still playing (t
     expect(html).toContain('Exit override mode')
   })
 
+  it('LOCKED, `lineup_not_set` (R1097): a side with NO lineup row — the server’s sentence VERBATIM, and NO score field, Save or winner button', () => {
+    const NO_LINEUP = 'This matchup can be corrected once every starter’s game has finished — no lineup set yet: Bravo'
+    const html = renderPage({ overrideMode: true, lock: lockDoc('m1', false, NO_LINEUP, 'lineup_not_set') })
+    expect(html).toContain('data-override-panel') // premise: the panel mounted
+    expect(between(html, 'data-override-lock="locked"', '</p>')).toContain(NO_LINEUP)
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-save-scores')
+    expect(html).not.toContain('data-declare-winner')
+    expect(html).not.toContain('<input')
+    expect(html).toContain('Exit override mode')
+  })
+
   it('OPEN (the server says every starter has finished): the controls are there and no lock line is', () => {
     const html = renderPage({ overrideMode: true })
     expect(html).toContain('data-override-arm="score"')
@@ -442,7 +454,7 @@ describe('Q61 — no score or winner control while a starter is still playing (t
     expect(html).not.toContain('data-override-lock')
   })
 
-  it('UNKNOWN (the read failed): the failure is said as an alert AND the controls stay — the verb re-decides at submit and its refusal renders verbatim', () => {
+  it('UNKNOWN (the read failed — R1098): the failure is said as an alert and NO score field, Save or winner button is offered; a verb refusal still renders verbatim', () => {
     const html = unescapeHtml(
       renderToStaticMarkup(
         createElement(MatchupOverridePanelView, {
@@ -462,7 +474,11 @@ describe('Q61 — no score or winner control while a starter is still playing (t
       ),
     )
     expect(html).toMatch(/role="alert"[^>]*data-override-lock="unknown"/)
-    expect(html).toContain('data-override-arm="score"')
+    expect(between(html, 'data-override-lock="unknown"', '</p>')).toContain('Couldn’t check this matchup’s games — boom')
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-save-scores')
+    expect(html).not.toContain('data-declare-winner')
+    expect(html).not.toContain('<input')
     expect(between(html, 'data-override-refusal', '</p>')).toContain(LINE)
   })
 })

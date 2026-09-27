@@ -167,10 +167,13 @@ export function scoreGate(args: { homeDraft: string; awayDraft: string; homeName
  *
  *  - `checking` — the read has not answered: no controls yet (offering them
  *    would be a guess).
- *  - `locked`   — a starter is still playing: no controls, the server's line.
+ *  - `locked`   — a starter is still playing, or a side has no lineup set
+ *    (`lineup_not_set`, R1097): no controls, the server's line verbatim —
+ *    whichever reason the server gave, the panel renders its sentence.
  *  - `open`     — the controls.
- *  - `unknown`  — the read FAILED: the controls are offered and the failure
- *    is said; the verb re-decides at submit and its refusal renders verbatim.
+ *  - `unknown`  — the read FAILED: the failure is said and NO controls are
+ *    offered (R1098 — the panel offers no score or winner control until the
+ *    server has said the matchup is editable; spec v2.16.43).
  */
 export type OverrideLockState =
   | { kind: 'checking' }

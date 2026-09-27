@@ -161,7 +161,8 @@ control in override mode; **F366** discharged in its own commit; discharges
 F360, mints F377, records D370) — **and it was M6A's LAST PLANNED TASK: the
 §6 list (L.E1.1–L.E1.17) is COMPLETE.**
 
-**`L.E1.18` is LANDED 2026-09-27** (migration **135** + pgTAP **083** `plan(75)`, pgTAP 074 re-cut,
+**`L.E1.18` is LANDED 2026-09-27** (migration **135** + pgTAP **083** `plan(86)` after PR #313's fix round —
+R1097: a side with no lineup row is not finished outside a final week — pgTAP 074 re-cut,
 `GET /commish/matchup-lock`, the matchup panel gate — Q61 as ruled: no score /
 result override while any starter on either team is still playing; a final week
 always editable. **Measured first:** the signal is `nfl_games.status = 'final'`
