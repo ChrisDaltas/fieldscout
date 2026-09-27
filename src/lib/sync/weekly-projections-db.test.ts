@@ -5,16 +5,23 @@
  * Pinned here:
  *   1. THE WRITE: the recorded week-4 response (src/lib/sync/fixtures/
  *      sleeper-weekly-projections-2026.json, ids prefixed `wpj-` so no real player is
- *      touched) lands 16 lines through the service role; a golden line and
- *      the TimeProvider instant read back BY VALUE.
+ *      touched) lands 17 lines through the service role; a golden line, the
+ *      FRACTIONAL points allowed (PIT 17.5 — R1104, no rounding through
+ *      jsonb) and the TimeProvider instant read back BY VALUE.
  *   2. THE REFRESH: a player who drops to filler (ruled out) loses his line
  *      on the next run (`removed = 1`), the others are re-stamped.
  *   3. ZERO PROJECTIONS IS A FAILURE: an all-filler week is `ok: false` and
  *      the stored lines are BYTE-IDENTICAL afterwards (nothing written).
- *   4. THE 1000-ROW CAP: 1,200 stale lines planted for one week are ALL
- *      removed — the stale read pages past PostgREST's cap (pageAll with an
- *      exact count), never a silent first-1000.
+ *   4. THE 1000-ROW CAP: 1,200 WR lines planted for one week; the fresh
+ *      fetch still projects the first 700 (so the R1105 guard is satisfied)
+ *      and the 500 it dropped are ALL removed — 200 of them sit only on the
+ *      stale read's SECOND page (pageAll with an exact count), so a
+ *      first-1000 read would remove 300.
  *   5. RLS through PostgREST: anon reads 0 lines and cannot insert.
+ *   6. THE SHARP DROP (R1105): a week holding 15 WR lines meets a degraded
+ *      200 that projects 3 — `ok: false`, the position named with both
+ *      counts, and every stored line BYTE-IDENTICAL afterwards (no upsert,
+ *      no delete).
  *
  * Season 2099 (the synthetic calendar, seeded idempotently); requires the
  * local stack (001–136) — D59(5); FAILS loudly when the stack is down.
@@ -91,7 +98,7 @@ beforeAll(async () => {
   const ids = WEEKLY_PROJECTION_POSITIONS.flatMap((p) => WEEK4[p].map((r) => ({ id: P + r.player_id, full_name: `WPJ ${r.player_id}`, position: p === 'DEF' ? 'DEF' : p })))
   const { error, count } = await service.from('players').insert(ids, { count: 'exact' })
   if (error) throw new Error(`fixture players: ${error.message}`)
-  expect(count).toBe(22)
+  expect(count).toBe(23)
 })
 
 afterAll(async () => {
@@ -99,17 +106,17 @@ afterAll(async () => {
 })
 
 describe('weekly projections — the service-role write path (stack)', () => {
-  it('1. THE WRITE: week 4 lands 16 lines; a golden line and the injected instant read back by value', async () => {
+  it('1. THE WRITE: week 4 lands 17 lines; a golden line, the fractional PA and the injected instant read back by value', async () => {
     const report = await syncWeeklyProjections(
       { db: service, time: clock('2099-09-29T15:40:00.000Z'), fetchWeek: async (_s, w, p) => recorded(w, p) },
       { season: SEASON, weeks: [4] },
     )
     expect(report.failures).toEqual([])
     expect(report.ok).toBe(true)
-    expect(report.counts).toEqual({ weeks: 1, projected: 16, stored: 16, removed: 0, unknownPlayer: 0, duplicates: 0, failedWeeks: 0 })
+    expect(report.counts).toEqual({ weeks: 1, projected: 17, stored: 17, removed: 0, unknownPlayer: 0, duplicates: 0, failedWeeks: 0 })
 
     const lines = await linesFor(4)
-    expect(lines).toHaveLength(16)
+    expect(lines).toHaveLength(17)
     const allen = lines.find((l) => l.player_id === `${P}4984`)
     expect(allen).toEqual({
       player_id: `${P}4984`,
@@ -125,6 +132,10 @@ describe('weekly projections — the service-role write path (stack)', () => {
     })
     // the real projected zero is stored as a line, not dropped
     expect(lines.find((l) => l.player_id === `${P}13300`)?.stats).toEqual({ receiving_tds: 0 })
+    // R1104: Sleeper's fractional points allowed survives the round trip verbatim
+    const pit = lines.find((l) => l.player_id === `${P}PIT`)
+    expect(pit?.stats).toEqual({ def_sack: 2.84, def_int: 0.88, def_fumble_rec: 0.61, def_td: 0.14, def_points_allowed: 17.5 })
+    expect((pit?.raw_stats as Record<string, unknown>).pts_allow).toBe(17.5)
   })
 
   it('2. THE REFRESH: a player who drops to filler loses his line; everyone else is re-stamped', async () => {
@@ -133,10 +144,10 @@ describe('weekly projections — the service-role write path (stack)', () => {
       { season: SEASON, weeks: [4] },
     )
     expect(report.ok).toBe(true)
-    expect(report.counts).toMatchObject({ projected: 15, stored: 15, removed: 1 })
+    expect(report.counts).toMatchObject({ projected: 16, stored: 16, removed: 1 })
     const lines = await linesFor(4)
     expect(lines.map((l) => l.player_id)).not.toContain(`${P}5849`)
-    expect(lines).toHaveLength(15)
+    expect(lines).toHaveLength(16)
     expect(new Set(lines.map((l) => l.fetched_at))).toEqual(new Set(['2099-09-29T16:40:00+00:00']))
   })
 
@@ -152,7 +163,7 @@ describe('weekly projections — the service-role write path (stack)', () => {
     expect(await linesFor(4)).toEqual(before)
   })
 
-  it('4. THE 1000-ROW CAP: 1,200 stale lines for one week are ALL removed (the stale read pages past the cap)', async () => {
+  it('4. THE 1000-ROW CAP: the 500 lines the fresh fetch dropped are ALL removed — 200 of them only on the second page', async () => {
     const bulk = Array.from({ length: 1200 }, (_, i) => `${P}bulk-${String(i).padStart(4, '0')}`)
     for (let i = 0; i < bulk.length; i += 500) {
       const chunk = bulk.slice(i, i + 500)
@@ -172,14 +183,27 @@ describe('weekly projections — the service-role write path (stack)', () => {
       .eq('week', 5)
     expect(planted).toBe(1200) // PREMISE: more than one PostgREST page
 
+    // The fresh fetch still projects bulk-0000..0699 (700 of 1,200 WR — above
+    // half, so the R1105 guard lets it through); bulk-0700..1199 went stale,
+    // and bulk-1000..1199 sort onto the stale read's SECOND page.
+    const kept = bulk.slice(0, 700)
     const report = await syncWeeklyProjections(
-      { db: service, time: clock('2099-10-06T15:40:00.000Z'), fetchWeek: async (_s, w, p) => recorded(w, p) },
+      {
+        db: service,
+        time: clock('2099-10-06T15:40:00.000Z'),
+        fetchWeek: async (_s, w, p) =>
+          p === 'WR'
+            ? [...recorded(w, p), ...kept.map((player_id) => ({ player_id, week: w, stats: { rec_yd: 1, pts_ppr: 0.1 }, player: {} }))]
+            : recorded(w, p),
+      },
       { season: SEASON, weeks: [5] },
     )
+    expect(report.failures).toEqual([])
     expect(report.ok).toBe(true)
-    expect(report.counts).toMatchObject({ stored: 16, removed: 1200 })
-    expect((await linesFor(5)).map((l) => l.player_id).filter((id) => id.startsWith(`${P}bulk-`))).toEqual([])
-    expect(await linesFor(5)).toHaveLength(16)
+    expect(report.counts).toMatchObject({ stored: 717, removed: 500 })
+    const after = (await linesFor(5)).map((l) => l.player_id)
+    expect(after.filter((id) => id.startsWith(`${P}bulk-`))).toEqual(kept)
+    expect(after).toHaveLength(717)
   })
 
   it('5. RLS through PostgREST: anon reads 0 lines and cannot insert', async () => {
@@ -190,5 +214,38 @@ describe('weekly projections — the service-role write path (stack)', () => {
       .from('player_weekly_projections')
       .insert({ season: SEASON, week: 6, player_id: `${P}4984`, stats: {}, raw_stats: {}, source: 'sleeper', fetched_at: '2099-10-01T00:00:00Z' })
     expect(write.error?.code).toBe('42501')
+  })
+
+  it('6. THE SHARP DROP (R1105): 15 WR lines stored, a degraded 200 projects 3 — ok:false, named, every stored line byte-identical', async () => {
+    const extra = Array.from({ length: 12 }, (_, i) => `${P}drop-${String(i).padStart(2, '0')}`)
+    const p = await service.from('players').insert(extra.map((id) => ({ id, full_name: id, position: 'WR' })), { count: 'exact' })
+    if (p.error) throw new Error(p.error.message)
+    expect(p.count).toBe(12)
+    const withExtra = (w: number, pos: WeeklyProjectionPosition) =>
+      pos === 'WR'
+        ? [...recorded(w, pos), ...extra.map((player_id) => ({ player_id, week: w, stats: { rec_yd: 40, pts_ppr: 6 }, player: {} }))]
+        : recorded(w, pos)
+
+    // A good hour: week 7 lands with 15 WR lines.
+    const good = await syncWeeklyProjections(
+      { db: service, time: clock('2099-10-20T15:40:00.000Z'), fetchWeek: async (_s, w, pos) => withExtra(w, pos) },
+      { season: SEASON, weeks: [7] },
+    )
+    expect(good.failures).toEqual([])
+    expect(good.counts).toMatchObject({ stored: 29, removed: 0 })
+    const before = await linesFor(7)
+    expect(before.filter((l) => l.player_id.startsWith(`${P}drop-`) || ['9488', '9493', '7547'].includes(l.player_id.slice(P.length)))).toHaveLength(15) // PREMISE
+
+    // The bad hour: every position still projects ≥1 row, WR keeps only its 3.
+    const bad = await syncWeeklyProjections(
+      { db: service, time: clock('2099-10-20T16:40:00.000Z'), fetchWeek: async (_s, w, pos) => recorded(w, pos) },
+      { season: SEASON, weeks: [7] },
+    )
+    expect(bad.ok).toBe(false)
+    expect(bad.failures).toEqual([
+      'week 7 WR: the fresh response projects 3 player(s) where 15 are stored — a drop below half reads as a degraded response, not the news; nothing written or deleted for the week',
+    ])
+    expect(bad.counts).toMatchObject({ stored: 0, removed: 0, failedWeeks: 1 })
+    expect(await linesFor(7)).toEqual(before)
   })
 })

@@ -1,5 +1,5 @@
 {
- "_note": "Trimmed recording of Sleeper's WEEKLY projections endpoint, GET https://api.sleeper.com/projections/nfl/{season}/{week}?season_type=regular&position[]={POS}, recorded 2026-09-27 (the Sunday of NFL week 3; api.sleeper.app/v1/state/nfl said week 3) by the L.E1.19 Builder with plain curl. Each row is VERBATIM except `player.metadata` (channel/genius ids) is dropped. Full-response measurements at recording time, week 4: QB 355 rows / 33 projected, RB 750 / 108, WR 1364 / 169, TE 647 / 106, K 157 / 33, DEF 32 / 32 - one row per player per position, company 'rotowire' only, no player under two positions; every non-projected row is a FILLER whose stats are only {adp_dd_ppr: 1000.0} (team/opponent/game_id null). Week 19 (no such regular-season week): QB 355 rows / 0 projected - ALL filler, HTTP 200. Weeks 1/5/10/18: QB 32/30/28/32 projected (Sleeper publishes every week of the season up front). Response header: cache-control public, s-maxage=600.",
+ "_note": "Trimmed recording of Sleeper's WEEKLY projections endpoint, GET https://api.sleeper.com/projections/nfl/{season}/{week}?season_type=regular&position[]={POS}, recorded 2026-09-27 (the Sunday of NFL week 3; api.sleeper.app/v1/state/nfl said week 3) by the L.E1.19 Builder with plain curl. Each row is VERBATIM except `player.metadata` (channel/genius ids) is dropped. Full-response measurements at recording time, week 4: QB 355 rows / 33 projected, RB 750 / 108, WR 1364 / 169, TE 647 / 106, K 157 / 33, DEF 32 / 32 - one row per player per position, company 'rotowire' only, no player under two positions; every non-projected row is a FILLER whose stats are only {adp_dd_ppr: 1000.0} (team/opponent/game_id null). Week 19 (no such regular-season week): QB 355 rows / 0 projected - ALL filler, HTTP 200. Weeks 1/5/10/18: QB 32/30/28/32 projected (Sleeper publishes every week of the season up front). Response header: cache-control public, s-maxage=600. RE-RECORDED 2026-09-27 13:11 UTC (L.E1.19 fix round, R1104): the DEF list gained PIT verbatim from a fresh GET of week 4 DEF (MIN and BAL re-fetched byte-identical, same updated_at) because Sleeper's projected pts_allow is FRACTIONAL for most defenses - live at that instant, week 3: 26 of 32 DEFs fractional (e.g. SEA 15.75, NYG 17.5, CAR 20.25); week 4: 17 of 32 (PIT 17.5 here). The sync stores it verbatim as def_points_allowed (no rounding); what the scorer does with a fractional PA is L.E1.20's (PROGRESS F386).",
  "season": 2026,
  "weeks": {
   "4": {
@@ -1184,6 +1184,64 @@
      "game_id": "202610403",
      "updated_at": 1790293552017,
      "week_shard": "4_3",
+     "company": "rotowire"
+    },
+    {
+     "status": null,
+     "date": "2026-10-01",
+     "stats": {
+      "adp_dd_ppr": 999.0,
+      "blk_kick": 0.07,
+      "def_fum_td": 0.07,
+      "def_kr_yd": 111.76,
+      "def_pr_yd": 129.37,
+      "def_td": 0.14,
+      "ff": 0.81,
+      "fum_rec": 0.61,
+      "gp": 1.0,
+      "int": 0.88,
+      "pass_int_td": 0.07,
+      "pos_adp_dd_ppr": 999.0,
+      "pr_yd": 17.61,
+      "pts_allow": 17.5,
+      "pts_allow_14_20": 1.0,
+      "pts_half_ppr": 8.59,
+      "pts_ppr": 8.59,
+      "pts_std": 8.59,
+      "sack": 2.84,
+      "tkl_loss": 5.22,
+      "yds_allow": 296.73,
+      "yds_allow_200_299": 1.0
+     },
+     "category": "proj",
+     "last_modified": 1790293551920,
+     "week": 4,
+     "sport": "nfl",
+     "season_type": "regular",
+     "season": "2026",
+     "player": {
+      "fantasy_positions": [
+       "DEF"
+      ],
+      "first_name": "Pittsburgh",
+      "injury_body_part": null,
+      "injury_notes": null,
+      "injury_start_date": null,
+      "injury_status": null,
+      "last_name": "Steelers",
+      "news_updated": null,
+      "position": "DEF",
+      "team": "PIT",
+      "team_abbr": null,
+      "team_changed_at": null,
+      "years_exp": null
+     },
+     "team": "PIT",
+     "player_id": "PIT",
+     "opponent": "CLE",
+     "updated_at": 1790293551920,
+     "game_id": "202610408",
+     "week_shard": "4_5",
      "company": "rotowire"
     }
    ]

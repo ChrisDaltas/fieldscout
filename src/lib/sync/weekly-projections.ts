@@ -18,7 +18,9 @@
  *      week's correction window the season is over and the plan is EMPTY
  *      WITH A NAMED REASON (never an empty success).
  *   2. FETCH each planned week, all six positions (plain `fetch` of the
- *      public endpoint — no scraping service, project rule).
+ *      public endpoint — no scraping service, project rule), each request
+ *      bounded by FETCH_TIMEOUT_MS: a hang is a named per-position failure,
+ *      never a stalled run (R1109).
  *   3. VALIDATE before writing anything for the week. MEASURED 2026-09-27
  *      (src/lib/sync/fixtures/sleeper-weekly-projections-2026.json, `_note`): the endpoint answers HTTP 200 with
  *      hundreds of FILLER rows (`stats = {adp_dd_ppr: 1000}`) for players it
@@ -29,12 +31,20 @@
  *      week (a partial response — every real week projects every position),
  *      and nothing is written for that week. A row whose `week` is not the
  *      week asked for is a failure too.
- *   4. WRITE (service role): upsert the week's projected rows for KNOWN
- *      players, then delete that week's rows the fresh fetch no longer
+ *   4. COMPARE with what is STORED for the week (R1105): the stored lines
+ *      are read first, attributed to a position through `players.position`,
+ *      and any position whose fresh projected count falls BELOW HALF of a
+ *      non-trivial stored count (>= DROP_GUARD_MIN_STORED) fails the week by
+ *      name — a degraded 200 that keeps one projected row per position must
+ *      not let the stale delete wipe the rest. A week's first sync (nothing
+ *      stored) is unaffected.
+ *   5. WRITE (service role): upsert the week's projected rows for KNOWN
+ *      players, then delete that week's stored rows the fresh fetch no longer
  *      projects (a player ruled out drops to filler — a stale line would
  *      outrank him forever). Every write asserts its own row count; a count
- *      that does not match throws — a 0-row write is never "done".
- *   5. REPORT loudly: unknown Sleeper ids (not in `players`) are counted AND
+ *      that does not match fails the week by name — a 0-row write is never
+ *      "done", and a short upsert issues NO delete.
+ *   6. REPORT loudly: unknown Sleeper ids (not in `players`) are counted AND
  *      named, duplicates counted, every failure named; `ok` is false when
  *      any planned week failed or nothing was planned for a reason other
  *      than the season being over.
@@ -62,6 +72,22 @@ const DELETE_CHUNK = 200
 /** How many unknown ids a warning names before it summarises the rest. */
 const UNKNOWN_NAMED = 10
 
+/** Per-request bound on the Sleeper fetch (R1109). Two planned weeks fetch
+ *  sequentially, six positions in parallel, so the worst case is ~30 s —
+ *  inside the cron route's `maxDuration = 60`. */
+export const FETCH_TIMEOUT_MS = 15_000
+
+/**
+ * The sharp-drop guard's floor (R1105): a position is compared only when at
+ * least this many lines are STORED for it. Measured 2026-09-27 (week 4, full
+ * responses): QB 33 / RB 108 / WR 169 / TE 106 / K 33 / DEF 32 projected, and
+ * a bye week removes at most a handful of teams — so every real position
+ * stores well above 5 and the floor exempts nothing real. Below it the stored
+ * set is not a real week (a test plant, a hand run of one player), where
+ * "below half" is one or two players' noise, not a degraded response.
+ */
+export const DROP_GUARD_MIN_STORED = 5
+
 // ── The endpoint ───────────────────────────────────────────────────────────
 
 /** The weekly counterpart of `projections.ts`'s season URL — verified
@@ -72,14 +98,33 @@ export function sleeperWeeklyProjectionsUrl(season: number, week: number, positi
 
 export type FetchWeeklyProjections = (season: number, week: number, position: WeeklyProjectionPosition) => Promise<unknown>
 
-/** Production fetch — plain `fetch`, loud on a non-2xx. */
-export const fetchSleeperWeeklyProjections: FetchWeeklyProjections = async (season, week, position) => {
-  const res = await fetch(sleeperWeeklyProjectionsUrl(season, week, position), {
-    headers: { accept: 'application/json' },
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`.trim())
-  return res.json()
+/**
+ * The production fetch — plain `fetch`, loud on a non-2xx, and bounded: the
+ * request AND the body read share one `AbortSignal.timeout`, so a hang ends as
+ * a named error (R1109) rather than a stalled run. `fetchImpl` / `timeoutMs`
+ * are injectable so the timeout is pinned with zero external calls.
+ */
+export function makeSleeperWeeklyFetch(opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}): FetchWeeklyProjections {
+  const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS
+  return async (season, week, position) => {
+    const fetchImpl = opts.fetchImpl ?? fetch
+    try {
+      const res = await fetchImpl(sleeperWeeklyProjectionsUrl(season, week, position), {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`.trim())
+      return await res.json()
+    } catch (err) {
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        throw new Error(`timed out after ${timeoutMs} ms (${err.name})`)
+      }
+      throw err
+    }
+  }
 }
+
+export const fetchSleeperWeeklyProjections: FetchWeeklyProjections = makeSleeperWeeklyFetch()
 
 // ── The plan (pure) ────────────────────────────────────────────────────────
 
@@ -313,20 +358,66 @@ export async function readProjectionCalendar(db: SyncClient, season: number): Pr
   return (data ?? []) as ProjectionCalendarWeek[]
 }
 
-async function storedPlayerIds(db: SyncClient, season: number, week: number): Promise<string[]> {
-  const rows = await pageAll<{ player_id: string }>((from, to) =>
+export interface StoredLine {
+  player_id: string
+  /** `players.position` of the stored line's player (null when it has none). */
+  position: string | null
+}
+
+/** Every line stored for (season, week), with its player's position — paged
+ *  past PostgREST's 1000-row cap with an exact count (pageAll). */
+async function storedLines(db: SyncClient, season: number, week: number): Promise<StoredLine[]> {
+  // A many-to-one embed arrives as an object at runtime; the untyped sync
+  // client infers an array — both are accepted, neither is assumed.
+  type Embed = { position: string | null }
+  const rows = await pageAll<{ player_id: string; players: Embed | Embed[] | null }>((from, to) =>
     db
       .from(WEEKLY_PROJECTIONS_TABLE)
-      .select('player_id', { count: 'exact' })
+      .select('player_id, players(position)', { count: 'exact' })
       .eq('season', season)
       .eq('week', week)
       .order('player_id')
       .range(from, to),
   )
-  return rows.map((r) => r.player_id)
+  return rows.map((r) => {
+    const p = Array.isArray(r.players) ? r.players[0] : r.players
+    return { player_id: r.player_id, position: p?.position ?? null }
+  })
 }
 
-async function writeWeek(db: SyncClient, season: number, week: number, rows: WeeklyProjectionRow[]): Promise<{ stored: number; removed: number }> {
+/**
+ * The sharp-drop guard (R1105), pure: per position, the fresh PROJECTED count
+ * against the STORED count. Stored >= DROP_GUARD_MIN_STORED and fresh below
+ * half of it ⇒ a named failure (position, stored n, fresh n). Nothing stored
+ * (a week's first sync) never trips it.
+ */
+export function sharpDrops(
+  week: number,
+  perPosition: Record<WeeklyProjectionPosition, PositionCounts>,
+  stored: readonly StoredLine[],
+): string[] {
+  const storedBy = new Map<string, number>()
+  for (const s of stored) if (s.position !== null) storedBy.set(s.position, (storedBy.get(s.position) ?? 0) + 1)
+  const out: string[] = []
+  for (const position of WEEKLY_PROJECTION_POSITIONS) {
+    const s = storedBy.get(position) ?? 0
+    const f = perPosition[position].projected
+    if (s >= DROP_GUARD_MIN_STORED && f * 2 < s) {
+      out.push(
+        `week ${week} ${position}: the fresh response projects ${f} player(s) where ${s} are stored — a drop below half reads as a degraded response, not the news; nothing written or deleted for the week`,
+      )
+    }
+  }
+  return out
+}
+
+async function writeWeek(
+  db: SyncClient,
+  season: number,
+  week: number,
+  rows: WeeklyProjectionRow[],
+  before: readonly StoredLine[],
+): Promise<{ stored: number; removed: number }> {
   let stored = 0
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
     const chunk = rows.slice(i, i + UPSERT_CHUNK)
@@ -340,8 +431,10 @@ async function writeWeek(db: SyncClient, season: number, week: number, rows: Wee
     stored += count
   }
 
+  // Stale = stored BEFORE this run's upsert and not in the fresh fetch (every
+  // row the upsert added is fresh by construction).
   const fresh = new Set(rows.map((r) => r.player_id))
-  const stale = (await storedPlayerIds(db, season, week)).filter((id) => !fresh.has(id))
+  const stale = before.map((s) => s.player_id).filter((id) => !fresh.has(id))
   let removed = 0
   for (let i = 0; i < stale.length; i += DELETE_CHUNK) {
     const chunk = stale.slice(i, i + DELETE_CHUNK)
@@ -456,9 +549,16 @@ export async function syncWeeklyProjections(
     }
     if (wr.ok) {
       try {
-        const written = await writeWeek(db, opts.season, week, parsed.rows)
-        wr.stored = written.stored
-        wr.removed = written.removed
+        const before = await storedLines(db, opts.season, week)
+        const drops = sharpDrops(week, parsed.perPosition, before)
+        if (drops.length > 0) {
+          wr.ok = false
+          wr.failures.push(...drops)
+        } else {
+          const written = await writeWeek(db, opts.season, week, parsed.rows, before)
+          wr.stored = written.stored
+          wr.removed = written.removed
+        }
       } catch (err) {
         wr.ok = false
         wr.failures.push(err instanceof Error ? err.message : String(err))

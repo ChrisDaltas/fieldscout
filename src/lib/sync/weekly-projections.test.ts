@@ -8,6 +8,14 @@
  * STORED LITERALS (not re-derived through the mapper they test), the plan's
  * boundaries are one-millisecond pairs (D146), and the zero-projection cell
  * is the task's named break probe (make it return success ⇒ it reds).
+ *
+ * Fix round (PR #314 review): R1104 — the fixture carries a FRACTIONAL
+ * points-allowed DEF (PIT 17.5) and the stored line keeps it verbatim;
+ * R1105 — the sharp-drop guard (sharp ⇒ nothing written or deleted, mild ⇒
+ * only the stale deleted, first sync ⇒ unaffected, the half and floor
+ * boundaries as pairs); R1106 — a short upsert / short delete count fails the
+ * week by name (and a short upsert issues no delete); R1109 — a hung fetch
+ * ends as a named per-position failure.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -19,13 +27,20 @@ import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 
 import type { SyncClient } from './types'
 import {
+  DROP_GUARD_MIN_STORED,
+  FETCH_TIMEOUT_MS,
   isProjectedRow,
+  makeSleeperWeeklyFetch,
   parseWeeklyProjections,
   planProjectionWeeks,
+  sharpDrops,
   sleeperWeeklyProjectionsUrl,
   syncWeeklyProjections,
   WEEKLY_PROJECTION_POSITIONS,
+  type FetchWeeklyProjections,
+  type PositionCounts,
   type ProjectionCalendarWeek,
+  type StoredLine,
   type WeeklyProjectionPosition,
 } from './weekly-projections'
 
@@ -63,11 +78,16 @@ describe('the recorded fixture (premise)', () => {
     const shape = Object.fromEntries(
       WEEKLY_PROJECTION_POSITIONS.map((p) => [p, [WEEK4[p].length, WEEK4[p].filter((r) => isProjectedRow(r.stats)).length]]),
     )
-    expect(shape).toEqual({ QB: [5, 3], RB: [5, 4], WR: [4, 3], TE: [3, 2], K: [3, 2], DEF: [2, 2] })
+    expect(shape).toEqual({ QB: [5, 3], RB: [5, 4], WR: [4, 3], TE: [3, 2], K: [3, 2], DEF: [3, 3] })
     // a filler row is exactly the measured shape — Sleeper's "not projected" placeholder
     expect(WEEK4.QB[3].stats).toEqual({ adp_dd_ppr: 1000 })
     expect(WEEK19_QB.map((r) => r.stats)).toEqual([{ adp_dd_ppr: 1000 }, { adp_dd_ppr: 1000 }])
     expect(WEEK19_QB.every((r) => r.week === 19)).toBe(true)
+  })
+
+  it('R1104 premise: Sleeper projects FRACTIONAL points allowed — the recorded DEFs include one (PIT 17.5) beside two integers', () => {
+    expect(WEEK4.DEF.map((r) => [r.player_id, r.stats.pts_allow])).toEqual([['MIN', 16], ['BAL', 17], ['PIT', 17.5]])
+    expect(WEEK4.DEF.filter((r) => !Number.isInteger(r.stats.pts_allow)).map((r) => r.player_id)).toEqual(['PIT'])
   })
 
   it('the endpoint is the season URL plus /{week} (verified 2026-09-27)', () => {
@@ -83,10 +103,10 @@ describe('the recorded fixture (premise)', () => {
 describe('parseWeeklyProjections — the recorded week 4', () => {
   const parsed = parseWeeklyProjections({ season: 2026, week: 4, responses: week4Responses(), known: ALL_IDS, fetchedAt: FETCHED_AT })
 
-  it('stores exactly the 16 PROJECTED rows; the 6 filler rows are counted, never stored', () => {
+  it('stores exactly the 17 PROJECTED rows; the 6 filler rows are counted, never stored', () => {
     expect(parsed.failures).toEqual([])
     expect(parsed.rows.map((r) => r.player_id)).toEqual([
-      '4984', '4881', '5849', '9221', '6813', '9509', '13300', '9488', '9493', '7547', '8130', '11604', '12185', '3451', 'MIN', 'BAL',
+      '4984', '4881', '5849', '9221', '6813', '9509', '13300', '9488', '9493', '7547', '8130', '11604', '12185', '3451', 'MIN', 'BAL', 'PIT',
     ])
     expect(parsed.perPosition).toEqual({
       QB: { rows: 5, projected: 3, filler: 2 },
@@ -94,7 +114,7 @@ describe('parseWeeklyProjections — the recorded week 4', () => {
       WR: { rows: 4, projected: 3, filler: 1 },
       TE: { rows: 3, projected: 2, filler: 1 },
       K: { rows: 3, projected: 2, filler: 1 },
-      DEF: { rows: 2, projected: 2, filler: 0 },
+      DEF: { rows: 3, projected: 3, filler: 0 },
     })
     expect(parsed.unknown).toEqual([])
     expect(parsed.duplicates).toEqual([])
@@ -120,6 +140,12 @@ describe('parseWeeklyProjections — the recorded week 4', () => {
       fg_made: 1.9, fg_attempted: 2.29, fg_40_49: 0.59, fg_50_plus: 0.39, pat_made: 2.62, pat_attempted: 2.69, pat_missed: 0.07,
     })
     expect(by.get('MIN')?.stats).toEqual({ def_sack: 3.17, def_int: 0.94, def_fumble_rec: 0.72, def_td: 0.14, def_points_allowed: 16 })
+  })
+
+  it('R1104 GOLDEN — a FRACTIONAL points allowed is stored VERBATIM (PIT 17.5 — never rounded to 17 or 18)', () => {
+    const pit = parsed.rows.find((r) => r.player_id === 'PIT')
+    expect(pit?.stats).toEqual({ def_sack: 2.84, def_int: 0.88, def_fumble_rec: 0.61, def_td: 0.14, def_points_allowed: 17.5 })
+    expect(pit?.raw_stats.pts_allow).toBe(17.5)
   })
 
   it('a REAL projected zero is a row (Le\'Veon Moss, pts 0) — delivered zero, not absence', () => {
@@ -195,7 +221,7 @@ describe('unknown Sleeper ids are COUNTED and NAMED, never silently dropped', ()
       { player_id: 'BAL', label: 'BAL (Baltimore Ravens DEF BAL)' },
     ])
     expect(parsed.rows.map((r) => r.player_id)).not.toContain('9488')
-    expect(parsed.rows).toHaveLength(14)
+    expect(parsed.rows).toHaveLength(15)
   })
 
   it('a filler row for an unknown id is NOT an unknown projection (nothing was projected)', () => {
@@ -251,7 +277,15 @@ describe('planProjectionWeeks', () => {
 // ---------------------------------------------------------------------------
 interface Call { table: string; op: string; args: unknown[] }
 
-function fakeDb(calendar: ProjectionCalendarWeek[], stored: string[] = []): { db: SyncClient; calls: Call[] } {
+/** Stored lines as the sync reads them: `player_id` + the embedded `players.position`. */
+const st = (position: string, ...ids: string[]): StoredLine[] => ids.map((player_id) => ({ player_id, position }))
+
+/** A fake client. `short` lets a cell make the upsert / delete report fewer rows than it was sent (R1106). */
+function fakeDb(
+  calendar: ProjectionCalendarWeek[],
+  stored: StoredLine[] = [],
+  short: { upsert?: (sent: number) => number; delete?: (named: number) => number } = {},
+): { db: SyncClient; calls: Call[] } {
   const calls: Call[] = []
   const db = {
     from(table: string) {
@@ -262,14 +296,14 @@ function fakeDb(calendar: ProjectionCalendarWeek[], stored: string[] = []): { db
         eq: () => b,
         order: () => b,
         range: () => b,
-        in: (_c: string, ids: unknown[]) => { payload = ids; return b },
+        in: (_c: string, ids: unknown[]) => { payload = ids; calls.push({ table, op: 'in', args: [ids] }); return b },
         upsert: (rows: unknown[], ...args: unknown[]) => { op = 'upsert'; payload = rows; calls.push({ table, op, args: [rows, ...args] }); return b },
         delete: (...args: unknown[]) => { op = 'delete'; calls.push({ table, op, args }); return b },
         then(resolve: (v: unknown) => void) {
           if (table === 'nfl_weeks') return resolve({ data: calendar, error: null })
-          if (op === 'upsert') return resolve({ data: null, error: null, count: payload.length })
-          if (op === 'delete') return resolve({ data: null, error: null, count: payload.length })
-          return resolve({ data: stored.map((player_id) => ({ player_id })), error: null, count: stored.length })
+          if (op === 'upsert') return resolve({ data: null, error: null, count: (short.upsert ?? ((n) => n))(payload.length) })
+          if (op === 'delete') return resolve({ data: null, error: null, count: (short.delete ?? ((n) => n))(payload.length) })
+          return resolve({ data: stored.map((s) => ({ player_id: s.player_id, players: { position: s.position } })), error: null, count: stored.length })
         },
       }
       return b
@@ -295,15 +329,15 @@ describe('syncWeeklyProjections — the run', () => {
     expect(writes(calls)).toEqual([])
   })
 
-  it('a clean week lands: 16 stored in ONE upsert, the stale row removed, counts by value', async () => {
-    const { db, calls } = fakeDb(CAL, ['4984', 'ghost-1'])
+  it('a clean week lands: 17 stored in ONE upsert, the stale row removed, counts by value', async () => {
+    const { db, calls } = fakeDb(CAL, st('QB', '4984', 'ghost-1'))
     const report = await syncWeeklyProjections(
       { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: async (_s, w, p) => (WEEK4[p] as Row[]).map((r) => ({ ...structuredClone(r), week: w })) },
       { season: 2026, weeks: [4] },
     )
     expect(report.failures).toEqual([])
     expect(report.ok).toBe(true)
-    expect(report.counts).toEqual({ weeks: 1, projected: 16, stored: 16, removed: 1, unknownPlayer: 0, duplicates: 0, failedWeeks: 0 })
+    expect(report.counts).toEqual({ weeks: 1, projected: 17, stored: 17, removed: 1, unknownPlayer: 0, duplicates: 0, failedWeeks: 0 })
     const w = writes(calls)
     expect(w.map((c) => c.op)).toEqual(['upsert', 'delete'])
     expect(w[0].args[1]).toEqual({ onConflict: 'season,week,player_id', count: 'exact' })
@@ -362,5 +396,141 @@ describe('syncWeeklyProjections — the run', () => {
     expect(report.ok).toBe(true)
     expect(report.plan.seasonComplete).toBe(true)
     expect(report.weeks).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 5. R1105 — a degraded 200 that keeps ≥1 projected row per position must not
+//    let the stale delete wipe the rest
+// ---------------------------------------------------------------------------
+const recordedWeek4: FetchWeeklyProjections = async (_s, w, p) => (WEEK4[p] as Row[]).map((r) => ({ ...structuredClone(r), week: w }))
+const ghosts = (n: number) => Array.from({ length: n }, (_, i) => `ghost-${i + 1}`)
+const QB_FRESH = ['4984', '4881', '5849'] // week 4's three projected QBs
+
+describe('the sharp-drop guard (R1105) — pure', () => {
+  const per = (projected: Partial<Record<WeeklyProjectionPosition, number>>) =>
+    Object.fromEntries(
+      WEEKLY_PROJECTION_POSITIONS.map((p) => [p, { rows: projected[p] ?? 30, projected: projected[p] ?? 30, filler: 0 }]),
+    ) as Record<WeeklyProjectionPosition, PositionCounts>
+
+  it('the floor is the measured-justified 5', () => {
+    expect(DROP_GUARD_MIN_STORED).toBe(5)
+  })
+
+  it('HALF boundary pair: 3 fresh vs 6 stored (exactly half) proceeds; 3 fresh vs 7 stored (below half) fails by name', () => {
+    expect(sharpDrops(4, per({ QB: 3 }), st('QB', ...ghosts(6)))).toEqual([])
+    expect(sharpDrops(4, per({ QB: 3 }), st('QB', ...ghosts(7)))).toEqual([
+      'week 4 QB: the fresh response projects 3 player(s) where 7 are stored — a drop below half reads as a degraded response, not the news; nothing written or deleted for the week',
+    ])
+  })
+
+  it('FLOOR boundary pair: 1 fresh vs 4 stored is exempt (a stored set too small to be a real week); 2 fresh vs 5 stored fails', () => {
+    expect(sharpDrops(4, per({ K: 1 }), st('K', ...ghosts(4)))).toEqual([])
+    expect(sharpDrops(4, per({ K: 2 }), st('K', ...ghosts(5)))).toHaveLength(1)
+  })
+
+  it('first sync (nothing stored) never trips it, however small the fresh count', () => {
+    expect(sharpDrops(4, per({ QB: 1, RB: 1, WR: 1, TE: 1, K: 1, DEF: 1 }), [])).toEqual([])
+  })
+
+  it('a stored line whose player has no position is not attributed (never counted against a position)', () => {
+    expect(sharpDrops(4, per({ QB: 1 }), ghosts(40).map((player_id) => ({ player_id, position: null })))).toEqual([])
+  })
+})
+
+describe('the sharp-drop guard (R1105) — the run', () => {
+  it('SHARP DROP: 10 QBs stored, 3 fresh ⇒ ok:false, named, and NO upsert or delete is issued', async () => {
+    const { db, calls } = fakeDb(CAL, [...st('QB', ...QB_FRESH, ...ghosts(7)), ...st('WR', '9488')])
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: recordedWeek4 },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.ok).toBe(false)
+    expect(report.failures).toEqual([
+      'week 4 QB: the fresh response projects 3 player(s) where 10 are stored — a drop below half reads as a degraded response, not the news; nothing written or deleted for the week',
+    ])
+    expect(report.counts).toMatchObject({ projected: 17, stored: 0, removed: 0, failedWeeks: 1 })
+    expect(writes(calls)).toEqual([])
+  })
+
+  it('MILD DROP: 5 QBs stored, 3 fresh ⇒ proceeds, and deletes ONLY the two stale lines', async () => {
+    const { db, calls } = fakeDb(CAL, st('QB', ...QB_FRESH, 'ghost-1', 'ghost-2'))
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: recordedWeek4 },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.failures).toEqual([])
+    expect(report.counts).toMatchObject({ stored: 17, removed: 2, failedWeeks: 0 })
+    expect(writes(calls).map((c) => c.op)).toEqual(['upsert', 'delete'])
+    expect(calls.filter((c) => c.op === 'in').map((c) => c.args[0])).toEqual([['ghost-1', 'ghost-2']])
+  })
+
+  it('FIRST SYNC of a week (nothing stored) proceeds — no guard, nothing to delete', async () => {
+    const { db, calls } = fakeDb(CAL, [])
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: recordedWeek4 },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.ok).toBe(true)
+    expect(report.counts).toMatchObject({ stored: 17, removed: 0 })
+    expect(writes(calls).map((c) => c.op)).toEqual(['upsert'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 6. R1106 — every write asserts its own row count (pinned)
+// ---------------------------------------------------------------------------
+describe('a short write is never "done" (R1106)', () => {
+  it('the UPSERT reports one row short ⇒ ok:false, named, and NO delete is issued', async () => {
+    const { db, calls } = fakeDb(CAL, st('QB', 'ghost-1'), { upsert: (n) => n - 1 })
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: recordedWeek4 },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.ok).toBe(false)
+    expect(report.failures).toEqual(['week 4 upsert wrote 16 row(s) for 17 sent — refusing to call that done'])
+    expect(writes(calls).map((c) => c.op)).toEqual(['upsert'])
+  })
+
+  it('the stale DELETE reports zero rows for one named ⇒ ok:false, named', async () => {
+    const { db, calls } = fakeDb(CAL, st('QB', 'ghost-1'), { delete: () => 0 })
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: recordedWeek4 },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.ok).toBe(false)
+    expect(report.failures).toEqual(['week 4 stale delete removed 0 row(s) for 1 named — refusing to call that done'])
+    expect(writes(calls).map((c) => c.op)).toEqual(['upsert', 'delete'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 7. R1109 — a hung fetch is a named per-position failure, not a stalled run
+// ---------------------------------------------------------------------------
+describe('the production fetch is bounded (R1109)', () => {
+  it('the default bound is 15 s', () => {
+    expect(FETCH_TIMEOUT_MS).toBe(15_000)
+  })
+
+  it('a fetch that never answers ends at the timeout as a NAMED failure for every position, and nothing is written', async () => {
+    // Would answer `[]` after 1 s — far past the 20 ms bound — unless the signal aborts it first.
+    const hanging = ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const t = setTimeout(() => resolve(new Response('[]')), 1000)
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(t)
+          reject(init.signal?.reason)
+        })
+      })) as unknown as typeof fetch
+    const { db, calls } = fakeDb(CAL)
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: makeSleeperWeeklyFetch({ fetchImpl: hanging, timeoutMs: 20 }) },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.ok).toBe(false)
+    expect(report.failures).toEqual(
+      [...WEEKLY_PROJECTION_POSITIONS].sort().map((p) => `week 4 ${p}: fetch failed — timed out after 20 ms (TimeoutError); nothing written for the week`),
+    )
+    expect(writes(calls)).toEqual([])
   })
 })
