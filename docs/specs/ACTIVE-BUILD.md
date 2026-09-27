@@ -226,7 +226,25 @@ recorded fixture). Records **D376**; **F380 / F391 / F392 discharged**; mints **
 F394**; spec **v2.16.47** (fold-back). **⚠ PUSH DEBT: 135–139** — production is at 134,
 and pushing 139 turns autopilot OFF for every existing team in production.)
 
-**NEXT TAKEABLE TASK: `L.E1.23`** — F377(c) (bracket "Edit a result" → a link to the game's
+**`L.E1.23` is LANDED 2026-09-27** (migration **140** + pgTAP **088** `plan(8)` — F377's
+remainder: `playoff_bracket_sync_internal`'s played-round refusal raises a NOTICE that says
+the bracket *"stands as played (F377(a), ruled 2026-09-27)"* instead of an hourly WARNING
+promising a commissioner act — ONE hunk against 134's file text, the return document
+byte-unchanged (088 A6's one-line md5 proof), 066 / 082 unmodified; and the bracket's
+*Edit a result* is a LINK per game (per week row on a two-week game) to its matchup page —
+the pending door is gone. Records **D377**; **F377 CLOSED**; mints **F395** (the callers
+`league_week_advance` / `finalize_matchups` still raise their OWN hourly "BLOCKED — a
+commissioner must act" WARNING for the same refusal — out of the one-hunk scope, filed with
+its shape) and **F396** (a co-commissioner sees neither bracket affordance); spec
+**v2.16.48** (fold-back). **⚠ PUSH DEBT: 135–140** — production is at 134.)
+
+**NEXT TAKEABLE TASK: `L.E1.24`** — Q64 as ruled: `rescore = true` re-scores every OPEN and
+future week and SKIPS final weeks, naming them, instead of refusing (tasks-M6A §6's
+2026-09-27 amendment; PROGRESS **F382**). The last of the ruling tasks L.E1.18–L.E1.24;
+after it, the M6A closeout below. Heads after L.E1.23: **140 / 088** — re-measure at task
+time (D161).
+
+~~**NEXT TAKEABLE TASK: `L.E1.23`**~~ *(advanced by L.E1.23's own PR)* — F377(c) (bracket "Edit a result" → a link to the game's
 matchup page) + the played-round WARNING downgraded to a NOTICE (tasks-M6A §6's 2026-09-27
 amendment; PROGRESS **F377**'s remainder). Then L.E1.24. Heads after L.E1.22:
 **139 / 087** — re-measure at task time (D161).
@@ -285,7 +303,7 @@ gate session, not a Builder task); (3) **the open M6A ledger rows**, each
 small and filed with its shape — F361 (the M4 panel hint), F363 (the retire
 verb's reason gate), F368, F370, F371 (League Home's activity feed), F372
 (REFERENCES / TRIGGER / MAINTAIN grants), F373–F376 (the synthetic gate's
-recorded blindnesses), F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23); (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
+recorded blindnesses), ~~F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23)~~ **F377 CLOSED by L.E1.23**, F395 (the callers' hourly BLOCKED WARNING for a played round), F396 (co-commissioner and the bracket's affordances); (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
 reads 124–134 applied, 0 of 73 `public` tables grant TRUNCATE to anon/authenticated, the M6A verbs present. After the
 closeout the delivery plan's next milestone is **M5** (trades / FAAB —
 D352 / F340), which needs its own Architect breakdown before the loop can
