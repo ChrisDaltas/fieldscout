@@ -47,7 +47,7 @@
 --      NEWEST definer's FILE TEXT, **135:190-353 on this branch** (= 135:182-345
 --      at f730c2a; this PR's comment-only banner edits in 135 shifted it by
 --      eight lines — R1143) (135 is its only definer — measured by grep over
---      supabase/migrations). **TWO `diff -u` hunks** (142 `+` lines / 14 `-`
+--      supabase/migrations). **TWO `diff -u` hunks** (147 `+` lines — 142 as first recorded, corrected at merge, R1146 — / 14 `-`
 --      lines):
 --        (i)   after `unfinished`, three NEW CTEs: `slot_defs` (the league's
 --              STARTING slot instances, `<key>:<i>` from
