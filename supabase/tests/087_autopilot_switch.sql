@@ -102,13 +102,35 @@ select is(
    where n.nspname = 'public' and p.proname = 'lineup_lock_tick'),
   '2040f93b901c6224e39a973fc958f1a0',
   'A7b …and those FIVE hunks are the WHOLE change (D137): the prosrc with each reversed is 138''s md5 byte for byte — arms (a) / (b), the kill switch, the D339 decline, the materialize and the write are untouched');
+-- RE-PINNED BY L.E1.25 (migration 142, Q68 — additive, R992): 142 replaces
+-- the chooser with FOUR hunks against 139's file text (pass 1b). The live
+-- prosrc's md5 is pinned by pgTAP 090 §A; here 142's four hunks are REVERSED
+-- first, so A8 / A8b keep proving exactly what they proved: 139's text is
+-- intact beneath 142, and 138's beneath that.
 select is(
-  (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(replace(replace(replace(replace(p.prosrc,
+  E'  -- 142 (L.E1.25, Q68 RULED): pass 1b — a Doubtful replacement for a BLOCKED\n  -- starter nobody healthy replaced.\n  v_defer       JSONB := \'{}\'::jsonb;        -- slot key → vacated BLOCKED starter with no healthy replacement\n  v_dslots      JSONB;                       -- pass 1b\'s slots: exactly those keys\n  v_players_d   JSONB := \'[]\'::jsonb;        -- pass 1b\'s candidates: the unseated Doubtful tail\n  v_fit_d       JSONB;\n  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\n',
+  E''),
+  E'      -- 142 (L.E1.25, Q68 RULED 2026-09-27 — "yes, swap in the doubtful"): a\n      -- vacated starter who is BLOCKED (on bye, or OUT / IR / PUP / NFI /\n      -- Suspended) and whose key nobody healthy took is NOT restored yet — pass\n      -- 1b below offers his key to the Doubtful tail first. A vacated DOUBTFUL\n      -- starter is restored here as before: never one Doubtful for another.\n      IF COALESCE((v_kick -> v_pid ->> \'on_bye\')::boolean, FALSE)\n         OR COALESCE((v_by_pid -> v_pid ->> \'designation\') IN (\'OUT\', \'IR\', \'PUP\', \'NFI\', \'Suspended\'), FALSE) THEN\n        v_defer := v_defer || jsonb_build_object(v_key, v_pid);\n        CONTINUE;\n      END IF;\n',
+  E''),
+  E'  -- PASS 1b — 142 (L.E1.25, Q68 RULED 2026-09-27: "yes, swap in the\n  -- doubtful"). When no healthy, unlocked, eligible replacement exists, a\n  -- DOUBTFUL one replaces a starter who is OUT / on bye. The contest is\n  -- exactly the deferred BLOCKED keys (never an empty slot — pass 2 owns\n  -- those, unchanged) and its candidates are the Doubtful tail in Q62 order,\n  -- minus every man already staying where he is — so a restored Doubtful\n  -- starter is never moved to another key (never one Doubtful for another).\n  -- A locked man is never a candidate (the pool loop sent him to\n  -- skipped_locked[]) and a locked starter was never vacated (D338). The\n  -- Doubtful tail is a preference under BOTH `allow_illegal_lineups` values\n  -- (a Doubtful start is legal, 114:596), so this runs under both — which is\n  -- what restores production\'s (125) swap in a league that forbids illegal\n  -- lineups (R1123). A deferred key no Doubtful man takes is restored exactly\n  -- as Q63\'s clause restores it.\n  IF v_defer <> \'{}\'::jsonb THEN\n    SELECT COALESCE(jsonb_agg(t.s ORDER BY t.ord), \'[]\'::jsonb)\n    INTO v_dslots\n    FROM jsonb_array_elements(v_slots) WITH ORDINALITY AS t(s, ord)\n    WHERE v_defer ? (t.s ->> \'key\');\n    FOR v_e IN SELECT * FROM jsonb_array_elements(v_tail_d) LOOP\n      CONTINUE WHEN (v_e ->> \'player_id\') = ANY (v_seated);\n      v_players_d := v_players_d || v_e;\n    END LOOP;\n    v_fit_d := public.lineup_fit_internal(v_dslots, v_players_d);\n    FOR v_key, v_val IN SELECT * FROM jsonb_each(v_defer) LOOP\n      v_pid := v_val #>> \'{}\';\n      IF (v_fit_d -> \'assignment\' ->> v_key) IS NULL THEN\n        v_restored := v_restored || jsonb_build_object(\n          \'slot\', v_key, \'player_id\', v_pid, \'name\', v_by_pid -> v_pid ->> \'name\',\n          \'reason\', \'no healthy or Doubtful, unlocked, eligible replacement existed — left exactly as he was (Q63; Q68)\');\n        v_seated := v_seated || v_pid;\n        v_players_b := v_players_b || jsonb_build_object(\n          \'player_id\', v_pid, \'position\', v_by_pid -> v_pid ->> \'position\',\n          \'wanted\', v_key, \'fixed\', TRUE);\n      ELSE\n        v_d_in := v_d_in || (v_fit_d -> \'assignment\' ->> v_key);\n        v_players_b := v_players_b || jsonb_build_object(\n          \'player_id\', v_fit_d -> \'assignment\' ->> v_key,\n          \'position\', v_by_pid -> (v_fit_d -> \'assignment\' ->> v_key) ->> \'position\',\n          \'wanted\', v_key, \'fixed\', TRUE);\n        v_subbed := v_subbed || jsonb_build_object(\n          \'slot\', v_key, \'out\', v_pid, \'out_name\', v_by_pid -> v_pid ->> \'name\',\n          \'in\', v_fit_d -> \'assignment\' ->> v_key,\n          \'in_name\', v_by_pid -> (v_fit_d -> \'assignment\' ->> v_key) ->> \'name\',\n          \'reason\', CASE WHEN COALESCE((v_kick -> v_pid ->> \'on_bye\')::boolean, FALSE)\n                         THEN \'on bye\' ELSE \'designated \' || (v_by_pid -> v_pid ->> \'designation\') END,\n          \'why\', \'no healthy, unlocked, eligible replacement existed — a Doubtful one replaces a starter who cannot play (Q68, ruled 2026-09-27)\',\n          \'order\', v_by_pid -> (v_fit_d -> \'assignment\' ->> v_key) -> \'order\');\n      END IF;\n    END LOOP;\n  END IF;\n\n',
+  E''),
+  E'    -- 142 (Q68): a Doubtful man pass 1b seated is already fixed above.\n    CONTINUE WHEN (v_e ->> \'player_id\') = ANY (v_d_in);\n',
+  E''))
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_autopilot_internal'),
   'a4fc61e3f00b5ed91770c496045cd57c',
-  'A8 lineup_autopilot_internal is 139''s FILE TEXT (prosrc md5, a stored literal)');
+  'A8 lineup_autopilot_internal is 139''s FILE TEXT beneath 142''s four hunks (prosrc with 142''s hunks reversed — md5 a stored literal)');
 select is(
-  (select md5(replace(p.prosrc,
+  (select md5(replace(replace(replace(replace(replace(p.prosrc,
+  E'  -- 142 (L.E1.25, Q68 RULED): pass 1b — a Doubtful replacement for a BLOCKED\n  -- starter nobody healthy replaced.\n  v_defer       JSONB := \'{}\'::jsonb;        -- slot key → vacated BLOCKED starter with no healthy replacement\n  v_dslots      JSONB;                       -- pass 1b\'s slots: exactly those keys\n  v_players_d   JSONB := \'[]\'::jsonb;        -- pass 1b\'s candidates: the unseated Doubtful tail\n  v_fit_d       JSONB;\n  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\n',
+  E''),
+  E'      -- 142 (L.E1.25, Q68 RULED 2026-09-27 — "yes, swap in the doubtful"): a\n      -- vacated starter who is BLOCKED (on bye, or OUT / IR / PUP / NFI /\n      -- Suspended) and whose key nobody healthy took is NOT restored yet — pass\n      -- 1b below offers his key to the Doubtful tail first. A vacated DOUBTFUL\n      -- starter is restored here as before: never one Doubtful for another.\n      IF COALESCE((v_kick -> v_pid ->> \'on_bye\')::boolean, FALSE)\n         OR COALESCE((v_by_pid -> v_pid ->> \'designation\') IN (\'OUT\', \'IR\', \'PUP\', \'NFI\', \'Suspended\'), FALSE) THEN\n        v_defer := v_defer || jsonb_build_object(v_key, v_pid);\n        CONTINUE;\n      END IF;\n',
+  E''),
+  E'  -- PASS 1b — 142 (L.E1.25, Q68 RULED 2026-09-27: "yes, swap in the\n  -- doubtful"). When no healthy, unlocked, eligible replacement exists, a\n  -- DOUBTFUL one replaces a starter who is OUT / on bye. The contest is\n  -- exactly the deferred BLOCKED keys (never an empty slot — pass 2 owns\n  -- those, unchanged) and its candidates are the Doubtful tail in Q62 order,\n  -- minus every man already staying where he is — so a restored Doubtful\n  -- starter is never moved to another key (never one Doubtful for another).\n  -- A locked man is never a candidate (the pool loop sent him to\n  -- skipped_locked[]) and a locked starter was never vacated (D338). The\n  -- Doubtful tail is a preference under BOTH `allow_illegal_lineups` values\n  -- (a Doubtful start is legal, 114:596), so this runs under both — which is\n  -- what restores production\'s (125) swap in a league that forbids illegal\n  -- lineups (R1123). A deferred key no Doubtful man takes is restored exactly\n  -- as Q63\'s clause restores it.\n  IF v_defer <> \'{}\'::jsonb THEN\n    SELECT COALESCE(jsonb_agg(t.s ORDER BY t.ord), \'[]\'::jsonb)\n    INTO v_dslots\n    FROM jsonb_array_elements(v_slots) WITH ORDINALITY AS t(s, ord)\n    WHERE v_defer ? (t.s ->> \'key\');\n    FOR v_e IN SELECT * FROM jsonb_array_elements(v_tail_d) LOOP\n      CONTINUE WHEN (v_e ->> \'player_id\') = ANY (v_seated);\n      v_players_d := v_players_d || v_e;\n    END LOOP;\n    v_fit_d := public.lineup_fit_internal(v_dslots, v_players_d);\n    FOR v_key, v_val IN SELECT * FROM jsonb_each(v_defer) LOOP\n      v_pid := v_val #>> \'{}\';\n      IF (v_fit_d -> \'assignment\' ->> v_key) IS NULL THEN\n        v_restored := v_restored || jsonb_build_object(\n          \'slot\', v_key, \'player_id\', v_pid, \'name\', v_by_pid -> v_pid ->> \'name\',\n          \'reason\', \'no healthy or Doubtful, unlocked, eligible replacement existed — left exactly as he was (Q63; Q68)\');\n        v_seated := v_seated || v_pid;\n        v_players_b := v_players_b || jsonb_build_object(\n          \'player_id\', v_pid, \'position\', v_by_pid -> v_pid ->> \'position\',\n          \'wanted\', v_key, \'fixed\', TRUE);\n      ELSE\n        v_d_in := v_d_in || (v_fit_d -> \'assignment\' ->> v_key);\n        v_players_b := v_players_b || jsonb_build_object(\n          \'player_id\', v_fit_d -> \'assignment\' ->> v_key,\n          \'position\', v_by_pid -> (v_fit_d -> \'assignment\' ->> v_key) ->> \'position\',\n          \'wanted\', v_key, \'fixed\', TRUE);\n        v_subbed := v_subbed || jsonb_build_object(\n          \'slot\', v_key, \'out\', v_pid, \'out_name\', v_by_pid -> v_pid ->> \'name\',\n          \'in\', v_fit_d -> \'assignment\' ->> v_key,\n          \'in_name\', v_by_pid -> (v_fit_d -> \'assignment\' ->> v_key) ->> \'name\',\n          \'reason\', CASE WHEN COALESCE((v_kick -> v_pid ->> \'on_bye\')::boolean, FALSE)\n                         THEN \'on bye\' ELSE \'designated \' || (v_by_pid -> v_pid ->> \'designation\') END,\n          \'why\', \'no healthy, unlocked, eligible replacement existed — a Doubtful one replaces a starter who cannot play (Q68, ruled 2026-09-27)\',\n          \'order\', v_by_pid -> (v_fit_d -> \'assignment\' ->> v_key) -> \'order\');\n      END IF;\n    END LOOP;\n  END IF;\n\n',
+  E''),
+  E'    -- 142 (Q68): a Doubtful man pass 1b seated is already fixed above.\n    CONTINUE WHEN (v_e ->> \'player_id\') = ANY (v_d_in);\n',
+  E''),
   E'                WHERE c ->> \'player_id\' = e ->> \'player_id\')\n    -- 139 (L.E1.22, F392 / R1126): a vacated-then-RESTORED starter is back in\n    -- `v_seated` and pass 2 skips him as seated, so the pass never ORDERED him —\n    -- he is not a candidate, and counting him let one valued restored man\n    -- report "ordered by projection" for a pass whose every real candidate\n    -- was ordered by ADP (spec §7.2.1(c): "counted over the pass\'s candidates\n    -- only").\n    AND NOT ((e ->> \'player_id\') = ANY (v_seated));\n',
   E'                WHERE c ->> \'player_id\' = e ->> \'player_id\');\n'))
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -222,11 +244,15 @@ insert into players (id, full_name, position, team, status, adp) values
  ('sw-x-qb',  'SW Claim QB','QB', 'DAL', 'Active', 14.0),
  ('sw-p-qb',  'SW TP QB',   'QB', 'SF',  'Active', 15.0),
  ('sw-3-qb',  'SW L3 QB',   'QB', 'NYG', 'Active', 16.0),
- -- F392 (TF): an unlocked OUT starter with a FRESH projection, whose only
- -- replacement is Doubtful (so he is RESTORED — Q68's built reading), plus a
- -- QB with no value row for the one empty slot, so the pass WRITES.
+ -- F392 (TF): an unlocked OUT starter with a FRESH projection who has NO
+ -- eligible replacement at all (so he is RESTORED), plus a QB with no value
+ -- row for the one empty slot, so the pass WRITES. RE-CUT BY L.E1.25 (Q68
+ -- RULED — "yes, swap in the doubtful"): the Doubtful bench man was a flex-
+ -- eligible RB, and since 142 he REPLACES the OUT starter — so he is now a
+ -- QB (not flex-eligible, never placed), which keeps the restore F392 is
+ -- about and keeps him a candidate the pass ORDERED (F3's count is unchanged).
  ('sw-f-out', 'SW F Out WR','WR', 'NYG', 'Out',      1.0),
- ('sw-f-dbt', 'SW F Dbt RB','RB', 'SF',  'Doubtful', 2.0),
+ ('sw-f-dbt', 'SW F Dbt QB','QB', 'SF',  'Doubtful', 2.0),
  ('sw-f-qb',  'SW F QB',    'QB', 'DAL', 'Active',   5.0);
 
 insert into league_rosters (league_id, team_id, player_id, slot_key, ir_placed_week) values
@@ -545,18 +571,18 @@ select is(
   (select format('%s:%s:%s', v.player_id, v.projected_points, v.computed_at) from league_player_values v
    where v.league_id = 'b7000000-0000-4000-8000-000000000001' and v.season = 2026 and v.week = 3),
   'sw-f-out:30.00:2026-09-25 11:00:00+00',
-  'F1 PREMISE: the ONLY values row in L1''s week 3 is the OUT starter''s — a FRESH 30.00 projection (1h old at P); the QB and the Doubtful RB have NO row');
+  'F1 PREMISE: the ONLY values row in L1''s week 3 is the OUT starter''s — a FRESH 30.00 projection (1h old at P); the QB and the Doubtful QB have NO row');
 insert into r87 select 'F', public.lineup_autopilot_internal('b7000000-0000-4000-8000-000000000001', 'c7000000-0000-4000-8000-000000000009', 2026, 3, '2026-09-25 12:00:00+00');
 select is(
   (select format('%s|%s|%s', r -> 'slot_map', (select string_agg(e ->> 'player_id', ',') from jsonb_array_elements(r -> 'restored') e), r ->> 'changed')
    from r87 where tag = 'F'),
   '{"qb:0": "sw-f-qb", "flex:0": "sw-f-out"}|sw-f-out|true',
-  'F2 PREMISE (the D7 variant): the OUT starter is RESTORED (his only replacement is Doubtful — Q68, built as the ruling reads) and the empty qb:0 is FILLED, so the pass WRITES');
+  'F2 PREMISE (the D7 variant, re-cut by L.E1.25): the OUT starter is RESTORED (no healthy or Doubtful man is eligible for his flex slot — the Doubtful man is a QB) and the empty qb:0 is FILLED, so the pass WRITES');
 select is(
   (select format('%s|%s|%s', r -> 'order_basis' ->> 'candidates', r -> 'order_basis' -> 'by_key' ->> 'projected_points', r -> 'order_basis' -> 'by_key' ->> 'adp')
    from r87 where tag = 'F'),
   '2|0|2',
-  'F3 F392 (R1126): order_basis counts the TWO men the pass ordered (the QB and the Doubtful RB, both by ADP) — NOT the restored OUT man, whose projection the pass never used. Before 139: candidates 3, projected_points 1. Break probe: revert the hunk ⇒ red');
+  'F3 F392 (R1126): order_basis counts the TWO men the pass ordered (the QB and the Doubtful QB, both by ADP) — NOT the restored OUT man, whose projection the pass never used. Before 139: candidates 3, projected_points 1. Break probe: revert the hunk ⇒ red');
 select is(
   (select format('%s|%s', r -> 'order_basis' ->> 'fell_back_to_adp', left(r -> 'order_basis' ->> 'fallback_why', 14)) from r87 where tag = 'F'),
   'true|no_value_rows:',

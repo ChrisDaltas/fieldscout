@@ -45,6 +45,13 @@
 --     the tick's prosrc minus that one hunk is 125's md5 (§A7b, R1122);
 --     `order_basis` counts CANDIDATES only (§F5–§F7 — counting the roster reds
 --     them, R1125).
+--   * L.E1.25 (migration 142, Q68 RULED 2026-09-27 — "yes, swap in the
+--     doubtful") RE-CUTS §D7 / §D7b: the OUT starter whose only replacement
+--     is Doubtful IS now swapped for him (it was restored under 138 / 139),
+--     and ADDS §D7c / §D7d — the same shape in AL2, the league that FORBIDS
+--     illegal lineups (R1123(b)): the OUT man is swapped and the lineup's
+--     flags clear. §D8 is UNCHANGED (an empty slot's tail order). The §G / §H
+--     counts move by exactly those two teams (X10 now writes; X10F is new).
 --   * All work runs as postgres (`auth.uid()` NULL — the tick's own
 --     precondition).
 -- ============================================================================
@@ -53,7 +60,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(82);
+select plan(85);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 138 replaces ONE function and nothing else
@@ -242,6 +249,8 @@ insert into q62_team (tag, id, league_id) values
  ('NV2', 'c6000000-0000-4000-8000-000000000020', 'b6000000-0000-4000-8000-000000000001'),
  ('SA',  'c6000000-0000-4000-8000-000000000021', 'b6000000-0000-4000-8000-000000000001'),
  ('D20', 'c6000000-0000-4000-8000-000000000030', 'b6000000-0000-4000-8000-000000000002'),
+ -- L.E1.25 (Q68): X10's shape in AL2 (allow_illegal_lineups = FALSE).
+ ('X10F','c6000000-0000-4000-8000-000000000031', 'b6000000-0000-4000-8000-000000000002'),
  ('N30', 'c6000000-0000-4000-8000-000000000040', 'b6000000-0000-4000-8000-000000000003'),
  ('IR',  'c6000000-0000-4000-8000-000000000050', 'b6000000-0000-4000-8000-000000000005'),
  ('ZC',  'c6000000-0000-4000-8000-000000000051', 'b6000000-0000-4000-8000-000000000005');
@@ -317,6 +326,9 @@ insert into players (id, full_name, position, team, status, adp) values
  ('q62-sa-b',   'Q62 SA B',   'QB', 'DAL', 'Active',    2.0),
  ('q62-d20-qb', 'Q62 D20 QB', 'QB', 'DAL', 'Active',   10.0),
  ('q62-d20-dbt','Q62 D20 Dbt','WR', 'NYG', 'Doubtful',  1.0),
+ ('q62-x10f-qb', 'Q62 X10F QB', 'QB', 'DAL', 'Active',   10.0),
+ ('q62-x10f-out','Q62 X10F Out','RB', 'SF',  'Out',       1.0),
+ ('q62-x10f-dbt','Q62 X10F Dbt','WR', 'NYG', 'Doubtful',  2.0),
  ('q62-n30-a',  'Q62 N30 A',  'QB', 'DAL', 'Active',    7.0),
  ('q62-n30-b',  'Q62 N30 B',  'QB', 'DAL', 'Active',    2.0),
  ('q62-ir-held','Q62 IR Held','QB', 'DAL', 'IR',        1.0),
@@ -344,6 +356,7 @@ from (values
  ('NV', 'q62-nv-a'), ('NV', 'q62-nv-b'), ('NV2', 'q62-nv2-a'),
  ('SA', 'q62-sa-a'), ('SA', 'q62-sa-b'),
  ('D20', 'q62-d20-qb'), ('D20', 'q62-d20-dbt'),
+ ('X10F', 'q62-x10f-qb'), ('X10F', 'q62-x10f-out'), ('X10F', 'q62-x10f-dbt'),
  ('N30', 'q62-n30-a'), ('N30', 'q62-n30-b'),
  ('IR', 'q62-ir-a'), ('IR', 'q62-ir-b'), ('ZC', 'q62-zc-qb')
 ) as r(tag, pid)
@@ -435,6 +448,10 @@ from (values
  -- D20 (AL2, allow_illegal_lineups = FALSE)
  (3, 'q62-d20-qb', 15.00,  null,   null, '2026-09-25 11:00:00+00', null),
  (3, 'q62-d20-dbt',12.00,  null,   null, '2026-09-25 11:00:00+00', null),
+ -- X10F (AL2, L.E1.25): X10's values, verbatim.
+ (3, 'q62-x10f-qb', 15.00, null,   null, '2026-09-25 11:00:00+00', null),
+ (3, 'q62-x10f-out', 0.00, null,   null, '2026-09-25 11:00:00+00', null),
+ (3, 'q62-x10f-dbt',20.00, null,   null, '2026-09-25 11:00:00+00', null),
  -- IR (AL5, R1125): the IR-HELD man is valued (fresh 50.00 projection); the
  -- two real candidates, a and b, have NO row.
  (3, 'q62-ir-held',50.00,  null,   null, '2026-09-25 11:00:00+00', null)
@@ -469,6 +486,7 @@ from (values
  ('X10', '{"qb:0": "q62-x10-qb", "flex:0": "q62-x10-out"}'::jsonb),
  ('O11', '{"qb:0": "q62-o11-qb"}'::jsonb),
  ('D20', '{"qb:0": "q62-d20-qb"}'::jsonb),
+ ('X10F','{"qb:0": "q62-x10f-qb", "flex:0": "q62-x10f-out"}'::jsonb),
  ('ZC',  '{"qb:0": "q62-zc-qb"}'::jsonb)
 ) as m(tag, map)
 join q62_team t on t.tag = m.tag
@@ -549,6 +567,14 @@ select is(
           (select count(*) from league_rosters where team_id = 'c6000000-0000-4000-8000-000000000051'))),
   'ir_map={"ir1:0": "q62-ir-held"} held=IR/50.00 rows=0 zc_map={"qb:0": "q62-zc-qb"} zc_rostered=1',
   'B12 R1125 PREMISE: IR''s carried row holds ONLY its IR man (designated IR, valued 50.00 fresh) and its two real candidates have NO values row; ZC''s only player is seated at qb:0 with flex:0 empty and nobody else rostered');
+select is(
+  (select format('allow=%s map=%s %s',
+          (select settings ->> 'allow_illegal_lineups' from leagues where id = 'b6000000-0000-4000-8000-000000000002'),
+          (select slot_map from team_lineups where team_id = 'c6000000-0000-4000-8000-000000000031' and season = 2026 and week = 3),
+          (select string_agg(format('%s=%s', p.id, coalesce(public.lineup_designation_internal(p.status), 'healthy')), ' ' order by p.id)
+           from players p where p.id like 'q62-x10f-%'))),
+  'allow=false map={"qb:0": "q62-x10f-qb", "flex:0": "q62-x10f-out"} q62-x10f-dbt=Doubtful q62-x10f-out=OUT q62-x10f-qb=healthy',
+  'B13 L.E1.25 PREMISE (R1123(b)): X10F sits in AL2, which FORBIDS illegal lineups; its OUT RB is seated at flex:0 and its only other flex-eligible man is a Doubtful WR — X10''s exact shape');
 
 -- Run the chooser for every team at P (K3 also at P1, week 1) and keep each
 -- result: §C-§F read them, §H compares them with what the REAL tick writes.
@@ -628,12 +654,28 @@ select is(format('%s/%s', pg_temp.r('Q9') -> 'slot_map', pg_temp.r('Q9') ->> 're
   'D5 QUESTIONABLE IS HEALTHY: a seated Questionable starter (3.00 projected) stays although a healthy 30.00 sits on the bench — never replaced on value (Q63) — and the short-circuit says why');
 select is(pg_temp.r('Q9B') -> 'slot_map' -> 'flex:0', '"q62-q9b-q"'::jsonb,
   'D6 …and a Questionable CANDIDATE (5.00) takes an empty slot ahead of a Doubtful one (40.00): healthy first, whatever the points');
-select is(pg_temp.r('X10') -> 'slot_map', '{"qb:0": "q62-x10-qb", "flex:0": "q62-x10-out"}'::jsonb,
-  'D7 Q68 — BUILT AS THE RULING READS, RECORDED NOT DECIDED: an OUT starter whose only bench replacement is Doubtful is NOT substituted — Q63 swaps only for a HEALTHY replacement, and Doubtful now sits (contrast §D8: the SAME two kinds of player, the slot EMPTY ⇒ the Doubtful man starts — Q68(a))');
+-- RE-CUT BY L.E1.25 (migration 142): until then D7 pinned 138's reading (the
+-- OUT man restored, Q68 open). Chris RULED Q68 on 2026-09-27: "yes, swap in
+-- the doubtful" — so D7 now agrees with D8.
+select is(pg_temp.r('X10') -> 'slot_map', '{"qb:0": "q62-x10-qb", "flex:0": "q62-x10-dbt"}'::jsonb,
+  'D7 Q68 RULED: an OUT starter whose only bench replacement is Doubtful IS substituted by him — no healthy, unlocked, eligible replacement exists, so the Doubtful one replaces the man who cannot play (now agreeing with §D8: the SAME two kinds of player, the slot EMPTY ⇒ the Doubtful man starts)');
 select is(
-  (select jsonb_agg(x ->> 'player_id') from jsonb_array_elements(pg_temp.r('X10') -> 'restored') x),
-  '["q62-x10-out"]'::jsonb,
-  'D7b …and restored[] names the OUT man, so the choice is visible in the tick''s report, not silent');
+  (select format('%s restored=%s', jsonb_build_object('slot', x ->> 'slot', 'out', x ->> 'out', 'in', x ->> 'in', 'reason', x ->> 'reason',
+                                                      'ordered_by', x -> 'order' ->> 'ordered_by', 'q68', strpos(x ->> 'why', 'Q68') > 0),
+                 pg_temp.r('X10') -> 'restored')
+   from jsonb_array_elements(pg_temp.r('X10') -> 'substituted') x),
+  '{"in": "q62-x10-dbt", "out": "q62-x10-out", "q68": true, "slot": "flex:0", "reason": "designated OUT", "ordered_by": "projected_points"} restored=[]',
+  'D7b …NAMED in substituted[] (out the OUT man, in the Doubtful man, reason "designated OUT", a `why` naming Q68, the incoming man''s key) and restored[] is EMPTY — the swap is visible in the tick''s report, never silent');
+select is(pg_temp.r('X10F') -> 'slot_map', '{"qb:0": "q62-x10f-qb", "flex:0": "q62-x10f-dbt"}'::jsonb,
+  'D7c Q68 IN A LEAGUE THAT FORBIDS ILLEGAL LINEUPS (R1123(b)): the same shape in AL2 — the OUT starter IS swapped for the Doubtful man (138 / 139 kept the OUT man and flagged him; production''s 125 swapped him — this restores that)');
+select is(
+  format('allow=%s flags=%s substituted=%s restored=%s unfillable=%s',
+         pg_temp.r('X10F') ->> 'allow_illegal_lineups',
+         (select jsonb_agg(s -> 'flags' order by s ->> 'slot') from jsonb_array_elements(pg_temp.r('X10F') -> 'starters') s),
+         (select jsonb_agg(x ->> 'out' || '>' || (x ->> 'in')) from jsonb_array_elements(pg_temp.r('X10F') -> 'substituted') x),
+         pg_temp.r('X10F') -> 'restored', pg_temp.r('X10F') -> 'unfillable'),
+  'allow=false flags=[[], []] substituted=["q62-x10f-out>q62-x10f-dbt"] restored=[] unfillable=[]',
+  'D7d …and the lineup''s FLAGS CLEAR: no starter carries `out` (a Doubtful start is legal, 114:596), the swap is named, nothing restored, nothing unfillable');
 select is(pg_temp.r('O11') -> 'slot_map' -> 'flex:0', '"q62-o11-dbt"'::jsonb,
   'D8 THE TAIL ORDER (D375(4)): for an empty slot with no healthy candidate, the Doubtful man (2.00) is seated ahead of the OUT man (30.00) — where Doubtful stood relative to a blocked man before 138');
 
@@ -716,7 +758,7 @@ select is(
   0, 'G1 no written map seats one player in two slots (D356(7c)''s defect class, re-checked over every changed result)');
 select is(
   (select count(*)::int from q62_r where (r ->> 'changed')::boolean),
-  22, 'G2 PREMISE for §H: 22 of the 26 chooser results change their map — all but D7 and X10 (the two restores), Q9 (the short-circuit) and ZC (nothing fillable)');
+  24, 'G2 PREMISE for §H: 24 of the 27 chooser results change their map — all but D7 (the Doubtful starter restored — never one Doubtful for another), Q9 (the short-circuit) and ZC (nothing fillable). L.E1.25: X10 now changes (Q68''s swap) and X10F is new');
 
 -- ---------------------------------------------------------------------------
 -- H. THE REAL TICK at the SAME instant writes exactly what the chooser chose,
@@ -746,11 +788,11 @@ select is(
      join team_lineups tl on tl.team_id = t.id and tl.season = 2026 and tl.week = 3
    where q.week = 3 and t.league_id not in ('b6000000-0000-4000-8000-000000000003', 'b6000000-0000-4000-8000-000000000005')
      and tl.slot_map = q.r -> 'slot_map'),
-  22, 'H1 the REAL tick (arm (c)) at P wrote, for all 22 AL1/AL2/AL4 teams, EXACTLY the map the pure chooser returned — the chooser is the tick''s selection, not a model of it');
+  23, 'H1 the REAL tick (arm (c)) at P wrote, for all 23 AL1/AL2/AL4 teams, EXACTLY the map the pure chooser returned — the chooser is the tick''s selection, not a model of it');
 select is(
   (select jsonb_array_length(current_setting('pgtap.t1')::jsonb -> 'autopiloted') + jsonb_array_length(current_setting('pgtap.t2')::jsonb -> 'autopiloted')
           + jsonb_array_length(current_setting('pgtap.t4')::jsonb -> 'autopiloted')),
-  19, 'H2 …and 19 teams written — the 22 changed results less K3@W1 (week 1, not the tick''s week), N30 (AL3) and IR (AL5) — neither league ticked; D7 / Q9 / X10 evaluated and left as they were');
+  21, 'H2 …and 21 teams written — the 24 changed results less K3@W1 (week 1, not the tick''s week), N30 (AL3) and IR (AL5) — neither league ticked; D7 / Q9 evaluated and left as they were (X10 / X10F now written — Q68)');
 select is(
   (select count(*)::int
    from jsonb_array_elements((current_setting('pgtap.t1')::jsonb -> 'autopiloted') || (current_setting('pgtap.t2')::jsonb -> 'autopiloted') || (current_setting('pgtap.t4')::jsonb -> 'autopiloted')) a
@@ -788,8 +830,8 @@ select is(
                              || (current_setting('pgtap.t4')::jsonb -> 'autopiloted')) a
    join q62_team t on t.id = (a ->> 'team_id')::uuid
    join q62_r q on q.tag = t.tag),
-  '0/19',
-  'H8 R1122: EVERY one of the 19 autopiloted[] entries carries the chooser''s order_basis, equal to what the chooser returned for that team (break probe: drop the tick''s forwarding hunk ⇒ 19/19 ⇒ red)');
+  '0/21',
+  'H8 R1122: EVERY one of the 21 autopiloted[] entries carries the chooser''s order_basis, equal to what the chooser returned for that team (break probe: drop the tick''s forwarding hunk ⇒ 21/21 ⇒ red)');
 select is(
   (select jsonb_build_object('fell_back_to_adp', a -> 'order_basis' -> 'fell_back_to_adp', 'why', split_part(a -> 'order_basis' ->> 'fallback_why', ':', 1),
                              'no_value_row', a -> 'order_basis' -> 'no_value_row', 'stale_value_row', a -> 'order_basis' -> 'stale_value_row')
