@@ -37,6 +37,14 @@
 --     Doubtful when the league forbids illegal lineups (§D4 reds); trust a
 --     stale row (§E2 reds); trust a stale projection (§E4 reds); an INNER
 --     JOIN to the values (§F2 reds).
+--   * #316's FIX ROUND (R1120–R1125) adds: a REVERSING values row for §C1's
+--     loser in ANOTHER league, in the NEXT week and in ANOTHER season (§B11),
+--     so dropping any one of the join's league / season / week predicates reds
+--     §C1 / §C1c by name (R1120); the tick's `autopiloted[]` carries the
+--     chooser's `order_basis` (§H8 — dropping the forwarding hunk reds it), and
+--     the tick's prosrc minus that one hunk is 125's md5 (§A7b, R1122);
+--     `order_basis` counts CANDIDATES only (§F5–§F7 — counting the roster reds
+--     them, R1125).
 --   * All work runs as postgres (`auth.uid()` NULL — the tick's own
 --     precondition).
 -- ============================================================================
@@ -45,7 +53,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(70);
+select plan(81);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 138 replaces ONE function and nothing else
@@ -94,8 +102,18 @@ select ok(
 select is(
   (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_lock_tick'),
+  '2040f93b901c6224e39a973fc958f1a0',
+  'A7 lineup_lock_tick is 138''s FILE TEXT (prosrc md5, a stored literal — re-pinned by #316''s fix round, R1122: 125''s text plus ONE hunk)');
+select is(
+  (select md5(replace(p.prosrc,
+     E'                -- 138 (L.E1.21, R1122): the chooser''s order_basis for this\n'
+     || E'                -- pass: which Q62 key ordered its candidates and, when none had\n'
+     || E'                -- a usable value, that it FELL BACK TO ADP and why (rule 15).\n'
+     || E'                ''order_basis'', v_ap_r -> ''order_basis'',\n', ''))
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'lineup_lock_tick'),
   'b657c8ba654257d74701f8561998267f',
-  'A7 lineup_lock_tick is BYTE-UNTOUCHED by 138 (prosrc md5, a stored literal — ZERO D137 hunks on the tick)');
+  'A7b …and that ONE hunk is the WHOLE change: the tick''s prosrc with the order_basis forwarding lines removed is 125''s prosrc md5 byte for byte (D137 — arms (a) / (b) untouched)');
 select ok(
   (select md5(p.prosrc) = 'b291362e2263f2b987b413f3cb6b9580' from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_fit_internal')
@@ -118,6 +136,10 @@ select ok(
 --                  at most 16 teams (`leagues_team_count_check`).
 --    AL2 `b6…02` — allow_illegal_lineups FALSE; D20 (Doubtful-only, §D4).
 --    AL3 `b6…03` — NO values rows at all (§F3 — the "week with no values").
+--    AL5 `b6…05` — allow_illegal_lineups TRUE and ONE IR spot (`ir1`); the
+--                  R1125 candidate cells (§F5 / §F7). NOT ticked in §H (its
+--                  IR key is not a starting slot, so §H3's oracle would read
+--                  the held man as unplaced — a fixture artefact, not a fact).
 --    Slots everywhere: qb ×1, flex ×1 [RB, WR, TE].
 -- ---------------------------------------------------------------------------
 insert into auth.users
@@ -144,15 +166,19 @@ select l.id, '9b000000-0000-4000-8000-000000000001', l.nm, 2026, 'in_season', 16
        (select id from scoring_systems where is_template and name = 'ESPN Standard'),
        (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
        'per_player_kickoff', l.st,
-       '{"starting_slots": [
+       jsonb_set('{"starting_slots": [
            {"key": "qb",   "label": "QB",    "eligible": ["QB"],             "count": 1},
            {"key": "flex", "label": "W/R/T", "eligible": ["RB", "WR", "TE"], "count": 1}],
-         "bench": 6, "ir_slots": [], "swap_spots": 0}'::jsonb
+         "bench": 6, "ir_slots": [], "swap_spots": 0}'::jsonb, '{ir_slots}',
+         case when l.id = 'b6000000-0000-4000-8000-000000000005'
+              then '[{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}]'::jsonb
+              else '[]'::jsonb end)
 from (values
  ('b6000000-0000-4000-8000-000000000001'::uuid, 'pgtap-q62-L1', '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb),
  ('b6000000-0000-4000-8000-000000000002'::uuid, 'pgtap-q62-L2', '{"schedule_mode": "h2h", "allow_illegal_lineups": false}'::jsonb),
  ('b6000000-0000-4000-8000-000000000003'::uuid, 'pgtap-q62-L3', '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb),
- ('b6000000-0000-4000-8000-000000000004'::uuid, 'pgtap-q62-L4', '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb)
+ ('b6000000-0000-4000-8000-000000000004'::uuid, 'pgtap-q62-L4', '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb),
+ ('b6000000-0000-4000-8000-000000000005'::uuid, 'pgtap-q62-L5', '{"schedule_mode": "h2h", "allow_illegal_lineups": true}'::jsonb)
 ) as l(id, nm, st);
 
 insert into league_weeks (league_id, season, week, status)
@@ -160,7 +186,8 @@ select l, 2026, g, case when g < 3 then 'final' when g = 3 then 'live' else 'upc
 from (values ('b6000000-0000-4000-8000-000000000001'::uuid),
              ('b6000000-0000-4000-8000-000000000002'::uuid),
              ('b6000000-0000-4000-8000-000000000003'::uuid),
-             ('b6000000-0000-4000-8000-000000000004'::uuid)) v(l),
+             ('b6000000-0000-4000-8000-000000000004'::uuid),
+             ('b6000000-0000-4000-8000-000000000005'::uuid)) v(l),
      generate_series(1, 6) g;
 
 -- One team per cell. `tag` is the cell's name; the uuid's last two digits
@@ -190,7 +217,9 @@ insert into q62_team (tag, id, league_id) values
  ('NV2', 'c6000000-0000-4000-8000-000000000020', 'b6000000-0000-4000-8000-000000000001'),
  ('SA',  'c6000000-0000-4000-8000-000000000021', 'b6000000-0000-4000-8000-000000000001'),
  ('D20', 'c6000000-0000-4000-8000-000000000030', 'b6000000-0000-4000-8000-000000000002'),
- ('N30', 'c6000000-0000-4000-8000-000000000040', 'b6000000-0000-4000-8000-000000000003');
+ ('N30', 'c6000000-0000-4000-8000-000000000040', 'b6000000-0000-4000-8000-000000000003'),
+ ('IR',  'c6000000-0000-4000-8000-000000000050', 'b6000000-0000-4000-8000-000000000005'),
+ ('ZC',  'c6000000-0000-4000-8000-000000000051', 'b6000000-0000-4000-8000-000000000005');
 insert into teams (id, owner_id, name, league_id)
 select id, '9b000000-0000-4000-8000-000000000001', 'Q62 ' || tag, league_id from q62_team;
 insert into league_members (league_id, user_id, team_id, role, is_placeholder)
@@ -251,7 +280,11 @@ insert into players (id, full_name, position, team, status, adp) values
  ('q62-d20-qb', 'Q62 D20 QB', 'QB', 'DAL', 'Active',   10.0),
  ('q62-d20-dbt','Q62 D20 Dbt','WR', 'NYG', 'Doubtful',  1.0),
  ('q62-n30-a',  'Q62 N30 A',  'QB', 'DAL', 'Active',    7.0),
- ('q62-n30-b',  'Q62 N30 B',  'QB', 'DAL', 'Active',    2.0);
+ ('q62-n30-b',  'Q62 N30 B',  'QB', 'DAL', 'Active',    2.0),
+ ('q62-ir-held','Q62 IR Held','QB', 'DAL', 'IR',        1.0),
+ ('q62-ir-a',   'Q62 IR A',   'QB', 'DAL', 'Active',    5.0),
+ ('q62-ir-b',   'Q62 IR B',   'QB', 'DAL', 'Active',    3.0),
+ ('q62-zc-qb',  'Q62 ZC QB',  'QB', 'DAL', 'Active',    4.0);
 
 insert into league_rosters (league_id, team_id, player_id, slot_key, ir_placed_week)
 select t.league_id, t.id, r.pid, 'bn', null
@@ -273,21 +306,25 @@ from (values
  ('NV', 'q62-nv-a'), ('NV', 'q62-nv-b'), ('NV2', 'q62-nv2-a'),
  ('SA', 'q62-sa-a'), ('SA', 'q62-sa-b'),
  ('D20', 'q62-d20-qb'), ('D20', 'q62-d20-dbt'),
- ('N30', 'q62-n30-a'), ('N30', 'q62-n30-b')
+ ('N30', 'q62-n30-a'), ('N30', 'q62-n30-b'),
+ ('IR', 'q62-ir-a'), ('IR', 'q62-ir-b'), ('ZC', 'q62-zc-qb')
 ) as r(tag, pid)
 join q62_team t on t.tag = r.tag;
+-- R1125: IR's held man sits in the league's IR spot (roster-level state, D308).
+insert into league_rosters (league_id, team_id, player_id, slot_key, ir_placed_week)
+select t.league_id, t.id, 'q62-ir-held', 'ir1', 2 from q62_team t where t.tag = 'IR';
 
 -- THE VALUES (137's table, written here as the job would write them — every
 -- CHECK honoured: a NULL names why, season NULL ⇔ 0 games). `pg_temp.v`
 -- derives the bookkeeping columns from the three points values so each row
 -- below reads as the numbers that matter.
 create function pg_temp.v(p_league uuid, p_week int, p_pid text, p_proj numeric, p_season numeric, p_pre numeric,
-                          p_computed timestamptz, p_fetched timestamptz default null) returns void
+                          p_computed timestamptz, p_fetched timestamptz default null, p_yr int default 2026) returns void
 language sql as $$
   insert into public.league_player_values
     (league_id, season, week, player_id, projected_points, projected_missing, projected_unscored, projection_fetched_at,
      season_points, season_games, preseason_points, preseason_missing, preseason_unscored, computed_at)
-  values (p_league, 2026, p_week, p_pid,
+  values (p_league, p_yr, p_week, p_pid,
           p_proj, case when p_proj is null then 'no_line' end, case when p_proj is not null then '{}'::text[] end,
           case when p_proj is not null then coalesce(p_fetched, p_computed - interval '10 minutes') end,
           p_season, case when p_season is null then 0 else p_week - 1 end,
@@ -359,10 +396,25 @@ from (values
  (3, 'q62-sa-b',   10.00,  null,   null, '2026-09-24 12:00:00+00', null),
  -- D20 (AL2, allow_illegal_lineups = FALSE)
  (3, 'q62-d20-qb', 15.00,  null,   null, '2026-09-25 11:00:00+00', null),
- (3, 'q62-d20-dbt',12.00,  null,   null, '2026-09-25 11:00:00+00', null)
+ (3, 'q62-d20-dbt',12.00,  null,   null, '2026-09-25 11:00:00+00', null),
+ -- IR (AL5, R1125): the IR-HELD man is valued (fresh 50.00 projection); the
+ -- two real candidates, a and b, have NO row.
+ (3, 'q62-ir-held',50.00,  null,   null, '2026-09-25 11:00:00+00', null)
 ) as x(w, pid, pr, se, pre, c, f)
--- each row lands in the league that ROSTERS the player (AL1, AL2 or AL4).
+-- each row lands in the league that ROSTERS the player (AL1, AL2, AL4 or AL5).
 join league_rosters r on r.player_id = x.pid;
+-- R1120 — THE JOIN'S THREE SCOPING PREDICATES, EACH REVERSED. §C1's LOSER
+-- (b, 18.00 in AL1's week 3) gets a 99.00 projection in the three places the
+-- production job really writes rows he must NOT be ordered by: ANOTHER league
+-- (AL4 — one real player is rostered in many leagues), the NEXT week (the job
+-- writes current AND next week), and ANOTHER season (2025 — last season's
+-- week 3, a fixture calendar row, since only 2026 is seeded). Every row fresh. Drop any one of `v.league_id = r.league_id` /
+-- `v.season = p_season` / `v.week = p_week` and b joins twice, first at 99.00:
+-- §C1 / §C1c red by name.
+insert into nfl_weeks (season, week, starts_at) values (2025, 3, '2025-09-17 04:00:00+00');
+select pg_temp.v('b6000000-0000-4000-8000-000000000004', 3, 'q62-k1-b', 99.00, null, null, '2026-09-25 11:00:00+00');
+select pg_temp.v('b6000000-0000-4000-8000-000000000001', 4, 'q62-k1-b', 99.00, null, null, '2026-09-25 11:00:00+00');
+select pg_temp.v('b6000000-0000-4000-8000-000000000001', 3, 'q62-k1-b', 99.00, null, null, '2026-09-25 11:00:00+00', null, 2025);
 
 -- THE LINEUP ROWS, written by the REAL carry (so every "empty" row is what
 -- `league_week_advance` produces), then the cells that need a STORED map get
@@ -378,7 +430,8 @@ from (values
  ('Q9B', '{"qb:0": "q62-q9b-qb"}'::jsonb),
  ('X10', '{"qb:0": "q62-x10-qb", "flex:0": "q62-x10-out"}'::jsonb),
  ('O11', '{"qb:0": "q62-o11-qb"}'::jsonb),
- ('D20', '{"qb:0": "q62-d20-qb"}'::jsonb)
+ ('D20', '{"qb:0": "q62-d20-qb"}'::jsonb),
+ ('ZC',  '{"qb:0": "q62-zc-qb"}'::jsonb)
 ) as m(tag, map)
 join q62_team t on t.tag = m.tag
 where tl.team_id = t.id and tl.season = 2026 and tl.week = 3;
@@ -387,7 +440,8 @@ where tl.team_id = t.id and tl.season = 2026 and tl.week = 3;
 select is(
   (select string_agg(format('%s:%s/%s/%s/%s', v.player_id, v.projected_points, v.season_points, v.preseason_points, p.adp), ' ' order by v.player_id)
    from league_player_values v join players p on p.id = v.player_id
-   where v.player_id in ('q62-k1-a', 'q62-k1-b')),
+   where v.player_id in ('q62-k1-a', 'q62-k1-b')
+     and v.league_id = 'b6000000-0000-4000-8000-000000000001' and v.season = 2026 and v.week = 3),
   'q62-k1-a:22.00/40.00/100.00/50.0 q62-k1-b:18.00/90.00/300.00/1.0',
   'B1 K1 PREMISE: a leads on PROJECTION only; b leads on season points, preseason points AND adp — so any key but the projection seats b');
 select is(
@@ -440,6 +494,23 @@ select is(
 select is(
   (select count(*)::int from league_player_values where player_id in ('q62-nv-a', 'q62-nv2-a')),
   0, 'B10 F389(a) PREMISE: NV''s a and NV2''s only QB are ROSTERED with NO values row');
+select is(
+  (select string_agg(format('%s/%s/w%s:%s:%s', right(v.league_id::text, 2), v.season, v.week, v.projected_points,
+                            case when v.computed_at >= '2026-09-25 06:00:00+00' then 'fresh' else 'stale' end), ' '
+                     order by v.league_id, v.season, v.week)
+   from league_player_values v where v.player_id = 'q62-k1-b'),
+  '01/2025/w3:99.00:fresh 01/2026/w3:18.00:fresh 01/2026/w4:99.00:fresh 04/2026/w3:99.00:fresh',
+  'B11 R1120 PREMISE: §C1''s loser b has FOUR fresh rows — his own (AL1, 2026, week 3: 18.00) and a REVERSING 99.00 in the NEXT week, in ANOTHER season and in ANOTHER league; only the first may order him');
+select is(
+  (select format('ir_map=%s held=%s/%s rows=%s zc_map=%s zc_rostered=%s',
+          (select slot_map from team_lineups where team_id = 'c6000000-0000-4000-8000-000000000050' and season = 2026 and week = 3),
+          public.lineup_designation_internal((select status from players where id = 'q62-ir-held')),
+          (select projected_points from league_player_values where player_id = 'q62-ir-held'),
+          (select count(*) from league_player_values where player_id in ('q62-ir-a', 'q62-ir-b')),
+          (select slot_map from team_lineups where team_id = 'c6000000-0000-4000-8000-000000000051' and season = 2026 and week = 3),
+          (select count(*) from league_rosters where team_id = 'c6000000-0000-4000-8000-000000000051'))),
+  'ir_map={"ir1:0": "q62-ir-held"} held=IR/50.00 rows=0 zc_map={"qb:0": "q62-zc-qb"} zc_rostered=1',
+  'B12 R1125 PREMISE: IR''s carried row holds ONLY its IR man (designated IR, valued 50.00 fresh) and its two real candidates have NO values row; ZC''s only player is seated at qb:0 with flex:0 empty and nobody else rostered');
 
 -- Run the chooser for every team at P (K3 also at P1, week 1) and keep each
 -- result: §C-§F read them, §H compares them with what the REAL tick writes.
@@ -459,6 +530,9 @@ select is(pg_temp.r('K1') -> 'slot_map' -> 'qb:0', '"q62-k1-a"'::jsonb,
   'C1 KEY 1 — THIS WEEK''S PROJECTION WINS: qb:0 is a (22.00 projected) over b (18.00), although b leads on season points, preseason points and adp (break probes: drop the projection key, or restore 125''s adp-first sort ⇒ red)');
 select is(pg_temp.fill('K1', 'qb:0') -> 'order' ->> 'ordered_by', 'projected_points',
   'C1b …and the fill SAYS which key ordered it (rule 15)');
+select is(format('bench=%s candidates=%s', pg_temp.r('K1') -> 'bench', pg_temp.r('K1') -> 'order_basis' -> 'candidates'),
+  'bench=["q62-k1-b"] candidates=2',
+  'C1c R1120: b is read ONCE — benched once, two candidates — although he has 99.00 rows in the next week, another season and another league (break probes: drop the join''s league, season or week predicate ⇒ he joins twice at 99.00 ⇒ C1 / C1c red)');
 select is(pg_temp.r('K2') -> 'slot_map' -> 'qb:0', '"q62-k2-a"'::jsonb,
   'C2 KEY 2 — NO PROJECTION ⇒ SEASON-TO-DATE POINTS: a (50.00) over b (40.00), although b leads on preseason points and adp');
 select is(pg_temp.fill('K2', 'qb:0') -> 'order', jsonb_build_object(
@@ -517,7 +591,7 @@ select is(format('%s/%s', pg_temp.r('Q9') -> 'slot_map', pg_temp.r('Q9') ->> 're
 select is(pg_temp.r('Q9B') -> 'slot_map' -> 'flex:0', '"q62-q9b-q"'::jsonb,
   'D6 …and a Questionable CANDIDATE (5.00) takes an empty slot ahead of a Doubtful one (40.00): healthy first, whatever the points');
 select is(pg_temp.r('X10') -> 'slot_map', '{"qb:0": "q62-x10-qb", "flex:0": "q62-x10-out"}'::jsonb,
-  'D7 Q68 — BUILT AS THE RULING READS, RECORDED NOT DECIDED: an OUT starter whose only bench replacement is Doubtful is NOT substituted — Q63 swaps only for a HEALTHY replacement, and Doubtful now sits');
+  'D7 Q68 — BUILT AS THE RULING READS, RECORDED NOT DECIDED: an OUT starter whose only bench replacement is Doubtful is NOT substituted — Q63 swaps only for a HEALTHY replacement, and Doubtful now sits (contrast §D8: the SAME two kinds of player, the slot EMPTY ⇒ the Doubtful man starts — Q68(a))');
 select is(
   (select jsonb_agg(x ->> 'player_id') from jsonb_array_elements(pg_temp.r('X10') -> 'restored') x),
   '["q62-x10-out"]'::jsonb,
@@ -574,6 +648,24 @@ select is(pg_temp.r('K1') -> 'order_basis' -> 'fell_back_to_adp', 'false'::jsonb
   'F4 the positive control: a team whose players carry projections does NOT report a fallback');
 select is(pg_temp.r('K1') -> 'order_basis' -> 'by_key', '{"adp": 0, "player_id": 0, "season_points": 0, "preseason_points": 0, "projected_points": 2}'::jsonb,
   'F4b …and counts both of its men as ordered by projection');
+-- R1125 — order_basis is over the pass's CANDIDATES, never the whole roster.
+select is(pg_temp.r('IR') -> 'slot_map' -> 'qb:0', '"q62-ir-b"'::jsonb,
+  'F5 IR''s qb:0 goes to b (adp 3.0) over a (adp 5.0): neither real candidate is valued, and the valued man is IR-HELD, never a candidate');
+select is(
+  (select jsonb_build_object('candidates', b -> 'candidates', 'by_key', b -> 'by_key', 'no_value_row', b -> 'no_value_row',
+                             'fell_back_to_adp', b -> 'fell_back_to_adp', 'why', split_part(b ->> 'fallback_why', ':', 1))
+   from (select pg_temp.r('IR') -> 'order_basis' as b) s),
+  '{"candidates": 2, "by_key": {"adp": 2, "player_id": 0, "season_points": 0, "preseason_points": 0, "projected_points": 0}, "no_value_row": ["q62-ir-a", "q62-ir-b"], "fell_back_to_adp": true, "why": "no_value_rows"}'::jsonb,
+  'F5b R1125: …and order_basis SAYS it fell back to ADP — two candidates, both adp-ordered — although the IR-held man carries a fresh 50.00 projection (break probe: count the whole roster ⇒ candidates 3, projected 1, fell_back false ⇒ red)');
+select is(format('candidates=%s by_key=%s', pg_temp.r('D6') -> 'order_basis' -> 'candidates', pg_temp.r('D6') -> 'order_basis' -> 'by_key'),
+  'candidates=2 by_key={"adp": 0, "player_id": 0, "season_points": 0, "preseason_points": 0, "projected_points": 2}',
+  'F6 R1125: D6''s SEATED QB (fixed at qb:0, projected 15.00) is not a candidate — only the vacated Doubtful RB and the healthy WR are counted');
+select is(
+  format('%s/%s/%s/%s/%s', pg_temp.r('ZC') -> 'order_basis' -> 'candidates', pg_temp.r('ZC') -> 'order_basis' -> 'fell_back_to_adp',
+         coalesce(pg_temp.r('ZC') -> 'order_basis' ->> 'fallback_why', 'null'), pg_temp.r('ZC') ->> 'reason',
+         (select x ->> 'slot' from jsonb_array_elements(pg_temp.r('ZC') -> 'unfillable') x)),
+  '0/false/null/nothing_fillable/flex:0',
+  'F7 R1125: a pass with NO candidate (ZC — its only man seated, flex:0 empty) says candidates = 0 and did NOT fall back — nothing was ordered — while the pass names the slot it could not fill and why');
 
 -- ---------------------------------------------------------------------------
 -- G. The candidate set is untouched by the sort — only its ORDER moved
@@ -586,7 +678,7 @@ select is(
   0, 'G1 no written map seats one player in two slots (D356(7c)''s defect class, re-checked over every changed result)');
 select is(
   (select count(*)::int from q62_r where (r ->> 'changed')::boolean),
-  21, 'G2 PREMISE for §H: 21 of the 24 chooser results change their map — all but D7 and X10 (the two restores) and Q9 (the short-circuit)');
+  22, 'G2 PREMISE for §H: 22 of the 26 chooser results change their map — all but D7 and X10 (the two restores), Q9 (the short-circuit) and ZC (nothing fillable)');
 
 -- ---------------------------------------------------------------------------
 -- H. THE REAL TICK at the SAME instant writes exactly what the chooser chose,
@@ -614,13 +706,13 @@ select set_config('pgtap.t4', public.lineup_lock_tick('2026-09-25 12:00:00+00', 
 select is(
   (select count(*)::int from q62_r q join q62_team t on t.tag = q.tag
      join team_lineups tl on tl.team_id = t.id and tl.season = 2026 and tl.week = 3
-   where q.week = 3 and t.league_id <> 'b6000000-0000-4000-8000-000000000003'
+   where q.week = 3 and t.league_id not in ('b6000000-0000-4000-8000-000000000003', 'b6000000-0000-4000-8000-000000000005')
      and tl.slot_map = q.r -> 'slot_map'),
   22, 'H1 the REAL tick (arm (c)) at P wrote, for all 22 AL1/AL2/AL4 teams, EXACTLY the map the pure chooser returned — the chooser is the tick''s selection, not a model of it');
 select is(
   (select jsonb_array_length(current_setting('pgtap.t1')::jsonb -> 'autopiloted') + jsonb_array_length(current_setting('pgtap.t2')::jsonb -> 'autopiloted')
           + jsonb_array_length(current_setting('pgtap.t4')::jsonb -> 'autopiloted')),
-  19, 'H2 …and 19 teams written — the 21 changed results less K3@W1 (week 1, not the tick''s week) and N30 (AL3, not ticked); D7 / Q9 / X10 evaluated and left as they were');
+  19, 'H2 …and 19 teams written — the 22 changed results less K3@W1 (week 1, not the tick''s week), N30 (AL3) and IR (AL5) — neither league ticked; D7 / Q9 / X10 evaluated and left as they were');
 select is(
   (select count(*)::int
    from jsonb_array_elements((current_setting('pgtap.t1')::jsonb -> 'autopiloted') || (current_setting('pgtap.t2')::jsonb -> 'autopiloted') || (current_setting('pgtap.t4')::jsonb -> 'autopiloted')) a
@@ -648,6 +740,25 @@ select is(format('%s %s %s', current_setting('pgtap.t1')::jsonb -> 'failures', c
               current_setting('pgtap.t4')::jsonb -> 'failures'),
   '[] [] []',
   'H6 every tick''s failures[] is EMPTY — no league raised under the new sort');
+select is(
+  (select slot_map -> 'qb:0' from team_lineups where team_id = 'c6000000-0000-4000-8000-000000000001' and season = 2026 and week = 3),
+  '"q62-k1-a"'::jsonb,
+  'H7 R1120: the REAL tick wrote K1''s qb:0 = a — b''s 99.00 rows in the next week, another season and another league never reached the tick''s sort');
+select is(
+  (select format('%s/%s', count(*) filter (where a -> 'order_basis' is distinct from q.r -> 'order_basis' or a -> 'order_basis' is null), count(*))
+   from jsonb_array_elements((current_setting('pgtap.t1')::jsonb -> 'autopiloted') || (current_setting('pgtap.t2')::jsonb -> 'autopiloted')
+                             || (current_setting('pgtap.t4')::jsonb -> 'autopiloted')) a
+   join q62_team t on t.id = (a ->> 'team_id')::uuid
+   join q62_r q on q.tag = t.tag),
+  '0/19',
+  'H8 R1122: EVERY one of the 19 autopiloted[] entries carries the chooser''s order_basis, equal to what the chooser returned for that team (break probe: drop the tick''s forwarding hunk ⇒ 19/19 ⇒ red)');
+select is(
+  (select jsonb_build_object('fell_back_to_adp', a -> 'order_basis' -> 'fell_back_to_adp', 'why', split_part(a -> 'order_basis' ->> 'fallback_why', ':', 1),
+                             'no_value_row', a -> 'order_basis' -> 'no_value_row', 'stale_value_row', a -> 'order_basis' -> 'stale_value_row')
+   from jsonb_array_elements(current_setting('pgtap.t1')::jsonb -> 'autopiloted') a
+   where a ->> 'team_id' = 'c6000000-0000-4000-8000-000000000020'),
+  '{"fell_back_to_adp": true, "why": "no_value_rows", "no_value_row": ["q62-nv2-a"], "stale_value_row": []}'::jsonb,
+  'H8b …so the TICK''s report itself says NV2''s pass FELL BACK TO ADP and why, naming the unvalued man (the build''s "a pass with no usable value says so" — now true of the report, not only the chooser)');
 
 select * from finish();
 rollback;
