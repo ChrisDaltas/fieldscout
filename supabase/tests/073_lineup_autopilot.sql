@@ -85,7 +85,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(105);
+select plan(107);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the new function's posture, the tick's unchanged posture,
@@ -454,6 +454,26 @@ select is((select count(*)::int from league_weeks where league_id = 'ba000000-00
 select is((select count(*)::int from league_player_values v
            where v.league_id::text like 'ba000000-0000-4000-8000-00000000000%'),
   0, 'B8 L.E1.21 PREMISE: this fixture has NO league_player_values rows, so 138''s sort falls through to its LAST-RESORT key (adp, then player_id) — §D2 tests exactly that key (pgTAP 086 tests the first three)');
+-- ADDED BY L.E1.22 (migration 139, R992 — additive): since 139 autopilot is
+-- OFF BY DEFAULT (Q63, RULED 2026-09-27) — arm (c) fills an unmanaged seat
+-- only when the commissioner's per-team switch is ON (`team_autopilot`, no row
+-- = OFF). Every cell in this file is about what autopilot DOES, so every
+-- unmanaged-looking team here is switched ON — written as the service role
+-- would (the verb's own cells, and the OFF behaviour, are pgTAP 087's). T4 and
+-- T60 (NO league_members row) are switched ON too, so §D8 / §K now prove the
+-- D339 decline holds EVEN WITH THE SWITCH ON. T1 (managed) is left OFF.
+select is((select count(*)::int from team_autopilot where team_id::text like 'ca000000-0000-4000-8000-0000000000%'),
+  0, 'B9 L.E1.22 PREMISE: before this file switches anything, NO fixture team has a team_autopilot row — the ruled default (OFF) is what a fresh seat carries');
+insert into team_autopilot (team_id, is_on, set_at)
+select t.id, true, '2026-09-23 04:00:00+00'
+from teams t
+where t.league_id::text like 'ba000000-0000-4000-8000-00000000000%'
+  and not exists (select 1 from league_members m where m.team_id = t.id and m.user_id is not null);
+select is(
+  (select string_agg(right(sw.team_id::text, 2), ',' order by sw.team_id) from team_autopilot sw
+   where sw.team_id::text like 'ca000000-0000-4000-8000-0000000000%' and sw.is_on),
+  '02,03,04,05,20,30,40,50,60',
+  'B9b …and now EVERY unmanaged-looking team in the fixture (the member-row-less T4 / T60 included) is switched ON, and the managed T1 is not — so every cell below exercises autopilot as SWITCHED ON (§7.2.1(c), Q63)');
 
 -- The chooser's own refusal: no row ⇒ loud, never an invented lineup (D354
 -- puts materialization in the caller).
