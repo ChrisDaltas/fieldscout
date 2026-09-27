@@ -185,8 +185,9 @@ flagged), mints **F385 / F386** for L.E1.20; spec **v2.16.44** (fold-back).
 **NEXT TAKEABLE TASK: `L.E1.20`** — league-scored player values for autopilot (the
 canonical TS scorer, persisted), the second third of Q62 (PROGRESS **F379**; its
 inputs **F385** — the preseason line is in the legacy namespace — and **F386** — the
-canonical map drops kicker short-FG / DEF yards-allowed projection fields; tasks-M6A
-§6's 2026-09-27 amendment). Then L.E1.21 → L.E1.24 in numeric order. Heads after
+canonical map drops kicker short-FG / DEF yards-allowed projection fields, and Sleeper's
+projected points allowed is usually FRACTIONAL — and **F387** — nothing bounds a
+projection line's age; tasks-M6A §6's 2026-09-27 amendment). Then L.E1.21 → L.E1.24 in numeric order. Heads after
 L.E1.19: **136 / 084** — re-measure at task time (D161).
 
 ~~**NEXT TAKEABLE TASK: `L.E1.19`**~~ *(advanced by L.E1.19's own PR)* — weekly projections sync (Sleeper), the first
