@@ -721,6 +721,10 @@ GATE    {L.E1.4, L.E1.5} → L.E1.14 (autopilot invariant + lawful-override prov
 > + **BREAK PROBES (§4 rule 14), shown red by name then restored:** restore the RAISE ⇒ the week-2 cell reds; let the rescore loop include final weeks ⇒ the week-1 byte-identity cell reds; drop the skipped-weeks field ⇒ its cell reds.
 > + **DoD:** §4 rules; fresh `db reset` over the full chain; `test:db`, `test`, `test:gate`, `type-check`; typegen (expect 0-line).
 
+> + **INPUT ROUTED HERE (R1113, additive):** **F387** — a weekly line older than the freshness bound at lock is treated as absent ⇒ the next fallback key, unless L.E1.20 already enforces it where values are computed.
+
+> + **INPUTS ROUTED HERE (R1113, L.E1.19 re-review 2026-09-27 — additive, R992):** **F385** (the preseason `players.projected_stats` line is in the LEGACY namespace — score it only after mapping to canonical keys), **F386** (the canonical map drops K `fg_0_39`/`fg_missed` and DEF yards-allowed / blocks / return TDs — every shipped template scores `fg_0_39`; extend projected AND actual maps together, cf. F10 — and Sleeper's projected `pts_allow` is FRACTIONAL for most DEFs while `deriveTierIndicators` withholds a fractional PA), **F387** (bound `fetched_at`'s age where values are computed).
+
 ---
 
 ## 7. Migration plan (schema lane, serialized)
