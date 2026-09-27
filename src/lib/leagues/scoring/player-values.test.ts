@@ -28,8 +28,12 @@
  *   V7  computePlayerValue's branches — F387's freshness boundary (exactly
  *       6 h fresh, 6 h + 1 ms stale), no line, other season, projected 0.00.
  *   V8  the projected line's position scope (no zero fill).
+ *   V9  F387's two halves share ONE bound (L.E1.21, migration 138): the SQL
+ *       read-side `c_max_age` in autopilot's newest definer equals
+ *       PROJECTION_MAX_AGE_MS — a line the job still scores is a line the
+ *       lock-time read still trusts.
  */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -389,5 +393,21 @@ describe('V8 the projected line\'s position scope — the worker\'s scope, WITHO
     const scored = scoreWeeklyProjection(SLEEPER_STD, 'DST', { def_sack: 3 })
     expect(scored.points).toBe(3)
     expect(scored.unscored).toEqual(['def_block', 'def_pa_0', 'def_pa_14_20', 'def_pa_1_6', 'def_pa_28_34', 'def_pa_35_plus', 'def_pa_7_13', 'def_return_td'])
+  })
+})
+
+describe('V9 F387 — the compute bound and the lock-time read bound are ONE number (L.E1.21, migration 138)', () => {
+  it('V9a the NEWEST migration defining lineup_autopilot_internal carries c_max_age = 6 hours, equal to PROJECTION_MAX_AGE_MS', () => {
+    const dir = fileURLToPath(new URL('../../../../supabase/migrations/', import.meta.url))
+    const definers = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .filter((f) => /CREATE OR REPLACE FUNCTION (public\.)?lineup_autopilot_internal\(/.test(readFileSync(dir + f, 'utf8')))
+    expect(definers.length).toBeGreaterThan(0)
+    const newest = readFileSync(dir + definers[definers.length - 1]!, 'utf8')
+    const m = newest.match(/c_max_age\s+CONSTANT INTERVAL := interval '(\d+) hours'/)
+    expect(m, 'the read-side bound must be declared as a whole number of hours').not.toBeNull()
+    expect(Number(m![1]) * 60 * 60 * 1000).toBe(PROJECTION_MAX_AGE_MS)
+    expect(PROJECTION_MAX_AGE_MS).toBe(6 * 60 * 60 * 1000)
   })
 })
