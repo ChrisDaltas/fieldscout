@@ -136,38 +136,38 @@ returns void language sql as $fn$
      p_season, p_games, p_pre, p_premiss, p_preunsc, '2026-09-27 12:50:00+00');
 $fn$;
 
-select throws_ok($$ select pg_temp.q85_ins(null, null, null, null, null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B1 a missing projected value MUST name why (NULL points, NULL reason → 23514)');
-select throws_ok($$ select pg_temp.q85_ins(9.5, 'no_line', '{}', '2026-09-27 12:40+00', null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B2 a projected VALUE never carries a reason (23514)');
-select throws_ok($$ select pg_temp.q85_ins(null, 'gone', null, null, null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B3 the projected reason vocabulary is no_line | stale_line (23514)');
+select throws_ok($$ select pg_temp.q85_ins(null, null, null, '2026-09-27 12:40+00', null, 0, null, 'no_line', null) $$,
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_projected_named"', 'B1 a missing projected value MUST name why (NULL points, NULL reason → 23514)');
+select throws_ok($$ select pg_temp.q85_ins(9.5, 'stale_line', '{}', '2026-09-27 12:40+00', null, 0, null, 'no_line', null) $$,
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_projected_named"', 'B2 a projected VALUE never carries a reason (23514)');
+select throws_ok($$ select pg_temp.q85_ins(null, 'gone', null, '2026-09-27 12:40+00', null, 0, null, 'no_line', null) $$,
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_projected_missing_vocab"', 'B3 the projected reason vocabulary is no_line | stale_line (23514)');
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', '{}', null, null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B4 an unscored list without a projected value is refused (23514)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_projected_unscored_iff_value"', 'B4 an unscored list without a projected value is refused (23514)');
 select throws_ok($$ select pg_temp.q85_ins(9.5, null, null, '2026-09-27 12:40+00', null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B5 a projected value WITHOUT its unscored list is refused (23514) — the under-count is always named');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_projected_unscored_iff_value"', 'B5 a projected value WITHOUT its unscored list is refused (23514) — the under-count is always named');
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, '2026-09-27 12:40+00', null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B6 "no_line" carries no fetch instant (23514)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_fetched_iff_line"', 'B6 "no_line" carries no fetch instant (23514)');
 select throws_ok($$ select pg_temp.q85_ins(9.5, null, '{}', null, null, 0, null, 'no_line', null) $$,
-  '23514', null, 'B7 a scored line carries its fetch instant (23514) — the read at lock bounds it (F387)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_fetched_iff_line"', 'B7 a scored line carries its fetch instant (23514) — the read at lock bounds it (F387)');
 select lives_ok($$ select pg_temp.q85_ins(null, 'stale_line', null, '2026-09-27 06:00+00', null, 0, null, 'no_line', null) $$,
   'B7b …its twin: a STALE line is NULL, named, and keeps its fetch instant');
 delete from league_player_values where player_id = 'q85-gone';
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, 0, 0, null, 'no_line', null) $$,
-  '23514', null, 'B8 NULL IS NOT ZERO: a 0.00 season with 0 games is refused (23514) — no games is NULL');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_season_null_iff_no_games"', 'B8 NULL IS NOT ZERO: a 0.00 season with 0 games is refused (23514) — no games is NULL');
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, null, 2, null, 'no_line', null) $$,
-  '23514', null, 'B9 …and a NULL season with games played is refused (23514)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_season_null_iff_no_games"', 'B9 …and a NULL season with games played is refused (23514)');
 select lives_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, 0, 1, null, 'no_line', null) $$,
   'B9b …its twin: a REAL 0.00 with one game lives');
 delete from league_player_values where player_id = 'q85-gone';
-select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, null, -1, null, 'no_line', null) $$,
-  '23514', null, 'B10 season_games is never negative (23514)');
+select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, 1, -1, null, 'no_line', null) $$,
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_season_games_nonneg"', 'B10 season_games is never negative (23514)');
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, null, 0, null, null, null) $$,
-  '23514', null, 'B11 a missing preseason value MUST name why (23514)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_preseason_named"', 'B11 a missing preseason value MUST name why (23514)');
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, null, 0, null, 'stale_line', null) $$,
-  '23514', null, 'B11b the preseason reason vocabulary is no_line | other_season (23514)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_preseason_missing_vocab"', 'B11b the preseason reason vocabulary is no_line | other_season (23514)');
 select throws_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, null, 0, 80, null, null) $$,
-  '23514', null, 'B11c a preseason value WITHOUT its unscored list is refused (23514)');
+  '23514', 'new row for relation "league_player_values" violates check constraint "league_player_values_preseason_unscored_iff_value"', 'B11c a preseason value WITHOUT its unscored list is refused (23514)');
 select lives_ok($$ select pg_temp.q85_ins(null, 'no_line', null, null, null, 0, null, 'other_season', null) $$,
   'B11d …its twin: another season''s line is NULL and named');
 delete from league_player_values where player_id = 'q85-gone';

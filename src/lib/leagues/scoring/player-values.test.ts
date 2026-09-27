@@ -147,7 +147,9 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
       const scored = weekly(SLEEPER_STD, id)
       expect(scored.unscored).toEqual(['def_block', 'def_return_td'])
       const raw = find(id).row.stats
-      const restored = scored.points + SLEEPER_STD.def_block * (raw.blk_kick ?? 0) + SLEEPER_STD.def_return_td * (raw.pr_td ?? 0) + 1 * (raw.ff ?? 0)
+      // Sleeper's own special-teams TD total is `st_td` (kick + punt return;
+      // measured live over weeks 1–6, 186 DEF rows — D374(5)).
+      const restored = scored.points + SLEEPER_STD.def_block * (raw.blk_kick ?? 0) + SLEEPER_STD.def_return_td * (raw.st_td ?? 0) + 1 * (raw.ff ?? 0)
       expect(Math.abs(restored - raw.pts_std), `${id} ${restored} vs ${raw.pts_std}`).toBeLessThanOrEqual(0.05)
     }
   })
