@@ -182,7 +182,28 @@ The first third of Q62; records **D373** (incl. D373(2), the namespace reading �
 flagged), mints **F385 / F386** for L.E1.20; spec **v2.16.44** (fold-back).
 **⚠ PUSH DEBT: 135–136** — production is at 134.)
 
-**NEXT TAKEABLE TASK: `L.E1.20`** — league-scored player values for autopilot (the
+**`L.E1.20` is LANDED 2026-09-27** (migration **137** + pgTAP **085** `plan(65)` —
+`league_player_values` (per league / week / rostered player: THIS week's projected points,
+season-to-date points + games, preseason projected points — POINTS under the league's
+FROZEN snapshot through the worker's own composition; every NULL names why, NULL is never
+zero; member-readable, no write policy) + `src/lib/leagues/scoring/player-values.ts` /
+`player-values-job.ts` + `GET /api/cron/league-player-values`, fired hourly at :50 by
+pg_cron `league-player-values-ping`. **F385** discharged (the legacy season line
+translated), **F386(b)** discharged (a fractional projected PA takes its floor's tier —
+Sleeper's own indicator, 186 / 186 live), **F386(a)** → F10 (neither map extended; every
+value names the keys its source cannot supply), **F387**'s compute half discharged (6 h);
+actual scoring byte-unchanged. The second third of Q62; records **D374**, mints
+**F388 / F389**; spec **v2.16.45** (fold-back). **⚠ PUSH DEBT: 135–137** — production
+is at 134.)
+
+**NEXT TAKEABLE TASK: `L.E1.21`** — autopilot's selection order (Q62) and `Doubtful` sits,
+the last third of Q62 (PROGRESS **F379**; it READS `league_player_values` under **F389**'s
+join contract — a LEFT JOIN, points columns only — and owns **F387**'s read half: bound
+`projection_fetched_at` / `computed_at` at lock; tasks-M6A §6's 2026-09-27 amendment).
+Then L.E1.22 → L.E1.24 in numeric order. Heads after L.E1.20: **137 / 085** — re-measure
+at task time (D161).
+
+~~**NEXT TAKEABLE TASK: `L.E1.20`**~~ *(advanced by L.E1.20's own PR)* — league-scored player values for autopilot (the
 canonical TS scorer, persisted), the second third of Q62 (PROGRESS **F379**; its
 inputs **F385** — the preseason line is in the legacy namespace — and **F386** — the
 canonical map drops kicker short-FG / DEF yards-allowed projection fields, and Sleeper's
