@@ -55,9 +55,38 @@
 --     the SEASON key of `league_player_values` (L.E1.20 sums `scoreStarter`
 --     over past weeks) and any NOT-final week the worker re-scores. A FINAL
 --     league week is never re-scored (Q64), so stored matchup scores and
---     standings do not move. Re-ingesting a completed week (weeks 1–3 on
---     production) to replace NULL with the real value is an ops step — F400.
+--     standings do not move.
+--
+--     ⚠ PUSH ORDER (R1149 / F400 / D380(11)) — this migration and the
+--     re-ingest are ONE operation:
+--       1. `npx supabase db push`                          (applies 143)
+--       2. IMMEDIATELY: `npm run sync:reingest -- --season 2026
+--          --weeks <every completed week> --confirm-target <hosted host>`
+--     Nothing else re-polls a completed week (the live poll plans only HOT
+--     weeks; its hourly sweep polls only the current calendar week). Until
+--     step 2 runs, every D/ST starter of a completed week under a yards-
+--     scoring template (Scout Standard — the DEFAULT template — Scout PPR,
+--     ESPN Std / PPR) reads PENDING in the box score beside a stored final
+--     score, and the nightly reconcile raises a `pending_vs_stored` ALERT
+--     for every such cell. After step 2 the box score shows the REAL tier,
+--     so a final week's box total can differ from its stored score (which
+--     kept the +5 — F397); reconcile reads that as `post_window_correction`
+--     (a WARN naming the delta) and checks that cell no further (F268).
+--     The tool is idempotent (a second run writes and enqueues nothing).
 -- (3) COMMENT the new contract on the column.
+--
+-- SLEEPER'S ZERO-OMISSION (R1150). Sleeper omits a zero-valued stat — a
+-- finished shutout line carries no `pts_allow` (7 of 7 2025 shutouts), and
+-- the convention applies to yards too: the live 2026 wk3 ARI row lacked
+-- `yds_allow` but carried `yds_allow_0_100: 1`. The adapter therefore reads
+-- "no `yds_allow` + `yds_allow_0_100: 1`" on an ACTUAL line as a DELIVERED
+-- 0 (`readZeroOmittedYardsAllowed`, sleeper-stats-provider.ts). Only a line
+-- with neither the value nor that indicator stays NULL / pending — a
+-- DELIBERATE deviation from Sleeper's convention whose cost is a line that
+-- never carries yards at all (never observed: every played D/ST row
+-- measured carries exactly one `yds_allow_<tier>` indicator; the 2025
+-- minimum is 75 yards). Points allowed keeps NULL-reads-0, which IS
+-- Sleeper's convention and correct (F401 closed).
 --
 -- Loud (CLAUDE.md): the backfill counts its rows and RAISEs a NOTICE with
 -- the count, then ASSERTS that no 0 survives (a trigger or rule rewriting

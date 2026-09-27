@@ -7,6 +7,7 @@ import type { TimeProvider } from '../time/time-provider'
 import {
   mapSleeperGameStatus,
   mapToCanonicalKeys,
+  readZeroOmittedYardsAllowed,
   SLEEPER_STAT_KEY_MAP,
   SleeperStatsProvider,
 } from './sleeper-stats-provider'
@@ -279,7 +280,7 @@ interface RecordedDefRow {
 }
 const DEF_FIXTURE = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/sleeper-def-yards-allowed-2026.json', import.meta.url)), 'utf8'),
-) as { weeks: Record<string, RecordedDefRow[]>; week3_live: RecordedDefRow[] }
+) as { weeks: Record<string, RecordedDefRow[]>; week3_live: RecordedDefRow[]; zero_omission_2025: RecordedDefRow[] }
 const recorded = (week: string, id: string): RecordedDefRow => {
   const found = DEF_FIXTURE.weeks[week].find((r) => r.player_id === id)
   if (!found) throw new Error(`fixture has no ${id} in week ${week}`)
@@ -323,6 +324,57 @@ describe('L.E1.26 — Sleeper yds_allow → def_yards_allowed on the RECORDED ac
       ['DET', 446],
       ['SEA', 151],
     ])
+  })
+})
+
+// ── L.E1.26 fix round (R1150) — Sleeper's zero-omission, read for yards ─────
+
+describe('R1150 — Sleeper omits zero-valued stats; `yds_allow_0_100: 1` with no `yds_allow` is a DELIVERED 0 (actuals only)', () => {
+  it('Z0 premise: two recorded completed 2025 shutouts carry NO pts_allow and pts_allow_0: 1 — an absent value on a finished line IS zero (F401 closed)', () => {
+    const rows = DEF_FIXTURE.zero_omission_2025
+    expect(rows.map((r) => [r.player_id, r.week])).toEqual([['KC', 7], ['PHI', 15]])
+    for (const r of rows) {
+      expect('pts_allow' in r.stats, r.player_id).toBe(false)
+      expect(r.stats.pts_allow_0, r.player_id).toBe(1)
+    }
+    // …so the ingest's NULL-reads-0 for points allowed pays the true shutout tier (no change owed — F401).
+    expect(mapToCanonicalKeys(rows[1].stats)).toEqual({ def_sack: 4, def_int: 1, def_yards_allowed: 75 })
+    // Every recorded played row carries exactly one yds_allow_<tier> indicator.
+    const all = [...DEF_FIXTURE.weeks['1'], ...DEF_FIXTURE.weeks['2'], ...DEF_FIXTURE.week3_live, ...rows]
+    for (const r of all) expect(Object.keys(r.stats).filter((k) => k.startsWith('yds_allow_')), r.player_id).toHaveLength(1)
+  })
+
+  it('Z1 a line with a canonical stat, no yds_allow and yds_allow_0_100: 1 reads def_yards_allowed 0 — the stored literal', () => {
+    // CONSTRUCTED from the recorded live ARI row + one sack (no real finished
+    // line without yds_allow has been observed — 2025 minimum 75 yards).
+    const raw = { ...DEF_FIXTURE.week3_live[0].stats, sack: 1 }
+    expect(readZeroOmittedYardsAllowed(raw, mapToCanonicalKeys(raw))).toEqual({ def_sack: 1, def_yards_allowed: 0 })
+  })
+
+  it('Z2 a present yds_allow is never touched; no indicator, or another tier’s indicator, stays ABSENT (pending — D380(4))', () => {
+    const buf = recorded('2', 'BUF').stats
+    expect(readZeroOmittedYardsAllowed(buf, mapToCanonicalKeys(buf))).toEqual({ def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 })
+    expect(readZeroOmittedYardsAllowed({ sack: 1 }, { def_sack: 1 })).toEqual({ def_sack: 1 })
+    expect(readZeroOmittedYardsAllowed({ sack: 1, yds_allow_100_199: 1 }, { def_sack: 1 })).toEqual({ def_sack: 1 })
+    expect(readZeroOmittedYardsAllowed({ sack: 1, yds_allow: null, yds_allow_0_100: 1 }, { def_sack: 1 })).toEqual({ def_sack: 1 })
+    expect(readZeroOmittedYardsAllowed(null, {})).toEqual({})
+  })
+
+  it('Z3 getWeekStats: the indicator-only live ARI row is STILL no line (unchanged); a constructed ARI-with-a-sack row delivers 0 yards', async () => {
+    const withSack = { ...DEF_FIXTURE.week3_live[0], player_id: 'ARZ', stats: { ...DEF_FIXTURE.week3_live[0].stats, sack: 1 } }
+    stubFetch((url) => {
+      if (url.includes('/stats/nfl/')) {
+        const position = /position\[\]=(\w+)/.exec(url)?.[1]
+        return ok(position === 'DEF' ? [...DEF_FIXTURE.week3_live, withSack] : [])
+      }
+      return undefined
+    })
+    const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 3)
+    expect(rows.map((r) => [r.playerId, r.stats])).toEqual([['ARZ', { def_sack: 1, def_yards_allowed: 0 }]])
+  })
+
+  it('Z4 the PROJECTIONS map is untouched: mapToCanonicalKeys never reads the indicator (the season feed carries a constant yds_allow_0_100: 1)', () => {
+    expect(mapToCanonicalKeys({ yds_allow_0_100: 1, sack: 2.4 })).toEqual({ def_sack: 2.4 })
   })
 })
 
