@@ -68,7 +68,8 @@ import type {
  *                        (projections evidence only, and a summed mapping).
  *   fumble_recovery_td / return_td — offensive TD variants; zero repo
  *                        evidence for actuals spellings.
- *   def_yards_allowed  — presumed yds_allow; zero repo evidence.
+ * (`def_yards_allowed` left this list in L.E1.26 — `yds_allow`, measured on
+ * the live /stats endpoint; see its entry below.)
  * Tier-indicator keys (the def_pa / def_ya families) and bonuses are never
  * adapter concerns: derived at scoring time (D44) or deferred to v1.1.
  */
@@ -112,6 +113,21 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   // week that contains a safety.
   safe: 'def_safety',
   pts_allow: 'def_points_allowed',
+  // L.E1.26 / F390 (Chris 2026-09-27: "we need to get yards allowed").
+  // MEASURED 2026-09-27 on this adapter's own endpoint (GET
+  // /stats/nfl/{season}/{week}?season_type=regular&position[]=DEF): every
+  // D/ST that played carries `yds_allow` as an integer — 2026 wk1 32/32
+  // (176–552), wk2 32/32 (151–523), 2025 wk2 32/32 — and Sleeper's own
+  // one-hot `yds_allow_<tier>` indicator names the same tier as our
+  // def_ya_* buckets in 88/88 rows (wk1/wk2/wk3). A live, just-kicked-off
+  // D/ST row can lack it (2026 wk3 ARI at ~20:17 UTC: `gp` and return
+  // stats only) — that absence stays ABSENT (NULL in `player_stats`,
+  // pending in scoring; `deliveredLine`), never a 0. The weekly
+  // projections endpoint uses the same spelling (fractional — floored for
+  // the tier by player-values, D374(4)); the SEASON endpoint carries no
+  // `yds_allow` at all. One map, both namespaces (F10 / F386(a)).
+  // Recorded: src/lib/leagues/stats/fixtures/sleeper-def-yards-allowed-2026.json.
+  yds_allow: 'def_yards_allowed',
 }
 
 /**

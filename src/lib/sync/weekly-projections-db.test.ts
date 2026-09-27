@@ -134,7 +134,8 @@ describe('weekly projections — the service-role write path (stack)', () => {
     expect(lines.find((l) => l.player_id === `${P}13300`)?.stats).toEqual({ receiving_tds: 0 })
     // R1104: Sleeper's fractional points allowed survives the round trip verbatim
     const pit = lines.find((l) => l.player_id === `${P}PIT`)
-    expect(pit?.stats).toEqual({ def_sack: 2.84, def_int: 0.88, def_fumble_rec: 0.61, def_td: 0.14, def_points_allowed: 17.5 })
+    // + def_yards_allowed since L.E1.26 (F390): `yds_allow` is mapped for projections and actuals alike.
+    expect(pit?.stats).toEqual({ def_sack: 2.84, def_int: 0.88, def_fumble_rec: 0.61, def_td: 0.14, def_points_allowed: 17.5, def_yards_allowed: 296.73 })
     expect((pit?.raw_stats as Record<string, unknown>).pts_allow).toBe(17.5)
   })
 

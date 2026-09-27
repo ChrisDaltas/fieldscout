@@ -153,6 +153,15 @@ export function finalLine(seed: number, player: SyntheticPlayerDef): FinalLine {
           def_td: randInt(rng, 0, 1),
           def_safety: 0,
           def_points_allowed: randInt(rng, 3, 35),
+          // Scenario library v3 (L.E1.26 / F390): the real sleeper_free D/ST
+          // line carries yards allowed (`yds_allow`, 32/32 D/STs every
+          // completed 2026 week), and since migration 143 a line WITHOUT it
+          // scores the def_ya_* family PENDING — so the synthetic double
+          // must deliver it too, or every ESPN / Scout-scored sim league
+          // holds every week open. Drawn LAST in the DEF case, from the same
+          // per-player stream, so no earlier draw (nor any other player's)
+          // moves; the range spans the real 2026 wk1–2 spread (151–552).
+          def_yards_allowed: randInt(rng, 150, 550),
         },
         trackingYards: null,
         chartedYards: null,

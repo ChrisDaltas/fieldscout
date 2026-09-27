@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TimeProvider } from '../time/time-provider'
 import {
   mapSleeperGameStatus,
+  mapToCanonicalKeys,
   SLEEPER_STAT_KEY_MAP,
   SleeperStatsProvider,
 } from './sleeper-stats-provider'
@@ -151,6 +155,7 @@ describe('SleeperStatsProvider', () => {
       def_td: 'def_td',
       safe: 'def_safety',
       pts_allow: 'def_points_allowed',
+      yds_allow: 'def_yards_allowed', // L.E1.26 / F390 — measured on the live /stats endpoint (fixture below)
     })
   })
 
@@ -262,6 +267,62 @@ describe('SleeperStatsProvider', () => {
     stubFetch(() => undefined) // must not fetch at all
     const provider = new SleeperStatsProvider(frozenTime)
     expect(await provider.getInactives(2026, 2)).toEqual([])
+  })
+})
+
+// ── L.E1.26 / F390 — yards allowed, sourced (the recorded real feed) ───────
+
+interface RecordedDefRow {
+  player_id: string
+  week: number
+  stats: Record<string, number | null>
+}
+const DEF_FIXTURE = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./fixtures/sleeper-def-yards-allowed-2026.json', import.meta.url)), 'utf8'),
+) as { weeks: Record<string, RecordedDefRow[]>; week3_live: RecordedDefRow[] }
+const recorded = (week: string, id: string): RecordedDefRow => {
+  const found = DEF_FIXTURE.weeks[week].find((r) => r.player_id === id)
+  if (!found) throw new Error(`fixture has no ${id} in week ${week}`)
+  return found
+}
+
+describe('L.E1.26 — Sleeper yds_allow → def_yards_allowed on the RECORDED actuals (F390; F10 / F386(a))', () => {
+  it('P0 premise (rule 14(c)): every recorded completed-week D/ST row carries an INTEGER yds_allow; the live row carries none', () => {
+    const completed = [...DEF_FIXTURE.weeks['1'], ...DEF_FIXTURE.weeks['2']]
+    expect(completed.map((r) => r.player_id)).toEqual(['CAR', 'KC', 'BUF', 'CIN', 'DET', 'SEA'])
+    for (const r of completed) expect(Number.isInteger(r.stats.yds_allow), r.player_id).toBe(true)
+    expect(DEF_FIXTURE.week3_live.map((r) => r.player_id)).toEqual(['ARI'])
+    expect('yds_allow' in DEF_FIXTURE.week3_live[0].stats).toBe(false)
+    expect('pts_allow' in DEF_FIXTURE.week3_live[0].stats).toBe(false)
+  })
+
+  it('GOLDEN — BUF wk2 / CAR wk1 / SEA wk2 map to canonical lines as stored literals (355 / 552 / 151 yards)', () => {
+    expect(mapToCanonicalKeys(recorded('2', 'BUF').stats)).toEqual({ def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 })
+    expect(mapToCanonicalKeys(recorded('1', 'CAR').stats)).toEqual({ def_sack: 2, def_fumble_rec: 1, def_points_allowed: 59, def_yards_allowed: 552 })
+    expect(mapToCanonicalKeys(recorded('2', 'SEA').stats)).toEqual({ def_sack: 2, def_int: 1, def_points_allowed: 7, def_yards_allowed: 151 })
+  })
+
+  it('the live row without yds_allow maps to NO def_yards_allowed key — the adapter never invents a 0 (it maps nothing canonical at all)', () => {
+    const line = mapToCanonicalKeys(DEF_FIXTURE.week3_live[0].stats)
+    expect(line).toEqual({})
+    expect('def_yards_allowed' in line).toBe(false)
+  })
+
+  it('getWeekStats over the recorded week-2 DEF response carries yards allowed for every D/ST (the production poll path)', async () => {
+    stubFetch((url) => {
+      if (url.includes('/stats/nfl/')) {
+        const position = /position\[\]=(\w+)/.exec(url)?.[1]
+        return ok(position === 'DEF' ? DEF_FIXTURE.weeks['2'] : [])
+      }
+      return undefined
+    })
+    const rows = await new SleeperStatsProvider(frozenTime).getWeekStats(2026, 2)
+    expect(rows.map((r) => [r.playerId, r.stats.def_yards_allowed])).toEqual([
+      ['BUF', 355],
+      ['CIN', 374],
+      ['DET', 446],
+      ['SEA', 151],
+    ])
   })
 })
 

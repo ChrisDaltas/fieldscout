@@ -158,26 +158,20 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
     }
   })
 
-  it('V1e ESPN scoring names the yards-allowed family the source cannot supply (F386(a)) — never a quiet under-count', () => {
-    expect(weekly(ESPN_STD, 'MIN').unscored).toEqual([
-      'def_block',
-      'def_return_td',
-      'def_ya_0_99',
-      'def_ya_100_199',
-      'def_ya_200_299',
-      'def_ya_350_399',
-      'def_ya_400_449',
-      'def_ya_450_499',
-      'def_ya_500_549',
-      'def_ya_550_plus',
-    ])
-    // def_ya_300_349 pays 0 — a zero coefficient is not an under-count.
+  it('V1e ESPN scoring now SCORES the yards-allowed tier from the projected line (L.E1.26 / F390 — re-cut; it was named unscored under F386(a))', () => {
+    // MIN projects 300.39 yards → floor 300 → def_ya_300_349 (ESPN 0);
+    // PIT 296.73 → 296 → def_ya_200_299 (ESPN +2). Only the two keys the
+    // source still cannot supply stay named.
+    expect(weekly(ESPN_STD, 'MIN').unscored).toEqual(['def_block', 'def_return_td'])
+    expect(weekly(ESPN_STD, 'PIT').unscored).toEqual(['def_block', 'def_return_td'])
+    // Sleeper Standard scores no yards-allowed tier: its value does not move.
+    expect(weekly(SLEEPER_STD, 'MIN').unscored).toEqual(['def_block', 'def_return_td'])
   })
 
   it('V1f the source vocabulary is the one Sleeper → canonical map (derived, not hand-listed)', () => {
     expect(WEEKLY_SOURCE_KEYS.has('def_points_allowed')).toBe(true)
     expect(WEEKLY_SOURCE_KEYS.has('fg_0_39')).toBe(false)
-    expect(WEEKLY_SOURCE_KEYS.has('def_yards_allowed')).toBe(false)
+    expect(WEEKLY_SOURCE_KEYS.has('def_yards_allowed')).toBe(true) // L.E1.26: yds_allow mapped (F390)
   })
 })
 
@@ -187,9 +181,12 @@ describe('V1 GOLDEN vs SLEEPER — the recorded week-4 lines through the canonic
 describe('V2 F386(b) — a fractional projected PA / YA takes the tier of its floor (the source\'s own reading)', () => {
   const dst = (pa: number) => scoreWeeklyProjection(SLEEPER_STD, 'DST', { def_sack: 2, def_points_allowed: pa })
 
-  it('V2a PIT 17.5 scores its 14–20 tier (+1): 7.66, not the 6.66 a withheld family would give', () => {
+  it('V2a PIT 17.5 scores its 14–20 tier (+1): 7.66 under Sleeper, not the 6.66 a withheld family would give (ESPN 9.66 — its yards tier, L.E1.26)', () => {
     expect(weekly(SLEEPER_STD, 'PIT').points).toBe(7.66)
-    expect(weekly(ESPN_STD, 'PIT').points).toBe(7.66) // ESPN: 17 → 14–17 (+1)
+    // ESPN: 17 → 14–17 (+1); and since L.E1.26 (F390) the projected 296.73
+    // yards → 296 → def_ya_200_299 (+2): 7.66 + 2 = 9.66 (was 7.66 with the
+    // yards family unscored).
+    expect(weekly(ESPN_STD, 'PIT').points).toBe(9.66)
   })
 
   it('V2b the boundary instants Sleeper itself decided (measured live): 20.75 → 14–20 (+1), 21.25 → 21–27 (0), 13.5 → 7–13 (+4)', () => {

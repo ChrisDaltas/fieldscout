@@ -6,7 +6,7 @@
  *     the L.A0.2b seam) at 1×/4×/64× deterministically — D11 reading:
  *     full-week step-driven ×3 identical + a wall-paced ≥3-poll-interval
  *     slice equivalent to step mode; the real 2025-wk2 fixture cross-checks.
- *  2. Every §23.6 synthetic scenario (all nine, library v2) runs to a
+ *  2. Every §23.6 synthetic scenario (all nine, library v3) runs to a
  *     passing assertion with zero external calls (fetch throws suite-wide).
  *  3. Calendar composition (gate item 2c): the scenario slate and the
  *     migration-039 nfl_weeks seed agree — asserted against the checked-in
@@ -69,15 +69,18 @@ const MIN = 60_000
 const T = (s: string) => new Date(s)
 
 // ── Golden pins (falsifiability: a changed world fails these literally) ─────
-// SHA-256 of the serialized multi-poll fixture — pins scenario library v2 +
-// fixture format v1. A deliberate behavior change regenerates via
+// SHA-256 of the serialized multi-poll fixture — pins scenario library v3 +
+// fixture format v1. (v3 = L.E1.26 / F390: every D/ST line carries
+// def_yards_allowed; re-recorded with `npm run record:synthetic-fixture` —
+// 85 yards values added, every other fixture value byte-identical.)
+// A deliberate behavior change regenerates via
 // `npm run record:synthetic-fixture` and updates these literals in the same
 // commit as the version bump (the D26/R23 contract, enforced mechanically).
 const GOLDEN_FIXTURE_SHA256 =
-  '093b83a04e7c5668eb99faf2968812691a39558b73755645b6bdb0781635f59f'
+  '4c436cd55eca750adca4c64d573e42b9633e428c6c0694f5bd27c511a8bf1a44'
 // SHA-256 of the full replayed upsert-batch sequence through the seam.
 const GOLDEN_UPSERT_SHA256 =
-  '44401b238dd71d9479d32bfc68d69b806295f095f4d4e2f5e453412ceeee2ccd'
+  'fc760fa55f5934d90f5b4d7adc332a571efd000e9c78ac2dff5da67561500a6e'
 const GOLDEN_UPSERT_BATCH_COUNT = 35
 
 function sha256(text: string): string {
@@ -207,7 +210,7 @@ describe('M0 gate · multi-poll fixture (recorder↔synthetic composition, D7)',
     expect(onDisk).toBe(reRecorded)
   })
 
-  it('matches the golden pin (scenario library v2 under fixture format v1)', () => {
+  it('matches the golden pin (scenario library v3 under fixture format v1)', () => {
     const recording = loadFixture(SYNTHETIC_FIXTURE_PATH)
     expect(recording.header).toEqual({
       format: 'fieldscout-fixture',

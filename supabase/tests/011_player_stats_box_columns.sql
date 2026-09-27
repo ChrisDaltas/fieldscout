@@ -84,7 +84,10 @@ select col_default_is('public', 'player_stats', 'fumble_recovery_td', 0, 'fumble
 select col_type_is('public', 'player_stats', 'return_td', 'integer', 'return_td is INTEGER');
 select col_default_is('public', 'player_stats', 'return_td', 0, 'return_td defaults to 0');
 select col_type_is('public', 'player_stats', 'def_yards_allowed', 'integer', 'def_yards_allowed is INTEGER');
-select col_default_is('public', 'player_stats', 'def_yards_allowed', 0, 'def_yards_allowed defaults to 0');
+-- Re-cut by L.E1.26 (migration 143, PROGRESS F390 / D380): the column's
+-- DEFAULT 0 is DROPPED - an absent yards-allowed value is NULL (not
+-- delivered, scored pending), never 0. pgTAP 091 pins the full contract.
+select col_hasnt_default('public', 'player_stats', 'def_yards_allowed', 'def_yards_allowed has no default (143 - NULL is not delivered)');
 
 -- ---------------------------------------------------------------------------
 -- C. Column presence for 057's 11 (redundant with A by construction, kept as
