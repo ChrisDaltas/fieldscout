@@ -14,7 +14,7 @@
  * F343): the commissioner is never prompted, the request carries none, and
  * since migration 131 the verb stores NULL and still writes the receipt.
  */
-import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
+import type { CommishMatchupEditLock, CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 
 export const OVERRIDE_BAR_OFF_COPY =
   'Commissioner — override mode lets you correct this matchup: set both scores, or declare a winner. It stays on until you turn it off, and every change is recorded.'
@@ -44,7 +44,6 @@ export const BYE_ROW_COPY = 'This is a bye — there is no opponent and no winne
 
 export type OverrideOutcomeBranch =
   | 'no_changes'
-  | 'will_be_overwritten'
   | 'live_scoring_stopped'
   | 'standings_rebuilt'
   | 'standings_at_finalization'
@@ -57,8 +56,6 @@ export interface OverrideOutcome {
 
 export const NO_CHANGES_COPY =
   'Nothing changed — this matchup already had that score and result, so nothing was recorded and nothing was posted.'
-export const WILL_BE_OVERWRITTEN_COPY =
-  'Saved — but it will NOT hold: live scoring is still running for this matchup and will overwrite this number on its next update.'
 export const LIVE_SCORING_STOPPED_COPY =
   'Saved, and live scoring for this matchup has stopped for the rest of the week — these numbers stand as written. Standings will follow at finalization.'
 export const STANDINGS_REBUILT_COPY = 'Saved, standings rebuilt — this week was already final, so the table reflects it now.'
@@ -74,12 +71,12 @@ type OutcomeFields = Pick<
  *
  *  1. `no_changes` is its own state and must NOT say "saved" — nothing was
  *     written, no receipt, no post (Chris's one condition; §3(b)).
- *  2. THE CONSEQUENCE ARMS COME FIRST among the "it saved" branches (R971 /
- *     §4 rule 15). `will_be_overwritten` is 126's `not_frozen` state — the
- *     write landed and will not survive the next drain; it is unreachable
- *     under the shipped flag (126:533-536) and rendered anyway, because a
- *     client that says "Saved" over it is the defect the rule names.
- *  3. `live_scoring_stopped` is Q61's freeze: the number stands because live
+ *  2. THE CONSEQUENCE ARM COMES FIRST among the "it saved" branches (R971 /
+ *     §4 rule 15). (A `will_be_overwritten` arm for 126's `not_frozen` state
+ *     was REMOVED by L.E1.18: Q61 is ruled — no edit lands while a starter
+ *     is still playing — and the verb sets the flag as the literal TRUE, so
+ *     that state cannot come back from the server; pgTAP 083 F8/F9 pin it.)
+ *  3. `live_scoring_stopped` is the freeze: the number stands because live
  *     scoring now skips the row — said out loud, since it is a consequence
  *     the commissioner did not ask for by name.
  *  4. Then the standings: rebuilt in-body for a FINAL week (D344), or carried
@@ -87,9 +84,6 @@ type OutcomeFields = Pick<
  */
 export function overrideOutcome(result: OutcomeFields): OverrideOutcome {
   if (result.no_changes) return { branch: 'no_changes', tone: 'neutral', text: NO_CHANGES_COPY }
-  if (!result.live_scoring_frozen && (result.live_scoring_frozen_why ?? '').startsWith('not_frozen')) {
-    return { branch: 'will_be_overwritten', tone: 'caution', text: WILL_BE_OVERWRITTEN_COPY }
-  }
   if (result.live_scoring_frozen) {
     return { branch: 'live_scoring_stopped', tone: 'caution', text: LIVE_SCORING_STOPPED_COPY }
   }
@@ -160,4 +154,43 @@ export function scoreGate(args: { homeDraft: string; awayDraft: string; homeName
   const away = parseScoreDraft(args.awayDraft)
   if (away === null) return { ok: false, why: `Enter ${args.awayName}’s score as a number (up to two decimals) to save.` }
   return { ok: true, home, away }
+}
+
+// ---------------------------------------------------------------------------
+// Q61, AS RULED (L.E1.18, migration 135) — the controls wait for the games
+// ---------------------------------------------------------------------------
+
+/**
+ * What the panel may offer, from the ONE server read (`commish_matchup_edit_lock`
+ * — the same SQL helper the verbs refuse on). Nothing here decides whether a
+ * game has finished: `locked` carries the server's own sentence, verbatim.
+ *
+ *  - `checking` — the read has not answered: no controls yet (offering them
+ *    would be a guess).
+ *  - `locked`   — a starter is still playing, or a side has no lineup set
+ *    (`lineup_not_set`, R1097): no controls, the server's line verbatim —
+ *    whichever reason the server gave, the panel renders its sentence.
+ *  - `open`     — the controls.
+ *  - `unknown`  — the read FAILED: the failure is said and NO controls are
+ *    offered (R1098 — the panel offers no score or winner control until the
+ *    server has said the matchup is editable; spec v2.16.43).
+ */
+export type OverrideLockState =
+  | { kind: 'checking' }
+  | { kind: 'locked'; message: string }
+  | { kind: 'open' }
+  | { kind: 'unknown'; message: string }
+
+export const LOCK_CHECKING_COPY = 'Checking whether this matchup’s games have finished…'
+
+export function overrideLockState(read: {
+  data: Pick<CommishMatchupEditLock, 'editable' | 'message'> | undefined
+  error: Error | null
+}): OverrideLockState {
+  if (read.data) {
+    if (read.data.editable) return { kind: 'open' }
+    return { kind: 'locked', message: read.data.message ?? 'This matchup can be corrected once every starter’s game has finished.' }
+  }
+  if (read.error) return { kind: 'unknown', message: `Couldn’t check this matchup’s games — ${read.error.message}` }
+  return { kind: 'checking' }
 }

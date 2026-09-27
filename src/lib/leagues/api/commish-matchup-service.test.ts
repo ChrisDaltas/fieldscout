@@ -30,6 +30,7 @@ import {
   commishSetResult,
   commishSetResultInputSchema,
   optionalReason,
+  readCommishMatchupEditLock,
 } from './commish-matchup-service'
 
 const LEAGUE = 'b4000000-0000-4000-8000-000000000001'
@@ -288,6 +289,72 @@ describe('commishSetResult — the RPC call, the mapper, the F65(b) guard', () =
       const res = await commishSetResult(client, LEAGUE, resultBody)
       expect(res.status, JSON.stringify(wrong)).toBe(409)
       expect(res.body).toStrictEqual({ error: COMMISH_MATCHUP_ACTION_ID_REUSED_MESSAGE })
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Q61, AS RULED (M6A L.E1.18, migration 135) — the refusal reaches the
+// commissioner verbatim, and the panel's read is a strict, loud door.
+// ---------------------------------------------------------------------------
+
+/** 135's refusal, as the verb raises it (pgTAP 083 A1 pins the SQL side). */
+const STILL_PLAYING =
+  'commish_edit_score: This matchup can be corrected once every starter’s game has finished — not finished yet: LK Monday Jet (NYJ)'
+
+describe('Q61 — the in-progress refusal through both doors (135)', () => {
+  it('P0001 from 135’s step (4b) is a 409 carrying the server’s sentence VERBATIM, through the score AND the result door', async () => {
+    expect(await commishEditScore(rpcDouble({ data: null, error: { code: 'P0001', message: STILL_PLAYING } }).client, LEAGUE, scoreBody))
+      .toStrictEqual({ status: 409, body: { error: STILL_PLAYING } })
+    const resultText = STILL_PLAYING.replace('commish_edit_score', 'commish_set_result')
+    expect(await commishSetResult(rpcDouble({ data: null, error: { code: 'P0001', message: resultText } }).client, LEAGUE, resultBody))
+      .toStrictEqual({ status: 409, body: { error: resultText } })
+  })
+})
+
+describe('readCommishMatchupEditLock — GET …/commish/matchup-lock (135’s read door)', () => {
+  const lockDoc = {
+    league_id: LEAGUE,
+    matchup_id: MATCHUP_LC,
+    season: 2026,
+    week: 4,
+    editable: false,
+    why: 'starters_not_finished',
+    week_status: 'live',
+    starters: 4,
+    finished: 3,
+    not_finished: 1,
+    still_playing: [{ team_id: HOME, side: 'home', slot: 'wr:0', player_id: 'p1', name: 'LK Monday Jet', nfl_team: 'NYJ', game_status: 'live', kickoff_at: null }],
+    no_lineup: [],
+    message: 'This matchup can be corrected once every starter’s game has finished — not finished yet: LK Monday Jet (NYJ)',
+  }
+
+  it('calls commish_matchup_edit_lock with the league and the LOWER-CASED matchup id, and returns the document WHOLE', async () => {
+    const { client, rpc } = rpcDouble({ data: lockDoc, error: null })
+    const res = await readCommishMatchupEditLock(client, LEAGUE, { matchup_id: MATCHUP })
+    expect(rpc).toHaveBeenCalledWith('commish_matchup_edit_lock', { p_league_id: LEAGUE, p_matchup_id: MATCHUP_LC })
+    expect(res).toStrictEqual({ status: 200, body: lockDoc })
+  })
+
+  it('a missing / malformed matchup_id or an unknown key is a 400 and the RPC is never reached', async () => {
+    for (const query of [{}, { matchup_id: 'nope' }, { matchup_id: MATCHUP, week: '4' }]) {
+      const { client, rpc } = rpcDouble({ data: lockDoc, error: null })
+      expect((await readCommishMatchupEditLock(client, LEAGUE, query)).status, JSON.stringify(query)).toBe(400)
+      expect(rpc).not.toHaveBeenCalled()
+    }
+  })
+
+  it('the family mapper: 42501 → 403 with the matchup doors’ own copy; P0002 → 404 verbatim', async () => {
+    expect(await readCommishMatchupEditLock(rpcDouble({ data: null, error: { code: '42501', message: 'x' } }).client, LEAGUE, { matchup_id: MATCHUP }))
+      .toStrictEqual({ status: 403, body: { error: COMMISH_MATCHUP_FORBIDDEN_MESSAGE } })
+    expect(await readCommishMatchupEditLock(rpcDouble({ data: null, error: { code: 'P0002', message: 'not this league’s' } }).client, LEAGUE, { matchup_id: MATCHUP }))
+      .toStrictEqual({ status: 404, body: { error: 'not this league’s' } })
+  })
+
+  it('LOUD, never "editable" by default: a null document, a document without a boolean `editable`, or one naming another matchup is a 500', async () => {
+    for (const data of [null, { ...lockDoc, editable: undefined }, { ...lockDoc, editable: 'true' }, { ...lockDoc, matchup_id: 'da000000-0000-4000-8000-0000000000ff' }]) {
+      const res = await readCommishMatchupEditLock(rpcDouble({ data, error: null }).client, LEAGUE, { matchup_id: MATCHUP })
+      expect(res.status, JSON.stringify(data)).toBe(500)
     }
   })
 })

@@ -142,8 +142,9 @@ export interface CommishMatchupOverrideResult {
   standings_rebuilt: boolean
   standings_not_rebuilt_why: string | null
   standings_rebuild: unknown
-  /** Q61 (open): whether live scoring will overwrite this number, said in
-   *  the document rather than discovered on the next drain. */
+  /** Whether live scoring is now frozen for this row, said in the document
+   *  rather than discovered on the next drain. Since Q61's ruling (135) the
+   *  verb always sets the flag, so this is never the `not_frozen` arm. */
   live_scoring_frozen: boolean
   live_scoring_frozen_why: string | null
   reason: string | null
@@ -271,5 +272,93 @@ export async function commishSetResult(
     return { status: 409, body: { error: COMMISH_MATCHUP_ACTION_ID_REUSED_MESSAGE } }
   }
 
+  return { status: 200, body: data as unknown as Json }
+}
+
+// ---------------------------------------------------------------------------
+// Q61, AS RULED (M6A L.E1.18, migration 135; PROGRESS F378): the panel's ONE
+// server read of whether this matchup can be corrected yet.
+// ---------------------------------------------------------------------------
+
+/** One starter whose NFL game has not finished (135's helper, verbatim). */
+export interface CommishMatchupStillPlaying {
+  team_id: string
+  side: 'home' | 'away'
+  slot: string
+  player_id: string
+  name: string
+  nfl_team: string | null
+  /** The measured `nfl_games.status` of his open game, or `no_game_rows`
+   *  when the week has no game rows at all. */
+  game_status: string
+  kickoff_at: string | null
+}
+
+/**
+ * `commish_matchup_edit_lock`'s document (135 §2). `editable` is the SAME
+ * evaluation the verbs refuse on (one SQL helper), so the panel can never
+ * disagree with the server; `message` is the verb's own refusal sentence,
+ * rendered verbatim. ADVISORY: the verb re-decides under the league lock at
+ * submit, so a read that goes stale is caught by the refusal.
+ */
+export interface CommishMatchupEditLock {
+  league_id: string
+  matchup_id: string
+  season: number
+  week: number
+  editable: boolean
+  /** `lineup_not_set` (R1097): outside a final week a side with NO lineup row
+   *  is not finished — never read as "no starters". */
+  why: 'week_final' | 'lineup_not_set' | 'starters_not_finished' | 'every_starter_finished' | 'no_starter_game'
+  week_status: 'upcoming' | 'live' | 'correction_window' | 'final' | null
+  starters: number
+  finished: number
+  not_finished: number
+  still_playing: CommishMatchupStillPlaying[]
+  /** The sides with no lineup row for the week (home first); empty unless
+   *  `why` is `lineup_not_set`. */
+  no_lineup: CommishMatchupNoLineup[]
+  message: string | null
+}
+
+/** One side with no stored lineup row for the week (135's helper, verbatim). */
+export interface CommishMatchupNoLineup {
+  team_id: string
+  side: 'home' | 'away'
+  team_name: string
+}
+
+export const commishMatchupEditLockQuerySchema = z.strictObject({
+  matchup_id: normalizedUuid,
+})
+
+/**
+ * GET /api/leagues/[id]/commish/matchup-lock?matchup_id= — may this matchup's
+ * score / result be corrected yet (Q61, ruled per matchup: every starter on
+ * both teams has finished his game; a final week always)? Commissioner-only,
+ * the verb family's ONE no-leak 403; a matchup that is not this league's is
+ * 404. A document that does not answer the question is a 500 — never read
+ * as "editable".
+ */
+export async function readCommishMatchupEditLock(
+  supabase: Supabase,
+  leagueId: string,
+  rawQuery: unknown,
+): Promise<ServiceResult> {
+  const parsed = commishMatchupEditLockQuerySchema.safeParse(rawQuery)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { data, error } = await supabase.rpc('commish_matchup_edit_lock', {
+    p_league_id: leagueId,
+    p_matchup_id: parsed.data.matchup_id,
+  })
+  if (error) {
+    return mapInSeasonRpcError(error, COMMISH_MATCHUP_FORBIDDEN_MESSAGE)
+  }
+  const doc = data as { editable?: unknown; matchup_id?: unknown } | null
+  if (doc === null || typeof doc.editable !== 'boolean' || doc.matchup_id !== parsed.data.matchup_id) {
+    return { status: 500, body: { error: 'The matchup lock read returned no usable answer.' } }
+  }
   return { status: 200, body: data as unknown as Json }
 }

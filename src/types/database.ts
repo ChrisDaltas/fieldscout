@@ -4268,6 +4268,14 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_matchup_edit_lock: {
+        Args: { p_league_id: string; p_matchup_id: string }
+        Returns: Json
+      }
+      commish_matchup_edit_lock_internal: {
+        Args: { p_league_id: string; p_matchup_id: string }
+        Returns: Json
+      }
       commish_matchup_override_internal: {
         Args: {
           p_action_id: string

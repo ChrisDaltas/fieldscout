@@ -18,8 +18,8 @@ import {
   NO_CHANGES_COPY,
   STANDINGS_AT_FINALIZATION_COPY,
   STANDINGS_REBUILT_COPY,
-  WILL_BE_OVERWRITTEN_COPY,
   bypassedCopy,
+  overrideLockState,
   overrideOutcome,
   parseScoreDraft,
   scoreDraftOf,
@@ -75,24 +75,23 @@ describe('overrideOutcome — one sentence per branch of 126’s result document
     expect(out.text).toBe(STANDINGS_AT_FINALIZATION_COPY)
   })
 
-  it('126’s `not_frozen` state — the write will be OVERWRITTEN — is said, in caution, never as a plain save', () => {
-    const out = overrideOutcome(doc({ live_scoring_frozen_why: WHY.notFrozen }))
-    expect(out.branch).toBe('will_be_overwritten')
-    expect(out.text).toBe(WILL_BE_OVERWRITTEN_COPY)
-    expect(out.tone).toBe('caution')
+  it('L.E1.18: there is NO "will be overwritten" branch any more — Q61 is ruled and 135 sets the flag as the literal TRUE (pgTAP 083 F8/F9), so 126’s `not_frozen` never comes back from the server', () => {
+    const branches = [WHY.already, WHY.frozen, WHY.notFrozen, WHY.matchupFinal, WHY.weekFinal].map(
+      (why) => overrideOutcome(doc({ live_scoring_frozen_why: why })).branch as string,
+    )
+    expect(branches).not.toContain('will_be_overwritten')
   })
 
   it('ORDER (R971 / rule 15): a consequence arm wins over the standings arm when a document carries both', () => {
     // Not a shape 126 emits today (a final week is never frozen) — which is
     // exactly why the ORDER is pinned rather than left to the fixture.
     expect(overrideOutcome(doc({ live_scoring_frozen: true, live_scoring_frozen_why: WHY.frozen, standings_rebuilt: true })).branch).toBe('live_scoring_stopped')
-    expect(overrideOutcome(doc({ live_scoring_frozen_why: WHY.notFrozen, standings_rebuilt: true })).branch).toBe('will_be_overwritten')
     // …and no_changes wins over everything.
     expect(overrideOutcome(doc({ no_changes: true, live_scoring_frozen_why: WHY.notFrozen, standings_rebuilt: true })).branch).toBe('no_changes')
   })
 
   it('every "it saved" sentence names a consequence — none is a bare "Saved."', () => {
-    for (const text of [WILL_BE_OVERWRITTEN_COPY, LIVE_SCORING_STOPPED_COPY, STANDINGS_REBUILT_COPY, STANDINGS_AT_FINALIZATION_COPY]) {
+    for (const text of [LIVE_SCORING_STOPPED_COPY, STANDINGS_REBUILT_COPY, STANDINGS_AT_FINALIZATION_COPY]) {
       expect(text).toMatch(/^Saved/)
       expect(text.replace(/^Saved[.,—\s]*/, '').length).toBeGreaterThan(20)
     }
@@ -162,5 +161,26 @@ describe('scoreGate — why Save is disabled is SAID (standing rule (h))', () =>
     const home = scoreGate({ homeName: 'Alpha', awayName: null, homeDraft: '', awayDraft: '' })
     expect(home.ok).toBe(false)
     expect(!home.ok && home.why).toContain('Alpha')
+  })
+})
+describe('overrideLockState — Q61 (135): the controls wait for the server’s answer, never a client re-derivation', () => {
+  const SERVER_LINE = 'This matchup can be corrected once every starter’s game has finished — not finished yet: LK Monday Jet (NYJ)'
+
+  it('no answer yet is `checking` — no controls are offered on a guess', () => {
+    expect(overrideLockState({ data: undefined, error: null })).toStrictEqual({ kind: 'checking' })
+  })
+
+  it('`editable: false` is `locked` with the SERVER’S sentence verbatim — the client composes nothing from the list', () => {
+    expect(overrideLockState({ data: { editable: false, message: SERVER_LINE }, error: null })).toStrictEqual({ kind: 'locked', message: SERVER_LINE })
+  })
+
+  it('`editable: true` is `open`', () => {
+    expect(overrideLockState({ data: { editable: true, message: null }, error: null })).toStrictEqual({ kind: 'open' })
+  })
+
+  it('a FAILED read is `unknown` — said (the panel then offers NO control, R1098; matchup-override.render.test.ts)', () => {
+    const out = overrideLockState({ data: undefined, error: new Error('Only this league’s commissioner can correct a matchup’s score or result.') })
+    expect(out.kind).toBe('unknown')
+    expect(out.kind === 'unknown' && out.message).toContain('Only this league’s commissioner')
   })
 })

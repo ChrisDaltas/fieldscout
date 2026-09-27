@@ -23,6 +23,13 @@
  *        (here and in `matchup-override-ops.test.ts`, which also owns P3/P4);
  *   P9 — drop `aria-pressed` from the switch → the a11y cell;
  *   P12 — render the `✸ Adjusted` chip unconditionally → the exactly-when cell.
+ *
+ * L.E1.18 (Q61 RULED, migration 135): with the mode ON the panel asks the
+ * server whether the matchup's games have finished
+ * (`useCommishMatchupEditLock`); the rig seeds that read as EDITABLE by
+ * default so the cells above keep rendering the controls, and the §Q61 block
+ * below renders the LOCKED, CHECKING and UNKNOWN states.
+ *   P13 — offer the controls while `locked` → the locked cell reds.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
@@ -31,6 +38,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguesKeys } from '@/hooks/use-leagues'
+import { commishMatchupLockKeys } from '@/hooks/use-commish-matchup-lock'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
@@ -40,12 +48,12 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import {
   BYE_ROW_COPY,
   LIVE_SCORING_STOPPED_COPY,
+  LOCK_CHECKING_COPY,
   NO_CHANGES_COPY,
   OVERRIDE_BAR_OFF_COPY,
   OVERRIDE_BAR_ON_COPY,
   STANDINGS_AT_FINALIZATION_COPY,
   STANDINGS_REBUILT_COPY,
-  WILL_BE_OVERWRITTEN_COPY,
 } from './matchup-override-ops'
 import { MatchupOverridePanelView } from './matchup-override-panel'
 import { MatchupPage } from './matchup-view'
@@ -137,11 +145,22 @@ function between(html: string, from: string, to: string): string {
   return html.slice(start, end === -1 ? undefined : end)
 }
 
-function renderPage(seed: { detail?: LeagueDetail; week?: WeekMatchups; matchupId?: string | null; overrideMode?: boolean } = {}): string {
+/** 135's read document for one matchup (the fields the panel reads). */
+function lockDoc(matchupId: string, editable: boolean, message: string | null = null, why?: string) {
+  return { league_id: LEAGUE, matchup_id: matchupId, season: 2099, week: 1, editable, why: why ?? (editable ? 'every_starter_finished' : 'starters_not_finished'), week_status: 'live', starters: 2, finished: editable ? 2 : 1, not_finished: editable ? 0 : 1, still_playing: [], no_lineup: [], message }
+}
+
+function renderPage(
+  seed: { detail?: LeagueDetail; week?: WeekMatchups; matchupId?: string | null; overrideMode?: boolean; lock?: ReturnType<typeof lockDoc> | 'unanswered' } = {},
+): string {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
   qc.setQueryData(leaguesKeys.detail(LEAGUE), seed.detail ?? detailAs('commissioner'))
   qc.setQueryData(scheduleKeys.all(LEAGUE), SCHEDULE)
   qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 1), seed.week ?? weekDoc())
+  // L.E1.18: the panel's server read — EDITABLE unless the cell says otherwise.
+  if (seed.lock !== 'unanswered') {
+    for (const id of ['m1', 'm2']) qc.setQueryData(commishMatchupLockKeys.one(LEAGUE, 1, id), seed.lock ?? lockDoc(id, true))
+  }
   const spy = vi.mocked(useOverrideMode)
   if (seed.overrideMode !== undefined) spy.mockReturnValue(seed.overrideMode)
   try {
@@ -352,14 +371,14 @@ describe('MatchupOverridePanelView — one render per branch of 126’s result d
     expect(html).toContain(STANDINGS_AT_FINALIZATION_COPY)
   })
 
-  it('will be overwritten (126’s not_frozen): said in caution, never as a clean save', () => {
+  it('L.E1.18: the "will be overwritten" line is GONE — 126’s `not_frozen` cannot come back since Q61’s ruling (135 sets the flag as the literal TRUE; pgTAP 083 F8/F9)', () => {
     const html = panel({ outcome: result({ live_scoring_frozen_why: 'not_frozen — the override flag was NOT set' }) })
-    expect(html).toContain('data-override-outcome="will_be_overwritten"')
-    expect(html).toContain(WILL_BE_OVERWRITTEN_COPY)
+    expect(html).not.toContain('will_be_overwritten')
+    expect(html).not.toMatch(/overwrite/i)
   })
 
   it('NO saved branch renders a bare "Saved." — each line carries its consequence', () => {
-    for (const outcome of [result({ live_scoring_frozen: true }), result({ standings_rebuilt: true }), result(), result({ live_scoring_frozen_why: 'not_frozen — x' })]) {
+    for (const outcome of [result({ live_scoring_frozen: true }), result({ standings_rebuilt: true }), result()]) {
       const line = between(panel({ outcome }), '<span>Saved', '</span>')
       expect(line.length).toBeGreaterThan('<span>Saved.'.length + 20)
     }
@@ -380,5 +399,86 @@ describe('MatchupOverridePanelView — one render per branch of 126’s result d
     expect([...html.matchAll(/<input[^>]*\sdisabled=""/g)]).toHaveLength(2)
     // premise: idle, none of them is.
     expect([...panel().matchAll(/<(button|input)[^>]*\sdisabled=""/g)]).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Q61, AS RULED (L.E1.18, migration 135) — the controls wait for the games
+// ---------------------------------------------------------------------------
+
+describe('Q61 — no score or winner control while a starter is still playing (the server says which)', () => {
+  const LINE = 'This matchup can be corrected once every starter’s game has finished — not finished yet: LK Monday Jet (NYJ)'
+
+  it('LOCKED: the mode is on, the panel says the server’s one line VERBATIM, and offers NO score field, NO Save and NO winner button', () => {
+    const html = renderPage({ overrideMode: true, lock: lockDoc('m1', false, LINE) })
+    expect(html).toContain('data-override-toggle="on"') // premise: the mode is on
+    expect(html).toContain('data-override-panel') // premise: the panel mounted
+    expect(between(html, 'data-override-lock="locked"', '</p>')).toContain(LINE)
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-save-scores')
+    expect(html).not.toContain('data-declare-winner')
+    expect(html).not.toContain('<input')
+    // The mode switch itself is never behind the refusal (rule (h)).
+    expect(html).toContain('Exit override mode')
+  })
+
+  it('LOCKED, `lineup_not_set` (R1097): a side with NO lineup row — the server’s sentence VERBATIM, and NO score field, Save or winner button', () => {
+    const NO_LINEUP = 'This matchup can be corrected once every starter’s game has finished — no lineup set yet: Bravo'
+    const html = renderPage({ overrideMode: true, lock: lockDoc('m1', false, NO_LINEUP, 'lineup_not_set') })
+    expect(html).toContain('data-override-panel') // premise: the panel mounted
+    expect(between(html, 'data-override-lock="locked"', '</p>')).toContain(NO_LINEUP)
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-save-scores')
+    expect(html).not.toContain('data-declare-winner')
+    expect(html).not.toContain('<input')
+    expect(html).toContain('Exit override mode')
+  })
+
+  it('OPEN (the server says every starter has finished): the controls are there and no lock line is', () => {
+    const html = renderPage({ overrideMode: true })
+    expect(html).toContain('data-override-arm="score"')
+    expect(html).toContain('data-declare-winner="home"')
+    expect(html).not.toContain('data-override-lock')
+  })
+
+  it('CHECKING (the read has not answered): no controls on a guess — one line says it is checking', () => {
+    const html = renderPage({ overrideMode: true, lock: 'unanswered' })
+    expect(html).toContain('data-override-lock="checking"')
+    expect(html).toContain(LOCK_CHECKING_COPY)
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-declare-winner')
+  })
+
+  it('OFF: the read is not needed and nothing about it renders', () => {
+    const html = renderPage({ lock: lockDoc('m1', false, LINE) })
+    expect(html).not.toContain('data-override-lock')
+  })
+
+  it('UNKNOWN (the read failed — R1098): the failure is said as an alert and NO score field, Save or winner button is offered; a verb refusal still renders verbatim', () => {
+    const html = unescapeHtml(
+      renderToStaticMarkup(
+        createElement(MatchupOverridePanelView, {
+          homeName: 'Alpha',
+          awayName: 'Bravo',
+          homeDraft: '1',
+          awayDraft: '2',
+          onHomeDraft: () => {},
+          onAwayDraft: () => {},
+          pending: null,
+          lock: { kind: 'unknown', message: 'Couldn’t check this matchup’s games — boom' },
+          outcome: null,
+          refusal: LINE,
+          onSaveScores: () => {},
+          onDeclareWinner: () => {},
+        }),
+      ),
+    )
+    expect(html).toMatch(/role="alert"[^>]*data-override-lock="unknown"/)
+    expect(between(html, 'data-override-lock="unknown"', '</p>')).toContain('Couldn’t check this matchup’s games — boom')
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-save-scores')
+    expect(html).not.toContain('data-declare-winner')
+    expect(html).not.toContain('<input')
+    expect(between(html, 'data-override-refusal', '</p>')).toContain(LINE)
   })
 })
