@@ -85,7 +85,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(103);
+select plan(105);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the new function's posture, the tick's unchanged posture,
@@ -445,6 +445,15 @@ select is((select slot_map from team_lineups where team_id = 'ca000000-0000-4000
   'B5 T2''s week-open row seats only its IR man from the ROSTER''s IR columns (D308) with every starting slot empty — the `{}`-shaped zero Q56(b) measured');
 select is((select count(*)::int from league_weeks where league_id = 'ba000000-0000-4000-8000-000000000001' and week = 3 and status = 'live'),
   1, 'B6 AL1''s week 3 is LIVE (arm (c) is bounded to a live week — §I pins the other side)');
+-- ADDED BY L.E1.21 (migration 138, R992 — additive): since 138 the sort is
+-- Q62's RULED four keys (projected → season-to-date → preseason points, then
+-- adp, then player_id), and this file's fixture writes NO league_player_values
+-- row — so every ordering cell here (§D2's adp-beats-player_id above all) now
+-- exercises the LAST-RESORT key, adp. That premise is what keeps those cells
+-- meaningful; pgTAP 086 owns the first three keys.
+select is((select count(*)::int from league_player_values v
+           where v.league_id::text like 'ba000000-0000-4000-8000-00000000000%'),
+  0, 'B8 L.E1.21 PREMISE: this fixture has NO league_player_values rows, so 138''s sort falls through to its LAST-RESORT key (adp, then player_id) — §D2 tests exactly that key (pgTAP 086 tests the first three)');
 
 -- The chooser's own refusal: no row ⇒ loud, never an invented lineup (D354
 -- puts materialization in the caller).
@@ -517,6 +526,12 @@ select ok(
 select is((select slot_map -> 'qb:0' from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000002' and week = 3),
   '"ap-qb-hi"'::jsonb,
   'D2 THE SORT (Q62): qb:0 holds the HIGHER-VALUED QB (adp 1.0) and not the one that sorts first by player_id — break probe 2 deletes the ORDER BY and this cell reds');
+select is(
+  (select f -> 'order' ->> 'ordered_by'
+   from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'autopiloted') a, jsonb_array_elements(a -> 'filled') f
+   where a ->> 'team_id' = 'ca000000-0000-4000-8000-000000000002' and f ->> 'slot' = 'qb:0'),
+  'adp',
+  'D2b (L.E1.21, 138) …and the tick''s report SAYS that pick was ordered by adp — the last-resort key, because §B8''s premise holds');
 
 -- (c) BIPARTITE, NOT FIRST-FIT.
 select is((select slot_map - 'ir1:0' from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000002' and week = 3),

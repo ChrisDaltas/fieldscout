@@ -196,12 +196,31 @@ actual scoring byte-unchanged. The second third of Q62; records **D374**, mints
 **F388 / F389**; spec **v2.16.45** (fold-back). **⚠ PUSH DEBT: 135–137** — production
 is at 134.)
 
-**NEXT TAKEABLE TASK: `L.E1.21`** — autopilot's selection order (Q62) and `Doubtful` sits,
+**`L.E1.21` is LANDED 2026-09-27** (migration **138** + pgTAP **086** `plan(70)` —
+`lineup_autopilot_internal` against `125:328-704`'s file text, nine hunks; the tick
+UNTOUCHED (md5 pinned). Autopilot now starts the eligible player with the highest
+projected points: ONE lexicographic ORDER BY per player (this week's projection →
+season-to-date → preseason points, then ADP, then `player_id`) over a LEFT JOIN to
+`league_player_values`; a values row or projection older than 6 h at the tick instant is
+absent (**F387** read half — row closed; **F389** discharged). **`Doubtful` sits** —
+swapped only for a healthy replacement, otherwise started ("yes start the doubtful"); a
+preference under both `allow_illegal_lineups` values, never the `out` flag. Every pick
+names its key; a pass with no usable value says it fell back to ADP and why. **F379
+closed**; records **D375**; files **Q68** (does NOT block — an OUT starter whose only
+replacement is Doubtful is no longer swapped, as the rulings' text reads; Chris's call);
+spec **v2.16.46** (fold-back). **⚠ PUSH DEBT: 135–138** — production is at 134.)
+
+**NEXT TAKEABLE TASK: `L.E1.22`** — Q63: autopilot OFF by default + the commissioner's
+"Put on autopilot" switch, and the synthetic gate re-cut (PROGRESS **F380**, and **F391** —
+the re-cut also runs the projections → values chain in the sim and grades WHICH player
+autopilot chose (R1121, PR #316's fix round); tasks-M6A §6's 2026-09-27 amendment). Then
+L.E1.23 → L.E1.24 in numeric order. Heads after L.E1.21:
+**138 / 086** — re-measure at task time (D161).
+
+~~**NEXT TAKEABLE TASK: `L.E1.21`**~~ *(advanced by L.E1.21's own PR)* — autopilot's selection order (Q62) and `Doubtful` sits,
 the last third of Q62 (PROGRESS **F379**; it READS `league_player_values` under **F389**'s
 join contract — a LEFT JOIN, points columns only — and owns **F387**'s read half: bound
 `projection_fetched_at` / `computed_at` at lock; tasks-M6A §6's 2026-09-27 amendment).
-Then L.E1.22 → L.E1.24 in numeric order. Heads after L.E1.20: **137 / 085** — re-measure
-at task time (D161).
 
 ~~**NEXT TAKEABLE TASK: `L.E1.20`**~~ *(advanced by L.E1.20's own PR)* — league-scored player values for autopilot (the
 canonical TS scorer, persisted), the second third of Q62 (PROGRESS **F379**; its
