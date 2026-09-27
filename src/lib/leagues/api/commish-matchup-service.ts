@@ -308,7 +308,10 @@ export interface CommishMatchupEditLock {
   week: number
   editable: boolean
   /** `lineup_not_set` (R1097): outside a final week a side with NO lineup row
-   *  is not finished — never read as "no starters". */
+   *  is not finished — never read as "no starters". `no_starter_game` (Q67,
+   *  migration 142): outside a final week a side whose row holds NO starter
+   *  with a game is not finished either — it is a REFUSAL (editable false);
+   *  until 142 it read "editable". */
   why: 'week_final' | 'lineup_not_set' | 'starters_not_finished' | 'every_starter_finished' | 'no_starter_game'
   week_status: 'upcoming' | 'live' | 'correction_window' | 'final' | null
   starters: number
@@ -318,6 +321,9 @@ export interface CommishMatchupEditLock {
   /** The sides with no lineup row for the week (home first); empty unless
    *  `why` is `lineup_not_set`. */
   no_lineup: CommishMatchupNoLineup[]
+  /** Q67 (migration 142): the sides whose lineup row exists but holds no
+   *  starter with a game (home first); empty in a final week. */
+  no_starter_game_sides: CommishMatchupNoLineup[]
   message: string | null
 }
 

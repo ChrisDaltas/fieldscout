@@ -167,8 +167,10 @@ export function scoreGate(args: { homeDraft: string; awayDraft: string; homeName
  *
  *  - `checking` — the read has not answered: no controls yet (offering them
  *    would be a guess).
- *  - `locked`   — a starter is still playing, or a side has no lineup set
- *    (`lineup_not_set`, R1097): no controls, the server's line verbatim —
+ *  - `locked`   — a starter is still playing, a side has no lineup set
+ *    (`lineup_not_set`, R1097), or a side's lineup holds no starter with a
+ *    game (`no_starter_game`, Q67 — migration 142): no controls, the server's
+ *    line verbatim —
  *    whichever reason the server gave, the panel renders its sentence.
  *  - `open`     — the controls.
  *  - `unknown`  — the read FAILED: the failure is said and NO controls are

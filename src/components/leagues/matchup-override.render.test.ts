@@ -147,7 +147,7 @@ function between(html: string, from: string, to: string): string {
 
 /** 135's read document for one matchup (the fields the panel reads). */
 function lockDoc(matchupId: string, editable: boolean, message: string | null = null, why?: string) {
-  return { league_id: LEAGUE, matchup_id: matchupId, season: 2099, week: 1, editable, why: why ?? (editable ? 'every_starter_finished' : 'starters_not_finished'), week_status: 'live', starters: 2, finished: editable ? 2 : 1, not_finished: editable ? 0 : 1, still_playing: [], no_lineup: [], message }
+  return { league_id: LEAGUE, matchup_id: matchupId, season: 2099, week: 1, editable, why: why ?? (editable ? 'every_starter_finished' : 'starters_not_finished'), week_status: 'live', starters: 2, finished: editable ? 2 : 1, not_finished: editable ? 0 : 1, still_playing: [], no_lineup: [], no_starter_game_sides: [], message }
 }
 
 function renderPage(
@@ -427,6 +427,18 @@ describe('Q61 — no score or winner control while a starter is still playing (t
     const html = renderPage({ overrideMode: true, lock: lockDoc('m1', false, NO_LINEUP, 'lineup_not_set') })
     expect(html).toContain('data-override-panel') // premise: the panel mounted
     expect(between(html, 'data-override-lock="locked"', '</p>')).toContain(NO_LINEUP)
+    expect(html).not.toContain('data-override-arm="score"')
+    expect(html).not.toContain('data-save-scores')
+    expect(html).not.toContain('data-declare-winner')
+    expect(html).not.toContain('<input')
+    expect(html).toContain('Exit override mode')
+  })
+
+  it('LOCKED, `no_starter_game` (Q67, migration 142): a side whose lineup holds NO starter with a game — the server’s sentence VERBATIM, and NO score field, Save or winner button', () => {
+    const NO_STARTER = 'This matchup can be corrected once every starter’s game has finished — no starter with a game yet: Bravo; not finished yet: LK Monday Jet (NYJ)'
+    const html = renderPage({ overrideMode: true, lock: lockDoc('m1', false, NO_STARTER, 'no_starter_game') })
+    expect(html).toContain('data-override-panel') // premise: the panel mounted
+    expect(between(html, 'data-override-lock="locked"', '</p>')).toContain(NO_STARTER)
     expect(html).not.toContain('data-override-arm="score"')
     expect(html).not.toContain('data-save-scores')
     expect(html).not.toContain('data-declare-winner')

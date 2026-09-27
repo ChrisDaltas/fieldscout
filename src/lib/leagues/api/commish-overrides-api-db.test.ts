@@ -127,6 +127,7 @@ const ACTION = {
   scoreStillPlaying: 'b0200000-0000-4000-8000-000000000017',
   scoreAfterFinal: 'b0200000-0000-4000-8000-000000000018',
   scoreNoLineup: 'b0200000-0000-4000-8000-000000000019',
+  scoreNoStarterGame: 'b0200000-0000-4000-8000-00000000001a',
 } as const
 
 /** L.E1.18 (Q61, migration 135): the ONE game row this suite writes — on the
@@ -135,6 +136,9 @@ const Q61_GAME_ID = 'vitest-co-q61-game'
 /** R1097: the weeks §1-§3 correct, and their FINAL VCS game rows. */
 const FINISHED_WEEKS = [2, 3, 4] as const
 const FINISHED_GAME_IDS = FINISHED_WEEKS.map((w) => `vitest-co-q61-final-w${w}`)
+/** L.E1.25 (Q67, migration 142): the FINAL VCS game in §5's week — the
+ *  opponent's starter once its empty row is filled. Deleted in cleanup. */
+const Q67_GAME_ID = 'vitest-co-q67-final'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -183,7 +187,7 @@ async function cleanup(): Promise<void> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
   }
-  const { error: gameError } = await service.from('nfl_games').delete().in('id', [Q61_GAME_ID, ...FINISHED_GAME_IDS])
+  const { error: gameError } = await service.from('nfl_games').delete().in('id', [Q61_GAME_ID, Q67_GAME_ID, ...FINISHED_GAME_IDS])
   if (gameError) throw new Error(`cleanup nfl_games: ${gameError.message}`)
   const { error: playersError } = await service
     .from('players')
@@ -779,6 +783,37 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
       .from('team_lineups')
       .insert({ team_id: opponentId, season: SYNTHETIC_SEASON, week, starters: [], bench: [], slot_map: {} })
     if (error) throw new Error(`team_lineups insert: ${error.message}`)
+  })
+
+  // L.E1.25 (Q67 RULED 2026-09-27, migration 142): an EMPTY row is not a
+  // finished side outside a final week. Until 142 the empty row above made
+  // this matchup judged on the MOVER alone; now it is itself a lock, so the
+  // opponent's row is then given the suite's STARTER, whose club plays a
+  // FINAL game this week — the only change — and the cells below are judged
+  // on the MOVER alone again.
+  it('Q67: once the opponent sets an EMPTY lineup the read says `no_starter_game` and the route refuses 409 with the server’s sentence verbatim — naming the opponent AND the starter still playing; then the opponent starts a player whose game is final (the only change)', async () => {
+    const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
+    expect(lock.status, errorText(lock)).toBe(200)
+    const doc = lock.body as { editable: boolean; why: string; message: string | null; no_starter_game_sides: Array<{ team_name: string }> }
+    const combined = `This matchup can be corrected once every starter's game has finished — no starter with a game yet: ${opponentName}; not finished yet: Vitest CO Mover (VCA)`
+    expect(doc).toMatchObject({ editable: false, why: 'no_starter_game', message: combined })
+    expect(doc.no_starter_game_sides.map((s) => s.team_name)).toStrictEqual([opponentName])
+    const res = await commishEditScore(commishClient, leagueId, { matchup_id: target.id, home_score: 10, away_score: 11, action_id: ACTION.scoreNoStarterGame })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(`commish_edit_score: ${combined}`)
+    expect(await receiptsFor(ACTION.scoreNoStarterGame)).toHaveLength(0)
+    const { error: gameError } = await service
+      .from('nfl_games')
+      .insert({ id: Q67_GAME_ID, season: SYNTHETIC_SEASON, week, home_team: 'VCS', away_team: 'VCY', kickoff_at: '2099-12-19T18:00:00Z', status: 'final' })
+    if (gameError) throw new Error(`nfl_games insert: ${gameError.message}`)
+    const opponentId = target.home_team_id === commishTeamId ? target.away_team_id! : target.home_team_id
+    const { error } = await service
+      .from('team_lineups')
+      .update({ slot_map: { 'wr:0': STARTER } })
+      .eq('team_id', opponentId)
+      .eq('season', SYNTHETIC_SEASON)
+      .eq('week', week)
+    if (error) throw new Error(`team_lineups update: ${error.message}`)
   })
 
   it('PREMISE: a real two-team row of the commissioner’s, and its starter’s game reads `live`', async () => {
