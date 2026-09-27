@@ -168,7 +168,8 @@ L.E1.18 → L.E1.23, taken in numeric order** (edges: L.E1.20 needs L.E1.19,
 L.E1.21 needs L.E1.20; the rest need nothing new). Chris ruled **Q60–Q64**
 and the **F377** read on 2026-09-27 (spec **v2.16.42**, PROGRESS **D371**):
 Q60 NO (no `commish_edit_record`) and Q64 option 1 (going forward only;
-`reopen_week` not wanted) need no task; Q61 → L.E1.18; Q62 → L.E1.19 /
+`reopen_week` not wanted) need no task; Q61 → L.E1.18 ("in progress" ruled PER MATCHUP — editable once every
+starter on both teams has finished); Q62 → L.E1.19 /
 L.E1.20 / L.E1.21 (weekly projections, league-scored values, the order +
 `Doubtful`); Q63 → **L.E1.22 (autopilot OFF by default + the commissioner's
 switch — it RE-CUTS L.E1.14's synthetic gate, and migrating the flag OFF
@@ -193,10 +194,12 @@ closeout the delivery plan's next milestone is **M5** (trades / FAAB —
 D352 / F340), which needs its own Architect breakdown before the loop can
 take it. A `/build-next` that reads this file and finds no task should say
 so and stop — this is the header's own rule.
-⚠ **Chris owes `npx supabase db push` for migrations 125–132** (hosted tops
+~~⚠ **Chris owes `npx supabase db push` for migrations 125–132** (hosted tops
 out at 124; 131 re-defines 123's verb, which IS in production; until 132 is
 pushed the hosted Remix preview still answers `reason_required = NOT free` —
-harmless, the modal no longer reads it as a gate).
+harmless, the modal no longer reads it as a gate).~~ **[Corrected 2026-09-27:
+STALE — production was pushed 2026-09-23 and is at 134 (PR #311 recorded it);
+there is no push debt.]**
 **`L.E1.17` (INSERTED BY RULING — Chris 2026-09-21, the repo went public) is
 BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
 mints F372, records D367. It did NOT move the pointer (then `L.E1.14`);
