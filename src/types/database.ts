@@ -3109,6 +3109,54 @@ export type Database = {
           },
         ]
       }
+      player_weekly_projections: {
+        Row: {
+          fetched_at: string
+          player_id: string
+          raw_stats: Json
+          season: number
+          source: string
+          source_updated_at: string | null
+          stats: Json
+          week: number
+        }
+        Insert: {
+          fetched_at: string
+          player_id: string
+          raw_stats: Json
+          season: number
+          source: string
+          source_updated_at?: string | null
+          stats: Json
+          week: number
+        }
+        Update: {
+          fetched_at?: string
+          player_id?: string
+          raw_stats?: Json
+          season?: number
+          source?: string
+          source_updated_at?: string | null
+          stats?: Json
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_weekly_projections_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_weekly_projections_week_fk"
+            columns: ["season", "week"]
+            isOneToOne: false
+            referencedRelation: "nfl_weeks"
+            referencedColumns: ["season", "week"]
+          },
+        ]
+      }
       players: {
         Row: {
           adp: number | null
