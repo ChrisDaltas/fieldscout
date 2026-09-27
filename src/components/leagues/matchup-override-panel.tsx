@@ -4,6 +4,7 @@ import { useId, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useCommishMatchupEditLock } from '@/hooks/use-commish-matchup-lock'
 import { useCommishSetResult } from '@/hooks/use-commish-result'
 import { useCommishEditScore } from '@/hooks/use-commish-score'
 import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
@@ -15,13 +16,16 @@ import {
   BOTH_SCORES_COPY,
   BYE_ROW_COPY,
   DECLARE_WINNER_COPY,
+  LOCK_CHECKING_COPY,
   OVERRIDE_BAR_OFF_COPY,
   OVERRIDE_BAR_ON_COPY,
   OVERRIDE_PANEL_TITLE,
   bypassedCopy,
+  overrideLockState,
   overrideOutcome,
   scoreGate,
   shownScoreDraft,
+  type OverrideLockState,
   type ScoreGate,
 } from './matchup-override-ops'
 import { OverrideModeBar } from './override-mode-bar'
@@ -51,6 +55,14 @@ import { OverrideModeBar } from './override-mode-bar'
  * verb's refusal VERBATIM. The hooks re-read the week, the standings and the
  * activity feed on success and on error; nothing here writes a cache.
  *
+ * **The controls wait for the games (Q61, ruled 2026-09-27 — L.E1.18).**
+ * While any starter on either team is still playing the panel offers no
+ * score or winner control and shows the server's one line naming who; it
+ * asks the server (`useCommishMatchupEditLock` — the SAME SQL helper the
+ * verbs refuse on) and never works the rule out itself. If that read fails
+ * the controls are offered and the failure is said: the verb re-decides at
+ * submit, and its refusal renders verbatim.
+ *
  * The mount is gated on the viewer's commissioner role by the page; the
  * server is the authority (126's in-body 42501).
  */
@@ -71,6 +83,8 @@ export function MatchupOverrideTools({
   const exit = useCommishOverrideStore((s) => s.exit)
   const score = useCommishEditScore(leagueId)
   const result = useCommishSetResult(leagueId)
+  const lockRead = useCommishMatchupEditLock(leagueId, row.week, row.id, overrideMode)
+  const lock = overrideLockState({ data: lockRead.data, error: lockRead.error })
   // Which door spoke last — the panel shows ONE outcome, the latest.
   const [last, setLast] = useState<'score' | 'result' | null>(null)
   // R1064: what he TYPED, or null while a field is untouched — an untouched
@@ -102,6 +116,7 @@ export function MatchupOverrideTools({
           onHomeDraft={setHomeTyped}
           onAwayDraft={setAwayTyped}
           pending={pending}
+          lock={lock}
           outcome={spoke?.data ?? null}
           refusal={spoke?.error?.message ?? null}
           onSaveScores={(gate) => {
@@ -136,6 +151,7 @@ export function MatchupOverridePanelView({
   onHomeDraft,
   onAwayDraft,
   pending,
+  lock = { kind: 'open' },
   outcome,
   refusal,
   onSaveScores,
@@ -149,6 +165,8 @@ export function MatchupOverridePanelView({
   onHomeDraft: (text: string) => void
   onAwayDraft: (text: string) => void
   pending: 'score' | 'result' | null
+  /** Q61 (135): whether the controls may be offered yet — from the server. */
+  lock?: OverrideLockState
   outcome: Pick<
     CommishMatchupOverrideResult,
     'no_changes' | 'live_scoring_frozen' | 'live_scoring_frozen_why' | 'standings_rebuilt' | 'bypassed'
@@ -168,57 +186,78 @@ export function MatchupOverridePanelView({
     <section className="flex flex-col gap-3 rounded-sm border border-ink bg-white px-3 py-3" aria-label={OVERRIDE_PANEL_TITLE} data-override-panel>
       <h3 className="text-[12px] font-bold text-ink">{OVERRIDE_PANEL_TITLE}</h3>
 
-      <form
-        className="flex flex-col gap-2"
-        onSubmit={(event) => {
-          event.preventDefault()
-          onSaveScores(gate)
-        }}
-        data-override-arm="score"
-      >
-        <div className="grid gap-2 sm:grid-cols-2">
-          <ScoreField id={`${id}-home`} label={`${homeName} score`} value={homeDraft} onChange={onHomeDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="home" />
-          {awayName !== null && (
-            <ScoreField id={`${id}-away`} label={`${awayName} score`} value={awayDraft} onChange={onAwayDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="away" />
-          )}
-        </div>
-        {awayName !== null && <p className="text-[11px] font-medium text-n-3">{BOTH_SCORES_COPY}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" variant="blue" size="sm" disabled={!gate.ok || pending !== null} data-save-scores>
-            {pending === 'score' ? 'Saving…' : 'Save scores'}
-          </Button>
-          {/* WHY Save is disabled, said (rule (h)) — never a dead button. */}
-          {!gate.ok && (
-            <span id={gateId} className="text-[11px] font-semibold text-n-3" data-save-gate>
-              {gate.why}
-            </span>
-          )}
-        </div>
-      </form>
-
-      {awayName === null ? (
-        // A BYE (F366): no winner arm — the result arm is refused by design
-        // (131:1052-1057); the score arm above is the team's points alone.
-        <p role="status" className="border-t border-n-4 pt-3 text-[11px] font-medium text-n-3" data-override-bye>
-          {BYE_ROW_COPY}
+      {/* Q61 (135): no controls while a starter is still playing, and none
+          before the server has answered. The server's line, verbatim. */}
+      {lock.kind === 'checking' && (
+        <p role="status" className="text-[11px] font-semibold text-n-3" data-override-lock="checking">
+          {LOCK_CHECKING_COPY}
         </p>
-      ) : (
-        <div className="flex flex-col gap-2 border-t border-n-4 pt-3" data-override-arm="result">
-          <p className="text-[11px] font-medium text-n-3">{DECLARE_WINNER_COPY}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('home')} data-declare-winner="home">
-              {`Declare ${homeName} the winner`}
-            </Button>
-            <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('away')} data-declare-winner="away">
-              {`Declare ${awayName} the winner`}
-            </Button>
-            {pending === 'result' && (
-              <span role="status" className="self-center text-[11px] font-semibold text-n-3">
-                Saving…
-              </span>
-            )}
-          </div>
-        </div>
+      )}
+      {lock.kind === 'locked' && (
+        <p role="status" className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[12px] font-semibold text-ink" data-override-lock="locked">
+          {lock.message}
+        </p>
+      )}
+      {lock.kind === 'unknown' && (
+        <p role="alert" className="text-[11px] font-semibold text-negative" data-override-lock="unknown">
+          {lock.message}
+        </p>
+      )}
+      {(lock.kind === 'open' || lock.kind === 'unknown') && (
+        <>
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onSaveScores(gate)
+            }}
+            data-override-arm="score"
+          >
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ScoreField id={`${id}-home`} label={`${homeName} score`} value={homeDraft} onChange={onHomeDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="home" />
+              {awayName !== null && (
+                <ScoreField id={`${id}-away`} label={`${awayName} score`} value={awayDraft} onChange={onAwayDraft} disabled={pending !== null} describedBy={gate.ok ? undefined : gateId} side="away" />
+              )}
+            </div>
+            {awayName !== null && <p className="text-[11px] font-medium text-n-3">{BOTH_SCORES_COPY}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" variant="blue" size="sm" disabled={!gate.ok || pending !== null} data-save-scores>
+                {pending === 'score' ? 'Saving…' : 'Save scores'}
+              </Button>
+              {/* WHY Save is disabled, said (rule (h)) — never a dead button. */}
+              {!gate.ok && (
+                <span id={gateId} className="text-[11px] font-semibold text-n-3" data-save-gate>
+                  {gate.why}
+                </span>
+              )}
+            </div>
+          </form>
+
+          {awayName === null ? (
+            // A BYE (F366): no winner arm — the result arm is refused by design
+            // (131:1052-1057); the score arm above is the team's points alone.
+            <p role="status" className="border-t border-n-4 pt-3 text-[11px] font-medium text-n-3" data-override-bye>
+              {BYE_ROW_COPY}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2 border-t border-n-4 pt-3" data-override-arm="result">
+              <p className="text-[11px] font-medium text-n-3">{DECLARE_WINNER_COPY}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('home')} data-declare-winner="home">
+                  {`Declare ${homeName} the winner`}
+                </Button>
+                <Button variant="stroke" size="sm" disabled={pending !== null} onClick={() => onDeclareWinner('away')} data-declare-winner="away">
+                  {`Declare ${awayName} the winner`}
+                </Button>
+                {pending === 'result' && (
+                  <span role="status" className="self-center text-[11px] font-semibold text-n-3">
+                    Saving…
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* The verb's refusal, VERBATIM — that text is the UX. */}

@@ -54,6 +54,7 @@ import {
   COMMISH_MATCHUP_FORBIDDEN_MESSAGE,
   commishEditScore,
   commishSetResult,
+  readCommishMatchupEditLock,
 } from './commish-matchup-service'
 import {
   COMMISH_ROSTER_ACTION_ID_REUSED_MESSAGE,
@@ -109,7 +110,13 @@ const ACTION = {
   scoreBye: 'b0200000-0000-4000-8000-000000000014',
   scoreByeWrong: 'b0200000-0000-4000-8000-000000000015',
   scoreHalfOnTwoTeam: 'b0200000-0000-4000-8000-000000000016',
+  scoreStillPlaying: 'b0200000-0000-4000-8000-000000000017',
+  scoreAfterFinal: 'b0200000-0000-4000-8000-000000000018',
 } as const
+
+/** L.E1.18 (Q61, migration 135): the ONE game row this suite writes — on the
+ *  suite's own made-up clubs, deleted in cleanup. */
+const Q61_GAME_ID = 'vitest-co-q61-game'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -158,6 +165,8 @@ async function cleanup(): Promise<void> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
   }
+  const { error: gameError } = await service.from('nfl_games').delete().eq('id', Q61_GAME_ID)
+  if (gameError) throw new Error(`cleanup nfl_games: ${gameError.message}`)
   const { error: playersError } = await service
     .from('players')
     .delete()
@@ -672,5 +681,89 @@ describe('POST …/commish/roster — commishForceAddDrop over the real RPC', ()
     expect(errorText(res)).toBe(COMMISH_ROSTER_ACTION_ID_REUSED_MESSAGE)
     expect(await rosterTeamOf(FREE_AGENT)).toStrictEqual([]) // nothing was added
     expect(await receiptsFor(ACTION.move)).toHaveLength(1) // still the move's
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 5. Q61, AS RULED (M6A L.E1.18, migration 135) — no correction while a
+//    starter is still playing, through the REAL route stack.
+// ---------------------------------------------------------------------------
+
+describe('Q61 (135) — /commish/score refuses while a starter is still playing; the panel’s read agrees', () => {
+  let target: MatchupRow
+  let week: number
+  const SERVER_LINE = 'This matchup can be corrected once every starter\'s game has finished — not finished yet: Vitest CO Mover (VCA)'
+
+  beforeAll(async () => {
+    // The LAST regular week — no earlier cell in this file touches it.
+    const { data: weeks, error: weeksError } = await service
+      .from('matchups')
+      .select('week')
+      .eq('league_id', leagueId)
+      .eq('round_type', 'regular')
+      .order('week', { ascending: false })
+      .limit(1)
+    if (weeksError) throw new Error(`weeks read: ${weeksError.message}`)
+    week = weeks![0].week
+    const rows = await weekRows(week)
+    target = rows.find((r) => r.home_team_id === commishTeamId || r.away_team_id === commishTeamId)!
+    // THE PREMISE (§4 rule 14(c)): the commissioner's team starts the MOVER
+    // (club VCA) that week, and VCA's one game that week is LIVE.
+    const { error: lineupError } = await service
+      .from('team_lineups')
+      .insert({ team_id: commishTeamId, season: SYNTHETIC_SEASON, week, starters: [], bench: [], slot_map: { 'wr:0': MOVER } })
+    if (lineupError) throw new Error(`team_lineups insert: ${lineupError.message}`)
+    const { error: gameError } = await service
+      .from('nfl_games')
+      .insert({ id: Q61_GAME_ID, season: SYNTHETIC_SEASON, week, home_team: 'VCA', away_team: 'VCZ', kickoff_at: '2099-12-20T18:00:00Z', status: 'live' })
+    if (gameError) throw new Error(`nfl_games insert: ${gameError.message}`)
+  })
+
+  it('PREMISE: a real two-team row of the commissioner’s, and its starter’s game reads `live`', async () => {
+    expect(target).toBeDefined()
+    const { data } = await service.from('nfl_games').select('status').eq('id', Q61_GAME_ID).single()
+    expect(data?.status).toBe('live')
+  })
+
+  it('REFUSED: 409 with the server’s sentence VERBATIM naming the starter still playing — no receipt, the row untouched', async () => {
+    const before = await service.from('matchups').select('home_score, away_score, is_overridden').eq('id', target.id).single()
+    const res = await commishEditScore(commishClient, leagueId, {
+      matchup_id: target.id,
+      home_score: 10,
+      away_score: 11,
+      action_id: ACTION.scoreStillPlaying,
+    })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(`commish_edit_score: ${SERVER_LINE}`)
+    expect(await receiptsFor(ACTION.scoreStillPlaying)).toHaveLength(0)
+    const after = await service.from('matchups').select('home_score, away_score, is_overridden').eq('id', target.id).single()
+    expect(after.data).toStrictEqual(before.data)
+  })
+
+  it('the panel’s READ says the same thing: 200, editable false, the SAME sentence — and a manager gets the no-leak 403', async () => {
+    const res = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
+    expect(res.status, errorText(res)).toBe(200)
+    const doc = res.body as { editable: boolean; message: string | null; still_playing: Array<{ name: string; game_status: string }> }
+    expect(doc.editable).toBe(false)
+    expect(doc.message).toBe(SERVER_LINE)
+    expect(doc.still_playing).toStrictEqual([expect.objectContaining({ name: 'Vitest CO Mover', game_status: 'live' })])
+    const manager = await readCommishMatchupEditLock(memberClient, leagueId, { matchup_id: target.id })
+    expect(manager.status).toBe(403)
+    expect(errorText(manager)).toBe(COMMISH_MATCHUP_FORBIDDEN_MESSAGE)
+  })
+
+  it('THE BOUNDARY: the same game marked `final` ⇒ the read says editable and the SAME correction LANDS (200, one receipt)', async () => {
+    const { error } = await service.from('nfl_games').update({ status: 'final' }).eq('id', Q61_GAME_ID)
+    if (error) throw new Error(`nfl_games update: ${error.message}`)
+    const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
+    expect((lock.body as { editable: boolean }).editable).toBe(true)
+    const res = await commishEditScore(commishClient, leagueId, {
+      matchup_id: target.id,
+      home_score: 10,
+      away_score: 11,
+      action_id: ACTION.scoreAfterFinal,
+    })
+    expect(res.status, errorText(res)).toBe(200)
+    expect(await receiptsFor(ACTION.scoreAfterFinal)).toHaveLength(1)
   })
 })
