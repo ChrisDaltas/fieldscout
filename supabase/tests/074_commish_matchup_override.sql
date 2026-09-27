@@ -78,7 +78,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(125);
+select plan(127);
 
 -- ---------------------------------------------------------------------------
 -- A. THE SECURITY CLAIM, FIRST (D344). Read the banner note before touching
@@ -252,7 +252,18 @@ delete from nfl_games where season = 2026;
 -- Week 5's games are ALL FINAL: §23.2's precondition for finalize_matchups.
 insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, status) values
  ('mo-w5-a', 2026, 5, 'KC',  'BUF', now() - interval '22 days', 'final'),
- ('mo-w5-b', 2026, 5, 'DAL', 'PHI', now() - interval '21 days', 'final');
+ ('mo-w5-b', 2026, 5, 'DAL', 'PHI', now() - interval '21 days', 'final'),
+-- RE-CUT BY MIGRATION 135 (L.E1.18 / F378 — Q61 RULED 2026-09-27): a score
+-- override now LANDS only once every starter on both sides has finished his
+-- game. Week 4 is the ruled SUNDAY-NIGHT window the live-week cells below
+-- (§E11-E13, §I) walk: d5…41's starters played Sunday (KC/BUF, final) while
+-- the Monday game (NYJ/MIA) is still live — so the league-week is still being
+-- scored and the override flag is load-bearing. C5a/C5b assert it.
+ ('mo-w4-sun', 2026, 4, 'KC',  'BUF', now() - interval '27 days', 'final'),
+ ('mo-w4-mon', 2026, 4, 'NYJ', 'MIA', now() - interval '26 days', 'live');
+insert into players (id, full_name, position, team, status) values
+ ('mo-kc-qb',  'MO Kansas QB',  'QB', 'KC',  'Active'),
+ ('mo-buf-qb', 'MO Buffalo QB', 'QB', 'BUF', 'Active');
 
 insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks,
                      playoff_teams, playoff_start_week,
@@ -276,6 +287,10 @@ insert into league_members (league_id, user_id, team_id, role) values
 
 insert into league_weeks (league_id, season, week)
 select 'b5000000-0000-4000-8000-000000000001', 2026, g from generate_series(3, 10) g;
+-- 135: d5…41's two stored week-4 lineups (one QB slot each; the league has no IR spot).
+insert into team_lineups (team_id, season, week, starters, bench, slot_map) values
+ ('c5000000-0000-4000-8000-000000000001', 2026, 4, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000002', 2026, 4, '[]', '[]', '{"qb:0": "mo-buf-qb"}');
 -- The F4 guard (§12.17) refuses a skipped step, so each week is WALKED to its
 -- status rather than assigned one: upcoming → live → correction_window → final.
 update league_weeks set status = 'live'              where league_id = 'b5000000-0000-4000-8000-000000000001' and week in (3, 4, 5);
@@ -329,6 +344,16 @@ select is(
   'C4 WRITE-DOOR PREMISE: score_write_week_batch CAN write matchup d5…41 today — one writable row, one written. §I asserts the same call is refused after the override, and without this cell that refusal is indistinguishable from a door that never worked (R972)');
 select is((select home_score from matchups where id = 'd5000000-0000-4000-8000-000000000041'), 55.00,
   'C5 …and the door''s number is in the row (55.00), which is the number §I will watch NOT move');
+select row_eq(
+  $$ select h ->> 'why', (h ->> 'starters')::int, (h ->> 'finished')::int
+     from (select public.commish_matchup_edit_lock_internal('b5000000-0000-4000-8000-000000000001',
+                    'd5000000-0000-4000-8000-000000000041') as h) x $$,
+  row('every_starter_finished'::text, 2, 2)::record,
+  'C5a PREMISE (135 / Q61 RULED): d5…41 is EDITABLE because its TWO starters (T1''s KC QB, T2''s BUF QB) have both FINISHED — not vacuously (no lineups). Every landing on d5…41 below is in the ruled window');
+select is(
+  (select string_agg(g.id || ':' || g.status, ' ' order by g.id) from nfl_games g where g.season = 2026 and g.week = 4),
+  'mo-w4-mon:live mo-w4-sun:final',
+  'C5b PREMISE: …while week 4''s Monday game is still LIVE — the league-week is still being scored, which is the one live-week window in which the override flag is load-bearing (the ruled note at 135''s flag)');
 
 -- ---------------------------------------------------------------------------
 -- D. THE REASON GATE AND THE ARM REFUSALS — every one BY NAME.
@@ -485,7 +510,7 @@ select is(
 
 -- Q61's freeze, REPORTED rather than discovered (§4 rule 15).
 select is((select r ->> 'live_scoring_frozen' from _e), 'true',
-  'E11 Q61: the verb SET the flag on a LIVE week and SAYS SO — live_scoring_frozen = true. (The recommendation on file; the swap is one line in the migration, grep `Q61 SWAP LINE`)');
+  'E11 Q61 (RULED — 135 re-cut): on a LIVE week whose matchup has FINISHED (C5a) while the Monday game is still scored (C5b), the verb SETS the flag and SAYS SO — live_scoring_frozen = true. The swap line is retired: there is no other ruling to swap to');
 select alike((select r ->> 'live_scoring_frozen_why' from _e), 'frozen_by_this_override%',
   'E12 …and names the mechanism, not just the fact: score_write_week_batch will skip this matchup for the rest of the week (119:634/:654)');
 select alike(
@@ -569,7 +594,7 @@ select is((select r ->> 'reason' from _door), 'nothing_writable',
 select is((select r -> 'skipped' -> 0 ->> 'reason' from _door), 'overridden',
   'I3 …and NAMES the protected row with reason `overridden` (119:626-628) — the door''s own loud-emptiness contract, now carrying this verb''s consequence');
 select is((select home_score from matchups where id = 'd5000000-0000-4000-8000-000000000041'), 77.00,
-  'I4 …and the commissioner''s 77.00 SURVIVED a drain that wanted to write 99 — which is the whole of Q61''s recommendation, proven on a real row rather than asserted in a comment');
+  'I4 …and the commissioner''s 77.00 SURVIVED a drain that wanted to write 99 — the ruled Sunday-night window (C5a/C5b): the matchup is finished, the league-week is not, and the flag is what keeps the drain off his number');
 
 -- ---------------------------------------------------------------------------
 -- H. THE BACKSTOP (F325 / D343). **Every cell here clears the GUC and asserts
@@ -715,7 +740,13 @@ select is(
 
 -- ---------------------------------------------------------------------------
 -- L. THE FREEZE CHOOSER — **BOTH OF Q61'S RULINGS, PROVEN (R1007).**
---    Q61 is open and is Chris's. The shipped swap line is `v_set_over := TRUE`,
+--    [135 RE-CUT — Q61 RULED 2026-09-27: neither ruling this section walks
+--    was the one chosen; edits are refused until every starter has finished,
+--    and the flag stays the literal TRUE (pgTAP 083 F8/F9). The chooser is
+--    BYTE-UNTOUCHED (083 F10), so these cells still pin its arms; L3-L6's
+--    `not_frozen` arm is now UNREACHABLE FROM THE VERB, and L.E1.18 removed
+--    the UI's matching "will be overwritten" copy on that pin.]
+--    Q61 was open and was Chris's. The shipped swap line is `v_set_over := TRUE`,
 --    so §E and §J only ever walk the TRUE arms — which is exactly why a lie on
 --    the FALSE branch survived to review: under the documented one-line swap,
 --    on a LIVE week with a LIVE matchup, the old inline CASE fell through every
@@ -746,7 +777,7 @@ select is(
 select is(
   (public.commish_override_freeze_internal(false, false, false, false) ->> 'frozen')::boolean,
   false,
-  'L3 Q61''s OTHER RULING, live week, live matchup: the flag is NOT set, so nothing is frozen — correct, and the only part the old inline CASE got right');
+  'L3 THE CHOOSER''S `not_frozen` ARM (unreachable from the verb since 135 — kept pinned because the chooser is unchanged): flag NOT set, live week, live matchup ⇒ nothing is frozen');
 select alike(
   public.commish_override_freeze_internal(false, false, false, false) ->> 'why',
   'not_frozen%',
