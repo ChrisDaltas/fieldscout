@@ -115,11 +115,11 @@ describe('SyntheticStatsProvider contract', () => {
 
   it('ships all nine §23.6 scenarios, versioned', () => {
     expect(SCENARIO_IDS).toHaveLength(9)
-    expect(SCENARIO_LIBRARY_VERSION).toBe(2)
+    expect(SCENARIO_LIBRARY_VERSION).toBe(3) // v3: D/ST lines carry def_yards_allowed (L.E1.26)
     for (const id of SCENARIO_IDS) {
       const scenario = makeScenario(id)
       expect(scenario.id).toBe(id)
-      expect(scenario.version).toBe(2)
+      expect(scenario.version).toBe(3)
       expect(scenario.seed).toBe(DEFAULT_SEED)
     }
   })
@@ -131,7 +131,7 @@ describe('golden pins (R23 — the version-bump tripwire)', () => {
   // draw-order refactor in finalLine, a range tweak, a PRNG edit — would
   // change every scenario's "deterministic" world while the suite stayed
   // green, silently diverging anything pinned against the current library
-  // version. These hardcoded DEFAULT_SEED outputs (scenario library v2) fail
+  // version. These hardcoded DEFAULT_SEED outputs (scenario library v3) fail
   // on ANY such change, making the D26/§23.6 contract mechanical: if a pin
   // breaks, either revert the behavior change or bump SCENARIO_LIBRARY_VERSION
   // (+ per-scenario versions) and update the pins deliberately in the same
@@ -225,6 +225,7 @@ describe('golden pins (R23 — the version-bump tripwire)', () => {
           def_td: 0,
           def_safety: 0,
           def_points_allowed: 30,
+          def_yards_allowed: 313, // library v3 (L.E1.26 / F390) — drawn last; every value above is v2's
         },
         advanced: {},
       },

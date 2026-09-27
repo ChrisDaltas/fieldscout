@@ -68,7 +68,8 @@ import type {
  *                        (projections evidence only, and a summed mapping).
  *   fumble_recovery_td / return_td — offensive TD variants; zero repo
  *                        evidence for actuals spellings.
- *   def_yards_allowed  — presumed yds_allow; zero repo evidence.
+ * (`def_yards_allowed` left this list in L.E1.26 — `yds_allow`, measured on
+ * the live /stats endpoint; see its entry below.)
  * Tier-indicator keys (the def_pa / def_ya families) and bonuses are never
  * adapter concerns: derived at scoring time (D44) or deferred to v1.1.
  */
@@ -112,6 +113,23 @@ export const SLEEPER_STAT_KEY_MAP: Readonly<Record<string, string>> = {
   // week that contains a safety.
   safe: 'def_safety',
   pts_allow: 'def_points_allowed',
+  // L.E1.26 / F390 (Chris 2026-09-27: "we need to get yards allowed").
+  // MEASURED 2026-09-27 on this adapter's own endpoint (GET
+  // /stats/nfl/{season}/{week}?season_type=regular&position[]=DEF): every
+  // D/ST that played carries `yds_allow` as an integer — 2026 wk1 32/32
+  // (176–552), wk2 32/32 (151–523), 2025 wk2 32/32 — and Sleeper's own
+  // one-hot `yds_allow_<tier>` indicator names the same tier as our
+  // def_ya_* buckets in 88/88 rows (wk1/wk2/wk3). A live, just-kicked-off
+  // D/ST row can lack it (2026 wk3 ARI at ~20:17 UTC: `gp` and return
+  // stats only) — that absence stays ABSENT (NULL in `player_stats`,
+  // pending in scoring; `deliveredLine`), never a 0 — UNLESS the actuals
+  // line says `yds_allow_0_100: 1` (Sleeper's zero-omission: a delivered 0,
+  // `readZeroOmittedYardsAllowed`, R1150). The weekly
+  // projections endpoint uses the same spelling (fractional — floored for
+  // the tier by player-values, D374(4)); the SEASON endpoint carries no
+  // `yds_allow` at all. One map, both namespaces (F10 / F386(a)).
+  // Recorded: src/lib/leagues/stats/fixtures/sleeper-def-yards-allowed-2026.json.
+  yds_allow: 'def_yards_allowed',
 }
 
 /**
@@ -186,6 +204,34 @@ export function mapToCanonicalKeys(
   return out
 }
 
+/**
+ * L.E1.26 fix round (R1150) — Sleeper's ZERO-OMISSION convention, read for
+ * yards allowed on the ACTUALS path only. Sleeper omits a zero-valued stat
+ * from a line (measured: every 2025 shutout carries no `pts_allow` and
+ * `pts_allow_0: 1`), and every played D/ST row measured carries exactly one
+ * one-hot `yds_allow_<tier>` indicator (2025 weeks 2/3/4/7/13/14/15, 2026
+ * weeks 1–3). So a line WITHOUT `yds_allow` whose indicator is
+ * `yds_allow_0_100: 1` is Sleeper saying "0 yards": that is a DELIVERED 0,
+ * not an absent value. Any other shape without `yds_allow` (no indicator,
+ * or a non-zero tier's) stays absent — NULL, pending (F390 / D380(4)).
+ *
+ * Applied in `getWeekStats` AFTER the "nothing canonical → noise" check, so
+ * an indicator-only row (the live ARI row, 2026 wk3 — `gp`, returns and the
+ * indicators, no canonical stat) is still no line at all, exactly as before.
+ * NOT applied in `mapToCanonicalKeys`: the season projections carry a
+ * constant `yds_allow_0_100: 1` on every D/ST (D380(2)) — an indicator
+ * there is not a value, and the projections path never reads this.
+ */
+export function readZeroOmittedYardsAllowed(
+  raw: Record<string, number | null> | null,
+  mapped: Partial<Record<string, number>>,
+): Partial<Record<string, number>> {
+  if (mapped.def_yards_allowed !== undefined || !raw) return mapped
+  if ('yds_allow' in raw) return mapped // present but non-finite — never guessed
+  if (Number(raw.yds_allow_0_100) !== 1) return mapped
+  return { ...mapped, def_yards_allowed: 0 }
+}
+
 /** injury_start_date is a day-granularity string (or null); when absent or
  *  unparseable the honest timestamp is "observed now" — from the injected
  *  clock, never the wall (D3). */
@@ -252,13 +298,14 @@ export class SleeperStatsProvider implements StatsProvider {
         if (typeof row?.player_id !== 'string' || row.player_id.length === 0) {
           continue
         }
-        const stats = mapToCanonicalKeys(row.stats)
-        if (Object.keys(stats).length === 0) continue // nothing canonical → noise
+        const mapped = mapToCanonicalKeys(row.stats)
+        if (Object.keys(mapped).length === 0) continue // nothing canonical → noise
         out.push({
           playerId: row.player_id, // players.id is Sleeper-keyed (§23.1)
           season,
           week,
-          stats,
+          stats: readZeroOmittedYardsAllowed(row.stats, mapped), // R1150 — actuals only
+
           advanced: {}, // box-score tier — tracking/charted never present here
         })
       }

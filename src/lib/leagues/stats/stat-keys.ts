@@ -80,6 +80,15 @@ export interface StatKeyDef {
   placeholder?: true
   /** §23.5 v2.11 / §7.3.3.1 editable scope — see `ScoringSurface`. */
   scoring_surface: ScoringSurface
+  /**
+   * L.E1.26 / F390 — present (only) on a column-stored key whose column has
+   * NO default and whose NULL means NOT DELIVERED: the ingest writes NULL
+   * when the provider line lacks the key, and the scoring read leaves it
+   * ABSENT (the calculator's pending path, §23.5 / E61) instead of reading
+   * it as a delivered 0. Every other column key keeps D303's rule (the
+   * whole surface is written, absent → 0, a stored NULL reads 0).
+   */
+  null_is_pending?: true
 }
 
 export const STAT_KEYS: readonly StatKeyDef[] = [
@@ -195,11 +204,25 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
   // indicators above one-hot from this at scoring time (D44).
   { key: 'def_points_allowed', label: 'Points Allowed (Raw)', tier: 'core_box', storage: 'column', column: 'def_points_allowed', scoring_surface: 'context' },
   // Raw total yards allowed — the def_ya_* family's source (Q3/D44). Column
-  // added by migration 057; no Sleeper actuals mapping yet (no repo evidence
-  // for the feed spelling — see the L.A1.7 adapter audit note in the map).
-  { key: 'def_yards_allowed', label: 'Yards Allowed (Raw)', tier: 'core_box', storage: 'column', column: 'def_yards_allowed', scoring_surface: 'context' },
+  // added by migration 057 (DEFAULT 0 — which read as a delivered 0 and paid
+  // every ESPN/Scout D/ST the "<100 yards" tier, F390). L.E1.26: sourced from
+  // Sleeper's `yds_allow` (the adapter map), and NULL-IS-PENDING — migration
+  // 143 drops the column's DEFAULT and NULLs the never-ingested zeros, so a
+  // week with no yards-allowed value scores the def_ya_* family PENDING.
+  { key: 'def_yards_allowed', label: 'Yards Allowed (Raw)', tier: 'core_box', storage: 'column', column: 'def_yards_allowed', scoring_surface: 'context', null_is_pending: true },
 
   // ── D15 placeholders — tier-machinery proof only, never product stats ─────
   { key: 'example_tracking_yards', label: 'Example Tracking Yards (placeholder)', tier: 'tracking', storage: 'advanced', placeholder: true, scoring_surface: 'reserved' },
   { key: 'example_charted_yards', label: 'Example Charted Yards (placeholder)', tier: 'charted', storage: 'advanced', placeholder: true, scoring_surface: 'reserved' },
 ]
+
+/**
+ * L.E1.26 / F390 — the canonical keys whose stored NULL means NOT DELIVERED
+ * (see `StatKeyDef.null_is_pending`). Exactly `def_yards_allowed` today
+ * (pinned by test). The ingest (`ingest-week.ts`) writes NULL for these when
+ * the provider line lacks them, and the scorer (`deliveredLine`) leaves them
+ * absent — pending, never a silent 0 (CLAUDE.md "nothing happened ≠ worked").
+ */
+export const NULL_IS_PENDING_KEYS: ReadonlySet<string> = new Set(
+  STAT_KEYS.filter((def) => def.null_is_pending === true).map((def) => def.key),
+)

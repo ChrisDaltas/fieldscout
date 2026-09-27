@@ -81,7 +81,7 @@
  */
 
 import type { DegradationTracker } from '@/lib/leagues/stats/degradation'
-import { STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
+import { NULL_IS_PENDING_KEYS, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import type {
   ProviderGame,
   ProviderPlayerWeekStats,
@@ -181,10 +181,32 @@ export interface IngestReport {
 /** Every `player_stats` box column the registry maps, plus the summed
  *  `two_point_conversions` derivation toStatColumns writes (D24/D56(4)).
  *  Every written row carries the WHOLE surface (absent provider keys → 0,
- *  the columns' own DEFAULT), so rows are homogeneous and the diff exact. */
+ *  the columns' own DEFAULT — or NULL for a `NULL_IS_PENDING_COLUMNS`
+ *  column, F390), so rows are homogeneous and the diff exact. */
 export const STAT_COLUMN_SURFACE: readonly string[] = [
   ...new Set([...Object.values(STAT_COLUMN_BY_KEY), 'two_point_conversions']),
 ].sort()
+
+/**
+ * L.E1.26 / F390 — the surface columns whose ABSENCE is written as NULL,
+ * not 0: the columns of the registry's `null_is_pending` keys (exactly
+ * `def_yards_allowed`; its DEFAULT is dropped by migration 143). A provider
+ * line without the key stores NULL — "not delivered", which the scorer reads
+ * as pending — and the diff tells NULL from a delivered 0 for these columns
+ * (every other column keeps "NULL ≡ absent ≡ 0", D303(5)).
+ */
+export const NULL_IS_PENDING_COLUMNS: ReadonlySet<string> = new Set(
+  [...NULL_IS_PENDING_KEYS].map((key) => {
+    const column = STAT_COLUMN_BY_KEY[key]
+    if (column === undefined) throw new Error(`null_is_pending key ${key} has no player_stats column`)
+    return column
+  }),
+)
+
+/** A surface column's value when the provider line lacks it. */
+function absentValue(column: string): number | null {
+  return NULL_IS_PENDING_COLUMNS.has(column) ? null : 0
+}
 
 /** Registry keys stored in `player_stats.advanced` (§23.5) — the D15
  *  placeholder pair today; a future key joins by registry edit, no migration. */
@@ -235,8 +257,9 @@ export interface StatRow {
   game_id: string | null
   is_live: boolean
   source: string
-  /** The full STAT_COLUMN_SURFACE, every column present. */
-  columns: Record<string, number>
+  /** The full STAT_COLUMN_SURFACE, every column present — NULL only for a
+   *  `NULL_IS_PENDING_COLUMNS` column the line did not deliver (F390). */
+  columns: Record<string, number | null>
   /** Registry-canonical advanced keys only. */
   advanced: Record<string, number>
 }
@@ -384,8 +407,8 @@ export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext)
   if (Object.keys(mapped).length === 0 && Object.keys(advanced).length === 0) {
     return { row: null, droppedAdvancedKeys }
   }
-  const columns: Record<string, number> = {}
-  for (const column of STAT_COLUMN_SURFACE) columns[column] = mapped[column] ?? 0
+  const columns: Record<string, number | null> = {}
+  for (const column of STAT_COLUMN_SURFACE) columns[column] = mapped[column] ?? absentValue(column)
 
   const gameId = stats.gameId ?? null
   const status = gameId === null ? undefined : ctx.gameStatus.get(gameId)
@@ -404,10 +427,13 @@ export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext)
   }
 }
 
-function sameNumbers(a: Record<string, number>, b: Record<string, number>): boolean {
+function sameNumbers(a: Record<string, number | null>, b: Record<string, number | null>): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)])
   for (const key of keys) {
-    if ((a[key] ?? 0) !== (b[key] ?? 0)) return false
+    // A NULL_IS_PENDING column compares NULL exactly (NULL ≠ 0 — "not
+    // delivered" vs a delivered zero, F390); every other column keeps
+    // NULL ≡ absent ≡ 0.
+    if ((a[key] ?? absentValue(key)) !== (b[key] ?? absentValue(key))) return false
   }
   return true
 }
@@ -431,7 +457,8 @@ export interface StatDiff {
 /**
  * The §23.2 diff. A scoring delta is a new row or a moved box column /
  * advanced value (a NULL stored column and an absent key both read as 0 —
- * the columns' DEFAULT; an advanced key that is ABSENT is pending and is
+ * the columns' DEFAULT — except a `NULL_IS_PENDING_COLUMNS` column, where
+ * NULL is "not delivered" and differs from 0, F390; an advanced key that is ABSENT is pending and is
  * distinct from one that is present at 0, §23.5).
  */
 export function diffStats(incoming: StatRow[], existing: ReadonlyMap<string, StatRow>): StatDiff {
@@ -563,10 +590,10 @@ async function readStats(db: SyncClient, season: number, week: number): Promise<
   )
   const out = new Map<string, StatRow>()
   for (const row of rows) {
-    const columns: Record<string, number> = {}
+    const columns: Record<string, number | null> = {}
     for (const column of STAT_COLUMN_SURFACE) {
       const value = row[column]
-      columns[column] = value === null || value === undefined ? 0 : Number(value)
+      columns[column] = value === null || value === undefined ? absentValue(column) : Number(value)
     }
     const advanced: Record<string, number> = {}
     for (const [key, value] of Object.entries(row.advanced ?? {})) {

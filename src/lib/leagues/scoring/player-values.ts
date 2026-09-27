@@ -58,8 +58,10 @@
  *
  * F386(a) — KEYS THE SOURCE CANNOT SUPPLY are NOT mapped here. The canonical
  * Sleeper map (`SLEEPER_STAT_KEY_MAP`, shared with the ACTUALS) carries no
- * spelling for `fg_0_39`, `fg_missed`, `def_yards_allowed`, `def_block`,
- * `def_return_td`, `return_td`, `fumble_recovery_td` — and the actuals have
+ * spelling for `fg_0_39`, `fg_missed`, `def_block`, `def_return_td`,
+ * `return_td`, `fumble_recovery_td` (`def_yards_allowed` left this list in
+ * L.E1.26 — `yds_allow` is mapped for BOTH namespaces at once, so a weekly
+ * D/ST value now scores its yards tier, floored below) — and the actuals have
  * the same gap (F10: the raw spellings are unevidenced). Extending the map
  * for projections only would make a projected and an actual line stop
  * matching key for key; extending it for actuals changes real scores. So

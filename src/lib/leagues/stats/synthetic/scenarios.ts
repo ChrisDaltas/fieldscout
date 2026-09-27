@@ -21,8 +21,12 @@ import type {
 /** Bump when any scenario's behavior changes (per-scenario `version` bumps
  *  with it). Fixture recordings and simulator runs pin against this.
  *  v2 (R25): gameDate is now the ET calendar day of the kickoff, not the UTC
- *  day — the SNF game's date moved Mon → Sun, matching the sleeper tier. */
-export const SCENARIO_LIBRARY_VERSION = 2
+ *  day — the SNF game's date moved Mon → Sun, matching the sleeper tier.
+ *  v3 (L.E1.26 / F390): every D/ST line carries `def_yards_allowed` (the
+ *  real feed's `yds_allow`; a line without it now scores the yards tier
+ *  PENDING, migration 143) — drawn last in the DEF case, so every other
+ *  value of every scenario is byte-identical to v2. */
+export const SCENARIO_LIBRARY_VERSION = 3
 
 export const DEFAULT_SEED = 20260920
 
@@ -91,7 +95,7 @@ function basePlayers(): SyntheticPlayerDef[] {
 function baseScenario(id: ScenarioId, seed: number): SyntheticScenario {
   return {
     id,
-    version: 2,
+    version: 3,
     seed,
     season: SEASON,
     week: WEEK,
