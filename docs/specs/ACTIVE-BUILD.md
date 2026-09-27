@@ -163,12 +163,14 @@ F360, mints F377, records D370) — **and it was M6A's LAST PLANNED TASK: the
 
 **NEXT TAKEABLE TASK: `L.E1.18`** — Q61: refuse a score / result override
 while the matchup's games are in progress (tasks-M6A §6's **2026-09-27
-amendment**; PROGRESS **F378**). **M6A IS REOPENED for six ruling tasks,
-L.E1.18 → L.E1.23, taken in numeric order** (edges: L.E1.20 needs L.E1.19,
+amendment**; PROGRESS **F378**). **M6A IS REOPENED for ~~six~~ seven ruling tasks,
+L.E1.18 → L.E1.24, taken in numeric order** (edges: L.E1.20 needs L.E1.19,
 L.E1.21 needs L.E1.20; the rest need nothing new). Chris ruled **Q60–Q64**
 and the **F377** read on 2026-09-27 (spec **v2.16.42**, PROGRESS **D371**):
-Q60 NO (no `commish_edit_record`) and Q64 option 1 (going forward only;
-`reopen_week` not wanted) need no task; Q61 → L.E1.18 ("in progress" ruled PER MATCHUP — editable once every
+Q60 NO (no `commish_edit_record`) needs no task; Q64 option 1 (going
+forward only — the open week IS re-scored, final weeks are not; `reopen_week`
+not wanted) → **L.E1.24** (F382 — the shipped refusal blocks the open week;
+added by the PR #312 review, R1090); Q61 → L.E1.18 ("in progress" ruled PER MATCHUP — editable once every
 starter on both teams has finished); Q62 → L.E1.19 /
 L.E1.20 / L.E1.21 (weekly projections, league-scored values, the order +
 `Doubtful`); Q63 → **L.E1.22 (autopilot OFF by default + the commissioner's
@@ -179,7 +181,7 @@ task's own time (D161). *(Advanced from the closeout by the 2026-09-27
 rulings docs session.)*
 
 ~~**NEXT — M6A CLOSEOUT, not a `L.E1.*` task.** There is no unbuilt task in
-tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.23**, before the pointer
+tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.24**, before the pointer
 moves to the next milestone:
 ~~(1) **Chris's rulings** — Q60–Q64 (still open in PROGRESS §3) and the
 F377 read (a "confirm as played" act for a round under R839's hourly
