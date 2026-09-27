@@ -161,16 +161,33 @@ control in override mode; **F366** discharged in its own commit; discharges
 F360, mints F377, records D370) — **and it was M6A's LAST PLANNED TASK: the
 §6 list (L.E1.1–L.E1.17) is COMPLETE.**
 
-**NEXT — M6A CLOSEOUT, not a `L.E1.*` task.** There is no unbuilt task in
-tasks-M6A §6. What remains before the pointer moves to the next milestone:
-(1) **Chris's rulings** — Q60–Q64 (still open in PROGRESS §3) and the
+**NEXT TAKEABLE TASK: `L.E1.18`** — Q61: refuse a score / result override
+while the matchup's games are in progress (tasks-M6A §6's **2026-09-27
+amendment**; PROGRESS **F378**). **M6A IS REOPENED for six ruling tasks,
+L.E1.18 → L.E1.23, taken in numeric order** (edges: L.E1.20 needs L.E1.19,
+L.E1.21 needs L.E1.20; the rest need nothing new). Chris ruled **Q60–Q64**
+and the **F377** read on 2026-09-27 (spec **v2.16.42**, PROGRESS **D371**):
+Q60 NO (no `commish_edit_record`) and Q64 option 1 (going forward only;
+`reopen_week` not wanted) need no task; Q61 → L.E1.18; Q62 → L.E1.19 /
+L.E1.20 / L.E1.21 (weekly projections, league-scored values, the order +
+`Doubtful`); Q63 → **L.E1.22 (autopilot OFF by default + the commissioner's
+switch — it RE-CUTS L.E1.14's synthetic gate, and migrating the flag OFF
+stops production's unmanaged seats being auto-filled until the switch is
+flipped)**; F377(c) + the WARNING → L.E1.23. Numbers are measured at each
+task's own time (D161). *(Advanced from the closeout by the 2026-09-27
+rulings docs session.)*
+
+~~**NEXT — M6A CLOSEOUT, not a `L.E1.*` task.** There is no unbuilt task in
+tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.23**, before the pointer
+moves to the next milestone:
+~~(1) **Chris's rulings** — Q60–Q64 (still open in PROGRESS §3) and the
 F377 read (a "confirm as played" act for a round under R839's hourly
-WARNING?); (2) **the M6A exit-criteria gate** per tasks-M6A §8 (a Reviewer /
+WARNING?);~~ **(1) RULED 2026-09-27 — see above;** (2) **the M6A exit-criteria gate** per tasks-M6A §8 (a Reviewer /
 gate session, not a Builder task); (3) **the open M6A ledger rows**, each
 small and filed with its shape — F361 (the M4 panel hint), F363 (the retire
 verb's reason gate), F368, F370, F371 (League Home's activity feed), F372
 (REFERENCES / TRIGGER / MAINTAIN grants), F373–F376 (the synthetic gate's
-recorded blindnesses), F377; (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
+recorded blindnesses), F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23); (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
 reads 124–134 applied, 0 of 73 `public` tables grant TRUNCATE to anon/authenticated, the M6A verbs present. After the
 closeout the delivery plan's next milestone is **M5** (trades / FAAB —
 D352 / F340), which needs its own Architect breakdown before the loop can
