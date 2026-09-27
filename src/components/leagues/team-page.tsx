@@ -23,8 +23,8 @@ import { Crest } from './league-cells'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
-import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, renameArm } from './team-commish-ops'
-import { TeamCommishTools, TeamRename } from './team-commish-tools'
+import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, autopilotSwitchShown, renameArm } from './team-commish-ops'
+import { TeamAutopilotSwitch, TeamCommishTools, TeamRename } from './team-commish-tools'
 
 /**
  * Team page — §16.1 `…/leagues/[id]/team/[teamId]` ("Team/roster + weekly
@@ -220,6 +220,11 @@ function TeamPageContent({
             arm={renameArm({ isCommish, isOwnTeam, overrideMode: inOverride })}
             showOverrideHint={isCommish && !isOwnTeam && !inOverride}
           />
+          {/* M6A L.E1.22 (Q63): the per-team autopilot switch — a face of
+              override mode, for a seat with no manager only. */}
+          {rosterTeam && autopilotSwitchShown({ inOverride, managerUserId: rosterTeam.manager_user_id, status: rosterTeam.status }) && (
+            <TeamAutopilotSwitch leagueId={leagueId} teamId={teamId} on={rosterTeam.autopilot} />
+          )}
         </CardContent>
       </Card>
 

@@ -125,6 +125,22 @@ export function renameArm(args: { isCommish: boolean; isOwnTeam: boolean; overri
 
 export const RENAME_VIA_OVERRIDE_HINT = 'To rename this team, turn on override mode below.'
 
+// ---------------------------------------------------------------------------
+// Autopilot — the commissioner's per-team switch (M6A L.E1.22; Q63, ruled
+// 2026-09-27: OFF by default, "give the [commissioner] a button that lets
+// them put the team on autopilot")
+// ---------------------------------------------------------------------------
+
+export const AUTOPILOT_SWITCH_LABEL = 'Put on autopilot'
+
+/** Whether the team page shows the switch: a face of override mode (rule
+ *  (h)) — so only while the commissioner is IN the mode — and only for a seat
+ *  with NO manager that still plays (139 refuses ON for a managed or a
+ *  retired seat; showing the control there would be a dead control). */
+export function autopilotSwitchShown(args: { inOverride: boolean; managerUserId: string | null; status: string }): boolean {
+  return args.inOverride && args.managerUserId === null && args.status !== 'retired'
+}
+
 export type RenameGate = { ok: true; name: string } | { ok: false; why: string }
 
 /** Why Save is disabled, SAID (rule (h)). 128's bound: trimmed, non-empty,

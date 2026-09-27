@@ -21,16 +21,18 @@ import {
   ADD_NO_MATCH_COPY,
   ADD_RESULT_LIMIT,
   ADD_SEARCH_HINT,
+  AUTOPILOT_SWITCH_LABEL,
   ROSTER_SAVED_COPY,
   TEAM_TOOLS_EMPTY_ROSTER_COPY,
   addCandidates,
+  autopilotSwitchShown,
   renameArm,
   renameGate,
   renameOutcome,
   rosterBypassedCopy,
   rosterOutcome,
 } from './team-commish-ops'
-import { TeamCommishToolsView, TeamRenameView, type AddCandidatesState } from './team-commish-tools'
+import { TeamAutopilotSwitchView, TeamCommishToolsView, TeamRenameView, type AddCandidatesState } from './team-commish-tools'
 
 const unescapeHtml = (html: string) => html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 
@@ -328,5 +330,59 @@ describe('TeamRenameView — one form, two arms', () => {
     expect(renderRename({ outcome: renameOutcome({ no_changes: true, name: 'Render Team', name_collides_with: [] }, false) })).toContain('data-rename-outcome="no_changes"')
     expect(renderRename({ outcome: renameOutcome({ no_changes: false, name: 'New', name_collides_with: ['t2'] }, true) })).toContain('data-rename-outcome="renamed_name_shared"')
     expect(renderRename({ pending: true })).toContain('Saving…')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// M6A L.E1.22 — the autopilot switch (Q63): who sees it, and its states
+// ---------------------------------------------------------------------------
+
+describe('autopilotSwitchShown — a face of override mode, for an unmanaged, playing seat only', () => {
+  it('shown ONLY inside the mode, ONLY for a seat with no manager, NEVER for a retired franchise', () => {
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'active' })).toBe(true)
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'orphaned' })).toBe(true)
+    expect(autopilotSwitchShown({ inOverride: false, managerUserId: null, status: 'active' })).toBe(false)
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: 'u1', status: 'active' })).toBe(false)
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'retired' })).toBe(false)
+  })
+})
+
+describe('TeamAutopilotSwitchView — every state is a real render', () => {
+  const view = (props: Partial<Parameters<typeof TeamAutopilotSwitchView>[0]>) =>
+    unescapeHtml(renderToStaticMarkup(createElement(TeamAutopilotSwitchView, { on: false, pending: false, refusal: null, onChange: noop, ...props })))
+
+  it('OFF: an unchecked switch labelled for what it does, no pending line, no refusal, and NO explanatory copy', () => {
+    const html = view({})
+    expect(html).toContain('data-autopilot-switch="off"')
+    expect(html).toMatch(/role="switch"[^>]*aria-checked="false"/)
+    expect(html).toContain(`>${AUTOPILOT_SWITCH_LABEL}</label>`)
+    expect(html).not.toContain('data-autopilot-pending')
+    expect(html).not.toContain('data-autopilot-refusal')
+    // The label is the only text — no sentence explaining autopilot.
+    expect(html.replace(/<[^>]+>/g, '').trim()).toBe(AUTOPILOT_SWITCH_LABEL)
+  })
+
+  it('ON: the switch is checked (the rosters document said so)', () => {
+    const html = view({ on: true })
+    expect(html).toContain('data-autopilot-switch="on"')
+    expect(html).toMatch(/role="switch"[^>]*aria-checked="true"/)
+  })
+
+  it('PENDING: the switch is disabled while the write is in flight and says so', () => {
+    const html = view({ pending: true })
+    expect(html).toMatch(/role="switch"[^>]*disabled=""/)
+    expect(html).toContain('data-autopilot-pending')
+  })
+
+  it('ERROR: the verb’s refusal renders VERBATIM as an alert', () => {
+    const refusal = 'team c7… has a manager — autopilot is for a seat with NO manager; to set this team’s lineup, use the lineup override'
+    const html = view({ refusal })
+    expect(html).toContain('role="alert"')
+    expect(html).toContain(refusal)
+  })
+
+  it('team-commish-tools.tsx carries no resting shadow (CLAUDE.md: elevation is a hover state)', () => {
+    const source = readFileSync(path.resolve(process.cwd(), 'src/components/leagues/team-commish-tools.tsx'), 'utf8')
+    expect(source).not.toMatch(/(?<![a-z-]:)shadow-hard/)
   })
 })

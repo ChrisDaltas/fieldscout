@@ -177,6 +177,13 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
   if ('name' in after && 'name' in before) {
     return `renamed ${text(before.name) ?? 'a team'} to ${text(after.name) ?? 'a new name'}`
   }
+  // THE AUTOPILOT SWITCH — 139 writes {autopilot} both sides (M6A L.E1.22,
+  // Q63). Read from the key set like every other act (F355), so the words
+  // follow the switch's direction and never the verb's name.
+  if ('autopilot' in after && typeof after.autopilot === 'boolean') {
+    const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
+    return after.autopilot ? `put ${team} on autopilot` : `took ${team} off autopilot`
+  }
   // A LINEUP — 123 writes the whole lineup row both sides.
   if ('slot_map' in after) {
     const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'

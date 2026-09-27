@@ -36,7 +36,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import { LineupEditor } from './lineup-editor'
 import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
-import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE } from './team-commish-ops'
+import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE } from './team-commish-ops'
 import { TeamPage } from './team-page'
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -132,8 +132,8 @@ const rosters: LeagueRosters = {
   league_id: LEAGUE,
   season: 2099,
   teams: [
-    { team_id: TEAM, name: 'Render Team', owner_id: 'user-manager', status: 'active', manager_user_id: 'user-manager', roster },
-    { team_id: 'team-2', name: 'Commish Team', owner_id: 'user-commish', status: 'active', manager_user_id: 'user-commish', roster: [] },
+    { team_id: TEAM, name: 'Render Team', owner_id: 'user-manager', status: 'active', manager_user_id: 'user-manager', autopilot: false, roster },
+    { team_id: 'team-2', name: 'Commish Team', owner_id: 'user-commish', status: 'active', manager_user_id: 'user-commish', autopilot: false, roster: [] },
   ],
 }
 
@@ -777,6 +777,70 @@ describe('the team page’s commissioner tools and rename arms (L.E1.13) — fre
       const html = renderTeamPage({ detail: asCommish, rosters: 'error' })
       expect(html).toContain('Couldn’t load this roster.')
       expect(html).not.toContain('data-team-commish-tools')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+})
+
+// M6A L.E1.22 (migration 139; Q63, ruled 2026-09-27): the per-team "Put on
+// autopilot" switch — a face of override mode, shown for an UNMANAGED seat
+// only, its checked state the rosters document's `autopilot` (never the click).
+describe('the team page’s autopilot switch (L.E1.22) — free vs gated', () => {
+  const asCommish = { ...detail, my_role: 'commissioner' as const }
+  /** TEAM has NO manager: its member row is a placeholder and the rosters
+   *  document says so (`manager_user_id: null`). */
+  const unmanagedDetail = {
+    ...asCommish,
+    members: detail.members.map((m) => (m.team_id === TEAM ? { ...m, user_id: null, is_placeholder: true } : m)),
+  }
+  const unmanagedRosters = (autopilot: boolean): LeagueRosters => ({
+    ...rosters,
+    teams: rosters.teams.map((t) => (t.team_id === TEAM ? { ...t, manager_user_id: null, autopilot } : t)),
+  })
+
+  it('MODE ON, commissioner, an UNMANAGED seat: the switch shows, OFF by default, with its label — and it is the rosters document’s state', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const off = renderTeamPage({ detail: unmanagedDetail, rosters: unmanagedRosters(false) })
+      expect(off).toContain('data-autopilot-switch="off"')
+      expect(off).toContain(AUTOPILOT_SWITCH_LABEL)
+      expect(off).toMatch(/role="switch"[^>]*aria-checked="false"/)
+      const on = renderTeamPage({ detail: unmanagedDetail, rosters: unmanagedRosters(true) })
+      expect(on).toContain('data-autopilot-switch="on"')
+      expect(on).toMatch(/role="switch"[^>]*aria-checked="true"/)
+      // Still exactly ONE override switch on the page (rule (h)).
+      expect(on.match(/data-override-toggle/g)).toHaveLength(1)
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  it('MODE OFF: no switch for the commissioner on the same unmanaged seat — it is a face of the mode, never a standalone control', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(false)
+    try {
+      expect(renderTeamPage({ detail: unmanagedDetail, rosters: unmanagedRosters(false) })).not.toContain('data-autopilot-switch')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  it('MODE ON, commissioner, a MANAGED seat: no switch (139 refuses ON there — no dead control)', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const html = renderTeamPage({ detail: asCommish })
+      expect(html).toContain('data-team-commish-tools')
+      expect(html).not.toContain('data-autopilot-switch')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  it('MODE ON in the store, but the viewer is a MANAGER: no switch, even on an unmanaged seat', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const manager = { ...unmanagedDetail, my_role: 'manager' as const }
+      expect(renderTeamPage({ detail: manager, rosters: unmanagedRosters(false) })).not.toContain('data-autopilot-switch')
     } finally {
       vi.mocked(useOverrideMode).mockReset()
     }

@@ -49,8 +49,16 @@
  * (`p_league_id` / `leagueIds`) — unscoped they would walk every in-season
  * league on the shared stack and flip other suites' weeks mid-run (D313).
  *
- * No `action_id` is minted anywhere here (the job RPC takes none), so this
- * file claims no prefix in the D108(14) registry.
+ * No `action_id` is minted by the JOB (it takes none). M6A L.E1.22 adds ONE
+ * verb call — the commissioner's `commish_set_autopilot` — with a fixed id
+ * under this file's existing `…0000b02a` stem (`create_league`'s own).
+ *
+ * M6A L.E1.22 (migration 139; Q63 — autopilot is OFF BY DEFAULT behind a
+ * per-team commissioner switch): the unmanaged seat is switched ON through
+ * the REAL verb before the tick (its premise asserted), and a SECOND
+ * unmanaged seat is left OFF with NO lineup row — D354's measurement end to
+ * end: the tick MATERIALIZES it (never fills it), the drain then writes its
+ * provisional zero, and the total_points week is NOT held.
  */
 import { createClient } from '@supabase/supabase-js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -60,6 +68,7 @@ import type { Database, Json } from '@/types/database'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import { VirtualClock } from '../time/virtual-clock'
+import { commishSetAutopilot } from '../api/commish-autopilot-service'
 import { runScoreWeekBatch } from './score-week-worker'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -88,6 +97,8 @@ const COMMISH = {
 
 const QB = `${PREFIX}-qb`
 const WR = `${PREFIX}-wr`
+/** The OFF seat's one player — fillable, so an empty map there is the switch. */
+const QB2 = `${PREFIX}-qb2`
 const GAME = `${PREFIX}-g1`
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
@@ -134,6 +145,14 @@ async function cleanup(): Promise<void> {
 let leagueId = ''
 let unmanagedTeamId = ''
 let commishTeamId = ''
+/** M6A L.E1.22: the unmanaged seat left OFF (Q63's default), with NO row. */
+let offTeamId = ''
+let commishClient: ReturnType<typeof createClient<Database>>
+let tickReport: {
+  autopiloted?: Array<{ team_id?: string }>
+  seats_materialized?: Array<{ team_id?: string }>
+  commissioner_managed?: Array<{ team_id?: string; reason?: string; materialized?: boolean }>
+} = {}
 
 beforeAll(async () => {
   await cleanup()
@@ -148,7 +167,7 @@ beforeAll(async () => {
   if (userError) throw new Error(`createUser failed: ${userError.message}`)
   const commishId = created.user.id
 
-  const commishClient = createClient<Database>(LOCAL_URL, LOCAL_ANON_KEY, { auth: { persistSession: false } })
+  commishClient = createClient<Database>(LOCAL_URL, LOCAL_ANON_KEY, { auth: { persistSession: false } })
   const { error: signInError } = await commishClient.auth.signInWithPassword({
     email: COMMISH.email,
     password: COMMISH.password,
@@ -187,6 +206,12 @@ beforeAll(async () => {
       'unmanaged team',
     )
   )!.id
+  offTeamId = (
+    await must(
+      service.from('teams').insert({ owner_id: commishId, name: 'Off Seat', league_id: leagueId }).select('id').single(),
+      'off team',
+    )
+  )!.id
 
   await must(
     service
@@ -217,6 +242,12 @@ beforeAll(async () => {
       .insert({ league_id: leagueId, user_id: null, team_id: unmanagedTeamId, role: 'manager', is_placeholder: true }),
     'placeholder seat',
   )
+  await must(
+    service
+      .from('league_members')
+      .insert({ league_id: leagueId, user_id: null, team_id: offTeamId, role: 'manager', is_placeholder: true }),
+    'placeholder seat (OFF)',
+  )
 
   await must(service.from('league_weeks').insert({ league_id: leagueId, season: SEASON, week: WEEK }), 'league_weeks')
   await must(
@@ -236,6 +267,7 @@ beforeAll(async () => {
       [
         { id: QB, full_name: 'AP Score QB', position: 'QB', team: 'DAL', status: 'Active', adp: 1 },
         { id: WR, full_name: 'AP Score WR', position: 'WR', team: 'DAL', status: 'Active', adp: 2 },
+        { id: QB2, full_name: 'AP Score QB2', position: 'QB', team: 'PHI', status: 'Active', adp: 3 },
       ],
       { onConflict: 'id' },
     ),
@@ -245,6 +277,7 @@ beforeAll(async () => {
     service.from('league_rosters').insert([
       { league_id: leagueId, team_id: unmanagedTeamId, player_id: QB },
       { league_id: leagueId, team_id: unmanagedTeamId, player_id: WR },
+      { league_id: leagueId, team_id: offTeamId, player_id: QB2 },
     ]),
     'league_rosters',
   )
@@ -272,11 +305,24 @@ describe('autopilot reaches the scoreboard (M6A exit criterion 4, R988)', () => 
     expect(rows ?? []).toHaveLength(0)
   })
 
+  it('M6A L.E1.22 PREMISE: autopilot is OFF by default — neither seat has a switch row — and the commissioner switches the unmanaged seat ON through the REAL verb', async () => {
+    const before = await must(service.from('team_autopilot').select('team_id').in('team_id', [unmanagedTeamId, offTeamId]), 'switch rows before')
+    expect(before ?? []).toHaveLength(0)
+    const res = await commishSetAutopilot(commishClient, leagueId, { team_id: unmanagedTeamId, on: true, action_id: '00000000-0000-4000-8000-0000b02a0002' })
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const after = await must(service.from('team_autopilot').select('team_id, is_on').in('team_id', [unmanagedTeamId, offTeamId]), 'switch rows after')
+    expect(after).toEqual([{ team_id: unmanagedTeamId, is_on: true }])
+    // …and the OFF seat, like the ON one, has NO lineup row yet (D354's shape).
+    const offRows = await must(service.from('team_lineups').select('id').eq('team_id', offTeamId).eq('season', SEASON).eq('week', WEEK), 'off rows')
+    expect(offRows ?? []).toHaveLength(0)
+  })
+
   it('the tick materializes and FILLS the unmanaged seat (arm (c), D354)', async () => {
     const report = await must(
       service.rpc('lineup_lock_tick', { p_now: TICK_AT, p_league_id: leagueId }),
       'lineup_lock_tick',
     )
+    tickReport = report as unknown as typeof tickReport
     const seats = (report as unknown as { seats_materialized: Array<{ team_id: string }> }).seats_materialized
     const piloted = (report as unknown as { autopiloted: Array<{ team_id: string }> }).autopiloted
     expect(seats.map((s) => s.team_id)).toContain(unmanagedTeamId)
@@ -295,6 +341,18 @@ describe('autopilot reaches the scoreboard (M6A exit criterion 4, R988)', () => 
     expect(row!.slot_map).toEqual({ 'qb:0': QB, 'flex:0': WR })
     // The redundant projection the box score reads, written in the same UPDATE.
     expect((row!.starters as Array<{ slot: string; player_id: string | null }>).map((s) => s.player_id)).toEqual([QB, WR])
+  })
+
+  it('M6A L.E1.22 — the OFF seat with NO row is MATERIALIZED, NOT FILLED, and named commissioner-managed (D354 kept for OFF seats)', async () => {
+    const row = await must(
+      service.from('team_lineups').select('slot_map').eq('team_id', offTeamId).eq('season', SEASON).eq('week', WEEK).single(),
+      'off seat row',
+    )
+    expect(row!.slot_map).toEqual({}) // its QB could start — the empty map is the switch
+    expect((tickReport.seats_materialized ?? []).map((e) => e.team_id)).toContain(offTeamId)
+    expect((tickReport.autopiloted ?? []).map((e) => e.team_id)).not.toContain(offTeamId)
+    const named = (tickReport.commissioner_managed ?? []).find((e) => e.team_id === offTeamId)
+    expect(named).toMatchObject({ reason: 'unmanaged_autopilot_off', materialized: true })
   })
 
   it('PREMISE: both seated players carry stat lines, so a zero cannot be blamed on missing stats', async () => {
@@ -353,5 +411,19 @@ describe('autopilot reaches the scoreboard (M6A exit criterion 4, R988)', () => 
     // seated lineup that scores zero is the zero this slice exists to remove.
     expect(Number(result!.points)).toBeGreaterThan(0)
     expect(Number(result!.points)).toBe(17)
+  })
+
+  it('M6A L.E1.22 — D354\'s MEASUREMENT, end to end: the materialized OFF seat gets its provisional ZERO from the same drain, so the total_points week is NOT held (a seat with NO row would be — pgTAP 087 §H1 pins that hold)', async () => {
+    const off = await must(
+      service.from('team_week_results').select('points').eq('league_id', leagueId).eq('team_id', offTeamId).eq('season', SEASON).eq('week', WEEK).maybeSingle(),
+      'off seat result',
+    )
+    expect(off).not.toBeNull()
+    expect(Number(off!.points)).toBe(0)
+    const pending = await must(
+      service.rpc('week_results_pending_internal', { p_league_id: leagueId, p_season: SEASON, p_week: WEEK }),
+      'week_results_pending_internal',
+    )
+    expect(pending).toBeNull()
   })
 })

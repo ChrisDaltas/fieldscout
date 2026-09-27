@@ -25,6 +25,7 @@
 import { MutationObserver, QueryClient } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { commishSetAutopilotMutationOptions } from './use-commish-autopilot'
 import { commishLogKeys, commishLogSearchParams } from './use-commish-log'
 import { commishEditScheduleMutationOptions } from './use-commish-schedule'
 import { commishChangeSettingMutationOptions } from './use-commish-setting'
@@ -136,6 +137,37 @@ describe('useCommishRenameTeam — /commish/team', () => {
     const calls = stubFetch({ ok: false, status: 409, body: { error: 'commish_rename_team: franchise … is RETIRED — its name is FROZEN' } })
     const failure = await new MutationObserver(client, commishRenameTeamMutationOptions(client, LEAGUE)).mutate(variables).catch((e: unknown) => e)
     expect((failure as { name: string }).name).toBe('LeagueActionError')
+    expect((failure as { status: number }).status).toBe(409)
+    expect(calls).toHaveLength(1)
+    expectCacheUntouched(client)
+    expectKeys(client, ON, OFF)
+  })
+})
+
+// M6A L.E1.22 (migration 139, Q63): the per-team autopilot switch. It moves
+// only the rosters document's `autopilot` flag (the switch's resting state is
+// the server's), and the act is shown in League Home's activity + the log.
+describe('useCommishSetAutopilot — /commish/autopilot', () => {
+  const variables = { team_id: TEAM_A, on: true, action_id: ACTION }
+  const ON = [leagueRosterKeys.all(LEAGUE), leagueActivityKeys.all(LEAGUE), commishLogKeys.all(LEAGUE)]
+  const OFF = [leagueRosterKeys.all(OTHER_LEAGUE), commishLogKeys.all(OTHER_LEAGUE), leagueActivityKeys.all(OTHER_LEAGUE), leaguesKeys.detail(LEAGUE), leagueStandingsKeys.all(LEAGUE), leagueMatchupKeys.week(LEAGUE, WEEK), teamLineupKeys.all(TEAM_A)]
+
+  it('a 200 sends the strict body and re-reads the rosters (the flag) + activity + log — not the detail, standings, matchups, the lineup or another league', async () => {
+    const client = seededClient()
+    const calls = stubFetch({ ok: true, status: 200, body: { verb: 'commish_set_autopilot' } })
+    await new MutationObserver(client, commishSetAutopilotMutationOptions(client, LEAGUE)).mutate(variables)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`/api/leagues/${LEAGUE}/commish/autopilot`)
+    expect(calls[0].init.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init.body))).toStrictEqual(variables)
+    expectKeys(client, ON, OFF)
+    expectCacheUntouched(client)
+  })
+
+  it('a 409 (ON on a managed seat — 139’s refusal) is sent EXACTLY ONCE against the retry:3 client, mutates no cache, and invalidates the SAME keys', async () => {
+    const client = seededClient()
+    const calls = stubFetch({ ok: false, status: 409, body: { error: 'commish_set_autopilot: team … has a manager — autopilot is for a seat with NO manager (§7.2.1(c))' } })
+    const failure = await new MutationObserver(client, commishSetAutopilotMutationOptions(client, LEAGUE)).mutate(variables).catch((e: unknown) => e)
     expect((failure as { status: number }).status).toBe(409)
     expect(calls).toHaveLength(1)
     expectCacheUntouched(client)

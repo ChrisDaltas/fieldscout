@@ -4,8 +4,11 @@ import { useId, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { useCommishSetAutopilot } from '@/hooks/use-commish-autopilot'
 import { useCommishMovePlayer } from '@/hooks/use-commish-move-player'
 import { useCommishForceAddDrop } from '@/hooks/use-commish-roster'
 import { useCommishRenameTeam } from '@/hooks/use-commish-team'
@@ -19,6 +22,7 @@ import {
   ADD_NO_MATCH_COPY,
   ADD_SEARCH_HINT,
   ADD_SEARCH_MIN,
+  AUTOPILOT_SWITCH_LABEL,
   RENAME_VIA_OVERRIDE_HINT,
   TEAM_TOOLS_EMPTY_ROSTER_COPY,
   TEAM_TOOLS_INTRO,
@@ -472,5 +476,68 @@ export function TeamRenameView({
       )}
       {!refusal && outcome && <OutcomeNote said={outcome} extra={null} marker="data-rename-outcome" extraMarker="data-rename-extra" />}
     </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Autopilot — the per-team switch (M6A L.E1.22; Q63)
+// ---------------------------------------------------------------------------
+
+/**
+ * The commissioner's "Put on autopilot" switch, in the team page's header
+ * card. A face of OVERRIDE MODE (rule (h)): the page mounts it only while the
+ * commissioner is in the mode and only for an UNMANAGED seat
+ * (`autopilotSwitchShown`). NOT optimistic — the checked state is the rosters
+ * document's `autopilot`, re-read after every answer (the hook), so the
+ * switch never shows a state the server did not store. No reason input
+ * (Q66), no explanatory copy; a refusal renders VERBATIM.
+ */
+export function TeamAutopilotSwitch({ leagueId, teamId, on }: { leagueId: string; teamId: string; on: boolean }) {
+  const autopilot = useCommishSetAutopilot(leagueId)
+  return (
+    <TeamAutopilotSwitchView
+      on={on}
+      pending={autopilot.isPending}
+      refusal={autopilot.error?.message ?? null}
+      onChange={(next) => {
+        if (autopilot.isPending) return
+        autopilot.submit({ teamId, on: next })
+      }}
+    />
+  )
+}
+
+export function TeamAutopilotSwitchView({
+  on,
+  pending,
+  refusal,
+  onChange,
+}: {
+  on: boolean
+  pending: boolean
+  refusal: string | null
+  onChange: (next: boolean) => void
+}) {
+  const id = useId()
+  return (
+    <div className="flex w-full flex-col gap-1.5" data-autopilot-switch={on ? 'on' : 'off'}>
+      <div className="flex items-center gap-2">
+        <Switch id={id} checked={on} disabled={pending} onCheckedChange={onChange} data-autopilot-toggle />
+        <Label htmlFor={id} className="text-[12px] font-bold text-ink">
+          {AUTOPILOT_SWITCH_LABEL}
+        </Label>
+        {pending && (
+          <span role="status" className="text-[11px] font-semibold text-n-3" data-autopilot-pending>
+            Saving…
+          </span>
+        )}
+      </div>
+      {/* The verb's refusal, VERBATIM — that text is the UX. */}
+      {refusal && (
+        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-autopilot-refusal>
+          {refusal}
+        </p>
+      )}
+    </div>
   )
 }
