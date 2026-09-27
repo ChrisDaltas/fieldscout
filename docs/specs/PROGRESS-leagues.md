@@ -5896,6 +5896,9 @@ Fresh `npx supabase db reset` over **001–130** (from the main repo via `--work
 - **R1131 · nit · `gate-m4-evidence.ts` doesn't print the discriminating-pick count or F394's gap line.** Not taken — rides F394.
 - **R1132 · nit · D376(8) and the session log said 4,689 tests; the run says 4,690.** TAKEN at merge.
 
+**L.E1.23 review (PR #318 @ `2a9e0b1`, fresh reviewer, 2026-09-27) — CLEAN, one nit, taken at merge.** Verified: 134 is the newest definer (135–139 never name it); `diff -u 134:822-1230` vs 140 = one hunk, one `-`/one `+` (WARNING→NOTICE + wording), return document outside the hunk, REVOKE byte-identical; A6/A7 md5s re-derived independently from file text and live `pg_proc`; P1/P2 re-run in rolled-back txns; posture unchanged; the NOTICE does leave the logs (`log_min_messages = warning`). F395 filing (not fixing) judged acceptable — the hourly WARNING drops from two lines per run to one, log noise only, fix shape right. UI: the route is real, commissioner-only, no link on a bye, per-week links on a two-week game, existing primitives only, deleted door has no readers; F396 filed correctly. pgTAP 088 8/8, 066 187/187, 082 135/135; bracket suites 56/56.
+- **R1133 · nit · 140's banner and 088 A3's label said the hourly line "leaves the logs" without naming the callers' remaining WARNING (F395).** TAKEN at merge — both now say "the sync's OWN hourly line" and name F395; both edits are outside `$$` / a label, so the A6/A7 md5 pins do not move.
+
 ## 7. Session log
 
 *One line per session: date, session type, what shipped, what's next. Newest on top. Keep entries short — this is a changelog, not a diary; detail belongs in commit messages and PRs.*

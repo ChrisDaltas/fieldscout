@@ -31,7 +31,9 @@
 -- DOWNGRADE TO `RAISE NOTICE` with corrected copy, NOT emit-once — emit-once
 -- needs new state (a marker row or column) to remember it has warned, for
 -- log noise no user ever sees; a NOTICE sits below the server's default
--- `log_min_messages` (WARNING), so the hourly line leaves the logs. The copy
+-- `log_min_messages` (WARNING), so the SYNC's OWN hourly line leaves the logs
+-- (the callers `league_week_advance` / `finalize_matchups` still raise their
+-- own hourly BLOCKED WARNING for the same refusal — F395, R1133). The copy
 -- now reads "the bracket stands as played (F377(a), ruled 2026-09-27)".
 --
 -- THE RETURN DOCUMENT IS BYTE-UNCHANGED: `reason:
