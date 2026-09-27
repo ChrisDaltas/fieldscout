@@ -211,8 +211,10 @@ replacement is Doubtful is no longer swapped, as the rulings' text reads; Chris'
 spec **v2.16.46** (fold-back). **⚠ PUSH DEBT: 135–138** — production is at 134.)
 
 **NEXT TAKEABLE TASK: `L.E1.22`** — Q63: autopilot OFF by default + the commissioner's
-"Put on autopilot" switch, and the synthetic gate re-cut (PROGRESS **F380**; tasks-M6A §6's
-2026-09-27 amendment). Then L.E1.23 → L.E1.24 in numeric order. Heads after L.E1.21:
+"Put on autopilot" switch, and the synthetic gate re-cut (PROGRESS **F380**, and **F391** —
+the re-cut also runs the projections → values chain in the sim and grades WHICH player
+autopilot chose (R1121, PR #316's fix round); tasks-M6A §6's 2026-09-27 amendment). Then
+L.E1.23 → L.E1.24 in numeric order. Heads after L.E1.21:
 **138 / 086** — re-measure at task time (D161).
 
 ~~**NEXT TAKEABLE TASK: `L.E1.21`**~~ *(advanced by L.E1.21's own PR)* — autopilot's selection order (Q62) and `Doubtful` sits,
