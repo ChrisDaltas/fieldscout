@@ -22,7 +22,7 @@
 --
 -- WHAT EACH SECTION CATCHES (§4.3 — a pin is named by the defect it reddens
 -- on):
---   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 74-table census as a stored
+--   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 75-table census as a stored
 --      literal (a migration that adds a table must re-derive the mid-state
 --      allowlist in §C — deliberately a conversation with this file), and
 --      two quiescence preconditions with their reasons printed: this file
@@ -175,6 +175,13 @@ select is(
         'expert_claim_requests', 'expert_follows', 'expert_profiles', 'follows',
         'league_chat', 'league_invites', 'league_lists', 'league_members',
         'league_player_pool',  -- 109/L.D1.1 (§12.19)
+        -- 137 / M6A L.E1.20: autopilot's league-scored player values.
+        -- UNREACHABLE from a mock (zero write policies; written only by the
+        -- league-player-values job as service_role, over in_season /
+        -- playoffs leagues — never a mock — and no mock RPC reads or writes
+        -- it), so §C's and §E's mid-state allowlists are re-derived
+        -- UNCHANGED — the delta cells are the proof. Census 74 → 75.
+        'league_player_values',
         'league_rosters', 'league_weeks', 'leagues',
         'lineup_actions',  -- 112/L.D1.4 (the set_lineup idempotency ledger, DEFINER-RPC only — UNREACHABLE from a mock)
         'list_comments', 'list_favorites',
@@ -207,7 +214,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 74 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 75 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -252,8 +259,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 74 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 74::bigint,
+  'BASELINE: all 75 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 75::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
