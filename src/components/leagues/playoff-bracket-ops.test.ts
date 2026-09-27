@@ -24,7 +24,8 @@ import {
   POINTS_RACE_COPY,
   ROLLOVER_EVENT_PREFIX,
   bracketShape,
-  commishDoors,
+  EDIT_RESULT_LABEL,
+  commishResultLinks,
   correctionsCloseDisplay,
   foreignRowsCopy,
   foreignRowsOf,
@@ -268,14 +269,29 @@ describe('seededBeforeCorrection — the view derives the marker the engine does
 })
 
 // ---------------------------------------------------------------------------
-// The commissioner's doors and names
+// The commissioner's result links and names
 // ---------------------------------------------------------------------------
 
-describe('commissioner doors (§10.1 / §16.2) and names', () => {
-  it('ONE pending door for the commissioner — results (the seeds door became the real hand-pick control, L.E1.16) — none for a manager or a viewer without a role', () => {
-    expect(commishDoors('commissioner').map((d) => d.key)).toEqual(['results'])
-    expect(commishDoors('manager')).toEqual([])
-    expect(commishDoors(null)).toEqual([])
+describe('commissioner result links (§10.1 / §16.2; L.E1.23, F377(c)) and names', () => {
+  it('a commissioner gets ONE link per game to its matchup page — the real route, the stored row id; a manager or a viewer without a role gets none', () => {
+    const [, , points] = BUILT_DOC.round_list[0].games
+    expect(commishResultLinks('commissioner', 'league-1', points)).toEqual([
+      { matchupId: 'm-r1-c', week: 15, href: '/app/leagues/league-1/matchup/m-r1-c', label: EDIT_RESULT_LABEL },
+    ])
+    expect(EDIT_RESULT_LABEL).toBe('Edit a result')
+    expect(commishResultLinks('manager', 'league-1', points)).toEqual([])
+    expect(commishResultLinks(null, 'league-1', points)).toEqual([])
+  })
+  it('a bye has no result, so no link; a two-week game gets one link per week row, each naming its week', () => {
+    const [bye] = BUILT_DOC.round_list[0].games
+    expect(bye.away_team_id).toBeNull() // premise: the fixture's first game IS a bye
+    expect(commishResultLinks('commissioner', 'league-1', bye)).toEqual([])
+    const final = COMPLETE_DOC.round_list[2].games[0]
+    expect(final.weeks).toHaveLength(2) // premise: a two-week championship
+    expect(commishResultLinks('commissioner', 'league-1', final).map((l) => [l.href, l.label])).toEqual([
+      ['/app/leagues/league-1/matchup/m-r3-w17', 'Edit week 17'],
+      ['/app/leagues/league-1/matchup/m-r3-w18', 'Edit week 18'],
+    ])
   })
   it('names resolve through the detail’s teams map (F256(g)); an unknown id is said, a NULL is TBD', () => {
     expect(teamName(BRACKET_NAMES, T.alpha)).toBe('Alpha')
