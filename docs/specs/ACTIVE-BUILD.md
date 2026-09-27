@@ -171,7 +171,26 @@ Discharges **F378**, mints **F383**, records **D372**; spec **v2.16.43** (fold-b
 **⚠ PUSH DEBT: 135** — production is at 134; until Chris runs
 `npx supabase db push`, production still accepts a live-week score edit.)
 
-**NEXT TAKEABLE TASK: `L.E1.19`** — weekly projections sync (Sleeper), the first
+**`L.E1.19` is LANDED 2026-09-27** (migration **136** + pgTAP **084** `plan(54)` —
+`player_weekly_projections` (THIS week's projected stat line per player, canonical
+namespace, SELECT for signed-in users, no write policy) + `src/lib/sync/weekly-projections.ts`
++ `npm run sync:weekly-projections` + `GET /api/cron/sync-weekly-projections`, fired
+hourly at :40 by pg_cron `sync-weekly-projections-ping` (124's vehicle). **Measured
+first:** Sleeper's weekly endpoint answers 200 with filler rows, and a week that does
+not exist is ALL filler — so zero PROJECTED rows for any position fails the week.
+The first third of Q62; records **D373** (incl. D373(2), the namespace reading —
+flagged), mints **F385 / F386** for L.E1.20; spec **v2.16.44** (fold-back).
+**⚠ PUSH DEBT: 135–136** — production is at 134.)
+
+**NEXT TAKEABLE TASK: `L.E1.20`** — league-scored player values for autopilot (the
+canonical TS scorer, persisted), the second third of Q62 (PROGRESS **F379**; its
+inputs **F385** — the preseason line is in the legacy namespace — and **F386** — the
+canonical map drops kicker short-FG / DEF yards-allowed projection fields, and Sleeper's
+projected points allowed is usually FRACTIONAL — and **F387** — nothing bounds a
+projection line's age; tasks-M6A §6's 2026-09-27 amendment). Then L.E1.21 → L.E1.24 in numeric order. Heads after
+L.E1.19: **136 / 084** — re-measure at task time (D161).
+
+~~**NEXT TAKEABLE TASK: `L.E1.19`**~~ *(advanced by L.E1.19's own PR)* — weekly projections sync (Sleeper), the first
 third of Q62 (PROGRESS **F379**; tasks-M6A §6's 2026-09-27 amendment). Then
 L.E1.20 → L.E1.24 in numeric order. Heads after L.E1.18: **135 / 083** —
 re-measure at task time (D161).
@@ -222,7 +241,7 @@ BUILT: the TRUNCATE sweep, migration 133 + pgTAP 081 — discharges F349 + F327,
 mints F372, records D367. It did NOT move the pointer (then `L.E1.14`);
 L.E1.14's own PR moved it to `L.E1.16`.** ~~⚠ **The push debt is now 125–134, and production
 is NOT protected against the F349 TRUNCATE grant until Chris runs
-`npx supabase db push`.**~~ **PUSHED 2026-09-23 — no push debt; production is at 134.** **[2026-09-27: L.E1.18 adds 135 — push debt 135.]**
+`npx supabase db push`.**~~ **PUSHED 2026-09-23 — no push debt; production is at 134.** **[2026-09-27: L.E1.18 adds 135 — push debt 135.]** **[2026-09-27: L.E1.19 adds 136 — push debt 135–136.]**
 *(Advanced from `L.E1.2` in L.E1.2's own fix round, R982; advanced again by
 L.E1.3's, L.E1.4's, L.E1.5's, L.E1.7's, L.E1.8's, L.E1.9's, L.E1.10's, L.E1.15's, L.E1.11's, L.E1.12's, L.E1.13's, L.E1.14's and L.E1.16's own sessions — L.E1.16's moved it to the CLOSEOUT, there being no task left.*
 > **⚠ THE STREAK BROKE AT `L.E1.6`, AND THIS IS THE FAILURE THIS FILE'S OWN

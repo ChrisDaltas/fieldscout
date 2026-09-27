@@ -171,7 +171,10 @@ async function fetchSleeperWeekStats(
   return (await res.json()) as SleeperWeeklyStatsRow[]
 }
 
-function mapToCanonicalKeys(
+/** Sleeper stat object → canonical keys (finite numbers only). Exported for
+ *  the weekly projections sync (L.E1.19, D373(2)): a projected line takes the
+ *  SAME map as the actuals, so the two are commensurable key for key. */
+export function mapToCanonicalKeys(
   stats: Record<string, number | null> | null,
 ): Partial<Record<string, number>> {
   const out: Partial<Record<string, number>> = {}
