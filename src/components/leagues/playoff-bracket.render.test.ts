@@ -49,7 +49,7 @@ import { BracketHandPickPanelView } from './bracket-hand-pick-panel'
 import { LeagueHomeStates } from './league-home-states'
 import {
   AWAITING_BUILD_COPY,
-  COMMISH_DOOR_PENDING_COPY,
+  EDIT_RESULT_LABEL,
   NO_PLAYOFFS_COPY,
   POINTS_RACE_COPY,
   PROJECTED_TITLE,
@@ -260,7 +260,7 @@ describe('ALL SEASON: the projected bracket — "if the playoffs started today" 
     expect(r1.indexOf('Foxtrot')).toBeLessThan(r1.indexOf('Delta'))
     expect(r1.indexOf('Delta')).toBeLessThan(r1.indexOf('Echo'))
     expect(between(html, 'data-round="Semifinals"', 'data-round="Championship"').match(/data-game="tbd"/g)).toHaveLength(2)
-    expect(between(html, 'data-round="Championship"', 'data-commish-doors').match(/data-game="tbd"/g)).toHaveLength(1)
+    expect(between(html, 'data-round="Championship"', 'data-bracket-hand-pick').match(/data-game="tbd"/g)).toHaveLength(1)
     // The viewer's own franchise (Charlie — the commissioner's seat) is marked.
     expect(between(r1, 'Charlie', 'Foxtrot')).toContain('>You<')
     expect(html).toContain('6</span> teams')
@@ -335,7 +335,7 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(r2).toContain('>pending<')
     expect(r2).toContain('Leads on points')
     expect(r2).toContain('✸ commissioner-adjusted')
-    expect(between(html, 'data-round="3"', 'data-commish-doors')).toContain('data-game="tbd"')
+    expect(between(html, 'data-round="3"', 'data-bracket-hand-pick')).toContain('data-game="tbd"')
     // R911: BUILT_DOC's regular season is FINAL — the document-level close is the regular
     // season's (a past instant) and must NOT render under a final bracket; each round's badge
     // carries its own close.
@@ -367,7 +367,7 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
 
   it('a two-week championship renders both weeks’ cells and 118’s SUM — an equal sum falls to the higher seed — and the STORED champion', () => {
     const html = renderTab({ bracket: COMPLETE_DOC, detail: detailWith({ status: 'complete', champion_team_id: T.alpha }) })
-    const r3 = between(html, 'data-round="3"', 'data-commish-doors')
+    const r3 = between(html, 'data-round="3"', 'data-bracket-hand-pick')
     expect(r3).toContain('two weeks per round'.length > 0 ? 'Weeks <span class="fs-num">17 + 18</span>' : '')
     expect(r3).toContain('80.00 + 70.00')
     expect(r3).toContain('95.50 + 54.50')
@@ -404,7 +404,8 @@ describe('the no-bracket kinds (Q39 (C)/(D)): the standings ARE the playoff', ()
     expect(html).toContain(POINTS_RACE_COPY)
     expect(html).toContain('Regular season ends')
     expect(html).not.toContain('data-rounds')
-    expect(html).not.toContain('data-commish-doors')
+    expect(html).not.toContain('data-bracket-hand-pick')
+    expect(html).not.toContain('data-result-link')
   })
 
   it('playoffs off + complete: the copy and the STORED champion — never rank 1 by inference', () => {
@@ -420,26 +421,52 @@ describe('the no-bracket kinds (Q39 (C)/(D)): the standings ARE the playoff', ()
 })
 
 // ---------------------------------------------------------------------------
-// The commissioner's doors — M6's modal, pending by name
+// The commissioner's affordances — the hand-pick control and the result links
 // ---------------------------------------------------------------------------
 
-describe('commissioner edit affordances (§10.1 / §16.2) — the doors, routed to the pending-by-name state', () => {
-  it('the commissioner sees the results door pending and the REAL hand-pick switch (L.E1.16); a manager sees neither', () => {
+/** The `<a>` that carries `data-result-link="<id>"` — the whole element. */
+function resultLink(html: string, matchupId: string): string {
+  return elementOf(html, `data-result-link="${matchupId}"`, '</a>')
+}
+
+describe('commissioner edit affordances (§10.1 / §16.2) — the hand-pick switch (L.E1.16) and "Edit a result" as a LINK to each game’s matchup page (L.E1.23, F377(c))', () => {
+  it('the commissioner sees ONE "Edit a result" link per game with an opponent, each to that game’s matchup page — no pending door; a bye gets none', () => {
     const commish = renderTab({ bracket: BUILT_DOC })
-    expect(commish).not.toContain('data-commish-door="seeds"') // retired: the seeds door is the hand-pick control now
-    expect(commish).toContain('data-commish-door="results"')
     expect(commish).toContain('data-bracket-hand-pick')
     expect(commish).toContain('data-override-toggle="off"')
-    expect(commish).not.toContain('data-commish-door-pending') // closed until pressed
-    const manager = renderTab({ bracket: BUILT_DOC, detail: detailWith({}, 'manager') })
-    expect(manager).not.toContain('data-commish-doors')
-    expect(manager).not.toContain('data-bracket-hand-pick')
+    // The pending door is GONE — no button, no pending copy.
+    expect(commish).not.toContain('data-commish-door')
+    expect(commish).not.toContain('Results are corrected on the matchup page')
+    // Round 1: two byes (m-r1-a, m-r1-b) and two played games; round 2: two live games.
+    expect(commish.match(/data-result-link="/g)).toHaveLength(4)
+    for (const id of ['m-r1-c', 'm-r1-d', 'm-r2-a', 'm-r2-b']) {
+      const link = resultLink(commish, id)
+      expect(link).toContain(`href="/app/leagues/${LEAGUE}/matchup/${id}"`)
+      expect(link).toContain(`>${EDIT_RESULT_LABEL}`)
+    }
+    expect(commish).not.toContain('data-result-link="m-r1-a"')
+    expect(commish).not.toContain('data-result-link="m-r1-b"')
+    // Each link sits INSIDE its own round's column — round 1's two in round 1, round 2's in round 2.
+    expect(between(commish, 'data-round="1"', 'data-round="2"').match(/data-result-link="/g)).toHaveLength(2)
+    expect(between(commish, 'data-round="2"', 'data-round="3"').match(/data-result-link="/g)).toHaveLength(2)
   })
 
-  it('the door’s copy names where results are corrected and the audit entry — NO reason law (Q66) — and carries no ledger code', () => {
-    expect(COMMISH_DOOR_PENDING_COPY).not.toMatch(/reason/)
-    expect(COMMISH_DOOR_PENDING_COPY).toMatch(/audit/)
-    expect(COMMISH_DOOR_PENDING_COPY).not.toMatch(/\b[QEF]\d+\b|L\.D\d|M6/)
+  it('a two-week game gets one link per week row, each naming its week; a link is an anchor, resting flat', () => {
+    const html = renderTab({ bracket: COMPLETE_DOC, detail: detailWith({ status: 'complete', champion_team_id: T.alpha }) })
+    const w17 = resultLink(html, 'm-r3-w17')
+    const w18 = resultLink(html, 'm-r3-w18')
+    expect(w17).toMatch(/^<a /)
+    expect(w17).toContain(`href="/app/leagues/${LEAGUE}/matchup/m-r3-w17"`)
+    expect(w17).toContain('>Edit week 17')
+    expect(w18).toContain(`href="/app/leagues/${LEAGUE}/matchup/m-r3-w18"`)
+    expect(w18).toContain('>Edit week 18')
+    expect(w17).not.toMatch(/[\s"]shadow-hard/) // elevation only behind hover:/active:/focus-visible:
+  })
+
+  it('a manager sees no link and no hand-pick switch', () => {
+    const manager = renderTab({ bracket: BUILT_DOC, detail: detailWith({}, 'manager') })
+    expect(manager).not.toContain('data-result-link')
+    expect(manager).not.toContain('data-bracket-hand-pick')
   })
 })
 
@@ -571,7 +598,8 @@ describe('the league home’s playoffs hero embeds the bracket (§16.5.1’s pla
     expect(html).toContain('data-playoff-bracket="bracket"')
     expect(html).toContain('data-compact')
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/standings?tab=playoffs"`)
-    expect(html).not.toContain('data-commish-doors')
+    expect(html).not.toContain('data-bracket-hand-pick')
+    expect(html).not.toContain('data-result-link') // the commissioner's links are the full tab's, never the hero's (compact)
     expect(html).not.toContain('the bracket view arrives in a later update')
   })
 

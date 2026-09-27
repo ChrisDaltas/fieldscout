@@ -77,8 +77,7 @@ export const NO_PROJECTION_NO_WEEKS_COPY =
 export const SEEDED_BEFORE_CORRECTION_COPY = 'Seeded before a late correction — stands as played.'
 export const SEEDED_BEFORE_CORRECTION_TITLE =
   'The seeds frozen on this round differ from the final standings: a stat correction moved a rank after the round had been played, and a played round is never rewritten (§23.4).'
-export const COMMISH_DOOR_PENDING_COPY =
-  'Results are corrected on the matchup page — open the game there with override mode on. Every change is posted to the league’s audit log.'
+export const EDIT_RESULT_LABEL = 'Edit a result'
 export const TBD_LABEL = 'TBD'
 export const ROLLOVER_EVENT_PREFIX = 'When Week'
 
@@ -315,23 +314,40 @@ export function correctionsCloseDisplay(
 }
 
 // ---------------------------------------------------------------------------
-// Commissioner doors — M6's `commish-action-modal`, pending by name
+// Commissioner result links — the matchup page is where results are edited
 // ---------------------------------------------------------------------------
 
-export interface CommishDoor {
-  key: 'results'
+/** One link to a game's matchup page — one per stored week row (a two-week
+ *  round is one game on two rows, each its own page). */
+export interface ResultLink {
+  matchupId: string
+  week: number
+  href: string
   label: string
 }
 
-/** §10 / §16.2: "commish edit affordances (seeds/results) routed through
- *  commish-action-modal". The SEEDS door is REAL since M6A L.E1.16 — the
- *  hand-pick control (`bracket-hand-pick-panel.tsx`, `commish_edit_bracket`)
- *  — so it no longer renders as a pending door. The results door stays
- *  pending by name here: results are corrected on the matchup page
- *  (L.E1.12). A manager sees no door. */
-export function commishDoors(myRole: string | null | undefined): CommishDoor[] {
+/** §10 / §16.2: "commish edit affordances (seeds/results)". The SEEDS
+ *  affordance is the hand-pick control (M6A L.E1.16). The RESULTS
+ *  affordance is a LINK per game to that game's matchup page
+ *  (`/app/leagues/[leagueId]/matchup/[mid]`), where L.E1.12's override
+ *  control lives and L.E1.18's in-progress rule applies on arrival — M6A
+ *  L.E1.23, PROGRESS F377(c); it was a pending door until then. A manager
+ *  sees none; a bye has no result, so it gets none. A two-week game gets one
+ *  link per week, each labelled with its week. */
+export function commishResultLinks(
+  myRole: string | null | undefined,
+  leagueId: string,
+  game: Pick<BracketGame, 'away_team_id' | 'weeks'>,
+): ResultLink[] {
   if (myRole !== 'commissioner') return []
-  return [{ key: 'results', label: 'Edit a result' }]
+  if (game.away_team_id === null) return []
+  const multi = game.weeks.length > 1
+  return game.weeks.map((w) => ({
+    matchupId: w.matchup_id,
+    week: w.week,
+    href: `/app/leagues/${leagueId}/matchup/${w.matchup_id}`,
+    label: multi ? `Edit week ${w.week}` : EDIT_RESULT_LABEL,
+  }))
 }
 
 // ---------------------------------------------------------------------------

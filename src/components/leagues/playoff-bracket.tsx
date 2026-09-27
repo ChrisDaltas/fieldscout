@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -16,13 +17,12 @@ import { CHAMPION_UNRECORDED_COPY } from './league-home-season-ops'
 import {
   AWAITING_BUILD_COPY,
   BUILT_TITLE,
-  COMMISH_DOOR_PENDING_COPY,
   PROJECTED_TITLE,
   SEEDED_BEFORE_CORRECTION_COPY,
   SEEDED_BEFORE_CORRECTION_TITLE,
   TBD_LABEL,
   bracketShape,
-  commishDoors,
+  commishResultLinks,
   correctionsCloseDisplay,
   foreignRowsCopy,
   foreignRowsOf,
@@ -39,7 +39,7 @@ import {
   tbdSlots,
   teamName,
   verdictCopy,
-  type CommishDoor,
+  type ResultLink,
 } from './playoff-bracket-ops'
 
 /**
@@ -79,9 +79,12 @@ import {
  * on, every built game 134 would accept (`gameHandPickable`: not final, no
  * written score / result / override) shows a "Change pairing" door that
  * opens that game's panel under the bracket. A hand-picked round's games
- * carry the ✸ hand-picked badge (118's `hand_picked_action_id`). The
- * "Edit a result" door stays pending by name: results are corrected on the
- * matchup page (L.E1.12).
+ * carry the ✸ hand-picked badge (118's `hand_picked_action_id`).
+ *
+ * **"Edit a result" is a LINK (M6A L.E1.23, PROGRESS F377(c)).** For a
+ * commissioner on the full mount, every built game with an opponent links
+ * to its matchup page — one link per stored week row — where L.E1.12's
+ * override control lives. A manager, the hero's trim and a bye get none.
  */
 export function PlayoffBracket({
   doc,
@@ -101,13 +104,12 @@ export function PlayoffBracket({
   myTeamId: string | null
   /** The FINAL standings (117's document), for R846's label; null = not loaded. */
   finalStandings: readonly Pick<StandingsRow, 'rank' | 'team_id'>[] | null
-  /** The hero's trim: no commissioner doors, no correction-close line. */
+  /** The hero's trim: no commissioner links, no correction-close line. */
   compact?: boolean
 }) {
   const shape = bracketShape(doc)
   const rollover = rolloverDisplay(doc, leagueTimeZone)
   const close = correctionsCloseDisplay(doc, leagueTimeZone)
-  const doors = compact ? [] : commishDoors(myRole)
   const foreign = foreignRowsCopy(foreignRowsOf(doc))
   const handPick = !compact && myRole === 'commissioner' && doc.kind === 'bracket'
   const overrideMode = useOverrideMode(doc.league_id)
@@ -215,6 +217,7 @@ export function PlayoffBracket({
                           teamNames={teamNames}
                           myTeamId={myTeamId}
                           onPick={handPick && overrideMode && gameHandPickable(game) ? () => setPickingId(game.weeks[0]?.matchup_id ?? null) : null}
+                          resultLinks={compact ? [] : commishResultLinks(myRole, doc.league_id, game)}
                           picking={picking?.game === game}
                         />
                       ))
@@ -227,7 +230,6 @@ export function PlayoffBracket({
       {handPick && (
         <BracketHandPickTools leagueId={doc.league_id} round={picking?.round ?? null} game={picking?.game ?? null} teamNames={teamNames} onClose={() => setPickingId(null)} />
       )}
-      {doors.length > 0 && <CommishDoors doors={doors} />}
     </section>
   )
 }
@@ -354,6 +356,7 @@ function BuiltGame({
   teamNames,
   myTeamId,
   onPick = null,
+  resultLinks = [],
   picking = false,
 }: {
   leagueId: string
@@ -363,6 +366,9 @@ function BuiltGame({
   /** The commissioner's door, present only while override mode is on and
    *  134 would accept the game (a scored game gets none — rule (h)). */
   onPick?: (() => void) | null
+  /** The commissioner's links to this game's matchup page(s) — where a
+   *  result is edited (L.E1.12); empty for everyone else. */
+  resultLinks?: ResultLink[]
   /** This game's panel is the open one — a resting state, carried by fill. */
   picking?: boolean
 }) {
@@ -434,6 +440,17 @@ function BuiltGame({
             {HAND_PICK_OPEN_LABEL}
           </Button>
         )}
+        {resultLinks.length > 0 && (
+          <span className={cn('flex flex-wrap items-center gap-1.5', !onPick && 'ml-auto')} data-result-links>
+            {resultLinks.map((link) => (
+              <Button key={link.matchupId} variant="stroke" size="sm" asChild>
+                <Link href={link.href} data-result-link={link.matchupId}>
+                  {link.label}
+                </Link>
+              </Button>
+            ))}
+          </span>
+        )}
         {game.weeks.length > 1 && (
           <span className="text-[10px] font-medium text-n-3">
             Weeks <span className="fs-num">{game.weeks.map((w) => w.week).join(' + ')}</span>
@@ -483,36 +500,6 @@ function ChampionLine({ doc, teamNames }: { doc: PlayoffBracketDoc; teamNames: R
         CHAMPION_UNRECORDED_COPY
       )}
     </p>
-  )
-}
-
-/** §10.1's doors, pending by name: pressing one opens the copy that says
- *  what the modal will be (a reason, an audit entry) — no fake form, no
- *  ledger code on screen. */
-function CommishDoors({ doors }: { doors: CommishDoor[] }) {
-  const [open, setOpen] = useState<CommishDoor['key'] | null>(null)
-  return (
-    <div className="flex flex-col gap-2" data-commish-doors>
-      <div className="flex flex-wrap items-center gap-2">
-        {doors.map((door) => (
-          <Button
-            key={door.key}
-            variant="stroke"
-            size="sm"
-            aria-pressed={open === door.key}
-            onClick={() => setOpen((current) => (current === door.key ? null : door.key))}
-            data-commish-door={door.key}
-          >
-            {door.label}
-          </Button>
-        ))}
-      </div>
-      {open && (
-        <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3" data-commish-door-pending={open}>
-          {COMMISH_DOOR_PENDING_COPY}
-        </p>
-      )}
-    </div>
   )
 }
 
