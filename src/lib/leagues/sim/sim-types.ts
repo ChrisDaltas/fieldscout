@@ -363,12 +363,23 @@ export interface SeasonLeagueResult {
   /** Of those, the seats whose week-1 starting map the SERVER left non-empty.
    *  They are counted inside `lineupsSeated` as well. */
   lineupsAutopiloted: number
+  /** M6A L.E1.22 (Q63): unmanaged seats whose autopilot switch the run
+   *  switched ON through the real verb, and the ones deliberately left OFF
+   *  (commissioner-managed — the negative control). */
+  autopilotOnSeats: number
+  autopilotOffSeats: number
+  /** An OFF seat's empty starting slots, BY TEAM — lawful by ruling ("that is
+   *  fine", Q63), so they are EXCLUDED from `lineupSlotsLeftEmpty` / F288's
+   *  run problem BY NAME here, never by loosening the check for anyone. */
+  offSeatEmptySlotKeys: Record<string, string[]>
   /** One row per seat: which hand set the week-1 lineup. `autopiloted = true`
    *  ⇒ the harness never touched the seat. */
   seatingTranscript: Array<{
     teamId: string
     autopiloted: boolean
     reportedByTick: boolean
+    /** M6A L.E1.22: the seat's switch was left OFF — commissioner-managed. */
+    autopilotOff?: boolean
     slotsFilled: number
     emptySlotKeys: string[]
   }>
@@ -452,6 +463,22 @@ export interface SeasonRunReport {
    * 0 is a run PROBLEM.
    */
   unmanagedSeatWeeksAsserted: number
+  /**
+   * M6A L.E1.22 (Q63): the run's switch census and invariant 9's PREMISE —
+   * (OFF seat, opened driven week) pairs the negative control asserted on.
+   * 0 is a run PROBLEM (the OFF arm asserted nothing). `unmanagedSeatWeeksAsserted`
+   * above now counts seats whose switch is ON.
+   */
+  autopilotOnSeats: number
+  autopilotOffSeats: number
+  autopilotOffSeatWeeksAsserted: number
+  /**
+   * F391 — invariant 10's grading, measured: picks graded, how many were
+   * ordered by each Q62 key, and the projections → values chain's own
+   * report lines. `byPointsKey` 0 is a run PROBLEM (the selection arm graded
+   * only the ADP fallback).
+   */
+  autopilotSelection: { picksGraded: number; byPointsKey: number; discriminating: number; byKey: Record<string, number>; chainLines: string[] }
   /**
    * D345 — invariant 6's provenance arm, measured: the ONE lawful commissioner
    * override the run injected on a final cell, or null. null with a finalized

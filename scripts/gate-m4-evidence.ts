@@ -222,8 +222,21 @@ function main(): void {
         `filled / ${emptySlots} left empty · ${finals} league-weeks reached 'final'`,
     )
     if (refused !== 0) fail(problems, `${scenario}: ${refused} lineup(s) refused by the server`)
+    // M6A L.E1.22 (Q63): `lineupSlotsLeftEmpty` already EXCLUDES an OFF
+    // (commissioner-managed) seat's empty slots — by name, in the runner — so
+    // this check is not loosened for anyone else. The OFF seats are named here.
     if (emptySlots !== 0) fail(problems, `${scenario}: ${emptySlots} starting slot(s) left empty (F288)`)
-    if (seated !== teams) fail(problems, `${scenario}: ${seated} of ${teams} franchises seated a week-1 lineup`)
+    const offSeats = report.leagues.reduce((n, l) => n + (l.autopilotOffSeats ?? 0), 0)
+    for (const l of report.leagues) {
+      for (const [team, keys] of Object.entries(l.offSeatEmptySlotKeys ?? {})) {
+        console.log(`   OFF SEAT (commissioner-managed, Q63): ${l.leagueLabel} team ${team} — ${keys.length} empty slot(s) EXCLUDED from F288 by name [${keys.join(' ')}]`)
+      }
+    }
+    // Every franchise seats a week-1 lineup EXCEPT the deliberately-OFF seats,
+    // which nobody seats by ruling (they play the lineup they have).
+    if (seated + offSeats !== teams) {
+      fail(problems, `${scenario}: ${seated} of ${teams} franchises seated a week-1 lineup (+ ${offSeats} OFF seat(s) left commissioner-managed)`)
+    }
 
     // ---- M6A L.E1.14: WHICH HAND seated them, and the two premises --------
     // (F335 / D345). `seated === teams` above can no longer be satisfied by
@@ -234,21 +247,38 @@ function main(): void {
     // (the R949 posture).
     const autopiloted = report.leagues.reduce((n, l) => n + l.lineupsAutopiloted, 0)
     console.log(
-      `   AUTOPILOT: ${report.unmanagedSeats} unmanaged seat(s) in the run · ${autopiloted} seated by the SERVER at ` +
-        `week 1 · ${seated - autopiloted} set by the harness through a manager's own door`,
+      `   AUTOPILOT: ${report.unmanagedSeats} unmanaged seat(s) in the run · ${report.autopilotOnSeats ?? 0} switched ON through ` +
+        `commish_set_autopilot · ${report.autopilotOffSeats ?? 0} left OFF (Q63's default — the negative control) · ` +
+        `${autopiloted} seated by the SERVER at week 1 · ${seated - autopiloted} set by the harness through a manager's own door`,
     )
     if (!(report.unmanagedSeats >= 1)) {
       fail(problems, `${scenario}: ZERO unmanaged seats — invariant 8 (unmanaged-seat-autopilot) asserted nothing`)
     }
-    // R1079: seats are not the premise — seat-WEEKS asserted are.
+    // R1079: seats are not the premise — seat-WEEKS asserted are. M6A
+    // L.E1.22: and they are seat-weeks whose switch is ON (Q63 — OFF by default).
     if (!(report.unmanagedSeatWeeksAsserted >= 1)) {
       fail(
         problems,
-        `${scenario}: invariant 8 asserted on ${String(report.unmanagedSeatWeeksAsserted)} unmanaged seat-week(s) — every driven week was still 'upcoming', so it asserted nothing`,
+        `${scenario}: AUTOPILOT PREMISE — invariant 8 asserted on ${String(report.unmanagedSeatWeeksAsserted)} switched-ON unmanaged seat-week(s), so it asserted nothing`,
       )
     }
-    if (autopiloted !== report.unmanagedSeats) {
-      fail(problems, `${scenario}: the server seated ${autopiloted} of ${report.unmanagedSeats} unmanaged seat(s) at week 1`)
+    // M6A L.E1.22: invariant 9's premise — the OFF negative control.
+    if (!((report.autopilotOffSeatWeeksAsserted ?? 0) >= 1)) {
+      fail(
+        problems,
+        `${scenario}: AUTOPILOT OFF PREMISE — invariant 9 (autopilot-off-seat-untouched) asserted on ${String(report.autopilotOffSeatWeeksAsserted)} OFF seat-week(s), so the switch's gate was never tested`,
+      )
+    }
+    // F391: invariant 10's premise — a pick ordered by a POINTS key.
+    console.log(
+      `   AUTOPILOT SELECTION (F391): ${report.autopilotSelection?.picksGraded ?? 0} pick(s) graded · ` +
+        `${report.autopilotSelection?.byPointsKey ?? 0} ordered by a points key · ${JSON.stringify(report.autopilotSelection?.byKey ?? {})}`,
+    )
+    if (!((report.autopilotSelection?.byPointsKey ?? 0) >= 1)) {
+      fail(problems, `${scenario}: SELECTION PREMISE — invariant 10 graded no pick ordered by a points key (every pick fell back to ADP)`)
+    }
+    if (autopiloted !== (report.autopilotOnSeats ?? 0)) {
+      fail(problems, `${scenario}: the server seated ${autopiloted} of ${String(report.autopilotOnSeats)} switched-ON unmanaged seat(s) at week 1`)
     }
     console.log(
       `   LAWFUL OVERRIDE (D345): ${report.lawfulOverride === null || report.lawfulOverride === undefined ? 'NONE' : `${report.lawfulOverride.leagueLabel} — ${report.lawfulOverride.detail}`}`,
