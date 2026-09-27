@@ -17,12 +17,24 @@
 -- ---------------------------------------------------------------------------
 -- THE RULINGS (Chris, 2026-09-27, in chat)
 -- ---------------------------------------------------------------------------
--- Q67: "you cannot edit a score for a matchup that has not finished yet." A
---   matchup is editable only once it is actually over: every starter on both
---   teams has finished his game, or the week is FINAL (always editable). A
---   team with no starter who has a game therefore holds its matchup LOCKED
---   until the week is done — an existing lineup row with no such starter no
---   longer reads `no_starter_game` ⇒ editable outside a final week.
+-- Q67: "you cannot edit a score for a matchup that has not finished yet."
+--   BUILT AS READ BY R1140 (PR #321's review; the orchestrator's reading of
+--   Chris's rule, stated to him 2026-09-27 and open for him to correct): a
+--   matchup has FINISHED when EITHER
+--     (A) every NFL game of the league week is over — every `nfl_games` row
+--         of the week `final` or moved out of the week (116's `left_week`),
+--         and at least one in-week row — OR
+--     (B) every STARTING slot on BOTH sides holds a player whose game is
+--         final.
+--   An empty starting slot, a starter on bye (or whose game left the week),
+--   or a side with no lineup row / no starter keeps the matchup OPEN under
+--   (B) — a manager could still add a player who plays later — but (A)
+--   releases it as soon as the week's games are all over. A FINAL league
+--   week is always editable (precedence unchanged). IR slots are not
+--   starting slots. (The FIRST build of this migration read "the week is
+--   done" as the league week being FINAL and let a bye / empty slot beside a
+--   finished starter hold nothing open; R1140 replaced both readings in the
+--   fix round, in place — 142 is unpushed.)
 -- Q68: "yes, swap in the doubtful." When no healthy, unlocked, eligible
 --   replacement exists, a Doubtful one replaces a starter who is OUT / on
 --   bye — never one Doubtful player for another, never a locked player.
@@ -32,27 +44,38 @@
 -- policy, no grant, no signature changes — typegen 0-line)
 -- ---------------------------------------------------------------------------
 --   1. `commish_matchup_edit_lock_internal` — CREATE OR REPLACE against the
---      NEWEST definer's FILE TEXT, **135:182-345** (135 is its only definer —
---      measured by grep over supabase/migrations). **FOUR `diff -u` hunks**:
---        (i)   a new `no_game` CTE — the sides whose lineup row EXISTS but
---              holds NO starter with a game this week (the EMPTY row the
---              week-open carry writes for a team that never set a lineup,
---              118:1813-1825, and a lineup of bye / no-team starters only);
---              judged PER SIDE, so a finished opponent does not unlock it;
---        (ii)  three `verdict` fields (the count, the named sides, the names);
---        (iii) the `lineup_not_set` sentence gains the middle clause and a
---              NEW refusal arm `no_starter_game` (editable FALSE, the team(s)
---              named — "… — no starter with a game yet: <team>", joined with
---              "not finished yet: <name> (<club>)" when both hold), placed
---              BELOW `lineup_not_set` and ABOVE `starters_not_finished`;
---        (iv)  the old ELSE (`no_starter_game` ⇒ editable) is now a REFUSAL —
---              reachable only for a matchup with no side at all, never a
---              vacuous yes — and every answer carries `no_starter_game_sides`.
---      Precedence: week_final > lineup_not_set > no_starter_game >
---      starters_not_finished > every_starter_finished. A FINAL week stays
---      always editable (R1092 — unchanged). The `why` value `no_starter_game`
---      KEEPS ITS NAME and flips its answer: it is now a refusal, and in a
---      final week `week_final` wins first — so it is never "editable".
+--      NEWEST definer's FILE TEXT, **135:190-353 on this branch** (= 135:182-345
+--      at f730c2a; this PR's comment-only banner edits in 135 shifted it by
+--      eight lines — R1143) (135 is its only definer — measured by grep over
+--      supabase/migrations). **TWO `diff -u` hunks** (142 `+` lines / 14 `-`
+--      lines):
+--        (i)   after `unfinished`, three NEW CTEs: `slot_defs` (the league's
+--              STARTING slot instances, `<key>:<i>` from
+--              `roster_settings.starting_slots` — never an IR spot),
+--              `week_games` ((A): the week's in-week games and how many are
+--              not `final`, a left-the-week game excluded by 116's predicate,
+--              a NULL-kickoff postponed row held IN the week — the
+--              conservative side), and `open_slots` ((B)'s open slots, per
+--              side: an EMPTY starting slot on a side that has a row, and a
+--              starter with NO game this week in a week that has game rows —
+--              the bye, the left-the-week game, the no-club player);
+--        (ii)  `verdict` gains `week_games_over`, `open_slots`, the list, the
+--              sides, and the two name strings; the CASE is rewritten as a
+--              LATERAL `doc` with the ONE refusal sentence computed once,
+--              and every answer gains `week_games_over`, `open_slots[]` and
+--              `no_starter_game_sides[]` (both EMPTY whenever editable).
+--      PRECEDENCE: `week_final` > (B) `every_starter_finished` > (A)
+--      `week_games_over` (NEW `why`, editable) > `lineup_not_set` >
+--      `no_starter_game` (an open slot — now a REFUSAL) >
+--      `starters_not_finished`; the ELSE (no side / no starting slot at all)
+--      REFUSES — never a vacuous yes. (B) before (A) keeps a matchup whose
+--      starters all finished reading `every_starter_finished` whatever the
+--      rest of the week does (074 C5c, unchanged).
+--      THE SENTENCE (one, every reason that holds, NULL clauses dropped):
+--      "This matchup can be corrected once every starter's game has finished
+--      — no lineup set yet: <team>; empty starting slot: <team> (<slot
+--      label>, …); starter with no game this week: <team> (<player>,
+--      <club>); not finished yet: <player> (<club>)".
 --      The read door (135 §2) and the verb (135 §3) are UNTOUCHED — both call
 --      the helper, so the panel and the refusal flip together.
 --   2. `lineup_autopilot_internal` — CREATE OR REPLACE against the NEWEST
@@ -105,22 +128,30 @@
 -- precedent; no statement outside a comment changed), and says it here.
 -- md5(prosrc) of both new bodies are pinned as stored literals in pgTAP 090
 -- §A, with each hunk reversed back to 135's / 139's md5 byte for byte; 087
--- A8 / A8b are re-pinned THROUGH that reversal (D379).
+-- A8 / A8b are re-pinned THROUGH that reversal (D379). EDITED IN PLACE in
+-- PR #321's fix round (R1140 — 142 is unpushed): §1 only; §2 is
+-- byte-identical to the reviewed text.
 --
 -- WHAT PUSHING THIS DOES IN PRODUCTION, IN WORDS: (1) a commissioner can no
--- longer correct a live week's matchup while one side has no starter with a
--- game (week 1 before lineups are set; a commissioner-managed seat with an
--- empty carried lineup) — the panel shows the server's sentence naming the
--- team; a FINAL week is unaffected. (2) An autopilot seat's OUT / bye starter
+-- longer correct a matchup while the week still has NFL games to play AND a
+-- starting slot on either side is empty, holds a player on bye (or whose
+-- game left the week), or a side has no lineup (week 1 before lineups are
+-- set; a commissioner-managed seat with an empty carried lineup) — the panel
+-- shows the server's sentence naming the team and why; once every game of
+-- the week is over (the correction window) the matchup opens whatever its
+-- slots hold, and a FINAL week is unaffected. (2) An autopilot seat's OUT / bye starter
 -- is swapped for a Doubtful bench player when no healthy one exists — what
 -- production (125) already does today, so for production this is not a
 -- change; it undoes 138's regression before 138 is pushed.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 1. commish_matchup_edit_lock_internal — Q67: a side with a lineup row but
---    no starter who has a game is NOT finished outside a final week.
---    CREATE OR REPLACE against 135:182-345's FILE TEXT (D137), FOUR hunks.
+-- 1. commish_matchup_edit_lock_internal — Q67 as READ by R1140: a matchup is
+--    editable once (A) every NFL game of its week is over, or (B) every
+--    starting slot on both sides holds a player whose game is final.
+--    CREATE OR REPLACE against 135:190-353's FILE TEXT on this branch
+--    (= 135:182-345 at f730c2a — the banner's comment-only edits above it
+--    shifted it eight lines; D137), TWO hunks.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION commish_matchup_edit_lock_internal(
   p_league_id  UUID,
@@ -224,22 +255,72 @@ AS $$
     FROM judged j
     WHERE j.week_rows = 0 OR j.open_games > 0
   ),
-  -- 142 (L.E1.25, Q67 RULED 2026-09-27 — "you cannot edit a score for a
-  -- matchup that has not finished yet"): a side whose lineup row EXISTS but
-  -- holds NO starter with a game this week — the EMPTY row the week-open carry
-  -- writes for a team that never set one, or a lineup of bye / no-team
-  -- starters only — is NOT finished outside a final week: its manager (or the
-  -- commissioner) may still start a player who has not played, so its score
-  -- is not over. Judged PER SIDE, so a finished opponent does not unlock it.
-  -- A starter in a week with ZERO game rows is not "no game" here — he is
-  -- already unfinished (`no_game_rows`, above).
-  no_game AS (
-    SELECT s.team_id, s.side, COALESCE(t.name, s.team_id::text) AS team_name
+  -- 142 (L.E1.25; Q67 RULED 2026-09-27 — "you cannot edit a score for a
+  -- matchup that has not finished yet" — as READ by R1140, the reading stated
+  -- to Chris 2026-09-27). A matchup has FINISHED when EITHER
+  --   (A) every NFL game of the league week is over: every in-week
+  --       `nfl_games` row reads `final` — a row that has LEFT the week (116's
+  --       `left_week`, the E43 predicate `judged` uses above) is not counted —
+  --       and at least one in-week row exists (zero rows is the emptiest
+  --       partial data, never "all over" — 116's `all_final`, §23.2); OR
+  --   (B) every STARTING slot on BOTH sides holds a player whose game is
+  --       final. An EMPTY starting slot, a starter with NO game this week (a
+  --       bye, a game that left the week, no club) and a side with NO lineup
+  --       row each keep the matchup OPEN under (B) — a manager could still
+  --       start a player who plays later — but (A) releases it as soon as the
+  --       week's games are all over. IR spots are not starting slots.
+  -- A FINAL league week is always editable (R1092 — unchanged, and first).
+  --
+  -- The league's STARTING SLOT instances, `<key>:<i>` for i < `count` — the
+  -- slot keys a stored `slot_map` uses (139's `v_slots`, 114).
+  slot_defs AS (
+    SELECT (s ->> 'key') || ':' || g.i AS slot,
+           COALESCE(s ->> 'label', s ->> 'key') AS label,
+           t.ord, g.i
+    FROM public.leagues l
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(l.roster_settings -> 'starting_slots', '[]'::jsonb))
+      WITH ORDINALITY AS t(s, ord)
+    CROSS JOIN LATERAL generate_series(0, COALESCE((s ->> 'count')::int, 0) - 1) AS g(i)
+    WHERE l.id = p_league_id AND (s ->> 'key') IS NOT NULL
+  ),
+  -- (A): the week's own games. A NULL-kickoff postponed row is NOT "left the
+  -- week" here (COALESCE → FALSE): it holds (A) open, the conservative side.
+  week_games AS (
+    SELECT count(*) FILTER (WHERE NOT x.left_week)::int AS in_week,
+           count(*) FILTER (WHERE NOT x.left_week AND x.status IS DISTINCT FROM 'final')::int AS open
+    FROM (
+      SELECT g.status,
+             COALESCE(g.status IS NOT DISTINCT FROM 'postponed'
+                      AND b.next_starts_at IS NOT NULL
+                      AND g.kickoff_at >= b.next_starts_at, FALSE) AS left_week
+      FROM m
+      CROSS JOIN bound b
+      JOIN public.nfl_games g ON g.season = m.season AND g.week = m.week
+    ) x
+  ),
+  -- (B)'s OPEN SLOTS, per side: an EMPTY starting slot on a side that HAS a
+  -- lineup row (a side with none is `no_lineup`, above), and a starter with
+  -- NO game this week in a week that HAS game rows (in a zero-rows week he is
+  -- already unfinished — `no_game_rows`).
+  open_slots AS (
+    SELECT s.team_id, s.side, COALESCE(t.name, s.team_id::text) AS team_name,
+           d.slot, d.label, d.ord, d.i,
+           NULL::text AS player_id, NULL::text AS name, NULL::text AS nfl_team,
+           'empty_slot'::text AS reason
     FROM sides s
+    CROSS JOIN slot_defs d
     LEFT JOIN public.teams t ON t.id = s.team_id
     WHERE NOT EXISTS (SELECT 1 FROM no_lineup nl WHERE nl.team_id = s.team_id)
-      AND NOT EXISTS (SELECT 1 FROM judged j
-                      WHERE j.team_id = s.team_id AND (j.week_rows = 0 OR j.games > 0))
+      AND NOT EXISTS (SELECT 1 FROM starters st WHERE st.team_id = s.team_id AND st.slot = d.slot)
+    UNION ALL
+    SELECT j.team_id, j.side, COALESCE(t.name, j.team_id::text),
+           j.slot, COALESCE(d.label, split_part(j.slot, ':', 1)), d.ord, d.i,
+           j.player_id, j.name, j.nfl_team,
+           'no_game'
+    FROM judged j
+    LEFT JOIN slot_defs d ON d.slot = j.slot
+    LEFT JOIN public.teams t ON t.id = j.team_id
+    WHERE j.week_rows > 0 AND j.games = 0
   ),
   verdict AS (
     SELECT
@@ -270,67 +351,102 @@ AS $$
          FROM no_lineup nl) AS no_lineup,
       (SELECT string_agg(nl.team_name, ', ' ORDER BY nl.side = 'away', nl.team_id)
          FROM no_lineup nl) AS no_lineup_names,
-      -- 142 (Q67): the sides with a row but no starter who has a game.
-      (SELECT count(*)::int FROM no_game) AS no_game_sides,
+      -- 142 (Q67 / R1140): (A), and (B)'s open slots — named per side.
+      (SELECT wg.in_week > 0 AND wg.open = 0 FROM week_games wg) AS week_games_over,
+      (SELECT count(*)::int FROM open_slots) AS open_slots,
       (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                'team_id',   ng.team_id,
-                'side',      ng.side,
-                'team_name', ng.team_name)
-              ORDER BY ng.side = 'away', ng.team_id), '[]'::jsonb)
-         FROM no_game ng) AS no_starter_game_sides,
-      (SELECT string_agg(ng.team_name, ', ' ORDER BY ng.side = 'away', ng.team_id)
-         FROM no_game ng) AS no_game_names
+                'team_id',   o.team_id,
+                'side',      o.side,
+                'team_name', o.team_name,
+                'slot',      o.slot,
+                'label',     o.label,
+                'reason',    o.reason,
+                'player_id', o.player_id,
+                'name',      o.name,
+                'nfl_team',  o.nfl_team)
+              ORDER BY o.side = 'away', o.team_id, o.ord NULLS LAST, o.i, o.slot), '[]'::jsonb)
+         FROM open_slots o) AS open_slot_list,
+      (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'team_id',   x.team_id,
+                'side',      x.side,
+                'team_name', x.team_name)
+              ORDER BY x.side = 'away', x.team_id), '[]'::jsonb)
+         FROM (SELECT DISTINCT o.team_id, o.side, o.team_name FROM open_slots o) x) AS no_starter_game_sides,
+      -- One entry per side, its empty slots by label in slot order, a label
+      -- empty more than once counted ("WR ×2").
+      (SELECT string_agg(y.team_name || ' (' || y.labels || ')', ', ' ORDER BY y.side = 'away', y.team_id)
+         FROM (SELECT x.team_id, x.side, x.team_name,
+                      string_agg(x.label || CASE WHEN x.n > 1 THEN ' ×' || x.n ELSE '' END, ', '
+                                 ORDER BY x.ord NULLS LAST, x.label) AS labels
+               FROM (SELECT o.team_id, o.side, o.team_name, o.label, min(o.ord) AS ord, count(*) AS n
+                     FROM open_slots o
+                     WHERE o.reason = 'empty_slot'
+                     GROUP BY o.team_id, o.side, o.team_name, o.label) x
+               GROUP BY x.team_id, x.side, x.team_name) y) AS empty_names,
+      (SELECT string_agg(o.team_name || ' (' || o.name || ', ' || COALESCE(o.nfl_team, 'no team') || ')', ', '
+                ORDER BY o.side = 'away', o.team_id, o.ord NULLS LAST, o.i, o.slot)
+         FROM open_slots o
+         WHERE o.reason = 'no_game') AS no_game_names
   )
-  SELECT CASE
+  -- 142 (Q67 / R1140): the verdict, then the open slots on every answer —
+  -- EMPTY whenever the matchup is editable (nothing holds it open).
+  SELECT d.doc || jsonb_build_object(
+           'week_games_over',       v.week_games_over,
+           'no_starter_game_sides', CASE WHEN (d.doc ->> 'editable')::boolean THEN '[]'::jsonb
+                                         ELSE v.no_starter_game_sides END,
+           'open_slots',            CASE WHEN (d.doc ->> 'editable')::boolean THEN '[]'::jsonb
+                                         ELSE v.open_slot_list END)
+  FROM verdict v
+  -- The ONE refusal sentence: every reason that holds, named by team or
+  -- player, in this order (a NULL clause drops out).
+  CROSS JOIN LATERAL (SELECT 'This matchup can be corrected once every starter''s game has finished — '
+      || concat_ws('; ', 'no lineup set yet: ' || v.no_lineup_names,
+                         'empty starting slot: ' || v.empty_names,
+                         'starter with no game this week: ' || v.no_game_names,
+                         'not finished yet: ' || v.names) AS refusal) r
+  CROSS JOIN LATERAL (SELECT CASE
     -- PRECEDENCE (R1092): a FINAL week is always editable.
     WHEN v.week_status = 'final' THEN jsonb_build_object(
       'editable', TRUE, 'why', 'week_final', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', 0,
       'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb, 'message', NULL)
+    -- (B): both sides have a row, no starting slot is open, every starter's
+    -- game is final, and there is at least one.
+    WHEN v.lineups_missing = 0 AND v.open_slots = 0 AND v.not_finished = 0 AND v.finished > 0 THEN jsonb_build_object(
+      'editable', TRUE, 'why', 'every_starter_finished', 'week_status', v.week_status,
+      'starters', v.starters, 'finished', v.finished, 'not_finished', 0,
+      'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb, 'message', NULL)
+    -- (A): every NFL game of the week is over — releases a missing row, an
+    -- empty slot and a no-game starter alike (none can score any more).
+    WHEN v.week_games_over THEN jsonb_build_object(
+      'editable', TRUE, 'why', 'week_games_over', 'week_status', v.week_status,
+      'starters', v.starters, 'finished', v.finished, 'not_finished', v.not_finished,
+      'still_playing', v.still_playing, 'no_lineup', '[]'::jsonb, 'message', NULL)
     -- R1097: a side with NO lineup row is NOT finished (never "no starters").
     WHEN v.lineups_missing > 0 THEN jsonb_build_object(
       'editable', FALSE, 'why', 'lineup_not_set', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', v.not_finished,
       'still_playing', v.still_playing, 'no_lineup', v.no_lineup,
-      'message', 'This matchup can be corrected once every starter''s game has finished — '
-                 || concat_ws('; ', 'no lineup set yet: ' || v.no_lineup_names,
-                                    'no starter with a game yet: ' || v.no_game_names,
-                                    'not finished yet: ' || v.names))
-    -- 142 (Q67 RULED): a side whose row holds NO starter with a game is NOT
-    -- finished outside a final week — refused, the team named, and any
-    -- unfinished starter on the other side named in the same sentence.
-    WHEN v.no_game_sides > 0 THEN jsonb_build_object(
+      'message', r.refusal)
+    -- (B) open: an empty starting slot, or a starter with no game this week.
+    WHEN v.open_slots > 0 THEN jsonb_build_object(
       'editable', FALSE, 'why', 'no_starter_game', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', v.not_finished,
       'still_playing', v.still_playing, 'no_lineup', '[]'::jsonb,
-      'message', 'This matchup can be corrected once every starter''s game has finished — '
-                 || concat_ws('; ', 'no starter with a game yet: ' || v.no_game_names,
-                                    'not finished yet: ' || v.names))
+      'message', r.refusal)
     WHEN v.not_finished > 0 THEN jsonb_build_object(
       'editable', FALSE, 'why', 'starters_not_finished', 'week_status', v.week_status,
       'starters', v.starters, 'finished', v.finished, 'not_finished', v.not_finished,
       'still_playing', v.still_playing, 'no_lineup', '[]'::jsonb,
-      'message', 'This matchup can be corrected once every starter''s game has finished — not finished yet: ' || v.names)
-    WHEN v.finished > 0 THEN jsonb_build_object(
-      'editable', TRUE, 'why', 'every_starter_finished', 'week_status', v.week_status,
-      'starters', v.starters, 'finished', v.finished, 'not_finished', 0,
-      'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb, 'message', NULL)
-    -- 142 (Q67): the old ELSE — "no starter has a game ⇒ editable at once" —
-    -- is the reading Chris ruled out; every side with a row and no starter
-    -- with a game is refused by the arm above. What is left for the ELSE is a
-    -- matchup with NO side at all (a row the league does not hold), and it is
-    -- REFUSED: never a vacuous yes.
+      'message', r.refusal)
+    -- No side and no starting slot at all (a row the league does not hold, or
+    -- a league with no starting slots): REFUSED — never a vacuous yes.
     ELSE jsonb_build_object(
       'editable', FALSE, 'why', 'no_starter_game', 'week_status', v.week_status,
       'starters', v.starters, 'finished', 0, 'not_finished', 0,
       'still_playing', '[]'::jsonb, 'no_lineup', '[]'::jsonb,
-      'message', 'This matchup can be corrected once every starter''s game has finished — no starter with a game yet')
-  END
-  -- 142 (Q67): the sides with a row but no starter who has a game, on EVERY
-  -- answer (empty in a final week, where they hold nothing).
-  || jsonb_build_object('no_starter_game_sides',
-       CASE WHEN v.week_status = 'final' THEN '[]'::jsonb ELSE v.no_starter_game_sides END)
-  FROM verdict v;
+      'message', 'This matchup can be corrected once every starter''s game has finished — no starting slot to judge')
+  END AS doc) d;
 $$;
 REVOKE EXECUTE ON FUNCTION commish_matchup_edit_lock_internal(UUID, UUID)
   FROM PUBLIC, anon, authenticated;

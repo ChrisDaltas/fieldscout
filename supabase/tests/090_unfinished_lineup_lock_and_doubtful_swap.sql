@@ -8,8 +8,8 @@
 -- Numbering: RESERVED by the orchestrator (PR #320 holds 089) ⇒ 090.
 --
 -- WHERE THE CELLS LIVE. Q67's behaviour cells are in pgTAP 083 (the Q61 suite
--- whose fixture they re-cut: E1 / E1a / E3, N2, N4a, N4c, N6c / N6d, N7, N8,
--- S5). Q68's re-cut and its `allow_illegal_lineups = FALSE` cell are in 086
+-- whose fixture they re-cut — after PR #321's fix round (R1140): C10, E1-E3,
+-- G2 / G2a, N1-N4c, N3b, N6c / N6d, N7, N8-N8f, B1b, S5-S7). Q68's re-cut and its `allow_illegal_lineups = FALSE` cell are in 086
 -- (§D7 / D7b / D7c / D7d — X10's family). THIS suite holds:
 --   §A  the FORM PINS for 142's two CREATE OR REPLACEs (D137): each new
 --       prosrc's md5 as a stored literal, and each one's hunks REVERSED back
@@ -33,7 +33,8 @@
 --     behaviour) ⇒ §C1 / §C5 red (and 086 §D7-§D7d); offer a RESTORED
 --     Doubtful starter to pass 1b (drop its `v_seated` skip) ⇒ §C2 reds;
 --     drop the pass-2 skip of a pass-1b man ⇒ §C5 reds; drop the pool's lock
---     test ⇒ §C3 reds.
+--     test ⇒ §C3 reds; pass 1b iterates the Doubtful tail in REVERSE (the
+--     reviewer's M1, R1142) ⇒ §C7 / C7b red.
 --   * All work runs as postgres (`auth.uid()` NULL — the tick's own
 --     precondition).
 -- ============================================================================
@@ -42,34 +43,24 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(31);
+select plan(34);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — 142 replaces TWO bodies and nothing else (D137)
 -- ---------------------------------------------------------------------------
 select is(
   (select md5(p.prosrc) from pg_proc p where p.oid = 'public.commish_matchup_edit_lock_internal(uuid,uuid)'::regprocedure),
-  'ff6a4e28968797a52b7039ddcc2f11dd',
-  'A1 commish_matchup_edit_lock_internal is 142''s FILE TEXT (prosrc md5, a stored literal)');
+  '22e166d7b568e70ae6a24153d0f564fe',
+  'A1 commish_matchup_edit_lock_internal is 142''s FILE TEXT (prosrc md5, a stored literal — re-pinned by PR #321''s fix round, R1140)');
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(replace(p.prosrc,
-  E'  -- 142 (L.E1.25, Q67 RULED 2026-09-27 — "you cannot edit a score for a\n  -- matchup that has not finished yet"): a side whose lineup row EXISTS but\n  -- holds NO starter with a game this week — the EMPTY row the week-open carry\n  -- writes for a team that never set one, or a lineup of bye / no-team\n  -- starters only — is NOT finished outside a final week: its manager (or the\n  -- commissioner) may still start a player who has not played, so its score\n  -- is not over. Judged PER SIDE, so a finished opponent does not unlock it.\n  -- A starter in a week with ZERO game rows is not "no game" here — he is\n  -- already unfinished (`no_game_rows`, above).\n  no_game AS (\n    SELECT s.team_id, s.side, COALESCE(t.name, s.team_id::text) AS team_name\n    FROM sides s\n    LEFT JOIN public.teams t ON t.id = s.team_id\n    WHERE NOT EXISTS (SELECT 1 FROM no_lineup nl WHERE nl.team_id = s.team_id)\n      AND NOT EXISTS (SELECT 1 FROM judged j\n                      WHERE j.team_id = s.team_id AND (j.week_rows = 0 OR j.games > 0))\n  ),\n',
-  E''),
-  E'         FROM no_lineup nl) AS no_lineup_names,\n      -- 142 (Q67): the sides with a row but no starter who has a game.\n      (SELECT count(*)::int FROM no_game) AS no_game_sides,\n      (SELECT COALESCE(jsonb_agg(jsonb_build_object(\n                \'team_id\',   ng.team_id,\n                \'side\',      ng.side,\n                \'team_name\', ng.team_name)\n              ORDER BY ng.side = \'away\', ng.team_id), \'[]\'::jsonb)\n         FROM no_game ng) AS no_starter_game_sides,\n      (SELECT string_agg(ng.team_name, \', \' ORDER BY ng.side = \'away\', ng.team_id)\n         FROM no_game ng) AS no_game_names\n',
-  E'         FROM no_lineup nl) AS no_lineup_names\n'),
-  E'                                    \'no starter with a game yet: \' || v.no_game_names,\n                                    \'not finished yet: \' || v.names))\n    -- 142 (Q67 RULED): a side whose row holds NO starter with a game is NOT\n    -- finished outside a final week — refused, the team named, and any\n    -- unfinished starter on the other side named in the same sentence.\n    WHEN v.no_game_sides > 0 THEN jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'no_starter_game\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', \'[]\'::jsonb,\n      \'message\', \'This matchup can be corrected once every starter\'\'s game has finished — \'\n                 || concat_ws(\'; \', \'no starter with a game yet: \' || v.no_game_names,\n',
-  E''),
-  E'    -- 142 (Q67): the old ELSE — "no starter has a game ⇒ editable at once" —\n    -- is the reading Chris ruled out; every side with a row and no starter\n    -- with a game is refused by the arm above. What is left for the ELSE is a\n    -- matchup with NO side at all (a row the league does not hold), and it is\n    -- REFUSED: never a vacuous yes.\n',
-  E''),
-  E'    ELSE jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'no_starter_game\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', 0, \'not_finished\', 0,\n',
-  E'    ELSE jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'no_starter_game\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', 0, \'not_finished\', 0,\n'),
-  E'      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb,\n      \'message\', \'This matchup can be corrected once every starter\'\'s game has finished — no starter with a game yet\')\n',
-  E'      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n'),
-  E'  -- 142 (Q67): the sides with a row but no starter who has a game, on EVERY\n  -- answer (empty in a final week, where they hold nothing).\n  || jsonb_build_object(\'no_starter_game_sides\',\n       CASE WHEN v.week_status = \'final\' THEN \'[]\'::jsonb ELSE v.no_starter_game_sides END)\n',
-  E''))
+  (select md5(replace(replace(p.prosrc,
+  E'    FROM judged j\n    WHERE j.week_rows = 0 OR j.open_games > 0\n  ),\n  -- 142 (L.E1.25; Q67 RULED 2026-09-27 — "you cannot edit a score for a\n  -- matchup that has not finished yet" — as READ by R1140, the reading stated\n  -- to Chris 2026-09-27). A matchup has FINISHED when EITHER\n  --   (A) every NFL game of the league week is over: every in-week\n  --       `nfl_games` row reads `final` — a row that has LEFT the week (116\'s\n  --       `left_week`, the E43 predicate `judged` uses above) is not counted —\n  --       and at least one in-week row exists (zero rows is the emptiest\n  --       partial data, never "all over" — 116\'s `all_final`, §23.2); OR\n  --   (B) every STARTING slot on BOTH sides holds a player whose game is\n  --       final. An EMPTY starting slot, a starter with NO game this week (a\n  --       bye, a game that left the week, no club) and a side with NO lineup\n  --       row each keep the matchup OPEN under (B) — a manager could still\n  --       start a player who plays later — but (A) releases it as soon as the\n  --       week\'s games are all over. IR spots are not starting slots.\n  -- A FINAL league week is always editable (R1092 — unchanged, and first).\n  --\n  -- The league\'s STARTING SLOT instances, `<key>:<i>` for i < `count` — the\n  -- slot keys a stored `slot_map` uses (139\'s `v_slots`, 114).\n  slot_defs AS (\n    SELECT (s ->> \'key\') || \':\' || g.i AS slot,\n           COALESCE(s ->> \'label\', s ->> \'key\') AS label,\n           t.ord, g.i\n    FROM public.leagues l\n    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(l.roster_settings -> \'starting_slots\', \'[]\'::jsonb))\n      WITH ORDINALITY AS t(s, ord)\n    CROSS JOIN LATERAL generate_series(0, COALESCE((s ->> \'count\')::int, 0) - 1) AS g(i)\n    WHERE l.id = p_league_id AND (s ->> \'key\') IS NOT NULL\n  ),\n  -- (A): the week\'s own games. A NULL-kickoff postponed row is NOT "left the\n  -- week" here (COALESCE → FALSE): it holds (A) open, the conservative side.\n  week_games AS (\n    SELECT count(*) FILTER (WHERE NOT x.left_week)::int AS in_week,\n           count(*) FILTER (WHERE NOT x.left_week AND x.status IS DISTINCT FROM \'final\')::int AS open\n    FROM (\n      SELECT g.status,\n             COALESCE(g.status IS NOT DISTINCT FROM \'postponed\'\n                      AND b.next_starts_at IS NOT NULL\n                      AND g.kickoff_at >= b.next_starts_at, FALSE) AS left_week\n      FROM m\n      CROSS JOIN bound b\n      JOIN public.nfl_games g ON g.season = m.season AND g.week = m.week\n    ) x\n  ),\n  -- (B)\'s OPEN SLOTS, per side: an EMPTY starting slot on a side that HAS a\n  -- lineup row (a side with none is `no_lineup`, above), and a starter with\n  -- NO game this week in a week that HAS game rows (in a zero-rows week he is\n  -- already unfinished — `no_game_rows`).\n  open_slots AS (\n    SELECT s.team_id, s.side, COALESCE(t.name, s.team_id::text) AS team_name,\n           d.slot, d.label, d.ord, d.i,\n           NULL::text AS player_id, NULL::text AS name, NULL::text AS nfl_team,\n           \'empty_slot\'::text AS reason\n    FROM sides s\n    CROSS JOIN slot_defs d\n    LEFT JOIN public.teams t ON t.id = s.team_id\n    WHERE NOT EXISTS (SELECT 1 FROM no_lineup nl WHERE nl.team_id = s.team_id)\n      AND NOT EXISTS (SELECT 1 FROM starters st WHERE st.team_id = s.team_id AND st.slot = d.slot)\n    UNION ALL\n    SELECT j.team_id, j.side, COALESCE(t.name, j.team_id::text),\n           j.slot, COALESCE(d.label, split_part(j.slot, \':\', 1)), d.ord, d.i,\n           j.player_id, j.name, j.nfl_team,\n           \'no_game\'\n    FROM judged j\n    LEFT JOIN slot_defs d ON d.slot = j.slot\n    LEFT JOIN public.teams t ON t.id = j.team_id\n    WHERE j.week_rows > 0 AND j.games = 0\n  ),\n  verdict AS (\n    SELECT\n      (SELECT lw.status FROM lw) AS week_status,\n',
+  E'    FROM judged j\n    WHERE j.week_rows = 0 OR j.open_games > 0\n  ),\n  verdict AS (\n    SELECT\n      (SELECT lw.status FROM lw) AS week_status,\n'),
+  E'              ORDER BY nl.side = \'away\', nl.team_id), \'[]\'::jsonb)\n         FROM no_lineup nl) AS no_lineup,\n      (SELECT string_agg(nl.team_name, \', \' ORDER BY nl.side = \'away\', nl.team_id)\n         FROM no_lineup nl) AS no_lineup_names,\n      -- 142 (Q67 / R1140): (A), and (B)\'s open slots — named per side.\n      (SELECT wg.in_week > 0 AND wg.open = 0 FROM week_games wg) AS week_games_over,\n      (SELECT count(*)::int FROM open_slots) AS open_slots,\n      (SELECT COALESCE(jsonb_agg(jsonb_build_object(\n                \'team_id\',   o.team_id,\n                \'side\',      o.side,\n                \'team_name\', o.team_name,\n                \'slot\',      o.slot,\n                \'label\',     o.label,\n                \'reason\',    o.reason,\n                \'player_id\', o.player_id,\n                \'name\',      o.name,\n                \'nfl_team\',  o.nfl_team)\n              ORDER BY o.side = \'away\', o.team_id, o.ord NULLS LAST, o.i, o.slot), \'[]\'::jsonb)\n         FROM open_slots o) AS open_slot_list,\n      (SELECT COALESCE(jsonb_agg(jsonb_build_object(\n                \'team_id\',   x.team_id,\n                \'side\',      x.side,\n                \'team_name\', x.team_name)\n              ORDER BY x.side = \'away\', x.team_id), \'[]\'::jsonb)\n         FROM (SELECT DISTINCT o.team_id, o.side, o.team_name FROM open_slots o) x) AS no_starter_game_sides,\n      -- One entry per side, its empty slots by label in slot order, a label\n      -- empty more than once counted ("WR ×2").\n      (SELECT string_agg(y.team_name || \' (\' || y.labels || \')\', \', \' ORDER BY y.side = \'away\', y.team_id)\n         FROM (SELECT x.team_id, x.side, x.team_name,\n                      string_agg(x.label || CASE WHEN x.n > 1 THEN \' ×\' || x.n ELSE \'\' END, \', \'\n                                 ORDER BY x.ord NULLS LAST, x.label) AS labels\n               FROM (SELECT o.team_id, o.side, o.team_name, o.label, min(o.ord) AS ord, count(*) AS n\n                     FROM open_slots o\n                     WHERE o.reason = \'empty_slot\'\n                     GROUP BY o.team_id, o.side, o.team_name, o.label) x\n               GROUP BY x.team_id, x.side, x.team_name) y) AS empty_names,\n      (SELECT string_agg(o.team_name || \' (\' || o.name || \', \' || COALESCE(o.nfl_team, \'no team\') || \')\', \', \'\n                ORDER BY o.side = \'away\', o.team_id, o.ord NULLS LAST, o.i, o.slot)\n         FROM open_slots o\n         WHERE o.reason = \'no_game\') AS no_game_names\n  )\n  -- 142 (Q67 / R1140): the verdict, then the open slots on every answer —\n  -- EMPTY whenever the matchup is editable (nothing holds it open).\n  SELECT d.doc || jsonb_build_object(\n           \'week_games_over\',       v.week_games_over,\n           \'no_starter_game_sides\', CASE WHEN (d.doc ->> \'editable\')::boolean THEN \'[]\'::jsonb\n                                         ELSE v.no_starter_game_sides END,\n           \'open_slots\',            CASE WHEN (d.doc ->> \'editable\')::boolean THEN \'[]\'::jsonb\n                                         ELSE v.open_slot_list END)\n  FROM verdict v\n  -- The ONE refusal sentence: every reason that holds, named by team or\n  -- player, in this order (a NULL clause drops out).\n  CROSS JOIN LATERAL (SELECT \'This matchup can be corrected once every starter\'\'s game has finished — \'\n      || concat_ws(\'; \', \'no lineup set yet: \' || v.no_lineup_names,\n                         \'empty starting slot: \' || v.empty_names,\n                         \'starter with no game this week: \' || v.no_game_names,\n                         \'not finished yet: \' || v.names) AS refusal) r\n  CROSS JOIN LATERAL (SELECT CASE\n    -- PRECEDENCE (R1092): a FINAL week is always editable.\n    WHEN v.week_status = \'final\' THEN jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'week_final\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', 0,\n      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n    -- (B): both sides have a row, no starting slot is open, every starter\'s\n    -- game is final, and there is at least one.\n    WHEN v.lineups_missing = 0 AND v.open_slots = 0 AND v.not_finished = 0 AND v.finished > 0 THEN jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'every_starter_finished\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', 0,\n      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n    -- (A): every NFL game of the week is over — releases a missing row, an\n    -- empty slot and a no-game starter alike (none can score any more).\n    WHEN v.week_games_over THEN jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'week_games_over\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n    -- R1097: a side with NO lineup row is NOT finished (never "no starters").\n    WHEN v.lineups_missing > 0 THEN jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'lineup_not_set\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', v.no_lineup,\n      \'message\', r.refusal)\n    -- (B) open: an empty starting slot, or a starter with no game this week.\n    WHEN v.open_slots > 0 THEN jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'no_starter_game\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', \'[]\'::jsonb,\n      \'message\', r.refusal)\n    WHEN v.not_finished > 0 THEN jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'starters_not_finished\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', \'[]\'::jsonb,\n      \'message\', r.refusal)\n    -- No side and no starting slot at all (a row the league does not hold, or\n    -- a league with no starting slots): REFUSED — never a vacuous yes.\n    ELSE jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'no_starter_game\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', 0, \'not_finished\', 0,\n      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb,\n      \'message\', \'This matchup can be corrected once every starter\'\'s game has finished — no starting slot to judge\')\n  END AS doc) d;\n',
+  E'              ORDER BY nl.side = \'away\', nl.team_id), \'[]\'::jsonb)\n         FROM no_lineup nl) AS no_lineup,\n      (SELECT string_agg(nl.team_name, \', \' ORDER BY nl.side = \'away\', nl.team_id)\n         FROM no_lineup nl) AS no_lineup_names\n  )\n  SELECT CASE\n    -- PRECEDENCE (R1092): a FINAL week is always editable.\n    WHEN v.week_status = \'final\' THEN jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'week_final\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', 0,\n      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n    -- R1097: a side with NO lineup row is NOT finished (never "no starters").\n    WHEN v.lineups_missing > 0 THEN jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'lineup_not_set\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', v.no_lineup,\n      \'message\', \'This matchup can be corrected once every starter\'\'s game has finished — \'\n                 || concat_ws(\'; \', \'no lineup set yet: \' || v.no_lineup_names,\n                                    \'not finished yet: \' || v.names))\n    WHEN v.not_finished > 0 THEN jsonb_build_object(\n      \'editable\', FALSE, \'why\', \'starters_not_finished\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', v.not_finished,\n      \'still_playing\', v.still_playing, \'no_lineup\', \'[]\'::jsonb,\n      \'message\', \'This matchup can be corrected once every starter\'\'s game has finished — not finished yet: \' || v.names)\n    WHEN v.finished > 0 THEN jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'every_starter_finished\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', v.finished, \'not_finished\', 0,\n      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n    ELSE jsonb_build_object(\n      \'editable\', TRUE, \'why\', \'no_starter_game\', \'week_status\', v.week_status,\n      \'starters\', v.starters, \'finished\', 0, \'not_finished\', 0,\n      \'still_playing\', \'[]\'::jsonb, \'no_lineup\', \'[]\'::jsonb, \'message\', NULL)\n  END\n  FROM verdict v;\n'))
    from pg_proc p where p.oid = 'public.commish_matchup_edit_lock_internal(uuid,uuid)'::regprocedure),
   '9f9214963f4b3084e00838c353ddf34b',
-  'A2 …and 142''s FOUR hunks are its WHOLE change (D137): each reversed, the prosrc is 135''s helper md5 byte for byte (D372(11)''s recorded post-fix-round value)');
+  'A2 …and 142''s TWO hunks (R1140''s re-cut) are its WHOLE change (D137): each reversed, the prosrc is 135''s helper md5 byte for byte (D372(11)''s recorded post-fix-round value)');
 select ok(
   (select not p.prosecdef and p.provolatile = 's' and array_to_string(p.proconfig, ',') = 'search_path=""'
    from pg_proc p where p.oid = 'public.commish_matchup_edit_lock_internal(uuid,uuid)'::regprocedure)
@@ -174,7 +165,8 @@ insert into q68_team (tag, id, league_id) values
  ('Y3', 'ca000000-0000-4000-8000-000000000003', 'ba000000-0000-4000-8000-000000000001'),
  ('Y4', 'ca000000-0000-4000-8000-000000000004', 'ba000000-0000-4000-8000-000000000001'),
  ('Y5', 'ca000000-0000-4000-8000-000000000005', 'ba000000-0000-4000-8000-000000000001'),
- ('Y6', 'ca000000-0000-4000-8000-000000000006', 'ba000000-0000-4000-8000-000000000002');
+ ('Y6', 'ca000000-0000-4000-8000-000000000006', 'ba000000-0000-4000-8000-000000000002'),
+ ('Y7', 'ca000000-0000-4000-8000-000000000007', 'ba000000-0000-4000-8000-000000000001');
 insert into teams (id, owner_id, name, league_id)
 select id, '9f000000-0000-4000-8000-000000000001', 'Q68 ' || tag, league_id from q68_team;
 insert into league_members (league_id, user_id, team_id, role, is_placeholder)
@@ -210,7 +202,15 @@ insert into players (id, full_name, position, team, status, adp) values
  ('q68-y5-dbt',  'Q68 Y5 Dbt',  'WR', 'NYG', 'Doubtful',   3.0),
  ('q68-y6-qbout','Q68 Y6 QB Out','QB', 'DAL', 'Out',       1.0),
  ('q68-y6-out',  'Q68 Y6 Out',  'WR', 'NYG', 'Out',        2.0),
- ('q68-y6-dbt',  'Q68 Y6 Dbt',  'WR', 'NYG', 'Doubtful',   3.0);
+ ('q68-y6-dbt',  'Q68 Y6 Dbt',  'WR', 'NYG', 'Doubtful',   3.0),
+ -- Y7 (R1142, PR #321's review): an OUT WR at flex:0 and TWO Doubtful bench
+ -- men — RB Da (adp 2, projected 4.00) and TE Db (adp 80, projected 18.00).
+ -- Q62 orders by projection first, so pass 1b must offer Db BEFORE Da.
+ ('q68-y7-qb',   'Q68 Y7 QB',   'QB', 'DAL', 'Active',    10.0),
+ ('q68-y7-out',  'Q68 Y7 Out',  'WR', 'NYG', 'Out',        1.0),
+ ('q68-y7-wr',   'Q68 Y7 WR',   'WR', 'PHI', 'Active',    11.0),
+ ('q68-y7-da',   'Q68 Y7 Da',   'RB', 'SF',  'Doubtful',   2.0),
+ ('q68-y7-db',   'Q68 Y7 Db',   'TE', 'SF',  'Doubtful',  80.0);
 insert into league_rosters (league_id, team_id, player_id, slot_key, ir_placed_week)
 select t.league_id, t.id, p.id, 'bn', null
 from q68_team t join players p on p.id like 'q68-' || lower(t.tag) || '-%';
@@ -221,7 +221,9 @@ insert into league_player_values
    season_points, season_games, preseason_points, preseason_missing, preseason_unscored, computed_at)
 values
  ('ba000000-0000-4000-8000-000000000001', 2026, 3, 'q68-y4-ok',   5.00, null, '{}'::text[], '2026-09-25 11:00:00+00', null, 0, null, 'no_line', null, '2026-09-25 11:00:00+00'),
- ('ba000000-0000-4000-8000-000000000001', 2026, 3, 'q68-y4-dbt', 25.00, null, '{}'::text[], '2026-09-25 11:00:00+00', null, 0, null, 'no_line', null, '2026-09-25 11:00:00+00');
+ ('ba000000-0000-4000-8000-000000000001', 2026, 3, 'q68-y4-dbt', 25.00, null, '{}'::text[], '2026-09-25 11:00:00+00', null, 0, null, 'no_line', null, '2026-09-25 11:00:00+00'),
+ ('ba000000-0000-4000-8000-000000000001', 2026, 3, 'q68-y7-da',   4.00, null, '{}'::text[], '2026-09-25 11:00:00+00', null, 0, null, 'no_line', null, '2026-09-25 11:00:00+00'),
+ ('ba000000-0000-4000-8000-000000000001', 2026, 3, 'q68-y7-db',  18.00, null, '{}'::text[], '2026-09-25 11:00:00+00', null, 0, null, 'no_line', null, '2026-09-25 11:00:00+00');
 
 -- THE LINEUP ROWS, written by the REAL carry, then each cell's stored map
 -- planted over `slot_map` (086 §B's method).
@@ -233,7 +235,8 @@ from (values
  ('Y3', '{"qb:0": "q68-y3-qb", "flex:0": "q68-y3-out", "flex:1": "q68-y3-wr"}'::jsonb),
  ('Y4', '{"qb:0": "q68-y4-qb", "flex:0": "q68-y4-out", "flex:1": "q68-y4-wr"}'::jsonb),
  ('Y5', '{"qb:0": "q68-y5-qbout", "flex:0": "q68-y5-out"}'::jsonb),
- ('Y6', '{"qb:0": "q68-y6-qbout", "flex:0": "q68-y6-out"}'::jsonb)
+ ('Y6', '{"qb:0": "q68-y6-qbout", "flex:0": "q68-y6-out"}'::jsonb),
+ ('Y7', '{"qb:0": "q68-y7-qb", "flex:0": "q68-y7-out", "flex:1": "q68-y7-wr"}'::jsonb)
 ) as m(tag, map)
 join q68_team t on t.tag = m.tag
 where tl.team_id = t.id and tl.season = 2026 and tl.week = 3;
@@ -255,6 +258,12 @@ select is(
    from leagues where id = 'ba000000-0000-4000-8000-000000000001'),
   'true/false',
   'B3 PREMISE: QA allows illegal lineups, QF forbids them');
+select is(
+  (select string_agg(format('%s=%s/adp %s/proj %s', p.id, public.lineup_designation_internal(p.status), p.adp, v.projected_points), ' ' order by p.id)
+   from players p join league_player_values v on v.player_id = p.id and v.league_id = 'ba000000-0000-4000-8000-000000000001' and v.week = 3
+   where p.id in ('q68-y7-da', 'q68-y7-db')),
+  'q68-y7-da=Doubtful/adp 2.0/proj 4.00 q68-y7-db=Doubtful/adp 80.0/proj 18.00',
+  'B4 PREMISE (R1142): Y7''s two Doubtful bench men — Da the BETTER adp and the LOWER projection, Db the WORSE adp and the HIGHER projection (both fresh at P)');
 
 create temp table q68_r (tag text primary key, r jsonb not null);
 insert into q68_r (tag, r)
@@ -309,6 +318,16 @@ select is(
   'flex:0:q68-y6-out>q68-y6-dbt(designated OUT) | unfillable=flex:1=no healthy eligible player at FLEX; league forbids illegal lineups | flags={"qb:0": ["out"], "flex:0": [], "flex:1": ["empty"]}',
   'C6b …named: the swap, flex:1 unfillable for 125''s one "forbids illegal lineups" reason (R1076''s pin, unchanged), and the flags — the Doubtful man clear, the restored OUT QB still flagged');
 
+select is(pg_temp.r('Y7') -> 'slot_map', '{"qb:0": "q68-y7-qb", "flex:0": "q68-y7-db", "flex:1": "q68-y7-wr"}'::jsonb,
+  'C7 (R1142) TWO DOUBTFUL CANDIDATES FOR ONE KEY: pass 1b offers them in Q62 order — projection first — so Db (18.00 projected, adp 80) takes the OUT WR''s flex:0 over Da (4.00, adp 2) (break probe: iterate the Doubtful tail in REVERSE in pass 1b ⇒ Da wins ⇒ red)');
+select is(
+  format('%s | ordered_by=%s | da=%s',
+         pg_temp.subs('Y7'),
+         (select x -> 'order' ->> 'ordered_by' from jsonb_array_elements(pg_temp.r('Y7') -> 'substituted') x),
+         (select string_agg(b #>> '{}', ',') from jsonb_array_elements(pg_temp.r('Y7') -> 'bench') b where b #>> '{}' = 'q68-y7-da')),
+  'flex:0:q68-y7-out>q68-y7-db(designated OUT) | ordered_by=projected_points | da=q68-y7-da',
+  'C7b (R1142) …NAMED in substituted[] (out the OUT WR, in Db), the order key that ranked him is `projected_points`, and Da is on the bench');
+
 -- ---------------------------------------------------------------------------
 -- D. order_basis counts a pass-1b Doubtful man as a CANDIDATE (he was
 --    ordered), and a deferred-then-restored man NOT (F392, unchanged)
@@ -329,7 +348,7 @@ select is(
   0, 'E1 no chooser result seats one player in two slots (D356(7c)''s defect class)');
 select is(
   (select count(*)::int from q68_r where (r ->> 'changed')::boolean),
-  4, 'E2 PREMISE for §H: 4 of the 6 results change their map — Y1, Y4, Y5, Y6 (Y2 and Y3 restore)');
+  5, 'E2 PREMISE for §H: 5 of the 7 results change their map — Y1, Y4, Y5, Y6, Y7 (Y2 and Y3 restore)');
 
 -- ---------------------------------------------------------------------------
 -- H. THE REAL TICK at the SAME instant writes exactly the chooser's maps, and
@@ -341,10 +360,10 @@ select is(
   (select count(*)::int from q68_r q join q68_team t on t.tag = q.tag
      join team_lineups tl on tl.team_id = t.id and tl.season = 2026 and tl.week = 3
    where tl.slot_map = q.r -> 'slot_map'),
-  6, 'H1 the REAL tick wrote, for all six teams, EXACTLY the map the pure chooser returned');
+  7, 'H1 the REAL tick wrote, for all seven teams, EXACTLY the map the pure chooser returned');
 select is(
   (select jsonb_array_length(current_setting('pgtap.ta')::jsonb -> 'autopiloted') + jsonb_array_length(current_setting('pgtap.tf')::jsonb -> 'autopiloted')),
-  4, 'H2 …four teams written (Y1, Y4, Y5, Y6); Y2 and Y3 evaluated and left as they were');
+  5, 'H2 …five teams written (Y1, Y4, Y5, Y6, Y7); Y2 and Y3 evaluated and left as they were');
 select is(
   (select format('%s>%s:%s', x ->> 'out', x ->> 'in', strpos(x ->> 'why', 'Q68') > 0)
    from jsonb_array_elements(current_setting('pgtap.ta')::jsonb -> 'autopiloted') a,

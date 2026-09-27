@@ -84,9 +84,8 @@
 --     finished — `why = 'lineup_not_set'`, refused, the team named. A week's
 --     lineup rows are written when it opens (D293's auto-carry, 116's
 --     `lineup_carry_internal`) — or earlier, when a manager pre-sets one
---     (corrected by L.E1.25 / R1101: this line said rows ONLY appear once a
---     week opens) — so reading a missing row as "no starters"
---     made every UPCOMING week's matchup editable before any game and let
+--     (R1101 corrected "ONLY once a week opens") — so reading a missing row
+--     as "no starters" made every UPCOMING week's matchup editable pre-game and let
 --     the override freeze its live scoring for the week. This mirrors the
 --     scoring worker's own posture — a team with no lineup row holds the
 --     week BY NAME (`score-week-worker.ts`, F241(b)); it is never "nothing to
@@ -94,14 +93,15 @@
 --     is a set lineup with no starters, and stays `no_starter_game` as ruled.
 --     [CORRECTED by L.E1.25 / R1101 — comment only: such a row is usually the
 --     CARRY's own empty row for a team that never set a lineup, not a lineup
---     anybody chose; and since migration 142 (Q67, ruled 2026-09-27) it is
---     NOT finished outside a final week — `no_starter_game` now REFUSES.]
+--     anybody chose; since migration 142 (Q67, R1140) its empty slots hold
+--     the matchup until every game of the week is over — refused by name.]
 --     A missing row takes precedence over unfinished starters in `why`; the
 --     sentence names both when both hold.
 --   * A STARTER'S GAME: the `nfl_games` rows of (season, week) whose home or
 --     away club is his `players.team` (112's join), MINUS any that has left
 --     the week (above). NO such row (a bye, a postponed-out game, a NULL
---     team) ⇒ no game ⇒ he does NOT hold the matchup open. EVERY such row
+--     team) ⇒ no game ⇒ he does NOT hold the matchup open [SUPERSEDED by 142 /
+--     R1140: he does, until every game of the week is over]. EVERY such row
 --     `final` ⇒ finished. Otherwise (`scheduled`, `live`, an in-week
 --     `postponed`, a NULL status) ⇒ NOT finished.
 --   * A WEEK WITH ZERO `nfl_games` ROWS: every starter is NOT finished. That
@@ -111,8 +111,8 @@
 --   * A matchup whose starters ALL have no game (every one on bye / an empty
 --     stored lineup) is EDITABLE AT ONCE — there is nothing to
 --     finish (a MISSING lineup row is not this case — above). [SUPERSEDED by
---     migration 142 (L.E1.25, Q67 RULED): outside a final week a side whose
---     row holds no starter with a game is NOT finished — refused by name.] The document says which (`why = 'no_starter_game'`), so a
+--     migration 142 (L.E1.25, Q67 / R1140): an empty or no-game starting
+--     slot holds the matchup until every game of the week is over.] The document says which (`why = 'no_starter_game'`), so a
 --     vacuous "editable" is never mistaken for "every game is final".
 --   * A BYE ROW (`away_team_id IS NULL`) is judged on its one side.
 --   * The refusal (P0001) names every unfinished starter, in plain words:
