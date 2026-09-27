@@ -52,7 +52,7 @@ select ok(
 select is(
   (select prosrc like '%RAISE WARNING%' from pg_proc where proname = 'playoff_bracket_sync_internal'),
   false,
-  'A3 the sync raises NO WARNING anywhere — the played-round refusal (R839) no longer writes the SYNC's OWN hourly WARNING to the server log — the callers' BLOCKED WARNING remains, F395 (F377, D371(6))');
+  'A3 the sync raises NO WARNING anywhere — the played-round refusal (R839) no longer writes the hourly WARNING of the SYNC ITSELF to the server log — the BLOCKED WARNING of its callers remains, F395 (F377, D371(6))');
 
 select is(
   (select (length(prosrc) - length(replace(prosrc,
