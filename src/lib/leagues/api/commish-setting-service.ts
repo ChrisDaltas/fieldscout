@@ -134,6 +134,12 @@ export interface CommishChangeSettingResult {
   rescore_performed: boolean
   /** Names why a requested rescore did NOT happen (§4 rule 15). */
   rescore_not_performed_why: string | null
+  /** 141 / Q64 as ruled: the FINAL weeks a `rescore` left alone — `[]`
+   *  unless rescore was asked for and a week was final. Optional: a replayed
+   *  pre-141 document does not carry it. */
+  rescore_skipped_final_weeks?: number[]
+  /** Why, in plain words — non-null exactly when that list is non-empty. */
+  rescore_skipped_final_weeks_why?: string | null
   /** What the change did and did not touch downstream — null on a no-op. */
   consequences: unknown
   reason: string | null

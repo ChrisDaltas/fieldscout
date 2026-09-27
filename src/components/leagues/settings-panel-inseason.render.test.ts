@@ -283,6 +283,14 @@ describe('InSeasonOverrideBlock — one line per key, never a bare "Saved."', ()
     expect(html).not.toContain('data-setting-outcome="saved"')
   })
 
+  it('L.E1.24 (141): the final weeks a rescore SKIPPED are SHOWN, in the server’s sentence verbatim — never swallowed into a plain save', () => {
+    const skipped = 'final_weeks_not_rescored — final week(s) [1] keep their original scores and results; the new scoring applies to open week(s) [2] (queued for re-scoring now) and to every later week (scored under it when it opens)'
+    const html = renderBlock([ok({ key: 'scoring_system_id', rescore_skipped_final_weeks_why: skipped })])
+    expect(html).toContain('data-setting-outcome="rescore_skipped_final"')
+    expect(html).toContain(`scoring system id: saved — ${skipped}.`)
+    expect(html).not.toContain('data-setting-outcome="saved"')
+  })
+
   it('a no-op says nothing changed — never "saved" — and carries no bypass narration', () => {
     const html = renderBlock([ok({ no_changes: true, no_changes_why: 'value_already_set' }, ['league_status_gate'])])
     expect(html).toContain('data-setting-outcome="no_changes"')
@@ -299,7 +307,7 @@ describe('InSeasonOverrideBlock — one line per key, never a bare "Saved."', ()
   })
 
   it('a REFUSAL is the verb’s sentence VERBATIM (role="alert"), beside the keys that DID land — one line each', () => {
-    const refusal = 'commish_change_setting: rescore was requested but week 1 is FINAL — no verb reopens a final week yet'
+    const refusal = 'commish_change_setting: team_count cannot be changed through this verb (league is in_season). WHY: team_count is PRE-DRAFT ONLY'
     const html = renderBlock([ok({}), { key: 'scoring_system_id', ok: false, refusal }])
     expect(html.match(/data-setting-result=/g)).toHaveLength(2)
     expect(html).toContain(refusal)

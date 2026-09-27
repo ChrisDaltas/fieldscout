@@ -49,7 +49,12 @@ const LOCAL_SERVICE_ROLE_KEY =
 const PREFIX = 'vitest-rc'
 const SEASON = SYNTHETIC_SEASON
 const COMMISH = { email: 'reconcile-commish@fieldscout.test', password: 'pgtap-rc-pass-1', username: 'rc_commish_one' }
-const ACTION = { l1: 'aff00000-0000-4000-8000-000000000001', l2: 'aff00000-0000-4000-8000-000000000002' } as const
+const ACTION = {
+  l1: 'aff00000-0000-4000-8000-000000000001',
+  l2: 'aff00000-0000-4000-8000-000000000002',
+  /** L.E1.24's scoring change (the verb's own replay ledger; same free `aff` prefix). */
+  rescore: 'aff00000-0000-4000-8000-000000000003',
+} as const
 
 /** Monday of 2099 week 1 (week 1 starts Wed 2099-09-09 04:00Z; the games kicked off Sunday 2099-09-13). */
 const NOW = new Date('2099-09-14T12:00:00.000Z')
@@ -477,5 +482,49 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
     const inside = await run()
     expect(find(inside, 'post_window_correction')).toEqual([])
     expect(find(inside, 'drift').map((f) => f.team_id)).toEqual([fx.t1])
+  })
+
+  // M6A L.E1.24 (migration 141; PROGRESS F382 / F397 / D378) — THE TASK'S
+  // MEASURE-FIRST CLAUSE, PINNED. Q64 as ruled keeps a FINAL week's stored
+  // scores through a scoring change, and 141 proves the verb never touches
+  // them (pgTAP 089 §C). But this job recomputes EVERY started week —
+  // `final` included — through the league's CURRENT `scoring_rules_snapshot`
+  // (`reconcile.ts` :624-640, :790), and nothing stores the rules a week was
+  // scored under. So a final week kept under the OLD rules reads as DRIFT
+  // after the change. This cell pins that measurement as it stands; F397
+  // owns the fix, and whoever builds it flips the last expectation.
+  it('L.E1.24 MEASUREMENT (F397): after a scoring change a FINAL week keeps its stored score (the ruling) — and this job, recomputing through the CURRENT snapshot, reads it as DRIFT', async () => {
+    // Back to the week's true line, so the premise is a CLEAN final week under the rules it was scored by.
+    await plantLine(P.rb1, { rush_yards: 87, rush_tds: 1, receptions: 4, receiving_yards: 33, fumbles_lost: 1 }, STAMP)
+    const before = await run()
+    expect(find(before, 'drift')).toEqual([])
+    expect(await storedScore(fx.m12)).toEqual({ home: 60.08, away: 0 })
+    const week1 = await must(service.from('league_weeks').select('status').eq('league_id', fx.l1).eq('week', 1).single(), 'week 1 status')
+    expect(week1!.status).toBe('final')
+
+    // The scoring change through the REAL verb as the commissioner, rescore asked for.
+    const { data: ppr } = await commishClient.from('scoring_systems').select('id').eq('is_template', true).eq('name', 'ESPN Full PPR').single()
+    const { data: doc, error } = await commishClient.rpc('commish_change_setting', {
+      p_league_id: fx.l1,
+      p_key: 'scoring_system_id',
+      p_value: ppr!.id as unknown as Json,
+      p_rescore: true,
+      p_action_id: ACTION.rescore,
+    })
+    expect(error).toBeNull()
+    const result = doc as { no_changes: boolean; rescore_performed: boolean; rescore_skipped_final_weeks: number[] }
+    expect(result.no_changes).toBe(false) // under 131 this call was refused whole (week 1 is final)
+    expect(result.rescore_skipped_final_weeks).toEqual([1])
+    expect(result.rescore_performed).toBe(false) // no week is open in this fixture — nothing to queue
+
+    // THE RULING'S HALF: the stored final score is kept, byte for byte.
+    expect(await storedScore(fx.m12)).toEqual({ home: 60.08, away: 0 })
+
+    // THE MEASUREMENT: the job re-derives the final week under Full PPR —
+    // RB1 4 rec + WR1 7 rec = +11.00 — and alerts on a score the ruling kept.
+    const after = await run()
+    const drift = find(after, 'drift')
+    expect(drift).toHaveLength(1)
+    expect(drift[0]).toMatchObject({ severity: 'alert', league_id: fx.l1, week: 1, team_id: fx.t1, stored: 60.08, recomputed: 71.08 })
   })
 })
