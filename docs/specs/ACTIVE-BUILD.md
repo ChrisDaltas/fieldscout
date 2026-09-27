@@ -238,6 +238,8 @@ commissioner must act" WARNING for the same refusal — out of the one-hunk scop
 its shape) and **F396** (a co-commissioner sees neither bracket affordance); spec
 **v2.16.48** (fold-back). **⚠ PUSH DEBT: 135–140** — production is at 134.)
 
+**QUEUED AFTER L.E1.24 (Chris's rulings 2026-09-27): `L.E1.25`** (Q67 empty-lineup lock + Q68 Doubtful swap) **then `L.E1.26`** (F390 — yards allowed, sourced). Task text: tasks-M6A §6's second 2026-09-27 amendment.
+
 **NEXT TAKEABLE TASK: `L.E1.24`** — Q64 as ruled: `rescore = true` re-scores every OPEN and
 future week and SKIPS final weeks, naming them, instead of refusing (tasks-M6A §6's
 2026-09-27 amendment; PROGRESS **F382**). The last of the ruling tasks L.E1.18–L.E1.24;
