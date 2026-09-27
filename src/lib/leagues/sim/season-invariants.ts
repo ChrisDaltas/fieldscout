@@ -24,6 +24,24 @@
  *      re-baselines the cell under its `commissioner_actions.id`; anything
  *      else that moves a final cell still fails. See `checkFinalCellsImmutable`.
  *
+ * M6A L.E1.22 (migration 139; Q63 RULED 2026-09-27 — autopilot is OFF by
+ * default behind a per-team commissioner switch) RE-CUTS the eighth and adds
+ * a NINTH and a TENTH:
+ *
+ *   8. now asserts on unmanaged seats whose switch is ON (plus, unchanged, the
+ *      member-row-less seats D339 declines — a §12.2 break stays loud); its
+ *      premise counts ON seat-weeks.
+ *   9. `autopilot-off-seat-untouched` — the NEGATIVE control: an unmanaged
+ *      seat whose switch is OFF is never written by arm (c) (the server never
+ *      names it in `autopiloted[]`; its map is what the carry gave it) and the
+ *      tick NAMES it in `commissioner_managed[]` (rule 15). Premise: >= 1 OFF
+ *      seat-week, asserted by the runner.
+ *  10. `autopilot-selection` (F391) — WHICH player autopilot chose: at every
+ *      pass that wrote a seat, no eligible, unlocked, healthy bench man
+ *      out-ranks a man the pass seated, under the pass's own Q62 key read
+ *      back from `league_player_values` at the pass instant. Premise: >= 1
+ *      pick ordered by a POINTS key (not ADP), asserted by the runner.
+ *
  * SAME SHAPE AS THE DRAFT SWEEP (`invariants.ts`): every invariant is a PURE
  * function over an audit snapshot the runner collected with a service-role
  * harness client, every failure NAMES its league AND its week, and each
@@ -307,6 +325,10 @@ export interface AuditStartingSlot {
 export interface AuditUnmanagedSeat {
   team_id: string
   shape: 'member_row_user_id_null' | 'no_member_row'
+  /** The commissioner's per-team switch as STORED (`team_autopilot`, 139 —
+   *  no row = OFF, the ruled default). Invariant 8 asserts on an ON seat,
+   *  invariant 9 on an OFF one (M6A L.E1.22, Q63). */
+  autopilot: boolean
   /** The seat's roster, positions in the roster vocabulary (DEF → DST). */
   roster: ReadonlyArray<{ player_id: string; position: string }>
 }
@@ -318,6 +340,43 @@ export interface AuditAutopilotUnfillable {
   week: number
   slot: string
   reason: string
+}
+
+/** What the week's CARRY gave an OFF seat — its `team_lineups.slot_map` read
+ *  by the runner right after the week-open advance, BEFORE any tick
+ *  (invariant 9's baseline). `null` = no row existed yet. */
+export interface AuditOffSeatCarry {
+  team_id: string
+  week: number
+  carry_map: Record<string, string> | null
+}
+
+/** One player's Q62 sort key as a pass READ it (138's one ORDER BY): this
+ *  week's projected points, season-to-date points, preseason points — each
+ *  NULL when absent or stale at the pass instant — then adp, then player_id. */
+export interface AuditSelectionKey {
+  player_id: string
+  projected: number | null
+  season: number | null
+  preseason: number | null
+  adp: number | null
+}
+
+/** One autopilot pick at a pass that WROTE the seat (F391, invariant 10). */
+export interface AuditAutopilotPick {
+  team_id: string
+  week: number
+  /** The pass instant (`p_now`). */
+  at: string
+  slot: string
+  /** The seated man's key, as the HARNESS re-read it at the pass instant. */
+  seated: AuditSelectionKey
+  /** The same man's key as the PASS reported it (`filled[].order` /
+   *  `substituted[].order`, 138) — must equal `seated` or the grade is void. */
+  reported: AuditSelectionKey & { ordered_by: string }
+  /** Every bench man eligible for the slot, unlocked and healthy (no
+   *  designation, not on bye) at the pass — his key as the harness read it. */
+  witnesses: readonly AuditSelectionKey[]
 }
 
 /** One `rebuild_team_week_results` probe (invariant 3). */
@@ -373,6 +432,16 @@ export interface SeasonAudit {
   unmanagedSeats: readonly AuditUnmanagedSeat[]
   /** What the tick itself NAMED unfillable, latest pass per (team, week, slot). */
   autopilotUnfillable: readonly AuditAutopilotUnfillable[]
+  /** M6A L.E1.22: `team|week` the tick named in `autopiloted[]` (it WROTE). */
+  autopilotedSeatWeeks: readonly string[]
+  /** `team|week` the tick named in `commissioner_managed[]` (139 — an OFF
+   *  seat left alone, by name). */
+  commissionerManagedSeatWeeks: readonly string[]
+  /** Invariant 9's baselines, captured by the runner (empty for fixtures
+   *  that do not drive a week open). */
+  autopilotOffCarry: readonly AuditOffSeatCarry[]
+  /** Invariant 10's graded picks (F391). */
+  autopilotPicks: readonly AuditAutopilotPick[]
   rebuilds: readonly AuditRebuild[]
   reconcileFindings: readonly AuditReconcileFinding[]
   /** Loud lines from the jobs and the worker, already carrying league context. */
@@ -977,6 +1046,16 @@ export function checkNoWorkerErrors(a: SeasonAudit): SeasonInvariantFailure[] {
  * having asserted nothing — zero seats, or seats whose every driven week is
  * still `upcoming` (R1079). `countUnmanagedSeatWeeksAsserted` is that count;
  * the RUNNER sums it and makes zero a run PROBLEM (`season-runner.ts`).
+ *
+ * RE-CUT BY M6A L.E1.22 (Q63 — autopilot OFF by default): the invariant
+ * asserts on a placeholder / vacated seat ONLY WHEN ITS SWITCH IS ON. An OFF
+ * seat is commissioner-managed and an empty slot there is the RULED state
+ * ("that is fine") — invariant 9 asserts the opposite of this one for it.
+ * A seat with NO league_members row stays in scope whatever the switch says
+ * (the verb refuses to switch it on; arm (c) declines it; its empty map is a
+ * §12.2 break, never a commissioner choice), so that arm is unchanged. The
+ * premise now counts ON seat-weeks — a run that switches nothing ON asserts
+ * nothing here, and the runner makes that a PROBLEM by name.
  */
 export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
@@ -990,7 +1069,7 @@ export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantF
       .filter((u) => !isForbidsIllegalReason(u.reason))
       .map((u) => [`${u.team_id}|${u.week}|${u.slot}`, u.reason] as const),
   )
-  for (const seat of a.unmanagedSeats) {
+  for (const seat of a.unmanagedSeats.filter((s) => s.shape === 'no_member_row' || s.autopilot)) {
     const shapeNote =
       seat.shape === 'no_member_row'
         ? ' [this team has NO league_members row at all — arm (c) DECLINES such a seat by name (125, D339), so nothing will ever seat it]'
@@ -1069,9 +1148,165 @@ export function openedDrivenWeeks(a: SeasonAudit): number[] {
   return a.weeks.filter((w) => driven.has(w.week) && w.status !== 'upcoming').map((w) => w.week)
 }
 
-/** Invariant 8's premise: the (seat, week) pairs it actually asserts on. */
+/** Invariant 8's premise: the (seat, week) pairs on which AUTOPILOT is
+ *  asserted — placeholder / vacated seats whose switch is ON (M6A L.E1.22
+ *  re-cut: the member-row-less seats are still checked, but they exercise no
+ *  autopilot, so they do not satisfy the premise). */
 export function countUnmanagedSeatWeeksAsserted(a: SeasonAudit): number {
-  return a.unmanagedSeats.length * openedDrivenWeeks(a).length
+  return a.unmanagedSeats.filter((s) => s.shape === 'member_row_user_id_null' && s.autopilot).length * openedDrivenWeeks(a).length
+}
+
+/** Invariant 9's premise: the OFF (commissioner-managed) seat-weeks. */
+export function countAutopilotOffSeatWeeksAsserted(a: SeasonAudit): number {
+  return a.unmanagedSeats.filter((s) => s.shape === 'member_row_user_id_null' && !s.autopilot).length * openedDrivenWeeks(a).length
+}
+
+// ── 9. An OFF seat is never autopiloted (M6A L.E1.22; Q63) ──────────────────
+
+function sameMap(x: Record<string, string> | null, y: Record<string, string> | null): boolean {
+  const a = Object.entries(x ?? {}).filter(([, v]) => typeof v === 'string' && v.length > 0).sort(([k1], [k2]) => k1.localeCompare(k2))
+  const b = Object.entries(y ?? {}).filter(([, v]) => typeof v === 'string' && v.length > 0).sort(([k1], [k2]) => k1.localeCompare(k2))
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/**
+ * THE NEGATIVE CONTROL (Q63, ruled 2026-09-27: "the default would be the
+ * commissioner has to manage the team"). For every placeholder / vacated seat
+ * whose switch is OFF, in every driven week that OPENED:
+ *   - the tick never named it in `autopiloted[]` — the SERVER's own word that
+ *     it wrote the seat;
+ *   - where the runner captured the carry's map at week open, the stored map
+ *     is STILL that map (arm (c) filled nothing and substituted nobody) —
+ *     unless a commissioner's own audited lineup edit (`edit_lineup`, 123)
+ *     targets the team, which is the ruled way a commissioner-managed seat
+ *     changes;
+ *   - and, where the carry was captured, the tick NAMED the seat in
+ *     `commissioner_managed[]` for that week (§4 rule 15 — an OFF seat is a
+ *     named state, never a quiet zero).
+ * Premise (`countAutopilotOffSeatWeeksAsserted`) — asserted by the runner.
+ */
+export function checkAutopilotOffSeatsUntouched(a: SeasonAudit): SeasonInvariantFailure[] {
+  const out: SeasonInvariantFailure[] = []
+  const opened = openedDrivenWeeks(a)
+  const written = new Set(a.autopilotedSeatWeeks)
+  const named = new Set(a.commissionerManagedSeatWeeks)
+  const edited = new Set(
+    a.commissionerActions.filter((c) => c.action_type === 'edit_lineup' && c.target_type === 'team').map((c) => String(c.target_id)),
+  )
+  for (const seat of a.unmanagedSeats.filter((s) => s.shape === 'member_row_user_id_null' && !s.autopilot)) {
+    for (const week of opened) {
+      const key = `${seat.team_id}|${week}`
+      if (written.has(key)) {
+        out.push(
+          fail(a, 'autopilot-off-seat-untouched', week,
+            `team ${seat.team_id} week ${week}: its autopilot switch is OFF (commissioner-managed, Q63) but the tick's ` +
+              `autopiloted[] says arm (c) WROTE it — autopilot ran for a seat the commissioner never switched on`),
+        )
+      }
+      const carry = a.autopilotOffCarry.find((c) => c.team_id === seat.team_id && c.week === week)
+      if (carry === undefined) continue
+      const lineup = a.lineups.find((l) => l.team_id === seat.team_id && l.week === week)
+      if (lineup === undefined) {
+        out.push(fail(a, 'autopilot-off-seat-untouched', week, `team ${seat.team_id} week ${week}: an OFF seat has NO team_lineups row — D354's materialize step is kept for OFF seats (139)`))
+      } else if (!edited.has(seat.team_id) && !sameMap(lineup.slot_map, carry.carry_map)) {
+        out.push(
+          fail(a, 'autopilot-off-seat-untouched', week,
+            `team ${seat.team_id} week ${week}: an OFF seat's map CHANGED from what the carry gave it ` +
+              `(${JSON.stringify(carry.carry_map ?? {})} → ${JSON.stringify(lineup.slot_map ?? {})}) with no commissioner edit_lineup receipt — something filled a commissioner-managed seat`),
+        )
+      }
+      if (!named.has(key)) {
+        out.push(
+          fail(a, 'autopilot-off-seat-untouched', week,
+            `team ${seat.team_id} week ${week}: an OFF seat was never NAMED in the tick's commissioner_managed[] — its empty slots would read as a quiet zero (§4 rule 15)`),
+        )
+      }
+    }
+  }
+  return out
+}
+
+// ── 10. WHICH player autopilot chose (F391; Q62 as ruled) ───────────────────
+
+/** 138's ONE ORDER BY, read back: projected DESC NULLS LAST, season DESC
+ *  NULLS LAST, preseason DESC NULLS LAST, adp ASC NULLS LAST, player_id ASC.
+ *  Negative ⇒ `x` ranks AHEAD of `y`. A comparator for GRADING a pass, not a
+ *  chooser: placement stays the matcher's (D340) and this never picks. */
+export function compareSelectionKeys(x: AuditSelectionKey, y: AuditSelectionKey): number {
+  const desc = (p: number | null, q: number | null): number => (p === q ? 0 : p === null ? 1 : q === null ? -1 : q - p)
+  const asc = (p: number | null, q: number | null): number => (p === q ? 0 : p === null ? 1 : q === null ? -1 : p - q)
+  return (
+    desc(x.projected, y.projected) ||
+    desc(x.season, y.season) ||
+    desc(x.preseason, y.preseason) ||
+    asc(x.adp, y.adp) ||
+    (x.player_id < y.player_id ? -1 : x.player_id > y.player_id ? 1 : 0)
+  )
+}
+
+const cents = (v: number | null): string => (v === null ? 'null' : v.toFixed(2))
+const keyText = (k: AuditSelectionKey): string =>
+  `${k.player_id} [proj ${cents(k.projected)} · season ${cents(k.season)} · pre ${cents(k.preseason)} · adp ${k.adp ?? 'null'}]`
+
+/** The Q62 keys that are POINTS — the premise for invariant 10. */
+export const SELECTION_POINTS_KEYS: readonly string[] = ['projected_points', 'season_points', 'preseason_points']
+
+/**
+ * F391 — an autopiloted seat's starter is never out-ranked, under the pass's
+ * own Q62 key, by an eligible, unlocked, healthy man the pass left on the
+ * bench. Why that is the whole truth of "chose the right player": 138 places
+ * through `lineup_fit_internal` over candidates offered in key order, and
+ * greedy-by-order over a transversal matroid is optimal (D340) — so a bench
+ * man who could take the seated man's slot and ranks ahead of him is exactly
+ * a pick the pass got wrong. The seated man's key is read back from
+ * `league_player_values` at the pass instant by the harness AND compared to
+ * what the pass itself reported (`order`, 138): a mismatch voids the grade and
+ * FAILS, so a harness that mis-reads cannot pass by accident.
+ * Premise (>= 1 pick ordered by a points key) — asserted by the runner.
+ */
+export function checkAutopilotSelection(a: SeasonAudit): SeasonInvariantFailure[] {
+  const out: SeasonInvariantFailure[] = []
+  const same = (p: number | null, q: number | null): boolean => (p === null || q === null ? p === q : Math.abs(p - q) < 0.005)
+  for (const pick of a.autopilotPicks) {
+    const where = `team ${pick.team_id} week ${pick.week} slot ${pick.slot} at ${pick.at}`
+    const r = pick.reported
+    const s = pick.seated
+    if (r.player_id !== s.player_id || !same(r.projected, s.projected) || !same(r.season, s.season) || !same(r.preseason, s.preseason) || !same(r.adp, s.adp)) {
+      out.push(
+        fail(a, 'autopilot-selection', pick.week,
+          `${where}: the harness read ${keyText(s)} but the pass reported ${keyText(r)} — the grade is void (the harness must see what the pass saw)`),
+      )
+      continue
+    }
+    const better = pick.witnesses.filter((w) => compareSelectionKeys(w, s) < 0)
+    if (better.length > 0) {
+      out.push(
+        fail(a, 'autopilot-selection', pick.week,
+          `${where}: seated ${keyText(s)} (ordered by ${r.ordered_by}) while eligible, unlocked, healthy bench man ` +
+            `${better.map(keyText).join('; ')} ranks AHEAD of him under Q62's order — autopilot chose the wrong player`),
+      )
+    }
+  }
+  return out
+}
+
+/** Invariant 10's premise: picks ordered by a POINTS key (not adp / player_id). */
+export function countAutopilotPicksByPointsKey(a: SeasonAudit): number {
+  return a.autopilotPicks.filter((p) => SELECTION_POINTS_KEYS.includes(p.reported.ordered_by)).length
+}
+
+/**
+ * How many graded picks would have gone the OTHER way under an ADP-first sort
+ * (125's, before Q62): a witness the pass rightly left on the bench (the
+ * seated man ranks ahead of him under Q62) holds the BETTER adp. Only these
+ * picks let invariant 10 tell Q62's order from ADP's — measured and reported
+ * so a run whose world never contests a slot is not read as proof that it
+ * would catch an ADP-first regression.
+ */
+export function countDiscriminatingPicks(a: SeasonAudit): number {
+  return a.autopilotPicks.filter((p) =>
+    p.witnesses.some((w) => compareSelectionKeys(p.seated, w) < 0 && w.adp !== null && (p.seated.adp === null || w.adp < p.seated.adp)),
+  ).length
 }
 
 // ── Held weeks: CLASSIFIED, never counted (Q37) ─────────────────────────────
@@ -1116,11 +1351,14 @@ export function sweepSeasonAudit(a: SeasonAudit): SeasonInvariantFailure[] {
     ...checkFinalCellsImmutable(a),
     ...checkNoWorkerErrors(a),
     ...checkUnmanagedSeatsAutopiloted(a),
+    ...checkAutopilotOffSeatsUntouched(a),
+    ...checkAutopilotSelection(a),
   ]
 }
 
 /** The invariant names — L.D6.1's seven in the row's order, then M6A
- *  L.E1.14's eighth — the report's vocabulary. */
+ *  L.E1.14's eighth, then L.E1.22's ninth and tenth — the report's
+ *  vocabulary. */
 export const SEASON_INVARIANTS: readonly string[] = [
   'exclusivity',
   'lineup-legality',
@@ -1130,6 +1368,8 @@ export const SEASON_INVARIANTS: readonly string[] = [
   'final-cell-immutable',
   'zero-worker-errors',
   'unmanaged-seat-autopilot',
+  'autopilot-off-seat-untouched',
+  'autopilot-selection',
 ]
 
 /** Adapter so a season failure can ride the draft sweep's printer if needed. */

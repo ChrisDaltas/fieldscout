@@ -26,6 +26,13 @@ import {
   checkUnmanagedSeatsAutopiloted,
   classifyHeldWeeks,
   countUnmanagedSeatWeeksAsserted,
+  countAutopilotOffSeatWeeksAsserted,
+  countAutopilotPicksByPointsKey,
+  countDiscriminatingPicks,
+  checkAutopilotOffSeatsUntouched,
+  checkAutopilotSelection,
+  compareSelectionKeys,
+  type AuditAutopilotPick,
   AUTOPILOT_UNFILLABLE_REASONS,
   FINAL_CELL_LICENSING_ACTION_TYPES,
   isForbidsIllegalReason,
@@ -133,6 +140,9 @@ function greenAudit(): SeasonAudit {
       {
         team_id: 'C',
         shape: 'member_row_user_id_null',
+        // M6A L.E1.22: the fixture's seat is switched ON (Q63 — OFF by
+        // default), so invariant 8 asserts on it exactly as before.
+        autopilot: true,
         roster: [
           { player_id: 'p5', position: 'QB' },
           { player_id: 'p6', position: 'RB' },
@@ -141,6 +151,10 @@ function greenAudit(): SeasonAudit {
       },
     ],
     autopilotUnfillable: [],
+    autopilotedSeatWeeks: ['C|1'],
+    commissionerManagedSeatWeeks: [],
+    autopilotOffCarry: [],
+    autopilotPicks: [],
     rebuilds: [
       {
         week: 1,
@@ -173,6 +187,8 @@ describe('the in-season sweep — green on a consistent season, and every failur
       'final-cell-immutable',
       'zero-worker-errors',
       'unmanaged-seat-autopilot',
+      'autopilot-off-seat-untouched',
+      'autopilot-selection',
     ])
   })
 })
@@ -1131,5 +1147,201 @@ describe('classifyReconcileAlert — what a run may lawfully NOT count as a prob
     for (const kind of ['drift', 'twr_mirror_drift', 'pool_mirror_broken', 'something_new']) {
       expect(classifyReconcileAlert({ kind, message: 'x' }, ctx), kind).toBeNull()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// M6A L.E1.22 (migration 139; Q63 — autopilot OFF by default behind a
+// per-team commissioner switch): invariant 8 re-cut, invariant 9 (the OFF
+// negative control) and invariant 10 (F391 — WHICH player autopilot chose).
+// ---------------------------------------------------------------------------
+
+describe('invariant 8 RE-CUT (L.E1.22): it asserts on a seat whose switch is ON', () => {
+  it('an OFF placeholder seat with an EMPTY map is NOT invariant 8\'s finding — it is commissioner-managed (Q63: "that is fine")', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, autopilot: false }]
+    expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
+    // …the SAME map on the same seat switched ON is still red (the positive control).
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, autopilot: true }]
+    expect(checkUnmanagedSeatsAutopiloted(a)).toHaveLength(1)
+  })
+
+  it('a seat with NO league_members row stays in scope whatever its switch — the §12.2 break stays loud', () => {
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = {}
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, shape: 'no_member_row', autopilot: false }]
+    expect(checkUnmanagedSeatsAutopiloted(a)).toHaveLength(1)
+  })
+
+  it('the premise counts ON placeholder seat-weeks only; the OFF control has its own count', () => {
+    const a = greenAudit()
+    expect(countUnmanagedSeatWeeksAsserted(a)).toBe(1)
+    expect(countAutopilotOffSeatWeeksAsserted(a)).toBe(0)
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, autopilot: false }]
+    expect(countUnmanagedSeatWeeksAsserted(a)).toBe(0)
+    expect(countAutopilotOffSeatWeeksAsserted(a)).toBe(1)
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, shape: 'no_member_row', autopilot: true }]
+    expect(countUnmanagedSeatWeeksAsserted(a)).toBe(0)
+  })
+
+  it('the RUNNER reds the OFF control\'s and the selection grade\'s absent premises BY NAME', () => {
+    const runner = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/sim/season-runner.ts'), 'utf8')
+    expect(runner).toContain('if (report.autopilotOffSeatWeeksAsserted < 1) {')
+    expect(runner).toContain('AUTOPILOT OFF PREMISE:')
+    expect(runner).toContain('if (report.autopilotSelection.byPointsKey < 1) {')
+    expect(runner).toContain('SELECTION PREMISE:')
+    // …and the switch is flipped through the REAL verb, never a table write.
+    expect(runner).toContain('await commishSetAutopilot(commish, league.leagueId,')
+    expect(runner).not.toMatch(/from\('team_autopilot'\)\s*\.\s*(insert|upsert|update)/)
+  })
+})
+
+describe('invariant 9 — an OFF seat is never autopiloted (L.E1.22; Q63)', () => {
+  /** Seat C switched OFF, the carry gave it {}, the tick named it OFF and never wrote it. */
+  function offAudit(): SeasonAudit {
+    const a = greenAudit()
+    a.unmanagedSeats = [{ ...a.unmanagedSeats[0]!, autopilot: false }]
+    a.lineups[2]!.slot_map = {}
+    a.autopilotedSeatWeeks = []
+    a.commissionerManagedSeatWeeks = ['C|1']
+    a.autopilotOffCarry = [{ team_id: 'C', week: 1, carry_map: {} }]
+    return a
+  }
+
+  it('GREEN: untouched, named, map equal to the carry\'s', () => {
+    expect(checkAutopilotOffSeatsUntouched(offAudit())).toEqual([])
+  })
+
+  it('RED: the tick\'s autopiloted[] says it WROTE the OFF seat', () => {
+    const a = offAudit()
+    a.autopilotedSeatWeeks = ['C|1']
+    const failures = checkAutopilotOffSeatsUntouched(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.invariant).toBe('autopilot-off-seat-untouched')
+    expect(failures[0]!.detail).toContain('team C week 1')
+    expect(failures[0]!.detail).toContain('WROTE')
+  })
+
+  it('RED: the map moved away from the carry\'s with no commissioner edit_lineup receipt; a receipt licenses it', () => {
+    const a = offAudit()
+    a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+    expect(checkAutopilotOffSeatsUntouched(a).map((f) => f.detail).join()).toContain('CHANGED from what the carry gave it')
+    a.commissionerActions = [{ id: 'ca1', action_type: 'edit_lineup', target_type: 'team', target_id: 'C', after: {} }]
+    expect(checkAutopilotOffSeatsUntouched(a)).toEqual([])
+  })
+
+  it('RED: the tick never NAMED it in commissioner_managed[] (rule 15 — never a quiet zero)', () => {
+    const a = offAudit()
+    a.commissionerManagedSeatWeeks = []
+    expect(checkAutopilotOffSeatsUntouched(a).map((f) => f.detail).join()).toContain('never NAMED')
+  })
+
+  it('an ON seat and a week that never opened are not this invariant\'s', () => {
+    const on = offAudit()
+    on.unmanagedSeats = [{ ...on.unmanagedSeats[0]!, autopilot: true }]
+    on.autopilotedSeatWeeks = ['C|1']
+    expect(checkAutopilotOffSeatsUntouched(on)).toEqual([])
+    const upcoming = offAudit()
+    upcoming.autopilotedSeatWeeks = ['C|1']
+    upcoming.weeks = [{ week: 1, status: 'upcoming' }]
+    expect(checkAutopilotOffSeatsUntouched(upcoming)).toEqual([])
+  })
+})
+
+describe('invariant 10 — WHICH player autopilot chose (F391; Q62 as ruled)', () => {
+  const key = (player_id: string, over: Partial<{ projected: number | null; season: number | null; preseason: number | null; adp: number | null }> = {}) => ({
+    player_id,
+    projected: null,
+    season: null,
+    preseason: null,
+    adp: null,
+    ...over,
+  })
+  const pick = (over: Partial<AuditAutopilotPick> = {}): AuditAutopilotPick => ({
+    team_id: 'C',
+    week: 1,
+    at: '2099-09-09T04:01:00.000Z',
+    slot: 'qb:0',
+    seated: key('p5', { projected: 20, adp: 30 }),
+    reported: { ...key('p5', { projected: 20, adp: 30 }), ordered_by: 'projected_points' },
+    witnesses: [key('p11', { projected: 12, adp: 1 })],
+    ...over,
+  })
+
+  it('the comparator is 138\'s ONE ORDER BY: each points key DESC NULLS LAST, then adp ASC NULLS LAST, then player_id', () => {
+    expect(compareSelectionKeys(key('a', { projected: 10 }), key('b', { projected: 9, season: 99 }))).toBeLessThan(0)
+    expect(compareSelectionKeys(key('a', { projected: 1 }), key('b', { season: 99, adp: 1 }))).toBeLessThan(0) // a projection beats every unprojected man
+    expect(compareSelectionKeys(key('a', { season: 5 }), key('b', { preseason: 500 }))).toBeLessThan(0)
+    expect(compareSelectionKeys(key('a', { preseason: 5 }), key('b', { adp: 1 }))).toBeLessThan(0)
+    expect(compareSelectionKeys(key('a', { adp: 2 }), key('b', { adp: 1 }))).toBeGreaterThan(0)
+    expect(compareSelectionKeys(key('a', { adp: 2 }), key('b'))).toBeLessThan(0) // adp NULLS LAST
+    expect(compareSelectionKeys(key('a'), key('b'))).toBeLessThan(0) // player_id ASC
+  })
+
+  it('GREEN: nobody on the bench out-ranks the seated man (a lower ADP does not beat a projection)', () => {
+    const a = greenAudit()
+    a.autopilotPicks = [pick()]
+    expect(checkAutopilotSelection(a)).toEqual([])
+    expect(countAutopilotPicksByPointsKey(a)).toBe(1)
+  })
+
+  it('RED: an eligible, unlocked, healthy bench man with a HIGHER projection — named, with both keys', () => {
+    const a = greenAudit()
+    a.autopilotPicks = [pick({ witnesses: [key('p11', { projected: 25, adp: 90 })] })]
+    const failures = checkAutopilotSelection(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.invariant).toBe('autopilot-selection')
+    expect(failures[0]!.detail).toContain('p11')
+    expect(failures[0]!.detail).toContain('wrong player')
+  })
+
+  it('VOID ⇒ RED: the harness\'s read differs from what the pass reported — a mis-reading harness cannot pass by accident', () => {
+    const a = greenAudit()
+    a.autopilotPicks = [pick({ seated: key('p5', { projected: 21, adp: 30 }) })]
+    expect(checkAutopilotSelection(a).map((f) => f.detail).join()).toContain('the grade is void')
+  })
+
+  it('F394: a pick is DISCRIMINATING only when a man it rightly benched held the better adp — the only picks that tell Q62 from an ADP-first sort', () => {
+    const a = greenAudit()
+    // the default pick: the benched witness has the better adp (1) and the lower projection ⇒ discriminating
+    a.autopilotPicks = [pick()]
+    expect(countDiscriminatingPicks(a)).toBe(1)
+    // the witness ALSO has the worse adp ⇒ both orders agree ⇒ not discriminating
+    a.autopilotPicks = [pick({ witnesses: [key('p11', { projected: 12, adp: 90 })] })]
+    expect(countDiscriminatingPicks(a)).toBe(0)
+    // no witness at all ⇒ nothing contested
+    a.autopilotPicks = [pick({ witnesses: [] })]
+    expect(countDiscriminatingPicks(a)).toBe(0)
+  })
+
+  it('the premise counts picks ordered by a POINTS key — an all-ADP run counts zero', () => {
+    const a = greenAudit()
+    a.autopilotPicks = [pick({ reported: { ...key('p5', { adp: 30 }), ordered_by: 'adp' }, seated: key('p5', { adp: 30 }) })]
+    expect(countAutopilotPicksByPointsKey(a)).toBe(0)
+  })
+})
+
+describe('absorbAutopilotReport records the OFF seats the tick NAMED (139 commissioner_managed[])', () => {
+  it('a commissioner_managed[] entry for this league lands in the league\'s seat-week set; another league\'s does not', () => {
+    const league = {
+      leagueId: 'L1',
+      teams: [{ id: 'C' }],
+      autopilotUnfillable: new Map(),
+      autopilotedSeatWeeks: new Set<string>(),
+      commissionerManagedSeatWeeks: new Set<string>(),
+    } as unknown as LeagueState
+    absorbAutopilotReport(
+      {
+        commissioner_managed: [
+          { league_id: 'L1', team_id: 'C', week: 1, reason: 'unmanaged_autopilot_off' },
+          { league_id: 'L2', team_id: 'X', week: 1, reason: 'unmanaged_autopilot_off' },
+        ],
+        autopilot_reason: 'every_unmanaged_seat_commissioner_managed_autopilot_off',
+      },
+      league,
+      1,
+    )
+    expect([...league.commissionerManagedSeatWeeks]).toEqual(['C|1'])
   })
 })

@@ -223,6 +223,58 @@ export type Database = {
           },
         ]
       }
+      commish_autopilot_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_autopilot_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_autopilot_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_autopilot_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commish_bracket_actions: {
         Row: {
           action_id: string
@@ -3817,6 +3869,32 @@ export type Database = {
           },
         ]
       }
+      team_autopilot: {
+        Row: {
+          is_on: boolean
+          set_at: string
+          team_id: string
+        }
+        Insert: {
+          is_on: boolean
+          set_at: string
+          team_id: string
+        }
+        Update: {
+          is_on?: boolean
+          set_at?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_autopilot_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: true
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_lineups: {
         Row: {
           bench: Json
@@ -4478,6 +4556,27 @@ export type Database = {
           p_team_id: string
           p_to_team_id: string
           p_verb: string
+        }
+        Returns: Json
+      }
+      commish_set_autopilot: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_on?: boolean
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      commish_set_autopilot_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_on: boolean
+          p_reason: string
+          p_team_id: string
         }
         Returns: Json
       }

@@ -101,6 +101,13 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ target_type: 'schedule', before: { home_team_id: 'a' }, after: { home_team_id: 'b' }, metadata: { week: 4 } }).text).toBe('edited a Week 4 matchup pairing')
   })
 
+  it('M6A L.E1.22 (Q63): the autopilot switch is read from its {autopilot} documents — both directions, the team named live (falling back to the receipt’s team_name), the verb name never on screen', () => {
+    expect(line({ action_type: 'set_autopilot', target_id: 't2', before: { autopilot: false }, after: { autopilot: true }, metadata: { team_name: 'Old Bravo' } }).text).toBe('put Bravo on autopilot')
+    expect(line({ action_type: 'set_autopilot', target_id: 't2', before: { autopilot: true }, after: { autopilot: false } }).text).toBe('took Bravo off autopilot')
+    expect(line({ action_type: 'set_autopilot', target_id: 'gone', before: { autopilot: false }, after: { autopilot: true }, metadata: { team_name: 'Retired Name' } }).text).toBe('put Retired Name on autopilot')
+    expect(line({ action_type: 'set_autopilot', target_id: 't1', before: { autopilot: false }, after: { autopilot: true } }).text).not.toContain('set autopilot')
+  })
+
   it('F355: a rename is read from its {name} documents — the word "reassign" never reaches the screen', () => {
     expect(line({ action_type: 'reassign_team', before: { name: 'Old' }, after: { name: 'New' } }).text).not.toContain('reassign')
   })

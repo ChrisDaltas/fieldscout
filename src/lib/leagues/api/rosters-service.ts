@@ -119,6 +119,11 @@ export interface RosterTeam {
   status: string
   /** From `league_members.team_id` (F35) — null for an unseated franchise. */
   manager_user_id: string | null
+  /** The commissioner's per-team "Put on autopilot" switch (§7.2.1(c), Q63 —
+   *  migration 139's `team_autopilot`, member-readable). NO ROW = OFF, the
+   *  ruled default; `true` only when the verb has switched it on. It acts
+   *  only while the seat has no manager (`manager_user_id === null`). */
+  autopilot: boolean
   roster: RosterPlayer[]
 }
 
@@ -135,7 +140,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
   const refused = await assertLeagueMember(supabase, leagueId)
   if (refused) return refused
 
-  const [leagueRes, teamsRes, membersRes, rostersRes, poolRes] = await Promise.all([
+  const [leagueRes, teamsRes, membersRes, rostersRes, poolRes, autopilotRes] = await Promise.all([
     supabase.from('leagues').select('id, season').eq('id', leagueId).is('deleted_at', null).maybeSingle(),
     supabase
       .from('teams')
@@ -152,6 +157,9 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
       .eq('league_id', leagueId)
       .order('player_id', { ascending: true }),
     supabase.from('league_player_pool').select('player_id, state, locked_until').eq('league_id', leagueId),
+    // 139 (L.E1.22): the switch rows of THIS league's teams (RLS: members
+    // read). An absent row is OFF — the ruled default — never "unknown".
+    supabase.from('team_autopilot').select('team_id, is_on, teams!inner(league_id)').eq('teams.league_id', leagueId),
   ])
   for (const [what, res] of [
     ['leagues', leagueRes],
@@ -159,6 +167,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
     ['league_members', membersRes],
     ['league_rosters', rostersRes],
     ['league_player_pool', poolRes],
+    ['team_autopilot', autopilotRes],
   ] as const) {
     if (res.error) return { status: 500, body: { error: `${what}: ${res.error.message}` } }
   }
@@ -182,6 +191,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
     [membersRes.data ?? [], 'league_members'],
     [rosterRows, 'league_rosters'],
     [poolRows, 'league_player_pool'],
+    [autopilotRes.data ?? [], 'team_autopilot'],
   ] as const) {
     const capped = assertBelowPostgrestCap(rows, what)
     if (capped) return capped
@@ -215,6 +225,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
   }
 
   const poolByPlayer = new Map(poolRows.map((row) => [row.player_id, row]))
+  const autopilotOn = new Set((autopilotRes.data ?? []).filter((row) => row.is_on).map((row) => row.team_id))
   const managerByTeam = new Map<string, string>()
   for (const m of membersRes.data ?? []) {
     if (m.team_id && m.user_id) managerByTeam.set(m.team_id, m.user_id)
@@ -231,6 +242,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
         owner_id: team.owner_id,
         status: team.status,
         manager_user_id: managerByTeam.get(team.id) ?? null,
+        autopilot: autopilotOn.has(team.id),
         roster: rosterRows
           .filter((r) => r.team_id === team.id)
           .map((r) => {

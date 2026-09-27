@@ -210,7 +210,28 @@ closed**; records **D375**; files **Q68** (does NOT block — an OUT starter who
 replacement is Doubtful is no longer swapped, as the rulings' text reads; Chris's call);
 spec **v2.16.46** (fold-back). **⚠ PUSH DEBT: 135–138** — production is at 134.)
 
-**NEXT TAKEABLE TASK: `L.E1.22`** — Q63: autopilot OFF by default + the commissioner's
+**`L.E1.22` is LANDED 2026-09-27** (migration **139** + pgTAP **087** `plan(76)` — Q63 as
+ruled: autopilot is OFF by default, per team, behind the commissioner's "Put on autopilot"
+switch. `team_autopilot` (no row = OFF — **every existing team, production's unmanaged
+seats included, goes OFF on push, no backfill**), `commish_set_autopilot` (commissioner or
+co-commissioner; ON only for a seat with no manager; OFF for any franchise; audited,
+reason optional, the §10.3 post, its own replay ledger), `lineup_lock_tick` arm (c) gated
+on the switch (an OFF seat is materialized, never filled, and NAMED in
+`commissioner_managed[]`), `POST /api/leagues/[id]/commish/autopilot` + hook + the switch
+on the team page inside override mode + the activity-feed line. **F392** discharged in the
+same migration (the chooser's `order_basis`, one hunk). **The synthetic gate is RE-CUT**
+(invariant 8 counts switched-ON seats; invariant 9 = the OFF negative control; invariant
+10 = F391's selection grade, with the projections → values chain run in the sim over the
+recorded fixture). Records **D376**; **F380 / F391 / F392 discharged**; mints **F393 /
+F394**; spec **v2.16.47** (fold-back). **⚠ PUSH DEBT: 135–139** — production is at 134,
+and pushing 139 turns autopilot OFF for every existing team in production.)
+
+**NEXT TAKEABLE TASK: `L.E1.23`** — F377(c) (bracket "Edit a result" → a link to the game's
+matchup page) + the played-round WARNING downgraded to a NOTICE (tasks-M6A §6's 2026-09-27
+amendment; PROGRESS **F377**'s remainder). Then L.E1.24. Heads after L.E1.22:
+**139 / 087** — re-measure at task time (D161).
+
+~~**NEXT TAKEABLE TASK: `L.E1.22`**~~ *(advanced by L.E1.22's own PR)* — Q63: autopilot OFF by default + the commissioner's
 "Put on autopilot" switch, and the synthetic gate re-cut (PROGRESS **F380**, and **F391** —
 the re-cut also runs the projections → values chain in the sim and grades WHICH player
 autopilot chose (R1121, PR #316's fix round); tasks-M6A §6's 2026-09-27 amendment). Then

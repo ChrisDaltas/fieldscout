@@ -22,7 +22,7 @@
 --
 -- WHAT EACH SECTION CATCHES (§4.3 — a pin is named by the defect it reddens
 -- on):
---   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 75-table census as a stored
+--   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 77-table census as a stored
 --      literal (a migration that adds a table must re-derive the mid-state
 --      allowlist in §C — deliberately a conversation with this file), and
 --      two quiescence preconditions with their reasons printed: this file
@@ -134,6 +134,13 @@ select is(
         -- has no playoff bracket and no commissioner verb), so §C's and §E's
         -- mid-state allowlists are re-derived UNCHANGED — the delta cells are
         -- the proof. Census 72 → 73.
+        -- 139 / M6A L.E1.22: commish_set_autopilot's own replay ledger
+        -- (D350). UNREACHABLE from a mock for the same reason as every sibling
+        -- here — zero policies, written only by the switch verb, and no mock
+        -- RPC calls it — so §C's and §E's mid-state allowlists are re-derived
+        -- UNCHANGED and the delta cells are the proof. Census 75 → 77 (with
+        -- team_autopilot below).
+        'commish_autopilot_actions',
         'commish_bracket_actions',
         'commish_lineup_actions',
         -- 126 / M6A L.E1.5: commish_edit_score / commish_set_result's own
@@ -204,6 +211,13 @@ select is(
         'scoring_systems', 'start_sit_questions', 'start_sit_votes',
         'system_flags',  -- 122/L.D2.3: the persisted ingestion flags (F217) — UNREACHABLE from a mock (no mock path reads or writes it; written by the sync routes as service_role only), so §C's and §E's mid-state allowlists are re-derived UNCHANGED in the same PR
         'tags',
+        -- 139 / M6A L.E1.22: the per-team autopilot switch (Q63). UNREACHABLE
+        -- from a mock (no write policy for any role; written only by
+        -- commish_set_autopilot, a commissioner verb no mock RPC calls; read
+        -- only by lineup_lock_tick's arm (c), which walks in_season / playoffs
+        -- leagues — never a mock), so §C's and §E's mid-state allowlists are
+        -- re-derived UNCHANGED — the delta cells are the proof.
+        'team_autopilot',
         'team_lineups', 'team_managers',
         'team_week_results',  -- 109/L.D1.1 (§12.18)
         'teams',
@@ -214,7 +228,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 75 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 77 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -259,8 +273,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 75 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 75::bigint,
+  'BASELINE: all 77 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 77::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------

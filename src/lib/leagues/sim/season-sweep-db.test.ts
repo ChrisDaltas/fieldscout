@@ -40,6 +40,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { Database } from '@/types/database'
 
+import { commishSetAutopilot } from '../api/commish-autopilot-service'
 import type { ReconcileReport } from '../scoring/reconcile'
 import { runScoreWeekBatch } from '../scoring/score-week-worker'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
@@ -96,6 +97,10 @@ const PLAYERS = Array.from({ length: SEATS }, (_, i) => [
 ]).flat()
 
 const ACTION_LEAGUE = 'ad600000-0000-4000-8000-000000000001'
+/** M6A L.E1.22: the placeholder's autopilot switch, through the real verb. */
+const ACTION_AUTOPILOT_ON = 'ad600000-0000-4000-8000-000000000301'
+const ACTION_AUTOPILOT_OFF_PLANT = 'ad600000-0000-4000-8000-000000000302'
+const ACTION_AUTOPILOT_ON_REVERT = 'ad600000-0000-4000-8000-000000000303'
 const lineupAction = (i: number): string => `ad600000-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
@@ -367,6 +372,13 @@ beforeAll(async () => {
       p_reason: 'season-sweep fixture: seating every franchise for the driven week',
     })
     if (error) throw new Error(`set_lineup(seat ${i + 1}): ${error.message}`)
+  }
+  // M6A L.E1.22 (migration 139; Q63 — autopilot OFF by default): the
+  // commissioner switches the placeholder seat ON through the REAL verb
+  // before the tick, so arm (c) seats it exactly as before.
+  {
+    const res = await commishSetAutopilot(commishClient, leagueId, { team_id: teamIds[PLACEHOLDER_SEAT]!, on: true, action_id: ACTION_AUTOPILOT_ON })
+    if (res.status !== 200) throw new Error(`commish_set_autopilot(placeholder, on): ${res.status} ${JSON.stringify(res.body)}`)
   }
   {
     const at = new Date(Date.parse(WEEK1_STARTS) + 2 * MINUTE_MS).toISOString()
@@ -909,6 +921,9 @@ describe('8 — unmanaged seats are seated by the SERVER (M6A L.E1.14; §7.2.1(c
     const shapeOf = new Map(a.unmanagedSeats.map((s) => [s.team_id, s.shape]))
     const placeholder = teamIds[PLACEHOLDER_SEAT]!
     expect(shapeOf.get(placeholder)).toBe('member_row_user_id_null')
+    // M6A L.E1.22: the collector read the placeholder's switch ON (the verb
+    // flipped it) and every member-row-less seat OFF (no row — the default).
+    expect(a.unmanagedSeats.filter((s) => s.autopilot).map((s) => s.team_id)).toEqual([placeholder])
     expect(teamIds.slice(2).map((t) => shapeOf.get(t))).toEqual(Array.from({ length: SEATS - 2 }, () => 'no_member_row'))
     // BOTH shapes are present …
     expect(new Set(shapeOf.values())).toEqual(new Set(['member_row_user_id_null', 'no_member_row']))
@@ -968,6 +983,27 @@ describe('8 — unmanaged seats are seated by the SERVER (M6A L.E1.14; §7.2.1(c
         .select('id'),
       'revert: the unmanaged seat',
     )
+    expect(await sweep()).toEqual([])
+  })
+
+  it('M6A L.E1.22 — invariant 9, LIVE: the SAME filled placeholder, switched OFF through the verb, reddens the OFF-seat invariant by name (its map is not what the carry gave it); switched back ON, the sweep is green again', async () => {
+    const placeholder = teamIds[PLACEHOLDER_SEAT]!
+    const off = await commishSetAutopilot(commishClient, leagueId, { team_id: placeholder, on: false, action_id: ACTION_AUTOPILOT_OFF_PLANT })
+    expect(off.status).toBe(200)
+    // The baseline the runner captures at week open: the carry gave it {}.
+    state.offSeatCarry.push({ team_id: placeholder, week: WEEK, carry_map: {} })
+    state.commissionerManagedSeatWeeks.add(`${placeholder}|${WEEK}`)
+    const failures = (await sweep()).filter((f) => f.invariant === 'autopilot-off-seat-untouched')
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain(placeholder)
+    expect(failures[0]!.detail).toContain('CHANGED from what the carry gave it')
+    // …and invariant 8 no longer asserts on the OFF seat.
+    expect((await sweep()).filter((f) => f.invariant === 'unmanaged-seat-autopilot')).toEqual([])
+
+    const on = await commishSetAutopilot(commishClient, leagueId, { team_id: placeholder, on: true, action_id: ACTION_AUTOPILOT_ON_REVERT })
+    expect(on.status).toBe(200)
+    state.offSeatCarry.length = 0
+    state.commissionerManagedSeatWeeks.clear()
     expect(await sweep()).toEqual([])
   })
 

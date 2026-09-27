@@ -109,8 +109,8 @@ const rosters: LeagueRosters = {
   league_id: LEAGUE,
   season: 2099,
   teams: [
-    { team_id: MINE, name: 'My Team', owner_id: 'user-manager', status: 'active', manager_user_id: 'user-manager', roster: [rp({ player_id: 'mine-open', full_name: 'Mine Open' }), rp({ player_id: 'mine-locked', full_name: 'Mine Locked', game_lock: { state: 'locked_release_unrecorded', until: null } })] },
-    { team_id: OTHER, name: 'Their Team', owner_id: 'user-commish', status: 'active', manager_user_id: 'user-commish', roster: [rp({ player_id: 'theirs', full_name: 'Theirs' })] },
+    { team_id: MINE, name: 'My Team', owner_id: 'user-manager', status: 'active', manager_user_id: 'user-manager', autopilot: false, roster: [rp({ player_id: 'mine-open', full_name: 'Mine Open' }), rp({ player_id: 'mine-locked', full_name: 'Mine Locked', game_lock: { state: 'locked_release_unrecorded', until: null } })] },
+    { team_id: OTHER, name: 'Their Team', owner_id: 'user-commish', status: 'active', manager_user_id: 'user-commish', autopilot: false, roster: [rp({ player_id: 'theirs', full_name: 'Theirs' })] },
   ],
 }
 const pool: PoolRow[] = [

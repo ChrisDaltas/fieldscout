@@ -2230,6 +2230,15 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
     .delete()
     .like('id', `${SIM_SEASON_GAME_PREFIX}%`)
   throwIfError(gamesError, 'cleanup: nfl_games delete')
+  // M6A L.E1.22 / F391: the season sim now runs the projections → values
+  // chain. `league_player_values` rides the league delete (137 — ON DELETE
+  // CASCADE); `player_weekly_projections` is keyed by (season, week, player)
+  // with no league column, so the synthetic season's lines are swept here.
+  const { error: projectionsError } = await service
+    .from('player_weekly_projections')
+    .delete()
+    .eq('season', SYNTHETIC_SEASON)
+  throwIfError(projectionsError, 'cleanup: player_weekly_projections delete')
   // The bounds the season's ingestion stamped. The 18 seeded `nfl_weeks`
   // rows are NEVER deleted (`synthetic-season.ts:24-29` — reference data a
   // parallel suite's league_weeks FK depends on); only the two live-updated
@@ -2337,6 +2346,7 @@ export async function simCensus(service: Supabase): Promise<CensusCell[]> {
     await count(`nfl_games(${SIM_SEASON_GAME_PREFIX}*)`, () => service.from('nfl_games').select('id', { count: 'exact', head: true }).like('id', `${SIM_SEASON_GAME_PREFIX}%`)),
     await count(`player_stats(${SYNTHETIC_SEASON})`, () => service.from('player_stats').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
     await count(`score_fanout(${SYNTHETIC_SEASON})`, () => service.from('score_fanout').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
+    await count(`player_weekly_projections(${SYNTHETIC_SEASON})`, () => service.from('player_weekly_projections').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
     // BOTH columns cleanup resets, not just one (R923): an abort between
     // the `nfl_games` delete and the bounds reset, on a run whose only
     // ingested week never reached all-final, leaves `first_kickoff_at`

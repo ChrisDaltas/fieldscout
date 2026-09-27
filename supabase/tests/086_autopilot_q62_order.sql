@@ -53,7 +53,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(81);
+select plan(82);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 138 replaces ONE function and nothing else
@@ -99,13 +99,38 @@ select ok(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_autopilot_internal'),
   'A6 Doubtful joins the CLASSIFICATION test and the `out` starter flag is still 125''s five (a Doubtful start is legal, 114:596) — the behaviour is §D2c''s');
+-- RE-PINNED BY L.E1.22 (migration 139, R992 — additive): 139 replaces the
+-- tick with FIVE hunks against THIS file's text (arm (c)'s switch — Q63). The
+-- live prosrc's md5 is pinned by pgTAP 087 §A; here each of 139's five hunks
+-- is REVERSED first, so A7 / A7b keep proving exactly what they proved: 138's
+-- text is intact beneath 139, and 125's beneath that.
 select is(
-  (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(replace(replace(replace(replace(replace(p.prosrc,
+  E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
+  E''),
+  E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
+  E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member\n'),
+  E'            END IF;\n\n            -- 139 (L.E1.22, Q63 RULED 2026-09-27): "the default would be the\n            -- commissioner has to manage the team, but give the [commissioner]\n            -- a button that lets them put the team on autopilot." A seat whose\n            -- switch is OFF is left EXACTLY as the carry (or the commissioner)\n            -- left it — never filled, never substituted — and it is NAMED, so\n            -- an empty slot there reads as the ruled state ("that is fine"),\n            -- never as autopilot having silently done nothing. It still passed\n            -- the materialize step above (D354): a seat with NO row would hold a\n            -- total_points week pending for ever (the worker writes no\n            -- provisional row without one — score-week-worker.ts step (6b) —\n            -- so week_results_pending_internal reports it), and a lineup row is\n            -- what the commissioner\'s own override edits.\n            IF NOT v_ap.autopilot_on THEN\n              v_ap_cm := v_ap_cm + 1;\n              v_ap_cm_list := v_ap_cm_list || jsonb_build_object(\n                \'league_id\', v_lg.id, \'team_id\', v_ap.team_id, \'week\', v_current,\n                \'reason\', \'unmanaged_autopilot_off\',\n                \'why\', \'unmanaged, autopilot off — commissioner-managed (Q63, ruled 2026-09-27): the seat has no manager and the commissioner has not switched autopilot on, so it plays the lineup it has and an empty slot scores zero\',\n                \'materialized\', v_ap.lineup_id IS NULL);\n              CONTINUE;\n',
+  E''),
+  E'    -- 139 (L.E1.22, Q63): every unmanaged seat left alone because its switch\n    -- is OFF, BY NAME — the commissioner manages it.\n    \'commissioner_managed\', v_ap_cm_list,\n',
+  E''),
+  E'      -- 139 (L.E1.22, Q63): the pass evaluated NO seat because every unmanaged\n      -- seat it reached has its switch OFF. Ahead of the D339 decline arm:\n      -- with an OFF seat present, "every unmanaged-looking seat was declined"\n      -- would be false (`skipped[]` still names each declined team).\n      WHEN v_ap_seats = 0 AND v_ap_cm > 0\n        THEN \'every_unmanaged_seat_commissioner_managed_autopilot_off\'\n',
+  E'')) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_lock_tick'),
   '2040f93b901c6224e39a973fc958f1a0',
-  'A7 lineup_lock_tick is 138''s FILE TEXT (prosrc md5, a stored literal — re-pinned by #316''s fix round, R1122: 125''s text plus ONE hunk)');
+  'A7 lineup_lock_tick is 138''s FILE TEXT beneath 139''s five hunks (prosrc with 139''s hunks reversed — md5 a stored literal; re-pinned by #316''s fix round, R1122: 125''s text plus ONE hunk)');
 select is(
-  (select md5(replace(p.prosrc,
+  (select md5(replace(replace(replace(replace(replace(replace(p.prosrc,
+  E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
+  E''),
+  E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
+  E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member\n'),
+  E'            END IF;\n\n            -- 139 (L.E1.22, Q63 RULED 2026-09-27): "the default would be the\n            -- commissioner has to manage the team, but give the [commissioner]\n            -- a button that lets them put the team on autopilot." A seat whose\n            -- switch is OFF is left EXACTLY as the carry (or the commissioner)\n            -- left it — never filled, never substituted — and it is NAMED, so\n            -- an empty slot there reads as the ruled state ("that is fine"),\n            -- never as autopilot having silently done nothing. It still passed\n            -- the materialize step above (D354): a seat with NO row would hold a\n            -- total_points week pending for ever (the worker writes no\n            -- provisional row without one — score-week-worker.ts step (6b) —\n            -- so week_results_pending_internal reports it), and a lineup row is\n            -- what the commissioner\'s own override edits.\n            IF NOT v_ap.autopilot_on THEN\n              v_ap_cm := v_ap_cm + 1;\n              v_ap_cm_list := v_ap_cm_list || jsonb_build_object(\n                \'league_id\', v_lg.id, \'team_id\', v_ap.team_id, \'week\', v_current,\n                \'reason\', \'unmanaged_autopilot_off\',\n                \'why\', \'unmanaged, autopilot off — commissioner-managed (Q63, ruled 2026-09-27): the seat has no manager and the commissioner has not switched autopilot on, so it plays the lineup it has and an empty slot scores zero\',\n                \'materialized\', v_ap.lineup_id IS NULL);\n              CONTINUE;\n',
+  E''),
+  E'    -- 139 (L.E1.22, Q63): every unmanaged seat left alone because its switch\n    -- is OFF, BY NAME — the commissioner manages it.\n    \'commissioner_managed\', v_ap_cm_list,\n',
+  E''),
+  E'      -- 139 (L.E1.22, Q63): the pass evaluated NO seat because every unmanaged\n      -- seat it reached has its switch OFF. Ahead of the D339 decline arm:\n      -- with an OFF seat present, "every unmanaged-looking seat was declined"\n      -- would be false (`skipped[]` still names each declined team).\n      WHEN v_ap_seats = 0 AND v_ap_cm > 0\n        THEN \'every_unmanaged_seat_commissioner_managed_autopilot_off\'\n',
+  E''),
      E'                -- 138 (L.E1.21, R1122): the chooser''s order_basis for this\n'
      || E'                -- pass: which Q62 key ordered its candidates and, when none had\n'
      || E'                -- a usable value, that it FELL BACK TO ADP and why (rule 15).\n'
@@ -113,7 +138,7 @@ select is(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_lock_tick'),
   'b657c8ba654257d74701f8561998267f',
-  'A7b …and that ONE hunk is the WHOLE change: the tick''s prosrc with the order_basis forwarding lines removed is 125''s prosrc md5 byte for byte (D137 — arms (a) / (b) untouched)');
+  'A7b …and that ONE hunk is the WHOLE change: the tick''s prosrc with 139''s five hunks reversed AND the order_basis forwarding lines removed is 125''s prosrc md5 byte for byte (D137 — arms (a) / (b) untouched)');
 select ok(
   (select md5(p.prosrc) = 'b291362e2263f2b987b413f3cb6b9580' from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_fit_internal')
@@ -224,6 +249,19 @@ insert into teams (id, owner_id, name, league_id)
 select id, '9b000000-0000-4000-8000-000000000001', 'Q62 ' || tag, league_id from q62_team;
 insert into league_members (league_id, user_id, team_id, role, is_placeholder)
 select league_id, null, id, 'manager', true from q62_team;
+-- ADDED BY L.E1.22 (migration 139, R992 — additive): autopilot is OFF BY
+-- DEFAULT since 139 (Q63, RULED) — §H's REAL tick fills a seat only when its
+-- `team_autopilot` switch is ON. Every team here is an unmanaged placeholder
+-- whose point is what autopilot CHOOSES, so every one is switched ON (as the
+-- service role would write it; the verb and the OFF behaviour are pgTAP 087's).
+-- The chooser cells (§C-§G) call `lineup_autopilot_internal` directly and do
+-- not read the switch at all. B0 asserts the premise.
+insert into team_autopilot (team_id, is_on, set_at)
+select id, true, '2026-09-23 04:00:00+00' from q62_team;
+select is(
+  (select format('%s/%s', count(*) filter (where sw.is_on), count(*)) from q62_team t left join team_autopilot sw on sw.team_id = t.id),
+  (select format('%s/%s', count(*), count(*)) from q62_team),
+  'B0 L.E1.22 PREMISE: EVERY fixture team is switched ON (team_autopilot.is_on) — so §H''s real tick evaluates each one as before 139');
 
 -- THE PLAYERS. `adp` is POPULATED on every row (rule 14(a)). Each cell's
 -- WINNER is the one a pure-ADP sort (125) would NOT seat, except where ADP is

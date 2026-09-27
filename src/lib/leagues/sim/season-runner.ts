@@ -81,8 +81,11 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '@/types/database'
 
+import { commishSetAutopilot } from '../api/commish-autopilot-service'
 import { commishEditScore } from '../api/commish-matchup-service'
 import { setLineup } from '../api/lineup-service'
+import { PROJECTION_MAX_AGE_MS } from '../scoring/player-values'
+import { runLeaguePlayerValues } from '../scoring/player-values-job'
 import { reconcileSeason, type ReconcileReport } from '../scoring/reconcile'
 import { runScoreWeekBatch, type BatchReport } from '../scoring/score-week-worker'
 import { DegradationTracker } from '../stats/degradation'
@@ -97,6 +100,8 @@ import { VirtualClock } from '../time/virtual-clock'
 
 import { BLOCKING_DESIGNATIONS, simDesignation } from './designations'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
+import projectionsFixture from '@/lib/sync/fixtures/sleeper-weekly-projections-2026.json'
+import { syncWeeklyProjections, type FetchWeeklyProjections } from '@/lib/sync/weekly-projections'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 
 import { BOT_POOL_SIZE } from './plan'
@@ -124,7 +129,13 @@ import {
   startersOfMap,
   sweepSeasonAudit,
   countUnmanagedSeatWeeksAsserted,
+  countAutopilotOffSeatWeeksAsserted,
+  countDiscriminatingPicks,
+  SELECTION_POINTS_KEYS,
+  type AuditAutopilotPick,
   type AuditAutopilotUnfillable,
+  type AuditOffSeatCarry,
+  type AuditSelectionKey,
   type AuditCommissionerAction,
   type AuditFinalCell,
   type AuditLineup,
@@ -198,6 +209,16 @@ export interface LeagueState {
   /** `team|week` for every seat-week a tick reported in `autopiloted[]` — the
    *  SERVER's own word that it wrote the lineup (the transcript's flag). */
   autopilotedSeatWeeks: Set<string>
+  /** M6A L.E1.22 (Q63): the unmanaged seats this run switched ON through the
+   *  real verb, and the ones it deliberately left OFF (the negative control). */
+  autopilotOn: Set<string>
+  autopilotOff: Set<string>
+  /** `team|week` the tick named in `commissioner_managed[]` (139). */
+  commissionerManagedSeatWeeks: Set<string>
+  /** Invariant 9's baselines — an OFF seat's map right after week open. */
+  offSeatCarry: AuditOffSeatCarry[]
+  /** Invariant 10's graded picks (F391). */
+  autopilotPicks: AuditAutopilotPick[]
 }
 
 function throwIfError(error: { message: string } | null, what: string): void {
@@ -363,6 +384,10 @@ export async function runSeasonSim(
     poolRows: 0,
     unmanagedSeats: 0,
     unmanagedSeatWeeksAsserted: 0,
+    autopilotOnSeats: 0,
+    autopilotOffSeats: 0,
+    autopilotOffSeatWeeksAsserted: 0,
+    autopilotSelection: { picksGraded: 0, byPointsKey: 0, discriminating: 0, byKey: {}, chainLines: [] },
     lawfulOverride: null,
     externalCalls: 0,
     workerErrors: [],
@@ -463,8 +488,19 @@ export async function runSeasonSim(
       botClients.set(data.user.id, client)
     }
 
+    // ---- Phase 3c: the per-team autopilot switch (M6A L.E1.22; Q63) ------
+    // Autopilot is OFF by default since 139. Invariant 8 is about what the
+    // SERVER does for an unmanaged seat that is switched ON, so the run turns
+    // the switch ON for its unmanaged seats THROUGH THE REAL VERB, as each
+    // league's own commissioner (the D100 door, the L.E1.14 override pattern)
+    // — and leaves AT LEAST ONE unmanaged seat OFF as the negative control
+    // (invariant 9). Before the season is driven, so the first week-open tick
+    // already sees every switch.
+    await switchAutopilotSeats(service, botClients, leagueStates, cfg.seed, deps.runTag, report.problems, deps.log)
+
     // ---- Phase 4: drive the season --------------------------------------
     const driven = await driveSeason(service, botClients, cfg, deps, base, bridge, leagueStates)
+    report.autopilotSelection.chainLines = driven.chainLines
     if (driven.weeksDriven.length === 0) {
       report.reason = 'no_weeks_driven'
       report.problems.push('no week reached its open instant — the calendar or the plan is empty')
@@ -532,6 +568,7 @@ export async function runSeasonSim(
         slotsFilled: 0,
         unmanagedSeats: 0,
         autopiloted: 0,
+        offSeatEmptySlotKeys: {},
         transcript: [],
       }
       // Invariant 8's premise is counted from the AUDIT (every seat the
@@ -540,6 +577,16 @@ export async function runSeasonSim(
       // watched.
       report.unmanagedSeats += audit.unmanagedSeats.length
       report.unmanagedSeatWeeksAsserted += countUnmanagedSeatWeeksAsserted(audit)
+      // M6A L.E1.22: the OFF control's premise, and the switch census.
+      report.autopilotOffSeatWeeksAsserted += countAutopilotOffSeatWeeksAsserted(audit)
+      report.autopilotOnSeats += state.autopilotOn.size
+      report.autopilotOffSeats += state.autopilotOff.size
+      report.autopilotSelection.discriminating += countDiscriminatingPicks(audit)
+      for (const pick of audit.autopilotPicks) {
+        report.autopilotSelection.picksGraded += 1
+        report.autopilotSelection.byKey[pick.reported.ordered_by] = (report.autopilotSelection.byKey[pick.reported.ordered_by] ?? 0) + 1
+        if (SELECTION_POINTS_KEYS.includes(pick.reported.ordered_by)) report.autopilotSelection.byPointsKey += 1
+      }
       const result: SeasonLeagueResult = {
         leagueLabel: state.label,
         leagueId: state.leagueId,
@@ -554,6 +601,9 @@ export async function runSeasonSim(
         benchedForLegality: seating.benchedForLegality,
         unmanagedSeats: audit.unmanagedSeats.length,
         lineupsAutopiloted: seating.autopiloted,
+        autopilotOnSeats: state.autopilotOn.size,
+        autopilotOffSeats: state.autopilotOff.size,
+        offSeatEmptySlotKeys: Object.fromEntries(Object.entries(seating.offSeatEmptySlotKeys).map(([k, v]) => [k, [...v]])),
         seatingTranscript: seating.transcript.map((t) => ({ ...t, emptySlotKeys: [...t.emptySlotKeys] })),
         matrixLine: state.matrixLine,
         weeksDriven: [...driven.weeksDriven],
@@ -572,6 +622,15 @@ export async function runSeasonSim(
       // slots read as a fully seated league. It is a run PROBLEM now, named by
       // slot key: the honest failure mode of a gate whose job is certifying
       // that scoring works is a position it never scored.
+      // M6A L.E1.22 (Q63): an OFF seat's empty slots are EXCLUDED from that
+      // problem BY NAME — the ruling makes them lawful ("that is fine") — and
+      // printed here so the exclusion is visible, never a loosened check.
+      for (const [teamId, keys] of Object.entries(result.offSeatEmptySlotKeys)) {
+        log(
+          `${state.label}: team ${teamId} is COMMISSIONER-MANAGED (autopilot OFF, Q63) — its ${keys.length} empty ` +
+            `starting slot(s) [${keys.join(' ')}] are lawful by ruling and EXCLUDED from F288's empty-slot problem by name`,
+        )
+      }
       if (result.lineupSlotsLeftEmpty > 0) {
         report.problems.push(
           `${state.label}: ${result.lineupSlotsLeftEmpty} starting slot(s) left EMPTY across the week-1 lineups ` +
@@ -596,12 +655,42 @@ export async function runSeasonSim(
     // nothing — so each absence is a run PROBLEM, not a green.
     // R1079: the premise is SEAT-WEEKS ASSERTED, not seats — with every driven
     // week still 'upcoming' invariant 8 iterates seats and asserts nothing.
+    // M6A L.E1.22: the premise now counts seats whose autopilot switch is ON
+    // (Q63 — OFF by default); a run that switched nothing ON reds here BY NAME.
     if (report.unmanagedSeatWeeksAsserted < 1) {
       report.problems.push(
         `AUTOPILOT PREMISE: invariant 8 (unmanaged-seat-autopilot) asserted on ${report.unmanagedSeatWeeksAsserted} ` +
-          `unmanaged seat-week(s) (${report.unmanagedSeats} unmanaged seat(s) × the driven weeks that OPENED) — ` +
-          `it iterated NOTHING, so this run says nothing about §7.2.1(c). A season plan ` +
+          `switched-ON unmanaged seat-week(s) (${report.autopilotOnSeats} seat(s) switched ON of ${report.unmanagedSeats} unmanaged, × the driven weeks that OPENED) — ` +
+          `it iterated NOTHING, so this run says nothing about §7.2.1(c). Autopilot is OFF by default (Q63): the run must ` +
+          `switch its unmanaged seats ON through commish_set_autopilot. A season plan ` +
           `seats min(teams, ${BOT_POOL_SIZE}) bots and fills the rest with placeholders: use --teams mixed or a size above ${BOT_POOL_SIZE}.`,
+      )
+    }
+    if (report.autopilotOffSeatWeeksAsserted < 1) {
+      report.problems.push(
+        `AUTOPILOT OFF PREMISE: invariant 9 (autopilot-off-seat-untouched) asserted on ${report.autopilotOffSeatWeeksAsserted} ` +
+          `OFF seat-week(s) (${report.autopilotOffSeats} seat(s) left OFF) — the negative control asserted nothing, so this run ` +
+          `cannot tell "autopilot is gated on the switch" from "autopilot fills everything" (Q63).`,
+      )
+    }
+    // F391, measured and SAID: only a DISCRIMINATING pick (a benched man held
+    // the better adp) lets invariant 10 tell Q62's order from an ADP-first
+    // sort. Whether a run's drafts produce one is a property of its world, not
+    // of the code under test, so a run with none says so every time rather
+    // than reading its clean grade as proof it would catch that regression.
+    if (report.autopilotSelection.discriminating === 0) {
+      report.coverageGaps.push(
+        `INVARIANT 10 (autopilot-selection) graded ${report.autopilotSelection.picksGraded} pick(s) and NONE was DISCRIMINATING — ` +
+          `in this run's world no autopiloted slot was contested between a man with the better Q62 key and a benched man with the ` +
+          `better adp, so a clean grade here cannot distinguish Q62's order from 125's ADP-first sort (F391). The discriminating ` +
+          `proof is pgTAP 086 §C (every key's fixture reverses adp) and, at scale, a run whose drafts contest a slot.`,
+      )
+    }
+    if (report.autopilotSelection.byPointsKey < 1) {
+      report.problems.push(
+        `SELECTION PREMISE: invariant 10 (autopilot-selection) graded ${report.autopilotSelection.picksGraded} pick(s), ` +
+          `${report.autopilotSelection.byPointsKey} ordered by a POINTS key (${JSON.stringify(report.autopilotSelection.byKey)}) — ` +
+          `every graded pick fell back to ADP, so the run never graded Q62's projected / season / preseason keys (F391).`,
       )
     }
     report.lawfulOverride = driven.lawfulOverride
@@ -868,6 +957,11 @@ export async function readLeagueState(
     finalCellRebaselines: new Map(),
     autopilotUnfillable: new Map(),
     autopilotedSeatWeeks: new Set(),
+    autopilotOn: new Set(),
+    autopilotOff: new Set(),
+    commissionerManagedSeatWeeks: new Set(),
+    offSeatCarry: [],
+    autopilotPicks: [],
   }
 }
 
@@ -900,6 +994,8 @@ interface DriveOutcome {
   evidence: SeasonRunReport['scenarioEvidence']
   workerNotes: string[]
   problems: string[]
+  /** F391: the projections → values chain's report lines, per driven week. */
+  chainLines: string[]
 }
 
 async function driveSeason(
@@ -1040,6 +1136,7 @@ async function driveSeason(
       evidence: { scenario: cfg.scenario, leagues: 0, assertions },
       workerNotes: [],
       problems,
+      chainLines: [],
     }
   }
 
@@ -1204,6 +1301,7 @@ async function driveSeason(
   // would have made the arm a false red (measured 2026-09-08).
   let chartedArrivedAtMs: number | null = null
   let chartedCellsBefore: Map<string, string> | null = null
+  const chainLines: string[] = []
 
   for (const entry of timeline) {
     clock.advanceTo(entry.at)
@@ -1227,6 +1325,18 @@ async function driveSeason(
       // player reads as locked from `starts_at`. The sim must seed the games
       // first, and the poll below is what writes them.
       seedLineupsAfterPoll = entry.kind === 'open' && entry.week === weeksDriven[0]
+    }
+
+    if (entry.kind === 'open') {
+      // M6A L.E1.22 — invariant 9's BASELINE: what the week's carry gave each
+      // OFF seat, read right after the advance and BEFORE any tick of the week.
+      await captureOffSeatCarry(service, leagues, entry.week)
+      // F391 — the projections → values chain, through the REAL code paths,
+      // at this instant and BEFORE this beat's tick: the weekly-projections
+      // sync over the RECORDED Sleeper fixture (zero external calls), then the
+      // league-player-values job, so the tick orders candidates by Q62's
+      // points keys and invariant 10 can grade WHICH player it chose.
+      chainLines.push(...(await runValuesChain(service, clock, leagueIds, entry.week, problems)))
     }
 
     if (entry.kind === 'finalize') {
@@ -1345,6 +1455,8 @@ async function driveSeason(
           .filter((w) => w.week >= firstWeek && Date.parse(w.starts_at) <= entry.at.getTime())
           .reduce((n, w) => Math.max(n, w.week), firstWeek)
       absorbAutopilotReport(data, league, tickWeek)
+      // F391: grade every seat this pass WROTE (invariant 10).
+      await gradeAutopilotPicks(service, league, data, pNow, tickWeek)
     }
 
     // E42: the flexed game's kickoff, read from the table either side of the
@@ -1481,6 +1593,7 @@ async function driveSeason(
     evidence: { scenario: cfg.scenario, leagues: leagues.length, assertions },
     workerNotes: [...measured.workerNotes.entries()].map(([reason, count]) => `${count}× ${reason}`).sort(),
     problems,
+    chainLines,
   }
 }
 
@@ -1513,10 +1626,21 @@ export const AUTOPILOT_PASS_EVALUATED_NOTHING: readonly string[] = [
   'disabled_by_system_flag:autopilot_disabled',
   'every_unmanaged_looking_seat_declined_no_league_members_row',
   'no_unmanaged_seats_in_a_live_current_week',
+  // 139 (M6A L.E1.22, Q63): every unmanaged seat the pass reached had its
+  // switch OFF — it evaluated no seat, so it says nothing about any slot.
+  'every_unmanaged_seat_commissioner_managed_autopilot_off',
 ]
 
 export function absorbAutopilotReport(data: unknown, league: LeagueState, tickWeek: number): void {
-  const doc = (data ?? {}) as { autopiloted?: unknown; autopilot_unfillable?: unknown; autopilot_reason?: unknown }
+  const doc = (data ?? {}) as { autopiloted?: unknown; autopilot_unfillable?: unknown; autopilot_reason?: unknown; commissioner_managed?: unknown }
+  // 139 (M6A L.E1.22): the OFF seats the pass left alone, BY NAME.
+  if (Array.isArray(doc.commissioner_managed)) {
+    for (const raw of doc.commissioner_managed) {
+      const e = (raw ?? {}) as { league_id?: unknown; team_id?: unknown; week?: unknown }
+      if (e.league_id !== league.leagueId || typeof e.team_id !== 'string') continue
+      league.commissionerManagedSeatWeeks?.add(`${e.team_id}|${Number(e.week)}`)
+    }
+  }
   if (Array.isArray(doc.autopiloted)) {
     for (const raw of doc.autopiloted) {
       const e = (raw ?? {}) as { league_id?: unknown; team_id?: unknown; week?: unknown }
@@ -2104,6 +2228,9 @@ export interface LeagueSeating {
   /** Of those, the seats whose week-1 starting map the SERVER left non-empty —
    *  counted into `seated` too, so `seated` still means "has a lineup". */
   autopiloted: number
+  /** M6A L.E1.22: an OFF (commissioner-managed) seat's empty slot keys, by
+   *  team — EXCLUDED from `emptySlots` by name (Q63: "that is fine"). */
+  offSeatEmptySlotKeys: Record<string, string[]>
   /** One line per seat: WHICH HAND set the week-1 lineup. */
   transcript: SeatTranscript[]
 }
@@ -2116,6 +2243,8 @@ export interface SeatTranscript {
   /** The tick's own `autopiloted[]` named this seat-week (125 H4). For a
    *  harness-set seat this is always false. */
   reportedByTick: boolean
+  /** M6A L.E1.22: the seat's switch is OFF — commissioner-managed (Q63). */
+  autopilotOff?: boolean
   slotsFilled: number
   emptySlotKeys: string[]
 }
@@ -2140,6 +2269,7 @@ async function seedLineups(
       slotsFilled: 0,
       unmanagedSeats: 0,
       autopiloted: 0,
+      offSeatEmptySlotKeys: {},
       transcript: [],
     }
     out.set(league.leagueId, seating)
@@ -2208,6 +2338,22 @@ async function seedLineups(
         const map = ((stored?.slot_map ?? {}) as Record<string, unknown>) ?? {}
         const filledKeys = league.slots.filter((sl) => typeof map[sl.key] === 'string' && (map[sl.key] as string).length > 0)
         const emptyKeys = league.slots.filter((sl) => !filledKeys.includes(sl)).map((sl) => sl.key)
+        if (league.autopilotOff.has(team.id)) {
+          // M6A L.E1.22 (Q63): an OFF seat is COMMISSIONER-MANAGED — nobody
+          // seats it, and its empty slots are the RULED state. Named in the
+          // transcript and in `offSeatEmptySlotKeys`, never counted as seated
+          // and never into F288's empty-slot problem (excluded BY NAME).
+          seating.transcript.push({
+            teamId: team.id,
+            autopiloted: false,
+            reportedByTick: league.autopilotedSeatWeeks.has(`${team.id}|${week}`),
+            autopilotOff: true,
+            slotsFilled: filledKeys.length,
+            emptySlotKeys: emptyKeys,
+          })
+          seating.offSeatEmptySlotKeys[team.id] = emptyKeys
+          continue
+        }
         seating.transcript.push({
           teamId: team.id,
           autopiloted: true,
@@ -2486,6 +2632,256 @@ async function injectLawfulOverride(
   return null
 }
 
+// ---------------------------------------------------------------------------
+// M6A L.E1.22 — the per-team autopilot switch, and F391's selection grade
+// ---------------------------------------------------------------------------
+
+/**
+ * Q63 (ruled 2026-09-27): autopilot is OFF by default, behind a per-team
+ * commissioner switch (migration 139). Invariant 8 asserts what the SERVER
+ * does for an unmanaged seat that is switched ON, so every unmanaged
+ * placeholder seat is switched ON here THROUGH THE REAL VERB
+ * (`commishSetAutopilot`, the L.E1.22 service over `commish_set_autopilot`),
+ * as the league's own commissioner signed in as himself (the D100 door — the
+ * L.E1.14 override-injection pattern), with no reason (Q66).
+ *
+ * THE NEGATIVE CONTROL: exactly ONE unmanaged seat per run is LEFT OFF — the
+ * lowest team id of the first league (by label) that has at least TWO
+ * unmanaged seats, so that league also carries an ON seat; when no league has
+ * two, the first unmanaged seat of the run. Invariant 9 asserts arm (c) never
+ * touches it; its premise (>= 1 OFF seat-week) and invariant 8's (>= 1 ON
+ * seat-week) are run PROBLEMS when absent. Its own RNG stream, so every other
+ * stream's action_ids are unmoved.
+ */
+async function switchAutopilotSeats(
+  service: Supabase,
+  bots: ReadonlyMap<string, Supabase>,
+  leagues: LeagueState[],
+  seed: number,
+  runTag: string,
+  problems: string[],
+  log: (line: string) => void,
+): Promise<void> {
+  const rng = deriveStream(seed, `season:autopilot:${runTag}`)
+  const unmanagedByLeague = new Map<string, string[]>()
+  for (const league of leagues) {
+    const { managerByTeam, teamsWithMemberRow } = await readSeatManagers(service, league, 'the autopilot switch')
+    unmanagedByLeague.set(
+      league.leagueId,
+      league.teams.map((t) => t.id).filter((id) => teamsWithMemberRow.has(id) && !managerByTeam.has(id)).sort(),
+    )
+  }
+  const ordered = [...leagues].sort((a, b) => a.label.localeCompare(b.label))
+  const offLeague = ordered.find((l) => (unmanagedByLeague.get(l.leagueId) ?? []).length >= 2) ?? ordered.find((l) => (unmanagedByLeague.get(l.leagueId) ?? []).length >= 1)
+  const offSeat = offLeague === undefined ? undefined : unmanagedByLeague.get(offLeague.leagueId)![0]
+  for (const league of leagues) {
+    const seats = unmanagedByLeague.get(league.leagueId) ?? []
+    if (seats.length === 0) continue
+    const commish = league.ownerId === null ? undefined : bots.get(league.ownerId)
+    for (const teamId of seats) {
+      if (teamId === offSeat) {
+        league.autopilotOff.add(teamId)
+        log(`${league.label}: team ${teamId} LEFT OFF — commissioner-managed (Q63's default), invariant 9's negative control`)
+        continue
+      }
+      if (commish === undefined) {
+        problems.push(`${league.label}: no signed-in commissioner client — team ${teamId}'s autopilot switch could not be flipped through the verb`)
+        league.autopilotOff.add(teamId)
+        continue
+      }
+      const result = await commishSetAutopilot(commish, league.leagueId, { team_id: teamId, on: true, action_id: uuidFromRng(rng) })
+      const body = result.body as { autopilot?: unknown; commissioner_action_id?: unknown }
+      if (result.status !== 200 || body.autopilot !== true || typeof body.commissioner_action_id !== 'string') {
+        problems.push(
+          `${league.label}: commish_set_autopilot(team ${teamId}, on) answered ${result.status}: ${JSON.stringify(result.body).slice(0, 300)}`,
+        )
+        league.autopilotOff.add(teamId)
+        continue
+      }
+      league.autopilotOn.add(teamId)
+    }
+  }
+}
+
+/** Invariant 9's baseline: what the week's carry gave each OFF seat, read
+ *  right after the week-open advance and before any tick of the week. */
+async function captureOffSeatCarry(service: Supabase, leagues: LeagueState[], week: number): Promise<void> {
+  for (const league of leagues) {
+    for (const teamId of league.autopilotOff) {
+      const { data, error } = await service
+        .from('team_lineups')
+        .select('slot_map')
+        .eq('team_id', teamId)
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', week)
+        .maybeSingle()
+      throwIfError(error, `${league.label}: OFF-seat carry read (team ${teamId} week ${week})`)
+      league.offSeatCarry.push({
+        team_id: teamId,
+        week,
+        carry_map: data === null ? null : ((data.slot_map ?? {}) as Record<string, string>),
+      })
+    }
+  }
+}
+
+/** The recorded Sleeper week the sim serves for EVERY driven week — the
+ *  fixture L.E1.19 recorded (`src/lib/sync/fixtures/…-2026.json`, week 4;
+ *  its `_note` records the measurement). Rows are served VERBATIM with only
+ *  `week` / `season` re-labelled to the week asked for: the sync refuses a
+ *  row labelled for another week, and that refusal is not what F391 tests. */
+const FIXTURE_WEEK = '4'
+
+function recordedWeeklyFetch(): FetchWeeklyProjections {
+  const weeks = (projectionsFixture as { weeks: Record<string, Record<string, unknown[]>> }).weeks
+  return async (season, week, position) =>
+    (weeks[FIXTURE_WEEK]?.[position] ?? []).map((row) => ({ ...(row as Record<string, unknown>), week, season: String(season) }))
+}
+
+/**
+ * F391 — the projections → values chain for one driven week, through the
+ * REAL code paths: `syncWeeklyProjections` (L.E1.19) over the recorded
+ * fixture — ZERO external calls — then `runLeaguePlayerValues` (L.E1.20)
+ * scoped to the run's leagues, both on the run's virtual clock. A sync that
+ * fails is a run PROBLEM (nothing downstream would mean anything); the values
+ * job's per-league "no usable projection" findings are reported lines — the
+ * run's SELECTION PREMISE (>= 1 pick ordered by a points key) is what says
+ * whether the chain reached a seat.
+ */
+async function runValuesChain(
+  service: Supabase,
+  clock: VirtualClock,
+  leagueIds: readonly string[],
+  week: number,
+  problems: string[],
+): Promise<string[]> {
+  const lines: string[] = []
+  const sync = await syncWeeklyProjections({ db: service, time: clock, fetchWeek: recordedWeeklyFetch() }, { season: SYNTHETIC_SEASON, weeks: [week] })
+  lines.push(
+    `VALUES CHAIN week ${week}: weekly-projections sync (recorded fixture) ok=${sync.ok} · ` +
+      `projected ${sync.counts.projected} · stored ${sync.counts.stored} · unknown ${sync.counts.unknownPlayer}`,
+  )
+  if (!sync.ok) problems.push(`VALUES CHAIN week ${week}: the weekly-projections sync FAILED — ${sync.failures.join(' | ').slice(0, 500)}`)
+  const values = await runLeaguePlayerValues({ db: service, time: clock }, { season: SYNTHETIC_SEASON, weeks: [week], leagueIds: [...leagueIds] })
+  const valued = values.leagueWeeks.filter((lw) => lw.week === week)
+  lines.push(
+    `VALUES CHAIN week ${week}: league-player-values ok=${values.ok} · ${valued.length} league-week(s) · ` +
+      `written ${values.counts.written} · with a projection ${valued.reduce((n, lw) => n + lw.projected, 0)} · ` +
+      `failed ${values.counts.failedLeagueWeeks}`,
+  )
+  for (const failure of values.failures) lines.push(`  values: ${failure}`)
+  if (valued.length === 0) problems.push(`VALUES CHAIN week ${week}: league-player-values valued NO league-week — ${values.failures.join(' | ').slice(0, 300)}`)
+  return lines
+}
+
+/**
+ * F391 — record every pick a tick pass WROTE, with the harness's own read of
+ * each key at the pass instant, for invariant 10 (`checkAutopilotSelection`).
+ * The keys are read the way 138 reads them: `league_player_values` for
+ * (league, season, week), a row older than 6 h at the instant is absent, a
+ * projection older than 6 h is absent (`PROJECTION_MAX_AGE_MS` — the same
+ * constant 138's `c_max_age` is pinned to), then `players.adp`. Witnesses are
+ * the team's rostered men the written map left on the bench, eligible for the
+ * slot, with no designation (`simDesignation` — Questionable is healthy), not
+ * IR-held and not in the pass's `skipped_locked[]`.
+ */
+async function gradeAutopilotPicks(service: Supabase, league: LeagueState, data: unknown, at: string, week: number): Promise<void> {
+  const doc = (data ?? {}) as {
+    autopiloted?: Array<{
+      league_id?: string
+      team_id?: string
+      filled?: Array<{ slot?: string; player_id?: string; order?: Record<string, unknown> }>
+      substituted?: Array<{ slot?: string; in?: string; order?: Record<string, unknown> }>
+    }>
+    skipped_locked?: Array<{ team_id?: string; player_id?: string }>
+  }
+  const entries = (doc.autopiloted ?? []).filter((e) => e.league_id === league.leagueId && typeof e.team_id === 'string')
+  if (entries.length === 0) return
+  const teamIds = entries.map((e) => e.team_id!)
+  const { data: values, error: valuesError } = await service
+    .from('league_player_values')
+    .select('player_id, projected_points, season_points, preseason_points, computed_at, projection_fetched_at')
+    .eq('league_id', league.leagueId)
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+  throwIfError(valuesError, `${league.label}: selection grade — league_player_values`)
+  const { data: rosterRows, error: rosterError } = await service
+    .from('league_rosters')
+    .select('team_id, player_id, slot_key, players!inner(position, status, adp)')
+    .in('team_id', teamIds)
+  throwIfError(rosterError, `${league.label}: selection grade — rosters`)
+  const { data: maps, error: mapsError } = await service
+    .from('team_lineups')
+    .select('team_id, slot_map')
+    .in('team_id', teamIds)
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+  throwIfError(mapsError, `${league.label}: selection grade — lineups`)
+
+  const atMs = Date.parse(at)
+  const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
+  const valueBy = new Map((values ?? []).map((v) => [v.player_id, v]))
+  const playerBy = new Map<string, { position: string; status: string | null; adp: number | null }>()
+  for (const r of rosterRows ?? []) {
+    const p = r.players as unknown as { position: string; status: string | null; adp: number | null }
+    playerBy.set(r.player_id, p)
+  }
+  const keyOf = (playerId: string): AuditSelectionKey => {
+    const v = valueBy.get(playerId)
+    const fresh = v !== undefined && Date.parse(v.computed_at) >= atMs - PROJECTION_MAX_AGE_MS
+    const projFresh =
+      fresh && v!.projected_points !== null && v!.projection_fetched_at !== null && Date.parse(v!.projection_fetched_at) >= atMs - PROJECTION_MAX_AGE_MS
+    return {
+      player_id: playerId,
+      projected: projFresh ? num(v!.projected_points) : null,
+      season: fresh ? num(v!.season_points) : null,
+      preseason: fresh ? num(v!.preseason_points) : null,
+      adp: num(playerBy.get(playerId)?.adp),
+    }
+  }
+  const irSpots = new Set(league.irKeys)
+  for (const entry of entries) {
+    const teamId = entry.team_id!
+    const map = ((maps ?? []).find((m) => m.team_id === teamId)?.slot_map ?? {}) as Record<string, string>
+    const held = new Set(Object.values(map))
+    const locked = new Set((doc.skipped_locked ?? []).filter((l) => l.team_id === teamId).map((l) => String(l.player_id)))
+    const bench = (rosterRows ?? []).filter(
+      (r) =>
+        r.team_id === teamId &&
+        !held.has(r.player_id) &&
+        !locked.has(r.player_id) &&
+        !irSpots.has(String(r.slot_key ?? '').split(':')[0]!) &&
+        simDesignation((r.players as unknown as { status: string | null }).status) === null,
+    )
+    const picks = [
+      ...(entry.filled ?? []).map((f) => ({ slot: f.slot, playerId: f.player_id, order: f.order })),
+      ...(entry.substituted ?? []).map((sub) => ({ slot: sub.slot, playerId: sub.in, order: sub.order })),
+    ]
+    for (const pick of picks) {
+      if (typeof pick.slot !== 'string' || typeof pick.playerId !== 'string') continue
+      const eligible = league.slots.find((sl) => sl.key === pick.slot)?.eligible ?? []
+      const norm = (pos: string): string => (pos.toUpperCase() === 'DEF' ? 'DST' : pos.toUpperCase())
+      const order = pick.order ?? {}
+      league.autopilotPicks.push({
+        team_id: teamId,
+        week,
+        at,
+        slot: pick.slot,
+        seated: keyOf(pick.playerId),
+        reported: {
+          player_id: pick.playerId,
+          projected: num(order.projected_points),
+          season: num(order.season_points),
+          preseason: num(order.preseason_points),
+          adp: num(order.adp),
+          ordered_by: String(order.ordered_by ?? '(none reported)'),
+        },
+        witnesses: bench.filter((r) => eligible.includes(norm(String(playerBy.get(r.player_id)?.position ?? '')))).map((r) => keyOf(r.player_id)),
+      })
+    }
+  }
+}
+
 /**
  * WHO manages each team, read from `league_members` — the same table
  * `set_lineup_internal`'s auth (114:240-243) and arm (c)'s predicate (125,
@@ -2528,6 +2924,8 @@ async function readUnmanagedSeats(
     out.push({
       team_id: team.id,
       shape: teamsWithMemberRow.has(team.id) ? 'member_row_user_id_null' : 'no_member_row',
+      // Filled in by the caller from `team_autopilot` (139); OFF until read.
+      autopilot: false,
       roster: rosters
         .filter((r) => r.team_id === team.id)
         .map((r) => {
@@ -2693,6 +3091,14 @@ export async function collectSeasonAudit(
 
   // ---- Invariant 8's seats: read from `league_members` (D339) -------------
   const unmanagedSeats = await readUnmanagedSeats(service, state, rosters ?? [], positionById)
+  // M6A L.E1.22: each seat's switch AS STORED (139 — no row = OFF).
+  const { data: switchRows, error: switchError } = await service
+    .from('team_autopilot')
+    .select('team_id, is_on')
+    .in('team_id', teamIds)
+  throwIfError(switchError, `${state.label}: audit team_autopilot`)
+  const switchedOn = new Set((switchRows ?? []).filter((r) => r.is_on).map((r) => r.team_id))
+  for (const seat of unmanagedSeats) seat.autopilot = switchedOn.has(seat.team_id)
 
   // ---- Invariant 3's probe — a MUTATING probe, run last ------------------
   const rebuilds: AuditRebuild[] = []
@@ -2748,6 +3154,10 @@ export async function collectSeasonAudit(
     startingSlots: state.slots.map((s) => ({ key: s.key, eligible: [...s.eligible] })),
     unmanagedSeats,
     autopilotUnfillable: [...state.autopilotUnfillable.values()],
+    autopilotedSeatWeeks: [...state.autopilotedSeatWeeks],
+    commissionerManagedSeatWeeks: [...(state.commissionerManagedSeatWeeks ?? [])],
+    autopilotOffCarry: [...(state.offSeatCarry ?? [])],
+    autopilotPicks: [...(state.autopilotPicks ?? [])],
     rebuilds,
     reconcileFindings,
     workerErrors: [...workerErrors],
@@ -3415,15 +3825,31 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
     const tickNamed = league.seatingTranscript.filter((t) => t.autopiloted && t.reportedByTick).length
     lines.push(
       `      set by: harness (manager's own door) ${league.lineupsSeated - league.lineupsAutopiloted} · ` +
-        `SERVER autopilot ${league.lineupsAutopiloted}/${league.unmanagedSeats} unmanaged seat(s) ` +
-        `(${tickNamed} named in a tick's autopiloted[])`,
+        `SERVER autopilot ${league.lineupsAutopiloted}/${league.autopilotOnSeats} switched-ON unmanaged seat(s) ` +
+        `(${tickNamed} named in a tick's autopiloted[]) · ${league.autopilotOffSeats} OFF (commissioner-managed, Q63)` +
+        (Object.keys(league.offSeatEmptySlotKeys).length === 0
+          ? ''
+          : ` — OFF seats' empty slots EXCLUDED from F288 by name: ${Object.entries(league.offSeatEmptySlotKeys)
+              .map(([team, keys]) => `${team} [${keys.join(' ')}]`)
+              .join('; ')}`),
     )
   }
   lines.push(
-    `UNMANAGED SEAT-WEEKS ASSERTED (invariant 8's premise, must be >= 1): ${report.unmanagedSeatWeeksAsserted} ` +
-      `over ${report.unmanagedSeats} unmanaged seat(s) across the run · ` +
+    `UNMANAGED SEAT-WEEKS ASSERTED (invariant 8's premise, switch ON, must be >= 1): ${report.unmanagedSeatWeeksAsserted} ` +
+      `over ${report.autopilotOnSeats} switched-ON of ${report.unmanagedSeats} unmanaged seat(s) across the run · ` +
       `${report.leagues.reduce((n, l) => n + l.lineupsAutopiloted, 0)} seated by the server at week 1`,
   )
+  lines.push(
+    `AUTOPILOT OFF SEAT-WEEKS ASSERTED (invariant 9's premise, the negative control, must be >= 1): ` +
+      `${report.autopilotOffSeatWeeksAsserted} over ${report.autopilotOffSeats} seat(s) left OFF`,
+  )
+  lines.push(
+    `AUTOPILOT SELECTION (invariant 10, F391 — premise: >= 1 pick ordered by a POINTS key): ` +
+      `${report.autopilotSelection.picksGraded} pick(s) graded · ${report.autopilotSelection.byPointsKey} by a points key · ` +
+      `${report.autopilotSelection.discriminating} DISCRIMINATING (a benched man held the better adp — only these tell Q62 from an ADP-first sort) · ` +
+      `by key ${JSON.stringify(report.autopilotSelection.byKey)}`,
+  )
+  for (const line of report.autopilotSelection.chainLines) lines.push(`  ${line}`)
   lines.push(
     report.lawfulOverride === null
       ? 'LAWFUL OVERRIDE (invariant 6\'s provenance arm, D345): NONE INJECTED'
