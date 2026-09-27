@@ -1651,6 +1651,79 @@ export type Database = {
           },
         ]
       }
+      league_player_values: {
+        Row: {
+          computed_at: string
+          league_id: string
+          player_id: string
+          preseason_missing: string | null
+          preseason_points: number | null
+          preseason_unscored: string[] | null
+          projected_missing: string | null
+          projected_points: number | null
+          projected_unscored: string[] | null
+          projection_fetched_at: string | null
+          season: number
+          season_games: number
+          season_points: number | null
+          week: number
+        }
+        Insert: {
+          computed_at: string
+          league_id: string
+          player_id: string
+          preseason_missing?: string | null
+          preseason_points?: number | null
+          preseason_unscored?: string[] | null
+          projected_missing?: string | null
+          projected_points?: number | null
+          projected_unscored?: string[] | null
+          projection_fetched_at?: string | null
+          season: number
+          season_games: number
+          season_points?: number | null
+          week: number
+        }
+        Update: {
+          computed_at?: string
+          league_id?: string
+          player_id?: string
+          preseason_missing?: string | null
+          preseason_points?: number | null
+          preseason_unscored?: string[] | null
+          projected_missing?: string | null
+          projected_points?: number | null
+          projected_unscored?: string[] | null
+          projection_fetched_at?: string | null
+          season?: number
+          season_games?: number
+          season_points?: number | null
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_player_values_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_player_values_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_player_values_week_fk"
+            columns: ["season", "week"]
+            isOneToOne: false
+            referencedRelation: "nfl_weeks"
+            referencedColumns: ["season", "week"]
+          },
+        ]
+      }
       league_rosters: {
         Row: {
           acquired_at: string | null
