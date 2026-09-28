@@ -670,6 +670,61 @@ export type Database = {
           },
         ]
       }
+      commish_trade_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          op: string
+          result: Json
+          trade_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          op: string
+          result: Json
+          trade_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          op?: string
+          result?: Json
+          trade_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_trade_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_trade_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_trade_actions_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commissioner_actions: {
         Row: {
           acting_as_team_id: string | null
@@ -5102,6 +5157,27 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_force_or_reverse_trade: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_op?: string
+          p_reason?: string
+          p_trade_id: string
+        }
+        Returns: Json
+      }
+      commish_force_or_reverse_trade_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_op: string
+          p_reason: string
+          p_trade_id: string
+        }
+        Returns: Json
+      }
       commish_matchup_edit_lock: {
         Args: { p_league_id: string; p_matchup_id: string }
         Returns: Json
@@ -5246,6 +5322,27 @@ export type Database = {
         Returns: Json
       }
       commish_setting_policy: { Args: { p_key: string }; Returns: Json }
+      commish_trade_closed_words_internal: {
+        Args: { p_trade: Database["public"]["Tables"]["trades"]["Row"] }
+        Returns: string
+      }
+      commish_trade_rescore_internal: {
+        Args: {
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_lineups: Json
+          p_teams: string[]
+          p_week: number
+        }
+        Returns: Json
+      }
+      commish_trade_reverse_internal: {
+        Args: {
+          p_at: string
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_trade_id: string
+        }
+        Returns: Json
+      }
       create_league: {
         Args: {
           p_action_id: string

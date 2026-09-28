@@ -142,6 +142,15 @@ select is(
   'A11 D137 waiver_window_internal: 149''s FILE TEXT (149:306-389) beneath 153''s 1 substitution(s) — each reversed, the prosrc md5 is 149''s (a stored literal)');
 -- The four roster writers: the SAME two substitutions (the DECLARE comment
 -- where 152 wrote one; the week end's SELECT), reversed on each live body.
+-- RE-PINNED BY L.D3.5 (migration 156 — additive, the R992 shape): 156's ONE
+-- hunk in trade_execute_internal (the commissioner's force past the game-day
+-- lock) is reversed INNERMOST first by un156 — an identity on every other
+-- body — so A12 / A13 still prove what 153 did; pgTAP 104 A5 pins 156's own.
+create function pg_temp.un156(p_src text) returns text language sql as $$
+  select replace(p_src,
+    E'  -- 156 / L.D3.5: the commissioner\'s FORCE stands outside the game-day lock\n  -- (a timing rule — tasks-M5 L.D3.5, standing rule (i)); it executes now.\n  -- Every validity check above still binds it.\n  IF (v_lock ->> \'locked\')::boolean AND p_via IS DISTINCT FROM \'commissioner_force\' THEN\n',
+    E'  IF (v_lock ->> \'locked\')::boolean THEN\n')
+$$;
 create function pg_temp.unhunk(p_src text, p_indent text) returns text language sql as $$
   select replace(replace(p_src,
     'TIMESTAMPTZ;   -- 152 / F437: the current week''s end (153: its lock release — Q78''s ceiling)',
@@ -155,19 +164,19 @@ create function pg_temp.unhunk(p_src text, p_indent text) returns text language 
     p_indent || 'SELECT w.last_game_ends_at INTO v_week_end FROM public.nfl_weeks w' || E'\n')
 $$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(p.prosrc, case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(p.prosrc), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('roster_add_drop_internal', 'commish_roster_override_internal', 'process_waivers_internal', 'trade_execute_internal')),
   'commish_roster_override_internal=42e165a610082723c1124d1dc872d648 process_waivers_internal=faaca7fba5fff976f4fa811678e553aa roster_add_drop_internal=a30621f38adb8b114a4a903b068eeb8e trade_execute_internal=ef4648770bd5c18127e5c2270d8aec14',
   'A12 D137 the four roster writers: each live body with 153''s substitutions reversed is its newest definer''s FILE TEXT (152:103-638 / 152:646-1643 / 152:1651-2203 / 151:755-1209 — stored md5 literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un156(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('pool_game_lock_internal', 'pool_game_lock_any_internal', 'waiver_window_internal',
                                                  'roster_add_drop_internal', 'commish_roster_override_internal',
                                                  'process_waivers_internal', 'trade_execute_internal')),
   'commish_roster_override_internal=32972a1a5183c748be5a90c8ffdad7f1 pool_game_lock_any_internal=c04027b390f46cf19247fab2ff2e1990 pool_game_lock_internal=0f5108e621329f956437ecacd370a011 process_waivers_internal=7b3dad5e6e9483ed0edc82bd8f055ada roster_add_drop_internal=f4879cd129747a28d52bab277108265e trade_execute_internal=2be2500ab6e3ba21b02a087e29403e50 waiver_window_internal=52a4199c8cf011c34cd24e93d4581b7c',
-  'A13 the seven live prosrc md5s — 153 as written (stored literals)');
+  'A13 the seven live prosrc md5s — 153 as written (stored literals; 156''s one executor hunk reversed first — L.D3.5)');
 select ok(
   (select col_description('public.league_player_pool'::regclass, a.attnum)
    from pg_attribute a where a.attrelid = 'public.league_player_pool'::regclass and a.attname = 'locked_until')
