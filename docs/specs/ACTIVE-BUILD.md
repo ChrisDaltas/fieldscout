@@ -261,17 +261,34 @@ window. **141 as merged re-scores one — INTERIM, contradicting the ruling (F40
 *"F397 yes build it"*: each league week stores the scoring rules it is played with. Spec
 **v2.16.52** (fold-back).
 
-**NEXT TAKEABLE TASK: `L.E1.27`** — per-week scoring rules (F397) + Q69: persist each league
+**`L.E1.27` is LANDED 2026-09-27** (`feat/M6A-L.E1.27-per-week-scoring-rules` — migration
+**144** + pgTAP **092**; PROGRESS **D382**; **F397 + F404 DISCHARGED**; spec **v2.16.53**):
+each league week stores the scoring rules it is played with (stamped when the week opens);
+the worker, box score, nightly reconcile and season-to-date values read the week's rules;
+a scoring change with re-score on re-scores only the live week and keeps + names the final
+and correction-window weeks; existing weeks backfilled (mixed weeks named in the NOTICE).
+**Open for Chris: F405** (a finished week's box score can differ from its final score after
+a late stat fix — store per-player points?). **The M6A ruling tasks are complete — the
+pointer now reads the CLOSEOUT below.**
+
+**⚠ PRODUCTION PUSH ORDER (Chris's steps; production is at 134):** (1) `npx supabase db push`
+— **135–144 together** (never 141 without 144, F404); read the `144 backfill` NOTICE lines —
+any AMBIGUOUS / UNRECOVERABLE week is named there; (2) **immediately**
+`npm run sync:reingest -- --season 2026 --weeks <every completed week> --confirm-target <hosted host>`
+(143 / F400).
+
+~~**NEXT TAKEABLE TASK: `L.E1.27`**~~ *(landed — above)* — per-week scoring rules (F397) + Q69: persist each league
 week's rules when it opens; the score worker (incl. correction-window stat corrections), the
 box score, the nightly reconcile and L.E1.20's season-to-date read THAT week's rules; 141's
 rescore skips `correction_window` weeks and names them beside the final ones; backfill the
 existing weeks. Task text: tasks-M6A §6's L.E1.27 amendment note (right after L.E1.24's
 AS-BUILT note). Heads: **143 / 091** — re-measure at task time (D161).
 
-**⚠ PRODUCTION PUSH — Chris should NOT push to production until L.E1.27 has merged** (141's
+~~**⚠ PRODUCTION PUSH — Chris should NOT push to production until L.E1.27 has merged** (141's
 `correction_window` re-score contradicts Q69). **PUSH DEBT: 135–143**, plus L.E1.27's
 migration — production is at 134. When the push happens, 143's order still applies:
-`npx supabase db push` → immediately `sync:reingest` for every completed week (F400).
+`npx supabase db push` → immediately `sync:reingest` for every completed week (F400).~~
+*(superseded by the push order above — push debt is now **135–144**)*
 
 ~~**NEXT TAKEABLE TASK: `L.E1.25`** (Chris's rulings 2026-09-27 — Q67 empty-lineup lock + Q68
 Doubtful swap) **then `L.E1.26`** (F390 — yards allowed, sourced). Task text: tasks-M6A §6's
@@ -336,7 +353,7 @@ task's own time (D161). *(Advanced from the closeout by the 2026-09-27
 rulings docs session.)*
 
 ~~**NEXT — M6A CLOSEOUT, not a `L.E1.*` task.** There is no unbuilt task in
-tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.24**, before the pointer
+tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.27** (all landed 2026-09-27 — this is now the NEXT item), before the pointer
 moves to the next milestone:
 ~~(1) **Chris's rulings** — Q60–Q64 (still open in PROGRESS §3) and the
 F377 read (a "confirm as played" act for a round under R839's hourly
@@ -345,7 +362,7 @@ gate session, not a Builder task); (3) **the open M6A ledger rows**, each
 small and filed with its shape — F361 (the M4 panel hint), F363 (the retire
 verb's reason gate), F368, F370, F371 (League Home's activity feed), F372
 (REFERENCES / TRIGGER / MAINTAIN grants), F373–F376 (the synthetic gate's
-recorded blindnesses), ~~F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23)~~ **F377 CLOSED by L.E1.23**, F395 (the callers' hourly BLOCKED WARNING for a played round), F396 (co-commissioner and the bracket's affordances); (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
+recorded blindnesses), ~~F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23)~~ **F377 CLOSED by L.E1.23**, F395 (the callers' hourly BLOCKED WARNING for a played round), F396 (co-commissioner and the bracket's affordances), **F405 (Chris's call — per-player points for finished weeks)**; **(3b) the production push 135–144 + `sync:reingest` (Chris's — order above)**; (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
 reads 124–134 applied, 0 of 73 `public` tables grant TRUNCATE to anon/authenticated, the M6A verbs present. After the
 closeout the delivery plan's next milestone is **M5** (trades / FAAB —
 D352 / F340), which needs its own Architect breakdown before the loop can
