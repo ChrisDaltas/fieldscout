@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { useCommishEditLineup } from '@/hooks/use-commish-lineup'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
+import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,8 @@ import {
   buildEditorModel,
   formatKickoff,
   irStintChip,
+  KEPT_STARTER_COPY,
+  keptStarters,
   lineupSaveRequest,
   lockBadgeFor,
   lockedPlayerIds,
@@ -173,6 +176,11 @@ export function LineupEditor({
   const locked = useMemo(() => lockedPlayerIds(roster, weekIsCurrent), [roster, weekIsCurrent])
   const storedPlacement = useMemo(() => placementFromStored(stored?.slot_map, roster), [stored, roster])
   const storedStarters = useMemo(() => startersByKey(stored?.starters), [stored])
+  // F443 (L.D2.13): a starter dropped after he played stays in his seat
+  // (152 / 154) — shown locked by name, never offered to anyone else.
+  const kept = useMemo(() => keptStarters(stored?.slot_map, roster), [stored, roster])
+  const keptIds = useMemo(() => [...kept.values()], [kept])
+  const keptIdentity = usePlayersByIds(keptIds)
 
   // The DRAFT placement — reset to the stored row whenever the stored row
   // changes underneath an UNEDITED draft (a refetch after a save, the
@@ -215,10 +223,11 @@ export function LineupEditor({
     () => ({ slots, players, locked, currentWeek, lockExempt }),
     [slots, players, locked, currentWeek, lockExempt],
   )
+  const moveCtx = useMemo(() => ({ ...ctx, kept }), [ctx, kept])
 
   function move(playerId: string, target: MoveTarget) {
     if (readOnly) return
-    const plan = planMove(draft, playerId, target, ctx)
+    const plan = planMove(draft, playerId, target, moveCtx)
     if (!plan.ok) {
       if (plan.reason !== 'noop') setNotice({ tone: 'negative', text: plan.message })
       setSelected(null)
@@ -418,7 +427,8 @@ export function LineupEditor({
                   storedStarter={storedStarters.get(row.slot.key) ?? null}
                   leagueTimeZone={leagueTimeZone}
                   readOnly={readOnly}
-                  locked={row.player ? locked.has(row.player.player_id) : false}
+                  kept={!row.player && kept.has(row.slot.key) ? keptIdentity.playerById.get(kept.get(row.slot.key)!)?.full_name ?? kept.get(row.slot.key)! : null}
+                  locked={row.player ? locked.has(row.player.player_id) : kept.has(row.slot.key)}
                   lockExempt={lockExempt}
                   selected={selected}
                   acceptsSelected={Boolean(selectedPlayer && positionMatches(selectedPlayer.position, row.slot.eligible))}
@@ -601,6 +611,8 @@ interface SlotSeatProps {
   leagueTimeZone: string | null
   readOnly: boolean
   locked: boolean
+  /** F443: the name of the off-roster starter the week keeps in this seat. */
+  kept?: string | null
   /** Commissioner override mode: the 🔒 badge stays, the wall comes down. */
   lockExempt?: boolean
   selected: string | null
@@ -620,6 +632,7 @@ function SlotSeat({
   leagueTimeZone,
   readOnly,
   locked,
+  kept = null,
   lockExempt,
   selected,
   acceptsSelected,
@@ -676,6 +689,12 @@ function SlotSeat({
             ) : null
           }
         />
+      ) : kept && !target ? (
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5" data-kept-starter>
+          <Badge variant="black">🔒</Badge>
+          <span className="truncate text-[12px] font-bold text-ink">{kept}</span>
+          <span className="text-[10px] font-medium text-n-3">{KEPT_STARTER_COPY}</span>
+        </span>
       ) : (
         <button
           type="button"

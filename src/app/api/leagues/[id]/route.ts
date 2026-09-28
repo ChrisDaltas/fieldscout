@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { deleteLeague, getLeagueDetail, patchLeague } from '@/lib/leagues/api/leagues-service'
+import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface RouteParams {
@@ -25,7 +26,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const result = await getLeagueDetail(supabase, user.id, id)
+  // L.D2.13: the waiver window is read at the TimeProvider's now (F425).
+  const result = await getLeagueDetail(supabase, user.id, id, systemTime.now())
   return NextResponse.json(result.body, { status: result.status })
 }
 

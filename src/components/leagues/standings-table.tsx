@@ -54,7 +54,8 @@ export function StandingsTable({
   overridesUnknown = false,
 }: {
   doc: LeagueStandings
-  settings: { median_game: boolean; second_opponent: boolean }
+  /** `waiver_type` (L.D2.13): a FAAB league shows each team's balance. */
+  settings: { median_game: boolean; second_opponent: boolean; waiver_type?: string }
   /** `teams.id → name` from the league detail, for the E63 footnote (117's
    *  rows carry their own `name`). */
   teamNames: ReadonlyMap<string, string>
@@ -70,6 +71,7 @@ export function StandingsTable({
 }) {
   const chain = renderedChain(doc.chain)
   const columns = recordColumns(doc.standings, settings)
+  const faab = settings.waiver_type === 'faab'
   const emptyCopy = standingsEmptyCopy(doc)
   const notes = skipNotes(doc.skipped, teamNames)
   // The legend shows exactly when a RENDERED row carries the marker.
@@ -109,6 +111,7 @@ export function StandingsTable({
             <TableHead className="text-right">PA</TableHead>
             {columns.median && <TableHead className="text-right">vs median</TableHead>}
             {columns.second && <TableHead className="text-right">2nd opp</TableHead>}
+            {faab && <TableHead className="text-right">FAAB</TableHead>}
             <TableHead>Placed by</TableHead>
           </TableRow>
         </TableHeader>
@@ -148,6 +151,11 @@ export function StandingsTable({
                 <TableCell className="fs-num text-right">{formatPoints(row.points_against)}</TableCell>
                 {columns.median && <TableCell className="fs-num text-right">{formatRecord(row.median_record)}</TableCell>}
                 {columns.second && <TableCell className="fs-num text-right">{formatRecord(row.second_record)}</TableCell>}
+                {faab && (
+                  <TableCell className="fs-num text-right" data-faab={row.faab_balance ?? ''}>
+                    {row.faab_balance === null || row.faab_balance === undefined ? '—' : `$${row.faab_balance}`}
+                  </TableCell>
+                )}
                 <TableCell>
                   {separator ? (
                     <Badge variant="stroke" className="text-[10px]">

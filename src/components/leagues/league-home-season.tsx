@@ -74,8 +74,8 @@ import { problemCopy } from './team-page'
  * server's lock RECORD, "Locks from …", and no client-computed countdown;
  * the team page's named placeholder stands), no elimination ("no playoff
  * game on record" is the copy, never "eliminated"), no deadline arithmetic
- * (the trade/waiver chips print the STORED settings and say the verbs are
- * not here yet). The champion is `leagues.champion_team_id`, stored.
+ * (the trade chip prints the STORED deadline; the waiver chip prints the
+ * server's next-run instant — L.D2.13). The champion is `leagues.champion_team_id`, stored.
  *
  * **One room.** `useMatchupsLive` / `useStandingsLive` /
  * `useLeagueActivityFeed` each JOIN the refcounted `league:<id>` room
@@ -445,7 +445,8 @@ function SetLineupCard({
   leagueTimeZone: string | null
 }) {
   const locksAt = lineup?.locked_at ? formatKickoff(lineup.locked_at, leagueTimeZone) : null
-  const waivers = waiverChip(data.settings)
+  // L.D2.13: the next run from the server's window read, in the viewer's zone.
+  const waivers = waiverChip(data.settings, data.waiver_window ?? null, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
   const trades = tradeChip(data.settings)
   return (
     <Card data-set-lineup>

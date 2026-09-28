@@ -31,7 +31,9 @@
  * **F241(d) — `locked_until` can be the literal `'infinity'`.** Migration
  * 116's `lineup_lock_tick` writes `'infinity'` when a player has kicked off
  * and the week's `last_game_ends_at` is not yet recorded (the release
- * instant is an EVENT datum L.D2.1's ingestion stamps); PostgREST hands it
+ * instant is an EVENT datum L.D2.1's ingestion stamps — and since 153 the
+ * lock releases at the week's Wednesday 00:00 Pacific ceiling at the latest,
+ * even while the stamp is missing); PostgREST hands it
  * to the client as the string `"infinity"`, and `new Date("infinity")` is
  * `Invalid Date`. So this layer never hands the raw column to a renderer:
  * `gameLockView` normalises the three shapes §12.19 defines — NULL = not
@@ -62,6 +64,7 @@ import type { Database, Json } from '@/types/database'
 
 import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
+import { selectWithSeatFallback } from './seat-columns'
 
 type Supabase = SupabaseClient<Database>
 
@@ -155,7 +158,11 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
       .eq('league_id', leagueId)
       .order('name', { ascending: true })
       .order('id', { ascending: true }),
-    supabase.from('league_members').select('user_id, team_id, faab_balance, waiver_priority').eq('league_id', leagueId),
+    // L.D2.13: a pre-145 database has no `waiver_priority` (seat-columns.ts).
+    selectWithSeatFallback(
+      () => supabase.from('league_members').select('user_id, team_id, faab_balance, waiver_priority').eq('league_id', leagueId),
+      () => supabase.from('league_members').select('user_id, team_id, faab_balance').eq('league_id', leagueId),
+    ),
     supabase
       .from('league_rosters')
       .select(

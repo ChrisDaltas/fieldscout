@@ -30,6 +30,7 @@ import {
 } from './league-create-wizard-ops'
 import { ChoiceSelect, numOptions } from './settings-form-controls'
 import { ScoringTemplatePicker } from './scoring-template-picker'
+import { WaiverScheduleFields } from './waiver-schedule-fields'
 import {
   effectiveTemplateSelection,
   resolveDefaultTemplateId,
@@ -308,6 +309,13 @@ export function LeagueCreateModal({
               }
               onScoringStyle={handleScoringStyle}
             />
+          )}
+          {step === 1 && (
+            // M5 L.D2.13: the waiver schedule's presets (Q70) — the pick only;
+            // the full schedule is editable in League settings afterwards.
+            <div className="space-y-1.5" data-wizard-waivers>
+              <WaiverScheduleFields s={draft.settings} onSettings={updateSettings} detail={false} idPrefix="create" />
+            </div>
           )}
 
           {step === 2 && (

@@ -23,6 +23,9 @@ import { z } from 'zod'
 
 import type { Database, Json, League } from '@/types/database'
 
+import { selectWithSeatFallback } from './seat-columns'
+import { readWaiverWindow } from './waiver-window-service'
+
 import {
   leagueSettingsSchema,
   mergeSettings,
@@ -493,6 +496,9 @@ export async function getLeagueDetail(
   supabase: Supabase,
   userId: string,
   leagueId: string,
+  /** L.D2.13: the instant `waiver_window` is read at — the route passes its
+   *  TimeProvider's now; absent (older callers, tests) = no window read. */
+  at?: Date,
 ): Promise<ServiceResult> {
   // RLS scopes visibility (member-or-owner SELECT, 052); a non-member simply
   // sees no row — indistinguishable from nonexistent (no existence leak).
@@ -523,14 +529,24 @@ export async function getLeagueDetail(
     }
   }
 
-  const [membersResult, teamsResult, draftResult] = await Promise.all([
-    supabase
-      .from('league_members')
-      .select(
-        'id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, faab_balance, waiver_priority, profiles(username, avatar_url)',
-      )
-      .eq('league_id', leagueId)
-      .order('joined_at', { ascending: true }),
+  const [membersResult, teamsResult, draftResult, windowRead] = await Promise.all([
+    // L.D2.13: a pre-145 database has no `waiver_priority` (seat-columns.ts).
+    selectWithSeatFallback(
+      () =>
+        supabase
+          .from('league_members')
+          .select(
+            'id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, faab_balance, waiver_priority, profiles(username, avatar_url)',
+          )
+          .eq('league_id', leagueId)
+          .order('joined_at', { ascending: true }),
+      () =>
+        supabase
+          .from('league_members')
+          .select('id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, faab_balance, profiles(username, avatar_url)')
+          .eq('league_id', leagueId)
+          .order('joined_at', { ascending: true }),
+    ),
     supabase
       .from('teams')
       .select('id, name, owner_id, status, created_at')
@@ -546,6 +562,11 @@ export async function getLeagueDetail(
       .eq('is_mock', false)
       .in('status', ['scheduled', 'live', 'paused'])
       .maybeSingle(),
+    // L.D2.13 (F425): the waiver window, NEVER failing the detail — a failed
+    // read is `waiver_window: null` with its reason named.
+    at
+      ? readWaiverWindow(supabase, league as League & { waiver_next_run_at?: string | null }, settings, at)
+      : Promise.resolve({ window: null, error: 'not read' }),
   ])
   if (membersResult.error) {
     return { status: 500, body: { error: membersResult.error.message } }
@@ -600,6 +621,8 @@ export async function getLeagueDetail(
       teams: teamsResult.data ?? [],
       my_role: myRole,
       active_draft: activeDraft,
+      waiver_window: windowRead.window,
+      waiver_window_error: windowRead.error,
     } as unknown as Json,
   }
 }

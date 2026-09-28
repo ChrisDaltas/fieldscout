@@ -48,7 +48,6 @@ import {
   PLAYOFF_NONE_FOR_TEAM_COPY,
   PLAYOFF_NO_ROWS_COPY,
   TRADES_LATER_COPY,
-  WAIVERS_LATER_COPY,
 } from './league-home-season-ops'
 import { LeagueHomeStates } from './league-home-states'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
@@ -335,13 +334,30 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     expect(html).toContain('0.00')
   })
 
-  it('the waiver and trade chips render HONESTLY — the stored settings, the verbs named as later', () => {
+  it('the waiver and trade chips render HONESTLY — the next run from the server window (L.D2.13), the trade verb named as later', () => {
     const html = renderHome()
     expect(html).toContain('data-chip="waivers"')
     expect(html).toContain('data-chip="trades"')
     expect(html).toContain(`Trade deadline · Week ${settings.trade_deadline_week}`)
-    expect(html).toContain(WAIVERS_LATER_COPY)
+    expect(html).not.toContain('Waiver claims arrive in a later update')
     expect(html).toContain(TRADES_LATER_COPY)
+    const withWindow = renderHome({
+      detail: {
+        ...detailWith(),
+        waiver_window: {
+          waivers: true,
+          free_agency_open: false,
+          why: 'awaiting_run',
+          next_run_at: '2099-09-16T07:00:00.000Z',
+          last_run_at: null,
+          last_open_at: null,
+          time_zone: 'America/New_York',
+          paused: false,
+          evaluated_at: '2099-09-15T12:00:00.000Z',
+        },
+      },
+    })
+    expect(withWindow).toMatch(/data-chip="waivers">Next waiver run · [^<]*Sep 16/)
     // Never a claim/propose button that posts nowhere.
     expect(html).not.toMatch(/>Claim<|>Propose trade</)
   })

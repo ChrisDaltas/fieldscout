@@ -302,7 +302,30 @@ export interface MoveContext {
    * LEGALITY rules. Default false: an ordinary manager never sees this.
    */
   lockExempt?: boolean
+  /** F443 (L.D2.13): slot key → the off-roster starter the week KEEPS there
+   *  (`keptStarters`). A kept seat is locked like a kicked-off one. */
+  kept?: ReadonlyMap<string, string>
 }
+
+/**
+ * F443 (L.D2.13): the stored starters who are NO LONGER ON THE ROSTER. Since
+ * 152 / 154 a drop leaves a player who already played in the week's lineup
+ * (his points stay with the team — D411 / D413), so a stored key naming an
+ * unrostered player is that kept starter, not a stale entry: the editor shows
+ * him locked in his seat and never offers the seat to anyone else (the
+ * manager's `set_lineup` refuses a replacement by name; the commissioner's
+ * override records one). The draft placement still omits him — both verbs
+ * carry him when the save leaves him out (D413(3)).
+ */
+export function keptStarters(slotMap: Record<string, string> | null | undefined, roster: readonly RosterPlayer[]): Map<string, string> {
+  const out = new Map<string, string>()
+  if (!slotMap) return out
+  const ids = new Set(roster.map((p) => p.player_id))
+  for (const [key, pid] of Object.entries(slotMap)) if (!ids.has(pid)) out.set(key, pid)
+  return out
+}
+
+export const KEPT_STARTER_COPY = 'dropped after he played — his points this week still count, so the seat stays his until the week ends'
 
 export type MovePlan =
   | { ok: true; next: Placement; displaced: string | null }
@@ -395,6 +418,13 @@ export function planMove(
   if (fromSlot?.kind === 'ir') {
     const stint = irStintRefusal(player, ctx.currentWeek)
     if (stint) return stint
+  }
+  if (ctx.kept?.has(target.key) && !ctx.lockExempt) {
+    return {
+      ok: false,
+      reason: 'locked',
+      message: `${slot.label} is locked — the player there was ${KEPT_STARTER_COPY}.`,
+    }
   }
   const occupant = placement[target.key] ?? null
   if (occupant && ctx.locked.has(occupant) && !ctx.lockExempt) {

@@ -34,7 +34,6 @@ import {
   type RosterSettings,
   type Tiebreaker,
 } from '@/lib/leagues/settings/league-settings'
-import { WAIVER_PRESETS, describeWaiverSchedule, matchWaiverPreset } from '@/lib/leagues/time/waiver-schedule'
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
@@ -45,6 +44,7 @@ import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringEditor } from './scoring-editor'
 import { isCustomScoringReference } from './scoring-editor-ops'
 import { ScoringTemplatePicker } from './scoring-template-picker'
+import { WaiverScheduleFields } from './waiver-schedule-fields'
 import {
   AuctionConfigFields,
   PickClockField,
@@ -1137,31 +1137,10 @@ function WaiversGroup({
 
       {/* v2.16.59 (Q70, migration 149): the four retired rows (process day / time ET / waiver period /
           free agency) are replaced by the schedule — when waivers run and when free agency is open, in the
-          league's own zone. This row picks one of the presets (Chris's two leagues among them) and says the
-          stored schedule in words; a custom schedule shows as such. The full editor is the waivers UI task. */}
-      <FieldRow label="Schedule" htmlFor="set-waiver-schedule" hint={describeWaiverSchedule(s)}>
-        <ChoiceSelect
-          id="set-waiver-schedule"
-          ariaLabel="Waiver schedule"
-          width="w-72"
-          value={matchWaiverPreset(s) ?? 'custom'}
-          options={[
-            ...WAIVER_PRESETS.map((p) => ({ value: p.id, label: p.label })),
-            ...(matchWaiverPreset(s) === null ? [{ value: 'custom', label: 'Custom schedule' }] : []),
-          ]}
-          onValueChange={(v) => {
-            const preset = WAIVER_PRESETS.find((p) => p.id === v)
-            if (!preset) return
-            onSettings({
-              ...preset.schedule,
-              waiver_run_days: [...preset.schedule.waiver_run_days],
-              // "No waivers" is a waiver TYPE; a schedule preset on a no-waivers league turns waivers
-              // back on with the catalog's default type.
-              ...(preset.waiverType ? { waiver_type: preset.waiverType } : s.waiver_type === 'none_fcfs' ? { waiver_type: 'faab' as const } : {}),
-            })
-          }}
-        />
-      </FieldRow>
+          league's own zone. A preset pick (Chris's two leagues among them) plus, since L.D2.13 (F425), the
+          schedule itself — run days, time, zone, when free agency opens — in the shared rows the create
+          wizard also uses (its preset pick only). */}
+      <WaiverScheduleFields s={s} onSettings={onSettings} />
 
       <UnlimitedOrNumber
         id="set-acq-week"

@@ -432,3 +432,20 @@ describe('the reads carry FAAB balance + waiver priority (L.D2.12)', () => {
     expect(members.find((m) => m.team_id === teamAId)).toMatchObject({ faab_balance: 250, waiver_priority: null })
   })
 })
+
+describe('the league detail carries the waiver window (L.D2.13, F425) — over the real tables', () => {
+  it('a member’s detail read at an instant composes the window from the real drafts / nfl_weeks / system_flags reads, never failing the detail', async () => {
+    const { data: bUser } = await managerBClient.auth.getUser()
+    const at = new Date('2099-09-15T12:00:00.000Z')
+    const detail = await getLeagueDetail(managerBClient, bUser.user!.id, leagueId, at)
+    expect(detail.status).toBe(200)
+    const body = detail.body as { waiver_window: Record<string, unknown> | null; waiver_window_error: string | null }
+    // Every read the window makes is member-readable: no error, a window.
+    expect(body.waiver_window_error).toBeNull()
+    expect(body.waiver_window).toMatchObject({ waivers: true, evaluated_at: at.toISOString(), time_zone: 'America/New_York', paused: false })
+    expect(typeof body.waiver_window?.next_run_at).toBe('string')
+    // Without an instant (older callers) nothing is read and nothing is claimed.
+    const plain = await getLeagueDetail(managerBClient, bUser.user!.id, leagueId)
+    expect((plain.body as { waiver_window: unknown }).waiver_window).toBeNull()
+  })
+})

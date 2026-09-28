@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 
 import type { ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
+import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 // SE.6: the scoring query key comes from the READER's own module (see
 // `leagueScoringInvalidationKeys`) — one factory, so the key a mutation
@@ -57,6 +58,10 @@ export interface LeagueDetail {
     is_placeholder: boolean | null
     is_autodraft: boolean | null
     joined_at: string | null
+    /** L.D2.12: the seat's FAAB balance / waiver priority (null = unset;
+     *  optional so older fixtures stay valid). */
+    faab_balance?: number | null
+    waiver_priority?: number | null
     profiles: { username: string; avatar_url: string | null } | null
   }>
   teams: Array<{
@@ -77,6 +82,12 @@ export interface LeagueDetail {
     started_at: string | null
     scheduled_at: string | null
   } | null
+  /** L.D2.13 (F425): the league's waiver window read at the server's instant
+   *  (`waiver-window-view.ts`) — null when it could not be read (named in
+   *  `waiver_window_error`) or the league has no pickups yet. Display only:
+   *  the add / claim verbs decide. */
+  waiver_window?: WaiverWindowView | null
+  waiver_window_error?: string | null
 }
 
 /** League detail (GET /api/leagues/[id]) — M1 task L.A1.12. */

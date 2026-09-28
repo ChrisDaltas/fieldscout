@@ -34,7 +34,7 @@ import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor } from './lineup-editor'
-import { LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
+import { KEPT_STARTER_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE } from './team-commish-ops'
 import { TeamPage } from './team-page'
@@ -871,5 +871,55 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.1 fi
       expect(src).not.toMatch(/\bdark:/)
       expect(src).not.toContain('next-themes')
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// M5 L.D2.13 — the seat's FAAB line; F443's kept starter
+// ---------------------------------------------------------------------------
+
+describe('L.D2.13 — the FAAB balance on the team page; a dropped-but-played starter stays in his seat (F443)', () => {
+  it('a FAAB league prints the seat’s balance against the budget; a priority league its priority', () => {
+    const faabRosters: LeagueRosters = { ...rosters, teams: rosters.teams.map((t) => (t.team_id === TEAM ? { ...t, faab_balance: 73 } : t)) }
+    expect(renderTeamPage({ rosters: faabRosters })).toMatch(/data-team-waiver-seat="true">\$73 of \$100 FAAB left</)
+    const priorityDetail: LeagueDetail = { ...detail, settings: { ...settings, waiver_type: 'rolling_priority' } }
+    const priorityRosters: LeagueRosters = { ...rosters, teams: rosters.teams.map((t) => (t.team_id === TEAM ? { ...t, waiver_priority: 2 } : t)) }
+    expect(renderTeamPage({ detail: priorityDetail, rosters: priorityRosters })).toMatch(/data-team-waiver-seat="true">Waiver priority #2</)
+  })
+
+  it('F443: a stored starter no longer on the roster shows LOCKED in his seat by name — never an empty seat to fill', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    // The identity read the editor makes for the kept id (usePlayersByIds).
+    client.setQueryData(['players-by-ids', ['gone-te']], [{ id: 'gone-te', full_name: 'Gone Tight End', position: 'TE', team: 'AAA', headshot_url: null, status: 'Active', adp: null }])
+    const stored: TeamLineupRow = { ...lineupRow, slot_map: { ...lineupRow.slot_map, 'te:0': 'gone-te' } }
+    const html = unescapeHtml(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(LineupEditor, {
+            leagueId: LEAGUE,
+            teamId: TEAM,
+            week: 1,
+            settings: settings.roster_settings,
+            allowIllegal: true,
+            roster,
+            stored,
+            currentWeek: 1,
+            editability: { state: 'open' },
+            canEdit: true,
+            isCommish: false,
+            leagueTimeZone: null,
+            overrideMode: false,
+            onOverrideMode: () => {},
+          }),
+        ),
+      ),
+    )
+    const seat = html.slice(html.indexOf('data-slot="te:0"'), html.indexOf('data-slot=', html.indexOf('data-slot="te:0"') + 10))
+    expect(seat).toContain('data-kept-starter')
+    expect(seat).toContain('Gone Tight End')
+    expect(seat).toContain(KEPT_STARTER_COPY)
+    expect(seat).not.toContain('>Empty<')
   })
 })

@@ -13,7 +13,9 @@
  *     run. A dropped player is on waivers until the next run. Right after the
  *     draft every undrafted player is on waivers until the first run after
  *     the draft. When the week ends (its last game — `nfl_weeks.
- *     last_game_ends_at`) everyone goes back to claim-only until the next run.
+ *     last_game_ends_at` — or its Wednesday 00:00 Pacific ceiling, whichever
+ *     comes first: 153 / Q78) everyone goes back to claim-only until the next
+ *     run.
  *   - `none_fcfs` ("no waivers") is always free agency; a drop goes straight
  *     to free agency.
  *
