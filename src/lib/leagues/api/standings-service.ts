@@ -81,6 +81,12 @@ export interface StandingsRow {
   /** The chain entry that separated this row from the one above (null for
    *  the leader / an unseparated tie resolved by the coin flip's own entry). */
   separated_by: string | null
+  /** The seat's FAAB balance and waiver priority (§13.2 "FAAB balance shown
+   *  on the team page and standings"; TD2 / TD8) — joined HERE from
+   *  `league_members` (member-SELECT, 052), never from the RPC, which knows
+   *  nothing of money. Null for a franchise with no seat row. M5 L.D2.12. */
+  faab_balance: number | null
+  waiver_priority: number | null
 }
 
 export interface LeagueStandings {
@@ -189,6 +195,23 @@ export async function readStandings(
   } catch (cause) {
     return { status: 500, body: { error: (cause as Error).message } }
   }
+
+  // The seat columns (L.D2.12). The RPC above already proved membership, so
+  // this RLS read is the caller's own league; an error is a 500 by name,
+  // never a table silently missing its balances.
+  const { data: seats, error: seatsError } = await supabase
+    .from('league_members')
+    .select('team_id, faab_balance, waiver_priority')
+    .eq('league_id', leagueId)
+  if (seatsError) {
+    return { status: 500, body: { error: `league_members: ${seatsError.message}` } }
+  }
+  const seatByTeam = new Map((seats ?? []).filter((s) => s.team_id).map((s) => [s.team_id as string, s]))
+  rows = rows.map((row) => ({
+    ...row,
+    faab_balance: seatByTeam.get(row.team_id)?.faab_balance ?? null,
+    waiver_priority: seatByTeam.get(row.team_id)?.waiver_priority ?? null,
+  }))
 
   const payload: LeagueStandings = { ...(doc as unknown as LeagueStandings), standings: rows }
   return { status: 200, body: payload as unknown as Json }

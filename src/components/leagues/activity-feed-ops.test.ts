@@ -30,6 +30,17 @@ describe('transactionText — 113’s payload names, nothing computed', () => {
   })
 })
 
+describe('transactionText — a WON waiver claim (TD9 row; M5 L.D2.12)', () => {
+  it('names the players in 113’s shape, the winning bid when FAAB was debited, and the drop', () => {
+    const payload = { add: { name: 'Nine', player_id: 'p9', position: 'WR', nfl_team: 'AAA' }, drop: { name: 'One', player_id: 'p1' }, faab_bid: 12, faab_before: 40, faab_after: 28 }
+    expect(transactionText(tx({ type: 'waiver_claim', payload }))).toBe('claimed Nine (WR · AAA) off waivers for $12, dropped One')
+  })
+  it('a priority league (no FAAB debit) shows no price; bare TD9 ids name "a player", never a provider id', () => {
+    expect(transactionText(tx({ type: 'waiver_claim', payload: { add: { name: 'Nine' }, faab_bid: 0 } }))).toBe('claimed Nine off waivers')
+    expect(transactionText(tx({ type: 'waiver_claim', payload: { add_player_id: 'p9', faab_bid: 5, faab_before: 10 } }))).toBe('claimed a player off waivers for $5')
+  })
+})
+
 describe('feedLines — transactions carry their team + week; a system post carries the commissioner treatment ONLY when an actor wrote it', () => {
   const names = new Map([['t1', 'Alpha']])
   const items: ActivityItem[] = [
