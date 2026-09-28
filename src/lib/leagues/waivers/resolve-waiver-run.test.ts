@@ -1,11 +1,16 @@
 /**
- * resolve-waiver-run.test.ts — L.D2.8's WORKED EXAMPLES: one case per ruling
- * (Q71, Q72, Q73, Q74), per tiebreaker (E7), per priority type, per failure
- * reason, the cycle the deadlock break exists for, and the input guards.
- * Every expectation is a STORED LITERAL (tasks-M* §4.3 falsifiability floor):
- * the decision sequence, reasons, amounts and balances written out by hand.
- * The invariants over random claim sets live in
- * `resolve-waiver-run-property.test.ts`.
+ * resolve-waiver-run.test.ts — the resolver's WORKED EXAMPLES: one case per
+ * ruling (Q71, Q72, Q73, Q74, F422(a)/(b)), per tiebreaker (E7), per priority
+ * type, per failure reason, and the input guards. Every expectation is a
+ * STORED LITERAL (tasks-M* §4.3 falsifiability floor): the decision sequence,
+ * reasons, amounts and balances written out by hand. The invariants over
+ * random claim sets live in `resolve-waiver-run-property.test.ts`.
+ *
+ * L.D2.9 re-cut (Chris, F422, 2026-09-28): (a) every win sends the team to
+ * the back at once, for the rest of the run, in every waiver type; (b) in a
+ * FAAB league a team's claims rank by bid, its own order only between equal
+ * bids. Each example that FLIPPED says so in its title and states what it was
+ * under L.D2.8 and why it changed.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -17,8 +22,8 @@ import {
 } from './resolve-waiver-run'
 import { claim, faabAfter, input, summary, team } from './waiver-run-fixture'
 
-describe('Q71 — the highest bid on a player always wins him', () => {
-  it("Chris's example: B's #2 ($50) beats A's only claim ($5) on X, and B also gets its #1", () => {
+describe('Q71 + F422(b) — the highest bid on a player wins him; a team ranks its own claims by bid', () => {
+  it("Chris's example: B's $50 beats A's only claim ($5) on X, and B also gets its $3 claim (unchanged)", () => {
     const r = resolveWaiverRun(
       input({
         teams: [team('A'), team('B')],
@@ -30,18 +35,48 @@ describe('Q71 — the highest bid on a player always wins him', () => {
     expect(r.teams.find((t) => t.teamId === 'B')?.rosterAfter).toEqual(['X', 'Y'])
   })
 
-  it("the team's own ranking settles running out of budget: B can't afford both, keeps its #1, and X goes to the next-highest bid", () => {
+  it("F422(b), Chris's words: \"if you bid $50, and someone else bids $55, you lose that bid and then the $10 bid becomes your top priority\"", () => {
+    // A has $50 and ranks its $10 claim FIRST — F422(b): the order does not
+    // matter between different bids, the $50 is A's top choice. B's $55 wins
+    // Y; A's $10 on X is then its top priority and goes through.
+    const r = resolveWaiverRun(
+      input({
+        teams: [team('A', [], 50), team('B')],
+        claims: [claim('a1', 'A', 'X', 10, 1), claim('a2', 'A', 'Y', 50, 2), claim('b1', 'B', 'Y', 55, 1)],
+      }),
+    )
+    expect(summary(r)).toEqual(['1 b1 won $55', '2 a2 lost:outbid $0', '3 a1 won $10'])
+    expect(faabAfter(r)).toEqual({ A: 40, B: 45 })
+  })
+
+  it('F422(b): "you cannot have a $10 priority that is higher than $50" — with no rival, the $50 wins first and the $10 runs out of money', () => {
+    const r = resolveWaiverRun(
+      input({
+        teams: [team('A', [], 50)],
+        claims: [claim('a1', 'A', 'X', 10, 1), claim('a2', 'A', 'Y', 50, 2)],
+      }),
+    )
+    expect(summary(r)).toEqual(['1 a2 won $50', '2 a1 invalid:insufficient_faab $0'])
+    expect(faabAfter(r)).toEqual({ A: 0 })
+  })
+
+  it("FLIPPED by F422(b) — running out of budget: B's $50 (ranked #2) is B's top choice; its $30 (ranked #1) then can't be afforded", () => {
+    // L.D2.8: '1 b1 won $30', '2 b2 invalid:insufficient_faab', '3 a1 won $40'
+    // (B's own order put Y first). Now the bigger bid is B's top choice.
     const r = resolveWaiverRun(
       input({
         teams: [team('A'), team('B', [], 60)],
         claims: [claim('a1', 'A', 'X', 40, 1), claim('b1', 'B', 'Y', 30, 1), claim('b2', 'B', 'X', 50, 2)],
       }),
     )
-    expect(summary(r)).toEqual(['1 b1 won $30', '2 b2 invalid:insufficient_faab $0', '3 a1 won $40'])
-    expect(faabAfter(r)).toEqual({ A: 60, B: 30 })
+    expect(summary(r)).toEqual(['1 b2 won $50', '2 a1 lost:outbid $0', '3 b1 invalid:insufficient_faab $0'])
+    expect(faabAfter(r)).toEqual({ A: 100, B: 10 })
   })
 
-  it('money is held back for a higher-ranked claim only while it can still win: once B loses Y, its $50 on X wins', () => {
+  it("FLIPPED by F422(b) — B's $50 on X is its top claim and is decided first; its $10 on Y can then no longer be afforded (same winners, same balances)", () => {
+    // L.D2.8: '1 d1 won $45', '2 b1 lost:outbid', '3 b2 won $50', '4 a1 lost:outbid'
+    // (B ranked Y first, so X waited until B lost Y). Now X ($50) is B's top
+    // claim: it wins, leaving $5, and b1's $10 fails before D's $45 is decided.
     const r = resolveWaiverRun(
       input({
         teams: [team('A'), team('B', [], 55), team('D')],
@@ -53,11 +88,11 @@ describe('Q71 — the highest bid on a player always wins him', () => {
         ],
       }),
     )
-    expect(summary(r)).toEqual(['1 d1 won $45', '2 b1 lost:outbid $0', '3 b2 won $50', '4 a1 lost:outbid $0'])
+    expect(summary(r)).toEqual(['1 b2 won $50', '2 a1 lost:outbid $0', '3 b1 invalid:insufficient_faab $0', '4 d1 won $45'])
     expect(faabAfter(r)).toEqual({ A: 100, B: 5, D: 55 })
   })
 
-  it('two claims dropping the same player: the higher-ranked wins, the other fails drop_gone', () => {
+  it('two claims with EQUAL bids dropping the same player: the manager\'s own order decides — #1 wins, #2 fails drop_gone (unchanged)', () => {
     const r = resolveWaiverRun(
       input({
         settings: { rosterSize: 2 },
@@ -69,7 +104,7 @@ describe('Q71 — the highest bid on a player always wins him', () => {
     expect(r.teams[0].rosterAfter).toEqual(['E', 'P'])
   })
 
-  it('…and when the #1 is outbid, the #2 goes through with the shared drop', () => {
+  it('…and when the #1 is outbid, the #2 goes through with the shared drop (unchanged)', () => {
     const r = resolveWaiverRun(
       input({
         settings: { rosterSize: 2 },
@@ -81,7 +116,8 @@ describe('Q71 — the highest bid on a player always wins him', () => {
     expect(r.teams.find((t) => t.teamId === 'T')?.rosterAfter).toEqual(['E', 'Q'])
   })
 
-  it('roster room settles running out in ranking order — the bigger bid ranked #2 fails roster_full', () => {
+  it('FLIPPED by F422(b) — roster room: the bigger bid (ranked #2) takes the last spot; the smaller fails roster_full', () => {
+    // L.D2.8: '1 t1 won $5', '2 t2 invalid:roster_full' (the manager's #1 first).
     const r = resolveWaiverRun(
       input({
         settings: { rosterSize: 2 },
@@ -89,10 +125,11 @@ describe('Q71 — the highest bid on a player always wins him', () => {
         claims: [claim('t1', 'T', 'P', 5, 1), claim('t2', 'T', 'Q', 9, 2)],
       }),
     )
-    expect(summary(r)).toEqual(['1 t1 won $5', '2 t2 invalid:roster_full $0'])
+    expect(summary(r)).toEqual(['1 t2 won $9', '2 t1 invalid:roster_full $0'])
   })
 
-  it('acquisition caps settle running out the same way (and a team already at its cap wins nothing)', () => {
+  it('FLIPPED by F422(b) — acquisition caps: the bigger bid uses the one weekly add (and a team already at its cap wins nothing)', () => {
+    // L.D2.8: '1 u1 invalid:cap_reached', '2 t1 won $5', '3 t2 invalid:cap_reached'.
     const r = resolveWaiverRun(
       input({
         settings: { acquisitionsPerWeek: 1, acquisitionsPerSeason: 10 },
@@ -100,17 +137,17 @@ describe('Q71 — the highest bid on a player always wins him', () => {
         claims: [claim('t1', 'T', 'P', 5, 1), claim('t2', 'T', 'Q', 9, 2), claim('u1', 'U', 'Z', 1, 1)],
       }),
     )
-    expect(summary(r)).toEqual(['1 u1 invalid:cap_reached $0', '2 t1 won $5', '3 t2 invalid:cap_reached $0'])
+    expect(summary(r)).toEqual(['1 u1 invalid:cap_reached $0', '2 t2 won $9', '3 t1 invalid:cap_reached $0'])
     const t = r.teams.find((x) => x.teamId === 'T')
     expect([t?.acquisitionsWeekAfter, t?.acquisitionsSeasonAfter]).toEqual([1, 1])
   })
 
-  it('a team with two claims on the same player (different drops) wins him through its highest-ranked claim that beats the rival', () => {
+  it('a team with two claims on the same player (different drops) wins him through its BIGGEST bid on him', () => {
     const base = {
       settings: { rosterSize: 2 },
       teams: [team('T', ['D1', 'D2']), team('U')],
     }
-    // U bids $20: T's #1 ($10) cannot beat it, T's #2 ($30) can.
+    // U bids $20: T's $30 claim wins (unchanged).
     const high = resolveWaiverRun(
       input({
         ...base,
@@ -119,18 +156,24 @@ describe('Q71 — the highest bid on a player always wins him', () => {
     )
     expect(summary(high)).toEqual(['1 t2 won $30', '2 u1 lost:outbid $0', '3 t1 invalid:own_claim_won $0'])
     expect(high.teams.find((t) => t.teamId === 'T')?.rosterAfter).toEqual(['D1', 'P'])
-    // U bids $5: T's #1 already beats it — T's own ranking picks #1 (drop D1, $10).
+    // FLIPPED by F422(b): U bids $5. L.D2.8 took T's #1 ($10, drop D1) because
+    // it already beat U; now the $30 claim is T's top choice for P — it wins
+    // at $30, dropping D2.
     const low = resolveWaiverRun(
       input({
         ...base,
         claims: [claim('t1', 'T', 'P', 10, 1, 'D1'), claim('t2', 'T', 'P', 30, 2, 'D2'), claim('u1', 'U', 'P', 5, 1)],
       }),
     )
-    expect(summary(low)).toEqual(['1 t1 won $10', '2 t2 invalid:own_claim_won $0', '3 u1 lost:outbid $0'])
-    expect(low.teams.find((t) => t.teamId === 'T')?.rosterAfter).toEqual(['D2', 'P'])
+    expect(summary(low)).toEqual(['1 t2 won $30', '2 t1 invalid:own_claim_won $0', '3 u1 lost:outbid $0'])
+    expect(low.teams.find((t) => t.teamId === 'T')?.rosterAfter).toEqual(['D1', 'P'])
   })
 
-  it('the cycle: each team outbids the other on its #2 and cannot afford both — both high bids win (deadlock break)', () => {
+  it('FLIPPED by F422(b) — the old "cycle" is an ordinary run: each team\'s $50 is its top choice; the better priority goes first', () => {
+    // L.D2.8 needed a deadlock break here ('1 b2 won $50 BREAK', …): each
+    // team RANKED its $10 above its $50. Under F422(b) the $50 bids are the
+    // top choices, so there is nothing to break — the same four decisions,
+    // no `deadlockBreak` field any more, and the order rolls (F422(a)).
     const r = resolveWaiverRun(
       input({
         teams: [team('A', [], 50), team('B', [], 50)],
@@ -145,33 +188,33 @@ describe('Q71 — the highest bid on a player always wins him', () => {
     // Priority before standings = reverse draft order: draft [A, B] ⇒ [B, A].
     expect(r.priority.before).toEqual(['B', 'A'])
     expect(summary(r)).toEqual([
-      '1 b2 won $50 BREAK',
+      '1 b2 won $50',
       '2 a1 lost:outbid $0',
       '3 b1 invalid:insufficient_faab $0',
       '4 a2 won $50',
     ])
     expect(faabAfter(r)).toEqual({ A: 0, B: 0 })
-    // THE BYTE FORM L.D2.9's parity test compares — pinned as a stored literal.
+    // THE BYTE FORM the parity test compares — pinned as a stored literal.
     expect(serializeWaiverRunResult(r)).toBe(
       '{"outcomes":[' +
-        '{"decision":1,"claimId":"b2","teamId":"B","addPlayerId":"X","dropPlayerId":null,"status":"won","reason":null,"faabSpent":50,"deadlockBreak":true},' +
-        '{"decision":2,"claimId":"a1","teamId":"A","addPlayerId":"X","dropPlayerId":null,"status":"lost","reason":"outbid","faabSpent":0,"deadlockBreak":false},' +
-        '{"decision":3,"claimId":"b1","teamId":"B","addPlayerId":"Y","dropPlayerId":null,"status":"invalid","reason":"insufficient_faab","faabSpent":0,"deadlockBreak":false},' +
-        '{"decision":4,"claimId":"a2","teamId":"A","addPlayerId":"Y","dropPlayerId":null,"status":"won","reason":null,"faabSpent":50,"deadlockBreak":false}],' +
+        '{"decision":1,"claimId":"b2","teamId":"B","addPlayerId":"X","dropPlayerId":null,"status":"won","reason":null,"faabSpent":50},' +
+        '{"decision":2,"claimId":"a1","teamId":"A","addPlayerId":"X","dropPlayerId":null,"status":"lost","reason":"outbid","faabSpent":0},' +
+        '{"decision":3,"claimId":"b1","teamId":"B","addPlayerId":"Y","dropPlayerId":null,"status":"invalid","reason":"insufficient_faab","faabSpent":0},' +
+        '{"decision":4,"claimId":"a2","teamId":"A","addPlayerId":"Y","dropPlayerId":null,"status":"won","reason":null,"faabSpent":50}],' +
         '"teams":[' +
         '{"teamId":"A","faabBefore":50,"faabAfter":0,"rosterAfter":["Y"],"acquisitionsWeekAfter":1,"acquisitionsSeasonAfter":1},' +
         '{"teamId":"B","faabBefore":50,"faabAfter":0,"rosterAfter":["X"],"acquisitionsWeekAfter":1,"acquisitionsSeasonAfter":1}],' +
-        '"priority":{"source":"reverse_draft_order","rotates":false,"before":["B","A"],"after":["B","A"]}}',
+        '"priority":{"source":"reverse_draft_order","persists":false,"before":["B","A"],"after":["B","A"]}}',
     )
   })
 
-  it("R1178 — the deadlock break awards the LEADING team's HIGHEST-RANKED top claim, not the strongest top itself", () => {
+  it("FLIPPED by F422(b) — L.D2.8's R1178 case: T's $60 is decided first, then R's $50, then T's $20 (no deadlock break)", () => {
     // T holds D. T: #1 Y $10 drop D, #2 X $20 drop D, #3 W $60. R ($52):
-    // #1 X $5, #2 Y $50. Weekly cap 2. Tops: W → t3 ($60), Y → r2 ($50),
-    // X → t2 ($20); none is ready (t3: T's two higher claims + t3 exceed the
-    // cap; r2: $52 − $5 held for r1 < $50; t2: shares its drop with t1). The
-    // strongest top is t3 (team T), and T's highest-ranked TOP is t2 — the
-    // break awards t2, not t3 (D389(4)).
+    // #1 X $5, #2 Y $50. Weekly cap 2. L.D2.8: '1 t2 won $20 BREAK',
+    // '2 r1 lost:outbid', '3 t1 invalid:drop_gone', '4 t3 won $60', '5 r2 won $50'.
+    // Now T's ranking is W ($60), X ($20), Y ($10): W first; R's $50 takes Y
+    // (T's $10 on it is outbid) and leaves R $2, so R's $5 on X fails; T's $20
+    // then takes X with drop D.
     const r = resolveWaiverRun(
       input({
         settings: { acquisitionsPerWeek: 2 },
@@ -186,24 +229,26 @@ describe('Q71 — the highest bid on a player always wins him', () => {
       }),
     )
     expect(summary(r)).toEqual([
-      '1 t2 won $20 BREAK',
-      '2 r1 lost:outbid $0',
-      '3 t1 invalid:drop_gone $0',
-      '4 t3 won $60',
-      '5 r2 won $50',
+      '1 t3 won $60',
+      '2 r2 won $50',
+      '3 t1 lost:outbid $0',
+      '4 r1 invalid:insufficient_faab $0',
+      '5 t2 won $20',
     ])
     expect(faabAfter(r)).toEqual({ R: 2, T: 20 })
     expect(r.teams.find((t) => t.teamId === 'T')?.rosterAfter).toEqual(['W', 'X'])
   })
 })
 
-describe('E7 / Q72 — equal bids go to waiver priority', () => {
+describe('E7 / Q72 / F422(a) — equal bids go to waiver priority, and every win burns it', () => {
   const tie = [claim('a1', 'A', 'P', 12, 1), claim('b1', 'B', 'P', 12, 1)]
 
   it('reverse standings: the worse team wins the tie, and flipping the standings flips the winner', () => {
     const aBest = resolveWaiverRun(input({ teams: [team('A'), team('B')], claims: tie, standings: ['A', 'B'] }))
     expect(summary(aBest)).toEqual(['1 b1 won $12', '2 a1 lost:lost_on_priority $0'])
-    expect(aBest.priority).toEqual({ source: 'reverse_standings', rotates: false, before: ['B', 'A'], after: ['B', 'A'] })
+    // F422(a): B's win sends it behind A for the rest of the run; the order
+    // does not persist (the next run starts from the standings again).
+    expect(aBest.priority).toEqual({ source: 'reverse_standings', persists: false, before: ['B', 'A'], after: ['A', 'B'] })
     const bBest = resolveWaiverRun(input({ teams: [team('A'), team('B')], claims: tie, standings: ['B', 'A'] }))
     expect(summary(bBest)).toEqual(['1 a1 won $12', '2 b1 lost:lost_on_priority $0'])
   })
@@ -222,7 +267,7 @@ describe('E7 / Q72 — equal bids go to waiver priority', () => {
     expect(summary(r)).toEqual(['1 c1 won $12', '2 a1 lost:lost_on_priority $0'])
   })
 
-  it('FAAB with the rolling tiebreaker: a winner goes to the back at once, so a second tie in the same run goes the other way', () => {
+  it('FAAB with the rolling tiebreaker: a winner goes to the back at once, so a second tie in the same run goes the other way (unchanged)', () => {
     const r = resolveWaiverRun(
       input({
         settings: { faabTiebreaker: 'rolling_priority' },
@@ -232,14 +277,15 @@ describe('E7 / Q72 — equal bids go to waiver priority', () => {
       }),
     )
     expect(summary(r)).toEqual(['1 a1 won $10', '2 b1 won $10', '3 a2 lost:lost_on_priority $0'])
-    expect(r.priority).toEqual({ source: 'rolling', rotates: true, before: ['A', 'B'], after: ['A', 'B'] })
+    expect(r.priority).toEqual({ source: 'rolling', persists: true, before: ['A', 'B'], after: ['A', 'B'] })
   })
 
-  it("R1176 / Q71 — a team's lower-ranked win never costs it a higher-ranked claim on the tiebreak: A gets P on priority AND Q", () => {
+  it("FLIPPED by F422(a)+(b) — L.D2.8's R1176 case: A's $30 is its top choice; winning it burns A's priority, so B takes the $10 tie", () => {
     // A holds priority 1. A: #1 P $10 (tied with B), #2 Q $30 (uncontested).
-    // Q's $30 is the bigger bid, so it is decided first — but A's win on its
-    // #2 does not send it behind B for its #1 (the R1176 ruling applying Q71,
-    // PROGRESS D389(7)): P is judged with A still at priority 1.
+    // L.D2.8 (R1176's per-claim key): '1 a2 won $30', '2 a1 won $10',
+    // '3 b1 lost:lost_on_priority' — A kept priority 1 for its #1. Chris
+    // (F422(a)): "you burn your order priority with each pick"; (b): the $30
+    // is A's top choice. So Q first, A to the back, B wins P on priority.
     const r = resolveWaiverRun(
       input({
         settings: { faabTiebreaker: 'rolling_priority' },
@@ -248,13 +294,39 @@ describe('E7 / Q72 — equal bids go to waiver priority', () => {
         rolling: { A: 1, B: 2 },
       }),
     )
-    expect(summary(r)).toEqual(['1 a2 won $30', '2 a1 won $10', '3 b1 lost:lost_on_priority $0'])
-    expect(faabAfter(r)).toEqual({ A: 60, B: 100 })
-    // The next run's order: A won (twice), so it is behind B.
-    expect(r.priority).toEqual({ source: 'rolling', rotates: true, before: ['A', 'B'], after: ['B', 'A'] })
+    expect(summary(r)).toEqual(['1 a2 won $30', '2 b1 won $10', '3 a1 lost:lost_on_priority $0'])
+    expect(faabAfter(r)).toEqual({ A: 70, B: 90 })
+    expect(r.priority).toEqual({ source: 'rolling', persists: true, before: ['A', 'B'], after: ['A', 'B'] })
   })
 
-  it('…and the plain rolling-priority league already gives A both, in its own order (unchanged)', () => {
+  it('F422(c) is moot — L.D2.8\'s bid-size case: whatever the Z bids, A wins exactly one tie (its bigger-bid claim), never both', () => {
+    // Rolling tiebreak, priority A=1, B=2, C=3. A bids X $5 (tied with B)
+    // and Z (tied with C). L.D2.8 (per-claim key): with Z at $6 A won BOTH
+    // ties. Now A's top choice is its bigger bid, and the win burns A's
+    // priority: A gets that player, the other tie goes to its rival.
+    const run = (z: number) =>
+      resolveWaiverRun(
+        input({
+          settings: { faabTiebreaker: 'rolling_priority' },
+          teams: [team('A'), team('B'), team('C')],
+          claims: [
+            claim('a1', 'A', 'X', 5, 1),
+            claim('a2', 'A', 'Z', z, 2),
+            claim('b1', 'B', 'X', 5, 1),
+            claim('c1', 'C', 'Z', z, 1),
+          ],
+          rolling: { A: 1, B: 2, C: 3 },
+        }),
+      )
+    const six = run(6)
+    expect(summary(six)).toEqual(['1 a2 won $6', '2 c1 lost:lost_on_priority $0', '3 b1 won $5', '4 a1 lost:lost_on_priority $0'])
+    expect(six.priority.after).toEqual(['C', 'A', 'B'])
+    const four = run(4)
+    expect(summary(four)).toEqual(['1 a1 won $5', '2 b1 lost:lost_on_priority $0', '3 c1 won $4', '4 a2 lost:lost_on_priority $0'])
+    expect(four.priority.after).toEqual(['B', 'A', 'C'])
+  })
+
+  it('…and the plain rolling-priority league gives A its #1 on priority, then its uncontested #2 (unchanged)', () => {
     const r = resolveWaiverRun(
       input({
         settings: { waiverType: 'rolling_priority' },
@@ -278,13 +350,13 @@ describe('E7 / Q72 — equal bids go to waiver priority', () => {
         rolling: null,
       }),
     )
-    expect(r.priority).toEqual({ source: 'reverse_draft_order', rotates: true, before: ['B', 'A'], after: ['B', 'A'] })
+    expect(r.priority).toEqual({ source: 'reverse_draft_order', persists: true, before: ['B', 'A'], after: ['B', 'A'] })
     expect(r.outcomes).toEqual([])
   })
 })
 
-describe('priority waiver types — no money, lowest priority number wins', () => {
-  it('rolling_priority: the classic order — each winner goes to the back, non-winners keep their order', () => {
+describe('priority waiver types — no money, lowest priority number wins, every win burns it', () => {
+  it('rolling_priority: the classic order — each winner goes to the back, non-winners keep their order (unchanged)', () => {
     const r = resolveWaiverRun(
       input({
         settings: { waiverType: 'rolling_priority' },
@@ -304,10 +376,13 @@ describe('priority waiver types — no money, lowest priority number wins', () =
       '3 b1 won $0',
       '4 a1 lost:lost_on_priority $0',
     ])
-    expect(r.priority).toEqual({ source: 'reverse_draft_order', rotates: true, before: ['C', 'B', 'A'], after: ['A', 'C', 'B'] })
+    expect(r.priority).toEqual({ source: 'reverse_draft_order', persists: true, before: ['C', 'B', 'A'], after: ['A', 'C', 'B'] })
   })
 
-  it('reverse_standings: the order is the standings, and a win does not move a team (§13.2 "order resets by reverse standings")', () => {
+  it('FLIPPED by F422(a) — reverse_standings: a win burns the team\'s priority for the rest of the run; the next run resets to the standings', () => {
+    // L.D2.8 (the order is the standings for the whole run): '1 c1 won',
+    // '2 b1 lost', '3 c2 won', '4 b2 lost' — last-place C took both. Now C's
+    // win on P sends it to the back, so B's #2 beats C's #2 on Q.
     const r = resolveWaiverRun(
       input({
         settings: { waiverType: 'reverse_standings' },
@@ -324,13 +399,13 @@ describe('priority waiver types — no money, lowest priority number wins', () =
     expect(summary(r)).toEqual([
       '1 c1 won $0',
       '2 b1 lost:lost_on_priority $0',
-      '3 c2 won $0',
-      '4 b2 lost:lost_on_priority $0',
+      '3 b2 won $0',
+      '4 c2 lost:lost_on_priority $0',
     ])
-    expect(r.priority).toEqual({ source: 'reverse_standings', rotates: false, before: ['C', 'B', 'A'], after: ['C', 'B', 'A'] })
+    expect(r.priority).toEqual({ source: 'reverse_standings', persists: false, before: ['C', 'B', 'A'], after: ['A', 'C', 'B'] })
   })
 
-  it('a stray bid left on a claim in a priority league is ignored and never charged', () => {
+  it('a stray bid left on a claim in a priority league is ignored and never charged (unchanged)', () => {
     const r = resolveWaiverRun(
       input({
         settings: { waiverType: 'rolling_priority' },
@@ -340,6 +415,17 @@ describe('priority waiver types — no money, lowest priority number wins', () =
     )
     expect(summary(r)).toEqual(['1 a1 won $0'])
     expect(faabAfter(r)).toEqual({ A: 40 })
+  })
+
+  it('a priority league settles a team\'s claims in its OWN order, whatever stray bids they carry (F422(b) is a FAAB rule)', () => {
+    const r = resolveWaiverRun(
+      input({
+        settings: { waiverType: 'rolling_priority', rosterSize: 1 },
+        teams: [team('A')],
+        claims: [claim('a1', 'A', 'P', 1, 1), claim('a2', 'A', 'Q', 90, 2)],
+      }),
+    )
+    expect(summary(r)).toEqual(['1 a1 won $0', '2 a2 invalid:roster_full $0'])
   })
 })
 

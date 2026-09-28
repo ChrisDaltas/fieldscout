@@ -1,122 +1,91 @@
 /**
  * resolve-waiver-run.ts — THE REFERENCE WAIVER RESOLVER (M5 task L.D2.8,
- * FULL rigour: it decides who gets players and how much FAAB is spent).
+ * re-cut by L.D2.9 to Chris's F422 rulings; FULL rigour: it decides who gets
+ * players and how much FAAB is spent).
  *
  * Spec §13.2 (process-waivers), §7.3.4 (waiver_type / faab_tiebreaker /
  * caps), §13.1 (the game-day lock rule, E32), E7, E33, E34; tasks-M5 TD7
  * ("one reference resolver, two implementations") and TD8 (priority on the
- * seat). Chris's rulings 2026-09-27 (PROGRESS §3, "approve M5, all
- * recommendations"):
+ * seat). Chris's rulings (PROGRESS §3 / F422):
  *
- *   Q71 — the highest bid on a player always wins him; a team's own claim
- *         ranking only settles clashes between ITS OWN claims (the Q71
- *         text Chris approved: "two claims dropping the same player, or not
- *         enough budget for both"; two claims on the same player, roster
- *         room / acquisition caps and priority (R1176) are the D389 reading
- *         of the same rule); a team
- *         can win several players in one run, each claim valid when its
- *         turn comes.
+ *   Q71 — the highest bid on a player always wins him; a team can win
+ *         several players in one run, each claim valid when its turn comes.
  *   Q72 — before week 1 is final, waiver priority is REVERSE DRAFT ORDER
  *         (last pick of round 1 first); after that reverse standings or the
  *         rolling order as the league chose; rolling starts from reverse
- *         draft order and a team moves to the back only when it wins.
+ *         draft order.
  *   Q73 — a claim whose DROP player has kicked off this week fails
- *         (`drop_locked`, no FAAB) — `bench_lock` retires; there is no
- *         "off" position (E34 is unreachable).
+ *         (`drop_locked`, no FAAB) — `bench_lock` retired; E34 unreachable.
  *   Q74 — a claim on a player whose game has kicked off fails at the run
  *         (`add_locked`, no FAAB) rather than waiting for a later run.
+ *   F422(a) (2026-09-28) — "During waivers, you burn your order priority with
+ *         each pick": EVERY win sends the winning team to the back of the
+ *         order at once, for every later decision in the same run — in every
+ *         waiver type, and for the FAAB equal-bid tiebreak.
+ *   F422(b) (2026-09-28) — "your top choice is the choice you put the most
+ *         money on … if you bid $50, and someone else bids $55, you lose
+ *         that bid and then the $10 bid becomes your top priority": in a FAAB
+ *         league a team's claims are RANKED BY BID, highest first; its own
+ *         `claim_order` only orders claims with EQUAL bids. (The swap / cycle
+ *         of F422(b) and the double tiebreak of F422(c) cannot arise.)
  *
  * PURE and DETERMINISTIC: no clock, no I/O, no randomness. Every lock fact is
  * an INPUT (`lockedPlayerIds` — the players whose game has kicked off and
  * whose week has not cleared at the run instant, i.e. what
  * `pool_game_lock_any_internal(season, week, team, p_at)` says for each), so
- * the TimeProvider rule is honoured by construction: the caller evaluates the
- * lock at its `p_at`, this function never asks what time it is.
+ * the TimeProvider rule is honoured by construction.
  *
- * THIS IS THE CONTRACT L.D2.9's SQL PROCESSOR MUST MATCH BYTE FOR BYTE
- * (`waivers-resolver-parity-db.test.ts`): feed both the same claim set,
- * compare `serializeWaiverRunResult(resolveWaiverRun(input))` with the SQL
- * run's result in the same shape. Everything that could vary between the two
- * implementations is pinned here:
- *   - ids (claim, team, player) are compared as plain code-unit strings —
- *     SQL must order them `COLLATE "C"` (a UUID's `::text` is lower-case hex,
- *     so byte order = code-unit order);
+ * THIS IS THE CONTRACT THE SQL TWIN MATCHES BYTE FOR BYTE (migration 150's
+ * `waiver_resolve_run_internal`; `waivers-resolver-parity-db.test.ts`): feed
+ * both the same input, map the SQL answer into a `WaiverRunResult` and
+ * compare `serializeWaiverRunResult` strings. Pinned for parity:
+ *   - ids (claim, team, player) compare as plain code-unit strings — SQL
+ *     orders them `COLLATE "C"`;
  *   - input ARRAY ORDER NEVER MATTERS (claims, teams, rosters, locks are
- *     sets); the only ordered inputs are the priority sources, which are
- *     semantic;
- *   - the failure-reason precedence (FAIL_CHECK_ORDER below) and the
- *     decision sequence (`decision`, 1..N) are part of the output.
+ *     sets); the only ordered inputs are the priority sources;
+ *   - the failure-reason precedence (FAIL_CHECK_ORDER) and the decision
+ *     sequence (`decision`, 1..N) are part of the output.
  *
  * ── THE ALGORITHM ──────────────────────────────────────────────────────────
- * Each claim's EFFECTIVE BID is its `faabBid` in a FAAB league and 0 under a
+ * A claim's EFFECTIVE BID is its `faabBid` in a FAAB league and 0 under a
  * priority waiver type (priority leagues spend no money, §13.2 — a stray bid
- * left over from a mid-season settings change is ignored, never charged).
- * Between two TEAMS a player goes to the higher effective bid, then the
- * better PRIORITY KEY (E7's tiebreaker) — strict, two teams never share one.
- * A claim's key is its team's run-start position, except in a ROTATING
- * league once the team has won a claim it ranked ABOVE this one: then the
- * team is at the back, as of its latest such win. A win on a claim the team
- * ranked BELOW does not move it for this claim — as far as priority goes, a
- * team's LOWER-ranked wins never cost it a HIGHER-ranked tie (the priority key; NOT a full ranking-order settlement — see F422(c), R1181), so a lower-ranked win
- * never costs it a higher-ranked claim on the tiebreak (R1176 — the
- * orchestrator's ruling 2026-09-28 applying Q71's "a team's own ranking only
- * settles its own collisions"; PROGRESS D389(7)). Between a team's OWN claims on one player (same
- * add, different drops) the team's ranking decides (Q71): the team wins
- * through its highest-ranked claim on him that still beats the strongest
- * other team's claim. Turn order across players uses the full key
- *     (effective bid DESC, priority position ASC, claim_order ASC, claim id ASC).
+ * left from a settings change is ignored, never charged). The ORDER is the
+ * run-start priority order (below); a team's POSITION is its place in the
+ * current order (0 = first).
  *
  * Repeat until nothing is pending:
  *   1. FAIL every pending claim that cannot go through against the CURRENT
- *      state (the checks run in FAIL_CHECK_ORDER — the one list; the first
- *      failing check names the reason; claims in id order). Every check is
- *      monotone — balances only fall, rosters only fill, a dropped player
- *      never comes back, caps only fill — so a failed claim can never become
- *      valid again, and a pending claim is always one that could be executed
- *      right now.
- *   2. For each player, the TOP claim is the one that would take him at this
- *      turn: the strongest team's highest-ranked claim that beats every
- *      other team's pending claim on him.
- *   3. A claim is READY when it stays valid however its team's
- *      higher-ranked pending claims (on other players) turn out: budget,
- *      room, drop and caps are checked with all of them counted as won
- *      (at most one per player). Awarding a ready claim therefore never
- *      costs its team a claim it ranked higher — Q71's "a team's own ranking
- *      settles running out, in its own ranking order". A team's first
- *      pending claim is always ready.
- *   4. Award the STRONGEST READY TOP (highest bid first across players, the
- *      classic "bids processed from the top" turn order). Its player's other
- *      pending claims are decided at once: another team's → `lost`
- *      (`outbid` when its bid was lower, `lost_on_priority` when equal), the
- *      same team's → `invalid` (`own_claim_won`). Under rolling priority the
- *      win is recorded NOW, so the next turn's keys see it (for the team's
- *      claims ranked below the one it won).
- *   5. DEADLOCK BREAK. If no top is ready, every top is waiting on its own
- *      team's higher-ranked claims, which are themselves outbid — a cycle
- *      (A: #1 X $10, #2 Y $50; B: #1 Y $10, #2 X $50; both $50 budgets). Two
- *      self-consistent outcomes exist; Q71's "the highest bid on a player
- *      ALWAYS wins him" picks the one where the high bids win: take the
- *      strongest top overall; its team's highest-ranked TOP claim is awarded
- *      (`deadlockBreak: true`) — NOT the strongest top itself when that team
- *      ranked another top higher (pinned: the R1178 worked example). Its own
- *      team's higher-ranked claims were all beaten at that moment; any the
- *      award now makes unaffordable fail on the next pass (PROGRESS
- *      D389(4)).
+ *      state (the checks run in FAIL_CHECK_ORDER; the first failing check
+ *      names the reason; claims in id order). Every check is monotone —
+ *      balances only fall, rosters only fill, a dropped player never comes
+ *      back, caps only fill — so a failed claim never becomes valid again.
+ *   2. AWARD the STRONGEST pending claim: effective bid DESC, then the
+ *      team's position ASC (E7's tiebreak — two teams never share one), then
+ *      its `claim_order` ASC, then claim id. That is at once "the highest bid
+ *      on a player wins him", "bids are processed from the top" and, for one
+ *      team, "its claims are settled biggest bid first, its own order only
+ *      between equal bids" (F422(b)) — a team's claims are never decided out
+ *      of that ranking, because its higher-ranked pending claim is always the
+ *      stronger one. Its player's other pending claims are decided at once:
+ *      another team's → `lost` (`outbid` when its bid was lower,
+ *      `lost_on_priority` when equal), the same team's → `invalid`
+ *      (`own_claim_won`), strongest first.
+ *   3. The winner goes to the BACK of the order (F422(a)); non-winners keep
+ *      their relative order.
  *   Each iteration decides at least one claim, so the loop ends in ≤ N turns.
+ *   (L.D2.8's readiness check and deadlock break are gone: under F422(b) the
+ *   strongest claim never waits on a stronger claim of its own team, so no
+ *   cycle can form.)
  *
  * Priority (Q72 / TD8): the START ORDER is the stored rolling order
- * (`priority.rolling`) when the league rotates and it has been seeded, else
- * reverse standings once week 1 is final (`priority.standings` non-null),
- * else reverse draft order. The league ROTATES iff waiver_type is
- * `rolling_priority`, or `faab` with `faab_tiebreaker = rolling_priority`;
- * then every win moves the winner to the back (non-winners keep their
- * relative order) — for the rest of the run, for the claims the team ranked
- * below the one it won (the priority key above), and in `priority.after` for
- * the next run. Under `reverse_standings` the order is recomputed from the
- * standings each run and a win does not move a team. §13.2's "winner drops to
- * the back (rolling) or order resets by reverse standings" is ambiguous on
- * this; built reading it as "the order is the standings for the whole run"
- * (PROGRESS D389(3); the question is open for Chris in F422(a)).
+ * (`priority.rolling`) when the order PERSISTS and it has been seeded, else
+ * reverse standings once week 1 is final (`priority.standings` non-null) for
+ * a league whose order does not persist, else reverse draft order. The order
+ * PERSISTS across runs iff waiver_type is `rolling_priority`, or `faab` with
+ * `faab_tiebreaker = rolling_priority` — then `priority.after` is written to
+ * `league_members.waiver_priority`. Under reverse standings the order rolls
+ * within the run (F422(a)) and the next run starts from the standings again
+ * (§13.2 "order resets by reverse standings").
  */
 
 // ── Public types ─────────────────────────────────────────────────────────────
@@ -233,8 +202,6 @@ export type WaiverClaimOutcome =
       reason: null
       /** The effective bid, debited from the team's balance. */
       faabSpent: number
-      /** Awarded by step 5 (a cycle), not as a ready top. */
-      deadlockBreak: boolean
     }
   | {
       decision: number
@@ -246,7 +213,6 @@ export type WaiverClaimOutcome =
       reason: WaiverFailReason
       /** Always 0 — a claim that does not go through never spends FAAB. */
       faabSpent: 0
-      deadlockBreak: false
     }
 
 export interface WaiverRunTeamResult {
@@ -269,13 +235,16 @@ export interface WaiverRunResult {
   priority: {
     /** Where the start order came from (Q72 / TD8). */
     source: WaiverPrioritySource
-    /** Whether a win moves the winner to the back (rolling). */
-    rotates: boolean
+    /** Whether the order carries to the next run (rolling priority, or FAAB
+     *  with the rolling tiebreaker). WITHIN a run every league rolls
+     *  (F422(a)); only a persisting order is stored. */
+    persists: boolean
     /** Active team ids, first priority first, at the start of the run. */
     before: string[]
-    /** After the run (== `before` when the league does not rotate). The value
-     *  L.D2.9 writes to `league_members.waiver_priority` (1-based) when
-     *  `rotates` — including the first run's lazy seeding. */
+    /** At the end of the run: `before` with every winner moved to the back,
+     *  in the order of its last win (F422(a)). The processor writes it to
+     *  `league_members.waiver_priority` (1-based) when `persists` —
+     *  including the first run's lazy seeding. */
     after: string[]
   }
 }
@@ -302,11 +271,6 @@ function cmpStr(a: string, b: string): number {
 
 function isNonNegInt(n: unknown): n is number {
   return typeof n === 'number' && Number.isInteger(n) && n >= 0
-}
-
-/** `h` is ranked above `c` by their (shared) team: claim_order, then id. */
-function rankedAbove(h: WaiverRunClaim, c: WaiverRunClaim): boolean {
-  return h.claimOrder < c.claimOrder || (h.claimOrder === c.claimOrder && h.claimId < c.claimId)
 }
 
 function validate(input: WaiverRunInput): void {
@@ -409,11 +373,11 @@ function assertPermutation(list: string[], active: Set<string>, what: string): v
 
 function startOrder(
   input: WaiverRunInput,
-  rotates: boolean,
+  persists: boolean,
 ): { source: WaiverPrioritySource; order: string[] } {
   const active = new Set(input.teams.filter((t) => !t.retired).map((t) => t.teamId))
   const { draftOrder, standings, rolling } = input.priority
-  if (rotates && rolling !== null) {
+  if (persists && rolling !== null) {
     const ids = Object.keys(rolling)
     assertPermutation(ids, active, 'the stored rolling priority')
     const values = new Set<number>()
@@ -425,7 +389,7 @@ function startOrder(
     }
     return { source: 'rolling', order: ids.sort((a, b) => rolling[a] - rolling[b]) }
   }
-  if (!rotates && standings !== null) {
+  if (!persists && standings !== null) {
     assertPermutation(standings, active, 'the standings')
     return { source: 'reverse_standings', order: [...standings].reverse() }
   }
@@ -439,10 +403,10 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
   validate(input)
   const { settings } = input
   const faab = settings.waiverType === 'faab'
-  const rotates =
+  const persists =
     settings.waiverType === 'rolling_priority' ||
     (faab && settings.faabTiebreaker === 'rolling_priority')
-  const { source, order: before } = startOrder(input, rotates)
+  const { source, order: before } = startOrder(input, persists)
   let order = [...before]
 
   // State (mutated by awards only).
@@ -480,7 +444,6 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
       status,
       reason,
       faabSpent: 0,
-      deadlockBreak: false,
     })
   }
 
@@ -503,56 +466,6 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
   const absoluteFailure = (c: WaiverRunClaim): WaiverInvalidReason | null =>
     FAIL_CHECK_ORDER.find((reason) => fails[reason](c)) ?? null
 
-  /** Awards so far, in decision order (a rotating league's priority moves). */
-  const wins: LiveClaim[] = []
-  const startPos = new Map(before.map((id, i) => [id, i]))
-  /** A claim's PRIORITY KEY — lower is better; two teams never share one.
-   *  The team's run-start position, or — in a rotating league — the moment of
-   *  its latest win on a claim it ranked ABOVE this one (a win sends the team
-   *  to the back). A win on a claim it ranked BELOW this one does not count:
-   *  as far as priority goes, a team's claims are settled in its own ranking
-   *  order, so a lower-ranked win never costs it a higher-ranked claim on
-   *  the tiebreak (R1176 — orchestrator ruling 2026-09-28 applying Q71;
-   *  PROGRESS D389(7)). Retired teams hold no priority. */
-  const priorityKey = (c: WaiverRunClaim): number => {
-    let key = startPos.get(c.teamId) ?? Number.MAX_SAFE_INTEGER
-    if (!rotates) return key
-    wins.forEach((w, i) => {
-      if (w.teamId === c.teamId && rankedAbove(w, c)) key = before.length + i
-    })
-    return key
-  }
-
-  /** Step 3 — valid however the team's higher-ranked pending claims on OTHER
-   *  players turn out (each counted as won, at most one per player). */
-  const isReady = (c: LiveClaim, pending: LiveClaim[]): boolean => {
-    const higher = pending.filter(
-      (h) => h.teamId === c.teamId && h !== c && h.addPlayerId !== c.addPlayerId && rankedAbove(h, c),
-    )
-    if (higher.length === 0) return true
-    const groups = new Map<string, { bid: number; net: number }>()
-    for (const h of higher) {
-      const g = groups.get(h.addPlayerId) ?? { bid: 0, net: 0 }
-      g.bid = Math.max(g.bid, effBid(h))
-      g.net = Math.max(g.net, net(h))
-      groups.set(h.addPlayerId, g)
-    }
-    let reservedBid = 0
-    let reservedNet = 0
-    for (const g of groups.values()) {
-      reservedBid += g.bid
-      reservedNet += g.net
-    }
-    const team = c.teamId
-    if (faab && (balance.get(team) ?? 0) - reservedBid < effBid(c)) return false
-    if (c.dropPlayerId !== null && higher.some((h) => h.dropPlayerId === c.dropPlayerId)) return false
-    if ((count.get(team) ?? 0) + reservedNet + net(c) > settings.rosterSize) return false
-    const n = groups.size
-    if (settings.acquisitionsPerWeek !== null && (accWeek.get(team) ?? 0) + n + 1 > settings.acquisitionsPerWeek) return false
-    if (settings.acquisitionsPerSeason !== null && (accSeason.get(team) ?? 0) + n + 1 > settings.acquisitionsPerSeason) return false
-    return true
-  }
-
   for (;;) {
     // Step 1.
     for (const c of claims) {
@@ -563,50 +476,19 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
     const pending = claims.filter((c) => !c.done)
     if (pending.length === 0) break
 
-    // Step 2 — strength at THIS turn. Between two teams: bid, then priority
-    // key (strict — two teams never share a key). Within one team
-    // on one player the team's own ranking decides (Q71: its ranking settles
-    // clashes between its own claims): the team whose best claim is
-    // strongest wins the player, through its HIGHEST-RANKED claim on him that
-    // still beats the strongest other team's claim (the rival is judged at
-    // this turn).
-    const key = new Map(pending.map((c) => [c, priorityKey(c)]))
-    const teamwise = (a: LiveClaim, b: LiveClaim): number =>
-      effBid(b) - effBid(a) || (key.get(a) ?? Number.MAX_SAFE_INTEGER) - (key.get(b) ?? Number.MAX_SAFE_INTEGER)
+    // Step 2 — the strongest pending claim at THIS turn: bid, then the
+    // team's place in the CURRENT order (F422(a)), then the team's own order
+    // between its equal bids (F422(b)), then id. Retired teams' claims failed
+    // in step 1, so every pending team has a place.
+    const pos = new Map(order.map((id, i) => [id, i]))
     const stronger = (a: LiveClaim, b: LiveClaim): number =>
-      teamwise(a, b) || a.claimOrder - b.claimOrder || cmpStr(a.claimId, b.claimId)
-    const byRank = (a: LiveClaim, b: LiveClaim): number =>
-      a.claimOrder - b.claimOrder || cmpStr(a.claimId, b.claimId)
-    const byPlayer = new Map<string, LiveClaim[]>()
-    for (const c of pending) {
-      const list = byPlayer.get(c.addPlayerId)
-      if (list === undefined) byPlayer.set(c.addPlayerId, [c])
-      else list.push(c)
-    }
-    const topList: LiveClaim[] = []
-    for (const list of byPlayer.values()) {
-      const best = [...list].sort(stronger)[0]
-      const rival = list.filter((c) => c.teamId !== best.teamId).sort(stronger)[0]
-      const exec = list
-        .filter((c) => c.teamId === best.teamId)
-        .sort(byRank)
-        .find((c) => rival === undefined || teamwise(c, rival) < 0)
-      // `best` itself beats the rival strictly, so `exec` always exists.
-      topList.push(exec ?? best)
-    }
-    topList.sort(stronger)
-
-    // Steps 3–5.
-    let winner = topList.find((c) => isReady(c, pending))
-    let deadlockBreak = false
-    if (winner === undefined) {
-      const team = topList[0].teamId
-      winner = topList.filter((c) => c.teamId === team).sort(byRank)[0]
-      deadlockBreak = true
-    }
+      effBid(b) - effBid(a) ||
+      (pos.get(a.teamId) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b.teamId) ?? Number.MAX_SAFE_INTEGER) ||
+      a.claimOrder - b.claimOrder ||
+      cmpStr(a.claimId, b.claimId)
+    const w = [...pending].sort(stronger)[0]
 
     // Award.
-    const w = winner
     const spent = effBid(w)
     const team = w.teamId
     if (faab) balance.set(team, (balance.get(team) ?? 0) - spent)
@@ -616,7 +498,6 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
     accWeek.set(team, (accWeek.get(team) ?? 0) + 1)
     accSeason.set(team, (accSeason.get(team) ?? 0) + 1)
     w.done = true
-    wins.push(w)
     outcomes.push({
       decision: outcomes.length + 1,
       claimId: w.claimId,
@@ -626,14 +507,15 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
       status: 'won',
       reason: null,
       faabSpent: spent,
-      deadlockBreak,
     })
-    // The player's other claims, strongest first.
+    // The player's other claims, strongest first (judged in the order the
+    // award was made in).
     for (const c of pending.filter((p) => !p.done && p.addPlayerId === w.addPlayerId).sort(stronger)) {
       if (c.teamId === team) fail(c, 'invalid', 'own_claim_won')
       else fail(c, 'lost', effBid(c) < spent ? 'outbid' : 'lost_on_priority')
     }
-    if (rotates) order = [...order.filter((id) => id !== team), team]
+    // Step 3 — F422(a): the winner burns its priority for the rest of the run.
+    order = [...order.filter((id) => id !== team), team]
   }
 
   const rosters = new Map<string, string[]>()
@@ -651,7 +533,7 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
       acquisitionsSeasonAfter: accSeason.get(t.teamId) ?? 0,
     }))
 
-  return { outcomes, teams, priority: { source, rotates, before, after: order } }
+  return { outcomes, teams, priority: { source, persists, before, after: order } }
 }
 
 /** The canonical byte form for the L.D2.9 differential test: the result's
