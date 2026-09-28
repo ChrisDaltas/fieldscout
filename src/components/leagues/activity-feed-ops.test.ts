@@ -144,6 +144,19 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ action_type: 'edit_faab', target_id: 't1', before: { faab_balance: 5 }, after: { faab_balance: 6 } }).text).not.toContain('edit faab')
   })
 
+  it('M5 L.D3.5: a commissioner trade override is read from the op it recorded, with the deal — the verb name never on screen', () => {
+    const summary = 'Alpha gives A One; Bravo gives B One'
+    const trade = (op: string, before: string, after: string) =>
+      line({ action_type: `${op}_trade`, target_type: 'trade', target_id: 'tr1', before: { status: before }, after: { status: after },
+             metadata: { verb: 'commish_force_or_reverse_trade', op, summary } }).text
+    expect(trade('approve', 'in_review', 'complete')).toBe(`approved a trade: ${summary}`)
+    expect(trade('veto', 'accepted', 'vetoed')).toBe(`vetoed a trade: ${summary}`)
+    expect(trade('force', 'expired', 'complete')).toBe(`forced a trade through: ${summary}`)
+    expect(trade('reverse', 'complete', 'reversed')).toBe(`reversed a trade: ${summary}`)
+    expect(line({ action_type: 'reverse_trade', target_type: 'trade', target_id: 'tr1', before: { status: 'complete' }, after: { status: 'reversed' },
+                  metadata: { verb: 'commish_force_or_reverse_trade', op: 'reverse' } }).text).toBe('reversed a trade')
+  })
+
   it('F355: a rename is read from its {name} documents — the word "reassign" never reaches the screen', () => {
     expect(line({ action_type: 'reassign_team', before: { name: 'Old' }, after: { name: 'New' } }).text).not.toContain('reassign')
   })

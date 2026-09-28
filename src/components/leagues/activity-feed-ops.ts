@@ -218,6 +218,17 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
     }
     return `set ${team}’s FAAB balance: ${dollars(before.faab_balance)} → ${dollars(after.faab_balance)}`
   }
+  // A TRADE OVERRIDE — 156 writes {status} both sides and names the op and
+  // the deal in metadata (M5 L.D3.5). Trades are member-visible, so the deal
+  // is shown; the op is what the commissioner did (approve / veto / force /
+  // reverse), never the verb's name.
+  if (item.target_type === 'trade' && 'status' in after && metadata.verb === 'commish_force_or_reverse_trade') {
+    const act = ({ approve: 'approved a trade', veto: 'vetoed a trade', force: 'forced a trade through', reverse: 'reversed a trade' } as Record<string, string>)[text(metadata.op) ?? '']
+    if (act) {
+      const summary = text(metadata.summary)
+      return summary ? `${act}: ${summary}` : act
+    }
+  }
   // A LINEUP — 123 writes the whole lineup row both sides.
   if ('slot_map' in after) {
     const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
