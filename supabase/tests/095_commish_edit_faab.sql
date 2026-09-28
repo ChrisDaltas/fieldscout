@@ -405,7 +405,7 @@ select is(
   (select concat_ws('|', d->>'faab_balance', d->>'league_status', d->>'reseed_can_overwrite', d->>'reseed_why')
    from (select current_setting('fe.k')::jsonb d) x)
     || ' / ' || (select faab_balance::text from league_members where id = 'd9500000-0000-4000-8000-000000000022'),
-  '130|scheduled|true|league is scheduled — before the draft starts balances track the budget (§12.2 v2.8.7): a faab_budget change re-seeds every seat, and filling this seat re-seeds it (146) / 130',
+  '130|scheduled|true|league is scheduled — before the draft starts balances track the budget (§12.2 v2.8.7): a faab_budget change re-seeds every seat; filling this seat or its manager leaving or being removed re-seeds it (146); and a draft reset after the draft starts re-seeds every seat (147, F412) / 130',
   'K1 a scheduled league: the edit lands (no timing refusal) and the result names what can re-seed it');
 
 -- ---------------------------------------------------------------------------

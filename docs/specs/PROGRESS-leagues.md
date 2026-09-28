@@ -6041,6 +6041,11 @@ Fresh `npx supabase db reset` over **001–130** (from the main repo via `--work
 - **R1168 · nit · "retire-and-succeed already kept it" is loose** — retire kept it on the seat; 146 makes the successor's seating keep it too (D384(5) is the accurate statement).
 - **R1169 · nit · the new refusal raises inside `claim_league_invite` instead of returning its outcome-JSON refusal** — unreachable state; accepted.
 
+**L.D2.11 review (PR #327, fresh reviewer, 2026-09-28) — FIX-THEN-MERGE; the fix taken at merge by the orchestrator (lighter rule).** Verified: `draft_reset`'s newest definer is 100 (nothing in 101–146 redefines it), exactly 3 hunks, chat post byte-identical, lock order drafts → leagues → league_members like every seat writer; no negative balance by any path; pending bids above a lowered balance counted and untouched (live probe: 1 of 3); commissioner-only, no direct UPDATE path, ledger unforgeable; no timing gate is consistent with FIX-never-CHANGE; probes (auth widened; re-seed removed) red; `test:db` 96 / 7,267; CI green.
+- **R1170 · should-fix · the pre-draft `reseed_why` warning omitted two things that can wipe the edit** — a draft reset after the draft starts, and the manager leaving or being removed. TAKEN — the text (147), 095 K1 and D385(1) now list both.
+- **R1171 · nit · `pending_bids_above_balance` is only ever asserted as 0.** Not taken — follow-up cell (one bid above a lowered balance, one below, another team's).
+- **R1172 · nit (for L.D2.12) · no upper bound on the balance** — the route's Zod should accept a whole number 0–2147483647 so an overflow is a clean 400, not a raw database error.
+
 ## 7. Session log
 
 *One line per session: date, session type, what shipped, what's next. Newest on top. Keep entries short — this is a changelog, not a diary; detail belongs in commit messages and PRs.*

@@ -250,7 +250,7 @@ BEGIN
   v_reseed := v_league.status IN ('setup', 'scheduled', 'drafting');
   v_reseed_why := CASE
     WHEN v_league.status IN ('setup', 'scheduled') THEN
-      'league is ' || v_league.status || ' — before the draft starts balances track the budget (§12.2 v2.8.7): a faab_budget change re-seeds every seat, and filling this seat re-seeds it (146)'
+      'league is ' || v_league.status || ' — before the draft starts balances track the budget (§12.2 v2.8.7): a faab_budget change re-seeds every seat; filling this seat or its manager leaving or being removed re-seeds it (146); and a draft reset after the draft starts re-seeds every seat (147, F412)'
     WHEN v_league.status = 'drafting' THEN
       'league is drafting — a draft reset returns the league to scheduled and re-seeds every seat to the budget (147, F412)'
     ELSE
