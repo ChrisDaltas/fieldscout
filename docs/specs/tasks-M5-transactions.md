@@ -321,3 +321,6 @@ You ruled that the week closes by Wednesday 00:00 Pacific even if a game hasn't 
 
 **Q79 — Two lineup helpers from the spec are still unbuilt: do you want them for the test cohort this season? (F211) — blocks nothing in M5.**
 **Auto-sub** (a league setting, off by default): if a starter is ruled out before his game, the app swaps in a bench player at the same position. **Hot Swap spots** (default 0): a manager names a backup for one starter ahead of time and it fires automatically. Neither is part of waivers or trades. *Recommend: leave both out of M5*; if you want them this season, they become a small follow-up slice after M5 (its one open question — when a Hot Swap locks — is Q36).
+
+> + **APPROVED 2026-09-27 by Chris — *"approve M5, all recommendations"*.** Every open question Q70–Q79 is ruled as recommended; nothing in §6 remains blocked on a Chris ruling. Process: the lighter pre-launch rule (Chris 2026-09-27) applies — FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI/API/sim/docs; short ledger notes.
+

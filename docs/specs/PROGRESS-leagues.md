@@ -340,6 +340,8 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 
 **Q70–Q79 — FILED 2026-09-27 BY THE M5 ARCHITECT (`tasks-M5-transactions.md` §11, breakdown PR open for approval). Each names the M5 tasks it blocks; every task not named can start without an answer. All ⬜ OPEN.** *(Q70 is F229's waiver-scheduling investigation; Q73 is F239; Q78 is F333's lock half; Q79 is F211's swap / auto-sub arms.)*
 
+**✅ Q70–Q79 ALL RULED by Chris 2026-09-27 — *"approve M5, all recommendations"*: every question below is decided exactly as its RECOMMENDATION reads; the breakdown (`tasks-M5-transactions.md`, PR #323) is APPROVED. Builders treat each recommendation as the ruling; no task is blocked on Q70–Q79 any more.**
+
 **Q70 — HOW DO WAIVERS RUN IN YOUR LEAGUES? (F229) — blocks L.D2.4's schedule part, L.D2.7, L.D2.9, L.D2.13's schedule copy.**
 - You described two leagues: (1) waivers every day at 9:00 AM Pacific until Sunday 6:00 AM, then instant-pickup free agency until Monday night's last game ends; (2) waivers once, Tuesday at midnight, then instant pickup for the rest of the week. Today's settings can express neither.
 - **Proposed model:** a league picks **(a) when waivers run** (one or more days, one local time, in the league's own time zone) and **(b) when free agency is open** (instant pickup for any unowned player whose game hasn't started — e.g. "Sunday 6:00 AM until the week's last game ends", or "from the waiver run until the week's last game ends"). Outside free agency every unowned player is claim-only until the next run. Your two leagues become presets, plus "no waivers, always free agency".
