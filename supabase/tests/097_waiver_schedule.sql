@@ -305,9 +305,13 @@ select is((pg_temp.win('L2', '2026-11-04 08:00:00+00') ->> 'free_agency_open')::
 update nfl_weeks set last_game_ends_at = '2026-10-28 07:00:00+00' where season = 2026 and week = 7;
 select is((pg_temp.win('L2', '2026-10-28 07:00:00+00') ->> 'free_agency_open')::boolean, true,
   'E10a the week''s end recorded EXACTLY at league 2''s run: the run counts and free agency opens (a run AT the reset counts — Q78)');
-update nfl_weeks set last_game_ends_at = '2026-11-01 14:00:00+00' where season = 2026 and week = 7;
+-- 153 re-cut (L.D2.10 — Q78 / F424): a week's end is capped at its ceiling, and week 7's is 2026-10-28
+-- 07:00Z — an end "recorded" at Sunday 11-01 would read as that ceiling. The boundary moves to week 8
+-- (ceiling 2026-11-04 08:00Z), which contains that Sunday; week 7 keeps E10a's end; week 8 restored below.
+update nfl_weeks set last_game_ends_at = '2026-11-01 14:00:00+00' where season = 2026 and week = 8;
 select is(pg_temp.win('L1', '2026-11-01 14:00:00+00') ->> 'why', 'awaiting_run',
   'E10b a week end recorded EXACTLY at league 1''s Sunday opening: that opening opens nothing (the week closed at that instant)');
+update nfl_weeks set last_game_ends_at = '2026-11-03 08:00:00+00' where season = 2026 and week = 8;   -- 153: restore
 -- R1189 (PR #334 fix round): the weekly opening's own rule (`v_last_open > v_reset`) at its boundary — a run
 -- HAS happened since the week closed, so only the opening instant decides. Week 7 recorded ending exactly at
 -- league 1's Sunday 06:00 PDT opening (13:00Z): by Tuesday's 09:00 PDT run that opening opens nothing; one

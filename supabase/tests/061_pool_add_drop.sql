@@ -120,7 +120,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(164);
+select plan(165);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the stamp, the CHECK, the functions, grants (§4.1), F35
@@ -711,6 +711,21 @@ select pg_temp.pd_undo_drop('pd-te1', 'ab000000-0000-4000-8000-000000000035');
 select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 insert into nfl_games (id, season, week, home_team, away_team, kickoff_at) values
  ('pd-w2-a', 2026, 2, 'NE', 'NYJ', now() - interval '5 days');
+-- 153 re-cut (L.D2.10 — Q78 / F333): a previous week binds only until ITS
+-- CEILING (Wednesday 00:00 Pacific after its Monday night — in the real
+-- calendar the three hours after week N+1 begins). This relative calendar's
+-- week 2 ceiling falls within the day BEFORE now (week 3 began a day ago), so
+-- the premise is re-seated: week 2's starts_at moves so its ceiling is the
+-- next Pacific midnight after now — unfinished and not yet past its ceiling,
+-- the only state in which a previous week can bind. Restored after R754.
+update nfl_weeks
+set starts_at = (((now() at time zone 'America/Los_Angeles')::date + 1)::timestamp at time zone 'America/Los_Angeles') - interval '171 hours'
+where season = 2026 and week = 2;
+select ok(
+  (select public.week_release_ceiling_internal(w.starts_at) > now() + interval '1 second'
+      and w.starts_at < (select w3.starts_at from nfl_weeks w3 where w3.season = 2026 and w3.week = 3)
+   from nfl_weeks w where w.season = 2026 and w.week = 2),
+  'R754 premise (153): week 2 starts before week 3 and its Q78 ceiling is still ahead of now + 1 s');
 update nfl_weeks set last_game_ends_at = now() + interval '1 second' where season = 2026 and week = 2;
 select is(
   (select on_bye from public.pool_game_lock_internal(2026, 3, 'NE', now())), true,
@@ -758,7 +773,9 @@ select lives_ok(
 delete from league_player_pool where league_id = 'bd000000-0000-4000-8000-000000000001' and player_id = 'pd-ne2';
 delete from transactions where action_id = 'ab000000-0000-4000-8000-000000000039';
 insert into league_rosters (league_id, team_id, player_id) values ('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-ne2');
-update nfl_weeks set last_game_ends_at = now() - interval '2 days' where season = 2026 and week = 2;   -- restore: week 2's last game ended
+update nfl_weeks set last_game_ends_at = now() - interval '2 days',   -- restore: week 2's last game ended
+                     starts_at = now() + ((2 - 3) * interval '7 days') - interval '1 day'   -- 153: the fixture's own week-2 start
+where season = 2026 and week = 2;
 update leagues set waiver_type = 'faab' where id = 'bd000000-0000-4000-8000-000000000001';   -- restore (149 re-cut)
 delete from nfl_games where id = 'pd-w2-a';
 -- R758: a BENCH-only drop reports its lineup row with slot NULL (never under-reports).

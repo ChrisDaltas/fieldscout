@@ -6430,7 +6430,15 @@ export type Database = {
           total_games: number
         }[]
       }
+      week_lock_release_internal: {
+        Args: { p_last_game_ends_at: string; p_starts_at: string }
+        Returns: string
+      }
       week_median_internal: { Args: { p_points: number[] }; Returns: number }
+      week_release_ceiling_internal: {
+        Args: { p_starts_at: string }
+        Returns: string
+      }
       week_results_derive_internal: {
         Args: {
           p_league_id: string
