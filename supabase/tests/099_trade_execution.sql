@@ -263,7 +263,7 @@ select is(
 select is(
   (select string_agg(format('%s:%s:%s:%s', r.player_id, r.acquisition_type, r.slot_key, r.acquired_at = '2026-10-21 12:00:00+00'), ' ' order by r.player_id)
    from league_rosters r where r.player_id in ('x-a2', 'x-b2')),
-  'x-a2:trade:bn:true x-b2:trade:bn:true',
+  'x-a2:trade:bn:t x-b2:trade:bn:t',
   'C3 each moved row: acquisition trade, on the bench (TD10), acquired at the execution instant');
 select is(format('%s|%s', pg_temp.faab('TX Alpha'), pg_temp.faab('TX Bravo')), '40|110', 'C4 the FAAB leg moved: TX Alpha 50 → 40, TX Bravo 100 → 110');
 select is(
@@ -271,12 +271,12 @@ select is(
                  x.payload ? 'add_player_id', x.payload #>> '{faab,0,from_before}' || '>' || (x.payload #>> '{faab,0,from_after}'),
                  x.payload #>> '{faab,0,to_before}' || '>' || (x.payload #>> '{faab,0,to_after}'))
    from transactions x where x.league_id = pg_temp.lg(1) and x.type = 'trade'),
-  'complete|true|99900000-0000-4000-8000-000000000002|7|false|50>40|100>110',
+  'complete|t|99900000-0000-4000-8000-000000000002|7|f|50>40|100>110',
   'C5 ONE transactions row: type trade, complete, initiated by the proposer, week 7, NO add_player_id (TD9 — no acquisition cap), FAAB before/after for both');
 select is(
   (select format('%s|%s|%s', tl.slot_map::text, (tl.starters -> 0 ->> 'player_id') is null and (tl.starters -> 0 -> 'flags') = '["empty"]', tl.bench::text)
    from team_lineups tl where tl.team_id = pg_temp.team('TX Alpha') and tl.week = 7),
-  '{}|true|["x-a1", "x-a3", "x-b2"]',
+  '{}|t|["x-a1", "x-a3", "x-b2"]',
   'C6 TD10 (current week, not finished): A Two leaves TX Alpha''s week-7 slot (it reads empty); B Two lands on the bench');
 select is(
   (select format('%s / %s', (select slot_map::text from team_lineups where team_id = pg_temp.team('TX Alpha') and week = 6),
@@ -320,12 +320,12 @@ select set_config('request.jwt.claims', '', true);
 select is(
   (select format('%s|%s|%s|%s', r #>> '{execution,outcome}', (r #>> '{execution,execute_after}')::timestamptz = '2026-10-27 03:30:00+00',
                  r #>> '{execution,lock,locked_players,0,player_id}', r ->> 'settled_by') from r99 where tag = 'C12a'),
-  'deferred|true|x-a1|accepted; a player in it already played this week, so the whole trade goes through right after the week''s last game ends (Q75 / E35)',
+  'deferred|t|x-a1|accepted; a player in it already played this week, so the whole trade goes through right after the week''s last game ends (Q75 / E35)',
   'C12 E35 DEFER: accepted while A One is locked — the whole trade waits until the week''s last game ends (Tue 03:30Z), said so');
 select is(
   (select format('%s|%s', t.status, t.execute_after = '2026-10-27 03:30:00+00') from trades t where t.id = pg_temp.tid('T2'))
     || ' ' || pg_temp.roster('TX Alpha') || ' / ' || pg_temp.roster('TX Bravo'),
-  'accepted|true x-a1,x-a3,x-b2 / x-a2,x-b1,x-b3',
+  'accepted|t x-a1,x-a3,x-b2 / x-a2,x-b1,x-b3',
   'C12b …parked accepted with execute_after = the release; NOTHING moved (the players stay with their teams)');
 select is(
   (select count(*)::int from notifications where type = 'league_trade_deferred' and (data ->> 'trade_id')::uuid = pg_temp.tid('T2')),
@@ -368,7 +368,7 @@ select is(
   (select format('%s|%s|%s|%s|%s', r #>> '{trade,status}', r #>> '{review,mode}', r #>> '{review,period_hours}',
                  (r #>> '{review,review_deadline}')::timestamptz = '2026-10-22 12:00:00+00', coalesce(r ->> 'execution', 'null'))
    from r99 where tag = 'D1'),
-  'in_review|commissioner|24|true|null',
+  'in_review|commissioner|24|t|null',
   'D1 review COMMISSIONER: the accept puts the trade in review until accepted_at + 24 h; nothing executes');
 select is(
   (select r ->> 'settled_by' from r99 where tag = 'D1'),
@@ -384,7 +384,7 @@ select is(
   (select format('%s|%s|%s|%s', r ->> 'executed', r #>> '{actions,0,via}', t.status, t.resolved_by is null) from r99, trades t
    where tag = 'D3' and t.id = pg_temp.tid('T6'))
     || ' ' || pg_temp.roster('TX Papa') || ' / ' || pg_temp.roster('TX Quebec'),
-  '1|review_elapsed|complete|true x-p2,x-p3,x-q1 / x-p1,x-q2,x-q3',
+  '1|review_elapsed|complete|t x-p2,x-p3,x-q1 / x-p1,x-q2,x-q3',
   'D3 AT the review deadline the tick auto-approves and executes (§13.3 "elapses → auto-approve"); resolved by the system');
 -- T7: P Two (TXA) — the review ends while he is locked; L2 rejects (trade_lock_behavior = reject).
 select pg_temp.prop('T7', 2, 2, 'TX Papa', 'TX Quebec',
@@ -452,7 +452,7 @@ select is(
   (select format('%s|%s|%s', (select r #>> '{execution,outcome}' from r99 where tag = 'E3'),
      (select count(*) from league_rosters where league_id = pg_temp.lg(1) and player_id = 'x-a3'),
      (select string_agg(team_id::text, ',') from league_rosters where league_id = pg_temp.lg(1) and player_id = 'x-b2') = pg_temp.team('TX Bravo')::text)),
-  'complete|0|true',
+  'complete|0|t',
   'E4 EXCLUSIVITY either way: the dropped player is on no roster; the traded one on exactly one — his new team''s');
 
 -- ---------------------------------------------------------------------------
@@ -510,7 +510,7 @@ select is(
   (select format('%s|%s', t.status, t.resolved_at = '2026-10-28 04:00:00+00') from trades t where t.id = pg_temp.tid('T5'))
     || ' ' || (select count(*)::int from notifications where type = 'league_trade_expired'
                and (data ->> 'trade_id')::uuid in (pg_temp.tid('T4'), pg_temp.tid('T5'))),
-  'expired|true 4',
+  'expired|t 4',
   'G8 …both pending offers, resolved at the deadline instant; both managers of each told (4 notifications)');
 
 -- ---------------------------------------------------------------------------
@@ -601,7 +601,7 @@ select is(
   (select format('%s|%s', pp.state, pp.waivers_until = '2026-10-28 07:00:00+00') from league_player_pool pp
    where pp.league_id = pg_temp.lg(4) and pp.player_id = 'x-v2')
     || ' ' || (select x.payload #>> '{drops,0,to_state}' from transactions x where x.type = 'trade' and x.payload ->> 'trade_id' = pg_temp.tid('X7')::text),
-  'on_waivers|true on_waivers',
+  'on_waivers|t on_waivers',
   'F11 TD13: the dropped player goes on waivers until the next scheduled run (Wed 03:00 New York = 07:00Z), exactly as an add/drop drop');
 -- F413 (e): a RETIRED party at execution (the executor called directly).
 select pg_temp.prop('X9', 4, 1, 'TX4 Commish', 'TX Sierra', jsonb_build_array(pg_temp.leg('x-c4b', 'TX4 Commish'), pg_temp.cash(5, 'TX Sierra')), null, '2026-10-27 10:00:00+00', 57);
@@ -640,7 +640,7 @@ select pg_temp.resp('H1', 3, 3, pg_temp.tid('T11'), 'accept', null, '2026-10-30 
 select set_config('request.jwt.claims', '', true);
 select is(
   (select format('%s|%s', r #>> '{execution,outcome}', (select execute_after = 'infinity' from trades where id = pg_temp.tid('T11'))) from r99 where tag = 'H1'),
-  'deferred|true',
+  'deferred|t',
   'H1 G One kicked off and week 8''s last game is NOT recorded: deferred with execute_after = infinity (never read as free)');
 insert into r99 select 'H2', public.trade_tick('2026-10-30 12:01:00+00', pg_temp.lg(3));
 select is(
@@ -651,7 +651,7 @@ update nfl_weeks set last_game_ends_at = '2026-11-03 04:00:00+00' where season =
 insert into r99 select 'H3', public.trade_tick('2026-11-03 03:59:59+00', pg_temp.lg(3));
 select is(
   (select format('%s|%s', r ->> 'deferred', (select execute_after = '2026-11-03 04:00:00+00' from trades where id = pg_temp.tid('T11'))) from r99 where tag = 'H3'),
-  '1|true',
+  '1|t',
   'H3 once ingestion records the week''s end, the next tick parks it at that instant');
 insert into r99 select 'H4', public.trade_tick('2026-11-03 04:00:00+00', pg_temp.lg(3));
 select is(
@@ -713,7 +713,7 @@ select set_config('request.jwt.claims', '', true);
 select is(
   (select format('%s|%s', (v ->> 'review_deadline')::timestamptz = '2026-10-22 12:00:00+00', v ? 'execute_after')
    from (select public.trade_view_internal(pg_temp.tid('T6')) as v) q),
-  'true|true',
+  't|t',
   'J4 trade_view_internal reports review_deadline and execute_after');
 select is(
   (select count(*)::int from (select r.player_id from league_rosters r where r.league_id::text like 'b9900000-%' group by r.league_id, r.player_id having count(*) > 1) d),
