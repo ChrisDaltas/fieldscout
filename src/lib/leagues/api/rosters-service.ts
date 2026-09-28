@@ -124,6 +124,13 @@ export interface RosterTeam {
    *  ruled default; `true` only when the verb has switched it on. It acts
    *  only while the seat has no manager (`manager_user_id === null`). */
   autopilot: boolean
+  /** The seat's FAAB balance (§13.2 "shown on the team page and standings";
+   *  TD2 — carried with the seat) and waiver priority (TD8, 1 = first; NULL
+   *  until the processor seeds it). Both public to members (052's
+   *  member-SELECT on `league_members` — only BIDS are blind, D385(4)); null
+   *  for an unseated franchise. M5 L.D2.12. */
+  faab_balance: number | null
+  waiver_priority: number | null
   roster: RosterPlayer[]
 }
 
@@ -148,7 +155,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
       .eq('league_id', leagueId)
       .order('name', { ascending: true })
       .order('id', { ascending: true }),
-    supabase.from('league_members').select('user_id, team_id').eq('league_id', leagueId),
+    supabase.from('league_members').select('user_id, team_id, faab_balance, waiver_priority').eq('league_id', leagueId),
     supabase
       .from('league_rosters')
       .select(
@@ -227,8 +234,10 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
   const poolByPlayer = new Map(poolRows.map((row) => [row.player_id, row]))
   const autopilotOn = new Set((autopilotRes.data ?? []).filter((row) => row.is_on).map((row) => row.team_id))
   const managerByTeam = new Map<string, string>()
+  const seatByTeam = new Map<string, { faab_balance: number | null; waiver_priority: number | null }>()
   for (const m of membersRes.data ?? []) {
     if (m.team_id && m.user_id) managerByTeam.set(m.team_id, m.user_id)
+    if (m.team_id) seatByTeam.set(m.team_id, { faab_balance: m.faab_balance, waiver_priority: m.waiver_priority })
   }
 
   let payload: LeagueRosters
@@ -243,6 +252,8 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
         status: team.status,
         manager_user_id: managerByTeam.get(team.id) ?? null,
         autopilot: autopilotOn.has(team.id),
+        faab_balance: seatByTeam.get(team.id)?.faab_balance ?? null,
+        waiver_priority: seatByTeam.get(team.id)?.waiver_priority ?? null,
         roster: rosterRows
           .filter((r) => r.team_id === team.id)
           .map((r) => {

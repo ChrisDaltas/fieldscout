@@ -132,8 +132,8 @@ const rosters: LeagueRosters = {
   league_id: LEAGUE,
   season: 2099,
   teams: [
-    { team_id: TEAM, name: 'Render Team', owner_id: 'user-manager', status: 'active', manager_user_id: 'user-manager', autopilot: false, roster },
-    { team_id: 'team-2', name: 'Commish Team', owner_id: 'user-commish', status: 'active', manager_user_id: 'user-commish', autopilot: false, roster: [] },
+    { team_id: TEAM, name: 'Render Team', owner_id: 'user-manager', status: 'active', manager_user_id: 'user-manager', autopilot: false, faab_balance: null, waiver_priority: null, roster },
+    { team_id: 'team-2', name: 'Commish Team', owner_id: 'user-commish', status: 'active', manager_user_id: 'user-commish', autopilot: false, faab_balance: null, waiver_priority: null, roster: [] },
   ],
 }
 

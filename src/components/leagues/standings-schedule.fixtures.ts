@@ -24,6 +24,8 @@ export function standingsRow(
     median_record: { wins: 0, losses: 0, ties: 0 },
     second_record: { wins: 0, losses: 0, ties: 0 },
     separated_by: null,
+    faab_balance: null,
+    waiver_priority: null,
     ...over,
   }
 }

@@ -57,8 +57,8 @@ const rosters: LeagueRosters = {
   league_id: 'L',
   season: 2099,
   teams: [
-    { team_id: MINE, name: 'My Team', owner_id: 'u1', status: 'active', manager_user_id: 'u1', autopilot: false, roster: [rostered({ player_id: 'r1' }), rostered({ player_id: 'r-locked', game_lock: { state: 'locked_release_unrecorded', until: null } })] },
-    { team_id: OTHER, name: 'Their Team', owner_id: 'u2', status: 'active', manager_user_id: 'u2', autopilot: false, roster: [rostered({ player_id: 'r2' })] },
+    { team_id: MINE, name: 'My Team', owner_id: 'u1', status: 'active', manager_user_id: 'u1', autopilot: false, faab_balance: null, waiver_priority: null, roster: [rostered({ player_id: 'r1' }), rostered({ player_id: 'r-locked', game_lock: { state: 'locked_release_unrecorded', until: null } })] },
+    { team_id: OTHER, name: 'Their Team', owner_id: 'u2', status: 'active', manager_user_id: 'u2', autopilot: false, faab_balance: null, waiver_priority: null, roster: [rostered({ player_id: 'r2' })] },
   ],
 }
 const pool: PoolRow[] = [

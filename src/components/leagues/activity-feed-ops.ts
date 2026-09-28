@@ -62,6 +62,26 @@ export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   draft_pick: 'Draft pick',
 }
 
+/** A WON claim's `transactions` row (TD9 — only a won claim writes one, TD3).
+ *  The players are read in 113's `add` / `drop` object shape when the
+ *  processor writes it (F416 asks L.D2.9 to); the bare TD9 ids alone name no
+ *  one, so they render as "a player" rather than as a provider id. */
+interface WaiverClaimPayloadShape extends AddDropPayloadShape {
+  faab_bid?: unknown
+  faab_before?: unknown
+}
+
+/** One won claim as a sentence — the winning bid is public (TD3: "the losing
+ *  manager sees the winning amount"), shown when the run debited FAAB
+ *  (`faab_before` present) — a priority league's $0 is not a price. M5
+ *  L.D2.12. */
+export function waiverClaimText(payload: WaiverClaimPayloadShape): string {
+  const add = playerLabel(payload.add) ?? 'a player'
+  const drop = playerLabel(payload.drop)
+  const price = typeof payload.faab_bid === 'number' && typeof payload.faab_before === 'number' ? ` for $${payload.faab_bid}` : ''
+  return `claimed ${add} off waivers${price}${drop ? `, dropped ${drop}` : ''}`
+}
+
 /** One transaction as a sentence: `add_drop` from its payload's names; any
  *  other type by its label (the table is read whole — a later writer's rows
  *  land here labelled, never hidden). */
@@ -74,6 +94,9 @@ export function transactionText(item: TransactionActivityItem): string {
     if (add) parts.push(`added ${add}`)
     if (drop) parts.push(`dropped ${drop}`)
     if (parts.length > 0) return parts.join(', ')
+  }
+  if (item.type === 'waiver_claim' && item.status === 'complete' && item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)) {
+    return waiverClaimText(item.payload as WaiverClaimPayloadShape)
   }
   const label = TRANSACTION_TYPE_LABELS[item.type] ?? item.type.replace(/_/g, ' ')
   return item.status === 'complete' ? label : `${label} (${item.status})`
