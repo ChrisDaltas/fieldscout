@@ -249,7 +249,8 @@ export const WAIVER_PRESETS: readonly WaiverPreset[] = Object.freeze([
     // to instant pickup for the rest of the week". "Tuesday at midnight" is
     // read as the END of Tuesday (Wednesday 00:00 Pacific) — Chris's own
     // idiom: he calls the Monday-night release "midnight PST Monday"
-    // (Q34(B)), i.e. the end of Monday. A preset is a starting point; the
+    // (Q34(B)), i.e. the end of Monday — confirmed by Chris 2026-09-28 (Q80:
+    // "Yes"). A preset is a starting point; the
     // days and time stay editable (D388).
     id: 'weekly_then_free_agency',
     label: 'Weekly waivers Tuesday midnight, then free agency',
