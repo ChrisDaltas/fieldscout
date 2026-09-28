@@ -61,7 +61,7 @@ select is(
                             has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname like 'waiver_claim%'),
-  'waiver_claim_cancel:true:search_path="":false:true waiver_claim_cancel_internal:false:search_path="":false:false waiver_claim_receipt_internal:false:search_path="":false:false waiver_claim_reorder:true:search_path="":false:true waiver_claim_reorder_internal:false:search_path="":false:false waiver_claim_submit:true:search_path="":false:true waiver_claim_submit_internal:false:search_path="":false:false',
+  'waiver_claim_cancel:t:search_path="":f:t waiver_claim_cancel_internal:f:search_path="":f:f waiver_claim_receipt_internal:f:search_path="":f:f waiver_claim_reorder:t:search_path="":f:t waiver_claim_reorder_internal:f:search_path="":f:f waiver_claim_submit:t:search_path="":f:t waiver_claim_submit_internal:f:search_path="":f:f',
   'A6 seven functions, one overload each: three SECURITY DEFINER doors (anon revoked, authenticated EXECUTE — the in-body gate authorizes) and four PLAIN internals REVOKEd from anon and authenticated; all search_path empty');
 select ok(
   not exists (
@@ -410,8 +410,8 @@ insert into r93 select 'F11', public.waiver_claim_cancel('b9300000-0000-4000-800
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
-  (select format('%s|%s', r ->> 'no_changes', (select string_agg(c.add_player_id || '>' || coalesce(c.drop_player_id, '-') || ':' || c.claim_order, ' ' order by c.claim_order)
-                                              from waiver_claims c where c.team_id = 'c9300000-0000-4000-8000-000000000003' and c.status = 'pending'))
+  (select format('%s|%s', r ->> 'no_changes', (select string_agg(c.add_player_id || '>' || coalesce(c.drop_player_id, '-') || ':' || (e ->> 'claim_order'), ' ' order by (e ->> 'claim_order')::int)
+                                              from jsonb_array_elements(r -> 'pending_claims') e join waiver_claims c on c.id = (e ->> 'id')::uuid))
    from r93 where tag = 'F1'),
   'false|wc-f1>wc-a2:1 wc-f1>wc-a1:2 wc-f2>-:3',
   'F1 the manager reorders his own claims (1..3 in the order he sent)');

@@ -22,7 +22,7 @@
 --
 -- WHAT EACH SECTION CATCHES (§4.3 — a pin is named by the defect it reddens
 -- on):
---   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 77-table census as a stored
+--   §A THE INSTRUMENT AND ITS PRECONDITIONS. The 79-table census as a stored
 --      literal (a migration that adds a table must re-derive the mid-state
 --      allowlist in §C — deliberately a conversation with this file), and
 --      two quiescence preconditions with their reasons printed: this file
@@ -222,13 +222,20 @@ select is(
         'team_week_results',  -- 109/L.D1.1 (§12.18)
         'teams',
         'transactions',  -- 109/L.D1.1 (§12.9)
+        -- 145 / M5 L.D2.5: the blind claims and the claim verbs' replay ledger.
+        -- UNREACHABLE from a mock (no write policy for any role; written only by
+        -- waiver_claim_submit / _cancel / _reorder, which require an in-season
+        -- league — no mock RPC calls them), so §C's and §E's mid-state
+        -- allowlists are re-derived UNCHANGED — the delta cells are the proof.
+        -- Census 77 → 79.
+        'waiver_claim_actions', 'waiver_claims',
         'weekly_rankings'],
         -- 109's five in-season tables (L.D1.1) join the census: every one is
         -- UNREACHABLE from a mock (no RPC writes them until 110+, and the
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 77 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 79 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -273,8 +280,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 77 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 77::bigint,
+  'BASELINE: all 79 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 79::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------
