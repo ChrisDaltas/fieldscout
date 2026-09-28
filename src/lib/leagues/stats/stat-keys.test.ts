@@ -9,7 +9,7 @@ import {
   tierKeysFromCuts,
 } from '@/lib/leagues/scoring/tier-cuts'
 
-import { STAT_KEYS } from './stat-keys'
+import { NULL_IS_PENDING_KEYS, STAT_KEYS } from './stat-keys'
 
 // Every core_box key Appendix B.1 names (the "fumble_recovery_td /
 // return_td" row is two keys).
@@ -484,5 +484,15 @@ describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable sc
         expect(def.scoring_surface, def.key).toBe('reserved')
       }
     }
+  })
+})
+
+describe('STAT_KEYS null_is_pending (L.E1.26 / F390 — NULL is not delivered, never 0)', () => {
+  it('exactly def_yards_allowed carries the flag — a column-stored raw source (context); every other key keeps "NULL reads 0"', () => {
+    expect([...NULL_IS_PENDING_KEYS]).toEqual(['def_yards_allowed'])
+    const def = STAT_KEYS.find((d) => d.key === 'def_yards_allowed')
+    expect(def).toMatchObject({ storage: 'column', column: 'def_yards_allowed', scoring_surface: 'context', null_is_pending: true })
+    // Its sibling raw source is deliberately NOT flagged (F401 — out of L.E1.26's scope).
+    expect(STAT_KEYS.find((d) => d.key === 'def_points_allowed')?.null_is_pending).toBeUndefined()
   })
 })

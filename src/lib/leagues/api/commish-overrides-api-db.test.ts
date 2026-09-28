@@ -127,6 +127,7 @@ const ACTION = {
   scoreStillPlaying: 'b0200000-0000-4000-8000-000000000017',
   scoreAfterFinal: 'b0200000-0000-4000-8000-000000000018',
   scoreNoLineup: 'b0200000-0000-4000-8000-000000000019',
+  scoreNoStarterGame: 'b0200000-0000-4000-8000-00000000001a',
 } as const
 
 /** L.E1.18 (Q61, migration 135): the ONE game row this suite writes — on the
@@ -135,6 +136,9 @@ const Q61_GAME_ID = 'vitest-co-q61-game'
 /** R1097: the weeks §1-§3 correct, and their FINAL VCS game rows. */
 const FINISHED_WEEKS = [2, 3, 4] as const
 const FINISHED_GAME_IDS = FINISHED_WEEKS.map((w) => `vitest-co-q61-final-w${w}`)
+/** L.E1.25 (Q67, migration 142): the FINAL VCS game in §5's week — the
+ *  opponent's starter once its empty row is filled. Deleted in cleanup. */
+const Q67_GAME_ID = 'vitest-co-q67-final'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -183,7 +187,7 @@ async function cleanup(): Promise<void> {
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
   }
-  const { error: gameError } = await service.from('nfl_games').delete().in('id', [Q61_GAME_ID, ...FINISHED_GAME_IDS])
+  const { error: gameError } = await service.from('nfl_games').delete().in('id', [Q61_GAME_ID, Q67_GAME_ID, ...FINISHED_GAME_IDS])
   if (gameError) throw new Error(`cleanup nfl_games: ${gameError.message}`)
   const { error: playersError } = await service
     .from('players')
@@ -352,12 +356,15 @@ beforeAll(async () => {
   )
   if (lineupsError) throw new Error(`team_lineups insert: ${lineupsError.message}`)
   // THE PREMISE, by value (rule 14(c)): a week-2, a week-3 and a week-4 row
-  // are editable because every starter FINISHED — not vacuously.
+  // are editable — not vacuously. RE-CUT BY L.E1.25's fix round (R1140,
+  // migration 142): the league's OTHER starting slots are empty, so (B) —
+  // every starting slot holds a finished player — does not hold; (A) does:
+  // every NFL game of the week (the one VCS game, a real row) is final.
   for (const w of FINISHED_WEEKS) {
     const probe = (await weekRows(w))[0]
     const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: probe.id })
     expect(lock.status, errorText(lock)).toBe(200)
-    expect(lock.body).toMatchObject({ editable: true, why: 'every_starter_finished', starters: 2, finished: 2 })
+    expect(lock.body).toMatchObject({ editable: true, why: 'week_games_over', week_games_over: true, starters: 2, finished: 2 })
   }
 }, 60_000)
 
@@ -732,8 +739,24 @@ describe('POST …/commish/roster — commishForceAddDrop over the real RPC', ()
 describe('Q61 (135) — /commish/score refuses while a starter is still playing; the panel’s read agrees', () => {
   let target: MatchupRow
   let week: number
-  const SERVER_LINE = 'This matchup can be corrected once every starter\'s game has finished — not finished yet: Vitest CO Mover (VCA)'
   let opponentName: string
+  // L.E1.25's fix round (R1140, migration 142): the league runs the DEFAULT
+  // roster (qb, rb ×2, wr ×3, te, flex, k, dst — measured from the column
+  // default), and a starting slot left EMPTY holds the matchup open while the
+  // week still has games to play. Each side here starts ONE player at `wr:0`,
+  // so its other eight slots are named — this is the real sentence for a
+  // default league.
+  const EMPTY_BESIDE_WR0 = 'QB, RB ×2, WR ×2, TE, FLEX (W/R/T), K, D/ST'
+  const EMPTY_ALL = 'QB, RB ×2, WR ×3, TE, FLEX (W/R/T), K, D/ST'
+  const LEAD = 'This matchup can be corrected once every starter\'s game has finished — '
+  /** Both sides' empty-slot clause, home first (the helper's order). */
+  const emptyClause = (commishSlots: string, opponentSlots: string): string => {
+    const commish = `Commish Team (${commishSlots})`
+    const opponent = `${opponentName} (${opponentSlots})`
+    return `empty starting slot: ${target.home_team_id === commishTeamId ? `${commish}, ${opponent}` : `${opponent}, ${commish}`}`
+  }
+  /** §5's line once both sides start one player at `wr:0` (the Q67 cell's end state). */
+  const serverLine = (): string => `${LEAD}${emptyClause(EMPTY_BESIDE_WR0, EMPTY_BESIDE_WR0)}; not finished yet: Vitest CO Mover (VCA)`
 
   beforeAll(async () => {
     // The LAST regular week — no earlier cell in this file touches it.
@@ -768,7 +791,7 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
     const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
     expect(lock.status, errorText(lock)).toBe(200)
     const doc = lock.body as { editable: boolean; why: string; message: string | null }
-    const combined = `This matchup can be corrected once every starter's game has finished — no lineup set yet: ${opponentName}; not finished yet: Vitest CO Mover (VCA)`
+    const combined = `${LEAD}no lineup set yet: ${opponentName}; empty starting slot: Commish Team (${EMPTY_BESIDE_WR0}); not finished yet: Vitest CO Mover (VCA)`
     expect(doc).toMatchObject({ editable: false, why: 'lineup_not_set', message: combined })
     const res = await commishEditScore(commishClient, leagueId, { matchup_id: target.id, home_score: 10, away_score: 11, action_id: ACTION.scoreNoLineup })
     expect(res.status).toBe(409)
@@ -779,6 +802,37 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
       .from('team_lineups')
       .insert({ team_id: opponentId, season: SYNTHETIC_SEASON, week, starters: [], bench: [], slot_map: {} })
     if (error) throw new Error(`team_lineups insert: ${error.message}`)
+  })
+
+  // L.E1.25 (Q67 as read by R1140, migration 142): an EMPTY starting slot
+  // holds the matchup open while the week still has games to play. Until 142
+  // the empty row above made this matchup judged on the MOVER alone; now its
+  // nine empty slots (and the commissioner's eight) are named. The opponent's
+  // row is then given the suite's STARTER at `wr:0`, whose club plays a FINAL
+  // game this week — the only change — and the cells below read that state.
+  it('Q67 / R1140: once the opponent sets an EMPTY lineup the read says `no_starter_game` and the route refuses 409 with the server’s sentence verbatim — naming BOTH teams’ empty starting slots AND the starter still playing; then the opponent starts a player whose game is final (the only change)', async () => {
+    const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
+    expect(lock.status, errorText(lock)).toBe(200)
+    const doc = lock.body as { editable: boolean; why: string; message: string | null; week_games_over: boolean; no_starter_game_sides: Array<{ team_name: string }> }
+    const combined = `${LEAD}${emptyClause(EMPTY_BESIDE_WR0, EMPTY_ALL)}; not finished yet: Vitest CO Mover (VCA)`
+    expect(doc).toMatchObject({ editable: false, why: 'no_starter_game', message: combined, week_games_over: false })
+    expect(doc.no_starter_game_sides.map((s) => s.team_name).sort()).toStrictEqual(['Commish Team', opponentName].sort())
+    const res = await commishEditScore(commishClient, leagueId, { matchup_id: target.id, home_score: 10, away_score: 11, action_id: ACTION.scoreNoStarterGame })
+    expect(res.status).toBe(409)
+    expect(errorText(res)).toBe(`commish_edit_score: ${combined}`)
+    expect(await receiptsFor(ACTION.scoreNoStarterGame)).toHaveLength(0)
+    const { error: gameError } = await service
+      .from('nfl_games')
+      .insert({ id: Q67_GAME_ID, season: SYNTHETIC_SEASON, week, home_team: 'VCS', away_team: 'VCY', kickoff_at: '2099-12-19T18:00:00Z', status: 'final' })
+    if (gameError) throw new Error(`nfl_games insert: ${gameError.message}`)
+    const opponentId = target.home_team_id === commishTeamId ? target.away_team_id! : target.home_team_id
+    const { error } = await service
+      .from('team_lineups')
+      .update({ slot_map: { 'wr:0': STARTER } })
+      .eq('team_id', opponentId)
+      .eq('season', SYNTHETIC_SEASON)
+      .eq('week', week)
+    if (error) throw new Error(`team_lineups update: ${error.message}`)
   })
 
   it('PREMISE: a real two-team row of the commissioner’s, and its starter’s game reads `live`', async () => {
@@ -796,7 +850,7 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
       action_id: ACTION.scoreStillPlaying,
     })
     expect(res.status).toBe(409)
-    expect(errorText(res)).toBe(`commish_edit_score: ${SERVER_LINE}`)
+    expect(errorText(res)).toBe(`commish_edit_score: ${serverLine()}`)
     expect(await receiptsFor(ACTION.scoreStillPlaying)).toHaveLength(0)
     const after = await service.from('matchups').select('home_score, away_score, is_overridden').eq('id', target.id).single()
     expect(after.data).toStrictEqual(before.data)
@@ -807,7 +861,7 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
     expect(res.status, errorText(res)).toBe(200)
     const doc = res.body as { editable: boolean; message: string | null; still_playing: Array<{ name: string; game_status: string }> }
     expect(doc.editable).toBe(false)
-    expect(doc.message).toBe(SERVER_LINE)
+    expect(doc.message).toBe(serverLine())
     expect(doc.still_playing).toStrictEqual([expect.objectContaining({ name: 'Vitest CO Mover', game_status: 'live' })])
     const manager = await readCommishMatchupEditLock(memberClient, leagueId, { matchup_id: target.id })
     expect(manager.status).toBe(403)
@@ -818,7 +872,9 @@ describe('Q61 (135) — /commish/score refuses while a starter is still playing;
     const { error } = await service.from('nfl_games').update({ status: 'final' }).eq('id', Q61_GAME_ID)
     if (error) throw new Error(`nfl_games update: ${error.message}`)
     const lock = await readCommishMatchupEditLock(commishClient, leagueId, { matchup_id: target.id })
-    expect((lock.body as { editable: boolean }).editable).toBe(true)
+    // R1140: the week's two games are now both final — (A) releases the
+    // matchup although both sides still have empty starting slots.
+    expect(lock.body as { editable: boolean; why: string }).toMatchObject({ editable: true, why: 'week_games_over', week_games_over: true })
     const res = await commishEditScore(commishClient, leagueId, {
       matchup_id: target.id,
       home_score: 10,

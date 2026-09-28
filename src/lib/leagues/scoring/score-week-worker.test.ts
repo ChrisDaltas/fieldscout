@@ -252,6 +252,85 @@ describe('E61 — pending, never zero; scoped to what the position can deliver',
   })
 })
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * L.E1.26 / F390 — yards allowed: a NULL column is NOT DELIVERED (pending),
+ * never the 0 that paid every ESPN / Scout D/ST the "<100 yards" +5.
+ * Hand-computed (ESPN Standard: def_sack 1 · PA 14–17 +1, 28–34 −1 ·
+ * YA <100 +5, 350–399 −1; Yahoo Standard: def_sack 1 · PA 14–20 +1, no YA):
+ *   R1119's measured line {def_points_allowed 17, def_sacks 2}:
+ *     was 2 + 1 + 5 = 8.00, pending []   (NULL/absent read as 0 → def_ya_0_99)
+ *     now 2 + 1     = 3.00, pending = the nine def_ya_* keys
+ *   BUF 2026 wk2 (the recorded real line): sacks 4 · PA 31 · YA 355
+ *     → 4 − 1 − 1 = 2.00, pending []      (was 8.00 with the phantom +5)
+ * ───────────────────────────────────────────────────────────────────────── */
+describe('L.E1.26 — def_yards_allowed NULL is pending, never 0 (F390; §23.5 / E61)', () => {
+  const YAHOO = template('Yahoo Standard')
+  const SCOUT = template('Scout Standard')
+  const YA_KEYS = [
+    'def_ya_0_99',
+    'def_ya_100_199',
+    'def_ya_200_299',
+    'def_ya_300_349',
+    'def_ya_350_399',
+    'def_ya_400_449',
+    'def_ya_450_499',
+    'def_ya_500_549',
+    'def_ya_550_plus',
+  ]
+
+  it('Y1 R1119 re-measured: the line with NO yards value scores 3.00 with the yards family PENDING — no automatic +5 (column absent AND column NULL)', () => {
+    for (const r of [
+      row('y-dst', { def_points_allowed: 17, def_sacks: 2 }), // R1119's literal input: the column absent
+      { ...row('y-dst', { def_points_allowed: 17, def_sacks: 2 }), def_yards_allowed: null }, // a stored NULL (143)
+    ]) {
+      expect(scoreStarter(ESPN, 'y-dst', 'DST', r)).toEqual({ player_id: 'y-dst', position: 'DST', points: 3, pending: YA_KEYS, reason: 'scored' })
+    }
+    expect(deliveredLine({ ...row('y-dst', { def_points_allowed: 17 }), def_yards_allowed: null }, 'DST')).not.toHaveProperty('def_yards_allowed')
+  })
+
+  it('Y2 the recorded real BUF wk2 line scores its TRUE tier: 355 yards → 350–399 (−1) → 2.00, pending [] (was 8.00)', () => {
+    const buf = row('BUF', { def_sacks: 4, def_points_allowed: 31, def_yards_allowed: 355 })
+    expect(scoreStarter(ESPN, 'BUF', 'DST', buf)).toEqual({ player_id: 'BUF', position: 'DST', points: 2, pending: [], reason: 'scored' })
+    // Scout Standard carries the same ESPN D/ST tables: 4 − 1 − 1 = 2.00.
+    expect(scoreStarter(SCOUT, 'BUF', 'DST', buf).points).toBe(2)
+  })
+
+  it('Y3 the NULL / 0 boundary: a DELIVERED 0 still pays the <100 tier (+5 → 8.00); only NOT delivered is pending', () => {
+    const zero = row('y-dst', { def_points_allowed: 17, def_sacks: 2, def_yards_allowed: 0 })
+    expect(scoreStarter(ESPN, 'y-dst', 'DST', zero)).toEqual({ player_id: 'y-dst', position: 'DST', points: 8, pending: [], reason: 'scored' })
+  })
+
+  it('Y4 a template that scores no yards tier is untouched by a NULL: Yahoo Standard 3.00, pending [] (with or without the value)', () => {
+    const nul = { ...row('y-dst', { def_points_allowed: 17, def_sacks: 2 }), def_yards_allowed: null }
+    const real = row('y-dst', { def_points_allowed: 17, def_sacks: 2, def_yards_allowed: 355 })
+    expect(scoreStarter(YAHOO, 'y-dst', 'DST', nul)).toEqual({ player_id: 'y-dst', position: 'DST', points: 3, pending: [], reason: 'scored' })
+    expect(scoreStarter(YAHOO, 'y-dst', 'DST', real).points).toBe(3)
+  })
+
+  it('Y5 ONLY yards allowed moved: a NULL def_points_allowed still reads 0 (a shutout, +5 — unchanged behaviour, filed as F401) and a NULL box column still reads 0', () => {
+    const r = { ...row('y-dst', { def_sacks: 2, def_yards_allowed: 300 }), def_points_allowed: null, def_interceptions: null }
+    // ESPN: 2 sacks + def_pa_0 (+5) + def_ya_300_349 (0) = 7.00
+    expect(scoreStarter(ESPN, 'y-dst', 'DST', r)).toEqual({ player_id: 'y-dst', position: 'DST', points: 7, pending: [], reason: 'scored' })
+    expect(deliveredLine(r, 'DST')).toMatchObject({ def_points_allowed: 0, def_int: 0 })
+  })
+
+  it('Y6 a non-D/ST row never reads yards allowed, NULL or not (the scope rule is unchanged)', () => {
+    const qb = { ...QB1, def_yards_allowed: null }
+    expect(deliveredLine(qb, 'QB')).not.toHaveProperty('def_yards_allowed')
+    expect(scoreStarter(ESPN, 'sw-qb1', 'QB', qb)).toEqual(scoreStarter(ESPN, 'sw-qb1', 'QB', QB1))
+  })
+
+  it('Y7 through the TEAM: a D/ST whose yards are not delivered makes his team PENDING (null) under ESPN — never a total with a phantom +5', () => {
+    const stats = new Map(ALPHA_STATS)
+    stats.set('sw-dst1', { ...DST1, def_yards_allowed: null })
+    const alpha = computeTeamWeek(ESPN, 'team-alpha', ALPHA_STARTERS, stats)
+    expect(alpha.points).toBeNull()
+    expect(alpha.pending).toEqual([{ player_id: 'sw-dst1', keys: YA_KEYS }])
+    // Yahoo scores no yards tier — the same map is a number.
+    expect(computeTeamWeek(YAHOO, 'team-alpha', ALPHA_STARTERS, stats).points).not.toBeNull()
+  })
+})
+
 describe('D292 — the corrupt-snapshot gate (quarantine the league, never the batch)', () => {
   it('a non-finite coefficient throws the calculator’s TypeError naming the key', () => {
     expect(() => assertSnapshotScorable({ ...ESPN, pass_yards: 'corrupt' })).toThrow(/scoring_rules_snapshot corrupt: .*pass_yards/)

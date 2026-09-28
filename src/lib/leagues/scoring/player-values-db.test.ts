@@ -198,12 +198,14 @@ describe('league-player-values — the service-role job over the stack', () => {
     ])
     expect(report.warnings).toEqual([`league ${L1.id} week 3: 1 projection line(s) older than the freshness bound — treated as absent: lpv-te-stale`])
 
-    const ESPN_YA = ['def_ya_0_99', 'def_ya_100_199', 'def_ya_200_299', 'def_ya_350_399', 'def_ya_400_449', 'def_ya_450_499', 'def_ya_500_549', 'def_ya_550_plus']
+    // L.E1.26 (F390): PIT's projected line now carries yards allowed (296.73 →
+    // floor 296 → def_ya_200_299, +2 under this ESPN-tabled custom scoring):
+    // 7.66 → 9.66, and the yards family is no longer named unscored.
     const at = '2099-09-24T12:50:00+00:00'
     expect(await valuesFor(L1.id, 3)).toEqual([
       { player_id: 'lpv-gibbs', projected_points: 23.17, projected_missing: null, projected_unscored: ['fumble_recovery_td', 'return_td'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
       { player_id: 'lpv-k', projected_points: 5.56, projected_missing: null, projected_unscored: ['fg_0_39', 'fg_missed'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
-      { player_id: 'lpv-pit', projected_points: 7.66, projected_missing: null, projected_unscored: ['def_block', 'def_return_td', ...ESPN_YA], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
+      { player_id: 'lpv-pit', projected_points: 9.66, projected_missing: null, projected_unscored: ['def_block', 'def_return_td'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
       { player_id: 'lpv-rookie', projected_points: null, projected_missing: 'no_line', projected_unscored: null, projection_fetched_at: null, season_points: null, season_games: 0, preseason_points: 110, preseason_missing: null, preseason_unscored: ['fumble_recovery_td', 'pass_2pt', 'rec_2pt', 'return_td', 'rush_2pt'], computed_at: at },
       { player_id: 'lpv-taylor', projected_points: 22.05, projected_missing: null, projected_unscored: ['fumble_recovery_td', 'return_td'], projection_fetched_at: FRESH, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },
       { player_id: 'lpv-te-stale', projected_points: null, projected_missing: 'stale_line', projected_unscored: null, projection_fetched_at: STALE, season_points: null, season_games: 0, preseason_points: null, preseason_missing: 'no_line', preseason_unscored: null, computed_at: at },

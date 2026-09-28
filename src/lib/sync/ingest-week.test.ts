@@ -17,6 +17,7 @@ import {
   diffGames,
   diffStats,
   ingestWeek,
+  NULL_IS_PENDING_COLUMNS,
   sameBounds,
   STAT_COLUMN_SURFACE,
   toGameRow,
@@ -402,6 +403,76 @@ describe('diffStats (§23.2: only real deltas enqueue)', () => {
     const existing = new Map([['syn-g1-qb', statRow()]])
     const both = statRow({ is_live: false, columns: { ...statRow().columns, pass_tds: 1 } })
     expect(diffStats([both], existing)).toEqual({ inserts: [], updates: [both], metaOnly: [], unchanged: 0 })
+  })
+})
+
+/**
+ * L.E1.26 / F390 — yards allowed is the ONE surface column whose absence is
+ * written as NULL ("not delivered"), never 0, and whose NULL the diff tells
+ * apart from a delivered 0. Every other column keeps D303(5)'s rule.
+ * Lines: the recorded real week-2 BUF D/ST line (355 yards) through the
+ * production map, and the live ARI row that carried no `yds_allow`.
+ */
+describe('L.E1.26 — def_yards_allowed: absent is NULL, never 0 (F390)', () => {
+  const DST_LINE: ProviderPlayerWeekStats = {
+    playerId: 'BUF',
+    season: 2026,
+    week: 2,
+    gameId: '2026-wk02-DAL@PHI',
+    // BUF 2026 wk2 through SLEEPER_STAT_KEY_MAP (the recorded fixture's values).
+    stats: { def_sack: 4, def_points_allowed: 31, def_yards_allowed: 355 },
+    advanced: {},
+  }
+  const { def_yards_allowed: _omit, ...withoutYards } = DST_LINE.stats
+  void _omit
+  const DST_NO_YARDS: ProviderPlayerWeekStats = { ...DST_LINE, stats: withoutYards }
+
+  it('Y1 the NULL-is-pending column set is exactly def_yards_allowed (derived from the registry flag)', () => {
+    expect([...NULL_IS_PENDING_COLUMNS]).toEqual(['def_yards_allowed'])
+  })
+
+  it('Y2 a delivered yards-allowed value is written as delivered: 355', () => {
+    expect(toStatRow(DST_LINE, CTX).row!.columns.def_yards_allowed).toBe(355)
+  })
+
+  it('Y3 a D/ST line WITHOUT yards allowed writes NULL — not 0 — and every other absent column still writes 0', () => {
+    const row = toStatRow(DST_NO_YARDS, CTX).row!
+    expect(row.columns.def_yards_allowed).toBeNull()
+    expect(row.columns.def_points_allowed).toBe(31)
+    expect(row.columns.def_interceptions).toBe(0) // absent → 0, unchanged (D303(5))
+    expect(Object.keys(row.columns).sort()).toEqual([...STAT_COLUMN_SURFACE]) // still the whole surface
+    // A QB line never carries yards allowed: NULL there too (a QB never reads it — deliveredLine scopes it out).
+    expect(toStatRow(QB_LINE, CTX).row!.columns.def_yards_allowed).toBeNull()
+  })
+
+  it('Y4 a delivered ZERO stays 0 (distinct from not delivered)', () => {
+    expect(toStatRow({ ...DST_LINE, stats: { ...DST_LINE.stats, def_yards_allowed: 0 } }, CTX).row!.columns.def_yards_allowed).toBe(0)
+  })
+
+  it('Y5 diff: stored NULL vs incoming NULL is unchanged — no phantom delta on every poll', () => {
+    const noYards = toStatRow(DST_NO_YARDS, CTX).row!
+    expect(diffStats([noYards], new Map([['BUF', toStatRow(DST_NO_YARDS, CTX).row!]])).unchanged).toBe(1)
+  })
+
+  it('Y6 diff: stored NULL → incoming 355 is a SCORING delta (the value arrived — enqueue)', () => {
+    const prior = toStatRow(DST_NO_YARDS, CTX).row!
+    const now = toStatRow(DST_LINE, CTX).row!
+    expect(diffStats([now], new Map([['BUF', prior]])).updates).toEqual([now])
+  })
+
+  it('Y7 diff: stored 0 (a pre-143 DEFAULT row) → incoming NULL is a SCORING delta — the phantom +5 must be rescored away', () => {
+    const prior = toStatRow({ ...DST_LINE, stats: { ...DST_LINE.stats, def_yards_allowed: 0 } }, CTX).row!
+    const now = toStatRow(DST_NO_YARDS, CTX).row!
+    expect(diffStats([now], new Map([['BUF', prior]])).updates).toEqual([now])
+    // …and the reverse (a withdrawn NULL → a delivered 0) too.
+    expect(diffStats([prior], new Map([['BUF', now]])).updates).toEqual([prior])
+  })
+
+  it('Y8 every OTHER column keeps NULL ≡ 0: a stored NULL def_points_allowed vs an incoming 0 is no delta', () => {
+    const now = toStatRow({ ...DST_NO_YARDS, stats: { def_sack: 4, def_points_allowed: 0 } }, CTX).row!
+    const prior: StatRow = { ...now, columns: { ...now.columns } }
+    delete prior.columns.def_points_allowed // a NULL read
+    expect(diffStats([now], new Map([['BUF', prior]])).unchanged).toBe(1)
   })
 })
 

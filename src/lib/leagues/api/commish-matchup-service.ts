@@ -307,9 +307,14 @@ export interface CommishMatchupEditLock {
   season: number
   week: number
   editable: boolean
-  /** `lineup_not_set` (R1097): outside a final week a side with NO lineup row
-   *  is not finished — never read as "no starters". */
-  why: 'week_final' | 'lineup_not_set' | 'starters_not_finished' | 'every_starter_finished' | 'no_starter_game'
+  /** Q67 as read by R1140 (migration 142): a matchup is editable once (A)
+   *  every NFL game of its week is over (`week_games_over`), or (B) every
+   *  starting slot on both sides holds a player whose game is final
+   *  (`every_starter_finished`); a FINAL week always is (`week_final`).
+   *  Otherwise refused: `lineup_not_set` (R1097 — a side with NO lineup row),
+   *  `no_starter_game` (a starting slot EMPTY or holding a player with no
+   *  game this week — until 142 it read "editable"), `starters_not_finished`. */
+  why: 'week_final' | 'every_starter_finished' | 'week_games_over' | 'lineup_not_set' | 'no_starter_game' | 'starters_not_finished'
   week_status: 'upcoming' | 'live' | 'correction_window' | 'final' | null
   starters: number
   finished: number
@@ -318,7 +323,28 @@ export interface CommishMatchupEditLock {
   /** The sides with no lineup row for the week (home first); empty unless
    *  `why` is `lineup_not_set`. */
   no_lineup: CommishMatchupNoLineup[]
+  /** R1140 (migration 142): (A) — every NFL game of the week is over. */
+  week_games_over: boolean
+  /** R1140 (migration 142): the sides holding an OPEN starting slot (home
+   *  first); empty whenever `editable`. */
+  no_starter_game_sides: CommishMatchupNoLineup[]
+  /** R1140 (migration 142): each OPEN starting slot — empty, or holding a
+   *  player with no game this week; empty whenever `editable`. */
+  open_slots: CommishMatchupOpenSlot[]
   message: string | null
+}
+
+/** One starting slot holding a matchup open (142's helper, verbatim). */
+export interface CommishMatchupOpenSlot {
+  team_id: string
+  side: 'home' | 'away'
+  team_name: string
+  slot: string
+  label: string
+  reason: 'empty_slot' | 'no_game'
+  player_id: string | null
+  name: string | null
+  nfl_team: string | null
 }
 
 /** One side with no stored lineup row for the week (135's helper, verbatim). */

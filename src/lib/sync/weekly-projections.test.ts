@@ -139,12 +139,15 @@ describe('parseWeeklyProjections — the recorded week 4', () => {
     expect(by.get('12185')?.stats).toEqual({
       fg_made: 1.9, fg_attempted: 2.29, fg_40_49: 0.59, fg_50_plus: 0.39, pat_made: 2.62, pat_attempted: 2.69, pat_missed: 0.07,
     })
-    expect(by.get('MIN')?.stats).toEqual({ def_sack: 3.17, def_int: 0.94, def_fumble_rec: 0.72, def_td: 0.14, def_points_allowed: 16 })
+    // L.E1.26 (F390): the one map gained `yds_allow` → def_yards_allowed, so
+    // the projected line now carries Sleeper's projected yards allowed
+    // verbatim (fractional — floored for the tier by player-values, D374(4)).
+    expect(by.get('MIN')?.stats).toEqual({ def_sack: 3.17, def_int: 0.94, def_fumble_rec: 0.72, def_td: 0.14, def_points_allowed: 16, def_yards_allowed: 300.39 })
   })
 
   it('R1104 GOLDEN — a FRACTIONAL points allowed is stored VERBATIM (PIT 17.5 — never rounded to 17 or 18)', () => {
     const pit = parsed.rows.find((r) => r.player_id === 'PIT')
-    expect(pit?.stats).toEqual({ def_sack: 2.84, def_int: 0.88, def_fumble_rec: 0.61, def_td: 0.14, def_points_allowed: 17.5 })
+    expect(pit?.stats).toEqual({ def_sack: 2.84, def_int: 0.88, def_fumble_rec: 0.61, def_td: 0.14, def_points_allowed: 17.5, def_yards_allowed: 296.73 }) // yards: L.E1.26
     expect(pit?.raw_stats.pts_allow).toBe(17.5)
   })
 

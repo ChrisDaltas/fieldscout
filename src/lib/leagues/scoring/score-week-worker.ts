@@ -158,7 +158,7 @@ import type { Database, Json } from '@/types/database'
 
 import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
 
-import { STAT_KEYS } from '../stats/stat-keys'
+import { NULL_IS_PENDING_KEYS, STAT_KEYS } from '../stats/stat-keys'
 import type { TimeProvider } from '../time/time-provider'
 import { roundHalfUp, scorePlayerWeek } from './calculator'
 import { deriveTierIndicators } from './derive-stats'
@@ -269,6 +269,14 @@ export interface StatLineRow {
  * and every registry advanced key PRESENT in `advanced` (an absent key is
  * pending — §23.5's storage rule). Keys outside the scope are left out so
  * a QB's `def_points_allowed = 0` can never one-hot a shutout tier.
+ *
+ * L.E1.26 / F390 — the ONE exception to "NULL reads 0": a key flagged
+ * `null_is_pending` in the registry (exactly `def_yards_allowed`) whose
+ * column is NULL is left ABSENT, so `deriveTierIndicators` emits none of the
+ * def_ya_* family and a template that scores it lands those keys on the
+ * calculator's pending path (§23.5 / E61) — never the "<100 yards" tier a
+ * NULL-read-as-0 used to pay every week. A stored number (including a real
+ * 0) is delivered as before.
  */
 export function deliveredLine(row: StatLineRow, position: string): Record<string, number> {
   const raw: Record<string, number> = {}
@@ -278,7 +286,12 @@ export function deliveredLine(row: StatLineRow, position: string): Record<string
     const column = COLUMN_BY_KEY.get(key)
     if (column === undefined) continue // a derived tier key — derive emits it
     const value = row[column]
-    raw[key] = value === null || value === undefined ? 0 : Number(value)
+    if (value === null || value === undefined) {
+      if (NULL_IS_PENDING_KEYS.has(key)) continue // F390: not delivered ⇒ pending, never 0
+      raw[key] = 0
+    } else {
+      raw[key] = Number(value)
+    }
   }
   const advanced = row.advanced ?? {}
   for (const key of ADVANCED_KEYS) {

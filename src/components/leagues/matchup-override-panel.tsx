@@ -60,8 +60,8 @@ import { OverrideModeBar } from './override-mode-bar'
  * score or winner control and shows the server's one line naming who; it
  * asks the server (`useCommishMatchupEditLock` — the SAME SQL helper the
  * verbs refuse on) and never works the rule out itself. The same holds when a
- * side has no lineup set yet (`lineup_not_set`, R1097): the server's line,
- * verbatim. If that read FAILS the failure is said as an alert and still NO
+ * side has no lineup set yet (`lineup_not_set`, R1097) or a starting slot is
+ * open (`no_starter_game`, Q67 / R1140): the server's line, verbatim. If that read FAILS the failure is said as an alert and still NO
  * control is offered (R1098) — nothing is offered until the server has said
  * the matchup is editable.
  *

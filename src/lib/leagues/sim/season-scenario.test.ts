@@ -234,7 +234,7 @@ describe('the two claims the bridge decision rests on', () => {
     const fresh = makeScenario('happy_path')
     expect(fresh.season).toBe(2026)
     expect(fresh.week).toBe(2)
-    expect(SCENARIO_LIBRARY_VERSION).toBe(2)
+    expect(SCENARIO_LIBRARY_VERSION).toBe(3) // v3 (L.E1.26 / F390): D/ST lines gained def_yards_allowed — a deliberate bump, fixture re-recorded
     expect(fresh.games.map((g) => g.gameId)).toEqual([
       '2026-wk02-DAL@PHI',
       '2026-wk02-BUF@KC',
