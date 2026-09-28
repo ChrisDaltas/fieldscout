@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { mulberry32 } from '../stats/synthetic/prng'
+import { FREE_AGENCY_OPENS, WEEKDAYS } from '../time/waiver-schedule'
 import type { LeagueRow, LeagueSettings } from './league-settings'
 import {
   LEAGUE_SETTINGS_DEFAULTS,
@@ -243,13 +244,18 @@ function randomSettings(rng: () => number): LeagueSettings {
     faab_budget: int(rng, 0, 1000),
     faab_min_bid: int(rng, 0, 10),
     faab_tiebreaker: pick(rng, ['reverse_standings', 'rolling_priority'] as const),
-    waiver_process_day: pick(rng, ['tue', 'wed', 'thu'] as const),
-    waiver_process_time: `${int(rng, 0, 23).toString().padStart(2, '0')}:${int(rng, 0, 59).toString().padStart(2, '0')}`,
-    waiver_period_hours: int(rng, 0, 168),
-    free_agency: pick(rng, ['immediate_after_waivers', 'continuous'] as const),
+    // v2.16.57 (Q70): a non-empty, Sunday-first day subset (the stored canonical form)
+    waiver_run_days: (() => {
+      const days = WEEKDAYS.filter(() => bool(rng))
+      return days.length > 0 ? days : [pick(rng, WEEKDAYS)]
+    })(),
+    waiver_run_time: `${int(rng, 0, 23).toString().padStart(2, '0')}:${int(rng, 0, 59).toString().padStart(2, '0')}`,
+    waiver_time_zone: pick(rng, ['America/New_York', 'America/Los_Angeles', 'America/Chicago', 'UTC'] as const),
+    free_agency_opens: pick(rng, FREE_AGENCY_OPENS),
+    free_agency_open_day: pick(rng, WEEKDAYS),
+    free_agency_open_time: `${int(rng, 0, 23).toString().padStart(2, '0')}:${int(rng, 0, 59).toString().padStart(2, '0')}`,
     acquisitions_per_week: bool(rng) ? ('unlimited' as const) : int(rng, 0, 50),
     acquisitions_per_season: bool(rng) ? ('unlimited' as const) : int(rng, 0, 500),
-    bench_lock: bool(rng),
     fa_hold_hours: int(rng, 0, 48),
     trade_review: pick(rng, ['none', 'commissioner', 'league_vote'] as const),
     trade_veto_votes: int(rng, 1, 16),

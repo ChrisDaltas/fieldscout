@@ -68,6 +68,26 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
     expect('player_game_lock' in LEAGUE_SETTINGS_DEFAULTS).toBe(false)
   })
 
+  // v2.16.57 (Q70 + Q73, migration 149): the four retired schedule keys and `bench_lock` are refused at
+  // parse the same way — the table's CHECK is the backstop (23514).
+  it('the retired waiver keys and bench_lock are refused at parse (strict object — migration 149 retires them)', () => {
+    for (const [key, value] of [
+      ['waiver_process_day', 'wed'],
+      ['waiver_process_time', '03:00'],
+      ['waiver_period_hours', 48],
+      ['free_agency', 'immediate_after_waivers'],
+      ['bench_lock', true],
+    ] as const) {
+      expect(parses(withPatch(key, value)), key).toBe(false)
+      expect(key in LEAGUE_SETTINGS_DEFAULTS, key).toBe(false)
+    }
+  })
+
+  it('waiver_run_days is stored Sunday-first with no repeats (the canonical form migration 149 stores)', () => {
+    const parsed = leagueSettingsSchema.parse({ ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), waiver_run_days: ['sat', 'tue', 'sun'] })
+    expect(parsed.waiver_run_days).toStrictEqual(['sun', 'tue', 'sat'])
+  })
+
   it('parse(defaults) is identity (no default rewrites a present field)', () => {
     expect(leagueSettingsSchema.parse(structuredClone(LEAGUE_SETTINGS_DEFAULTS))).toStrictEqual(LEAGUE_SETTINGS_DEFAULTS)
   })
@@ -76,7 +96,7 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
   // a STORED literal — not recomputed. Flipping ANY §7.3 default fails here.
   it('golden pin: full default object serialization matches the stored literal', () => {
     const pinned =
-      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"schedule_seed":null,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_process_day":"wed","waiver_process_time":"03:00","waiver_period_hours":48,"free_agency":"immediate_after_waivers","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","bench_lock":true,"fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
+      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"schedule_seed":null,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_run_days":["wed"],"waiver_run_time":"03:00","waiver_time_zone":"America/New_York","free_agency_opens":"after_waiver_run","free_agency_open_day":"sun","free_agency_open_time":"06:00","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
     expect(JSON.stringify(LEAGUE_SETTINGS_DEFAULTS)).toBe(pinned)
   })
 
@@ -211,10 +231,13 @@ const RANGE_CASES: RangeCase[] = [
   { path: 'faab_budget', ok: [0, 1000], bad: [-1, 1001] },
   { path: 'faab_min_bid', ok: [0, 10], bad: [-1, 11] },
   { path: 'faab_tiebreaker', ok: ['reverse_standings', 'rolling_priority'], bad: ['coin_flip'] },
-  { path: 'waiver_process_day', ok: ['tue', 'wed', 'thu'], bad: ['fri', 'mon'] },
-  { path: 'waiver_process_time', ok: ['00:00', '23:59', '03:00'], bad: ['24:00', '3:00', '03:60', ''] },
-  { path: 'waiver_period_hours', ok: [0, 168], bad: [-1, 169] },
-  { path: 'free_agency', ok: ['immediate_after_waivers', 'continuous'], bad: ['immediate'] },
+  // v2.16.57 (Q70, migration 149): the waiver schedule
+  { path: 'waiver_run_days', ok: [['wed'], ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'], ['tue', 'sat']], bad: [[], ['wed', 'wed'], ['weds'], 'wed', null] },
+  { path: 'waiver_run_time', ok: ['00:00', '23:59', '09:00'], bad: ['24:00', '9:00', '09:60', ''] },
+  { path: 'waiver_time_zone', ok: ['America/Los_Angeles', 'America/New_York', 'UTC'], bad: ['Not/AZone', 'PST', '-08:00', '', null] },
+  { path: 'free_agency_opens', ok: ['after_waiver_run', 'day_and_time', 'never'], bad: ['immediate_after_waivers', 'continuous'] },
+  { path: 'free_agency_open_day', ok: ['sun', 'sat'], bad: ['sunday', 7] },
+  { path: 'free_agency_open_time', ok: ['06:00', '00:00', '23:59'], bad: ['6:00', '24:00'] },
   { path: 'acquisitions_per_week', ok: ['unlimited', 0, 50], bad: [-1, 51, 'none'] },
   { path: 'acquisitions_per_season', ok: ['unlimited', 0, 500], bad: [-1, 501] },
   { path: 'fa_hold_hours', ok: [0, 48], bad: [-1, 49] },

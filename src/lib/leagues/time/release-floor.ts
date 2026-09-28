@@ -32,73 +32,27 @@
  * covers this file with nothing to exempt.
  */
 
+import { wallClockAt, weekdayOf, zoneOffsetMinutesAt, zonedWallToUtc } from './zoned-time'
+
 const PACIFIC = 'America/Los_Angeles'
 
-const pacific = new Intl.DateTimeFormat('en-US', {
-  timeZone: PACIFIC,
-  hourCycle: 'h23',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-})
-
-interface PacificWall {
-  year: number
-  month: number
-  day: number
-  hour: number
-  minute: number
-  second: number
-}
-
-/** The Pacific wall clock at `instant`, as numbers. */
-function pacificWallAt(instant: Date): PacificWall {
-  const parts: Record<string, number> = {}
-  for (const part of pacific.formatToParts(instant)) {
-    if (part.type !== 'literal') parts[part.type] = Number(part.value)
-  }
-  return {
-    year: parts.year,
-    month: parts.month,
-    day: parts.day,
-    hour: parts.hour,
-    minute: parts.minute,
-    second: parts.second,
-  }
-}
-
 /** Minutes to ADD to a Pacific wall time to reach UTC at `instant`
- *  (420 during PDT, 480 during PST). */
+ *  (420 during PDT, 480 during PST). Since L.D2.7 a thin wrapper over the
+ *  ONE IANA implementation, `zoned-time.ts` (the waiver schedule reads the
+ *  same code in the league's own zone). */
 export function pacificOffsetMinutesAt(instant: Date): number {
-  const w = pacificWallAt(instant)
-  // The wall clock read back as if it were UTC, minus the true instant, is
-  // the zone's offset (negative in the Americas); we return its negation.
-  const wallAsUtc = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second)
-  return -Math.round((wallAsUtc - instant.getTime()) / 60_000)
+  return zoneOffsetMinutesAt(PACIFIC, instant)
 }
 
 /**
- * Pacific wall-clock Y/M/D 00:00:00 → the UTC instant. `day` may overflow its
- * month; `Date.UTC` normalizes (Oct 34 → Nov 3), which is what lets the
- * caller add 7 days by arithmetic alone.
- *
- * Two-pass, because the offset can DIFFER on either side of the shift — the
- * same structure as `easternToUtc` (`eastern-time.ts:67-81`).
+ * Pacific wall-clock Y/M/D 00:00 → the UTC instant. `day` may overflow its
+ * month (`Date.UTC` normalizes). Both US transitions happen at 02:00 local,
+ * so midnight is never a skipped or repeated wall hour; `zonedWallToUtc`'s
+ * DST arms (PostgreSQL's rule) are defensive here, load-bearing for the
+ * waiver schedule.
  */
 function pacificMidnightUtc(year: number, month: number, day: number): Date {
-  const wallAsUtc = Date.UTC(year, month - 1, day, 0, 0, 0)
-  const firstGuess = wallAsUtc + pacificOffsetMinutesAt(new Date(wallAsUtc)) * 60_000
-  const offset = pacificOffsetMinutesAt(new Date(firstGuess))
-  const instant = wallAsUtc + offset * 60_000
-  // Both US transitions happen at 02:00 local, so midnight is never a skipped
-  // or repeated wall hour and this arm is defensive rather than load-bearing;
-  // it resolves an ambiguous wall time to the FIRST occurrence, as the
-  // Eastern twin does.
-  if (pacificOffsetMinutesAt(new Date(instant)) !== offset) return new Date(firstGuess)
-  return new Date(instant)
+  return zonedWallToUtc(PACIFIC, year, month, day, 0, 0)
 }
 
 const TUESDAY = 2
@@ -113,10 +67,10 @@ const TUESDAY = 2
  * 00:00 Pacific advances a full seven days.
  */
 export function nextPacificTuesdayMidnight(after: Date): Date {
-  const w = pacificWallAt(after)
+  const w = wallClockAt(PACIFIC, after)
   // The weekday ARITHMETICALLY, from the Pacific calendar date — never
   // parsed out of a locale string, whose spelling is ICU-version dependent.
-  const dow = new Date(Date.UTC(w.year, w.month - 1, w.day)).getUTCDay()
+  const dow = weekdayOf(w.year, w.month, w.day)
   const delta = (TUESDAY - dow + 7) % 7
   const candidate = pacificMidnightUtc(w.year, w.month, w.day + delta)
   if (candidate.getTime() > after.getTime()) return candidate

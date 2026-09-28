@@ -145,8 +145,8 @@ function boundaryMin(): LeagueSettings {
     waiver_type: 'faab',
     faab_budget: 0,
     faab_min_bid: 0,
-    waiver_process_time: '00:00',
-    waiver_period_hours: 0,
+    waiver_run_time: '00:00',
+    waiver_run_days: ['sun'], // one day (min)
     acquisitions_per_week: 0,
     acquisitions_per_season: 0,
     fa_hold_hours: 0,
@@ -198,8 +198,9 @@ function boundaryMax(): LeagueSettings {
     waiver_type: 'faab',
     faab_budget: 1000,
     faab_min_bid: 10,
-    waiver_process_time: '23:59',
-    waiver_period_hours: 168,
+    waiver_run_time: '23:59',
+    waiver_run_days: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'], // every day (max)
+    free_agency_opens: 'never',
     acquisitions_per_week: 50,
     acquisitions_per_season: 500,
     fa_hold_hours: 48,

@@ -27,7 +27,6 @@ import {
   standingsPeek,
   tradeChip,
   waiverChip,
-  waiverTypeLabel,
 } from './league-home-season-ops'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 
@@ -158,12 +157,25 @@ describe('standingsPeek — a SLICE of 117’s ranked rows, the reason carried t
 
 describe('the waiver / trade chips print the STORED settings and name the verbs as not yet here', () => {
   const settings = defaultsForTeamCount(8)
-  it('waivers: the period from the settings; no run day/time printed as a deadline no job keeps', () => {
+  it('waivers: the STORED schedule in the league’s zone (the add path keeps it since v2.16.57); the claim verb still named as later', () => {
     const chip = waiverChip(settings)
-    expect(chip.label).toBe(`Waivers · dropped players clear after ${settings.waiver_period_hours} h`)
-    expect(chip.title).toContain('Waiver claims arrive in a later update.')
-    expect(chip.title).toContain(waiverTypeLabel(settings.waiver_type))
-    expect(chip.label + chip.title).not.toMatch(/Tue|Wed|Thu|\d{1,2}:\d{2}/)
+    expect(chip.label).toBe('Waivers · dropped players wait for the next run')
+    expect(chip.title).toBe(
+      'Waiver type: FAAB (blind bids). Waivers run Wednesday at 3:00 AM (America/New_York); free agency is open from the waiver run until the week’s last game ends. Waiver claims arrive in a later update.',
+    )
+    // Chris's league 1 preset, said plainly — the one describer, never a second copy.
+    const daily = waiverChip({
+      ...settings,
+      waiver_run_days: ['tue', 'wed', 'thu', 'fri', 'sat'],
+      waiver_run_time: '09:00',
+      waiver_time_zone: 'America/Los_Angeles',
+      free_agency_opens: 'day_and_time',
+      free_agency_open_day: 'sun',
+      free_agency_open_time: '06:00',
+    })
+    expect(daily.title).toContain(
+      'Waivers run Tuesday, Wednesday, Thursday, Friday and Saturday at 9:00 AM (America/Los_Angeles); free agency opens Sunday at 6:00 AM and lasts until the week’s last game ends.',
+    )
   })
   it('waivers off (none_fcfs): says so', () => {
     const chip = waiverChip({ ...settings, waiver_type: 'none_fcfs' })
