@@ -34,6 +34,7 @@ import {
   type RosterSettings,
   type Tiebreaker,
 } from '@/lib/leagues/settings/league-settings'
+import { WAIVER_PRESETS, describeWaiverSchedule, matchWaiverPreset } from '@/lib/leagues/time/waiver-schedule'
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
@@ -1134,52 +1135,31 @@ function WaiversGroup({
         </>
       )}
 
-      <FieldRow label="Process day" htmlFor="set-waiver-day">
+      {/* v2.16.59 (Q70, migration 149): the four retired rows (process day / time ET / waiver period /
+          free agency) are replaced by the schedule — when waivers run and when free agency is open, in the
+          league's own zone. This row picks one of the presets (Chris's two leagues among them) and says the
+          stored schedule in words; a custom schedule shows as such. The full editor is the waivers UI task. */}
+      <FieldRow label="Schedule" htmlFor="set-waiver-schedule" hint={describeWaiverSchedule(s)}>
         <ChoiceSelect
-          id="set-waiver-day"
-          ariaLabel="Waiver process day"
-          value={s.waiver_process_day}
+          id="set-waiver-schedule"
+          ariaLabel="Waiver schedule"
+          width="w-72"
+          value={matchWaiverPreset(s) ?? 'custom'}
           options={[
-            { value: 'tue', label: 'Tuesday' },
-            { value: 'wed', label: 'Wednesday' },
-            { value: 'thu', label: 'Thursday' },
+            ...WAIVER_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+            ...(matchWaiverPreset(s) === null ? [{ value: 'custom', label: 'Custom schedule' }] : []),
           ]}
-          onValueChange={(v) => onSettings({ waiver_process_day: v as LeagueSettings['waiver_process_day'] })}
-        />
-      </FieldRow>
-
-      <FieldRow label="Process time" htmlFor="set-waiver-time" hint="24-hour ET.">
-        <Input
-          id="set-waiver-time"
-          type="time"
-          value={s.waiver_process_time}
-          onChange={(e) => onSettings({ waiver_process_time: e.target.value })}
-          className="h-btn-md w-28 text-[12px]"
-        />
-      </FieldRow>
-
-      <FieldRow label="Waiver period" htmlFor="set-waiver-hours" hint="Hours a dropped player sits.">
-        <Input
-          id="set-waiver-hours"
-          type="number"
-          min={0}
-          max={168}
-          value={s.waiver_period_hours}
-          onChange={(e) => onSettings({ waiver_period_hours: clampInt(e.target.value, 0, 168, s.waiver_period_hours) })}
-          className="h-btn-md w-24 text-[12px]"
-        />
-      </FieldRow>
-
-      <FieldRow label="Free agency" htmlFor="set-free-agency">
-        <ChoiceSelect
-          id="set-free-agency"
-          ariaLabel="Free agency"
-          value={s.free_agency}
-          options={[
-            { value: 'immediate_after_waivers', label: 'After waivers' },
-            { value: 'continuous', label: 'Continuous' },
-          ]}
-          onValueChange={(v) => onSettings({ free_agency: v as LeagueSettings['free_agency'] })}
+          onValueChange={(v) => {
+            const preset = WAIVER_PRESETS.find((p) => p.id === v)
+            if (!preset) return
+            onSettings({
+              ...preset.schedule,
+              waiver_run_days: [...preset.schedule.waiver_run_days],
+              // "No waivers" is a waiver TYPE; a schedule preset on a no-waivers league turns waivers
+              // back on with the catalog's default type.
+              ...(preset.waiverType ? { waiver_type: preset.waiverType } : s.waiver_type === 'none_fcfs' ? { waiver_type: 'faab' as const } : {}),
+            })
+          }}
         />
       </FieldRow>
 
@@ -1212,14 +1192,9 @@ function WaiversGroup({
 
       {/* v2.16.21 (Q34(B) + Q35 (a), Chris 2026-09-05; migration 115): the "Lock players at kickoff"
           toggle is GONE — the game-day lock is a rule, not a setting (a player locks for adds AND drops at
-          his own kickoff, until the week's last game ends). Its hint stated only the add half anyway. */}
-      <ToggleRow
-        id="set-bench-lock"
-        label="Bench lock"
-        hint="A claim whose drop already played fails at processing."
-        checked={s.bench_lock}
-        onCheckedChange={(bench_lock) => onSettings({ bench_lock })}
-      />
+          his own kickoff, until the week's last game ends). Its hint stated only the add half anyway.
+          v2.16.59 (Q73, migration 149): the "Bench lock" toggle is GONE the same way — a claim whose drop
+          already played this week always fails at the waiver run. */}
     </GroupCard>
   )
 }

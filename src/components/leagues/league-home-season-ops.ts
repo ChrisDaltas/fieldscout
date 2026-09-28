@@ -22,6 +22,7 @@ import type { ScheduleWeek } from '@/hooks/use-schedule'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
+import { describeWaiverSchedule, type WAIVER_SCHEDULE_KEYS } from '@/lib/leagues/time/waiver-schedule'
 
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
@@ -155,22 +156,26 @@ export const TRADES_LATER_COPY = 'Trades arrive in a later update.'
 
 /**
  * The waiver chip: the STORED settings said plainly, and the claim verb
- * named as not yet here. No run day/time is printed as a deadline — no job
- * processes claims yet, so a printed Wednesday would be a promise the
- * server does not keep; what a dropped player does today is the stored
- * `waiver_period_hours` (then first-come-first-served).
+ * named as not yet here. Since the waiver schedule landed (spec §7.3.4
+ * v2.16.59) the schedule is REAL for pickups — outside the free-agency
+ * window an unowned player is claim-only and a dropped player waits for the
+ * next run, and the add path enforces both — so the schedule is printed, in
+ * the league's own zone, by the one describer (`describeWaiverSchedule`).
+ * What is still later is the claim itself: no job settles claims yet, so the
+ * title keeps saying so.
  */
-export function waiverChip(settings: Pick<LeagueSettings, 'waiver_type' | 'waiver_period_hours'>): HonestChip {
+export function waiverChip(
+  settings: Pick<LeagueSettings, 'waiver_type' | (typeof WAIVER_SCHEDULE_KEYS)[number]>,
+): HonestChip {
   if (settings.waiver_type === 'none_fcfs') {
     return {
       label: 'No waivers — dropped players are free agents at once',
       title: `Waivers: off (first come, first served). ${WAIVERS_LATER_COPY}`,
     }
   }
-  const hours = settings.waiver_period_hours
   return {
-    label: `Waivers · dropped players clear after ${hours} h`,
-    title: `Waiver type: ${waiverTypeLabel(settings.waiver_type)}. Until then a dropped player sits on waivers for ${hours} hour${hours === 1 ? '' : 's'}, then is free to add. ${WAIVERS_LATER_COPY}`,
+    label: 'Waivers · dropped players wait for the next run',
+    title: `Waiver type: ${waiverTypeLabel(settings.waiver_type)}. ${describeWaiverSchedule(settings)} ${WAIVERS_LATER_COPY}`,
   }
 }
 

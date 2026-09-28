@@ -33,9 +33,11 @@
  *
  * Builder-finalized field shapes (tasks-M1 §5: "Builder finalizes exact
  * fields; names below are contractual") — recorded in PROGRESS D60:
- *   - `waiver_process_time` ("+ time" in §7.3.4's R column) is HH:MM 24h ET,
- *     default '03:00' (incumbent-normed overnight processing; the spec names
- *     no default).
+ *   - ~~`waiver_process_time` ("+ time" in §7.3.4's R column) is HH:MM 24h ET,
+ *     default '03:00'~~ — RETIRED v2.16.59 (Q70, migration 149): the waiver
+ *     schedule is `waiver_run_days` × `waiver_run_time` in `waiver_time_zone`
+ *     (an explicit IANA zone, §16.4), default Wednesday 03:00
+ *     America/New_York — D60's instant kept (D388).
  *   - `stat_correction_window` is `'thu_06_00_et'` (the §23.4 anchored-instant
  *     default) or an integer hour count 0–168 (the "0h–7d" configurable range).
  *   - `playoff_byes` is the literal 'auto' (§7.3.1: derived from bracket
@@ -46,6 +48,14 @@
 import { z } from 'zod'
 
 import type { Json, League } from '@/types/database'
+
+import {
+  DEFAULT_WAIVER_SCHEDULE,
+  FREE_AGENCY_OPENS,
+  HH_MM,
+  WEEKDAYS,
+  canonicalWeekdays,
+} from '../time/waiver-schedule'
 
 /**
  * Recursively freeze an exported constant (R64): `Object.freeze` alone is
@@ -399,20 +409,41 @@ export const leagueSettingsSchema = z.strictObject({
   faab_budget: z.number().int().min(0).max(1000).default(100),
   faab_min_bid: z.number().int().min(0).max(10).default(0),
   faab_tiebreaker: z.enum(['reverse_standings', 'rolling_priority']).default('reverse_standings'),
-  waiver_process_day: z.enum(['tue', 'wed', 'thu']).default('wed'),
-  waiver_process_time: z
+  // v2.16.59 (Q70 RULED by Chris 2026-09-27 — F229's waiver schedule; migration 149, L.D2.7, D388):
+  // WHEN WAIVERS RUN (weekdays × one local time, in the league's own IANA zone) and WHEN INSTANT-PICKUP
+  // FREE AGENCY OPENS (after the run / a weekday + time / never — it always closes when the week's last
+  // game ends). Replaces the retired `waiver_process_day` / `waiver_process_time` (D60's fixed ET) /
+  // `waiver_period_hours` / `free_agency` — a dropped player is on waivers until the NEXT RUN; migration
+  // 149 maps every stored league onto these keys and a CHECK refuses the old ones. Defaults keep the
+  // catalog's Wednesday 03:00 Eastern run (`DEFAULT_WAIVER_SCHEDULE`). The window arithmetic is
+  // `src/lib/leagues/time/waiver-schedule.ts` (SQL twin: 149's `waiver_window_internal`).
+  waiver_run_days: z
+    .array(z.enum(WEEKDAYS))
+    .min(1, 'pick at least one day for waivers to run')
+    .max(7)
+    .refine((days) => new Set(days).size === days.length, 'a waiver run day may be listed only once')
+    .transform((days) => canonicalWeekdays(days))
+    .default(() => [...DEFAULT_WAIVER_SCHEDULE.waiver_run_days]),
+  waiver_run_time: z.string().regex(HH_MM, 'must be HH:MM (24h, in the league’s waiver time zone)').default(DEFAULT_WAIVER_SCHEDULE.waiver_run_time),
+  waiver_time_zone: z
     .string()
-    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM (24h, ET)')
-    .default('03:00'), // Builder-finalized default (D60) — spec's R column names "+ time" with no D
-  waiver_period_hours: z.number().int().min(0).max(168).default(48),
-  free_agency: z.enum(['immediate_after_waivers', 'continuous']).default('immediate_after_waivers'),
+    .refine(isIanaTimeZone, 'must be a valid IANA time zone name (e.g. America/Los_Angeles)')
+    .default(DEFAULT_WAIVER_SCHEDULE.waiver_time_zone),
+  free_agency_opens: z.enum(FREE_AGENCY_OPENS).default(DEFAULT_WAIVER_SCHEDULE.free_agency_opens),
+  free_agency_open_day: z.enum(WEEKDAYS).default(DEFAULT_WAIVER_SCHEDULE.free_agency_open_day),
+  free_agency_open_time: z
+    .string()
+    .regex(HH_MM, 'must be HH:MM (24h, in the league’s waiver time zone)')
+    .default(DEFAULT_WAIVER_SCHEDULE.free_agency_open_time),
   acquisitions_per_week: z.union([z.literal('unlimited'), z.number().int().min(0).max(50)]).default('unlimited'),
   acquisitions_per_season: z.union([z.literal('unlimited'), z.number().int().min(0).max(500)]).default('unlimited'),
   // v2.16.21 (Q34(B) + Q35 (a), Chris 2026-09-05; migration 115): `player_game_lock` is RETIRED — the
   // game-day add/drop lock is a RULE (a player locks for adds and drops at his own kickoff, releases at
   // the week's `last_game_ends_at`), not a setting. The key is unstorable at the table (a CHECK) and
   // refused here by the strict object (`league-settings.test.ts` pins it).
-  bench_lock: z.boolean().default(true),
+  // v2.16.59 (Q73 RULED 2026-09-27; migration 149): `bench_lock` is RETIRED the same way — a waiver claim
+  // whose drop has already played this week always fails at the run (E33 is the only behaviour; the
+  // processor is L.D2.9). The key is unstorable (149's CHECK) and refused here by the strict object.
   fa_hold_hours: z.number().int().min(0).max(48).default(0),
 
   // §7.3.5 — trades
@@ -799,17 +830,72 @@ export function splitSettings(s: LeagueSettings): { columns: LeagueTypedColumns;
 }
 
 /**
+ * The five blob keys migration 149 retired (Q70's schedule replaces the first
+ * four; Q73 retires `bench_lock`). 149's CHECK
+ * `leagues_settings_no_retired_waiver_keys` refuses them at the table and the
+ * strict `leagueSettingsSchema` refuses them on every write path.
+ */
+export const RETIRED_WAIVER_KEYS = [
+  'waiver_process_day',
+  'waiver_process_time',
+  'waiver_period_hours',
+  'free_agency',
+  'bench_lock',
+] as const
+
+/**
+ * READ-SIDE ONLY (R1187, PR #334 fix round — D388): the TS twin of migration
+ * 149's `waiver_schedule_from_legacy_internal`, so the app reads a PRE-149
+ * row correctly during the window between a merge (Vercel deploys main at
+ * once) and the hosted `db push` that runs 149's blob mapping. Same rule,
+ * key by key: a key already in the new vocabulary wins; the old run day
+ * (`tue`/`wed`/`thu`) and HH:MM run time carry over, read in
+ * America/New_York (D60's "ET"); anything else takes the §7.3.4 catalog
+ * default; free agency opens after the run; the five retired keys are
+ * stripped. On a post-149 row (all six keys present, no retired key — the
+ * CHECK) it is the identity. `mergeSettings` is its only caller; every write
+ * path parses the strict schema directly, so a NEW write naming a retired
+ * key is still refused.
+ */
+export function waiverScheduleFromLegacy(blob: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(blob, key)
+  const oldDay = blob.waiver_process_day
+  const oldTime = blob.waiver_process_time
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(blob)) {
+    if (!(RETIRED_WAIVER_KEYS as readonly string[]).includes(key)) out[key] = value
+  }
+  out.waiver_run_days = has('waiver_run_days')
+    ? blob.waiver_run_days
+    : [typeof oldDay === 'string' && ['tue', 'wed', 'thu'].includes(oldDay) ? oldDay : 'wed']
+  out.waiver_run_time = has('waiver_run_time')
+    ? blob.waiver_run_time
+    : typeof oldTime === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(oldTime)
+      ? oldTime
+      : '03:00'
+  out.waiver_time_zone = has('waiver_time_zone') ? blob.waiver_time_zone : 'America/New_York'
+  out.free_agency_opens = has('free_agency_opens') ? blob.free_agency_opens : 'after_waiver_run'
+  out.free_agency_open_day = has('free_agency_open_day') ? blob.free_agency_open_day : 'sun'
+  out.free_agency_open_time = has('free_agency_open_time') ? blob.free_agency_open_time : '06:00'
+  return out
+}
+
+/**
  * Inverse of `splitSettings`: reconstitute LeagueSettings from a leagues row
  * (typed columns + `settings` blob), re-validated through the schema.
  * Corrupt rows THROW (ZodError) rather than yielding a silently-wrong
  * settings object (the D58 loud-failure doctrine); missing blob fields on a
- * legacy/defaulted row fill from the §7.3 defaults.
+ * legacy/defaulted row fill from the §7.3 defaults. A pre-149 blob (the old
+ * waiver keys) is read through `waiverScheduleFromLegacy` first — the same
+ * schedule 149's data migration writes (R1187: the code is
+ * backward-compatible with a database that has not received 149 yet).
  */
 export function mergeSettings(row: LeagueRow): LeagueSettings {
-  const blob = row.settings
-  if (blob === null || typeof blob !== 'object' || Array.isArray(blob)) {
-    throw new TypeError(`mergeSettings: leagues.settings must be a JSON object, got ${blob === null ? 'null' : Array.isArray(blob) ? 'array' : typeof blob}`)
+  const raw = row.settings
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new TypeError(`mergeSettings: leagues.settings must be a JSON object, got ${raw === null ? 'null' : Array.isArray(raw) ? 'array' : typeof raw}`)
   }
+  const blob = waiverScheduleFromLegacy(raw)
   const candidate: Record<string, unknown> = {
     ...blob,
     format: row.format,

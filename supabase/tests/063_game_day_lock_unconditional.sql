@@ -61,7 +61,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(40);
+select plan(41);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — the CHECK's definition, the helpers' shape, the sweep
@@ -146,7 +146,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff', 'faab',
-  '{"waiver_period_hours": 48, "free_agency": "immediate_after_waivers", "fa_hold_hours": 0, "allow_illegal_lineups": true}',
+  '{"waiver_run_days": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], "waiver_run_time": "00:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run", "fa_hold_hours": 0, "allow_illegal_lineups": true}',
   '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 3, "ir_slots": [], "swap_spots": 0}');
 
 select throws_ok(
@@ -161,8 +161,8 @@ select throws_ok(
   $$ update leagues set settings = settings || '{"player_game_lock": false}' where id = 'b5000000-0000-4000-8000-000000000001' $$,
   '23514', null, 'the CHECK: an UPDATE adding the key is refused 23514');
 select lives_ok(
-  $$ update leagues set settings = settings || '{"bench_lock": false}' where id = 'b5000000-0000-4000-8000-000000000001' $$,
-  'the CHECK: an UPDATE adding a LIVE §7.3.4 key (bench_lock) lands — only the retired key is refused');
+  $$ update leagues set settings = settings || '{"auto_sub_inactives": false}' where id = 'b5000000-0000-4000-8000-000000000001' $$,
+  'the CHECK: an UPDATE adding a LIVE key (auto_sub_inactives; 149 re-cut — bench_lock is itself retired now) lands — only the retired key is refused');
 select is((select settings ? 'player_game_lock' from leagues where id = 'b5000000-0000-4000-8000-000000000001'), false,
   'the fixture league carries no player_game_lock key (the strip is the migration''s; here the key never existed)');
 
@@ -300,11 +300,21 @@ select throws_like(
        'ab500000-0000-4000-8000-000000000004', now()) $$,
   '%GL QB (gl-qb) is locked for drops%', 'D3 DROP at last-game-end−1s: refused');
 update nfl_weeks set last_game_ends_at = now() where season = 2026 and week = 3;
+-- 149 (Q70): AT the week's end the lock releases and the waiver gate answers
+-- (claim-only until the next run); the ADD release cell proves the LOCK alone,
+-- so the league is a no-waivers league for it and restored after.
+select throws_like(
+  $$ select public.roster_add_drop_internal('b5000000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000001', 'gl-fa-kc', null,
+       'ab500000-0000-4000-8000-000000000003', now()) $$,
+  '%GL FA KC (gl-fa-kc) is claim-only right now — no waiver run has happened since the week''s last game ended%',
+  'D3 (149 re-cut) ADD AT last_game_ends_at under faab: the lock has RELEASED and the waiver gate answers — claim-only until the next run');
+update leagues set waiver_type = 'none_fcfs' where id = 'b5000000-0000-4000-8000-000000000001';
 select lives_ok(
   $$ select public.roster_add_drop_internal('b5000000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000001', 'gl-fa-kc', null,
        'ab500000-0000-4000-8000-000000000003', now()) $$,
   'D3 ADD AT last_game_ends_at: LIVES — the release is exactly the instant the week''s last game ended (Q34(B): "players unlock after the last game has finished")');
 select pg_temp.gl_undo_add('gl-fa-kc', 'ab500000-0000-4000-8000-000000000003');
+update leagues set waiver_type = 'faab' where id = 'b5000000-0000-4000-8000-000000000001';   -- restore (149 re-cut)
 select lives_ok(
   $$ select public.roster_add_drop_internal('b5000000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000001', null, 'gl-qb',
        'ab500000-0000-4000-8000-000000000004', now()) $$,
@@ -334,7 +344,7 @@ update nfl_weeks set last_game_ends_at = null where season = 2026 and week = 3;
 select throws_like(
   $$ select public.roster_add_drop_internal('b5000000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000001', 'gl-fa-kc', null,
        'ab500000-0000-4000-8000-000000000006', now()) $$,
-  '%GL FA KC (gl-fa-kc) is locked for adds — kicked off at % (nfl_games); week 3 clears at an instant not yet recorded — nfl_weeks.last_game_ends_at is NULL until every game of the week is final, so he stays locked%',
+  '%GL FA KC (gl-fa-kc) is locked for adds — kicked off at % (nfl_games); week 3 clears at an instant not yet recorded — nfl_weeks.last_game_ends_at stays NULL until ingestion has recorded every game of the week final, so he stays locked%',
   'D5 NULL last_game_ends_at, the ADD: refused as LOCKED with the text naming the unrecorded end — never a raise, never read as free');
 select throws_like(
   $$ select public.roster_add_drop_internal('b5000000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000001', null, 'gl-qb',
@@ -372,8 +382,8 @@ select set_config('pgtap.gl_r', public.roster_add_drop_internal(
   'b5000000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000001', 'gl-fa-dal', null,
   'ab500000-0000-4000-8000-000000000010', now())::text, true);
 select is(current_setting('pgtap.gl_r')::jsonb -> 'settings',
-  '{"lineup_lock": "per_player_kickoff", "waiver_type": "faab", "waiver_period_hours": 48, "free_agency": "immediate_after_waivers", "fa_hold_hours": 0}'::jsonb,
-  'D6 the result''s settings echo is exactly the five live keys — no player_game_lock (retired)');
+  '{"lineup_lock": "per_player_kickoff", "waiver_type": "faab", "waiver_schedule": {"waivers": true, "run_days": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], "run_dows": [0, 1, 2, 3, 4, 5, 6], "run_time": "00:00", "time_zone": "UTC", "free_agency_opens": "after_waiver_run", "free_agency_open_day": "sun", "open_dow": 0, "free_agency_open_time": "06:00"}, "fa_hold_hours": 0}'::jsonb,
+  'D6 the result''s settings echo: lineup lock, waiver type, the waiver SCHEDULE (149 re-cut — waiver_period_hours / free_agency retired, Q70) and fa hold — no player_game_lock (retired)');
 select is((current_setting('pgtap.gl_r')::jsonb -> 'add' -> 'game_lock' ->> 'window_ends_at')::timestamptz, now() + interval '5 days',
   'D6 the lock document''s window_ends_at IS week 3''s last_game_ends_at (now + 5 days), not its correction window (now + 7 days)');
 select set_config('request.jwt.claims', '', true);

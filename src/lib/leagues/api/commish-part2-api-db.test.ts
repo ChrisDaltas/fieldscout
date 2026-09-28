@@ -262,7 +262,7 @@ beforeAll(async () => {
   // its seeded name, the blob key starts at its default, and the audit log
   // is EMPTY for this league — every row the cells below find is theirs.
   expect(await teamName(memberTeamId)).toBe('CP2 Team 2')
-  expect(await blobSetting('waiver_period_hours')).not.toBe(72)
+  expect(await blobSetting('acquisitions_per_season')).not.toBe(72)
   expect((await service.from('commissioner_actions').select('id').eq('league_id', leagueId)).data).toHaveLength(0)
 }, 60_000)
 
@@ -349,22 +349,22 @@ describe('POST …/commish/team — commishRenameTeam over the real RPC', () => 
 
 describe('POST …/commish/setting — commishChangeSetting over the real RPC', () => {
   it('a seated manager gets the route’s own no-leak 403, changes nothing and writes NO receipt', async () => {
-    const before = await blobSetting('waiver_period_hours')
-    const res = await commishChangeSetting(memberClient, leagueId, { key: 'waiver_period_hours', value: 72, action_id: ACTION.settingMember, reason: 'not mine' })
+    const before = await blobSetting('acquisitions_per_season')
+    const res = await commishChangeSetting(memberClient, leagueId, { key: 'acquisitions_per_season', value: 72, action_id: ACTION.settingMember, reason: 'not mine' })
     expect(res.status).toBe(403)
     expect(errorText(res)).toBe(COMMISH_SETTING_FORBIDDEN_MESSAGE)
-    expect(await blobSetting('waiver_period_hours')).toStrictEqual(before)
+    expect(await blobSetting('acquisitions_per_season')).toStrictEqual(before)
     expect(await receiptsFor(ACTION.settingMember)).toHaveLength(0)
   })
 
-  it('a commissioner changes waiver_period_hours to 72 in-season WITH a reason: 200, the identity fields echo, the blob holds 72, the lifted status gate is NAMED, one receipt with the reason TRIMMED', async () => {
-    const res = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: 72, action_id: ACTION.setting, reason: '  waivers clear faster in-season  ' })
+  it('a commissioner changes acquisitions_per_season to 72 in-season WITH a reason: 200, the identity fields echo, the blob holds 72, the lifted status gate is NAMED, one receipt with the reason TRIMMED', async () => {
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'acquisitions_per_season', value: 72, action_id: ACTION.setting, reason: '  waivers clear faster in-season  ' })
     expect(res.status, errorText(res)).toBe(200)
     const body = res.body as { verb: string; action_type: string; action_id: string; key: string; value: unknown; requested_value: unknown; rescore_requested: boolean; no_changes: boolean; commissioner_action_id: string | null; bypassed: string[]; reason: string | null }
     expect(body.verb).toBe('commish_change_setting')
     expect(body.action_type).toBe('change_setting')
     expect(body.action_id).toBe(ACTION.setting)
-    expect(body.key).toBe('waiver_period_hours')
+    expect(body.key).toBe('acquisitions_per_season')
     expect(body.value).toBe(72)
     expect(body.requested_value).toBe(72)
     expect(body.rescore_requested).toBe(false)
@@ -372,25 +372,25 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     expect(body.commissioner_action_id).not.toBeNull()
     expect(body.bypassed.length).toBeGreaterThan(0)
     expect(body.reason).toBe('waivers clear faster in-season')
-    expect(await blobSetting('waiver_period_hours')).toBe(72)
+    expect(await blobSetting('acquisitions_per_season')).toBe(72)
     const receipts = await receiptsFor(ACTION.setting)
     expect(receipts).toHaveLength(1)
-    expect(receipts[0]).toMatchObject({ action_type: 'change_setting', target_type: 'setting', target_id: 'waiver_period_hours', reason: 'waivers clear faster in-season' })
+    expect(receipts[0]).toMatchObject({ action_type: 'change_setting', target_type: 'setting', target_id: 'acquisitions_per_season', reason: 'waivers clear faster in-season' })
   })
 
   it('Q66 (131 / L.E1.15): a BLANK reason is NO reason and LANDS — 96 hours: 200, ONE receipt with reason NULL (not ""), a post with NO "— reason:" clause', async () => {
-    const res = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: 96, action_id: ACTION.settingNoReason, reason: '   ' })
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'acquisitions_per_season', value: 96, action_id: ACTION.settingNoReason, reason: '   ' })
     expect(res.status, errorText(res)).toBe(200)
     const body = res.body as { value: unknown; reason: string | null; commissioner_action_id: string | null; no_changes: boolean }
     expect(body.value).toBe(96)
     expect(body.reason).toBeNull()
     expect(body.no_changes).toBe(false)
     expect(body.commissioner_action_id).not.toBeNull()
-    expect(await blobSetting('waiver_period_hours')).toBe(96)
+    expect(await blobSetting('acquisitions_per_season')).toBe(96)
     const receipts = await receiptsFor(ACTION.settingNoReason)
     expect(receipts).toHaveLength(1)
-    expect(receipts[0]).toMatchObject({ action_type: 'change_setting', target_id: 'waiver_period_hours', reason: null })
-    const posts = await systemPostsLike('%waiver_period_hours%(commissioner override)%')
+    expect(receipts[0]).toMatchObject({ action_type: 'change_setting', target_id: 'acquisitions_per_season', reason: null })
+    const posts = await systemPostsLike('%acquisitions_per_season%(commissioner override)%')
     expect(posts.length).toBeGreaterThanOrEqual(2)
     const noReason = posts.filter((p) => p.includes('96'))
     expect(noReason).toHaveLength(1)
@@ -411,23 +411,23 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     // holds the SECOND one's value.
     expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
     expect(await receiptsFor(ACTION.settingNoReason)).toHaveLength(1)
-    expect(await blobSetting('waiver_period_hours')).toBe(96)
-    const res = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: 120, action_id: ACTION.setting, reason: 'a different value on a spent id' })
+    expect(await blobSetting('acquisitions_per_season')).toBe(96)
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'acquisitions_per_season', value: 120, action_id: ACTION.setting, reason: 'a different value on a spent id' })
     expect(res.status).toBe(409)
     expect(errorText(res)).toBe(COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE)
-    expect(await blobSetting('waiver_period_hours')).toBe(96)
+    expect(await blobSetting('acquisitions_per_season')).toBe(96)
     expect(await receiptsFor(ACTION.setting)).toHaveLength(1)
   })
 
   it('F365 / R1062 on the REAL verb — the narrowed guard still answers a lawful FIRST submit in a NON-CANONICAL depth-0 form with 200 (" 48 " lands as 48, never a false 409 for a change that landed), and a same-id replay with 120 is a 409', async () => {
-    const first = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: ' 48 ', action_id: ACTION.settingNonCanonical })
+    const first = await commishChangeSetting(commishClient, leagueId, { key: 'acquisitions_per_season', value: ' 48 ', action_id: ACTION.settingNonCanonical })
     expect(first.status).toBe(200)
     expect((first.body as { requested_value: unknown; no_changes: boolean }).requested_value).toBe(48)
-    expect(await blobSetting('waiver_period_hours')).toBe(48)
+    expect(await blobSetting('acquisitions_per_season')).toBe(48)
     expect(await receiptsFor(ACTION.settingNonCanonical)).toHaveLength(1)
-    const replay = await commishChangeSetting(commishClient, leagueId, { key: 'waiver_period_hours', value: '120', action_id: ACTION.settingNonCanonical })
+    const replay = await commishChangeSetting(commishClient, leagueId, { key: 'acquisitions_per_season', value: '120', action_id: ACTION.settingNonCanonical })
     expect(replay.status).toBe(409)
-    expect(await blobSetting('waiver_period_hours')).toBe(48)
+    expect(await blobSetting('acquisitions_per_season')).toBe(48)
   })
 
   it('F365 — THE PREMISE of the enum arm, measured on the real verb: 129 only btrims an enum, so an UPPER-CASE enum is REFUSED by name (never canonicalised to an echo the guard would have to fold) and writes no receipt', async () => {

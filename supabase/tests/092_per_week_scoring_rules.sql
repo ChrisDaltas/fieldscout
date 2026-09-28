@@ -85,8 +85,8 @@ select ok(
 select is(
   (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'),
-  'fe71e96772a9584f62d6728067d0b0ff',
-  'A6 commish_change_setting_internal is 144 body, a STORED LITERAL md5 (141 text 05d2c7e4ae83506c113f7168d262a8b3, nine hunks apart — D137)');
+  'ac7854085b294b27112c3b451903e72c',
+  'A6 commish_change_setting_internal is 149''s body (144''s fe71e96772a9584f62d6728067d0b0ff plus 149''s three waiver-schedule hunks), a STORED LITERAL md5 (141 text 05d2c7e4ae83506c113f7168d262a8b3, nine hunks apart — D137)');
 select is(
   coalesce(public.league_week_list_words_internal('[]'), 'null') || '|' || public.league_week_list_words_internal('[3]')
   || '|' || public.league_week_list_words_internal('[1, 2]') || '|' || public.league_week_list_words_internal('[1, 2, 3]'),

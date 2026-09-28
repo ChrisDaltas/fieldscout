@@ -90,13 +90,15 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   faab_budget: 500,
   faab_min_bid: 2,
   faab_tiebreaker: 'rolling_priority',
-  waiver_process_day: 'tue',
-  waiver_process_time: '11:30',
-  waiver_period_hours: 24,
-  free_agency: 'continuous',
+  // v2.16.59 (Q70): every schedule key off its default — Chris's league-1 shape
+  waiver_run_days: ['tue', 'wed', 'thu', 'fri', 'sat'],
+  waiver_run_time: '09:00',
+  waiver_time_zone: 'America/Los_Angeles',
+  free_agency_opens: 'day_and_time',
+  free_agency_open_day: 'mon',
+  free_agency_open_time: '11:30',
   acquisitions_per_week: 7,
   acquisitions_per_season: 100,
-  bench_lock: false,
   fa_hold_hours: 24,
 
   // §7.3.5 — trades

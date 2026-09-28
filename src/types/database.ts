@@ -2007,6 +2007,7 @@ export type Database = {
           trade_deadline_week: number | null
           trade_review: string
           updated_at: string | null
+          waiver_next_run_at: string | null
           waiver_type: string
         }
         Insert: {
@@ -2039,6 +2040,7 @@ export type Database = {
           trade_deadline_week?: number | null
           trade_review?: string
           updated_at?: string | null
+          waiver_next_run_at?: string | null
           waiver_type?: string
         }
         Update: {
@@ -2071,6 +2073,7 @@ export type Database = {
           trade_deadline_week?: number | null
           trade_review?: string
           updated_at?: string | null
+          waiver_next_run_at?: string | null
           waiver_type?: string
         }
         Relationships: [
@@ -6260,6 +6263,33 @@ export type Database = {
           p_league_id: string
           p_reason: string
           p_team_id: string
+        }
+        Returns: Json
+      }
+      waiver_last_open_internal: {
+        Args: { p_at: string; p_sched: Json }
+        Returns: string
+      }
+      waiver_last_run_internal: {
+        Args: { p_at: string; p_sched: Json }
+        Returns: string
+      }
+      waiver_next_run_internal: {
+        Args: { p_after: string; p_sched: Json }
+        Returns: string
+      }
+      waiver_schedule_from_legacy_internal: {
+        Args: { p_settings: Json }
+        Returns: Json
+      }
+      waiver_schedule_internal: {
+        Args: { p_settings: Json; p_waiver_type: string }
+        Returns: Json
+      }
+      waiver_window_internal: {
+        Args: {
+          p_at: string
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
         }
         Returns: Json
       }

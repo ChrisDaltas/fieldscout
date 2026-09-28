@@ -180,7 +180,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, regular_sea
   '{"schedule_mode": "h2h", "median_game": false, "second_opponent": false, "schedule_seed": 1,
     "tiebreakers": ["win_pct", "points_for", "head_to_head", "points_against", "division_record", "coin_flip"],
     "allow_illegal_lineups": true, "acquisitions_per_week": "unlimited", "acquisitions_per_season": "unlimited",
-    "waiver_period_hours": 48, "free_agency": "immediate_after_waivers", "fa_hold_hours": 0}',
+    "waiver_run_days": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], "waiver_run_time": "00:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run", "fa_hold_hours": 0}',
   '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 4, "ir_slots": [], "swap_spots": 0}'),
  -- L2: total_points (the pending-through-lineage pin)
  ('be000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001', 'pgtap-rs-L2', 2026, 'in_season', 8, 4, 0, 5,

@@ -60,7 +60,7 @@ describe('settingPolicyKeys / inSeasonChangePlan — one working draft → ONE C
 
   it('the policy keys are the settings document’s own top-level keys + scoring_system_id', () => {
     const keys = settingPolicyKeys(baseline)
-    expect(keys).toContain('waiver_period_hours')
+    expect(keys).toContain('waiver_run_time')
     expect(keys).toContain('draft')
     expect(keys).toContain(SCORING_SYSTEM_KEY)
     expect(keys).toHaveLength(Object.keys(baseline).length + 1)
@@ -71,10 +71,10 @@ describe('settingPolicyKeys / inSeasonChangePlan — one working draft → ONE C
   })
 
   it('two changed keys are two calls, each carrying THAT key’s whole new value, in key order — never the whole document', () => {
-    const working = { ...baseline, waiver_period_hours: 72, allow_illegal_lineups: !baseline.allow_illegal_lineups }
+    const working = { ...baseline, waiver_run_time: '09:00', allow_illegal_lineups: !baseline.allow_illegal_lineups }
     expect(plan({ working }).send).toEqual([
       { key: 'allow_illegal_lineups', value: !baseline.allow_illegal_lineups },
-      { key: 'waiver_period_hours', value: 72 },
+      { key: 'waiver_run_time', value: '09:00' },
     ])
   })
 
@@ -87,8 +87,8 @@ describe('settingPolicyKeys / inSeasonChangePlan — one working draft → ONE C
   })
 
   it('a changed REFUSED key is NEVER sent and NEVER dropped — it is listed with 129’s words', () => {
-    const out = plan({ working: { ...baseline, team_count: 12, waiver_period_hours: 72 } })
-    expect(out.send).toEqual([{ key: 'waiver_period_hours', value: 72 }])
+    const out = plan({ working: { ...baseline, team_count: 12, waiver_run_time: '09:00' } })
+    expect(out.send).toEqual([{ key: 'waiver_run_time', value: '09:00' }])
     expect(out.refused).toEqual([{ key: 'team_count', why: 'team_count is PRE-DRAFT ONLY' }])
   })
 
@@ -101,8 +101,8 @@ describe('settingPolicyKeys / inSeasonChangePlan — one working draft → ONE C
   it('a changed scoring reference is its own call, LAST; an unchanged or null one is not', () => {
     expect(plan({ scoringId: 'sys-b' }).send).toEqual([{ key: SCORING_SYSTEM_KEY, value: 'sys-b' }])
     expect(plan({ scoringId: null }).send).toEqual([])
-    const both = plan({ working: { ...baseline, waiver_period_hours: 72 }, scoringId: 'sys-b' })
-    expect(both.send.map((c) => c.key)).toEqual(['waiver_period_hours', SCORING_SYSTEM_KEY])
+    const both = plan({ working: { ...baseline, waiver_run_time: '09:00' }, scoringId: 'sys-b' })
+    expect(both.send.map((c) => c.key)).toEqual(['waiver_run_time', SCORING_SYSTEM_KEY])
   })
 })
 
@@ -166,10 +166,10 @@ describe('settingOutcome — never a bare "Saved." (§4 rule 15 / R971); ORDER i
   })
 
   it('a clean save names the key in words and says it was recorded and posted', () => {
-    expect(settingOutcome({ ...doc, key: 'waiver_period_hours' })).toEqual({
+    expect(settingOutcome({ ...doc, key: 'waiver_run_time' })).toEqual({
       branch: 'saved',
       tone: 'positive',
-      text: 'waiver period hours: saved — recorded and posted to the league.',
+      text: 'waiver run time: saved — recorded and posted to the league.',
     })
   })
 })

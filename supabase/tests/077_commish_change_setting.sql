@@ -155,7 +155,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, regular_sea
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff',
-  '{"schedule_mode": "h2h", "waiver_period_hours": 48, "bench_lock": true, "tiebreakers": ["win_pct", "points_for", "head_to_head", "points_against", "division_record", "coin_flip"]}',
+  '{"schedule_mode": "h2h", "trade_review_period_hours": 48, "auto_sub_inactives": true, "tiebreakers": ["win_pct", "points_for", "head_to_head", "points_against", "division_record", "coin_flip"]}',
   '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}, {"key": "rb", "label": "RB", "eligible": ["RB"], "count": 1}], "bench": 3, "ir_slots": [{"key": "ir1", "type": "unrestricted", "eligible_designations": ["OUT", "IR"]}], "swap_spots": 0}',
   now() - interval '10 days', now() - interval '10 days'),
  ('be000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001', 'pgtap-cs-L2', 2026,
@@ -262,8 +262,8 @@ select is((select tl.slot_map ->> 'qb:0' || '|' || (ps.updated_at is not null)::
            from team_lineups tl join player_stats ps on ps.player_id = tl.slot_map ->> 'qb:0' and ps.season = 2026 and ps.week = 3
            where tl.team_id = 'ce000000-0000-4000-8000-000000000001' and tl.week = 3),
   'cs-qb1|true|0', 'B8b PREMISE (R1137): FINAL week 3 has a STARTER with a STAMPED line (queueable) and an empty queue, so G13''s nothing-for-week-3 is the verb skipping it');
-select is((select settings ->> 'waiver_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
-  '48', 'B9 PREMISE: L1 stores waiver_period_hours = 48 (the §C key''s before-value is a real stored value, not an absent key)');
+select is((select settings ->> 'trade_review_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+  '48', 'B9 PREMISE: L1 stores trade_review_period_hours = 48 (the §C key''s before-value is a real stored value, not an absent key)');
 
 -- ---------------------------------------------------------------------------
 -- C. AN IN-SEASON CHANGE TO A PERMITTED KEY — the receipt names THAT KEY ALONE.
@@ -272,15 +272,15 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select set_config('pgtap.cs_c1',
   (select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-     'waiver_period_hours', '72'::jsonb, false, 'waivers clear faster in-season',
+     'trade_review_period_hours', '72'::jsonb, false, 'waivers clear faster in-season',
      '0e000000-0000-4000-8000-000000000010'::uuid)::text), true);
 reset role;
 select set_config('request.jwt.claims', '', true);
 
-select is((select settings -> 'waiver_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+select is((select settings -> 'trade_review_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
   '72'::jsonb, 'C1 THE LIFTED GATE: an in_season league''s setting is CHANGED — 118:2489-2497 would have refused this status by name; this verb is the override that message promised');
-select is((select settings - 'waiver_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
-  '{"schedule_mode": "h2h", "bench_lock": true, "tiebreakers": ["win_pct", "points_for", "head_to_head", "points_against", "division_record", "coin_flip"]}'::jsonb,
+select is((select settings - 'trade_review_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+  '{"schedule_mode": "h2h", "auto_sub_inactives": true, "tiebreakers": ["win_pct", "points_for", "head_to_head", "points_against", "division_record", "coin_flip"]}'::jsonb,
   'C2 …and EVERY OTHER blob key is byte-untouched (per-key read-modify-write, D347 — not 118''s whole-document UPDATE)');
 select is(current_setting('pgtap.cs_c1')::jsonb ->> 'no_changes', 'false',
   'C3 …the document says a change happened, by value');
@@ -288,10 +288,10 @@ select is((select count(*)::int from commissioner_actions where league_id = 'be0
   1, 'C4 EXACTLY ONE audit row (D336 part 2)');
 select is((select action_type || '|' || target_type || '|' || target_id from commissioner_actions
            where league_id = 'be000000-0000-4000-8000-000000000001'),
-  'change_setting|setting|waiver_period_hours', 'C5 …stamped change_setting / setting / <the key> — tasks-M6A §5''s contractual row');
+  'change_setting|setting|trade_review_period_hours', 'C5 …stamped change_setting / setting / <the key> — tasks-M6A §5''s contractual row');
 select is((select before::text || ' -> ' || after::text from commissioner_actions
            where league_id = 'be000000-0000-4000-8000-000000000001'),
-  '{"waiver_period_hours": 48} -> {"waiver_period_hours": 72}',
+  '{"trade_review_period_hours": 48} -> {"trade_review_period_hours": 72}',
   'C6 …and before/after name THAT KEY ALONE — one key in, one key out; a whole-document receipt (118''s shape) would carry fifteen');
 select is((select (metadata ->> 'rescore_requested') || '|' || (metadata ->> 'rescore_performed') || '|' || coalesce(metadata ->> 'rescore_not_performed_why', 'null')
            from commissioner_actions where league_id = 'be000000-0000-4000-8000-000000000001'),
@@ -303,7 +303,7 @@ select is(current_setting('pgtap.cs_c1')::jsonb -> 'bypassed', '["settings_statu
   'C9 `bypassed` names the ONE rule this write walked past — 118''s status gate — so the receipt says what was lifted (standing rule (g)''s shape, §4 rule 15)');
 select is((select count(*)::int from league_chat where league_id = 'be000000-0000-4000-8000-000000000001' and is_system),
   1, 'C10 §10.3: ONE in-transaction league_chat system post, which cannot be disabled');
-select ok((select message like 'Setting waiver_period_hours changed from 48 to 72 by %(commissioner override) — reason: waivers clear faster in-season'
+select ok((select message like 'Setting trade_review_period_hours changed from 48 to 72 by %(commissioner override) — reason: waivers clear faster in-season'
            from league_chat where league_id = 'be000000-0000-4000-8000-000000000001' and is_system),
   'C11 …naming the key, both values, the override and the reason');
 select is((select updated_at > created_at from leagues where id = 'be000000-0000-4000-8000-000000000001'),
@@ -340,12 +340,12 @@ select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000
 -- (i) the same value, the same JSON type
 select set_config('pgtap.cs_d1',
   (select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-     'waiver_period_hours', '72'::jsonb, false, 'a second look',
+     'trade_review_period_hours', '72'::jsonb, false, 'a second look',
      '0e000000-0000-4000-8000-000000000020'::uuid)::text), true);
 -- (ii) the same value as a STRING — item 4: `2` and `"2"` are the same value
 select set_config('pgtap.cs_d2',
   (select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-     'waiver_period_hours', '"72"'::jsonb, false, 'a third look, typed differently',
+     'trade_review_period_hours', '"72"'::jsonb, false, 'a third look, typed differently',
      '0e000000-0000-4000-8000-000000000021'::uuid)::text), true);
 -- (iii) a TYPED COLUMN re-sent as a string
 select set_config('pgtap.cs_d3',
@@ -634,9 +634,9 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, true, 'rescore a boolean?',
+       'auto_sub_inactives', 'false'::jsonb, true, 'rescore a boolean?',
        '0e000000-0000-4000-8000-000000000054'::uuid) $$,
-  '%rescore applies only to scoring_system_id%bench_lock has no stored score to recompute%',
+  '%rescore applies only to scoring_system_id%auto_sub_inactives has no stored score to recompute%',
   'G21 `rescore` on any other key is refused by name — the flag has no subject there, and a success document for a flag that meant nothing is 126''s rule against');
 -- A personal / non-template system cannot be attached (118 step 5''s scope).
 insert into scoring_systems (id, name, owner_id, is_template, rules)
@@ -666,11 +666,11 @@ select ok(
   'H1 Q66 (131): commish_change_setting_internal no longer carries 129:735''s "a reason is required" refusal — the gate is a NORMALISATION now (the explicit class still decides "blank", and blank ⇒ NULL)');
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, repeat('x', 501), '0e000000-0000-4000-8000-000000000061'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, repeat('x', 501), '0e000000-0000-4000-8000-000000000061'::uuid) $$,
   '22023', null, 'H2 a 501-character reason is refused (the league_chat bound)');
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, 'no key', null) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, 'no key', null) $$,
   '22023', null, 'H3 a missing action_id is refused: the idempotency key is not optional');
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
@@ -678,18 +678,18 @@ select throws_ok(
   '22023', null, 'H4 LOUD EMPTINESS: a call naming no key is a MALFORMED CALL refused by name — never no_changes: true');
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'waiver_period_hours', '"lots"'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000063'::uuid) $$,
-  '%waiver_period_hours requires an integer between 0 and 168 — got lots%',
+       'trade_review_period_hours', '"lots"'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000063'::uuid) $$,
+  '%trade_review_period_hours requires an integer between 0 and 96 — got lots%',
   'H5 a value of the wrong TYPE is refused by name, with the range');
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'waiver_period_hours', '169'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000064'::uuid) $$,
-  '%waiver_period_hours must be between 0 and 168%got 169%',
-  'H6 …169 is refused (one over §7.3.4''s 0-168)…');
+       'trade_review_period_hours', '97'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000064'::uuid) $$,
+  '%trade_review_period_hours must be between 0 and 96%got 97%',
+  'H6 …97 is refused (one over §7.3.5''s 0-96)…');
 select lives_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'waiver_period_hours', '168'::jsonb, false, 'the boundary', '0e000000-0000-4000-8000-000000000065'::uuid) $$,
-  'H7 …and 168 lives — the boundary, one unit either side');
+       'trade_review_period_hours', '96'::jsonb, false, 'the boundary', '0e000000-0000-4000-8000-000000000065'::uuid) $$,
+  'H7 …and 96 lives — the boundary, one unit either side');
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'waiver_type', '"faab_plus"'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000066'::uuid) $$,
@@ -739,23 +739,23 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, 'not mine', '0e000000-0000-4000-8000-000000000080'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, 'not mine', '0e000000-0000-4000-8000-000000000080'::uuid) $$,
   '42501', 'commish_change_setting: not a commissioner of this league',
   'I1 a seated MANAGER is refused with the one no-leak 42501');
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000004", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000081'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000081'::uuid) $$,
   '42501', 'commish_change_setting: not a commissioner of this league', 'I2 an OUTSIDER is refused the same way');
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000082'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000082'::uuid) $$,
   '42501', 'commish_change_setting: not a commissioner of this league', 'I3 a MEMBER WITH NO TEAM is refused the same way');
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.commish_change_setting('00000000-0000-4000-8000-0000000000aa',
-       'bench_lock', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000083'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000083'::uuid) $$,
   '42501', 'commish_change_setting: not a commissioner of this league',
   'I4 NO LEAK: a league that does not exist gets the IDENTICAL message (D336 part 5)');
 select set_config('request.jwt.claims', '', true);
@@ -763,10 +763,10 @@ reset role;
 set local role anon;
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000084'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, 'x', '0e000000-0000-4000-8000-000000000084'::uuid) $$,
   '42501', null, 'I5 anon cannot reach the door at all (the REVOKE, not the body)');
 reset role;
-select is((select settings ->> 'bench_lock' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+select is((select settings ->> 'auto_sub_inactives' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
   'true', 'I6 …and none of the five refusals wrote anything');
 
 -- ---------------------------------------------------------------------------
@@ -776,13 +776,13 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select is(
   (select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-     'bench_lock', 'false'::jsonb, false, 'a completely different request',
+     'auto_sub_inactives', 'false'::jsonb, false, 'a completely different request',
      '0e000000-0000-4000-8000-000000000010'::uuid)::text),
   current_setting('pgtap.cs_c1'),
   'J1 REPLAY (E2/D68): §C''s action_id returns §C''s document BYTE-identically — with a different KEY, value and reason. The lookup sits AFTER auth but BEFORE every business gate');
 reset role;
 select set_config('request.jwt.claims', '', true);
-select is((select settings ->> 'bench_lock' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+select is((select settings ->> 'auto_sub_inactives' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
   'true', 'J2 …and NOTHING was written on the replay: the returned document is a record, not an instruction');
 
 -- ---------------------------------------------------------------------------
@@ -819,8 +819,8 @@ select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.
 -- ---------------------------------------------------------------------------
 select is((select string_agg(k || ':' || (commish_setting_policy(k) ->> 'class'), ',' order by k)
            from unnest(array['faab_budget', 'waiver_type', 'trade_review', 'trade_deadline_week', 'roster_settings',
-                             'waiver_period_hours', 'tiebreakers', 'playoff_reseed', 'allow_illegal_lineups']) k),
-  'allow_illegal_lineups:free,faab_budget:free,playoff_reseed:free,roster_settings:free,tiebreakers:free,trade_deadline_week:free,trade_review:free,waiver_period_hours:free,waiver_type:free',
+                             'trade_review_period_hours', 'tiebreakers', 'playoff_reseed', 'allow_illegal_lineups']) k),
+  'allow_illegal_lineups:free,faab_budget:free,playoff_reseed:free,roster_settings:free,tiebreakers:free,trade_deadline_week:free,trade_review:free,trade_review_period_hours:free,waiver_type:free',
   'L1 FREE keys');
 select is(commish_setting_policy('scoring_system_id') ->> 'class', 'rescore', 'L2 scoring_system_id is the ONE rescore key');
 select is((select string_agg(k || ':' || (commish_setting_policy(k) ->> 'class'), ',' order by k)
@@ -840,26 +840,26 @@ select is(commish_setting_policy('player_game_lock'), null, 'L6 a retired / unkn
 -- ---------------------------------------------------------------------------
 -- Q. THE REASON IS OPTIONAL — Q66 (spec v2.16.41 §10.3 / §15.4), landed for
 --    this verb by migration 131 (L.E1.15 / F362). The sweep's proof shape,
---    on `bench_lock` (a free key; §J left it `true`). Runs LAST so no earlier
+--    on `auto_sub_inactives` (a free key; §J left it `true`). Runs LAST so no earlier
 --    count premise moves.
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select lives_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, null, '0e000000-0000-4000-8000-000000000090'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, null, '0e000000-0000-4000-8000-000000000090'::uuid) $$,
   'Q1 a NO-reason setting change LANDS (Q66). Re-adding 129:734-737''s refusal reds here');
 select lives_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'true'::jsonb, false, E' \t\r\n ', '0e000000-0000-4000-8000-000000000091'::uuid) $$,
+       'auto_sub_inactives', 'true'::jsonb, false, E' \t\r\n ', '0e000000-0000-4000-8000-000000000091'::uuid) $$,
   'Q2 a reason of SPACE+TAB+CR+NEWLINE is treated as NO reason and LANDS (the explicit class still decides "blank", R745)');
 select lives_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'false'::jsonb, false, E'\t lock off \n', '0e000000-0000-4000-8000-000000000092'::uuid) $$,
+       'auto_sub_inactives', 'false'::jsonb, false, E'\t lock off \n', '0e000000-0000-4000-8000-000000000092'::uuid) $$,
   'Q3 a real reason wrapped in tabs and newlines lands…');
 select throws_ok(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'bench_lock', 'true'::jsonb, false, repeat('x', 501), '0e000000-0000-4000-8000-000000000093'::uuid) $$,
+       'auto_sub_inactives', 'true'::jsonb, false, repeat('x', 501), '0e000000-0000-4000-8000-000000000093'::uuid) $$,
   '22023', null, 'Q4 a 501-character reason is STILL refused in-body (the bound survives Q66; only the presence gate went)');
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -868,14 +868,14 @@ select is(
    from commissioner_actions where league_id = 'be000000-0000-4000-8000-000000000001'
      and metadata ->> 'action_id' in ('0e000000-0000-4000-8000-000000000090', '0e000000-0000-4000-8000-000000000091',
                                       '0e000000-0000-4000-8000-000000000092', '0e000000-0000-4000-8000-000000000093')),
-  'change_setting|bench_lock=<NULL> change_setting|bench_lock=<NULL> change_setting|bench_lock=lock off',
+  'change_setting|auto_sub_inactives=<NULL> change_setting|auto_sub_inactives=<NULL> change_setting|auto_sub_inactives=lock off',
   'Q5 THE RECEIPTS: no reason ⇒ NULL, whitespace-only ⇒ NULL (not ''''), tab-wrapped ⇒ stored TRIMMED; the 501 refusal wrote none');
 select is(
   (select string_agg(message, '|' order by message) from league_chat
-   where league_id = 'be000000-0000-4000-8000-000000000001' and is_system and message like 'Setting bench_lock changed%'),
-  'Setting bench_lock changed from false to true by cs_user1 (commissioner override)|Setting bench_lock changed from true to false by cs_user1 (commissioner override)|Setting bench_lock changed from true to false by cs_user1 (commissioner override) — reason: lock off',
+   where league_id = 'be000000-0000-4000-8000-000000000001' and is_system and message like 'Setting auto_sub_inactives changed%'),
+  'Setting auto_sub_inactives changed from false to true by cs_user1 (commissioner override)|Setting auto_sub_inactives changed from true to false by cs_user1 (commissioner override)|Setting auto_sub_inactives changed from true to false by cs_user1 (commissioner override) — reason: lock off',
   'Q6 THE POSTS, pinned by content: the two no-reason landings end at the override marker with NO "— reason:" clause; the reasoned one carries the TRIMMED reason');
-select is((select settings ->> 'bench_lock' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
+select is((select settings ->> 'auto_sub_inactives' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
   'false', 'Q7 …and the league carries Q3''s value: the three landings wrote, the refusal did not');
 
 select * from finish();

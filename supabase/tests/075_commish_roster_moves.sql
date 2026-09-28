@@ -198,7 +198,7 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
   (select id from scoring_systems where is_template and name = 'ESPN Standard'),
   (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
   'per_player_kickoff', 'faab',
-  '{"waiver_period_hours": 48, "free_agency": "immediate_after_waivers", "fa_hold_hours": 0,
+  '{"waiver_run_days": ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], "waiver_run_time": "00:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run", "fa_hold_hours": 0,
     "acquisitions_per_week": "unlimited", "acquisitions_per_season": "unlimited", "allow_illegal_lineups": true}',
   '{"starting_slots": [
       {"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1},
