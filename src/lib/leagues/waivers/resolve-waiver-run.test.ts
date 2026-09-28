@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  FAIL_CHECK_ORDER,
   resolveWaiverRun,
   serializeWaiverRunResult,
   WaiverRunInputError,
@@ -163,6 +164,37 @@ describe('Q71 — the highest bid on a player always wins him', () => {
         '"priority":{"source":"reverse_draft_order","rotates":false,"before":["B","A"],"after":["B","A"]}}',
     )
   })
+
+  it("R1178 — the deadlock break awards the LEADING team's HIGHEST-RANKED top claim, not the strongest top itself", () => {
+    // T holds D. T: #1 Y $10 drop D, #2 X $20 drop D, #3 W $60. R ($52):
+    // #1 X $5, #2 Y $50. Weekly cap 2. Tops: W → t3 ($60), Y → r2 ($50),
+    // X → t2 ($20); none is ready (t3: T's two higher claims + t3 exceed the
+    // cap; r2: $52 − $5 held for r1 < $50; t2: shares its drop with t1). The
+    // strongest top is t3 (team T), and T's highest-ranked TOP is t2 — the
+    // break awards t2, not t3 (D389(4)).
+    const r = resolveWaiverRun(
+      input({
+        settings: { acquisitionsPerWeek: 2 },
+        teams: [team('T', ['D']), team('R', [], 52)],
+        claims: [
+          claim('t1', 'T', 'Y', 10, 1, 'D'),
+          claim('t2', 'T', 'X', 20, 2, 'D'),
+          claim('t3', 'T', 'W', 60, 3),
+          claim('r1', 'R', 'X', 5, 1),
+          claim('r2', 'R', 'Y', 50, 2),
+        ],
+      }),
+    )
+    expect(summary(r)).toEqual([
+      '1 t2 won $20 BREAK',
+      '2 r1 lost:outbid $0',
+      '3 t1 invalid:drop_gone $0',
+      '4 t3 won $60',
+      '5 r2 won $50',
+    ])
+    expect(faabAfter(r)).toEqual({ R: 2, T: 20 })
+    expect(r.teams.find((t) => t.teamId === 'T')?.rosterAfter).toEqual(['W', 'X'])
+  })
 })
 
 describe('E7 / Q72 — equal bids go to waiver priority', () => {
@@ -201,6 +233,38 @@ describe('E7 / Q72 — equal bids go to waiver priority', () => {
     )
     expect(summary(r)).toEqual(['1 a1 won $10', '2 b1 won $10', '3 a2 lost:lost_on_priority $0'])
     expect(r.priority).toEqual({ source: 'rolling', rotates: true, before: ['A', 'B'], after: ['A', 'B'] })
+  })
+
+  it("R1176 / Q71 — a team's lower-ranked win never costs it a higher-ranked claim on the tiebreak: A gets P on priority AND Q", () => {
+    // A holds priority 1. A: #1 P $10 (tied with B), #2 Q $30 (uncontested).
+    // Q's $30 is the bigger bid, so it is decided first — but A's win on its
+    // #2 does not send it behind B for its #1 (Q71: "its higher-ranked claim
+    // goes first"): P is judged with A still at priority 1.
+    const r = resolveWaiverRun(
+      input({
+        settings: { faabTiebreaker: 'rolling_priority' },
+        teams: [team('A'), team('B')],
+        claims: [claim('a1', 'A', 'P', 10, 1), claim('a2', 'A', 'Q', 30, 2), claim('b1', 'B', 'P', 10, 1)],
+        rolling: { A: 1, B: 2 },
+      }),
+    )
+    expect(summary(r)).toEqual(['1 a2 won $30', '2 a1 won $10', '3 b1 lost:lost_on_priority $0'])
+    expect(faabAfter(r)).toEqual({ A: 60, B: 100 })
+    // The next run's order: A won (twice), so it is behind B.
+    expect(r.priority).toEqual({ source: 'rolling', rotates: true, before: ['A', 'B'], after: ['B', 'A'] })
+  })
+
+  it('…and the plain rolling-priority league already gives A both, in its own order (unchanged)', () => {
+    const r = resolveWaiverRun(
+      input({
+        settings: { waiverType: 'rolling_priority' },
+        teams: [team('A'), team('B')],
+        claims: [claim('a1', 'A', 'P', 0, 1), claim('a2', 'A', 'Q', 0, 2), claim('b1', 'B', 'P', 0, 1)],
+        rolling: { A: 1, B: 2 },
+      }),
+    )
+    expect(summary(r)).toEqual(['1 a1 won $0', '2 b1 lost:lost_on_priority $0', '3 a2 won $0'])
+    expect(r.priority.after).toEqual(['B', 'A'])
   })
 
   it('rolling starts from reverse draft order when nothing is stored yet (Q72) — even once standings exist', () => {
@@ -337,6 +401,40 @@ describe('the other failure reasons', () => {
     )
     expect(summary(r)).toEqual(['1 r1 invalid:team_retired $0', '2 u1 won $1'])
     expect(r.priority.before).toEqual(['U'])
+  })
+
+  it('R1177 — FAIL_CHECK_ORDER is pinned as a stored literal (parity-relevant: the SQL twin tests in this order)', () => {
+    expect(FAIL_CHECK_ORDER).toEqual([
+      'team_retired',
+      'add_rostered',
+      'add_locked',
+      'drop_gone',
+      'drop_locked',
+      'roster_full',
+      'cap_reached',
+      'insufficient_faab',
+    ])
+  })
+
+  it('R1177 — adjacent pairs in FAIL_CHECK_ORDER: a claim failing both names the earlier one', () => {
+    // drop_gone before drop_locked: the drop left the team AND is locked.
+    const gone = resolveWaiverRun(
+      input({ teams: [team('T'), team('V', ['D'])], claims: [claim('t1', 'T', 'P', 5, 1, 'D')], locked: ['D'] }),
+    )
+    expect(summary(gone)).toEqual(['1 t1 invalid:drop_gone $0'])
+    // roster_full before cap_reached before insufficient_faab: full, capped, broke.
+    const full = resolveWaiverRun(
+      input({
+        settings: { rosterSize: 1, acquisitionsPerWeek: 0 },
+        teams: [team('T', ['R1'], 4)],
+        claims: [claim('t1', 'T', 'P', 5, 1)],
+      }),
+    )
+    expect(summary(full)).toEqual(['1 t1 invalid:roster_full $0'])
+    const capped = resolveWaiverRun(
+      input({ settings: { acquisitionsPerWeek: 0 }, teams: [team('T', [], 4)], claims: [claim('t1', 'T', 'P', 5, 1)] }),
+    )
+    expect(summary(capped)).toEqual(['1 t1 invalid:cap_reached $0'])
   })
 
   it('the reasons are checked in FAIL_CHECK_ORDER — the first failing check names it', () => {
