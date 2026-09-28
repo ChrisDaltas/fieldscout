@@ -9,6 +9,13 @@
 
 ---
 
+> **NEXT BUILD (queued): M5 — Transactions, breakdown PR #323** (`docs/specs/tasks-M5-transactions.md`; added 2026-09-27).
+> **Not active yet.** The loop keeps building M6A below until L.E1.27 merges. It takes no `L.D2.4+` / `L.D3.2+`
+> task until Chris merges #323 and this file is repointed. Questions Q70–Q79 (PROGRESS §3) block only the
+> tasks they name. L.D2.5, L.D2.6, L.D2.11, L.D2.12 and L.D3.2 can start without any answer.
+
+---
+
 ## Active: **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
 
 **The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
