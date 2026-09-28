@@ -24,7 +24,8 @@ import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, autopilotSwitchShown, renameArm } from './team-commish-ops'
-import { TeamAutopilotSwitch, TeamCommishTools, TeamRename } from './team-commish-tools'
+import { TeamAutopilotSwitch, TeamCommishTools, TeamFaabEdit, TeamRename } from './team-commish-tools'
+import { waiverSeatCopy } from './waiver-claims-ops'
 
 /**
  * Team page — §16.1 `…/leagues/[id]/team/[teamId]` ("Team/roster + weekly
@@ -197,6 +198,13 @@ function TeamPageContent({
               {isOwnTeam ? 'Your team' : rosterTeam?.manager_user_id ? 'Managed by another member' : 'No manager seated'}
               {isCommish && !isOwnTeam ? ' · you are acting as commissioner' : ''}
             </span>
+            {/* L.D2.13: the seat's FAAB balance / waiver priority (public to
+                members — only bids are blind, D385(4)). */}
+            {rosterTeam && waiverSeatCopy(detail.settings, rosterTeam) && (
+              <span className="text-[11px] font-bold text-ink" data-team-waiver-seat>
+                {waiverSeatCopy(detail.settings, rosterTeam)}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* The mode, said at the TOP of the page — above the week picker and
@@ -298,6 +306,9 @@ function TeamPageContent({
             overrideMode={inOverride}
             onOverrideMode={(next) => (next ? enterOverride(leagueId) : exitOverride())}
           />
+          {inOverride && detail.settings.waiver_type === 'faab' && (
+            <TeamFaabEdit key={teamId} leagueId={leagueId} teamId={teamId} teamName={teamName} balance={rosterTeam.faab_balance} />
+          )}
           {inOverride && (
             <TeamCommishTools
               leagueId={leagueId}

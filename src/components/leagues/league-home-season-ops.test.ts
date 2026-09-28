@@ -155,14 +155,25 @@ describe('standingsPeek — a SLICE of 117’s ranked rows, the reason carried t
 // The honest chips
 // ---------------------------------------------------------------------------
 
-describe('the waiver / trade chips print the STORED settings and name the verbs as not yet here', () => {
+describe('the waiver chip names the next run (L.D2.13); the trade chip prints the STORED deadline', () => {
   const settings = defaultsForTeamCount(8)
-  it('waivers: the STORED schedule in the league’s zone (the add path keeps it since v2.16.59); the claim verb still named as later', () => {
+  const window = { waivers: true, next_run_at: '2099-09-16T07:00:00.000Z', paused: false, free_agency_open: false }
+  it('waivers: the server window’s next run, formatted by the host; the STORED schedule in the title', () => {
+    const chip = waiverChip(settings, window, (iso) => `<${iso}>`)
+    expect(chip.label).toBe('Next waiver run · <2099-09-16T07:00:00.000Z>')
+    expect(chip.title).toBe(
+      'Waiver type: FAAB (blind bids). Waivers run Wednesday at 3:00 AM (America/New_York); free agency is open from the waiver run until the week’s last game ends. Claims only until then.',
+    )
+    expect(waiverChip(settings, { ...window, free_agency_open: true }).title).toMatch(/Free agency is open now\.$/)
+    expect(waiverChip(settings, { ...window, paused: true }).label).toBe('Waivers paused')
+  })
+  it('waivers with NO window (a failed read): the schedule, no invented instant, no "later update"', () => {
     const chip = waiverChip(settings)
     expect(chip.label).toBe('Waivers · dropped players wait for the next run')
     expect(chip.title).toBe(
-      'Waiver type: FAAB (blind bids). Waivers run Wednesday at 3:00 AM (America/New_York); free agency is open from the waiver run until the week’s last game ends. Waiver claims arrive in a later update.',
+      'Waiver type: FAAB (blind bids). Waivers run Wednesday at 3:00 AM (America/New_York); free agency is open from the waiver run until the week’s last game ends.',
     )
+    expect(chip.title).not.toMatch(/later update/)
     // Chris's league 1 preset, said plainly — the one describer, never a second copy.
     const daily = waiverChip({
       ...settings,

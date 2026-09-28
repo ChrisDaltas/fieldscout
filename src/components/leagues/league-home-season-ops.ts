@@ -23,6 +23,7 @@ import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { describeWaiverSchedule, type WAIVER_SCHEDULE_KEYS } from '@/lib/leagues/time/waiver-schedule'
+import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
@@ -151,32 +152,34 @@ export interface HonestChip {
   title: string
 }
 
-export const WAIVERS_LATER_COPY = 'Waiver claims arrive in a later update.'
 export const TRADES_LATER_COPY = 'Trades arrive in a later update.'
 
 /**
- * The waiver chip: the STORED settings said plainly, and the claim verb
- * named as not yet here. Since the waiver schedule landed (spec §7.3.4
- * v2.16.59) the schedule is REAL for pickups — outside the free-agency
- * window an unowned player is claim-only and a dropped player waits for the
- * next run, and the add path enforces both — so the schedule is printed, in
- * the league's own zone, by the one describer (`describeWaiverSchedule`).
- * What is still later is the claim itself: no job settles claims yet, so the
- * title keeps saying so.
+ * The waiver chip (M5 L.D2.13 — it replaced "claims arrive in a later
+ * update"): the league's NEXT RUN, from the server's window read (the league
+ * detail's `waiver_window` — no clock here), formatted for the viewer by
+ * `fmt`; the stored schedule said plainly in the title by the one describer
+ * (`describeWaiverSchedule`). With no window (a failed read) the chip says
+ * what the schedule means and names no instant it cannot know.
  */
 export function waiverChip(
   settings: Pick<LeagueSettings, 'waiver_type' | (typeof WAIVER_SCHEDULE_KEYS)[number]>,
+  window: Pick<WaiverWindowView, 'waivers' | 'next_run_at' | 'paused' | 'free_agency_open'> | null = null,
+  fmt: (iso: string) => string = (iso) => iso,
 ): HonestChip {
-  if (settings.waiver_type === 'none_fcfs') {
+  if (settings.waiver_type === 'none_fcfs' || window?.waivers === false) {
     return {
       label: 'No waivers — dropped players are free agents at once',
-      title: `Waivers: off (first come, first served). ${WAIVERS_LATER_COPY}`,
+      title: 'Waivers: off (first come, first served) — any unowned player whose game hasn’t started can be picked up at once.',
     }
   }
-  return {
-    label: 'Waivers · dropped players wait for the next run',
-    title: `Waiver type: ${waiverTypeLabel(settings.waiver_type)}. ${describeWaiverSchedule(settings)} ${WAIVERS_LATER_COPY}`,
+  const schedule = `Waiver type: ${waiverTypeLabel(settings.waiver_type)}. ${describeWaiverSchedule(settings)}`
+  if (window?.paused) return { label: 'Waivers paused', title: `Waiver runs are paused right now — claims stay pending. ${schedule}` }
+  if (window?.next_run_at) {
+    const state = window.free_agency_open ? ' Free agency is open now.' : ' Claims only until then.'
+    return { label: `Next waiver run · ${fmt(window.next_run_at)}`, title: `${schedule}${state}` }
   }
+  return { label: 'Waivers · dropped players wait for the next run', title: schedule }
 }
 
 export function waiverTypeLabel(type: string): string {

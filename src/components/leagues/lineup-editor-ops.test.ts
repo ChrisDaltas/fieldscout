@@ -31,6 +31,8 @@ import {
   defaultLineupWeek,
   designationOf,
   irStintChip,
+  KEPT_STARTER_COPY,
+  keptStarters,
   lockBadgeFor,
   lineupSaveRequest,
   lockedPlayerIds,
@@ -491,5 +493,20 @@ describe('R973 — the four `lockExempt` sites move together, or the door leads 
 
   it('does not let override mode be read-only (the Save path stays reachable)', () => {
     expect(editor).toMatch(/const readOnly = !canEdit \|\| \(editability\.state !== 'open' && !overrideMode\)/)
+  })
+})
+
+describe('F443 (L.D2.13) — a starter dropped after he played keeps his seat', () => {
+  const stored = { 'qb:0': 'qb1', 'te:0': 'gone-te' }
+  it('keptStarters names exactly the stored keys whose player is off the roster; placementFromStored still omits him (the verbs carry him — D413(3))', () => {
+    expect([...keptStarters(stored, ALL)]).toEqual([['te:0', 'gone-te']])
+    expect(keptStarters(null, ALL).size).toBe(0)
+    expect(placementFromStored(stored, ALL)).toEqual({ 'qb:0': 'qb1' })
+  })
+  it('the manager cannot seat anyone in a kept seat; the commissioner’s override can (it records a replacement)', () => {
+    const ctx = { slots, players, locked: new Set<string>(), currentWeek: 1, kept: keptStarters(stored, ALL) }
+    const refused = planMove({ 'qb:0': 'qb1' }, 'te1', { kind: 'slot', key: 'te:0' }, ctx)
+    expect(refused).toEqual({ ok: false, reason: 'locked', message: `TE is locked — the player there was ${KEPT_STARTER_COPY}.` })
+    expect(planMove({ 'qb:0': 'qb1' }, 'te1', { kind: 'slot', key: 'te:0' }, { ...ctx, lockExempt: true })).toMatchObject({ ok: true })
   })
 })

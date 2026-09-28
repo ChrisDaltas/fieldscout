@@ -60,6 +60,7 @@ import type { Database, Json } from '@/types/database'
 import { mapInSeasonRpcError } from './inseason-errors'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
+import { selectWithSeatFallback } from './seat-columns'
 
 type Supabase = SupabaseClient<Database>
 
@@ -199,10 +200,11 @@ export async function readStandings(
   // The seat columns (L.D2.12). The RPC above already proved membership, so
   // this RLS read is the caller's own league; an error is a 500 by name,
   // never a table silently missing its balances.
-  const { data: seats, error: seatsError } = await supabase
-    .from('league_members')
-    .select('team_id, faab_balance, waiver_priority')
-    .eq('league_id', leagueId)
+  // L.D2.13: a pre-145 database has no `waiver_priority` (seat-columns.ts).
+  const { data: seats, error: seatsError } = await selectWithSeatFallback(
+    () => supabase.from('league_members').select('team_id, faab_balance, waiver_priority').eq('league_id', leagueId),
+    () => supabase.from('league_members').select('team_id, faab_balance').eq('league_id', leagueId),
+  )
   if (seatsError) {
     return { status: 500, body: { error: `league_members: ${seatsError.message}` } }
   }

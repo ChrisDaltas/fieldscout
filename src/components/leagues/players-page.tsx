@@ -19,10 +19,14 @@ import { useDraftPool } from '@/hooks/use-draft-pool'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeaguePoolLive } from '@/hooks/use-league-pool'
 import { useRostersLive } from '@/hooks/use-rosters'
+import { useSubmitClaim } from '@/hooks/use-submit-claim'
 import { useAddDrop, type AddDropResult } from '@/hooks/use-transactions'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
+import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 import { cn } from '@/lib/utils'
+
+import { ClaimDialog } from './claim-dialog'
 
 import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
@@ -48,6 +52,8 @@ import {
 } from './players-page-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
+import { FA_HOLD_TITLE, WAIVERS_PAUSED_COPY, faHoldUntil, pickupActions, windowLine, type ActionState } from './waiver-claims-ops'
+import { WaiverClaimsPanel } from './waiver-claims-panel'
 
 /**
  * Players / free agents — §16.1 `…/leagues/[id]/players`, §16.2
@@ -89,10 +95,17 @@ import { ProblemCard, problemCopy } from './team-page'
  * read out (`moveReadout`): the slot the add landed on, every lineup the
  * drop touched, where the dropped player went, the caps after.
  *
- * **Waivers and trades are HONEST absences:** an `on_waivers` row says when
- * the period lapses and that claims arrive in a later update (its Add is
- * live — the server answers); a player on another roster says trades do.
- * No button posts nowhere.
+ * **Claims (M5 L.D2.13, F425):** every unowned row offers Claim beside Add
+ * as the league's waiver WINDOW allows — the server's read (the league
+ * detail's `waiver_window`, D414): during free agency Add alone; outside it
+ * Claim first and Add still live with an advisory title (the window is not
+ * refreshed while the page is open — R1220; a refused add names the next run
+ * verbatim); with no window both, and the server answers. A database without
+ * the claims (pre-149, `waivers_live: false` — R1219) shows no Claim and no
+ * panel. Claim opens `ClaimDialog` (a FAAB bid or a priority
+ * claim, and an optional drop); the team's claims live in
+ * `WaiverClaimsPanel` above the table. A player on another roster says
+ * trades come later. No button posts nowhere.
  *
  * **§16.5.4:** skeleton · empty by reason (per scope, per search) · error-
  * with-retry (`ProblemCard`) · degraded (stale banner + last-good rows; the
@@ -129,12 +142,21 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const pool = useLeaguePoolLive(leagueId)
   const players = useDraftPool(search, position)
   const move = useAddDrop(leagueId)
+  const claim = useSubmitClaim(leagueId)
+  const [claimRow, setClaimRow] = useState<PoolPlayerRow | null>(null)
+  const waiverWindow = detail.waiver_window ?? null
+  const waiverType = detail.settings.waiver_type
+  // R1219: a database without the claims (pre-149) — no Claim, no panel.
+  const claimsLive = detail.waivers_live !== false
+  const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
+  const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
 
   const rows = useMemo(
     () => poolRows(players.data ?? [], rosters.data, pool.data ?? [], myTeamId, scope),
     [players.data, rosters.data, pool.data, myTeamId, scope],
   )
-  const myRoster = rosters.data?.teams.find((t) => t.team_id === myTeamId)?.roster
+  const myRosterTeam = rosters.data?.teams.find((t) => t.team_id === myTeamId)
+  const myRoster = myRosterTeam?.roster
   const fill = rosterFill(myRoster, deriveRosterSize(detail.settings.roster_settings))
 
   const rostersProblem = rosters.isError ? rosters.error : null
@@ -172,6 +194,16 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
 
       {reconnecting && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {stale && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
+      {waiverWindow?.paused && waiverWindow.waivers && (
+        <StatusBanner tone="caution">
+          <span data-waivers-paused>{WAIVERS_PAUSED_COPY}</span>
+        </StatusBanner>
+      )}
+      {line && (
+        <StatusBanner tone={line.tone}>
+          <span data-waiver-window={waiverWindow?.why ?? ''}>{line.text}</span>
+        </StatusBanner>
+      )}
 
       {myTeamId ? (
         <MovePanel
@@ -192,6 +224,30 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           {NO_SEAT_COPY}
         </StatusBanner>
       )}
+
+      {myTeamId && claimsLive && waiverType !== 'none_fcfs' && waiverWindow?.waivers !== false && (
+        <WaiverClaimsPanel leagueId={leagueId} nextRunLocal={nextRunLocal} />
+      )}
+      <ClaimDialog
+        row={claimRow}
+        waiverType={waiverType}
+        minBid={detail.settings.faab_min_bid}
+        balance={myRosterTeam?.faab_balance ?? null}
+        budget={detail.settings.faab_budget}
+        roster={myRoster ?? []}
+        nextRunLocal={nextRunLocal}
+        pending={claim.isPending}
+        refusal={claim.isError ? (claim.error instanceof Error ? claim.error.message : 'The claim was refused.') : null}
+        result={claim.data ?? null}
+        onSubmit={({ bid, dropPlayerId }) => {
+          if (!myTeamId || !claimRow) return
+          claim.submit({ teamId: myTeamId, addPlayerId: claimRow.player.id, dropPlayerId, ...(bid === undefined ? {} : { faabBid: bid }) })
+        }}
+        onClose={() => {
+          setClaimRow(null)
+          claim.reset()
+        }}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -244,6 +300,15 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           canAct={myTeamId !== null}
           intent={intent}
           leagueTimeZone={leagueTimeZone}
+          waiverType={waiverType}
+          waiverWindow={waiverWindow}
+          nextRunLocal={nextRunLocal}
+          claimsLive={claimsLive}
+          faHoldHours={detail.settings.fa_hold_hours}
+          onClaim={(row) => {
+            claim.reset()
+            setClaimRow(row)
+          }}
           onAdd={(row) => {
             move.reset()
             setIntent((i) => ({ ...i, add: row }))
@@ -404,8 +469,14 @@ export function PoolTable({
   canAct,
   intent,
   leagueTimeZone,
+  waiverType = 'faab',
+  waiverWindow = null,
+  nextRunLocal = null,
+  claimsLive = true,
+  faHoldHours = 0,
   onAdd,
   onDrop,
+  onClaim = () => {},
 }: {
   leagueId: string
   rows: readonly PoolPlayerRow[]
@@ -414,8 +485,16 @@ export function PoolTable({
   canAct: boolean
   intent: MoveIntent
   leagueTimeZone: string | null
+  /** L.D2.13: the league's waiver type and the server's window (null = unread). */
+  waiverType?: string
+  waiverWindow?: WaiverWindowView | null
+  nextRunLocal?: string | null
+  /** R1219: false = no claim verb on this database (pre-149). */
+  claimsLive?: boolean
+  faHoldHours?: number
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
+  onClaim?: (row: PoolPlayerRow) => void
 }) {
   if (rows.length === 0) {
     return (
@@ -473,11 +552,27 @@ export function PoolTable({
                   )}
                 </TableCell>
                 <TableCell>
-                  <AvailabilityCell leagueId={leagueId} row={row} leagueTimeZone={leagueTimeZone} />
+                  <AvailabilityCell
+                    leagueId={leagueId}
+                    row={row}
+                    leagueTimeZone={leagueTimeZone}
+                    faHoldHours={faHoldHours}
+                    evaluatedAt={waiverWindow?.evaluated_at ?? null}
+                  />
                 </TableCell>
                 {canAct && (
                   <TableCell className="text-right">
-                    <MoveButton row={row} leagueTimeZone={leagueTimeZone} onAdd={onAdd} onDrop={onDrop} />
+                    <MoveButton
+                      row={row}
+                      leagueTimeZone={leagueTimeZone}
+                      waiverType={waiverType}
+                      waiverWindow={waiverWindow}
+                      nextRunLocal={nextRunLocal}
+                      claimsLive={claimsLive}
+                      onAdd={onAdd}
+                      onDrop={onDrop}
+                      onClaim={onClaim}
+                    />
                   </TableCell>
                 )}
               </TableRow>
@@ -489,7 +584,19 @@ export function PoolTable({
   )
 }
 
-function AvailabilityCell({ leagueId, row, leagueTimeZone }: { leagueId: string; row: PoolPlayerRow; leagueTimeZone: string | null }) {
+function AvailabilityCell({
+  leagueId,
+  row,
+  leagueTimeZone,
+  faHoldHours,
+  evaluatedAt,
+}: {
+  leagueId: string
+  row: PoolPlayerRow
+  leagueTimeZone: string | null
+  faHoldHours: number
+  evaluatedAt: string | null
+}) {
   const a = row.availability
   if (a.kind === 'free_agent') return <Badge variant="stroke-green">{FREE_AGENT_LABEL}</Badge>
   if (a.kind === 'on_waivers') {
@@ -509,20 +616,49 @@ function AvailabilityCell({ leagueId, row, leagueTimeZone }: { leagueId: string;
   // player (trades come later), so the only useful next step from here is
   // that team's own page — and `teamId` is non-nullable on this branch.
   // The accent stays the call site's; the link adds only its underline.
+  // §16.5.2's `fa_hold` chip on the viewer's own fresh pickup — the stored
+  // pickup instant + the hold, against the SERVER's instant (no clock here).
+  const holdUntil = a.mine && row.roster ? faHoldUntil(row.roster, faHoldHours, evaluatedAt) : null
   return (
-    <span className={cn('text-[12px] font-medium', a.mine ? 'font-bold text-accent-strong' : 'text-ink')} title={a.mine ? undefined : ROSTERED_ELSEWHERE_TITLE}>
-      <TeamNameLink name={a.mine ? 'Your team' : a.teamName} leagueId={leagueId} teamId={a.teamId} />
+    <span className="flex flex-wrap items-center gap-1.5">
+      <span className={cn('text-[12px] font-medium', a.mine ? 'font-bold text-accent-strong' : 'text-ink')} title={a.mine ? undefined : ROSTERED_ELSEWHERE_TITLE}>
+        <TeamNameLink name={a.mine ? 'Your team' : a.teamName} leagueId={leagueId} teamId={a.teamId} />
+      </span>
+      {holdUntil && (
+        <Badge variant="stroke" title={FA_HOLD_TITLE} data-fa-hold={holdUntil}>
+          Hold until {formatInstantWithDate(holdUntil, leagueTimeZone).local}
+        </Badge>
+      )}
     </span>
   )
 }
 
-/** The action per row: Add for a free agent (disabled ONLY by the VIEW's
- *  lock, with the reason — an `on_waivers` row keeps a live Add whose title
- *  names the instant, because the server decides whether the period has
- *  lapsed (R894)), Drop for the viewer's own player (disabled by the view's
- *  lock), nothing for another roster's — each an honest absence, never a
- *  button that posts nowhere. */
-function MoveButton({ row, leagueTimeZone, onAdd, onDrop }: { row: PoolPlayerRow; leagueTimeZone: string | null; onAdd: (row: PoolPlayerRow) => void; onDrop: (player: RosterPlayer) => void }) {
+/** The action per row: Drop for the viewer's own player (disabled by the
+ *  view's lock), nothing for another roster's, and for an UNOWNED player Add
+ *  and / or Claim as `pickupActions` decides from the server's window (F425)
+ *  — each disabled only by the view's lock or the window, with the reason in
+ *  its title. Never a button that posts nowhere. */
+function MoveButton({
+  row,
+  leagueTimeZone,
+  waiverType,
+  waiverWindow,
+  nextRunLocal,
+  claimsLive,
+  onAdd,
+  onDrop,
+  onClaim,
+}: {
+  row: PoolPlayerRow
+  leagueTimeZone: string | null
+  waiverType: string
+  waiverWindow: WaiverWindowView | null
+  nextRunLocal: string | null
+  claimsLive: boolean
+  onAdd: (row: PoolPlayerRow) => void
+  onDrop: (player: RosterPlayer) => void
+  onClaim: (row: PoolPlayerRow) => void
+}) {
   const a = row.availability
   if (a.kind === 'rostered') {
     if (!a.mine) return <span className="text-[11px] text-n-3">—</span>
@@ -533,16 +669,20 @@ function MoveButton({ row, leagueTimeZone, onAdd, onDrop }: { row: PoolPlayerRow
     )
   }
   const waiversTitle = a.kind === 'on_waivers' ? waiversAddTitle(formatInstantWithDate(a.until, leagueTimeZone).local) : undefined
+  const actions = pickupActions(row, { waiverType, window: waiverWindow, addTitle: waiversTitle, lockedAddTitle: LOCKED_ADD_TITLE, nextRunLocal, claimsLive })
   return (
-    <Button
-      variant="stroke"
-      size="sm"
-      disabled={row.lock.locked}
-      title={row.lock.locked ? LOCKED_ADD_TITLE : waiversTitle}
-      onClick={() => onAdd(row)}
-      data-action="add"
-    >
-      Add
+    <span className="inline-flex items-center gap-1.5">
+      <RowAction state={actions.claim} label="Claim" action="claim" onClick={() => onClaim(row)} />
+      <RowAction state={actions.add} label="Add" action="add" onClick={() => onAdd(row)} />
+    </span>
+  )
+}
+
+function RowAction({ state, label, action, onClick }: { state: ActionState; label: string; action: string; onClick: () => void }) {
+  if (!state.show) return null
+  return (
+    <Button variant="stroke" size="sm" disabled={state.disabled} title={state.title} onClick={onClick} data-action={action}>
+      {label}
     </Button>
   )
 }

@@ -172,7 +172,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
           ) : standings.data ? (
             <StandingsTable
               doc={standings.data}
-              settings={{ median_game: detail.settings.median_game, second_opponent: detail.settings.second_opponent }}
+              settings={{ median_game: detail.settings.median_game, second_opponent: detail.settings.second_opponent, waiver_type: detail.settings.waiver_type }}
               teamNames={teamNames}
               highlightTeamId={myTeamId}
               overridden={overridden}

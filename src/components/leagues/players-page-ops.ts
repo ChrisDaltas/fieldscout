@@ -51,6 +51,9 @@ export interface PoolPlayerRow {
    *  `rostered` / `locked_in_game`), or `null` when no row exists yet
    *  (§12.19: lazy — an unowned player with no row IS a free agent). */
   poolState: string | null
+  /** The rosters route's row when he is rostered (L.D2.13 — the `fa_hold`
+   *  chip reads its `acquisition_type` / `acquired_at`). */
+  roster?: RosterPlayer
 }
 
 /** Who holds each rostered player, from the rosters route (one map). */
@@ -102,7 +105,7 @@ export function poolRows(
     // The lock: the ROSTERED player's view rides on the rosters route (the
     // same evaluation, joined there); an unowned player's on his pool row.
     const gameLock = held ? held.player.game_lock : row?.game_lock ?? { state: 'unlocked' as const, until: null }
-    out.push({ player, availability, lock: lockBadgeFor(gameLock, true), poolState: row?.state ?? null })
+    out.push({ player, availability, lock: lockBadgeFor(gameLock, true), poolState: row?.state ?? null, ...(held ? { roster: held.player } : {}) })
   }
   return out
 }
@@ -117,17 +120,20 @@ export const NO_MATCH_COPY = 'No players match that search.'
 export const NO_FREE_AGENTS_COPY = 'No free agents match — every player in this window is on a roster.'
 export const NO_ROSTERED_COPY = 'No rostered players match.'
 export const NO_SEAT_COPY = 'You don’t manage a team in this league, so you can browse the pool but not make moves.'
-export const LOCKED_ADD_TITLE = 'Locked — this player’s game has started; he can be added once the week’s last game ends.'
-export const LOCKED_DROP_TITLE = 'Locked — this player’s game has started; he can be dropped once the week’s last game ends.'
+/** F444 (client half): since 153 a lock holds until the week's last game ends
+ *  or its Wednesday 12:00 AM Pacific ceiling, whichever comes first. */
+export const LOCKED_ADD_TITLE =
+  'Locked — this player’s game has started; he can be added once the week’s last game ends (Wednesday 12:00 AM Pacific at the latest).'
+export const LOCKED_DROP_TITLE =
+  'Locked — this player’s game has started; he can be dropped once the week’s last game ends (Wednesday 12:00 AM Pacific at the latest).'
 /** The Add button's title on an `on_waivers` row. The button stays LIVE
  *  (R894): the client has no clock and never compares `waivers_until` to
- *  now — the server refuses an add while the period is open (113's
- *  sentence names the instant, rendered verbatim) and ADMITS it once it
- *  has lapsed (FCFS — Q33; nothing flips the row afterwards, so a lapsed
- *  row still reads `on_waivers`). A disabled button here would have made
- *  every dropped player un-addable for the season under the default 48 h. */
+ *  now — the server refuses an add while the hold is on (its sentence names
+ *  the run, rendered verbatim) and admits it once it has lapsed. Since
+ *  L.D2.13 the row also offers Claim (a dropped player waits for the next
+ *  run — 149). */
 export function waiversAddTitle(untilLocal: string): string {
-  return `On waivers until ${untilLocal} — an add before then is refused; once it lapses he can be added first come, first served. Waiver claims arrive in a later update.`
+  return `On waivers until ${untilLocal} — put in a claim to get him at that waiver run; an add before then is refused.`
 }
 export const ROSTERED_ELSEWHERE_TITLE = 'On another roster — trades arrive in a later update.'
 

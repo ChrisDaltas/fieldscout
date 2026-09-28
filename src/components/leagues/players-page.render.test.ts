@@ -42,6 +42,7 @@ import {
   waiversAddTitle,
 } from './players-page-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
+import { WAIVERS_PAUSED_COPY } from './waiver-claims-ops'
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-manager' }, profile: { username: 'chris' } }),
@@ -199,28 +200,28 @@ describe('the page opens on the free agents: §12.19’s states per row, the �
     expect(row).toMatch(/disabled=""[^>]*title="[^"]*game has started/)
     expect(row).toContain(LOCKED_ADD_TITLE)
   })
-  it('a player on waivers says until WHEN the period lapses and that claims arrive later — the Add stays LIVE with the instant in its title (R894: the server decides), no claim button', () => {
+  it('a player on waivers says until WHEN the hold lasts — Claim beside a LIVE Add with the instant in its title (R894: the server decides; L.D2.13)', () => {
     const html = renderPage()
     const row = html.slice(html.indexOf('data-pool-row="fa-waivers"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-waivers"')))
     expect(row).toContain('data-availability="on_waivers"')
     expect(row).toContain('On waivers')
     expect(row).toMatch(/until /)
     expect(row).toContain('data-action="add"')
+    expect(row).toContain('data-action="claim"')
     expect(row).not.toMatch(/disabled=""/)
-    expect(row).toMatch(/title="On waivers until [^"]*Sep 12[^"]*first come, first served[^"]*"[^>]*data-action="add"/)
-    expect(html).not.toMatch(/>Claim</)
+    expect(row).toMatch(/title="On waivers until [^"]*Sep 12[^"]*put in a claim[^"]*"[^>]*data-action="add"/)
   })
-  it('a LAPSED waivers row (the instant behind us; the tick never flips the state) renders exactly the same live Add — the client compares nothing, 115 admits the add (R894)', () => {
+  it('a LAPSED waivers row (the instant behind us; the tick never flips the state) renders exactly the same live Add — the client compares nothing (R894)', () => {
     const html = renderPage()
     const row = html.slice(html.indexOf('data-pool-row="fa-waivers-lapsed"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-waivers-lapsed"')))
     expect(row).toContain('data-availability="on_waivers"')
     expect(row).toContain('data-action="add"')
     expect(row).not.toMatch(/disabled=""/)
-    expect(row).toMatch(/title="On waivers until [^"]*Jun 15[^"]*first come, first served[^"]*"[^>]*data-action="add"/)
+    expect(row).toMatch(/title="On waivers until [^"]*Jun 15[^"]*put in a claim[^"]*"[^>]*data-action="add"/)
   })
-  it('the waivers title carries no promise the server does not keep: it names the instant, the refusal before it and the FCFS add after', () => {
+  it('the waivers title carries no promise the server does not keep: it names the instant, the claim, and the refusal before it', () => {
     expect(waiversAddTitle('Sat, Sep 12, 10:00 AM')).toBe(
-      'On waivers until Sat, Sep 12, 10:00 AM — an add before then is refused; once it lapses he can be added first come, first served. Waiver claims arrive in a later update.',
+      'On waivers until Sat, Sep 12, 10:00 AM — put in a claim to get him at that waiver run; an add before then is refused.',
     )
   })
   it('the roster-move panel is idle with the STORED fill ("2 of 17" — the 8-team default roster), and no ledger code reaches the screen', () => {
@@ -347,5 +348,53 @@ describe('§16.5.4 — the required states', () => {
   })
   it('reconnecting: the room’s connection drives the banner', () => {
     expect(renderPage({ connection: 'reconnecting' })).toContain('Reconnecting')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// M5 L.D2.13 — the window line, the paused banner, the claims panel mount
+// ---------------------------------------------------------------------------
+
+describe('L.D2.13 — the page reads the server’s waiver window', () => {
+  const window = {
+    waivers: true,
+    free_agency_open: false,
+    why: 'awaiting_run' as const,
+    next_run_at: '2099-09-16T07:00:00.000Z',
+    last_run_at: null,
+    last_open_at: null,
+    time_zone: 'America/New_York',
+    paused: false,
+    evaluated_at: '2099-09-15T12:00:00.000Z',
+  }
+  it('claims only: the line names the next run, the claims panel mounts, free agents offer Claim and a still-live Add (R1220)', () => {
+    const html = renderPage({ detail: { ...detail, waiver_window: window } })
+    expect(html).toContain('data-waiver-window="awaiting_run"')
+    expect(html).toMatch(/Claims only until the next waiver run, [^<]*Sep 16/)
+    expect(html).toContain('data-waiver-claims-panel')
+    const row = html.slice(html.indexOf('data-pool-row="fa-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-open"')))
+    expect(row).toContain('data-action="claim"')
+    expect(row).toMatch(/title="Claims only right now[^"]*"[^>]*data-action="add"/)
+    expect(row).not.toMatch(/disabled=""/)
+  })
+  it('R1219: a pre-149 database (`waivers_live: false`) — no window line, no claims panel, no Claim; Add as before', () => {
+    const html = renderPage({ detail: { ...detail, waiver_window: null, waivers_live: false } })
+    expect(html).not.toContain('data-waiver-window')
+    expect(html).not.toContain('data-waiver-claims-panel')
+    expect(html).not.toContain('data-action="claim"')
+    expect(html).toContain('data-action="add"')
+  })
+  it('paused: the banner says so in plain words', () => {
+    expect(renderPage({ detail: { ...detail, waiver_window: { ...window, paused: true } } })).toContain(WAIVERS_PAUSED_COPY)
+  })
+  it('no waivers: no panel, no Claim', () => {
+    const noWaivers: LeagueDetail = {
+      ...detail,
+      settings: { ...detail.settings, waiver_type: 'none_fcfs' },
+      waiver_window: { ...window, waivers: false, free_agency_open: true, why: 'no_waivers', next_run_at: null },
+    }
+    const html = renderPage({ detail: noWaivers })
+    expect(html).not.toContain('data-waiver-claims-panel')
+    expect(html).not.toContain('data-action="claim"')
   })
 })
