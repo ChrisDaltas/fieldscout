@@ -455,12 +455,21 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     const { data: ppr } = await commishClient.from('scoring_systems').select('id').eq('is_template', true).eq('name', 'ESPN Full PPR').single()
     const res = await commishChangeSetting(commishClient, leagueId, { key: 'scoring_system_id', value: ppr!.id, rescore: true, action_id: ACTION.settingRescore })
     expect(res.status, errorText(res)).toBe(200)
-    const body = res.body as { rescore_requested: boolean; rescore_performed: boolean; rescore_not_performed_why: string | null; rescore_skipped_final_weeks: number[]; rescore_skipped_final_weeks_why: string | null }
+    const body = res.body as {
+      rescore_requested: boolean
+      rescore_performed: boolean
+      rescore_not_performed_why: string | null
+      rescore_skipped_final_weeks: number[]
+      rescore_skipped_correction_window_weeks: number[]
+      rescore_skipped_final_weeks_why: string | null
+    }
     expect(body.rescore_requested).toBe(true)
     expect(body.rescore_skipped_final_weeks).toEqual([1])
-    expect(body.rescore_skipped_final_weeks_why).toMatch(/^final_weeks_not_rescored — final week\(s\) \[1\] keep their original scores and results/)
+    // L.E1.27 (144, Q69): the sibling list — no week is in its correction window here.
+    expect(body.rescore_skipped_correction_window_weeks).toEqual([])
+    expect(body.rescore_skipped_final_weeks_why).toMatch(/^finished_weeks_not_rescored — week 1 \(final\) keeps its scores and results/)
     expect(body.rescore_performed).toBe(false)
-    expect(body.rescore_not_performed_why).toMatch(/^no_open_week — /)
+    expect(body.rescore_not_performed_why).toMatch(/^no_live_week — /)
     expect(await receiptsFor(ACTION.settingRescore)).toHaveLength(1)
     // F65(b): the same id replayed with rescore = false is a DIFFERENT request — 409, never the first document.
     const replay = await commishChangeSetting(commishClient, leagueId, { key: 'scoring_system_id', value: ppr!.id, rescore: false, action_id: ACTION.settingRescore })

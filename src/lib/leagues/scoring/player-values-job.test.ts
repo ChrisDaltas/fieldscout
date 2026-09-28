@@ -53,7 +53,7 @@ function fakeDb(tables: Tables, short: { upsert?: (sent: number) => number } = {
       const b: Record<string, unknown> = {}
       const chain = () => b
       Object.assign(b, {
-        select: chain, eq: chain, in: chain, is: chain, gte: chain, lt: chain, not: chain, order: chain, range: chain,
+        select: chain, eq: chain, neq: chain, in: chain, is: chain, gte: chain, lt: chain, not: chain, order: chain, range: chain,
         upsert: (rows: unknown[]) => { op = 'upsert'; payload = rows; calls.push({ table, op, rows }); return b },
         delete: () => { op = 'delete'; calls.push({ table, op }); return b },
         then(resolve: (v: unknown) => void) {
@@ -70,6 +70,9 @@ function fakeDb(tables: Tables, short: { upsert?: (sent: number) => number } = {
 }
 
 const league = (id: string, snapshot: unknown) => ({ id, season: 2099, scoring_rules_snapshot: snapshot })
+/** A league week: the planned week 3 has OPENED at NOW (starts 2099-09-23) and carries its rules (144 / F397). */
+const lw = (league_id: string, week: number, status = 'live', rules: unknown = SLEEPER_STD) => ({ league_id, week, status, scoring_rules_snapshot: rules })
+const SLEEPER_PPR = { ...SCORING_TEMPLATES.find((t) => t.name === 'Sleeper Full PPR')!.rules }
 const player = (id: string, position: string) => ({
   id, position, projected_stats: {}, projections_season: null, projected_pts_ppr: null, projected_pts_standard: null, projected_pts_half_ppr: null,
 })
@@ -80,7 +83,7 @@ describe('runLeaguePlayerValues — the loud arms (fake client)', () => {
     const { db, calls } = fakeDb({
       nfl_weeks: CAL,
       leagues: [league('A', null), league('B', { pass_yards: 'corrupt' }), league('C', SLEEPER_STD)],
-      league_weeks: ['A', 'B', 'C'].map((league_id) => ({ league_id, week: 3 })),
+      league_weeks: ['A', 'B', 'C'].map((league_id) => lw(league_id, 3)),
       league_rosters: [{ league_id: 'C', player_id: 'wr1' }],
       players: [player('wr1', 'WR')],
       player_weekly_projections: [{ week: 3, player_id: 'wr1', stats: { receiving_yards: 80 }, fetched_at: FRESH }],
@@ -102,7 +105,7 @@ describe('runLeaguePlayerValues — the loud arms (fake client)', () => {
       {
         nfl_weeks: CAL,
         leagues: [league('C', SLEEPER_STD)],
-        league_weeks: [{ league_id: 'C', week: 3 }],
+        league_weeks: [lw('C', 3)],
         league_rosters: [{ league_id: 'C', player_id: 'wr1' }],
         players: [player('wr1', 'WR')],
         player_weekly_projections: [{ week: 3, player_id: 'wr1', stats: { receiving_yards: 80 }, fetched_at: FRESH }],
@@ -118,7 +121,7 @@ describe('runLeaguePlayerValues — the loud arms (fake client)', () => {
     const { db, calls } = fakeDb({
       nfl_weeks: CAL,
       leagues: [league('C', SLEEPER_STD)],
-      league_weeks: [{ league_id: 'C', week: 3 }],
+      league_weeks: [lw('C', 3)],
       league_rosters: [{ league_id: 'C', player_id: 'wr1' }, { league_id: 'C', player_id: 'wr2' }],
       players: [player('wr1', 'WR'), player('wr2', 'WR')],
       player_weekly_projections: [{ week: 3, player_id: 'wr2', stats: { receiving_yards: 80 }, fetched_at: '2099-09-24T06:49:59.999Z' }],
@@ -133,7 +136,7 @@ describe('runLeaguePlayerValues — the loud arms (fake client)', () => {
   })
 
   it('J4 an EMPTY ROSTER is a failure, nothing written', async () => {
-    const { db, calls } = fakeDb({ nfl_weeks: CAL, leagues: [league('C', SLEEPER_STD)], league_weeks: [{ league_id: 'C', week: 3 }] })
+    const { db, calls } = fakeDb({ nfl_weeks: CAL, leagues: [league('C', SLEEPER_STD)], league_weeks: [lw('C', 3)] })
     const report = await runLeaguePlayerValues({ db, time: NOW }, { season: 2099, weeks: [3] })
     expect(report.failures).toEqual([expect.stringMatching(/^league C week 3: no rostered player — no values/)])
     expect(upserts(calls)).toHaveLength(0)
@@ -167,11 +170,44 @@ describe('runLeaguePlayerValues — the loud arms (fake client)', () => {
     expect([report.ok, report.plan.weeks, report.warnings]).toEqual([true, [3, 4], ['no in_season / playoffs league for season 2099 — nothing to value']])
   })
 
+  // M6A L.E1.27 (migration 144; PROGRESS F397, R1118(a)): the season to date
+  // scores each PAST week under the rules the league PLAYED it with — never
+  // the league's current rules, which a mid-season change re-freezes.
+  it('J9 (F397) SEASON TO DATE scores each past week under ITS OWN rules: week 1 (played under Full PPR) 10.00 + week 2 (Sleeper Standard) 5.00 = 15.00 — not 10.00 (all current) nor 20.00 (all PPR)', async () => {
+    const line = (week: number) => ({ player_id: 'wr1', week, updated_at: '2099-09-20T00:00:00Z', advanced: {}, receptions: 5, receiving_yards: 50 })
+    const { db, calls } = fakeDb({
+      nfl_weeks: CAL,
+      leagues: [league('C', SLEEPER_STD)],
+      league_weeks: [lw('C', 1, 'final', SLEEPER_PPR), lw('C', 2, 'final', SLEEPER_STD), lw('C', 3)],
+      league_rosters: [{ league_id: 'C', player_id: 'wr1' }],
+      players: [player('wr1', 'WR')],
+      player_weekly_projections: [{ week: 3, player_id: 'wr1', stats: { receiving_yards: 80 }, fetched_at: FRESH }],
+      player_stats: [line(1), line(2)],
+    })
+    const report = await runLeaguePlayerValues({ db, time: NOW }, { season: 2099, weeks: [3] })
+    expect(report.failures).toEqual([])
+    const rows = upserts(calls)[0].rows as Array<{ season_points: number; season_games: number; projected_points: number }>
+    expect(rows.map((r) => [r.season_points, r.season_games, r.projected_points])).toEqual([[15, 2, 8]])
+  })
+
+  it('J10 (F397) an OPENED week with NO stored rules quarantines its league BY NAME — never valued under the league column', async () => {
+    const { db, calls } = fakeDb({
+      nfl_weeks: CAL,
+      leagues: [league('C', SLEEPER_STD)],
+      league_weeks: [lw('C', 1, 'final', null), lw('C', 3)],
+      league_rosters: [{ league_id: 'C', player_id: 'wr1' }],
+      players: [player('wr1', 'WR')],
+    })
+    const report = await runLeaguePlayerValues({ db, time: NOW }, { season: 2099, weeks: [3] })
+    expect(report.failures).toEqual([expect.stringMatching(/^league C week 3: snapshot_missing: league_weeks\.scoring_rules_snapshot is empty for week 1 \(final\).*nothing valued for this league$/)])
+    expect(upserts(calls)).toHaveLength(0)
+  })
+
   it('J8 a stale line is named in a warning and valued as absent', async () => {
     const { db } = fakeDb({
       nfl_weeks: CAL,
       leagues: [league('C', SLEEPER_STD)],
-      league_weeks: [{ league_id: 'C', week: 3 }],
+      league_weeks: [lw('C', 3)],
       league_rosters: [{ league_id: 'C', player_id: 'wr1' }, { league_id: 'C', player_id: 'wr2' }],
       players: [player('wr1', 'WR'), player('wr2', 'WR')],
       player_weekly_projections: [

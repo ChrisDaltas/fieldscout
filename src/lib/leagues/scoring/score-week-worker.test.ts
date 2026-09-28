@@ -34,6 +34,7 @@ import {
   scoreStarter,
   startersOf,
   type TeamRow,
+  weekScoringRules,
 } from './score-week-worker'
 import { forkTemplateDoc, resolveRules } from './rules-doc'
 import { SCORING_TEMPLATES } from './templates'
@@ -328,6 +329,26 @@ describe('L.E1.26 — def_yards_allowed NULL is pending, never 0 (F390; §23.5 /
     expect(alpha.pending).toEqual([{ player_id: 'sw-dst1', keys: YA_KEYS }])
     // Yahoo scores no yards tier — the same map is a number.
     expect(computeTeamWeek(YAHOO, 'team-alpha', ALPHA_STARTERS, stats).points).not.toBeNull()
+  })
+})
+
+describe('F397 (L.E1.27, migration 144) — weekScoringRules: every reader takes a week’s rules from the WEEK', () => {
+  it('an OPENED week (live / correction_window / final) is scored under ITS stored rules, never the league’s current ones', () => {
+    for (const status of ['live', 'correction_window', 'final']) {
+      expect(weekScoringRules({ week: 2, status, scoring_rules_snapshot: template('Yahoo Standard') }, ESPN)).toEqual(template('Yahoo Standard'))
+    }
+  })
+  it('an opened week with NO stored rules is `snapshot_missing` BY NAME — never a fallback to the league column', () => {
+    expect(() => weekScoringRules({ week: 2, status: 'correction_window', scoring_rules_snapshot: null }, ESPN)).toThrow(
+      /^snapshot_missing: league_weeks\.scoring_rules_snapshot is empty for week 2 \(correction_window\)/,
+    )
+  })
+  it('a corrupt stored document throws the calculator’s own TypeError (the D292 quarantine)', () => {
+    expect(() => weekScoringRules({ week: 2, status: 'live', scoring_rules_snapshot: { ...ESPN, pass_yards: 'corrupt' } }, ESPN)).toThrow(/pass_yards/)
+  })
+  it('an UPCOMING week holds none — it is shown under the league’s current rules, the ones it will take when it opens', () => {
+    expect(weekScoringRules({ week: 4, status: 'upcoming', scoring_rules_snapshot: null }, ESPN)).toBe(ESPN)
+    expect(() => weekScoringRules({ week: 4, status: 'upcoming', scoring_rules_snapshot: null }, null)).toThrow(/^snapshot_missing/)
   })
 })
 

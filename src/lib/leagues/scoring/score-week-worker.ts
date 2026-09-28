@@ -56,7 +56,9 @@
  *        `scorePlayerWeek(resolveRules(snapshot, position),
  *                         deriveTierIndicators(deliveredLine(row, position), cuts))`
  *      — `deriveTierIndicators` composed BEFORE `scorePlayerWeek` (F23), the
- *      FROZEN `scoring_rules_snapshot` resolved per position (rule 9), the
+ *      WEEK's frozen rules (`league_weeks.scoring_rules_snapshot`, 144 /
+ *      F397 — read through `weekScoringRules`, never the league's current
+ *      snapshot) resolved per position (rule 9), the
  *      format-2 document's OWN `tier_cuts` (§7.3.3.1(a)). Per-player points
  *      are `roundHalfUp`'d (the §7.3.3 stored precision); a team's score is
  *      the sum of those ROUNDED per-player values (§7.3.3 verbatim), snapped
@@ -319,6 +321,47 @@ export function assertSnapshotScorable(snapshot: unknown): asserts snapshot is S
   for (const position of SCORING_POSITIONS) {
     scorePlayerWeek(resolveRules(snapshot as ScoringRulesDoc, position), {})
   }
+}
+
+/** The slice of a `league_weeks` row the per-week rules are read from. */
+export interface WeekRulesRow {
+  week: number
+  status: string
+  scoring_rules_snapshot: unknown
+}
+
+/**
+ * THE ONE READER OF A WEEK'S SCORING RULES (M6A L.E1.27, migration 144;
+ * PROGRESS F397 — Chris: "F397 yes build it"; Q69). Every league week stores
+ * the rules it is played with (`league_weeks.scoring_rules_snapshot`, stamped
+ * when the week opens, re-written only while it is LIVE by a rescore). The
+ * worker (live polls AND correction-window stat corrections), the box score,
+ * the nightly reconcile and the season-to-date values all read a week's
+ * rules through THIS, never the league's current snapshot:
+ *   - an OPENED week (live / correction_window / final) ⇒ ITS stored rules;
+ *     none stored ⇒ `snapshot_missing` BY NAME (the D292 quarantine / E61
+ *     posture) — NEVER a fallback to the league column, which after a
+ *     mid-season scoring change holds rules the week was not played with;
+ *   - an UPCOMING week holds none (144's CHECK) — it takes the league's rules
+ *     when it opens, so the league's snapshot is exactly the rules it WILL
+ *     be scored under; only the box score (a projection of a week not yet
+ *     played) and the values job reach this arm.
+ * Throws a `TypeError` (`snapshot_missing: …`, or the calculator's own for a
+ * corrupt document), exactly like `assertSnapshotScorable`.
+ */
+export function weekScoringRules(week: WeekRulesRow, leagueSnapshot: unknown): ScoringRulesDoc {
+  if (week.status === 'upcoming') {
+    assertSnapshotScorable(leagueSnapshot)
+    return leagueSnapshot
+  }
+  const rules = week.scoring_rules_snapshot
+  if (rules === null || rules === undefined || typeof rules !== 'object') {
+    throw new TypeError(
+      `snapshot_missing: league_weeks.scoring_rules_snapshot is empty for week ${week.week} (${week.status}) — an opened week is scored only under the rules it was played with, never the league's current rules (§7.3.3 / F397)`,
+    )
+  }
+  assertSnapshotScorable(rules)
+  return rules
 }
 
 // ── Per-starter / per-team scoring (pure; the D62 literals pin these) ───────
@@ -657,7 +700,6 @@ interface LeagueRow {
   season: number
   settings: Json
   roster_settings: Json
-  scoring_rules_snapshot: Json
   deleted_at: string | null
 }
 
@@ -855,7 +897,7 @@ async function readLeagues(db: ScoreWorkerClient, ids: readonly string[]): Promi
     const rows = must(
       await db
         .from('leagues')
-        .select('id, status, season, settings, roster_settings, scoring_rules_snapshot, deleted_at')
+        .select('id, status, season, settings, roster_settings, deleted_at')
         .in('id', part),
       'leagues read',
     )
@@ -911,9 +953,10 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
     problems: [],
   }
 
-  // (4) The week's door state — the league_weeks row is the datum (§23.3).
+  // (4) The week's door state — the league_weeks row is the datum (§23.3) —
+  //     and, from 144 (F397), the rules THIS week is played with.
   const weekRows = must(
-    await db.from('league_weeks').select('status').eq('league_id', league.id).eq('season', season).eq('week', week),
+    await db.from('league_weeks').select('league_id, week, status, scoring_rules_snapshot').eq('league_id', league.id).eq('season', season).eq('week', week),
     'league_weeks read',
   )
   if (weekRows.length === 0) {
@@ -931,11 +974,14 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
     return report
   }
 
-  // (6a) The snapshot gate — quarantine BEFORE any team is computed.
+  // (6a) The snapshot gate — quarantine BEFORE any team is computed. THE
+  //      WEEK's rules (144 / F397): a live week's, or a correction-window
+  //      week's under every stat correction — never the league's current
+  //      snapshot, which a mid-season scoring change re-freezes (Q64 / Q69:
+  //      a finished week keeps the rules it was played with).
   let snapshot: ScoringRulesDoc
   try {
-    assertSnapshotScorable(league.scoring_rules_snapshot)
-    snapshot = league.scoring_rules_snapshot
+    snapshot = weekScoringRules(weekRows[0], null)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new LeagueWeekFailure(message.startsWith('snapshot_missing') ? message : `snapshot_corrupt: ${message}`)

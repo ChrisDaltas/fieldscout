@@ -127,9 +127,18 @@ describe('settingOutcome — never a bare "Saved." (§4 rule 15 / R971); ORDER i
     expect(said.text).toContain(why)
   })
 
-  it('L.E1.24: the rescore switch’s hint no longer promises a refusal on a final week — Q64 as ruled keeps final weeks and re-scores the open ones', () => {
+  it('L.E1.27 (144, Q69 + F397): the rescore switch’s hint says, in plain words, that finished weeks — last week in its stat-correction window included — keep their scores, and what Off and On do', () => {
     expect(RESCORE_TOGGLE_HINT).not.toMatch(/refused/)
-    expect(RESCORE_TOGGLE_HINT).toContain('final weeks keep their original scores and results')
+    expect(RESCORE_TOGGLE_HINT).toBe(
+      'Off: every week already started keeps the scoring it started with, and the new scoring begins next week. On: this week is re-scored under the new scoring. Either way, finished weeks — including last week while its stat corrections are still coming in — keep their scores and results.',
+    )
+  })
+
+  it('L.E1.27 (144, Q69): a rescore that kept last week (in its correction window) renders the server’s ONE sentence naming both kept weeks — the same arm', () => {
+    const kept = 'finished_weeks_not_rescored — week 1 (final) and week 2 (final, pending stat corrections) keep their scores and results; the new scoring applies to week 3 (being played now — re-scored under it) and to every later week (scored under it when it opens)'
+    const said = settingOutcome({ ...doc, rescore_skipped_final_weeks_why: kept })
+    expect(said.branch).toBe('rescore_skipped_final')
+    expect(said.text).toBe(`scoring system id: saved — ${kept}.`)
   })
 
   it('L.E1.24 (141, Q64 as ruled): a rescore that SKIPPED final weeks says so in the server’s own sentence — after rescore_not_performed, ahead of score_stale', () => {
