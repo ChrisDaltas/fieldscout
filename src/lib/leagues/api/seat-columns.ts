@@ -18,7 +18,8 @@ import type { PostgrestError } from '@supabase/supabase-js'
 type Result<T> = { data: T | null; error: PostgrestError | null }
 
 export function isMissingWaiverPriority(error: PostgrestError | null): boolean {
-  return error !== null && error.code === '42703' && /waiver_priority/.test(error.message ?? '')
+  // R1222: anchored to the exact column, so another table's `waiver_priority` never triggers it.
+  return error !== null && error.code === '42703' && /league_members\.waiver_priority does not exist/.test(error.message ?? '')
 }
 
 export async function selectWithSeatFallback<Row>(

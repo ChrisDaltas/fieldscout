@@ -8,12 +8,18 @@
  * world-readable `system_flags.waivers_paused`.
  *
  * NEVER FAILS THE DETAIL. The detail is every league page's membership gate;
- * a hosted database that has not yet received migration 149 (no
- * `waiver_next_run_at`), a failed side read, or a schedule the TS twin
- * refuses all answer `{ window: null, error }` — the error NAMED, never an
- * empty window that would read as "free agency is closed" (CLAUDE.md "never
- * let nothing happened mean it worked"). The page then offers Add and Claim
- * both and the server answers.
+ * a failed side read or a schedule the TS twin refuses answers `{ window:
+ * null, error }` — the error NAMED, never an empty window that would read as
+ * "free agency is closed" (CLAUDE.md "never let nothing happened mean it
+ * worked"). The page then offers Add and Claim both and the server answers.
+ *
+ * PRE-149 DATABASE (R1219). A league row WITHOUT the `waiver_next_run_at`
+ * key is a database that has not received the schedule (149) — nor, since
+ * 149 follows it, the claims (145). There the server enforces no window and
+ * has no claim verb, so computing one would disable pickups the server
+ * allows and offer claims it cannot take: the read answers `{ window: null,
+ * live: false }` and the page hides Claim and the claims panel (Add is the
+ * old behaviour).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -30,7 +36,11 @@ export interface WaiverWindowRead {
   window: WaiverWindowView | null
   /** Why `window` is null (a status with no pickups, or the read that failed). */
   error: string | null
+  /** False on a database without the waiver schedule / claims (pre-149, R1219). */
+  live: boolean
 }
+
+export const PRE_149_ERROR = 'schedule not live on this database (pre-149)'
 
 export async function readWaiverWindow(
   supabase: Supabase,
@@ -38,8 +48,11 @@ export async function readWaiverWindow(
   settings: LeagueSettings,
   at: Date,
 ): Promise<WaiverWindowRead> {
+  if (!Object.prototype.hasOwnProperty.call(league, 'waiver_next_run_at')) {
+    return { window: null, error: PRE_149_ERROR, live: false }
+  }
   if (!WAIVER_WINDOW_STATUSES.has(league.status)) {
-    return { window: null, error: `no pickups while the league is ${league.status}` }
+    return { window: null, error: `no pickups while the league is ${league.status}`, live: true }
   }
   try {
     const [draftsRes, weeksRes, flagRes] = await Promise.all([
@@ -47,22 +60,30 @@ export async function readWaiverWindow(
       supabase.from('nfl_weeks').select('starts_at, last_game_ends_at').eq('season', league.season),
       supabase.from('system_flags').select('value').eq('key', 'waivers_paused').maybeSingle(),
     ])
-    if (draftsRes.error) return { window: null, error: `drafts: ${draftsRes.error.message}` }
-    if (weeksRes.error) return { window: null, error: `nfl_weeks: ${weeksRes.error.message}` }
-    if (flagRes.error) return { window: null, error: `system_flags: ${flagRes.error.message}` }
+    if (draftsRes.error) return { window: null, error: `drafts: ${draftsRes.error.message}`, live: true }
+    if (weeksRes.error) return { window: null, error: `nfl_weeks: ${weeksRes.error.message}`, live: true }
+    if (flagRes.error) return { window: null, error: `system_flags: ${flagRes.error.message}`, live: true }
     const flag = (flagRes.data?.value ?? null) as { paused?: unknown } | null
     const window = waiverWindowView({
       settings,
       draftCompletedAt: (draftsRes.data ?? []).map((d) => d.completed_at),
       weeks: weeksRes.data ?? [],
-      // Absent on a pre-149 row (the column does not exist yet): untracked.
+      // NULL = the processor does not track the league yet (the key exists — checked above).
       pendingRunAt: league.waiver_next_run_at ?? null,
-      // 150's tick reads `(value ->> 'paused')::boolean`, so a stored "true" pauses too.
-      paused: flag?.paused === true || flag?.paused === 'true',
+      paused: pausedFlag(flag?.paused),
       at,
     })
-    return { window, error: null }
+    return { window, error: null, live: true }
   } catch (cause) {
-    return { window: null, error: `waiver window: ${(cause as Error).message}` }
+    return { window: null, error: `waiver window: ${(cause as Error).message}`, live: true }
   }
+}
+
+/** 150's tick reads `(value ->> 'paused')::boolean` — so every Postgres true
+ *  spelling pauses (R1223): t / true / yes / y / on / 1, any case. */
+export function pausedFlag(value: unknown): boolean {
+  if (value === true) return true
+  if (typeof value === 'number') return value === 1
+  if (typeof value !== 'string') return false
+  return ['t', 'true', 'yes', 'y', 'on', '1'].includes(value.trim().toLowerCase())
 }

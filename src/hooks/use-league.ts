@@ -88,6 +88,9 @@ export interface LeagueDetail {
    *  the add / claim verbs decide. */
   waiver_window?: WaiverWindowView | null
   waiver_window_error?: string | null
+  /** R1219: false on a database without the waiver schedule / claims
+   *  (pre-149) — no Claim, no claims panel. Absent (older fixtures) = live. */
+  waivers_live?: boolean
 }
 
 /** League detail (GET /api/leagues/[id]) — M1 task L.A1.12. */

@@ -31,6 +31,7 @@ import {
   formatKickoff,
   irStintChip,
   KEPT_STARTER_COPY,
+  KEPT_STARTER_OTHER_WEEK_COPY,
   keptStarters,
   lineupSaveRequest,
   lockBadgeFor,
@@ -693,7 +694,7 @@ function SlotSeat({
         <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5" data-kept-starter>
           <Badge variant="black">🔒</Badge>
           <span className="truncate text-[12px] font-bold text-ink">{kept}</span>
-          <span className="text-[10px] font-medium text-n-3">{KEPT_STARTER_COPY}</span>
+          <span className="text-[10px] font-medium text-n-3">{weekIsCurrent ? KEPT_STARTER_COPY : KEPT_STARTER_OTHER_WEEK_COPY}</span>
         </span>
       ) : (
         <button

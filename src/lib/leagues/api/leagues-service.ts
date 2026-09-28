@@ -566,7 +566,7 @@ export async function getLeagueDetail(
     // read is `waiver_window: null` with its reason named.
     at
       ? readWaiverWindow(supabase, league as League & { waiver_next_run_at?: string | null }, settings, at)
-      : Promise.resolve({ window: null, error: 'not read' }),
+      : Promise.resolve({ window: null, error: 'not read', live: Object.prototype.hasOwnProperty.call(league, 'waiver_next_run_at') }),
   ])
   if (membersResult.error) {
     return { status: 500, body: { error: membersResult.error.message } }
@@ -623,6 +623,8 @@ export async function getLeagueDetail(
       active_draft: activeDraft,
       waiver_window: windowRead.window,
       waiver_window_error: windowRead.error,
+      // R1219: false on a database without the waiver schedule / claims (pre-149).
+      waivers_live: windowRead.live,
     } as unknown as Json,
   }
 }

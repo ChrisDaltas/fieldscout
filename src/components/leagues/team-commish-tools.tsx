@@ -561,6 +561,9 @@ export function TeamFaabEdit({ leagueId, teamId, teamName, balance }: { leagueId
   const faab = useCommishFaab(leagueId)
   return (
     <TeamFaabEditView
+      // R1224: the box re-seeds when the stored balance changes (the save's
+      // re-read, another tab); the outcome lives in the hook, so it survives.
+      key={balance ?? 'none'}
       teamName={teamName}
       balance={balance}
       pending={faab.isPending}

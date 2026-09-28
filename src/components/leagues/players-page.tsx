@@ -98,8 +98,11 @@ import { WaiverClaimsPanel } from './waiver-claims-panel'
  * **Claims (M5 L.D2.13, F425):** every unowned row offers Claim beside Add
  * as the league's waiver WINDOW allows — the server's read (the league
  * detail's `waiver_window`, D414): during free agency Add alone; outside it
- * Claim, with Add disabled and the next run named; with no window both, and
- * the server answers. Claim opens `ClaimDialog` (a FAAB bid or a priority
+ * Claim first and Add still live with an advisory title (the window is not
+ * refreshed while the page is open — R1220; a refused add names the next run
+ * verbatim); with no window both, and the server answers. A database without
+ * the claims (pre-149, `waivers_live: false` — R1219) shows no Claim and no
+ * panel. Claim opens `ClaimDialog` (a FAAB bid or a priority
  * claim, and an optional drop); the team's claims live in
  * `WaiverClaimsPanel` above the table. A player on another roster says
  * trades come later. No button posts nowhere.
@@ -143,6 +146,8 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const [claimRow, setClaimRow] = useState<PoolPlayerRow | null>(null)
   const waiverWindow = detail.waiver_window ?? null
   const waiverType = detail.settings.waiver_type
+  // R1219: a database without the claims (pre-149) — no Claim, no panel.
+  const claimsLive = detail.waivers_live !== false
   const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
   const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
 
@@ -220,7 +225,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
         </StatusBanner>
       )}
 
-      {myTeamId && waiverType !== 'none_fcfs' && waiverWindow?.waivers !== false && (
+      {myTeamId && claimsLive && waiverType !== 'none_fcfs' && waiverWindow?.waivers !== false && (
         <WaiverClaimsPanel leagueId={leagueId} nextRunLocal={nextRunLocal} />
       )}
       <ClaimDialog
@@ -298,6 +303,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           waiverType={waiverType}
           waiverWindow={waiverWindow}
           nextRunLocal={nextRunLocal}
+          claimsLive={claimsLive}
           faHoldHours={detail.settings.fa_hold_hours}
           onClaim={(row) => {
             claim.reset()
@@ -466,6 +472,7 @@ export function PoolTable({
   waiverType = 'faab',
   waiverWindow = null,
   nextRunLocal = null,
+  claimsLive = true,
   faHoldHours = 0,
   onAdd,
   onDrop,
@@ -482,6 +489,8 @@ export function PoolTable({
   waiverType?: string
   waiverWindow?: WaiverWindowView | null
   nextRunLocal?: string | null
+  /** R1219: false = no claim verb on this database (pre-149). */
+  claimsLive?: boolean
   faHoldHours?: number
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
@@ -559,6 +568,7 @@ export function PoolTable({
                       waiverType={waiverType}
                       waiverWindow={waiverWindow}
                       nextRunLocal={nextRunLocal}
+                      claimsLive={claimsLive}
                       onAdd={onAdd}
                       onDrop={onDrop}
                       onClaim={onClaim}
@@ -634,6 +644,7 @@ function MoveButton({
   waiverType,
   waiverWindow,
   nextRunLocal,
+  claimsLive,
   onAdd,
   onDrop,
   onClaim,
@@ -643,6 +654,7 @@ function MoveButton({
   waiverType: string
   waiverWindow: WaiverWindowView | null
   nextRunLocal: string | null
+  claimsLive: boolean
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
   onClaim: (row: PoolPlayerRow) => void
@@ -657,7 +669,7 @@ function MoveButton({
     )
   }
   const waiversTitle = a.kind === 'on_waivers' ? waiversAddTitle(formatInstantWithDate(a.until, leagueTimeZone).local) : undefined
-  const actions = pickupActions(row, { waiverType, window: waiverWindow, addTitle: waiversTitle, lockedAddTitle: LOCKED_ADD_TITLE, nextRunLocal })
+  const actions = pickupActions(row, { waiverType, window: waiverWindow, addTitle: waiversTitle, lockedAddTitle: LOCKED_ADD_TITLE, nextRunLocal, claimsLive })
   return (
     <span className="inline-flex items-center gap-1.5">
       <RowAction state={actions.claim} label="Claim" action="claim" onClick={() => onClaim(row)} />

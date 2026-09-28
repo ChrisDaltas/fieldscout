@@ -326,6 +326,9 @@ export function keptStarters(slotMap: Record<string, string> | null | undefined,
 }
 
 export const KEPT_STARTER_COPY = 'dropped after he played — his points this week still count, so the seat stays his until the week ends'
+/** R1221: a week that is not the current one (a past week's record) — no
+ *  claim about "playing" or "until the week ends". */
+export const KEPT_STARTER_OTHER_WEEK_COPY = 'no longer on the roster — kept in this week’s lineup'
 
 export type MovePlan =
   | { ok: true; next: Placement; displaced: string | null }

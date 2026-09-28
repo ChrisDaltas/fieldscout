@@ -34,7 +34,7 @@ import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor } from './lineup-editor'
-import { KEPT_STARTER_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
+import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE } from './team-commish-ops'
 import { TeamPage } from './team-page'
@@ -892,34 +892,42 @@ describe('L.D2.13 — the FAAB balance on the team page; a dropped-but-played st
     // The identity read the editor makes for the kept id (usePlayersByIds).
     client.setQueryData(['players-by-ids', ['gone-te']], [{ id: 'gone-te', full_name: 'Gone Tight End', position: 'TE', team: 'AAA', headshot_url: null, status: 'Active', adp: null }])
     const stored: TeamLineupRow = { ...lineupRow, slot_map: { ...lineupRow.slot_map, 'te:0': 'gone-te' } }
-    const html = unescapeHtml(
-      renderToStaticMarkup(
-        createElement(
-          QueryClientProvider,
-          { client },
-          createElement(LineupEditor, {
-            leagueId: LEAGUE,
-            teamId: TEAM,
-            week: 1,
-            settings: settings.roster_settings,
-            allowIllegal: true,
-            roster,
-            stored,
-            currentWeek: 1,
-            editability: { state: 'open' },
-            canEdit: true,
-            isCommish: false,
-            leagueTimeZone: null,
-            overrideMode: false,
-            onOverrideMode: () => {},
-          }),
+    const seatHtml = (currentWeek: number) => {
+      const html = unescapeHtml(
+        renderToStaticMarkup(
+          createElement(
+            QueryClientProvider,
+            { client },
+            createElement(LineupEditor, {
+              leagueId: LEAGUE,
+              teamId: TEAM,
+              week: 1,
+              settings: settings.roster_settings,
+              allowIllegal: true,
+              roster,
+              stored,
+              currentWeek,
+              editability: currentWeek === 1 ? { state: 'open' } : { state: 'closed', reason: PAST_WEEK_COPY },
+              canEdit: true,
+              isCommish: false,
+              leagueTimeZone: null,
+              overrideMode: false,
+              onOverrideMode: () => {},
+            }),
+          ),
         ),
-      ),
-    )
-    const seat = html.slice(html.indexOf('data-slot="te:0"'), html.indexOf('data-slot=', html.indexOf('data-slot="te:0"') + 10))
+      )
+      return html.slice(html.indexOf('data-slot="te:0"'), html.indexOf('data-slot=', html.indexOf('data-slot="te:0"') + 10))
+    }
+    const seat = seatHtml(1)
     expect(seat).toContain('data-kept-starter')
     expect(seat).toContain('Gone Tight End')
     expect(seat).toContain(KEPT_STARTER_COPY)
     expect(seat).not.toContain('>Empty<')
+    // R1221: a past week's record says it neutrally — no "played" / "until the week ends".
+    const past = seatHtml(2)
+    expect(past).toContain('data-kept-starter')
+    expect(past).toContain(KEPT_STARTER_OTHER_WEEK_COPY)
+    expect(past).not.toContain(KEPT_STARTER_COPY)
   })
 })

@@ -367,14 +367,22 @@ describe('L.D2.13 — the page reads the server’s waiver window', () => {
     paused: false,
     evaluated_at: '2099-09-15T12:00:00.000Z',
   }
-  it('claims only: the line names the next run, the claims panel mounts, free agents offer Claim with Add disabled', () => {
+  it('claims only: the line names the next run, the claims panel mounts, free agents offer Claim and a still-live Add (R1220)', () => {
     const html = renderPage({ detail: { ...detail, waiver_window: window } })
     expect(html).toContain('data-waiver-window="awaiting_run"')
     expect(html).toMatch(/Claims only until the next waiver run, [^<]*Sep 16/)
     expect(html).toContain('data-waiver-claims-panel')
     const row = html.slice(html.indexOf('data-pool-row="fa-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-open"')))
     expect(row).toContain('data-action="claim"')
-    expect(row).toMatch(/disabled=""[^>]*title="Claims only right now[^"]*"[^>]*data-action="add"/)
+    expect(row).toMatch(/title="Claims only right now[^"]*"[^>]*data-action="add"/)
+    expect(row).not.toMatch(/disabled=""/)
+  })
+  it('R1219: a pre-149 database (`waivers_live: false`) — no window line, no claims panel, no Claim; Add as before', () => {
+    const html = renderPage({ detail: { ...detail, waiver_window: null, waivers_live: false } })
+    expect(html).not.toContain('data-waiver-window')
+    expect(html).not.toContain('data-waiver-claims-panel')
+    expect(html).not.toContain('data-action="claim"')
+    expect(html).toContain('data-action="add"')
   })
   it('paused: the banner says so in plain words', () => {
     expect(renderPage({ detail: { ...detail, waiver_window: { ...window, paused: true } } })).toContain(WAIVERS_PAUSED_COPY)

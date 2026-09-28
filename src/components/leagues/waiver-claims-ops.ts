@@ -195,19 +195,31 @@ export const LOCKED_CLAIM_TITLE = 'Locked — this player’s game has started; 
 export const CLAIM_TITLE = 'Put in a waiver claim — it’s settled at the next waiver run.'
 
 export function claimOnlyAddTitle(nextRunLocal: string | null): string {
-  return `Claims only right now — he can’t be picked up directly until free agency opens.${nextRunLocal ? ` Claims are settled at the next waiver run, ${nextRunLocal}.` : ''}`
+  return `Claims only right now — he can’t be picked up directly until free agency opens, so an add is refused.${nextRunLocal ? ` Claims are settled at the next waiver run, ${nextRunLocal}.` : ''}`
 }
 
 /**
- * Add and Claim for an UNOWNED row. The window is the server's; with no
- * window (a failed read, a pre-149 database) both stay live and the server
- * answers. Locks come from the tick's view only (`row.lock`).
+ * Add and Claim for an UNOWNED row. The window is the server's, read when the
+ * page loaded — it is NOT refreshed while the page stays open (nothing
+ * invalidates the league detail at a waiver run), so it never DISABLES Add
+ * (R1220, the R894 precedent): claims-only puts Claim first and gives Add an
+ * advisory title, and if the add is refused the server's sentence (naming the
+ * next run) renders verbatim. With no window (a failed read) both stay live.
+ * `claimsLive: false` — a database without claims (pre-149, R1219) — means
+ * no Claim at all. Locks come from the tick's view only (`row.lock`).
  */
 export function pickupActions(
   row: Pick<PoolPlayerRow, 'availability' | 'lock'>,
-  ctx: { waiverType: WaiverType | string; window: WaiverWindowView | null | undefined; addTitle: string | undefined; lockedAddTitle: string; nextRunLocal: string | null },
+  ctx: {
+    waiverType: WaiverType | string
+    window: WaiverWindowView | null | undefined
+    addTitle: string | undefined
+    lockedAddTitle: string
+    nextRunLocal: string | null
+    claimsLive?: boolean
+  },
 ): { add: ActionState; claim: ActionState } {
-  const noWaivers = ctx.waiverType === 'none_fcfs' || ctx.window?.waivers === false
+  const noWaivers = ctx.waiverType === 'none_fcfs' || ctx.window?.waivers === false || ctx.claimsLive === false
   if (row.lock.locked) {
     return {
       add: { show: true, disabled: true, title: ctx.lockedAddTitle },
@@ -223,7 +235,7 @@ export function pickupActions(
   }
   if (w.free_agency_open) return { add: { show: true, disabled: false, title: ctx.addTitle }, claim: { show: false } }
   return {
-    add: { show: true, disabled: true, title: claimOnlyAddTitle(ctx.nextRunLocal) },
+    add: { show: true, disabled: false, title: claimOnlyAddTitle(ctx.nextRunLocal) },
     claim: { show: true, disabled: false, title: CLAIM_TITLE },
   }
 }

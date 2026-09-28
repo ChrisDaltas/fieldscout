@@ -14,10 +14,12 @@
  * facts the SQL reads (the schedule, the draft's completion, the weeks' lock
  * releases, `leagues.waiver_next_run_at`) and hands the answer to the page.
  *
- * DISPLAY ONLY. Nothing is refused or allowed on this answer: the add path
- * and the claim verb decide under the league row lock and say why by name,
- * and the page renders that sentence verbatim. At worst this read is one tick
- * (a minute) behind the processor.
+ * DISPLAY ONLY. Nothing is refused or allowed on this answer — no button is
+ * disabled by it (R1220): the add path and the claim verb decide under the
+ * league row lock and say why by name, and the page renders that sentence
+ * verbatim. It is as fresh as the league detail on screen: read when the page
+ * loads (and on any refetch of the detail), NOT refreshed at a waiver run, so
+ * a page left open can show a window that has since moved.
  *
  * PURE — the instant is an argument (`at`, the route's TimeProvider); no
  * clock is read (the D3 fence over `src/lib/leagues/**`).

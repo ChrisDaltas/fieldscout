@@ -138,11 +138,16 @@ describe('F425 — Claim beside Add, as the server’s window allows', () => {
   const onWaivers = { availability: { kind: 'on_waivers' as const, until: '2099-09-16T07:00:00.000Z' }, lock: { locked: false as const } }
   const locked = { availability: { kind: 'free_agent' as const }, lock: { locked: true as const, copy: 'x', until: null } }
   const ctx = (window: WaiverWindowView | null, waiverType = 'faab') => ({ waiverType, window, addTitle: undefined, lockedAddTitle: 'LOCKED', nextRunLocal: 'Wed 3:00 AM' })
-  it('claims only: Claim live, Add disabled naming the run', () => {
+  it('claims only: Claim live, Add STILL LIVE with the advisory title naming the run (R1220 — the window is not refreshed on an open page)', () => {
     expect(pickupActions(free, ctx(WINDOW))).toEqual({
-      add: { show: true, disabled: true, title: claimOnlyAddTitle('Wed 3:00 AM') },
+      add: { show: true, disabled: false, title: claimOnlyAddTitle('Wed 3:00 AM') },
       claim: { show: true, disabled: false, title: CLAIM_TITLE },
     })
+  })
+  it('R1219: a database without the claims (pre-149) — no Claim anywhere, Add as before', () => {
+    const out = pickupActions(free, { ...ctx(null), claimsLive: false })
+    expect(out).toEqual({ add: { show: true, disabled: false, title: undefined }, claim: { show: false } })
+    expect(pickupActions(onWaivers, { ...ctx(null), claimsLive: false }).claim).toEqual({ show: false })
   })
   it('free agency open: Add alone', () => {
     expect(pickupActions(free, ctx({ ...WINDOW, free_agency_open: true, why: 'open' }))).toEqual({

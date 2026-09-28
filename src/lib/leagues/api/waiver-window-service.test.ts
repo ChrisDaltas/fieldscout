@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import { isMissingWaiverPriority, selectWithSeatFallback } from './seat-columns'
-import { readWaiverWindow } from './waiver-window-service'
+import { PRE_149_ERROR, pausedFlag, readWaiverWindow } from './waiver-window-service'
 
 type Answer = { data: unknown; error: { message: string; code?: string } | null }
 
@@ -65,8 +65,23 @@ describe('readWaiverWindow — never fails the detail', () => {
   it('a league with no pickups yet reads nothing', async () => {
     const calls: string[] = []
     const read = await readWaiverWindow(fakeClient({}, calls), { ...league, status: 'setup' }, settings, AT)
-    expect(read).toEqual({ window: null, error: 'no pickups while the league is setup' })
+    expect(read).toEqual({ window: null, error: 'no pickups while the league is setup', live: true })
     expect(calls).toEqual([])
+  })
+  it('R1219: a league row WITHOUT the `waiver_next_run_at` key (a pre-149 database) — no window, not live, nothing read', async () => {
+    const calls: string[] = []
+    const { waiver_next_run_at: _omit, ...pre149 } = league
+    void _omit
+    const read = await readWaiverWindow(fakeClient({}, calls), pre149, settings, AT)
+    expect(read).toEqual({ window: null, error: PRE_149_ERROR, live: false })
+    expect(PRE_149_ERROR).toBe('schedule not live on this database (pre-149)')
+    expect(calls).toEqual([])
+    // …while the key PRESENT with NULL is a live, untracked league.
+    expect((await readWaiverWindow(fakeClient({}), league, settings, AT)).live).toBe(true)
+  })
+  it('R1223: every Postgres true spelling pauses; anything else does not', () => {
+    for (const v of [true, 't', 'TRUE', 'yes', 'Y', 'on', '1', ' True ', 1]) expect(pausedFlag(v), String(v)).toBe(true)
+    for (const v of [false, 'f', 'false', 'no', 'off', '0', '', null, undefined, 0, 2, {}]) expect(pausedFlag(v), String(v)).toBe(false)
   })
   it('a thrown read (a schedule the twin refuses) is caught and named', async () => {
     const read = await readWaiverWindow(fakeClient({}), league, { ...settings, waiver_run_days: [] }, AT)
@@ -80,6 +95,8 @@ describe('selectWithSeatFallback — the pre-145 database (deploy before push)',
   it('only the undefined-column error naming waiver_priority triggers the fallback', () => {
     expect(isMissingWaiverPriority(missing)).toBe(true)
     expect(isMissingWaiverPriority({ ...missing, message: 'column league_members.other does not exist' })).toBe(false)
+    // R1222: anchored — another table's column of the same name never triggers it.
+    expect(isMissingWaiverPriority({ ...missing, message: 'column some_view.waiver_priority does not exist' })).toBe(false)
     expect(isMissingWaiverPriority({ ...missing, code: '42501' })).toBe(false)
     expect(isMissingWaiverPriority(null)).toBe(false)
   })

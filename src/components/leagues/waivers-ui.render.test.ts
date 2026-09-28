@@ -265,10 +265,16 @@ function table(window: WaiverWindowView | null, rows: PoolPlayerRow[] = [ROW], o
 }
 
 describe('the players table per window', () => {
-  it('claims only: a live Claim, a DISABLED Add naming the run', () => {
+  it('claims only: a live Claim first, and a LIVE Add whose title names the run (R1220 — the server’s refusal is the rule)', () => {
     const html = table(WINDOW)
-    expect(html).toMatch(/data-action="claim">Claim</)
-    expect(html).toMatch(/disabled=""[^>]*title="Claims only right now[^"]*Wed 3:00 AM[^"]*"[^>]*data-action="add"/)
+    expect(html).toMatch(/data-action="claim">Claim<\/button><button[^>]*title="Claims only right now[^"]*Wed 3:00 AM[^"]*"[^>]*data-action="add"/)
+    expect(html).not.toMatch(/disabled=""/)
+  })
+  it('R1219: no claims on this database (pre-149) — no Claim, Add live', () => {
+    const html = table(null, [ROW], { claimsLive: false })
+    expect(html).not.toContain('data-action="claim"')
+    expect(html).toContain('data-action="add"')
+    expect(html).not.toMatch(/disabled=""/)
   })
   it('free agency open: Add alone', () => {
     const html = table({ ...WINDOW, free_agency_open: true, why: 'open' })
