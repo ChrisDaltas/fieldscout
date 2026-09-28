@@ -90,7 +90,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   faab_budget: 500,
   faab_min_bid: 2,
   faab_tiebreaker: 'rolling_priority',
-  // v2.16.57 (Q70): every schedule key off its default — Chris's league-1 shape
+  // v2.16.59 (Q70): every schedule key off its default — Chris's league-1 shape
   waiver_run_days: ['tue', 'wed', 'thu', 'fri', 'sat'],
   waiver_run_time: '09:00',
   waiver_time_zone: 'America/Los_Angeles',

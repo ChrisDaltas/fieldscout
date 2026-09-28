@@ -2,7 +2,7 @@
  * The waiver schedule — when waivers run and when instant-pickup free agency
  * is open (M5 task L.D2.7; PROGRESS Q70 RULED by Chris 2026-09-27 "approve
  * M5, all recommendations", F229's investigation; spec §7.3.4 / §13.1 /
- * §13.2 v2.16.57; tasks-M5 TD14).
+ * §13.2 v2.16.59; tasks-M5 TD14).
  *
  * THE RULING, IN LEAGUE TERMS
  *   - A league sets (a) WHEN WAIVERS RUN — one or more weekdays at one local
@@ -51,7 +51,7 @@ export type FreeAgencyOpens = (typeof FREE_AGENCY_OPENS)[number]
 /** HH:MM, 24-hour, league-local. */
 export const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/
 
-/** The six stored keys (the `leagues.settings` blob half of §7.3.4 v2.16.57). */
+/** The six stored keys (the `leagues.settings` blob half of §7.3.4 v2.16.59). */
 export interface WaiverSchedule {
   waiver_run_days: Weekday[]
   waiver_run_time: string

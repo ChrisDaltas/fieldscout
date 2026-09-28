@@ -1,6 +1,6 @@
 -- ============================================================================
 -- The waiver schedule (Q70 as ruled) and the add / drop it changes — pgTAP 097
--- (M5 task L.D2.7; migration 149; spec §7.3.4 / §13.1 / §16.4 v2.16.57;
+-- (M5 task L.D2.7; migration 149; spec §7.3.4 / §13.1 / §16.4 v2.16.59;
 -- PROGRESS Q70 / Q73 / Q74 / Q78, F229 / F239 / F240, D388).
 --
 -- Numbering: reserved 149 / 097, heads measured 148 / 096.
@@ -26,9 +26,9 @@
 --     non-member and a plain manager (no-leak 42501), the commissioner
 --     (lives, one receipt); every new internal closed to anon/authenticated.
 --   * BREAK PROBES shown red in the PR, then reverted: (1) a run AT the reset
---     stops counting (`>=` → `>`) ⇒ E8 / F2 red; (2) the settled-run gate
---     removed from waiver_window_internal ⇒ E11 red; (3) the waiver-state
---     check moved BEFORE the lock ⇒ F10 red.
+--     stops counting (`>=` → `>`) ⇒ E10a red; (2) the settled-run gate
+--     removed from waiver_window_internal ⇒ E11 red; (3) EXECUTE on
+--     waiver_window_internal granted to authenticated ⇒ I1 red.
 -- ============================================================================
 begin;
 

@@ -16,7 +16,7 @@ import {
 import { zonedWallToUtc } from './zoned-time'
 
 /**
- * The waiver schedule (M5 L.D2.7; Q70 as ruled; spec §7.3.4 v2.16.57).
+ * The waiver schedule (M5 L.D2.7; Q70 as ruled; spec §7.3.4 v2.16.59).
  *
  * Every expected instant below is a STORED LITERAL worked out by hand from
  * the zone rules (the 2026 fall-back is Sunday 2026-11-01 02:00 local; the

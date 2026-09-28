@@ -1135,7 +1135,7 @@ function WaiversGroup({
         </>
       )}
 
-      {/* v2.16.57 (Q70, migration 149): the four retired rows (process day / time ET / waiver period /
+      {/* v2.16.59 (Q70, migration 149): the four retired rows (process day / time ET / waiver period /
           free agency) are replaced by the schedule — when waivers run and when free agency is open, in the
           league's own zone. This row picks one of the presets (Chris's two leagues among them) and says the
           stored schedule in words; a custom schedule shows as such. The full editor is the waivers UI task. */}
@@ -1193,7 +1193,7 @@ function WaiversGroup({
       {/* v2.16.21 (Q34(B) + Q35 (a), Chris 2026-09-05; migration 115): the "Lock players at kickoff"
           toggle is GONE — the game-day lock is a rule, not a setting (a player locks for adds AND drops at
           his own kickoff, until the week's last game ends). Its hint stated only the add half anyway.
-          v2.16.57 (Q73, migration 149): the "Bench lock" toggle is GONE the same way — a claim whose drop
+          v2.16.59 (Q73, migration 149): the "Bench lock" toggle is GONE the same way — a claim whose drop
           already played this week always fails at the waiver run. */}
     </GroupCard>
   )

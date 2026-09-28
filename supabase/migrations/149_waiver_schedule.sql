@@ -2,7 +2,7 @@
 -- 149_waiver_schedule.sql — the waiver schedule (F229 / Q70 as ruled) and the
 -- changes it forces on add / drop; `bench_lock` retired (Q73)
 -- (M5 task L.D2.7, FULL rigour — who may add a player, and when).
--- Spec §7.3.4 / §13.1 / §13.2 / §14 / §16.4 / E33–E34 (v2.16.57, this PR's
+-- Spec §7.3.4 / §13.1 / §13.2 / §14 / §16.4 / E33–E34 (v2.16.59, this PR's
 -- fold-back); tasks-M5-transactions.md §6 L.D2.7, TD6 / TD14, §4 rules;
 -- PROGRESS Q70 / Q73 / Q74 / Q78 (ruled 2026-09-27, "approve M5, all
 -- recommendations"), F229 / F239 / F240, D388.
@@ -36,7 +36,7 @@
 --      analogue of DROP COLUMN).
 --   2. `leagues.waiver_next_run_at` — the next UNPROCESSED scheduled run.
 --      NULL = the processor does not track the league yet (it is L.D2.9's to
---      seed and advance — F418); while NULL the schedule itself is the
+--      seed and advance — F423); while NULL the schedule itself is the
 --      record. Once set, a run counts only after it has been SETTLED, so no
 --      instant add can beat the claims a due run is settling (E8).
 --   3. The schedule functions — `waiver_schedule_internal` (parse + validate
@@ -1966,9 +1966,9 @@ AS $$
     -- CHECK refuses them too — leagues_settings_no_retired_waiver_keys).
     WHEN p_key IN ('waiver_process_day', 'waiver_process_time', 'waiver_period_hours', 'free_agency')
                                 THEN jsonb_build_object('storage', 'blob', 'class', 'refused', 'refused_why',
-                                  'RETIRED by the waiver schedule (Q70, ruled 2026-09-27; spec §7.3.4 v2.16.57): when waivers run is waiver_run_days + waiver_run_time in waiver_time_zone, and when free agency is open is free_agency_opens (+ free_agency_open_day / free_agency_open_time); a dropped player is on waivers until the next run, so there is no waiver period to set')
+                                  'RETIRED by the waiver schedule (Q70, ruled 2026-09-27; spec §7.3.4 v2.16.59): when waivers run is waiver_run_days + waiver_run_time in waiver_time_zone, and when free agency is open is free_agency_opens (+ free_agency_open_day / free_agency_open_time); a dropped player is on waivers until the next run, so there is no waiver period to set')
     WHEN p_key IN ('bench_lock')           THEN jsonb_build_object('storage', 'blob', 'class', 'refused', 'refused_why',
-                                  'RETIRED (Q73, ruled 2026-09-27; spec §7.3.4 v2.16.57): a waiver claim whose drop has already played this week always fails at the waiver run — the same rule as a manual drop — so there is nothing to switch')
+                                  'RETIRED (Q73, ruled 2026-09-27; spec §7.3.4 v2.16.59): a waiver claim whose drop has already played this week always fails at the waiver run — the same rule as a manual drop — so there is nothing to switch')
     WHEN p_key IN ('draft')                THEN jsonb_build_object('storage', 'blob', 'class', 'refused', 'refused_why',
                                   'the §7.3.8 draft block: pre-draft it belongs to the wizard / update_league_settings; post-draft the draft has happened and the block has no subject')
     ELSE NULL

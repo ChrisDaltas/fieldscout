@@ -68,7 +68,7 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
     expect('player_game_lock' in LEAGUE_SETTINGS_DEFAULTS).toBe(false)
   })
 
-  // v2.16.57 (Q70 + Q73, migration 149): the four retired schedule keys and `bench_lock` are refused at
+  // v2.16.59 (Q70 + Q73, migration 149): the four retired schedule keys and `bench_lock` are refused at
   // parse the same way — the table's CHECK is the backstop (23514).
   it('the retired waiver keys and bench_lock are refused at parse (strict object — migration 149 retires them)', () => {
     for (const [key, value] of [
@@ -231,7 +231,7 @@ const RANGE_CASES: RangeCase[] = [
   { path: 'faab_budget', ok: [0, 1000], bad: [-1, 1001] },
   { path: 'faab_min_bid', ok: [0, 10], bad: [-1, 11] },
   { path: 'faab_tiebreaker', ok: ['reverse_standings', 'rolling_priority'], bad: ['coin_flip'] },
-  // v2.16.57 (Q70, migration 149): the waiver schedule
+  // v2.16.59 (Q70, migration 149): the waiver schedule
   { path: 'waiver_run_days', ok: [['wed'], ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'], ['tue', 'sat']], bad: [[], ['wed', 'wed'], ['weds'], 'wed', null] },
   { path: 'waiver_run_time', ok: ['00:00', '23:59', '09:00'], bad: ['24:00', '9:00', '09:60', ''] },
   { path: 'waiver_time_zone', ok: ['America/Los_Angeles', 'America/New_York', 'UTC'], bad: ['Not/AZone', 'PST', '-08:00', '', null] },

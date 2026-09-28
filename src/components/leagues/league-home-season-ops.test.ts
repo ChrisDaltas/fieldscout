@@ -157,7 +157,7 @@ describe('standingsPeek — a SLICE of 117’s ranked rows, the reason carried t
 
 describe('the waiver / trade chips print the STORED settings and name the verbs as not yet here', () => {
   const settings = defaultsForTeamCount(8)
-  it('waivers: the STORED schedule in the league’s zone (the add path keeps it since v2.16.57); the claim verb still named as later', () => {
+  it('waivers: the STORED schedule in the league’s zone (the add path keeps it since v2.16.59); the claim verb still named as later', () => {
     const chip = waiverChip(settings)
     expect(chip.label).toBe('Waivers · dropped players wait for the next run')
     expect(chip.title).toBe(

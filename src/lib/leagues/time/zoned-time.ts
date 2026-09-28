@@ -1,7 +1,7 @@
 /**
  * The ONE implementation of IANA wall-clock arithmetic for league time
  * (M5 task L.D2.7 — "one implementation of the Pacific/IANA math"; spec
- * §16.4 "stored with an explicit IANA zone", §7.3.4 v2.16.57).
+ * §16.4 "stored with an explicit IANA zone", §7.3.4 v2.16.59).
  *
  * Two league rules are stated in a WALL CLOCK, not in UTC:
  *   - Q50's release floor — Tuesday 00:00 in `America/Los_Angeles`

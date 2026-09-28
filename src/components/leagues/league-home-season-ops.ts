@@ -157,7 +157,7 @@ export const TRADES_LATER_COPY = 'Trades arrive in a later update.'
 /**
  * The waiver chip: the STORED settings said plainly, and the claim verb
  * named as not yet here. Since the waiver schedule landed (spec §7.3.4
- * v2.16.57) the schedule is REAL for pickups — outside the free-agency
+ * v2.16.59) the schedule is REAL for pickups — outside the free-agency
  * window an unowned player is claim-only and a dropped player waits for the
  * next run, and the add path enforces both — so the schedule is printed, in
  * the league's own zone, by the one describer (`describeWaiverSchedule`).

@@ -244,7 +244,7 @@ function randomSettings(rng: () => number): LeagueSettings {
     faab_budget: int(rng, 0, 1000),
     faab_min_bid: int(rng, 0, 10),
     faab_tiebreaker: pick(rng, ['reverse_standings', 'rolling_priority'] as const),
-    // v2.16.57 (Q70): a non-empty, Sunday-first day subset (the stored canonical form)
+    // v2.16.59 (Q70): a non-empty, Sunday-first day subset (the stored canonical form)
     waiver_run_days: (() => {
       const days = WEEKDAYS.filter(() => bool(rng))
       return days.length > 0 ? days : [pick(rng, WEEKDAYS)]

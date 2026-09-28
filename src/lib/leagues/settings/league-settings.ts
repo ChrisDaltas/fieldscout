@@ -34,7 +34,7 @@
  * Builder-finalized field shapes (tasks-M1 §5: "Builder finalizes exact
  * fields; names below are contractual") — recorded in PROGRESS D60:
  *   - ~~`waiver_process_time` ("+ time" in §7.3.4's R column) is HH:MM 24h ET,
- *     default '03:00'~~ — RETIRED v2.16.57 (Q70, migration 149): the waiver
+ *     default '03:00'~~ — RETIRED v2.16.59 (Q70, migration 149): the waiver
  *     schedule is `waiver_run_days` × `waiver_run_time` in `waiver_time_zone`
  *     (an explicit IANA zone, §16.4), default Wednesday 03:00
  *     America/New_York — D60's instant kept (D388).
@@ -409,7 +409,7 @@ export const leagueSettingsSchema = z.strictObject({
   faab_budget: z.number().int().min(0).max(1000).default(100),
   faab_min_bid: z.number().int().min(0).max(10).default(0),
   faab_tiebreaker: z.enum(['reverse_standings', 'rolling_priority']).default('reverse_standings'),
-  // v2.16.57 (Q70 RULED by Chris 2026-09-27 — F229's waiver schedule; migration 149, L.D2.7, D388):
+  // v2.16.59 (Q70 RULED by Chris 2026-09-27 — F229's waiver schedule; migration 149, L.D2.7, D388):
   // WHEN WAIVERS RUN (weekdays × one local time, in the league's own IANA zone) and WHEN INSTANT-PICKUP
   // FREE AGENCY OPENS (after the run / a weekday + time / never — it always closes when the week's last
   // game ends). Replaces the retired `waiver_process_day` / `waiver_process_time` (D60's fixed ET) /
@@ -441,7 +441,7 @@ export const leagueSettingsSchema = z.strictObject({
   // game-day add/drop lock is a RULE (a player locks for adds and drops at his own kickoff, releases at
   // the week's `last_game_ends_at`), not a setting. The key is unstorable at the table (a CHECK) and
   // refused here by the strict object (`league-settings.test.ts` pins it).
-  // v2.16.57 (Q73 RULED 2026-09-27; migration 149): `bench_lock` is RETIRED the same way — a waiver claim
+  // v2.16.59 (Q73 RULED 2026-09-27; migration 149): `bench_lock` is RETIRED the same way — a waiver claim
   // whose drop has already played this week always fails at the run (E33 is the only behaviour; the
   // processor is L.D2.9). The key is unstorable (149's CHECK) and refused here by the strict object.
   fa_hold_hours: z.number().int().min(0).max(48).default(0),
