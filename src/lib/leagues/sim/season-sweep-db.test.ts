@@ -21,9 +21,12 @@
  * (072:147), which refuses even a service-role INSERT. `the constraint
  * refuses the plant` below PROVES that refusal rather than skipping the
  * invariant, and the checker's own falsifiability is pinned in
- * `season-invariants.test.ts`. Invariant 1's other two arms — a started
- * player who is on nobody's roster, and one player started by two teams —
- * ARE plantable, because `team_lineups.slot_map` is unconstrained JSONB.
+ * `season-invariants.test.ts`. Invariant 1's other two arms: a started
+ * player who is on nobody's roster IS plantable (`team_lineups.slot_map` is
+ * JSONB); one player started by two teams in a league-week is NOT since
+ * migration 154 (L.D2.15 — F441 / F445: a trigger on `team_lineups` refuses
+ * it by name, even for the service role), so that plant is PROVED refused,
+ * the roster plant's shape.
  *
  * Requires the local stack (`npx supabase start` + migrations applied) —
  * D59(5) precedent; FAILS loudly when the stack is down, never skips (§4.3).
@@ -453,13 +456,30 @@ describe('the driven fixture', () => {
   })
 })
 
-describe('1 — exclusivity: the constraint, and the two arms nothing constrains', () => {
+describe('1 — exclusivity: the two constraints, and the arm nothing constrains', () => {
   it('the DB REFUSES the roster plant — 072:147\'s unique index is the proof, and the check can never redden here', async () => {
     const { error } = await service
       .from('league_rosters')
       .insert({ league_id: leagueId, team_id: teamIds[1]!, player_id: 'vitest-ss-qb-1' })
     expect(error).not.toBeNull()
     expect(error!.message).toMatch(/duplicate key|unique/i)
+    // …and the sweep stays green, because nothing changed.
+    expect(await sweep()).toEqual([])
+  })
+
+  it('the DB REFUSES the double-start plant — 154\'s trigger (F441 / F445) is the proof, and that arm can never redden here', async () => {
+    // Seat 8 starts vitest-ss-rb-8 this week; starting him for Seat 1 too is
+    // refused by name, even through the service role.
+    const { error } = await service
+      .from('team_lineups')
+      .update({ slot_map: { 'qb:0': 'vitest-ss-qb-1', 'rb:0': 'vitest-ss-rb-8' } })
+      .eq('team_id', teamIds[0]!)
+      .eq('season', SYNTHETIC_SEASON)
+      .eq('week', WEEK)
+      .select('id')
+    expect(error).not.toBeNull()
+    expect(error!.message).toContain('vitest-ss-rb-8')
+    expect(error!.message).toMatch(/a player starts for at most one team per league-week/)
     // …and the sweep stays green, because nothing changed.
     expect(await sweep()).toEqual([])
   })
@@ -472,10 +492,12 @@ describe('1 — exclusivity: the constraint, and the two arms nothing constrains
       .eq('season', SYNTHETIC_SEASON)
       .eq('week', WEEK)
       .single()
+    // 154: a player NOBODY rosters and nobody else starts (the double-start
+    // arm is refused by the database above), so only the roster-owner arm fires.
     must(
       await service
         .from('team_lineups')
-        .update({ slot_map: { 'qb:0': 'vitest-ss-qb-1', 'rb:0': 'vitest-ss-rb-8' } })
+        .update({ slot_map: { 'qb:0': 'vitest-ss-qb-1', 'rb:0': 'vitest-ss-ghost' } })
         .eq('team_id', teamIds[0]!)
         .eq('season', SYNTHETIC_SEASON)
         .eq('week', WEEK)
@@ -484,7 +506,8 @@ describe('1 — exclusivity: the constraint, and the two arms nothing constrains
     )
     const failures = await sweep()
     expect(failures.filter((f) => f.invariant === 'exclusivity').length).toBeGreaterThan(0)
-    expect(failures.find((f) => f.invariant === 'exclusivity')!.detail).toContain('vitest-ss-rb-8')
+    expect(failures.find((f) => f.invariant === 'exclusivity')!.detail).toContain('vitest-ss-ghost')
+    expect(failures.find((f) => f.invariant === 'exclusivity')!.detail).toContain('nobody')
     expect(failures.find((f) => f.invariant === 'exclusivity')!.week).toBe(WEEK)
 
     must(

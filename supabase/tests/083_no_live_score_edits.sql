@@ -173,6 +173,20 @@ insert into players (id, full_name, position, team, status) values
  ('lk-sf1',  'LK Tuesday Niner', 'QB', 'SF',  'Active'),
  ('lk-ari1', 'LK Postponed Card','WR', 'ARI', 'Active'),
  ('lk-lv1',  'LK Moved-out Raider', 'QB', 'LV', 'Active');
+-- RE-SEATED BY MIGRATION 154 (L.D2.15 — PROGRESS F441 / F445, D413): a
+-- player starts for at most ONE team of a league per week (a trigger on
+-- team_lineups refuses a second start by name), so the teams below no longer
+-- share one player as "a starter of game X": each has its OWN player with the
+-- same name, position and NFL team (every cell reads the game by NFL team and
+-- names a player by full_name, so no expectation moves).
+-- (T1 and T2 keep the originals.)
+insert into players (id, full_name, position, team, status)
+select c.id, p.full_name, p.position, p.team, p.status
+from (values ('lk-kc1-t3', 'lk-kc1'), ('lk-kc1-t5', 'lk-kc1'), ('lk-kc1-t7', 'lk-kc1'), ('lk-kc1-t8', 'lk-kc1'), ('lk-kc1-t11', 'lk-kc1'),
+             ('lk-dal1-t4', 'lk-dal1'), ('lk-dal1-t6', 'lk-dal1'), ('lk-dal1-t10', 'lk-dal1'), ('lk-dal1-t12', 'lk-dal1'),
+             ('lk-phi1-t3', 'lk-phi1'), ('lk-phi1-t7', 'lk-phi1'), ('lk-phi1-t8', 'lk-phi1'), ('lk-phi1-t12', 'lk-phi1'),
+             ('lk-buf1-t5', 'lk-buf1'), ('lk-buf1-t10', 'lk-buf1'), ('lk-buf1-t11', 'lk-buf1')) as c(id, src)
+join players p on p.id = c.src;
 
 insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks,
                      playoff_teams, playoff_start_week,
@@ -211,16 +225,16 @@ update league_weeks set status = 'final'             where league_id = 'b6000000
 insert into team_lineups (team_id, season, week, starters, bench, slot_map) values
  ('c6000000-0000-4000-8000-000000000001', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1",  "wr:0": "lk-nyj1"}'),
  ('c6000000-0000-4000-8000-000000000002', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-phi1"}'),
- ('c6000000-0000-4000-8000-000000000003', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1",  "wr:0": "lk-phi1", "ir1:0": "lk-nyj2"}'),
- ('c6000000-0000-4000-8000-000000000004', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-buf1"}'),
- ('c6000000-0000-4000-8000-000000000005', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1",  "wr:0": "lk-buf1"}'),
- ('c6000000-0000-4000-8000-000000000006', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-mia1"}'),
+ ('c6000000-0000-4000-8000-000000000003', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1-t3",  "wr:0": "lk-phi1-t3", "ir1:0": "lk-nyj2"}'),
+ ('c6000000-0000-4000-8000-000000000004', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1-t4", "wr:0": "lk-buf1"}'),
+ ('c6000000-0000-4000-8000-000000000005', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1-t5",  "wr:0": "lk-buf1-t5"}'),
+ ('c6000000-0000-4000-8000-000000000006', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1-t6", "wr:0": "lk-mia1"}'),
  ('c6000000-0000-4000-8000-000000000007', 2026, 4, '[]', '[]', '{"qb:0": "lk-gb1"}'),
- ('c6000000-0000-4000-8000-000000000008', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1",  "wr:0": "lk-phi1"}'),
+ ('c6000000-0000-4000-8000-000000000008', 2026, 4, '[]', '[]', '{"qb:0": "lk-kc1-t8",  "wr:0": "lk-phi1-t8"}'),
  ('c6000000-0000-4000-8000-000000000009', 2026, 4, '[]', '[]', '{"qb:0": "lk-sf1",  "wr:0": "lk-ari1"}'),
- ('c6000000-0000-4000-8000-000000000010', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-buf1"}'),
- ('c6000000-0000-4000-8000-000000000011', 2026, 4, '[]', '[]', '{"qb:0": "lk-lv1",  "wr:0": "lk-buf1"}'),
- ('c6000000-0000-4000-8000-000000000012', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-phi1"}'),
+ ('c6000000-0000-4000-8000-000000000010', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1-t10", "wr:0": "lk-buf1-t10"}'),
+ ('c6000000-0000-4000-8000-000000000011', 2026, 4, '[]', '[]', '{"qb:0": "lk-lv1",  "wr:0": "lk-buf1-t11"}'),
+ ('c6000000-0000-4000-8000-000000000012', 2026, 4, '[]', '[]', '{"qb:0": "lk-dal1-t12", "wr:0": "lk-phi1-t12"}'),
  ('c6000000-0000-4000-8000-000000000001', 2026, 3, '[]', '[]', '{"qb:0": "lk-kc1"}'),
  ('c6000000-0000-4000-8000-000000000001', 2026, 5, '[]', '[]', '{"qb:0": "lk-kc1",  "wr:0": "lk-phi1"}'),
  ('c6000000-0000-4000-8000-000000000002', 2026, 5, '[]', '[]', '{"qb:0": "lk-dal1", "wr:0": "lk-buf1"}'),
@@ -412,7 +426,7 @@ select throws_ok(
   'commish_edit_score: This matchup can be corrected once every starter''s game has finished — empty starting slot: LK T7 (WR); starter with no game this week: LK T7 (LK Bye Packer, GB)',
   'E1 (B) REFUSED: T7 starts GB''s QB (bye — no game) beside an EMPTY WR slot while week 4 still has games to play — both reasons named, by team, although T8''s starters are all final (a finished opponent does not unlock it)');
 reset role;
-update team_lineups set slot_map = '{"qb:0": "lk-gb1", "wr:0": "lk-phi1"}'
+update team_lineups set slot_map = '{"qb:0": "lk-gb1", "wr:0": "lk-phi1-t7"}'
  where team_id = 'c6000000-0000-4000-8000-000000000007' and season = 2026 and week = 4;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -423,7 +437,7 @@ select throws_ok(
   'commish_edit_score: This matchup can be corrected once every starter''s game has finished — starter with no game this week: LK T7 (LK Bye Packer, GB)',
   'E1a (B, the BYE branch) THE ADJACENT PAIR: T7''s empty WR slot now holds PHI''s receiver (final) — the ONLY change — and the matchup is STILL refused: a starter on bye keeps it open (break probe: drop the no-game starters from the open slots ⇒ red)');
 reset role;
-update team_lineups set slot_map = '{"qb:0": "lk-kc1", "wr:0": "lk-phi1"}'
+update team_lineups set slot_map = '{"qb:0": "lk-kc1-t7", "wr:0": "lk-phi1-t7"}'
  where team_id = 'c6000000-0000-4000-8000-000000000007' and season = 2026 and week = 4;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -440,7 +454,7 @@ select row_eq(
                     'd6000000-0000-4000-8000-000000000044') as h) x $$,
   row(4, 4, 'every_starter_finished'::text, false)::record,
   'E2 (B) …and the helper counted FOUR starters, all FOUR finished, and says `every_starter_finished` — with `week_games_over` FALSE: (B), not (A), released it');
-update team_lineups set slot_map = '{"qb:0": "lk-kc1"}'
+update team_lineups set slot_map = '{"qb:0": "lk-kc1-t8"}'
  where team_id = 'c6000000-0000-4000-8000-000000000008' and season = 2026 and week = 4;
 select row_eq(
   $$ select (h ->> 'editable')::boolean, h ->> 'why', h ->> 'message', h -> 'open_slots' -> 0 ->> 'side',
@@ -474,7 +488,7 @@ select throws_ok(
   'commish_edit_score: This matchup can be corrected once every starter''s game has finished — starter with no game this week: LK T11 (LK Moved-out Raider, LV)',
   'G2 (g) E43 under (B): a starter whose game was POSTPONED OUT of the week (DEN/LV, kickoff past week 5''s start) has NO game this week — beside a finished starter the matchup is REFUSED, the team and the player named');
 reset role;
-update team_lineups set slot_map = '{"qb:0": "lk-kc1", "wr:0": "lk-buf1"}'
+update team_lineups set slot_map = '{"qb:0": "lk-kc1-t11", "wr:0": "lk-buf1-t11"}'
  where team_id = 'c6000000-0000-4000-8000-000000000011' and season = 2026 and week = 4;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "96000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -677,7 +691,7 @@ insert into matchups (id, league_id, season, week, round_type, home_team_id, awa
  ('d6000000-0000-4000-8000-000000000052', 'b6000000-0000-4000-8000-000000000001', 2026, 5, 'regular',
   'c6000000-0000-4000-8000-000000000003', 'c6000000-0000-4000-8000-000000000004', 20.00, 10.00, 'live', null);
 insert into team_lineups (team_id, season, week, starters, bench, slot_map) values
- ('c6000000-0000-4000-8000-000000000003', 2026, 5, '[]', '[]', '{"qb:0": "lk-kc1"}');
+ ('c6000000-0000-4000-8000-000000000003', 2026, 5, '[]', '[]', '{"qb:0": "lk-kc1-t3"}');
 select public.lineup_carry_internal('b6000000-0000-4000-8000-000000000001', 'c6000000-0000-4000-8000-000000000004', 2026, 5, now() - interval '21 days');
 select is(
   (select string_agg(right(tl.team_id::text, 2) || '=' || tl.slot_map::text, ' ' order by tl.team_id)
@@ -687,7 +701,7 @@ select is(
   || ' games:' || (select string_agg(g.id || ':' || g.status, ',' order by g.id) from nfl_games g where g.season = 2026 and g.week = 5)
   || ' denlv_left:' || (select (g.kickoff_at >= w.starts_at)::text from nfl_games g, nfl_weeks w
                         where g.id = 'lk-w5-denlv' and w.season = 2026 and w.week = 6),
-  '03={"qb:0": "lk-kc1"} 04={} week:correction_window games:lk-w5-denlv:postponed,lk-w5-kcbuf:final,lk-w5-phidal:final denlv_left:true',
+  '03={"qb:0": "lk-kc1-t3"} 04={} week:correction_window games:lk-w5-denlv:postponed,lk-w5-kcbuf:final,lk-w5-phidal:final denlv_left:true',
   'N8 PREMISE (A): week 5 is in its CORRECTION WINDOW; T3 starts only KC''s QB (final), T4 has only the carry''s EMPTY row; KC/BUF and PHI/DAL are final and DEN/LV was postponed OUT (kickoff at/after week 6''s start)');
 select row_eq(
   $$ select (h ->> 'editable')::boolean, h ->> 'why', (h ->> 'week_games_over')::boolean, h ->> 'message',

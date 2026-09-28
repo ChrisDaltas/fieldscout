@@ -228,8 +228,9 @@ export interface AuditCommissionerAction {
 export const FINAL_CELL_LICENSING_ACTION_TYPES: readonly string[] = ['edit_score', 'set_result']
 
 /**
- * The three REASON strings `lineup_autopilot_internal` emits into
- * `unfillable[]` (`125:637-643`), as `prefix + UPPER(slot) + suffix`. Pinned
+ * The four REASON strings `lineup_autopilot_internal` emits into
+ * `unfillable[]` (`125:637-643`; the fourth since 154), as `prefix +
+ * UPPER(slot) + suffix`. Pinned
  * against the migration's FILE TEXT by `season-invariants.test.ts`, so a
  * wording change in a later migration reds a test instead of silently
  * un-excusing — or over-excusing — a slot (R1076).
@@ -242,6 +243,13 @@ export const AUTOPILOT_UNFILLABLE_REASONS = {
   lockedOut: { prefix: 'no unlocked eligible player at ', suffix: "; every candidate's game had kicked off" },
   /** Never excused beside a bench witness: the witness refutes it. */
   nobodyEligible: { prefix: 'no eligible player at ', suffix: ' on the roster' },
+  /** 154 (L.D2.15 — F441 / F445): the only eligible candidate already STARTS
+   *  for another team of the league this week (one start per player per
+   *  league-week). Never excused: the harness never builds that state. */
+  startedElsewhere: {
+    prefix: 'no eligible player at ',
+    suffix: ' free to start — another team of the league already starts him this week (F441 / F445)',
+  },
 } as const
 
 /** True iff `reason` is 125's "league forbids illegal lineups" arm. */
@@ -491,9 +499,11 @@ export function checkExclusivity(a: SeasonAudit): SeasonInvariantFailure[] {
     ownerByPlayer.set(row.player_id, row.team_id)
   }
 
-  // (b) + (c) The arms nothing constrains: a started player must be on the
-  //     starting team's roster, and no two teams may start one player in a
-  //     week (`team_lineups.slot_map` is unconstrained JSONB).
+  // (b) + (c) A started player must be on the starting team's roster (no
+  //     constraint — `team_lineups.slot_map` is JSONB), and no two teams may
+  //     start one player in a week (since migration 154 a trigger on
+  //     `team_lineups` refuses it at the database — F441 / F445 — so (c) is
+  //     restated here, like (a)).
   const startersByWeek = new Map<number, Map<string, string>>()
   for (const lineup of a.lineups) {
     let seen = startersByWeek.get(lineup.week)
