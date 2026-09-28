@@ -58,6 +58,19 @@
  * transport error is a 500; every read asserted below the PostgREST cap; a
  * snapshot that cannot score throws the calculator's own message as a 500
  * (the D292 posture — never a plausible 0.00 for a broken document).
+ *
+ * **The rules are THE WEEK'S (M6A L.E1.27, migration 144; PROGRESS F397 —
+ * Chris: "F397 yes build it").** An opened week is box-scored under the rules
+ * it is played with (`league_weeks.scoring_rules_snapshot`, through the
+ * worker's own `weekScoringRules`), never the league's current snapshot — so
+ * after a mid-season scoring change a finished week's lines and box sum stay
+ * on the rules its stored score was written under (Q64 / Q69). An opened week
+ * with no stored rules is a 500 by name (`snapshot_missing`), never a
+ * fallback. An UPCOMING week holds no rules: it is shown under the league's
+ * current snapshot, which is exactly what it will take when it opens. Where
+ * the STATS moved after a finished week was scored (a correction the worker
+ * no longer applies), the box sum can still differ from the stored score —
+ * per-player points are not stored (PROGRESS F405).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
@@ -65,7 +78,6 @@ import { z } from 'zod'
 import type { Database, Json } from '@/types/database'
 
 import {
-  assertSnapshotScorable,
   computeTeamWeek,
   irKeysOf,
   normalizePosition,
@@ -73,6 +85,7 @@ import {
   startersOf,
   type StarterRef,
   type StatLineRow,
+  weekScoringRules,
 } from '../scoring/score-week-worker'
 import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
@@ -246,7 +259,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
   }
 
   const [weekRes, ladderRes, teamRes] = await Promise.all([
-    supabase.from('league_weeks').select('week').eq('league_id', leagueId).eq('season', league.season).eq('week', week).maybeSingle(),
+    supabase.from('league_weeks').select('week, status, scoring_rules_snapshot').eq('league_id', leagueId).eq('season', league.season).eq('week', week).maybeSingle(),
     supabase.from('league_weeks').select('week').eq('league_id', leagueId).eq('season', league.season),
     supabase.from('teams').select('id').eq('id', teamId).eq('league_id', leagueId).maybeSingle(),
   ])
@@ -267,11 +280,10 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
 
   // The snapshot must score before any starter is computed (the D292
   // quarantine gate, applied to a read): a broken document is a 500 naming
-  // the key, never a page of zeros.
+  // the key, never a page of zeros. THE WEEK's rules (144 / F397).
   let snapshot: Parameters<typeof computeTeamWeek>[0]
   try {
-    assertSnapshotScorable(league.scoring_rules_snapshot)
-    snapshot = league.scoring_rules_snapshot
+    snapshot = weekScoringRules(weekRes.data, league.scoring_rules_snapshot)
   } catch (e) {
     return { status: 500, body: { error: `scoring snapshot: ${e instanceof Error ? e.message : String(e)}` } }
   }

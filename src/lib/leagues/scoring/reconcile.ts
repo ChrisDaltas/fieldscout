@@ -89,8 +89,11 @@
  *     `team_lineups` row: D293's auto-carry did not materialize; the cell
  *     cannot be recomputed and is said, never assumed 0.
  *   * `lineup_unreadable` [alert] — a `slot_map` that is not an object.
- *   * `snapshot_unscorable` [alert] — the league's frozen snapshot does not
- *     resolve/score (D292's quarantine, seen from here).
+ *   * `snapshot_unscorable` [alert] — a started week's stored rules
+ *     (`league_weeks.scoring_rules_snapshot`, 144 / F397) are missing or do
+ *     not resolve/score, so the week is not recomputed (D292's quarantine,
+ *     seen from here); or the league's own snapshot — the rules the NEXT
+ *     week to open takes — does not.
  *   * `starter_final_game_no_line` [alert, TIME-BOUNDED — R877] — F263(g):
  *     a starter whose NFL team played a `final` game this week has NO
  *     `player_stats` row. The worker's "0 by name" (Q42) cannot tell a DNP
@@ -149,6 +152,7 @@ import {
   startersOf,
   type StatLineRow,
   type TeamWeekScore,
+  weekScoringRules,
 } from './score-week-worker'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -433,6 +437,8 @@ interface LeagueRow {
 interface LeagueWeekRow {
   week: number
   status: string
+  /** 144 / F397: the rules THIS week is played with — every cell of the week is recomputed under them. */
+  scoring_rules_snapshot: unknown
 }
 
 interface MatchupRow {
@@ -621,22 +627,22 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
     const mode = modeOf(league.settings)
     const irKeys = irKeysOf(league.roster_settings)
 
-    // The snapshot gate (D292, seen from here).
-    let snapshot: ScoringRulesDoc | null = null
+    // The LEAGUE's snapshot gate (D292, seen from here) — from 144 (F397) the
+    // league column is the rules the NEXT week to open takes; no started week
+    // is recomputed under it (each week under its OWN rules, below).
     try {
       assertSnapshotScorable(league.scoring_rules_snapshot)
-      snapshot = league.scoring_rules_snapshot
     } catch (err) {
       findings.push({
         kind: 'snapshot_unscorable',
         severity: SEVERITY.snapshot_unscorable,
         season,
         league_id: league.id,
-        message: `league_id=${league.id} (${league.name}): the frozen scoring snapshot does not resolve/score — ${err instanceof Error ? err.message : String(err)} (D292: the worker quarantines this league; nothing here can be recomputed)`,
+        message: `league_id=${league.id} (${league.name}): the league's frozen scoring snapshot does not resolve/score — ${err instanceof Error ? err.message : String(err)} (D292: the next week to open takes these rules, and the worker would quarantine it)`,
       })
     }
 
-    const weeks = must(await db.from('league_weeks').select('week, status').eq('league_id', league.id).eq('season', season).order('week'), 'league_weeks read') as LeagueWeekRow[]
+    const weeks = must(await db.from('league_weeks').select('week, status, scoring_rules_snapshot').eq('league_id', league.id).eq('season', season).order('week'), 'league_weeks read') as LeagueWeekRow[]
     const started = weeks.filter((w) => w.status === 'live' || w.status === 'correction_window' || w.status === 'final')
     report.league_weeks += started.length
 
@@ -672,7 +678,7 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
       }
     }
 
-    if (snapshot === null || started.length === 0) continue
+    if (started.length === 0) continue
 
     const teams = must(await db.from('teams').select('id').eq('league_id', league.id), 'teams read').map((t) => t.id)
     const lineups: LineupRow[] = []
@@ -689,6 +695,24 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
 
     for (const lw of started) {
       const week = lw.week
+      // THE WEEK's rules (144 / F397 — Chris: "F397 yes build it"): a finished
+      // week kept under the rules it was played with after a mid-season
+      // scoring change is recomputed under THOSE, so it reads clean, not
+      // drift (Q64 / Q69). Missing or broken ⇒ named, the week not recomputed.
+      let snapshot: ScoringRulesDoc
+      try {
+        snapshot = weekScoringRules(lw, league.scoring_rules_snapshot)
+      } catch (err) {
+        findings.push({
+          kind: 'snapshot_unscorable',
+          severity: SEVERITY.snapshot_unscorable,
+          season,
+          week,
+          league_id: league.id,
+          message: `league_id=${league.id} (${league.name}) week ${week}: the week's stored scoring rules do not resolve/score — ${err instanceof Error ? err.message : String(err)} (D292: the worker quarantines this week; its cells are not recomputed)`,
+        })
+        continue
+      }
       const calWeek = weekByNumber.get(week) ?? null
       const queuedAt = queuedByWeek.get(week) ?? new Map<string, string>()
 

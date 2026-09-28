@@ -138,7 +138,12 @@ export interface CommishChangeSettingResult {
    *  unless rescore was asked for and a week was final. Optional: a replayed
    *  pre-141 document does not carry it. */
   rescore_skipped_final_weeks?: number[]
-  /** Why, in plain words — non-null exactly when that list is non-empty. */
+  /** 144 / Q69 as ruled: the weeks in their stat-correction window
+   *  ("Final (pending corrections)") a `rescore` kept, like the final ones.
+   *  Optional: a replayed pre-144 document does not carry it. */
+  rescore_skipped_correction_window_weeks?: number[]
+  /** Why, in plain words, naming BOTH kinds with their status — non-null
+   *  exactly when either list is non-empty. */
   rescore_skipped_final_weeks_why?: string | null
   /** What the change did and did not touch downstream — null on a no-op. */
   consequences: unknown

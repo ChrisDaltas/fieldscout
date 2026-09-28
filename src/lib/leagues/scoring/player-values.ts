@@ -287,16 +287,28 @@ export function scorePreseasonLine(
  * stored per-player precision), summed, the sum snapped once more for float
  * noise — exactly how a team week sums its starters. No row ⇒ NULL (no games
  * yet), never 0.
+ *
+ * M6A L.E1.27 (migration 144; PROGRESS F397, R1118(a)): each past week is
+ * scored under THAT WEEK's rules when the league played it —
+ * `pastWeekRules.get(week)`, the league week's stored
+ * `scoring_rules_snapshot` — so a mid-season scoring change never re-values
+ * a finished week. A week the league never opened (no `league_weeks` row, or
+ * still upcoming) has no rules of its own and is scored under `snapshot`,
+ * the league's current rules (a ranking under the league's scoring now).
  */
 export function seasonToDate(
   snapshot: ScoringRulesDoc,
   playerId: string,
   position: string,
   weeklyRows: readonly StatLineRow[],
+  pastWeekRules?: ReadonlyMap<number, ScoringRulesDoc>,
 ): { points: number | null; games: number } {
   if (weeklyRows.length === 0) return { points: null, games: 0 }
   let sum = 0
-  for (const row of weeklyRows) sum += scoreStarter(snapshot, playerId, position, row).points
+  for (const row of weeklyRows) {
+    const rules = typeof row.week === 'number' ? (pastWeekRules?.get(row.week) ?? snapshot) : snapshot
+    sum += scoreStarter(rules, playerId, position, row).points
+  }
   return { points: roundHalfUp(sum), games: weeklyRows.length }
 }
 
@@ -359,6 +371,8 @@ export function computePlayerValue(
   snapshot: ScoringRulesDoc,
   ctx: { league_id: string; season: number; week: number; now: Date },
   input: PlayerValueInput,
+  /** 144 / F397: each OPENED league week's own rules, by week (see `seasonToDate`). */
+  pastWeekRules?: ReadonlyMap<number, ScoringRulesDoc>,
 ): PlayerValueRow {
   // (1) THIS week's projection.
   let projected_points: number | null = null
@@ -377,8 +391,8 @@ export function computePlayerValue(
     }
   }
 
-  // (2) Season to date (weeks before this one).
-  const season = seasonToDate(snapshot, input.player_id, input.position, input.seasonRows)
+  // (2) Season to date (weeks before this one) — each under its OWN rules (144 / F397).
+  const season = seasonToDate(snapshot, input.player_id, input.position, input.seasonRows, pastWeekRules)
 
   // (3) Preseason — the season line, for THIS season only.
   let preseason_points: number | null = null

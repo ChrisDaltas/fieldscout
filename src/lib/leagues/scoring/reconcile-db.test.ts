@@ -484,16 +484,13 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
     expect(find(inside, 'drift').map((f) => f.team_id)).toEqual([fx.t1])
   })
 
-  // M6A L.E1.24 (migration 141; PROGRESS F382 / F397 / D378) — THE TASK'S
-  // MEASURE-FIRST CLAUSE, PINNED. Q64 as ruled keeps a FINAL week's stored
-  // scores through a scoring change, and 141 proves the verb never touches
-  // them (pgTAP 089 §C). But this job recomputes EVERY started week —
-  // `final` included — through the league's CURRENT `scoring_rules_snapshot`
-  // (`reconcile.ts` :624-640, :790), and nothing stores the rules a week was
-  // scored under. So a final week kept under the OLD rules reads as DRIFT
-  // after the change. This cell pins that measurement as it stands; F397
-  // owns the fix, and whoever builds it flips the last expectation.
-  it('L.E1.24 MEASUREMENT (F397): after a scoring change a FINAL week keeps its stored score (the ruling) — and this job, recomputing through the CURRENT snapshot, reads it as DRIFT', async () => {
+  // M6A L.E1.24 (migration 141; PROGRESS F382 / F397 / D378) measured that
+  // this job recomputed EVERY started week — `final` included — through the
+  // league's CURRENT snapshot, so a final week kept under the OLD rules read
+  // as DRIFT after a scoring change. L.E1.27 (migration 144, F397 — Chris:
+  // "F397 yes build it") stores each week's rules and this job reads THEM:
+  // the last expectation FLIPS, as the L.E1.24 cell said it would.
+  it('L.E1.27 (F397, flipped from L.E1.24): after a scoring change a FINAL week keeps its stored score AND its own rules — and this job, recomputing under the WEEK’s rules, reads it CLEAN', async () => {
     // Back to the week's true line, so the premise is a CLEAN final week under the rules it was scored by.
     await plantLine(P.rb1, { rush_yards: 87, rush_tds: 1, receptions: 4, receiving_yards: 33, fumbles_lost: 1 }, STAMP)
     const before = await run()
@@ -520,11 +517,17 @@ describe('§23.2 reconciliation over the real stack (L.D2.3)', () => {
     // THE RULING'S HALF: the stored final score is kept, byte for byte.
     expect(await storedScore(fx.m12)).toEqual({ home: 60.08, away: 0 })
 
-    // THE MEASUREMENT: the job re-derives the final week under Full PPR —
-    // RB1 4 rec + WR1 7 rec = +11.00 — and alerts on a score the ruling kept.
+    // The week still stores the rules it was played with (ESPN Standard); the
+    // league moved on to Full PPR (the rules the next week to open takes).
+    const rules = await must(service.from('league_weeks').select('scoring_rules_snapshot').eq('league_id', fx.l1).eq('week', 1).single(), 'week 1 rules')
+    const { data: std } = await service.from('scoring_systems').select('rules').eq('is_template', true).eq('name', 'ESPN Standard').single()
+    expect(rules!.scoring_rules_snapshot).toEqual(std!.rules)
+
+    // THE FLIP: under Full PPR the week would recompute to 71.08 (RB1 4 rec +
+    // WR1 7 rec = +11.00, L.E1.24's measurement) — under ITS OWN rules it is
+    // 60.08, the stored score, so there is NO drift.
     const after = await run()
-    const drift = find(after, 'drift')
-    expect(drift).toHaveLength(1)
-    expect(drift[0]).toMatchObject({ severity: 'alert', league_id: fx.l1, week: 1, team_id: fx.t1, stored: 60.08, recomputed: 71.08 })
+    expect(find(after, 'drift')).toEqual([])
+    expect(find(after, 'snapshot_unscorable')).toEqual([])
   })
 })

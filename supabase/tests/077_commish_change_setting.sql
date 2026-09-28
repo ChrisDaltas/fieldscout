@@ -56,7 +56,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(131);
+select plan(132);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS
@@ -230,7 +230,14 @@ insert into player_stats (player_id, season, week, stat_type, updated_at) values
  ('cs-qb2', 2026, 4, 'weekly', now() - interval '2 hours'),
  ('cs-ir',  2026, 4, 'weekly', now() - interval '1 hour'),
  ('cs2-qb', 2026, 4, 'weekly', now() - interval '90 minutes');
-delete from score_fanout where season = 2026 and week = 4;
+-- R1137 (L.E1.27 re-cut): FINAL week 3 gets a STAMPED starter too, so G13's
+-- "nothing queued for week 3" is a verb that skipped a queueable week, not an
+-- empty week.
+insert into team_lineups (team_id, season, week, slot_map, starters, bench) values
+ ('ce000000-0000-4000-8000-000000000001', 2026, 3, '{"qb:0": "cs-qb1"}', '[]', '[]');
+insert into player_stats (player_id, season, week, stat_type, updated_at) values
+ ('cs-qb1', 2026, 3, 'weekly', now() - interval '8 days');
+delete from score_fanout where season = 2026 and week in (3, 4);
 
 -- PREMISES.
 select is((select faab_balance from league_members where team_id = 'ce000000-0000-4000-8000-000000000002'),
@@ -251,6 +258,10 @@ select is((select count(*)::int from league_weeks where league_id = 'be000000-00
   0, 'B7 PREMISE: L2 has NO final week — the league on which rescore can reach every scored week');
 select is((select count(*)::int from score_fanout where season = 2026 and week = 4),
   0, 'B8 PREMISE: the week-4 queue is EMPTY before any call, so every queue row counted below was written by this verb');
+select is((select tl.slot_map ->> 'qb:0' || '|' || (ps.updated_at is not null)::text || '|' || (select count(*) from score_fanout where season = 2026 and week = 3)
+           from team_lineups tl join player_stats ps on ps.player_id = tl.slot_map ->> 'qb:0' and ps.season = 2026 and ps.week = 3
+           where tl.team_id = 'ce000000-0000-4000-8000-000000000001' and tl.week = 3),
+  'cs-qb1|true|0', 'B8b PREMISE (R1137): FINAL week 3 has a STARTER with a STAMPED line (queueable) and an empty queue, so G13''s nothing-for-week-3 is the verb skipping it');
 select is((select settings ->> 'waiver_period_hours' from leagues where id = 'be000000-0000-4000-8000-000000000001'),
   '48', 'B9 PREMISE: L1 stores waiver_period_hours = 48 (the §C key''s before-value is a real stored value, not an absent key)');
 
@@ -509,11 +520,14 @@ select is((select count(*)::int from score_fanout where season = 2026 and week =
   'G5 …and with rescore = false NOTHING was queued for the open week 4 either');
 select is(current_setting('pgtap.cs_g1')::jsonb ->> 'rescore_performed', 'false',
   'G6 the document says rescore was NOT performed…');
-select ok(current_setting('pgtap.cs_g1')::jsonb ->> 'rescore_not_performed_why' like 'not_requested%1 final week(s) [3] keep their stored scores%1 open week(s) [4] keep the points already computed under the PREVIOUS snapshot',
-  'G7 …WHY, naming the final week left as it was AND the open week now carrying points computed under the previous snapshot');
-select is(current_setting('pgtap.cs_g1')::jsonb -> 'consequences' ->> 'score_stale' || '|' || (current_setting('pgtap.cs_g1')::jsonb -> 'consequences' ->> 'score_stale_reason'),
-  'true|snapshot_changed_without_rescore',
-  'G8 …and it flags the open week as STALE by name — a re-frozen snapshot over an already-scored live week is a MIXED week, and the one thing this verb must never report as clean (§4 rule 15)');
+select is(current_setting('pgtap.cs_g1')::jsonb ->> 'rescore_not_performed_why',
+  'not_requested — rescore was not asked for, so no week already under way changes: week 3 (final) and week 4 (being played now) keep the scoring they started with, and the new scoring starts with the next week to open',
+  'G7 RE-CUT (144, F397): …WHY in plain words — the final week AND the live week keep the scoring they started with; the new scoring starts with the next week');
+select is(current_setting('pgtap.cs_g1')::jsonb -> 'consequences' ->> 'score_stale' || '|' || coalesce(current_setting('pgtap.cs_g1')::jsonb -> 'consequences' ->> 'score_stale_reason', 'null')
+          || '|' || (select (scoring_rules_snapshot = (select rules from scoring_systems where is_template and name = 'ESPN Standard'))::text
+                     from league_weeks where league_id = 'be000000-0000-4000-8000-000000000001' and week = 4),
+  'false|null|true',
+  'G8 RE-CUT (144, F397): NO open week is mixed any more — the live week 4 KEEPS its stored ESPN Standard rules (the worker scores it under them), so nothing is stale; under 141 the worker read the re-frozen league column and this was a MIXED week');
 select is((select metadata ->> 'rescore_requested' || '|' || (metadata ->> 'rescore_performed') from commissioner_actions
            where league_id = 'be000000-0000-4000-8000-000000000001' and target_id = 'scoring_system_id'),
   'false|false', 'G9 …and the receipt carries the same two facts');
@@ -542,17 +556,20 @@ end $$;
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
-  (current_setting('pgtap.cs_g10')::jsonb ->> 'rescore_performed') || '|' || (current_setting('pgtap.cs_g10')::jsonb -> 'rescore_skipped_final_weeks')::text,
-  'true|[3]',
-  'G10 RE-CUT (141, Q64 AS RULED): `rescore` with a FINAL week LANDS — the open week 4 is re-scored and final week 3 is NAMED as skipped. Under 129 this exact call was refused whole (the recommendation, now superseded)');
+  (current_setting('pgtap.cs_g10')::jsonb ->> 'rescore_performed') || '|' || (current_setting('pgtap.cs_g10')::jsonb -> 'rescore_skipped_final_weeks')::text
+  || '|' || (current_setting('pgtap.cs_g10')::jsonb -> 'rescore_skipped_correction_window_weeks')::text
+  || '|' || (select (scoring_rules_snapshot = (select rules from scoring_systems where is_template and name = 'Sleeper Standard'))::text || '/' || scoring_rules_source
+             from league_weeks where league_id = 'be000000-0000-4000-8000-000000000001' and week = 4),
+  'true|[3]|[]|true/rescore',
+  'G10 RE-CUT (141, Q64 AS RULED; 144, F397): `rescore` with a FINAL week LANDS — the LIVE week 4 is re-scored and now CARRIES the new rules (source rescore), final week 3 is NAMED as skipped, and no correction-window week exists here. Under 129 this exact call was refused whole');
 select is((select scoring_system_id from leagues where id = 'be000000-0000-4000-8000-000000000001'),
   (select id from scoring_systems where is_template and name = 'Sleeper Standard'),
   'G11 …and the change is WRITTEN: the reference is Sleeper Standard now (under 129 it stayed Full PPR)');
 select is((select count(*)::int from commish_setting_actions where action_id = '0e000000-0000-4000-8000-000000000051'), 1,
   'G12 …and it consumed its ledger row');
-select is((select string_agg(player_id, ',' order by player_id) from score_fanout where season = 2026 and week in (3, 4)),
-  'cs-qb1,cs-qb2',
-  'G13 …and ONLY the open week 4 was queued (its two stamped starters; the IR man, the unstamped and the missing lines as G19/G20 name them) — NOTHING for final week 3, whose stored 110.50 stands');
+select is((select string_agg(week || ':' || player_id, ',' order by week, player_id) from score_fanout where season = 2026 and week in (3, 4)),
+  '4:cs-qb1,4:cs-qb2',
+  'G13 RE-CUT (R1137): …and ONLY the live week 4 was queued (its two stamped starters; the IR man, the unstamped and the missing lines as G19/G20 name them) — NOTHING for final week 3, although its starter cs-qb1 carries a stamped line (B8b), and its stored 110.50 stands');
 -- G14 RE-CUT: the refusal is GONE from the body, not merely unreached. RED on
 -- 129 / 131's text, which carried both strings.
 select is(

@@ -27,7 +27,11 @@
  *   3. THE SNAPSHOT GATE — the scoring worker's own `assertSnapshotScorable`
  *      on `leagues.scoring_rules_snapshot` (§7.3.3: the frozen snapshot,
  *      never the live `scoring_systems` row): a NULL or corrupt snapshot
- *      QUARANTINES that league by name; its siblings are valued.
+ *      QUARANTINES that league by name; its siblings are valued. From 144
+ *      (L.E1.27 / F397) the season-to-date value scores each PAST week under
+ *      that league week's own stored rules (`weekScoringRules`) — this
+ *      week's projection and the preseason value keep the league's current
+ *      rules — and an opened week with no rules quarantines the league too.
  *   4. INPUTS, paged past the 1000-row cap (`pageAll`, exact counts): the
  *      league's ROSTER (the population autopilot chooses from), each
  *      player's position and season line, the week's projection lines, and
@@ -57,7 +61,14 @@ import type { Database } from '@/types/database'
 import type { TimeProvider } from '../time/time-provider'
 import { computePlayerValue, type PlayerValueRow } from './player-values'
 import type { ScoringRulesDoc } from './rules-doc'
-import { assertSnapshotScorable, normalizePosition, STAT_LINE_COLUMNS, type StatLineRow } from './score-week-worker'
+import {
+  assertSnapshotScorable,
+  normalizePosition,
+  STAT_LINE_COLUMNS,
+  type StatLineRow,
+  weekScoringRules,
+  type WeekRulesRow,
+} from './score-week-worker'
 
 export const PLAYER_VALUES_TABLE = 'league_player_values'
 
@@ -165,6 +176,35 @@ async function readLeagueWeeks(db: Db, season: number, weeks: readonly number[],
           .range(from, to) as unknown as PageResponse<{ league_id: string; week: number }>,
     )
     for (const r of rows) out.add(`${r.league_id}:${r.week}`)
+  }
+  return out
+}
+
+/**
+ * 144 / F397 (R1118(a)): every OPENED week's stored rules per league, so the
+ * season-to-date value scores each past week under the rules the league
+ * played it with (`weekScoringRules` — an opened week with none is LOUD).
+ */
+async function readOpenedWeekRules(db: Db, season: number, leagueIds: readonly string[]): Promise<Map<string, Array<WeekRulesRow>>> {
+  const out = new Map<string, Array<WeekRulesRow>>()
+  for (const ids of chunk(leagueIds, IN_CHUNK)) {
+    const rows = await pageAll<WeekRulesRow & { league_id: string }>(
+      (from, to) =>
+        db
+          .from('league_weeks')
+          .select('league_id, week, status, scoring_rules_snapshot', { count: 'exact' })
+          .eq('season', season)
+          .neq('status', 'upcoming')
+          .in('league_id', ids)
+          .order('league_id')
+          .order('week')
+          .range(from, to) as unknown as PageResponse<WeekRulesRow & { league_id: string }>,
+    )
+    for (const r of rows) {
+      const list = out.get(r.league_id) ?? []
+      list.push(r)
+      out.set(r.league_id, list)
+    }
   }
   return out
 }
@@ -373,6 +413,7 @@ export async function runLeaguePlayerValues(
   }
 
   const scheduled = await readLeagueWeeks(db, opts.season, plan.weeks, leagues.map((l) => l.id))
+  const openedWeekRules = await readOpenedWeekRules(db, opts.season, leagues.map((l) => l.id))
   const rosters = await readRosters(db, leagues.map((l) => l.id))
   const allPlayers = [...new Set([...rosters.values()].flat())].sort()
   const players = await readPlayers(db, allPlayers)
@@ -384,11 +425,17 @@ export async function runLeaguePlayerValues(
     for (const w of plan.weeks) if (!weeks.includes(w)) report.notScheduled.push({ league_id: league.id, week: w })
     if (weeks.length === 0) continue
 
-    // (3) The snapshot gate — the worker's own (D292's quarantine posture).
+    // (3) The snapshot gate — the worker's own (D292's quarantine posture) —
+    //     over the league's current rules (this week's projection, the
+    //     preseason line) AND every opened week's own rules (the season to
+    //     date, 144 / F397): a missing or broken week is named, never scored
+    //     under the league's current rules.
     let snapshot: ScoringRulesDoc
+    const pastWeekRules = new Map<number, ScoringRulesDoc>()
     try {
       assertSnapshotScorable(league.scoring_rules_snapshot)
       snapshot = league.scoring_rules_snapshot
+      for (const row of openedWeekRules.get(league.id) ?? []) pastWeekRules.set(row.week, weekScoringRules(row, null))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const cause = message.startsWith('snapshot_missing') ? message : `snapshot_corrupt: ${message}`
@@ -430,6 +477,7 @@ export async function runLeaguePlayerValues(
               projected: p.projected_pts_ppr !== null || p.projected_pts_standard !== null || p.projected_pts_half_ppr !== null,
             },
           },
+          pastWeekRules,
         )
         if (row.projected_missing === 'stale_line') stale.push(playerId)
         rows.push(row)
