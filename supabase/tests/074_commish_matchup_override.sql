@@ -264,6 +264,17 @@ insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, statu
 insert into players (id, full_name, position, team, status) values
  ('mo-kc-qb',  'MO Kansas QB',  'QB', 'KC',  'Active'),
  ('mo-buf-qb', 'MO Buffalo QB', 'QB', 'BUF', 'Active');
+-- RE-SEATED BY MIGRATION 154 (L.D2.15 — PROGRESS F441 / F445, D413): a
+-- player starts for at most ONE team of a league per week (a trigger on
+-- team_lineups refuses a second start by name), so the teams below no longer
+-- share one player as "a starter of game X": each has its OWN player with the
+-- same name, position and NFL team (every cell reads the game by NFL team and
+-- names a player by full_name, so no expectation moves).
+insert into players (id, full_name, position, team, status)
+select c.id, p.full_name, p.position, p.team, p.status
+from (values ('mo-kc-qb3', 'mo-kc-qb'), ('mo-kc-qb5', 'mo-kc-qb'), ('mo-kc-qb7', 'mo-kc-qb'),
+             ('mo-buf-qb4', 'mo-buf-qb'), ('mo-buf-qb6', 'mo-buf-qb'), ('mo-buf-qb8', 'mo-buf-qb')) as c(id, src)
+join players p on p.id = c.src;
 
 insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks,
                      playoff_teams, playoff_start_week,
@@ -297,15 +308,15 @@ insert into team_lineups (team_id, season, week, starters, bench, slot_map) valu
 -- the bye row d5…42 (week 4, Sunday's KC game) and all four week-5 rows
 -- (correction window, KC/BUF final). C5c asserts each lands for the ruled
 -- reason (`every_starter_finished`), never vacuously.
- ('c5000000-0000-4000-8000-000000000003', 2026, 4, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
+ ('c5000000-0000-4000-8000-000000000003', 2026, 4, '[]', '[]', '{"qb:0": "mo-kc-qb3"}'),
  ('c5000000-0000-4000-8000-000000000001', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
  ('c5000000-0000-4000-8000-000000000002', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
- ('c5000000-0000-4000-8000-000000000003', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
- ('c5000000-0000-4000-8000-000000000004', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
- ('c5000000-0000-4000-8000-000000000005', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
- ('c5000000-0000-4000-8000-000000000006', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}'),
- ('c5000000-0000-4000-8000-000000000007', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb"}'),
- ('c5000000-0000-4000-8000-000000000008', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb"}');
+ ('c5000000-0000-4000-8000-000000000003', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb3"}'),
+ ('c5000000-0000-4000-8000-000000000004', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb4"}'),
+ ('c5000000-0000-4000-8000-000000000005', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb5"}'),
+ ('c5000000-0000-4000-8000-000000000006', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb6"}'),
+ ('c5000000-0000-4000-8000-000000000007', 2026, 5, '[]', '[]', '{"qb:0": "mo-kc-qb7"}'),
+ ('c5000000-0000-4000-8000-000000000008', 2026, 5, '[]', '[]', '{"qb:0": "mo-buf-qb8"}');
 -- The F4 guard (§12.17) refuses a skipped step, so each week is WALKED to its
 -- status rather than assigned one: upcoming → live → correction_window → final.
 update league_weeks set status = 'live'              where league_id = 'b5000000-0000-4000-8000-000000000001' and week in (3, 4, 5);

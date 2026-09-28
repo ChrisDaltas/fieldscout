@@ -763,7 +763,7 @@ describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/
     expect(isForbidsIllegalReason(NOBODY)).toBe(false)
   })
 
-  it("R1076 — 125's three reason strings and the tick's three 'evaluated nothing' reasons are pinned to the MIGRATION'S FILE TEXT", () => {
+  it("R1076 — the chooser's four reason strings (125's three + 154's) and the tick's three 'evaluated nothing' reasons are pinned to the MIGRATION'S FILE TEXT", () => {
     // The NEWEST migration that defines each function — a later CREATE OR
     // REPLACE that rewords a reason must red THIS cell, not silently
     // un-excuse (or over-excuse) a slot.
@@ -781,8 +781,9 @@ describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/
     for (const arm of Object.values(AUTOPILOT_UNFILLABLE_REASONS)) {
       expect(chooser, arm.prefix).toContain(`${sql(arm.prefix)} || upper(v_e ->> 'slot') || ${sql(arm.suffix)}`)
     }
-    // Exactly three reason arms exist — a FOURTH would be unclassified here.
-    expect(chooser.match(/\|\| upper\(v_e ->> 'slot'\) \|\|/g)).toHaveLength(3)
+    // Exactly four reason arms exist (154 added the started-elsewhere arm) —
+    // a FIFTH would be unclassified here.
+    expect(chooser.match(/\|\| upper\(v_e ->> 'slot'\) \|\|/g)).toHaveLength(4)
     const tick = newestDefining('lineup_lock_tick')
     for (const reason of AUTOPILOT_PASS_EVALUATED_NOTHING) expect(tick, reason).toContain(`'${reason}'`)
   })

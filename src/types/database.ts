@@ -5733,6 +5733,24 @@ export type Database = {
         Args: { p_players: Json; p_slots: Json }
         Returns: Json
       }
+      lineup_kept_starter_internal: {
+        Args: {
+          p_at: string
+          p_player_id: string
+          p_season: number
+          p_slot: string
+          p_starters: Json
+          p_week: number
+        }
+        Returns: {
+          datum_arm: string
+          detail: string
+          kept: boolean
+          kickoff_at: string
+          on_bye: boolean
+          why: string
+        }[]
+      }
       lineup_kickoff_internal: {
         Args: {
           p_at: string
@@ -5748,6 +5766,16 @@ export type Database = {
       }
       lineup_lock_tick: {
         Args: { p_league_id?: string; p_now?: string }
+        Returns: Json
+      }
+      lineup_started_elsewhere_internal: {
+        Args: {
+          p_league_id: string
+          p_player_id: string
+          p_season: number
+          p_team_id: string
+          p_week: number
+        }
         Returns: Json
       }
       log_commissioner_action_internal: {

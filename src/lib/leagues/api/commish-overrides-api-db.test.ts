@@ -104,6 +104,17 @@ const PLAYERS = [
   // whose game in each of those weeks is FINAL). Rostered nowhere.
   { id: 'vitest-co-starter', full_name: 'Vitest CO Starter', position: 'WR', team: 'VCS', status: 'Active' },
 ] as const
+/** 154 (L.D2.15 — F441 / F445): a player starts for at most ONE team of a
+ *  league per week, so the weeks-2-4 rows below can no longer all name the
+ *  one STARTER — each team starts its OWN copy (same name, position and club
+ *  VCS, whose game in each of those weeks is FINAL; rostered nowhere). */
+const TEAM_STARTERS = Array.from({ length: TEAM_COUNT }, (_, i) => ({
+  id: `vitest-co-starter-t${i + 1}`,
+  full_name: 'Vitest CO Starter',
+  position: 'WR',
+  team: 'VCS',
+  status: 'Active',
+}))
 const MOVER = 'vitest-co-mover'
 const FREE_AGENT = 'vitest-co-fa'
 const STARTER = 'vitest-co-starter'
@@ -194,7 +205,7 @@ async function cleanup(): Promise<void> {
     .delete()
     .in(
       'id',
-      PLAYERS.map((p) => p.id),
+      [...PLAYERS, ...TEAM_STARTERS].map((p) => p.id),
     )
   if (playersError) throw new Error(`cleanup players: ${playersError.message}`)
   for (const u of [COMMISH, MEMBER]) {
@@ -327,7 +338,7 @@ beforeAll(async () => {
   const { error: genError } = await service.rpc('league_generate_schedule', { p_league_id: leagueId })
   if (genError) throw new Error(`league_generate_schedule: ${genError.message}`)
 
-  const { error: playersError } = await service.from('players').upsert([...PLAYERS])
+  const { error: playersError } = await service.from('players').upsert([...PLAYERS, ...TEAM_STARTERS])
   if (playersError) throw new Error(`players upsert: ${playersError.message}`)
   // THE PREMISE, asserted (§4 rule 14(c)): the mover starts on the
   // commissioner's roster and the free agent is on none.
@@ -343,7 +354,7 @@ beforeAll(async () => {
   expect(await rosterTeamOf(FREE_AGENT)).toStrictEqual([])
 
   // R1097 (PR #313's fix round): weeks 2-4 get a STORED lineup for every team
-  // starting STARTER, and STARTER's club plays one FINAL game in each.
+  // starting a VCS starter (its own — 154), and VCS plays one FINAL game in each.
   const { data: allTeams, error: allTeamsError } = await service.from('teams').select('id').eq('league_id', leagueId)
   if (allTeamsError) throw new Error(`teams read: ${allTeamsError.message}`)
   expect(allTeams).toHaveLength(TEAM_COUNT)
@@ -352,7 +363,7 @@ beforeAll(async () => {
   )
   if (finishedGamesError) throw new Error(`nfl_games insert: ${finishedGamesError.message}`)
   const { error: lineupsError } = await service.from('team_lineups').insert(
-    FINISHED_WEEKS.flatMap((w) => allTeams!.map((t) => ({ team_id: t.id, season: SYNTHETIC_SEASON, week: w, starters: [], bench: [], slot_map: { 'wr:0': STARTER } }))),
+    FINISHED_WEEKS.flatMap((w) => allTeams!.map((t, i) => ({ team_id: t.id, season: SYNTHETIC_SEASON, week: w, starters: [], bench: [], slot_map: { 'wr:0': TEAM_STARTERS[i]!.id } }))),
   )
   if (lineupsError) throw new Error(`team_lineups insert: ${lineupsError.message}`)
   // THE PREMISE, by value (rule 14(c)): a week-2, a week-3 and a week-4 row
