@@ -390,8 +390,9 @@ describe('roster_add_drop over PostgREST — two managers race one FCFS add', ()
       p_action_id: ACTION.afterDropB,
     })
     expect(waiversError?.code).toBe('P0001')
-    expect(waiversError?.message).toContain('is on waivers until')
-    expect(waiversError?.message).toContain("waiver claims are M5's")
+    expect(waiversError?.message).toContain('is on waivers until the waiver run at')
+    // 149 (Q70): a dropped player waits for the NEXT waiver run, named in the league's zone.
+    expect(waiversError?.message).toContain('put in a waiver claim')
 
     // No client writes anywhere: a manager's direct INSERT into league_rosters
     // is refused by RLS (there is no write policy), his pool/transactions

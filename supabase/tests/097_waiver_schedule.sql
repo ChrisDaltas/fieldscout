@@ -35,7 +35,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(93);
+select plan(95);
 
 -- ---------------------------------------------------------------------------
 -- A. Form: the column, the CHECK, the index, the retired keys unstorable
@@ -286,6 +286,14 @@ select is(
   'E9 league 2 after week 8 ends: claims only until the next run — Wednesday 00:00 PST, 08:00Z');
 select is((pg_temp.win('L2', '2026-11-04 08:00:00+00') ->> 'free_agency_open')::boolean, true,
   'E10 league 2, AT the post-fall-back run: open');
+-- a run AT the reset instant counts (Q78: waivers run on schedule as the week closes); an opening AT it opens nothing
+update nfl_weeks set last_game_ends_at = '2026-10-28 07:00:00+00' where season = 2026 and week = 7;
+select is((pg_temp.win('L2', '2026-10-28 07:00:00+00') ->> 'free_agency_open')::boolean, true,
+  'E10a the week''s end recorded EXACTLY at league 2''s run: the run counts and free agency opens (a run AT the reset counts — Q78)');
+update nfl_weeks set last_game_ends_at = '2026-11-01 14:00:00+00' where season = 2026 and week = 7;
+select is(pg_temp.win('L1', '2026-11-01 14:00:00+00') ->> 'why', 'awaiting_run',
+  'E10b a week end recorded EXACTLY at league 1''s Sunday opening: that opening opens nothing (the week closed at that instant)');
+update nfl_weeks set last_game_ends_at = starts_at + interval '6 days 3 hours' where season = 2026 and week = 7;   -- restore
 update leagues set waiver_next_run_at = '2026-10-28 07:00:00+00' where id = 'b9700000-0000-4000-8000-000000000002';
 select is(
   (select jsonb_build_array(w ->> 'free_agency_open', w ->> 'why', (w ->> 'last_run_at')::timestamptz)
@@ -522,10 +530,10 @@ select ok(has_function_privilege('authenticated', 'public.commish_setting_policy
   'I2 the policy table stays readable by authenticated (129''s grant — the panel renders refusal copy from it)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public'
+   where n.nspname = 'public' and p.proname <> 'waiver_schedule_from_legacy_internal'   -- the one-off mapper reads them by design
      and (p.prosrc like '%->> ''waiver_period_hours''%' or p.prosrc like '%->> ''free_agency''%'
           or p.prosrc like '%->> ''bench_lock''%' or p.prosrc like '%->> ''waiver_process_day''%')),
-  0, 'I3 no public function body reads a retired key from a settings blob any more');
+  0, 'I3 no public function body except the one-off legacy mapper reads a retired key from a settings blob any more');
 select ok(
   (select prosrc like '%public.waiver_window_internal(v_league, p_at)%' and prosrc like '%public.waiver_next_run_internal(v_sched, p_at)%'
    from pg_proc where proname = 'roster_add_drop_internal'),

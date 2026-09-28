@@ -57,8 +57,8 @@ select plan(43);
 select is(
   (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'),
-  'fe71e96772a9584f62d6728067d0b0ff',
-  'A1 RE-CUT (144): the body as a STORED LITERAL md5 — 144''s (measured on the local chain 001-144; 141''s was 05d2c7e4ae83506c113f7168d262a8b3, nine hunks apart; 131''s 497b5fbc33dd6c7fc0b9da41f9f212f2)');
+  'ac7854085b294b27112c3b451903e72c',
+  'A1 RE-CUT (149): the body as a STORED LITERAL md5 — 149''s (the waiver-schedule hunks, 3 apart from 144''s fe71e96772a9584f62d6728067d0b0ff; measured on the local chain 001-149; 141''s was 05d2c7e4ae83506c113f7168d262a8b3, nine hunks apart; 131''s 497b5fbc33dd6c7fc0b9da41f9f212f2)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'
