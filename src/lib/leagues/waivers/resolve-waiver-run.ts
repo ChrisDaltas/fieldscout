@@ -57,7 +57,7 @@
  * league once the team has won a claim it ranked ABOVE this one: then the
  * team is at the back, as of its latest such win. A win on a claim the team
  * ranked BELOW does not move it for this claim — as far as priority goes, a
- * team's claims are settled in its own ranking order, so a lower-ranked win
+ * team's LOWER-ranked wins never cost it a HIGHER-ranked tie (the priority key; NOT a full ranking-order settlement — see F422(c), R1181), so a lower-ranked win
  * never costs it a higher-ranked claim on the tiebreak (R1176 — the
  * orchestrator's ruling 2026-09-28 applying Q71's "a team's own ranking only
  * settles its own collisions"; PROGRESS D389(7)). Between a team's OWN claims on one player (same
