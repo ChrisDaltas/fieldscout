@@ -320,6 +320,58 @@ export type Database = {
           },
         ]
       }
+      commish_faab_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commish_faab_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_faab_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commish_faab_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commish_lineup_actions: {
         Row: {
           action_id: string
@@ -4583,6 +4635,27 @@ export type Database = {
           p_league_id: string
           p_matchup_id: string
           p_reason: string
+        }
+        Returns: Json
+      }
+      commish_edit_faab: {
+        Args: {
+          p_action_id?: string
+          p_balance?: number
+          p_league_id: string
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      commish_edit_faab_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_balance: number
+          p_league_id: string
+          p_reason: string
+          p_team_id: string
         }
         Returns: Json
       }

@@ -12,11 +12,11 @@
 ## Active: **Redraft Leagues M5 — Transactions (waivers / FAAB / trades)** *(breakdown approved by Chris 2026-09-27 — "approve M5, all recommendations"; PR #323)*
 
 - **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M5-transactions.md` §6 (+ its approval note). **Memory:** `docs/specs/PROGRESS-leagues.md` (Q70–Q79 ruled as recommended; D383, D384; F406–F409, F411). **Task-id prefixes:** `L.D2.*` (waivers / FAAB / free agency) and `L.D3.*` (trades).
-- **Landed:** L.D2.5 (PR #325, migration 145 / pgTAP 093); L.D2.6 (migration 146 / pgTAP 094 — C72 fixed).
-- **NEXT TAKEABLE TASK: `L.D2.11`** (`commish_edit_faab`; FULL; also takes F409 if it touches the budget verbs). Then in the breakdown's suggested order (§7): L.D3.2 → L.D2.12; L.D2.7 onward as the graph allows. Measure migration / pgTAP numbers at build time (heads after L.D2.6: 146 / 094).
+- **Landed:** L.D2.5 (PR #325, migration 145 / pgTAP 093); L.D2.6 (migration 146 / pgTAP 094 — C72 fixed); L.D2.11 (migration 147 / pgTAP 095 — `commish_edit_faab`, F412's reset re-seed).
+- **NEXT TAKEABLE TASK: `L.D3.2`** (trade tables + propose / reject / cancel / accept; FULL). Then in the breakdown's suggested order (§7): L.D2.12; L.D2.7 onward as the graph allows. Measure migration / pgTAP numbers at build time (heads after L.D2.11: 147 / 095).
 - **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
 - **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
-- **Production:** at 134 until Chris pushes. Push order (M6A): `npx supabase db push` (135–146 together; stop and report on any error) → immediately `npm run sync:reingest -- --season 2026 --weeks <completed weeks> --confirm-target <hosted host>`.
+- **Production:** at 134 until Chris pushes. Push order (M6A): `npx supabase db push` (135–147 together; stop and report on any error) → immediately `npm run sync:reingest -- --season 2026 --weeks <completed weeks> --confirm-target <hosted host>`.
 
 ---
 
