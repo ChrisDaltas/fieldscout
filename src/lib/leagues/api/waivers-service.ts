@@ -6,6 +6,8 @@
  *   POST   /api/leagues/[id]/waivers          submit a blind claim
  *   GET    /api/leagues/[id]/waivers          a team's claims (default: mine, pending)
  *   PATCH  /api/leagues/[id]/waivers/[cid]    move one claim to a new place in its team's order
+ *                                             — or, with { faab_bid, drop_player_id }, change
+ *                                             its bid / drop in place (150's edit verb, F417)
  *   DELETE /api/leagues/[id]/waivers/[cid]    cancel one claim
  *
  * Same D68/D71 layering as the rest of the in-season family: the Route
@@ -476,6 +478,104 @@ export async function reorderClaim(
     echo.action_id !== action_id ||
     echo.team_id !== claim.team_id ||
     echo.pending_claims?.[claim_order - 1]?.id !== cid
+  ) {
+    return { status: 409, body: { error: WAIVER_CLAIM_ACTION_ID_REUSED_MESSAGE } }
+  }
+  return { status: 200, body: data as unknown as Json }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH …/waivers/[cid] with { faab_bid, drop_player_id } — edit in place
+// (M5 L.D2.9, PROGRESS F417: migration 150's `waiver_claim_edit` — ONE
+// transaction, replacing D387(5)'s cancel + resubmit + move-back).
+// ---------------------------------------------------------------------------
+
+export const editClaimInputSchema = z.strictObject({
+  /** The new bid — 150 SETS it (a priority league refuses anything but $0). */
+  faab_bid: wholeDollars,
+  /** The new drop — null = no drop. Required so an edit never guesses. */
+  drop_player_id: playerId.nullable(),
+  action_id: normalizedUuid,
+  reason: optionalReason,
+})
+export type EditClaimInput = z.infer<typeof editClaimInputSchema>
+
+/** 150's edit document, returned whole. */
+export interface EditClaimResult {
+  verb: 'waiver_claim_edit'
+  league_id: string
+  team_id: string
+  team_name: string
+  action_id: string
+  claim_id: string
+  claim: {
+    id: string
+    add_player_id: string
+    drop_player_id: string | null
+    faab_bid: number
+    claim_order: number
+    status: string
+    process_at: string | null
+    created_at: string
+  }
+  before: { faab_bid: number; drop_player_id: string | null; claim_order: number }
+  add_player_name: string | null
+  drop_player_name: string | null
+  waiver_type: string
+  faab_balance: number | null
+  faab_spent: 0
+  no_changes: boolean
+  no_changes_why: string | null
+  pending_claims: Array<{ id: string; claim_order: number }>
+  acted_as_commissioner: boolean
+  commissioner_action_id: string | null
+  system_post: string | null
+  notified_user_id: string | null
+  reason: string | null
+  evaluated_at: string
+}
+
+interface EditEchoShape {
+  verb?: unknown
+  action_id?: unknown
+  claim_id?: unknown
+  claim?: { faab_bid?: unknown; drop_player_id?: unknown } | null
+}
+
+export async function editClaim(
+  supabase: Supabase,
+  leagueId: string,
+  claimId: string,
+  rawBody: unknown,
+): Promise<ServiceResult> {
+  const parsed = editClaimInputSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const { faab_bid, drop_player_id, action_id, reason } = parsed.data
+  const cid = claimId.toLowerCase()
+
+  const { data, error } = await supabase.rpc('waiver_claim_edit', {
+    p_league_id: leagueId,
+    p_claim_id: cid,
+    p_bid: faab_bid,
+    ...(drop_player_id === null ? {} : { p_drop: drop_player_id }),
+    p_action_id: action_id,
+    ...(reason === undefined ? {} : { p_reason: reason }),
+  })
+  if (error) {
+    return mapInSeasonRpcError(error, WAIVER_CLAIM_FORBIDDEN_MESSAGE)
+  }
+
+  // F65(b): the replay is verb-, team- and claim-scoped, not argument-scoped —
+  // an echo that is not THIS edit is refused, never reported as done.
+  const echo = (data ?? {}) as EditEchoShape
+  if (
+    echo.verb !== 'waiver_claim_edit' ||
+    echo.action_id !== action_id ||
+    echo.claim_id !== cid ||
+    echo.claim?.faab_bid !== faab_bid ||
+    (echo.claim?.drop_player_id ?? null) !== drop_player_id
   ) {
     return { status: 409, body: { error: WAIVER_CLAIM_ACTION_ID_REUSED_MESSAGE } }
   }

@@ -19,6 +19,7 @@ import type { WaiverClaimsDocument } from '@/lib/leagues/api/waivers-service'
 
 import { cancelClaimMutationOptions } from './use-cancel-claim'
 import { commishEditFaabMutationOptions } from './use-commish-faab'
+import { editClaimMutationOptions } from './use-edit-claim'
 import { commishLogKeys } from './use-commish-log'
 import { leagueActivityKeys } from './use-league-activity'
 import { leaguesKeys } from './use-leagues'
@@ -116,6 +117,37 @@ describe('useCancelClaim', () => {
     expect(init.method).toBe('DELETE')
     expect(JSON.parse(String(init.body))).toStrictEqual({ action_id: 'x' })
     expect(stale(client, waiverClaimKeys.team(LEAGUE, null, 'all'))).toBe(true)
+  })
+})
+
+describe('useEditClaim — ONE call, one transaction (M5 L.D2.9 / F417): not optimistic, not retried', () => {
+  it('PATCHes …/waivers/[cid] with { faab_bid, drop_player_id, action_id } once; the cache is untouched; the claims re-read on a failure', async () => {
+    const client = seeded()
+    const fetchMock = respond(502, { error: 'upstream' })
+    vi.stubGlobal('fetch', fetchMock)
+    await new MutationObserver(client, editClaimMutationOptions(client, LEAGUE))
+      .mutate({ claim_id: 'b', faab_bid: 12, drop_player_id: null, action_id: 'x' })
+      .catch(() => undefined)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`/api/leagues/${LEAGUE}/waivers/b`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(String(init.body))).toStrictEqual({ faab_bid: 12, drop_player_id: null, action_id: 'x' })
+    expect(client.getQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'))).toBe(DOC)
+    expect(stale(client, waiverClaimKeys.team(LEAGUE, null, 'all'))).toBe(true)
+    expect(stale(client, waiverClaimKeys.team(OTHER, null, 'all'))).toBe(false)
+  })
+
+  it("a manager's edit re-reads only the claims; a commissioner's also the feed and the audit log", async () => {
+    const client = seeded()
+    vi.stubGlobal('fetch', respond(200, { acted_as_commissioner: false }))
+    await new MutationObserver(client, editClaimMutationOptions(client, LEAGUE)).mutate({ claim_id: 'b', faab_bid: 1, drop_player_id: null, action_id: 'x' })
+    expect(stale(client, waiverClaimKeys.team(LEAGUE, null, 'all'))).toBe(true)
+    expect(stale(client, leagueActivityKeys.all(LEAGUE))).toBe(false)
+    vi.stubGlobal('fetch', respond(200, { acted_as_commissioner: true }))
+    await new MutationObserver(client, editClaimMutationOptions(client, LEAGUE)).mutate({ claim_id: 'b', faab_bid: 1, drop_player_id: null, action_id: 'y' })
+    expect(stale(client, leagueActivityKeys.all(LEAGUE))).toBe(true)
+    expect(stale(client, commishLogKeys.all(LEAGUE))).toBe(true)
   })
 })
 
