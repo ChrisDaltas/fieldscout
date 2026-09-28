@@ -60,7 +60,10 @@ select is(
                             has_function_privilege('anon', p.oid, 'EXECUTE'),
                             has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname like 'waiver_claim%'),
+   where n.nspname = 'public' and p.proname in ('waiver_claim_cancel', 'waiver_claim_cancel_internal', 'waiver_claim_receipt_internal',
+                                                'waiver_claim_reorder', 'waiver_claim_reorder_internal', 'waiver_claim_submit', 'waiver_claim_submit_internal')),
+  -- 150 (L.D2.9) re-cut: the census names 145's seven BY NAME — 150 adds
+  -- waiver_claim_edit / _edit_internal / _notify_internal, pinned by 098 A3.
   'waiver_claim_cancel:t:search_path="":f:t waiver_claim_cancel_internal:f:search_path="":f:f waiver_claim_receipt_internal:f:search_path="":f:f waiver_claim_reorder:t:search_path="":f:t waiver_claim_reorder_internal:f:search_path="":f:f waiver_claim_submit:t:search_path="":f:t waiver_claim_submit_internal:f:search_path="":f:f',
   'A6 seven functions, one overload each: three SECURITY DEFINER doors (anon revoked, authenticated EXECUTE — the in-body gate authorizes) and four PLAIN internals REVOKEd from anon and authenticated; all search_path empty');
 select ok(
@@ -155,6 +158,18 @@ insert into league_rosters (league_id, team_id, player_id, slot_key) values
  ('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-a1', 'bn'),
  ('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-a2', 'bn'),
  ('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000004', 'wc-b1', 'bn');
+
+-- 150 (L.D2.9, F407) re-cut: submit now refuses a player whose game has
+-- kicked off (Q74), evaluated at its instant through the league's calendar —
+-- so L1 / L2 get their league_weeks, and the 2026 calendar is pinned inside
+-- this transaction so that NO player is locked at the wall clock (every
+-- week's last game "ends" at its own start; no game rows): these cells test
+-- the claim rules, not the lock (098 §C pins the lock).
+update nfl_weeks set last_game_ends_at = starts_at, first_kickoff_at = null where season = 2026;
+delete from nfl_games where season = 2026;
+insert into league_weeks (league_id, season, week)
+select l, 2026, g from (values ('b9300000-0000-4000-8000-000000000001'::uuid), ('b9300000-0000-4000-8000-000000000002'::uuid)) v(l),
+     generate_series(1, 6) g;
 
 create temp table r93 (tag text primary key, r jsonb not null);
 grant select, insert on r93 to authenticated;
@@ -256,7 +271,8 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "99300000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 insert into r93 select 'D1', public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-f1', 'wc-a1', 40, 'a9300000-0000-4000-8000-000000000101');
 insert into r93 select 'D5', public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-f2', null, 1, 'a9300000-0000-4000-8000-000000000102');
-insert into r93 select 'D6', public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-f1', 'wc-a2', 7, 'a9300000-0000-4000-8000-000000000103');
+-- 150 re-cut: $40 (was $7) — F422(b) lets a manager reorder only EQUAL bids, and §F reorders this claim above D1's $40.
+insert into r93 select 'D6', public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-f1', 'wc-a2', 40, 'a9300000-0000-4000-8000-000000000103');
 select throws_ok(
   $$ select public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003', 'wc-f1', 'wc-a1', 12, 'a9300000-0000-4000-8000-000000000104') $$,
   'P0001', 'waiver_claim_submit: WC Alpha already has a pending claim for WC Free One (wc-f1) dropping WC Alpha One (wc-a1) — cancel it to change the bid or the order',
@@ -277,12 +293,12 @@ select is(
 select is(
   (select string_agg(format('%s>%s:%s:%s:%s', c.add_player_id, coalesce(c.drop_player_id, '-'), c.faab_bid, c.claim_order, c.created_by), ' ' order by c.claim_order)
    from waiver_claims c where c.team_id = 'c9300000-0000-4000-8000-000000000003'),
-  'wc-f1>wc-a1:40:1:99300000-0000-4000-8000-000000000003 wc-f2>-:1:2:99300000-0000-4000-8000-000000000003 wc-f1>wc-a2:7:3:99300000-0000-4000-8000-000000000003',
-  'D3 three claims at the back of the order (1, 2, 3); $1 = faab_min_bid LANDS; the same add with a DIFFERENT drop is not identical');
+  'wc-f1>wc-a1:40:1:99300000-0000-4000-8000-000000000003 wc-f1>wc-a2:40:2:99300000-0000-4000-8000-000000000003 wc-f2>-:1:3:99300000-0000-4000-8000-000000000003',
+  'D3 three claims, ordered by BID (150 / F422(b): the second $40 goes above the $1 placed before it; equal bids keep their order); $1 = faab_min_bid LANDS; the same add with a DIFFERENT drop is not identical');
 select is(
   (select faab_balance from league_members where team_id = 'c9300000-0000-4000-8000-000000000003'),
   40,
-  'D4 a claim SPENDS NOTHING — WC Alpha still holds $40 after $48 of pending bids (TD2: only a won claim debits)');
+  'D4 a claim SPENDS NOTHING — WC Alpha still holds $40 after $81 of pending bids (TD2: only a won claim debits)');
 select is(
   (select format('txns=%s audit=%s chat=%s',
      (select count(*) from transactions where league_id = 'b9300000-0000-4000-8000-000000000001'),
@@ -443,6 +459,10 @@ select is(
   'F12 the manager''s reorders and cancels wrote NO audit row (still the two commissioner submits)');
 
 -- the commissioner reorders then cancels for WC Alpha
+-- (150 re-cut: D5's bid raised to D1's $40 first — F422(b) lets anyone,
+-- the commissioner included, reorder only EQUAL bids in a FAAB league; 098 D1
+-- pins the refusal of a smaller bid above a bigger one.)
+update waiver_claims set faab_bid = 40 where id = ((select r from r93 where tag = 'D5') #>> '{claim,id}')::uuid;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "99300000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 insert into r93 select 'F13', public.waiver_claim_reorder('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000003',

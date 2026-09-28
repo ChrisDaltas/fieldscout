@@ -39,6 +39,7 @@ import {
   WAIVER_CLAIM_ACTION_ID_REUSED_MESSAGE,
   WAIVER_CLAIM_FORBIDDEN_MESSAGE,
   cancelClaim,
+  editClaim,
   readClaims,
   reorderClaim,
   submitClaim,
@@ -78,6 +79,8 @@ const ACTION = {
   move: A(21),
   moveForeign: A(22),
   cancel: A(31),
+  edit: A(32),
+  editBadDrop: A(33),
   faab: A(41),
   faabManager: A(42),
 } as const
@@ -205,6 +208,15 @@ beforeAll(async () => {
   // PREMISE, measured: a FAAB league with a $100 budget.
   expect(inSeason).toStrictEqual([{ waiver_type: 'faab', faab_budget: 100 }])
 
+  // 150 (L.D2.9, F407) re-cut: submit now refuses a player whose game has
+  // kicked off, evaluated through the league's calendar — a league with no
+  // league_weeks rows is refused by name. The synthetic season's weeks lie in
+  // 2099, so nothing is locked at the wall clock.
+  const { error: weeksError } = await service
+    .from('league_weeks')
+    .insert(Array.from({ length: 14 }, (_, i) => ({ league_id: leagueId, season: SYNTHETIC_SEASON, week: i + 1 })))
+  if (weeksError) throw new Error(`league_weeks insert: ${weeksError.message}`)
+
   const { error: playersError } = await service.from('players').upsert([...PLAYERS])
   if (playersError) throw new Error(`players upsert: ${playersError.message}`)
 }, 60_000)
@@ -216,8 +228,10 @@ afterAll(async () => {
 describe('POST …/waivers — submitClaim over the real verb', () => {
   it('the manager submits two claims; the answer is 145’s document, spending nothing', async () => {
     for (const [add, bid, action] of [
+      // 150 re-cut (F422(b)): EQUAL bids — in a FAAB league the order follows
+      // the bids and only equal bids reorder, and §PATCH moves claim 3 to 1.
       ['vitest-wapi-1', 5, ACTION.claim1],
-      ['vitest-wapi-2', 7, ACTION.claim2],
+      ['vitest-wapi-2', 5, ACTION.claim2],
     ] as const) {
       const res = await submitClaim(managerAClient, leagueId, { team_id: teamAId, add_player_id: add, faab_bid: bid, action_id: action })
       expect(res.status, JSON.stringify(res.body)).toBe(200)
@@ -252,7 +266,7 @@ describe('POST …/waivers — submitClaim over the real verb', () => {
     const res = await submitClaim(commishClient, leagueId, {
       team_id: teamAId,
       add_player_id: 'vitest-wapi-3',
-      faab_bid: 1,
+      faab_bid: 5,
       action_id: ACTION.commishClaim,
       reason: 'he asked me to',
     })
@@ -274,8 +288,8 @@ describe('GET …/waivers — the blind read (E13)', () => {
     expect([d.team_id, d.status, d.waiver_type, d.faab_balance, d.faab_min_bid]).toStrictEqual([teamAId, 'pending', 'faab', BALANCE, 0])
     expect(d.claims.map((c) => [c.id, c.claim_order, c.add.full_name, c.faab_bid])).toStrictEqual([
       [claimIds[0], 1, 'Vitest WAPI One', 5],
-      [claimIds[1], 2, 'Vitest WAPI Two', 7],
-      [claimIds[2], 3, 'Vitest WAPI Three', 1],
+      [claimIds[1], 2, 'Vitest WAPI Two', 5],
+      [claimIds[2], 3, 'Vitest WAPI Three', 5],
     ])
   })
 
@@ -331,6 +345,40 @@ describe('PATCH / DELETE …/waivers/[cid]', () => {
     const moved = await reorderClaim(managerAClient, leagueId, claimIds[0], { claim_order: 1, action_id: A(23) })
     expect(moved.status).toBe(409)
     expect(JSON.stringify(moved.body)).toContain('this one is cancelled')
+  })
+})
+
+describe('PATCH …/waivers/[cid] with { faab_bid, drop_player_id } — the one-transaction edit (M5 L.D2.9 / F417, migration 150)', () => {
+  it('the manager raises a bid IN PLACE: the same claim id, the new bid, and it moves above the smaller bid (F422(b))', async () => {
+    const res = await editClaim(managerAClient, leagueId, claimIds[1], { faab_bid: 9, drop_player_id: null, action_id: ACTION.edit })
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const body = res.body as { claim: { id: string; faab_bid: number; claim_order: number }; before: { faab_bid: number }; no_changes: boolean }
+    expect([body.claim.id, body.claim.faab_bid, body.claim.claim_order, body.before.faab_bid, body.no_changes]).toStrictEqual([claimIds[1], 9, 1, 5, false])
+    const after = doc((await readClaims(managerAClient, leagueId, managerAId, {})).body)
+    expect(after.claims.map((c) => [c.id, c.claim_order, c.faab_bid])).toStrictEqual([
+      [claimIds[1], 1, 9],
+      [claimIds[2], 2, 5],
+    ])
+    // The same body again replays byte-identically; the same id for a
+    // DIFFERENT bid is the F65(b) 409, never a report of an edit nobody made.
+    const replay = await editClaim(managerAClient, leagueId, claimIds[1], { faab_bid: 9, drop_player_id: null, action_id: ACTION.edit })
+    expect(JSON.stringify(replay.body)).toBe(JSON.stringify(res.body))
+    expect(await editClaim(managerAClient, leagueId, claimIds[1], { faab_bid: 8, drop_player_id: null, action_id: ACTION.edit })).toStrictEqual({
+      status: 409,
+      body: { error: WAIVER_CLAIM_ACTION_ID_REUSED_MESSAGE },
+    })
+  })
+
+  it('refused by name: a drop not on the team (409, verbatim); another member (the no-leak 403)', async () => {
+    const bad = await editClaim(managerAClient, leagueId, claimIds[1], { faab_bid: 9, drop_player_id: 'vitest-wapi-3', action_id: ACTION.editBadDrop })
+    expect(bad).toStrictEqual({
+      status: 409,
+      body: { error: "waiver_claim_edit: Vitest WAPI Three (vitest-wapi-3) is not on WAPI Manager A Team's roster — a claim can only drop one of the team's own players (§13.2)" },
+    })
+    expect(await editClaim(managerBClient, leagueId, claimIds[1], { faab_bid: 1, drop_player_id: null, action_id: A(34) })).toStrictEqual({
+      status: 403,
+      body: { error: WAIVER_CLAIM_FORBIDDEN_MESSAGE },
+    })
   })
 })
 

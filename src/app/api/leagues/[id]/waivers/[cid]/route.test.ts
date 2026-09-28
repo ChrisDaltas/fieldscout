@@ -13,9 +13,11 @@ vi.mock('@/lib/supabase/server', () => ({
 
 const reorderClaim = vi.fn()
 const cancelClaim = vi.fn()
+const editClaim = vi.fn()
 vi.mock('@/lib/leagues/api/waivers-service', () => ({
   reorderClaim: (...args: unknown[]) => reorderClaim(...args),
   cancelClaim: (...args: unknown[]) => cancelClaim(...args),
+  editClaim: (...args: unknown[]) => editClaim(...args),
 }))
 
 import { DELETE, PATCH } from './route'
@@ -52,5 +54,26 @@ describe.each([
     const res = await handler(req(method, body), params(LEAGUE, CLAIM))
     expect(res.status).toBe(409)
     expect(service.mock.calls[0].slice(1)).toStrictEqual([LEAGUE, CLAIM, body])
+  })
+})
+
+describe('PATCH dispatch (M5 L.D2.9 / F417): a body with claim_order is a MOVE; anything else is an EDIT in place', () => {
+  it('{ faab_bid, drop_player_id } reaches the one-transaction edit, never the move', async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: 'u1' } } })
+    editClaim.mockResolvedValueOnce({ status: 200, body: { verb: 'waiver_claim_edit' } })
+    const body = { action_id: 'a', faab_bid: 12, drop_player_id: null }
+    const res = await PATCH(req('PATCH', body), params(LEAGUE, CLAIM))
+    expect(res.status).toBe(200)
+    expect(editClaim.mock.calls[0].slice(1)).toStrictEqual([LEAGUE, CLAIM, body])
+    expect(reorderClaim).not.toHaveBeenCalled()
+  })
+
+  it('a body that is not an object goes to the edit, whose schema answers the 400', async () => {
+    getUser.mockResolvedValueOnce({ data: { user: { id: 'u1' } } })
+    editClaim.mockResolvedValueOnce({ status: 400, body: { error: 'shape' } })
+    const res = await PATCH(new Request('http://x', { method: 'PATCH', body: 'nope' }), params(LEAGUE, CLAIM))
+    expect(res.status).toBe(400)
+    expect(editClaim.mock.calls[0][3]).toBeNull()
+    expect(reorderClaim).not.toHaveBeenCalled()
   })
 })

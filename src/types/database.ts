@@ -4764,6 +4764,59 @@ export type Database = {
           },
         ]
       }
+      waiver_runs: {
+        Row: {
+          attempts: number
+          created_at: string
+          id: string
+          input: Json | null
+          last_error: string | null
+          league_id: string
+          processed_at: string | null
+          result: Json | null
+          run_at: string
+          status: string
+          summary: Json | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          input?: Json | null
+          last_error?: string | null
+          league_id: string
+          processed_at?: string | null
+          result?: Json | null
+          run_at: string
+          status: string
+          summary?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          input?: Json | null
+          last_error?: string | null
+          league_id?: string
+          processed_at?: string | null
+          result?: Json | null
+          run_at?: string
+          status?: string
+          summary?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waiver_runs_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       weekly_rankings: {
         Row: {
           accuracy_score: number | null
@@ -5785,6 +5838,10 @@ export type Database = {
           window_ends_at: string
         }[]
       }
+      process_waivers_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: Json
+      }
       rebuild_team_week_results: {
         Args: { p_league_id: string; p_week: number }
         Returns: Json
@@ -6203,6 +6260,39 @@ export type Database = {
         }
         Returns: Json
       }
+      waiver_claim_edit: {
+        Args: {
+          p_action_id?: string
+          p_bid?: number
+          p_claim_id: string
+          p_drop?: string
+          p_league_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      waiver_claim_edit_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_bid: number
+          p_claim_id: string
+          p_drop: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      waiver_claim_notify_internal: {
+        Args: {
+          p_claim: Database["public"]["Tables"]["waiver_claims"]["Row"]
+          p_extra: Json
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_reason: string
+          p_status: string
+        }
+        Returns: string
+      }
       waiver_claim_receipt_internal: {
         Args: {
           p_act_text: string
@@ -6278,12 +6368,17 @@ export type Database = {
         Args: { p_after: string; p_sched: Json }
         Returns: string
       }
+      waiver_resolve_run_internal: { Args: { p_input: Json }; Returns: Json }
       waiver_schedule_from_legacy_internal: {
         Args: { p_settings: Json }
         Returns: Json
       }
       waiver_schedule_internal: {
         Args: { p_settings: Json; p_waiver_type: string }
+        Returns: Json
+      }
+      waiver_tick: {
+        Args: { p_league_id?: string; p_now?: string }
         Returns: Json
       }
       waiver_window_internal: {
