@@ -4265,6 +4265,273 @@ export type Database = {
           },
         ]
       }
+      trade_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+          verb: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+          verb: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+          verb?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_drops: {
+        Row: {
+          created_at: string
+          id: string
+          player_id: string
+          team_id: string
+          trade_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          player_id: string
+          team_id: string
+          trade_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          player_id?: string
+          team_id?: string
+          trade_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_drops_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_drops_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_drops_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_items: {
+        Row: {
+          faab_amount: number | null
+          from_team_id: string
+          id: string
+          player_id: string | null
+          to_team_id: string
+          trade_id: string
+        }
+        Insert: {
+          faab_amount?: number | null
+          from_team_id: string
+          id?: string
+          player_id?: string | null
+          to_team_id: string
+          trade_id: string
+        }
+        Update: {
+          faab_amount?: number | null
+          from_team_id?: string
+          id?: string
+          player_id?: string | null
+          to_team_id?: string
+          trade_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_items_from_team_id_fkey"
+            columns: ["from_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_items_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_items_to_team_id_fkey"
+            columns: ["to_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_items_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trades: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          action_id: string
+          countered_from: string | null
+          created_at: string
+          execute_after: string | null
+          id: string
+          league_id: string
+          note: string | null
+          proposed_by: string
+          proposer_team_id: string
+          recipient_team_id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          review_deadline: string | null
+          status: string
+          status_reason: string | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          action_id: string
+          countered_from?: string | null
+          created_at?: string
+          execute_after?: string | null
+          id?: string
+          league_id: string
+          note?: string | null
+          proposed_by: string
+          proposer_team_id: string
+          recipient_team_id: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          review_deadline?: string | null
+          status?: string
+          status_reason?: string | null
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          action_id?: string
+          countered_from?: string | null
+          created_at?: string
+          execute_after?: string | null
+          id?: string
+          league_id?: string
+          note?: string | null
+          proposed_by?: string
+          proposer_team_id?: string
+          recipient_team_id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          review_deadline?: string | null
+          status?: string
+          status_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trades_accepted_by_fkey"
+            columns: ["accepted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_countered_from_fkey"
+            columns: ["countered_from"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_proposed_by_fkey"
+            columns: ["proposed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_proposer_team_id_fkey"
+            columns: ["proposer_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_recipient_team_id_fkey"
+            columns: ["recipient_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trades_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transactions: {
         Row: {
           action_id: string | null
@@ -5767,6 +6034,121 @@ export type Database = {
         Args: { r: Database["public"]["Tables"]["team_week_results"]["Row"] }
         Returns: Json
       }
+      trade_broadcast_payload: {
+        Args: { t: Database["public"]["Tables"]["trades"]["Row"] }
+        Returns: Json
+      }
+      trade_check_internal: {
+        Args: {
+          p_items: Json
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_proposer: Database["public"]["Tables"]["teams"]["Row"]
+          p_proposer_drops: string[]
+          p_recipient: Database["public"]["Tables"]["teams"]["Row"]
+          p_recipient_drops: string[]
+          p_verb: string
+        }
+        Returns: Json
+      }
+      trade_notify_team_internal: {
+        Args: {
+          p_body: string
+          p_data: Json
+          p_league_id: string
+          p_skip_actor: boolean
+          p_team_id: string
+          p_title: string
+          p_type: string
+        }
+        Returns: string
+      }
+      trade_propose: {
+        Args: {
+          p_action_id?: string
+          p_drops?: string[]
+          p_from_team_id: string
+          p_items: Json
+          p_league_id: string
+          p_note?: string
+          p_reason?: string
+          p_to_team_id: string
+        }
+        Returns: Json
+      }
+      trade_propose_core_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_countered_from: string
+          p_drops: string[]
+          p_from_team_id: string
+          p_items: Json
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_note: string
+          p_to_team_id: string
+          p_verb: string
+        }
+        Returns: Json
+      }
+      trade_propose_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_drops: string[]
+          p_from_team_id: string
+          p_items: Json
+          p_league_id: string
+          p_note: string
+          p_reason: string
+          p_to_team_id: string
+        }
+        Returns: Json
+      }
+      trade_receipt_internal: {
+        Args: {
+          p_act_text: string
+          p_action_id: string
+          p_action_type: string
+          p_after: Json
+          p_before: Json
+          p_league_id: string
+          p_reason: string
+          p_season: number
+          p_team: Database["public"]["Tables"]["teams"]["Row"]
+          p_trade_id: string
+          p_verb: string
+        }
+        Returns: Json
+      }
+      trade_respond: {
+        Args: {
+          p_action_id?: string
+          p_drops?: string[]
+          p_items?: Json
+          p_league_id: string
+          p_note?: string
+          p_op: string
+          p_reason?: string
+          p_trade_id: string
+        }
+        Returns: Json
+      }
+      trade_respond_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_drops: string[]
+          p_items: Json
+          p_league_id: string
+          p_note: string
+          p_op: string
+          p_reason: string
+          p_trade_id: string
+        }
+        Returns: Json
+      }
+      trade_summary_internal: { Args: { p_trade_id: string }; Returns: string }
+      trade_view_internal: { Args: { p_trade_id: string }; Returns: Json }
       transaction_broadcast_payload: {
         Args: { t: Database["public"]["Tables"]["transactions"]["Row"] }
         Returns: Json
