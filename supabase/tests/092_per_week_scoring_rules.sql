@@ -318,7 +318,7 @@ select is(
   || ' || ' || (select string_agg(row_to_json(r)::text, ' ; ' order by r.week, r.team_id) from team_week_results r
                 where r.league_id = 'b9200000-0000-4000-8000-00000000000b' and r.week in (1, 2)),
   current_setting('pgtap.pw_before'),
-  'E4 WEEKS 1 AND 2 ARE BYTE-IDENTICAL: their league_weeks rows (stored ESPN Standard rules included), matchups and results, compared whole (probe Q ⇒ red)');
+  'E4 WEEKS 1 AND 2 ARE BYTE-IDENTICAL: their league_weeks rows (stored ESPN Standard rules included), matchups and results, compared whole');
 select is(
   (current_setting('pgtap.pw_e')::jsonb -> 'rescore_skipped_final_weeks')::text || '|'
   || (current_setting('pgtap.pw_e')::jsonb -> 'rescore_skipped_correction_window_weeks')::text || '|'
