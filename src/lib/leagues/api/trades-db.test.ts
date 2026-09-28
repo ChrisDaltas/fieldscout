@@ -16,7 +16,9 @@
  *      reason (an accept that ran first is invalidated by the drop; an accept
  *      that ran second is refused by name), every other in-flight trade
  *      naming that player goes invalid too, and exclusivity holds — no
- *      player changed teams (nothing executes before L.D3.3).
+ *      player changed teams (the league reviews trades — the §7.3.5 default —
+ *      so nothing executes before the review ends; migration 151 re-cut the
+ *      accepted status to in_review).
  *
  * Requires the local stack (D59(5)); FAILS loudly when it is down. Calendar:
  * the league is on SYNTHETIC_SEASON (2099) and the players are on made-up
@@ -264,10 +266,12 @@ describe('trade verbs over PostgREST under real concurrency (migration 148)', ()
     expect(refused).toHaveLength(1)
     expect(refused[0].error?.code).toBe('P0001')
     expect(refused[0].error?.message).toBe(
-      'trade_respond: this trade is already accepted (no reason recorded) — only a proposed trade can be accepted',
+      'trade_respond: this trade is already in_review (no reason recorded) — only a proposed trade can be accepted',
     )
-    expect((landed[0].data as unknown as TradeResult).trade.status).toBe('accepted')
-    expect((await tradeRow(t1)).status).toBe('accepted')
+    // The league reviews trades (the §7.3.5 default, commissioner), so an
+    // accepted offer is in review — migration 151 (L.D3.3).
+    expect((landed[0].data as unknown as TradeResult).trade.status).toBe('in_review')
+    expect((await tradeRow(t1)).status).toBe('in_review')
     const { count } = await service
       .from('trade_actions')
       .select('id', { count: 'exact', head: true })
@@ -284,7 +288,7 @@ describe('trade verbs over PostgREST under real concurrency (migration 148)', ()
     expect(a.error).toBeNull()
     expect(b.error).toBeNull()
     expect(JSON.stringify(a.data)).toBe(JSON.stringify(b.data))
-    expect((await tradeRow(t2)).status).toBe('accepted')
+    expect((await tradeRow(t2)).status).toBe('in_review')
   })
 
   it("an ACCEPT racing the proposer's DROP of a traded player: the drop lands, the trade ends invalid (E37) either way, and no player changed teams", async () => {
@@ -301,7 +305,7 @@ describe('trade verbs over PostgREST under real concurrency (migration 148)', ()
       expect(accepted.error.code).toBe('P0001')
       expect(accepted.error.message).toMatch(/^trade_respond: this trade is already invalid \(Vitest TR One \(vitest-tr-1\) is no longer on TRD Manager A Team's roster — he was dropped \(E37\)\)/)
     } else {
-      expect((accepted.data as unknown as TradeResult).trade.status).toBe('accepted')
+      expect((accepted.data as unknown as TradeResult).trade.status).toBe('in_review')
     }
     const reason = "Vitest TR One (vitest-tr-1) is no longer on TRD Manager A Team's roster — he was dropped (E37)"
     expect(await tradeRow(t3)).toStrictEqual({ status: 'invalid', status_reason: reason })

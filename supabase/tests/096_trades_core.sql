@@ -66,8 +66,8 @@ select is(
                             has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and (p.proname like 'trade%' or p.proname = 'broadcast_trade_change')),
-  'broadcast_trade_change:t:search_path="":f:f trade_broadcast_payload:f:search_path="":f:f trade_check_internal:f:search_path="":f:f trade_invalidate_on_roster_change:t:search_path="":f:f trade_notify_team_internal:f:search_path="":f:f trade_propose:t:search_path="":f:t trade_propose_core_internal:f:search_path="":f:f trade_propose_internal:f:search_path="":f:f trade_receipt_internal:f:search_path="":f:f trade_respond:t:search_path="":f:t trade_respond_internal:f:search_path="":f:f trade_summary_internal:f:search_path="":f:f trade_view_internal:f:search_path="":f:f',
-  'A6 thirteen functions, one overload each: two DEFINER doors (authenticated EXECUTE, the in-body gate authorizes), two DEFINER trigger functions and nine PLAIN internals REVOKEd from anon and authenticated; all search_path empty');
+  'broadcast_trade_change:t:search_path="":f:f trade_broadcast_payload:f:search_path="":f:f trade_check_internal:f:search_path="":f:f trade_close_internal:f:search_path="":f:f trade_deadline_internal:f:search_path="":f:f trade_execute_internal:f:search_path="":f:f trade_invalidate_on_roster_change:t:search_path="":f:f trade_lock_internal:f:search_path="":f:f trade_notify_team_internal:f:search_path="":f:f trade_propose:t:search_path="":f:t trade_propose_core_internal:f:search_path="":f:f trade_propose_internal:f:search_path="":f:f trade_receipt_internal:f:search_path="":f:f trade_rescind_on_stint_close:t:search_path="":f:f trade_respond:t:search_path="":f:t trade_respond_internal:f:search_path="":f:f trade_summary_internal:f:search_path="":f:f trade_tick:f:search_path="":f:f trade_view_internal:f:search_path="":f:f',
+  'A6 nineteen functions (148''s thirteen + 151''s six — re-cut by L.D3.3), one overload each: two DEFINER doors (authenticated EXECUTE, the in-body gate authorizes), three DEFINER trigger functions and fourteen PLAIN internals REVOKEd from anon and authenticated; all search_path empty');
 select ok(
   not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -448,7 +448,7 @@ select throws_ok(
 insert into r96 select 'E7', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('P3'), 'accept', array['tr-b3'], null, null, 'a9600000-0000-4000-8000-000000000207');
 select throws_ok(
   format($$ select public.trade_respond('b9600000-0000-4000-8000-000000000001', '%s', 'accept', array['tr-b3'], null, null, 'a9600000-0000-4000-8000-000000000208') $$, pg_temp.tid('P3')),
-  'P0001', 'trade_respond: this trade is already accepted (no reason recorded) — only a proposed trade can be accepted',
+  'P0001', 'trade_respond: this trade is already in_review (no reason recorded) — only a proposed trade can be accepted',
   'E8 a SECOND accept (new action_id) is refused by name — never a silent no-op');
 insert into r96 select 'E9', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('P3'), 'accept', null, null, null, 'a9600000-0000-4000-8000-000000000207');
 insert into r96 select 'E10', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('P1'), 'reject', null, null, null, 'a9600000-0000-4000-8000-000000000210');
@@ -480,8 +480,8 @@ select set_config('request.jwt.claims', '', true);
 
 select is(
   (select format('%s|%s|%s|%s', t.status, t.accepted_by, t.accepted_at is not null, t.resolved_at is null) from trades t where t.id = pg_temp.tid('P3')),
-  'accepted|99600000-0000-4000-8000-000000000004|t|t',
-  'E7a the receiving manager accepts WITH a drop: accepted, by him, still in flight (waiting for L.D3.3)');
+  'in_review|99600000-0000-4000-8000-000000000004|t|t',
+  'E7a the receiving manager accepts WITH a drop: accepted by him and IN REVIEW (the league''s default commissioner review, §13.3 — re-cut by L.D3.3), still in flight');
 select is(
   (select format('%s|%s|%s', (select string_agg(d.team_id || ':' || d.player_id, ',' order by d.player_id) from trade_drops d where d.trade_id = pg_temp.tid('P3')),
                  r #>> '{rosters,recipient,count_after}', r #>> '{rosters,recipient,enforced}')
@@ -491,7 +491,7 @@ select is(
 select is(
   (select string_agg(r.player_id, ',' order by r.player_id) from league_rosters r where r.team_id = 'c9600000-0000-4000-8000-000000000004'),
   'tr-b1,tr-b2,tr-b3',
-  'E7c an accepted trade MOVES NOTHING yet — execution is L.D3.3''s (b3 is still on TR Bravo)');
+  'E7c a trade in review MOVES NOTHING yet — it executes when review ends (L.D3.3; b3 is still on TR Bravo)');
 select is(
   (select (select r from r96 where tag = 'E9')::text = (select r from r96 where tag = 'E7')::text),
   true,
@@ -564,8 +564,8 @@ select is(
 select is(
   (select format('%s|%s|%s', r ->> 'acted_as_commissioner', r ->> 'notified_user_ids', (select status from trades where id = pg_temp.tid('F1')))
    from r96 where tag = 'F2'),
-  'true|["99600000-0000-4000-8000-000000000006"]|accepted',
-  'F7 the commissioner''s accept for the OPEN seat: accepted, and TR Delta''s manager is told');
+  'true|["99600000-0000-4000-8000-000000000006"]|in_review',
+  'F7 the commissioner''s accept for the OPEN seat: accepted (in review — §13.3), and TR Delta''s manager is told');
 select is(
   (select string_agg(n.type, ',' order by n.type) from notifications n where n.user_id = '99600000-0000-4000-8000-000000000006' and n.type like 'league_trade%'),
   'league_trade_accepted,league_trade_commissioner',
@@ -609,7 +609,7 @@ select is(
 select is(
   (select format('%s|%s|%s', (select status from trades where id = pg_temp.tid('G0a')), (select status from trades where id = pg_temp.tid('F1')),
                  (select status from trades where id = pg_temp.tid('G0b')))),
-  'proposed|accepted|proposed',
+  'proposed|in_review|proposed',
   'G3 …and ONLY that one: trades not naming b3 are untouched');
 select is(
   (select string_agg(n.user_id::text, ',' order by n.user_id) from notifications n
@@ -638,7 +638,7 @@ update league_rosters set team_id = 'c9600000-0000-4000-8000-000000000005' where
 select set_config('app.executing_trade_id', '', true);
 select is(
   (select format('%s|%s', (select status from trades where id = pg_temp.tid('F1')), (select status from trades where id = pg_temp.tid('G0b')))),
-  'accepted|invalid',
+  'in_review|invalid',
   'G8 the EXECUTING trade (app.executing_trade_id) is exempt from its own moves; another trade naming d1 from TR Delta still goes invalid');
 -- G9: an UPDATE that keeps the team (a slot change) invalidates nothing
 create temp table g9_before as select id, status from trades;
@@ -647,8 +647,8 @@ select set_eq($$ select id, status from trades $$, $$ select id, status from g9_
   'G9 a roster UPDATE that leaves team_id alone (a slot change) touches NO trade');
 select is(
   (select string_agg(status, ',' order by status) from trades where league_id = 'b9600000-0000-4000-8000-000000000001'),
-  'accepted,cancelled,cancelled,invalid,invalid,invalid,rejected,rejected',
-  'G10 the ledger of outcomes: three invalid (one per E37 event), one still accepted, the manual closures untouched');
+  'cancelled,cancelled,in_review,invalid,invalid,invalid,rejected,rejected',
+  'G10 the ledger of outcomes: three invalid (one per E37 event), one still in review, the manual closures untouched');
 
 -- ---------------------------------------------------------------------------
 -- H. PER ROLE — who reads a trade; nobody writes one directly
@@ -713,8 +713,8 @@ select is(
    from realtime.messages m
    where m.topic = 'league:b9600000-0000-4000-8000-000000000001' and m.event = 'trades'
      and m.inserted_at >= now() and (m.payload #>> '{record,id}')::uuid = pg_temp.tid('P3')),
-  'proposed,accepted,invalid',
-  'I1 P3''s life on league:<id> (event trades): one event per status — proposed, accepted, invalid');
+  'proposed,in_review,invalid',
+  'I1 P3''s life on league:<id> (event trades): one event per status — proposed, in_review, invalid');
 select ok(
   (select bool_and(m.private and not (m.payload -> 'record' ? 'action_id') and not (m.payload -> 'record' ? 'proposed_by') and not (m.payload -> 'record' ? 'note'))
    from realtime.messages m
