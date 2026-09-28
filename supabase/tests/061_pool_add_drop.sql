@@ -666,11 +666,17 @@ select set_config('pgtap.pd_r_f2', public.roster_add_drop_internal(
   'ab000000-0000-4000-8000-000000000032', now())::text, true);
 select is((select count(*)::int from league_rosters where player_id = 'pd-qb1'), 0,
   'F2 DROP AT the last game''s end: LIVES (open at the instant — the release is last_game_ends_at, not the correction window still 7 days out)');
+-- RE-CUT 2026-09-28 (L.D2.14, migration 152 — PROGRESS F437 / D411, spec
+-- v2.16.62): these two cells pinned the defect. AT the last game's end week 3
+-- is FINISHED, so the played starter's week-3 start is the record the week is
+-- scored and re-scored from — it stays; the move starts at the first
+-- unfinished week (4). Q32's ruling (the lock) is untouched: F1 still clears
+-- the current week for a player who has NOT played.
 select is(current_setting('pgtap.pd_r_f2')::jsonb -> 'drop' -> 'lineups',
-  '[{"week": 3, "slot": "qb:0"}, {"week": 4, "slot": "qb:0"}]'::jsonb,
-  'F2 Q32: once the week has cleared the played starter drops and his slot is CLEARED in both rows — no kept phantom exists');
+  '[{"week": 4, "slot": "qb:0"}]'::jsonb,
+  'F2 F437: once the week has cleared the played starter drops and ONLY the unfinished week''s slot (4) is cleared');
 select is((select slot_map ->> 'qb:0' from team_lineups where team_id = 'cd000000-0000-4000-8000-000000000002' and week = 3),
-  null, 'F2 …the week-3 map no longer carries him');
+  'pd-qb1', 'F2 …the FINISHED week-3 map still starts him — his points stay with the team that played him');
 select pg_temp.pd_undo_drop('pd-qb1', 'ab000000-0000-4000-8000-000000000032');
 update nfl_weeks set last_game_ends_at = now() - interval '1 second' where season = 2026 and week = 3;
 select lives_ok(
