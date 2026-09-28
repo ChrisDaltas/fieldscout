@@ -27,6 +27,12 @@
 --      W Hotel u3, W India u4, W Juliet u5, W Kilo u6, W Lima u7.
 --   V3 (commissioner review): X Commish u1, X Mike u2, X November u3,
 --      X Oscar u4.
+--   V4 (league_vote, no stored setting ⇒ 4): Y Papa u2, Y Quebec u3 and
+--      Y Romeo u7, whose seat empties — NOBODY can vote on Papa ↔ Quebec
+--      (R1225: the number is 0 and the trade must still go through).
+--   V5 (league_vote, trade_veto_votes 2): Z Sierra u2, Z Tango u3, Z Uniform
+--      u5, Z Victor u6 — Victor's seat empties AFTER the review period ended
+--      (R1227: too late to veto).
 --   u9 belongs to no league; u11 succeeds W Kilo's manager mid-review (§E).
 --
 -- Falsifiability (tasks-M1 §4.3): every refusal and every reason a stored
@@ -36,14 +42,15 @@
 -- review) and at the number (vetoed), under and over the cap. BREAK PROBES
 -- shown red in the PR, then reverted (one site each): the party refusal, the
 -- cap, the deadline comparison, the vote's own veto call, the tick's step
--- (2b), the voter-still-manages join, the own-vote policy.
+-- (2b), the voter-still-manages join, the own-vote policy, the at-least-one-
+-- veto guard (R1225), step (2b)'s review-deadline bound (R1227).
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(63);
+select plan(69);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -89,7 +96,7 @@ select ok(
   'A6 D137: the tick vetoes (2b) BEFORE it executes (3); the vote calls the same veto (F435)');
 select is(
   md5((select prosrc from pg_proc where proname = 'trade_tick')),
-  '6a09bd5f7634d77e16eca75bc881eaeb',
+  '8ed5c0706d2fa7da12898deeda721c31',
   'A7 D137 golden: trade_tick is 151''s body plus exactly the three 155 substitutions (md5 of prosrc, a stored literal)');
 select ok(
   not has_table_privilege('anon', 'public.trade_votes', 'TRUNCATE') and not has_table_privilege('authenticated', 'public.trade_votes', 'TRUNCATE'),
@@ -125,7 +132,9 @@ select l.id, '91030000-0000-4000-8000-000000000001', l.nm, 2026, 'in_season', 8,
 from (values
  ('b1030000-0000-4000-8000-000000000001'::uuid, 'pgtap-vote-V1', 'league_vote',  '{"trade_veto_votes": 3}'::jsonb),
  ('b1030000-0000-4000-8000-000000000002'::uuid, 'pgtap-vote-V2', 'league_vote',  '{"trade_veto_votes": 6}'::jsonb),
- ('b1030000-0000-4000-8000-000000000003'::uuid, 'pgtap-vote-V3', 'commissioner', '{}'::jsonb)
+ ('b1030000-0000-4000-8000-000000000003'::uuid, 'pgtap-vote-V3', 'commissioner', '{}'::jsonb),
+ ('b1030000-0000-4000-8000-000000000004'::uuid, 'pgtap-vote-V4', 'league_vote',  '{}'::jsonb),
+ ('b1030000-0000-4000-8000-000000000005'::uuid, 'pgtap-vote-V5', 'league_vote',  '{"trade_veto_votes": 2}'::jsonb)
 ) as l(id, nm, review, st);
 
 insert into teams (id, owner_id, name, league_id, status)
@@ -136,7 +145,9 @@ from (values
  (15, 5, 'V Delta', 1, 'active'), (16, 6, 'V Echo', 1, 'active'), (17, 7, 'V Foxtrot', 1, 'active'), (18, 10, 'V Retired', 1, 'retired'),
  (22, 2, 'W Golf', 2, 'active'), (23, 3, 'W Hotel', 2, 'active'), (24, 4, 'W India', 2, 'active'), (25, 5, 'W Juliet', 2, 'active'),
  (26, 6, 'W Kilo', 2, 'active'), (27, 7, 'W Lima', 2, 'active'),
- (31, 1, 'X Commish', 3, 'active'), (32, 2, 'X Mike', 3, 'active'), (33, 3, 'X November', 3, 'active'), (34, 4, 'X Oscar', 3, 'active')
+ (31, 1, 'X Commish', 3, 'active'), (32, 2, 'X Mike', 3, 'active'), (33, 3, 'X November', 3, 'active'), (34, 4, 'X Oscar', 3, 'active'),
+ (41, 2, 'Y Papa', 4, 'active'), (42, 3, 'Y Quebec', 4, 'active'), (43, 7, 'Y Romeo', 4, 'active'),
+ (51, 2, 'Z Sierra', 5, 'active'), (52, 3, 'Z Tango', 5, 'active'), (53, 5, 'Z Uniform', 5, 'active'), (54, 6, 'Z Victor', 5, 'active')
 ) as t(n, u, nm, lg, st);
 
 insert into league_members (league_id, user_id, team_id, role, is_placeholder, faab_balance)
@@ -156,7 +167,8 @@ from (values
  ('v-k1', 'VT K One'), ('v-a1', 'VT A One'), ('v-b1', 'VT B One'), ('v-c1', 'VT C One'), ('v-d1', 'VT D One'),
  ('v-e1', 'VT E One'), ('v-f1', 'VT F One'),
  ('w-g1', 'WT G One'), ('w-h1', 'WT H One'), ('w-i1', 'WT I One'), ('w-j1', 'WT J One'),
- ('x-m1', 'XT M One'), ('x-n1', 'XT N One')
+ ('x-m1', 'XT M One'), ('x-n1', 'XT N One'),
+ ('y-p1', 'YT P One'), ('y-q1', 'YT Q One'), ('z-s1', 'ZT S One'), ('z-t1', 'ZT T One')
 ) as p(id, nm);
 
 insert into league_rosters (league_id, team_id, player_id, slot_key)
@@ -165,7 +177,8 @@ from (values
  ('V Commish', 'v-k1'), ('V Alpha', 'v-a1'), ('V Bravo', 'v-b1'), ('V Charlie', 'v-c1'), ('V Delta', 'v-d1'),
  ('V Echo', 'v-e1'), ('V Foxtrot', 'v-f1'),
  ('W Golf', 'w-g1'), ('W Hotel', 'w-h1'), ('W India', 'w-i1'), ('W Juliet', 'w-j1'),
- ('X Mike', 'x-m1'), ('X November', 'x-n1')
+ ('X Mike', 'x-m1'), ('X November', 'x-n1'),
+ ('Y Papa', 'y-p1'), ('Y Quebec', 'y-q1'), ('Z Sierra', 'z-s1'), ('Z Tango', 'z-t1')
 ) as r(team, pid)
 join teams t on t.name = r.team and t.id::text like 'c1030000-%';
 
@@ -248,6 +261,10 @@ select pg_temp.prop('T4', 2, 4, 'W India', 'W Juliet', jsonb_build_array(pg_temp
 select pg_temp.accept('T4a', 2, 5, pg_temp.tid('T4'), '2026-10-21 12:00:00+00', 9);
 select pg_temp.prop('T6', 3, 2, 'X Mike', 'X November', jsonb_build_array(pg_temp.leg('x-m1', 'X Mike'), pg_temp.leg('x-n1', 'X November')), '2026-10-21 11:00:00+00', 10);
 select pg_temp.accept('T6a', 3, 3, pg_temp.tid('T6'), '2026-10-21 12:00:00+00', 11);
+select pg_temp.prop('T8', 4, 2, 'Y Papa', 'Y Quebec', jsonb_build_array(pg_temp.leg('y-p1', 'Y Papa'), pg_temp.leg('y-q1', 'Y Quebec')), '2026-10-21 11:00:00+00', 12);
+select pg_temp.accept('T8a', 4, 3, pg_temp.tid('T8'), '2026-10-21 12:00:00+00', 13);
+select pg_temp.prop('T9', 5, 2, 'Z Sierra', 'Z Tango', jsonb_build_array(pg_temp.leg('z-s1', 'Z Sierra'), pg_temp.leg('z-t1', 'Z Tango')), '2026-10-21 11:00:00+00', 14);
+select pg_temp.accept('T9a', 5, 3, pg_temp.tid('T9'), '2026-10-21 12:00:00+00', 15);
 
 select is(
   (select string_agg(format('%s:%s:%s', x.tag, t.status, coalesce(t.review_deadline = '2026-10-22 12:00:00+00', false)), ' ' order by x.tag)
@@ -427,6 +444,43 @@ select is(
     || (select count(*) from transactions x where x.league_id = pg_temp.lg(2) and x.type = 'trade'),
   'w-i1/w-j1|0',
   'E8 …nothing moved in V2');
+
+-- R1225 — NOBODY can vote (V4: the only non-party seat empties). The number
+-- is 0 and no veto was cast, so it is NOT reached: the trade goes through at
+-- the end of its review, never vetoed by an empty league.
+delete from league_members where team_id = pg_temp.team('Y Romeo');
+select is(
+  (select format('%s/%s/%s/%s/%s', r ->> 'eligible_voters', r ->> 'veto_number', r ->> 'veto_votes', r ->> 'reached', r ->> 'setting')
+   from (select public.trade_vote_tally_internal(t, l) as r from trades t, leagues l where t.id = pg_temp.tid('T8') and l.id = pg_temp.lg(4)) x),
+  '0/0/0/false/4',
+  'E9 R1225 — no manager can vote on T8: eligible 0, number 0, vetoes 0, NOT reached (the setting defaults to 4)');
+insert into r103 select 'E10', public.trade_tick('2026-10-22 11:59:59+00', pg_temp.lg(4));
+select is(
+  (select format('%s|%s', r ->> 'vetoed', r ->> 'executed') from r103 where tag = 'E10') || '|' || pg_temp.st('T8'),
+  '0|0|in_review|-',
+  'E10 …the tick at deadline − 1 s neither vetoes nor runs it');
+insert into r103 select 'E11', public.trade_tick('2026-10-22 12:00:00+00', pg_temp.lg(4));
+select is(
+  (select format('%s|%s', r ->> 'vetoed', r ->> 'executed') from r103 where tag = 'E11') || '|' || pg_temp.st('T8') || '|' || pg_temp.roster('Y Papa') || '/' || pg_temp.roster('Y Quebec'),
+  '0|1|complete|-|y-q1/y-p1',
+  'E11 …and at the deadline it goes through');
+
+-- R1227 — a seat that empties AFTER the review period ended is too late to
+-- veto (V5: number 2, one veto; Victor's seat empties at 12:00:30, the tick
+-- reaches the league at 12:01).
+select pg_temp.vote('E12', 5, 5, 'T9', 'veto', '2026-10-21 13:00:00+00', 140);
+select is(pg_temp.tally('E12') || '|' || pg_temp.st('T9'), '1/2 number 2|in_review|-', 'E12 T9: one veto of the two who can vote, one short');
+delete from league_members where team_id = pg_temp.team('Z Victor');
+select is(
+  (select format('%s/%s number %s %s', r ->> 'veto_votes', r ->> 'eligible_voters', r ->> 'veto_number', r ->> 'reached')
+   from (select public.trade_vote_tally_internal(t, l) as r from trades t, leagues l where t.id = pg_temp.tid('T9') and l.id = pg_temp.lg(5)) x),
+  '1/1 number 1 true',
+  'E13 PREMISE: after the seat empties the count now reaches the number');
+insert into r103 select 'E14', public.trade_tick('2026-10-22 12:01:00+00', pg_temp.lg(5));
+select is(
+  (select format('%s|%s', r ->> 'vetoed', r ->> 'executed') from r103 where tag = 'E14') || '|' || pg_temp.st('T9') || '|' || pg_temp.roster('Z Sierra') || '/' || pg_temp.roster('Z Tango'),
+  '0|1|complete|-|z-t1/z-s1',
+  'E14 R1227 — …but the review period is over: the tick RUNS the trade (Q77 otherwise it goes through), it does not veto it');
 
 -- ---------------------------------------------------------------------------
 -- F. The review mode and the trade's state

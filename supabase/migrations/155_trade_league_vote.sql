@@ -57,8 +57,10 @@
 --      could run a league-vote trade, vetoes every `in_review` trade whose
 --      counted votes already reach the number — the cap can fall with no
 --      vote cast (a seat empties), and "otherwise it goes through" must not
---      run a trade whose votes reach the league's number (F430 / F435). The
---      tick result gains a `vetoed` count.
+--      run a trade whose votes reach the league's number (F430 / F435) —
+--      only while the review period is still running (`review_deadline >
+--      p_now`, R1227; at the deadline step (3) runs it). The tick result
+--      gains a `vetoed` count.
 --
 -- D137 REPLACEMENT — against 151's FILE TEXT (151 is the newest definer:
 -- `grep -n "FUNCTION trade_tick" supabase/migrations/*.sql | tail -1`),
@@ -66,8 +68,9 @@
 -- exactly once; the before/after diff is in the PR):
 --   trade_tick   151:1587-1732   md5 f11fb508   3 substitutions (DECLARE
 --                                              v_vetoed; step (2b) inserted
---                                              before step (3); the result's
---                                              `vetoed` key)
+--                                              before step (3), bounded to
+--                                              review_deadline > p_now — R1227;
+--                                              the result's `vetoed` key)
 -- Nothing else is replaced: 148's doors, 151's executor (153's newest body),
 -- close / lock / deadline internals and the E37 / E47 triggers are NOT
 -- touched. `trade_actions_verb_check` gains `trade_vote` (the ledger is
@@ -541,8 +544,9 @@ COMMENT ON FUNCTION trade_vote_tally(UUID) IS
 -- ---------------------------------------------------------------------------
 -- 6. D137 — trade_tick (151:1587-1732, md5 f11fb508): step (2b) — a
 --    league-vote trade whose counted vetoes reach the number is vetoed
---    before step (3) can run it (F430 / F435); the result's `vetoed` count.
---    Three substitutions; everything else byte-identical to 151.
+--    before step (3) can run it (F430 / F435), only while the review period
+--    is running (R1227); the result's `vetoed` count. Three substitutions;
+--    everything else byte-identical to 151.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION trade_tick(p_now TIMESTAMPTZ DEFAULT now(), p_league_id UUID DEFAULT NULL)
 RETURNS JSONB
@@ -646,11 +650,16 @@ BEGIN
       --      vetoed here, before (3) could run it. A vote that reaches the
       --      number vetoes at the vote (trade_vote); this catches the number
       --      falling with no vote cast — it is capped at the managers who
-      --      can vote, and that falls when a seat empties.
+      --      can vote, and that falls when a seat empties. Only BEFORE the
+      --      review period ends (R1227): at or after `review_deadline` the
+      --      vote is over and the trade goes through in (3) — a seat that
+      --      empties after the deadline (or a league the tick skipped as
+      --      busy) never vetoes a trade Q77 has already let through.
       IF COALESCE(v_league.trade_review, 'commissioner') = 'league_vote' THEN
         FOR v_t IN
           SELECT t.id FROM public.trades t
           WHERE t.league_id = v_league.id AND t.status = 'in_review'
+            AND t.review_deadline > p_now
           ORDER BY t.created_at, t.id
         LOOP
           v_res := public.trade_vote_veto_internal(v_t.id, v_league, p_now);
