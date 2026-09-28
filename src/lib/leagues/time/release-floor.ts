@@ -23,8 +23,16 @@
  * LAST KICKOFF instead would compute the FOLLOWING Tuesday and hold every
  * player an extra week — the trap this file exists to avoid.
  *
- * The CEILING (Wednesday 00:00 Pacific) is deliberately NOT here. Q50(c)
- * defers it: its consequences are waivers (M5) and a notification (M8).
+ * THE CEILING (Wednesday 00:00 Pacific — `weekReleaseCeiling`, L.D2.10,
+ * migration 153) is the floor's sibling: the same zone read, the same
+ * `starts_at` anchor, the floor's day after on every real week. Q78 (Chris,
+ * 2026-09-27): at that instant every locked player unlocks and waivers run on
+ * schedule, even if a game is unplayed; the unplayed game's points stay
+ * pending. It releases
+ * LOCKS only (tasks-M5 TD15 / D404) — it is NEVER stamped into
+ * `last_game_ends_at` (`weekBounds` does not read it), which keeps meaning
+ * "the games are over" for week advance and scoring. Its SQL twin is 153's
+ * `week_release_ceiling_internal`, pinned to the same literals.
  *
  * PURE — no clock is read anywhere. `Intl` with an explicit `timeZone` reads
  * zone data, not the wall clock, and only `Date.UTC(...)` / `new Date(<ms>)`
@@ -56,6 +64,7 @@ function pacificMidnightUtc(year: number, month: number, day: number): Date {
 }
 
 const TUESDAY = 2
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
  * The first Tuesday 00:00 `America/Los_Angeles` STRICTLY AFTER `after`.
@@ -92,4 +101,38 @@ export function weekReleaseFloor(weekStartsAt: string): Date {
     throw new Error(`weekReleaseFloor: unparseable nfl_weeks.starts_at "${weekStartsAt}"`)
   }
   return nextPacificTuesdayMidnight(startsAt)
+}
+
+/**
+ * The week's RELEASE CEILING — Wednesday 00:00 `America/Los_Angeles` after
+ * the week's Monday night: the first Pacific midnight STRICTLY AFTER
+ * `starts_at + 7 days`. Q50: *"no later than Wednesday 00:00 Pacific
+ * regardless"*; Q78 (Chris 2026-09-27): at this instant every locked player
+ * unlocks and waivers run on schedule, even with a game unplayed.
+ *
+ * `starts_at` is Wednesday 00:00 EASTERN (Tuesday 20:00–21:00 Pacific), so
+ * `starts_at + 7 days` is the next Tuesday evening in Pacific and the next
+ * Pacific midnight is that Wednesday — for EVERY week of the calendar the
+ * floor's day after (pinned over the whole seeded 2026 calendar, both sides
+ * of the fall-back, and a spring-forward week). Anchored past the week's own
+ * seven days rather than on the floor's weekday walk so the ceiling can never
+ * fall INSIDE the week it closes: a `starts_at` stored at any other wall time
+ * (an anomaly, or a test's relative calendar) still gets a ceiling after its
+ * successor begins, never one that unlocks players mid-week.
+ *
+ * Note week N+1 has already begun at the ceiling (its Wednesday 00:00 ET is
+ * three hours earlier): the ceiling is not a week boundary, it is the latest
+ * instant week N's locks may hold.
+ *
+ * Refuses an unparseable `starts_at` loudly (the floor's own guard).
+ */
+export function weekReleaseCeiling(weekStartsAt: string): Date {
+  const startsAt = new Date(weekStartsAt)
+  if (Number.isNaN(startsAt.getTime())) {
+    throw new Error(`weekReleaseCeiling: unparseable nfl_weeks.starts_at "${weekStartsAt}"`)
+  }
+  const w = wallClockAt(PACIFIC, new Date(startsAt.getTime() + WEEK_MS))
+  // The NEXT Pacific calendar day's midnight is strictly after any instant of
+  // this one (a midnight exactly included).
+  return pacificMidnightUtc(w.year, w.month, w.day + 1)
 }
