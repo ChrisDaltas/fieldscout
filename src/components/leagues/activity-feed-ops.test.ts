@@ -108,6 +108,12 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ action_type: 'set_autopilot', target_id: 't1', before: { autopilot: false }, after: { autopilot: true } }).text).not.toContain('set autopilot')
   })
 
+  it('M5 L.D2.11: a FAAB edit is read from its {faab_balance} documents — amounts shown, an unset balance never "null", the verb name never on screen', () => {
+    expect(line({ action_type: 'edit_faab', target_id: 't2', before: { faab_balance: 60 }, after: { faab_balance: 250 }, metadata: { team_name: 'Old Bravo' } }).text).toBe('set Bravo’s FAAB balance: $60 → $250')
+    expect(line({ action_type: 'edit_faab', target_id: 'gone', before: { faab_balance: null }, after: { faab_balance: 0 }, metadata: { team_name: 'Gone FC' } }).text).toBe('set Gone FC’s FAAB balance: unset → $0')
+    expect(line({ action_type: 'edit_faab', target_id: 't1', before: { faab_balance: 5 }, after: { faab_balance: 6 } }).text).not.toContain('edit faab')
+  })
+
   it('F355: a rename is read from its {name} documents — the word "reassign" never reaches the screen', () => {
     expect(line({ action_type: 'reassign_team', before: { name: 'Old' }, after: { name: 'New' } }).text).not.toContain('reassign')
   })

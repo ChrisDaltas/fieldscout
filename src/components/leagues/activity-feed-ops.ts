@@ -184,6 +184,17 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
     const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
     return after.autopilot ? `put ${team} on autopilot` : `took ${team} off autopilot`
   }
+  // A FAAB EDIT — 147 writes {faab_balance} both sides (M5 L.D2.11). The
+  // balance is member-visible, so the amounts are shown; an unset one reads
+  // "unset", never "null".
+  if ('faab_balance' in after) {
+    const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
+    const dollars = (value: unknown): string => {
+      const amount = num(value)
+      return amount === null ? 'unset' : `$${amount}`
+    }
+    return `set ${team}’s FAAB balance: ${dollars(before.faab_balance)} → ${dollars(after.faab_balance)}`
+  }
   // A LINEUP — 123 writes the whole lineup row both sides.
   if ('slot_map' in after) {
     const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
