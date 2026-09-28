@@ -85,6 +85,8 @@ async function main(): Promise<void> {
     corpus.push({ id: l.playerId, position, row: { player_id: l.playerId, updated_at: '2025-09-15T00:00:00Z', advanced: row.advanced, ...row.columns } })
   }
   console.log(`corpus: ${lines.length} recorded lines → ${corpus.length} scored (${noPlayer} not in the local pool, ${noRow} with nothing storable)`)
+  // R1156: a golden that checked nothing must never print OK — an empty local pool (e.g. straight after `db reset`) scores 0 lines.
+  if (corpus.length < 300) throw new Error(`golden: only ${corpus.length} of ${lines.length} recorded lines are scorable — run \`RESTORE_SCOPE=draft npm run restore:dev\` first (R1156)`)
 
   await cleanup()
   const owner = (await must(db.from('profiles').select('id').limit(1).single(), 'owner'))!.id
@@ -152,7 +154,7 @@ async function main(): Promise<void> {
   await cleanup()
   console.log(`PART A (no change): ${totalA} cells, ${changedA} changed`)
   console.log(`PART B (a change, re-score off): ${totalB} cells, ${changedB} changed — all in weeks 1–3 (week 4 changed: ${week4Changed}); unexplained: ${unexplainedB}`)
-  if (changedA !== 0 || week4Changed !== 0 || unexplainedB !== 0) {
+  if (totalA === 0 || totalB === 0 || changedA !== 0 || week4Changed !== 0 || unexplainedB !== 0) {
     console.error('GOLDEN FAILED')
     process.exit(1)
   }

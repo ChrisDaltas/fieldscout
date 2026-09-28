@@ -9,6 +9,13 @@
 
 ---
 
+> **NEXT BUILD (queued): M5 — Transactions, breakdown PR #323** (`docs/specs/tasks-M5-transactions.md`; added 2026-09-27).
+> **Not active yet.** The loop keeps building M6A below until L.E1.27 merges. It takes no `L.D2.4+` / `L.D3.2+`
+> task until Chris merges #323 and this file is repointed. Questions Q70–Q79 (PROGRESS §3) block only the
+> tasks they name. L.D2.5, L.D2.6, L.D2.11, L.D2.12 and L.D3.2 can start without any answer.
+
+---
+
 ## Active: **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
 
 **The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
@@ -275,6 +282,7 @@ pointer now reads the CLOSEOUT below.**
 — **135–144 together** (never 141 without 144, F404); read the `144 backfill` NOTICE lines —
 any AMBIGUOUS / UNRECOVERABLE week is named there; (2) **immediately**
 `npm run sync:reingest -- --season 2026 --weeks <every completed week> --confirm-target <hosted host>`
+**If `db push` stops with an error on 144 (or any migration), STOP: do not run `sync:reingest`, and report the error — production would otherwise sit with 141 live and 144 missing (F404). (R1158.) Read the `144 backfill` NOTICE lines; any `AMBIGUOUS` week had a scoring change land mid-week without a re-score and will show nightly drift alerts for the teams that kept the old rules (R1159).**
 (143 / F400).
 
 ~~**NEXT TAKEABLE TASK: `L.E1.27`**~~ *(landed — above)* — per-week scoring rules (F397) + Q69: persist each league
