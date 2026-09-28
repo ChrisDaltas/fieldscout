@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import {
+  RESCORE_TOGGLE_HINT,
   SCORING_SYSTEM_KEY,
   inSeasonChangePlan,
   inSeasonRefusal,
@@ -124,6 +125,24 @@ describe('settingOutcome — never a bare "Saved." (§4 rule 15 / R971); ORDER i
     expect(said.branch).toBe('rescore_not_performed')
     expect(said.tone).toBe('caution')
     expect(said.text).toContain(why)
+  })
+
+  it('L.E1.24: the rescore switch’s hint no longer promises a refusal on a final week — Q64 as ruled keeps final weeks and re-scores the open ones', () => {
+    expect(RESCORE_TOGGLE_HINT).not.toMatch(/refused/)
+    expect(RESCORE_TOGGLE_HINT).toContain('final weeks keep their original scores and results')
+  })
+
+  it('L.E1.24 (141, Q64 as ruled): a rescore that SKIPPED final weeks says so in the server’s own sentence — after rescore_not_performed, ahead of score_stale', () => {
+    const skipped = 'final_weeks_not_rescored — final week(s) [1] keep their original scores and results; the new scoring applies to open week(s) [2] (queued for re-scoring now) and to every later week (scored under it when it opens)'
+    const said = settingOutcome({ ...doc, rescore_skipped_final_weeks_why: skipped, consequences: { score_stale: true } })
+    expect(said.branch).toBe('rescore_skipped_final')
+    expect(said.text).toBe(`scoring system id: saved — ${skipped}.`)
+    // The no-open-week arm carries BOTH fields; the not-performed sentence (which names the kept weeks too) wins.
+    const nothingOpen = settingOutcome({ ...doc, rescore_not_performed_why: 'no_open_week — no week is open right now', rescore_skipped_final_weeks_why: skipped })
+    expect(nothingOpen.branch).toBe('rescore_not_performed')
+    // A pre-141 replayed document carries no such field: the arm stays silent, never a crash.
+    expect(settingOutcome({ ...doc }).branch).toBe('saved')
+    expect(settingOutcome({ ...doc, rescore_skipped_final_weeks_why: null }).branch).toBe('saved')
   })
 
   it('then a MIXED open week, un-refit lineups (the MEASURED count), and balances a budget change did not touch', () => {

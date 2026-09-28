@@ -31,9 +31,12 @@
 --       statement still exists behind the status condition. ***BREAK PROBE
 --       1's TARGET*** (reinstate 118's unconditional re-seed ⇒ F reds).
 --   §G  a scoring change re-freezes the snapshot AND leaves final weeks'
---       stored scores untouched unless `rescore` was asked; `rescore` on a
---       final week is REFUSED BY NAME (Q64's recommendation); `rescore` on
---       a league with no final week re-queues every open week's starters,
+--       stored scores untouched unless `rescore` was asked; ~~`rescore` on a
+--       final week is REFUSED BY NAME (Q64's recommendation)~~ — RE-CUT BY
+--       MIGRATION 141 (L.E1.24, F382; Q64 AS RULED 2026-09-27): `rescore`
+--       with a final week LANDS, re-queues the open week and names the final
+--       week as skipped (G10-G14; the full fixture is pgTAP 089); `rescore`
+--       on a league with no final week re-queues every open week's starters,
 --       stamped with the stat line's own updated_at, IR excluded, the
 --       unqueueable NAMED.
 --   §H  the reason gate, the shape gates, the value gates — one unit either
@@ -53,7 +56,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(130);
+select plan(131);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS
@@ -515,32 +518,53 @@ select is((select metadata ->> 'rescore_requested' || '|' || (metadata ->> 'resc
            where league_id = 'be000000-0000-4000-8000-000000000001' and target_id = 'scoring_system_id'),
   'false|false', 'G9 …and the receipt carries the same two facts');
 
--- THE Q64 REFUSAL: rescore = true on a league with a FINAL week.
+-- Q64 AS RULED (Chris, 2026-09-27 — option 1, going forward only): RE-CUT BY
+-- MIGRATION 141 (L.E1.24, F382). 129 shipped Q64's RECOMMENDATION here — the
+-- whole call REFUSED whenever any week was final (G10-G13 pinned that
+-- refusal). The ruling re-scores the OPEN week and keeps the FINAL week's
+-- scores, so the SAME call now LANDS and names week 3 as skipped. pgTAP 089
+-- carries the full fixture (stored-literal week-1 rows, the correction_window
+-- week, the no-open-week arm, the probes).
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
-       'scoring_system_id', to_jsonb((select id::text from scoring_systems where is_template and name = 'Sleeper Standard')),
+-- Captured through a handler, so the pre-141 body (which RAISEs here) reds
+-- G10-G14 BY NAME instead of aborting the suite.
+do $$
+begin
+  perform set_config('pgtap.cs_g10',
+    (select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
+       'scoring_system_id', to_jsonb((select id::text from public.scoring_systems where is_template and name = 'Sleeper Standard')),
        true, 'rescore everything',
-       '0e000000-0000-4000-8000-000000000051'::uuid) $$,
-  '%rescore = true cannot reach FINAL week(s) [3] of league%NO VERB REOPENS A WEEK TODAY (Q64%zero writers)%resubmit with rescore = false%wait for reopen_week%',
-  'G10 `rescore` ON A FINAL WEEK IS REFUSED BY NAME (Q64''s recommendation, task item 3): the message names the week, says why (no reopen_week exists; reopened_by_action_id has zero writers) and names both routes. Silently accepting the flag was the one option §4 rule 15 forbade');
+       '0e000000-0000-4000-8000-000000000051'::uuid)::text), true);
+exception when others then
+  perform set_config('pgtap.cs_g10', jsonb_build_object('error', sqlerrm)::text, true);
+end $$;
 reset role;
 select set_config('request.jwt.claims', '', true);
+select is(
+  (current_setting('pgtap.cs_g10')::jsonb ->> 'rescore_performed') || '|' || (current_setting('pgtap.cs_g10')::jsonb -> 'rescore_skipped_final_weeks')::text,
+  'true|[3]',
+  'G10 RE-CUT (141, Q64 AS RULED): `rescore` with a FINAL week LANDS — the open week 4 is re-scored and final week 3 is NAMED as skipped. Under 129 this exact call was refused whole (the recommendation, now superseded)');
 select is((select scoring_system_id from leagues where id = 'be000000-0000-4000-8000-000000000001'),
-  (select id from scoring_systems where is_template and name = 'ESPN Full PPR'),
-  'G11 …and the refusal wrote NOTHING: the reference is still Full PPR — a commissioner who asked for a rescored season gets a rescored season or nothing, never half');
-select is((select count(*)::int from commish_setting_actions where action_id = '0e000000-0000-4000-8000-000000000051'), 0,
-  'G12 …and consumed no ledger row');
-select is((select count(*)::int from score_fanout where season = 2026 and week = 4), 0,
-  'G13 …and queued nothing');
--- THE Q64 SEAM, pinned as a position in the text so a future reopen_week
--- task finds exactly one block to replace.
+  (select id from scoring_systems where is_template and name = 'Sleeper Standard'),
+  'G11 …and the change is WRITTEN: the reference is Sleeper Standard now (under 129 it stayed Full PPR)');
+select is((select count(*)::int from commish_setting_actions where action_id = '0e000000-0000-4000-8000-000000000051'), 1,
+  'G12 …and it consumed its ledger row');
+select is((select string_agg(player_id, ',' order by player_id) from score_fanout where season = 2026 and week in (3, 4)),
+  'cs-qb1,cs-qb2',
+  'G13 …and ONLY the open week 4 was queued (its two stamped starters; the IR man, the unstamped and the missing lines as G19/G20 name them) — NOTHING for final week 3, whose stored 110.50 stands');
+-- G14 RE-CUT: the refusal is GONE from the body, not merely unreached. RED on
+-- 129 / 131's text, which carried both strings.
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'
-     and p.prosrc like '%Q64 SEAM%'),
-  1, 'G14 the seam is ONE marked block in the body (`-- Q64 SEAM`): the RAISE a future reopen_week replaces with a per-week reopen call, and nothing else');
+     and (p.prosrc like '%Q64 SEAM%' or p.prosrc like '%rescore = true cannot reach FINAL week%')),
+  0, 'G14 RE-CUT (141): the `-- Q64 SEAM` block and its RAISE ("rescore = true cannot reach FINAL week(s)") are ABSENT from prosrc — the whole-call refusal the ruling contradicted is gone');
+-- The queue is a GLOBAL table keyed (season, week, player): clear the rows G10
+-- wrote so B8's premise holds again for G15-G19, and assert it.
+delete from score_fanout where season = 2026 and week = 4;
+select is((select count(*)::int from score_fanout where season = 2026 and week = 4), 0,
+  'G14a PREMISE RESTORED: the week-4 queue is empty again before G15 (G10 now writes to it)');
 
 -- `rescore` WHERE IT CAN DO SOMETHING: L2 has no final week and a live week 4.
 set local role authenticated;
@@ -768,10 +792,10 @@ select ok(
   'K4 104''s two walls on leagues (the snapshot validator, ENABLE ALWAYS; the reference guard) are still there — the re-freeze RIDES them and does not bypass them');
 select ok(
   exists (select 1 from pg_trigger where tgrelid = 'public.league_weeks'::regclass and tgname = 'trg_league_weeks_transition'),
-  'K5 110''s week-status guard is still there: a final week cannot be reopened without a NEW reopened_by_action_id (110:285-296) — which is exactly why the Q64 seam refuses rather than flips');
+  'K5 110''s week-status guard is still there: a final week cannot be reopened without a NEW reopened_by_action_id (110:285-296) — which is why a final week is SKIPPED by rescore, never flipped (Q64 as ruled, 141)');
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname like 'reopen_week%'),
-  0, 'K6 and NO reopen_week exists after 129 (the split seam, migration 132 / pgTAP 080, was NOT taken) — G10''s refusal is honest');
+  0, 'K6 and NO reopen_week exists — Q64 RULED it not wanted (2026-09-27); 141 skips a final week instead of reopening it');
 
 -- ---------------------------------------------------------------------------
 -- L. THE POLICY TABLE, PINNED AS DATA (the banner''s table = this function).

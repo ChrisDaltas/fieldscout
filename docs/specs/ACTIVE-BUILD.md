@@ -238,9 +238,49 @@ commissioner must act" WARNING for the same refusal — out of the one-hunk scop
 its shape) and **F396** (a co-commissioner sees neither bracket affordance); spec
 **v2.16.48** (fold-back). **⚠ PUSH DEBT: 135–140** — production is at 134.)
 
-**QUEUED AFTER L.E1.24 (Chris's rulings 2026-09-27): `L.E1.25`** (Q67 empty-lineup lock + Q68 Doubtful swap) **then `L.E1.26`** (F390 — yards allowed, sourced). Task text: tasks-M6A §6's second 2026-09-27 amendment.
+**`L.E1.24` is LANDED 2026-09-27** (migration **141** + pgTAP **089** `plan(43)` — Q64 as
+ruled: `commish_change_setting_internal` against 131's file text, nine hunks; the
+`-- Q64 SEAM` whole-call refusal is gone — with a final week the scoring change LANDS, the
+open weeks (`live` + `correction_window`) are re-queued, and the final weeks come back BY
+NAME (`rescore_skipped_final_weeks`, in the result, receipt and league post); pgTAP 077
+G10–G14 re-cut; the settings panel's hint no longer promises a refusal and the outcome line
+shows the kept weeks verbatim. **Measured first: the nightly reconcile and the box score
+re-derive a FINAL week under the league's CURRENT rules, so after any scoring change a kept
+final week reads as reconcile `drift` — F397, pre-existing since 129, pinned by a stack
+cell, not fixed here.** Records **D378**; **F382 DISCHARGED**; spec **v2.16.49**
+(fold-back). **⚠ PUSH DEBT: 135–141** — production is at 134.)
 
-**NEXT TAKEABLE TASK: `L.E1.24`** — Q64 as ruled: `rescore = true` re-scores every OPEN and
+**`L.E1.25` and `L.E1.26` are LANDED 2026-09-27** (PR #321 — migration **142** + pgTAP
+**090**, Q67 + Q68, PROGRESS D379; PR #322 — migration **143** + pgTAP **091**, F390 yards
+allowed, PROGRESS D380). They were built AROUND #320's reserved 141 / 089 and merged first;
+#320 was brought forward onto main by a merge commit (PROGRESS **D381**).
+
+**Chris's rulings on #320's review (2026-09-27, in chat):** **Q69** — *"Q69 keep last week's
+scores"*: a scoring change with re-score on does NOT re-score a week in its stat-correction
+window. **141 as merged re-scores one — INTERIM, contradicting the ruling (F404).** **F397** —
+*"F397 yes build it"*: each league week stores the scoring rules it is played with. Spec
+**v2.16.52** (fold-back).
+
+**NEXT TAKEABLE TASK: `L.E1.27`** — per-week scoring rules (F397) + Q69: persist each league
+week's rules when it opens; the score worker (incl. correction-window stat corrections), the
+box score, the nightly reconcile and L.E1.20's season-to-date read THAT week's rules; 141's
+rescore skips `correction_window` weeks and names them beside the final ones; backfill the
+existing weeks. Task text: tasks-M6A §6's L.E1.27 amendment note (right after L.E1.24's
+AS-BUILT note). Heads: **143 / 091** — re-measure at task time (D161).
+
+**⚠ PRODUCTION PUSH — Chris should NOT push to production until L.E1.27 has merged** (141's
+`correction_window` re-score contradicts Q69). **PUSH DEBT: 135–143**, plus L.E1.27's
+migration — production is at 134. When the push happens, 143's order still applies:
+`npx supabase db push` → immediately `sync:reingest` for every completed week (F400).
+
+~~**NEXT TAKEABLE TASK: `L.E1.25`** (Chris's rulings 2026-09-27 — Q67 empty-lineup lock + Q68
+Doubtful swap) **then `L.E1.26`** (F390 — yards allowed, sourced). Task text: tasks-M6A §6's
+second 2026-09-27 amendment. Heads after L.E1.24: **141 / 089** — re-measure at task time
+(D161).~~ *(both landed — advanced by #320's merge-forward, D381)*
+
+~~**QUEUED AFTER L.E1.24 (Chris's rulings 2026-09-27): `L.E1.25`** (Q67 empty-lineup lock + Q68 Doubtful swap) **then `L.E1.26`** (F390 — yards allowed, sourced). Task text: tasks-M6A §6's second 2026-09-27 amendment.~~ *(promoted to NEXT TAKEABLE by L.E1.24's own PR)*
+
+~~**NEXT TAKEABLE TASK: `L.E1.24`**~~ *(advanced by L.E1.24's own PR)* — Q64 as ruled: `rescore = true` re-scores every OPEN and
 future week and SKIPS final weeks, naming them, instead of refusing (tasks-M6A §6's
 2026-09-27 amendment; PROGRESS **F382**). The last of the ruling tasks L.E1.18–L.E1.24;
 after it, the M6A closeout below. Heads after L.E1.23: **140 / 088** — re-measure at task

@@ -90,6 +90,7 @@ const ACTION = {
   settingRefused: 'b0300000-0000-4000-8000-000000000024',
   settingNonCanonical: 'b0300000-0000-4000-8000-000000000025',
   settingEnumCase: 'b0300000-0000-4000-8000-000000000026',
+  settingRescore: 'b0300000-0000-4000-8000-000000000027',
   schedule: 'b0300000-0000-4000-8000-000000000031',
   scheduleNoReason: 'b0300000-0000-4000-8000-000000000032',
   scheduleMember: 'b0300000-0000-4000-8000-000000000033',
@@ -442,6 +443,34 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
     expect(errorText(res)).toContain('team_count is PRE-DRAFT ONLY')
     expect(await receiptsFor(ACTION.settingRefused)).toHaveLength(0)
   })
+
+  it('L.E1.24 (141, Q64 as ruled): a scoring change with rescore = true on a league whose week 1 is FINAL is a 200 — never the 409 131 gave — and the route returns the skipped week BY NAME; the F65(b) guard still compares the rescore flag on a replay', async () => {
+    // THE PREMISE: week 1 walked to FINAL (one legal step per UPDATE — 110), nothing open.
+    for (const to of ['live', 'correction_window', 'final'] as const) {
+      const { error } = await service.from('league_weeks').update({ status: to }).eq('league_id', leagueId).eq('week', 1)
+      if (error) throw new Error(`league_weeks 1 → ${to}: ${error.message}`)
+    }
+    const { data: weeks } = await service.from('league_weeks').select('week, status').eq('league_id', leagueId).in('status', ['live', 'correction_window', 'final'])
+    expect(weeks).toEqual([{ week: 1, status: 'final' }])
+    const { data: ppr } = await commishClient.from('scoring_systems').select('id').eq('is_template', true).eq('name', 'ESPN Full PPR').single()
+    const res = await commishChangeSetting(commishClient, leagueId, { key: 'scoring_system_id', value: ppr!.id, rescore: true, action_id: ACTION.settingRescore })
+    expect(res.status, errorText(res)).toBe(200)
+    const body = res.body as { rescore_requested: boolean; rescore_performed: boolean; rescore_not_performed_why: string | null; rescore_skipped_final_weeks: number[]; rescore_skipped_final_weeks_why: string | null }
+    expect(body.rescore_requested).toBe(true)
+    expect(body.rescore_skipped_final_weeks).toEqual([1])
+    expect(body.rescore_skipped_final_weeks_why).toMatch(/^final_weeks_not_rescored — final week\(s\) \[1\] keep their original scores and results/)
+    expect(body.rescore_performed).toBe(false)
+    expect(body.rescore_not_performed_why).toMatch(/^no_open_week — /)
+    expect(await receiptsFor(ACTION.settingRescore)).toHaveLength(1)
+    // F65(b): the same id replayed with rescore = false is a DIFFERENT request — 409, never the first document.
+    const replay = await commishChangeSetting(commishClient, leagueId, { key: 'scoring_system_id', value: ppr!.id, rescore: false, action_id: ACTION.settingRescore })
+    expect(replay.status).toBe(409)
+    expect(errorText(replay)).toBe(COMMISH_SETTING_ACTION_ID_REUSED_MESSAGE)
+    // …and the identical request replays the stored document, skipped week included.
+    const same = await commishChangeSetting(commishClient, leagueId, { key: 'scoring_system_id', value: ppr!.id, rescore: true, action_id: ACTION.settingRescore })
+    expect(same.status).toBe(200)
+    expect(same.body).toStrictEqual(res.body)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -545,8 +574,8 @@ describe('POST …/commish/schedule — commishEditSchedule over the real RPC', 
 // ---------------------------------------------------------------------------
 
 describe('GET …/commish/log — readCommishLog over the real table', () => {
-  /** The six receipts the cells above wrote, by action_id. */
-  const WRITTEN = [ACTION.rename, ACTION.renameNoReason, ACTION.setting, ACTION.settingNoReason, ACTION.settingNonCanonical, ACTION.schedule, ACTION.scheduleNoReason]
+  /** The receipts the cells above wrote, by action_id (L.E1.24 added `settingRescore`). */
+  const WRITTEN = [ACTION.rename, ACTION.renameNoReason, ACTION.setting, ACTION.settingNoReason, ACTION.settingNonCanonical, ACTION.settingRescore, ACTION.schedule, ACTION.scheduleNoReason]
 
   it('a MEMBER who is not the commissioner CAN read it (spec:1703): every receipt above, newest first, the actor’s username resolved, `reason` null where none was given and never the string "null"', async () => {
     const res = await readCommishLog(memberClient, leagueId, {})

@@ -143,7 +143,7 @@ export const SETTINGS_POLICY_PROBLEM_COPY =
 export const SETTINGS_POLICY_LOADING_COPY = 'Reading which settings can change mid-season…'
 export const RESCORE_TOGGLE_LABEL = 'Re-score this season’s open weeks under the new scoring'
 export const RESCORE_TOGGLE_HINT =
-  'Off: weeks already scored keep their points. On: open weeks are re-scored — and if any week is already final the whole change is refused, because a final week can’t be re-scored yet.'
+  'Off: weeks already scored keep their points. On: open weeks are re-scored under the new scoring; final weeks keep their original scores and results.'
 
 // ---------------------------------------------------------------------------
 // The consequence copy — §4 rule 15 / R971: never a bare "Saved."
@@ -152,6 +152,7 @@ export const RESCORE_TOGGLE_HINT =
 export type SettingOutcomeBranch =
   | 'no_changes'
   | 'rescore_not_performed'
+  | 'rescore_skipped_final'
   | 'score_stale'
   | 'lineups_not_refit'
   | 'faab_not_reseeded'
@@ -170,7 +171,8 @@ interface ConsequencesShape {
   faab_seats_off_budget?: unknown
 }
 
-type SettingOutcomeFields = Pick<CommishChangeSettingResult, 'key' | 'no_changes' | 'no_changes_why' | 'rescore_not_performed_why' | 'consequences'>
+type SettingOutcomeFields = Pick<CommishChangeSettingResult, 'key' | 'no_changes' | 'no_changes_why' | 'rescore_not_performed_why' | 'consequences'> &
+  Partial<Pick<CommishChangeSettingResult, 'rescore_skipped_final_weeks_why'>>
 
 const label = (key: string) => key.replace(/_/g, ' ')
 
@@ -181,9 +183,13 @@ const label = (key: string) => key.replace(/_/g, ' ')
  *     in 129's own words, NEVER swallowed (the task's PROOF line; D360(10)):
  *     a scoring change that did not re-score is the consequence a
  *     commissioner most needs and least expects.
- *  3. then a MIXED open week (`score_stale`), un-refit lineups (a MEASURED
+ *  3. then the final weeks a rescore SKIPPED (migration 141 / Q64 as ruled —
+ *     `rescore_skipped_final_weeks_why`, the server's sentence verbatim): the
+ *     open weeks were re-scored and the final ones kept, and the commissioner
+ *     is told which (L.E1.24; never swallowed);
+ *  4. then a MIXED open week (`score_stale`), un-refit lineups (a MEASURED
  *     count), and balances a budget change did not touch (D360(6));
- *  4. then the plain save.
+ *  5. then the plain save.
  */
 export function settingOutcome(result: SettingOutcomeFields): SettingOutcome {
   const name = label(result.key)
@@ -193,6 +199,9 @@ export function settingOutcome(result: SettingOutcomeFields): SettingOutcome {
   }
   if (result.rescore_not_performed_why) {
     return { branch: 'rescore_not_performed', tone: 'caution', text: `${name}: saved — but scores were NOT re-scored: ${result.rescore_not_performed_why}.` }
+  }
+  if (result.rescore_skipped_final_weeks_why) {
+    return { branch: 'rescore_skipped_final', tone: 'neutral', text: `${name}: saved — ${result.rescore_skipped_final_weeks_why}.` }
   }
   const c = (result.consequences ?? {}) as ConsequencesShape
   if (c.score_stale === true) {
