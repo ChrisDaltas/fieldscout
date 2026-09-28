@@ -527,7 +527,7 @@ export async function getLeagueDetail(
     supabase
       .from('league_members')
       .select(
-        'id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, profiles(username, avatar_url)',
+        'id, user_id, team_id, role, is_placeholder, is_autodraft, joined_at, faab_balance, waiver_priority, profiles(username, avatar_url)',
       )
       .eq('league_id', leagueId)
       .order('joined_at', { ascending: true }),
