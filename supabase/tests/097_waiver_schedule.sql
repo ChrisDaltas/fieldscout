@@ -28,14 +28,16 @@
 --   * BREAK PROBES shown red in the PR, then reverted: (1) a run AT the reset
 --     stops counting (`>=` → `>`) ⇒ E10a red; (2) the settled-run gate
 --     removed from waiver_window_internal ⇒ E11 red; (3) EXECUTE on
---     waiver_window_internal granted to authenticated ⇒ I1 red.
+--     waiver_window_internal granted to authenticated ⇒ I1 red. Fix round
+--     (PR #334): (4) an opening AT the reset opens (`>` → `>=`) ⇒ E10c red;
+--     (5) the posix/right refusal removed from the zone arm ⇒ H10b red.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(95);
+select plan(102);
 
 -- ---------------------------------------------------------------------------
 -- A. Form: the column, the CHECK, the index, the retired keys unstorable
@@ -55,6 +57,19 @@ select is(
   (select count(*)::int from leagues
    where settings ?| array['waiver_process_day', 'waiver_process_time', 'waiver_period_hours', 'free_agency', 'bench_lock']),
   0, 'A4 no stored league carries a retired key after the rewrite');
+-- R1187 (PR #334 fix round): the blob mapping pinned as STORED LITERALS — the SAME literals
+-- split-merge.test.ts pins for the TS read-side twin (`waiverScheduleFromLegacy`), so the app reads a
+-- pre-149 row exactly as 149 rewrites it.
+select is(
+  public.waiver_schedule_from_legacy_internal(
+    '{"waiver_process_day": "tue", "waiver_process_time": "01:30", "waiver_period_hours": 24, "free_agency": "continuous", "bench_lock": false, "faab_min_bid": 1}'::jsonb),
+  '{"faab_min_bid": 1, "waiver_run_days": ["tue"], "waiver_run_time": "01:30", "waiver_time_zone": "America/New_York", "free_agency_opens": "after_waiver_run", "free_agency_open_day": "sun", "free_agency_open_time": "06:00"}'::jsonb,
+  'A4a a pre-149 Tuesday 01:30 league keeps its day and time, read in Eastern; the five retired keys are stripped');
+select is(
+  public.waiver_schedule_from_legacy_internal(
+    '{"waiver_process_day": "thu", "waiver_process_time": "11:00", "bench_lock": true, "waiver_run_days": ["wed"], "waiver_run_time": "00:00", "waiver_time_zone": "America/Los_Angeles", "free_agency_opens": "never", "free_agency_open_day": "mon", "free_agency_open_time": "07:15"}'::jsonb),
+  '{"waiver_run_days": ["wed"], "waiver_run_time": "00:00", "waiver_time_zone": "America/Los_Angeles", "free_agency_opens": "never", "free_agency_open_day": "mon", "free_agency_open_time": "07:15"}'::jsonb,
+  'A4b a blob carrying BOTH vocabularies: every new key wins and the retired keys are stripped');
 
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -293,6 +308,19 @@ select is((pg_temp.win('L2', '2026-10-28 07:00:00+00') ->> 'free_agency_open')::
 update nfl_weeks set last_game_ends_at = '2026-11-01 14:00:00+00' where season = 2026 and week = 7;
 select is(pg_temp.win('L1', '2026-11-01 14:00:00+00') ->> 'why', 'awaiting_run',
   'E10b a week end recorded EXACTLY at league 1''s Sunday opening: that opening opens nothing (the week closed at that instant)');
+-- R1189 (PR #334 fix round): the weekly opening's own rule (`v_last_open > v_reset`) at its boundary — a run
+-- HAS happened since the week closed, so only the opening instant decides. Week 7 recorded ending exactly at
+-- league 1's Sunday 06:00 PDT opening (13:00Z): by Tuesday's 09:00 PDT run that opening opens nothing; one
+-- second earlier it does.
+update nfl_weeks set last_game_ends_at = '2026-10-25 13:00:00+00' where season = 2026 and week = 7;
+select is(
+  (select jsonb_build_array(w ->> 'free_agency_open', w ->> 'why', (w ->> 'reset_at')::timestamptz, (w ->> 'last_open_at')::timestamptz, (w ->> 'last_run_at')::timestamptz)
+   from pg_temp.win('L1', '2026-10-27 16:00:00+00') w),
+  jsonb_build_array('false', 'before_opening_time', '2026-10-25 13:00:00+00'::timestamptz, '2026-10-25 13:00:00+00'::timestamptz, '2026-10-27 16:00:00+00'::timestamptz),
+  'E10c the week ends EXACTLY at the Sunday opening and Tuesday''s run follows: that opening opens nothing, so free agency waits for next Sunday');
+update nfl_weeks set last_game_ends_at = '2026-10-25 12:59:59+00' where season = 2026 and week = 7;
+select is(pg_temp.win('L1', '2026-10-27 16:00:00+00') ->> 'why', 'open',
+  'E10d the week ends ONE SECOND before the Sunday opening: that opening counts and Tuesday''s run opens free agency');
 update nfl_weeks set last_game_ends_at = starts_at + interval '6 days 3 hours' where season = 2026 and week = 7;   -- restore
 update leagues set waiver_next_run_at = '2026-10-28 07:00:00+00' where id = 'b9700000-0000-4000-8000-000000000002';
 select is(
@@ -363,6 +391,12 @@ select throws_like(
   $$ select public.roster_add_drop_internal('b9700000-0000-4000-8000-000000000002', 'c9700000-0000-4000-8000-000000000011',
        'ws-b2b', null, 'a9700000-0000-4000-8000-000000000008', '2026-11-11 08:00:30+00') $$,
   '%WS B2B (ws-b2b) is on waivers until the waiver run at%', 'F10a TRACKED: 30 s past his run but the run is not settled — still on waivers (E8)');
+-- R1190 (PR #334 fix round): the run-pending refusal names the unsettled run in the league''s zone, like the next run
+select throws_like(
+  $$ select public.roster_add_drop_internal('b9700000-0000-4000-8000-000000000002', 'c9700000-0000-4000-8000-000000000011',
+       'ws-fa4', null, 'a9700000-0000-4000-8000-000000000032', '2026-11-11 08:00:30+00') $$,
+  '%WS FA4 (ws-fa4) is claim-only right now — the waiver run at Wed 2026-11-11 00:00 America/Los_Angeles is still being processed; put in a waiver claim instead%',
+  'F10c TRACKED and unsettled: a fresh free agent is claim-only, naming the run being processed in the league''s zone (never raw UTC)');
 update leagues set waiver_next_run_at = '2026-11-18 08:00:00+00' where id = 'b9700000-0000-4000-8000-000000000002';
 select lives_ok(
   $$ select public.roster_add_drop_internal('b9700000-0000-4000-8000-000000000002', 'c9700000-0000-4000-8000-000000000011',
@@ -463,6 +497,13 @@ select throws_like(
   $$ select public.commish_change_setting_internal('b9700000-0000-4000-8000-000000000002', 'waiver_time_zone', '"Mars/Olympus"', false,
        'a9700000-0000-4000-8000-000000000023', '2026-11-02 12:00:00+00', null) $$,
   '%waiver_time_zone must be an IANA time zone name%', 'H10 an unknown zone is refused by name');
+-- R1188 (PR #334 fix round): pg knows the posix/ tree, the app reader (Intl) does not — refused by name
+select ok(exists (select 1 from pg_catalog.pg_timezone_names where name = 'posix/America/New_York'),
+  'H10a fixture: the database knows posix/America/New_York (so H10b is not vacuous)');
+select throws_like(
+  $$ select public.commish_change_setting_internal('b9700000-0000-4000-8000-000000000002', 'waiver_time_zone', '"posix/America/New_York"', false,
+       'a9700000-0000-4000-8000-000000000033', '2026-11-02 12:00:00+00', null) $$,
+  '%waiver_time_zone must be an IANA time zone name%', 'H10b a posix/ zone (one the app cannot read) is refused by name');
 select throws_like(
   $$ select public.commish_change_setting_internal('b9700000-0000-4000-8000-000000000002', 'waiver_run_days', '[]', false,
        'a9700000-0000-4000-8000-000000000024', '2026-11-02 12:00:00+00', null) $$,

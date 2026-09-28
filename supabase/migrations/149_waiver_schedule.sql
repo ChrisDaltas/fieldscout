@@ -77,6 +77,14 @@
 -- straight to it). The claim verbs (145) are untouched: Q74(i) at submit is
 -- F407 (L.D2.9).
 --
+-- FIX ROUND (PR #334 review, edited in place — 149 is unpushed): R1188 the
+-- commissioner's waiver_time_zone gate also refuses the posix/ and right/
+-- trees (pg knows them, the app's Intl reader does not — measured: exactly
+-- the 598 posix/* names); R1190 the run-pending refusal names the unsettled
+-- run in the league's zone. Both inside existing hunks (counts unchanged).
+-- R1187 is app-side: `mergeSettings` reads a pre-149 blob through the TS
+-- twin of section 1's mapping, so a deploy ahead of `db push` still renders.
+--
 -- MIGRATION CHECKLIST (tasks-M* §4.4): one blob rewrite of `leagues` (every
 -- row, counted), one CHECK, one nullable column + one partial index, six new
 -- functions (all triple-REVOKEd), five replaced (REVOKEs restated). RLS
@@ -685,7 +693,9 @@ BEGIN
         CASE v_fa_window ->> 'why'
           WHEN 'awaiting_run' THEN 'no waiver run has happened since '
                || CASE v_fa_window ->> 'reset_kind' WHEN 'draft' THEN 'the draft' ELSE 'the week''s last game ended' END
-          WHEN 'run_pending' THEN 'the waiver run at ' || (v_fa_window ->> 'scheduled_last_run_at') || ' is still being processed'
+          WHEN 'run_pending' THEN 'the waiver run at '   -- R1190: in the league's zone, like the next run
+               || to_char((v_fa_window ->> 'scheduled_last_run_at')::timestamptz AT TIME ZONE (v_sched ->> 'time_zone'), 'Dy YYYY-MM-DD HH24:MI')
+               || ' ' || (v_sched ->> 'time_zone') || ' is still being processed'
           WHEN 'before_opening_time' THEN 'free agency opens ' || initcap(v_sched ->> 'free_agency_open_day') || ' '
                || (v_sched ->> 'free_agency_open_time') || ' ' || (v_sched ->> 'time_zone')
           WHEN 'claims_only' THEN 'this league has no free agency — every pickup is a waiver claim'
@@ -2147,9 +2157,17 @@ BEGIN
       END IF;
       RETURN to_jsonb(btrim(p_value #>> '{}'));
     WHEN 'waiver_time_zone' THEN
+      -- R1188 (PR #334 fix round): the refusal set is exactly what the app's
+      -- reader (`isIanaTimeZone`, Intl) refuses, so a stored zone can never
+      -- 500 the league. MEASURED on the local stack (pg_timezone_names vs
+      -- Node 24 / ICU 78.2 / tz 2025c): of the 1153 names this arm let
+      -- through, Intl rejects exactly 598 — every one under `posix/` (none
+      -- other); `right/` (the leap-second tree some tzdata builds ship) is
+      -- refused with it. Every Intl canonical zone (418) is in pg's list.
       IF p_value IS NULL OR jsonb_typeof(p_value) <> 'string'
          OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name = btrim(p_value #>> '{}'))
-         OR (btrim(p_value #>> '{}') NOT IN ('UTC', 'GMT') AND position('/' IN btrim(p_value #>> '{}')) = 0) THEN
+         OR (btrim(p_value #>> '{}') NOT IN ('UTC', 'GMT') AND position('/' IN btrim(p_value #>> '{}')) = 0)
+         OR btrim(p_value #>> '{}') ~ '^(posix|right)/' THEN
         RAISE EXCEPTION 'commish_change_setting: waiver_time_zone must be an IANA time zone name such as America/Los_Angeles (§16.4) — got %', COALESCE(p_value::text, 'null')
           USING ERRCODE = '22023';
       END IF;

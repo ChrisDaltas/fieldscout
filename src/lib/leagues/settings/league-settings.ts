@@ -830,17 +830,72 @@ export function splitSettings(s: LeagueSettings): { columns: LeagueTypedColumns;
 }
 
 /**
+ * The five blob keys migration 149 retired (Q70's schedule replaces the first
+ * four; Q73 retires `bench_lock`). 149's CHECK
+ * `leagues_settings_no_retired_waiver_keys` refuses them at the table and the
+ * strict `leagueSettingsSchema` refuses them on every write path.
+ */
+export const RETIRED_WAIVER_KEYS = [
+  'waiver_process_day',
+  'waiver_process_time',
+  'waiver_period_hours',
+  'free_agency',
+  'bench_lock',
+] as const
+
+/**
+ * READ-SIDE ONLY (R1187, PR #334 fix round — D388): the TS twin of migration
+ * 149's `waiver_schedule_from_legacy_internal`, so the app reads a PRE-149
+ * row correctly during the window between a merge (Vercel deploys main at
+ * once) and the hosted `db push` that runs 149's blob mapping. Same rule,
+ * key by key: a key already in the new vocabulary wins; the old run day
+ * (`tue`/`wed`/`thu`) and HH:MM run time carry over, read in
+ * America/New_York (D60's "ET"); anything else takes the §7.3.4 catalog
+ * default; free agency opens after the run; the five retired keys are
+ * stripped. On a post-149 row (all six keys present, no retired key — the
+ * CHECK) it is the identity. `mergeSettings` is its only caller; every write
+ * path parses the strict schema directly, so a NEW write naming a retired
+ * key is still refused.
+ */
+export function waiverScheduleFromLegacy(blob: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(blob, key)
+  const oldDay = blob.waiver_process_day
+  const oldTime = blob.waiver_process_time
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(blob)) {
+    if (!(RETIRED_WAIVER_KEYS as readonly string[]).includes(key)) out[key] = value
+  }
+  out.waiver_run_days = has('waiver_run_days')
+    ? blob.waiver_run_days
+    : [typeof oldDay === 'string' && ['tue', 'wed', 'thu'].includes(oldDay) ? oldDay : 'wed']
+  out.waiver_run_time = has('waiver_run_time')
+    ? blob.waiver_run_time
+    : typeof oldTime === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(oldTime)
+      ? oldTime
+      : '03:00'
+  out.waiver_time_zone = has('waiver_time_zone') ? blob.waiver_time_zone : 'America/New_York'
+  out.free_agency_opens = has('free_agency_opens') ? blob.free_agency_opens : 'after_waiver_run'
+  out.free_agency_open_day = has('free_agency_open_day') ? blob.free_agency_open_day : 'sun'
+  out.free_agency_open_time = has('free_agency_open_time') ? blob.free_agency_open_time : '06:00'
+  return out
+}
+
+/**
  * Inverse of `splitSettings`: reconstitute LeagueSettings from a leagues row
  * (typed columns + `settings` blob), re-validated through the schema.
  * Corrupt rows THROW (ZodError) rather than yielding a silently-wrong
  * settings object (the D58 loud-failure doctrine); missing blob fields on a
- * legacy/defaulted row fill from the §7.3 defaults.
+ * legacy/defaulted row fill from the §7.3 defaults. A pre-149 blob (the old
+ * waiver keys) is read through `waiverScheduleFromLegacy` first — the same
+ * schedule 149's data migration writes (R1187: the code is
+ * backward-compatible with a database that has not received 149 yet).
  */
 export function mergeSettings(row: LeagueRow): LeagueSettings {
-  const blob = row.settings
-  if (blob === null || typeof blob !== 'object' || Array.isArray(blob)) {
-    throw new TypeError(`mergeSettings: leagues.settings must be a JSON object, got ${blob === null ? 'null' : Array.isArray(blob) ? 'array' : typeof blob}`)
+  const raw = row.settings
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new TypeError(`mergeSettings: leagues.settings must be a JSON object, got ${raw === null ? 'null' : Array.isArray(raw) ? 'array' : typeof raw}`)
   }
+  const blob = waiverScheduleFromLegacy(raw)
   const candidate: Record<string, unknown> = {
     ...blob,
     format: row.format,

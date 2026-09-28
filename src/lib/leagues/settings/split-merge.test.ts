@@ -13,16 +13,18 @@
 import { describe, expect, it } from 'vitest'
 
 import { mulberry32 } from '../stats/synthetic/prng'
-import { FREE_AGENCY_OPENS, WEEKDAYS } from '../time/waiver-schedule'
+import { FREE_AGENCY_OPENS, WAIVER_SCHEDULE_KEYS, WEEKDAYS } from '../time/waiver-schedule'
 import type { LeagueRow, LeagueSettings } from './league-settings'
 import {
   LEAGUE_SETTINGS_DEFAULTS,
   PICK_TIMER_SECONDS,
+  RETIRED_WAIVER_KEYS,
   TIEBREAKERS,
   leagueSettingsSchema,
   mergeSettings,
   splitSettings,
   validateLeagueSettings,
+  waiverScheduleFromLegacy,
 } from './league-settings'
 import { ROUND_TRIP_SCORING_SYSTEM_ID, ROUND_TRIP_SETTINGS, SINGLE_OPTION_FIELD_PATHS } from './round-trip-fixture'
 
@@ -112,6 +114,105 @@ describe('mergeSettings(splitSettings(x)) ≡ x', () => {
     expect(merged).toStrictEqual(LEAGUE_SETTINGS_DEFAULTS)
   })
 })
+
+// ---------------------------------------------------------------------------
+// R1187 (PR #334 fix round, D388): a deploy can reach production before the
+// hosted `db push` runs migration 149, so the READER must take a pre-149 blob
+// and yield the schedule 149 would write. The expected blobs are the SAME
+// stored literals pgTAP 097 A4a/A4b pin for 149's `waiver_schedule_from_legacy_internal`.
+// ---------------------------------------------------------------------------
+
+describe('mergeSettings reads a pre-149 row (the waiver keys migration 149 retires)', () => {
+  const { columns, blob: defaultBlob } = splitSettings(LEAGUE_SETTINGS_DEFAULTS)
+  /** The default blob as a pre-149 database stores it: the four old schedule keys + bench_lock, none of the six new ones. */
+  function pre149Blob(old: Record<string, unknown>): Record<string, unknown> {
+    const blob = { ...(defaultBlob as Record<string, unknown>) }
+    for (const k of WAIVER_SCHEDULE_KEYS) delete blob[k]
+    return { ...blob, ...old }
+  }
+
+  it('a pre-149 DEFAULT league lands exactly on the Wednesday 03:00 Eastern default (no throw)', () => {
+    const blob = pre149Blob({ waiver_process_day: 'wed', waiver_process_time: '03:00', waiver_period_hours: 48, free_agency: 'immediate_after_waivers', bench_lock: true })
+    expect(() => leagueSettingsSchema.parse({ ...blob, ...columns })).toThrow() // the strict parse alone would 500 the league
+    expect(mergeSettings({ ...columns, settings: blob } as LeagueRow)).toStrictEqual(LEAGUE_SETTINGS_DEFAULTS)
+  })
+
+  it('a pre-149 Tuesday 01:30 league keeps its day and time, read in Eastern — the literal pgTAP 097 A4a pins for 149', () => {
+    const mapped = waiverScheduleFromLegacy({
+      waiver_process_day: 'tue',
+      waiver_process_time: '01:30',
+      waiver_period_hours: 24,
+      free_agency: 'continuous',
+      bench_lock: false,
+      faab_min_bid: 1,
+    })
+    expect(JSON.stringify(mapped)).toBe(
+      '{"faab_min_bid":1,"waiver_run_days":["tue"],"waiver_run_time":"01:30","waiver_time_zone":"America/New_York","free_agency_opens":"after_waiver_run","free_agency_open_day":"sun","free_agency_open_time":"06:00"}',
+    )
+    const merged = mergeSettings({
+      ...columns,
+      settings: pre149Blob({ waiver_process_day: 'tue', waiver_process_time: '01:30', waiver_period_hours: 24, free_agency: 'continuous', bench_lock: false }),
+    } as LeagueRow)
+    expect(scheduleOf(merged)).toStrictEqual({
+      waiver_run_days: ['tue'],
+      waiver_run_time: '01:30',
+      waiver_time_zone: 'America/New_York',
+      free_agency_opens: 'after_waiver_run',
+      free_agency_open_day: 'sun',
+      free_agency_open_time: '06:00',
+    })
+    for (const k of RETIRED_WAIVER_KEYS) expect(k in merged, k).toBe(false)
+  })
+
+  it('a post-149 row is read unchanged (the mapping is the identity on the new vocabulary)', () => {
+    const { blob } = splitSettings(ROUND_TRIP_SETTINGS)
+    expect(waiverScheduleFromLegacy(blob as Record<string, unknown>)).toStrictEqual(blob)
+    expect(mergeSettings(rowFrom(ROUND_TRIP_SETTINGS))).toStrictEqual(ROUND_TRIP_SETTINGS)
+  })
+
+  it('a blob carrying BOTH vocabularies (unstorable after 149’s CHECK): the new keys win, the retired keys are stripped — pgTAP 097 A4b', () => {
+    const both = {
+      waiver_process_day: 'thu',
+      waiver_process_time: '11:00',
+      bench_lock: true,
+      waiver_run_days: ['wed'],
+      waiver_run_time: '00:00',
+      waiver_time_zone: 'America/Los_Angeles',
+      free_agency_opens: 'never',
+      free_agency_open_day: 'mon',
+      free_agency_open_time: '07:15',
+    }
+    expect(JSON.stringify(waiverScheduleFromLegacy(both))).toBe(
+      '{"waiver_run_days":["wed"],"waiver_run_time":"00:00","waiver_time_zone":"America/Los_Angeles","free_agency_opens":"never","free_agency_open_day":"mon","free_agency_open_time":"07:15"}',
+    )
+    const merged = mergeSettings({ ...columns, settings: { ...(defaultBlob as Record<string, unknown>), ...both } } as LeagueRow)
+    for (const k of RETIRED_WAIVER_KEYS) expect(k in merged, k).toBe(false)
+    expect(scheduleOf(merged)).toStrictEqual({
+      waiver_run_days: ['wed'],
+      waiver_run_time: '00:00',
+      waiver_time_zone: 'America/Los_Angeles',
+      free_agency_opens: 'never',
+      free_agency_open_day: 'mon',
+      free_agency_open_time: '07:15',
+    })
+  })
+
+  it('an old value 149 would not carry takes the catalog default, as 149 does (a Monday day, a malformed time)', () => {
+    expect(scheduleOf(mergeSettings({ ...columns, settings: pre149Blob({ waiver_process_day: 'mon', waiver_process_time: '3am' }) } as LeagueRow))).toStrictEqual(
+      scheduleOf(LEAGUE_SETTINGS_DEFAULTS),
+    )
+  })
+
+  it('WRITE paths stay strict: a new write naming a retired key is still refused (only the reader tolerates the old shape)', () => {
+    for (const k of RETIRED_WAIVER_KEYS) {
+      expect(leagueSettingsSchema.safeParse({ ...structuredClone(LEAGUE_SETTINGS_DEFAULTS), [k]: 'x' }).success, k).toBe(false)
+    }
+  })
+})
+
+function scheduleOf(s: LeagueSettings): Pick<LeagueSettings, (typeof WAIVER_SCHEDULE_KEYS)[number]> {
+  return Object.fromEntries(WAIVER_SCHEDULE_KEYS.map((k) => [k, s[k]])) as Pick<LeagueSettings, (typeof WAIVER_SCHEDULE_KEYS)[number]>
+}
 
 describe('the round-trip enumeration fixture (gate item 3’s "every §7.3 field")', () => {
   it('is schema-valid and parse-stable (no default kicks in — every field is present)', () => {
