@@ -35,6 +35,25 @@ describe('transactionText — a WON waiver claim (TD9 row; M5 L.D2.12)', () => {
     const payload = { add: { name: 'Nine', player_id: 'p9', position: 'WR', nfl_team: 'AAA' }, drop: { name: 'One', player_id: 'p1' }, faab_bid: 12, faab_before: 40, faab_after: 28 }
     expect(transactionText(tx({ type: 'waiver_claim', payload }))).toBe('claimed Nine (WR · AAA) off waivers for $12, dropped One')
   })
+  it('F416 (M5 L.D2.9): the row migration 150 writes renders with both names — its payload as pgTAP 098 F10 pins it', () => {
+    // 150's won-claim payload (the fields the feed reads), verbatim from 098 F10 / F9.
+    const payload = {
+      type: 'waiver_claim',
+      claim_id: 'd9800000-0000-4000-8000-000000000004',
+      add_player_id: 'wp-y',
+      drop_player_id: 'wp-cold',
+      faab_bid: 12,
+      faab_before: 100,
+      faab_after: 88,
+      add: { name: 'WP Why', nfl_team: 'SEA', position: 'WR', slot_key: 'bn', to_state: 'rostered', player_id: 'wp-y', from_state: 'free_agent', acquired_at: '2026-11-01T12:00:00+00:00', acquisition_type: 'waiver' },
+      drop: { name: 'WP Cold', player_id: 'wp-cold', position: 'QB', nfl_team: 'DEN', to_state: 'on_waivers' },
+    }
+    expect(transactionText(tx({ type: 'waiver_claim', payload }))).toBe('claimed WP Why (WR · SEA) off waivers for $12, dropped WP Cold (QB · DEN)')
+    // …and a priority league's row (150 writes faab_before / faab_after NULL) shows no price.
+    expect(transactionText(tx({ type: 'waiver_claim', payload: { ...payload, faab_bid: 0, faab_before: null, faab_after: null } }))).toBe(
+      'claimed WP Why (WR · SEA) off waivers, dropped WP Cold (QB · DEN)',
+    )
+  })
   it('a priority league (no FAAB debit) shows no price; bare TD9 ids name "a player", never a provider id', () => {
     expect(transactionText(tx({ type: 'waiver_claim', payload: { add: { name: 'Nine' }, faab_bid: 0 } }))).toBe('claimed Nine off waivers')
     expect(transactionText(tx({ type: 'waiver_claim', payload: { add_player_id: 'p9', faab_bid: 5, faab_before: 10 } }))).toBe('claimed a player off waivers for $5')

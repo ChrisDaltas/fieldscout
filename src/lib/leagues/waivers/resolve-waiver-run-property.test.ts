@@ -1,14 +1,17 @@
 /**
- * resolve-waiver-run-property.test.ts — L.D2.8's PROPERTY suite (tasks-M5
- * §6 L.D2.8 "Proofs"; delivery plan §3 M5 exit criterion 2, "deterministic
- * FAAB tiebreak property tests"). fast-check over random leagues and claim
- * sets — small player pools and clustered bids, so contested players, equal
- * bids, shared drops, over-full rosters, caps, locks and the deadlock cycle
- * all occur (the coverage cell at the bottom counts them and fails if any is
- * zero — an invariant over an empty population proves nothing). Two shapes
- * random claims rarely form are PLANTED amid random noise: the deadlock cycle
- * (`cycleArb`) and R1176's priority tie beside a bigger lower-ranked claim
- * (`tieArb`).
+ * resolve-waiver-run-property.test.ts — the resolver's PROPERTY suite
+ * (tasks-M5 §6 L.D2.8 "Proofs"; delivery plan §3 M5 exit criterion 2,
+ * "deterministic FAAB tiebreak property tests"), re-cut by L.D2.9 to Chris's
+ * F422 rulings (2026-09-28): (a) every win burns the team's priority for the
+ * rest of the run, in every waiver type; (b) a FAAB team's claims rank by
+ * bid, its own order only between equal bids. fast-check over random leagues
+ * and claim sets — small player pools and clustered bids, so contested
+ * players, equal bids, shared drops, over-full rosters, caps and locks all
+ * occur (the coverage cell at the bottom counts them and fails if any is zero
+ * — an invariant over an empty population proves nothing). Two shapes random
+ * claims rarely form are PLANTED amid random noise: L.D2.8's cycle
+ * (`cycleArb` — a small bid ranked above a bigger one) and R1176's priority
+ * tie beside a bigger claim of the same team (`tieArb`).
  *
  *   1. determinism — same input ⇒ byte-identical output; the input is not
  *      mutated;
@@ -30,24 +33,27 @@
  *      only ever fails for its OWN reasons, decided before the award; a
  *      `lost` claim lost to another team's claim with a bid ≥ its own
  *      (`outbid` iff strictly lower); nobody is `lost` on a player nobody
- *      won; a `lost_on_priority` loser's winner held the better priority
- *      position AT THE MOMENT HE WON (the current rolling order, replayed —
- *      not the run-start order) (R1177);
- *   9. Q71 — a team's ranking settles its running out: a ready (non-break)
- *      award never leaves one of the same team's HIGHER-ranked pending
- *      claims unable to go through;
- *  10. priority rotation — rolling: winners move to the back in the order of
- *      their last win, non-winners keep their relative order; otherwise the
- *      order is unchanged;
+ *      won; a `lost_on_priority` loser's winner held the better place in the
+ *      ROLLED order at the moment he won (F422(a), R1177);
+ *   9. F422(b) — a FAAB team's claims are decided in descending bid order:
+ *      a claim is only ever awarded once every claim its team ranks above it
+ *      (a bigger bid; an equal bid it ordered first) has been decided;
+ *  10. priority rolls — in EVERY waiver type the order after the run is the
+ *      start order with each winner moved to the back by its last win,
+ *      non-winners keeping their order (F422(a)); it persists only under
+ *      rolling priority / the FAAB rolling tiebreaker;
  *  11. E7 — equal top bids go to the worse team under reverse standings, and
  *      flipping the two teams in the standings flips the winner;
  *  12. FAIL_CHECK_ORDER (R1177) — every step-1 `invalid` reason is the FIRST
  *      failing check, in this file's own independently written order
  *      (`failures()`), against the state replayed to its decision point;
- *  13. Q71 / R1176 — in a rotating league a team never loses a claim on
- *      priority BECAUSE OF a win on one of its own LOWER-ranked claims
- *      earlier in the same run: with those rotations undone, the winner was
- *      still ahead (D389(7)).
+ *  13. F422(a)+(b) — every award is the STRONGEST claim that could go through
+ *      at its turn: no claim still undecided and executable then had a bigger
+ *      bid, an equal bid from a team ahead in the rolled order, or (same
+ *      team) a place above it in the team's own ranking. With 8 and 10 this
+ *      is F422(c)'s re-check: a tie is decided by the rolled order alone, and
+ *      a team's claims by its bid ranking alone — no bid-size-dependent
+ *      double tiebreak survives.
  *
  * SEED: fixed literal (replayable); FC_SEED=<n> / FC_RUNS=<n> override.
  * A counterexample is a FINDING, never a generator constraint to massage.
@@ -63,215 +69,11 @@ import {
   type WaiverRunInput,
   type WaiverRunResult,
 } from './resolve-waiver-run'
+import { inputArb, TEAM_IDS } from './waiver-run-arbitraries'
 
 const SEED = process.env.FC_SEED !== undefined ? Number(process.env.FC_SEED) : 20260928
 const NUM_RUNS = process.env.FC_RUNS !== undefined ? Number(process.env.FC_RUNS) : 1000
 const FC = { seed: SEED, numRuns: NUM_RUNS, verbose: true } as const
-
-const PLAYERS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'pa', 'pb']
-const TEAM_IDS = ['tA', 'tB', 'tC', 'tD', 'tE']
-const CLAIM_IDS = Array.from({ length: 16 }, (_, i) => `c${String(i).padStart(2, '0')}`)
-
-// ── The generator ────────────────────────────────────────────────────────────
-
-const bidArb = fc.oneof(fc.integer({ min: 0, max: 60 }), fc.constantFrom(5, 10, 20, 30))
-
-const generalArb: fc.Arbitrary<WaiverRunInput> = fc
-  .record({
-    nTeams: fc.integer({ min: 2, max: 5 }),
-    waiverType: fc.constantFrom('faab', 'faab', 'rolling_priority', 'reverse_standings'),
-    faabTiebreaker: fc.constantFrom('reverse_standings', 'rolling_priority'),
-    rosterSize: fc.integer({ min: 1, max: 6 }),
-    capWeek: fc.option(fc.integer({ min: 0, max: 4 }), { freq: 2 }),
-    capSeason: fc.option(fc.integer({ min: 0, max: 6 }), { freq: 2 }),
-    // Negative = unowned; weighted toward unowned so there is something to claim.
-    owners: fc.array(fc.integer({ min: -7, max: 4 }), { minLength: PLAYERS.length, maxLength: PLAYERS.length }),
-    balances: fc.array(fc.integer({ min: 0, max: 100 }), { minLength: 5, maxLength: 5 }),
-    accWeek: fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 5, maxLength: 5 }),
-    accSeason: fc.array(fc.integer({ min: 0, max: 4 }), { minLength: 5, maxLength: 5 }),
-    retiredMask: fc.array(fc.integer({ min: 0, max: 19 }), { minLength: 5, maxLength: 5 }),
-    rawClaims: fc.array(
-      fc.record({
-        team: fc.integer({ min: 0, max: 4 }),
-        // 'free' picks among the players unowned at the start (most claims),
-        // 'any' among all (exercises add_rostered).
-        addKind: fc.constantFrom('free', 'free', 'free', 'any'),
-        add: fc.nat(),
-        dropKind: fc.constantFrom('none', 'own', 'own', 'any'),
-        dropPick: fc.nat(),
-        bid: bidArb,
-        order: fc.integer({ min: 1, max: 6 }),
-      }),
-      { maxLength: CLAIM_IDS.length },
-    ),
-    uniqueOrders: fc.boolean(),
-    claimIds: fc.shuffledSubarray(CLAIM_IDS, { minLength: CLAIM_IDS.length, maxLength: CLAIM_IDS.length }),
-    lockedMask: fc.array(fc.integer({ min: 0, max: 9 }), { minLength: PLAYERS.length, maxLength: PLAYERS.length }),
-    draftPerm: fc.shuffledSubarray([0, 1, 2, 3, 4], { minLength: 5, maxLength: 5 }),
-    standingsPerm: fc.option(fc.shuffledSubarray([0, 1, 2, 3, 4], { minLength: 5, maxLength: 5 })),
-    rollingPerm: fc.option(fc.shuffledSubarray([0, 1, 2, 3, 4], { minLength: 5, maxLength: 5 })),
-    rollingGap: fc.integer({ min: 1, max: 3 }),
-  })
-  .map((g) => {
-    const ids = TEAM_IDS.slice(0, g.nTeams)
-    const retired = ids.map((_, i) => g.retiredMask[i] === 0)
-    // Keep at least one active team (a league of only sealed teams has no
-    // priority order to speak of).
-    if (retired.every(Boolean)) retired[0] = false
-    const rosters = ids.map(() => [] as string[])
-    g.owners.forEach((o, p) => {
-      if (o >= 0 && o < g.nTeams) rosters[o].push(PLAYERS[p])
-    })
-    const teams = ids.map((teamId, i) => ({
-      teamId,
-      roster: rosters[i],
-      faabBalance: g.balances[i],
-      acquisitionsWeek: g.accWeek[i],
-      acquisitionsSeason: g.accSeason[i],
-      retired: retired[i],
-    }))
-    const perTeamCount = ids.map(() => 0)
-    const free = PLAYERS.filter((p) => !rosters.some((r) => r.includes(p)))
-    const claims: WaiverRunClaim[] = g.rawClaims.map((rc, i) => {
-      const t = rc.team % g.nTeams
-      const add =
-        rc.addKind === 'free' && free.length > 0 ? free[rc.add % free.length] : PLAYERS[rc.add % PLAYERS.length]
-      let drop: string | null = null
-      if (rc.dropKind === 'own' && rosters[t].length > 0) drop = rosters[t][rc.dropPick % rosters[t].length]
-      if (rc.dropKind === 'any') drop = PLAYERS[rc.dropPick % PLAYERS.length]
-      if (drop === add) drop = null
-      perTeamCount[t] += 1
-      return {
-        claimId: g.claimIds[i],
-        teamId: ids[t],
-        addPlayerId: add,
-        dropPlayerId: drop,
-        faabBid: rc.bid,
-        claimOrder: g.uniqueOrders ? perTeamCount[t] : rc.order,
-      }
-    })
-    const active = ids.filter((_, i) => !retired[i])
-    const permOf = (perm: number[]): string[] => perm.filter((i) => i < g.nTeams && !retired[i]).map((i) => ids[i])
-    const rolling =
-      g.rollingPerm === null
-        ? null
-        : Object.fromEntries(permOf(g.rollingPerm).map((id, i) => [id, 1 + i * g.rollingGap]))
-    return {
-      settings: {
-        waiverType: g.waiverType,
-        faabTiebreaker: g.faabTiebreaker,
-        rosterSize: g.rosterSize,
-        acquisitionsPerWeek: g.capWeek,
-        acquisitionsPerSeason: g.capSeason,
-      },
-      teams,
-      claims,
-      priority: {
-        draftOrder: permOf(g.draftPerm),
-        standings: g.standingsPerm === null ? null : permOf(g.standingsPerm),
-        rolling: active.length > 0 ? rolling : null,
-      },
-      lockedPlayerIds: PLAYERS.filter((_, p) => g.lockedMask[p] === 0),
-    } satisfies WaiverRunInput
-  })
-
-/**
- * The CYCLE the deadlock break exists for, planted into a random FAAB league
- * with random noise around it: two active teams, each outbidding the other
- * on its #2 claim while unable to afford #1 + #2 —
- *   A: #1 X a1, #2 Y a2 (a2 > b1),  balance < a1 + a2;
- *   B: #1 Y b1, #2 X b2 (b2 > a1),  balance < b1 + b2.
- * Random claims can form one, but too rarely to prove the break non-vacuous.
- */
-const cycleArb: fc.Arbitrary<WaiverRunInput> = fc
-  .tuple(
-    generalArb,
-    fc.record({
-      a1: fc.integer({ min: 1, max: 20 }),
-      b1: fc.integer({ min: 1, max: 20 }),
-      r: fc.integer({ min: 0, max: 20 }),
-      s: fc.integer({ min: 0, max: 20 }),
-      t: fc.nat(),
-      u: fc.nat(),
-    }),
-  )
-  .map(([base, k]) => {
-    const active = base.teams.filter((t) => !t.retired).map((t) => t.teamId)
-    if (active.length < 2) return base
-    const [A, B] = active
-    const a2 = k.b1 + 1 + k.r
-    const b2 = k.a1 + 1 + k.s
-    const balA = a2 + (k.t % k.a1)
-    const balB = b2 + (k.u % k.b1)
-    const maxRoster = Math.max(...base.teams.map((t) => t.roster.length))
-    return {
-      ...base,
-      settings: {
-        ...base.settings,
-        waiverType: 'faab',
-        rosterSize: Math.max(base.settings.rosterSize, maxRoster + 2),
-        acquisitionsPerWeek: null,
-        acquisitionsPerSeason: null,
-      },
-      teams: base.teams.map((t) =>
-        t.teamId === A ? { ...t, faabBalance: balA } : t.teamId === B ? { ...t, faabBalance: balB } : t,
-      ),
-      claims: [
-        // The team's other claims rank after the planted pair.
-        ...base.claims.map((c) => (c.teamId === A || c.teamId === B ? { ...c, claimOrder: c.claimOrder + 2 } : c)),
-        { claimId: 'k0', teamId: A, addPlayerId: 'X*', dropPlayerId: null, faabBid: k.a1, claimOrder: 1 },
-        { claimId: 'k1', teamId: A, addPlayerId: 'Y*', dropPlayerId: null, faabBid: a2, claimOrder: 2 },
-        { claimId: 'k2', teamId: B, addPlayerId: 'Y*', dropPlayerId: null, faabBid: k.b1, claimOrder: 1 },
-        { claimId: 'k3', teamId: B, addPlayerId: 'X*', dropPlayerId: null, faabBid: b2, claimOrder: 2 },
-      ],
-    } satisfies WaiverRunInput
-  })
-
-/**
- * R1176's SHAPE planted into a random ROTATING FAAB league (the rolling
- * tiebreaker) with noise around it: A ranks #1 X at bid b — tied with B's
- * #1 X at b — and #2 Y at a bigger, uncontested bid. Whichever of A / B holds
- * the better position, a priority tie and a bigger lower-ranked claim of the
- * same team meet in one run (random claims rarely line up like this).
- */
-const tieArb: fc.Arbitrary<WaiverRunInput> = fc
-  .tuple(
-    generalArb,
-    fc.record({ b: fc.integer({ min: 0, max: 20 }), r: fc.integer({ min: 0, max: 20 }), extra: fc.nat({ max: 30 }) }),
-  )
-  .map(([base, k]) => {
-    const active = base.teams.filter((t) => !t.retired).map((t) => t.teamId)
-    if (active.length < 2) return base
-    const [A, B] = active
-    const y = k.b + 1 + k.r
-    const maxRoster = Math.max(...base.teams.map((t) => t.roster.length))
-    return {
-      ...base,
-      settings: {
-        ...base.settings,
-        waiverType: 'faab',
-        faabTiebreaker: 'rolling_priority',
-        rosterSize: Math.max(base.settings.rosterSize, maxRoster + 2),
-        acquisitionsPerWeek: null,
-        acquisitionsPerSeason: null,
-      },
-      teams: base.teams.map((t) =>
-        t.teamId === A ? { ...t, faabBalance: k.b + y + k.extra } : t.teamId === B ? { ...t, faabBalance: k.b + k.extra } : t,
-      ),
-      claims: [
-        ...base.claims.map((c) => (c.teamId === A || c.teamId === B ? { ...c, claimOrder: c.claimOrder + 2 } : c)),
-        { claimId: 'k4', teamId: A, addPlayerId: 'X*', dropPlayerId: null, faabBid: k.b, claimOrder: 1 },
-        { claimId: 'k5', teamId: A, addPlayerId: 'Y*', dropPlayerId: null, faabBid: y, claimOrder: 2 },
-        { claimId: 'k6', teamId: B, addPlayerId: 'X*', dropPlayerId: null, faabBid: k.b, claimOrder: 1 },
-      ],
-    } satisfies WaiverRunInput
-  })
-
-const inputArb: fc.Arbitrary<WaiverRunInput> = fc.oneof(
-  { weight: 4, arbitrary: generalArb },
-  { weight: 1, arbitrary: cycleArb },
-  { weight: 1, arbitrary: tieArb },
-)
 
 // ── Test-side model (an independent re-statement of the checks) ─────────────
 
@@ -286,47 +88,16 @@ interface ReplayState {
 const faabMode = (inp: WaiverRunInput): boolean => inp.settings.waiverType === 'faab'
 const eff = (inp: WaiverRunInput, c: WaiverRunClaim): number => (faabMode(inp) ? c.faabBid : 0)
 
-/** The priority order at the moment decision `upTo` is made, with `c`'s
- *  team's wins on claims it ranked BELOW `c` undone: the run-start order,
- *  and in a rotating league every other earlier winner moved to the back. */
-function orderAt(
-  res: WaiverRunResult,
-  byId: Map<string, WaiverRunClaim>,
-  upTo: number,
-  c: WaiverRunClaim,
-): string[] {
+/** The priority order at the moment decision `upTo` is made (F422(a)): the
+ *  run-start order with every earlier winner moved to the back, in the order
+ *  of its wins — in EVERY waiver type. */
+function orderAt(res: WaiverRunResult, upTo: number): string[] {
   let order = [...res.priority.before]
-  if (!res.priority.rotates) return order
   for (const o of res.outcomes) {
     if (o.decision >= upTo || o.status !== 'won') continue
-    if (o.teamId === c.teamId && rankedAbove(c, byId.get(o.claimId) as WaiverRunClaim)) continue
     order = [...order.filter((id) => id !== o.teamId), o.teamId]
   }
   return order
-}
-
-/** Where `c`'s team stands FOR `c` at the moment decision `upTo` is made
- *  (lower = better; comparable across teams): its run-start index, or — in a
- *  rotating league — the run's win count at its latest earlier win on a claim
- *  it ranked ABOVE `c`, past every start index. A win it ranked below `c`
- *  does not move it for `c` (R1176). */
-function standingFor(
-  res: WaiverRunResult,
-  byId: Map<string, WaiverRunClaim>,
-  upTo: number,
-  c: WaiverRunClaim,
-): number {
-  let at = res.priority.before.indexOf(c.teamId)
-  if (!res.priority.rotates) return at
-  let n = 0
-  for (const o of res.outcomes) {
-    if (o.status !== 'won') continue
-    if (o.decision < upTo && o.teamId === c.teamId && rankedAbove(byId.get(o.claimId) as WaiverRunClaim, c)) {
-      at = res.priority.before.length + n
-    }
-    n++
-  }
-  return at
 }
 
 /** The state after every award with `decision < upTo` (the input state for 1). */
@@ -372,9 +143,13 @@ function failures(inp: WaiverRunInput, s: ReplayState, c: WaiverRunClaim): strin
   return out
 }
 
-const RESOURCE = new Set(['insufficient_faab', 'roster_full', 'drop_gone', 'cap_reached'])
-const rankedAbove = (h: WaiverRunClaim, c: WaiverRunClaim): boolean =>
-  h.claimOrder < c.claimOrder || (h.claimOrder === c.claimOrder && h.claimId < c.claimId)
+/** F422(b), restated here independently: how a team ranks its OWN claims —
+ *  in a FAAB league the bigger bid first, its `claim_order` only between
+ *  equal bids; in a priority league its `claim_order` (bids are ignored). */
+const rankedAbove = (inp: WaiverRunInput, h: WaiverRunClaim, c: WaiverRunClaim): boolean =>
+  eff(inp, h) > eff(inp, c) ||
+  (eff(inp, h) === eff(inp, c) &&
+    (h.claimOrder < c.claimOrder || (h.claimOrder === c.claimOrder && h.claimId < c.claimId)))
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0
@@ -572,12 +347,12 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
             expect(o.decision).toBeGreaterThan(w.decision)
           }
           if (o.reason === 'lost_on_priority') {
-            // R1177: the winner held the better position AT THE MOMENT HE WON
-            // — the current (rolling) order, each side as it stood for its
-            // own claim (R1176), never the run-start order.
-            const winnerAt = standingFor(res, byId, w.decision, wc)
-            expect(winnerAt).toBeGreaterThanOrEqual(0)
-            expect(winnerAt).toBeLessThan(standingFor(res, byId, w.decision, c))
+            // R1177 + F422(a): the winner held the better position AT THE
+            // MOMENT HE WON — the rolled order (every earlier winner at the
+            // back), never the run-start order.
+            const order = orderAt(res, w.decision)
+            expect(order.indexOf(wc.teamId)).toBeGreaterThanOrEqual(0)
+            expect(order.indexOf(wc.teamId)).toBeLessThan(order.indexOf(c.teamId))
           }
         }
       }),
@@ -585,23 +360,21 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
     )
   })
 
-  it("9. Q71 — a team's ranking settles its running out: a ready award never costs the team a higher-ranked claim still pending", () => {
+  it('9. F422(b): a FAAB team\'s claims are decided in descending bid order — an award never jumps a claim its team ranks higher', () => {
     fc.assert(
       fc.property(inputArb, (inp) => {
         const res = resolveWaiverRun(inp)
         const byId = new Map(inp.claims.map((c) => [c.claimId, c]))
         const out = new Map(res.outcomes.map((o) => [o.claimId, o]))
         for (const w of res.outcomes) {
-          if (w.status !== 'won' || w.deadlockBreak) continue
+          if (w.status !== 'won') continue
           const k = byId.get(w.claimId) as WaiverRunClaim
-          const pre = replay(inp, res, w.decision)
-          const post = replay(inp, res, w.decision + 1)
           for (const j of inp.claims) {
-            if (j.teamId !== k.teamId || j.addPlayerId === k.addPlayerId || !rankedAbove(j, k)) continue
-            if ((out.get(j.claimId) as WaiverClaimOutcome).decision < w.decision) continue // already decided
-            if (failures(inp, pre, j).length > 0) continue // it could not go through anyway
-            const newly = failures(inp, post, j).filter((r) => RESOURCE.has(r))
-            expect(newly).toEqual([])
+            if (j.claimId === k.claimId || j.teamId !== k.teamId || !rankedAbove(inp, j, k)) continue
+            expect(
+              (out.get(j.claimId) as WaiverClaimOutcome).decision,
+              `${w.claimId} (bid ${k.faabBid}) was awarded while ${j.claimId} (bid ${j.faabBid}), ranked above it, was undecided`,
+            ).toBeLessThan(w.decision)
           }
         }
       }),
@@ -609,17 +382,13 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
     )
   })
 
-  it('10. priority rotation: rolling moves winners to the back (by last win), non-winners keep their order; otherwise unchanged', () => {
+  it('10. priority rolls (F422(a)): the order after the run is the start order with winners moved to the back by last win, in every waiver type; it persists only under rolling', () => {
     fc.assert(
       fc.property(inputArb, (inp) => {
         const res = resolveWaiverRun(inp)
-        const { before, after, rotates } = res.priority
+        const { before, after, persists } = res.priority
         const t = inp.settings
-        expect(rotates).toBe(t.waiverType === 'rolling_priority' || (t.waiverType === 'faab' && t.faabTiebreaker === 'rolling_priority'))
-        if (!rotates) {
-          expect(after).toEqual(before)
-          return
-        }
+        expect(persists).toBe(t.waiverType === 'rolling_priority' || (t.waiverType === 'faab' && t.faabTiebreaker === 'rolling_priority'))
         const lastWin = new Map<string, number>()
         for (const o of res.outcomes) if (o.status === 'won') lastWin.set(o.teamId, o.decision)
         const expected = [
@@ -627,6 +396,7 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
           ...[...lastWin.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id),
         ]
         expect(after).toEqual(expected)
+        expect(after).toEqual(orderAt(res, res.outcomes.length + 1))
       }),
       FC,
     )
@@ -679,36 +449,27 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
     )
   })
 
-  it("13. Q71 / R1176: in a rotating league a team never loses a claim on priority BECAUSE OF a win on a lower-ranked claim of its own", () => {
+  it('13. F422(a)+(b): every award is the strongest claim that could go through at its turn (bid, then the ROLLED order, then the team\'s own ranking)', () => {
     fc.assert(
       fc.property(inputArb, (inp) => {
         const res = resolveWaiverRun(inp)
-        if (!res.priority.rotates) return
         const byId = new Map(inp.claims.map((c) => [c.claimId, c]))
-        const wonBy = new Map<string, WaiverClaimOutcome>()
-        for (const o of res.outcomes) if (o.status === 'won') wonBy.set(o.addPlayerId, o)
-        for (const j of res.outcomes) {
-          if (j.reason !== 'lost_on_priority') continue
-          const jc = byId.get(j.claimId) as WaiverRunClaim
-          const w = wonBy.get(jc.addPlayerId) as WaiverClaimOutcome
-          const wc = byId.get(w.claimId) as WaiverRunClaim
-          // Only where the WINNER'S place is plain (it had no earlier win on
-          // a claim it ranked below w), so the statement needs no rule for it.
-          const winnerPlain = !res.outcomes.some(
-            (o) =>
-              o.status === 'won' &&
-              o.decision < w.decision &&
-              o.teamId === wc.teamId &&
-              rankedAbove(wc, byId.get(o.claimId) as WaiverRunClaim),
-          )
-          if (!winnerPlain) continue
-          // Undo the loser's own lower-ranked wins: the winner must still be
-          // ahead — j would have lost on priority anyway.
-          const order = orderAt(res, byId, w.decision, jc)
-          expect(
-            order.indexOf(w.teamId) < order.indexOf(j.teamId),
-            `${j.claimId} lost on priority to ${w.claimId} only because ${j.teamId} won a claim it ranked lower`,
-          ).toBe(true)
+        const out = new Map(res.outcomes.map((o) => [o.claimId, o]))
+        for (const w of res.outcomes) {
+          if (w.status !== 'won') continue
+          const k = byId.get(w.claimId) as WaiverRunClaim
+          const state = replay(inp, res, w.decision)
+          const order = orderAt(res, w.decision)
+          for (const j of inp.claims) {
+            if (j.claimId === k.claimId) continue
+            if ((out.get(j.claimId) as WaiverClaimOutcome).decision < w.decision) continue // already decided
+            if (failures(inp, state, j).length > 0) continue // could not go through at this turn
+            const beats =
+              eff(inp, j) > eff(inp, k) ||
+              (eff(inp, j) === eff(inp, k) &&
+                (j.teamId === k.teamId ? rankedAbove(inp, j, k) : order.indexOf(j.teamId) < order.indexOf(k.teamId)))
+            expect(beats, `${j.claimId} could go through and was stronger than the award ${w.claimId}`).toBe(false)
+          }
         }
       }),
       FC,
@@ -721,29 +482,31 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
     for (const inp of fc.sample(inputArb, { seed: SEED, numRuns: NUM_RUNS })) {
       const res = resolveWaiverRun(inp)
       bump(`type:${inp.settings.waiverType}`)
-      for (const o of res.outcomes) {
-        bump(o.status === 'won' ? 'won' : `reason:${o.reason}`)
-        if (o.deadlockBreak) bump('deadlockBreak')
-      }
-      if (res.priority.rotates && res.outcomes.some((o) => o.status === 'won')) bump('rotated')
+      for (const o of res.outcomes) bump(o.status === 'won' ? 'won' : `reason:${o.reason}`)
+      if (res.priority.persists && res.outcomes.some((o) => o.status === 'won')) bump('persisted order moved')
       bump(`source:${res.priority.source}`)
       const won = res.outcomes.filter((o) => o.status === 'won')
       if (new Set(won.map((o) => o.teamId)).size < won.length) bump('team won several')
-      // Property 13's population: a rotating league where a team lost a claim
-      // on priority AND won one of its lower-ranked claims in the same run
-      // (before the fix, the win came first — R1176; now it comes after).
-      if (res.priority.rotates) {
-        const byId = new Map(inp.claims.map((c) => [c.claimId, c]))
-        const hit = res.outcomes.some(
-          (j) =>
-            j.reason === 'lost_on_priority' &&
-            won.some(
-              (k) =>
-                k.teamId === j.teamId &&
-                rankedAbove(byId.get(j.claimId) as WaiverRunClaim, byId.get(k.claimId) as WaiverRunClaim),
-            ),
-        )
-        if (hit) bump('rotating: priority loss + an own lower-ranked win')
+      const byId = new Map(inp.claims.map((c) => [c.claimId, c]))
+      const wonBy = new Map(won.map((o) => [o.addPlayerId, o]))
+      // F422(a)'s population: a tie LOST by a team that started the run
+      // AHEAD of the winner — it had burned its priority on an earlier win.
+      for (const j of res.outcomes) {
+        if (j.reason !== 'lost_on_priority') continue
+        const w = wonBy.get(j.addPlayerId) as WaiverClaimOutcome
+        if (res.priority.before.indexOf(j.teamId) < res.priority.before.indexOf(w.teamId)) {
+          bump(`F422(a): a tie lost to burned priority (${inp.settings.waiverType})`)
+        }
+      }
+      // F422(b)'s population: a FAAB team won a claim it had ORDERED below a
+      // smaller bid — the bid outranked the manager's own order.
+      if (inp.settings.waiverType === 'faab') {
+        for (const o of won) {
+          const k = byId.get(o.claimId) as WaiverRunClaim
+          if (inp.claims.some((j) => j.teamId === k.teamId && j.claimOrder < k.claimOrder && j.faabBid < k.faabBid)) {
+            bump('F422(b): a bigger bid outranked the manager order')
+          }
+        }
       }
     }
     // eslint-disable-next-line no-console
@@ -764,10 +527,12 @@ describe('resolveWaiverRun — properties (fast-check, seeded)', () => {
       'reason:roster_full',
       'reason:cap_reached',
       'reason:insufficient_faab',
-      'deadlockBreak',
-      'rotated',
+      'persisted order moved',
       'team won several',
-      'rotating: priority loss + an own lower-ranked win',
+      'F422(a): a tie lost to burned priority (faab)',
+      'F422(a): a tie lost to burned priority (rolling_priority)',
+      'F422(a): a tie lost to burned priority (reverse_standings)',
+      'F422(b): a bigger bid outranked the manager order',
       'source:rolling',
       'source:reverse_standings',
       'source:reverse_draft_order',

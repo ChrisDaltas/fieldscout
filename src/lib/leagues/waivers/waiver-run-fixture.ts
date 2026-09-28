@@ -72,11 +72,10 @@ export function input(spec: RunSpec): WaiverRunInput {
   }
 }
 
-/** One line per decision: `<n> <claim> <status>[:<reason>] $<spent>[ BREAK]`. */
+/** One line per decision: `<n> <claim> <status>[:<reason>] $<spent>`. */
 export function summary(result: WaiverRunResult): string[] {
   return result.outcomes.map(
-    (o) =>
-      `${o.decision} ${o.claimId} ${o.status}${o.reason === null ? '' : `:${o.reason}`} $${o.faabSpent}${o.deadlockBreak ? ' BREAK' : ''}`,
+    (o) => `${o.decision} ${o.claimId} ${o.status}${o.reason === null ? '' : `:${o.reason}`} $${o.faabSpent}`,
   )
 }
 

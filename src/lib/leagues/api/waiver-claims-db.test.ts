@@ -217,6 +217,15 @@ beforeAll(async () => {
   // PREMISE, measured: a FAAB league (the balance cells mean nothing otherwise).
   expect(inSeason).toStrictEqual([{ waiver_type: 'faab' }])
 
+  // 150 (L.D2.9, F407) re-cut: submit now refuses a player whose game has
+  // kicked off, evaluated through the league's calendar — a league with no
+  // league_weeks rows is refused by name. The synthetic season's weeks lie in
+  // 2099, so nothing is locked at the wall clock.
+  const { error: weeksError } = await service
+    .from('league_weeks')
+    .insert(Array.from({ length: 14 }, (_, i) => ({ league_id: leagueId, season: SYNTHETIC_SEASON, week: i + 1 })))
+  if (weeksError) throw new Error(`league_weeks insert: ${weeksError.message}`)
+
   const { error: playersError } = await service.from('players').upsert([...PLAYERS])
   if (playersError) throw new Error(`players upsert: ${playersError.message}`)
 }, 60_000)
