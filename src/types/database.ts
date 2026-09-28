@@ -4425,6 +4425,58 @@ export type Database = {
           },
         ]
       }
+      trade_votes: {
+        Row: {
+          created_at: string
+          id: string
+          team_id: string
+          trade_id: string
+          updated_at: string
+          vote: string
+          voter_id: string
+        }
+        Insert: {
+          created_at: string
+          id?: string
+          team_id: string
+          trade_id: string
+          updated_at: string
+          vote: string
+          voter_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          team_id?: string
+          trade_id?: string
+          updated_at?: string
+          vote?: string
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_votes_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_votes_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_votes_voter_id_fkey"
+            columns: ["voter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trades: {
         Row: {
           accepted_at: string | null
@@ -6268,6 +6320,45 @@ export type Database = {
         Returns: Json
       }
       trade_view_internal: { Args: { p_trade_id: string }; Returns: Json }
+      trade_vote: {
+        Args: {
+          p_action_id?: string
+          p_league_id: string
+          p_trade_id: string
+          p_vote: string
+        }
+        Returns: Json
+      }
+      trade_vote_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_league_id: string
+          p_trade_id: string
+          p_vote: string
+        }
+        Returns: Json
+      }
+      trade_vote_tally: { Args: { p_trade_id: string }; Returns: Json }
+      trade_vote_tally_internal: {
+        Args: {
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_trade: Database["public"]["Tables"]["trades"]["Row"]
+        }
+        Returns: Json
+      }
+      trade_vote_veto_internal: {
+        Args: {
+          p_at: string
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_trade_id: string
+        }
+        Returns: Json
+      }
+      trade_vote_view_internal: {
+        Args: { p_at: string; p_trade_id: string }
+        Returns: Json
+      }
       transaction_broadcast_payload: {
         Args: { t: Database["public"]["Tables"]["transactions"]["Row"] }
         Returns: Json
