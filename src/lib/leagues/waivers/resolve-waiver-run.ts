@@ -9,10 +9,11 @@
  * recommendations"):
  *
  *   Q71 — the highest bid on a player always wins him; a team's own claim
- *         ranking only settles clashes between ITS OWN claims (Chris's words:
- *         "two claims dropping the same player, or not enough budget for
- *         both"; two claims on the same player and roster room /
- *         acquisition caps are the D389 reading of the same rule); a team
+ *         ranking only settles clashes between ITS OWN claims (the Q71
+ *         text Chris approved: "two claims dropping the same player, or not
+ *         enough budget for both"; two claims on the same player, roster
+ *         room / acquisition caps and priority (R1176) are the D389 reading
+ *         of the same rule); a team
  *         can win several players in one run, each claim valid when its
  *         turn comes.
  *   Q72 — before week 1 is final, waiver priority is REVERSE DRAFT ORDER
@@ -57,8 +58,9 @@
  * team is at the back, as of its latest such win. A win on a claim the team
  * ranked BELOW does not move it for this claim — as far as priority goes, a
  * team's claims are settled in its own ranking order, so a lower-ranked win
- * never costs it a higher-ranked claim on the tiebreak (R1176; Q71's "its
- * higher-ranked claim goes first", orchestrator ruling 2026-09-28). Between a team's OWN claims on one player (same
+ * never costs it a higher-ranked claim on the tiebreak (R1176 — the
+ * orchestrator's ruling 2026-09-28 applying Q71's "a team's own ranking only
+ * settles its own collisions"; PROGRESS D389(7)). Between a team's OWN claims on one player (same
  * add, different drops) the team's ranking decides (Q71): the team wins
  * through its highest-ranked claim on him that still beats the strongest
  * other team's claim. Turn order across players uses the full key
@@ -510,8 +512,8 @@ export function resolveWaiverRun(input: WaiverRunInput): WaiverRunResult {
    *  to the back). A win on a claim it ranked BELOW this one does not count:
    *  as far as priority goes, a team's claims are settled in its own ranking
    *  order, so a lower-ranked win never costs it a higher-ranked claim on
-   *  the tiebreak (R1176 — Q71's "its higher-ranked claim goes first",
-   *  orchestrator ruling 2026-09-28). Retired teams hold no priority. */
+   *  the tiebreak (R1176 — orchestrator ruling 2026-09-28 applying Q71;
+   *  PROGRESS D389(7)). Retired teams hold no priority. */
   const priorityKey = (c: WaiverRunClaim): number => {
     let key = startPos.get(c.teamId) ?? Number.MAX_SAFE_INTEGER
     if (!rotates) return key

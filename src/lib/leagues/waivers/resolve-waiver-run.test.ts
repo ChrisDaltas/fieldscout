@@ -238,8 +238,8 @@ describe('E7 / Q72 — equal bids go to waiver priority', () => {
   it("R1176 / Q71 — a team's lower-ranked win never costs it a higher-ranked claim on the tiebreak: A gets P on priority AND Q", () => {
     // A holds priority 1. A: #1 P $10 (tied with B), #2 Q $30 (uncontested).
     // Q's $30 is the bigger bid, so it is decided first — but A's win on its
-    // #2 does not send it behind B for its #1 (Q71: "its higher-ranked claim
-    // goes first"): P is judged with A still at priority 1.
+    // #2 does not send it behind B for its #1 (the R1176 ruling applying Q71,
+    // PROGRESS D389(7)): P is judged with A still at priority 1.
     const r = resolveWaiverRun(
       input({
         settings: { faabTiebreaker: 'rolling_priority' },

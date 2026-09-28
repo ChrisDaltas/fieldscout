@@ -47,7 +47,7 @@
  *  13. Q71 / R1176 — in a rotating league a team never loses a claim on
  *      priority BECAUSE OF a win on one of its own LOWER-ranked claims
  *      earlier in the same run: with those rotations undone, the winner was
- *      still ahead (its higher-ranked claim goes first).
+ *      still ahead (D389(7)).
  *
  * SEED: fixed literal (replayable); FC_SEED=<n> / FC_RUNS=<n> override.
  * A counterexample is a FINDING, never a generator constraint to massage.
