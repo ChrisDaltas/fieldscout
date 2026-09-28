@@ -6110,6 +6110,33 @@ export type Database = {
         }
         Returns: Json
       }
+      trade_close_internal: {
+        Args: {
+          p_at: string
+          p_reason: string
+          p_status: string
+          p_title: string
+          p_trade_id: string
+          p_type: string
+        }
+        Returns: Json
+      }
+      trade_deadline_internal: {
+        Args: { p_league: Database["public"]["Tables"]["leagues"]["Row"] }
+        Returns: Json
+      }
+      trade_execute_internal: {
+        Args: { p_at: string; p_trade_id: string; p_via: string }
+        Returns: Json
+      }
+      trade_lock_internal: {
+        Args: {
+          p_at: string
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_trade_id: string
+        }
+        Returns: Json
+      }
       trade_notify_team_internal: {
         Args: {
           p_body: string
@@ -6208,6 +6235,10 @@ export type Database = {
         Returns: Json
       }
       trade_summary_internal: { Args: { p_trade_id: string }; Returns: string }
+      trade_tick: {
+        Args: { p_league_id?: string; p_now?: string }
+        Returns: Json
+      }
       trade_view_internal: { Args: { p_trade_id: string }; Returns: Json }
       transaction_broadcast_payload: {
         Args: { t: Database["public"]["Tables"]["transactions"]["Row"] }
@@ -6563,6 +6594,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 
