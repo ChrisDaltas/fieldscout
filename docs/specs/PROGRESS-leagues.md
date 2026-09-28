@@ -360,7 +360,7 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 
 **Q71 — CAN A TEAM WIN MORE THAN ONE PLAYER IN ONE WAIVER RUN, AND DOES "BIGGEST BID WINS" BEAT A MANAGER'S OWN RANKING? — blocks L.D2.8, L.D2.9.**
 - Example: Team A bids $5 on Player X (its only claim). Team B ranks #1 Player Y ($3), #2 Player X ($50). **(1)** The highest bid on a player always wins him — B gets X for $50; a team's ranking only settles its own collisions (two claims dropping the same player, or not enough budget for both). **(2)** Strict ranking — B's #2 isn't looked at until B's #1 is settled, which can hand X to A for $5.
-- **Recommendation: (1)**, and a team can win several players in one run as long as each claim is still valid when its turn comes. ✅ RULED 2026-09-27 as recommended — Chris: *"approve M5, all recommendations"*. Folded into the spec v2.16.58 (L.D2.4). (In the spec since v2.16.57 — C77, L.D2.8; not re-folded. F422 (a)/(b)/(c) stay OPEN.)
+- **Recommendation: (1)**, and a team can win several players in one run as long as each claim is still valid when its turn comes. ✅ RULED 2026-09-27 as recommended — Chris: *"approve M5, all recommendations"*. Folded into the spec v2.16.58 (L.D2.4). (In the spec since v2.16.57 — C77, L.D2.8; not re-folded — folded in v2.16.57 (C77); v2.16.58 only aligns §14's row (R1185). F422 (a)/(b)/(c) stay OPEN.)
 
 **Q72 — BEFORE THERE ARE STANDINGS, WHO GETS FIRST WAIVER PRIORITY? — blocks L.D2.8, L.D2.9.**
 - Example: week 1's run, two teams bid the same $12 on the same player (or the league uses rolling priority).
@@ -6094,6 +6094,8 @@ Fresh `npx supabase db reset` over **001–130** (from the main repo via `--work
 
 **L.D2.8 re-review (PR #330, fix round `f5ca2c8..662933a`, 2026-09-28) — FIX-THEN-MERGE, nothing must land (the resolver is wired to nothing yet); taken at merge.** Verified: the R1176 key matches the ruling in every scratch case (three claims; mutual ties; a higher-ranked invalid claim; $0 uncontested); plain rolling-priority and non-rotating leagues byte-identical to the old resolver over 300,000 random runs; FAIL_CHECK_ORDER is the single source (property 12 non-vacuous); mutation probes red; property 13 non-vacuous (2,200+ planted cases at 20,000 runs).
 - **R1181 · should-fix · one team can win two tiebreaks in one rotating run depending on bid size.** Recorded as **F422(c)** (orchestrator or Chris rules before L.D2.9 merges); the resolver header's "settled in its own ranking order" corrected. The pin of the built behaviour rides the ruling.
+
+**L.D2.4 one-pass fidelity review (PR #331, 2026-09-28) — FIX-THEN-MERGE, all mechanical, taken at merge.** Q70–Q79 each folded faithfully; F422 (a)/(b)/(c) left open; C73/C74/C77 not double-folded; D390–D405 spot-checked; F430 correct. R1182 (§13.1 stale key / `bench_lock` sentence — annotated), R1183 (preset 1 end point restored), R1184 (week-end anchor clarified), R1185 (Q71 "folded vs re-folded" wording) taken; R1186 (the D390–D405 header sits inside the D-list) not taken — cosmetic.
 
 ## 7. Session log
 
