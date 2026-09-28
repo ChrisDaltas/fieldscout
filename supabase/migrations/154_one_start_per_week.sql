@@ -145,7 +145,7 @@
 --       (DECLARE; the new (4b); step (6)'s fold; step (7)'s record; step
 --       (10)'s gate; step (12)'s slot_key loop)
 --
--- DEPLOY SAFETY. SQL only — no app file changes. Merging deploys nothing the
+-- DEPLOY SAFETY. SQL plus one sim-harness constant (AUTOPILOT_UNFILLABLE_REASONS — read only by sim files, D413(7); R1218). Service-role direct writers (sim, dev scripts) take the row lock before the league lock the trigger then takes — a deadlock is possible only with the tick, only locally, and Postgres breaks it. Merging deploys nothing the
 -- app reads differently; the hosted database gets 154 at Chris's `db push`.
 -- Every RPC document keeps its keys (autopilot's skipped_locked[] elements
 -- may carry one more key, `started_by`; measured — `grep -rn skipped_locked
@@ -325,6 +325,8 @@ BEGIN
     -- Only a player ENTERING a starting slot of this row is judged: a start
     -- the row already held (same season-week) is never re-judged.
     CONTINUE WHEN TG_OP = 'UPDATE'
+      AND (SELECT t.league_id FROM public.teams t WHERE t.id = OLD.team_id)
+          = (SELECT t.league_id FROM public.teams t WHERE t.id = NEW.team_id)   -- R1217: a row moved into ANOTHER LEAGUE is judged; a same-league re-point (retire-and-succeed, F5) is not
       AND OLD.season = NEW.season AND OLD.week = NEW.week
       AND OLD.slot_map IS NOT NULL AND jsonb_typeof(OLD.slot_map) = 'object'
       AND EXISTS (SELECT 1 FROM jsonb_each_text(OLD.slot_map) o
