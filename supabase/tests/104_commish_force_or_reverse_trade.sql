@@ -35,13 +35,13 @@
 --     manager, another league's commissioner — refused with the ONE no-leak
 --     42501; C7 proves nothing was written; §J proves the ledger has NO
 --     policy for any role (RETURNING counts / the INSERT refused), taken
---     with twelve rows present so a 0 is never an empty table.
+--     with thirteen rows present so a 0 is never an empty table.
 --   * every refusal a stored literal; every roster and balance after each
 --     act one string; exclusivity asserted after every force and reverse.
 --   * boundary instants: force AFTER the game-day lock took hold (a3 kicked
 --     off Thu 00:15Z) and AFTER the trade deadline (week 8's start).
 --   * BREAK PROBES shown red in the PR, then restored (one site each; the
---     migration re-applied and 64/64 re-shown after each): (P1) the executor
+--     migration re-applied and 71/71 re-shown after each): (P1) the executor
 --     hunk removed ⇒ A5 red and the file dies at F1 (the force defers);
 --     (P2) auth widened to any member ⇒ C3 / C4 + 12 downstream; (P3) the
 --     no-op guard removed ⇒ dies at D5; (P4) approve via the force path ⇒
@@ -50,14 +50,19 @@
 --     week ⇒ G3; (P8) the replay's op / trade guard ⇒ G8; (P9) the forced
 --     offer's room check ⇒ F5; (P10) the reverse's FAAB check ⇒ H5 (the
 --     debit's own row-count backstop still refuses); (P11) the reverse's
---     roster-size check ⇒ H6.
+--     roster-size check ⇒ H6. Fix round (PR #342): (P12) the force's
+--     re-score call removed ⇒ F2b; (P13) the reverse's ⇒ G3b; (P14) the
+--     queue stamped now() ⇒ F2b / G3b; (P15) edited_by_commish not written
+--     ⇒ F2b / G3b; (P16) the reverse's league-status gate ⇒ H6b; (P17) a
+--     leg already back refused instead of skipped ⇒ the file dies at V4;
+--     (P18) the approve's lock wording reverted ⇒ F11.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(64);
+select plan(71);
 
 -- ---------------------------------------------------------------------------
 -- A. Posture
@@ -81,16 +86,17 @@ select is(
                             has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('commish_force_or_reverse_trade', 'commish_force_or_reverse_trade_internal',
-                                                 'commish_trade_reverse_internal', 'commish_trade_closed_words_internal')),
-  'commish_force_or_reverse_trade:t:search_path="":f:t commish_force_or_reverse_trade_internal:f:search_path="":f:f commish_trade_closed_words_internal:f:search_path="":f:f commish_trade_reverse_internal:f:search_path="":f:f',
-  'A3 four new functions, one overload each, search_path empty: the DEFINER door (authenticated only — the in-body gate authorizes) and three PLAIN internals nobody else can call');
+                                                 'commish_trade_reverse_internal', 'commish_trade_closed_words_internal',
+                                                 'commish_trade_rescore_internal')),
+  'commish_force_or_reverse_trade:t:search_path="":f:t commish_force_or_reverse_trade_internal:f:search_path="":f:f commish_trade_closed_words_internal:f:search_path="":f:f commish_trade_rescore_internal:f:search_path="":f:f commish_trade_reverse_internal:f:search_path="":f:f',
+  'A3 five new functions, one overload each, search_path empty: the DEFINER door (authenticated only — the in-body gate authorizes) and four PLAIN internals nobody else can call');
 select ok(
   not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where n.nspname = 'public' and p.proname in ('commish_force_or_reverse_trade', 'commish_force_or_reverse_trade_internal',
                                                   'commish_trade_reverse_internal', 'commish_trade_closed_words_internal',
-                                                  'trade_execute_internal')
+                                                  'commish_trade_rescore_internal', 'trade_execute_internal')
       and a.privilege_type = 'EXECUTE' and a.grantee = 0)
   and not has_function_privilege('authenticated', 'public.trade_execute_internal(uuid, timestamptz, text)', 'EXECUTE'),
   'A4 PUBLIC holds EXECUTE on none of them; the replaced executor is still callable by nobody but its owner');
@@ -421,6 +427,12 @@ select pg_temp.team('Q Alpha'), 2026, 7, '{"qb:0": "cx-a3"}', '[{"slot": "qb:0",
 where not exists (select 1 from team_lineups where team_id = pg_temp.team('Q Alpha') and week = 7);
 insert into team_lineups (team_id, season, week, slot_map, starters, bench)
 values (pg_temp.team('Q Delta'), 2026, 7, '{"qb:0": "cx-d1"}', '[{"slot": "qb:0", "player_id": "cx-d1"}]', '["cx-d2"]');
+-- R1228: week 7 is being scored (live) and both players have stat lines,
+-- each with its own ingestion stamp.
+update league_weeks set status = 'live' where league_id = pg_temp.lg(1) and season = 2026 and week = 7;
+insert into player_stats (player_id, season, week, stat_type, pass_yards, updated_at) values
+ ('cx-a3', 2026, 7, 'weekly', 310, '2026-10-23 03:10:00+00'),
+ ('cx-d1', 2026, 7, 'weekly', 0,   '2026-10-23 03:20:00+00');
 select pg_temp.cx('F1', 1, 1, 'T3', 'force', 'manager away', '2026-10-23 08:00:00+00', 30);
 select is(
   (select concat_ws('|', r ->> 'outcome', r ->> 'status_before', r ->> 'status', r #>> '{execution,via}', r ->> 'bypassed') from r104 where tag = 'F1')
@@ -433,9 +445,19 @@ select is(
     || ' / ' || (select payload ->> 'lineup_from_week' from transactions where type = 'trade' and payload ->> 'trade_id' = pg_temp.tid('T3')::text),
   '{} ["cx-a2", "cx-b1", "cx-d2"] / {"qb:0": "cx-d1"} ["cx-a3"] / 7',
   'F2 the week is still being played, so the move starts THIS week: Q A Three leaves Alpha''s week-7 starting slot (F440 — a deliberate move is not second-guessed) for Delta''s bench, Q D Two the other way');
+select is(
+  (select concat_ws('|', r ->> 'score_week', r ->> 'score_week_status', r ->> 'score_rescore', r ->> 'score_enqueued', r ->> 'score_reach_enqueued',
+                    r ->> 'score_reachable', r ->> 'score_stale', r ->> 'edited_by_commish') from r104 where tag = 'F1')
+    || ' / ' || (select enqueued_at::text from score_fanout where season = 2026 and week = 7 and player_id = 'cx-a3')
+    || ' / ' || (select string_agg(tm.name || '=' || tl.edited_by_commish, ',' order by tm.name) from team_lineups tl join teams tm on tm.id = tl.team_id
+                 where tl.team_id in (pg_temp.team('Q Alpha'), pg_temp.team('Q Delta')) and tl.week = 7)
+    || ' / ' || (select ca.metadata ->> 'score_enqueued' from commissioner_actions ca where ca.id = (select (r ->> 'commissioner_action_id')::uuid from r104 where tag = 'F1')),
+  '7|live|["cx-a3"]|["cx-a3"]|["cx-d1"]|true|false|true / 2026-10-23 03:10:00+00 / Q Alpha=true,Q Delta=true / ["cx-a3"]',
+  'F2b R1228 THE SCORE FOLLOWS: the played starter who left a LIVE week is queued with HIS OWN stat stamp (never now()), the reach set too, both changed week-7 rows flagged edited_by_commish (the drain recomputes the teams), the score keys on the result and the receipt');
 -- T5: Charlie c1 ↔ Bravo b2, offered before the deadline; the deadline
 -- (week 8 starts Wed 10-28 04:00Z) expires it; the commissioner forces it.
 select pg_temp.prop('T5', 1, 4, 'Q Charlie', 'Q Bravo', jsonb_build_array(pg_temp.leg('cx-c1', 'Q Charlie'), pg_temp.leg('cx-b2', 'Q Bravo')), '2026-10-27 12:00:00+00', 31);
+select pg_temp.prop('T13', 1, 6, 'Q Golf', 'Q Charlie', jsonb_build_array(pg_temp.leg('cx-g2', 'Q Golf'), pg_temp.leg('cx-c3', 'Q Charlie')), '2026-10-27 12:05:00+00', 69);
 insert into r104 select 'F3t', public.trade_tick('2026-10-28 04:00:00+00', pg_temp.lg(1));
 select is(pg_temp.st('T5'),
   'expired|the trade deadline passed — offers could be accepted until week 8 began (Wed 2026-10-28 04:00 UTC; trade_deadline_week 7, §13.3 / Q76)',
@@ -473,6 +495,21 @@ update league_rosters set team_id = pg_temp.team('Q Golf') where player_id = 'cx
 select throws_ok($$ select pg_temp.try_cx(1, 1, 'T2', 'force', '2026-10-23 09:00:00+00', 38) $$,
   'P0001', 'commish_force_or_reverse_trade: this trade cannot be forced — it was vetoed (vetoed by the commissioner — collusion); to move these players use commish_move_player',
   'F9 a vetoed trade is a decision, not a timing rule — force refuses it BY NAME');
+select throws_ok($$ select pg_temp.try_cx(1, 1, 'T13', 'approve', '2026-10-28 06:00:00+00', 39) $$,
+  'P0001', 'commish_force_or_reverse_trade: this offer expired at the trade deadline before it was accepted, so there is no review to approve — force puts it through (op force)',
+  'F10 R1230: approving an offer the DEADLINE expired points at force (the deadline is a timing rule)');
+-- T14: Delta a3 (kicked off, week 7 not over) ↔ Hotel h3, in review; the
+-- league switches to failing locked trades.
+select pg_temp.prop('T14', 1, 5, 'Q Delta', 'Q Hotel', jsonb_build_array(pg_temp.leg('cx-a3', 'Q Delta'), pg_temp.leg('cx-h3', 'Q Hotel')), '2026-10-23 09:00:00+00', 70);
+select pg_temp.accept('T14a', 1, 7, 'T14', null, '2026-10-23 09:10:00+00', 71);
+update leagues set settings = settings || '{"trade_lock_behavior": "reject"}'::jsonb where id = pg_temp.lg(1);
+select throws_ok($$ select pg_temp.try_cx(1, 1, 'T14', 'approve', '2026-10-23 10:00:00+00', 72) $$,
+  'P0001', 'commish_force_or_reverse_trade: Q A Three already kicked off this week, and this league fails a locked trade instead of waiting (trade_lock_behavior = reject) — nothing was changed; force puts it through now (op force)',
+  'F11 R1230: an approve refused for a LOCKED player (trade_lock_behavior = reject) names the player and points at force — not at room or moves');
+select is(pg_temp.st('T14') || ' / ' || pg_temp.roster('Q Delta') || ' ' || pg_temp.roster('Q Hotel'),
+  'in_review|- / cx-a3,cx-d1 cx-h1,cx-h2,cx-h3',
+  'F12 …and nothing was written: still in review, nobody moved');
+update leagues set settings = settings - 'trade_lock_behavior' where id = pg_temp.lg(1);
 
 -- ---------------------------------------------------------------------------
 -- V. A LEAGUE-VOTE TRADE IN REVIEW (D415): the commissioner decides.
@@ -501,6 +538,14 @@ select is(
   (select format('%s|%s', r ->> 'executed', r ->> 'reason') from r104 where tag = 'V3t') || ' / ' || pg_temp.roster('V Oscar'),
   '0|no_trades_in_flight / cx-o1',
   'V3 at the review deadline the tick runs NEITHER — both are settled (the vetoed one is never executed)');
+-- R1232: M One goes back to Mike by another route; reversing W1 skips him.
+update league_rosters set team_id = pg_temp.team('V Mike') where player_id = 'cx-m1' and league_id = pg_temp.lg(2);
+select pg_temp.cx('V4', 2, 1, 'W1', 'reverse', null, '2026-10-22 13:00:00+00', 47);
+select is(
+  (select concat_ws('|', r ->> 'outcome', r ->> 'status', r #>> '{reversal,players_already_back,0,player_id}', r #>> '{reversal,players,0,player_id}')
+   from r104 where tag = 'V4') || ' / ' || pg_temp.roster('V Mike') || ' ' || pg_temp.roster('V November') || ' / ' || pg_temp.exclusive(2),
+  'reversed|reversed|cx-m1|cx-n1 / cx-m1 cx-n1 / true',
+  'V4 R1232: a player the trade moved who is ALREADY BACK on the team that gave him is skipped (like a drop already back); the rest is reversed');
 
 -- ---------------------------------------------------------------------------
 -- G. REVERSE — E11's happy path: rosters, the dropped player and the FAAB
@@ -523,6 +568,10 @@ select is(
     || ' / ' || (select state from league_player_pool where league_id = pg_temp.lg(3) and player_id = 'cx-j3'),
   'complete|- / cx-i3,cx-j1 cx-i1,cx-i2,cx-j2 / $115 $85 / on_waivers',
   'G1 PREMISE: the trade went through — India holds I Three and J One, Juliet I One, I Two and J Two; $15 moved; J Three dropped to waivers');
+-- R1228: week 8 is being scored (live); I One has a stat line.
+update league_weeks set status = 'live' where league_id = pg_temp.lg(3) and season = 2026 and week = 8;
+insert into player_stats (player_id, season, week, stat_type, pass_yards, updated_at) values
+ ('cx-i1', 2026, 8, 'weekly', 250, '2026-10-28 09:05:00+00');
 select pg_temp.cx('G2', 3, 1, 'T9', 'reverse', 'made in error', '2026-10-28 10:00:00+00', 52);
 select is(
   (select concat_ws('|', r ->> 'outcome', r ->> 'status_before', r ->> 'status', r ->> 'bypassed', r ->> 'reason') from r104 where tag = 'G2')
@@ -537,6 +586,16 @@ select is(
     || ' / ' || (select r #>> '{reversal,lineup_from_week}' from r104 where tag = 'G2'),
   '{"qb:0": "cx-i1"} / {} ["cx-j1", "cx-j2", "cx-j3"] / {"qb:0": "cx-i3"} ["cx-i1", "cx-i2"] / 8',
   'G3 PAST WEEKS UNTOUCHED: Juliet''s finished week-7 start stays; from week 8 on I One / I Two leave Juliet''s lineup and return to India''s bench, J One and J Three to Juliet''s');
+select is(
+  (select concat_ws('|', r ->> 'score_week', r ->> 'score_week_status', r ->> 'score_rescore', r ->> 'score_enqueued',
+                    r ->> 'score_reachable', r ->> 'score_stale', r ->> 'edited_by_commish') from r104 where tag = 'G2')
+    || ' / ' || (select enqueued_at::text from score_fanout where season = 2026 and week = 8 and player_id = 'cx-i1')
+    || ' / ' || (select string_agg(tm.name || ':' || tl.week || '=' || coalesce(tl.edited_by_commish::text, 'null'), ',' order by tm.name, tl.week)
+                 from team_lineups tl join teams tm on tm.id = tl.team_id
+                 where tl.team_id in (pg_temp.team('R India'), pg_temp.team('R Juliet')))
+    || ' / ' || (select ca.metadata ->> 'score_enqueued' from commissioner_actions ca where ca.id = (select (r ->> 'commissioner_action_id')::uuid from r104 where tag = 'G2')),
+  '8|live|["cx-i1"]|["cx-i1"]|true|false|true / 2026-10-28 09:05:00+00 / R India:8=true,R Juliet:7=false,R Juliet:8=true / ["cx-i1"]',
+  'G3b R1228 THE REVERSE''S SCORE FOLLOWS: I One left Juliet''s LIVE week-8 lineup — queued with his own stamp, the week-8 rows flagged; the finished week-7 row is NOT flagged (past weeks untouched); the score keys on the receipt');
 select is(
   (select format('%s|%s|%s|%s', ca.action_type, ca.before, ca.after, ca.reason) from commissioner_actions ca
    where ca.id = (select (r ->> 'commissioner_action_id')::uuid from r104 where tag = 'G2'))
@@ -604,6 +663,11 @@ insert into league_rosters (league_id, team_id, player_id, slot_key) values
 select throws_ok($$ select pg_temp.try_cx(3, 1, 'T11', 'reverse', '2026-10-28 10:00:00+00', 67) $$,
   'P0001', 'commish_force_or_reverse_trade: R Kilo''s roster would hold 4 players after the reversal — 1 more than its 3 spots (§7.3.2 roster_size); free room first with commish_force_add_drop (a roster over its league''s size binds the commissioner too)',
   'H6 ROOM: taking two players back for one would put Kilo over its roster size — refused BY NAME');
+update leagues set status = 'complete' where id = pg_temp.lg(3);
+select throws_ok($$ select pg_temp.try_cx(3, 1, 'T11', 'reverse', '2026-10-28 10:00:00+00', 73) $$,
+  'P0001', 'commish_force_or_reverse_trade: league b1040000-0000-4000-8000-000000000003 is complete — rosters change only while in_season or in playoffs, so a trade can be reversed only then (§13.1)',
+  'H6b R1229: a reverse only while the league is in season or in the playoffs (rosters change only then) — refused BY NAME');
+update leagues set status = 'in_season' where id = pg_temp.lg(3);
 select is(
   pg_temp.st('T11') || ' / ' || pg_temp.roster('R Kilo') || ' ' || pg_temp.roster('R Lima') || ' / $' || pg_temp.bal('R Kilo') || ' $' || pg_temp.bal('R Lima')
     || ' / ' || pg_temp.counts(3),
@@ -621,18 +685,18 @@ select is(
    from (select action_type, count(*) n from commissioner_actions
          where league_id::text like 'b1040000-%' and metadata ->> 'verb' = 'commish_force_or_reverse_trade'
          group by action_type) x),
-  'approve_trade=3 force_trade=2 reverse_trade=1 veto_trade=2',
-  'I1 one receipt per landed op — approve D1 / D6 / V1, force F1 / F4, reverse G2, veto E1 / V2 — and none for the four no-ops or any refusal');
+  'approve_trade=3 force_trade=2 reverse_trade=2 veto_trade=2',
+  'I1 one receipt per landed op — approve D1 / D6 / V1, force F1 / F4, reverse G2 / V4, veto E1 / V2 — and none for the four no-ops or any refusal');
 select is(
   (select count(*)::int from commish_trade_actions where league_id::text like 'b1040000-%'),
-  12,
-  'I2 the ledger holds one row per ANSWERED call — the eight landings and the four no-ops (a refusal and a replay consume nothing)');
+  13,
+  'I2 the ledger holds one row per ANSWERED call — the nine landings and the four no-ops (a refusal and a replay consume nothing)');
 select ok(pg_temp.exclusive(1) and pg_temp.exclusive(2),
   'I3 exclusivity holds in L1 and L2 after every force (L3 carries H6''s free-agent fixture rows)');
 
 -- ---------------------------------------------------------------------------
 -- J. NO WRITE POLICY ON THE LEDGER FOR ANY ROLE (tasks-M* §4.2 — RETURNING
---    counts, taken with twelve rows present so a 0 is not an empty table).
+--    counts, taken with thirteen rows present so a 0 is not an empty table).
 -- ---------------------------------------------------------------------------
 create temp table j104_before as select * from commish_trade_actions where league_id::text like 'b1040000-%';
 grant select on j104_before to authenticated, anon;
@@ -657,7 +721,7 @@ select throws_ok($$ insert into commish_trade_actions (league_id, trade_id, op, 
 reset role;
 select set_config('request.jwt.claims', '', true);
 select set_eq($$ select * from commish_trade_actions where league_id::text like 'b1040000-%' $$, $$ select * from j104_before $$,
-  'J7 the ledger is BYTE-IDENTICAL after every client walk (all twelve rows)');
+  'J7 the ledger is BYTE-IDENTICAL after every client walk (all thirteen rows)');
 
 select * from finish();
 rollback;

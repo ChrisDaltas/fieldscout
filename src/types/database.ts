@@ -5326,6 +5326,15 @@ export type Database = {
         Args: { p_trade: Database["public"]["Tables"]["trades"]["Row"] }
         Returns: string
       }
+      commish_trade_rescore_internal: {
+        Args: {
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+          p_lineups: Json
+          p_teams: string[]
+          p_week: number
+        }
+        Returns: Json
+      }
       commish_trade_reverse_internal: {
         Args: {
           p_at: string

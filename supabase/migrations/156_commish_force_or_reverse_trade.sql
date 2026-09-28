@@ -42,7 +42,8 @@
 --   4. `commish_force_or_reverse_trade_internal` + the DEFINER door
 --      `commish_force_or_reverse_trade` — D336's seven parts (mapped below);
 --      `commish_trade_closed_words_internal` words a closed trade's state
---      for the refusals.
+--      for the refusals; `commish_trade_rescore_internal` (R1228) queues the
+--      re-score when a played starter leaves a week still being scored.
 --
 -- ---------------------------------------------------------------------------
 -- THE FOUR OPS, SAID ONCE (PROGRESS D416)
@@ -95,12 +96,33 @@
 --          (`commish_force_add_drop`); a party is retired (sealed, §7.2.1).
 --          PAST WEEKS' LINEUPS AND SCORES ARE UNTOUCHED (task text): lineups
 --          change from the first week that is not finished — the executor's
---          own week rule (151 / 153) — and nothing is re-scored. A player
---          who already played in a week still being played leaves that
---          week's lineup with the rest (the F440 ruling: a commissioner's
---          deliberate move is not second-guessed). Returned players land on
---          the bench as `commissioner` acquisitions. A `reversed` trade is a
---          NO-OP; anything that never went through is refused by name.
+--          own week rule (151 / 153). A player who already played in a
+--          week still being played leaves that week's lineup with the rest,
+--          and HIS POINTS LEAVE THE TEAM (the F440 ruling: a commissioner's
+--          deliberate move is not second-guessed) — the re-score is queued by
+--          §2c below (R1228). A player the trade moved who is ALREADY BACK
+--          on the team that gave him is skipped, like a drop already back
+--          (R1232). Only while the league is in season or in the playoffs
+--          (rosters change only then — 127:770-775's reasoning, R1229).
+--          Returned players land on the bench as `commissioner`
+--          acquisitions. A `reversed` trade is a NO-OP; anything that never
+--          went through is refused by name.
+--
+-- THE SCORE (R1228 — D346, 127 / 153's clause reused, §2c). A force (past
+-- the lock) or a reverse in a week still being played can take a PLAYED
+-- starter out of that week's lineup; the stored week score must follow. So
+-- after the executor (approve / force) or the reversal, every player who
+-- left a STARTING slot (not an IR spot) of the CURRENT week is re-scored
+-- when that week is `live` / `correction_window`: the week's changed lineup
+-- rows get `edited_by_commish = TRUE` (the drain's force — the worker
+-- recomputes the team), each such player is queued in `score_fanout` with
+-- his OWN MIN `player_stats.updated_at` (never now() — the worker's
+-- readiness rule would defer a now() row for ever), plus the reach set
+-- (the two teams' rosters, so the drain arrives even for a dropped
+-- starter), reachability measured, and every player not queued named. A
+-- `final` week says `score_stale` / `week_final` instead. The `score_*`
+-- keys ride the result and the receipt's metadata. The executor itself is
+-- unchanged beyond §2's one hunk.
 --
 -- D336's SEVEN PARTS, AND WHERE EACH ONE IS
 --   (1) the ledger      → §1, `commish_trade_actions` (its own namespace)
@@ -133,7 +155,7 @@
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4)
 --   Additive: one new table (RLS on, ZERO policies, TRUNCATE revoked; 045's
---   census 86 → 87), four new functions; ONE function replaced
+--   census 86 → 87), five new functions; ONE function replaced
 --   (`trade_execute_internal`, 1 hunk vs 153's file text — signature
 --   unchanged, REVOKE restated). Typegen additive (the table, the door).
 --   Grants (D18 → D23 → 133): the door REVOKEd from PUBLIC + anon, EXECUTE
@@ -663,6 +685,192 @@ $$;
 REVOKE EXECUTE ON FUNCTION commish_trade_closed_words_internal(public.trades) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- 2c. commish_trade_rescore_internal — R1228: THE SCORE FOLLOWS (D346, the
+--     clause of 127 as it stands in 153's commish_roster_override_internal,
+--     steps (14) / (14b) / (14c), reused for a trade's two teams). Given the
+--     lineup changes an approve / force (the executor's payload `lineups`)
+--     or a reverse (the reversal's `lineups`) wrote, every player REMOVED
+--     from a STARTING slot of the CURRENT week (never an IR spot — R1018's
+--     rule, the worker's `startersOf`) is re-scored while that week is
+--     `live` or `correction_window`:
+--       (a) the drain's force — the week's changed lineup rows of the two
+--           teams get `edited_by_commish = TRUE` (the worker recomputes a
+--           flagged team; F344's widened meaning — a commissioner CHANGED
+--           this row). Only the scored week's rows: a later week has no
+--           score to chase.
+--       (b) the enqueue — each such player, still rostered in this league,
+--           stamped with his OWN MIN `player_stats.updated_at` for the week,
+--           NEVER now() (the worker's readiness rule `updated_at >=
+--           enqueued_at` would defer a now() row for ever), ON CONFLICT DO
+--           NOTHING (a healthy row is never re-stamped);
+--       (c) the reach set — the two teams' remaining rosters, each with its
+--           own stamp, so the drain VISITS this league-week even when the
+--           removed starter was a trade drop the league no longer rosters
+--           (F353);
+--       (d) reachability measured against the state about to commit, and
+--           every removed starter not queued NAMED (`unrostered` /
+--           `stats_unstamped` / `no_stat_row`); unreachable or unstamped ⇒
+--           `score_stale`. A `final` week ⇒ `score_stale` / `week_final`
+--           (the write door refuses a final week, 119:566-568). `upcoming`
+--           ⇒ nothing (nothing scored yet).
+--     The caller holds the league lock. Returns the `score_*` keys.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION commish_trade_rescore_internal(
+  p_league  public.leagues,
+  p_week    INTEGER,
+  p_teams   UUID[],
+  p_lineups JSONB
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_ir_keys    TEXT[];
+  v_rescore    TEXT[];
+  v_changed    UUID[];
+  v_status     TEXT;
+  v_edited     INTEGER := 0;
+  v_reach      TEXT[] := ARRAY[]::text[];
+  v_reach_enq  JSONB := '[]'::jsonb;
+  v_enqueued   JSONB := '[]'::jsonb;
+  v_not_enq    JSONB := '[]'::jsonb;
+  v_unstamped  TEXT[] := ARRAY[]::text[];
+  v_reachable  BOOLEAN := NULL;
+  v_stale      BOOLEAN := FALSE;
+  v_stale_why  TEXT := NULL;
+BEGIN
+  SELECT COALESCE(array_agg(s ->> 'key'), ARRAY[]::text[])
+  INTO v_ir_keys
+  FROM jsonb_array_elements(COALESCE(p_league.roster_settings -> 'ir_slots', '[]'::jsonb)) s
+  WHERE COALESCE(s ->> 'key', '') <> '';
+
+  -- Who left a STARTING slot of the current week (the symmetric difference's
+  -- only side: an arriving player lands on the bench, TD10).
+  SELECT COALESCE(array_agg(DISTINCT e ->> 'player_id'), ARRAY[]::text[])
+  INTO v_rescore
+  FROM jsonb_array_elements(COALESCE(p_lineups, '[]'::jsonb)) e
+  WHERE (e ->> 'week')::int = p_week
+    AND e ->> 'change' = 'removed'
+    AND e ->> 'slot' IS NOT NULL
+    AND NOT (split_part(e ->> 'slot', ':', 1) = ANY (v_ir_keys));
+
+  SELECT lw.status INTO v_status
+  FROM public.league_weeks lw
+  WHERE lw.league_id = p_league.id AND lw.season = p_league.season AND lw.week = p_week;
+
+  IF array_length(v_rescore, 1) > 0 AND v_status IS NULL THEN
+    RAISE EXCEPTION 'commish_force_or_reverse_trade: league % has no league_weeks row for season % week % — a starter left that week''s lineup and its score cannot be placed (§12.17)',
+      p_league.id, p_league.season, p_week
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  IF array_length(v_rescore, 1) > 0 AND v_status IN ('live', 'correction_window') THEN
+    -- (a) THE DRAIN'S FORCE — the week's changed rows of the two teams.
+    SELECT COALESCE(array_agg(DISTINCT (e ->> 'team_id')::uuid), ARRAY[]::uuid[])
+    INTO v_changed
+    FROM jsonb_array_elements(p_lineups) e
+    WHERE (e ->> 'week')::int = p_week AND (e ->> 'team_id')::uuid = ANY (p_teams);
+    UPDATE public.team_lineups tl
+    SET edited_by_commish = TRUE
+    WHERE tl.team_id = ANY (v_changed) AND tl.season = p_league.season AND tl.week = p_week;
+    GET DIAGNOSTICS v_edited = ROW_COUNT;
+    IF v_edited < 1 THEN
+      RAISE EXCEPTION 'commish_force_or_reverse_trade: a starter left week % but no lineup row of teams % could be flagged for the re-score — refusing (D346)',
+        p_week, v_changed
+        USING ERRCODE = 'P0001';
+    END IF;
+
+    -- (b) THE ENQUEUE — his own MIN stamp, never now(); still rostered here.
+    INSERT INTO public.score_fanout (season, week, player_id, enqueued_at)
+    SELECT p_league.season, p_week, ps.player_id, min(ps.updated_at)
+    FROM public.player_stats ps
+    WHERE ps.season = p_league.season AND ps.week = p_week
+      AND ps.player_id = ANY (v_rescore)
+      AND ps.updated_at IS NOT NULL
+      AND EXISTS (SELECT 1 FROM public.league_rosters r
+                  WHERE r.league_id = p_league.id AND r.player_id = ps.player_id)
+    GROUP BY ps.player_id
+    ON CONFLICT (season, week, player_id) DO NOTHING;   -- never re-stamp a healthy row
+
+    -- (c) THE REACH SET — the two teams' rosters, so the drain arrives.
+    SELECT COALESCE(array_agg(DISTINCT r.player_id), ARRAY[]::text[]) INTO v_reach
+    FROM public.league_rosters r
+    WHERE r.league_id = p_league.id
+      AND r.team_id = ANY (p_teams)
+      AND NOT (r.player_id = ANY (v_rescore));
+    IF array_length(v_reach, 1) > 0 THEN
+      INSERT INTO public.score_fanout (season, week, player_id, enqueued_at)
+      SELECT p_league.season, p_week, ps.player_id, min(ps.updated_at)
+      FROM public.player_stats ps
+      WHERE ps.season = p_league.season AND ps.week = p_week
+        AND ps.player_id = ANY (v_reach)
+        AND ps.updated_at IS NOT NULL
+      GROUP BY ps.player_id
+      ON CONFLICT (season, week, player_id) DO NOTHING;
+      SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x), '[]'::jsonb) INTO v_reach_enq
+      FROM unnest(v_reach) x
+      WHERE EXISTS (SELECT 1 FROM public.score_fanout f
+                    WHERE f.season = p_league.season AND f.week = p_week AND f.player_id = x);
+    END IF;
+
+    -- (d) WHAT WAS QUEUED, WHAT WAS NOT (named, never silent), REACHABLE?
+    SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x), '[]'::jsonb) INTO v_enqueued
+    FROM unnest(v_rescore) x
+    WHERE EXISTS (SELECT 1 FROM public.score_fanout f
+                  WHERE f.season = p_league.season AND f.week = p_week AND f.player_id = x);
+    SELECT COALESCE(array_agg(DISTINCT x), ARRAY[]::text[]) INTO v_unstamped
+    FROM unnest(v_rescore) x
+    WHERE EXISTS (SELECT 1 FROM public.player_stats ps
+                  WHERE ps.season = p_league.season AND ps.week = p_week AND ps.player_id = x)
+      AND NOT EXISTS (SELECT 1 FROM public.player_stats ps
+                      WHERE ps.season = p_league.season AND ps.week = p_week AND ps.player_id = x
+                        AND ps.updated_at IS NOT NULL);
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+             'player_id', x,
+             'why', CASE
+               WHEN NOT EXISTS (SELECT 1 FROM public.league_rosters r
+                                WHERE r.league_id = p_league.id AND r.player_id = x)
+                 THEN 'unrostered'
+               WHEN x = ANY (v_unstamped) THEN 'stats_unstamped'
+               ELSE 'no_stat_row' END) ORDER BY x), '[]'::jsonb)
+    INTO v_not_enq
+    FROM unnest(v_rescore) x
+    WHERE NOT EXISTS (SELECT 1 FROM public.score_fanout f
+                      WHERE f.season = p_league.season AND f.week = p_week AND f.player_id = x);
+    SELECT EXISTS (
+      SELECT 1 FROM public.score_fanout f
+      JOIN public.league_rosters r ON r.player_id = f.player_id AND r.league_id = p_league.id
+      WHERE f.season = p_league.season AND f.week = p_week)
+    INTO v_reachable;
+    IF NOT v_reachable THEN
+      v_stale := TRUE;
+      v_stale_why := 'unreachable';
+    ELSIF array_length(v_unstamped, 1) > 0 THEN
+      v_stale := TRUE;
+      v_stale_why := 'stats_unstamped';
+    END IF;
+  ELSIF array_length(v_rescore, 1) > 0 AND v_status = 'final' THEN
+    v_stale := TRUE;
+    v_stale_why := 'week_final';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'score_week',           p_week,
+    'score_week_status',    v_status,
+    'score_rescore',        to_jsonb(v_rescore),
+    'score_enqueued',       v_enqueued,
+    'score_not_enqueued',   v_not_enq,
+    'score_reach_enqueued', v_reach_enq,
+    'score_reachable',      v_reachable,
+    'score_stale',          v_stale,
+    'score_stale_reason',   v_stale_why,
+    'edited_by_commish',    v_edited > 0,
+    'edited_lineup_rows',   v_edited);
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION commish_trade_rescore_internal(public.leagues, INTEGER, UUID[], JSONB) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- 3. commish_trade_reverse_internal — E11: undo a COMPLETE trade as a whole. The
 --    caller holds the league lock and the trade row. Every refusal is a
 --    P0001 BY NAME raised BEFORE the first write (validity binds the
@@ -696,6 +904,8 @@ DECLARE
   v_expected    JSONB := '{}'::jsonb;
   v_restore     TEXT[] := ARRAY[]::text[];     -- drops going back (team_id|player_id)
   v_back        JSONB := '[]'::jsonb;          -- drops already back on their team
+  v_skip        TEXT[] := ARRAY[]::text[];     -- R1232: legs already back on the team that gave them
+  v_legs_back   JSONB := '[]'::jsonb;
   v_moves       JSONB := '[]'::jsonb;
   v_drops_in    JSONB := '[]'::jsonb;
   v_faab        JSONB := '[]'::jsonb;
@@ -725,6 +935,14 @@ BEGIN
   SELECT t.* INTO v_recipient FROM public.teams t WHERE t.id = v_trade.recipient_team_id;
 
   -- ---- VALIDATE (no write above this line) --------------------------------
+  -- (0) R1229: rosters change only while the league is in season or in the
+  --     playoffs (127:770-775 — not a timing rule on who may act, the
+  --     absence of a subject; the executor's own gate for a trade).
+  IF p_league.status NOT IN ('in_season', 'playoffs') THEN
+    RAISE EXCEPTION '%: league % is % — rosters change only while in_season or in playoffs, so a trade can be reversed only then (§13.1)',
+      v_verb, p_league.id, p_league.status
+      USING ERRCODE = 'P0001';
+  END IF;
   -- (a) A retired franchise is SEALED (§7.2.1, spec:183) — its roster is
   --     frozen and its seat moved to its successor. A legality gate.
   IF v_proposer.status = 'retired' OR v_recipient.status = 'retired' THEN
@@ -751,7 +969,13 @@ BEGIN
         CASE WHEN v_leg.to_team_id = v_proposer.id THEN v_proposer.name ELSE v_recipient.name END
         USING ERRCODE = 'P0001';
     END IF;
-    IF v_holder.team_id <> v_leg.to_team_id THEN
+    IF v_holder.team_id = v_leg.from_team_id THEN
+      -- R1232: already back on the team that gave him (moved back since) —
+      -- nothing to restore for him, like a drop already back.
+      v_skip := v_skip || v_leg.player_id;
+      v_legs_back := v_legs_back || jsonb_build_array(jsonb_build_object(
+        'player_id', v_leg.player_id, 'name', v_leg.full_name, 'team_id', v_leg.from_team_id));
+    ELSIF v_holder.team_id <> v_leg.to_team_id THEN
       SELECT t.* INTO v_holder_team FROM public.teams t WHERE t.id = v_holder.team_id;
       RAISE EXCEPTION
         '%: % is no longer on %''s roster — he is on %''s now — so the trade cannot be reversed as a whole (player exclusivity binds the commissioner too); move players one at a time with commish_move_player instead',
@@ -826,8 +1050,10 @@ BEGIN
     SELECT count(*)::int INTO v_count FROM public.league_rosters r
     WHERE r.league_id = p_league.id AND r.team_id = v_side.team_id;
     v_after := v_count
-      - (SELECT count(*)::int FROM public.trade_items i WHERE i.trade_id = p_trade_id AND i.player_id IS NOT NULL AND i.to_team_id = v_side.team_id)
-      + (SELECT count(*)::int FROM public.trade_items i WHERE i.trade_id = p_trade_id AND i.player_id IS NOT NULL AND i.from_team_id = v_side.team_id)
+      - (SELECT count(*)::int FROM public.trade_items i WHERE i.trade_id = p_trade_id AND i.player_id IS NOT NULL AND i.to_team_id = v_side.team_id
+           AND NOT (i.player_id = ANY (v_skip)))
+      + (SELECT count(*)::int FROM public.trade_items i WHERE i.trade_id = p_trade_id AND i.player_id IS NOT NULL AND i.from_team_id = v_side.team_id
+           AND NOT (i.player_id = ANY (v_skip)))
       + (SELECT count(*)::int FROM unnest(v_restore) x WHERE split_part(x, '|', 1) = v_side.team_id::text);
     IF v_after > v_roster_size THEN
       RAISE EXCEPTION
@@ -858,7 +1084,7 @@ BEGIN
   FOR v_leg IN
     SELECT i.player_id, i.from_team_id, i.to_team_id, p.full_name
     FROM public.trade_items i JOIN public.players p ON p.id = i.player_id
-    WHERE i.trade_id = p_trade_id AND i.player_id IS NOT NULL
+    WHERE i.trade_id = p_trade_id AND i.player_id IS NOT NULL AND NOT (i.player_id = ANY (v_skip))
     ORDER BY i.player_id
   LOOP
     UPDATE public.league_rosters r
@@ -936,10 +1162,10 @@ BEGIN
   FOREACH v_team IN ARRAY ARRAY[v_trade.proposer_team_id, v_trade.recipient_team_id] LOOP
     SELECT COALESCE(array_agg(i.player_id ORDER BY i.player_id), ARRAY[]::text[]) INTO v_out
     FROM public.trade_items i
-    WHERE i.trade_id = p_trade_id AND i.to_team_id = v_team AND i.player_id IS NOT NULL;
+    WHERE i.trade_id = p_trade_id AND i.to_team_id = v_team AND i.player_id IS NOT NULL AND NOT (i.player_id = ANY (v_skip));
     SELECT COALESCE(array_agg(q.pid ORDER BY q.pid), ARRAY[]::text[]) INTO v_in
     FROM (SELECT i.player_id AS pid FROM public.trade_items i
-          WHERE i.trade_id = p_trade_id AND i.from_team_id = v_team AND i.player_id IS NOT NULL
+          WHERE i.trade_id = p_trade_id AND i.from_team_id = v_team AND i.player_id IS NOT NULL AND NOT (i.player_id = ANY (v_skip))
           UNION
           SELECT split_part(x, '|', 2) FROM unnest(v_restore) x WHERE split_part(x, '|', 1) = v_team::text) q;
     FOR v_row IN
@@ -1041,6 +1267,7 @@ BEGIN
     'players',            v_moves,
     'drops_restored',     v_drops_in,
     'drops_already_back', v_back,
+    'players_already_back', v_legs_back,
     'faab',               v_faab,
     'lineups',            v_lineups,
     'lineup_from_week',   v_from_week,
@@ -1095,6 +1322,11 @@ DECLARE
   v_n            UUID;
   v_team         UUID;
   v_txn_id       UUID := NULL;
+  v_score        JSONB := jsonb_build_object(
+                   'score_week', NULL, 'score_week_status', NULL, 'score_rescore', '[]'::jsonb,
+                   'score_enqueued', '[]'::jsonb, 'score_not_enqueued', '[]'::jsonb, 'score_reach_enqueued', '[]'::jsonb,
+                   'score_reachable', NULL, 'score_stale', FALSE, 'score_stale_reason', NULL,
+                   'edited_by_commish', FALSE, 'edited_lineup_rows', 0);   -- R1228: nothing moved ⇒ nothing to re-score
   v_cnt          INTEGER;
   v_count        INTEGER;
   v_roster_size  INTEGER;
@@ -1181,7 +1413,14 @@ BEGIN
       -- F436: THE EXECUTOR decides — it re-validates, waits for the
       -- game-day lock (Q75) and records the trade. This verb moves nothing.
       v_exec := public.trade_execute_internal(p_trade_id, p_at, 'commissioner_approve');
-      IF v_exec ->> 'outcome' = 'invalid' THEN
+      IF v_exec ->> 'outcome' = 'invalid' AND v_exec ? 'lock' THEN
+        -- R1230: a TIMING cause (trade_lock_behavior = reject and a player
+        -- has kicked off) — the tool that stands outside it is force.
+        RAISE EXCEPTION
+          'commish_force_or_reverse_trade: % already kicked off this week, and this league fails a locked trade instead of waiting (trade_lock_behavior = reject) — nothing was changed; force puts it through now (op force)',
+          (SELECT string_agg(e ->> 'name', ', ' ORDER BY e ->> 'name') FROM jsonb_array_elements(v_exec #> '{lock,locked_players}') e)
+          USING ERRCODE = 'P0001';
+      ELSIF v_exec ->> 'outcome' = 'invalid' THEN
         RAISE EXCEPTION
           'commish_force_or_reverse_trade: the trade cannot go through as agreed — % — nothing was changed; a trade must leave both rosters legal, which binds the commissioner too (standing rule (i)): make room with commish_force_add_drop or move players with commish_move_player',
           regexp_replace(COALESCE(v_exec ->> 'status_reason', 'no reason recorded'), '^the trade could not go through: ', '')
@@ -1205,6 +1444,11 @@ BEGIN
     ELSIF v_trade.status = 'proposed' THEN
       RAISE EXCEPTION
         'commish_force_or_reverse_trade: this trade has not been accepted yet, so there is no review to approve — the receiving team accepts it (the commissioner can accept for it with trade_respond), or force puts it through as it stands'
+        USING ERRCODE = 'P0001';
+    ELSIF v_trade.status = 'expired' THEN
+      -- R1230: the deadline closed it — a timing rule; force stands outside it.
+      RAISE EXCEPTION
+        'commish_force_or_reverse_trade: this offer expired at the trade deadline before it was accepted, so there is no review to approve — force puts it through (op force)'
         USING ERRCODE = 'P0001';
     ELSE
       RAISE EXCEPTION
@@ -1345,6 +1589,21 @@ BEGIN
 
   SELECT t.* INTO v_trade FROM public.trades t WHERE t.id = p_trade_id;
 
+  -- (7) R1228 — THE SCORE FOLLOWS (D346, §2c): when the trade's players
+  --     moved (an approve / force that went through, or a reverse), every
+  --     player who left a STARTING slot of the current week is re-scored
+  --     while that week is being scored — so a played starter's points leave
+  --     with him (F440). A deferred approve moved nothing.
+  IF v_exec ->> 'outcome' = 'complete' THEN
+    v_score := public.commish_trade_rescore_internal(
+      v_league, (v_exec #>> '{payload,week}')::int,
+      ARRAY[v_before.proposer_team_id, v_before.recipient_team_id], v_exec #> '{payload,lineups}');
+  ELSIF v_rev IS NOT NULL THEN
+    v_score := public.commish_trade_rescore_internal(
+      v_league, (v_rev ->> 'week')::int,
+      ARRAY[v_before.proposer_team_id, v_before.recipient_team_id], v_rev -> 'lineups');
+  END IF;
+
   IF NOT v_no_changes THEN
     v_action_type := p_op || '_trade';     -- approve_trade | veto_trade | force_trade | reverse_trade (§12.12)
     -- (8) D336 part 2 — EXACTLY ONE audit row, AFTER the state write.
@@ -1368,7 +1627,7 @@ BEGIN
         'transaction_id',       v_exec ->> 'transaction_id',
         'reversal',             v_rev,
         'affected_team_ids',    jsonb_build_array(v_before.proposer_team_id, v_before.recipient_team_id),
-        'bypassed',             v_bypassed),
+        'bypassed',             v_bypassed) || v_score,
       NULL);
     IF v_audit_id IS NULL THEN
       RAISE EXCEPTION 'commish_force_or_reverse_trade: the audit row was not written — refusing to let the override stand without its receipt (§10.3)'
@@ -1404,7 +1663,7 @@ BEGIN
     --     of his own act.
     v_act_text := CASE v_outcome
       WHEN 'approved'          THEN 'approved a trade'
-      WHEN 'approved_deferred' THEN 'approved a trade (it goes through right after this week''s last game ends — E35)'
+      WHEN 'approved_deferred' THEN 'approved a trade (it goes through right after this week''s last game ends)'
       WHEN 'vetoed'            THEN 'vetoed a trade'
       WHEN 'forced'            THEN 'forced a trade through'
       WHEN 'reversed'          THEN 'reversed a trade — every player and any FAAB are back with the team that had them before it'
@@ -1464,7 +1723,7 @@ BEGIN
     'reason',                 v_reason,
     'system_post',            v_message,               -- NULL on a no-op
     'notified_user_ids',      v_notified,
-    'evaluated_at',           p_at);
+    'evaluated_at',           p_at) || v_score;
 
   -- The idempotency ledger row is written for a NO-OP TOO (123:1259-1266).
   INSERT INTO public.commish_trade_actions (league_id, trade_id, op, action_id, actor_id, result)
