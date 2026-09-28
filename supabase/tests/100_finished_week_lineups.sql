@@ -31,13 +31,29 @@
 -- own transaction, so the ROLLBACK ends it) ⇒ add/drop: A3 B6 B7 B8 red;
 -- the commissioner: C3 C4 C5 C6 C8 C9 C10 red; the waiver run: A3 D6 D8 E3
 -- E9 red; every other cell green each time; 42/42 with 152 as written.
+--
+-- FIX ROUND (PR #337's review — R1206 / R1207; 152 edited in place):
+--   §D9 (R1207) the PRODUCTION shape of a mid-week run — the current week's
+--       end NULL (week 8 on Wednesday): the run clears that week's slot.
+--   §G  (R1206) a PLAYED starter who left the roster after the week's last
+--       game stays in that week's lineup while it is still current:
+--       set_lineup refuses to replace / move him by name (the reviewer's
+--       exact probe is G3) and carries him through an editor-shaped submit;
+--       autopilot never reads his slot as OPEN; a NOT-played (bye) dropped
+--       player's slot still opens (G6–G8, unchanged); 151's trade path (G9–
+--       G10). G0b/G0c pin the two bodies (D137 in the database).
+--   BREAK PROBES (the PR body), each injected inside this transaction:
+--   131's set_lineup_internal byte for byte ⇒ G3 G4 G5 G9 G10 red (G0c
+--   too — G0b stays green: reversing 152's hunks over 131's text is a no-op); 142's lineup_autopilot_internal ⇒ G2 red (G0c too); the waiver
+--   run's CASE rewritten to `COALESCE(v_week_end, '-infinity') <= p_at` ⇒
+--   A3 D9 red. 56/56 with 152 as written.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(42);
+select plan(56);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -155,7 +171,9 @@ from (values
  ('fw-t1', 'FW T One (Thu)', 'FA'), ('fw-t2', 'FW T Two (bye)', 'FC'), ('fw-u1', 'FW U One (bye)', 'FC'), ('fw-u2', 'FW U Two (bye)', 'FC'),
  ('fw-y1', 'FW Y One (bye)', 'FC'),
  ('fw-v1', 'FW V One (Thu)', 'FA'), ('fw-v2', 'FW V Two (bye)', 'FC'), ('fw-w1', 'FW W One (bye)', 'FC'), ('fw-w2', 'FW W Two (bye)', 'FC'),
- ('fw-z1', 'FW Z One (bye)', 'FC')
+ ('fw-z1', 'FW Z One (bye)', 'FC'), ('fw-x3', 'FW X Three (bye)', 'FC'),
+ ('fw-h1', 'FW H One (Thu)', 'FA'), ('fw-h2', 'FW H Two (Sun)', 'FB'), ('fw-h3', 'FW H Three (bye)', 'FC'),
+ ('fw-j1', 'FW J One (Thu)', 'FA'), ('fw-j2', 'FW J Two (bye)', 'FC'), ('fw-j3', 'FW J Three (bye)', 'FC')
 ) as p(id, nm, nfl);
 
 insert into league_rosters (league_id, team_id, player_id, slot_key)
@@ -400,6 +418,22 @@ select is(
   (select x.payload #>> '{drop,lineups}' from transactions x where x.league_id = pg_temp.lg(3) and x.type = 'waiver_claim' and x.payload ->> 'add_player_id' = 'fw-x2'),
   '[{"slot": "qb:0", "week": 8}]',
   'D8 the claim''s transactions row reports only week 8''s slot — the league-visible record says what changed');
+-- D9 (R1207): THE PRODUCTION SHAPE of every mid-week run — the current week's
+-- last_game_ends_at is NULL (ingestion records it only once every game of the
+-- week is final). Wednesday 10:00Z: week 8 is current (it started 04:00Z) and
+-- its end is not recorded; FW Golf's claim drops its week-8 starter.
+insert into waiver_claims (id, league_id, team_id, add_player_id, drop_player_id, faab_bid, claim_order, action_id, created_by) values
+ ('d4370000-0000-4000-8000-000000000005', pg_temp.lg(3), pg_temp.team('FW Golf'), 'fw-x3', 'fw-g1', 1, 1, pg_temp.act(23), '94370000-0000-4000-8000-000000000002');
+insert into r100 select 'D9', public.process_waivers_internal(pg_temp.lg(3), '2026-10-28 10:00:00+00');
+select is(
+  format('%s|%s|%s || %s || %s',
+         (select coalesce(last_game_ends_at::text, 'NULL') from nfl_weeks where season = 2026 and week = 8),
+         public.lineup_current_week_internal(pg_temp.lg(3), '2026-10-28 10:00:00+00'),
+         (select format('%s:%s', c.status, coalesce(c.result_reason, '-')) from waiver_claims c where c.id = 'd4370000-0000-4000-8000-000000000005'),
+         pg_temp.lu('FW Golf', 8),
+         (select x.payload #>> '{drop,lineups}' from transactions x where x.league_id = pg_temp.lg(3) and x.type = 'waiver_claim' and x.payload ->> 'add_player_id' = 'fw-x3')),
+  'NULL|8|won:- || {} | -,- | ["fw-x3"] || [{"slot": "qb:0", "week": 8}]',
+  'D9 R1207 an UNRECORDED end (NULL) is "not over": the Wednesday run clears the CURRENT week''s slot on the old team and FW X Three lands on that week''s bench (a COALESCE-to-past rewrite of the CASE reds here)');
 
 -- ---------------------------------------------------------------------------
 -- E. F439 — a waiver claim's drop against a trade naming that player
@@ -471,6 +505,138 @@ select is(
      and exists (select 1 from jsonb_each_text(tl.slot_map) e where e.value in ('fw-t1', 'fw-v1'))),
   2,
   'E9 across both leagues each contested player starts in exactly ONE week-7 lineup — his old team''s');
+
+-- ---------------------------------------------------------------------------
+-- G. R1206 — a PLAYED starter who has left the roster stays in the finished
+--    week's lineup while that week is still current: set_lineup (4b) and
+--    autopilot (152 §§4–5). LS: three QB slots, week 7 LIVE (the hourly
+--    advance has not flipped it), every instant inside the gap.
+-- ---------------------------------------------------------------------------
+select is(
+  (select string_agg(format('%s:%s:%s:%s:%s', p.proname, p.prosecdef, array_to_string(p.proconfig, ','),
+                            has_function_privilege('anon', p.oid, 'EXECUTE'),
+                            has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'lineup_autopilot_internal')),
+  'lineup_autopilot_internal:f:search_path="":f:f set_lineup_internal:f:search_path="":f:f',
+  'G0 the two internals 152 §§4–5 replace: one overload each, PLAIN, search_path empty, closed to anon and authenticated');
+select is(
+  (select md5(replace(replace(replace(replace(replace(p.prosrc,
+  E'  v_msg         TEXT;\n  -- 152 / R1206: stored starters who PLAYED and have left this roster since\n  -- (player_id → {kickoff_at, datum_arm, on_bye}) — fixed for the week.\n  v_gone_kick   JSONB := \'{}\'::jsonb;\nBEGIN\n',
+  E'  v_msg         TEXT;\nBEGIN\n'),
+  E'  v_stored := COALESCE(v_row.slot_map, \'{}\'::jsonb);\n\n  -- (4b) 152 / R1206 (Q32\'s amendment, verbatim: "if they are in the lineup\n  --      they are stuck in the lineup"; D411): A PLAYED STARTER STAYS EVEN\n  --      AFTER HE LEAVES THE ROSTER. Once a week\'s last game has ended the\n  --      lock releases (E32 / 115) and a starter who played can be dropped,\n  --      claimed away or traded, while the week is still current (live)\n  --      until the next week starts; 152 keeps his finished-week start (the\n  --      week is scored and re-scored from this slot_map). A stored STARTING\n  --      slot whose player is not on this roster and whose OWN game for\n  --      p_week has kicked off is therefore FIXED: carried through unchanged\n  --      (the editor never holds an unrostered player — placementFromStored\n  --      — so an omitted key is carried, not read as "empty it"), and a\n  --      submit that puts anyone else there, or moves him, is refused by\n  --      name. He joins v_by_pid (never v_roster: no bench, no roster write)\n  --      so steps 7–10 treat him as the locked starter he is. A stored\n  --      unrostered player whose game has NOT kicked off (a bye) did not\n  --      play: his slot opens, as before.\n  FOR v_key, v_val IN SELECT * FROM jsonb_each(v_stored) LOOP\n    v_pid := v_val #>> \'{}\';\n    CONTINUE WHEN v_by_pid ? v_pid;\n    CONTINUE WHEN NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_slots) s WHERE s ->> \'key\' = v_key);\n    SELECT jsonb_build_object(\n             \'player_id\',          p.id,\n             \'name\',               p.full_name,\n             \'position\',           CASE WHEN p.position = \'DEF\' THEN \'DST\' ELSE p.position END,\n             \'designation\',        public.lineup_designation_internal(p.status),\n             \'nfl_team\',           p.team,\n             \'ir_placed_week\',     NULL,\n             \'ir_lock_until_week\', NULL,\n             \'slot_key\',           NULL,\n             \'off_roster\',         TRUE)\n    INTO v_e\n    FROM public.players p WHERE p.id = v_pid;\n    CONTINUE WHEN v_e IS NULL;\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot opens\n    IF ((p_slot_map ? v_key) AND (p_slot_map ->> v_key) IS DISTINCT FROM v_pid)\n       OR EXISTS (SELECT 1 FROM jsonb_each(p_slot_map) x WHERE x.key <> v_key AND (x.value #>> \'{}\') = v_pid) THEN\n      RAISE EXCEPTION\n        \'set_lineup: % already played this week — his start stays (slot "%": his game kicked off at % (%); he has left %\'\'s roster since, and a played starter is stuck in the lineup for the week — §11.2, Q32; the week is scored from this lineup, §7.3.3)\',\n        v_e ->> \'name\', v_key, v_k.kickoff_at, v_k.datum_arm, v_team.name\n        USING ERRCODE = \'P0001\';\n    END IF;\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n    v_gone_kick := v_gone_kick || jsonb_build_object(v_pid, jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n    p_slot_map := p_slot_map || jsonb_build_object(v_key, v_pid);   -- carried\n  END LOOP;\n\n  -- (5) VALIDATE THE SUBMITTED MAP',
+  E'  v_stored := COALESCE(v_row.slot_map, \'{}\'::jsonb);\n\n  -- (5) VALIDATE THE SUBMITTED MAP'),
+  E'      v_kick_cur := v_kick_cur || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n        \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n    END IF;\n  END LOOP;\n  v_kick := v_kick || v_gone_kick;   -- 152 / R1206: (4b)\'s played, since-unrostered starters\n',
+  E'      v_kick_cur := v_kick_cur || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n        \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n    END IF;\n  END LOOP;\n'),
+  E'      CONTINUE WHEN NOT (v_by_pid ? v_pid);                       -- off the roster and NOT played (a played one is in v_by_pid since (4b) — 152 / R1206)\n',
+  E'      CONTINUE WHEN NOT (v_by_pid ? v_pid);                       -- dropped since (113) — nothing to lock\n'),
+  E'      FOR v_key, v_val IN SELECT * FROM jsonb_each(v_fit -> \'assignment\') LOOP\n        CONTINUE WHEN v_gone_kick ? (v_val #>> \'{}\');   -- 152 / R1206: off this roster — no roster row of his to write\n        UPDATE public.league_rosters r SET slot_key = v_key\n        WHERE r.league_id = p_league_id AND r.team_id = p_team_id AND r.player_id = (v_val #>> \'{}\');\n        GET DIAGNOSTICS v_cnt = ROW_COUNT;\n        v_expected := v_expected + v_cnt;\n      END LOOP;\n      IF v_expected <> COALESCE(array_length(v_started, 1), 0) - (SELECT count(*)::int FROM jsonb_object_keys(v_gone_kick)) THEN\n        RAISE EXCEPTION \'set_lineup: wrote slot_key for % starters, expected %\', v_expected,\n          COALESCE(array_length(v_started, 1), 0) - (SELECT count(*)::int FROM jsonb_object_keys(v_gone_kick))\n          USING ERRCODE = \'P0001\';\n      END IF;\n',
+  E'      FOR v_key, v_val IN SELECT * FROM jsonb_each(v_fit -> \'assignment\') LOOP\n        UPDATE public.league_rosters r SET slot_key = v_key\n        WHERE r.league_id = p_league_id AND r.team_id = p_team_id AND r.player_id = (v_val #>> \'{}\');\n        GET DIAGNOSTICS v_cnt = ROW_COUNT;\n        v_expected := v_expected + v_cnt;\n      END LOOP;\n      IF v_expected <> COALESCE(array_length(v_started, 1), 0) THEN\n        RAISE EXCEPTION \'set_lineup: wrote slot_key for % starters, expected %\', v_expected, COALESCE(array_length(v_started, 1), 0)\n          USING ERRCODE = \'P0001\';\n      END IF;\n')) from pg_proc p where p.oid = 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)'::regprocedure),
+  'ca81a2a42dfdbd2003cea6853d3e11f7',
+  'G0b D137: set_lineup_internal is 131''s FILE TEXT beneath 152''s FIVE hunks — each reversed, the prosrc md5 is 131''s (a stored literal)');
+select is(
+  (select format('%s|%s', md5(s.prosrc), md5(a.prosrc))
+   from pg_proc s, pg_proc a
+   where s.oid = 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)'::regprocedure
+     and a.oid = 'public.lineup_autopilot_internal(uuid,uuid,integer,integer,timestamptz)'::regprocedure),
+  '8a2601f9a904f7fd6c00c8d4f7758f15|cb96ab439aa9dcb6d218d7da79125fe6',
+  'G0c the live prosrc md5 of both (152 §§4–5 as written — stored literals); pgTAP 090 A4/A5 and 087 A8/A8b prove 142''s text beneath the autopilot''s two hunks');
+insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
+                     scoring_system_id, scoring_rules_snapshot, lineup_lock, waiver_type, faab_budget, trade_review,
+                     settings, roster_settings, waiver_next_run_at)
+select 'b4370000-0000-4000-8000-000000000006', '94370000-0000-4000-8000-000000000001', 'pgtap-fw-LS', 2026, 'in_season', 12, 14, 0, 15,
+       (select id from scoring_systems where is_template and name = 'ESPN Standard'),
+       (select rules from scoring_systems where is_template and name = 'ESPN Standard'),
+       'per_player_kickoff', 'faab', 100, 'commissioner',
+       '{"waiver_run_days": ["sun","mon","tue","wed","thu","fri","sat"], "waiver_run_time": "10:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run"}'::jsonb,
+       '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 3}], "bench": 3, "ir_slots": [], "swap_spots": 0}'::jsonb,
+       null;
+insert into teams (id, owner_id, name, league_id, status) values
+ ('c4370000-0000-4000-8000-000000000061', '94370000-0000-4000-8000-000000000002', 'FW Hotel',  pg_temp.lg(6), 'active'),
+ ('c4370000-0000-4000-8000-000000000062', '94370000-0000-4000-8000-000000000003', 'FW Juliet', pg_temp.lg(6), 'active');
+insert into league_members (league_id, user_id, team_id, role, is_placeholder, faab_balance)
+select t.league_id, t.owner_id, t.id, 'manager', false, 100 from teams t where t.league_id = pg_temp.lg(6);
+insert into league_weeks (league_id, season, week, status)
+select pg_temp.lg(6), 2026, w, case when w = 7 then 'live' when w < 7 then 'final' else 'upcoming' end from generate_series(1, 14) w;
+insert into drafts (league_id, status, completed_at, draft_order)
+select pg_temp.lg(6), 'complete', '2026-09-06 06:00:00+00', (select jsonb_agg(t.id order by t.id) from teams t where t.league_id = pg_temp.lg(6));
+insert into league_rosters (league_id, team_id, player_id, slot_key)
+select pg_temp.lg(6), pg_temp.team(r.team), r.pid, 'bn'
+from (values ('FW Hotel', 'fw-h1'), ('FW Hotel', 'fw-h2'), ('FW Hotel', 'fw-h3'),
+             ('FW Juliet', 'fw-j1'), ('FW Juliet', 'fw-j2'), ('FW Juliet', 'fw-j3')) as r(team, pid);
+select pg_temp.put(t.team, w.week, t.q0, t.q1, t.bench::jsonb)
+from (values ('FW Hotel', 'fw-h1', 'fw-h2', '["fw-h3"]'), ('FW Juliet', 'fw-j1', 'fw-j2', '["fw-j3"]')) as t(team, q0, q1, bench)
+cross join (values (7), (8)) as w(week);
+create function pg_temp.sl(p_tag text, p_lg int, p_user int, p_team text, p_week int, p_map jsonb, p_at timestamptz, p_act int)
+returns jsonb language plpgsql as $$
+begin
+  perform pg_temp.as_user(p_user);
+  insert into r100 select p_tag, public.set_lineup_internal(pg_temp.lg(p_lg), pg_temp.team(p_team), p_week, p_map, pg_temp.act(p_act), p_at, null);
+  perform set_config('request.jwt.claims', '', true);
+  return (select r from r100 where tag = p_tag);
+end $$;
+-- G1: Tuesday 03:35Z — five minutes after week 7's last game — FW Hotel drops
+-- FW H One, who PLAYED Thursday (the lock released at 03:30Z).
+select pg_temp.drop('G1', 6, 2, 'FW Hotel', 'fw-h1', '2026-10-27 03:35:00+00', 61);
+select is(
+  format('%s|%s|%s|%s || %s', public.lineup_current_week_internal(pg_temp.lg(6), '2026-10-27 03:35:00+00'),
+         (select r #>> '{drop,lineups}' from r100 where tag = 'G1'), pg_temp.roster_of('fw-h1'),
+         (select status from league_weeks where league_id = pg_temp.lg(6) and week = 7), pg_temp.lu('FW Hotel', 7)),
+  '7|[{"slot": "qb:0", "week": 8}]|(none)|live || {"qb:0": "fw-h1", "qb:1": "fw-h2"} | fw-h1,fw-h2 | ["fw-h3"]',
+  'G1 PREMISE: week 7 is still current and LIVE; the drop went through and (152) left the finished week-7 lineup starting FW H One');
+-- G2: autopilot over that row, at 03:40Z (the pass is pure; nothing written).
+insert into r100 select 'G2', public.lineup_autopilot_internal(pg_temp.lg(6), pg_temp.team('FW Hotel'), 2026, 7, '2026-10-27 03:40:00+00');
+select is(
+  (select format('%s|%s|%s', r ->> 'changed', r -> 'slot_map',
+                 (select string_agg(format('%s:%s', x ->> 'slot', x ->> 'player_id'), ',') from jsonb_array_elements(r -> 'filled') x))
+   from r100 where tag = 'G2'),
+  'true|{"qb:0": "fw-h1", "qb:1": "fw-h2", "qb:2": "fw-h3"}|qb:2:fw-h3',
+  'G2 R1206 autopilot leaves the played starter''s slot ALONE (never OPEN): FW H One stays at qb:0 and only the truly empty qb:2 is filled');
+-- G3: THE REVIEWER'S PROBE — a manager replaces the played starter at 03:40Z.
+select is(
+  pg_temp.err($$ select pg_temp.sl('G3x', 6, 2, 'FW Hotel', 7, '{"qb:0": "fw-h3", "qb:1": "fw-h2"}', '2026-10-27 03:40:00+00', 62) $$),
+  'P0001: set_lineup: FW H One (Thu) already played this week — his start stays (slot "qb:0": his game kicked off at 2026-10-23 00:15:00+00 (nfl_games); he has left FW Hotel''s roster since, and a played starter is stuck in the lineup for the week — §11.2, Q32; the week is scored from this lineup, §7.3.3)',
+  'G3 R1206 THE REVIEWER''S PROBE: putting FW H Three in the played starter''s slot is REFUSED BY NAME');
+select is(
+  format('%s || %s',
+         pg_temp.err($$ select pg_temp.sl('G4x', 6, 2, 'FW Hotel', 7, '{"qb:1": "fw-h2", "qb:2": "fw-h1"}', '2026-10-27 03:41:00+00', 63) $$),
+         pg_temp.lu('FW Hotel', 7)),
+  'P0001: set_lineup: FW H One (Thu) already played this week — his start stays (slot "qb:0": his game kicked off at 2026-10-23 00:15:00+00 (nfl_games); he has left FW Hotel''s roster since, and a played starter is stuck in the lineup for the week — §11.2, Q32; the week is scored from this lineup, §7.3.3) || {"qb:0": "fw-h1", "qb:1": "fw-h2"} | fw-h1,fw-h2 | ["fw-h3"]',
+  'G4 moving him to another slot is refused the same way, and after both refusals the week-7 row is UNCHANGED');
+-- G5: the EDITOR's submit — it never holds an unrostered player
+-- (placementFromStored), so it omits him: he is CARRIED, the rest applies.
+select pg_temp.sl('G5', 6, 2, 'FW Hotel', 7, '{"qb:1": "fw-h2", "qb:2": "fw-h3"}', '2026-10-27 03:45:00+00', 64);
+select is(
+  format('%s|%s || %s || %s', (select r ->> 'no_changes' from r100 where tag = 'G5'), (select r -> 'slot_map' from r100 where tag = 'G5'),
+         pg_temp.lu('FW Hotel', 7),
+         (select string_agg(format('%s:%s', r.player_id, r.slot_key), ',' order by r.player_id) from league_rosters r where r.team_id = pg_temp.team('FW Hotel'))),
+  'false|{"qb:0": "fw-h1", "qb:1": "fw-h2", "qb:2": "fw-h3"} || {"qb:0": "fw-h1", "qb:1": "fw-h2", "qb:2": "fw-h3"} | fw-h1,fw-h2,fw-h3 | [] || fw-h2:qb:1,fw-h3:qb:2',
+  'G5 R1206 the editor-shaped submit (FW H One omitted) is ACCEPTED with him carried at qb:0 — the change lands, his start stays, and only his rostered teammates'' slot_key rows are written');
+-- G6–G8: a dropped starter who has NOT played (a bye) — his slot opens, unchanged.
+select pg_temp.drop('G6', 6, 3, 'FW Juliet', 'fw-j2', '2026-10-27 03:35:00+00', 65);
+select is(pg_temp.lu('FW Juliet', 7), '{"qb:0": "fw-j1", "qb:1": "fw-j2"} | fw-j1,fw-j2 | ["fw-j3"]',
+  'G6 PREMISE: FW J Two (bye — no game this week) was dropped at 03:35Z; 152 left the finished week-7 row naming him');
+insert into r100 select 'G7', public.lineup_autopilot_internal(pg_temp.lg(6), pg_temp.team('FW Juliet'), 2026, 7, '2026-10-27 03:40:00+00');
+select is(
+  (select format('%s|%s', r ->> 'changed', r -> 'slot_map') from r100 where tag = 'G7'),
+  'true|{"qb:0": "fw-j1", "qb:1": "fw-j3"}',
+  'G7 autopilot: the not-played dropped player''s slot is OPEN and filled, as before');
+select pg_temp.sl('G8', 6, 3, 'FW Juliet', 7, '{"qb:0": "fw-j1", "qb:1": "fw-j3"}', '2026-10-27 03:45:00+00', 66);
+select is(pg_temp.lu('FW Juliet', 7), '{"qb:0": "fw-j1", "qb:1": "fw-j3"} | fw-j1,fw-j3,- | []',
+  'G8 set_lineup: a manager may put FW J Three in the not-played dropped player''s slot, as before');
+-- G9–G10: 151's trade path (LT2, §E): the deferred trade executed at 03:30Z,
+-- sending FW V One (played Thursday) to FW Whiskey; FW Victor then sets a
+-- lineup while week 7 is still current.
+select is(
+  pg_temp.err($$ select pg_temp.sl('G9x', 5, 2, 'FW Victor', 7, '{"qb:0": "fw-v2"}', '2026-10-27 10:30:00+00', 67) $$),
+  'P0001: set_lineup: FW V One (Thu) already played this week — his start stays (slot "qb:0": his game kicked off at 2026-10-23 00:15:00+00 (nfl_games); he has left FW Victor''s roster since, and a played starter is stuck in the lineup for the week — §11.2, Q32; the week is scored from this lineup, §7.3.3)',
+  'G9 R1206 after the deferred trade executed, FW Victor cannot put FW V Two in the traded-away player''s finished-week slot');
+select pg_temp.sl('G10', 5, 2, 'FW Victor', 7, '{}', '2026-10-27 10:31:00+00', 68);
+select is(
+  format('%s || %s || %s', (select r ->> 'no_changes' from r100 where tag = 'G10'), pg_temp.lu('FW Victor', 7), pg_temp.roster_of('fw-v1')),
+  'true || {"qb:0": "fw-v1"} | fw-v1,- | ["fw-v2"] || FW Whiskey',
+  'G10 R1206 …and the editor-shaped submit keeps FW V One''s start with FW Victor (a no-op) while he is on FW Whiskey''s roster');
+
 
 -- ---------------------------------------------------------------------------
 -- F. The rule is the calendar's, not a status: an unrecorded end is "not over"
