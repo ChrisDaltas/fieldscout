@@ -1614,6 +1614,7 @@ export type Database = {
           role: string
           team_id: string | null
           user_id: string | null
+          waiver_priority: number | null
         }
         Insert: {
           faab_balance?: number | null
@@ -1625,6 +1626,7 @@ export type Database = {
           role?: string
           team_id?: string | null
           user_id?: string | null
+          waiver_priority?: number | null
         }
         Update: {
           faab_balance?: number | null
@@ -1636,6 +1638,7 @@ export type Database = {
           role?: string
           team_id?: string | null
           user_id?: string | null
+          waiver_priority?: number | null
         }
         Relationships: [
           {
@@ -4281,6 +4284,164 @@ export type Database = {
           },
         ]
       }
+      waiver_claim_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          team_id: string
+          verb: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          team_id: string
+          verb: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          team_id?: string
+          verb?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waiver_claim_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claim_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claim_actions_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      waiver_claims: {
+        Row: {
+          action_id: string
+          add_player_id: string
+          cancelled_at: string | null
+          cancelled_by: string | null
+          claim_order: number
+          created_at: string
+          created_by: string
+          drop_player_id: string | null
+          faab_bid: number
+          id: string
+          league_id: string
+          priority: number | null
+          process_at: string | null
+          processed_at: string | null
+          result_reason: string | null
+          status: string
+          team_id: string
+        }
+        Insert: {
+          action_id: string
+          add_player_id: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          claim_order?: number
+          created_at?: string
+          created_by: string
+          drop_player_id?: string | null
+          faab_bid?: number
+          id?: string
+          league_id: string
+          priority?: number | null
+          process_at?: string | null
+          processed_at?: string | null
+          result_reason?: string | null
+          status?: string
+          team_id: string
+        }
+        Update: {
+          action_id?: string
+          add_player_id?: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          claim_order?: number
+          created_at?: string
+          created_by?: string
+          drop_player_id?: string | null
+          faab_bid?: number
+          id?: string
+          league_id?: string
+          priority?: number | null
+          process_at?: string | null
+          processed_at?: string | null
+          result_reason?: string | null
+          status?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waiver_claims_add_player_id_fkey"
+            columns: ["add_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claims_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claims_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claims_drop_player_id_fkey"
+            columns: ["drop_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claims_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_claims_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       weekly_rankings: {
         Row: {
           accuracy_score: number | null
@@ -5564,6 +5725,88 @@ export type Database = {
           p_waiver_type: string
         }
         Returns: undefined
+      }
+      waiver_claim_cancel: {
+        Args: {
+          p_action_id?: string
+          p_claim_id: string
+          p_league_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      waiver_claim_cancel_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_claim_id: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      waiver_claim_receipt_internal: {
+        Args: {
+          p_act_text: string
+          p_action_id: string
+          p_action_type: string
+          p_claim_ids: Json
+          p_league_id: string
+          p_owner_body: string
+          p_owner_data: Json
+          p_owner_title: string
+          p_reason: string
+          p_season: number
+          p_team: Database["public"]["Tables"]["teams"]["Row"]
+          p_verb: string
+        }
+        Returns: Json
+      }
+      waiver_claim_reorder: {
+        Args: {
+          p_action_id?: string
+          p_claim_ids: string[]
+          p_league_id: string
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      waiver_claim_reorder_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_claim_ids: string[]
+          p_league_id: string
+          p_reason: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      waiver_claim_submit: {
+        Args: {
+          p_action_id?: string
+          p_add: string
+          p_bid?: number
+          p_drop?: string
+          p_league_id: string
+          p_reason?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      waiver_claim_submit_internal: {
+        Args: {
+          p_action_id: string
+          p_add: string
+          p_at: string
+          p_bid: number
+          p_drop: string
+          p_league_id: string
+          p_reason: string
+          p_team_id: string
+        }
+        Returns: Json
       }
       week_games_state_internal: {
         Args: { p_season: number; p_week: number }

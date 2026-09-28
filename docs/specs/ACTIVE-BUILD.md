@@ -9,14 +9,20 @@
 
 ---
 
-> **NEXT BUILD (queued): M5 — Transactions, breakdown PR #323** (`docs/specs/tasks-M5-transactions.md`; added 2026-09-27).
-> **Not active yet.** The loop keeps building M6A below until L.E1.27 merges. It takes no `L.D2.4+` / `L.D3.2+`
-> task until Chris merges #323 and this file is repointed. Questions Q70–Q79 (PROGRESS §3) block only the
-> tasks they name. L.D2.5, L.D2.6, L.D2.11, L.D2.12 and L.D3.2 can start without any answer.
+## Active: **Redraft Leagues M5 — Transactions (waivers / FAAB / trades)** *(breakdown approved by Chris 2026-09-27 — "approve M5, all recommendations"; PR #323)*
+
+- **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M5-transactions.md` §6 (+ its approval note). **Memory:** `docs/specs/PROGRESS-leagues.md` (Q70–Q79 ruled as recommended; D383; F406–F409). **Task-id prefixes:** `L.D2.*` (waivers / FAAB / free agency) and `L.D3.*` (trades).
+- **Landed:** L.D2.5 (PR #325, migration 145 / pgTAP 093).
+- **NEXT TAKEABLE TASK: `L.D2.6`** (FAAB stays with the team after the draft starts; fixes C72; FULL). Then in the breakdown's dependency order (§6): L.D2.11, L.D2.12, L.D3.2 need no answer; L.D2.7 onward as the graph allows. Measure migration / pgTAP numbers at build time (heads after L.D2.5: 145 / 093).
+- **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
+- **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
+- **Production:** at 134 until Chris pushes. Push order (M6A): `npx supabase db push` (135–145 together; stop and report on any error) → immediately `npm run sync:reingest -- --season 2026 --weeks <completed weeks> --confirm-target <hosted host>`.
 
 ---
 
-## Active: **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
+## ~~Active~~ PAUSED AT CLOSEOUT — **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(all ruling tasks L.E1.1–L.E1.27 merged; the §8 exit gate and open F-rows remain — not scheduled)*
+
+ *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
 
 **The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
 A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds

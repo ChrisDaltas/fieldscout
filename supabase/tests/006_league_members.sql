@@ -41,8 +41,8 @@ select plan(77);
 select has_table('public', 'league_members', 'league_members exists');
 select columns_are('public', 'league_members',
   array['id', 'league_id', 'user_id', 'team_id', 'role', 'is_placeholder',
-        'is_autodraft', 'faab_balance', 'joined_at'],
-  'exact §12.2 column set');
+        'is_autodraft', 'faab_balance', 'joined_at', 'waiver_priority'],
+  'exact §12.2 column set (+ waiver_priority, migration 145 / M5 TD8)');
 select col_is_pk('public', 'league_members', 'id', 'PK id');
 select col_type_is('public', 'league_members', 'id', 'uuid', 'id is UUID');
 select col_type_is('public', 'league_members', 'league_id', 'uuid', 'league_id is UUID');
