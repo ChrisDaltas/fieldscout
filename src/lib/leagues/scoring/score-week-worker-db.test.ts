@@ -286,15 +286,18 @@ function raceAfterFirstStatsRead(base: ScoreWorkerClient, after: () => Promise<v
   })
 }
 
-/** The worker sees `snapshot` for `leagueId` — the DB row keeps its valid one. */
+/** The worker sees `snapshot` as the WEEK's rules for every week of `leagueId`
+ *  — the DB row keeps its valid one. M6A L.E1.27 (144 / F397): the worker
+ *  reads a week's rules from `league_weeks`, never the league column, so the
+ *  overlay rides the `league_weeks` read (re-cut from `leagues`). */
 const snapshotOverlay = new Map<string, Json>()
 function withSnapshotOverlay(base: ScoreWorkerClient): ScoreWorkerClient {
-  return interceptSelect(base, 'leagues', async (res) => {
+  return interceptSelect(base, 'league_weeks', async (res) => {
     if (!Array.isArray(res.data)) return res
     return {
       ...res,
-      data: (res.data as Array<{ id: string }>).map((row) =>
-        snapshotOverlay.has(row.id) ? { ...row, scoring_rules_snapshot: snapshotOverlay.get(row.id) } : row,
+      data: (res.data as Array<{ league_id?: string }>).map((row) =>
+        row.league_id !== undefined && snapshotOverlay.has(row.league_id) ? { ...row, scoring_rules_snapshot: snapshotOverlay.get(row.league_id) } : row,
       ),
     }
   })

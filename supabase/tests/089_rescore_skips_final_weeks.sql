@@ -29,9 +29,12 @@
 --       field ⇒ C9 red).***
 --   §D  rescore = false is UNCHANGED (LC), and rescore = true with a final
 --       week and NO open week lands and says so (LC, the no_open_week arm).
---   §E  a CORRECTION_WINDOW week IS re-scored (LB) — the task reading: open is
---       131 v_open_weeks = live + correction_window; only final is kept.
---       ***BREAK PROBE P4 (skip correction_window too ⇒ E2/E3 red).***
+--   §E  RE-CUT BY 144 (L.E1.27, Q69 AS RULED — "Q69 keep last week's
+--       scores"): a CORRECTION_WINDOW week is KEPT like a final one and named
+--       with its status; only the LIVE week is re-scored (LB). 141 re-scored
+--       it (F404, interim). pgTAP 092 §E carries the full Q69 fixture.
+-- (A1 and the §C/§D sentences are re-cut to 144's body and plain-words text;
+-- every other cell is 141's, unchanged.)
 --   §F  no final week at all (LD) ⇒ behaviour as before, the new fields say
 --       nothing was skipped.
 --   §G  REPLAY — the landed action replays byte-identically.
@@ -54,8 +57,8 @@ select plan(43);
 select is(
   (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'),
-  '05d2c7e4ae83506c113f7168d262a8b3',
-  'A1 the post-141 body, as a STORED LITERAL md5 (measured on the local chain 001-141; pre-141 it was 497b5fbc33dd6c7fc0b9da41f9f212f2 — 131 text, nine hunks apart)');
+  'fe71e96772a9584f62d6728067d0b0ff',
+  'A1 RE-CUT (144): the body as a STORED LITERAL md5 — 144''s (measured on the local chain 001-144; 141''s was 05d2c7e4ae83506c113f7168d262a8b3, nine hunks apart; 131''s 497b5fbc33dd6c7fc0b9da41f9f212f2)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_change_setting_internal'
@@ -277,8 +280,8 @@ select is(public.league_standings_internal('b8900000-0000-4000-8000-00000000000a
 select is(current_setting('pgtap.rs_c')::jsonb -> 'rescore_skipped_final_weeks',
   '[1]'::jsonb, 'C9 THE DOCUMENT NAMES WEEK 1 AS SKIPPED, at the top level (rescore_skipped_final_weeks) — never a quiet partial (probe P3 ⇒ red)');
 select is(current_setting('pgtap.rs_c')::jsonb ->> 'rescore_skipped_final_weeks_why',
-  'final_weeks_not_rescored — final week(s) [1] keep their original scores and results; the new scoring applies to open week(s) [2] (queued for re-scoring now) and to every later week (scored under it when it opens)',
-  'C10 …with WHY in plain words, naming the kept week and the re-scored one');
+  'finished_weeks_not_rescored — week 1 (final) keeps its scores and results; the new scoring applies to week 2 (being played now — re-scored under it) and to every later week (scored under it when it opens)',
+  'C10 …with WHY in plain words, naming the kept week and the re-scored one (144: plain words, R1139)');
 select is((current_setting('pgtap.rs_c')::jsonb ->> 'rescore_performed') || '|' || coalesce(current_setting('pgtap.rs_c')::jsonb ->> 'rescore_not_performed_why', 'null'),
   'true|null', 'C11 …rescore_performed = true and NO not-performed reason: the open week WAS re-queued');
 select is(
@@ -293,7 +296,7 @@ select is((select count(*)::int || '|' || string_agg(message, '') from league_ch
            where league_id = 'b8900000-0000-4000-8000-00000000000a' and is_system),
   '1|Setting scoring_system_id changed from "' || (select id::text from scoring_systems where is_template and name = 'ESPN Standard')
     || '" to "' || (select id::text from scoring_systems where is_template and name = 'ESPN Full PPR')
-    || '" by rs_user1 (commissioner override) — open weeks will be re-scored under the new rules; final week(s) [1] keep their original scores and results — reason: PPR from this week on',
+    || '" by rs_user1 (commissioner override) — week 2 (being played now) will be re-scored under the new rules; week 1 (final) keeps its scores and results — reason: PPR from this week on',
   'C14 ONE §10.3 post, and it tells the league the final week keeps its scores');
 select is((select count(*)::int from commish_setting_actions where action_id = '08900000-0000-4000-8000-000000000001'),
   1, 'C15 …and ONE ledger row');
@@ -320,8 +323,8 @@ reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
   (current_setting('pgtap.rs_d1')::jsonb ->> 'rescore_performed') || '|' || (current_setting('pgtap.rs_d1')::jsonb ->> 'rescore_not_performed_why'),
-  'false|not_requested — rescore was not asked for: 1 final week(s) [1] keep their stored scores, and 0 open week(s) [] keep the points already computed under the PREVIOUS snapshot',
-  'D1 rescore = false is UNCHANGED: not performed, and 131 wording for why is kept byte-for-byte');
+  'false|not_requested — rescore was not asked for, so no week already under way changes: week 1 (final) keeps the scoring it started with, and the new scoring starts with the next week to open',
+  'D1 rescore = false: not performed, and WHY in plain words (144 re-cut: every started week keeps the scoring it started with, F397)');
 select is(
   (current_setting('pgtap.rs_d1')::jsonb -> 'rescore_skipped_final_weeks')::text || '|' || coalesce(current_setting('pgtap.rs_d1')::jsonb ->> 'rescore_skipped_final_weeks_why', 'null'),
   '[]|null', 'D2 …and with rescore NOT asked for, nothing is reported as SKIPPED (the list is empty, the why NULL) — a skip is the answer to a rescore request only');
@@ -331,16 +334,16 @@ select is(
   'false|false|[1]',
   'D3 THE NO-OPEN-WEEK ARM: rescore = true with final week 1 and nothing open LANDS (under 131: refused whole), performs nothing, and names week 1 as skipped');
 select is(current_setting('pgtap.rs_d2')::jsonb ->> 'rescore_not_performed_why',
-  'no_open_week — no week is open right now, so there is no score to re-score: final week(s) [1] keep their original scores and results, and every later week is scored under the new scoring when it opens',
+  'no_live_week — no week is being played right now, so nothing is re-scored: week 1 (final) keeps its scores and results, and every later week is scored under the new scoring when it opens',
   'D4 …and SAYS why nothing was re-scored — never the nothing_scored_yet text, which claims there is no final week');
 select is(current_setting('pgtap.rs_d2')::jsonb ->> 'rescore_skipped_final_weeks_why',
-  'final_weeks_not_rescored — final week(s) [1] keep their original scores and results; the new scoring applies to every later week (scored under it when it opens) — no week is open right now',
+  'finished_weeks_not_rescored — week 1 (final) keeps its scores and results; the new scoring applies to every later week (scored under it when it opens) — no week is being played right now',
   'D5 …and the skipped-week why does not claim an open week was queued');
 select is((select message from league_chat where league_id = 'b8900000-0000-4000-8000-00000000000c' and is_system
              and message like '% to "' || (select id::text from scoring_systems where is_template and name = 'Sleeper Standard') || '" %'),
   'Setting scoring_system_id changed from "' || (select id::text from scoring_systems where is_template and name = 'ESPN Full PPR')
     || '" to "' || (select id::text from scoring_systems where is_template and name = 'Sleeper Standard')
-    || '" by rs_user1 (commissioner override) — final week(s) [1] keep their original scores and results',
+    || '" by rs_user1 (commissioner override) — week 1 (final) keeps its scores and results',
   'D6 …and its post names the kept final week (no reason given ⇒ no reason clause, Q66)');
 select is((select string_agg(action_type || ':' || (metadata ->> 'rescore_requested'), ',' order by created_at, metadata ->> 'action_id')
            from commissioner_actions where league_id = 'b8900000-0000-4000-8000-00000000000c'),
@@ -365,13 +368,14 @@ end $$;
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(current_setting('pgtap.rs_e')::jsonb -> 'consequences' -> 'rescored_weeks',
-  '[{"week": 2, "status": "correction_window", "starters_enqueued": 1, "score_not_enqueued": []}, {"week": 3, "status": "live", "starters_enqueued": 1, "score_not_enqueued": []}]'::jsonb,
-  'E1 BOTH open weeks are re-scored — the CORRECTION_WINDOW week 2 and the live week 3 (probe P4: skip correction_window ⇒ red)');
+  '[{"week": 3, "status": "live", "starters_enqueued": 1, "score_not_enqueued": []}]'::jsonb,
+  'E1 RE-CUT (144, Q69): ONLY the live week 3 is re-scored — the CORRECTION_WINDOW week 2 is kept like a final one (141 re-scored it: F404)');
 select is((select string_agg(week || ':' || player_id, ',' order by week) from score_fanout where season = 2026 and player_id = 'rs-qb3'),
-  '2:rs-qb3,3:rs-qb3', 'E2 …the queue holds rs-qb3 for weeks 2 and 3, and NOT for final week 1 (his week-1 line is stamped) (probe P4 ⇒ red)');
-select is((current_setting('pgtap.rs_e')::jsonb -> 'rescore_skipped_final_weeks')::text || '|' || (current_setting('pgtap.rs_e')::jsonb ->> 'rescore_skipped_final_weeks_why'),
-  '[1]|final_weeks_not_rescored — final week(s) [1] keep their original scores and results; the new scoring applies to open week(s) [2, 3] (queued for re-scoring now) and to every later week (scored under it when it opens)',
-  'E3 …and only week 1 — the one FINAL week — is named as skipped; the correction_window week is named among the open ones');
+  '3:rs-qb3', 'E2 RE-CUT (144, Q69): …the queue holds rs-qb3 for week 3 ONLY — NOT for correction-window week 2 nor final week 1, although both his lines are stamped');
+select is((current_setting('pgtap.rs_e')::jsonb -> 'rescore_skipped_final_weeks')::text || '|' || (current_setting('pgtap.rs_e')::jsonb -> 'rescore_skipped_correction_window_weeks')::text
+          || '|' || (current_setting('pgtap.rs_e')::jsonb ->> 'rescore_skipped_final_weeks_why'),
+  '[1]|[2]|finished_weeks_not_rescored — week 1 (final) and week 2 (final, pending stat corrections) keep their scores and results; the new scoring applies to week 3 (being played now — re-scored under it) and to every later week (scored under it when it opens)',
+  'E3 RE-CUT (144, Q69): week 1 is named as kept FINAL and week 2 as kept in its stat-correction window, each with its status, in plain words');
 
 -- ---------------------------------------------------------------------------
 -- F. NO FINAL WEEK AT ALL (LD) — behaviour as before; nothing reported skipped.

@@ -141,9 +141,9 @@ export const SETTINGS_OVERRIDE_BAR_ON_COPY =
 export const SETTINGS_POLICY_PROBLEM_COPY =
   'Couldn’t read which settings can change mid-season, so editing stays closed — this is a failed read, not a locked league.'
 export const SETTINGS_POLICY_LOADING_COPY = 'Reading which settings can change mid-season…'
-export const RESCORE_TOGGLE_LABEL = 'Re-score this season’s open weeks under the new scoring'
+export const RESCORE_TOGGLE_LABEL = 'Re-score this week under the new scoring'
 export const RESCORE_TOGGLE_HINT =
-  'Off: weeks already scored keep their points. On: open weeks are re-scored under the new scoring; final weeks keep their original scores and results.'
+  'Off: every week already started keeps the scoring it started with, and the new scoring begins next week. On: this week is re-scored under the new scoring. Either way, finished weeks — including last week while its stat corrections are still coming in — keep their scores and results.'
 
 // ---------------------------------------------------------------------------
 // The consequence copy — §4 rule 15 / R971: never a bare "Saved."
@@ -183,10 +183,11 @@ const label = (key: string) => key.replace(/_/g, ' ')
  *     in 129's own words, NEVER swallowed (the task's PROOF line; D360(10)):
  *     a scoring change that did not re-score is the consequence a
  *     commissioner most needs and least expects.
- *  3. then the final weeks a rescore SKIPPED (migration 141 / Q64 as ruled —
- *     `rescore_skipped_final_weeks_why`, the server's sentence verbatim): the
- *     open weeks were re-scored and the final ones kept, and the commissioner
- *     is told which (L.E1.24; never swallowed);
+ *  3. then the finished weeks a rescore SKIPPED (migration 141 / Q64, and
+ *     from 144 / Q69 the week still in its stat-correction window too —
+ *     `rescore_skipped_final_weeks_why`, the server's ONE sentence naming
+ *     both kinds, verbatim): this week was re-scored and the finished ones
+ *     kept, and the commissioner is told which (never swallowed);
  *  4. then a MIXED open week (`score_stale`), un-refit lineups (a MEASURED
  *     count), and balances a budget change did not touch (D360(6));
  *  5. then the plain save.

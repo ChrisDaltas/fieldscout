@@ -41,8 +41,9 @@ select plan(44);
 select has_table('public', 'league_weeks', 'league_weeks exists');
 select columns_are('public', 'league_weeks',
   array['id', 'league_id', 'season', 'week', 'status', 'median_score',
-        'waivers_processed_at', 'finalized_at', 'reopened_by_action_id'],
-  'exact §12.17 column set');
+        'waivers_processed_at', 'finalized_at', 'reopened_by_action_id',
+        'scoring_rules_snapshot', 'scoring_system_id', 'scoring_rules_source', 'scoring_rules_action_id'],
+  'exact §12.17 column set, plus 144''s per-week scoring rules (M6A L.E1.27, F397 — pgTAP 092 pins them)');
 select col_is_pk('public', 'league_weeks', 'id', 'PK id');
 select col_not_null('public', 'league_weeks', 'league_id', 'league_id NOT NULL');
 select fk_ok('public', 'league_weeks', 'league_id', 'public', 'leagues', 'id', 'league_id → leagues');

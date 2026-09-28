@@ -95,7 +95,7 @@ async function cleanup(): Promise<void> {
       const { error } = await service.from(table).delete().in('league_id', ids)
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
-    // ORDER MATTERS (PROGRESS F410): a commissioner-placed claim writes a
+    // ORDER MATTERS (PROGRESS F406): a commissioner-placed claim writes a
     // commissioner_actions row whose `acting_as_team_id` references the team
     // (123:304, no ON DELETE), and that row is immutable except through the
     // league's ON DELETE CASCADE. So the teams are detached from the league,

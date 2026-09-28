@@ -9,14 +9,20 @@
 
 ---
 
-> **NEXT BUILD (queued): M5 — Transactions, breakdown PR #323** (`docs/specs/tasks-M5-transactions.md`; added 2026-09-27).
-> **Not active yet.** The loop keeps building M6A below until L.E1.27 merges. It takes no `L.D2.4+` / `L.D3.2+`
-> task until Chris merges #323 and this file is repointed. Questions Q70–Q79 (PROGRESS §3) block only the
-> tasks they name. L.D2.5, L.D2.6, L.D2.11, L.D2.12 and L.D3.2 can start without any answer.
+## Active: **Redraft Leagues M5 — Transactions (waivers / FAAB / trades)** *(breakdown approved by Chris 2026-09-27 — "approve M5, all recommendations"; PR #323)*
+
+- **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M5-transactions.md` §6 (+ its approval note). **Memory:** `docs/specs/PROGRESS-leagues.md` (Q70–Q79 ruled as recommended; D383; F406–F409). **Task-id prefixes:** `L.D2.*` (waivers / FAAB / free agency) and `L.D3.*` (trades).
+- **Landed:** L.D2.5 (PR #325, migration 145 / pgTAP 093).
+- **NEXT TAKEABLE TASK: `L.D2.6`** (FAAB stays with the team after the draft starts; fixes C72; FULL). Then in the breakdown's dependency order (§6): L.D2.11, L.D2.12, L.D3.2 need no answer; L.D2.7 onward as the graph allows. Measure migration / pgTAP numbers at build time (heads after L.D2.5: 145 / 093).
+- **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
+- **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
+- **Production:** at 134 until Chris pushes. Push order (M6A): `npx supabase db push` (135–145 together; stop and report on any error) → immediately `npm run sync:reingest -- --season 2026 --weeks <completed weeks> --confirm-target <hosted host>`.
 
 ---
 
-## Active: **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
+## ~~Active~~ PAUSED AT CLOSEOUT — **Redraft Leagues M6A — Commissioner Fallback & Autopilot** *(all ruling tasks L.E1.1–L.E1.27 merged; the §8 exit gate and open F-rows remain — not scheduled)*
+
+ *(scope ruled by Chris 2026-09-09/11; breakdown approved and merged 2026-09-11, PR #289)*
 
 **The breakdown is LAW — `docs/specs/tasks-M6A-commissioner-fallback.md` (PR #289).**
 A pulled-forward slice of M6 / Phase E, sequenced **BEFORE M5**. The loop builds
@@ -268,17 +274,35 @@ window. **141 as merged re-scores one — INTERIM, contradicting the ruling (F40
 *"F397 yes build it"*: each league week stores the scoring rules it is played with. Spec
 **v2.16.52** (fold-back).
 
-**NEXT TAKEABLE TASK: `L.E1.27`** — per-week scoring rules (F397) + Q69: persist each league
+**`L.E1.27` is LANDED 2026-09-27** (`feat/M6A-L.E1.27-per-week-scoring-rules` — migration
+**144** + pgTAP **092**; PROGRESS **D382**; **F397 + F404 DISCHARGED**; spec **v2.16.53**):
+each league week stores the scoring rules it is played with (stamped when the week opens);
+the worker, box score, nightly reconcile and season-to-date values read the week's rules;
+a scoring change with re-score on re-scores only the live week and keeps + names the final
+and correction-window weeks; existing weeks backfilled (mixed weeks named in the NOTICE).
+**Open for Chris: F405** (a finished week's box score can differ from its final score after
+a late stat fix — store per-player points?). **The M6A ruling tasks are complete — the
+pointer now reads the CLOSEOUT below.**
+
+**⚠ PRODUCTION PUSH ORDER (Chris's steps; production is at 134):** (1) `npx supabase db push`
+— **135–144 together** (never 141 without 144, F404); read the `144 backfill` NOTICE lines —
+any AMBIGUOUS / UNRECOVERABLE week is named there; (2) **immediately**
+`npm run sync:reingest -- --season 2026 --weeks <every completed week> --confirm-target <hosted host>`
+**If `db push` stops with an error on 144 (or any migration), STOP: do not run `sync:reingest`, and report the error — production would otherwise sit with 141 live and 144 missing (F404). (R1158.) Read the `144 backfill` NOTICE lines; any `AMBIGUOUS` week had a scoring change land mid-week without a re-score and will show nightly drift alerts for the teams that kept the old rules (R1159).**
+(143 / F400).
+
+~~**NEXT TAKEABLE TASK: `L.E1.27`**~~ *(landed — above)* — per-week scoring rules (F397) + Q69: persist each league
 week's rules when it opens; the score worker (incl. correction-window stat corrections), the
 box score, the nightly reconcile and L.E1.20's season-to-date read THAT week's rules; 141's
 rescore skips `correction_window` weeks and names them beside the final ones; backfill the
 existing weeks. Task text: tasks-M6A §6's L.E1.27 amendment note (right after L.E1.24's
 AS-BUILT note). Heads: **143 / 091** — re-measure at task time (D161).
 
-**⚠ PRODUCTION PUSH — Chris should NOT push to production until L.E1.27 has merged** (141's
+~~**⚠ PRODUCTION PUSH — Chris should NOT push to production until L.E1.27 has merged** (141's
 `correction_window` re-score contradicts Q69). **PUSH DEBT: 135–143**, plus L.E1.27's
 migration — production is at 134. When the push happens, 143's order still applies:
-`npx supabase db push` → immediately `sync:reingest` for every completed week (F400).
+`npx supabase db push` → immediately `sync:reingest` for every completed week (F400).~~
+*(superseded by the push order above — push debt is now **135–144**)*
 
 ~~**NEXT TAKEABLE TASK: `L.E1.25`** (Chris's rulings 2026-09-27 — Q67 empty-lineup lock + Q68
 Doubtful swap) **then `L.E1.26`** (F390 — yards allowed, sourced). Task text: tasks-M6A §6's
@@ -343,7 +367,7 @@ task's own time (D161). *(Advanced from the closeout by the 2026-09-27
 rulings docs session.)*
 
 ~~**NEXT — M6A CLOSEOUT, not a `L.E1.*` task.** There is no unbuilt task in
-tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.24**, before the pointer
+tasks-M6A §6.~~ **What remains AFTER L.E1.18–L.E1.27** (all landed 2026-09-27 — this is now the NEXT item), before the pointer
 moves to the next milestone:
 ~~(1) **Chris's rulings** — Q60–Q64 (still open in PROGRESS §3) and the
 F377 read (a "confirm as played" act for a round under R839's hourly
@@ -352,7 +376,7 @@ gate session, not a Builder task); (3) **the open M6A ledger rows**, each
 small and filed with its shape — F361 (the M4 panel hint), F363 (the retire
 verb's reason gate), F368, F370, F371 (League Home's activity feed), F372
 (REFERENCES / TRIGGER / MAINTAIN grants), F373–F376 (the synthetic gate's
-recorded blindnesses), ~~F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23)~~ **F377 CLOSED by L.E1.23**, F395 (the callers' hourly BLOCKED WARNING for a played round), F396 (co-commissioner and the bracket's affordances); (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
+recorded blindnesses), ~~F377 ((a)/(b) ruled 2026-09-27; the remainder is L.E1.23)~~ **F377 CLOSED by L.E1.23**, F395 (the callers' hourly BLOCKED WARNING for a played round), F396 (co-commissioner and the bracket's affordances), **F405 (Chris's call — per-player points for finished weeks)**; **(3b) the production push 135–144 + `sync:reingest` (Chris's — order above)**; (4) ~~⚠ **`npx supabase db push` for 125–134**~~ **DONE 2026-09-23** — production
 reads 124–134 applied, 0 of 73 `public` tables grant TRUNCATE to anon/authenticated, the M6A verbs present. After the
 closeout the delivery plan's next milestone is **M5** (trades / FAAB —
 D352 / F340), which needs its own Architect breakdown before the loop can

@@ -17,7 +17,7 @@
 --     a commissioner-placed claim carry neither the player nor the bid.
 --   * BREAK PROBES shown red in the PR, then reverted: widen the SELECT
 --     policy to is_league_member (§G3 / G4 red); drop the bid ≤ balance guard
---     (C14 red); drop the rostered-in-league check (C11 red); drop the CHECK
+--     (C15 red); drop the rostered-in-league check (C11 red); drop the CHECK
 --     (H1 red).
 -- ============================================================================
 begin;

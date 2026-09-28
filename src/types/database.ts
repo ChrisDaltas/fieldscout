@@ -1847,6 +1847,10 @@ export type Database = {
           league_id: string
           median_score: number | null
           reopened_by_action_id: string | null
+          scoring_rules_action_id: string | null
+          scoring_rules_snapshot: Json | null
+          scoring_rules_source: string | null
+          scoring_system_id: string | null
           season: number
           status: string
           waivers_processed_at: string | null
@@ -1858,6 +1862,10 @@ export type Database = {
           league_id: string
           median_score?: number | null
           reopened_by_action_id?: string | null
+          scoring_rules_action_id?: string | null
+          scoring_rules_snapshot?: Json | null
+          scoring_rules_source?: string | null
+          scoring_system_id?: string | null
           season: number
           status?: string
           waivers_processed_at?: string | null
@@ -1869,6 +1877,10 @@ export type Database = {
           league_id?: string
           median_score?: number | null
           reopened_by_action_id?: string | null
+          scoring_rules_action_id?: string | null
+          scoring_rules_snapshot?: Json | null
+          scoring_rules_source?: string | null
+          scoring_system_id?: string | null
           season?: number
           status?: string
           waivers_processed_at?: string | null
@@ -1887,6 +1899,20 @@ export type Database = {
             columns: ["reopened_by_action_id"]
             isOneToOne: false
             referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_weeks_scoring_rules_action_id_fkey"
+            columns: ["scoring_rules_action_id"]
+            isOneToOne: false
+            referencedRelation: "commissioner_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_weeks_scoring_system_id_fkey"
+            columns: ["scoring_system_id"]
+            isOneToOne: false
+            referencedRelation: "scoring_systems"
             referencedColumns: ["id"]
           },
           {
@@ -5268,6 +5294,14 @@ export type Database = {
       }
       league_week_broadcast_payload: {
         Args: { w: Database["public"]["Tables"]["league_weeks"]["Row"] }
+        Returns: Json
+      }
+      league_week_list_words_internal: {
+        Args: { p_weeks: Json }
+        Returns: string
+      }
+      league_weeks_rules_backfill_internal: {
+        Args: { p_apply?: boolean }
         Returns: Json
       }
       leave_league: { Args: { p_league_id: string }; Returns: Json }
