@@ -17,6 +17,7 @@ import type { CommishTradeResult } from '@/lib/leagues/api/trades-service'
 
 import { CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
 import { TradeBuilderView, type TradeBuilderViewProps } from './trade-builder'
+import { plainRefusal } from './trades-ops'
 import {
   NEVER_WHO_VOTED_COPY,
   TRADES_ERROR_TITLE,
@@ -196,7 +197,10 @@ describe('trade card — an offer', () => {
     const refusal = "Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"
     const html = card({ refusal })
     expect(html).toContain('data-accept-drops')
-    expect(html).toContain(refusal)
+    // R1244: the sentence shows without its builder citations.
+    expect(html).toContain("more than its 16 spots: name 1 more drop(s) as part of the trade")
+    expect(html).not.toContain('(E36)')
+    expect(html).not.toContain('roster_size')
     expect(html).toContain('Pick 1 player to drop so your roster fits — he is dropped only if the trade goes through.')
     // The players Bravo is giving away are not offered as drops.
     const picker = html.slice(html.indexOf('data-drop-picker'))
@@ -335,7 +339,8 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     const refusal = "Alpha's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"
     const html = builder({ refusal })
     expect(html).toContain(`data-trade-refusal="true"`)
-    expect(html).toContain(refusal)
+    expect(html).toContain(plainRefusal(refusal)) // R1244: citations removed
+    expect(html).not.toContain("(E36)")
     expect(html).toContain('data-trade-drops="open"')
     expect(html).toContain('data-trade-drops-prompt="1"')
     expect(html).toContain('Pick 1 player to drop so your roster fits')

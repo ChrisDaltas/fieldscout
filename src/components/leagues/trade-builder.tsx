@@ -24,6 +24,7 @@ import {
   parseFaab,
   type BuilderLeg,
   type BuilderSides,
+  plainRefusal,
 } from './trades-ops'
 
 /**
@@ -280,8 +281,8 @@ export function TradeBuilderView({
         {refusal && !locked && (
           <div className="flex flex-col gap-1 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-trade-refusal>
             <p className="text-[12px] font-bold">The offer wasn’t sent.</p>
-            {/* VERBATIM — the server names the rule it applied. */}
-            <p className="text-[11px] font-medium text-ink">{refusal}</p>
+            {/* The server's sentence, its builder citations removed (R1244). */}
+            <p className="text-[11px] font-medium text-ink">{plainRefusal(refusal)}</p>
           </div>
         )}
 

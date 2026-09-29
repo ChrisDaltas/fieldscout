@@ -60,6 +60,7 @@ import {
   tradeStatusView,
   type TradeTone,
   type TradeViewer,
+  plainRefusal,
 } from './trades-ops'
 
 /**
@@ -589,8 +590,8 @@ export function TradeCard({
 
         {refusal && !(recipientOverflows && pickingDrops) && (
           <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-trade-card-refusal>
-            {/* VERBATIM — the server's sentence. */}
-            {refusal}
+            {/* The server's sentence, its builder citations removed (R1244). */}
+            {plainRefusal(refusal)}
           </p>
         )}
 
@@ -602,7 +603,7 @@ export function TradeCard({
 
         {pickingDrops && recipientRoster && (
           <div className="flex flex-col gap-1.5 rounded-sm border border-ink px-2 py-2" data-accept-drops>
-            {recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{refusal}</p>}
+            {recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{plainRefusal(refusal)}</p>}
             <p className="text-[11px] font-bold text-ink">
               {recipientOverflows ? dropsPromptCopy(overflow!.more) : 'Players to drop so your roster fits — dropped only if the trade goes through.'}
             </p>

@@ -92,6 +92,24 @@ export function plainServerSentence(text: string): string {
   return text.replace(/\s*\((?:[^()]*§[^()]*|[EQRFCD]\d+(?:\s*\/\s*[EQRFCD]?\d+)*)\)\s*$/, '').trim()
 }
 
+/** A refusal as a league member reads it (R1244): every builder citation is
+ *  taken out of its parentheses — a `§` pointer, a rule code ("E36", "Q76"),
+ *  a setting's column name ("trade_deadline_week 11") — and a group left
+ *  empty goes entirely; the rest of the server's words stay as sent (the
+ *  deadline's date and time survive). Display only: `dropsNeeded` and
+ *  `isDeadlineRefusal` still read the raw sentence. */
+export function plainRefusal(text: string): string {
+  const citation = (part: string) =>
+    /§/.test(part) || /\b[EQRFCD]\d+\b/.test(part) || /\b[a-z]+(?:_[a-z]+)+\b/.test(part)
+  return text
+    .replace(/(\s*)\(([^()]*)\)/g, (_whole, lead: string, inner: string) => {
+      const kept = inner.split(';').map((p) => p.trim()).filter((p) => p && !citation(p))
+      return kept.length ? `${lead}(${kept.join('; ')})` : ''
+    })
+    .replace(/\s+([:.,])/g, '$1')
+    .trim()
+}
+
 // ---------------------------------------------------------------------------
 // Time words — from the read's own numbers, never a clock
 // ---------------------------------------------------------------------------
@@ -206,7 +224,7 @@ export function tallyWords(tally: TradeVoteTally): TallyWords {
     const all = tally.veto_number === 1 ? 'the 1 manager who can vote vetoes' : `all ${tally.veto_number} managers who can vote veto`
     rule = `It’s vetoed if ${all} it — the league’s setting is ${tally.setting}, but only ${tally.eligible_voters} manager${tally.eligible_voters === 1 ? '' : 's'} can vote on this trade.`
   } else {
-    rule = `It’s vetoed at ${tally.veto_number} veto vote${tally.veto_number === 1 ? '' : 's'} — ${tally.eligible_voters} managers can vote.`
+    rule = `It’s vetoed at ${tally.veto_number} veto vote${tally.veto_number === 1 ? '' : 's'} — ${tally.eligible_voters} manager${tally.eligible_voters === 1 ? '' : 's'} can vote.`
   }
   let mine: string | null = null
   if (tally.my_vote === 'veto') mine = 'You voted to veto.'

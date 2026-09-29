@@ -25,6 +25,7 @@ import {
   isTradesUnavailable,
   parseFaab,
   plainServerSentence,
+  plainRefusal,
   reviewModeCopy,
   splitTrades,
   tallyWords,
@@ -141,6 +142,13 @@ describe('F438 — every state a trade can be in, in words', () => {
     expect(closed('expired', null).detail).toBe('Still waiting for an answer when the trade deadline passed.')
     expect(closed('reversed', null).label).toBe('Reversed')
     expect(tradeStatusView(trade({ status: 'complete', in_flight: false, resolved_at: '2099-09-15T00:00:00.000Z' }), fmt).detail).toBe('Went through <2099-09-15T00:00:00.000Z>.')
+  })
+  it('plainRefusal takes out builder citations, keeps the server words (R1244)', () => {
+    expect(plainRefusal("Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"))
+      .toBe("Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots: name 1 more drop(s) as part of the trade")
+    expect(plainRefusal('the trade deadline has passed (Wed, Nov 25 12:00 AM ET; trade_deadline_week 11, §13.3 / Q76)'))
+      .toBe('the trade deadline has passed (Wed, Nov 25 12:00 AM ET)')
+    expect(plainRefusal('x (2 of 3)')).toBe('x (2 of 3)')
   })
   it('plainServerSentence strips only a trailing citation', () => {
     expect(plainServerSentence('x (§13.3 / Q77)')).toBe('x')
