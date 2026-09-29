@@ -336,7 +336,7 @@ BEGIN
   RETURN v_doc || jsonb_build_object(
     'league_id',    p_league.id,
     -- 151's trade_propose / trade_respond: `IF deadline_at <= p_at THEN RAISE`.
-    'passed',       COALESCE(v_at < p_at, FALSE),
+    'passed',       COALESCE(v_at <= p_at, FALSE),
     'ms_remaining', CASE WHEN v_at > p_at THEN floor(extract(epoch FROM (v_at - p_at)) * 1000)::bigint END,
     'evaluated_at', p_at);
 END;
