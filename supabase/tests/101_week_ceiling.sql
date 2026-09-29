@@ -45,6 +45,34 @@ set local search_path = public, extensions;
 
 select plan(52);
 
+-- L.D2.16 (migration 157 — additive, the R992 shape): pg_temp.un157 reverses
+-- 157's substitutions in the seven bodies it replaced (an identity on every
+-- other body), applied INNERMOST so the literals below still prove what
+-- they proved; pgTAP 105 A6 / A7 pin 157's own.
+create function pg_temp.un157(p_src text) returns text language sql as $un157$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  -- 157 / F447: each ROSTERED player\'s kickoff is judged per PLAYER — his\n  -- current NFL team\'s game, or, when that is still ahead (or he has no\n  -- team), a start this league recorded for a game that kicked off or his\n  -- stat line for the week (lineup_player_kickoff_internal): a player the\n  -- NFL released or traded AFTER he played is still locked for the week.\n  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n',
+    E'  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, p_week, v_e ->> \'nfl_team\', p_at);\n'),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 157 / F447\n',
+    E'      SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_current, v_e ->> \'nfl_team\', p_at);\n'),
+    E'  -- 157 / F447: judged per PLAYER (set_lineup\'s step (6) helper) — a player\n  -- the NFL released or traded after he played is locked, never OPEN.\n  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, p_season, p_week, v_e ->> \'player_id\', p_at);\n',
+    E'  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n'),
+    E'    v_drop_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_drop, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_drop_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_drop_p.team, p_at);\n'),
+    E'    v_add_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_add, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);\n'),
+    E'  )\n  -- 157 / F447: judged per PLAYER — a player the NFL released or traded\n  -- after he played this week is locked at the run (Q73 / Q74).\n  SELECT COALESCE(jsonb_agg(p.id ORDER BY p.id COLLATE "C"), \'[]\'::jsonb) INTO v_locked\n  FROM public.players p JOIN claim_players cp ON cp.pid = p.id\n  WHERE (public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p.id, p_at) ->> \'locked\')::boolean;\n',
+    E'  ), nfl AS (\n    SELECT DISTINCT p.team FROM public.players p JOIN claim_players cp ON cp.pid = p.id WHERE p.team IS NOT NULL\n  ), locked_nfl AS (\n    SELECT n.team FROM nfl n\n    WHERE (public.pool_game_lock_any_internal(v_league.season, v_current, n.team, p_at) ->> \'locked\')::boolean\n  )\n  SELECT COALESCE(jsonb_agg(p.id ORDER BY p.id COLLATE "C"), \'[]\'::jsonb) INTO v_locked\n  FROM public.players p JOIN claim_players cp ON cp.pid = p.id JOIN locked_nfl ln ON ln.team = p.team;\n'),
+    E'  v_add_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_add, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'  v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);\n'),
+    E'    v_lock := public.pool_game_lock_player_internal(p_league.id, p_league.season, v_current, v_p.player_id, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_lock := public.pool_game_lock_any_internal(p_league.season, v_current, v_p.nfl_team, p_at);\n'),
+    E'          v_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_pool.nfl_team, p_now);\n          -- 157 / F447: the view agrees with the lock every writer enforces —\n          -- per PLAYER: unlocked by his current team, but he PLAYED this week\n          -- (a start recorded for a real kickoff, or his stat line) ⇒ locked.\n          IF NOT (v_lock ->> \'locked\')::boolean THEN\n            v_lock := COALESCE(public.lineup_played_lock_internal(v_lg.id, v_league.season, v_current, v_pool.player_id, p_now), v_lock);\n          END IF;\n',
+    E'          v_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_pool.nfl_team, p_now);\n'),
+    E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n            -- 157 / F447: a PASSED kickoff this record holds STAYS when it is a\n            -- real kickoff of the week and his current team\'s game is not\n            -- postponed — he played, and the NFL has released or traded him\n            -- since: never re-read to NULL or to his new team\'s later game.\n            -- A flexed or postponed game still moves it (E42 / E43).\n            IF (v_e ->> \'kickoff_at\')::timestamptz IS DISTINCT FROM v_k.kickoff_at\n               AND public.lineup_record_kicked_off_internal(v_league.season, v_row.week, v_pid, (v_e ->> \'kickoff_at\')::timestamptz, p_now) THEN\n              v_k.kickoff_at := (v_e ->> \'kickoff_at\')::timestamptz;\n            END IF;\n',
+    E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n')
+$un157$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form pins, the ceiling literals, D137 in the database
 -- ---------------------------------------------------------------------------
@@ -164,13 +192,13 @@ create function pg_temp.unhunk(p_src text, p_indent text) returns text language 
     p_indent || 'SELECT w.last_game_ends_at INTO v_week_end FROM public.nfl_weeks w' || E'\n')
 $$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(p.prosrc), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(p.prosrc)), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('roster_add_drop_internal', 'commish_roster_override_internal', 'process_waivers_internal', 'trade_execute_internal')),
   'commish_roster_override_internal=42e165a610082723c1124d1dc872d648 process_waivers_internal=faaca7fba5fff976f4fa811678e553aa roster_add_drop_internal=a30621f38adb8b114a4a903b068eeb8e trade_execute_internal=ef4648770bd5c18127e5c2270d8aec14',
   'A12 D137 the four roster writers: each live body with 153''s substitutions reversed is its newest definer''s FILE TEXT (152:103-638 / 152:646-1643 / 152:1651-2203 / 151:755-1209 — stored md5 literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un156(p.prosrc)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(p.prosrc))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('pool_game_lock_internal', 'pool_game_lock_any_internal', 'waiver_window_internal',
                                                  'roster_add_drop_internal', 'commish_roster_override_internal',
