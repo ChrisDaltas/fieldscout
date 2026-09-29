@@ -27,6 +27,7 @@ import {
   presetPatch,
   toggleRunDay,
   waiverOrderCopy,
+  waiverOrderListView,
   waiverSeatCopy,
   windowLine,
   zoneOptions,
@@ -215,6 +216,73 @@ describe('the bid box, the seat line, the fa_hold chip', () => {
     // a rolling-priority league ignores the tiebreaker key
     expect(waiverOrderCopy({ waiver_type: 'rolling_priority', faab_tiebreaker: 'reverse_standings' }, 5, true)).toBe('Waiver priority #5')
     expect(waiverOrderCopy({ waiver_type: 'none_fcfs' }, 5, true)).toBeNull()
+  })
+  describe('waiverOrderListView (L.D3.15, F494): the whole league’s STORED order, never a computed one', () => {
+    // Stored literals: the standings read's order (rank) is NOT the waiver
+    // order — t3 is #1, t1 is #4 — so a list that kept the read's order reds.
+    const teams = [
+      { team_id: 't1', name: 'Alpha', waiver_priority: 4 },
+      { team_id: 't2', name: 'Bravo', waiver_priority: 2 },
+      { team_id: 't3', name: 'Charlie', waiver_priority: 1 },
+      { team_id: 't4', name: 'Delta', waiver_priority: 3 },
+    ]
+    const unstored = teams.map((t) => ({ ...t, waiver_priority: null }))
+    it('rolling priority: #1 first, by the stored number; the viewer’s team marked', () => {
+      const v = waiverOrderListView({ waiver_type: 'rolling_priority' }, teams, 't2')
+      expect(v.kind).toBe('order')
+      if (v.kind !== 'order') return
+      expect(v.title).toBe('Waiver order')
+      expect(v.caption).toBe('When teams claim the same player, the team higher on this list gets him. A team that wins a claim moves to the back of the line.')
+      expect(v.rows.map((r) => [r.priority, r.name, r.mine])).toEqual([
+        [1, 'Charlie', false],
+        [2, 'Bravo', true],
+        [3, 'Delta', false],
+        [4, 'Alpha', false],
+      ])
+    })
+    it('FAAB with the rolling tiebreak (and no key stored — the default): titled as the tie order for equal bids', () => {
+      for (const settings of [{ waiver_type: 'faab', faab_tiebreaker: 'rolling_priority' }, { waiver_type: 'faab' }, { waiver_type: null }]) {
+        const v = waiverOrderListView(settings, teams, null)
+        expect(v.kind, JSON.stringify(settings)).toBe('order')
+        if (v.kind !== 'order') return
+        expect(v.title).toBe('Tie order for equal bids')
+        expect(v.caption).toBe('The highest bid wins a player. When bids are equal, the team higher on this list gets him — and a team that wins a claim moves to the back.')
+        expect(v.rows.map((r) => r.team_id)).toEqual(['t3', 't2', 't4', 't1'])
+        expect(v.rows.some((r) => r.mine)).toBe(false)
+      }
+    })
+    it('standings-based: the rule in words — a stale stored number is never listed', () => {
+      expect(waiverOrderListView({ waiver_type: 'reverse_standings' }, teams, 't1')).toEqual({
+        kind: 'rule',
+        title: 'Waiver order',
+        copy: 'Waiver priority: reverse draft order until week 1 is final, then reverse standings.',
+      })
+      expect(waiverOrderListView({ waiver_type: 'faab', faab_tiebreaker: 'reverse_standings' }, teams, 't1')).toEqual({
+        kind: 'rule',
+        title: 'Tie order for equal bids',
+        copy: 'Ties on equal bids: reverse draft order until week 1 is final, then reverse standings.',
+      })
+    })
+    it('no stored order (before the draft ends, or before 163): where it starts — never a guessed list', () => {
+      expect(waiverOrderListView({ waiver_type: 'rolling_priority' }, unstored, 't1')).toEqual({
+        kind: 'fallback',
+        title: 'Waiver order',
+        copy: 'Waiver priority starts from reverse draft order.',
+      })
+      expect(waiverOrderListView({ waiver_type: 'faab' }, unstored, 't1')).toEqual({
+        kind: 'fallback',
+        title: 'Tie order for equal bids',
+        copy: 'Ties on equal bids start from reverse draft order.',
+      })
+    })
+    it('a team with no stored place is listed last with no number, the others by theirs', () => {
+      const v = waiverOrderListView({ waiver_type: 'rolling_priority' }, [{ team_id: 'tx', name: 'Xray', waiver_priority: null }, ...teams], null)
+      if (v.kind !== 'order') throw new Error(v.kind)
+      expect(v.rows.map((r) => r.priority)).toEqual([1, 2, 3, 4, null])
+    })
+    it('no waivers: nothing to show', () => {
+      expect(waiverOrderListView({ waiver_type: 'none_fcfs' }, teams, 't1')).toEqual({ kind: 'hidden' })
+    })
   })
   it('faHoldUntil: a free-agent pickup inside the hold, at the SERVER instant — the boundary exact', () => {
     const p = { acquisition_type: 'free_agent', acquired_at: '2099-09-15T00:00:00.000Z' } as Pick<RosterPlayer, 'acquisition_type' | 'acquired_at'>

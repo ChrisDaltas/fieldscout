@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
+import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { SubmitClaimResult, WaiverClaimView, WaiverClaimsDocument } from '@/lib/leagues/api/waivers-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
@@ -31,8 +32,9 @@ import type { PoolPlayerRow } from './players-page-ops'
 import { GOLDEN_STANDINGS, NAMES } from './standings-schedule.fixtures'
 import { StandingsTable } from './standings-table'
 import { TeamFaabEditView } from './team-commish-tools'
-import { LOCKED_CLAIM_TITLE, WAIVERS_PAUSED_COPY } from './waiver-claims-ops'
+import { LOCKED_CLAIM_TITLE, WAIVERS_PAUSED_COPY, waiverOrderListView } from './waiver-claims-ops'
 import { CLAIMS_EMPTY_COPY, CLAIMS_ERROR_TITLE, WaiverClaimsPanelView } from './waiver-claims-panel'
+import { WaiverOrderList } from './waiver-order-list'
 import { WaiverScheduleFields } from './waiver-schedule-fields'
 
 function unescapeHtml(html: string): string {
@@ -389,12 +391,62 @@ describe('standings: a FAAB league shows each team’s balance', () => {
   })
 })
 
+describe('standings: the whole league’s waiver order (L.D3.15, F494)', () => {
+  // GOLDEN_STANDINGS' rank order is Alpha, Bravo, Charlie, Delta; the STORED
+  // order below is Charlie, Alpha, Delta, Bravo — the list must follow it.
+  const stored = [3, 4, 1, 2]
+  const rows: StandingsRow[] = GOLDEN_STANDINGS.standings.map((r, i) => ({ ...r, waiver_priority: stored[i]! }))
+  const list = (settings: { waiver_type: string; faab_tiebreaker?: string }, teams: readonly StandingsRow[] = rows, mine: string | null = 't2') =>
+    render(createElement(WaiverOrderList, { view: waiverOrderListView(settings, teams, mine), leagueId: 'league-1' }))
+  const order = (html: string) => [...html.matchAll(/data-waiver-order-team="(t\d)" data-waiver-priority="(\d*)"/g)].map((m) => `${m[2]}:${m[1]}`)
+  it('rolling priority: every team, #1 first by the stored number, each a link to its page; the viewer’s row filled, never lifted', () => {
+    const html = list({ waiver_type: 'rolling_priority' })
+    expect(html).toContain('data-waiver-order="order"')
+    expect(html).toContain('>Waiver order<')
+    expect(order(html)).toEqual(['1:t3', '2:t4', '3:t1', '4:t2'])
+    expect(html).toContain('>#1<')
+    expect(html).toContain('href="/app/leagues/league-1/team/t3"')
+    const mine = html.match(/<li[^>]*data-waiver-order-team="t2"[^>]*>/)![0]
+    expect(mine).toContain('data-mine="true"')
+    expect(mine).toContain('bg-accent-soft')
+    expect(mine).not.toMatch(/shadow/)
+    expect(html.match(/<li[^>]*data-waiver-order-team="t1"[^>]*>/)![0]).not.toContain('data-mine')
+    expect(html).toContain('>You<')
+  })
+  it('FAAB with the rolling tiebreak: the same stored order, titled as the tie order for equal bids', () => {
+    const html = list({ waiver_type: 'faab', faab_tiebreaker: 'rolling_priority' })
+    expect(html).toContain('>Tie order for equal bids<')
+    expect(html).toContain('When bids are equal, the team higher on this list gets him')
+    expect(order(html)).toEqual(['1:t3', '2:t4', '3:t1', '4:t2'])
+  })
+  it('standings-based: the rule in words, no list and no stale number', () => {
+    const html = list({ waiver_type: 'faab', faab_tiebreaker: 'reverse_standings' })
+    expect(html).toContain('data-waiver-order="rule"')
+    expect(html).toContain('Ties on equal bids: reverse draft order until week 1 is final, then reverse standings.')
+    expect(html).not.toContain('data-waiver-order-team')
+    expect(html).not.toMatch(/>#\d</)
+    expect(list({ waiver_type: 'reverse_standings' })).toContain('Waiver priority: reverse draft order until week 1 is final, then reverse standings.')
+  })
+  it('no stored order: the plain fallback copy', () => {
+    const none = GOLDEN_STANDINGS.standings
+    const rolling = list({ waiver_type: 'rolling_priority' }, none)
+    expect(rolling).toContain('data-waiver-order="fallback"')
+    expect(rolling).toContain('Waiver priority starts from reverse draft order.')
+    expect(rolling).not.toContain('data-waiver-order-team')
+    expect(list({ waiver_type: 'faab' }, none)).toContain('Ties on equal bids start from reverse draft order.')
+  })
+  it('no waivers: nothing rendered', () => {
+    expect(list({ waiver_type: 'none_fcfs' })).toBe('')
+  })
+})
+
 describe('the waivers files: single theme, no clock, resting shadows only on true overlays', () => {
   const files = [
     'src/components/leagues/waiver-claims-panel.tsx',
     'src/components/leagues/waiver-claims-ops.ts',
     'src/components/leagues/claim-dialog.tsx',
     'src/components/leagues/waiver-schedule-fields.tsx',
+    'src/components/leagues/waiver-order-list.tsx',
   ]
   const code = (f: string) =>
     readFileSync(path.resolve(process.cwd(), f), 'utf8')

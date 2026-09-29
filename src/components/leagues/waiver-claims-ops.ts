@@ -321,6 +321,67 @@ export function faabLeftCopy(balance: number | null, budget: number | null): str
 }
 
 // ---------------------------------------------------------------------------
+// The whole league's waiver order (L.D3.15 — F494; spec §13.2 Q72, v2.16.72)
+// ---------------------------------------------------------------------------
+
+export const WAIVER_ORDER_TITLE = 'Waiver order'
+export const WAIVER_TIE_ORDER_TITLE = 'Tie order for equal bids'
+export const WAIVER_ORDER_ROLLING_CAPTION =
+  'When teams claim the same player, the team higher on this list gets him. A team that wins a claim moves to the back of the line.'
+export const WAIVER_ORDER_TIES_CAPTION =
+  'The highest bid wins a player. When bids are equal, the team higher on this list gets him — and a team that wins a claim moves to the back.'
+/** No stored order yet (before the draft ends, or a database before 163):
+ *  where the order starts — never a guessed list. */
+export const WAIVER_ORDER_FALLBACK_COPY = 'Waiver priority starts from reverse draft order'
+export const WAIVER_TIE_ORDER_FALLBACK_COPY = 'Ties on equal bids start from reverse draft order'
+
+export interface WaiverOrderRow {
+  team_id: string
+  name: string
+  /** The STORED place (`league_members.waiver_priority`); null = none stored. */
+  priority: number | null
+  mine: boolean
+}
+
+export type WaiverOrderListView =
+  /** No waivers (free agency only) — nothing to show. */
+  | { kind: 'hidden' }
+  /** Decided by the standings each run — the rule in words, never numbers
+   *  (a stale stored number from an earlier setting is never shown). */
+  | { kind: 'rule'; title: string; copy: string }
+  /** A rolling order with nothing stored yet — where it starts. */
+  | { kind: 'fallback'; title: string; copy: string }
+  /** The stored order, #1 first; a team with no stored place last. */
+  | { kind: 'order'; title: string; caption: string; rows: WaiverOrderRow[] }
+
+/**
+ * The league-wide waiver order (F494) over the STORED places the standings
+ * read already carries (`waiver_priority` per team, L.D2.12). Nothing is
+ * computed: the rows are sorted by the number the server stored; the words
+ * come from `waiverOrderBasis` (the processor's own `v_persists` rule, as
+ * everywhere else — `waiverOrderCopy`).
+ */
+export function waiverOrderListView(
+  settings: { waiver_type: string | null; faab_tiebreaker?: string | null },
+  teams: ReadonlyArray<{ team_id: string; name: string; waiver_priority: number | null }>,
+  myTeamId: string | null,
+): WaiverOrderListView {
+  const basis = waiverOrderBasis(settings.waiver_type, settings.faab_tiebreaker)
+  if (basis === 'none') return { kind: 'hidden' }
+  const faab = (settings.waiver_type ?? 'faab') === 'faab'
+  const title = faab ? WAIVER_TIE_ORDER_TITLE : WAIVER_ORDER_TITLE
+  if (basis === 'reverse_standings') return { kind: 'rule', title, copy: `${waiverOrderCopy(settings, null, false)}.` }
+  if (!teams.some((t) => t.waiver_priority !== null)) {
+    return { kind: 'fallback', title, copy: `${faab ? WAIVER_TIE_ORDER_FALLBACK_COPY : WAIVER_ORDER_FALLBACK_COPY}.` }
+  }
+  const rows = teams
+    .map((t) => ({ team_id: t.team_id, name: t.name, priority: t.waiver_priority, mine: myTeamId !== null && t.team_id === myTeamId }))
+    // Stable: equal keys (only ever the unstored ones, last) keep the read's order.
+    .sort((a, b) => (a.priority === null ? (b.priority === null ? 0 : 1) : b.priority === null ? -1 : a.priority - b.priority))
+  return { kind: 'order', title, caption: faab ? WAIVER_ORDER_TIES_CAPTION : WAIVER_ORDER_ROLLING_CAPTION, rows }
+}
+
+// ---------------------------------------------------------------------------
 // The schedule editor (settings panel + create wizard — Q70 presets, F425's
 // "full schedule editor")
 // ---------------------------------------------------------------------------

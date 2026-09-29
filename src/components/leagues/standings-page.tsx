@@ -20,6 +20,8 @@ import { PROJECTED_COPY, overriddenWeeksByTeam } from './standings-table-ops'
 import { StandingsTable } from './standings-table'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
+import { waiverOrderListView } from './waiver-claims-ops'
+import { WaiverOrderList } from './waiver-order-list'
 
 export type StandingsTab = 'standings' | 'playoffs'
 export type StandingsView = 'final' | 'projected'
@@ -54,6 +56,10 @@ export type StandingsView = 'final' | 'projected'
  * shapes are each designed copy) · error-with-retry (ONE 404 copy,
  * F250(a)) · degraded (a refetch failed with last-good data on screen →
  * the banner + the data; the realtime drop → the reconnecting banner).
+ *
+ * **The waiver order (L.D3.15, F494).** Under the table, the whole league's
+ * order (`waiver-order-list.tsx`) over the STORED `waiver_priority` the
+ * standings read already carries — no new read, nothing computed.
  *
  * No clock here (§23.3 / the F226 fence): the bracket's rollover is a
  * stored instant formatted for the viewer.
@@ -179,6 +185,14 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
               overridesUnknown={schedule.isError && !schedule.data}
             />
           ) : null}
+
+          {/* L.D3.15 (F494): the whole league's waiver order — the STORED
+              places this same read carries (`waiver_priority`, L.D2.12), so
+              it shows exactly when the table does (a failed read is the
+              ProblemCard above, never an empty order). */}
+          {standings.data && (
+            <WaiverOrderList view={waiverOrderListView(detail.settings, standings.data.standings, myTeamId)} leagueId={leagueId} />
+          )}
         </TabsContent>
 
         <TabsContent value="playoffs" className="flex flex-col gap-4" data-tab-panel="playoffs">

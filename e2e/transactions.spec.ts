@@ -23,7 +23,9 @@ import {
   readTeamLineup,
   readTeamRoster,
   readTrade,
+  readTradeDrops,
   readWaiverNextRun,
+  readWaiverPriorities,
   recordWeekEnd,
   serviceClient,
   tradeTickAt,
@@ -41,8 +43,8 @@ import { STORAGE_STATE } from './helpers/local-env'
  * `free-agents-table` / trade center, §11.2 the lineup lock; PROGRESS D414,
  * D415, D416, D417, D419, F296).
  *
- * ONE LEAGUE, THREE STEPS, IN ORDER (`serial`): the draft is the expensive
- * part, so the three tests share one drafted league and each picks up the
+ * ONE LEAGUE, FOUR STEPS, IN ORDER (`serial`): the draft is the expensive
+ * part, so the four tests share one drafted league and each picks up the
  * rosters the last one left.
  *
  *   1. WAIVER MORNING — two managers put in claims on the same free agent in
@@ -55,6 +57,13 @@ import { STORAGE_STATE } from './helpers/local-env'
  *   3. A DEFERRED TRADE — accepted while a player in it has played, parked
  *      until the week's last game ends, executed by the tick after that
  *      instant — and F296's `set_lineup` lock refusal on the same fixture.
+ *   4. THE PREVENTED TRADE STATES (L.D3.15 — F492; D426) and the whole
+ *      waiver order (F494): the standings page lists the order the run left;
+ *      a full roster opens the drop picker on the builder (Send off until the
+ *      drop is picked) and on the offer card (Accept off until the receiving
+ *      team picks); past the deadline there is no Propose door and no
+ *      Counter, a waiting offer says it can't be accepted, and Turn down
+ *      still works.
  *
  * TIME — THE TWO CLOCKS, SAID PLAINLY. Every CLIENT verb (claim, propose,
  * accept, vote, the commissioner's approve, `set_lineup`) takes no caller
@@ -99,6 +108,9 @@ interface Fixture {
   botTeams: string[]
   /** Players no step may move — F296's target is reserved here. */
   reserved: Set<string>
+  /** NFL clubs whose week-1 game has kicked off (step 3's planted row) — a
+   *  later step that needs a trade to go through at once avoids them. */
+  lockedClubs: Set<string>
 }
 
 let fx: Fixture | null = null
@@ -126,7 +138,8 @@ async function setSetting(key: string, value: string): Promise<void> {
 async function takePlayer(teamId: string, used: Set<string>): Promise<RosterEntry> {
   const { league, reserved } = fixture()
   const roster = await readTeamRoster(serviceClient(), league.leagueId, teamId)
-  const pick = roster.find((p) => !used.has(p.player_id) && !reserved.has(p.player_id) && p.nfl_team !== null)
+  const { lockedClubs } = fixture()
+  const pick = roster.find((p) => !used.has(p.player_id) && !reserved.has(p.player_id) && p.nfl_team !== null && !lockedClubs.has(p.nfl_team))
   if (!pick) {
     throw new Error(`team ${teamId} has no unused player left — roster ${JSON.stringify(roster.map((p) => p.player_id))}`)
   }
@@ -159,11 +172,16 @@ async function proposeInBrowser(
   })
   await builder.locator(`[data-trade-side="give"] [data-trade-pick="${give.player_id}"]`).getByRole('checkbox').click()
   await expect(builder.locator(`[data-trade-side="give"] [data-trade-pick="${give.player_id}"]`)).toHaveAttribute('data-picked', 'true')
+  return sendOffer(page, leagueId)
+}
+
+/** Press the open builder's Send and return the new trade's id. */
+async function sendOffer(page: Page, leagueId: string): Promise<string> {
   const posted = page.waitForResponse(
     (res) => new URL(res.url()).pathname === `/api/leagues/${leagueId}/trades` && res.request().method() === 'POST',
     { timeout: 60_000 },
   )
-  await builder.locator('[data-trade-send]').click()
+  await page.locator('[data-trade-builder="propose"] [data-trade-send]').click()
   const response = await posted
   const body = (await response.json()) as { trade?: { id?: string } }
   expect(response.status(), `the offer answered ${response.status()}: ${JSON.stringify(body)}`).toBe(200)
@@ -232,7 +250,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
     expect(await readLeague(service, league.leagueId)).toMatchObject({ status: 'in_season' })
     // eslint-disable-next-line no-console -- the DoD evidence line
     console.log(`[transactions] ${TEAM_COUNT * SEASON_ROUNDS} picks in ${drive.steps} engine steps → ${drive.status}`)
-    fx = { league, commish, manager, bots, botTeams: league.extraTeamIds, reserved: new Set() }
+    fx = { league, commish, manager, bots, botTeams: league.extraTeamIds, reserved: new Set(), lockedClubs: new Set() }
   })
 
   test.afterAll(async () => {
@@ -508,6 +526,8 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       status: 'final',
     })
     await recordWeekEnd(service, 1, lastEnd)
+    fixture().lockedClubs.add(played.nfl_team!)
+    if (f296.nfl_team) fixture().lockedClubs.add(f296.nfl_team)
     // eslint-disable-next-line no-console -- the DoD evidence line
     console.log(
       `[transactions] planted ${gameId}: ${played.full_name} (${played.nfl_team}) + F296 ${f296.full_name} ` +
@@ -599,6 +619,213 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       test.info().annotations.push({
         type: 'deferred-and-f296',
         description: `${t5} parked until ${lastEnd}, complete @ ${releaseAt}; F296 refusal on ${f296.player_id}`,
+      })
+    } finally {
+      await managerContext.close()
+      await commishContext.close()
+    }
+  })
+
+  test('the prevented trade states (F492) and the whole waiver order (F494): full rosters pick their drops; past the deadline, no doors', async ({ browser }) => {
+    test.setTimeout(300_000)
+    const service = serviceClient()
+    const { league } = fixture()
+    const managerTeam = league.managerTeamId!
+    const commishTeam = league.commishTeamId
+    const used = new Set<string>()
+    await setSetting('trade_review', 'none') // an accept goes through at once
+
+    // Every roster is full (SEASON_ROSTER: 7 seats, 7 rounds, and every step
+    // so far swapped one for one) — the premise both drop states stand on.
+    for (const team of [managerTeam, commishTeam]) {
+      expect((await readTeamRoster(service, league.leagueId, team)).length, `team ${team} is full`).toBe(SEASON_ROUNDS)
+    }
+
+    const managerContext = await browser.newContext({ storageState: STORAGE_STATE.devPro })
+    const commishContext = await browser.newContext({ storageState: STORAGE_STATE.dev })
+    try {
+      const mPage = await managerContext.newPage()
+      const cPage = await commishContext.newPage()
+
+      // ---- (0) F494 — THE WHOLE WAIVER ORDER, on the standings page ----------
+      // The order is the one the server STORED (163 at the draft's end, then
+      // step 1's run: dev-pro won, so dev-pro went to the back — F422(a)). The
+      // league is FAAB with the rolling tiebreak (the default), so the list is
+      // titled as the tie order for equal bids.
+      const stored = await readWaiverPriorities(service, league.leagueId)
+      expect(stored.size).toBe(TEAM_COUNT)
+      expect([...stored.values()].sort((a, b) => (a ?? 0) - (b ?? 0)), 'one stored place per team, 1…N').toEqual(
+        Array.from({ length: TEAM_COUNT }, (_, i) => i + 1),
+      )
+      expect(stored.get(managerTeam), 'the claim step’s winner went to the back').toBe(TEAM_COUNT)
+      const storedOrder = [...stored.entries()].sort((a, b) => a[1]! - b[1]!).map(([team]) => team)
+      await mPage.goto(`/app/leagues/${league.leagueId}/standings`)
+      const orderList = mPage.locator('[data-waiver-order="order"]')
+      await expect(orderList).toBeVisible({ timeout: 60_000 })
+      await expect(orderList.getByRole('heading')).toHaveText('Tie order for equal bids')
+      const shownTeams = orderList.locator('[data-waiver-order-team]')
+      await expect(shownTeams).toHaveCount(TEAM_COUNT)
+      const shown = await shownTeams.evaluateAll((els) =>
+        els.map((el) => [el.getAttribute('data-waiver-order-team'), el.getAttribute('data-waiver-priority')]),
+      )
+      expect(shown, 'the list is the stored order, #1 first').toEqual(storedOrder.map((team) => [team, String(stored.get(team))]))
+      await expect(orderList.locator(`[data-waiver-order-team="${managerTeam}"]`)).toHaveAttribute('data-mine', 'true')
+      await expect(orderList.locator('[data-mine]')).toHaveCount(1)
+
+      // ---- (1) THE BUILDER: dev-pro's roster would be over → the drop picker -
+      // One for two: dev-pro gets two players and gives one, so its full roster
+      // would be one over. Send stays off until one drop is picked.
+      const give1 = await takePlayer(managerTeam, used)
+      const get1 = await takePlayer(commishTeam, used)
+      const get2 = await takePlayer(commishTeam, used)
+      const drop1 = await takePlayer(managerTeam, used)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get1.player_id}`)
+      const builder = mPage.locator('[data-trade-builder="propose"]')
+      await expect(builder).toBeVisible({ timeout: 60_000 })
+      await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${get1.player_id}"]`)).toHaveAttribute('data-picked', 'true', {
+        timeout: 30_000,
+      })
+      await builder.locator(`[data-trade-side="get"] [data-trade-pick="${get2.player_id}"]`).getByRole('checkbox').click()
+      await builder.locator(`[data-trade-side="give"] [data-trade-pick="${give1.player_id}"]`).getByRole('checkbox').click()
+      const send = builder.locator('[data-trade-send]')
+      const gate = builder.locator('[data-trade-gate]')
+      await expect(gate).toHaveAttribute('data-trade-gate', 'blocked', { timeout: 30_000 })
+      await expect(gate).toHaveText('Pick 1 more player to drop so your roster fits.')
+      await expect(builder.locator('[data-trade-drops]')).toHaveAttribute('data-trade-drops', 'open')
+      await expect(builder.locator('[data-trade-drops-prompt]')).toHaveAttribute('data-trade-drops-prompt', '1')
+      await expect(builder.locator('[data-trade-drops-prompt]')).toContainText('pick 1 more player to drop')
+      await expect(send).toBeDisabled()
+      await builder.locator(`[data-trade-drops] [data-trade-pick="${drop1.player_id}"]`).getByRole('checkbox').click()
+      await expect(gate).toHaveAttribute('data-trade-gate', 'ok', { timeout: 30_000 })
+      await expect(send).toBeEnabled()
+      const o1 = await sendOffer(mPage, league.leagueId)
+      expect((await readTrade(service, o1)).status).toBe('proposed')
+      expect(await readTradeDrops(service, o1), 'the drop was stored with the offer').toEqual([{ team_id: managerTeam, player_id: drop1.player_id }])
+
+      // ---- (2) THE CARD: dev@'s roster would be over → he picks on the card --
+      // Two for one: dev@ gets two and gives one. The builder says so and sends;
+      // on dev@'s card the drop picker is there before anything is pressed and
+      // Accept stays off until he picks.
+      const give2 = await takePlayer(managerTeam, used)
+      const give3 = await takePlayer(managerTeam, used)
+      const get3 = await takePlayer(commishTeam, used)
+      const drop2 = await takePlayer(commishTeam, used)
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get3.player_id}`)
+      await expect(builder).toBeVisible({ timeout: 60_000 })
+      await expect(builder.locator(`[data-trade-side="get"] [data-trade-pick="${get3.player_id}"]`)).toHaveAttribute('data-picked', 'true', {
+        timeout: 30_000,
+      })
+      await builder.locator(`[data-trade-side="give"] [data-trade-pick="${give2.player_id}"]`).getByRole('checkbox').click()
+      await builder.locator(`[data-trade-side="give"] [data-trade-pick="${give3.player_id}"]`).getByRole('checkbox').click()
+      await expect(gate).toHaveAttribute('data-trade-gate', 'ok', { timeout: 30_000 })
+      await expect(gate).toContainText('would be 1 over, so they’ll pick a player to drop when they accept')
+      const o2 = await sendOffer(mPage, league.leagueId)
+
+      await openTrades(cPage, league.leagueId)
+      const card2 = cPage.locator(`[data-trade="${o2}"]`)
+      await expect(card2).toBeVisible({ timeout: 60_000 })
+      const picker2 = card2.locator('[data-accept-drops]')
+      await expect(picker2).toHaveAttribute('data-accept-must-drop', '1', { timeout: 30_000 })
+      await expect(picker2).toContainText('Your roster would be over its size — pick 1 more player to drop.')
+      await expect(card2.locator('[data-accept-with-drops]')).toBeDisabled()
+      await expect(card2.locator('[data-trade-op="accept"]')).toHaveCount(0)
+      await picker2.locator(`[data-trade-pick="${drop2.player_id}"]`).getByRole('checkbox').click()
+      await expect(picker2).toHaveAttribute('data-accept-must-drop', '0', { timeout: 30_000 })
+      await expect(card2.locator('[data-accept-with-drops]')).toBeEnabled()
+      const accepted = cPage.waitForResponse(
+        (res) => new URL(res.url()).pathname === `/api/leagues/${league.leagueId}/trades/${o2}` && res.request().method() === 'PATCH',
+        { timeout: 60_000 },
+      )
+      await card2.locator('[data-accept-with-drops]').click()
+      expect((await accepted).status(), 'the accept with the drop answers 200').toBe(200)
+      expect((await readTrade(service, o2)).status).toBe('complete')
+      expect(await readHolder(service, league.leagueId, give2.player_id)).toBe(commishTeam)
+      expect(await readHolder(service, league.leagueId, give3.player_id)).toBe(commishTeam)
+      expect(await readHolder(service, league.leagueId, get3.player_id)).toBe(managerTeam)
+      expect(await readHolder(service, league.leagueId, drop2.player_id), 'dev@’s pick was dropped').toBeNull()
+      expect((await readTeamRoster(service, league.leagueId, commishTeam)).length, 'dev@’s roster fits').toBe(SEASON_ROUNDS)
+      await expect((await historyCard(cPage, league.leagueId, o2)).locator('[data-trade-status-label]')).toHaveText('Completed')
+
+      // ---- (3) PAST THE DEADLINE -----------------------------------------------
+      // The doors first, with the deadline ahead (the control): a Propose trade
+      // door on dev@'s team page; Accept and Counter on the offer dev@ holds.
+      await mPage.goto(`/app/leagues/${league.leagueId}/team/${commishTeam}`)
+      await expect(mPage.locator('[data-team-waiver-seat]')).toBeVisible({ timeout: 60_000 })
+      await expect(mPage.locator('[data-propose-trade]')).toBeVisible({ timeout: 30_000 })
+      await openTrades(cPage, league.leagueId)
+      const card1 = cPage.locator(`[data-trade="${o1}"]`)
+      await expect(card1.locator('[data-trade-op="accept"]')).toBeEnabled({ timeout: 30_000 })
+      await expect(card1.locator('[data-trade-op="counter"]')).toBeVisible()
+
+      // THE INJECTION, AT THE NETWORK EDGE. `trade_deadline` judges `passed` at
+      // the database's now() — wall time, decades before the synthetic 2099
+      // calendar's deadline — and takes no caller clock, so no harness job can
+      // move it (PROGRESS D431). The route below fetches the SERVER's real
+      // answer and returns what the same read answers one minute past that
+      // instant (162's `trade_deadline_view_internal` at p_at = deadline + 1
+      // min: passed, no time remaining); the instant, week and label stay the
+      // server's. The binding of `passed` to the verbs' own refusal is pgTAP
+      // 110 B2 / B3. Every other request goes to the real server.
+      const deadlinePath = `/api/leagues/${league.leagueId}/trades/deadline`
+      const real: Array<{ passed: boolean; deadline_at: string | null }> = []
+      const inject = (context: BrowserContext) =>
+        context.route(
+          (url) => url.pathname === deadlinePath,
+          async (route) => {
+            const response = await route.fetch()
+            const view = (await response.json()) as { passed: boolean; deadline_at: string | null }
+            real.push(view)
+            const past = view.deadline_at ? new Date(Date.parse(view.deadline_at) + MINUTE_MS).toISOString() : null
+            await route.fulfill({ response, json: { ...view, passed: true, ms_remaining: null, evaluated_at: past } })
+          },
+        )
+      await inject(managerContext)
+      await inject(commishContext)
+
+      // dev-pro: no Propose trade on another team's page; on the trade center
+      // the door is the closed-for-the-season line, and the ?with= door opens
+      // no builder.
+      const teamRead = mPage.waitForResponse((res) => new URL(res.url()).pathname === deadlinePath, { timeout: 60_000 })
+      await mPage.reload()
+      await teamRead
+      await expect(mPage.locator('[data-team-waiver-seat]')).toBeVisible({ timeout: 60_000 })
+      await expect(mPage.locator('[data-propose-trade]')).toHaveCount(0, { timeout: 30_000 })
+      await mPage.goto(`/app/leagues/${league.leagueId}/trades?with=${commishTeam}&player=${get1.player_id}`)
+      const closed = mPage.locator('[data-trade-door-closed="deadline"]')
+      await expect(closed).toBeVisible({ timeout: 60_000 })
+      await expect(closed).toContainText('Offers can’t be made, accepted or countered now')
+      await expect(mPage.locator('[data-trade-deadline-passed="true"]')).toBeVisible()
+      await expect(mPage.locator('[data-propose-open]')).toHaveCount(0)
+      await expect(mPage.locator('[data-trade-builder]')).toHaveCount(0)
+
+      // dev@: the waiting offer says it can't be accepted or countered; no
+      // Accept, no Counter, no drop picker — Turn down still works.
+      await cPage.reload()
+      await expect(cPage.locator('[data-trade-deadline-passed="true"]')).toBeVisible({ timeout: 60_000 })
+      const gate1 = card1.locator('[data-accept-gate="blocked"]')
+      await expect(gate1).toBeVisible({ timeout: 30_000 })
+      await expect(gate1).toContainText('this offer can’t be accepted or countered now')
+      await expect(gate1).toContainText('you can still turn it down')
+      await expect(card1.locator('[data-trade-op="accept"]')).toHaveCount(0)
+      await expect(card1.locator('[data-trade-op="accept-drops"]')).toHaveCount(0)
+      await expect(card1.locator('[data-accept-with-drops]')).toHaveCount(0)
+      await expect(card1.locator('[data-trade-op="counter"]')).toHaveCount(0)
+      expect(await pressTradeOp(cPage, league.leagueId, o1, 'reject'), 'Turn down answers 200').toBe(200)
+      expect((await readTrade(service, o1)).status).toBe('rejected')
+      expect(await readHolder(service, league.leagueId, give1.player_id), 'a turned-down offer moves nobody').toBe(managerTeam)
+      expect(await readHolder(service, league.leagueId, drop1.player_id), 'nor drops anybody').toBe(managerTeam)
+      await expect((await historyCard(cPage, league.leagueId, o1)).locator('[data-trade-status-label]')).toHaveText('Turned down')
+
+      // The injection rewrote real answers only: the server's deadline was
+      // real and still ahead each time it was read.
+      expect(real.length, 'the deadline read was intercepted').toBeGreaterThan(0)
+      for (const view of real) {
+        expect(view.passed, 'the server’s own answer: not passed').toBe(false)
+        expect(view.deadline_at, 'the server’s own answer: a real instant').not.toBeNull()
+      }
+      test.info().annotations.push({
+        type: 'prevented-trade-states',
+        description: `builder drop ${o1} (turned down past the deadline) · card drop ${o2} (complete) · waiver order ${storedOrder.join(',')}`,
       })
     } finally {
       await managerContext.close()
