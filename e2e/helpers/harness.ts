@@ -95,7 +95,13 @@ export type Supabase = SupabaseClient<Database>
  *      flipped nothing, an upsert that wrote zero rows THROWS naming the
  *      reason (M4 rule 10's loud emptiness; CLAUDE.md's "never let 'nothing
  *      happened' mean 'it worked'"). The one deliberate exception is
- *      documented at its own call site;
+ *      documented at its own call site. **M5's L.D3.9 added the two
+ *      transaction jobs to it, the same class**: `waiver_tick` and
+ *      `trade_tick` (`150:1279`, `155:551`) are REVOKEd from
+ *      `authenticated` and refuse a JWT caller in-body, take `p_now`, and
+ *      are driven league-scoped here (`waiverTickAt` / `tradeTickAt`) —
+ *      each THROWS when this league was not processed the way the caller
+ *      needs (a run that settled nothing, a tick that did nothing);
  *  10. (L.D6.2) the SEASON-SURFACE half of the sweep and its door check.
  *      The synthetic season (2099) is shared ground with the sim and the
  *      dev seeder, and no league delete cascades to `nfl_games`,
@@ -192,6 +198,13 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
       throwIfError(lineupsError, 'cleanup: team_lineups delete')
     }
     for (const table of [
+      // M5 L.D3.9 (the sim's own order, `runner.ts:2180-2186`): `trades`'
+      // two team columns and `trade_items` / `trade_drops`' team columns
+      // reference `teams` with NO cascade (148:124-125, :171-172, :194), so
+      // a spec's trades go before the teams (items, drops and votes cascade
+      // from the trade). Every other M5 table cascades from the league or
+      // the team.
+      'trades',
       'lineup_actions',
       'team_week_results',
       'league_player_pool',
@@ -1739,4 +1752,181 @@ export async function waitFor<T>(
     }
     await new Promise((resolve) => setTimeout(resolve, pace))
   }
+}
+
+// ---------------------------------------------------------------------------
+// Job 9, the M5 half (L.D3.9) — the transaction jobs at an injected `p_now`
+// ---------------------------------------------------------------------------
+
+/** How many times a scoped job call is repeated when the live per-minute cron
+ *  held THIS league's row (both jobs claim leagues `FOR UPDATE SKIP LOCKED`,
+ *  `150:1339`, `155:590`) — a skipped league is "busy", never "done". */
+const BUSY_RETRIES = 12
+const BUSY_PACE_MS = 500
+
+export type WaiverTickOutcome = 'seeded' | 'settled'
+
+/**
+ * `waiver_tick` at an injected instant, scoped to ONE league (`150:1279`).
+ * The report sorts each processed league into `settled` / `seeded` /
+ * `no_waivers` / `other` (`not_due`, `skipped`) — the per-league document is
+ * `process_waivers_internal`'s own (`153:1981`). Returns this league's
+ * document once it lands in one of `want`.
+ *
+ * THROWS on a non-empty `failures` array (`jobReport`), when the league came
+ * back in a bucket the caller did not want (a run that was `not_due` is the
+ * caller's instant being wrong, and says so), and when the league was never
+ * processed at all after `BUSY_RETRIES` passes — the live `process-waivers`
+ * cron shares the stack and a SKIP LOCKED miss is retried, never read as a
+ * run (CLAUDE.md: "nothing happened" must never mean "it worked").
+ */
+export async function waiverTickAt(
+  service: Supabase,
+  leagueId: string,
+  pNow: string,
+  want: readonly WaiverTickOutcome[],
+): Promise<{ outcome: WaiverTickOutcome; result: Record<string, unknown>; report: JobReport }> {
+  let last: JobReport | null = null
+  for (let attempt = 1; attempt <= BUSY_RETRIES; attempt++) {
+    const { data, error } = await service.rpc('waiver_tick', { p_now: pNow, p_league_id: leagueId })
+    throwIfError(error, 'harness waiver_tick')
+    const report = jobReport(data, 'waiverTickAt')
+    last = report
+    for (const bucket of ['settled', 'seeded', 'no_waivers', 'other'] as const) {
+      const rows = (report[bucket] ?? []) as Array<Record<string, unknown>>
+      const mine = rows.find((row) => row.league_id === leagueId)
+      if (!mine) continue
+      if ((want as readonly string[]).includes(bucket)) {
+        return { outcome: bucket as WaiverTickOutcome, result: mine, report }
+      }
+      throw new Error(
+        `waiverTickAt: waiver_tick at ${pNow} put league ${leagueId} in '${bucket}' ` +
+          `(${JSON.stringify(mine)}), the caller needed ${want.join(' / ')} — full report: ${JSON.stringify(report)}`,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, BUSY_PACE_MS))
+  }
+  throw new Error(
+    `waiverTickAt: waiver_tick at ${pNow} never processed league ${leagueId} in ${BUSY_RETRIES} passes ` +
+      `(the league is not in season, its tracked run is after p_now, or the live cron held it every time) — last report: ${JSON.stringify(last)}`,
+  )
+}
+
+/**
+ * `trade_tick` at an injected instant, scoped to ONE league (`155:551`):
+ * expiry at the deadline, the backstop sweep, the league-vote veto, and every
+ * trade whose review ended or whose game-lock wait is over.
+ *
+ * THROWS on a non-empty `failures` array, and when the pass took NO action —
+ * a tick the caller drove to move a trade that moved nothing is the caller's
+ * instant being wrong, and the report's own `reason` travels in the error.
+ * The ONE exception is a boundary's negative side (`expectAction: false`):
+ * the caller asserts the report's own `reason` instead. A pass the live
+ * `trade-tick` cron beat to the league row (`skipped_locked`) is retried,
+ * never read as "nothing due".
+ */
+export async function tradeTickAt(
+  service: Supabase,
+  leagueId: string,
+  pNow: string,
+  opts: { expectAction?: boolean } = {},
+): Promise<JobReport> {
+  let last: JobReport | null = null
+  for (let attempt = 1; attempt <= BUSY_RETRIES; attempt++) {
+    const { data, error } = await service.rpc('trade_tick', { p_now: pNow, p_league_id: leagueId })
+    throwIfError(error, 'harness trade_tick')
+    const report = jobReport(data, 'tradeTickAt')
+    last = report
+    if (Number(report.skipped_locked ?? 0) > 0) {
+      await new Promise((resolve) => setTimeout(resolve, BUSY_PACE_MS))
+      continue
+    }
+    const actions = (report.actions ?? []) as unknown[]
+    if (!Array.isArray(actions)) {
+      throw new Error(`tradeTickAt: the report's \`actions\` is not an array — report: ${JSON.stringify(report)}`)
+    }
+    if (actions.length === 0 && opts.expectAction !== false) {
+      throw new Error(
+        `tradeTickAt: trade_tick at ${pNow} took NO action for league ${leagueId} ` +
+          `(reason ${JSON.stringify(report.reason)}) — the caller expected a trade to move; report: ${JSON.stringify(report)}`,
+      )
+    }
+    return report
+  }
+  throw new Error(
+    `tradeTickAt: the live trade-tick cron held league ${leagueId} for ${BUSY_RETRIES} passes at ${pNow} — ` +
+      `last report: ${JSON.stringify(last)}`,
+  )
+}
+
+// --- Job 4, the M5 reads (same read-only class, R297) ---------------------
+
+/** `leagues.waiver_next_run_at` — the run the processor is tracking. */
+export async function readWaiverNextRun(service: Supabase, leagueId: string): Promise<string | null> {
+  const { data, error } = await service.from('leagues').select('waiver_next_run_at').eq('id', leagueId).single()
+  throwIfError(error, 'read waiver_next_run_at')
+  return data!.waiver_next_run_at
+}
+
+export interface ClaimRow {
+  id: string
+  team_id: string
+  add_player_id: string
+  drop_player_id: string | null
+  status: string
+  result_reason: string | null
+  faab_bid: number
+}
+
+/** Every claim in a league — the run's outcome, asserted beside the screen. */
+export async function readLeagueClaims(service: Supabase, leagueId: string): Promise<ClaimRow[]> {
+  const { data, error } = await service
+    .from('waiver_claims')
+    .select('id, team_id, add_player_id, drop_player_id, status, result_reason, faab_bid')
+    .eq('league_id', leagueId)
+    .order('id')
+  throwIfError(error, 'read waiver claims')
+  return (data ?? []) as ClaimRow[]
+}
+
+/** A team's FAAB balance (`league_members.faab_balance`). */
+export async function readFaabBalance(service: Supabase, leagueId: string, teamId: string): Promise<number | null> {
+  const { data, error } = await service
+    .from('league_members')
+    .select('faab_balance')
+    .eq('league_id', leagueId)
+    .eq('team_id', teamId)
+    .single()
+  throwIfError(error, 'read faab balance')
+  return data!.faab_balance
+}
+
+export interface TradeRow {
+  status: string
+  status_reason: string | null
+  review_deadline: string | null
+  execute_after: string | null
+}
+
+/** One trade's stored state — the server's word on what the screen shows. */
+export async function readTrade(service: Supabase, tradeId: string): Promise<TradeRow> {
+  const { data, error } = await service
+    .from('trades')
+    .select('status, status_reason, review_deadline, execute_after')
+    .eq('id', tradeId)
+    .single()
+  throwIfError(error, 'read trade')
+  return data as TradeRow
+}
+
+/** Which team holds a player in a league now (null = on no roster). */
+export async function readHolder(service: Supabase, leagueId: string, playerId: string): Promise<string | null> {
+  const { data, error } = await service
+    .from('league_rosters')
+    .select('team_id')
+    .eq('league_id', leagueId)
+    .eq('player_id', playerId)
+    .maybeSingle()
+  throwIfError(error, 'read roster holder')
+  return data?.team_id ?? null
 }
