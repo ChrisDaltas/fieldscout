@@ -513,7 +513,44 @@ export interface SeasonRunReport {
    *  only in a PR description is. L.D6.3's evidence stage prints these and
    *  PROGRESS records them (the task row's item 4). */
   coverageGaps: string[]
+  /**
+   * M5 L.D3.8 — the transacting personas + the Ghost (`--transact`), or null
+   * for a run that drove none (every gate-m4 run: its evidence stage requires
+   * `poolRows = 0`). Each invariant's POPULATION is carried so a report can
+   * never read a vacuous pass as coverage; a zero population is a run PROBLEM.
+   */
+  transactions: TransactionRunReport | null
   /** Never an empty success (CLAUDE.md): a run that drove nothing says why. */
   reason: 'no_leagues' | 'no_weeks_driven' | null
   green: boolean
+}
+
+/** M5 L.D3.8 — what the transacting phase did, and what each invariant iterated. */
+export interface TransactionRunReport {
+  /** The `--probe` planted this run, or null (a clean run). */
+  probe: string | null
+  probeDetail: string | null
+  leagues: number
+  leaguesAborted: number
+  claims: { submitted: number; won: number; lost: number; invalid: number }
+  addDrops: number
+  trades: { commissioner: number; none: number; league_vote: number; reversed: number; votes: number }
+  commishFaabEdits: number
+  ghosts: { attempted: number; completed: number }
+  /** Invariant populations — every one must be > 0 in a clean run. */
+  populations: {
+    /** T1: players the acknowledged transactions moved. */
+    exclusivityMoved: number
+    /** T2: franchises whose ledger carries >= 1 receipted term, and the terms by kind. */
+    faabTeams: number
+    faabTerms: { won_claim: number; trade_leg: number; reversal_leg: number; commissioner_edit: number }
+    /** T3: `league_player_pool` rows by state (invariant 4's input). */
+    poolByState: Record<string, number>
+    /** T4: (viewer, other team's claim) pairs asserted hidden; own claims seen; lost claims in the set. */
+    privacyHiddenPairs: number
+    privacyOwnVisible: number
+    privacyLostClaims: number
+  }
+  /** Per-league narrative lines (what each league did), printed verbatim. */
+  lines: string[]
 }

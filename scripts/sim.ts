@@ -39,6 +39,15 @@
  *                      library as nine stages.
  *   --weeks N          how many of each league's planned regular-season weeks
  *                      to drive (1..18; default 2).
+ *   --transact         M5 L.D3.8: drive the TRANSACTING personas + the Ghost
+ *                      (claims → a waiver run, add/drop, a trade under each
+ *                      review mode + a reversal, a commissioner FAAB edit, the
+ *                      Ghost's vacate → orphan → seat claim) and sweep the four
+ *                      transaction invariants, each with its population.
+ *                      OPT-IN: gate-m4 measures the transaction-free season.
+ *   --probe ID         with --transact: plant ONE fault (exclusivity |
+ *                      faab-ledger | pool-mirror | claim-privacy) in the sim's
+ *                      own league so that invariant MUST turn the run RED.
  *   --report PATH      also write the whole typed `SeasonRunReport` there as
  *                      pretty JSON, so a gate transcribes evidence from a
  *                      file rather than from scrollback (F135's lesson).
@@ -90,6 +99,7 @@ import {
 import { SCENARIO_LIBRARY_VERSION } from '../src/lib/leagues/stats/synthetic/scenarios'
 import { hashString } from '../src/lib/leagues/stats/synthetic/prng'
 import { SYNTHETIC_SEASON } from '../src/lib/leagues/sim/synthetic-season'
+import { TRANSACTION_PROBES, type TransactionProbe } from '../src/lib/leagues/sim/transaction-invariants'
 import {
   LEGAL_TEAM_COUNTS,
   type LegalTeamCount,
@@ -119,6 +129,8 @@ const SEASON_FLAGS = new Set([
   'scenario',
   'weeks',
   'report',
+  'transact',
+  'probe',
 ])
 const KNOWN_FLAGS = new Set([...DRAFT_FLAGS, ...SEASON_FLAGS])
 const VALUE_FLAGS = new Set([
@@ -131,6 +143,7 @@ const VALUE_FLAGS = new Set([
   'scenario',
   'weeks',
   'report',
+  'probe',
 ])
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -190,7 +203,7 @@ async function main(): Promise<void> {
       'Usage: npm run sim -- draft [--type snake|auction] --leagues 25 --clock 30 [--teams mixed|8..16] [--seed K]',
     )
     console.error(
-      '       npm run sim -- season --leagues 6 --scenario happy_path [--weeks 2] [--teams mixed|8..16] [--seed K] [--report PATH]',
+      '       npm run sim -- season --leagues 6 --scenario happy_path [--weeks 2] [--teams mixed|8..16] [--seed K] [--report PATH] [--transact [--probe ID]]',
     )
     process.exit(2)
   }
@@ -267,13 +280,27 @@ async function main(): Promise<void> {
       process.exit(2)
     }
     const reportPath = flagValue(argv, 'report')
+    // M5 L.D3.8: the transacting personas + the Ghost (OPT-IN — gate-m4's
+    // population stays transaction-free), and one break probe per invariant.
+    const transact = argv.includes('--transact')
+    const probeRaw = flagValue(argv, 'probe')
+    if (probeRaw !== undefined && !(TRANSACTION_PROBES as readonly string[]).includes(probeRaw)) {
+      console.error(`--probe must be one of ${TRANSACTION_PROBES.join('|')} (got ${probeRaw})`)
+      process.exit(2)
+    }
+    if (probeRaw !== undefined && !transact) {
+      console.error('--probe breaks a TRANSACTION invariant — it needs --transact')
+      process.exit(2)
+    }
+    const probe = (probeRaw ?? null) as TransactionProbe | null
 
     // The run id: a pure function of the PRINTED inputs. See the banner for
     // exactly what a replay reproduces (decision streams) and what it does
     // not (per-submit action-id nonces, race resolution).
     const runIdSource =
       `v1|season|scenario=${scenario}|leagues=${leagues}|teams=${teamsRaw}|clock=${clockSeconds}` +
-      `|weeks=${weeks}|seed=${seed}|season=${SYNTHETIC_SEASON}|lib=${SCENARIO_LIBRARY_VERSION}`
+      `|weeks=${weeks}|seed=${seed}|season=${SYNTHETIC_SEASON}|lib=${SCENARIO_LIBRARY_VERSION}` +
+      (transact ? `|transact=1${probe === null ? '' : `|probe=${probe}`}` : '')
     const runId = (hashString(runIdSource) >>> 0).toString(16).padStart(8, '0')
 
     // EXTERNAL CALLS: measured, not stubbed. Every `fetch` this process makes
@@ -292,7 +319,8 @@ async function main(): Promise<void> {
     console.log(`RUN ID: ${runId}  (a pure function of: ${runIdSource})`)
     console.log(
       `REPLAY: npm run sim -- season --leagues ${leagues}` +
-        `${teams === 'mixed' ? '' : ` --teams ${teams}`} --clock ${clockSeconds} --scenario ${scenario} --weeks ${weeks} --seed ${seed}`,
+        `${teams === 'mixed' ? '' : ` --teams ${teams}`} --clock ${clockSeconds} --scenario ${scenario} --weeks ${weeks} --seed ${seed}` +
+        `${transact ? ' --transact' : ''}${probe === null ? '' : ` --probe ${probe}`}`,
     )
     console.log(
       '        (replays the plan and every persona DECISION; per-submit action_id nonces and race resolution are ' +
@@ -300,7 +328,7 @@ async function main(): Promise<void> {
     )
 
     const seasonReport = await runSeasonSim(
-      { leagues, teams, clockSeconds, seed, scenario, weeks, concurrency, verbose },
+      { leagues, teams, clockSeconds, seed, scenario, weeks, concurrency, verbose, transact, probe },
       {
         clock: {
           nowMs: () => Date.now(),
