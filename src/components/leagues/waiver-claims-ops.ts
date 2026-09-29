@@ -17,6 +17,7 @@ import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { WAIVER_PRESETS, canonicalWeekdays, type Weekday } from '@/lib/leagues/time/waiver-schedule'
+import { waiverOrderBasis } from '@/lib/leagues/waivers/waiver-order'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 import type { PoolPlayerRow } from './players-page-ops'
@@ -263,16 +264,55 @@ export function claimSettlesCopy(nextRunLocal: string | null): string {
   return nextRunLocal ? `Settles at the next waiver run: ${nextRunLocal}.` : 'Settles at the next waiver run.'
 }
 
-/** The team page's seat line: FAAB left in a FAAB league, the waiver
- *  priority in a priority league (null = nothing to say — no waivers, or a
- *  priority not seeded yet). */
-export function waiverSeatCopy(
-  settings: Pick<LeagueSettings, 'waiver_type' | 'faab_budget'>,
-  seat: { faab_balance: number | null; waiver_priority: number | null },
+/**
+ * The seat's place in the waiver order, in plain words — L.D2.18 (F484,
+ * migration 163). The number is the one the server STORED
+ * (`league_members.waiver_priority`, from the draft's end); this only picks
+ * the words around it (`waiverOrderBasis`, the processor's own rule):
+ *   - a rolling-priority league: "Waiver priority #N";
+ *   - a FAAB league whose equal bids go by the rolling order: "Ties on equal
+ *     bids: you're #N" (or "#N" for another team);
+ *   - a league decided by the standings says what decides — reverse draft
+ *     order until week 1 is final, then reverse standings (Q72; a stale
+ *     stored number from an earlier setting is never shown);
+ *   - no stored order yet (a database before 163, or before the draft): a
+ *     rolling league says where the order starts, a FAAB league says nothing
+ *     more — exactly as before; never a guessed number.
+ * Null = nothing to say (no waivers, or FAAB with no stored tie order).
+ */
+/** What decides a standings-based league's order (Q72), in plain words. */
+export const STANDINGS_ORDER_COPY = 'reverse draft order until week 1 is final, then reverse standings'
+
+export function waiverOrderCopy(
+  settings: { waiver_type: string | null; faab_tiebreaker?: string | null },
+  waiverPriority: number | null,
+  own: boolean,
 ): string | null {
-  if (settings.waiver_type === 'faab') return faabLeftCopy(seat.faab_balance, settings.faab_budget)
-  if (settings.waiver_type === 'none_fcfs' || seat.waiver_priority === null) return null
-  return `Waiver priority #${seat.waiver_priority}`
+  const basis = waiverOrderBasis(settings.waiver_type, settings.faab_tiebreaker)
+  if (basis === 'none') return null
+  const faab = (settings.waiver_type ?? 'faab') === 'faab'
+  if (basis === 'reverse_standings') {
+    // R1287 / Q72: reverse DRAFT order until the first week is final (160
+    // reads the standings only once weeks_final > 0), then reverse standings.
+    return `${faab ? 'Ties on equal bids' : 'Waiver priority'}: ${STANDINGS_ORDER_COPY}`
+  }
+  if (waiverPriority === null) return faab ? null : 'Waiver priority starts from reverse draft order'
+  if (faab) return own ? `Ties on equal bids: you’re #${waiverPriority}` : `Ties on equal bids: #${waiverPriority}`
+  return `Waiver priority #${waiverPriority}`
+}
+
+/** The team page's seat line: FAAB left in a FAAB league, then the seat's
+ *  place in the waiver order (`waiverOrderCopy`); null = nothing to say. */
+export function waiverSeatCopy(
+  settings: Pick<LeagueSettings, 'waiver_type' | 'faab_budget'> & { faab_tiebreaker?: string | null },
+  seat: { faab_balance: number | null; waiver_priority: number | null },
+  own = false,
+): string | null {
+  const parts = [
+    settings.waiver_type === 'faab' ? faabLeftCopy(seat.faab_balance, settings.faab_budget) : null,
+    waiverOrderCopy(settings, seat.waiver_priority, own),
+  ].filter((p): p is string => p !== null)
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 export function faabLeftCopy(balance: number | null, budget: number | null): string {

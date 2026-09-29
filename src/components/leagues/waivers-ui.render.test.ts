@@ -129,6 +129,15 @@ describe('waiver-claims-panel — every state (§16.5.4)', () => {
     expect(html).toContain('Waiver priority #4')
     expect(html).not.toContain('data-claim-bid')
   })
+  it('L.D2.18 (F484): a FAAB league shows the stored tie order beside the balance; a rolling league with none stored says where it starts', () => {
+    expect(panel({ doc: doc([], { waiver_priority: 3 }) })).toContain('$73 of $100 FAAB left · Ties on equal bids: you’re #3')
+    expect(panel({ doc: doc([], { waiver_priority: 3, faab_tiebreaker: 'reverse_standings' }) })).toContain(
+      '$73 of $100 FAAB left · Ties on equal bids: reverse draft order until week 1 is final, then reverse standings',
+    )
+    const unseeded = panel({ doc: doc([], { waiver_type: 'rolling_priority', waiver_priority: null }) })
+    expect(unseeded).toContain('Waiver priority starts from reverse draft order')
+    expect(unseeded).not.toContain('Waiver priority #')
+  })
   it('results: won / lost / didn’t go through, each with its reason in plain words', () => {
     const html = panel({
       doc: doc([

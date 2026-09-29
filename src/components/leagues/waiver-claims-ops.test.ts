@@ -26,6 +26,7 @@ import {
   pickupActions,
   presetPatch,
   toggleRunDay,
+  waiverOrderCopy,
   waiverSeatCopy,
   windowLine,
   zoneOptions,
@@ -189,8 +190,31 @@ describe('the bid box, the seat line, the fa_hold chip', () => {
   it('waiverSeatCopy: FAAB left, or the priority, or nothing', () => {
     expect(waiverSeatCopy({ waiver_type: 'faab', faab_budget: 100 }, { faab_balance: 73, waiver_priority: null })).toBe('$73 of $100 FAAB left')
     expect(waiverSeatCopy({ waiver_type: 'rolling_priority', faab_budget: 100 }, { faab_balance: 100, waiver_priority: 3 })).toBe('Waiver priority #3')
-    expect(waiverSeatCopy({ waiver_type: 'rolling_priority', faab_budget: 100 }, { faab_balance: 100, waiver_priority: null })).toBeNull()
+    // L.D2.18: no stored order yet — say where it starts, never a number
+    expect(waiverSeatCopy({ waiver_type: 'rolling_priority', faab_budget: 100 }, { faab_balance: 100, waiver_priority: null })).toBe(
+      'Waiver priority starts from reverse draft order',
+    )
     expect(waiverSeatCopy({ waiver_type: 'none_fcfs', faab_budget: 100 }, { faab_balance: 100, waiver_priority: 1 })).toBeNull()
+  })
+  it('waiverSeatCopy / waiverOrderCopy (L.D2.18, F484): the stored order in plain words, FAAB ties included', () => {
+    const faabRolling = { waiver_type: 'faab', faab_budget: 100, faab_tiebreaker: 'rolling_priority' } as const
+    // FAAB, rolling tiebreak (the default), order stored ⇒ the tie order after the balance
+    expect(waiverSeatCopy(faabRolling, { faab_balance: 73, waiver_priority: 3 }, true)).toBe('$73 of $100 FAAB left · Ties on equal bids: you’re #3')
+    expect(waiverSeatCopy(faabRolling, { faab_balance: 73, waiver_priority: 3 })).toBe('$73 of $100 FAAB left · Ties on equal bids: #3')
+    // no key stored ⇒ the default (rolling)
+    expect(waiverSeatCopy({ waiver_type: 'faab', faab_budget: 100 }, { faab_balance: 73, waiver_priority: 3 })).toBe('$73 of $100 FAAB left · Ties on equal bids: #3')
+    // FAAB, order not stored yet (before 163 / before the draft) ⇒ exactly as before
+    expect(waiverSeatCopy(faabRolling, { faab_balance: 73, waiver_priority: null }, true)).toBe('$73 of $100 FAAB left')
+    // standings-based: say what decides; a stale stored number is never shown
+    expect(waiverSeatCopy({ waiver_type: 'faab', faab_budget: 100, faab_tiebreaker: 'reverse_standings' }, { faab_balance: 73, waiver_priority: 2 })).toBe(
+      '$73 of $100 FAAB left · Ties on equal bids: reverse draft order until week 1 is final, then reverse standings',
+    )
+    expect(waiverSeatCopy({ waiver_type: 'reverse_standings', faab_budget: 100 }, { faab_balance: 100, waiver_priority: 2 })).toBe(
+      'Waiver priority: reverse draft order until week 1 is final, then reverse standings',
+    )
+    // a rolling-priority league ignores the tiebreaker key
+    expect(waiverOrderCopy({ waiver_type: 'rolling_priority', faab_tiebreaker: 'reverse_standings' }, 5, true)).toBe('Waiver priority #5')
+    expect(waiverOrderCopy({ waiver_type: 'none_fcfs' }, 5, true)).toBeNull()
   })
   it('faHoldUntil: a free-agent pickup inside the hold, at the SERVER instant — the boundary exact', () => {
     const p = { acquisition_type: 'free_agent', acquired_at: '2099-09-15T00:00:00.000Z' } as Pick<RosterPlayer, 'acquisition_type' | 'acquired_at'>

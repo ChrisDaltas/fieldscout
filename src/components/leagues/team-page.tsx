@@ -206,9 +206,9 @@ function TeamPageContent({
             </span>
             {/* L.D2.13: the seat's FAAB balance / waiver priority (public to
                 members — only bids are blind, D385(4)). */}
-            {rosterTeam && waiverSeatCopy(detail.settings, rosterTeam) && (
+            {rosterTeam && waiverSeatCopy(detail.settings, rosterTeam, isOwnTeam) && (
               <span className="text-[11px] font-bold text-ink" data-team-waiver-seat>
-                {waiverSeatCopy(detail.settings, rosterTeam)}
+                {waiverSeatCopy(detail.settings, rosterTeam, isOwnTeam)}
               </span>
             )}
           </div>

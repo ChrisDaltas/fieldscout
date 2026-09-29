@@ -890,6 +890,13 @@ describe('L.D2.13 — the FAAB balance on the team page; a dropped-but-played st
     const priorityRosters: LeagueRosters = { ...rosters, teams: rosters.teams.map((t) => (t.team_id === TEAM ? { ...t, waiver_priority: 2 } : t)) }
     expect(renderTeamPage({ detail: priorityDetail, rosters: priorityRosters })).toMatch(/data-team-waiver-seat="true">Waiver priority #2</)
   })
+  it('L.D2.18 (F484): a FAAB league with the stored rolling order prints the tie order after the balance; the manager reads it as his own', () => {
+    const tieRosters: LeagueRosters = {
+      ...rosters,
+      teams: rosters.teams.map((t) => (t.team_id === TEAM ? { ...t, faab_balance: 73, waiver_priority: 4 } : t)),
+    }
+    expect(renderTeamPage({ rosters: tieRosters })).toMatch(/data-team-waiver-seat="true">\$73 of \$100 FAAB left · Ties on equal bids: you’re #4</)
+  })
 
   it('F443: a stored starter no longer on the roster shows LOCKED in his seat by name — never an empty seat to fill', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
