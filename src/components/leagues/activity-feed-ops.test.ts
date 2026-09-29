@@ -158,6 +158,15 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ action_type: 'edit_faab', target_id: 't1', before: { faab_balance: 5 }, after: { faab_balance: 6 } }).text).not.toContain('edit faab')
   })
 
+  it('M5 L.D3.13 (161): a ruled re-score of a final week reads in plain words, from its {week_scores} documents — never the verb name', () => {
+    const rescore = (metadata: { [key: string]: number }) =>
+      line({ action_type: 'rescore_final_week', target_type: 'week', target_id: '2026:1', before: { week_scores: [] }, after: { week_scores: [] }, metadata }).text
+    expect(rescore({ week: 1, scores_changed: 12 })).toBe('re-scored Week 1 after it was final (12 team scores changed)')
+    expect(rescore({ week: 2, scores_changed: 1 })).toBe('re-scored Week 2 after it was final (1 team score changed)')
+    expect(rescore({})).toBe('re-scored after it was final')
+    expect(rescore({ week: 1 })).not.toContain('rescore final week')
+  })
+
   it('M5 L.D3.5: a commissioner trade override is read from the op it recorded, with the deal — the verb name never on screen', () => {
     const summary = 'Alpha gives A One; Bravo gives B One'
     const trade = (op: string, before: string, after: string) =>

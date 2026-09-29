@@ -19,6 +19,7 @@
     "sync:nflverse": "npx tsx scripts/sync-nflverse.ts",
     "sync:reingest": "npx tsx scripts/reingest-weeks.ts",
     "backfill:player-points": "npx tsx scripts/backfill-player-points.ts",
+    "rescore:final-weeks": "npx tsx scripts/rescore-final-weeks.ts",
     "record:fixtures": "npx tsx scripts/record-fixtures.ts",
     "record:synthetic-fixture": "npx tsx scripts/record-synthetic-fixture.ts",
     "sync:history": "python3 scripts/load-historical-stats.py",

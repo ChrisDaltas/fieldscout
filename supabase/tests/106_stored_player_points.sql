@@ -79,13 +79,14 @@ select is(
    from information_schema.columns where table_schema = 'public' and table_name = 'league_week_player_points'),
   'league_id:uuid:NO,season:integer:NO,week:integer:NO,team_id:uuid:NO,slot:text:NO,player_id:text:NO,points:numeric:NO,pending:ARRAY:NO,reason:text:NO,source:text:NO,updated_at:timestamp with time zone:NO',
   'A1 league_week_player_points: one row per league / season / week / team / SLOT — the starter, his points, his pending keys, why, where from');
+-- 161 (M5 L.D3.13, D425) re-pin, additive: the source CHECK gains `rescore` — every 158 value kept.
 select is(
   (select string_agg(pg_get_constraintdef(c.oid), ' | ' order by c.contype, c.conname) from pg_constraint c
    where c.conrelid = 'public.league_week_player_points'::regclass),
   'CHECK (((reason <> ''no_stat_row''::text) OR ((points = (0)::numeric) AND (cardinality(pending) = 0)))) | '
   'CHECK ((reason = ANY (ARRAY[''scored''::text, ''no_stat_row''::text]))) | '
   'CHECK ((btrim(slot) <> ''''::text)) | '
-  'CHECK ((source = ANY (ARRAY[''worker''::text, ''backfill''::text, ''backfill_unrecoverable''::text]))) | '
+  'CHECK ((source = ANY (ARRAY[''worker''::text, ''backfill''::text, ''backfill_unrecoverable''::text, ''rescore''::text]))) | '
   'FOREIGN KEY (league_id, season, week) REFERENCES league_weeks(league_id, season, week) ON DELETE CASCADE | '
   'FOREIGN KEY (player_id) REFERENCES players(id) | '
   'FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE | '

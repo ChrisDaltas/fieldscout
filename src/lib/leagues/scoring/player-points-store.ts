@@ -11,7 +11,10 @@
  * `backfill` — recomputed once by 158's backfill and equal to the stored
  * score; `backfill_unrecoverable` — a final week whose stats moved after it
  * was scored, so the rows are the corrected recompute and do NOT add up to
- * the stored score, named as such). A final week's rows never change.
+ * the stored score, named as such; `rescore` — written WITH the re-scored
+ * score by 161's `admin_rescore_final_week`, a recorded product ruling —
+ * PROGRESS D425 — so they add up to it). A final week's rows never change
+ * except through that one door.
  *
  * DEPLOY BEFORE PUSH. Production is at 134 while merged code deploys at once:
  * against a database without the table, PostgREST answers PGRST205 ("Could
@@ -27,7 +30,7 @@ import type { Database } from '@/types/database'
 
 export const PLAYER_POINTS_TABLE = 'league_week_player_points'
 
-export type StoredPointsSource = 'worker' | 'backfill' | 'backfill_unrecoverable'
+export type StoredPointsSource = 'worker' | 'backfill' | 'backfill_unrecoverable' | 'rescore'
 
 export interface StoredPlayerPoints {
   team_id: string
@@ -89,7 +92,7 @@ export function toStoredRow(r: RawRow): StoredPlayerPoints {
     points: Number(r.points),
     pending: r.pending ?? [],
     reason: r.reason === 'no_stat_row' ? 'no_stat_row' : 'scored',
-    source: r.source === 'backfill' || r.source === 'backfill_unrecoverable' ? r.source : 'worker',
+    source: r.source === 'backfill' || r.source === 'backfill_unrecoverable' || r.source === 'rescore' ? r.source : 'worker',
   }
 }
 

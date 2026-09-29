@@ -139,4 +139,8 @@ describe('trade notifications land on the trade center (M5 L.D3.7, F438)', () =>
   it('no league id → inert text, never a dead link', () => {
     expect(notificationHref({ type: 'league_trade_executed', data: { team_id: 't1' } })).toBeNull()
   })
+  it('M5 L.D3.13 (161): a re-scored week whose result changed → the league home (standings + the league post); no league id → inert', () => {
+    expect(notificationHref({ type: 'league_week_rescored', data: { league_id: 'lg-1', team_id: 't1' } })).toBe('/app/leagues/lg-1')
+    expect(notificationHref({ type: 'league_week_rescored', data: { team_id: 't1' } })).toBeNull()
+  })
 })
