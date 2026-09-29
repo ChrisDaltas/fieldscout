@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 166_lineup_batch.sql — the lineup batch (task L.D2.20, PROGRESS F500 +
--- F501; FULL rigour — lineups, the played lock, commissioner powers).
+-- F501, and F503 from its review; FULL rigour — lineups, the played lock, commissioner powers).
 -- Spec §7.3.6 (allow_illegal_lineups: "If false, the slot is blocked at
 -- submit. Either way, commissioner can flag & override"), §11.2 (the per-
 -- player lock; the one-start bullet: "the lineup's record of his kickoff is
@@ -36,8 +36,11 @@
 -- its gate (step (7b) refuses a kicked-off player entering a slot first);
 -- the editor has no lock, so the literal copy let a moved OUT starter
 -- through into an empty key (pgTAP 114 F4 caught it as first written). The
--- editor's own kept-start clause (154 / F441) is unchanged (its `=` has
--- the same NULL shape — filed F503, not widened here). What still binds
+-- editor's own kept-start clause (154 / F441) had the same `=` shape: a
+-- KEPT OFF-ROSTER played starter, now OUT, moved into an empty key landed
+-- with flags.illegal (F503, review R1300) — it is spelled null-safe too, so
+-- such a start still stays where it stands but is refused when moved
+-- (pgTAP 114 F9). What still binds
 -- the commissioner, by name: a bye / OUT player put at any key he is not
 -- stored at (moved, or started from the bench — the manager's gate refuses
 -- the same map), the E16 fit, and the one-start trigger (154). pgTAP 114 §F.
@@ -93,14 +96,20 @@
 -- player whose team's game is still ahead reads exactly as 157 wrote it.
 -- No backfill (D38): a record a pre-166 re-save already moved to the new
 -- team's kickoff is not re-judged — the played lock never depended on it
--- (both instants passed), and 157 / 165 made the same call.
+-- (both instants passed), and 157 / 165 made the same call. RESIDUAL
+-- (F504, review R1302): 157's real-kickoff guard asks whether ANY game of
+-- the week kicks off at the recorded instant, not his; so a stale record
+-- at an instant another game shares (his own game flexed later) is now
+-- preferred over his real, later kickoff once that has passed too — record
+-- only (the lock bit is equal; pgTAP 114 X8 lists it), and the per-minute
+-- tick normally rewrites an unpassed record before it can go stale.
 --
 -- D137 — each replaced body is derived from its NEWEST definer's FILE TEXT
 -- (measured over 001–165: no later migration defines either) by an exact-
 -- match script (derive_166.py — each substitution asserted to occur once,
 -- its reversal asserted to reproduce the source byte for byte, the source
 -- prosrc md5 equal to the live one on the 001–165 stack):
---   commish_edit_lineup_internal    165:145-988 prosrc md5 95d0b465… → dd36f9ef…  1 hunk  (+19 / -5)
+--   commish_edit_lineup_internal    165:145-988 prosrc md5 95d0b465… → cee39d86…  1 hunk  (+23 / -6)
 --   lineup_player_kickoff_internal  157:275-308 prosrc md5 b14949f7… → a9b16bd7…  2 hunks (+32 / -0)
 -- Every older suite that pins one of these bodies reverses 166 INNERMOST
 -- (pg_temp.un166 — additive, the R992 shape) so its literal stands; pgTAP
@@ -128,7 +137,8 @@
 -- ---------------------------------------------------------------------------
 -- 1. commish_edit_lineup_internal — CREATE OR REPLACE against 165:145-988's
 --    FILE TEXT (D137; definers 123 / 131 / 154 / 164 / 165 — 165 newest),
---    1 hunk (+19 / -5): step (10)'s §7.3.6 gate carries R739 (F500). The
+--    1 hunk (+23 / -6): step (10)'s §7.3.6 gate carries R739 (F500)
+--    and its kept-start clause is null-safe (F503). The
 --    DEFINER wrapper commish_edit_lineup (123) is untouched.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION commish_edit_lineup_internal(
@@ -703,11 +713,14 @@ BEGIN
       -- yields NULL for a key that was empty, which cannot reach its gate
       -- (step (7b) refuses a kicked-off player entering a slot first) but
       -- would reach this one (no lock) and let a moved OUT starter through.
+      -- The kept-start clause below (154 / F441) is spelled the same way
+      -- (F503): its `=` let a kept OFF-ROSTER starter, now OUT, be moved
+      -- into an empty key without the refusal.
       IF NOT v_allow AND jsonb_array_length(v_pflags) > 0
          AND NOT ((v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
                   AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at
                   AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid)   -- 166 / F500: R739, as set_lineup (null-safe)
-         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) = v_pid) THEN   -- 154 / F441: a kept start where it stands is the week's record, not a submit
+         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid) THEN   -- 154 / F441: a kept start where it stands is the week's record, not a submit (166 / F503: null-safe too — an empty key must not exempt a moved kept start)
         RAISE EXCEPTION
           'commish_edit_lineup: % is % for week % and allow_illegal_lineups is off — slot "%" is blocked at submit (§7.3.6); bench him, start someone who plays, or turn the setting on',
           v_p ->> 'name', CASE WHEN v_pflags ? 'bye' THEN 'on bye' ELSE 'OUT (' || (v_p ->> 'designation') || ')' END,

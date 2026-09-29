@@ -15,7 +15,7 @@
 --       literals), 166 as written, un166 an identity on every other body,
 --       the neighbours untouched, the editor carrying set_lineup R739 clause
 --       byte for byte, the readers of the helper counted, the comment.
---   §F  F500, allow_illegal_lineups OFF, Sunday 16:00: a starter who played
+--   §F  F500 (and F503: F9), allow_illegal_lineups OFF, Sunday 16:00: a starter who played
 --       Thursday and is now on IR (XK IR) — a commissioner fix that keeps him
 --       where he stands LANDS (the pre-166 editor refused it), exactly as the
 --       manager own re-save lands, and they write the same row; what still
@@ -30,33 +30,37 @@
 --       pre-166 helper (which records Sunday 17:00); the tick keeps what the
 --       writer stored (X5); the manager lock outcomes are the same under both
 --       helpers, only the instant named differs (X6); and over a boundary
---       matrix of players x instants the lock bit and the bye bit never
---       differ — only the kickoff, and only for the two traded players from
---       the Sunday kickoff on (X7 / X8).
+--       matrix of 13 players x 7 instants the lock bit and the bye bit
+--       never differ — only the kickoff, and only for players who played
+--       Thursday and were then traded (to a Sunday, a postponed or a flexed
+--       team), plus the stale-record residual F504 (X7 / X8).
 --
 -- BREAK PROBES (the PR body; measured), each injected right after the
 -- pre-166 bodies are created, inside this transaction (the ROLLBACK ends it):
 --   (1) the editor back to 165 (its un166 on the live body) ⇒ A4 A7 F1 F2
---       F3 F5 F7 red (F5 / F7: the 165 gate refuses XK IR at qb:0 before
---       the cell reaches its own refusal) — 17 / 24 green;
+--       F3 F5 F7 F9 red (F5 / F7: the 165 gate refuses XK IR at qb:0 before
+--       the cell reaches its own refusal) — 17 / 25 green;
 --   (2) the helper back to 157 ⇒ A4 X1 X2 X3 X4 X5 X6 X8 red — X7 stays
---       green by design (the lock bits never depended on it) — 16 / 24;
+--       green by design (the lock bits never depended on it) — 17 / 25;
 --   (3) the helper stat-line branch disabled ⇒ A3 A4 X3 X8 red (X1 X2 X4
---       stay green — they ride the lineup record) — 20 / 24;
+--       stay green — they ride the lineup record) — 21 / 25;
 --   (4) the helper stat-line branch counting a stat line that names no game
 --       (157 fallback, the week first kickoff) ⇒ A3 A4 X8 red (XK NG moves
---       to Thursday) — 21 / 24;
+--       to Thursday) — 22 / 25;
 --   (5) the editor R739 clause with set_lineup literal `=` occupant test
---       (not null-safe) ⇒ A3 A4 A7 F4 red (moving the played OUT starter
---       into an empty key lands — the hole the first draft of 166 had) —
---       20 / 24.
+--       (not null-safe) ⇒ A3 A4 A7 F4 F9 red (moving the played OUT starter
+--       into an empty key lands — the hole the first draft of 166 had; the
+--       kept start of F9 needs BOTH clauses null-safe) — 20 / 25;
+--   (6) the editor kept-start clause back to its 154 `=` occupant test (F503)
+--       ⇒ A3 A4 F9 red (the kept off-roster start moved into an empty key
+--       lands) — 22 / 25.
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(24);
+select plan(25);
 
 -- pg_temp.un166 reverses 166's substitutions in the two bodies it replaced
 -- (commish_edit_lineup_internal, lineup_player_kickoff_internal) — an
@@ -64,7 +68,7 @@ select plan(24);
 -- same pairs the migration was derived with (one per substitution).
 create function pg_temp.un166(p_src text) returns text language sql as $un166$
   select replace(replace(replace(p_src,
-    E'      -- §7.3.6 allow_illegal_lineups = FALSE. KEPT (see WHAT IS NOT LIFTED).\n      -- 166 / F500: R739\'s exemption, carried exactly as set_lineup_internal\n      -- step (10) has it (157): a STORED starter whose own game has kicked\n      -- off (his per-player datum, step (6)) and who stays at his stored key\n      -- is not blocked — his game is under way or over, so keeping him where\n      -- he stands is the week as it happened, not a submit. 123 dropped the\n      -- clause as meaningless for a verb with no lock; without it a starter\n      -- who played Thursday and was put on IR before Sunday refused every\n      -- commissioner fix to that week unless he benched him (changing the\n      -- score) — a save the manager may make: a TIMING refusal of the\n      -- commissioner (standing rule (g)). Putting a bye / OUT player at any\n      -- key he is not stored at (moving him, or starting one from the\n      -- bench) is still refused by name, as it is for the manager. The\n      -- stored-occupant test is spelled NULL-SAFE here: set_lineup\'s `=`\n      -- yields NULL for a key that was empty, which cannot reach its gate\n      -- (step (7b) refuses a kicked-off player entering a slot first) but\n      -- would reach this one (no lock) and let a moved OUT starter through.\n      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0\n         AND NOT ((v_kick -> v_pid ->> \'kickoff_at\') IS NOT NULL\n                  AND (v_kick -> v_pid ->> \'kickoff_at\')::timestamptz <= p_at\n                  AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid)   -- 166 / F500: R739, as set_lineup (null-safe)\n         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) = v_pid) THEN   -- 154 / F441: a kept start where it stands is the week\'s record, not a submit\n',
+    E'      -- §7.3.6 allow_illegal_lineups = FALSE. KEPT (see WHAT IS NOT LIFTED).\n      -- 166 / F500: R739\'s exemption, carried exactly as set_lineup_internal\n      -- step (10) has it (157): a STORED starter whose own game has kicked\n      -- off (his per-player datum, step (6)) and who stays at his stored key\n      -- is not blocked — his game is under way or over, so keeping him where\n      -- he stands is the week as it happened, not a submit. 123 dropped the\n      -- clause as meaningless for a verb with no lock; without it a starter\n      -- who played Thursday and was put on IR before Sunday refused every\n      -- commissioner fix to that week unless he benched him (changing the\n      -- score) — a save the manager may make: a TIMING refusal of the\n      -- commissioner (standing rule (g)). Putting a bye / OUT player at any\n      -- key he is not stored at (moving him, or starting one from the\n      -- bench) is still refused by name, as it is for the manager. The\n      -- stored-occupant test is spelled NULL-SAFE here: set_lineup\'s `=`\n      -- yields NULL for a key that was empty, which cannot reach its gate\n      -- (step (7b) refuses a kicked-off player entering a slot first) but\n      -- would reach this one (no lock) and let a moved OUT starter through.\n      -- The kept-start clause below (154 / F441) is spelled the same way\n      -- (F503): its `=` let a kept OFF-ROSTER starter, now OUT, be moved\n      -- into an empty key without the refusal.\n      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0\n         AND NOT ((v_kick -> v_pid ->> \'kickoff_at\') IS NOT NULL\n                  AND (v_kick -> v_pid ->> \'kickoff_at\')::timestamptz <= p_at\n                  AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid)   -- 166 / F500: R739, as set_lineup (null-safe)\n         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid) THEN   -- 154 / F441: a kept start where it stands is the week\'s record, not a submit (166 / F503: null-safe too — an empty key must not exempt a moved kept start)\n',
     E'      -- §7.3.6 allow_illegal_lineups = FALSE. KEPT (see WHAT IS NOT LIFTED).\n      -- 114\'s R739 clause is dropped from the predicate rather than carried:\n      -- it exempts "the stored player\'s own game has kicked off and he is the\n      -- stored occupant", i.e. "not the manager\'s to change" — and for a verb\n      -- with no lock there is no such thing, so carrying it would be a clause\n      -- that means nothing. The gate is therefore the plain one.\n      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0\n         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) = v_pid) THEN   -- 154 / F441: a kept start where it stands is the week\'s record, not a submit\n'),
     E'  v_k    RECORD;\n  v_p    RECORD;\n  v_stat TIMESTAMPTZ;   -- 166 / F501\nBEGIN\n',
     E'  v_k    RECORD;\n  v_p    RECORD;\nBEGIN\n'),
@@ -116,7 +120,7 @@ select is(
   (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('commish_edit_lineup_internal', 'lineup_player_kickoff_internal')),
-  'commish_edit_lineup_internal=dd36f9efe1d32898501ae8127869d008 lineup_player_kickoff_internal=a9b16bd7ded168d0730376a3561301dd',
+  'commish_edit_lineup_internal=cee39d868365ebe257365cfc56804ad3 lineup_player_kickoff_internal=a9b16bd7ded168d0730376a3561301dd',
   'A4 the two live prosrc md5s — 166 as written (stored literals)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -174,7 +178,8 @@ from nfl_weeks w where w.season = 2026 and w.week <= 14 and w.week <> 6;
 insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, status) values
  ('x-g6a', 2026, 6, 'RA', 'RZ', '2026-10-16 00:15:00+00', 'final'),
  ('x-g6b', 2026, 6, 'RB', 'RY', '2026-10-18 17:00:00+00', 'scheduled'),
- ('x-g6f', 2026, 6, 'RF', 'RG', '2026-10-19 00:20:00+00', 'scheduled');
+ ('x-g6f', 2026, 6, 'RF', 'RG', '2026-10-19 00:20:00+00', 'scheduled'),
+ ('x-g6p', 2026, 6, 'RP', 'RQ', '2026-10-18 20:00:00+00', 'postponed');
 
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -224,7 +229,13 @@ insert into players (id, full_name, position, team, status) values
  ('x-lt2',  'XK Late2 (flexed game)',           'QB', 'RF', 'Active'),
  ('y-trd',  'XK UTrd (Thu stat line, traded)',  'QB', 'RA', 'Active'),
  ('y-ng',   'XK NG (Sun, stat line names no game)', 'QB', 'RB', 'Active'),
- ('y-cut',  'XK Cut (no team, never played)',   'QB', null, 'Active');
+ ('y-cut',  'XK Cut (no team, never played)',   'QB', null, 'Active'),
+ ('y-early', 'XK Early (Sun team, traded to the Thu team, never played)', 'QB', 'RB', 'Active'),
+ ('y-post', 'XK Post (Thu stat line, traded to a postponed team)', 'QB', 'RA', 'Active'),
+ ('y-flx',  'XK Flx (Thu stat line, traded to the flexed team)', 'QB', 'RA', 'Active'),
+ ('y-stale', 'XK Stale (flexed team, stale 17:00 record)', 'QB', 'RF', 'Active'),
+ ('y-rel',  'XK Rel (Thu stat line, released)',  'QB', 'RA', 'Active'),
+ ('y-prior', 'XK Prior (Sun team, week-5 stat line only)', 'QB', 'RB', 'Active');
 
 insert into league_rosters (league_id, team_id, player_id, slot_key)
 select 'b1140000-0000-4000-8000-000000000001', 'c1140000-0000-4000-8000-000000000002', p, case when p = 'x-ir' then 'qb' else 'bn' end
@@ -256,8 +267,9 @@ insert into team_lineups (team_id, season, week, slot_map, starters, bench, lock
  ('c1140000-0000-4000-8000-000000000004', 2026, 5, '{"qb:0": "y-trd"}'::jsonb,
   '[{"slot": "qb:0", "slot_key": "qb", "label": "QB", "player_id": "y-trd", "position": "QB", "kickoff_at": "2026-10-08T04:00:00+00:00", "flags": []}]'::jsonb,
   '[]'::jsonb, '2026-10-08 04:00:00+00'),
- ('c1140000-0000-4000-8000-000000000005', 2026, 6, '{"qb:0": "x-dup"}'::jsonb,
-  '[{"slot": "qb:0", "slot_key": "qb", "label": "QB", "player_id": "x-dup", "position": "QB", "kickoff_at": "2026-10-18T17:00:00+00:00", "flags": []}]'::jsonb,
+ ('c1140000-0000-4000-8000-000000000005', 2026, 6, '{"qb:0": "x-dup", "qb:1": "y-stale"}'::jsonb,
+  '[{"slot": "qb:0", "slot_key": "qb", "label": "QB", "player_id": "x-dup", "position": "QB", "kickoff_at": "2026-10-18T17:00:00+00:00", "flags": []},
+    {"slot": "qb:1", "slot_key": "qb", "label": "QB", "player_id": "y-stale", "position": "QB", "kickoff_at": "2026-10-18T17:00:00+00:00", "flags": []}]'::jsonb,
   '[]'::jsonb, '2026-10-18 17:00:00+00');
 
 -- THE STAT LINES: XK IR and XK UTrd played Thursday (the game named); XK NG
@@ -266,10 +278,18 @@ insert into team_lineups (team_id, season, week, slot_map, starters, bench, lock
 insert into player_stats (player_id, season, week, stat_type, game_id, updated_at) values
  ('x-ir',  2026, 6, 'weekly', 'x-g6a', '2026-10-16 03:30:00+00'),
  ('y-trd', 2026, 6, 'weekly', 'x-g6a', '2026-10-16 03:30:00+00'),
- ('y-ng',  2026, 6, 'weekly', null,    '2026-10-18 20:30:00+00');
+ ('y-ng',  2026, 6, 'weekly', null,    '2026-10-18 20:30:00+00'),
+ ('y-post', 2026, 6, 'weekly', 'x-g6a', '2026-10-16 03:30:00+00'),
+ ('y-flx',  2026, 6, 'weekly', 'x-g6a', '2026-10-16 03:30:00+00'),
+ ('y-rel',  2026, 6, 'weekly', 'x-g6a', '2026-10-16 03:30:00+00'),
+ ('y-prior', 2026, 5, 'weekly', 'x-dummy-5', '2026-10-09 03:30:00+00');
 
 -- THE NFL MOVES, after the Thursday game.
 update players set team = 'RB' where id in ('x-trd', 'y-trd');
+update players set team = 'RA' where id = 'y-early';
+update players set team = 'RP' where id = 'y-post';
+update players set team = 'RF' where id = 'y-flx';
+update players set team = null where id = 'y-rel';
 update players set status = 'IR' where id = 'x-ir';
 
 -- Post-reset race guard (067): today and tomorrow realtime.messages partitions.
@@ -421,6 +441,32 @@ select is(
   'landed | landed | same state: true | same document: true',
   'F8 CONTROL, the setting ON (the default): the live and pre-166 editors land the same fix and write the same rows and the same document (but its fresh audit row id) — the gate is all 166 changed in the editor');
 
+-- F9 (F503, review R1300): the kept-start clause is null-safe too. XK IR
+--    leaves XK Tango roster after he played (a kept OFF-ROSTER start, 152 /
+--    154 — built directly inside the trial); with the setting off his start
+--    stays where it stands, but moving him into an empty key is refused.
+create function pg_temp.kept_try(p_fn text, p_map text, p_act int) returns jsonb language plpgsql as $$
+declare
+  v_doc jsonb;
+begin
+  delete from league_rosters where team_id = 'c1140000-0000-4000-8000-000000000002' and player_id = 'x-ir';
+  execute pg_temp.edit_sql(p_fn, 2, 6, p_map, p_act, '2026-10-18 16:00:00+00') into v_doc;
+  return v_doc;
+end $$;
+update leagues set settings = '{"allow_illegal_lineups": false}'::jsonb where id = 'b1140000-0000-4000-8000-000000000001';
+insert into r114 (tag, r) values
+ ('f9m:live', pg_temp.trial(format('select pg_temp.kept_try(%L, %L, 18)', 'public.commish_edit_lineup_internal', '{"qb:0": "x-sun1", "qb:1": "x-ir"}'))),
+ ('f9k:live', pg_temp.trial(format('select pg_temp.kept_try(%L, %L, 19)', 'public.commish_edit_lineup_internal', '{"qb:0": "x-ir", "qb:1": "x-sun1"}'))),
+ ('f9m:pre',  pg_temp.trial(format('select pg_temp.kept_try(%L, %L, 18)', 'pg_temp.edit_pre166', '{"qb:0": "x-sun1", "qb:1": "x-ir"}')));
+select is(
+  'moved: ' || pg_temp.outcome('f9m:live') || ' | kept where he stands: ' || pg_temp.outcome('f9k:live')
+  || ' | moved, pre-166: ' || pg_temp.outcome('f9m:pre')
+  || coalesce(' illegal=' || (select r -> 'doc' -> 'flags' ->> 'illegal' from r114 where tag = 'f9m:pre'), ''),
+  'moved: refused: commish_edit_lineup: XK IR (Thu, played, now IR) is OUT (IR) for week 6 and allow_illegal_lineups is off — slot "qb:1" is blocked at submit (§7.3.6); bench him, start someone who plays, or turn the setting on'
+  || ' | kept where he stands: landed | moved, pre-166: landed illegal=true',
+  'F9 THE KEPT OFF-ROSTER TWIN OF F4 (F503): a start kept after XK IR left the roster stays where it stands under the setting off, but moving him into an empty key is refused by name — before 166 that move landed with flags.illegal (the NULL-shaped occupant test)');
+update leagues set settings = '{}'::jsonb where id = 'b1140000-0000-4000-8000-000000000001';
+
 -- ---------------------------------------------------------------------------
 -- X. F501 — Sunday 17:30, after the traded starters NEW team kicked off.
 -- ---------------------------------------------------------------------------
@@ -548,7 +594,7 @@ create temp table m114 as
 select p.pid, t.at,
        l.kickoff_at as l_k, l.datum_arm as l_arm, l.on_bye as l_bye,
        q.kickoff_at as q_k, q.datum_arm as q_arm, q.on_bye as q_bye
-from unnest(array['x-trd', 'y-trd', 'x-ir', 'x-sunA', 'x-lt1', 'y-ng', 'y-cut']) p(pid)
+from unnest(array['x-trd', 'y-trd', 'x-ir', 'x-sunA', 'x-lt1', 'y-ng', 'y-cut', 'y-early', 'y-post', 'y-flx', 'y-stale', 'y-rel', 'y-prior']) p(pid)
 cross join unnest(array['2026-10-16 00:14:59+00', '2026-10-16 00:15:00+00', '2026-10-18 16:59:59+00', '2026-10-18 17:00:00+00',
                         '2026-10-18 17:30:00+00', '2026-10-19 00:20:00+00', '2026-10-19 01:00:00+00']::timestamptz[]) t(at)
 cross join lateral public.lineup_player_kickoff_internal('b1140000-0000-4000-8000-000000000001', 2026, 6, p.pid, t.at) l
@@ -558,15 +604,18 @@ select is(
                  count(*) filter (where (l_k is not null and l_k <= at) is distinct from (q_k is not null and q_k <= at)),
                  count(*) filter (where l_bye is distinct from q_bye))
    from m114),
-  'cells 49 | lock bit differs 0 | bye bit differs 0',
-  'X7 over 7 players x 7 instants (a second before and at the Thursday kickoff, a second before and at the Sunday kickoff, 17:30, at and after the flexed kickoff): the lock bit and the bye bit are the same under both helpers — including XK NG, whose stat line names no game (it never displaces his team kickoff)');
+  'cells 91 | lock bit differs 0 | bye bit differs 0',
+  'X7 over 13 players x 7 instants (a second before and at the Thursday kickoff, a second before and at the Sunday kickoff, 17:30, at and after the flexed kickoff) — the two traded players, the controls, and the review grid (traded to an EARLIER team, played then traded to a postponed or a flexed team, a stale record, released, a prior-week stat line only): the lock bit and the bye bit are the same under both helpers, including XK NG, whose stat line names no game (it never displaces his team kickoff)');
 select is(
   (select string_agg(format('%s@%s %s(%s)->%s(%s)', pid, to_char(at at time zone 'UTC', 'MM-DD HH24:MI:SS'),
                             to_char(q_k at time zone 'UTC', 'MM-DD HH24:MI'), q_arm, to_char(l_k at time zone 'UTC', 'MM-DD HH24:MI'), l_arm), ', ' order by pid, at)
    from m114 where l_k is distinct from q_k or l_arm is distinct from q_arm),
   'x-trd@10-18 17:00:00 10-18 17:00(nfl_games)->10-16 00:15(lineup_record), x-trd@10-18 17:30:00 10-18 17:00(nfl_games)->10-16 00:15(lineup_record), x-trd@10-19 00:20:00 10-18 17:00(nfl_games)->10-16 00:15(lineup_record), x-trd@10-19 01:00:00 10-18 17:00(nfl_games)->10-16 00:15(lineup_record), '
+  || 'y-flx@10-19 00:20:00 10-19 00:20(nfl_games)->10-16 00:15(stat_line), y-flx@10-19 01:00:00 10-19 00:20(nfl_games)->10-16 00:15(stat_line), '
+  || 'y-post@10-19 00:20:00 10-18 20:00(nfl_games)->10-16 00:15(stat_line), y-post@10-19 01:00:00 10-18 20:00(nfl_games)->10-16 00:15(stat_line), '
+  || 'y-stale@10-19 00:20:00 10-19 00:20(nfl_games)->10-18 17:00(lineup_record), y-stale@10-19 01:00:00 10-19 00:20(nfl_games)->10-18 17:00(lineup_record), '
   || 'y-trd@10-18 17:00:00 10-18 17:00(nfl_games)->10-16 00:15(stat_line), y-trd@10-18 17:30:00 10-18 17:00(nfl_games)->10-16 00:15(stat_line), y-trd@10-19 00:20:00 10-18 17:00(nfl_games)->10-16 00:15(stat_line), y-trd@10-19 01:00:00 10-18 17:00(nfl_games)->10-16 00:15(stat_line)',
-  'X8 …and the ONLY differences (pre-166 -> live) are the two traded players from the Sunday kickoff instant on: the record stays on the Thursday game each played — by the lineup record (XK Trd) or by his stat line (XK UTrd)');
+  'X8 …and the ONLY differences (pre-166 -> live), each once his current team kickoff has passed: the players who played Thursday and were then traded — to a Sunday team (XK Trd by the lineup record, XK UTrd by his stat line), to the postponed team (XK Post) or to the flexed team (XK Flx) — keep the Thursday game; and XK Stale (F504, a residual): a stale record at an instant another game shares (17:00) is preferred over his real later kickoff — record only (X7: the lock bit is equal). Traded to an earlier team, released, and a prior-week stat line change nothing');
 
 select * from finish();
 rollback;
