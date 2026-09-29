@@ -70,6 +70,25 @@
  *     mover a final-week cell is checked no further, for the rest of the
  *     season (PROGRESS F268). Hence a WARN with `stored X ≠ recomputed Y,
  *     Δ Z` in the message — visible every night, never exit-1, never info.
+ *     **A LOCKED WEEK WITH STORED PER-PLAYER POINTS IS CHECKED EXACTLY
+ *     (M5 L.D3.11, migration 158; PROGRESS F405 — Chris 2026-09-28 "okay lets
+ *     stay in line with standard platforms"; F268's post-window part folds
+ *     in here).** A `final` week's cell whose team has rows in
+ *     `league_week_player_points` is compared with THOSE, not with today's
+ *     stats: stored score ≠ Σ stored rows ⇒ `drift` [alert] (exact — the rows
+ *     were stored with the score, so nothing benign explains a difference);
+ *     equal ⇒ clean, and where today's stats score a starter differently
+ *     (a correction after the week locked) the cell earns
+ *     `post_window_correction` [INFO] naming each player's stored and
+ *     current points — research moved, the locked week did not, by law. No
+ *     nightly warn, and the cell stays drift-checked for the rest of the
+ *     season. A team-week the 158 backfill could not recover (its stats
+ *     moved after it was scored — rows marked `backfill_unrecoverable`) is
+ *     `backfill_unrecoverable` [info], named once per night with both sums.
+ *     A final week with NO stored rows (scored before 158, not yet
+ *     backfilled) keeps the arm above, unchanged. On a database without
+ *     the table (pre-158) one `player_points_store_missing` [info] says so
+ *     and every check is today's.
  *   * `in_flight` [info] — a starter of the cell still has a `score_fanout`
  *     row for (season, week): the worker has not drained it; the mismatch
  *     is expected. The queue's AGE is not a cell property (R881): a row
@@ -140,6 +159,7 @@ import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 
 import type { TimeProvider } from '../time/time-provider'
 import { roundHalfUp } from './calculator'
+import { readStoredPlayerPointsForSeason, type StoredPlayerPoints, storedTeamPoints } from './player-points-store'
 import type { ScoringRulesDoc } from './rules-doc'
 import {
   assertSnapshotScorable,
@@ -183,6 +203,8 @@ export type FindingKind =
   | 'snapshot_unscorable'
   | 'starter_final_game_no_line'
   | 'pool_mirror_broken'
+  | 'backfill_unrecoverable'
+  | 'player_points_store_missing'
 
 export type Severity = 'alert' | 'warn' | 'info'
 
@@ -237,6 +259,63 @@ const SEVERITY: Record<FindingKind, Severity> = {
   snapshot_unscorable: 'alert',
   starter_final_game_no_line: 'alert',
   pool_mirror_broken: 'alert',
+  backfill_unrecoverable: 'info', // 158: a known, recorded state — named, never re-alerted
+  player_points_store_missing: 'info', // 158 not pushed yet: today's checks run
+}
+
+/**
+ * A LOCKED (final) week's cell whose team has STORED per-player points (158 /
+ * F405): the exact check. The rows were stored WITH the score, so stored ≠ Σ
+ * rows is drift, full stop; a starter whose points under today's stats
+ * differ from his stored points is a correction that landed after the week
+ * locked — research moved, the league cell did not (§23.4) — named as INFO.
+ * Returns the findings for the cell (empty = clean).
+ */
+export function classifyLockedCell(
+  stored: number | null,
+  rows: readonly StoredPlayerPoints[],
+  computed: TeamWeekScore | null,
+): Array<{ kind: FindingKind; severity: Severity; explanation: string }> {
+  const sum = storedTeamPoints(rows)
+  if (rows.some((r) => r.source === 'backfill_unrecoverable')) {
+    return [
+      {
+        kind: 'backfill_unrecoverable',
+        severity: SEVERITY.backfill_unrecoverable,
+        explanation: `stored ${stored}; the stored per-player points add up to ${sum} — this final week's stats moved after it was scored and the line it was scored on no longer exists, so the 158 backfill stored the corrected recompute, marked as such (F405 / F268); the final score and result stand`,
+      },
+    ]
+  }
+  if (!sameScore(stored, sum)) {
+    return [
+      {
+        kind: 'drift',
+        severity: SEVERITY.drift,
+        explanation: `stored ${stored} ≠ Σ of the stored per-player points ${sum} on a locked week — the rows were stored WITH the score (158 / F405), so nothing benign explains this`,
+      },
+    ]
+  }
+  if (computed === null) return []
+  const bySlotPlayer = new Map(computed.starters.map((s) => [s.player_id, s]))
+  const moved: string[] = []
+  for (const r of rows) {
+    const now = bySlotPlayer.get(r.player_id)
+    if (now === undefined) {
+      moved.push(`${r.player_id} (${r.slot}) stored ${r.points}, no longer in the week's lineup`)
+      continue
+    }
+    if (!sameScore(now.points, r.points) || now.pending.length !== r.pending.length) {
+      moved.push(`${r.player_id} (${r.slot}) stored ${r.points}, today's stats ${now.pending.length > 0 ? 'pending' : now.points}`)
+    }
+  }
+  if (moved.length === 0) return []
+  return [
+    {
+      kind: 'post_window_correction',
+      severity: 'info',
+      explanation: `the week is final and locked at ${stored} (= its stored per-player points); since then ${moved.join('; ')} — a correction after the week locked updates the players' stats (research), never the week's score or result (§23.4 / F405; exact, so the cell stays drift-checked)`,
+    },
+  ]
 }
 
 /** Two stored-precision scores are equal when they agree to the cent (both are two-decimal values by law). */
@@ -619,6 +698,7 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
   }
 
   // LEAGUES in scope.
+  let storeMissingNamed = false
   const leagues = await readLeagues(db, season, opts.leagueIds ?? null)
   report.leagues = leagues.length
   if (leagues.length === 0) report.reason = 'no_leagues_in_scope'
@@ -692,6 +772,29 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
       'matchups read',
     ) as MatchupRow[]
     const results = must(await db.from('team_week_results').select('team_id, week, points, is_final').eq('league_id', league.id).eq('season', season), 'team_week_results read') as ResultRow[]
+
+    // 158 (F405): the STORED per-player points — a locked week's cells are
+    // checked against these. Pre-158: named once, today's checks run.
+    const storedByTeamWeek = new Map<string, StoredPlayerPoints[]>()
+    if (started.some((w) => w.status === 'final')) {
+      const read = await readStoredPlayerPointsForSeason(db, league.id, season)
+      if (read.available) {
+        for (const r of read.rows) {
+          const key = `${r.team_id}:${r.week}`
+          const bucket = storedByTeamWeek.get(key)
+          if (bucket) bucket.push(r)
+          else storedByTeamWeek.set(key, [r])
+        }
+      } else if (!storeMissingNamed) {
+        storeMissingNamed = true
+        findings.push({
+          kind: 'player_points_store_missing',
+          severity: SEVERITY.player_points_store_missing,
+          season,
+          message: `${season}: ${read.reason}; final weeks are checked as before (post_window_correction stays a warn — F268)`,
+        })
+      }
+    }
 
     for (const lw of started) {
       const week = lw.week
@@ -784,7 +887,18 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
 
       for (const cell of cells) {
         const starters = startersByTeam.get(cell.team_id)
-        if (!starters) continue
+        // 158 (F405): a LOCKED week's stored per-player points, when it has them.
+        const lockedRows = lw.status === 'final' ? storedByTeamWeek.get(`${cell.team_id}:${week}`) : undefined
+        if (!starters) {
+          if (lockedRows && lockedRows.length > 0) {
+            // The exact Σ check needs no lineup: the rows ARE what it was scored on.
+            report.cells += 1
+            for (const v of classifyLockedCell(cell.stored, lockedRows, null)) {
+              findings.push({ kind: v.kind, severity: v.severity, season, week, league_id: league.id, team_id: cell.team_id, stored: cell.stored, recomputed: storedTeamPoints(lockedRows), message: `league_id=${league.id} (${league.name}) week ${week} team ${cell.team_id} [${cell.source}]: ${v.explanation}` })
+            }
+          }
+          continue
+        }
         report.cells += 1
         let computed = computedByTeam.get(cell.team_id)
         if (!computed) {
@@ -832,6 +946,28 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
               })
             }
           }
+        }
+        if (lockedRows && lockedRows.length > 0) {
+          // The exact check (158 / F405): stored vs Σ stored rows; today's
+          // stats vs the stored rows is information, never a warn.
+          for (const v of classifyLockedCell(cell.stored, lockedRows, computed)) {
+            findings.push({
+              kind: v.kind,
+              severity: v.severity,
+              season,
+              week,
+              league_id: league.id,
+              team_id: cell.team_id,
+              stored: cell.stored,
+              recomputed: storedTeamPoints(lockedRows),
+              message: `league_id=${league.id} (${league.name}) week ${week} team ${cell.team_id} [${cell.source}]: ${v.explanation}`,
+              detail: {
+                stored_rows: lockedRows.map((r) => ({ slot: r.slot, player_id: r.player_id, points: r.points, pending: r.pending, source: r.source })),
+                today: computed.starters.map((s) => ({ player_id: s.player_id, points: s.points, pending: s.pending })),
+              } as unknown as Json,
+            })
+          }
+          continue
         }
         const verdict = classifyCell(cell.stored, computed, ctx)
         if (verdict) {

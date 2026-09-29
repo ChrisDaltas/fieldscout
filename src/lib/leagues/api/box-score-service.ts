@@ -67,16 +67,43 @@
  * on the rules its stored score was written under (Q64 / Q69). An opened week
  * with no stored rules is a 500 by name (`snapshot_missing`), never a
  * fallback. An UPCOMING week holds no rules: it is shown under the league's
- * current snapshot, which is exactly what it will take when it opens. Where
- * the STATS moved after a finished week was scored (a correction the worker
- * no longer applies), the box sum can still differ from the stored score —
- * per-player points are not stored (PROGRESS F405).
+ * current snapshot, which is exactly what it will take when it opens.
+ *
+ * **A SCORED week reads the STORED per-player points (M5 L.D3.11, migration
+ * 158; PROGRESS F405 — Chris 2026-09-28: "okay lets stay in line with
+ * standard platforms").** For a week in its correction window or final, each
+ * starter's points / pending / reason are the rows the scoring door stored
+ * WITH the team's score (`league_week_player_points`), so the lines always
+ * add up to the stored score — even after a late stat correction the worker
+ * no longer applies (the week is locked; research reads `player_stats`,
+ * which the displayed stat LINE still comes from). The starters are the
+ * stored slots (what the team was scored on), not a lineup edited since. A
+ * LIVE week (or an upcoming one) is computed live, as before
+ * (`points_source: 'live'`). A scored week with no stored rows — scored
+ * before 158 and not yet backfilled — is computed live and SAYS so
+ * (`stored_note`); a 158 backfill row marked `backfill_unrecoverable` (the
+ * stats moved after the week was scored, and the old line is gone) is
+ * shown with its note, not passed off as adding up.
+ *
+ * DEPLOY BEFORE PUSH: on a database without the table (production at 134)
+ * the read answers PGRST205 / 42P01 naming it; ONLY that answer falls back
+ * to the live computation with `stored_note` saying why — never a 500,
+ * never silent. Any other error is a 500 as before.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
+import {
+  isMissingPlayerPointsStore,
+  PRE_158_SENTENCE,
+  STORED_SELECT,
+  type StoredPlayerPoints,
+  type StoredPointsSource,
+  storedTeamPoints,
+  toStoredRow,
+} from '../scoring/player-points-store'
 import {
   computeTeamWeek,
   irKeysOf,
@@ -170,7 +197,25 @@ export interface TeamBoxScore {
   /** True when the week has no `nfl_games` rows at all (phases are
    *  `up_next` by default, `game: null`). */
   no_game_rows: boolean
+  /** 158 (F405): `stored` — a scored week's lines are the per-player points
+   *  stored with the team's score (they add up to it); `live` — computed now
+   *  from `player_stats` (a live / upcoming week, or a scored week with none
+   *  stored — then `stored_note` says why). */
+  points_source: 'live' | 'stored'
+  /** Where the stored rows came from (`stored` only): the scoring worker, the
+   *  158 backfill, or the backfill of a week whose stats moved after it was
+   *  scored (`backfill_unrecoverable` — the lines do NOT add up to the stored
+   *  score; `stored_note` says so). */
+  stored_source: StoredPointsSource | null
+  /** One plain sentence when a scored week's lines are not the stored,
+   *  adding-up ones — null otherwise. */
+  stored_note: string | null
 }
+
+const NONE_STORED_NOTE =
+  'no per-player points are stored for this team-week (it was scored before they were, and the one-time backfill has not reached it) — the lines are computed from today’s stats and may not add up to the final score'
+const UNRECOVERABLE_NOTE =
+  'a stat correction reached a player after this week was scored, and the line he was scored on no longer exists — these points are recomputed from the corrected stats and do not add up to the final score'
 
 interface SlotDef {
   key: string
@@ -322,12 +367,41 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     pending: [],
     no_stat_row: [],
     no_game_rows: games.length === 0,
+    points_source: 'live',
+    stored_source: null,
+    stored_note: null,
   }
-  if (!lineupRes.data) return { status: 200, body: empty as unknown as Json }
 
-  const slotMap = (lineupRes.data.slot_map ?? {}) as Record<string, unknown>
+  // 158 (F405): a SCORED week (correction window / final) reads the rows
+  // stored WITH the team's score. Only the exact pre-158 answer falls back.
+  const scoredWeek = weekRes.data.status === 'correction_window' || weekRes.data.status === 'final'
+  let stored: StoredPlayerPoints[] | null = null
+  if (scoredWeek) {
+    const storedRes = await supabase
+      .from('league_week_player_points')
+      .select(STORED_SELECT)
+      .eq('league_id', leagueId)
+      .eq('season', league.season)
+      .eq('week', week)
+      .eq('team_id', teamId)
+      .order('slot', { ascending: true })
+    if (storedRes.error) {
+      if (!isMissingPlayerPointsStore(storedRes.error)) {
+        return { status: 500, body: { error: `league_week_player_points: ${storedRes.error.message}` } }
+      }
+      empty.stored_note = PRE_158_SENTENCE
+    } else if ((storedRes.data ?? []).length === 0) {
+      empty.stored_note = NONE_STORED_NOTE
+    } else {
+      stored = (storedRes.data ?? []).map(toStoredRow)
+    }
+  }
+
+  if (!lineupRes.data && stored === null) return { status: 200, body: empty as unknown as Json }
+
+  const slotMap = (lineupRes.data?.slot_map ?? {}) as Record<string, unknown>
   const irKeys = irKeysOf(league.roster_settings)
-  const starterIds = startersOf(slotMap, irKeys) ?? []
+  const starterIds = stored !== null ? stored.map((r) => r.player_id) : (startersOf(slotMap, irKeys) ?? [])
 
   const playerIds = [...new Set(starterIds)]
   const [playersRes, statsRes] = await Promise.all([
@@ -350,6 +424,53 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
   const statsCapped = assertBelowPostgrestCap(statRows, 'player_stats')
   if (statsCapped) return statsCapped
   const statsByPlayer = new Map(statRows.map((r) => [r.player_id, r]))
+  const lineupMeta = lineupRes.data
+    ? { locked_at: lineupRes.data.locked_at, set_at: lineupRes.data.set_at, edited_by_commish: lineupRes.data.edited_by_commish }
+    : null
+
+  if (stored !== null) {
+    // THE STORED LINES — what the team was scored on, slot by slot, in the
+    // league's slot order (a stored slot the settings no longer name comes
+    // last, under its own key). The stat LINE shown is today's player_stats
+    // (research stays right); the POINTS are the stored ones.
+    const bySlot = new Map(stored.map((r) => [r.slot, r]))
+    const order = [...slots]
+    for (const r of stored) {
+      if (!order.some((s) => s.slot === r.slot)) order.push({ slot: r.slot, slot_key: r.slot.split(':')[0], label: r.slot.split(':')[0] })
+    }
+    const starters: BoxStarter[] = order.map((seat) => {
+      const row = bySlot.get(seat.slot)
+      if (!row) return { ...seat, player: null, phase: 'up_next' as const, game: null, points: 0, pending: [], reason: 'empty' as const, line: null }
+      const player = players.get(row.player_id)
+      const { phase, game } = starterPhase(player?.team ?? null, games)
+      return {
+        ...seat,
+        player: player
+          ? { id: row.player_id, full_name: player.full_name, position: player.position, nfl_team: player.team }
+          : { id: row.player_id, full_name: row.player_id, position: '?', nfl_team: null },
+        phase: player ? phase : ('up_next' as const),
+        game: player ? game : null,
+        points: row.points,
+        pending: row.pending,
+        reason: row.reason,
+        line: boxLine(statsByPlayer.get(row.player_id) ?? null),
+      }
+    })
+    const sources = new Set(stored.map((r) => r.source))
+    const storedSource: StoredPointsSource = sources.has('backfill_unrecoverable') ? 'backfill_unrecoverable' : sources.has('worker') ? 'worker' : 'backfill'
+    const payload: TeamBoxScore = {
+      ...empty,
+      lineup: lineupMeta,
+      starters,
+      points: storedTeamPoints(stored),
+      pending: stored.filter((r) => r.pending.length > 0).map((r) => ({ player_id: r.player_id, keys: r.pending })),
+      no_stat_row: stored.filter((r) => r.reason === 'no_stat_row').map((r) => r.player_id),
+      points_source: 'stored',
+      stored_source: storedSource,
+      stored_note: storedSource === 'backfill_unrecoverable' ? UNRECOVERABLE_NOTE : null,
+    }
+    return { status: 200, body: payload as unknown as Json }
+  }
 
   // THE computation — the worker's own `computeTeamWeek` over the same
   // refs and rows it scores from (one implementation; the team `points`,
@@ -409,7 +530,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
 
   const payload: TeamBoxScore = {
     ...empty,
-    lineup: { locked_at: lineupRes.data.locked_at, set_at: lineupRes.data.set_at, edited_by_commish: lineupRes.data.edited_by_commish },
+    lineup: lineupMeta,
     starters,
     points: team.points,
     pending: team.pending,

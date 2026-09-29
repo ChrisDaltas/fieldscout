@@ -1947,6 +1947,70 @@ export type Database = {
           },
         ]
       }
+      league_week_player_points: {
+        Row: {
+          league_id: string
+          pending: string[]
+          player_id: string
+          points: number
+          reason: string
+          season: number
+          slot: string
+          source: string
+          team_id: string
+          updated_at: string
+          week: number
+        }
+        Insert: {
+          league_id: string
+          pending?: string[]
+          player_id: string
+          points: number
+          reason: string
+          season: number
+          slot: string
+          source: string
+          team_id: string
+          updated_at?: string
+          week: number
+        }
+        Update: {
+          league_id?: string
+          pending?: string[]
+          player_id?: string
+          points?: number
+          reason?: string
+          season?: number
+          slot?: string
+          source?: string
+          team_id?: string
+          updated_at?: string
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_week_player_points_league_id_season_week_fkey"
+            columns: ["league_id", "season", "week"]
+            isOneToOne: false
+            referencedRelation: "league_weeks"
+            referencedColumns: ["league_id", "season", "week"]
+          },
+          {
+            foreignKeyName: "league_week_player_points_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_week_player_points_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_weeks: {
         Row: {
           finalized_at: string | null
@@ -2808,6 +2872,7 @@ export type Database = {
       }
       nfl_weeks: {
         Row: {
+          correction_window_default_ends_at: string | null
           correction_window_ends_at: string | null
           first_kickoff_at: string | null
           last_game_ends_at: string | null
@@ -2816,6 +2881,7 @@ export type Database = {
           week: number
         }
         Insert: {
+          correction_window_default_ends_at?: string | null
           correction_window_ends_at?: string | null
           first_kickoff_at?: string | null
           last_game_ends_at?: string | null
@@ -2824,6 +2890,7 @@ export type Database = {
           week: number
         }
         Update: {
+          correction_window_default_ends_at?: string | null
           correction_window_ends_at?: string | null
           first_kickoff_at?: string | null
           last_game_ends_at?: string | null
@@ -6023,6 +6090,16 @@ export type Database = {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
       }
+      player_points_rows_check_internal: {
+        Args: {
+          p_i: number
+          p_players: Json
+          p_points: Json
+          p_team: string
+          p_who: string
+        }
+        Returns: undefined
+      }
       playoff_bracket_size_internal: {
         Args: { p_playoff_teams: number }
         Returns: number
@@ -6213,6 +6290,10 @@ export type Database = {
           first_kickoff_at: string
           free: boolean
         }[]
+      }
+      score_backfill_player_points: {
+        Args: { p_league_id: string; p_teams: Json; p_week: number }
+        Returns: Json
       }
       score_fanout_ack: {
         Args: {

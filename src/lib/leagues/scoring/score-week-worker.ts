@@ -74,6 +74,15 @@
  *      door's REPORT is read (F259(e)): `nothing_writable` on a week the
  *      worker expected to score is a PROBLEM, never success; `no_change` is
  *      the idempotency count; every `skipped[]` entry is named.
+ *      (M5 L.D3.11 / migration 158 — PROGRESS F405, Chris 2026-09-28: "okay
+ *      lets stay in line with standard platforms".) Each team also carries
+ *      its per-player rows (`players` — slot, player, points, pending,
+ *      reason: the terms of its score) and the door stores them WITH the
+ *      score in one transaction, so a scored week's box score always adds up
+ *      to the stored score (`league_week_player_points`). A pre-158 door
+ *      ignores the key and its report carries no `player_points`: the drain
+ *      names that (`player_points: not_stored_pre_158`, a problem line) and
+ *      everything else is exactly as before — deploy before push.
  *   8. ACK — ONE `score_fanout_ack(token, consumed, deferred, deferUntil)`
  *      call (121; 122): every consumed row still carrying THIS token at the
  *      stamp the claim returned is deleted; the HELD rows (the not-ready of
@@ -469,15 +478,53 @@ export function irKeysOf(rosterSettings: unknown): ReadonlySet<string> {
  * row whose map is not an object (a 001-era row) — the caller names it.
  */
 export function startersOf(slotMap: unknown, irKeys: ReadonlySet<string>): string[] | null {
+  const slots = starterSlotsOf(slotMap, irKeys)
+  return slots === null ? null : slots.map((s) => s.player_id)
+}
+
+/**
+ * The same starters WITH their slot keys, in the same order — the terms of
+ * the team's sum, one per starting slot (M5 L.D3.11 / migration 158: the
+ * stored per-player rows are keyed by slot, so they are exactly those terms).
+ */
+export function starterSlotsOf(slotMap: unknown, irKeys: ReadonlySet<string>): Array<{ slot: string; player_id: string }> | null {
   if (slotMap === null || typeof slotMap !== 'object' || Array.isArray(slotMap)) return null
-  const out: string[] = []
+  const out: Array<{ slot: string; player_id: string }> = []
   for (const [slot, value] of Object.entries(slotMap as Record<string, unknown>)) {
     if (typeof value !== 'string' || value.length === 0) continue
     const key = slot.split(':')[0]
     if (irKeys.has(key)) continue
-    out.push(value)
+    out.push({ slot, player_id: value })
   }
   return out
+}
+
+/** One stored per-player row as the scoring door takes it (158 — `players` on a batch element). */
+export interface PlayerPointsRow {
+  slot: string
+  player_id: string
+  points: number
+  pending: string[]
+  reason: 'scored' | 'no_stat_row'
+}
+
+/**
+ * A computed team's per-player rows, slot by slot — `team.starters[i]` is
+ * the score of `slots[i]` (computeTeamWeek maps its refs in order). The rows
+ * ARE the team's score: Σ points = `team.points` when nothing is pending
+ * (the door refuses anything else — 158's `player_points_rows_check_internal`).
+ */
+export function playerPointsRows(slots: ReadonlyArray<{ slot: string; player_id: string }>, team: TeamWeekScore): PlayerPointsRow[] {
+  if (slots.length !== team.starters.length) {
+    throw new Error(`playerPointsRows: ${slots.length} slots but ${team.starters.length} scored starters for team ${team.team_id}`)
+  }
+  return slots.map((s, i) => {
+    const scored = team.starters[i]
+    if (scored.player_id !== s.player_id) {
+      throw new Error(`playerPointsRows: slot ${s.slot} holds ${s.player_id} but the score at that position is ${scored.player_id} (team ${team.team_id})`)
+    }
+    return { slot: s.slot, player_id: s.player_id, points: scored.points, pending: scored.pending, reason: scored.reason }
+  })
 }
 
 // ── Lineage (F262(d)) ──────────────────────────────────────────────────────
@@ -584,7 +631,26 @@ export interface DoorReport {
   unchanged: number
   skipped: DoorSkip[]
   reason: 'nothing_writable' | 'no_change' | null
+  /** 158 (F405): the per-player arm's count. ABSENT on a pre-158 door (119),
+   *  which ignores `players` — that absence is how the worker knows. */
+  player_points?: { teams_sent: number; teams_written: number; rows_written: number; rows_removed: number }
 }
+
+/** 158 (F405): what became of the per-player rows sent with a league-week's scores. */
+export type PlayerPointsStorage = 'stored' | 'not_stored_pre_158'
+
+/**
+ * What the door did with the per-player rows (pure): a 158 door's report
+ * carries `player_points`; 119's never does (it reads only team_id / points,
+ * so the rows were ignored and the scores written as before).
+ */
+export function playerPointsStorageOf(door: DoorReport): PlayerPointsStorage {
+  return door.player_points === undefined || door.player_points === null ? 'not_stored_pre_158' : 'stored'
+}
+
+/** The sentence a pre-158 door earns — named on the drain, never silent. */
+export const PRE_158_DOOR_SENTENCE =
+  'per-player points NOT stored: score_write_week_batch answered without a player_points report — the database predates migration 158 (it ignores `players`); the team scores are written exactly as before and box scores stay live until 158 is pushed'
 
 export type LeagueWeekOutcome =
   | 'written'
@@ -622,6 +688,9 @@ export interface LeagueWeekReport {
    *  exists — the door keeps the last value (F259(d); F263). */
   pending_kept_provisional: string[]
   door?: DoorReport
+  /** 158 (F405): set when the door was called — `stored` (the rows went with
+   *  the scores) or `not_stored_pre_158` (a pre-158 door; named in problems). */
+  player_points?: PlayerPointsStorage
   problems: string[]
 }
 
@@ -1003,14 +1072,16 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
   }
   const irKeys = irKeysOf(league.roster_settings)
   const startersByTeam = new Map<string, string[]>()
+  const slotsByTeam = new Map<string, Array<{ slot: string; player_id: string }>>()
   const commishEdited = new Set<string>()
   for (const row of lineupRows) {
-    const starters = startersOf(row.slot_map, irKeys)
-    if (starters === null) {
+    const slots = starterSlotsOf(row.slot_map, irKeys)
+    if (slots === null) {
       report.problems.push(`team ${row.team_id}: team_lineups.slot_map is not an object — the row is unreadable, the team is not scored`)
       continue
     }
-    startersByTeam.set(row.team_id, starters)
+    slotsByTeam.set(row.team_id, slots)
+    startersByTeam.set(row.team_id, slots.map((s) => s.player_id))
     if (row.edited_by_commish === true) commishEdited.add(row.team_id)
   }
 
@@ -1119,8 +1190,17 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
     scores.some((s) => s.team_id === teamId && s.points === null),
   )
 
-  // (7) ONE door call per league-week per drain.
-  const batch = scores.map((s) => ({ team_id: s.team_id, points: s.points }))
+  // (7) ONE door call per league-week per drain. From 158 (F405) every team
+  //     carries its per-player rows — the terms of its score, slot by slot —
+  //     and the door stores them WITH the score, in the same transaction, so
+  //     a scored week's box score always adds up to it. A pre-158 door
+  //     ignores the key (119 reads team_id / points only) and says nothing
+  //     of it: that silence is named below.
+  const batch = scores.map((s) => ({
+    team_id: s.team_id,
+    points: s.points,
+    players: playerPointsRows(slotsByTeam.get(s.team_id) ?? [], s),
+  }))
   const { data, error } = await db.rpc('score_write_week_batch', {
     p_league_id: league.id,
     p_week: week,
@@ -1135,6 +1215,8 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
   }
   const door = data as unknown as DoorReport
   report.door = door
+  report.player_points = playerPointsStorageOf(door)
+  if (report.player_points === 'not_stored_pre_158') report.problems.push(PRE_158_DOOR_SENTENCE)
   for (const skip of door.skipped ?? []) {
     report.problems.push(`door skipped ${skip.team_id ?? skip.matchup_id ?? '?'}: ${skip.reason}`)
   }

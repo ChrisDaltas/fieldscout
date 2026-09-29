@@ -89,6 +89,12 @@ export function classifyDrain(report: BatchReport): DrainVerdict {
       infos.push(`league_id=${entry.league_id} week=${entry.week} skipped: ${entry.skip_reason}`)
     }
   }
+  // M5 L.D3.11 (158 / F405): a pre-158 door stores no per-player points —
+  // informational (the scores are written as before), named once per drain.
+  const pre158 = report.leagues.filter((e) => e.player_points === 'not_stored_pre_158').length
+  if (pre158 > 0) {
+    infos.push(`${pre158} league-week(s) scored without per-player points: the database predates migration 158 (box scores stay live until it is pushed)`)
+  }
   if (report.reason === 'all_leased' || report.reason === 'all_deferred') {
     infos.push(`drain claimed nothing: ${report.reason} (R875 — informational)`)
   }

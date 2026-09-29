@@ -25,9 +25,12 @@ select plan(20);
 -- Shape: §12.20 column-for-column, no additions, no omissions.
 -- ---------------------------------------------------------------------------
 select has_table('public', 'nfl_weeks', 'nfl_weeks exists');
+-- M5 L.D3.11 (migration 158 — additive, the R992 shape): §12.20 gains ONE
+-- column, `correction_window_default_ends_at` (the Thursday 06:00 ET default
+-- kept for when the next week's first kickoff is not known — F405; pgTAP 106).
 select columns_are('public', 'nfl_weeks',
-  array['season', 'week', 'starts_at', 'first_kickoff_at', 'last_game_ends_at', 'correction_window_ends_at'],
-  'exact §12.20 column set');
+  array['season', 'week', 'starts_at', 'first_kickoff_at', 'last_game_ends_at', 'correction_window_ends_at', 'correction_window_default_ends_at'],
+  'exact §12.20 column set (+ 158''s correction_window_default_ends_at)');
 select col_is_pk('public', 'nfl_weeks', array['season', 'week'], 'PK (season, week)');
 
 -- ---------------------------------------------------------------------------
