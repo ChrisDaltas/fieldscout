@@ -30,6 +30,17 @@ const PROBE_INVARIANT: Record<string, string> = {
   'pool-mirror': 'pool-roster-mirror',
   'claim-privacy': 'claim-privacy',
 }
+/**
+ * The SAME fault seen from a second side (D423(11), found by gate run 3): the
+ * exclusivity probe re-teams one moved player's roster row; when that player
+ * is also in his old team's lineup, the season invariant `exclusivity`
+ * ("team X starts P, but the roster owner is Y") names the very same player.
+ * That sibling is allowed ONLY when every one of its failures names the
+ * probed player — anything else is still a foreign red.
+ */
+const PROBE_SIBLINGS: Record<string, string[]> = {
+  exclusivity: ['exclusivity'],
+}
 const WAIVER_TYPES = ['faab', 'rolling_priority', 'reverse_standings'] as const
 
 const failures: string[] = []
@@ -103,7 +114,23 @@ function probe(name: string, path: string): void {
   const by = new Map<string, number>()
   for (const f of r.invariantFailures) by.set(f.invariant, (by.get(f.invariant) ?? 0) + 1)
   check((by.get(want) ?? 0) > 0, `the NAMED invariant '${want}' fired (${by.get(want) ?? 0} failure(s))`)
-  const others = [...by.entries()].filter(([k]) => k !== want)
+  // The probed player, from the named invariant's own words ("player <id>: …").
+  const probed = new Set(
+    r.invariantFailures
+      .filter((f) => f.invariant === want)
+      .map((f) => /player (\S+?):/.exec(f.detail)?.[1])
+      .filter((id): id is string => id !== undefined),
+  )
+  const siblings = PROBE_SIBLINGS[name] ?? []
+  const siblingFailures = r.invariantFailures.filter((f) => siblings.includes(f.invariant))
+  const siblingOk = siblingFailures.every((f) => [...probed].some((id) => new RegExp(`\\b${id}\\b`).test(f.detail)))
+  if (siblingFailures.length > 0) {
+    check(
+      siblingOk,
+      `the sibling invariant(s) ${siblings.join(', ')} fired only on the probed player ${[...probed].join(', ') || '(none named)'} (${siblingFailures.length} failure(s) — the same fault from the lineup side)`,
+    )
+  }
+  const others = [...by.entries()].filter(([k]) => k !== want && !siblings.includes(k))
   check(others.length === 0, `no OTHER invariant fired (${others.map(([k, n]) => `${k} ×${n}`).join(', ') || 'none'})`)
   check(r.problems.length === 0, `no run problem (${r.problems.length}${r.problems.length > 0 ? `: ${r.problems[0]!.slice(0, 200)}` : ''})`)
   for (const f of r.invariantFailures.filter((x) => x.invariant === want).slice(0, 3)) console.log(`      ${f.invariant}: ${f.detail.slice(0, 220)}`)
