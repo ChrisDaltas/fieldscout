@@ -315,3 +315,46 @@ describe('no ledger code in any end-user copy (F277(a))', () => {
     }
   })
 })
+
+describe('F480 / R1268 — the ?with=&player= door (tradeDoorStep, replayed the way TradesContent renders)', () => {
+  /** Replays the component: one step at mount and one per render with the
+   *  team known then (its effect on `myTeamId`); 'close' clears the builder.
+   *  Returns every builder the door opened, in order. */
+  function replay(renders: Array<string | null | 'close'>, door: ops.TradeDoorParams): ops.TradeDoorOpen[] {
+    const opened: ops.TradeDoorOpen[] = []
+    let decided = false
+    for (const r of renders) {
+      if (r === 'close') continue // closing clears the builder; the door's memory is `decided`, untouched
+      const step = ops.tradeDoorStep(decided, r, door)
+      decided = step.decided
+      if (step.open) opened.push(step.open)
+    }
+    return opened
+  }
+  const door = { with: 'team-b', player: 'p-9' }
+
+  it('mounted while the session is still loading (team null), it opens when the team arrives — exactly once', () => {
+    expect(replay([null, null, 'team-a', 'team-a', 'team-a'], door)).toEqual([
+      { fromTeamId: 'team-a', toTeamId: 'team-b', getPlayerIds: ['p-9'] },
+    ])
+  })
+
+  it('the team known at mount opens it at once, the same single time', () => {
+    expect(replay(['team-a', 'team-a'], door)).toHaveLength(1)
+  })
+
+  it('closing the builder never re-opens it', () => {
+    expect(replay([null, 'team-a', 'close', 'team-a', 'team-a'], door)).toHaveLength(1)
+  })
+
+  it('a link to the viewer’s own team, or no link at all, decides "no door" and stays closed', () => {
+    expect(replay([null, 'team-b', 'team-b'], door)).toEqual([])
+    expect(replay([null, 'team-a'], { with: null, player: null })).toEqual([])
+    expect(ops.tradeDoorStep(false, 'team-a', { with: null, player: null })).toEqual({ decided: true, open: null })
+    expect(ops.tradeDoorStep(false, null, door)).toEqual({ decided: false, open: null })
+  })
+
+  it('a player-only link opens toward no fixed team, the player picked', () => {
+    expect(replay([null, 'team-a'], { with: null, player: 'p-9' })).toEqual([{ fromTeamId: 'team-a', toTeamId: null, getPlayerIds: ['p-9'] }])
+  })
+})

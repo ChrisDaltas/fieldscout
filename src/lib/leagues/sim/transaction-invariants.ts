@@ -112,6 +112,10 @@ export interface AuditGhost {
   successorUserId: string | null
   /** The franchise's won-claim spend before the ghost left (the premise). */
   spentBeforeVacate: number
+  /** M5 L.D3.10 (D423): the league's `waiver_type` when the ghost claimed.
+   *  Only a FAAB league spends on a claim, so only there must the carry arm
+   *  have something to carry; absent = FAAB (the strict reading). */
+  waiverType?: string
   balanceAtVacate: number | null
   balanceAfterTakeover: number | null
   budget: number
@@ -400,7 +404,7 @@ export function checkGhostTakeover(a: TransactionAudit): SeasonInvariantFailure[
     out.push(fail(a, 'ghost-takeover', `the Ghost's lifecycle did not complete on team ${g.teamId}: ${g.incomplete}`))
     return out
   }
-  if (g.spentBeforeVacate <= 0) {
+  if ((g.waiverType ?? 'faab') === 'faab' && g.spentBeforeVacate <= 0) {
     out.push(fail(a, 'ghost-takeover', `team ${g.teamId} spent $${g.spentBeforeVacate} before the ghost left — the carry arm has nothing to carry`))
   }
   const owed = g.budget - g.spentBeforeVacate

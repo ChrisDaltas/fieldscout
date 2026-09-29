@@ -89,8 +89,13 @@
  */
 import { writeFileSync } from 'node:fs'
 
+import { keepAliveFetch } from './sim-keepalive-fetch'
+
 import { PICK_TIMER_SECONDS } from '../src/lib/leagues/settings/league-settings'
-import { runDraftSim } from '../src/lib/leagues/sim/runner'
+import { createClient } from '@supabase/supabase-js'
+
+import type { Database } from '../src/types/database'
+import { restoreSimWorld, runDraftSim } from '../src/lib/leagues/sim/runner'
 import { runSeasonSim, seasonReportLines } from '../src/lib/leagues/sim/season-runner'
 import {
   SCENARIO_IDS,
@@ -166,6 +171,30 @@ const LOCAL_SERVICE_ROLE_KEY =
 function flagValue(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
+}
+
+/**
+ * R1270 (D423): an interrupted run must not leave the shared pool's statuses
+ * masked or planted until somebody's next sweep. On SIGINT / SIGTERM the
+ * sim-world half of the sweep runs on its own (the rest — leagues, users,
+ * season rows — is the next run's first sweep, and the census names it), then
+ * the process exits 130 / 143. A second signal exits at once.
+ */
+let interrupted = false
+for (const [signal, code] of [
+  ['SIGINT', 130],
+  ['SIGTERM', 143],
+] as const) {
+  process.on(signal, () => {
+    if (interrupted) process.exit(code)
+    interrupted = true
+    console.error(`sim: ${signal} — restoring the sim world (masked + planted statuses) before exiting`)
+    const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+    restoreSimWorld(service)
+      .then((r) => console.error(`sim: restored ${r.masks} mask(s) + ${r.plants} plant(s)`))
+      .catch((e) => console.error(`sim: sim-world restore FAILED — run \`npm run sim:census\` and a 1-league sweep: ${(e as Error).message}`))
+      .finally(() => process.exit(code))
+  })
 }
 
 async function main(): Promise<void> {
@@ -307,12 +336,21 @@ async function main(): Promise<void> {
     // is counted, and any host other than the local stack is a violation
     // (§23.6 "zero external calls"). A stub would also break supabase-js,
     // which is how the sim reaches the stack at all.
+    // TRANSPORT (M5 L.D3.10, F375 / D423): every LOCAL-stack request goes over
+    // `keepAliveFetch` — one `node:http` keep-alive agent — because the global
+    // fetch's undici Agent opens a fresh socket per request once Kong has
+    // closed a connection, and a 100-league season then exhausts the host's
+    // ephemeral ports (the measurement is in `sim-keepalive-fetch.ts`). Any
+    // other host still goes through the real fetch and is COUNTED.
     let external = 0
     const realFetch = globalThis.fetch.bind(globalThis)
     globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: Parameters<typeof realFetch>[1]) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-      if (!url.startsWith(LOCAL_URL)) external += 1
-      return realFetch(input, init)
+      if (!url.startsWith(LOCAL_URL)) {
+        external += 1
+        return realFetch(input, init)
+      }
+      return keepAliveFetch(input, init)
     }) as typeof globalThis.fetch
 
     console.log(`SIM SEED: ${seed}`)

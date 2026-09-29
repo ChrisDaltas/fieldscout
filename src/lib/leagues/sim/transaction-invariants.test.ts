@@ -20,6 +20,7 @@ import {
   sweepTransactionAudit,
   type TransactionAudit,
 } from './transaction-invariants'
+import { WAIVER_TYPE_MATRIX, waiverTypeFor } from './transact-personas'
 
 /**
  * Teams A, B, C, G (the Ghost's franchise). Budget $100.
@@ -259,6 +260,23 @@ describe('G ghost-takeover (F211)', () => {
     expect(checkGhostTakeover(a)[0]!.detail).toContain('spent $0')
   })
 
+  it('D423: an explicit FAAB league with nothing spent still reds', () => {
+    const a = greenAudit()
+    a.ghost = { ...a.ghost!, waiverType: 'faab', spentBeforeVacate: 0, balanceAtVacate: 100, balanceAfterTakeover: 100 }
+    expect(checkGhostTakeover(a)[0]!.detail).toContain('spent $0')
+  })
+
+  it('D423: a priority league spends nothing on a claim — the carry arm is judged on the untouched budget', () => {
+    for (const waiverType of ['rolling_priority', 'reverse_standings']) {
+      const a = greenAudit()
+      a.ghost = { ...a.ghost!, waiverType, spentBeforeVacate: 0, balanceAtVacate: 100, balanceAfterTakeover: 100 }
+      expect(checkGhostTakeover(a)).toEqual([])
+      // …and the balance is still checked there: a moved budget reds.
+      a.ghost = { ...a.ghost!, balanceAtVacate: 95, balanceAfterTakeover: 95 }
+      expect(checkGhostTakeover(a)[0]!.detail).toContain('expected budget $100 − spent $0 = $100')
+    }
+  })
+
   it('a ghost whose claim still went through after the vacate reds', () => {
     const a = greenAudit()
     a.ghost = { ...a.ghost!, ghostSubmitStatus: 200 }
@@ -287,5 +305,19 @@ describe('G ghost-takeover (F211)', () => {
     const a = greenAudit()
     a.ghost = { ...a.ghost!, incomplete: 'the seat claim never ran' }
     expect(checkGhostTakeover(a)[0]!.detail).toContain('the seat claim never ran')
+  })
+})
+
+describe('D423 — the claim-type axis', () => {
+  it('assigns faab / rolling_priority / reverse_standings by the league plan number, never by completion order', () => {
+    expect(['SIM L.B6.1 #01', 'SIM L.B6.1 #02', 'SIM L.B6.1 #03', 'SIM L.B6.1 #04', 'SIM L.B6.1 #24'].map((l, i) => waiverTypeFor(l, 99 - i))).toEqual([
+      'faab',
+      'rolling_priority',
+      'reverse_standings',
+      'faab',
+      'reverse_standings',
+    ])
+    expect(waiverTypeFor('no number', 1)).toBe('rolling_priority')
+    expect(WAIVER_TYPE_MATRIX).toEqual(['faab', 'rolling_priority', 'reverse_standings'])
   })
 })

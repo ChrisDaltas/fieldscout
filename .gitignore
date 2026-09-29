@@ -58,3 +58,6 @@ redesign_pkg.zip
 # writes and its evidence stage reads. Regenerated on every run; the RECORD
 # lives in PROGRESS and the PR body, never in the tree.
 /.gate-m4/
+
+# M5 gate evidence (L.D3.10) — the transacting run and four probe reports.
+/.gate-m5/

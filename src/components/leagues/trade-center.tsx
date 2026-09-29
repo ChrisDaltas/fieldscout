@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { PositionBadge } from '@/components/players/position-badge'
@@ -56,6 +56,8 @@ import {
   tallyWords,
   tradeActions,
   tradeDeadlineCopy,
+  tradeDoorStep,
+  type TradeDoorOpen,
   tradeSides,
   tradeStatusView,
   type TradeTone,
@@ -137,11 +139,31 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const fmt = (iso: string) => formatInstantWithDate(iso, leagueTimeZone).local
 
   const [tab, setTab] = useState<Tab>('pending')
-  const [builder, setBuilder] = useState<BuilderState | null>(() =>
-    (initialWith || initialPlayer) && myTeamId && initialWith !== myTeamId
-      ? { mode: 'propose', fromTeamId: myTeamId, counterOf: null, initialTo: initialWith, initialGet: initialPlayer ? [initialPlayer] : [] }
-      : null,
-  )
+  // The `?with=` / `?player=` door (D419(6)). It needs the viewer's own team,
+  // which needs the signed-in user — and `useAuth`'s session can resolve AFTER
+  // the league read (a fresh page load races the two). Deciding only in the
+  // initial state lost the door whenever the league won that race: the page
+  // rendered the trade center with no builder (the M5 gate's red at
+  // transactions.spec.ts:155, reproduced by delaying the session — PROGRESS
+  // F480 / D423). So the door opens the FIRST time the team is known, once;
+  // closing the builder never re-opens it.
+  const door = { with: initialWith, player: initialPlayer }
+  const asBuilder = (open: TradeDoorOpen): BuilderState => ({
+    mode: 'propose',
+    fromTeamId: open.fromTeamId,
+    counterOf: null,
+    initialTo: open.toTeamId,
+    initialGet: open.getPlayerIds,
+  })
+  const [firstDoor] = useState(() => tradeDoorStep(false, myTeamId, door))
+  const [builder, setBuilder] = useState<BuilderState | null>(() => (firstDoor.open ? asBuilder(firstDoor.open) : null))
+  const doorDecided = useRef(firstDoor.decided)
+  useEffect(() => {
+    const step = tradeDoorStep(doorDecided.current, myTeamId, door)
+    doorDecided.current = step.decided
+    if (step.open) setBuilder(asBuilder(step.open))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the door reads the URL's params once, when the team first becomes known
+  }, [myTeamId])
   const [builderKey, setBuilderKey] = useState(0)
   const [deadlineRefusal, setDeadlineRefusal] = useState<string | null>(null)
   const [lastCard, setLastCard] = useState<{ tradeId: string; kind: 'respond' | 'commish' } | null>(null)

@@ -1597,6 +1597,8 @@ export interface StatLine {
   receiving_yards?: number
   receiving_tds?: number
   fumbles_lost?: number
+  /** F471: a D/ST line's yards allowed — NULL is PENDING since 143 (D380). */
+  def_yards_allowed?: number
 }
 
 /**
