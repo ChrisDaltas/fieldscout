@@ -272,7 +272,7 @@ BEGIN
     v_ndrops := COALESCE(cardinality(v_side.drops), 0);
     v_after := v_before - v_out + v_in - v_ndrops;
 
-    IF v_side.enforce AND v_after > v_roster_size AND p_verb IS DISTINCT FROM 'trade_preview' THEN
+    IF v_side.enforce AND v_after > v_roster_size THEN
       -- 151 (F414): the words name who can fix it. At execution nobody can
       -- name drops any more; at acceptance the PROPOSING team's overflow (it
       -- added players after proposing) is the proposer's to fix — the
