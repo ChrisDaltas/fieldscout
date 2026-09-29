@@ -28,7 +28,7 @@
 - *(L.D2.17 built — migration 160 / pgTAP 108: equal FAAB bids go by the rolling waiver order by default (Chris 2026-09-29); the stored old default is rewritten at the push (hosted: 1 league); F478 discharged; D424. Measured: hosted is at 159. NEXT is unchanged.)*
 - **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
 - **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
-- **Production:** at 134 until Chris pushes. Push order (M6A): `npx supabase db push` (135–150 together once L.D2.9 merges; stop and report on any error) → immediately `npm run sync:reingest -- --season 2026 --weeks <completed weeks> --confirm-target <hosted host>`.
+- **Production:** at **159** — Chris had 135–159 pushed 2026-09-29 (dry run showed exactly 135–159; all applied; `sync:reingest --weeks 1-3` run: D/ST yards filled 32/32 in weeks 1–2). **Held:** `backfill:player-points --apply` until L.D3.13's one-time weeks 1–2 re-score lands (Chris's ruling). Push debt: **160** (L.D2.17; read its NOTICE — if the hosted league is under `kept_waiver_history`, set its Bid tiebreaker to Rolling priority), then L.D3.13's migration.
 
 ---
 
