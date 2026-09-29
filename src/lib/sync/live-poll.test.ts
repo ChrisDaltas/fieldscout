@@ -109,7 +109,7 @@ describe('planLivePoll — hot / sweep / idle from the tables', () => {
       { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
     ]
     const inside = planLivePoll(games, weeks, new Date('2026-09-17T15:00:30Z')) // Thu 11:00 ET — after the OLD 06:00 close
-    expect([inside.mode, inside.weeks]).toEqual(['sweep', [1, 2]])
+    expect([inside.mode, inside.weeks]).toEqual(['sweep', [2, 1]]) // R1265: the current week first
     expect(inside.reasons[0]).toMatch(/week\(s\) 1 still inside their stat-correction window/)
     const atClose = planLivePoll(games, weeks, new Date('2026-09-18T01:00:00Z'))
     expect(atClose.weeks).toEqual([2])

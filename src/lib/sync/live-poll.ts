@@ -185,7 +185,8 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
       `sweep: nothing due; top-of-hour schedule refresh of week ${currentWeek} (flex moves reach nfl_games within the hour, E42)` +
         (inWindow.length > 0 ? `; and week(s) ${inWindow.join(', ')} still inside their stat-correction window (F270 — a late correction is re-scored before the week locks)` : ''),
     )
-    return { mode: 'sweep', weeks: [...inWindow, currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    // R1265: the current week first — a throw on an earlier week never skips its refresh.
+    return { mode: 'sweep', weeks: [currentWeek, ...inWindow], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
   reasons.push(`idle: no in-week game within ${leadMs / 60_000} min of kickoff or still open; next sweep at minute ${sweepMinute} — no provider call`)
   return { mode: 'idle', weeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
