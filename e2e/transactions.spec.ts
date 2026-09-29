@@ -43,8 +43,8 @@ import { STORAGE_STATE } from './helpers/local-env'
  * `free-agents-table` / trade center, §11.2 the lineup lock; PROGRESS D414,
  * D415, D416, D417, D419, F296).
  *
- * ONE LEAGUE, THREE STEPS, IN ORDER (`serial`): the draft is the expensive
- * part, so the three tests share one drafted league and each picks up the
+ * ONE LEAGUE, FOUR STEPS, IN ORDER (`serial`): the draft is the expensive
+ * part, so the four tests share one drafted league and each picks up the
  * rosters the last one left.
  *
  *   1. WAIVER MORNING — two managers put in claims on the same free agent in
