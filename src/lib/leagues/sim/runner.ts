@@ -2177,6 +2177,13 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
       throwIfError(lineupsError, 'cleanup: team_lineups delete')
     }
     for (const table of [
+      // M5 L.D3.8: `trades.proposer_team_id` / `recipient_team_id` (148:124-125)
+      // and `trade_items` / `trade_drops`' team columns reference `teams` with
+      // NO cascade, so a transacting run's trades must go before the teams
+      // (items, drops and votes cascade from the trade). Every other M5 table
+      // (`waiver_claims`, `waiver_runs`, the verbs' ledgers) cascades from the
+      // league.
+      'trades',
       'lineup_actions',
       'team_week_results',
       'league_player_pool',
@@ -2196,16 +2203,30 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
     // 118's `leagues.champion_team_id` FK: a COMPLETE league points at its
     // champion, and the teams delete fails on it (measured 2026-09-08 on the
     // first driven season — D326(11)).
+    // PROGRESS F406's order (M5 L.D3.8): a commissioner who acted FOR a team
+    // leaves an immutable `commissioner_actions` row whose `acting_as_team_id`
+    // references `teams` with no ON DELETE (123:304), removable only by the
+    // league's cascade — while `teams.league_id` blocks deleting the league
+    // first. So: detach the teams, delete the league (its cascade takes the
+    // audit rows), then delete the teams by the ids resolved above.
     for (const part of chunked(ids)) {
       const { error: championError } = await service
         .from('leagues')
         .update({ champion_team_id: null })
         .in('id', part)
       throwIfError(championError, 'cleanup: champion clear')
-      const { error: teamsError } = await service.from('teams').delete().in('league_id', part)
-      throwIfError(teamsError, 'cleanup: teams delete')
+    }
+    for (const part of chunked(teamIds)) {
+      const { error: detachError } = await service.from('teams').update({ league_id: null }).in('id', part)
+      throwIfError(detachError, 'cleanup: teams detach')
+    }
+    for (const part of chunked(ids)) {
       const { error: leaguesError } = await service.from('leagues').delete().in('id', part)
       throwIfError(leaguesError, 'cleanup: leagues delete')
+    }
+    for (const part of chunked(teamIds)) {
+      const { error: teamsError } = await service.from('teams').delete().in('id', part)
+      throwIfError(teamsError, 'cleanup: teams delete')
     }
   }
   // ---- The SEASON-WIDE surfaces no league delete cascades to (F199) -------
