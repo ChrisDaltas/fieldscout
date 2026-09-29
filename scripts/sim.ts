@@ -89,6 +89,8 @@
  */
 import { writeFileSync } from 'node:fs'
 
+import { keepAliveFetch } from './sim-keepalive-fetch'
+
 import { PICK_TIMER_SECONDS } from '../src/lib/leagues/settings/league-settings'
 import { runDraftSim } from '../src/lib/leagues/sim/runner'
 import { runSeasonSim, seasonReportLines } from '../src/lib/leagues/sim/season-runner'
@@ -307,12 +309,21 @@ async function main(): Promise<void> {
     // is counted, and any host other than the local stack is a violation
     // (§23.6 "zero external calls"). A stub would also break supabase-js,
     // which is how the sim reaches the stack at all.
+    // TRANSPORT (M5 L.D3.10, F375 / D423): every LOCAL-stack request goes over
+    // `keepAliveFetch` — one `node:http` keep-alive agent — because the global
+    // fetch's undici Agent opens a fresh socket per request once Kong has
+    // closed a connection, and a 100-league season then exhausts the host's
+    // ephemeral ports (the measurement is in `sim-keepalive-fetch.ts`). Any
+    // other host still goes through the real fetch and is COUNTED.
     let external = 0
     const realFetch = globalThis.fetch.bind(globalThis)
     globalThis.fetch = ((input: Parameters<typeof realFetch>[0], init?: Parameters<typeof realFetch>[1]) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-      if (!url.startsWith(LOCAL_URL)) external += 1
-      return realFetch(input, init)
+      if (!url.startsWith(LOCAL_URL)) {
+        external += 1
+        return realFetch(input, init)
+      }
+      return keepAliveFetch(input, init)
     }) as typeof globalThis.fetch
 
     console.log(`SIM SEED: ${seed}`)

@@ -122,9 +122,15 @@ function statLineFor(playerId: string, position: string, teamIndex: number, scal
   if (p === 'RB') return { player_id: playerId, rush_yards: (50 + bump * 7) * scale, rush_tds: teamIndex % 2 }
   if (p === 'WR') return { player_id: playerId, receptions: 3, receiving_yards: (40 + bump * 5) * scale, receiving_tds: (teamIndex + 1) % 2 }
   if (p === 'TE') return { player_id: playerId, receptions: 2, receiving_yards: (20 + bump * 3) * scale }
-  // K and D/ST: a bare DELIVERED row. `deliveredLine` fills every
-  // column-backed key with 0 and `deriveTierIndicators` emits the tier keys,
-  // so the starter scores 0.00 with `reason: 'scored'` — never `no_stat_row`.
+  // K and D/ST: a DELIVERED row. `deliveredLine` fills every column-backed
+  // key with 0 and `deriveTierIndicators` emits the tier keys, so the starter
+  // scores with `reason: 'scored'` — never `no_stat_row`. F471 (L.D3.10): the
+  // ONE exception since 143 / D380 is `def_yards_allowed` (`null_is_pending`
+  // — a NULL is PENDING, never the "<100 yards" tier), so a D/ST line must
+  // DELIVER its yards allowed or every D/ST starter reads pending on the
+  // def_ya_* keys. A fixed 350 (not scaled: more yards allowed can only LOWER
+  // a D/ST score, and (7) needs the re-scored total to move up).
+  if (p === 'DST') return { player_id: playerId, def_yards_allowed: 350 }
   return { player_id: playerId }
 }
 

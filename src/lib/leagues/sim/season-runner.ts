@@ -171,6 +171,7 @@ import {
   ghostSeatClaim,
   type TransactDeps,
   type TransactRun,
+  WAIVER_TYPE_MATRIX,
 } from './transact-personas'
 import {
   claimPrivacyPopulation,
@@ -835,6 +836,7 @@ async function sweepTransactions(
     trades: { commissioner: 0, none: 0, league_vote: 0, reversed: 0, votes: 0 },
     commishFaabEdits: 0,
     ghosts: { attempted: 0, completed: 0 },
+    byWaiverType: Object.fromEntries(WAIVER_TYPE_MATRIX.map((t) => [t, { leagues: 0, resolved: 0, won: 0, lost: 0, invalid: 0 }])),
     populations: {
       exclusivityMoved: 0,
       faabTeams: 0,
@@ -869,6 +871,14 @@ async function sweepTransactions(
     out.trades.reversed += state.counts.reversed
     out.trades.votes += state.counts.votes
     out.commishFaabEdits += state.counts.commishFaabEdits
+    {
+      const w = out.byWaiverType[state.waiverType]!
+      w.leagues += 1
+      w.won += state.counts.won
+      w.lost += state.counts.lost
+      w.invalid += state.counts.invalid
+      if (state.counts.won > 0 && state.counts.lost > 0) w.resolved += 1
+    }
     if (state.ghost !== null) {
       out.ghosts.attempted += 1
       if (state.ghost.incomplete === null) out.ghosts.completed += 1
@@ -911,6 +921,18 @@ async function sweepTransactions(
     `trades by review mode ${JSON.stringify(out.trades)} — each of commissioner / none / league_vote, and a reversal, must execute`,
   )
   need(out.addDrops > 0, `${out.addDrops} add/drop(s) went through`)
+  // M5 L.D3.10 (D423): the claim-type axis. With fewer than three leagues the
+  // matrix cannot be covered — said on the report, never passed silently.
+  if (out.leagues >= WAIVER_TYPE_MATRIX.length) {
+    for (const t of WAIVER_TYPE_MATRIX) {
+      const w = out.byWaiverType[t]!
+      need(w.resolved > 0, `claims under waiver_type '${t}' resolved a contested player (>= 1 won and >= 1 lost) in ${w.resolved} of ${w.leagues} league(s)`)
+    }
+  } else {
+    report.coverageGaps.push(
+      `WAIVER-TYPE AXIS NOT COVERED: ${out.leagues} transacting league(s) < ${WAIVER_TYPE_MATRIX.length} — each league runs one of ${WAIVER_TYPE_MATRIX.join(' / ')} by its plan number, so a run this small cannot reach all three (D423)`,
+    )
+  }
   return out
 }
 
@@ -4154,6 +4176,9 @@ export function transactionReportLines(report: SeasonRunReport): string[] {
       `${t.claims.won} won / ${t.claims.lost} lost / ${t.claims.invalid} invalid · add/drops ${t.addDrops} · trades: commissioner-review ` +
       `${t.trades.commissioner} · no-review ${t.trades.none} · league-vote ${t.trades.league_vote} (${t.trades.votes} votes) · reversed ` +
       `${t.trades.reversed} · commish_edit_faab ${t.commishFaabEdits} · Ghost ${t.ghosts.completed}/${t.ghosts.attempted} completed`,
+    `  WAIVER TYPES (D423): ${Object.entries(t.byWaiverType)
+      .map(([k, w]) => `${k} ${w.leagues} league(s), ${w.resolved} resolved (${w.won} won / ${w.lost} lost / ${w.invalid} invalid)`)
+      .join(' · ')}`,
     `  T1 transaction-exclusivity — population: ${p.exclusivityMoved} player(s) moved by acknowledged transactions`,
     `  T2 faab-ledger             — population: ${p.faabTeams} franchise(s) · terms won_claim ${p.faabTerms.won_claim} · trade_leg ` +
       `${p.faabTerms.trade_leg} · reversal_leg ${p.faabTerms.reversal_leg} · commissioner_edit ${p.faabTerms.commissioner_edit}`,

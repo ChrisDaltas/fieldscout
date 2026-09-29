@@ -152,10 +152,32 @@ export interface GhostState {
   incomplete: string | null
 }
 
+/**
+ * M5 L.D3.10 (D423) — THE WAIVER-TYPE AXIS. The gate runs the transacting
+ * personas "across the settings matrix (FAAB / rolling / reverse)" (tasks-M5
+ * §6 L.D3.10), so each league runs its claims under ONE of the three claim
+ * types, by its plan number (`#NN`, 1-based) mod 3 — replayable, never by
+ * completion order. The league is switched through `commish_change_setting`
+ * before any claim (a free knob in-season, 149:1932). Under a priority type a
+ * claim carries no money (157's submit refuses a non-zero bid), so every bid
+ * is $0 and the contested player is decided by waiver priority; the same
+ * won / lost / invalid shape follows, since each claimer ranks the contested
+ * player first and a second with the same drop behind it.
+ */
+export const WAIVER_TYPE_MATRIX = ['faab', 'rolling_priority', 'reverse_standings'] as const
+export type SimWaiverType = (typeof WAIVER_TYPE_MATRIX)[number]
+
+export function waiverTypeFor(label: string, index: number): SimWaiverType {
+  const planNumber = Number(/#(\d+)/.exec(label)?.[1] ?? index + 1)
+  return WAIVER_TYPE_MATRIX[(planNumber - 1) % WAIVER_TYPE_MATRIX.length]!
+}
+
 export interface LeagueTransactState {
   label: string
   leagueId: string
   commishUserId: string
+  /** The claim type this league's claims ran under (the D423 axis). */
+  waiverType: SimWaiverType
   expectedHolder: Map<string, string | null>
   counts: {
     claimsSubmitted: number
@@ -387,6 +409,7 @@ export async function driveTransactions(deps: TransactDeps, leagues: readonly Tr
       label: league.label,
       leagueId: league.leagueId,
       commishUserId: league.ownerId ?? '',
+      waiverType: waiverTypeFor(league.label, index),
       expectedHolder: new Map(),
       counts: { claimsSubmitted: 0, won: 0, lost: 0, invalid: 0, addDrops: 0, trades: { commissioner: 0, none: 0, league_vote: 0 }, reversed: 0, votes: 0, commishFaabEdits: 0 },
       ghost: null,
@@ -435,6 +458,18 @@ async function driveLeague(
   const note = (line: string): void => {
     state.lines.push(line)
   }
+  const setting = async (key: string, value: Json): Promise<void> => {
+    ok(`setting ${key}=${JSON.stringify(value)}`, await commishChangeSetting(commish, league.leagueId, { key, value, action_id: uuidFromRng(ids) }))
+  }
+
+  // ---- 0a. THE CLAIM TYPE (D423's axis), before the run is tracked ---------
+  {
+    const current = must('league read', await service.from('leagues').select('waiver_type').eq('id', league.leagueId).single()).waiver_type
+    if (current !== state.waiverType) await setting('waiver_type', state.waiverType)
+    const readBack = must('league read', await service.from('leagues').select('waiver_type').eq('id', league.leagueId).single()).waiver_type
+    if (readBack !== state.waiverType) throw new StepError(`waiver_type reads '${readBack}' after switching it to '${state.waiverType}'`)
+  }
+  const priced = state.waiverType === 'faab'
 
   // ---- 0. TRACK THE LEAGUE ON THE SYNTHETIC CALENDAR (before any claim) ---
   // The live per-minute `process-waivers` cron may already have tracked the
@@ -468,13 +503,15 @@ async function driveLeague(
   const b2 = draw(1, 4)
   const b1 = b2 + draw(1, 4)
   const b0 = b1 + draw(1, 4)
-  const bids = [b0, b1, b2]
+  // The draws are consumed in every league so the decision stream is the same
+  // whatever the claim type; a priority league bids $0 (no money — 157).
+  const bids = priced ? [b0, b1, b2] : [0, 0, 0]
   for (const [i, c] of claimers.entries()) {
     const drop = world.take(c.teamId, claimAt)
     const second = world.freeAgent(claimAt)
     for (const [add, bid] of [
       [contested, bids[i]!],
-      [second, 1],
+      [second, priced ? 1 : 0],
     ] as const) {
       ok(
         `claim ${add.id} for team ${c.teamId}`,
@@ -493,7 +530,8 @@ async function driveLeague(
   const ghostSeat = N.find((s) => !claimers.includes(s) && world.addDropPosition(s.teamId, 2) !== undefined)
   if (ghostSeat === undefined) throw new StepError(`no seat left to play the Ghost — ${world.depth(N.map((s) => s.teamId))}`)
   const ghostAt = world.addDropPosition(ghostSeat.teamId, 2)!
-  const ghostBid = draw(5, 15)
+  const ghostDraw = draw(5, 15)
+  const ghostBid = priced ? ghostDraw : 0
   const ghostAdd = world.freeAgent(ghostAt)
   const ghostDrop = world.take(ghostSeat.teamId, ghostAt)
   ok(
@@ -539,7 +577,7 @@ async function driveLeague(
   }
   note(
     `claims ${state.counts.claimsSubmitted} submitted → ${state.counts.won} won · ${state.counts.lost} lost · ${state.counts.invalid} invalid ` +
-      `(contested ${claimAt} ${contested.id}: bids $${b0}/$${b1}/$${b2}) · run at ${runAt.toISOString()}`,
+      `(${state.waiverType}: contested ${claimAt} ${contested.id} — ${priced ? `bids $${b0}/$${b1}/$${b2}` : 'no bids, decided by waiver priority'}) · run at ${runAt.toISOString()}`,
   )
   const ghostClaim = claims.find((c) => c.team_id === ghostSeat.teamId && c.add_player_id === ghostAdd.id)
   const ghost: GhostState = {
@@ -588,9 +626,6 @@ async function driveLeague(
 
   // ---- 4. TRADES, one per review mode ------------------------------------
   type Seat = (typeof N)[number]
-  const setting = async (key: string, value: Json): Promise<void> => {
-    ok(`setting ${key}=${JSON.stringify(value)}`, await commishChangeSetting(commish, league.leagueId, { key, value, action_id: uuidFromRng(ids) }))
-  }
   const rpc = (client: Supabase): Rpc => client.rpc.bind(client) as unknown as Rpc
   const propose = async (from: Seat, to: Seat, give: string, get: string, faab: number): Promise<string> => {
     const items: Array<Record<string, unknown>> = [
@@ -636,13 +671,15 @@ async function driveLeague(
   }
   const inTrades = new Set<string>()
 
-  await setting('allow_faab_in_trades', true)
+  // A priority league has no FAAB to trade (148's propose refuses a FAAB leg
+  // there, §7.3.4), so its trades carry players only (D423).
+  if (priced) await setting('allow_faab_in_trades', true)
   // A — commissioner review, approved by the commissioner (L.D3.5 approve).
   const reviewNow = must('league read', await service.from('leagues').select('trade_review').eq('id', league.leagueId).single()).trade_review
   if (reviewNow !== 'commissioner') await setting('trade_review', 'commissioner')
   {
     const { a, b, pa, pb } = world.pickTrade(others, inTrades)
-    const t = await propose(a, b, pa.id, pb.id, 2)
+    const t = await propose(a, b, pa.id, pb.id, priced ? 2 : 0)
     await accept(b, t)
     await expectStatus(t, 'in_review', 'trade A after accept (commissioner review)')
     await commishOp(t, 'approve')
@@ -650,13 +687,13 @@ async function driveLeague(
     swap(a, pa.id, b, pb.id)
     inTrades.add(a.teamId).add(b.teamId)
     state.counts.trades.commissioner += 1
-    note(`trade A (commissioner review): ${pa.position} ${pa.id} ↔ ${pb.id} + $2 — approved by the commissioner → complete`)
+    note(`trade A (commissioner review): ${pa.position} ${pa.id} ↔ ${pb.id}${priced ? ' + $2' : ''} — approved by the commissioner → complete`)
   }
   // B — no review: executes at accept; then REVERSED (E11).
   await setting('trade_review', 'none')
   {
     const { a, b, pa, pb } = world.pickTrade(others, inTrades)
-    const t = await propose(a, b, pa.id, pb.id, 3)
+    const t = await propose(a, b, pa.id, pb.id, priced ? 3 : 0)
     await accept(b, t)
     await expectStatus(t, 'complete', 'trade B after accept (no review)')
     swap(a, pa.id, b, pb.id)
@@ -667,7 +704,7 @@ async function driveLeague(
     state.expectedHolder.set(pb.id, b.teamId)
     inTrades.add(a.teamId).add(b.teamId)
     state.counts.reversed += 1
-    note(`trade B (no review): ${pa.position} ${pa.id} ↔ ${pb.id} + $3 — complete at accept, then REVERSED by the commissioner (E11)`)
+    note(`trade B (no review): ${pa.position} ${pa.id} ↔ ${pb.id}${priced ? ' + $3' : ''} — complete at accept, then REVERSED by the commissioner (E11)`)
   }
   // C — league vote (L.D3.4): one veto + one approve (below the number), then
   // the tick executes it at a virtual instant past the review deadline.
@@ -914,6 +951,7 @@ export async function collectTransactionAudit(
       ghostUserId: ghost.ghostUserId,
       successorUserId: ghost.successorUserId,
       spentBeforeVacate: ghost.spent,
+      waiverType: state.waiverType,
       balanceAtVacate: ghost.balanceAtVacate,
       balanceAfterTakeover: ghost.balanceAfterTakeover,
       budget: lg.faab_budget ?? 0,

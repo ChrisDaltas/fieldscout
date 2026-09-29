@@ -537,6 +537,9 @@ export interface TransactionRunReport {
   trades: { commissioner: number; none: number; league_vote: number; reversed: number; votes: number }
   commishFaabEdits: number
   ghosts: { attempted: number; completed: number }
+  /** M5 L.D3.10 (D423): the waiver-type axis — per `waiver_type`, the leagues
+   *  whose claim run resolved the contested player (>= 1 won AND >= 1 lost). */
+  byWaiverType: Record<string, { leagues: number; resolved: number; won: number; lost: number; invalid: number }>
   /** Invariant populations — every one must be > 0 in a clean run. */
   populations: {
     /** T1: players the acknowledged transactions moved. */
