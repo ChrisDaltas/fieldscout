@@ -29,7 +29,7 @@
 - *(L.D3.13 built — migration 161 / pgTAP 109: the one-time, ruled, audited re-score of FINAL weeks (Chris 2026-09-29: "re-score weeks 1 and 2 with the actual yards"); `npm run rescore:final-weeks`; D425. NEXT is unchanged.)*
 - **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
 - **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
-- **Production:** at **159** — Chris had 135–159 pushed 2026-09-29 (dry run showed exactly 135–159; all applied; `sync:reingest --weeks 1-3` run: D/ST yards filled 32/32 in weeks 1–2). **Held:** `backfill:player-points --apply` until L.D3.13's one-time weeks 1–2 re-score lands (Chris's ruling). Push debt: **160** (L.D2.17; read its NOTICE — if the hosted league is under `kept_waiver_history`, set its Bid tiebreaker to Rolling priority), then **161** (L.D3.13) → the weeks 1–2 re-score (dry, then `--apply`) → the held `backfill:player-points` (PROGRESS F488 — the exact commands).
+- **Production:** at **161** (2026-09-29: 135–159, then 160 + 161 pushed by the orchestrator; weeks 1–2 re-scored and the player-points backfill applied — PROGRESS F488). Push debt: none.
 
 ---
 
