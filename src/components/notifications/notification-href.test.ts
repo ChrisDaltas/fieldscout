@@ -117,3 +117,26 @@ describe('draft notifications never deep-link into the room (§16.1 v2.12)', () 
     expect(source).not.toContain('/draft')
   })
 })
+
+describe('trade notifications land on the trade center (M5 L.D3.7, F438)', () => {
+  it('every league_trade_* type with a league id → /app/leagues/<id>/trades', () => {
+    for (const type of [
+      'league_trade_proposed',
+      'league_trade_accepted',
+      'league_trade_rejected',
+      'league_trade_cancelled',
+      'league_trade_countered',
+      'league_trade_executed',
+      'league_trade_deferred',
+      'league_trade_expired',
+      'league_trade_invalid',
+      'league_trade_vetoed',
+      'league_trade_commissioner',
+    ]) {
+      expect(notificationHref({ type, data: { league_id: 'lg-1', team_id: 't1' } }), type).toBe('/app/leagues/lg-1/trades')
+    }
+  })
+  it('no league id → inert text, never a dead link', () => {
+    expect(notificationHref({ type: 'league_trade_executed', data: { team_id: 't1' } })).toBeNull()
+  })
+})

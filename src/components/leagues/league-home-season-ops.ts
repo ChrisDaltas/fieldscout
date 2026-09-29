@@ -143,7 +143,7 @@ export function standingsPeek(doc: LeagueStandings, myTeamId: string | null, lim
 }
 
 // ---------------------------------------------------------------------------
-// The chips — waivers / trades render HONESTLY (M4 has neither verb)
+// The chips — waivers / trades render HONESTLY from the stored settings
 // ---------------------------------------------------------------------------
 
 export interface HonestChip {
@@ -151,8 +151,6 @@ export interface HonestChip {
   /** The stored setting behind the chip, and what is not built yet. */
   title: string
 }
-
-export const TRADES_LATER_COPY = 'Trades arrive in a later update.'
 
 /**
  * The waiver chip (M5 L.D2.13 — it replaced "claims arrive in a later
@@ -197,16 +195,19 @@ export function waiverTypeLabel(type: string): string {
   }
 }
 
-/** The trade chip: the STORED deadline week (or none), the verb named as
- *  not yet here. Whether the deadline has PASSED is never decided here —
- *  that needs the ladder and belongs to the trade verb when it lands. */
+/** The trade chip (M5 L.D3.7 — it replaced "trades arrive in a later
+ *  update"): the STORED deadline week (or none), said the way Q76 rules it —
+ *  deadline week N ⇒ offers can be made and accepted until week N+1 begins.
+ *  Whether the deadline has PASSED is never decided here: the instant has no
+ *  read door (F452), and a refused offer names it verbatim on the trade
+ *  center. The host renders the chip as the door to the trade center. */
 export function tradeChip(settings: Pick<LeagueSettings, 'trade_deadline_week'>): HonestChip {
   if (settings.trade_deadline_week === null) {
-    return { label: 'No trade deadline', title: `Trades are allowed all season. ${TRADES_LATER_COPY}` }
+    return { label: 'No trade deadline', title: 'Trades are allowed all season. Open the trade center to offer one.' }
   }
   return {
     label: `Trade deadline · Week ${settings.trade_deadline_week}`,
-    title: `Trades close after Week ${settings.trade_deadline_week}. ${TRADES_LATER_COPY}`,
+    title: `Trades can be offered and accepted until Week ${settings.trade_deadline_week + 1} begins. Open the trade center to offer one.`,
   }
 }
 

@@ -60,6 +60,20 @@ describe('transactionText — a WON waiver claim (TD9 row; M5 L.D2.12)', () => {
   })
 })
 
+describe('transactionText — trades (M5 L.D3.7, F415 / F438): the deal from the stored summary, never a bare "Trade"', () => {
+  const summary = 'Alpha gives A One; Bravo gives B One, $5 FAAB'
+  it('an executed trade (151’s row) names the deal; a forced one says so', () => {
+    expect(transactionText(tx({ type: 'trade', payload: { type: 'trade', summary, via: 'review_none' } }))).toBe(`completed a trade: ${summary}`)
+    expect(transactionText(tx({ type: 'trade', payload: { summary, via: 'commissioner_force' } }))).toBe(`completed a trade (forced through by the commissioner): ${summary}`)
+    expect(transactionText(tx({ type: 'trade', payload: {} }))).toBe('completed a trade')
+  })
+  it('the commissioner’s reversal (156’s commissioner_move row, kind trade_reversal) says every player went back', () => {
+    expect(transactionText(tx({ type: 'commissioner_move', team_id: null, payload: { kind: 'trade_reversal', summary } }))).toBe(`reversed a trade — every player went back: ${summary}`)
+    // Any other commissioner_move keeps its label.
+    expect(transactionText(tx({ type: 'commissioner_move', payload: {} }))).toBe('Commissioner move')
+  })
+})
+
 describe('feedLines — transactions carry their team + week; a system post carries the commissioner treatment ONLY when an actor wrote it', () => {
   const names = new Map([['t1', 'Alpha']])
   const items: ActivityItem[] = [
@@ -155,6 +169,22 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(trade('reverse', 'complete', 'reversed')).toBe(`reversed a trade: ${summary}`)
     expect(line({ action_type: 'reverse_trade', target_type: 'trade', target_id: 'tr1', before: { status: 'complete' }, after: { status: 'reversed' },
                   metadata: { verb: 'commish_force_or_reverse_trade', op: 'reverse' } }).text).toBe('reversed a trade')
+  })
+
+  it('M5 L.D3.7 (F415): a manager’s trade move the commissioner made for a team (148 / 151’s arm) reads in plain words, with the deal and the team', () => {
+    const summary = 'Alpha gives A One; Bravo gives B One'
+    const arm = (actionType: string, verb: string) =>
+      commishLogLines(
+        [{ ...base, action_type: actionType, target_type: 'trade', target_id: 'tr1', acting_as_team_id: 't2', before: { status: 'proposed' }, after: { status: 'proposed' }, metadata: { verb, summary } }],
+        new Map([['t2', 'Bravo']]),
+      )[0].text
+    expect(arm('propose_trade', 'trade_propose')).toBe(`offered a trade: ${summary} (acting for Bravo)`)
+    expect(arm('accept_trade', 'trade_respond')).toBe(`accepted a trade: ${summary} (acting for Bravo)`)
+    expect(arm('reject_trade', 'trade_respond')).toBe(`turned down a trade: ${summary} (acting for Bravo)`)
+    expect(arm('cancel_trade', 'trade_respond')).toBe(`called off a trade offer: ${summary} (acting for Bravo)`)
+    expect(arm('counter_trade', 'trade_respond')).toBe(`made a counter-offer: ${summary} (acting for Bravo)`)
+    // The generic "accept trade" line R1174 found is gone.
+    expect(arm('accept_trade', 'trade_respond')).not.toMatch(/^accept trade/)
   })
 
   it('F355: a rename is read from its {name} documents — the word "reassign" never reaches the screen', () => {

@@ -82,6 +82,28 @@ export function waiverClaimText(payload: WaiverClaimPayloadShape): string {
   return `claimed ${add} off waivers${price}${drop ? `, dropped ${drop}` : ''}`
 }
 
+/** A trade's `transactions` row (151 / 156 write `summary` — "Alpha gives X;
+ *  Bravo gives Y" — into the payload, F438): the executed trade, and the
+ *  commissioner's reversal (a `commissioner_move` row, `kind =
+ *  'trade_reversal'`). M5 L.D3.7 (F415). */
+interface TradePayloadShape {
+  summary?: unknown
+  kind?: unknown
+  via?: unknown
+}
+
+export function tradeTransactionText(type: string, payload: TradePayloadShape): string | null {
+  const summary = typeof payload.summary === 'string' && payload.summary.trim() !== '' ? payload.summary : null
+  if (type === 'trade') {
+    const how = payload.via === 'commissioner_force' ? ' (forced through by the commissioner)' : ''
+    return summary ? `completed a trade${how}: ${summary}` : `completed a trade${how}`
+  }
+  if (type === 'commissioner_move' && payload.kind === 'trade_reversal') {
+    return summary ? `reversed a trade — every player went back: ${summary}` : 'reversed a trade — every player went back'
+  }
+  return null
+}
+
 /** One transaction as a sentence: `add_drop` from its payload's names; any
  *  other type by its label (the table is read whole — a later writer's rows
  *  land here labelled, never hidden). */
@@ -97,6 +119,10 @@ export function transactionText(item: TransactionActivityItem): string {
   }
   if (item.type === 'waiver_claim' && item.status === 'complete' && item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)) {
     return waiverClaimText(item.payload as WaiverClaimPayloadShape)
+  }
+  if ((item.type === 'trade' || item.type === 'commissioner_move') && item.status === 'complete' && item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)) {
+    const line = tradeTransactionText(item.type, item.payload as TradePayloadShape)
+    if (line) return line
   }
   const label = TRANSACTION_TYPE_LABELS[item.type] ?? item.type.replace(/_/g, ' ')
   return item.status === 'complete' ? label : `${label} (${item.status})`
@@ -224,6 +250,25 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
   // reverse), never the verb's name.
   if (item.target_type === 'trade' && 'status' in after && metadata.verb === 'commish_force_or_reverse_trade') {
     const act = ({ approve: 'approved a trade', veto: 'vetoed a trade', force: 'forced a trade through', reverse: 'reversed a trade' } as Record<string, string>)[text(metadata.op) ?? '']
+    if (act) {
+      const summary = text(metadata.summary)
+      return summary ? `${act}: ${summary}` : act
+    }
+  }
+  // A MANAGER'S TRADE MOVE MADE BY THE COMMISSIONER — 148 / 151's TD5 arm
+  // (M5 L.D3.7, F415): `propose_trade` / `accept_trade` / `reject_trade` /
+  // `cancel_trade` / `counter_trade`, {status} both sides, the deal in
+  // metadata; the team he acted for is the caller's "(acting for …)".
+  if (item.target_type === 'trade' && (metadata.verb === 'trade_propose' || metadata.verb === 'trade_respond')) {
+    const act = (
+      {
+        propose_trade: 'offered a trade',
+        accept_trade: 'accepted a trade',
+        reject_trade: 'turned down a trade',
+        cancel_trade: 'called off a trade offer',
+        counter_trade: 'made a counter-offer',
+      } as Record<string, string>
+    )[item.action_type]
     if (act) {
       const summary = text(metadata.summary)
       return summary ? `${act}: ${summary}` : act

@@ -47,7 +47,6 @@ import {
   NO_LADDER_COPY,
   PLAYOFF_NONE_FOR_TEAM_COPY,
   PLAYOFF_NO_ROWS_COPY,
-  TRADES_LATER_COPY,
 } from './league-home-season-ops'
 import { LeagueHomeStates } from './league-home-states'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
@@ -334,13 +333,15 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     expect(html).toContain('0.00')
   })
 
-  it('the waiver and trade chips render HONESTLY — the next run from the server window (L.D2.13), the trade verb named as later', () => {
+  it('the waiver and trade chips render HONESTLY — the next run from the server window (L.D2.13); the trade chip is the door to the trade center (L.D3.7)', () => {
     const html = renderHome()
     expect(html).toContain('data-chip="waivers"')
     expect(html).toContain('data-chip="trades"')
     expect(html).toContain(`Trade deadline · Week ${settings.trade_deadline_week}`)
     expect(html).not.toContain('Waiver claims arrive in a later update')
-    expect(html).toContain(TRADES_LATER_COPY)
+    expect(html).not.toMatch(/later update/)
+    expect(html).toMatch(/<a [^>]*data-trades-link="true" href="\/app\/leagues\/league-1\/trades">/)
+    expect(html).toContain(`until Week ${(settings.trade_deadline_week ?? 0) + 1} begins`)
     const withWindow = renderHome({
       detail: {
         ...detailWith(),
