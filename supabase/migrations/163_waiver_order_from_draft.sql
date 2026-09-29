@@ -84,7 +84,7 @@
 --      playoffs and not deleted; ENABLE ALWAYS (R616 — a replica-mode
 --      session must not skip it). WHY A TRIGGER rather than a PERFORM in
 --      `draft_complete_internal`: the order must be stored whenever a
---      league with a complete draft BECOMES rolling, and three writers make
+--      league with a complete draft first BECOMES rolling, and three writers make
 --      that true — draft completion (the status flip, snake and auction
 --      alike), a commissioner's in-season `waiver_type` / `faab_tiebreaker`
 --      change (`commish_change_setting_internal`, 149), and any later writer
@@ -94,7 +94,15 @@
 --      inside the same completion) or an unrelated setting change cause are
 --      `kept` no-ops. It never raises for a business reason, so it can
 --      never fail a draft's last pick or a setting change; a broken
---      invariant (the write count) does raise.
+--      invariant (the write count) does raise. An `unseedable` outcome is
+--      SAID as a WARNING naming the league and the reason (R1289).
+--      EXACTLY WHAT A SWITCH DOES (R1288): the order is stored at a switch
+--      to a rolling order only when NO seat stores one yet — i.e. the
+--      league's FIRST time rolling since its draft. A league that goes
+--      rolling → standings-based → rolling keeps the rolled order it left
+--      with (the seed answers `kept`), which is also what the unchanged
+--      processor does with a stored order; whether it should restart from
+--      reverse draft order instead is Chris's call — PROGRESS F495.
 --   §3 `waiver_priority_backfill_internal()` + ONE call — every league
 --      already past its draft with no stored order is seeded exactly as the
 --      processor would have seeded it (§1 is that computation). Idempotent:
@@ -266,10 +274,18 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+DECLARE
+  v_r JSONB;
 BEGIN
   -- The WHEN clause restates the status gate; the helper decides the rest
   -- and answers every "no" by name without raising (§2 in the banner).
-  PERFORM public.waiver_priority_seed_internal(NEW.id);
+  v_r := public.waiver_priority_seed_internal(NEW.id);
+  -- R1289: an order that cannot be stored is SAID (a WARNING naming the
+  -- league and the reason — visible in the database log at the draft's end),
+  -- never raised: it must not fail the last pick or the setting change.
+  IF v_r ->> 'status' = 'unseedable' THEN
+    RAISE WARNING 'waiver order not stored for league %: %', NEW.id, v_r ->> 'why';
+  END IF;
   RETURN NULL;
 END;
 $$;

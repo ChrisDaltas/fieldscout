@@ -272,13 +272,17 @@ export function claimSettlesCopy(nextRunLocal: string | null): string {
  *   - a rolling-priority league: "Waiver priority #N";
  *   - a FAAB league whose equal bids go by the rolling order: "Ties on equal
  *     bids: you're #N" (or "#N" for another team);
- *   - a league decided by the standings says so (a stale stored number from
- *     an earlier setting is never shown);
+ *   - a league decided by the standings says what decides — reverse draft
+ *     order until week 1 is final, then reverse standings (Q72; a stale
+ *     stored number from an earlier setting is never shown);
  *   - no stored order yet (a database before 163, or before the draft): a
  *     rolling league says where the order starts, a FAAB league says nothing
  *     more — exactly as before; never a guessed number.
  * Null = nothing to say (no waivers, or FAAB with no stored tie order).
  */
+/** What decides a standings-based league's order (Q72), in plain words. */
+export const STANDINGS_ORDER_COPY = 'reverse draft order until week 1 is final, then reverse standings'
+
 export function waiverOrderCopy(
   settings: { waiver_type: string | null; faab_tiebreaker?: string | null },
   waiverPriority: number | null,
@@ -288,7 +292,9 @@ export function waiverOrderCopy(
   if (basis === 'none') return null
   const faab = (settings.waiver_type ?? 'faab') === 'faab'
   if (basis === 'reverse_standings') {
-    return faab ? 'Ties on equal bids go by reverse standings' : 'Waiver priority goes by reverse standings'
+    // R1287 / Q72: reverse DRAFT order until the first week is final (160
+    // reads the standings only once weeks_final > 0), then reverse standings.
+    return `${faab ? 'Ties on equal bids' : 'Waiver priority'}: ${STANDINGS_ORDER_COPY}`
   }
   if (waiverPriority === null) return faab ? null : 'Waiver priority starts from reverse draft order'
   if (faab) return own ? `Ties on equal bids: you’re #${waiverPriority}` : `Ties on equal bids: #${waiverPriority}`

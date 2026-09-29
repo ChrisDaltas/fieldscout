@@ -207,10 +207,10 @@ describe('the bid box, the seat line, the fa_hold chip', () => {
     expect(waiverSeatCopy(faabRolling, { faab_balance: 73, waiver_priority: null }, true)).toBe('$73 of $100 FAAB left')
     // standings-based: say what decides; a stale stored number is never shown
     expect(waiverSeatCopy({ waiver_type: 'faab', faab_budget: 100, faab_tiebreaker: 'reverse_standings' }, { faab_balance: 73, waiver_priority: 2 })).toBe(
-      '$73 of $100 FAAB left · Ties on equal bids go by reverse standings',
+      '$73 of $100 FAAB left · Ties on equal bids: reverse draft order until week 1 is final, then reverse standings',
     )
     expect(waiverSeatCopy({ waiver_type: 'reverse_standings', faab_budget: 100 }, { faab_balance: 100, waiver_priority: 2 })).toBe(
-      'Waiver priority goes by reverse standings',
+      'Waiver priority: reverse draft order until week 1 is final, then reverse standings',
     )
     // a rolling-priority league ignores the tiebreaker key
     expect(waiverOrderCopy({ waiver_type: 'rolling_priority', faab_tiebreaker: 'reverse_standings' }, 5, true)).toBe('Waiver priority #5')

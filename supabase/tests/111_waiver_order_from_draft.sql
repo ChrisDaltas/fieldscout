@@ -12,7 +12,8 @@
 --
 -- THE LEAGUES
 --   Draft completion through the REAL writer (draft_complete_internal, the
---   058 LC shape — 8 teams, 1 round, every pick made):
+--   058 LC shape — 8 teams, 1 round; K1's last pick goes through the real
+--   draft_make_pick, R1291):
 --     K1 snake,   FAAB, no faab_tiebreaker key (the default: rolling)
 --     K2 auction, waiver type rolling_priority, nomination order
 --        [t3, t1, t4, t2, t5, t6, t7, t8]
@@ -31,7 +32,7 @@
 --   (1) the trigger disabled ⇒ A3 B2 C1 C2 E1 E2 G1 H1 red (E2: the run
 --       then re-derives the order — source reverse_draft_order);
 --   (2) the never-re-seed guard removed (condition (c)) ⇒ E5 E7 F2 F3 G1 G3
---       red (the setting change resets the order to the draft);
+--       H1b red (the setting change resets the order to the draft);
 --   (3) the order not reversed ⇒ B2 C1 C2 E1 E3 E4 E5 E7 F2 G2 G3 H1 red;
 --   (4) the persists check removed ⇒ D1 D2 G1 G3 G4 red;
 --   (5) the backfill loop emptied ⇒ G1 G2 G3 G5 red.
@@ -41,7 +42,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(31);
+select plan(35);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 163 replaces nothing
@@ -77,6 +78,12 @@ select is(
    where n.nspname = 'public' and p.proname = 'draft_complete_internal'),
   '0928fa4fd54541a9cfc3460270b317a0',
   'A5 the one draft completion writer is untouched — prosrc md5 is 110 as written (a stored literal); the trigger rides its status flip');
+select ok(
+  (select p.prosrc like '%IF v_r ->> ''status'' = ''unseedable'' THEN%RAISE WARNING ''waiver order not stored for league %: %'', NEW.id, v_r ->> ''why'';%'
+          and p.prosrc not like '%RAISE EXCEPTION%'
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'leagues_waiver_priority_seed_trg'),
+  'A6 R1289: the trigger SAYS an unseedable league (a WARNING naming the league and the reason) and never raises; G5 and G6 pin the outcome and the write landing');
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (postgres context)
@@ -130,13 +137,17 @@ select ('e1110000-0000-4000-8000-00000000000' || n)::uuid, pg_temp.lg(n::text),
        case when n = 2 then 'auction' else 'snake' end, 'live', false, '{"pick_timer_seconds": 90}',
        (select jsonb_agg(to_jsonb('c1110000-0000-4000-8000-0000000000' || n || o.t) order by o.k)
         from unnest(case when n = 2 then array[3, 1, 4, 2, 5, 6, 7, 8] else array[1, 2, 3, 4, 5, 6, 7, 8] end) with ordinality o(t, k)),
-       1, 1, 8, null, now()
+       1, 1, 8,
+       case when n = 1 then 'c1110000-0000-4000-8000-000000000018'::uuid end,
+       now()
 from generate_series(1, 4) n;
+update drafts set current_deadline = now() + interval '90 seconds' where id = 'e1110000-0000-4000-8000-000000000001';
 insert into draft_picks (draft_id, league_id, pick_number, round, team_id, player_id, price, is_auto, made_via)
 select ('e1110000-0000-4000-8000-00000000000' || n)::uuid, pg_temp.lg(n::text), t, 1,
        ('c1110000-0000-4000-8000-0000000000' || n || t)::uuid, 'wo-p' || lpad(t::text, 2, '0'),
        case when n = 2 then t else null end, false, 'manager'
-from generate_series(1, 4) n, generate_series(1, 8) t;
+from generate_series(1, 4) n, generate_series(1, 8) t
+where not (n = 1 and t = 8);   -- K1: the last pick is made below through the REAL draft_make_pick
 
 -- the stored order of a K league as team numbers by priority ("-" when none)
 create or replace function pg_temp.korder(n int) returns text language sql as $$
@@ -153,13 +164,19 @@ select is(
   format('%s %s %s %s', pg_temp.korder(1), pg_temp.korder(2), pg_temp.korder(3), pg_temp.korder(4)),
   '-|8 -|8 -|8 -|8',
   'B1 PREMISE (the boundary): while the drafts are live no seat stores a waiver priority');
+-- K1: the on-clock manager (u8, t8) makes the LAST pick through the real door
+select set_config('request.jwt.claims', '{"sub": "91110000-0000-4000-8000-000000000008", "role": "authenticated"}', true);
+select lives_ok(
+  $$ select public.draft_make_pick('e1110000-0000-4000-8000-000000000001', 'wo-p08', gen_random_uuid()) $$,
+  'B2a THE REAL ROUTE: K1 on-clock manager makes the last pick through draft_make_pick');
+select set_config('request.jwt.claims', '', true);
 select public.draft_complete_internal(('e1110000-0000-4000-8000-00000000000' || n)::uuid, '2026-11-05 12:00:00-05')
-from generate_series(1, 4) n;
+from generate_series(2, 4) n;
 select is(
   (select format('%s|%s|%s', l.status, d.status, pg_temp.korder(1))
    from leagues l join drafts d on d.league_id = l.id where l.id = pg_temp.lg('1')),
   'in_season|complete|8,7,6,5,4,3,2,1|0',
-  'B2 K1 (snake, FAAB, default tiebreaker) at completion: in season, and the order is REVERSE DRAFT ORDER — the last pick of round 1 is #1');
+  'B2 K1 (snake, FAAB, default tiebreaker) completed by that pick: in season, and the order is REVERSE DRAFT ORDER — the last pick of round 1 is #1');
 
 -- ---------------------------------------------------------------------------
 -- C. An AUCTION completes ⇒ reverse NOMINATION order (F434)
@@ -397,11 +414,28 @@ select is(
 -- ---------------------------------------------------------------------------
 -- H. The switch to a rolling order mid-season stores it at once
 -- ---------------------------------------------------------------------------
-update leagues set waiver_type = 'rolling_priority' where id = pg_temp.lg('53');
+select set_config('request.jwt.claims', '{"sub": "91110000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select is(
-  pg_temp.prio(pg_temp.lg('53')),
-  'D=1 C=2 B=3 A=4',
-  'H1 LG3 switched from reverse standings to rolling priority: its order is stored from reverse draft order at the switch');
+  format('%s|%s',
+    (select r ->> 'no_changes' from public.commish_change_setting_internal(pg_temp.lg('53'), 'waiver_type', '"rolling_priority"', false,
+            'a1110000-0000-4000-8000-000000000531', '2026-11-03 13:00:00+00', null) r),
+    pg_temp.prio(pg_temp.lg('53'))),
+  'false|D=1 C=2 B=3 A=4',
+  'H1 LG3 switched by the commissioner (commish_change_setting) from reverse standings to rolling priority: its order is stored from reverse draft order at the switch');
+-- R1288 (as built; F495 asks Chris): LE rolling -> standings tiebreak -> rolling keeps the order it rolled to
+select is(
+  format('%s|%s',
+    (select r ->> 'no_changes' from public.commish_change_setting_internal(pg_temp.lg('e'), 'faab_tiebreaker', '"reverse_standings"', false,
+            'a1110000-0000-4000-8000-0000000000e1', '2026-11-03 13:00:00+00', null) r),
+    (select r ->> 'no_changes' from public.commish_change_setting_internal(pg_temp.lg('e'), 'faab_tiebreaker', '"rolling_priority"', false,
+            'a1110000-0000-4000-8000-0000000000e2', '2026-11-03 13:01:00+00', null) r)),
+  'false|false',
+  'H1a PREMISE: the commissioner moved LE to the standings tiebreak and back to the rolling order');
+select is(
+  format('%s|%s', pg_temp.prio(pg_temp.lg('e')), public.waiver_priority_seed_internal(pg_temp.lg('e')) ->> 'status'),
+  'C=1 B=2 A=3 D=4|kept',
+  'H1b AS BUILT (F495): back on the rolling order LE resumes where it left off — not reverse draft order (D C B A); the seed answers kept');
+select set_config('request.jwt.claims', '', true);
 update leagues set waiver_type = 'reverse_standings' where id = pg_temp.lg('53');
 update leagues set status = 'complete' where id = pg_temp.lg('55');
 select is(
