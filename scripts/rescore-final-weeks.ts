@@ -4,6 +4,14 @@
  * `src/lib/leagues/scoring/rescore-final-weeks.ts`; the database door is
  * `admin_rescore_final_week`.
  *
+ * ⛔ RETIRED (migration 164, M5 L.D3.14; PROGRESS F489 / D428): used once,
+ * 2026-09-29 (F488), then retired. Run now, this refuses BY NAME before it
+ * reads anything — the database refuses the door (42501) — and prints the one
+ * migration that would re-grant it (`GRANT EXECUTE ON FUNCTION
+ * public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid,
+ * uuid, boolean) TO service_role`, reversing 164 §4). Re-grant only on a NEW
+ * recorded ruling; after that this tool runs exactly as below.
+ *
  *   npm run rescore:final-weeks -- --season 2026 --weeks 1-2 --ruled-by <username> \
  *     --reason "<the ruling, quoted>" --why "<plain words for the league>"                       (dry run — writes nothing)
  *   …the same… --apply --confirm-target <host>
@@ -27,7 +35,7 @@
  * of this tool reports `scores_already_correct` (naming the audit row) and
  * sends nothing. Exit 1 on any problem, 2 on a usage / target error.
  */
-import { rescoreFinalWeeks, renderRescore } from '../src/lib/leagues/scoring/rescore-final-weeks'
+import { probeRescoreDoor, rescoreFinalWeeks, renderRescore } from '../src/lib/leagues/scoring/rescore-final-weeks'
 import { systemTime } from '../src/lib/leagues/time/time-provider'
 import { confirmTarget, parseWeeks } from '../src/lib/sync/reingest-weeks'
 import { cliClient, fail } from './_sync-cli'
@@ -58,6 +66,16 @@ async function main(): Promise<void> {
   }
   console.log(`target: ${host}`)
 
+  // 164 (F489): the door is retired — refused BY NAME here, before any
+  // argument is read or any row is touched (the probe writes nothing).
+  const db = cliClient()
+  try {
+    await probeRescoreDoor(db)
+  } catch (err) {
+    console.error((err as Error).message)
+    process.exit(1)
+  }
+
   const seasonRaw = flag('--season')
   const weeksRaw = flag('--weeks')
   const ruledBy = flag('--ruled-by')
@@ -78,7 +96,6 @@ async function main(): Promise<void> {
     process.exit(2)
   }
 
-  const db = cliClient()
   const { data: actors, error } = await db.from('profiles').select('id, username').eq('username', ruledBy)
   if (error) throw new Error(`profiles read: ${error.message}`)
   if (!actors || actors.length !== 1) {

@@ -40,6 +40,14 @@
  *
  * Pre-161: the door is missing ⇒ refused BY NAME. Time only via `time`;
  * no provider call — the stats are `player_stats`, the StatsProvider's store.
+ *
+ * RETIRED (migration 164, M5 L.D3.14; PROGRESS F489, D428; spec §11.4
+ * v2.16.73): the door was used once, 2026-09-29 (F488 — production weeks
+ * 1–2), then retired — 164 REVOKEs EXECUTE from the service role; the
+ * function, its ledger and its audit history stay. Every run asks the door
+ * first (`probeRescoreDoor` — an all-NULL call the database answers without
+ * running a line of it, so nothing can be written) and a retired door is
+ * refused BY NAME, pointing at the one migration that would re-grant it.
  */
 import { randomUUID } from 'node:crypto'
 
@@ -312,6 +320,39 @@ function isMissingDoor(error: { code?: string | null; message?: string | null })
 
 export const PRE_161_SENTENCE = 'the database predates migration 161 (no admin_rescore_final_week) — push 161 first; nothing was re-scored'
 
+/** 164 (F489): the database's own refusal of a caller that holds no EXECUTE — the retired door. */
+function isRetiredDoor(error: { code?: string | null; message?: string | null }): boolean {
+  return error.code === '42501' && /permission denied for function admin_rescore_final_week/.test(error.message ?? '')
+}
+
+export const RETIRED_SENTENCE =
+  'the re-score door admin_rescore_final_week is RETIRED — migration 164 (supabase/migrations/164_m5_cleanup.sql §4, PROGRESS F489) revoked it after its one use on 2026-09-29 (F488); nothing was re-scored. To re-score a final week again, on a NEW recorded ruling, first add a migration that grants it back: GRANT EXECUTE ON FUNCTION public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean) TO service_role'
+
+/**
+ * Asks the door whether this run may use it, writing nothing: an all-NULL
+ * call. An open door answers with its own shape refusal (22023, "… are
+ * required") before it reads or locks anything; a retired one is refused by
+ * the database (42501) before a line of it runs; a missing one is PGRST202.
+ * Anything else is refused too — never read as "open".
+ */
+export async function probeRescoreDoor(db: ScoreWorkerClient): Promise<void> {
+  const { error } = await db.rpc('admin_rescore_final_week', {
+    p_league_id: null,
+    p_week: null,
+    p_teams: null,
+    p_reason: null,
+    p_member_note: null,
+    p_actor_id: null,
+    p_action_id: null,
+    p_dry_run: true,
+  } as never)
+  if (!error) throw new Error('rescore refused: the door answered an all-NULL probe with a document — refusing to trust it; nothing was re-scored')
+  if (isMissingDoor(error)) throw new Error(`rescore refused: ${PRE_161_SENTENCE}`)
+  if (isRetiredDoor(error)) throw new Error(`rescore refused: ${RETIRED_SENTENCE}`)
+  if (error.code === '22023' && /are required/.test(error.message ?? '')) return
+  throw new Error(`rescore refused: the door probe got an unexpected answer (${error.code ?? 'no code'}: ${error.message ?? ''}) — nothing was re-scored`)
+}
+
 export async function rescoreFinalWeeks(deps: RescoreDeps, opts: RescoreOptions): Promise<RescoreReport> {
   const { db } = deps
   const newActionId = deps.newActionId ?? randomUUID
@@ -340,6 +381,7 @@ export async function rescoreFinalWeeks(deps: RescoreDeps, opts: RescoreOptions)
   }
   if (opts.weeks.length === 0) throw new Error('rescore: no weeks requested')
   if (opts.reason.trim() === '' || opts.memberNote.trim() === '') throw new Error('rescore: --reason (the ruling) and --why (plain words for the league) are both required')
+  await probeRescoreDoor(db) // 164 (F489): a retired or missing door is refused BY NAME before anything is read
 
   let leagueQuery = db
     .from('leagues')
@@ -549,6 +591,7 @@ export async function rescoreFinalWeeks(deps: RescoreDeps, opts: RescoreOptions)
       })
       if (error) {
         if (isMissingDoor(error)) throw new Error(`rescore refused: ${PRE_161_SENTENCE}`)
+        if (isRetiredDoor(error)) throw new Error(`rescore refused: ${RETIRED_SENTENCE}`)
         problem(`${where}: admin_rescore_final_week refused — ${error.message}`)
         record(base)
         continue

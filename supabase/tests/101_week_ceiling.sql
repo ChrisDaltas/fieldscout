@@ -45,6 +45,37 @@ set local search_path = public, extensions;
 
 select plan(52);
 
+-- L.D3.14 (migration 164 — additive, the R992 shape): pg_temp.un164 reverses
+-- 164's substitutions in the three bodies it replaced (an identity on every
+-- other body), applied INNERMOST so A12 / A13 still prove what they proved;
+-- pgTAP 112 A3 / A4 pin 164's own.
+create function pg_temp.un164(p_src text) returns text language sql as $un164$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  ELSIF public.lineup_record_kicked_off_internal(p_season, p_week, p_player_id, v_rec_at, p_at) THEN   -- 164 / F468(b): a REAL, passed kickoff of the week and his team\'s game not postponed (157\'s guard — the locks\' own judgment)\n',
+    E'  ELSIF v_rec_at IS NOT NULL AND v_rec_at <= p_at THEN\n'),
+    E'      v_lose_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_lose_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_lose_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_lose_p.team, p_at);\n'),
+    E'      v_gain_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_gain_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_gain_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_gain_p.team, p_at);\n'),
+    E'  v_lock_kick   JSONB := \'{}\'::jsonb;   -- 164 / F467: the RECEIPT\'s datum for p_week, per PLAYER (157\'s lineup_player_kickoff_internal)\n  v_lock_kick_cur JSONB := \'{}\'::jsonb; -- 164 / F467: the same for the CURRENT week (the IR timing receipt)\n',
+    E''),
+    E'    -- 164 / F467: what the RECEIPT says is judged per PLAYER — his current\n    -- NFL team\'s kickoff, or the kickoff he PLAYED in this week (157) — so\n    -- a player the NFL released or traded after he played is named as\n    -- moved past the lock. Receipt only: v_kick (the stored record,\n    -- locked_at, the bye flags) is unchanged, and nothing here refuses.\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n    v_lock_kick := v_lock_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 164 / F467\n      v_lock_kick_cur := v_lock_kick_cur || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n        \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'  v_lock_kick := v_lock_kick || v_gone_kick;   -- 164 / F467: (4b)\'s kept starters, as v_kick\n',
+    E''),
+    E'    v_lock_kick_cur := v_lock_kick;   -- 164 / F467\n',
+    E''),
+    E'  --     164 / F467: judged by v_lock_kick — per PLAYER, the lock a manager\n  --     faces since 157 — so the record names every player a manager\n  --     could not have moved.\n',
+    E''),
+    E'v_lock_kick_cur -> v_pid',
+    E'v_kick_cur -> v_pid'),
+    E'v_lock_kick -> v_pid',
+    E'v_kick -> v_pid')
+$un164$;
+
+
 -- L.D2.16 (migration 157 — additive, the R992 shape): pg_temp.un157 reverses
 -- 157's substitutions in the seven bodies it replaced (an identity on every
 -- other body), applied INNERMOST so the literals below still prove what
@@ -202,13 +233,13 @@ create function pg_temp.unhunk(p_src text, p_indent text) returns text language 
     p_indent || 'SELECT w.last_game_ends_at INTO v_week_end FROM public.nfl_weeks w' || E'\n')
 $$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(pg_temp.un160(p.prosrc))), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(pg_temp.un160(pg_temp.un164(p.prosrc)))), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('roster_add_drop_internal', 'commish_roster_override_internal', 'process_waivers_internal', 'trade_execute_internal')),
   'commish_roster_override_internal=42e165a610082723c1124d1dc872d648 process_waivers_internal=faaca7fba5fff976f4fa811678e553aa roster_add_drop_internal=a30621f38adb8b114a4a903b068eeb8e trade_execute_internal=ef4648770bd5c18127e5c2270d8aec14',
   'A12 D137 the four roster writers: each live body with 153''s substitutions reversed is its newest definer''s FILE TEXT (152:103-638 / 152:646-1643 / 152:1651-2203 / 151:755-1209 — stored md5 literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(pg_temp.un160(p.prosrc)))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(pg_temp.un160(pg_temp.un164(p.prosrc))))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('pool_game_lock_internal', 'pool_game_lock_any_internal', 'waiver_window_internal',
                                                  'roster_add_drop_internal', 'commish_roster_override_internal',

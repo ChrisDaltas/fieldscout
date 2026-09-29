@@ -13,6 +13,8 @@
 --       (D137), the trigger still ENABLE ALWAYS, the scoring door untouched.
 --   §B  per role: nobody but the service role runs the door; the ledger is
 --       unreadable / unwritable (RETURNING counts); a JWT is refused in-body.
+--       (L.D3.14: B2 / B4 / B5 run after E18, on a ledger that holds a row —
+--       R1277; and since 164 the service role no longer holds the door — A3.)
 --   §C  every refusal BY NAME, and nothing written by any of them.
 --   §D  THE DRY RUN: the apply's own document, and NOTHING persists.
 --   §E  THE APPLY: the flip, the overridden cell kept, the results rebuilt
@@ -109,8 +111,8 @@ select is((select proconfig from pg_proc where oid = 'public.admin_rescore_final
   array['search_path=""'], 'A2 …with search_path pinned to ''''');
 select ok(not has_function_privilege('anon', 'public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean)', 'EXECUTE')
           and not has_function_privilege('authenticated', 'public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean)', 'EXECUTE')
-          and has_function_privilege('service_role', 'public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean)', 'EXECUTE'),
-  'A3 REVOKEd from anon and authenticated; the service role keeps EXECUTE');
+          and not has_function_privilege('service_role', 'public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean)', 'EXECUTE'),
+  'A3 REVOKEd from anon and authenticated; the service role held EXECUTE until migration 164 retired the door (F489 — used once, 2026-09-29; pgTAP 112 R1 to R6). This suite runs the door as its owner');
 select is((select relrowsecurity::text || ':' || (select count(*) from pg_policies where tablename = 'admin_rescore_actions')::text
            from pg_class where oid = 'public.admin_rescore_actions'::regclass),
   'true:0', 'A4 the replay ledger: RLS on, ZERO policies');
@@ -244,16 +246,11 @@ set local role anon;
 select set_config('request.jwt.claims', '{"role": "anon"}', true);
 select throws_ok($$ select public.admin_rescore_final_week('b9710000-0000-4000-8000-00000000000a', 1, '[]', 'r', 'n', '9f710000-0000-4000-8000-000000000004', null, true) $$,
   '42501', null, 'B1 anon cannot run the door (REVOKEd)');
-select is((select count(*)::int from admin_rescore_actions), 0, 'B2 anon reads nothing from the ledger');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f710000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok($$ select public.admin_rescore_final_week('b9710000-0000-4000-8000-00000000000a', 1, '[]', 'r', 'n', '9f710000-0000-4000-8000-000000000001', null, true) $$,
   '42501', null, 'B3 the COMMISSIONER cannot run the door (REVOKEd) — his tool is the audited override');
-select results_eq($$ with w as (update admin_rescore_actions set week = 9 returning 1) select count(*) from w $$, $$ values (0::bigint) $$,
-  'B4 the commissioner: UPDATE of the ledger touches 0 rows');
-select results_eq($$ with w as (delete from admin_rescore_actions returning 1) select count(*) from w $$, $$ values (0::bigint) $$,
-  'B5 …DELETE touches 0 rows');
 select throws_ok($$ insert into admin_rescore_actions (league_id, season, week, action_id, actor_id, result)
   values ('b9710000-0000-4000-8000-00000000000a', 2026, 1, gen_random_uuid(), '9f710000-0000-4000-8000-000000000001', '{}') $$,
   '42501', null, 'B6 …INSERT is refused (RLS, 42501) — a pre-planted replay row is impossible');
@@ -430,6 +427,22 @@ select is(coalesce(current_setting('fieldscout.final_week_rescore', true), '') |
   '|final', 'E19 the lock''s setting is cleared behind the door; the week is still FINAL');
 select is(current_setting('pgtap.e')::jsonb -> 'player_points', '{"rows_removed": 1, "rows_written": 4, "teams_written": 2}'::jsonb,
   'E20 the door''s own count of the rows (4 written, 1 removed, 2 teams)');
+
+-- R1277 (L.D3.14): B2 / B4 / B5 run HERE, after E18 wrote the ledger row — in
+-- §B the ledger was EMPTY, so "reads nothing" and "touches 0 rows" could not
+-- fail. Now a row exists for them to leak or change.
+set local role anon;
+select set_config('request.jwt.claims', '{"role": "anon"}', true);
+select is((select count(*)::int from admin_rescore_actions), 0, 'B2 anon reads nothing from the ledger (a row exists — E18; R1277)');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "9f710000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select results_eq($$ with w as (update admin_rescore_actions set week = 9 returning 1) select count(*) from w $$, $$ values (0::bigint) $$,
+  'B4 the commissioner: UPDATE of the ledger touches 0 rows (a row exists — E18; R1277)');
+select results_eq($$ with w as (delete from admin_rescore_actions returning 1) select count(*) from w $$, $$ values (0::bigint) $$,
+  'B5 …DELETE touches 0 rows (R1277)');
+reset role;
+select set_config('request.jwt.claims', '', true);
 
 -- ---------------------------------------------------------------------------
 -- F. IDEMPOTENT
