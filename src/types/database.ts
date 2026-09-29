@@ -5862,6 +5862,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      faab_tiebreaker_old_default_rewrite_internal: {
+        Args: never
+        Returns: Json
+      }
       finalize_matchups: {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json

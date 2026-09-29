@@ -7,7 +7,7 @@
  *    the D30(2) parse-the-artifact pattern — so drift in EITHER home fails)
  *  - every range boundary at the edge and one past it (schema level)
  */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -96,8 +96,27 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
   // a STORED literal — not recomputed. Flipping ANY §7.3 default fails here.
   it('golden pin: full default object serialization matches the stored literal', () => {
     const pinned =
-      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"schedule_seed":null,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"reverse_standings","waiver_run_days":["wed"],"waiver_run_time":"03:00","waiver_time_zone":"America/New_York","free_agency_opens":"after_waiver_run","free_agency_open_day":"sun","free_agency_open_time":"06:00","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
+      '{"format":"redraft","team_count":12,"divisions":1,"regular_season_weeks":14,"playoff_teams":6,"playoff_start_week":15,"playoff_weeks_per_round":1,"playoff_byes":"auto","playoff_reseed":true,"consolation_bracket":false,"third_place_game":false,"schedule_mode":"h2h","median_game":false,"second_opponent":false,"schedule_seed":null,"roster_settings":{"starting_slots":[{"key":"qb","label":"QB","eligible":["QB"],"count":1},{"key":"rb","label":"RB","eligible":["RB"],"count":2},{"key":"wr","label":"WR","eligible":["WR"],"count":3},{"key":"te","label":"TE","eligible":["TE"],"count":1},{"key":"flex","label":"FLEX (W/R/T)","eligible":["WR","RB","TE"],"count":1},{"key":"k","label":"K","eligible":["K"],"count":1},{"key":"dst","label":"D/ST","eligible":["DST"],"count":1}],"bench":6,"ir_slots":[{"key":"ir1","type":"unrestricted","eligible_designations":["OUT","IR"]}],"swap_spots":0},"waiver_type":"faab","faab_budget":100,"faab_min_bid":0,"faab_tiebreaker":"rolling_priority","waiver_run_days":["wed"],"waiver_run_time":"03:00","waiver_time_zone":"America/New_York","free_agency_opens":"after_waiver_run","free_agency_open_day":"sun","free_agency_open_time":"06:00","acquisitions_per_week":"unlimited","acquisitions_per_season":"unlimited","fa_hold_hours":0,"trade_review":"commissioner","trade_veto_votes":6,"trade_review_period_hours":24,"trade_deadline_week":11,"allow_faab_in_trades":false,"allow_future_considerations":false,"trade_lock_behavior":"defer","lineup_lock":"per_player_kickoff","allow_illegal_lineups":true,"auto_sub_inactives":false,"stat_correction_window":"thu_06_00_et","tiebreakers":["win_pct","points_for","head_to_head","points_against","division_record","coin_flip"],"draft":{"draft_type":"snake","snake_reversal":false,"draft_order_mode":"random","draft_order":null,"pick_timer_seconds":90,"auction_budget":200,"auction_zero_dollar_nominations":false,"auction_nomination_seconds":30,"auction_bid_seconds":20,"auction_anti_snipe_seconds":10,"nomination_order_mode":"same_as_draft_order","nomination_order":null,"autopick_default":"queue_then_board_then_adp","disconnect_grace_seconds":30,"draft_scheduled_at":null,"time_zone":null}}'
     expect(JSON.stringify(LEAGUE_SETTINGS_DEFAULTS)).toBe(pinned)
+  })
+
+  // L.D2.17 (migration 160): the TS default and the SQL processor's no-key
+  // fallback are ONE rule — parsed from the NEWEST migration that defines
+  // `process_waivers_internal` (the D30(2) parse-the-artifact pattern), so a
+  // later definer that changes either side without the other fails here.
+  it('faab_tiebreaker default ≡ the newest process_waivers_internal fallback (rolling_priority)', () => {
+    const dir = join(process.cwd(), 'supabase/migrations')
+    const newest = readdirSync(dir)
+      .filter((f) => /^\d+_.*\.sql$/.test(f))
+      .sort()
+      .filter((f) => /CREATE OR REPLACE FUNCTION (public\.)?process_waivers_internal\(/.test(readFileSync(join(dir, f), 'utf8')))
+      .pop()
+    expect(newest, 'some migration must define process_waivers_internal').toBeDefined()
+    const sql = readFileSync(join(dir, newest as string), 'utf8')
+    const fallbacks = [...sql.matchAll(/COALESCE\(v_league\.settings ->> 'faab_tiebreaker', '([a-z_]+)'\)/g)].map((m) => m[1])
+    expect(fallbacks).toStrictEqual(['rolling_priority'])
+    expect(LEAGUE_SETTINGS_DEFAULTS.faab_tiebreaker).toBe('rolling_priority')
+    expect(leagueSettingsSchema.parse({}).faab_tiebreaker).toBe(fallbacks[0])
   })
 
   it('the roster portion ≡ the JSON literal pgTAP 005 pins for 040’s DEFAULT (C9)', () => {
