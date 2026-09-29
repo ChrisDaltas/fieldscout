@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 161_rescore_final_weeks.sql — A ONE-TIME, RULED, AUDITED RE-SCORE OF FINAL
 -- LEAGUE-WEEKS (task M5 L.D3.13, FULL rigour — scoring, results, standings,
--- production data). PROGRESS D425, F487–F489; spec v2.16.70 (§11.4, §23.4
+-- production data). PROGRESS D425, F487–F488; spec v2.16.70 (§11.4, §23.4
 -- notes; fold-back of the ruling below).
 --
 -- THE RULING (Chris, 2026-09-29, in chat, verbatim — asked to choose between
