@@ -35,6 +35,7 @@ import { MovePanel, PlayersPage, PoolTable } from './players-page'
 import {
   LOCKED_ADD_TITLE,
   LOCKED_DROP_TITLE,
+  ROSTERED_ELSEWHERE_TITLE,
   NO_FREE_AGENTS_COPY,
   NO_MATCH_COPY,
   NO_SEAT_COPY,
@@ -244,7 +245,7 @@ describe('PoolTable — the rostered scope: Drop for mine (disabled by the view�
   const html = unescapeHtml(
     renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: rostered, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })),
   )
-  it('mine, unlocked → Drop; mine, locked → Drop disabled with the reason; theirs → a dash that names trades as later', () => {
+  it('mine, unlocked → Drop; mine, locked → Drop disabled with the reason; theirs → Trade, a link to the builder (L.D3.7)', () => {
     const open = html.slice(html.indexOf('data-pool-row="mine-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="mine-open"')))
     expect(open).toContain('data-action="drop"')
     expect(open).not.toMatch(/data-action="drop"[^>]*disabled/)
@@ -255,8 +256,10 @@ describe('PoolTable — the rostered scope: Drop for mine (disabled by the view�
     expect(locked).toMatch(/disabled=""/)
     const theirs = html.slice(html.indexOf('data-pool-row="theirs"'), html.indexOf('</tr>', html.indexOf('data-pool-row="theirs"')))
     expect(theirs).toContain('Their Team')
-    expect(theirs).not.toContain('data-action=')
-    expect(theirs).toContain('trades arrive in a later update')
+    expect(theirs).not.toMatch(/data-action="(add|drop|claim)"/)
+    expect(theirs).toMatch(/<a data-action="trade"[^>]*href="\/app\/leagues\/league-1\/trades\?with=team-other&player=theirs">Trade<\/a>/)
+    expect(theirs).toContain(ROSTERED_ELSEWHERE_TITLE)
+    expect(theirs).not.toMatch(/later update/)
   })
   it('empty by reason: no free agents vs no match', () => {
     const none = (scope: 'free_agents' | 'rostered', hadSearch: boolean) =>

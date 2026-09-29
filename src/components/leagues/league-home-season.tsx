@@ -53,6 +53,7 @@ import { formatRecord, standingsEmptyCopy } from './standings-table-ops'
 import { StandingsTable } from './standings-table'
 import { LiveStatsDelayedBanner, ReconnectingBanner, STALE_LEAGUE_COPY, STALE_SCORES_COPY, StaleDataBanner } from './status-banners'
 import { problemCopy } from './team-page'
+import { tradesHref } from './trades-ops'
 
 /**
  * The league home's SEASON heroes — §16.5.1's `in_season` / `playoffs` /
@@ -491,9 +492,13 @@ function SetLineupCard({
           <Badge variant="stroke" title={waivers.title} data-chip="waivers">
             {waivers.label}
           </Badge>
-          <Badge variant="stroke" title={trades.title} data-chip="trades">
-            {trades.label}
-          </Badge>
+          {/* L.D3.7: the trade chip is the door to the trade center. */}
+          <Link href={tradesHref(leagueId)} title={trades.title} className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent" data-trades-link>
+            <Badge variant="stroke" className="transition-colors hover:bg-ink hover:text-white" data-chip="trades">
+              <Icon name="transfer" size={11} />
+              {trades.label}
+            </Badge>
+          </Link>
         </div>
       </CardContent>
     </Card>
