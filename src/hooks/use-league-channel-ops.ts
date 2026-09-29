@@ -58,6 +58,16 @@ export const LEAGUE_CHANNEL_EVENTS = [
   // and the row set, and nothing else on this wire invalidates them) and,
   // through the same hook, the league detail's teams list.
   'teams',
+  // Landed with 148 (M5 L.D3.2, D386(10)): `trades` INSERT / UPDATE OF status
+  // broadcasts `{operation, record: {id, status, status_reason,
+  // proposer_team_id, recipient_team_id, countered_from, created_at,
+  // accepted_at, resolved_at}}` on `league:<league_id>` — column-selected,
+  // never `action_id`, who pressed the button or the note. A trade is not
+  // blind (§12.11 — every member reads it; only waiver BIDS are, §9.2). Its
+  // first subscriber is L.D3.6's `use-trades` (§15.6: trades reflect the
+  // broadcast, never optimistic), which is why it joins the set now. A VOTE
+  // is not broadcast (155, F450) — the trades hook re-reads the count.
+  'trades',
 ] as const
 
 export type LeagueChannelEvent = (typeof LEAGUE_CHANNEL_EVENTS)[number]
@@ -315,6 +325,23 @@ export const SCHEDULE_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = [
 
 export function scheduleEventInvalidates(name: string): boolean {
   return (SCHEDULE_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
+ * Which events make the TRADES list stale (§13.3 / §15.6 — M5 L.D3.6).
+ *
+ * `trades` (148) is the list's own carrier: an offer made, answered,
+ * countered, put in review, deferred, executed, vetoed (a league vote's or
+ * the commissioner's), reversed, or invalidated by E37 / E47 / the deadline —
+ * every one of them is a `trades` INSERT or status change. Nothing else is:
+ * a VOTE changes no `trades` row (155 — the count is re-read on a timer while
+ * voting is open, F450), and the roster move an execution makes is the
+ * rosters' carrier, not the list's.
+ */
+export const TRADES_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = ['trades']
+
+export function tradesEventInvalidates(name: string): boolean {
+  return (TRADES_INVALIDATING_EVENTS as readonly string[]).includes(name)
 }
 
 /**
