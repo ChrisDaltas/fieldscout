@@ -327,7 +327,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const lost = settled.find((c) => c.team_id === commishTeam)!
       expect(won).toMatchObject({ status: 'won', add_player_id: target.player_id, faab_bid: WINNING_BID })
       expect(lost.status).toBe('lost')
-      expect(lost.result_reason).not.toBe('lost_on_priority')
+      expect(lost.result_reason).toBe('outbid')
       expect(await readHolder(service, league.leagueId, target.player_id)).toBe(managerTeam)
       expect(await readHolder(service, league.leagueId, managerDrop.player_id), 'the winner’s drop left his roster').toBeNull()
       expect(await readHolder(service, league.leagueId, commishDrop.player_id), 'the loser keeps his drop').toBe(commishTeam)

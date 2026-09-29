@@ -1808,7 +1808,7 @@ export async function waiverTickAt(
   }
   throw new Error(
     `waiverTickAt: waiver_tick at ${pNow} never processed league ${leagueId} in ${BUSY_RETRIES} passes ` +
-      `(the league is not in season, or the live cron held it every time) — last report: ${JSON.stringify(last)}`,
+      `(the league is not in season, its tracked run is after p_now, or the live cron held it every time) — last report: ${JSON.stringify(last)}`,
   )
 }
 

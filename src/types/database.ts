@@ -5917,6 +5917,54 @@ export type Database = {
         Args: { p_league_id?: string; p_now?: string }
         Returns: Json
       }
+      lineup_played_internal: {
+        Args: {
+          p_at: string
+          p_league_id: string
+          p_player_id: string
+          p_season: number
+          p_week: number
+        }
+        Returns: {
+          datum_arm: string
+          kickoff_at: string
+          played: boolean
+        }[]
+      }
+      lineup_played_lock_internal: {
+        Args: {
+          p_at: string
+          p_current_week: number
+          p_league_id: string
+          p_player_id: string
+          p_season: number
+        }
+        Returns: Json
+      }
+      lineup_player_kickoff_internal: {
+        Args: {
+          p_at: string
+          p_league_id: string
+          p_player_id: string
+          p_season: number
+          p_week: number
+        }
+        Returns: {
+          datum_arm: string
+          kickoff_at: string
+          on_bye: boolean
+        }[]
+      }
+      lineup_record_kicked_off_internal: {
+        Args: {
+          p_at: string
+          p_kickoff_at: string
+          p_player_id: string
+          p_season: number
+          p_week: number
+        }
+        Returns: boolean
+      }
       lineup_started_elsewhere_internal: {
         Args: {
           p_league_id: string
@@ -6014,6 +6062,16 @@ export type Database = {
           on_bye: boolean
           window_ends_at: string
         }[]
+      }
+      pool_game_lock_player_internal: {
+        Args: {
+          p_at: string
+          p_current_week: number
+          p_league_id: string
+          p_player_id: string
+          p_season: number
+        }
+        Returns: Json
       }
       process_waivers_internal: {
         Args: { p_at: string; p_league_id: string }

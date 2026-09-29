@@ -44,6 +44,34 @@ set local search_path = public, extensions;
 
 select plan(37);
 
+-- L.D2.16 (migration 157 — additive, the R992 shape): pg_temp.un157 reverses
+-- 157's substitutions in the seven bodies it replaced (an identity on every
+-- other body), applied INNERMOST so the literals below still prove what
+-- they proved; pgTAP 105 A6 / A7 pin 157's own.
+create function pg_temp.un157(p_src text) returns text language sql as $un157$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  -- 157 / F447: each ROSTERED player\'s kickoff is judged per PLAYER — his\n  -- current NFL team\'s game, or, when that is still ahead (or he has no\n  -- team), a start this league recorded for a game that kicked off or his\n  -- stat line for the week (lineup_player_kickoff_internal): a player the\n  -- NFL released or traded AFTER he played is still locked for the week.\n  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n',
+    E'  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, p_week, v_e ->> \'nfl_team\', p_at);\n'),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 157 / F447\n',
+    E'      SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_current, v_e ->> \'nfl_team\', p_at);\n'),
+    E'  -- 157 / F447: judged per PLAYER (set_lineup\'s step (6) helper) — a player\n  -- the NFL released or traded after he played is locked, never OPEN.\n  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, p_season, p_week, v_e ->> \'player_id\', p_at);\n',
+    E'  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n'),
+    E'    v_drop_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_drop, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_drop_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_drop_p.team, p_at);\n'),
+    E'    v_add_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_add, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);\n'),
+    E'  )\n  -- 157 / F447: judged per PLAYER — a player the NFL released or traded\n  -- after he played this week is locked at the run (Q73 / Q74).\n  SELECT COALESCE(jsonb_agg(p.id ORDER BY p.id COLLATE "C"), \'[]\'::jsonb) INTO v_locked\n  FROM public.players p JOIN claim_players cp ON cp.pid = p.id\n  WHERE (public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p.id, p_at) ->> \'locked\')::boolean;\n',
+    E'  ), nfl AS (\n    SELECT DISTINCT p.team FROM public.players p JOIN claim_players cp ON cp.pid = p.id WHERE p.team IS NOT NULL\n  ), locked_nfl AS (\n    SELECT n.team FROM nfl n\n    WHERE (public.pool_game_lock_any_internal(v_league.season, v_current, n.team, p_at) ->> \'locked\')::boolean\n  )\n  SELECT COALESCE(jsonb_agg(p.id ORDER BY p.id COLLATE "C"), \'[]\'::jsonb) INTO v_locked\n  FROM public.players p JOIN claim_players cp ON cp.pid = p.id JOIN locked_nfl ln ON ln.team = p.team;\n'),
+    E'  v_add_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_add, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'  v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);\n'),
+    E'    v_lock := public.pool_game_lock_player_internal(p_league.id, p_league.season, v_current, v_p.player_id, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_lock := public.pool_game_lock_any_internal(p_league.season, v_current, v_p.nfl_team, p_at);\n'),
+    E'          v_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_pool.nfl_team, p_now);\n          -- 157 / F447: the view agrees with the lock every writer enforces —\n          -- per PLAYER: unlocked by his current team, but he PLAYED this week\n          -- (a start recorded for a real kickoff, or his stat line) ⇒ locked.\n          IF NOT (v_lock ->> \'locked\')::boolean THEN\n            v_lock := COALESCE(public.lineup_played_lock_internal(v_lg.id, v_league.season, v_current, v_pool.player_id, p_now), v_lock);\n          END IF;\n',
+    E'          v_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_pool.nfl_team, p_now);\n'),
+    E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n            -- 157 / F447: a PASSED kickoff this record holds STAYS when it is a\n            -- real kickoff of the week and his current team\'s game is not\n            -- postponed — he played, and the NFL has released or traded him\n            -- since: never re-read to NULL or to his new team\'s later game.\n            -- A flexed or postponed game still moves it (E42 / E43).\n            IF (v_e ->> \'kickoff_at\')::timestamptz IS DISTINCT FROM v_k.kickoff_at\n               AND public.lineup_record_kicked_off_internal(v_league.season, v_row.week, v_pid, (v_e ->> \'kickoff_at\')::timestamptz, p_now) THEN\n              v_k.kickoff_at := (v_e ->> \'kickoff_at\')::timestamptz;\n            END IF;\n',
+    E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n')
+$un157$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form pins, the trigger, D137 in the database
 -- ---------------------------------------------------------------------------
@@ -77,7 +105,7 @@ select is(
   'A|CREATE TRIGGER trg_team_lineups_one_start_per_week BEFORE INSERT OR UPDATE OF slot_map, team_id, season, week ON public.team_lineups FOR EACH ROW EXECUTE FUNCTION team_lineups_one_start_per_week()|1',
   'A4 THE RULE lives on team_lineups itself: BEFORE INSERT / UPDATE OF slot_map, team_id, season, week, per row, ENABLE ALWAYS (a replica-mode session cannot skip it — R616), the table''s only trigger');
 select is(
-  (select md5(replace(replace(replace(p.prosrc,
+  (select md5(replace(replace(replace(pg_temp.un157(p.prosrc),
   E'                  AND (v_stored ->> v_key) = v_pid)\n         AND NOT (v_gone_kick ? v_pid) THEN   -- 154 / F445: a kept off-roster starter is not the manager\'s to change\n',
   E'                  AND (v_stored ->> v_key) = v_pid) THEN\n'),
   E'           ((v_kick -> (e.value #>> \'{}\') ->> \'kickoff_at\') IS NOT NULL\n            AND (v_kick -> (e.value #>> \'{}\') ->> \'kickoff_at\')::timestamptz <= p_at)\n           OR v_gone_kick ? (e.value #>> \'{}\') AS fixed   -- 154 / F445: a kept off-roster starter is FIXED even while his (postponed) game is ahead\n',
@@ -88,7 +116,7 @@ select is(
   'A5 D137 set_lineup_internal: 152''s FILE TEXT (152:2216-2868) beneath 154''s 3 substitutions — each reversed, the prosrc md5 is 152''s (pgTAP 100 G0c''s stored literal)');
 
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(p.prosrc,
+  (select md5(replace(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
   E'      FOR v_key, v_val IN SELECT * FROM jsonb_each(v_fit -> \'assignment\') LOOP\n        CONTINUE WHEN v_gone_kick ? (v_val #>> \'{}\');   -- 154 / F441: off this roster — no roster row of his to write\n        UPDATE public.league_rosters r SET slot_key = v_key\n        WHERE r.league_id = p_league_id AND r.team_id = p_team_id AND r.player_id = (v_val #>> \'{}\');\n        GET DIAGNOSTICS v_cnt = ROW_COUNT;\n        v_expected := v_expected + v_cnt;\n      END LOOP;\n      IF v_expected <> COALESCE(array_length(v_started, 1), 0)\n                       - (SELECT count(*)::int FROM jsonb_object_keys(v_gone_kick) g WHERE g = ANY (v_started)) THEN\n        RAISE EXCEPTION \'commish_edit_lineup: wrote slot_key for % starters, expected %\', v_expected,\n          COALESCE(array_length(v_started, 1), 0) - (SELECT count(*)::int FROM jsonb_object_keys(v_gone_kick) g WHERE g = ANY (v_started))\n          USING ERRCODE = \'P0001\';\n      END IF;\n',
   E'      FOR v_key, v_val IN SELECT * FROM jsonb_each(v_fit -> \'assignment\') LOOP\n        UPDATE public.league_rosters r SET slot_key = v_key\n        WHERE r.league_id = p_league_id AND r.team_id = p_team_id AND r.player_id = (v_val #>> \'{}\');\n        GET DIAGNOSTICS v_cnt = ROW_COUNT;\n        v_expected := v_expected + v_cnt;\n      END LOOP;\n      IF v_expected <> COALESCE(array_length(v_started, 1), 0) THEN\n        RAISE EXCEPTION \'commish_edit_lineup: wrote slot_key for % starters, expected %\', v_expected, COALESCE(array_length(v_started, 1), 0)\n          USING ERRCODE = \'P0001\';\n      END IF;\n'),
   E'      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0\n         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) = v_pid) THEN   -- 154 / F441: a kept start where it stands is the week\'s record, not a submit\n',
@@ -105,7 +133,7 @@ select is(
   'A6 D137 commish_edit_lineup_internal: 131''s FILE TEXT (131:136-905) beneath 154''s 6 substitutions — each reversed, the prosrc md5 is 131''s (a stored literal)');
 
 select is(
-  (select md5(replace(replace(replace(replace(replace(p.prosrc,
+  (select md5(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
   E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\') AND x ? \'started_by\')\n            THEN \'no eligible player at \' || upper(v_e ->> \'slot\') || \' free to start — another team of the league already starts him this week (F441 / F445)\'\n          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \'',
   E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \''),
   E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n    -- 154 / F441 · F445: ONE START PER PLAYER PER LEAGUE-WEEK. A candidate\n    -- another team of this league already STARTS this week (a start kept\n    -- after he left that team — D411 / D412(5)) is never offered: the write\n    -- would be refused by name (team_lineups\' trigger) and fail the league\'s\n    -- tick. Named in skipped_locked[] (the tick reports it), never silently\n    -- dropped (§4 rule 15).\n    v_else := public.lineup_started_elsewhere_internal(p_league_id, p_team_id, p_season, p_week, v_pid);\n    IF v_else IS NOT NULL THEN\n      v_locked_out := v_locked_out || jsonb_build_object(\n        \'player_id\', v_pid, \'name\', v_e ->> \'name\', \'position\', v_e ->> \'position\',\n        \'kickoff_at\', v_kick -> v_pid ->> \'kickoff_at\',\n        \'started_by\', v_else ->> \'team_id\',\n        \'reason\', \'already in \' || (v_else ->> \'team_name\') || \'\'\'s starting lineup for week \' || p_week\n                  || \' — a player starts for at most one team per league-week (F441 / F445)\');\n      CONTINUE;\n    END IF;\n',
@@ -119,7 +147,7 @@ select is(
   'cb96ab439aa9dcb6d218d7da79125fe6',
   'A7 D137 lineup_autopilot_internal: 152''s FILE TEXT (152:2881-3489) beneath 154''s 5 substitutions — each reversed, the prosrc md5 is 152''s (pgTAP 100 G0c''s stored literal)');
 select is(
-  (select format('%s|%s|%s', md5(s.prosrc), md5(c.prosrc), md5(a.prosrc))
+  (select format('%s|%s|%s', md5(pg_temp.un157(s.prosrc)), md5(c.prosrc), md5(pg_temp.un157(a.prosrc)))
    from pg_proc s, pg_proc c, pg_proc a
    where s.oid = 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)'::regprocedure
      and c.oid = 'public.commish_edit_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)'::regprocedure
@@ -407,12 +435,21 @@ select is(
   'true|{"qb:0": "os-d1", "qb:1": "os-d2"} || {"qb:0": "os-d1", "qb:1": "os-d2"} | os-d1,os-d2 | ["os-d3"]',
   'C1 F442 the LINEUP''S RECORD: OS D One (released — his current NFL team reads as a bye) keeps his played start through an editor-shaped submit: the slot''s recorded kickoff (Thu 00:15Z) says he played');
 -- The tick's lineup-record refresh re-reads every starter's kickoff from players.team (139 arm (b)) …
+-- RE-CUT BY L.D2.16 (migration 157 — F447): C2 pinned the defect as a
+-- premise ("the tick re-reads a released player's recorded kickoff to
+-- NULL"); 157 stops exactly that, so C2 now pins the kept record, and the
+-- fixture then blanks it by hand — the state a pre-157 tick left behind (no
+-- backfill) — so C3–C5 still prove the STAT-LINE arm on its own.
 select set_config('pgtap.c2', public.lineup_lock_tick('2026-10-20 03:40:00+00', pg_temp.lg(1))::text, true);
 select is(
   (select coalesce(s ->> 'kickoff_at', 'null') from team_lineups tl, jsonb_array_elements(tl.starters) s
    where tl.team_id = pg_temp.team('OS Charlie') and tl.week = 6 and s ->> 'player_id' = 'os-c1'),
-  'null',
-  'C2 PREMISE (measured): the tick re-reads a released player''s recorded kickoff from players.team — OS C One''s starters[] kickoff_at is now NULL, so the record alone cannot carry F442');
+  '2026-10-16T00:15:00+00:00',
+  'C2 (re-cut by L.D2.16 — F447): the tick KEEPS a released player''s passed recorded kickoff (Thu 00:15Z, a real kickoff of the week) — before 157 it re-read it from players.team to NULL');
+update team_lineups tl
+set starters = (select jsonb_agg(case when s ->> 'player_id' = 'os-c1' then s || '{"kickoff_at": null}'::jsonb else s end order by o)
+                from jsonb_array_elements(tl.starters) with ordinality x(s, o))
+where tl.team_id = pg_temp.team('OS Charlie') and tl.week = 6;
 select pg_temp.try('C3', $$ select pg_temp.sl('C3', 1, 4, 'OS Charlie', 6, '{"qb:1": "os-c2"}', '2026-10-20 03:45:00+00', 14) $$);
 select is(
   format('%s|%s || %s', (select r ->> 'no_changes' from r102 where tag = 'C3'), (select r -> 'slot_map' from r102 where tag = 'C3'), pg_temp.lu('OS Charlie', 6)),
