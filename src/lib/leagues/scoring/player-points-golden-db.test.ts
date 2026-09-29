@@ -7,8 +7,13 @@
  * THE CORPUS: every player line of the REAL recorded Sleeper 2025 week 2
  * (`fixtures/nfl/2025/wk02/sleeper.jsonl.gz`) through ingestion's own
  * `toStatRow`, positions from the local `players` pool (R1156: fewer than 300
- * scorable lines ⇒ the golden refuses to pass — run `RESTORE_SCOPE=draft npm
- * run restore:dev` first). Eight leagues, one per template; in each, the
+ * scorable lines ⇒ the golden refuses to pass). A database WITHOUT the pool
+ * (CI: `restore:dev` never runs there) gets the recording's players created
+ * for the run from the committed `fixtures/nfl/2025/wk02/player-positions.json`
+ * (id → position, 348 players) — only the ids the table lacks, marked by name,
+ * and exactly those deleted afterwards; an existing row is never touched, so
+ * a restored local pool behaves exactly as before. The guard then still
+ * means "the corpus really is scorable". Eight leagues, one per template; in each, the
  * corpus dealt nine starters to a team (slot keys `flex:0..8`), teams paired
  * two by two; the same lines as week 1 and week 2 of a fixture season
  * (2092, its own calendar rows).
@@ -52,6 +57,9 @@ const LOCAL_SERVICE_ROLE_KEY =
 
 const PREFIX = 'vitest-ppg'
 const SEASON = 2092
+/** Players this run CREATED (a pool-less database — CI); nothing else is ever deleted. */
+const CREATED_NAME_PREFIX = 'PPG golden fixture'
+const createdPlayerIds: string[] = []
 const PER_TEAM = 9
 const STAMP = '2092-09-14T20:00:00.000Z'
 const LATE = '2092-09-30T12:00:00.000Z'
@@ -81,6 +89,9 @@ async function cleanup(): Promise<void> {
     await must(db.from('leagues').delete().in('id', ids), 'cleanup leagues')
   }
   await must(db.from('nfl_weeks').delete().eq('season', SEASON), 'cleanup nfl_weeks')
+  // Only the rows this suite created (tracked this run, or marked by name by a run that died before its cleanup).
+  for (let i = 0; i < createdPlayerIds.length; i += 150) await must(db.from('players').delete().in('id', createdPlayerIds.slice(i, i + 150)), 'cleanup created players')
+  await must(db.from('players').delete().like('full_name', `${CREATED_NAME_PREFIX}%`), 'cleanup marked players')
 }
 
 interface CorpusLine {
@@ -127,6 +138,19 @@ beforeAll(async () => {
   for (let i = 0; i < ids.length; i += 150) {
     for (const p of (await must(db.from('players').select('id').in('id', ids.slice(i, i + 150)), 'players')) ?? []) known.add(p.id)
   }
+  // A pool-less database (CI): create the recording's players it lacks, from the committed positions.
+  const positions = (JSON.parse(readFileSync('fixtures/nfl/2025/wk02/player-positions.json', 'utf8')) as { positions: Record<string, string> }).positions
+  const knownBefore = known.size
+  const missing = ids.filter((id) => !known.has(id) && positions[id] !== undefined)
+  for (let i = 0; i < missing.length; i += 150) {
+    const rows = missing.slice(i, i + 150).map((id) => ({ id, full_name: `${CREATED_NAME_PREFIX} ${id}`, position: positions[id]!, status: 'Active' }))
+    await must(db.from('players').insert(rows).select('id'), 'create fixture players')
+    for (const r of rows) {
+      known.add(r.id)
+      createdPlayerIds.push(r.id)
+    }
+  }
+  console.log(`golden pool: ${ids.length} recorded players — ${knownBefore} already in players (untouched), ${missing.length} created for this run, ${ids.length - knownBefore - missing.length} in neither (not scored)`)
   for (const l of [...lines].sort((a, b) => (a.playerId < b.playerId ? -1 : 1))) {
     if (!known.has(l.playerId)) continue
     const { row } = toStatRow(l, { gameStatus: new Map(), anyGameOpen: false, providerName: 'sleeper' })
