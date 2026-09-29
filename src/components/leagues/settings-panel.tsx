@@ -1119,15 +1119,24 @@ function WaiversGroup({
               className="h-btn-md w-24 text-[12px]"
             />
           </FieldRow>
-          <FieldRow label="Bid tiebreaker" htmlFor="set-faab-tb">
+          {/* v2.16.69 (L.D2.17 — Chris 2026-09-29): rolling priority is the default tiebreaker. */}
+          <FieldRow
+            label="Bid tiebreaker"
+            htmlFor="set-faab-tb"
+            hint={
+              s.faab_tiebreaker === 'rolling_priority'
+                ? 'Equal bids go to the team higher in the waiver order. It starts from reverse draft order, and a team drops to the back only when it wins a claim — it never resets.'
+                : 'Equal bids go to the team lower in the standings (reverse draft order until a week is final).'
+            }
+          >
             <ChoiceSelect
               id="set-faab-tb"
               ariaLabel="FAAB tiebreaker"
               value={s.faab_tiebreaker}
               width="w-48"
               options={[
-                { value: 'reverse_standings', label: 'Reverse standings' },
                 { value: 'rolling_priority', label: 'Rolling priority' },
+                { value: 'reverse_standings', label: 'Reverse standings' },
               ]}
               onValueChange={(v) => onSettings({ faab_tiebreaker: v as LeagueSettings['faab_tiebreaker'] })}
             />

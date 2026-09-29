@@ -89,7 +89,7 @@ export const ROUND_TRIP_SETTINGS: LeagueSettings = {
   waiver_type: 'rolling_priority',
   faab_budget: 500,
   faab_min_bid: 2,
-  faab_tiebreaker: 'rolling_priority',
+  faab_tiebreaker: 'reverse_standings', // L.D2.17: rolling_priority is the default now — the fixture stays off it
   // v2.16.59 (Q70): every schedule key off its default — Chris's league-1 shape
   waiver_run_days: ['tue', 'wed', 'thu', 'fri', 'sat'],
   waiver_run_time: '09:00',

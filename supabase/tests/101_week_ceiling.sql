@@ -73,6 +73,16 @@ create function pg_temp.un157(p_src text) returns text language sql as $un157$
     E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n')
 $un157$;
 
+-- L.D2.17 (migration 160 — additive, the R992 shape): pg_temp.un160 reverses
+-- 160's ONE substitution in process_waivers_internal (the no-key tiebreaker
+-- fallback; an identity on every other body), applied INNERMOST so the
+-- literals below still prove what they proved; pgTAP 108 A pins 160's own.
+create function pg_temp.un160(p_src text) returns text language sql as $un160$
+  select replace(p_src,
+    '  v_tb := COALESCE(v_league.settings ->> ''faab_tiebreaker'', ''rolling_priority'');   -- 160 / L.D2.17: no stored key => the rolling order (Chris 2026-09-29)',
+    '  v_tb := COALESCE(v_league.settings ->> ''faab_tiebreaker'', ''reverse_standings'');')
+$un160$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form pins, the ceiling literals, D137 in the database
 -- ---------------------------------------------------------------------------
@@ -192,13 +202,13 @@ create function pg_temp.unhunk(p_src text, p_indent text) returns text language 
     p_indent || 'SELECT w.last_game_ends_at INTO v_week_end FROM public.nfl_weeks w' || E'\n')
 $$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(p.prosrc)), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.unhunk(pg_temp.un156(pg_temp.un157(pg_temp.un160(p.prosrc))), case when p.proname = 'commish_roster_override_internal' then '    ' else '  ' end)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('roster_add_drop_internal', 'commish_roster_override_internal', 'process_waivers_internal', 'trade_execute_internal')),
   'commish_roster_override_internal=42e165a610082723c1124d1dc872d648 process_waivers_internal=faaca7fba5fff976f4fa811678e553aa roster_add_drop_internal=a30621f38adb8b114a4a903b068eeb8e trade_execute_internal=ef4648770bd5c18127e5c2270d8aec14',
   'A12 D137 the four roster writers: each live body with 153''s substitutions reversed is its newest definer''s FILE TEXT (152:103-638 / 152:646-1643 / 152:1651-2203 / 151:755-1209 — stored md5 literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(p.prosrc))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un156(pg_temp.un157(pg_temp.un160(p.prosrc)))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('pool_game_lock_internal', 'pool_game_lock_any_internal', 'waiver_window_internal',
                                                  'roster_add_drop_internal', 'commish_roster_override_internal',

@@ -180,8 +180,11 @@ select v.id::uuid, '99800000-0000-4000-8000-000000000001', v.nm, 2026, v.st, 8,
   '{"starting_slots": [{"key": "qb", "label": "QB", "eligible": ["QB"], "count": 1}], "bench": 4, "ir_slots": [], "swap_spots": 0}',
   v.nx::timestamptz
 from (values
+  -- L.D2.17 (migration 160): LF STORES reverse_standings — before 160 a
+  -- missing key read as reverse_standings, now it reads as the rolling order,
+  -- so F13 (a reverse-standings order does not persist) names the key it tests.
   ('b9800000-0000-4000-8000-000000000001', 'pgtap-wp-LF', 'in_season', 'faab',
-   '{"waiver_run_days": ["sun","mon","tue","wed","thu","fri","sat"], "waiver_run_time": "12:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run"}',
+   '{"waiver_run_days": ["sun","mon","tue","wed","thu","fri","sat"], "waiver_run_time": "12:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run", "faab_tiebreaker": "reverse_standings"}',
    '2026-11-01 12:00:00+00'),
   ('b9800000-0000-4000-8000-000000000002', 'pgtap-wp-LR', 'in_season', 'rolling_priority',
    '{"waiver_run_days": ["sun","mon","tue","wed","thu","fri","sat"], "waiver_run_time": "12:00", "waiver_time_zone": "UTC", "free_agency_opens": "after_waiver_run"}',
