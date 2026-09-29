@@ -71,6 +71,16 @@ create function pg_temp.un157(p_src text) returns text language sql as $un157$
     E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n')
 $un157$;
 
+-- L.D2.17 (migration 160 — additive, the R992 shape): pg_temp.un160 reverses
+-- 160's ONE substitution in process_waivers_internal (the no-key tiebreaker
+-- fallback; an identity on every other body), applied INNERMOST so the
+-- literals below still prove what they proved; pgTAP 108 A pins 160's own.
+create function pg_temp.un160(p_src text) returns text language sql as $un160$
+  select replace(p_src,
+    '  v_tb := COALESCE(v_league.settings ->> ''faab_tiebreaker'', ''rolling_priority'');   -- 160 / L.D2.17: no stored key => the rolling order (Chris 2026-09-29)',
+    '  v_tb := COALESCE(v_league.settings ->> ''faab_tiebreaker'', ''reverse_standings'');')
+$un160$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form pins, D137 in the database, the neighbours untouched
 -- ---------------------------------------------------------------------------
@@ -103,14 +113,14 @@ select ok(
                         'waiver_claim_submit_internal', 'process_waivers_internal', 'trade_lock_internal', 'lineup_lock_tick')),
   'A3 PUBLIC holds EXECUTE on none of the twelve (REVOKEs restated)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un157(p.prosrc)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un157(pg_temp.un160(p.prosrc))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'lineup_autopilot_internal', 'roster_add_drop_internal',
                                                  'waiver_claim_submit_internal', 'process_waivers_internal', 'trade_lock_internal', 'lineup_lock_tick')),
   'lineup_autopilot_internal=0eb0586b35c3a22559e2323ba25b58a5 lineup_lock_tick=540946257b7f6b2f2739e4d27f5cf584 process_waivers_internal=7b3dad5e6e9483ed0edc82bd8f055ada roster_add_drop_internal=f4879cd129747a28d52bab277108265e set_lineup_internal=991dfe0a36e1e9d3f823e81999bf3190 trade_lock_internal=0e8a591bdac064d7c3d06eb0e4a414f4 waiver_claim_submit_internal=33aaaaa0bf94e620c3f03f836aa888f7',
   'A4 D137: each live body with 157''s substitutions reversed is its NEWEST definer''s FILE TEXT (154:372 / 154:1899 / 153:422 / 150:1397 / 153:1981 / 151:689 / 139:1045 — the stored md5 literals 102 A8, 101 A13 and 087 A7 pin)');
 select is(
-  (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un160(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'lineup_autopilot_internal', 'roster_add_drop_internal',
                                                  'waiver_claim_submit_internal', 'process_waivers_internal', 'trade_lock_internal', 'lineup_lock_tick')),

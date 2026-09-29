@@ -408,7 +408,11 @@ export const leagueSettingsSchema = z.strictObject({
   waiver_type: z.enum(['faab', 'rolling_priority', 'reverse_standings', 'none_fcfs']).default('faab'),
   faab_budget: z.number().int().min(0).max(1000).default(100),
   faab_min_bid: z.number().int().min(0).max(10).default(0),
-  faab_tiebreaker: z.enum(['reverse_standings', 'rolling_priority']).default('reverse_standings'),
+  // v2.16.69 (L.D2.17 — Chris 2026-09-29, "yes, use the rolling order"): equal FAAB bids go by the
+  // rolling waiver order by default (it starts from reverse draft order and a team moves to the back
+  // only when it wins a claim — §13.2 / Q72). The SQL twin is migration 160's no-key fallback in
+  // `process_waivers_internal`; league-settings.test.ts pins the two equal. A stored value still wins.
+  faab_tiebreaker: z.enum(['reverse_standings', 'rolling_priority']).default('rolling_priority'),
   // v2.16.59 (Q70 RULED by Chris 2026-09-27 — F229's waiver schedule; migration 149, L.D2.7, D388):
   // WHEN WAIVERS RUN (weekdays × one local time, in the league's own IANA zone) and WHEN INSTANT-PICKUP
   // FREE AGENCY OPENS (after the run / a weekday + time / never — it always closes when the week's last
