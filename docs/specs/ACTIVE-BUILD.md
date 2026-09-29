@@ -35,6 +35,7 @@
 - *(L.D3.15 built — no migration: the standings page lists the whole waiver order the server stored (F494), and `transactions.spec.ts` drives the prevented trade states in a browser — full-roster drop pickers on the builder and the offer card, the past-deadline doors (F492); D431. NEXT is unchanged.)*
 - **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
 - **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
+- **M5 CLOSED 2026-09-29** — every follow-up without a ruling is built; F490 / F495 ruled as built. **NEXT (Chris, 2026-09-29): M6 — the commissioner console + the stat-corrections pipeline (L.E2).** Needs its task breakdown (Architect) and Chris's approval before `/build-next` builds it.
 - **Production:** at **166** (pushed 2026-09-29 — 135–159, then 160 + 161 + 162, then 163, then 164, then 165, then 166; weeks 1–2 re-scored and the player-points backfill applied — PROGRESS F488). Push debt: **none** (L.D3.15 is UI + E2E only — nothing to push).
 
 ---
