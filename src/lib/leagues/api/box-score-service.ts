@@ -479,7 +479,8 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       }
     })
     const sources = new Set(stored.map((r) => r.source))
-    const storedSource: StoredPointsSource = sources.has('backfill_unrecoverable') ? 'backfill_unrecoverable' : sources.has('worker') ? 'worker' : 'backfill'
+    // 161 (D425): `rescore` rows were written WITH the re-scored score, so they add up to it — no note, like the worker's.
+    const storedSource: StoredPointsSource = sources.has('backfill_unrecoverable') ? 'backfill_unrecoverable' : sources.has('rescore') ? 'rescore' : sources.has('worker') ? 'worker' : 'backfill'
     const payload: TeamBoxScore = {
       ...empty,
       lineup: lineupMeta,

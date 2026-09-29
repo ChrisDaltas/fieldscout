@@ -279,6 +279,13 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
     const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
     return `set ${team}’s ${weekClause(metadata)}lineup`
   }
+  // A RULED RE-SCORE OF A FINAL WEEK — 161 writes {week_scores} both sides
+  // (M5 L.D3.13, D425). Not a commissioner's own act: the actor is the
+  // person whose ruling it is, and the league's post says why in plain words.
+  if ('week_scores' in after) {
+    const changed = num(metadata.scores_changed)
+    return `re-scored ${weekClause(metadata)}after it was final${changed === null ? '' : ` (${changed} team score${changed === 1 ? '' : 's'} changed)`}`
+  }
   // A SCORE / RESULT — 126 writes {home_score, away_score, result, is_overridden}.
   if ('home_score' in after || 'result' in after) {
     const moved = before.home_score !== after.home_score || before.away_score !== after.away_score

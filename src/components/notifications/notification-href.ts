@@ -37,6 +37,12 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   if (n.type.startsWith('league_trade_') && typeof data?.league_id === 'string' && data.league_id !== '') {
     return `/app/leagues/${data.league_id}/trades`
   }
+  // M5 L.D3.13 (161, D425): a re-scored week whose result changed for the
+  // manager (`league_week_rescored`) → that league's home, where the
+  // standings and the league's post about the re-score are.
+  if (n.type === 'league_week_rescored' && typeof data?.league_id === 'string' && data.league_id !== '') {
+    return `/app/leagues/${data.league_id}`
+  }
   // List activity (the pre-existing arm).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
     return `/app/lists/${data.list_id}`

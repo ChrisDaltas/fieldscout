@@ -34,6 +34,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_rescore_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          created_at: string
+          id: string
+          league_id: string
+          result: Json
+          season: number
+          week: number
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          league_id: string
+          result: Json
+          season: number
+          week: number
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          league_id?: string
+          result?: Json
+          season?: number
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_rescore_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_rescore_actions_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_call_log: {
         Row: {
           created_at: string
@@ -5068,6 +5116,19 @@ export type Database = {
     Functions: {
       add_placeholder_seat: {
         Args: { p_league_id: string; p_team_name?: string }
+        Returns: Json
+      }
+      admin_rescore_final_week: {
+        Args: {
+          p_action_id: string
+          p_actor_id: string
+          p_dry_run?: boolean
+          p_league_id: string
+          p_member_note: string
+          p_reason: string
+          p_teams: Json
+          p_week: number
+        }
         Returns: Json
       }
       applied_migration_versions: {
