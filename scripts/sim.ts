@@ -92,7 +92,10 @@ import { writeFileSync } from 'node:fs'
 import { keepAliveFetch } from './sim-keepalive-fetch'
 
 import { PICK_TIMER_SECONDS } from '../src/lib/leagues/settings/league-settings'
-import { runDraftSim } from '../src/lib/leagues/sim/runner'
+import { createClient } from '@supabase/supabase-js'
+
+import type { Database } from '../src/types/database'
+import { restoreSimWorld, runDraftSim } from '../src/lib/leagues/sim/runner'
 import { runSeasonSim, seasonReportLines } from '../src/lib/leagues/sim/season-runner'
 import {
   SCENARIO_IDS,
@@ -168,6 +171,30 @@ const LOCAL_SERVICE_ROLE_KEY =
 function flagValue(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
+}
+
+/**
+ * R1270 (D423): an interrupted run must not leave the shared pool's statuses
+ * masked or planted until somebody's next sweep. On SIGINT / SIGTERM the
+ * sim-world half of the sweep runs on its own (the rest — leagues, users,
+ * season rows — is the next run's first sweep, and the census names it), then
+ * the process exits 130 / 143. A second signal exits at once.
+ */
+let interrupted = false
+for (const [signal, code] of [
+  ['SIGINT', 130],
+  ['SIGTERM', 143],
+] as const) {
+  process.on(signal, () => {
+    if (interrupted) process.exit(code)
+    interrupted = true
+    console.error(`sim: ${signal} — restoring the sim world (masked + planted statuses) before exiting`)
+    const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+    restoreSimWorld(service)
+      .then((r) => console.error(`sim: restored ${r.masks} mask(s) + ${r.plants} plant(s)`))
+      .catch((e) => console.error(`sim: sim-world restore FAILED — run \`npm run sim:census\` and a 1-league sweep: ${(e as Error).message}`))
+      .finally(() => process.exit(code))
+  })
 }
 
 async function main(): Promise<void> {

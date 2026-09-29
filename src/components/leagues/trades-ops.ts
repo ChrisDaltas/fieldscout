@@ -534,3 +534,33 @@ export function splitTrades(trades: readonly TradeView[]): { pending: TradeView[
 export function isTradesUnavailable(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'status' in error && (error as { status: unknown }).status === 503
 }
+
+/**
+ * THE `?with=` / `?player=` DOOR — PROGRESS F480 / R1268 (D423). One step of
+ * the trade center's door, run once per render with the viewer's team as it
+ * is known THEN. The team needs the signed-in user, and `useAuth`'s session
+ * can land AFTER the league read, so the first renders may carry `null`. The
+ * door is decided the FIRST time the team is known — opened toward the
+ * linked team (never toward the viewer's own) or not at all — and never
+ * again: a later render, or a builder the viewer closed, does not re-open it.
+ */
+export interface TradeDoorParams {
+  with: string | null
+  player: string | null
+}
+
+export interface TradeDoorOpen {
+  fromTeamId: string
+  toTeamId: string | null
+  getPlayerIds: string[]
+}
+
+export function tradeDoorStep(
+  decided: boolean,
+  myTeamId: string | null,
+  door: TradeDoorParams,
+): { decided: boolean; open: TradeDoorOpen | null } {
+  if (decided || myTeamId === null) return { decided, open: null }
+  if ((door.with === null && door.player === null) || door.with === myTeamId) return { decided: true, open: null }
+  return { decided: true, open: { fromTeamId: myTeamId, toTeamId: door.with, getPlayerIds: door.player === null ? [] : [door.player] } }
+}

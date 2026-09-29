@@ -32,48 +32,77 @@ const agent = new http.Agent({ keepAlive: true, maxSockets: 64 })
 
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304])
 
-export async function keepAliveFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const request = new Request(input, init)
-  const url = new URL(request.url)
-  if (url.protocol !== 'http:') throw new TypeError(`keepAliveFetch serves the local http stack only (got ${url.protocol})`)
-  const body = request.body === null ? null : Buffer.from(await request.arrayBuffer())
-  const headers: Record<string, string> = {}
-  request.headers.forEach((value, key) => {
-    headers[key] = value
-  })
-  if (body !== null) headers['content-length'] = String(body.length)
-  const signal = init?.signal ?? null
-  if (signal?.aborted) throw signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
+/**
+ * R1269: undici's default `headersTimeout` / `bodyTimeout` are 300 s; a
+ * request with no socket activity for that long is destroyed and rejects
+ * `TypeError('fetch failed', { cause })`, exactly as the global fetch would —
+ * never a hang.
+ */
+export const KEEPALIVE_FETCH_TIMEOUT_MS = 300_000
 
-  return new Promise<Response>((resolve, reject) => {
-    const req = http.request(
-      {
-        host: url.hostname,
-        port: url.port === '' ? 80 : Number(url.port),
-        path: `${url.pathname}${url.search}`,
-        method: request.method,
-        headers,
-        agent,
-      },
-      (res) => {
-        const chunks: Buffer[] = []
-        res.on('data', (chunk: Buffer) => chunks.push(chunk))
-        res.on('error', (e) => reject(new TypeError('fetch failed', { cause: e })))
-        res.on('end', () => {
-          const status = res.statusCode ?? 0
-          const out = new Headers()
-          for (const [key, value] of Object.entries(res.headers)) {
-            if (value === undefined) continue
-            if (Array.isArray(value)) for (const v of value) out.append(key, v)
-            else out.set(key, value)
-          }
-          const noBody = request.method === 'HEAD' || NULL_BODY_STATUS.has(status)
-          resolve(new Response(noBody ? null : Buffer.concat(chunks), { status, statusText: res.statusMessage ?? '', headers: out }))
-        })
-      },
-    )
-    req.on('error', (e) => reject(signal?.aborted ? (signal.reason ?? e) : new TypeError('fetch failed', { cause: e })))
-    signal?.addEventListener('abort', () => req.destroy(new DOMException('This operation was aborted', 'AbortError')), { once: true })
-    req.end(body ?? undefined)
-  })
+export function createKeepAliveFetch(opts: { timeoutMs?: number } = {}) {
+  const timeoutMs = opts.timeoutMs ?? KEEPALIVE_FETCH_TIMEOUT_MS
+  return async function keepAliveFetchImpl(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    // The Request only parses the call; the signal is ours to wire (R1269), so
+    // it is not handed to Request, which would attach a listener of its own.
+    const request = new Request(input, init === undefined ? undefined : { ...init, signal: null })
+    const url = new URL(request.url)
+    if (url.protocol !== 'http:') throw new TypeError(`keepAliveFetch serves the local http stack only (got ${url.protocol})`)
+    const body = request.body === null ? null : Buffer.from(await request.arrayBuffer())
+    const headers: Record<string, string> = {}
+    request.headers.forEach((value, key) => {
+      headers[key] = value
+    })
+    if (body !== null) headers['content-length'] = String(body.length)
+    const signal = init?.signal ?? null
+    if (signal?.aborted) throw signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
+
+    return new Promise<Response>((resolve, reject) => {
+      let settled = false
+      const onAbort = (): void => {
+        req.destroy(new DOMException('This operation was aborted', 'AbortError'))
+      }
+      // R1269: the abort listener lives only as long as the request.
+      const settle = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onAbort)
+        fn()
+      }
+      const req = http.request(
+        {
+          host: url.hostname,
+          port: url.port === '' ? 80 : Number(url.port),
+          path: `${url.pathname}${url.search}`,
+          method: request.method,
+          headers,
+          agent,
+        },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (chunk: Buffer) => chunks.push(chunk))
+          res.on('error', (e) => settle(() => reject(new TypeError('fetch failed', { cause: e }))))
+          res.on('end', () => {
+            const status = res.statusCode ?? 0
+            const out = new Headers()
+            for (const [key, value] of Object.entries(res.headers)) {
+              if (value === undefined) continue
+              if (Array.isArray(value)) for (const v of value) out.append(key, v)
+              else out.set(key, value)
+            }
+            const noBody = request.method === 'HEAD' || NULL_BODY_STATUS.has(status)
+            settle(() => resolve(new Response(noBody ? null : Buffer.concat(chunks), { status, statusText: res.statusMessage ?? '', headers: out })))
+          })
+        },
+      )
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`keepAliveFetch: no socket activity for ${timeoutMs} ms (undici's headers/body timeout)`))
+      })
+      req.on('error', (e) => settle(() => reject(signal?.aborted ? (signal.reason ?? e) : new TypeError('fetch failed', { cause: e }))))
+      signal?.addEventListener('abort', onAbort, { once: true })
+      req.end(body ?? undefined)
+    })
+  }
 }
+
+export const keepAliveFetch = createKeepAliveFetch()

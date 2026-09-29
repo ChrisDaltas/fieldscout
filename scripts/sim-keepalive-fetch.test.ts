@@ -11,7 +11,7 @@ import type { AddressInfo } from 'node:net'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { keepAliveFetch } from './sim-keepalive-fetch'
+import { createKeepAliveFetch, KEEPALIVE_FETCH_TIMEOUT_MS, keepAliveFetch } from './sim-keepalive-fetch'
 
 let server: http.Server
 let base = ''
@@ -89,5 +89,43 @@ describe('keepAliveFetch', () => {
     controller.abort()
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     await expect(keepAliveFetch('http://127.0.0.1:1/x')).rejects.toMatchObject({ name: 'TypeError', message: 'fetch failed' })
+  })
+
+  it('R1269: times out like undici — 300 s by default; a silent server rejects TypeError(\'fetch failed\'), never hangs', async () => {
+    expect(KEEPALIVE_FETCH_TIMEOUT_MS).toBe(300_000)
+    const quick = createKeepAliveFetch({ timeoutMs: 200 })
+    const started = Date.now()
+    await expect(quick(`${base}/slow`)).rejects.toMatchObject({ name: 'TypeError', message: 'fetch failed' })
+    expect(Date.now() - started).toBeLessThan(1_500)
+  })
+
+  it('R1269: the abort listener is removed once the request settles (answered or failed)', async () => {
+    const spied = (): { signal: AbortSignal; added: unknown[]; removed: unknown[] } => {
+      const controller = new AbortController()
+      const added: unknown[] = []
+      const removed: unknown[] = []
+      const signal = controller.signal
+      const add = signal.addEventListener.bind(signal)
+      const remove = signal.removeEventListener.bind(signal)
+      signal.addEventListener = ((type: string, fn: EventListener, o?: AddEventListenerOptions) => {
+        if (type === 'abort') added.push(fn)
+        add(type, fn, o)
+      }) as typeof signal.addEventListener
+      signal.removeEventListener = ((type: string, fn: EventListener) => {
+        if (type === 'abort') removed.push(fn)
+        remove(type, fn)
+      }) as typeof signal.removeEventListener
+      return { signal, added, removed }
+    }
+    for (const path of ['/x', '/empty']) {
+      const s = spied()
+      const res = await keepAliveFetch(`${base}${path}`, { signal: s.signal })
+      await res.text()
+      expect(s.added).toHaveLength(1)
+      expect(s.removed).toEqual(s.added)
+    }
+    const s = spied()
+    await expect(keepAliveFetch('http://127.0.0.1:1/x', { signal: s.signal })).rejects.toThrow('fetch failed')
+    expect(s.removed).toEqual(s.added)
   })
 })

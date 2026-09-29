@@ -16,7 +16,7 @@
 #          one-slot-per-week, the played lock, stored points, the budget
 #          range). Runs on the
 #          EMPTY post-reset pool (D144(5)), so before [3.5].
-#   [3/9]  vitest -c vitest.gate-m5.config.ts — 35 files enumerated by name
+#   [3/9]  vitest -c vitest.gate-m5.config.ts — 37 files enumerated by name
 #          (F84): exit criterion 2 (the L.D2.8 resolver's worked examples +
 #          property tests, the SQL ⇔ TS parity) and every M5 stack / service /
 #          route / hook / UI suite. Serialized (F52).
@@ -65,6 +65,13 @@
 #     restores them and the census counts any left. The synthetic season's
 #     designations come from the scenario library, never from the day's
 #     injury report.
+#   - R1266 (the fix round): masking alone left the §7.3.6 legality arm with
+#     nothing to police, so a season run also PLANTS up to two synthetic `Out`s
+#     per OFF league, on men the harness would start for a managed seat, only
+#     where every OFF seat holding them keeps a healthy man at the position
+#     (F374 cannot come back through a plant); the sweep restores them, the
+#     census counts them, and an OFF league that passed over nobody is a
+#     `LEGALITY PREMISE` problem — here AND in gate-m4-evidence / [4.1].
 #   - F480 (a PRODUCT fix, found by this gate's first run): the trade
 #     center's `?with=&player=` door decided once, in the initial state, and
 #     was lost whenever the league read beat the session (`useAuth` user still
@@ -129,7 +136,7 @@ stage "[2/9] Full pgTAP suite — test:db (093-107 are the M5 files)"
 npm run test:db
 took
 
-stage "[3/9] M5 vitest gate — 35 enumerated suites (resolver properties + parity first)"
+stage "[3/9] M5 vitest gate — 37 enumerated suites (resolver properties + parity first)"
 npx vitest run -c vitest.gate-m5.config.ts
 took
 

@@ -56,6 +56,8 @@ import {
   tallyWords,
   tradeActions,
   tradeDeadlineCopy,
+  tradeDoorStep,
+  type TradeDoorOpen,
   tradeSides,
   tradeStatusView,
   type TradeTone,
@@ -145,17 +147,21 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   // transactions.spec.ts:155, reproduced by delaying the session — PROGRESS
   // F480 / D423). So the door opens the FIRST time the team is known, once;
   // closing the builder never re-opens it.
-  const doorFor = (teamId: string | null): BuilderState | null =>
-    (initialWith || initialPlayer) && teamId && initialWith !== teamId
-      ? { mode: 'propose', fromTeamId: teamId, counterOf: null, initialTo: initialWith, initialGet: initialPlayer ? [initialPlayer] : [] }
-      : null
-  const [builder, setBuilder] = useState<BuilderState | null>(() => doorFor(myTeamId))
-  const doorDecided = useRef(myTeamId !== null)
+  const door = { with: initialWith, player: initialPlayer }
+  const asBuilder = (open: TradeDoorOpen): BuilderState => ({
+    mode: 'propose',
+    fromTeamId: open.fromTeamId,
+    counterOf: null,
+    initialTo: open.toTeamId,
+    initialGet: open.getPlayerIds,
+  })
+  const [firstDoor] = useState(() => tradeDoorStep(false, myTeamId, door))
+  const [builder, setBuilder] = useState<BuilderState | null>(() => (firstDoor.open ? asBuilder(firstDoor.open) : null))
+  const doorDecided = useRef(firstDoor.decided)
   useEffect(() => {
-    if (doorDecided.current || myTeamId === null) return
-    doorDecided.current = true
-    const opened = doorFor(myTeamId)
-    if (opened) setBuilder(opened)
+    const step = tradeDoorStep(doorDecided.current, myTeamId, door)
+    doorDecided.current = step.decided
+    if (step.open) setBuilder(asBuilder(step.open))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the door reads the URL's params once, when the team first becomes known
   }, [myTeamId])
   const [builderKey, setBuilderKey] = useState(0)

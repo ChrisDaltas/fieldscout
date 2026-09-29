@@ -2239,9 +2239,92 @@ export async function restoreMaskedStatuses(service: Supabase): Promise<number> 
   return rows.length
 }
 
+/**
+ * THE SIM'S OWN DESIGNATIONS — R1266 (PROGRESS D423(10)). Masking the real
+ * injury report (F374) left the §7.3.6 legality arm with nothing to police:
+ * every OFF league benched nobody for legality. So a season run PLANTS a
+ * synthetic `Out` on a few drafted players it chooses (season-runner's
+ * `plantLegalityDesignations`), and the arm is live again on the sim's terms.
+ *
+ * A plant writes `status = 'Out'` (the exact spelling 112:337's bridge and
+ * `simDesignation` read as OUT) and records what it replaced in
+ * `injury_notes` as `sim-world-plant:{"status":…,"injury_notes":…}` — the
+ * status column itself cannot carry a marker, since the bridge matches it
+ * exactly. `restorePlantedDesignations` puts both columns back; every
+ * `cleanupSweep` runs it BEFORE the mask restore (a plant may sit on a masked
+ * player, whose recorded status is the mask), and `simCensus` counts any
+ * plant left behind.
+ */
+export const SIM_WORLD_PLANT_PREFIX = 'sim-world-plant:'
+export const SIM_PLANTED_STATUS = 'Out'
+
+/** Plants `Out` on exactly these players (their current values recorded for the sweep). */
+export async function plantDesignations(service: Supabase, playerIds: readonly string[]): Promise<void> {
+  if (playerIds.length === 0) return
+  const { data, error } = await service.from('players').select('id, status, injury_notes').in('id', [...playerIds])
+  throwIfError(error, 'sim world: plant read')
+  if ((data ?? []).length !== playerIds.length) {
+    throw new Error(`sim world: plant read found ${(data ?? []).length} of ${playerIds.length} players`)
+  }
+  for (const row of data ?? []) {
+    if ((row.injury_notes ?? '').startsWith(SIM_WORLD_PLANT_PREFIX)) throw new Error(`sim world: ${row.id} is already planted`)
+    const note = `${SIM_WORLD_PLANT_PREFIX}${JSON.stringify({ status: row.status, injury_notes: row.injury_notes })}`
+    const { data: written, error: writeError } = await service
+      .from('players')
+      .update({ status: SIM_PLANTED_STATUS, injury_notes: note })
+      .eq('id', row.id)
+      .select('id')
+    throwIfError(writeError, `sim world: plant ${row.id}`)
+    if ((written ?? []).length !== 1) throw new Error(`sim world: plant ${row.id} wrote ${(written ?? []).length} rows`)
+  }
+}
+
+/** Restores every planted designation (any run's). Returns how many rows it restored. */
+export async function restorePlantedDesignations(service: Supabase): Promise<number> {
+  const rows = await pageAll<{ id: string; status: string | null; injury_notes: string | null }>((from, to) =>
+    service
+      .from('players')
+      .select('id, status, injury_notes', { count: 'exact' })
+      .like('injury_notes', `${SIM_WORLD_PLANT_PREFIX}%`)
+      .order('id')
+      .range(from, to),
+  )
+  for (const row of rows) {
+    const recorded = JSON.parse((row.injury_notes ?? '').slice(SIM_WORLD_PLANT_PREFIX.length)) as {
+      status: string | null
+      injury_notes: string | null
+    }
+    const { data, error } = await service
+      .from('players')
+      .update({ status: recorded.status, injury_notes: recorded.injury_notes })
+      .eq('id', row.id)
+      .eq('injury_notes', row.injury_notes ?? '')
+      .select('id')
+    throwIfError(error, `sim world: restore plant ${row.id}`)
+    if ((data ?? []).length !== 1) throw new Error(`sim world: restore plant ${row.id} wrote ${(data ?? []).length} rows`)
+  }
+  return rows.length
+}
+
+/** Both halves of the sim world, plants first. Used by the sweep and by sim.ts's signal hook. */
+export async function restoreSimWorld(service: Supabase): Promise<{ plants: number; masks: number }> {
+  const plants = await restorePlantedDesignations(service)
+  const masks = await restoreMaskedStatuses(service)
+  return { plants, masks }
+}
+
 export async function cleanupSweep(service: Supabase, log: (line: string) => void): Promise<string> {
-  // F374 (D423): a masked world is restored FIRST, whatever else fails below.
-  const restoredStatuses = await restoreMaskedStatuses(service)
+  // F374 / R1266 (D423): the sim's world is restored FIRST. R1270: a restore
+  // that throws does not stop the rest of the sweep — the leagues, users and
+  // season rows are still swept — and the error is re-thrown at the end.
+  let world: { plants: number; masks: number } = { plants: 0, masks: 0 }
+  let worldError: Error | null = null
+  try {
+    world = await restoreSimWorld(service)
+  } catch (e) {
+    worldError = e as Error
+    log(`CLEANUP: the sim-world restore FAILED (the rest of the sweep still runs): ${worldError.message}`)
+  }
   const { data: stale, error: staleError } = await service
     .from('leagues')
     .select('id')
@@ -2395,6 +2478,9 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
   throwIfError(verifyProfiles, 'cleanup: profile verification')
   const census = await simCensus(service)
   const dirty = census.filter((c) => c.count !== 0)
+  if (worldError !== null) {
+    throw new Error(`cleanup: sim-world restore failed (the rest of the sweep ran; ${censusLine(census)}): ${worldError.message}`)
+  }
   if ((leagueCount ?? -1) !== 0 || (profileCount ?? -1) !== 0 || dirty.length > 0) {
     throw new Error(
       `cleanup: stack NOT clean — ${leagueCount} sim leagues, ${profileCount} sim profiles remain` +
@@ -2403,7 +2489,7 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
   }
   const summary =
     `CLEANUP: swept ${ids.length} leagues + ${(profiles ?? []).length} bot users — 0 sim leagues / 0 sim profiles remain ` +
-    `(players: none seeded; ${restoredStatuses} sim-world status mask(s) restored — F374); ${censusLine(census)}`
+    `(players: none seeded; ${world.masks} sim-world status mask(s) + ${world.plants} planted designation(s) restored — F374 / R1266); ${censusLine(census)}`
   log(summary)
   return summary
 }
@@ -2480,6 +2566,8 @@ export async function simCensus(service: Supabase): Promise<CensusCell[]> {
     await count(`nfl_weeks(${SYNTHETIC_SEASON}) stamped`, () => service.from('nfl_weeks').select('week', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON).or('first_kickoff_at.not.is.null,last_game_ends_at.not.is.null')),
     // F374 (D423): a season run's masked designations must not outlive it.
     await count(`players(status ${SIM_WORLD_STATUS_PREFIX}*)`, () => service.from('players').select('id', { count: 'exact', head: true }).like('status', `${SIM_WORLD_STATUS_PREFIX}%`)),
+    // R1266 (D423): the sim's planted designations must not outlive the run.
+    await count(`players(planted ${SIM_PLANTED_STATUS})`, () => service.from('players').select('id', { count: 'exact', head: true }).like('injury_notes', `${SIM_WORLD_PLANT_PREFIX}%`)),
   ]
 }
 

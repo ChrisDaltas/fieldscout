@@ -116,7 +116,9 @@ import { BOT_POOL_SIZE } from './plan'
 import {
   censusLine,
   cleanupSweep,
+  plantDesignations,
   runDraftSim,
+  SIM_PLANTED_STATUS,
   simBotEmail,
   simCensus,
   SIM_BOT_PASSWORD,
@@ -422,6 +424,7 @@ export async function runSeasonSim(
     autopilotOffSeatWeeksAsserted: 0,
     autopilotSelection: { picksGraded: 0, byPointsKey: 0, discriminating: 0, byKey: {}, chainLines: [] },
     lawfulOverride: null,
+    legalityPlants: [],
     externalCalls: 0,
     workerErrors: [],
     reconcileSummary: { leagues: 0, cells: 0, counts: {}, alerts: 0, warns: 0, infos: 0 },
@@ -559,6 +562,17 @@ export async function runSeasonSim(
       }
     }
 
+    // ---- Phase 3e: the sim's OWN §7.3.6 designations (R1266, D423(10)) ---
+    // F374 masked the real injury report, which left the legality arm with
+    // nothing to police. Up to two synthetic `Out`s per OFF league, each on a player the
+    // harness would START for a managed seat, chosen so that EVERY seat that
+    // rosters him in ANY `allow_illegal_lineups = false` league holds a
+    // healthy man at his position (so no OFF seat is left with an empty slot —
+    // F374's failure can never be re-created by a plant). ON leagues need no
+    // check: 142 seats a blocked man there LAST, never leaves the slot empty.
+    // After the transactions, before the first week opens.
+    report.legalityPlants = await plantLegalityDesignations(service, leagueStates, bridgedIds, log)
+
     // ---- Phase 4: drive the season --------------------------------------
     const driven = await driveSeason(service, botClients, cfg, deps, base, bridge, leagueStates, {
       // The Ghost's SEAT CLAIM lands at the season's first `finalize` beat,
@@ -576,6 +590,20 @@ export async function runSeasonSim(
       log(`BREAK PROBE PLANTED — ${probeDetail}`)
     }
     report.autopilotSelection.chainLines = driven.chainLines
+    // R1266 (D423(10)): the legality arm is never vacuous again. Every OFF
+    // league must have passed over at least one player for §7.3.6 on a seat
+    // the harness set — the plant above guarantees one when a safe candidate
+    // exists; when none does, this names the league instead of passing.
+    for (const state of leagueStates) {
+      if (state.allowIllegalLineups) continue
+      const benched = driven.seatingByLeague.get(state.leagueId)?.benchedForLegality ?? 0
+      if (benched === 0) {
+        report.problems.push(
+          `LEGALITY PREMISE: ${state.label} (allow_illegal_lineups = false) passed over 0 players for §7.3.6 — ` +
+            `the arm had nothing to police (plants: ${report.legalityPlants.filter((pl) => pl.leagueLabel === state.label).length})`,
+        )
+      }
+    }
     if (driven.weeksDriven.length === 0) {
       report.reason = 'no_weeks_driven'
       report.problems.push('no week reached its open instant — the calendar or the plan is empty')
@@ -2397,6 +2425,125 @@ function measureCorrectionArms(
 export { BLOCKING_DESIGNATIONS, simDesignation }
 
 /** A roster player as the seating chooser reads him. */
+/** One synthetic designation the run planted (R1266, D423(10)). */
+export interface LegalityPlant {
+  leagueLabel: string
+  teamId: string
+  playerId: string
+  position: string
+  /** The healthy teammate(s) at his position in every OFF-league seat that rosters him. */
+  offHolders: number
+}
+
+/**
+ * R1266: choose and plant up to TWO synthetic `Out`s per `allow_illegal_lineups =
+ * false` league, on different managed seats. The candidate is the man the harness would START at a
+ * position where a MANAGED seat holds two healthy players (the best-ADP one —
+ * `seedLineups` seats in ADP order), never a §23.6 bridged player, and only
+ * when every OFF-league seat that rosters him (managed or autopiloted; an OFF
+ * commissioner-managed seat is seated by nobody) keeps a healthy, unplanted
+ * man at that position after every plant so far. Pure choice over reads;
+ * `plantDesignations` does the one write per player, and the sweep restores.
+ */
+/** A few per OFF league — two, on two different managed seats — so one
+ *  unlucky roster cannot leave the arm at a population of one. */
+export const LEGALITY_PLANTS_PER_OFF_LEAGUE = 2
+
+export function chooseLegalityPlants(input: {
+  leagues: ReadonlyArray<{ label: string; leagueId: string; allowIllegalLineups: boolean; managedTeams: ReadonlySet<string>; offSeats: ReadonlySet<string> }>
+  rosters: ReadonlyArray<{ leagueId: string; teamId: string; playerId: string; position: string; adp: number | null; status: string | null }>
+  bridged: ReadonlySet<string>
+}): LegalityPlant[] {
+  const offLeague = new Map(input.leagues.filter((l) => !l.allowIllegalLineups).map((l) => [l.leagueId, l]))
+  const byTeam = new Map<string, typeof input.rosters[number][]>()
+  const holders = new Map<string, Array<{ leagueId: string; teamId: string }>>()
+  for (const r of input.rosters) {
+    byTeam.set(r.teamId, [...(byTeam.get(r.teamId) ?? []), r])
+    if (offLeague.has(r.leagueId) && !offLeague.get(r.leagueId)!.offSeats.has(r.teamId)) {
+      holders.set(r.playerId, [...(holders.get(r.playerId) ?? []), { leagueId: r.leagueId, teamId: r.teamId }])
+    }
+  }
+  const planted = new Set<string>()
+  const healthy = (r: { playerId: string; status: string | null }): boolean => simDesignation(r.status) === null && !planted.has(r.playerId)
+  const order = (a: { adp: number | null; playerId: string }, b: { adp: number | null; playerId: string }): number =>
+    (a.adp ?? Number.POSITIVE_INFINITY) - (b.adp ?? Number.POSITIVE_INFINITY) || (a.playerId < b.playerId ? -1 : 1)
+  /** Every OFF-league seat rostering any planted man keeps a healthy one at his position. */
+  const safe = (): boolean => {
+    for (const pid of planted) {
+      for (const h of holders.get(pid) ?? []) {
+        const mine = (byTeam.get(h.teamId) ?? []).find((r) => r.playerId === pid)!
+        if (!(byTeam.get(h.teamId) ?? []).some((r) => r.position === mine.position && healthy(r))) return false
+      }
+    }
+    return true
+  }
+  const out: LegalityPlant[] = []
+  for (const league of [...offLeague.values()].sort((a, b) => (a.label < b.label ? -1 : 1))) {
+    let inLeague = 0
+    for (const teamId of [...league.managedTeams].sort()) {
+      if (inLeague >= LEGALITY_PLANTS_PER_OFF_LEAGUE) break
+      const roster = (byTeam.get(teamId) ?? []).filter((r) => r.leagueId === league.leagueId)
+      for (const position of [...new Set(roster.map((r) => r.position))].sort()) {
+        const at = roster.filter((r) => r.position === position && healthy(r)).sort(order)
+        if (at.length < 2) continue
+        const starter = at[0]!
+        if (input.bridged.has(starter.playerId)) continue
+        planted.add(starter.playerId)
+        if (!safe()) {
+          planted.delete(starter.playerId)
+          continue
+        }
+        out.push({ leagueLabel: league.label, teamId, playerId: starter.playerId, position, offHolders: (holders.get(starter.playerId) ?? []).length })
+        inLeague += 1
+        break // one per team; the next managed team may take the league's second
+      }
+    }
+  }
+  return out
+}
+
+async function plantLegalityDesignations(
+  service: Supabase,
+  leagues: readonly LeagueState[],
+  bridged: ReadonlySet<string>,
+  log: (line: string) => void,
+): Promise<LegalityPlant[]> {
+  const off = leagues.filter((l) => !l.allowIllegalLineups)
+  if (off.length === 0) return []
+  const rows = await pageByLeague<{ id: string; league_id: string; team_id: string; player_id: string; players: unknown }>(
+    leagues.map((l) => l.leagueId),
+    'legality plants: roster read',
+    (part, from, to) =>
+      service
+        .from('league_rosters')
+        .select('id, league_id, team_id, player_id, players!inner(position, adp, status)', { count: 'exact' })
+        .in('league_id', part)
+        .order('id')
+        .range(from, to) as never,
+  )
+  const rosters = rows.map((r) => {
+    const p = r.players as { position: string; adp: number | null; status: string | null }
+    const raw = String(p.position).toUpperCase()
+    return { leagueId: r.league_id, teamId: r.team_id, playerId: r.player_id, position: raw === 'DEF' ? 'DST' : raw, adp: p.adp === null ? null : Number(p.adp), status: p.status }
+  })
+  const shaped = []
+  for (const l of leagues) {
+    if (l.allowIllegalLineups) {
+      shaped.push({ label: l.label, leagueId: l.leagueId, allowIllegalLineups: true, managedTeams: new Set<string>(), offSeats: l.autopilotOff })
+      continue
+    }
+    const { managerByTeam } = await readSeatManagers(service, l, 'legality plants')
+    shaped.push({ label: l.label, leagueId: l.leagueId, allowIllegalLineups: false, managedTeams: new Set(managerByTeam.keys()), offSeats: l.autopilotOff })
+  }
+  const plants = chooseLegalityPlants({ leagues: shaped, rosters, bridged })
+  await plantDesignations(service, plants.map((pl) => pl.playerId))
+  log(
+    `SIM WORLD (R1266): ${plants.length} synthetic '${SIM_PLANTED_STATUS}' planted over ${off.length} OFF league(s) — ` +
+      (plants.map((pl) => `${pl.leagueLabel} team ${pl.teamId.slice(0, 8)} ${pl.position} ${pl.playerId} (${pl.offHolders} OFF seat(s) hold him, each with a healthy teammate there)`).join(' · ') || 'none'),
+  )
+  return plants
+}
+
 export interface SeatCandidate {
   id: string
   /** The roster vocabulary (DEF is normalised to DST by the caller). */
@@ -4132,7 +4279,8 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
   if (off.length > 0) {
     lines.push(
       `LEGALITY ARM (allow_illegal_lineups = false): ${off.length} league(s) — ` +
-        off.map((l) => `${l.leagueLabel} ${l.lineupsSeated}/${l.teamCount} lineups seated, ${l.lineupsRefused} refused`).join(' · '),
+        off.map((l) => `${l.leagueLabel} ${l.lineupsSeated}/${l.teamCount} lineups seated, ${l.lineupsRefused} refused, ${l.benchedForLegality} passed over for §7.3.6`).join(' · ') +
+        ` · plants (R1266): ${report.legalityPlants.length}`,
     )
   }
   lines.push(`WORKER ERRORS: ${report.workerErrors.length}`)

@@ -12,13 +12,17 @@ import { resolveAlias, sharedExclude } from './vitest.shared'
  * test file ADDED during M5 that still exists — the band is
  * `git log --diff-filter=A 684861e..HEAD` (684861e = the M5 breakdown),
  * less L.E1.27's `per-week-rules-db` (M6A, in flight beside it) and less
- * `waiver-claim-edit.test.ts` (added at L.D2.12, removed since) — 32 files;
- * plus (b) THREE named pre-existing suites M5 changed underneath:
- * `roster-add-drop-db` (L.D2.7 re-cut the add path to the waiver schedule),
- * `transactions-api-db` (the activity read the claim / trade rows land in)
- * and `season-sweep-db` (the sim sweep L.D3.8 and L.D3.10 re-ordered and
- * paged). Nothing else: the M4 → M0 suites ride `test:gate:m4`, the whole
- * pgTAP surface (093–107) rides `test:db`.
+ * `waiver-claim-edit.test.ts` (added at L.D2.12, removed since) —
+ * counting L.D3.10's own `sim-world-db` (R1267) and `legality-plants` (R1266) — 34 files; plus (b) THREE named
+ * pre-existing suites M5 changed underneath: `roster-add-drop-db` (L.D2.7
+ * re-cut the add path to the waiver schedule), `transactions-api-db` (the
+ * activity read the claim / trade rows land in) and `season-sweep-db` (the
+ * season INVARIANT sweep over a stack fixture — `collectSeasonAudit` /
+ * `sweepSeasonAudit`, which L.D3.8's corrected invariant 4 changed. It does
+ * NOT call the sim's `cleanupSweep`; R1267 corrected this line, which said it
+ * did. The cleanup sweep's mask / plant / restore and its paged detach are
+ * pinned by `sim-world-db`). Nothing else: the M4 → M0 suites ride
+ * `test:gate:m4`, the whole pgTAP surface (093–107) rides `test:db`.
  *
  * ── Exit criterion 2 — the FAAB tiebreak properties + parity (3) ────────
  *   resolve-waiver-run · resolve-waiver-run-property — the L.D2.8 reference
@@ -34,10 +38,13 @@ import { resolveAlias, sharedExclude } from './vitest.shared'
  *   · trades-service · waiver-schedule · waiver-window-view
  *   · player-points-store · the six route files · use-waiver-hooks
  *   · use-trade-hooks
- * ── UI (4) + the sim's transaction invariants (1) ───────────────────────
+ * ── UI (4) + the sim's transaction invariants and its world (3) ────────
  *   waiver-claims-ops · waivers-ui.render · trades-ops · trades-ui.render
- *   · transaction-invariants
- * TOTAL: 35 files.
+ *   · transaction-invariants · sim-world-db (the shared pool's mask / plant /
+ *     restore round trip, the >1000-team paged detach, R1270's sweep-on-throw)
+ *   · legality-plants (R1266: the sim's own §7.3.6 designations never
+ *     re-create F374)
+ * TOTAL: 37 files.
  *
  * Nothing here needs the RESTORED player pool (the golden creates the players
  * its recording needs and deletes exactly those — D422), so the whole config
@@ -85,12 +92,14 @@ export default defineConfig({
       'src/app/api/leagues/[id]/commish/trade/route.test.ts',
       'src/hooks/use-waiver-hooks.test.ts',
       'src/hooks/use-trade-hooks.test.ts',
-      // UI (4) + the sim's transaction invariants (1)
+      // UI (4) + the sim's transaction invariants and its world (3)
       'src/components/leagues/waiver-claims-ops.test.ts',
       'src/components/leagues/waivers-ui.render.test.ts',
       'src/components/leagues/trades-ops.test.ts',
       'src/components/leagues/trades-ui.render.test.ts',
       'src/lib/leagues/sim/transaction-invariants.test.ts',
+      'src/lib/leagues/sim/sim-world-db.test.ts',
+      'src/lib/leagues/sim/legality-plants.test.ts',
       // named pre-existing suites M5 changed underneath (3)
       'src/lib/leagues/api/roster-add-drop-db.test.ts',
       'src/lib/leagues/api/transactions-api-db.test.ts',

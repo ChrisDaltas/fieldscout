@@ -81,6 +81,12 @@ function transact(path: string): void {
     p.privacyHiddenPairs > 0 && p.privacyOwnVisible > 0 && p.privacyLostClaims > 0,
     `T4 claim-privacy population ${p.privacyHiddenPairs} hidden / ${p.privacyOwnVisible} own / ${p.privacyLostClaims} lost`,
   )
+  const off = r.leagues.filter((l) => !l.allowIllegalLineups)
+  check(off.length > 0, `${off.length} allow_illegal_lineups = false league(s) in the matrix`)
+  check(
+    off.length > 0 && off.every((l) => l.benchedForLegality > 0),
+    `every OFF league passed over >= 1 player for §7.3.6 (R1266): ${off.map((l) => `${l.leagueLabel} ${l.benchedForLegality}`).join(' · ')}`,
+  )
   check(r.externalCalls === 0, `external calls ${r.externalCalls}`)
   check(r.provenance.foreign === 0, `foreign stat rows ${r.provenance.foreign}`)
   check(!r.problems.some((l) => l.startsWith('TRANSACTION PREMISE')), 'no TRANSACTION PREMISE line')

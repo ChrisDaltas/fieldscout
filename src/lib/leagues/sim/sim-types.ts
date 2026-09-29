@@ -484,6 +484,8 @@ export interface SeasonRunReport {
    * override the run injected on a final cell, or null. null with a finalized
    * week is a run PROBLEM (the arm asserted nothing).
    */
+  /** R1266 (D423(10)): the synthetic §7.3.6 designations the run planted. */
+  legalityPlants: Array<{ leagueLabel: string; teamId: string; playerId: string; position: string; offHolders: number }>
   lawfulOverride: {
     leagueLabel: string
     leagueId: string
