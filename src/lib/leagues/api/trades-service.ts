@@ -737,3 +737,161 @@ export async function readTrades(
   }
   return { status: 200, body: doc as unknown as Json }
 }
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — the trade deadline and the legality preview (migration 162;
+// PROGRESS D426, F452, F462). Chris 2026-09-29: "there is no such thing as
+// trade that isn't legal" — the trade screen PREVENTS an offer the league
+// would refuse, so it asks the database BEFORE the manager sends / accepts.
+//
+//   GET  /api/leagues/[id]/trades/deadline   → trade_deadline (162)
+//   POST /api/leagues/[id]/trades/preview    → trade_preview  (162)
+//
+// Both are READS over the verbs' own internals (`trade_deadline_internal`,
+// `trade_check_internal`) — nothing about legality is decided here. Deploy
+// before push: until 162 is pushed both functions are missing, and the named
+// 503 below tells the screen to fall back to send-and-see (D419's shape).
+// ---------------------------------------------------------------------------
+
+/** 162's two doors — a missing one means "not pushed yet", never a crash. */
+export const TRADE_CHECK_OBJECTS = ['trade_deadline', 'trade_preview'] as const
+
+/** The deploy-before-push answer for the two reads (503). */
+export const TRADE_CHECKS_UNAVAILABLE_MESSAGE =
+  'The trade deadline and the offer check aren’t available yet — the league database hasn’t been updated. Offers are still checked when you send them.'
+
+/** 162's one no-leak 42501 for both reads: no league / a deleted league /
+ *  not a member. */
+export const TRADE_CHECKS_FORBIDDEN_MESSAGE = 'Only members of this league can see its trade deadline and check offers.'
+
+/** `trade_deadline` (162) — 151's deadline document plus `passed` at the
+ *  database's now() (the clock the verbs refuse by). */
+export interface TradeDeadlineView {
+  league_id: string
+  /** `trade_deadline_week` — null = no deadline. */
+  deadline_week: number | null
+  /** Week N+1's start; null = no deadline, or it falls after the calendar. */
+  deadline_at: string | null
+  why: 'no_deadline' | 'after_last_calendar_week' | 'next_week_starts'
+  /** The instant in the league's zone, the verbs' own label. */
+  label: string | null
+  passed: boolean
+  ms_remaining: number | null
+  evaluated_at: string
+}
+
+/** One side's roster after the trade — `trade_check_internal`'s facts. */
+export interface TradeRosterFacts {
+  team_id: string
+  count_before: number
+  players_out: number
+  players_in: number
+  drops: number
+  count_after: number
+  roster_size: number
+  /** How many MORE players this team must drop (E36) — 0 = it fits. */
+  must_drop: number
+  /** Whether the verb would enforce this side now (the receiving team's side
+   *  of an offer is only reported — it names its drops when it accepts). */
+  enforced: boolean
+}
+
+/** `trade_preview` (162). */
+export interface TradePreview {
+  mode: 'offer' | 'accept'
+  league_id: string
+  trade_id: string | null
+  proposer_team_id: string
+  recipient_team_id: string
+  /** The verb would take it as it stands. */
+  ok: boolean
+  league_status: string
+  in_season: boolean
+  deadline: TradeDeadlineView
+  /** The first refusal the validator would raise (its own sentence). */
+  refusal: string | null
+  rosters: { proposer: TradeRosterFacts; recipient: TradeRosterFacts } | null
+  evaluated_at: string
+}
+
+/** Each door's parameters as 162 defines them — what this file sends. */
+export const TRADE_CHECK_DOORS: Readonly<Record<string, readonly string[]>> = {
+  trade_deadline: ['p_league_id'],
+  trade_preview: ['p_league_id', 'p_trade_id', 'p_from_team_id', 'p_to_team_id', 'p_items', 'p_drops'],
+}
+
+/**
+ * R1282: true ONLY when the database has no such door — 162 not pushed yet —
+ * never for a call the door exists for but does not match (argument drift).
+ * PostgREST answers both with PGRST202 (measured on the local stack
+ * 2026-09-29), so a PGRST202 counts as "not pushed" only when (a) its hint
+ * does not offer the SAME function under another signature ("Perhaps you
+ * meant to call the function public.trade_deadline(p_league_id)" — the door
+ * is there) and (b) every argument it names is one of the door's own (a
+ * `p_bogus` means the CALL drifted — the hint is not always given, measured:
+ * `trade_preview(p_bogus, p_league_id)` came back with `hint: null`).
+ * Anything else is a loud 500, never the quiet fallback.
+ */
+export function isDoorNotPushed(
+  error: (RpcErrorLike & { hint?: string | null }) | null | undefined,
+  doors: Readonly<Record<string, readonly string[]>> = TRADE_CHECK_DOORS,
+): boolean {
+  if (!error) return false
+  for (const [name, params] of Object.entries(doors)) {
+    if (!isMissingSchemaObject(error, [name])) continue
+    if (error.code !== 'PGRST202') return true
+    if ((error.hint ?? '').includes(`public.${name}(`)) return false
+    const args = new RegExp(`public\\.${escapeRegExp(name)}\\(([^)]*)\\)`).exec(error.message ?? '')
+    const named = (args?.[1] ?? '').split(',').map((a) => a.trim()).filter(Boolean)
+    return named.every((a) => params.includes(a))
+  }
+  return false
+}
+
+function checksFailure(error: RpcErrorLike & { hint?: string | null }): ServiceResult {
+  if (isDoorNotPushed(error)) {
+    return { status: 503, body: { error: TRADE_CHECKS_UNAVAILABLE_MESSAGE } }
+  }
+  return mapInSeasonRpcError(error, TRADE_CHECKS_FORBIDDEN_MESSAGE)
+}
+
+export async function readTradeDeadline(supabase: Supabase, leagueId: string): Promise<ServiceResult> {
+  const { data, error } = await supabase.rpc('trade_deadline', { p_league_id: leagueId })
+  if (error) return checksFailure(error)
+  if (data === null || typeof data !== 'object') {
+    return { status: 500, body: { error: 'trade_deadline: the database answered no deadline document' } }
+  }
+  return { status: 200, body: data as unknown as Json }
+}
+
+/** The preview's two arms (162): ACCEPT names the offer only (its legs are
+ *  the stored ones) plus the receiving team's drops; OFFER names both teams,
+ *  the legs and the offering team's drops. */
+export const tradePreviewInputSchema = z.union([
+  z.strictObject({ trade_id: normalizedUuid, drops: drops.optional() }),
+  z
+    .strictObject({ from_team_id: normalizedUuid, to_team_id: normalizedUuid, items: legs, drops: drops.optional() })
+    .refine((body) => body.from_team_id !== body.to_team_id, {
+      message: 'A trade is between two different teams.',
+      path: ['to_team_id'],
+    }),
+])
+export type TradePreviewInput = z.infer<typeof tradePreviewInputSchema>
+
+export async function previewTrade(supabase: Supabase, leagueId: string, rawBody: unknown): Promise<ServiceResult> {
+  const parsed = tradePreviewInputSchema.safeParse(rawBody)
+  if (!parsed.success) return badRequest(parsed.error)
+  const body = parsed.data
+  const dropsArg = body.drops && body.drops.length > 0 ? { p_drops: body.drops } : {}
+  const { data, error } = await supabase.rpc(
+    'trade_preview',
+    'trade_id' in body
+      ? { p_league_id: leagueId, p_trade_id: body.trade_id, ...dropsArg }
+      : { p_league_id: leagueId, p_from_team_id: body.from_team_id, p_to_team_id: body.to_team_id, p_items: body.items as unknown as Json, ...dropsArg },
+  )
+  if (error) return checksFailure(error)
+  if (data === null || typeof data !== 'object') {
+    return { status: 500, body: { error: 'trade_preview: the database answered no preview document' } }
+  }
+  return { status: 200, body: data as unknown as Json }
+}

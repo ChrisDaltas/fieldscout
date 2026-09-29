@@ -15,7 +15,10 @@
  *                         403; the OTHER party asking for the wrong move is a
  *                         409 by name; a party voting is a 409 by name.
  *
- * Plus the deploy-before-push predicate against PostgREST's REAL answer for a
+ * L.D3.12 (migration 162): the deadline read and the legality preview — a
+ * member reads / previews, a non-member is the no-leak 403, nothing written.
+ *
+ * Plus the deploy-before-push predicate against PostgREST’s REAL answer for a
  * missing table / function (the hosted database is at 134; trades are 148+).
  *
  * Requires the local stack (D59(5)); FAILS loudly when it is down, and
@@ -41,7 +44,14 @@ import {
   TRADE_PROPOSE_FORBIDDEN_MESSAGE,
   TRADE_RESPOND_FORBIDDEN_MESSAGE,
   TRADE_VOTE_FORBIDDEN_MESSAGE,
+  TRADE_CHECKS_FORBIDDEN_MESSAGE,
+  TRADE_CHECK_OBJECTS,
+  previewTrade,
+  readTradeDeadline,
+  type TradeDeadlineView,
+  type TradePreview,
   actOnTrade,
+  isDoorNotPushed,
   isMissingSchemaObject,
   proposeTrade,
   readTrades,
@@ -534,5 +544,80 @@ describe('deploy before push — PostgREST’s REAL answer for a missing object'
     const fn = await managerAClient.rpc('trade_l_d3_6_probe' as never, { p_league_id: leagueId } as never)
     expect(fn.error?.code).toBe('PGRST202')
     expect(isMissingSchemaObject(fn.error, ['trade_l_d3_6_probe'])).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — migration 162's two reads over the real wire (PROGRESS D426)
+// ---------------------------------------------------------------------------
+
+describe('GET …/trades/deadline + POST …/trades/preview — 162 over the real wire', () => {
+  it('a member reads the deadline instant (week N+1’s start in the calendar), not passed in 2099; a non-member is the no-leak 403', async () => {
+    const { data: league } = await service.from('leagues').select('trade_deadline_week, season').eq('id', leagueId).single()
+    const week = league!.trade_deadline_week!
+    const { data: next } = await service.from('nfl_weeks').select('starts_at').eq('season', league!.season).eq('week', week + 1).single()
+    const res = await readTradeDeadline(managerAClient, leagueId)
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const view = res.body as unknown as TradeDeadlineView
+    expect([view.deadline_week, Date.parse(view.deadline_at!), view.why, view.passed]).toStrictEqual([week, Date.parse(next!.starts_at), 'next_week_starts', false])
+    expect(await readTradeDeadline(outsiderClient, leagueId)).toStrictEqual({ status: 403, body: { error: TRADE_CHECKS_FORBIDDEN_MESSAGE } })
+  })
+
+  it('a member previews an offer — the rosters’ facts from the verbs’ own validator; a leg naming another team’s player is the validator’s sentence; nothing is written', async () => {
+    const { data: rows } = await service.from('league_rosters').select('team_id, player_id').eq('league_id', leagueId).order('player_id')
+    const mine = rows!.find((r) => r.team_id === teamAId)!.player_id
+    const theirs = rows!.find((r) => r.team_id === teamCId)!.player_id
+    const before = await service.from('trades').select('id', { count: 'exact', head: true }).eq('league_id', leagueId)
+
+    const ok = await previewTrade(managerAClient, leagueId, {
+      from_team_id: teamAId,
+      to_team_id: teamCId,
+      items: [
+        { player_id: mine, from_team_id: teamAId },
+        { player_id: theirs, from_team_id: teamCId },
+      ],
+    })
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200)
+    const p = ok.body as unknown as TradePreview
+    expect([p.mode, p.ok, p.refusal, p.rosters?.proposer.must_drop, p.rosters?.recipient.enforced]).toStrictEqual(['offer', true, null, 0, false])
+
+    const wrong = await previewTrade(managerAClient, leagueId, {
+      from_team_id: teamAId,
+      to_team_id: teamBId,
+      items: [
+        { player_id: mine, from_team_id: teamAId },
+        { player_id: theirs, from_team_id: teamBId },
+      ],
+    })
+    expect(wrong.status).toBe(200)
+    expect((wrong.body as unknown as TradePreview).refusal).toMatch(/^trade_preview: .+ is on TAPI Manager C Team's roster, not TAPI Manager B Team's — a trade can only move a player from the team that has him/)
+    expect(await previewTrade(outsiderClient, leagueId, { from_team_id: teamAId, to_team_id: teamCId, items: [{ player_id: mine, from_team_id: teamAId }] })).toStrictEqual({
+      status: 403,
+      body: { error: TRADE_CHECKS_FORBIDDEN_MESSAGE },
+    })
+    const after = await service.from('trades').select('id', { count: 'exact', head: true }).eq('league_id', leagueId)
+    expect(after.count).toBe(before.count)
+  })
+
+  it('the named-503 predicate recognises PostgREST’s REAL answer for a door this database does not have (the pre-162 shape)', async () => {
+    const { error } = await (managerAClient.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ error: { code?: string; message: string } | null }>)(
+      'trade_preview_not_pushed',
+      { p_league_id: leagueId },
+    )
+    expect(error?.code).toBe('PGRST202')
+    expect(error?.message).toBe('Could not find the function public.trade_preview_not_pushed(p_league_id) in the schema cache')
+    expect(isMissingSchemaObject(error, ['trade_preview_not_pushed'])).toBe(true)
+    expect(isMissingSchemaObject(error, TRADE_CHECK_OBJECTS)).toBe(false)
+    expect(isDoorNotPushed(error, { trade_preview_not_pushed: ['p_league_id'] })).toBe(true)
+  })
+
+  it('R1282: a DRIFTED call to a door that exists is never read as "not pushed" (PostgREST’s real answers, with and without a hint)', async () => {
+    const call = managerAClient.rpc.bind(managerAClient) as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ error: { code?: string; message: string; hint?: string | null } | null }>
+    const drift1 = (await call('trade_deadline', { p_bogus: 1 })).error
+    const drift2 = (await call('trade_preview', { p_league_id: leagueId, p_bogus: 1 })).error
+    expect([drift1?.code, drift2?.code]).toStrictEqual(['PGRST202', 'PGRST202'])
+    expect(isMissingSchemaObject(drift1, TRADE_CHECK_OBJECTS)).toBe(true) // the old, too-wide test said "not pushed"
+    expect(isDoorNotPushed(drift1)).toBe(false)
+    expect(isDoorNotPushed(drift2)).toBe(false)
   })
 })

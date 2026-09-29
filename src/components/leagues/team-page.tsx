@@ -15,6 +15,7 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLineup } from '@/hooks/use-lineup'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSchedule } from '@/hooks/use-schedule'
+import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@/lib/leagues/api/inseason-reads'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
@@ -147,6 +148,10 @@ function TeamPageContent({
   // L.D5.4). F252(c): no lineup read for a week the ladder has not named yet.
   const rosters = useRostersLive(leagueId)
   const lineup = useLineup(teamId, schedule.data ? week : undefined)
+  // L.D3.12 (Q76 / Chris 2026-09-29): no Propose trade door past the trade
+  // deadline — the server's `passed` (162); loading / before 162 keeps it.
+  const tradeDeadline = useTradeDeadline(leagueId)
+  const tradesClosed = tradeDeadlinePassed(tradeDeadline.data)
 
   const rosterTeam = rosters.data?.teams.find((t) => t.team_id === teamId) ?? null
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
@@ -223,7 +228,7 @@ function TeamPageContent({
             {currentWeek !== null && week === currentWeek && <Badge variant="green">Current week</Badge>}
             {/* L.D3.7 (§16.5.2 "team page → propose"): another team's page
                 opens the trade builder toward it; the server decides. */}
-            {myTeamId && !isOwnTeam && rosterTeam?.status !== 'retired' && (
+            {myTeamId && !isOwnTeam && rosterTeam?.status !== 'retired' && !tradesClosed && (
               <Button variant="stroke" size="sm" asChild>
                 <Link href={tradesHref(leagueId, { teamId })} data-propose-trade>
                   <Icon name="transfer" size={13} />

@@ -261,6 +261,17 @@ describe('PoolTable â€” the rostered scope: Drop for mine (disabled by the viewâ
     expect(theirs).toContain(ROSTERED_ELSEWHERE_TITLE)
     expect(theirs).not.toMatch(/later update/)
   })
+  it('L.D3.12: past the trade deadline (the server said so) there is no Trade door on their player', () => {
+    const closed = unescapeHtml(
+      renderToStaticMarkup(
+        createElement(PoolTable, { leagueId: LEAGUE, rows: rostered, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, tradesClosed: true, onAdd: () => {}, onDrop: () => {} }),
+      ),
+    )
+    const row = closed.slice(closed.indexOf('data-pool-row="theirs"'), closed.indexOf('</tr>', closed.indexOf('data-pool-row="theirs"')))
+    expect(row).toContain('Their Team')
+    expect(row).not.toContain('data-action="trade"')
+    expect(closed).toContain('data-action="drop"')
+  })
   it('empty by reason: no free agents vs no match', () => {
     const none = (scope: 'free_agents' | 'rostered', hadSearch: boolean) =>
       unescapeHtml(renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: [], scope, hadSearch, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })))

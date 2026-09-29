@@ -28,6 +28,7 @@ import { leaguesKeys } from '@/hooks/use-leagues'
 import { teamLineupKeys, useLineup, useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import { leagueRosterKeys, useRostersLive } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
+import { tradeDeadlineKeys, type TradeDeadlineState } from '@/hooks/use-trade-deadline'
 import type { LeagueDetail } from '@/hooks/use-league'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -171,6 +172,8 @@ interface Seed {
   rosters?: LeagueRosters | 'error' | 'degraded' | 'missing'
   schedule?: LeagueSchedule | 'missing'
   lineup?: TeamLineupRow | null | 'missing' | 'error'
+  /** L.D3.12: the trade deadline read (162) — unseeded = still loading. */
+  deadline?: TradeDeadlineState
 }
 
 function failQuery(client: QueryClient, queryKey: readonly unknown[], error: Error, data?: unknown) {
@@ -198,6 +201,7 @@ function renderTeamPage(seed: Seed = {}): string {
   const l = seed.lineup === undefined ? lineupRow : seed.lineup
   if (l === 'error') failQuery(client, teamLineupKeys.week(TEAM, 1), new Error('team_lineups: boom'))
   else if (l !== 'missing') client.setQueryData(teamLineupKeys.week(TEAM, 1), l)
+  if (seed.deadline) client.setQueryData(tradeDeadlineKeys.all(LEAGUE), seed.deadline)
   return unescapeHtml(
     renderToStaticMarkup(
       createElement(QueryClientProvider, { client }, createElement(TeamPage, { leagueId: LEAGUE, teamId: TEAM })),
@@ -929,5 +933,36 @@ describe('L.D2.13 — the FAAB balance on the team page; a dropped-but-played st
     expect(past).toContain('data-kept-starter')
     expect(past).toContain(KEPT_STARTER_OTHER_WEEK_COPY)
     expect(past).not.toContain(KEPT_STARTER_COPY)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — no Propose trade door past the trade deadline (Q76; Chris
+// 2026-09-29: "you can't propose trades past the trade deadline")
+// ---------------------------------------------------------------------------
+
+describe('the Propose trade door and the trade deadline (L.D3.12)', () => {
+  /** The viewer manages team-2 and is looking at TEAM — another team's page. */
+  const elsewhere = { ...detail, members: detail.members.map((m) => (m.user_id === 'user-manager' ? { ...m, team_id: 'team-2' } : { ...m, team_id: TEAM })) }
+  const view = (passed: boolean): TradeDeadlineState => ({
+    state: 'known',
+    view: {
+      league_id: LEAGUE,
+      deadline_week: 11,
+      deadline_at: '2099-11-18T05:00:00.000Z',
+      why: 'next_week_starts',
+      label: 'Wed 2099-11-18 00:00 America/New_York',
+      passed,
+      ms_remaining: passed ? null : 1000,
+      evaluated_at: '2099-11-18T04:59:59.000Z',
+    },
+  })
+  it('before the deadline, while it loads, and before 162 is pushed: the door is there', () => {
+    expect(renderTeamPage({ detail: elsewhere, deadline: view(false) })).toContain('data-propose-trade')
+    expect(renderTeamPage({ detail: elsewhere })).toContain('data-propose-trade')
+    expect(renderTeamPage({ detail: elsewhere, deadline: { state: 'unavailable', reason: 'not pushed' } })).toContain('data-propose-trade')
+  })
+  it('past it (the server said so): no door', () => {
+    expect(renderTeamPage({ detail: elsewhere, deadline: view(true) })).not.toContain('data-propose-trade')
   })
 })

@@ -13,17 +13,29 @@
  *     now (`evaluated_at`) — printed as "about N left", never ticked;
  *   - "voting open" is the TALLY's own `closes_at` against the TALLY's own
  *     `evaluated_at` — one clock (R1236), never the review countdown's;
- *   - the trade deadline is the stored WEEK only (F452 — the instant has no
- *     read door; a refused propose / accept names it verbatim);
- *   - there is no legality preview route (no door to `trade_check_internal`),
- *     so the builder sends the offer and, when the server says a roster would
- *     overflow, reads the NUMBER of drops out of that sentence and prompts
- *     for them (`dropsNeeded`) — the refusal itself renders verbatim.
+ *   - the trade deadline is the server's instant and its `passed` (L.D3.12,
+ *     migration 162's `trade_deadline` — F452); before 162 is pushed, the
+ *     stored WEEK only, and a refused propose / accept names it verbatim;
+ *   - the legality preview is migration 162's `trade_preview` (F462) — the
+ *     verbs' own `trade_check_internal`, asked before Send / Accept, so an
+ *     offer the league would refuse cannot be built (`builderGate`,
+ *     `acceptGate`). Before 162 the builder sends the offer and, when the
+ *     server says a roster would overflow, reads the NUMBER of drops out of
+ *     that sentence and prompts for them (`dropsNeeded`) — the refusal
+ *     itself renders verbatim, and still does as the backstop.
  *
  * Plain fantasy-football words throughout (Chris's rule): "offer", "turned
  * down", "called off", "goes through" — never a status enum on screen.
  */
-import type { CommishTradeOp, CommishTradeResult, TradeView, TradeVoteTally, TradesDocument } from '@/lib/leagues/api/trades-service'
+import type { TradePreviewState } from '@/hooks/use-trade-preview'
+import type {
+  CommishTradeOp,
+  CommishTradeResult,
+  TradeDeadlineView,
+  TradeView,
+  TradeVoteTally,
+  TradesDocument,
+} from '@/lib/leagues/api/trades-service'
 
 // ---------------------------------------------------------------------------
 // Where the trade center lives
@@ -55,9 +67,9 @@ export const NOT_IN_SEASON_TRADE_COPY = 'Trades open once the season starts — 
 export const COMMISH_TRADE_MODE_COPY = 'Force a trade through now, veto one that’s waiting, or reverse a completed one — each is logged for the whole league.'
 export const NEVER_WHO_VOTED_COPY = 'Votes are secret — the league sees the count, never who voted.'
 
-/** F452: the deadline as its WEEK (the instant is not readable by the app —
- *  the verb's refusal names it). Q76: deadline week N ⇒ offers can be made
- *  and accepted until week N+1 begins. */
+/** The deadline as its WEEK — the words when the instant is not readable yet
+ *  (before migration 162 is pushed, D426; F452's first answer). Q76:
+ *  deadline week N ⇒ offers can be made and accepted until week N+1 begins. */
 export function tradeDeadlineCopy(deadlineWeek: number | null): string {
   if (deadlineWeek === null) return 'No trade deadline — trades are allowed all season.'
   return `Trade deadline: Week ${deadlineWeek} — offers can be made and accepted until Week ${deadlineWeek + 1} begins.`
@@ -77,11 +89,214 @@ export function reviewModeCopy(settings: Pick<TradesDocument['settings'], 'trade
   }
 }
 
-/** What a 🔒 on a trade asset means under this league's rule (Q75 / E35). */
+/** What a 🔒 on a trade asset means under this league's rule (Q75 / E35) —
+ *  what WILL happen, never a ban: the lock is judged when the trade goes
+ *  through (151's executor), so a started player can always be offered
+ *  (R1283). */
 export function lockedAssetTitle(lockBehavior: string): string {
   return lockBehavior === 'reject'
-    ? 'His game has started this week — a trade with him is refused until the week’s last game ends.'
+    ? 'His game has started this week — this league won’t let a trade with him go through until the week’s games are over.'
     : 'His game has started this week — a trade with him waits and goes through right after the week’s last game ends.'
+}
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — prevent, don't refuse (Chris 2026-09-29: "there is no such thing
+// as trade that isn't legal"). The rules stay the server's: the deadline and
+// the legality preview are migration 162's reads (`trade_deadline`,
+// `trade_preview` over the verbs' own `trade_deadline_internal` /
+// `trade_check_internal`); these functions only turn their answers into
+// which buttons work and why — in plain words.
+// ---------------------------------------------------------------------------
+
+/** The deadline line from the SERVER's instant (F452). `view` null = not
+ *  readable yet (162 not pushed) → the week-only words. */
+export function tradeDeadlineLine(deadlineWeek: number | null, view: TradeDeadlineView | null, fmt: (iso: string) => string): string {
+  if (view === null) return tradeDeadlineCopy(deadlineWeek)
+  const week = view.deadline_week
+  if (week === null) return 'No trade deadline — trades are allowed all season.'
+  if (view.deadline_at === null) return `Trade deadline: Week ${week} — that’s the last week, so trades are allowed all season.`
+  if (view.passed) return `The trade deadline has passed — trades closed ${fmt(view.deadline_at)}, when Week ${week + 1} began.`
+  return `Trade deadline: ${fmt(view.deadline_at)}, when Week ${week + 1} begins — offers can be made and accepted until then.`
+}
+
+export const DEADLINE_PASSED_TITLE = 'Trades are closed for the season.'
+
+/** Past the deadline, where the Propose door used to be (§13.3 / Q76: the
+ *  commissioner's own roster tools still work, §15.4). */
+export function deadlinePassedCopy(view: TradeDeadlineView, fmt: (iso: string) => string): string {
+  const when = view.deadline_at ? ` on ${fmt(view.deadline_at)}` : ''
+  const week = view.deadline_week !== null ? `, when Week ${view.deadline_week + 1} began` : ''
+  return `The trade deadline passed${when}${week}. Offers can’t be made, accepted or countered now — the commissioner can still move players.`
+}
+
+/** Past the deadline, on an offer still waiting for an answer. */
+export function offerPastDeadlineCopy(view: TradeDeadlineView, fmt: (iso: string) => string): string {
+  const when = view.deadline_at ? ` on ${fmt(view.deadline_at)}` : ''
+  return `The trade deadline passed${when} — this offer can’t be accepted or countered now. It expires on its own; you can still turn it down.`
+}
+
+/** R1282: the check itself failed (not "not pushed yet") — said plainly,
+ *  distinct from the before-162 line; the league still checks on send. */
+export const PREVIEW_FAILED_COPY = 'Couldn’t check this offer with the league just now — it will still be checked when you send it.'
+export const ACCEPT_CHECK_FAILED_COPY = 'Couldn’t check this trade with the league just now — it will still be checked when you accept.'
+
+/** A FAAB box above what the team has (the rosters read's balance — the
+ *  preview rechecks it, §13.3). */
+export function faabOverBalance(amount: number | null, balance: number | null): boolean {
+  return amount !== null && !Number.isNaN(amount) && balance !== null && amount > balance
+}
+
+export function faabOverCopy(teamName: string, balance: number): string {
+  return `${teamName} has $${balance} of FAAB — offer $${balance} or less.`
+}
+
+/** The server's refusal as a league member reads it: the raiser's `fn: `
+ *  prefix off (F116), then every builder citation (R1244). */
+export function previewRefusalCopy(refusal: string): string {
+  return plainRefusal(refusal.replace(/^[a-z0-9_]+: /, ''))
+}
+
+export const SEND_AND_SEE_COPY = 'The league checks both rosters, the deadline and any FAAB when you send — its answer is what you see.'
+export const PREVIEW_CHECKING_COPY = 'Checking the offer with the league…'
+export const PREVIEW_OK_COPY = 'Both rosters fit and the league will take this offer.'
+
+export interface BuilderGate {
+  /** Send is enabled. */
+  canSend: boolean
+  /** Why not — or what the league said — in words. */
+  reason: string
+  /** Drops the offering team still has to pick (E36), from the league's answer. */
+  mustDrop: number
+  /** The receiving team would be over by this many — it picks them when it accepts. */
+  recipientMustDrop: number
+  /** The league checked this offer (162) — false = send-and-see (before 162,
+   *  or the check failed). */
+  checked: boolean
+  /** R1282: the check failed — shown as such, never as "not updated yet". */
+  failed?: boolean
+}
+
+/**
+ * The builder's Send gate (L.D3.12). `problem` / `faabProblem` are the
+ * builder's own advice (nothing picked, FAAB over what the team has); the
+ * rest is the league's answer. Before 162 (`unavailable`) Send works exactly
+ * as it did — the verb's refusal is the answer (D419).
+ */
+export function builderGate(input: {
+  problem: string | null
+  faabProblem: string | null
+  preview: TradePreviewState
+  /** "your roster" for the viewer's own team, else the team's name. */
+  fromWords: string
+  toName: string
+}): BuilderGate {
+  const none = { mustDrop: 0, recipientMustDrop: 0 }
+  if (input.problem) return { canSend: false, reason: input.problem, checked: false, ...none }
+  if (input.faabProblem) return { canSend: false, reason: input.faabProblem, checked: false, ...none }
+  const p = input.preview
+  if (p.state === 'unavailable' || p.state === 'off') return { canSend: p.state === 'unavailable', reason: SEND_AND_SEE_COPY, checked: false, ...none }
+  if (p.state === 'failed') return { canSend: true, reason: PREVIEW_FAILED_COPY, checked: false, failed: true, ...none }
+  const answer = p.state === 'ready' ? p.preview : p.last
+  const counts = {
+    mustDrop: answer?.rosters?.proposer.must_drop ?? 0,
+    recipientMustDrop: answer?.rosters?.recipient.must_drop ?? 0,
+  }
+  if (p.state === 'checking') return { canSend: false, reason: PREVIEW_CHECKING_COPY, checked: true, ...counts }
+  const v = p.preview
+  if (!v.in_season) return { canSend: false, reason: NOT_IN_SEASON_TRADE_COPY, checked: true, ...counts }
+  if (v.deadline.passed) return { canSend: false, reason: 'The trade deadline has passed — offers can’t be made now.', checked: true, ...counts }
+  if (v.refusal) return { canSend: false, reason: previewRefusalCopy(v.refusal), checked: true, ...counts }
+  if (counts.mustDrop > 0) {
+    return { canSend: false, reason: `Pick ${counts.mustDrop} more player${counts.mustDrop === 1 ? '' : 's'} to drop so ${input.fromWords} fits.`, checked: true, ...counts }
+  }
+  if (!v.ok) return { canSend: false, reason: 'The league wouldn’t take this offer as it stands.', checked: true, ...counts }
+  const theirs =
+    counts.recipientMustDrop > 0
+      ? ` ${input.toName} would be ${counts.recipientMustDrop} over, so they’ll pick ${counts.recipientMustDrop === 1 ? 'a player' : `${counts.recipientMustDrop} players`} to drop when they accept.`
+      : ''
+  return { canSend: true, reason: `${PREVIEW_OK_COPY}${theirs}`, checked: true, ...counts }
+}
+
+/** "your roster" / "Andy One's roster" — who the drops are for. */
+export function rosterWords(teamName: string | null, own: boolean): string {
+  return own ? 'your roster' : `${teamName ?? 'the team'}’s roster`
+}
+
+/** The drop picker's prompt when the league says drops are needed. */
+export function dropsNeededCopy(more: number, words: string): string {
+  return `${capitalize(words)} would be over its size — pick ${more} more player${more === 1 ? '' : 's'} to drop. ${more === 1 ? 'He is' : 'They are'} dropped only if the trade goes through.`
+}
+
+export type AcceptGateState = 'fallback' | 'failed' | 'checking' | 'ready' | 'needs_drops' | 'blocked'
+
+export interface AcceptGate {
+  state: AcceptGateState
+  /** Drops the receiving team still has to pick. */
+  mustDrop: number
+  /** Why Accept is off (blocked / checking), in words. */
+  reason: string | null
+  /** Blocked because the deadline passed — Counter is off too. */
+  pastDeadline: boolean
+}
+
+/**
+ * The Accept gate on an offer (L.D3.12). The receiving manager (or the
+ * commissioner answering for him) picks the drops his roster needs AS PART
+ * of accepting — the picker is there before he presses anything, never a
+ * reaction to a refusal.
+ *
+ *   - past the deadline (the server's `passed`) → blocked, Counter too;
+ *   - `reject` league + a player in the offer already played this week +
+ *     review `none` (the accept would run the trade at once, and it would
+ *     fail by name — Q75 / E35) → blocked until the week's games are over;
+ *   - the league's answer: out of season / a refusal / the OFFERING team no
+ *     longer fits (F414 — only it can fix that) → blocked; the receiving
+ *     team over its size → needs_drops (K); otherwise ready.
+ *   - before 162 (`unavailable`) → fallback: today's Accept / Accept with
+ *     drops, the verb's refusal as the answer (D419); the check itself
+ *     failing → `failed`: the same buttons, and the card says so (R1282).
+ */
+export function acceptGate(input: {
+  preview: TradePreviewState
+  deadline: TradeDeadlineView | null
+  lockBehavior: string
+  review: string
+  lockedNames: readonly string[]
+  proposerName: string
+  fmt: (iso: string) => string
+}): AcceptGate {
+  const deadline = input.deadline?.passed ? input.deadline : input.preview.state === 'ready' && input.preview.preview.deadline.passed ? input.preview.preview.deadline : null
+  if (deadline) return { state: 'blocked', mustDrop: 0, reason: offerPastDeadlineCopy(deadline, input.fmt), pastDeadline: true }
+  if (input.lockBehavior === 'reject' && input.review === 'none' && input.lockedNames.length > 0) {
+    const who = input.lockedNames.join(', ')
+    return {
+      state: 'blocked',
+      mustDrop: 0,
+      reason: `${who} ${input.lockedNames.length === 1 ? 'has' : 'have'} already played this week — this league doesn’t let a trade go through until the week’s games are over. You can accept once they are.`,
+      pastDeadline: false,
+    }
+  }
+  const p = input.preview
+  if (p.state === 'unavailable' || p.state === 'off') return { state: 'fallback', mustDrop: 0, reason: null, pastDeadline: false }
+  // R1282: the check failed — the D419 buttons (the verb decides), said.
+  if (p.state === 'failed') return { state: 'failed', mustDrop: 0, reason: ACCEPT_CHECK_FAILED_COPY, pastDeadline: false }
+  const answer = p.state === 'ready' ? p.preview : p.last
+  const mustDrop = answer?.rosters?.recipient.must_drop ?? 0
+  if (p.state === 'checking') return { state: 'checking', mustDrop, reason: PREVIEW_CHECKING_COPY, pastDeadline: false }
+  const v = p.preview
+  if (!v.in_season) return { state: 'blocked', mustDrop: 0, reason: NOT_IN_SEASON_TRADE_COPY, pastDeadline: false }
+  if (v.refusal) return { state: 'blocked', mustDrop: 0, reason: previewRefusalCopy(v.refusal), pastDeadline: false }
+  if ((v.rosters?.proposer.must_drop ?? 0) > 0) {
+    return {
+      state: 'blocked',
+      mustDrop: 0,
+      reason: `This offer no longer fits ${input.proposerName}’s roster — they’ve added players since sending it. Ask them to call it off and send a new one.`,
+      pastDeadline: false,
+    }
+  }
+  if (mustDrop > 0) return { state: 'needs_drops', mustDrop, reason: null, pastDeadline: false }
+  if (!v.ok) return { state: 'blocked', mustDrop: 0, reason: 'The league wouldn’t take this trade as it stands.', pastDeadline: false }
+  return { state: 'ready', mustDrop: 0, reason: null, pastDeadline: false }
 }
 
 /** A server sentence with its trailing builder citation removed — "(§13.3 /

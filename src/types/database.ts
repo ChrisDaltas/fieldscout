@@ -6502,8 +6502,20 @@ export type Database = {
         }
         Returns: Json
       }
+      trade_deadline: { Args: { p_league_id: string }; Returns: Json }
       trade_deadline_internal: {
         Args: { p_league: Database["public"]["Tables"]["leagues"]["Row"] }
+        Returns: Json
+      }
+      trade_deadline_read_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: Json
+      }
+      trade_deadline_view_internal: {
+        Args: {
+          p_at: string
+          p_league: Database["public"]["Tables"]["leagues"]["Row"]
+        }
         Returns: Json
       }
       trade_execute_internal: {
@@ -6529,6 +6541,29 @@ export type Database = {
           p_type: string
         }
         Returns: string
+      }
+      trade_preview: {
+        Args: {
+          p_drops?: string[]
+          p_from_team_id?: string
+          p_items?: Json
+          p_league_id: string
+          p_to_team_id?: string
+          p_trade_id?: string
+        }
+        Returns: Json
+      }
+      trade_preview_internal: {
+        Args: {
+          p_at: string
+          p_drops: string[]
+          p_from_team_id: string
+          p_items: Json
+          p_league_id: string
+          p_to_team_id: string
+          p_trade_id: string
+        }
+        Returns: Json
       }
       trade_propose: {
         Args: {
