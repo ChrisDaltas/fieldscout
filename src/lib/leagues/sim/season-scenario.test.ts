@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest'
 
 import { weekBounds } from '@/lib/sync/ingest-week'
 import { finalLine, SyntheticStatsProvider } from '../stats/synthetic/synthetic-stats-provider'
-import { makeScenario, SCENARIO_LIBRARY_VERSION } from '../stats/synthetic/scenarios'
+import { DEFAULT_SEED, makeScenario, SCENARIO_LIBRARY_VERSION } from '../stats/synthetic/scenarios'
 import { SCENARIO_IDS } from '../stats/synthetic/scenario'
 
 import {
@@ -34,7 +34,9 @@ import {
   LIBRARY_WEEK_STARTS_AT,
   LIBRARY_WEEK_WINDOW_ENDS_AT,
   assertSlateInsideCore,
+  firstKickoffOf,
   NFL_CLUBS,
+  rewindowScenario,
   scenarioInstants,
   SIM_SEASON_GAME_PREFIX,
   slateClubs,
@@ -583,5 +585,31 @@ describe('uncoveredClubs — the refusal that keeps the slate honest', () => {
 
   it('de-duplicates and sorts (one line per club, not one per player)', () => {
     expect(uncoveredClubs(['ZZZ', 'AAA', 'ZZZ'], [])).toEqual(['AAA', 'ZZZ'])
+  })
+})
+
+describe('rewindowScenario — the F405 window (migration 158): post-window beats keep their offset from the window END', () => {
+  const lib = makeScenario('correction_post_window', DEFAULT_SEED)
+  const inWindow = makeScenario('correction_in_window', DEFAULT_SEED)
+  const real = new Date(lib.correctionWindowEndsAt.getTime() + 3 * 86_400_000 + 7 * 3_600_000) // e.g. the next Sunday's first kickoff
+  it('a post-window correction moves with the window (after it by exactly the library offset); an in-window one does not move', () => {
+    const offset = lib.corrections[0].at.getTime() - lib.correctionWindowEndsAt.getTime()
+    expect(offset).toBeGreaterThan(0)
+    const r = rewindowScenario(lib, real)
+    expect(r.correctionWindowEndsAt).toEqual(real)
+    expect(r.corrections[0].at.getTime() - real.getTime()).toBe(offset)
+    const i = rewindowScenario(inWindow, real)
+    expect(i.corrections[0].at).toEqual(inWindow.corrections[0].at)
+    expect(i.corrections[0].at.getTime()).toBeLessThan(real.getTime())
+  })
+  it('the library object is untouched (pure) and a shrinking window is refused', () => {
+    const before = lib.corrections[0].at.getTime()
+    rewindowScenario(lib, real)
+    expect(lib.corrections[0].at.getTime()).toBe(before)
+    expect(() => rewindowScenario(lib, new Date(lib.correctionWindowEndsAt.getTime() - 1))).toThrow(/ends BEFORE/)
+  })
+  it('firstKickoffOf is the slate\'s earliest kickoff (what ingestion records as first_kickoff_at)', () => {
+    expect(firstKickoffOf(lib)).toEqual(new Date(Math.min(...lib.games.map((g) => g.kickoffAt.getTime()))))
+    expect(firstKickoffOf({ ...lib, games: [] })).toBeNull()
   })
 })

@@ -755,9 +755,24 @@ select is(
 --    override, and nothing that exists today would red.
 -- ---------------------------------------------------------------------------
 reset role;
+-- M5 L.D3.11 (migration 158 — additive, the R992 shape): 158 adds the
+-- per-player arm with its OWN `NOT m.is_overridden` (an overridden team gets
+-- no stored rows — pgTAP 106 A9 pins the three). K1 counts on the body with
+-- 158's four hunks reversed (106 A8 proves that body IS 119's), so its two
+-- stand exactly where they stood.
 select is(
-  (select (length(prosrc) - length(replace(prosrc, 'NOT m.is_overridden', ''))) / length('NOT m.is_overridden')
-   from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select (length(s) - length(replace(s, 'NOT m.is_overridden', ''))) / length('NOT m.is_overridden')
+   from (select replace(replace(replace(replace(prosrc,
+     E'    ''skipped'',   v_skipped,\n    -- 158 (F405): the per-player arm''s own count. Its ABSENCE is how the\n    -- worker knows it is talking to a pre-158 door (it names that).\n    ''player_points'', jsonb_build_object(\n      ''teams_sent'',    cardinality(v_pp_teams),\n      ''teams_written'', cardinality(v_pp_write),\n      ''rows_written'',  v_pp_rows,\n      ''rows_removed'',  v_pp_gone),\n',
+     E'    ''skipped'',   v_skipped,\n'),
+     substring(prosrc from position(E'  -- 158 (F405): THE PER-PLAYER ROWS FOLLOW THE SCORE.' in prosrc)
+                      for position(E'  RETURN jsonb_build_object(' in prosrc) - position(E'  -- 158 (F405): THE PER-PLAYER ROWS FOLLOW THE SCORE.' in prosrc)),
+     ''),
+     E'    -- 158 (F405): the OPTIONAL per-player arm — each starter''s points,\n    -- checked to BE the team''s score (Σ = points; pending ⇔ null) before\n    -- anything is written. An element without `players` writes no rows.\n    IF v_e ? ''players'' THEN\n      PERFORM public.player_points_rows_check_internal(''score_write_week_batch'', v_i, v_tid, v_e -> ''points'', v_e -> ''players'');\n      v_pp_teams := v_pp_teams || v_tid;\n    END IF;\n',
+     ''),
+     E'  v_pp_teams  UUID[] := ''{}'';   -- 158 (F405): teams whose element carries `players`\n  v_pp_write  UUID[] := ''{}'';   -- 158: …and whose score this call may write (the rows follow the score)\n  v_pp_rows   INTEGER := 0;     -- 158: per-player rows inserted or changed\n  v_pp_gone   INTEGER := 0;     -- 158: per-player rows removed (a slot no longer started)\n',
+     '') as s
+   from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure) b),
   2, 'K1 score_write_week_batch still carries BOTH `NOT m.is_overridden` exclusions — the writable count (119:634) AND the one UPDATE (119:654). Relaxing either would let the next drain overwrite the commissioner within a minute, which is exactly what Q61 chose against');
 select ok(
   (select prosrc like '%IF v_m.is_overridden THEN%'

@@ -19,11 +19,13 @@
  *        the worker scores it under PPR.
  *   PW5  a stat correction to week 2 (still in its window) re-scores it under
  *        STANDARD — not PPR — and the box and reconcile agree.
- *   PW6  (the task's (e), MEASURED) a stat correction to FINAL week 1 after its
- *        window: the worker keeps the stored score (week_final); the box, now
- *        under the week's own rules, shows the new stats' total, so it can
- *        differ from the stored score — per-player points are not stored
- *        (PROGRESS F405); reconcile names it `post_window_correction` [warn].
+ *   PW6  (the task's (e) — MEASURED here first, then RULED: F405, Chris
+ *        2026-09-28, built by M5 L.D3.11 / migration 158) a stat correction
+ *        to FINAL week 1 after its window: the worker keeps the stored score
+ *        (week_final); the box reads the per-player points stored WITH that
+ *        score, so it still shows 11.00 — its lines add up to the final
+ *        score — and reconcile names the moved line `post_window_correction`
+ *        [INFO], exact (no warn). (Before 158 the box showed 12.00 here.)
  *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): players / stats / queue rows carry the `vitest-pwr`
@@ -298,17 +300,19 @@ describe('F397 + Q69 end to end: each week is scored, box-scored and reconciled 
     expect(report.findings.filter((f) => f.league_id === leagueId && ['drift', 'snapshot_unscorable'].includes(f.kind))).toEqual([])
   })
 
-  it('PW6 (the task (e), MEASURED): a stat correction to FINAL week 1 after its window is NOT applied (week_final) — the box, under week 1’s own rules, shows the corrected stats (12.00) beside the stored 11.00; reconcile names it post_window_correction [warn]', async () => {
+  it('PW6 (F405 as ruled — 158): a stat correction to FINAL week 1 after its window is NOT applied (week_final) — the box reads the STORED per-player points, so it still adds up to the stored 11.00; reconcile names the moved line post_window_correction [info], exact', async () => {
     clock.advanceTo(new Date(WEEK1_LATE_CORRECTION))
     await plant(1, { [WR1]: { receptions: 5, receiving_yards: 60, receiving_tds: 1 } }, WEEK1_LATE_CORRECTION)
     const batch = await drain()
     expect(batch.written).toBe(0)
     expect(batch.problems).toContain(`[${leagueId} wk 1] league ${leagueId} week 1 skipped: week_final`)
     expect(await stored(1)).toEqual([11, 4])
-    expect(await box(1, t1)).toBe(12)
+    expect(await box(1, t1)).toBe(11)
     const report = await reconcile()
     const late = report.findings.filter((f) => f.league_id === leagueId && f.kind === 'post_window_correction')
-    expect(late.map((f) => [f.week, f.team_id, f.severity, f.stored, f.recomputed])).toEqual([[1, t1, 'warn', 11, 12]])
+    // recomputed = Σ of the STORED rows (11) — the exact check; the moved line is named in the message.
+    expect(late.map((f) => [f.week, f.team_id, f.severity, f.stored, f.recomputed])).toEqual([[1, t1, 'info', 11, 11]])
+    expect(late[0].message).toContain(`${WR1} (wr:0) stored 11, today's stats 12`)
     expect(report.findings.filter((f) => f.league_id === leagueId && f.kind === 'drift')).toEqual([])
   })
 })

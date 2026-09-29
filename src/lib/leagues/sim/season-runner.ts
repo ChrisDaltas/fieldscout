@@ -126,6 +126,8 @@ import {
   anchorScenario,
   bridgeLines,
   buildPlayerBridge,
+  firstKickoffOf,
+  rewindowScenario,
   scenarioInstants,
   uncoveredClubs,
   withFullSlate,
@@ -1249,21 +1251,45 @@ async function driveSeason(
   const published = new Map<number, ReturnType<typeof makeScenario>>()
   let slate = { coreGames: 0, fillerGames: 0, clubs: [] as readonly string[] }
   const timeline: TimelineEntry[] = []
+  // PASS 1 — anchor every driven week onto its calendar row (the pure shift,
+  // `assertAnchorConsistent` against the row as read — the DEFAULT window).
+  const shiftedByWeek = new Map<number, ReturnType<typeof makeScenario>>()
   for (const week of weeksDriven) {
     const row = weekRows.get(week)!
     if (row.correction_window_ends_at === null) {
       throw new Error(`season: nfl_weeks (${SYNTHETIC_SEASON}, week ${week}) has no correction_window_ends_at`)
     }
-    const scenario = anchorScenario(
-      base,
-      {
-        season: SYNTHETIC_SEASON,
-        week,
-        weekStartsAt: row.starts_at,
-        weekWindowEndsAt: row.correction_window_ends_at,
-      },
-      bridge,
+    shiftedByWeek.set(
+      week,
+      anchorScenario(
+        base,
+        {
+          season: SYNTHETIC_SEASON,
+          week,
+          weekStartsAt: row.starts_at,
+          weekWindowEndsAt: row.correction_window_ends_at,
+        },
+        bridge,
+      ),
     )
+  }
+  // M5 L.D3.11 / migration 158 (F405): week N's correction window now ends at
+  // week N+1's FIRST KICKOFF — what ingestion records for N+1 at its first
+  // poll, which 158's trigger copies onto N. So every driven week with a
+  // driven successor is RE-WINDOWED onto that kickoff (post-window beats keep
+  // their offset from the window's end — `rewindowScenario`), and its finalize
+  // beat follows the real window; the last driven week (no successor on the
+  // calendar) keeps its default. The DB's window is READ BACK at the finalize
+  // beat and must equal this (loud, never assumed).
+  const realWindowEndsAt = new Map<number, Date>()
+  for (const week of weeksDriven) {
+    const next = shiftedByWeek.get(week + 1)
+    const nextKickoff = next === undefined ? null : firstKickoffOf(withFullSlate(next).scenario)
+    realWindowEndsAt.set(week, nextKickoff ?? new Date(weekRows.get(week)!.correction_window_ends_at!))
+  }
+  for (const week of weeksDriven) {
+    const row = weekRows.get(week)!
+    const scenario = rewindowScenario(shiftedByWeek.get(week)!, realWindowEndsAt.get(week)!)
     anchored.set(week, scenario)
     const full = withFullSlate(scenario)
     published.set(week, full.scenario)
@@ -1299,10 +1325,10 @@ async function driveSeason(
       label: 'players release (Q50 floor: Tue 00:00 PT)',
     })
     timeline.push({
-      at: new Date(Date.parse(row.correction_window_ends_at) + MINUTE_MS),
+      at: new Date(realWindowEndsAt.get(week)!.getTime() + MINUTE_MS),
       week,
       kind: 'finalize',
-      label: 'correction window closed',
+      label: 'correction window closed (the next week\'s first kickoff — F405)',
     })
   }
   timeline.sort((a, b) => a.at.getTime() - b.at.getTime() || a.week - b.week)
@@ -1468,9 +1494,7 @@ async function driveSeason(
       ? undefined
       : anchored.get(weeksDriven[0]!)!.games.find((g) => g.postponement === undefined && g.gameId !== postponedGame.gameId)
   const controlClubs = controlGame === undefined ? [] : [controlGame.awayTeam, controlGame.homeTeam]
-  const windowEndsAt = new Map(
-    weeksDriven.map((w) => [w, Date.parse(weekRows.get(w)!.correction_window_ends_at!)]),
-  )
+  const windowEndsAt = new Map(weeksDriven.map((w) => [w, realWindowEndsAt.get(w)!.getTime()]))
 
   const actionRng = deriveStream(cfg.seed, `season:lineups:${deps.runTag}`)
   let seedLineupsAfterPoll = false
@@ -1525,6 +1549,22 @@ async function driveSeason(
     }
 
     if (entry.kind === 'finalize') {
+      // 158 / F405: the window as the calendar NOW stores it (the trigger moved
+      // it when week N+1's first kickoff was ingested) — it must be the one the
+      // beat was dated from, else the finalize below would silently hold.
+      const { data: calRow, error: calError } = await service
+        .from('nfl_weeks')
+        .select('correction_window_ends_at')
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', entry.week)
+        .single()
+      throwIfError(calError, `season: nfl_weeks window read-back (week ${entry.week})`)
+      const stored = calRow?.correction_window_ends_at === null || calRow === null ? null : Date.parse(calRow.correction_window_ends_at)
+      if (stored !== windowEndsAt.get(entry.week)) {
+        throw new Error(
+          `season: week ${entry.week}'s stored correction window ${stored === null ? 'NULL' : new Date(stored).toISOString()} is not the one its finalize beat was dated from (${new Date(windowEndsAt.get(entry.week)!).toISOString()} — the next week's first kickoff, F405 / migration 158)`,
+        )
+      }
       for (const league of leagues) {
         const { data, error } = await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: league.leagueId })
         throwIfError(error, `${league.label}: finalize_matchups`)

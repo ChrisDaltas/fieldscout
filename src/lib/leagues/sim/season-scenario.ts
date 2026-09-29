@@ -609,6 +609,48 @@ export function anchorScenario(
   }
 }
 
+/**
+ * The earliest kickoff of a (published) week's slate — what ingestion's
+ * `weekBounds` records as that week's `nfl_weeks.first_kickoff_at` at its
+ * first poll, and so (migration 158 / F405) the PREVIOUS week's
+ * stat-correction window end. Pure; null for an empty slate.
+ */
+export function firstKickoffOf(scenario: SyntheticScenario): Date | null {
+  let min: number | null = null
+  for (const g of scenario.games) {
+    const t = g.kickoffAt.getTime()
+    if (min === null || t < min) min = t
+  }
+  return min === null ? null : new Date(min)
+}
+
+/**
+ * RE-WINDOW an anchored scenario onto the calendar's REAL correction window
+ * (M5 L.D3.11 / migration 158; PROGRESS F405 — the window runs to the NEXT
+ * week's first kickoff, no longer the library's Thursday 06:00 ET). The
+ * library declares ONE week's world and dates its beats against its own
+ * `correctionWindowEndsAt`; in the sim's multi-week calendar that window now
+ * ends at the next driven week's first kickoff. So every beat the library
+ * dates AFTER its window (a post-window correction, a post-window charted
+ * revision) keeps its offset FROM THE WINDOW'S END, and every beat inside it
+ * keeps its offset from the week's start (unchanged) — "after the window"
+ * and "inside the window" keep their meaning. Downstream fixture
+ * construction, like `withFullSlate` (R801's line): `makeScenario`'s output,
+ * the M0 fixture and `SCENARIO_LIBRARY_VERSION` are untouched. Pure.
+ */
+export function rewindowScenario(scenario: SyntheticScenario, windowEndsAt: Date): SyntheticScenario {
+  const oldMs = scenario.correctionWindowEndsAt.getTime()
+  const deltaMs = windowEndsAt.getTime() - oldMs
+  if (deltaMs < 0) throw new Error(`rewindowScenario: the real window ${windowEndsAt.toISOString()} ends BEFORE the library's ${scenario.correctionWindowEndsAt.toISOString()} — a window only grows under F405`)
+  const move = (at: Date): Date => (at.getTime() > oldMs ? new Date(at.getTime() + deltaMs) : at)
+  return {
+    ...scenario,
+    correctionWindowEndsAt: windowEndsAt,
+    corrections: scenario.corrections.map((c) => ({ ...c, at: move(c.at) })),
+    chartedRevisions: scenario.chartedRevisions.map((r) => ({ ...r, at: move(r.at) })),
+  }
+}
+
 /** One instant the season driver must visit, and why. */
 export interface ScenarioInstant {
   at: Date

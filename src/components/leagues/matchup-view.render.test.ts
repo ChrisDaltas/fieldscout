@@ -172,6 +172,10 @@ function boxFor(teamId: string, over: Partial<TeamBoxScore> = {}): TeamBoxScore 
     pending: [{ player_id: 'rbp', keys: ['charted_placeholder'] }],
     no_stat_row: ['wr0', 'wr1'],
     no_game_rows: false,
+    // 158 (F405): a live box — the three fields the stored-points read adds.
+    points_source: 'live',
+    stored_source: null,
+    stored_note: null,
     ...over,
   }
 }
