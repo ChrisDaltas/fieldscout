@@ -43,6 +43,37 @@ set local search_path = public, extensions;
 
 select plan(39);
 
+-- L.D3.14 (migration 164 — additive, the R992 shape): pg_temp.un164 reverses
+-- 164's substitutions in the three bodies it replaced (an identity on every
+-- other body), applied INNERMOST so A6 still prove what they proved;
+-- pgTAP 112 A3 / A4 pin 164's own.
+create function pg_temp.un164(p_src text) returns text language sql as $un164$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  ELSIF public.lineup_record_kicked_off_internal(p_season, p_week, p_player_id, v_rec_at, p_at) THEN   -- 164 / F468(b): a REAL, passed kickoff of the week and his team\'s game not postponed (157\'s guard — the locks\' own judgment)\n',
+    E'  ELSIF v_rec_at IS NOT NULL AND v_rec_at <= p_at THEN\n'),
+    E'      v_lose_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_lose_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_lose_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_lose_p.team, p_at);\n'),
+    E'      v_gain_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_gain_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_gain_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_gain_p.team, p_at);\n'),
+    E'  v_lock_kick   JSONB := \'{}\'::jsonb;   -- 164 / F467: the RECEIPT\'s datum for p_week, per PLAYER (157\'s lineup_player_kickoff_internal)\n  v_lock_kick_cur JSONB := \'{}\'::jsonb; -- 164 / F467: the same for the CURRENT week (the IR timing receipt)\n',
+    E''),
+    E'    -- 164 / F467: what the RECEIPT says is judged per PLAYER — his current\n    -- NFL team\'s kickoff, or the kickoff he PLAYED in this week (157) — so\n    -- a player the NFL released or traded after he played is named as\n    -- moved past the lock. Receipt only: v_kick (the stored record,\n    -- locked_at, the bye flags) is unchanged, and nothing here refuses.\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n    v_lock_kick := v_lock_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 164 / F467\n      v_lock_kick_cur := v_lock_kick_cur || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n        \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'  v_lock_kick := v_lock_kick || v_gone_kick;   -- 164 / F467: (4b)\'s kept starters, as v_kick\n',
+    E''),
+    E'    v_lock_kick_cur := v_lock_kick;   -- 164 / F467\n',
+    E''),
+    E'  --     164 / F467: judged by v_lock_kick — per PLAYER, the lock a manager\n  --     faces since 157 — so the record names every player a manager\n  --     could not have moved.\n',
+    E''),
+    E'v_lock_kick_cur -> v_pid',
+    E'v_kick_cur -> v_pid'),
+    E'v_lock_kick -> v_pid',
+    E'v_kick -> v_pid')
+$un164$;
+
+
 -- L.D2.16 (migration 157 — additive, the R992 shape): pg_temp.un157 reverses
 -- 157's substitutions in the seven bodies it replaced (an identity on every
 -- other body), applied INNERMOST so the literals below still prove what
@@ -127,12 +158,12 @@ select is(
   'lineup_autopilot_internal=544d32c67abd3f3243ff1bfa568360ad lineup_lock_tick=bcc10f9a40e99f7a1cf83e1c94f813f0 process_waivers_internal=440a595061f1bdd26715ee381b5d6afa roster_add_drop_internal=d0e6afde7fdd872cb0d9576de91bcf7e set_lineup_internal=ca3307414057469da7ed5c0af0b29fe6 trade_lock_internal=cfdbf2451a0287cc6bf6bb1ee166b553 waiver_claim_submit_internal=5822e363acddfb8f781dc3ea6fb7e448',
   'A5 the seven live prosrc md5s — 157 as written (stored literals)');
 select is(
-  (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un164(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('trade_execute_internal', 'commish_roster_override_internal', 'commish_edit_lineup_internal',
                                                  'lineup_kept_starter_internal', 'lineup_kickoff_internal', 'pool_game_lock_any_internal')),
   'commish_edit_lineup_internal=60662cff534f641b2674201b999681c8 commish_roster_override_internal=32972a1a5183c748be5a90c8ffdad7f1 lineup_kept_starter_internal=3266056c8506911d20ef8f96fd76cbb3 lineup_kickoff_internal=80b9c63efa3cb5bbef7b79863e9801a7 pool_game_lock_any_internal=c04027b390f46cf19247fab2ff2e1990 trade_execute_internal=044fd0a7668adb67c2c81b0e452b8341',
-  'A6 UNTOUCHED (stored literals): the executor (156 — R1234 needs no hunk), the two commissioner verbs (they stand outside the lock), 154''s kept-starter judgment, 112''s team datum and 153''s team lock');
+  'A6 UNTOUCHED (stored literals): the executor (156 — R1234 needs no hunk), the two commissioner verbs (they stand outside the lock), 154''s kept-starter judgment, 112''s team datum and 153''s team lock — untouched BY 157 (164 later changed three of them: reversed innermost here, pgTAP 112 pins them)');
 select is(
   (select string_agg(p.proname || ':' || (length(p.prosrc) - length(replace(p.prosrc, 'public.pool_game_lock_any_internal(', ''))) / length('public.pool_game_lock_any_internal(')
                      || '/' || (length(p.prosrc) - length(replace(p.prosrc, 'public.pool_game_lock_player_internal(', ''))) / length('public.pool_game_lock_player_internal('),

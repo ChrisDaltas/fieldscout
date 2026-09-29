@@ -44,6 +44,37 @@ set local search_path = public, extensions;
 
 select plan(37);
 
+-- L.D3.14 (migration 164 — additive, the R992 shape): pg_temp.un164 reverses
+-- 164's substitutions in the three bodies it replaced (an identity on every
+-- other body), applied INNERMOST so A6 / A8 still prove what they proved;
+-- pgTAP 112 A3 / A4 pin 164's own.
+create function pg_temp.un164(p_src text) returns text language sql as $un164$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  ELSIF public.lineup_record_kicked_off_internal(p_season, p_week, p_player_id, v_rec_at, p_at) THEN   -- 164 / F468(b): a REAL, passed kickoff of the week and his team\'s game not postponed (157\'s guard — the locks\' own judgment)\n',
+    E'  ELSIF v_rec_at IS NOT NULL AND v_rec_at <= p_at THEN\n'),
+    E'      v_lose_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_lose_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_lose_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_lose_p.team, p_at);\n'),
+    E'      v_gain_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_gain_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_gain_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_gain_p.team, p_at);\n'),
+    E'  v_lock_kick   JSONB := \'{}\'::jsonb;   -- 164 / F467: the RECEIPT\'s datum for p_week, per PLAYER (157\'s lineup_player_kickoff_internal)\n  v_lock_kick_cur JSONB := \'{}\'::jsonb; -- 164 / F467: the same for the CURRENT week (the IR timing receipt)\n',
+    E''),
+    E'    -- 164 / F467: what the RECEIPT says is judged per PLAYER — his current\n    -- NFL team\'s kickoff, or the kickoff he PLAYED in this week (157) — so\n    -- a player the NFL released or traded after he played is named as\n    -- moved past the lock. Receipt only: v_kick (the stored record,\n    -- locked_at, the bye flags) is unchanged, and nothing here refuses.\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n    v_lock_kick := v_lock_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 164 / F467\n      v_lock_kick_cur := v_lock_kick_cur || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n        \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'  v_lock_kick := v_lock_kick || v_gone_kick;   -- 164 / F467: (4b)\'s kept starters, as v_kick\n',
+    E''),
+    E'    v_lock_kick_cur := v_lock_kick;   -- 164 / F467\n',
+    E''),
+    E'  --     164 / F467: judged by v_lock_kick — per PLAYER, the lock a manager\n  --     faces since 157 — so the record names every player a manager\n  --     could not have moved.\n',
+    E''),
+    E'v_lock_kick_cur -> v_pid',
+    E'v_kick_cur -> v_pid'),
+    E'v_lock_kick -> v_pid',
+    E'v_kick -> v_pid')
+$un164$;
+
+
 -- L.D2.16 (migration 157 — additive, the R992 shape): pg_temp.un157 reverses
 -- 157's substitutions in the seven bodies it replaced (an identity on every
 -- other body), applied INNERMOST so the literals below still prove what
@@ -116,7 +147,7 @@ select is(
   'A5 D137 set_lineup_internal: 152''s FILE TEXT (152:2216-2868) beneath 154''s 3 substitutions — each reversed, the prosrc md5 is 152''s (pgTAP 100 G0c''s stored literal)');
 
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
+  (select md5(replace(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un164(p.prosrc)),
   E'      FOR v_key, v_val IN SELECT * FROM jsonb_each(v_fit -> \'assignment\') LOOP\n        CONTINUE WHEN v_gone_kick ? (v_val #>> \'{}\');   -- 154 / F441: off this roster — no roster row of his to write\n        UPDATE public.league_rosters r SET slot_key = v_key\n        WHERE r.league_id = p_league_id AND r.team_id = p_team_id AND r.player_id = (v_val #>> \'{}\');\n        GET DIAGNOSTICS v_cnt = ROW_COUNT;\n        v_expected := v_expected + v_cnt;\n      END LOOP;\n      IF v_expected <> COALESCE(array_length(v_started, 1), 0)\n                       - (SELECT count(*)::int FROM jsonb_object_keys(v_gone_kick) g WHERE g = ANY (v_started)) THEN\n        RAISE EXCEPTION \'commish_edit_lineup: wrote slot_key for % starters, expected %\', v_expected,\n          COALESCE(array_length(v_started, 1), 0) - (SELECT count(*)::int FROM jsonb_object_keys(v_gone_kick) g WHERE g = ANY (v_started))\n          USING ERRCODE = \'P0001\';\n      END IF;\n',
   E'      FOR v_key, v_val IN SELECT * FROM jsonb_each(v_fit -> \'assignment\') LOOP\n        UPDATE public.league_rosters r SET slot_key = v_key\n        WHERE r.league_id = p_league_id AND r.team_id = p_team_id AND r.player_id = (v_val #>> \'{}\');\n        GET DIAGNOSTICS v_cnt = ROW_COUNT;\n        v_expected := v_expected + v_cnt;\n      END LOOP;\n      IF v_expected <> COALESCE(array_length(v_started, 1), 0) THEN\n        RAISE EXCEPTION \'commish_edit_lineup: wrote slot_key for % starters, expected %\', v_expected, COALESCE(array_length(v_started, 1), 0)\n          USING ERRCODE = \'P0001\';\n      END IF;\n'),
   E'      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0\n         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) = v_pid) THEN   -- 154 / F441: a kept start where it stands is the week\'s record, not a submit\n',
@@ -147,7 +178,7 @@ select is(
   'cb96ab439aa9dcb6d218d7da79125fe6',
   'A7 D137 lineup_autopilot_internal: 152''s FILE TEXT (152:2881-3489) beneath 154''s 5 substitutions — each reversed, the prosrc md5 is 152''s (pgTAP 100 G0c''s stored literal)');
 select is(
-  (select format('%s|%s|%s', md5(pg_temp.un157(s.prosrc)), md5(c.prosrc), md5(pg_temp.un157(a.prosrc)))
+  (select format('%s|%s|%s', md5(pg_temp.un157(s.prosrc)), md5(pg_temp.un164(c.prosrc)), md5(pg_temp.un157(a.prosrc)))
    from pg_proc s, pg_proc c, pg_proc a
    where s.oid = 'public.set_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)'::regprocedure
      and c.oid = 'public.commish_edit_lineup_internal(uuid,uuid,integer,jsonb,uuid,timestamptz,text)'::regprocedure

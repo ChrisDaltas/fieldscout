@@ -15,21 +15,23 @@
  *        `week_final` — the stored week did not move.
  *   RS1  the ordinary backfill's dry run says what production's said: both
  *        teams `backfill_unrecoverable`, recomputed 9.00 / 12.00 (−6 / −2).
- *   RS2  THE DRY RUN of the re-score: both teams' before → after, the ONE
- *        flip, the league post it would write — and NOTHING written.
- *   RS3  THE APPLY: 9.00 v 12.00 away; results rebuilt (One loses, Two wins);
- *        the standings follow; per-player rows stored (`rescore`, adding up);
- *        ONE audit row with the ruling; ONE league post; both managers told.
- *   RS4  the box score adds up (stored, 10 − 1 = 9) and names no note.
- *   RS5  reconcile: nothing but info for the league — the stored rows are
- *        today's stats, and they add up to the stored score.
- *   RS6  the ordinary backfill afterwards: both teams `already_stored`.
- *   RS7  a SECOND --apply: `scores_already_correct` (detected by value),
- *        naming the earlier audit row; no new audit row, post or notification.
+ *   RS2  RETIRED (migration 164, L.D3.14; PROGRESS F489 / D428): the door
+ *        was used once (2026-09-29, F488) and 164 revoked it from the service
+ *        role. The REAL answer (42501, "permission denied for function
+ *        admin_rescore_final_week") ⇒ the dry run is refused BY NAME, naming
+ *        the migration that would re-grant it — and NOTHING is written.
+ *   RS3  …and so is an --apply.
  *   RS8  the ordinary worker still skips the locked week (a new correction
  *        lands in player_stats; nothing in the league moves).
  *   RS9  PRE-161 — the door missing (the REAL PostgREST answer, from a schema
  *        that lacks it): refused BY NAME, nothing written.
+ *
+ * L.D3.13's own story through the door (its RS2–RS7: the dry run, the apply,
+ * the box score / reconcile / backfill over the `rescore` rows, the second
+ * apply) ran green on 001–163 and is kept in the repository history at main
+ * f6ce0a7 (this file); the door's database behaviour stays pinned by pgTAP
+ * 109, which runs it as its owner. If the door is ever re-granted (a new
+ * migration, on a new recorded ruling), restore those cells (PROGRESS F498).
  *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-rsf` prefix on players / stats / queue / games,
@@ -41,12 +43,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { Database, Json } from '@/types/database'
 
-import { readBoxScore, type TeamBoxScore } from '../api/box-score-service'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { VirtualClock } from '../time/virtual-clock'
 import { backfillPlayerPoints } from './player-points-backfill'
-import { reconcileSeason } from './reconcile'
-import { PRE_161_SENTENCE, rescoreFinalWeeks, type RescoreOptions } from './rescore-final-weeks'
+import { PRE_161_SENTENCE, RETIRED_SENTENCE, rescoreFinalWeeks, type RescoreOptions } from './rescore-final-weeks'
 import { runScoreWeekBatch } from './score-week-worker'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -182,12 +182,6 @@ function rescore(over: Partial<RescoreOptions> = {}, db: SupabaseClient<Database
   return rescoreFinalWeeks({ db, time: clock, newActionId: () => `3c100000-0000-4000-8000-0000000001${String(++seq).padStart(2, '0')}` }, opts(over))
 }
 
-async function box(team: string): Promise<TeamBoxScore> {
-  const result = await readBoxScore(commishClient, leagueId, { week: '1', team })
-  expect(result.status, JSON.stringify(result.body)).toBe(200)
-  return result.body as unknown as TeamBoxScore
-}
-
 beforeAll(async () => {
   await cleanup()
   await must(
@@ -280,70 +274,26 @@ describe('L.D3.13 — the ruled re-score of a final week, end to end (Chris 2026
     ])
   })
 
-  it('RS2 THE DRY RUN: both teams before → after, the ONE flip, the post it would write — and NOTHING written', async () => {
-    const report = await rescore()
-    expect(report.ok, report.problems.join('\n')).toBe(true)
-    const lw = report.league_weeks[0]
-    expect([lw.verdict, lw.scores_changed, lw.teams.map((t) => `${t.team_name} ${t.stored.join('/')}→${t.recomputed} (${t.delta})`)]).toEqual([
-      'would_rescore', 2, ['RSF One 15→9 (-6)', 'RSF Two 14→12 (-2)'],
-    ])
-    expect(lw.flips.map((f) => f.matchup_id)).toEqual([matchupId])
-    expect(lw.system_post).toBe('Week 1 was re-scored: defense yards allowed were missing when it was first scored. Result changed: RSF Two beat RSF One 12.00–9.00 (first scored RSF One 15.00–14.00). 2 team scores changed; standings are updated.')
-    expect([lw.notified, lw.commissioner_action_id]).toEqual([2, null])
+  it('RS2 RETIRED (164 / F489): the dry run is refused BY NAME on the REAL 42501, naming the migration that would re-grant the door — and NOTHING is written', async () => {
+    // PREMISE — the database's own answer to the service role, an all-NULL call (it runs no line of the door).
+    const premise = await service.rpc('admin_rescore_final_week', {
+      p_league_id: null, p_week: null, p_teams: null, p_reason: null, p_member_note: null, p_actor_id: null, p_action_id: null, p_dry_run: true,
+    } as never)
+    expect([premise.error?.code, premise.error?.message]).toEqual(['42501', 'permission denied for function admin_rescore_final_week'])
+    await expect(rescore()).rejects.toThrow(`rescore refused: ${RETIRED_SENTENCE}`)
+    expect(RETIRED_SENTENCE).toContain('GRANT EXECUTE ON FUNCTION public.admin_rescore_final_week(uuid, integer, jsonb, text, text, uuid, uuid, boolean) TO service_role')
     expect(await scores()).toBe('15.00/14.00 final home')
     expect(await results()).toBe('One=15.00:win:true Two=14.00:loss:true')
     expect(await storedRows()).toBe('')
     expect(await ledger()).toBe('audit 0 · posts 0 · notifications 0')
   })
 
-  it('RS3 THE APPLY: 9 v 12 away, results rebuilt, standings follow, rows stored and adding up, ONE audit row, ONE post, both managers told', async () => {
-    const report = await rescore({ apply: true })
-    expect(report.ok, report.problems.join('\n')).toBe(true)
-    const lw = report.league_weeks[0]
-    expect(lw.verdict).toBe('rescored')
-    expect(report.cells_moved).toBeGreaterThan(0) // the golden: every moved cell is week 1's (else a PROBLEM)
-    expect(await scores()).toBe('9.00/12.00 final away')
-    expect(await results()).toBe('One=9.00:loss:true Two=12.00:win:true')
-    const standings = await must(commishClient.rpc('league_standings', { p_league_id: leagueId }), 'standings') as unknown as { standings: Array<{ team_id: string; wins: number; losses: number; points_for: number }> }
-    expect(standings.standings.filter((s) => [t1, t2].includes(s.team_id)).map((s) => `${s.team_id === t1 ? 'One' : 'Two'} ${s.wins}-${s.losses} ${Number(s.points_for).toFixed(2)}`).sort()).toEqual(['One 0-1 9.00', 'Two 1-0 12.00'])
-    expect(await storedRows()).toBe('One/dst:0=-1.00:rescore One/wr:0=10.00:rescore Two/dst:0=3.00:rescore Two/wr:0=9.00:rescore')
-    const audit = await must(service.from('commissioner_actions').select('id, actor_id, reason, metadata').eq('league_id', leagueId).eq('action_type', 'rescore_final_week'), 'audit')
-    expect(audit!.map((a) => [a.id === lw.commissioner_action_id, a.actor_id === commishId, a.reason, (a.metadata as { week: number }).week])).toEqual([[true, true, RULING, 1]])
-    const posts = await must(service.from('league_chat').select('user_id, is_system, message').eq('league_id', leagueId), 'posts')
-    expect(posts).toEqual([{ user_id: null, is_system: true, message: lw.system_post }])
-    const notes = await must(service.from('notifications').select('user_id, title, data').eq('type', 'league_week_rescored').in('user_id', [commishId, managerId]), 'notifications')
-    expect(notes!.map((n) => [n.user_id === commishId ? 'commish' : 'manager', n.title, (n.data as { league_id: string }).league_id === leagueId]).sort()).toEqual([
-      ['commish', 'Week 1 was re-scored — your result changed', true],
-      ['manager', 'Week 1 was re-scored — your result changed', true],
-    ])
-  })
-
-  it('RS4 the box score adds up to the re-scored score (stored: 10 − 1 = 9) and carries no note', async () => {
-    const b = await box(t1)
-    expect([b.points_source, b.points, b.stored_source, b.stored_note, b.starters.filter((s) => s.player).map((s) => `${s.slot}=${s.points}`).sort()]).toEqual(['stored', 9, 'rescore', null, ['dst:0=-1', 'wr:0=10']])
-  })
-
-  it('RS5 reconcile: nothing but info for the league — the stored rows ARE today’s stats and add up to the score', async () => {
-    const report = await reconcileSeason({ time: clock, db: service }, { season: SEASON, leagueIds: [leagueId] })
-    const mine = report.findings.filter((f) => f.league_id === leagueId)
-    expect(mine.filter((f) => f.severity !== 'info')).toEqual([])
-    expect(mine.filter((f) => f.kind === 'post_window_correction' || f.kind === 'backfill_unrecoverable')).toEqual([])
-  })
-
-  it('RS6 the ordinary backfill afterwards finds the re-scored week already stored', async () => {
-    const report = await backfillPlayerPoints({ db: service, time: clock }, { season: SEASON, apply: false, leagueIds: [leagueId] })
-    expect(report.counts).toEqual({ already_stored: 2 })
-  })
-
-  it('RS7 a SECOND --apply is a no-op detected by value — scores_already_correct, naming the earlier audit row; nothing new written', async () => {
-    const before = await ledger()
-    const report = await rescore({ apply: true })
-    expect(report.ok, report.problems.join('\n')).toBe(true)
-    const lw = report.league_weeks[0]
-    expect([lw.verdict, lw.scores_changed, lw.prior_rescores.length]).toEqual(['scores_already_correct', 0, 1])
-    expect(report.cells_moved).toBe(0)
-    expect(await ledger()).toBe(before)
-    expect(await scores()).toBe('9.00/12.00 final away')
+  it('RS3 …and an --apply is refused the same way, before anything is read or written', async () => {
+    await expect(rescore({ apply: true })).rejects.toThrow(`rescore refused: ${RETIRED_SENTENCE}`)
+    expect(await scores()).toBe('15.00/14.00 final home')
+    expect(await results()).toBe('One=15.00:win:true Two=14.00:loss:true')
+    expect(await storedRows()).toBe('')
+    expect(await ledger()).toBe('audit 0 · posts 0 · notifications 0')
   })
 
   it('RS8 the ordinary worker still skips the locked week: a later correction lands in player_stats, nothing in the league moves', async () => {
@@ -353,7 +303,7 @@ describe('L.D3.13 — the ruled re-score of a final week, end to end (Chris 2026
     const batch = await drain()
     expect(batch.written).toBe(0)
     expect(batch.problems).toContain(`[${leagueId} wk 1] league ${leagueId} week 1 skipped: week_final`)
-    expect(await scores()).toBe('9.00/12.00 final away')
+    expect(await scores()).toBe('15.00/14.00 final home')
     expect(await storedRows()).toBe(rowsBefore)
   })
 
@@ -368,12 +318,9 @@ describe('L.D3.13 — the ruled re-score of a final week, end to end (Chris 2026
         return Reflect.get(target, prop, receiver)
       },
     }) as SupabaseClient<Database>
-    // Make the week look un-re-scored to the TS side, so it reaches the door: one more real yards change.
-    await plant({ [DSTB]: { def_points_allowed: 20, def_yards_allowed: 420 } }, LATE)
-    await drain()
     const before = await ledger()
     await expect(rescore({ apply: true }, pre161)).rejects.toThrow(`rescore refused: ${PRE_161_SENTENCE}`)
     expect(await ledger()).toBe(before)
-    expect(await scores()).toBe('9.00/12.00 final away')
+    expect(await scores()).toBe('15.00/14.00 final home')
   })
 })

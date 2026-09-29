@@ -334,10 +334,20 @@ select throws_ok(
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
-  (select format('%s|%s|%s', (select count(*) from trades), (select count(*) from trade_actions),
-                 (select count(*) from notifications where type like 'league_trade%'))),
+  -- F491 (L.D3.14): scoped to THIS suite's fixture leagues and users — a
+  -- global count reds whenever another run (e2e/transactions.spec.ts) left
+  -- its trade notifications in the same database.
+  (select format('%s|%s|%s',
+                 (select count(*) from trades where league_id in ('b9600000-0000-4000-8000-000000000001', 'b9600000-0000-4000-8000-000000000002',
+                                                                  'b9600000-0000-4000-8000-000000000003', 'b9600000-0000-4000-8000-000000000004')),
+                 (select count(*) from trade_actions where league_id in ('b9600000-0000-4000-8000-000000000001', 'b9600000-0000-4000-8000-000000000002',
+                                                                         'b9600000-0000-4000-8000-000000000003', 'b9600000-0000-4000-8000-000000000004')),
+                 (select count(*) from notifications n where n.type like 'league_trade%'
+                    and (n.user_id::text like '99600000-%'
+                         or n.data ->> 'league_id' in ('b9600000-0000-4000-8000-000000000001', 'b9600000-0000-4000-8000-000000000002',
+                                                       'b9600000-0000-4000-8000-000000000003', 'b9600000-0000-4000-8000-000000000004'))))),
   '0|0|0',
-  'C25 every refusal above wrote NOTHING — no trade, no ledger row, no notification');
+  'C25 every refusal above wrote NOTHING in this suite leagues — no trade, no ledger row, no notification to its users or about its leagues (F491: scoped, so a foreign run cannot red it)');
 
 -- ---------------------------------------------------------------------------
 -- D. The manager proposes (TR Alpha, u3)

@@ -98,6 +98,37 @@ set local search_path = public, extensions;
 
 select plan(166);
 
+-- L.D3.14 (migration 164 — additive, the R992 shape): pg_temp.un164 reverses
+-- 164's substitutions in the three bodies it replaced (an identity on every
+-- other body), applied INNERMOST so K5 still prove what they proved;
+-- pgTAP 112 A3 / A4 pin 164's own.
+create function pg_temp.un164(p_src text) returns text language sql as $un164$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  ELSIF public.lineup_record_kicked_off_internal(p_season, p_week, p_player_id, v_rec_at, p_at) THEN   -- 164 / F468(b): a REAL, passed kickoff of the week and his team\'s game not postponed (157\'s guard — the locks\' own judgment)\n',
+    E'  ELSIF v_rec_at IS NOT NULL AND v_rec_at <= p_at THEN\n'),
+    E'      v_lose_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_lose_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_lose_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_lose_p.team, p_at);\n'),
+    E'      v_gain_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, v_gain_player, p_at);   -- 164 / F467: the receipt judges the lock per player (played this week), as 157\'s writers do\n',
+    E'      v_gain_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_gain_p.team, p_at);\n'),
+    E'  v_lock_kick   JSONB := \'{}\'::jsonb;   -- 164 / F467: the RECEIPT\'s datum for p_week, per PLAYER (157\'s lineup_player_kickoff_internal)\n  v_lock_kick_cur JSONB := \'{}\'::jsonb; -- 164 / F467: the same for the CURRENT week (the IR timing receipt)\n',
+    E''),
+    E'    -- 164 / F467: what the RECEIPT says is judged per PLAYER — his current\n    -- NFL team\'s kickoff, or the kickoff he PLAYED in this week (157) — so\n    -- a player the NFL released or traded after he played is named as\n    -- moved past the lock. Receipt only: v_kick (the stored record,\n    -- locked_at, the bye flags) is unchanged, and nothing here refuses.\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n    v_lock_kick := v_lock_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 164 / F467\n      v_lock_kick_cur := v_lock_kick_cur || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n        \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n',
+    E''),
+    E'  v_lock_kick := v_lock_kick || v_gone_kick;   -- 164 / F467: (4b)\'s kept starters, as v_kick\n',
+    E''),
+    E'    v_lock_kick_cur := v_lock_kick;   -- 164 / F467\n',
+    E''),
+    E'  --     164 / F467: judged by v_lock_kick — per PLAYER, the lock a manager\n  --     faces since 157 — so the record names every player a manager\n  --     could not have moved.\n',
+    E''),
+    E'v_lock_kick_cur -> v_pid',
+    E'v_kick_cur -> v_pid'),
+    E'v_lock_kick -> v_pid',
+    E'v_kick -> v_pid')
+$un164$;
+
+
 -- ---------------------------------------------------------------------------
 -- A. FORM PINS — the ledger (D350), the two doors, the two internals
 --    (§4.1 grants doctrine; §4 rule 12).
@@ -346,7 +377,7 @@ select ok(
   'B4 PREMISE: KC IS LOCKED at this instant (it kicked off one second ago) — every "the commissioner walked past E32" cell below is about a lock that is actually closed');
 select ok(
   not (select (public.pool_game_lock_any_internal(2026, 3, 'PHI', now()) ->> 'locked')::boolean),
-  'B5 PREMISE: PHI is NOT locked (it kicks off in one second) — so §D''s move reports an EMPTY bypassed[], which is the control that proves bypassed[] names measured bypasses and not a constant');
+  'B5 PREMISE: PHI is NOT locked (it kicks off in one second) — so the ONE bypass §D''s move reports (D10) is the PLAYED lock of 157 (his week-3 stat line), not his team lock');
 select is((select count(*)::int from league_rosters where league_id = 'be000000-0000-4000-8000-000000000001' and team_id = 'ce000000-0000-4000-8000-000000000004'),
   8, 'B6 PREMISE: T4''s roster holds 8 of 8 — it is FULL, so §N1''s capacity refusal is about a real boundary');
 select ok(
@@ -588,8 +619,15 @@ select ok((select not (bench ? 'cr-wr1') from team_lineups
 select is(current_setting('pgtap.cr_move')::jsonb -> 'affected_team_ids',
   '["ce000000-0000-4000-8000-000000000002", "ce000000-0000-4000-8000-000000000003"]'::jsonb,
   'D9 …and a TWO-team verb writes both ids, from-then-to (D353 — the activity feed filters by team, and deriving the pair from an untyped blob at read time is the shape that rots)');
-select is(current_setting('pgtap.cr_move')::jsonb -> 'bypassed', '[]'::jsonb,
-  'D10 THE CONTROL FOR C4: PHI is not locked (B5), so bypassed[] is EMPTY here. bypassed[] names measured bypasses, never a constant');
+-- L.D3.14 (164 / F467) RE-CUT: cr-wr1 carries a week-3 stat line (§D's
+-- stats_unstamped subject) and the week's first game (KC) has kicked off, so
+-- since 157 the MANAGER's verb refuses his drop (the played lock, datum
+-- stat_line) although PHI is not locked (B5). The receipt now says so. The
+-- empty-bypassed control this cell was lives on in pgTAP 112 C4 (a subject
+-- with no played evidence), beside 112 C1–C3.
+select is(jsonb_build_array(current_setting('pgtap.cr_move')::jsonb -> 'bypassed', current_setting('pgtap.cr_move')::jsonb -> 'drop_game_lock' ->> 'datum_arm'),
+  '[["e32_drop_lock:cr-wr1"], "stat_line"]'::jsonb,
+  'D10 bypassed[] names the lock MEASURED for him: PHI is not locked (B5) but he has a week-3 stat line after the first kickoff, the lock a manager meets since 157 (164 / F467) — measured, never a constant (the empty control: pgTAP 112 C4)');
 select is((select count(*)::int from commissioner_actions) - current_setting('pgtap.cr_actions_before')::int, 1,
   'D11 EXACTLY ONE audit row for the move');
 select is((select action_type || '|' || target_type || '|' || target_id from commissioner_actions where metadata ->> 'action_id' = 'af000000-0000-4000-8000-000000000004'),
@@ -1150,10 +1188,10 @@ select is(
    where n.nspname = 'public' and p.proname in ('roster_add_drop_internal', 'roster_add_drop')),
   2, 'K4 …and both are still ONE overload each — no second signature crept in beside them');
 select ok(
-  (select bool_and(p.prosrc like '%pool_game_lock_any_internal%')
+  (select bool_and(pg_temp.un164(p.prosrc) like '%pool_game_lock_any_internal%')
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_roster_override_internal'),
-  'K5 …while the NEW verb still EVALUATES the lock it walks past: bypassed[] names a lock that was measured closed, not a constant string');
+  'K5 …while the NEW verb still EVALUATES the lock it walks past: bypassed[] names a lock that was measured closed, not a constant string (164 reversed innermost; since 164 the live body reads the per-player lock — pgTAP 112 A5)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_roster_override_internal'
