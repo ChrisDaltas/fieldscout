@@ -600,14 +600,15 @@ export function TradeCard({
   const gate = answering
     ? acceptGate({ preview, deadline, lockBehavior, review, lockedNames, proposerName: trade.proposer.name ?? 'the other team', fmt })
     : null
-  const checked = gate !== null && gate.state !== 'fallback'
+  const checked = gate !== null && gate.state !== 'fallback' && gate.state !== 'failed'
 
   // Before 162 (fallback): the server said the receiving roster overflows —
   // the picker opens with the count from its sentence (D419).
   const overflow = refusal ? dropsNeeded(refusal) : null
   const recipientOverflows = overflow !== null && overflow.teamName === trade.recipient.name
+  // R1286: the voluntary "Accept with drops…" opener stays (acceptDrops set).
   const pickingDrops = checked
-    ? gate.state === 'needs_drops' || (acceptDrops ?? []).length > 0
+    ? gate.state === 'needs_drops' || acceptDrops !== null
     : actions.accept && (acceptDrops !== null || recipientOverflows)
   const dropWords = rosterWords(trade.recipient.name, viewer.teamId === trade.recipient.team_id)
   const giving = new Set(trade.items.filter((i) => i.from_team_id === trade.recipient.team_id && i.player).map((i) => i.player!.player_id))
@@ -734,9 +735,8 @@ export function TradeCard({
               >
                 {pending ? 'Sending…' : actions.actingFor === 'recipient' ? `Accept for ${trade.recipient.name ?? 'the team'} with these drops` : 'Accept with these drops'}
               </Button>
-              {checked ? (
-                gate.state === 'checking' && <span className="text-[10px] font-medium text-n-3">{gate.reason}</span>
-              ) : (
+              {checked && gate.state === 'checking' && <span className="text-[10px] font-medium text-n-3">{gate.reason}</span>}
+              {(!checked || (gate.state !== 'needs_drops' && gate.mustDrop === 0)) && (
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => setAcceptDrops(null)}>
                   Never mind
                 </Button>
@@ -750,12 +750,12 @@ export function TradeCard({
           actions={actions}
           pending={pending}
           accept={
-            gate === null || gate.state === 'fallback'
+            gate === null || gate.state === 'fallback' || gate.state === 'failed'
               ? { show: !pickingDrops, enabled: true, withDrops: true, counter: true, note: null }
               : {
                   show: !pickingDrops && gate.state !== 'blocked' && gate.state !== 'needs_drops',
                   enabled: gate.state === 'ready',
-                  withDrops: false,
+                  withDrops: true,
                   counter: !gate.pastDeadline,
                   note: gate.state === 'checking' && !pickingDrops ? gate.reason : null,
                 }

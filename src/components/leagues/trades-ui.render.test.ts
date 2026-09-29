@@ -503,21 +503,36 @@ describe('L.D3.12 — the builder: Send only when the league would take it', () 
     expect(html).not.toContain('data-faab-over')
     expect(rec.drafts.at(-1)).toMatchObject({ kind: 'offer', legs: [{ playerId: 'p-b1', fromTeamId: BRAVO }, { faabAmount: 40, fromTeamId: ALPHA }] })
   })
-  it('Q75 `reject`: a started player cannot be picked — the reason is on his row — and a deep-link to him picks nothing', () => {
+  it('R1283 — Q75 `reject`: a started player is still pickable (the lock is judged when the trade goes through); picked, his row says it can’t go through until the week’s games are over', () => {
     const rec = recorder()
     const html = builder({ lockBehavior: 'reject', usePreview: rec.hook, initial: { toTeamId: BRAVO, get: ['p-b2'] } })
     const bo = rowOf(html, 'p-b2')
-    expect(bo).toContain('data-unpickable="locked"')
-    expect(bo).toContain('disabled=""')
-    expect(bo).toContain('His game has started — this league doesn’t trade a player until his week’s games are over.')
-    expect(bo).not.toContain('data-picked')
-    expect(html).toContain('Pick at least one player (or some FAAB) to trade.')
-    expect(rec.drafts.every((d) => d === null)).toBe(true)
-  })
-  it('Q75 `defer`: he stays pickable — the trade waits for the week’s last game', () => {
-    const bo = rowOf(builder({ lockBehavior: 'defer', initial: { toTeamId: BRAVO, get: ['p-b2'] } }), 'p-b2')
-    expect(bo).not.toContain('data-unpickable')
     expect(bo).toContain('data-picked="true"')
+    expect(bo).not.toContain('disabled=""')
+    expect(bo).toContain('data-lock-note="reject"')
+    expect(bo).toContain('this league won’t let a trade with him go through until the week’s games are over.')
+    expect(rec.drafts.at(-1)).toMatchObject({ kind: 'offer', legs: [{ playerId: 'p-b2', fromTeamId: BRAVO }] })
+  })
+  it('Q75 `defer`: he stays pickable — picked, his row says the trade waits for the week’s last game; unpicked, only the 🔒', () => {
+    const bo = rowOf(builder({ lockBehavior: 'defer', initial: { toTeamId: BRAVO, get: ['p-b2'] } }), 'p-b2')
+    expect(bo).toContain('data-picked="true"')
+    expect(bo).toContain('data-lock-note="defer"')
+    const unpicked = rowOf(builder({ lockBehavior: 'defer' }), 'p-b2')
+    expect(unpicked).toContain('🔒')
+    expect(unpicked).not.toContain('data-lock-note')
+  })
+  it('R1286: the voluntary “Drop players…” opener stays even when the league says no drop is needed', () => {
+    const html = builder({ usePreview: answer(preview()) })
+    expect(html).toContain('data-trade-drops="closed"')
+    expect(html).toContain('data-trade-drops-open')
+    expect(gateOf(html)).toBe('ok')
+  })
+  it('R1282: the check FAILED (not the 503) → said on screen as a failed check, Send still works (the league checks on send)', () => {
+    const html = builder({ usePreview: () => ({ state: 'failed', reason: 'boom' }) })
+    expect(gateOf(html)).toBe('failed')
+    expect(html).toContain('Couldn’t check this offer with the league just now — it will still be checked when you send it.')
+    expect(html).not.toContain('The league checks both rosters, the deadline and any FAAB when you send')
+    expect(sendOff(html)).toBe(false)
   })
   it('before 162 (unavailable): Send works as it did, with the send-and-see line and the optional drop opener', () => {
     const html = builder()
@@ -539,9 +554,9 @@ describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
   const acceptAnswer = (over: Parameters<typeof preview>[0] = {}, sides: Parameters<typeof preview>[1] = {}) =>
     answer(preview({ mode: 'accept', trade_id: 'tr-1', ...over }, sides))
 
-  it('the receiving roster fits → a plain Accept, on', () => {
+  it('the receiving roster fits → a plain Accept, on — and the voluntary “Accept with drops…” stays (R1286)', () => {
     const html = card({ usePreview: acceptAnswer() })
-    expect(ops(html)).toStrictEqual(['accept', 'counter', 'reject'])
+    expect(ops(html)).toStrictEqual(['accept', 'accept-drops', 'counter', 'reject'])
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*data-trade-op="accept"/)
     expect(html).not.toContain('data-accept-drops')
   })
@@ -562,9 +577,17 @@ describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
     card({ usePreview: rec.hook })
     expect(rec.drafts).toStrictEqual([{ kind: 'accept', tradeId: 'tr-1', drops: [] }])
   })
-  it('Q75 `reject`: a started player can’t be picked as the drop either', () => {
+  it('R1283 — Q75 `reject`: a started player is pickable as a drop too (the 🔒 says what will happen)', () => {
     const html = card({ lockBehavior: 'reject', usePreview: acceptAnswer({ ok: false }, { recipient: { must_drop: 1 } }) })
-    expect(rowOf(html, 'p-b2')).toContain('data-unpickable="locked"')
+    const bo = rowOf(html.slice(html.indexOf('data-drop-picker')), 'p-b2')
+    expect(bo).toContain('🔒')
+    expect(bo).not.toContain('disabled=""')
+  })
+  it('R1282: the accept check FAILED → the card says so, with the D419 buttons (the league checks on accept)', () => {
+    const html = card({ usePreview: () => ({ state: 'failed', reason: 'boom' }) })
+    expect(html).toContain('data-accept-gate="failed"')
+    expect(html).toContain('Couldn’t check this trade with the league just now — it will still be checked when you accept.')
+    expect(ops(html)).toStrictEqual(['accept', 'accept-drops', 'counter', 'reject'])
   })
   it('F414: the offering team no longer fits (it added players) → Accept is off, and why — only they can fix it', () => {
     const html = card({ usePreview: acceptAnswer({ ok: false }, { proposer: { must_drop: 1 } }) })
@@ -585,7 +608,7 @@ describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
   })
   it('…under `defer` it just waits — Accept stays on', () => {
     const html = card({ lockBehavior: 'defer', review: 'none', lockedIds: new Set(['p-b1']), usePreview: acceptAnswer() })
-    expect(ops(html)).toStrictEqual(['accept', 'counter', 'reject'])
+    expect(ops(html)).toStrictEqual(['accept', 'accept-drops', 'counter', 'reject'])
   })
   it('while the league checks: Accept is shown but off', () => {
     const html = card({ usePreview: checking })

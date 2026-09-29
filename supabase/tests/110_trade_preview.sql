@@ -22,6 +22,7 @@
 --      review): P Alpha (u1, the commissioner) a1 a2 a3 — full, FAAB $50;
 --      P Bravo (u2) b1 b2 b3 — full, $100; P Charlie (u3) c1 c2 — one open
 --      spot; P Delta (u4) d1 — RETIRED. u5 is a co-commissioner with NO team.
+--      P Golf (u7) g1 g2 g3 — full (§G's K = 2 bindings).
 --   P2 (in season, no deadline, FAAB NOT allowed in trades, no future
 --      considerations): Q Echo (u1) e1, Q Fox (u2) f1.
 --   u6 belongs to no league.
@@ -29,7 +30,8 @@
 -- Falsifiability (tasks-M1 §4.3): every refusal a stored literal; the
 -- deadline at −1 s (open) and AT it (passed) — and the verbs refuse exactly
 -- when the door says passed; the preview's must_drop is bound to the verbs:
--- must_drop − 1 drops refused by E36, must_drop drops accepted (both arms).
+-- must_drop − 1 drops refused by E36, must_drop drops accepted (both arms,
+-- K = 1 in §C / §D and K = 2 in §G — R1284).
 -- BREAK PROBES shown red in the PR, then reverted (commits on the branch):
 -- (1) take the 162 substitution out of trade_check_internal ⇒ A4 / C1 / D1 /
 -- D8 red (the preview raises instead of reporting); (2) the view's `<=` →
@@ -40,7 +42,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(54);
+select plan(62);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -84,7 +86,7 @@ insert into auth.users
 select '00000000-0000-0000-0000-000000000000', ('91100000-0000-4000-8000-00000000000' || i)::uuid,
   'authenticated', 'authenticated', 'pgtap-tp' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}', json_build_object('username', 'tp_user' || i)::jsonb, now(), now()
-from generate_series(1, 6) i;
+from generate_series(1, 7) i;
 
 insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
                      scoring_system_id, scoring_rules_snapshot, lineup_lock, waiver_type, faab_budget, trade_review, trade_deadline_week,
@@ -104,6 +106,7 @@ select t.id::uuid, ('91100000-0000-4000-8000-00000000000' || t.u)::uuid, t.nm, (
 from (values
  ('c1100000-0000-4000-8000-000000000011', 1, 'P Alpha',   1, 'active'), ('c1100000-0000-4000-8000-000000000012', 2, 'P Bravo', 1, 'active'),
  ('c1100000-0000-4000-8000-000000000013', 3, 'P Charlie', 1, 'active'), ('c1100000-0000-4000-8000-000000000014', 4, 'P Delta', 1, 'retired'),
+ ('c1100000-0000-4000-8000-000000000015', 7, 'P Golf',    1, 'active'),
  ('c1100000-0000-4000-8000-000000000021', 1, 'Q Echo',    2, 'active'), ('c1100000-0000-4000-8000-000000000022', 2, 'Q Fox',   2, 'active')
 ) as t(id, u, nm, lg, st);
 
@@ -124,6 +127,7 @@ from (values
  ('pv-a1', 'P A One'), ('pv-a2', 'P A Two'), ('pv-a3', 'P A Three'),
  ('pv-b1', 'P B One'), ('pv-b2', 'P B Two'), ('pv-b3', 'P B Three'),
  ('pv-c1', 'P C One'), ('pv-c2', 'P C Two'), ('pv-c3', 'P C Three'), ('pv-d1', 'P D One'),
+ ('pv-g1', 'P G One'), ('pv-g2', 'P G Two'), ('pv-g3', 'P G Three'),
  ('pv-e1', 'Q E One'), ('pv-f1', 'Q F One')
 ) as p(id, nm);
 
@@ -133,6 +137,7 @@ from (values
  ('P Alpha', 'pv-a1'), ('P Alpha', 'pv-a2'), ('P Alpha', 'pv-a3'),
  ('P Bravo', 'pv-b1'), ('P Bravo', 'pv-b2'), ('P Bravo', 'pv-b3'),
  ('P Charlie', 'pv-c1'), ('P Charlie', 'pv-c2'), ('P Delta', 'pv-d1'),
+ ('P Golf', 'pv-g1'), ('P Golf', 'pv-g2'), ('P Golf', 'pv-g3'),
  ('Q Echo', 'pv-e1'), ('Q Fox', 'pv-f1')
 ) as r(team, pid)
 join teams t on t.name = r.team and t.id::text like 'c1100000-%';
@@ -508,6 +513,59 @@ select is(
    where n.nspname = 'public' and p.prosrc like '%trade_check_internal(''trade_preview''%'),
   'trade_preview_internal',
   'F3 exactly ONE function calls the validator under the preview verb — trade_preview_internal (no verb borrows the reporting mode)');
+
+-- ---------------------------------------------------------------------------
+-- G. K = 2 (R1284): a 3-for-1 into a full roster needs TWO drops — one is
+--    refused by E36, two are taken — on both arms
+-- ---------------------------------------------------------------------------
+select is(
+  (select format('ok %s | %s', d ->> 'ok', pg_temp.side(d, 'proposer'))
+   from (select pg_temp.offer(1, 1, 'P Alpha', 'P Bravo',
+                 jsonb_build_array(pg_temp.leg('pv-a1', 'P Alpha'), pg_temp.leg('pv-b1', 'P Bravo'), pg_temp.leg('pv-b2', 'P Bravo'), pg_temp.leg('pv-b3', 'P Bravo')),
+                 null, '2026-10-21 16:00:00+00') d) x),
+  'ok false | before 3 out 1 in 3 drops 0 after 5 size 3 must_drop 2 enforced true',
+  'G1 offer: 3-for-1 into a full roster — must_drop 2');
+select is(
+  (select format('ok %s | %s', d ->> 'ok', pg_temp.side(d, 'proposer'))
+   from (select pg_temp.offer(1, 1, 'P Alpha', 'P Bravo',
+                 jsonb_build_array(pg_temp.leg('pv-a1', 'P Alpha'), pg_temp.leg('pv-b1', 'P Bravo'), pg_temp.leg('pv-b2', 'P Bravo'), pg_temp.leg('pv-b3', 'P Bravo')),
+                 array['pv-a2'], '2026-10-21 16:00:00+00') d) x),
+  'ok false | before 3 out 1 in 3 drops 1 after 4 size 3 must_drop 1 enforced true',
+  'G2 …one drop named: still 1 more');
+select throws_ok(
+  $$ select pg_temp.as_user(1); select public.trade_propose_internal(pg_temp.lg(1), pg_temp.team('P Alpha'), pg_temp.team('P Bravo'),
+       jsonb_build_array(pg_temp.leg('pv-a1', 'P Alpha'), pg_temp.leg('pv-b1', 'P Bravo'), pg_temp.leg('pv-b2', 'P Bravo'), pg_temp.leg('pv-b3', 'P Bravo')),
+       array['pv-a2'], null, pg_temp.act(20), '2026-10-21 16:00:00+00', null) $$,
+  'P0001',
+  'trade_propose: P Alpha''s roster would hold 4 players after this trade — 1 more than its 3 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)',
+  'G3 the binding: the verb refuses the offer with one drop…');
+select lives_ok(
+  $$ select pg_temp.as_user(1); select public.trade_propose_internal(pg_temp.lg(1), pg_temp.team('P Alpha'), pg_temp.team('P Bravo'),
+       jsonb_build_array(pg_temp.leg('pv-a1', 'P Alpha'), pg_temp.leg('pv-b1', 'P Bravo'), pg_temp.leg('pv-b2', 'P Bravo'), pg_temp.leg('pv-b3', 'P Bravo')),
+       array['pv-a2', 'pv-a3'], null, pg_temp.act(21), '2026-10-21 16:00:00+00', null) $$,
+  'G4 …and takes it with the two drops the preview asked for');
+
+select pg_temp.as_user(7);
+insert into t110 select 'gb', (public.trade_propose_internal(pg_temp.lg(1), pg_temp.team('P Golf'), pg_temp.team('P Bravo'),
+  jsonb_build_array(pg_temp.leg('pv-g1', 'P Golf'), pg_temp.leg('pv-g2', 'P Golf'), pg_temp.leg('pv-g3', 'P Golf'), pg_temp.leg('pv-b3', 'P Bravo')), null, null, pg_temp.act(22), '2026-10-21 16:00:00+00', null) #>> '{trade,id}')::uuid;
+select is(
+  (select format('ok %s | %s', d ->> 'ok', pg_temp.side(d, 'recipient'))
+   from (select pg_temp.accept(2, 1, (select id from t110 where tag = 'gb'), null, '2026-10-21 17:00:00+00') d) x),
+  'ok false | before 3 out 1 in 3 drops 0 after 5 size 3 must_drop 2 enforced true',
+  'G5 accept: three players in for one into a full roster — the receiving team must pick 2');
+select is(
+  (select format('ok %s | %s', d ->> 'ok', pg_temp.side(d, 'recipient'))
+   from (select pg_temp.accept(2, 1, (select id from t110 where tag = 'gb'), array['pv-b1'], '2026-10-21 17:00:00+00') d) x),
+  'ok false | before 3 out 1 in 3 drops 1 after 4 size 3 must_drop 1 enforced true',
+  'G6 …one picked: still 1 more');
+select throws_ok(
+  $$ select pg_temp.as_user(2); select public.trade_respond_internal(pg_temp.lg(1), (select id from t110 where tag = 'gb'), 'accept', array['pv-b1'], null, null, pg_temp.act(23), '2026-10-21 17:00:00+00', null) $$,
+  'P0001',
+  'trade_respond: P Bravo''s roster would hold 4 players after this trade — 1 more than its 3 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)',
+  'G7 the binding: the verb refuses the accept with one drop…');
+select lives_ok(
+  $$ select pg_temp.as_user(2); select public.trade_respond_internal(pg_temp.lg(1), (select id from t110 where tag = 'gb'), 'accept', array['pv-b1', 'pv-b2'], null, null, pg_temp.act(24), '2026-10-21 17:00:00+00', null) $$,
+  'G8 …and takes it with the two drops');
 
 select * from finish();
 rollback;

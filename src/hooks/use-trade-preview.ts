@@ -30,8 +30,9 @@ import { tradeLegVariables, type TradeLeg, type TradeLegVariables } from './use-
  *
  * DEPLOY BEFORE PUSH: until 162 is pushed the route answers a named 503 →
  * `unavailable`, and the screen falls back to today's send-and-see (the
- * verb's refusal renders, D419). Any other failure also falls back (the
- * verb still decides) — said, never silent.
+ * verb's refusal renders, D419). Any OTHER failure is `failed` (R1282): the
+ * screen says the check couldn't be made, the error is logged, and the verb
+ * stays the backstop — prevention never switches off silently.
  */
 export const tradePreviewKeys = {
   all: (leagueId: string) => ['league-trade-preview', leagueId] as const,
@@ -49,8 +50,12 @@ export type TradePreviewBody =
 export type TradePreviewState =
   /** Nothing to check yet. */
   | { state: 'off' }
-  /** 162 not pushed (the named 503) or the check failed — send and see. */
+  /** 162 not pushed (the named 503) — send and see, exactly as before (D419). */
   | { state: 'unavailable'; reason: string }
+  /** R1282: the check itself failed (a 400 / 403 / 409 / 500, a network
+   *  error) — said on screen, never passed off as "not updated yet"; the
+   *  verb still decides when the offer is sent. */
+  | { state: 'failed'; reason: string }
   /** The current draft is being checked; `last` is the previous answer. */
   | { state: 'checking'; last: TradePreview | null }
   | { state: 'ready'; preview: TradePreview }
@@ -78,8 +83,8 @@ export async function fetchTradePreview(leagueId: string, body: TradePreviewBody
   }
 }
 
-/** The fallback's words when the check itself failed (not the 503). */
-export const TRADE_PREVIEW_FAILED_COPY = 'Couldn’t check this with the league just now — it’s checked when you send it.'
+/** The reason recorded when a failed check carried no message. */
+export const TRADE_PREVIEW_NO_REASON = 'the league check failed'
 
 /**
  * Pure: the hook's state from the pieces React Query hands it. `key` is the
@@ -97,7 +102,7 @@ export function tradePreviewState(input: {
 }): TradePreviewState {
   if (input.key === null) return { state: 'off' }
   if (input.isError) {
-    return { state: 'unavailable', reason: input.error instanceof Error && input.error.message ? input.error.message : TRADE_PREVIEW_FAILED_COPY }
+    return { state: 'failed', reason: input.error instanceof Error && input.error.message ? input.error.message : TRADE_PREVIEW_NO_REASON }
   }
   if (input.data?.kind === 'unavailable') return { state: 'unavailable', reason: input.data.reason }
   const answer = input.data?.kind === 'answer' ? input.data.preview : null
@@ -124,6 +129,10 @@ export const useTradePreview: UseTradePreview = (leagueId, draft) => {
     retry: false,
     placeholderData: keepPreviousData,
   })
+  // R1282: a failed check is loud — on screen (the gates) and here.
+  useEffect(() => {
+    if (query.error) console.error('trade preview failed:', query.error)
+  }, [query.error])
   return tradePreviewState({
     key,
     settled,

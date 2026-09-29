@@ -26,7 +26,6 @@ import {
   faabOverCopy,
   isDeadlineRefusal,
   lockedAssetTitle,
-  lockedPickReason,
   parseFaab,
   rosterWords,
   type BuilderLeg,
@@ -55,9 +54,10 @@ import {
  * no longer on the named team is not in the roster list.
  *
  * A player whose game has started wears 🔒 (Q75, the rosters read's lock
- * view): under `reject` he is NOT pickable, with the reason shown on his row
- * (a trade with him would fail when it goes through); under `defer` he is —
- * the trade waits for the week's last game (E35).
+ * view) and stays pickable — the lock is judged when the trade GOES THROUGH
+ * (151's executor), not when it is offered (R1283). Picked, his row says what
+ * will happen: under `defer` the trade waits for the week's last game (E35);
+ * under `reject` it can't go through until the week's games are over.
  *
  * **Before migration 162 is pushed** (`unavailable`) the builder works as it
  * did (D419): the offer is sent and a refusal renders VERBATIM — when the
@@ -140,12 +140,8 @@ export function TradeBuilderView({
   const faabGive = allowFaab ? parseFaab(faabGiveText) : null
   const faabGet = allowFaab ? parseFaab(faabGetText) : null
   const faabValid = !Number.isNaN(faabGive ?? 0) && !Number.isNaN(faabGet ?? 0)
-  // Picks that no longer sit on the roster (the rosters re-read) are left
-  // out — and so is a started player this league won't trade (Q75 `reject`).
-  const pickable = (team: RosterTeam | null, id: string) => {
-    const p = team?.roster.find((r) => r.player_id === id)
-    return p !== undefined && lockedPickReason(lockBehavior, lockBadgeFor(p.game_lock, true).locked) === null
-  }
+  // Picks that no longer sit on the roster (the rosters re-read) are left out.
+  const pickable = (team: RosterTeam | null, id: string) => team?.roster.some((r) => r.player_id === id) ?? false
   const giveNow = give.filter((id) => pickable(from, id))
   const getNow = get.filter((id) => pickable(to, id))
   const dropsNow = drops.filter((id) => pickable(from, id) && !giveNow.includes(id))
@@ -171,7 +167,8 @@ export function TradeBuilderView({
   // picker with the count (the send-and-see path, D419).
   const overflow = refusal ? dropsNeeded(refusal) : null
   const overflowIsMine = overflow !== null && from !== null && overflow.teamName === from.name
-  const dropsOpen = gate.checked ? gate.mustDrop > 0 || dropsNow.length > 0 : showDrops || overflowIsMine || dropsNow.length > 0
+  // R1286: the voluntary opener stays — the league allows extra drops.
+  const dropsOpen = gate.checked ? gate.mustDrop > 0 || dropsNow.length > 0 || showDrops : showDrops || overflowIsMine || dropsNow.length > 0
   const dropsNeed = gate.checked ? gate.mustDrop : overflowIsMine ? overflow!.more : 0
   const dropsPrompt = gate.checked
     ? gate.mustDrop > 0
@@ -180,7 +177,7 @@ export function TradeBuilderView({
     : overflowIsMine
       ? dropsPromptCopy(overflow!.more)
       : 'Players to drop (only if your roster would be over its size) — dropped only if the trade goes through.'
-  const gateTag = gate.checked ? (gate.canSend ? 'ok' : preview.state === 'checking' ? 'checking' : 'blocked') : 'unchecked'
+  const gateTag = gate.failed ? 'failed' : gate.checked ? (gate.canSend ? 'ok' : preview.state === 'checking' ? 'checking' : 'blocked') : 'unchecked'
 
   if (sentTo) {
     return (
@@ -312,10 +309,10 @@ export function TradeBuilderView({
                 onToggle={(id) => setDrops((d) => toggle(d, id))}
               />
             </>
-          ) : gate.checked ? null : (
+          ) : (
             <span>
               <Button variant="ghost" size="sm" onClick={() => setShowDrops(true)} data-trade-drops-open>
-                Drop players to make room…
+                Drop players…
               </Button>
             </span>
           )}
@@ -338,7 +335,7 @@ export function TradeBuilderView({
           <Button variant="blue" size="sm" shadow disabled={pending || !gate.canSend || locked !== null} onClick={send} data-trade-send>
             {pending ? 'Sending…' : mode === 'counter' ? 'Send counter-offer' : 'Send offer'}
           </Button>
-          <span className={cn('text-[10px] font-medium', gateTag === 'blocked' ? 'text-ink' : 'text-n-3')} data-trade-gate={gateTag}>
+          <span className={cn('text-[10px] font-medium', gateTag === 'blocked' || gateTag === 'failed' ? 'text-ink' : 'text-n-3')} data-trade-gate={gateTag} role={gateTag === 'failed' ? 'status' : undefined}>
             {gate.reason}
           </span>
         </div>
@@ -416,40 +413,29 @@ export function PlayerPickRow({
   onToggle: (playerId: string) => void
 }) {
   const lock = lockBadgeFor(player.game_lock, true)
-  // Q75 `reject`: a started player cannot be in a trade — not pickable, and
-  // the reason is on the row itself (readable on a phone, where there is no
-  // hover), not only in the 🔒's title.
-  const unpickable = lockedPickReason(lockBehavior, lock.locked)
-  const on = checked && unpickable === null
+  // R1283: a started player is always pickable; once picked, his row says
+  // what will happen under this league's rule (readable on a phone, where
+  // the 🔒's title is not).
   const id = `pick-${player.player_id}`
   return (
     <li
-      className={cn('flex items-center gap-2 rounded-sm border px-2 py-1', on ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white')}
+      className={cn('flex items-center gap-2 rounded-sm border px-2 py-1', checked ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white')}
       data-trade-pick={player.player_id}
-      data-picked={on || undefined}
-      data-unpickable={unpickable ? 'locked' : undefined}
-      title={unpickable ?? undefined}
+      data-picked={checked || undefined}
     >
-      <Checkbox
-        id={id}
-        checked={on}
-        disabled={unpickable !== null}
-        onCheckedChange={() => onToggle(player.player_id)}
-        aria-label={`Pick ${player.full_name}`}
-        aria-describedby={unpickable ? `${id}-why` : undefined}
-      />
-      <label htmlFor={id} className={cn('flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5', unpickable ? 'cursor-not-allowed' : 'cursor-pointer')}>
+      <Checkbox id={id} checked={checked} onCheckedChange={() => onToggle(player.player_id)} aria-label={`Pick ${player.full_name}`} />
+      <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-1.5">
         <PositionBadge position={player.position} size="sm" />
-        <span className={cn('truncate text-[12px] font-bold', unpickable ? 'text-n-3' : 'text-ink')}>{player.full_name}</span>
+        <span className="truncate text-[12px] font-bold text-ink">{player.full_name}</span>
         <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
-        {unpickable && (
-          <span id={`${id}-why`} className="basis-full text-[10px] font-medium text-n-3" data-unpickable-why>
-            {unpickable}
+        {lock.locked && checked && (
+          <span className="basis-full text-[10px] font-medium text-n-3" data-lock-note={lockBehavior}>
+            {lockedAssetTitle(lockBehavior)}
           </span>
         )}
       </label>
       {lock.locked && (
-        <Badge variant="black" title={unpickable ?? lockedAssetTitle(lockBehavior)} data-lock>
+        <Badge variant="black" title={lockedAssetTitle(lockBehavior)} data-lock>
           🔒
         </Badge>
       )}

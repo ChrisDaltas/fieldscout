@@ -814,8 +814,42 @@ export interface TradePreview {
   evaluated_at: string
 }
 
-function checksFailure(error: RpcErrorLike): ServiceResult {
-  if (isMissingSchemaObject(error, TRADE_CHECK_OBJECTS)) {
+/** Each door's parameters as 162 defines them — what this file sends. */
+export const TRADE_CHECK_DOORS: Readonly<Record<string, readonly string[]>> = {
+  trade_deadline: ['p_league_id'],
+  trade_preview: ['p_league_id', 'p_trade_id', 'p_from_team_id', 'p_to_team_id', 'p_items', 'p_drops'],
+}
+
+/**
+ * R1282: true ONLY when the database has no such door — 162 not pushed yet —
+ * never for a call the door exists for but does not match (argument drift).
+ * PostgREST answers both with PGRST202 (measured on the local stack
+ * 2026-09-29), so a PGRST202 counts as "not pushed" only when (a) its hint
+ * does not offer the SAME function under another signature ("Perhaps you
+ * meant to call the function public.trade_deadline(p_league_id)" — the door
+ * is there) and (b) every argument it names is one of the door's own (a
+ * `p_bogus` means the CALL drifted — the hint is not always given, measured:
+ * `trade_preview(p_bogus, p_league_id)` came back with `hint: null`).
+ * Anything else is a loud 500, never the quiet fallback.
+ */
+export function isDoorNotPushed(
+  error: (RpcErrorLike & { hint?: string | null }) | null | undefined,
+  doors: Readonly<Record<string, readonly string[]>> = TRADE_CHECK_DOORS,
+): boolean {
+  if (!error) return false
+  for (const [name, params] of Object.entries(doors)) {
+    if (!isMissingSchemaObject(error, [name])) continue
+    if (error.code !== 'PGRST202') return true
+    if ((error.hint ?? '').includes(`public.${name}(`)) return false
+    const args = new RegExp(`public\\.${escapeRegExp(name)}\\(([^)]*)\\)`).exec(error.message ?? '')
+    const named = (args?.[1] ?? '').split(',').map((a) => a.trim()).filter(Boolean)
+    return named.every((a) => params.includes(a))
+  }
+  return false
+}
+
+function checksFailure(error: RpcErrorLike & { hint?: string | null }): ServiceResult {
+  if (isDoorNotPushed(error)) {
     return { status: 503, body: { error: TRADE_CHECKS_UNAVAILABLE_MESSAGE } }
   }
   return mapInSeasonRpcError(error, TRADE_CHECKS_FORBIDDEN_MESSAGE)

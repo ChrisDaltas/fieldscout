@@ -18,11 +18,12 @@ import {
   tradeDeadlineRefetchInterval,
   tradeDeadlineUrl,
 } from '@/hooks/use-trade-deadline'
-import { TRADE_PREVIEW_FAILED_COPY, fetchTradePreview, tradePreviewBody, tradePreviewState, type TradePreviewState } from '@/hooks/use-trade-preview'
+import { TRADE_PREVIEW_NO_REASON, fetchTradePreview, tradePreviewBody, tradePreviewState, type TradePreviewState } from '@/hooks/use-trade-preview'
 
 import {
-  LOCKED_UNPICKABLE_COPY,
+  ACCEPT_CHECK_FAILED_COPY,
   NOT_IN_SEASON_TRADE_COPY,
+  PREVIEW_FAILED_COPY,
   PREVIEW_CHECKING_COPY,
   SEND_AND_SEE_COPY,
   acceptGate,
@@ -31,7 +32,7 @@ import {
   dropsNeededCopy,
   faabOverBalance,
   faabOverCopy,
-  lockedPickReason,
+  lockedAssetTitle,
   offerPastDeadlineCopy,
   previewRefusalCopy,
   rosterWords,
@@ -81,10 +82,9 @@ describe('the deadline line (F452) — from the server’s instant, never a cloc
 })
 
 describe('the pickers — Q75 and FAAB', () => {
-  it('a started player is unpickable only where the league refuses such a trade (`reject`); `defer` waits', () => {
-    expect(lockedPickReason('reject', true)).toBe(LOCKED_UNPICKABLE_COPY)
-    expect(lockedPickReason('reject', false)).toBeNull()
-    expect(lockedPickReason('defer', true)).toBeNull()
+  it('R1283: a started player’s 🔒 says what WILL happen under the league’s rule — never a ban (the lock is judged when the trade goes through)', () => {
+    expect(lockedAssetTitle('defer')).toBe('His game has started this week — a trade with him waits and goes through right after the week’s last game ends.')
+    expect(lockedAssetTitle('reject')).toBe('His game has started this week — this league won’t let a trade with him go through until the week’s games are over.')
   })
   it('FAAB over the balance: one dollar over is over, the balance itself is not; blank / not-a-number / unknown balance never', () => {
     expect(faabOverBalance(51, 50)).toBe(true)
@@ -118,6 +118,11 @@ describe('builderGate — Send only when the league would take the offer', () =>
   it('before 162 (unavailable): Send is on and the server’s answer is what you see', () => {
     expect(builderGate({ ...base, preview: { state: 'unavailable', reason: 'x' } })).toStrictEqual({ canSend: true, reason: SEND_AND_SEE_COPY, mustDrop: 0, recipientMustDrop: 0, checked: false })
   })
+  it('R1282: the check itself FAILED (not the 503): Send stays on (the verb decides) but it is said — never the before-162 line', () => {
+    const g = builderGate({ ...base, preview: { state: 'failed', reason: 'boom' } })
+    expect(g).toStrictEqual({ canSend: true, reason: PREVIEW_FAILED_COPY, mustDrop: 0, recipientMustDrop: 0, checked: false, failed: true })
+    expect(g.reason).not.toBe(SEND_AND_SEE_COPY)
+  })
   it('checking: off, but the last answer’s counts stay on screen', () => {
     const last = preview({ ok: false }, { proposer: { must_drop: 2 } })
     expect(builderGate({ ...base, preview: { state: 'checking', last } })).toStrictEqual({ canSend: false, reason: PREVIEW_CHECKING_COPY, mustDrop: 2, recipientMustDrop: 0, checked: true })
@@ -145,7 +150,10 @@ describe('acceptGate — the drop picker is part of accepting', () => {
   const base = { deadline: null, lockBehavior: 'defer', review: 'commissioner', lockedNames: [] as string[], proposerName: 'Alpha', fmt }
   const accept = (over: Parameters<typeof preview>[0] = {}, sides: Parameters<typeof preview>[1] = {}) => ready(preview({ mode: 'accept', trade_id: 'tr-1', ...over }, sides))
   it('before 162: the fallback (today’s Accept / Accept with drops)', () => {
-    expect(acceptGate({ ...base, preview: { state: 'unavailable', reason: 'x' } }).state).toBe('fallback')
+    expect(acceptGate({ ...base, preview: { state: 'unavailable', reason: 'x' } })).toStrictEqual({ state: 'fallback', mustDrop: 0, reason: null, pastDeadline: false })
+  })
+  it('R1282: the check FAILED → its own state, said on the card (the verb still decides)', () => {
+    expect(acceptGate({ ...base, preview: { state: 'failed', reason: 'boom' } })).toStrictEqual({ state: 'failed', mustDrop: 0, reason: ACCEPT_CHECK_FAILED_COPY, pastDeadline: false })
   })
   it('past the deadline — from the page’s deadline read or the preview’s own — blocked, Counter too', () => {
     expect(acceptGate({ ...base, deadline: deadlineView({ passed: true }), preview: { state: 'off' } })).toMatchObject({ state: 'blocked', pastDeadline: true })
@@ -191,8 +199,9 @@ describe('the hooks’ pure halves', () => {
       tradePreviewState({ key: 'k', settled: 'k', data: answer, isError: false, error: null, isFetching: false, isPlaceholderData: false, ...over })
     expect(s({ key: null })).toStrictEqual({ state: 'off' })
     expect(s({ data: { kind: 'unavailable', reason: 'not pushed' } })).toStrictEqual({ state: 'unavailable', reason: 'not pushed' })
-    expect(s({ isError: true, error: new Error('boom') })).toStrictEqual({ state: 'unavailable', reason: 'boom' })
-    expect(s({ isError: true, error: null })).toStrictEqual({ state: 'unavailable', reason: TRADE_PREVIEW_FAILED_COPY })
+    // R1282: only the named 503 is `unavailable`; any other failure is `failed`.
+    expect(s({ isError: true, error: new Error('boom') })).toStrictEqual({ state: 'failed', reason: 'boom' })
+    expect(s({ isError: true, error: null })).toStrictEqual({ state: 'failed', reason: TRADE_PREVIEW_NO_REASON })
     expect(s({ settled: 'older' })).toStrictEqual({ state: 'checking', last: answer.preview })
     expect(s({ isFetching: true })).toStrictEqual({ state: 'checking', last: answer.preview })
     expect(s({ isPlaceholderData: true })).toStrictEqual({ state: 'checking', last: answer.preview })
@@ -221,6 +230,11 @@ describe('the hooks’ pure halves', () => {
     await expect(fetchTradePreview('L', { trade_id: 't' })).resolves.toStrictEqual({ kind: 'unavailable', reason: 'The trade deadline and the offer check aren’t available yet' })
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'nope' }), { status: 403 })))
     await expect(fetchTradeDeadline('L')).rejects.toMatchObject({ status: 403 })
+    // R1282: a 400 / 403 / 409 / 500 from the preview THROWS (→ `failed`), never `unavailable`.
+    for (const status of [400, 403, 409, 500]) {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'x' }), { status })))
+      await expect(fetchTradePreview('L', { trade_id: 't' })).rejects.toMatchObject({ status })
+    }
     const ok = vi.fn(async () => new Response(JSON.stringify(preview()), { status: 200 }))
     vi.stubGlobal('fetch', ok)
     await expect(fetchTradePreview('L', { trade_id: 't', drops: ['a'] })).resolves.toStrictEqual({ kind: 'answer', preview: preview() })

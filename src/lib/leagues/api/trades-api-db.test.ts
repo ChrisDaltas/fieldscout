@@ -51,6 +51,7 @@ import {
   type TradeDeadlineView,
   type TradePreview,
   actOnTrade,
+  isDoorNotPushed,
   isMissingSchemaObject,
   proposeTrade,
   readTrades,
@@ -607,5 +608,16 @@ describe('GET …/trades/deadline + POST …/trades/preview — 162 over the rea
     expect(error?.message).toBe('Could not find the function public.trade_preview_not_pushed(p_league_id) in the schema cache')
     expect(isMissingSchemaObject(error, ['trade_preview_not_pushed'])).toBe(true)
     expect(isMissingSchemaObject(error, TRADE_CHECK_OBJECTS)).toBe(false)
+    expect(isDoorNotPushed(error, { trade_preview_not_pushed: ['p_league_id'] })).toBe(true)
+  })
+
+  it('R1282: a DRIFTED call to a door that exists is never read as "not pushed" (PostgREST’s real answers, with and without a hint)', async () => {
+    const call = managerAClient.rpc.bind(managerAClient) as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ error: { code?: string; message: string; hint?: string | null } | null }>
+    const drift1 = (await call('trade_deadline', { p_bogus: 1 })).error
+    const drift2 = (await call('trade_preview', { p_league_id: leagueId, p_bogus: 1 })).error
+    expect([drift1?.code, drift2?.code]).toStrictEqual(['PGRST202', 'PGRST202'])
+    expect(isMissingSchemaObject(drift1, TRADE_CHECK_OBJECTS)).toBe(true) // the old, too-wide test said "not pushed"
+    expect(isDoorNotPushed(drift1)).toBe(false)
+    expect(isDoorNotPushed(drift2)).toBe(false)
   })
 })

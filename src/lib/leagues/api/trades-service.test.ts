@@ -21,6 +21,7 @@ import {
   readTradeDeadline,
   actOnTrade,
   commishTrade,
+  isDoorNotPushed,
   isMissingSchemaObject,
   msUntil,
   proposeTrade,
@@ -382,5 +383,36 @@ describe('previewTrade (POST …/trades/preview → trade_preview, 162)', () => 
     for (const [error, status, message] of cases) {
       expect(await previewTrade(rpcClient({ data: null, error }).client, L, offer)).toStrictEqual({ status, body: { error: message } })
     }
+  })
+})
+
+describe('isDoorNotPushed — R1282: "not pushed yet" only when the door is absent, never on argument drift', () => {
+  // PostgREST's answers, measured on the local stack 2026-09-29 (162 applied).
+  const DRIFT_WITH_HINT = {
+    code: 'PGRST202',
+    message: 'Could not find the function public.trade_deadline(p_bogus) in the schema cache',
+    hint: 'Perhaps you meant to call the function public.trade_deadline(p_league_id)',
+  }
+  const DRIFT_NO_HINT = { code: 'PGRST202', message: 'Could not find the function public.trade_preview(p_bogus, p_league_id) in the schema cache', hint: null }
+  const ABSENT_OTHER_HINT = {
+    code: 'PGRST202',
+    message: 'Could not find the function public.trade_deadline(p_league_id) in the schema cache',
+    hint: 'Perhaps you meant to call the function public.trade_deadline_view_internal',
+  }
+  it('absent door (our own arguments, no same-name hint) → not pushed', () => {
+    expect(isDoorNotPushed(DEADLINE_MISSING)).toBe(true)
+    expect(isDoorNotPushed(PREVIEW_MISSING)).toBe(true)
+    expect(isDoorNotPushed(ABSENT_OTHER_HINT)).toBe(true)
+    expect(isDoorNotPushed({ code: '42883', message: 'function public.trade_preview(uuid) does not exist' })).toBe(true)
+  })
+  it('the door is there but the call drifted — a same-name hint, or an argument the door does not have → NOT "not pushed"', () => {
+    expect(isDoorNotPushed(DRIFT_WITH_HINT)).toBe(false)
+    expect(isDoorNotPushed(DRIFT_NO_HINT)).toBe(false)
+    expect(isDoorNotPushed(null)).toBe(false)
+    expect(isDoorNotPushed({ code: 'P0001', message: 'Could not find the function public.trade_preview(p_league_id)' })).toBe(false)
+  })
+  it('…so the routes answer a drifted call with a loud 500, not the quiet named 503', async () => {
+    expect((await readTradeDeadline(rpcClient({ data: null, error: DRIFT_WITH_HINT }).client, L)).status).toBe(500)
+    expect((await previewTrade(rpcClient({ data: null, error: DRIFT_NO_HINT }).client, L, { trade_id: TID })).status).toBe(500)
   })
 })

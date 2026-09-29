@@ -89,10 +89,13 @@ export function reviewModeCopy(settings: Pick<TradesDocument['settings'], 'trade
   }
 }
 
-/** What a 🔒 on a trade asset means under this league's rule (Q75 / E35). */
+/** What a 🔒 on a trade asset means under this league's rule (Q75 / E35) —
+ *  what WILL happen, never a ban: the lock is judged when the trade goes
+ *  through (151's executor), so a started player can always be offered
+ *  (R1283). */
 export function lockedAssetTitle(lockBehavior: string): string {
   return lockBehavior === 'reject'
-    ? 'His game has started this week — a trade with him is refused until the week’s last game ends.'
+    ? 'His game has started this week — this league won’t let a trade with him go through until the week’s games are over.'
     : 'His game has started this week — a trade with him waits and goes through right after the week’s last game ends.'
 }
 
@@ -132,14 +135,10 @@ export function offerPastDeadlineCopy(view: TradeDeadlineView, fmt: (iso: string
   return `The trade deadline passed${when} — this offer can’t be accepted or countered now. It expires on its own; you can still turn it down.`
 }
 
-/** Q75 in the pickers: under `reject` a started player cannot be in a trade
- *  (the trade would fail when it goes through while he is locked), so he is
- *  not pickable; under `defer` he is — the trade just waits for the week's
- *  last game (the spec's rule, E35). Null = pickable. */
-export const LOCKED_UNPICKABLE_COPY = 'His game has started — this league doesn’t trade a player until his week’s games are over.'
-export function lockedPickReason(lockBehavior: string, locked: boolean): string | null {
-  return locked && lockBehavior === 'reject' ? LOCKED_UNPICKABLE_COPY : null
-}
+/** R1282: the check itself failed (not "not pushed yet") — said plainly,
+ *  distinct from the before-162 line; the league still checks on send. */
+export const PREVIEW_FAILED_COPY = 'Couldn’t check this offer with the league just now — it will still be checked when you send it.'
+export const ACCEPT_CHECK_FAILED_COPY = 'Couldn’t check this trade with the league just now — it will still be checked when you accept.'
 
 /** A FAAB box above what the team has (the rosters read's balance — the
  *  preview rechecks it, §13.3). */
@@ -170,8 +169,11 @@ export interface BuilderGate {
   mustDrop: number
   /** The receiving team would be over by this many — it picks them when it accepts. */
   recipientMustDrop: number
-  /** The league checked this offer (162) — false = send-and-see (before 162). */
+  /** The league checked this offer (162) — false = send-and-see (before 162,
+   *  or the check failed). */
   checked: boolean
+  /** R1282: the check failed — shown as such, never as "not updated yet". */
+  failed?: boolean
 }
 
 /**
@@ -193,6 +195,7 @@ export function builderGate(input: {
   if (input.faabProblem) return { canSend: false, reason: input.faabProblem, checked: false, ...none }
   const p = input.preview
   if (p.state === 'unavailable' || p.state === 'off') return { canSend: p.state === 'unavailable', reason: SEND_AND_SEE_COPY, checked: false, ...none }
+  if (p.state === 'failed') return { canSend: true, reason: PREVIEW_FAILED_COPY, checked: false, failed: true, ...none }
   const answer = p.state === 'ready' ? p.preview : p.last
   const counts = {
     mustDrop: answer?.rosters?.proposer.must_drop ?? 0,
@@ -224,7 +227,7 @@ export function dropsNeededCopy(more: number, words: string): string {
   return `${capitalize(words)} would be over its size — pick ${more} more player${more === 1 ? '' : 's'} to drop. ${more === 1 ? 'He is' : 'They are'} dropped only if the trade goes through.`
 }
 
-export type AcceptGateState = 'fallback' | 'checking' | 'ready' | 'needs_drops' | 'blocked'
+export type AcceptGateState = 'fallback' | 'failed' | 'checking' | 'ready' | 'needs_drops' | 'blocked'
 
 export interface AcceptGate {
   state: AcceptGateState
@@ -250,7 +253,8 @@ export interface AcceptGate {
  *     longer fits (F414 — only it can fix that) → blocked; the receiving
  *     team over its size → needs_drops (K); otherwise ready.
  *   - before 162 (`unavailable`) → fallback: today's Accept / Accept with
- *     drops, the verb's refusal as the answer (D419).
+ *     drops, the verb's refusal as the answer (D419); the check itself
+ *     failing → `failed`: the same buttons, and the card says so (R1282).
  */
 export function acceptGate(input: {
   preview: TradePreviewState
@@ -274,6 +278,8 @@ export function acceptGate(input: {
   }
   const p = input.preview
   if (p.state === 'unavailable' || p.state === 'off') return { state: 'fallback', mustDrop: 0, reason: null, pastDeadline: false }
+  // R1282: the check failed — the D419 buttons (the verb decides), said.
+  if (p.state === 'failed') return { state: 'failed', mustDrop: 0, reason: ACCEPT_CHECK_FAILED_COPY, pastDeadline: false }
   const answer = p.state === 'ready' ? p.preview : p.last
   const mustDrop = answer?.rosters?.recipient.must_drop ?? 0
   if (p.state === 'checking') return { state: 'checking', mustDrop, reason: PREVIEW_CHECKING_COPY, pastDeadline: false }
