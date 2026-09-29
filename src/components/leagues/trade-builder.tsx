@@ -9,19 +9,26 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useTradePreview, type UseTradePreview } from '@/hooks/use-trade-preview'
 import type { RosterPlayer, RosterTeam } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
 
 import { lockBadgeFor } from './lineup-editor-ops'
 import { StatusBanner } from './status-banners'
 import {
+  builderGate,
   builderLegs,
   builderProblem,
   dropsNeeded,
+  dropsNeededCopy,
   dropsPromptCopy,
+  faabOverBalance,
+  faabOverCopy,
   isDeadlineRefusal,
   lockedAssetTitle,
+  lockedPickReason,
   parseFaab,
+  rosterWords,
   type BuilderLeg,
   type BuilderSides,
   plainRefusal,
@@ -29,23 +36,34 @@ import {
 
 /**
  * `trade-builder` — spec §16.2 ("two-sided selector w/ legality preview"),
- * §16.5.2's Trade lifecycle row, §13.3 — M5 task L.D3.7 (PROGRESS D419).
+ * §16.5.2's Trade lifecycle row, §13.3 — M5 tasks L.D3.7 (PROGRESS D419) and
+ * L.D3.12 (D426).
  *
  * Two columns — what the offering team gives, what it asks for — picked from
  * the two ROSTERS (the rosters read, never a client guess), plus FAAB when
  * the league allows it in trades, the team's own drops (E36) and a note.
  *
- * **The legality preview is the server's answer.** There is no dry-run door
- * to 148/151's `trade_check_internal`, so none is invented (F462 asks for
- * one): the offer is sent, and a refusal renders VERBATIM. When the sentence
- * says the offering team's roster would overflow, the drop picker opens and
- * says how many (`dropsNeeded`). When it says the trade deadline has passed,
- * the builder locks with that sentence — the deadline instant is the
- * server's (F452).
+ * **An offer the league would refuse cannot be built (L.D3.12 — Chris
+ * 2026-09-29: "there is no such thing as trade that isn't legal").** As the
+ * manager picks, the offer is checked with the league (`usePreview` →
+ * migration 162's `trade_preview`, the verbs' own `trade_check_internal`):
+ * Send is enabled only when it says the offer goes in. When the offering
+ * team's roster would be over its size, the drop picker opens with how many
+ * more to pick; the receiving team's own overflow is said (it picks its
+ * drops when it accepts). A FAAB box above what the team has is refused
+ * here, from the rosters read's balance (the preview rechecks it). A player
+ * no longer on the named team is not in the roster list.
  *
- * A player whose game has started wears 🔒 with what that means under the
- * league's `trade_lock_behavior` (Q75 — `defer` waits, `reject` refuses);
- * he stays pickable — the verb decides.
+ * A player whose game has started wears 🔒 (Q75, the rosters read's lock
+ * view): under `reject` he is NOT pickable, with the reason shown on his row
+ * (a trade with him would fail when it goes through); under `defer` he is —
+ * the trade waits for the week's last game (E35).
+ *
+ * **Before migration 162 is pushed** (`unavailable`) the builder works as it
+ * did (D419): the offer is sent and a refusal renders VERBATIM — when the
+ * sentence says the offering team's roster would overflow the drop picker
+ * opens (`dropsNeeded`), and a deadline refusal locks the builder. Those
+ * refusals stay as the backstop after 162 too.
  *
  * Also the COUNTER-OFFER form (`mode = 'counter'`): the teams are fixed, the
  * picks start from the offer turned around (`counterSeed`).
@@ -62,6 +80,7 @@ export interface TradeBuilderSend {
 }
 
 export interface TradeBuilderViewProps {
+  leagueId: string
   mode: 'propose' | 'counter'
   teams: readonly RosterTeam[]
   /** The offering team. */
@@ -69,7 +88,7 @@ export interface TradeBuilderViewProps {
   /** A commissioner in override mode may offer for any team (TD5): the
    *  choices; null = the offering team is fixed (the viewer's own). */
   fromChoices: readonly { id: string; name: string }[] | null
-  initial?: Partial<Pick<BuilderSides, 'toTeamId' | 'give' | 'get' | 'faabGive' | 'faabGet'>>
+  initial?: Partial<Pick<BuilderSides, 'toTeamId' | 'give' | 'get' | 'faabGive' | 'faabGet'>> & { drops?: readonly string[] }
   allowFaab: boolean
   lockBehavior: string
   pending: boolean
@@ -82,9 +101,13 @@ export interface TradeBuilderViewProps {
   onFromTeam?: (teamId: string) => void
   onSend: (send: TradeBuilderSend) => void
   onClose: () => void
+  /** The league's answer as the offer is built (162); injected so a static
+   *  render can hand it any answer. */
+  usePreview?: UseTradePreview
 }
 
 export function TradeBuilderView({
+  leagueId,
   mode,
   teams,
   fromTeamId,
@@ -99,13 +122,14 @@ export function TradeBuilderView({
   onFromTeam,
   onSend,
   onClose,
+  usePreview = useTradePreview,
 }: TradeBuilderViewProps) {
   const [toTeamId, setToTeamId] = useState<string | null>(initial?.toTeamId && initial.toTeamId !== fromTeamId ? initial.toTeamId : null)
   const [give, setGive] = useState<string[]>([...(initial?.give ?? [])])
   const [get, setGet] = useState<string[]>([...(initial?.get ?? [])])
   const [faabGiveText, setFaabGiveText] = useState(initial?.faabGive ? String(initial.faabGive) : '')
   const [faabGetText, setFaabGetText] = useState(initial?.faabGet ? String(initial.faabGet) : '')
-  const [drops, setDrops] = useState<string[]>([])
+  const [drops, setDrops] = useState<string[]>([...(initial?.drops ?? [])])
   const [showDrops, setShowDrops] = useState(false)
   const [note, setNote] = useState('')
 
@@ -116,17 +140,47 @@ export function TradeBuilderView({
   const faabGive = allowFaab ? parseFaab(faabGiveText) : null
   const faabGet = allowFaab ? parseFaab(faabGetText) : null
   const faabValid = !Number.isNaN(faabGive ?? 0) && !Number.isNaN(faabGet ?? 0)
-  // Picks that no longer sit on the roster (the rosters re-read) are left out.
-  const giveNow = give.filter((id) => from?.roster.some((p) => p.player_id === id))
-  const getNow = get.filter((id) => to?.roster.some((p) => p.player_id === id))
-  const dropsNow = drops.filter((id) => from?.roster.some((p) => p.player_id === id) && !giveNow.includes(id))
+  // Picks that no longer sit on the roster (the rosters re-read) are left
+  // out — and so is a started player this league won't trade (Q75 `reject`).
+  const pickable = (team: RosterTeam | null, id: string) => {
+    const p = team?.roster.find((r) => r.player_id === id)
+    return p !== undefined && lockedPickReason(lockBehavior, lockBadgeFor(p.game_lock, true).locked) === null
+  }
+  const giveNow = give.filter((id) => pickable(from, id))
+  const getNow = get.filter((id) => pickable(to, id))
+  const dropsNow = drops.filter((id) => pickable(from, id) && !giveNow.includes(id))
   const problem = builderProblem({ toTeamId: toTeamId ?? undefined, give: giveNow, get: getNow, faabGive, faabGet, faabValid })
+  const faabProblem =
+    from && from.faab_balance !== null && faabOverBalance(faabGive, from.faab_balance)
+      ? faabOverCopy(from.name, from.faab_balance)
+      : to && to.faab_balance !== null && faabOverBalance(faabGet, to.faab_balance)
+        ? faabOverCopy(to.name, to.faab_balance)
+        : null
+  const locked = deadlineRefusal ?? (refusal && isDeadlineRefusal(refusal) ? refusal : null)
+  const legs = toTeamId ? builderLegs({ fromTeamId, toTeamId, give: giveNow, get: getNow, faabGive: faabGive ?? null, faabGet: faabGet ?? null }) : []
 
-  // The server said the offering team overflows — open the picker with the count.
+  // THE LEAGUE'S ANSWER (162) — asked only for an offer that could be sent.
+  const preview = usePreview(
+    leagueId,
+    !problem && !faabProblem && toTeamId && !locked && !sentTo ? { kind: 'offer', fromTeamId, toTeamId, legs, drops: dropsNow } : null,
+  )
+  const words = rosterWords(from?.name ?? null, fromChoices === null)
+  const gate = builderGate({ problem, faabProblem, preview, fromWords: words, toName: to?.name ?? 'the other team' })
+
+  // Before 162: the server said the offering team overflows — open the
+  // picker with the count (the send-and-see path, D419).
   const overflow = refusal ? dropsNeeded(refusal) : null
   const overflowIsMine = overflow !== null && from !== null && overflow.teamName === from.name
-  const dropsOpen = showDrops || overflowIsMine || dropsNow.length > 0
-  const locked = deadlineRefusal ?? (refusal && isDeadlineRefusal(refusal) ? refusal : null)
+  const dropsOpen = gate.checked ? gate.mustDrop > 0 || dropsNow.length > 0 : showDrops || overflowIsMine || dropsNow.length > 0
+  const dropsNeed = gate.checked ? gate.mustDrop : overflowIsMine ? overflow!.more : 0
+  const dropsPrompt = gate.checked
+    ? gate.mustDrop > 0
+      ? dropsNeededCopy(gate.mustDrop, words)
+      : 'Dropped only if the trade goes through.'
+    : overflowIsMine
+      ? dropsPromptCopy(overflow!.more)
+      : 'Players to drop (only if your roster would be over its size) — dropped only if the trade goes through.'
+  const gateTag = gate.checked ? (gate.canSend ? 'ok' : preview.state === 'checking' ? 'checking' : 'blocked') : 'unchecked'
 
   if (sentTo) {
     return (
@@ -147,14 +201,8 @@ export function TradeBuilderView({
   }
 
   const send = () => {
-    if (problem || !toTeamId || locked) return
-    onSend({
-      fromTeamId,
-      toTeamId,
-      legs: builderLegs({ fromTeamId, toTeamId, give: giveNow, get: getNow, faabGive: faabGive ?? null, faabGet: faabGet ?? null }),
-      drops: dropsNow,
-      note,
-    })
+    if (!gate.canSend || !toTeamId || locked) return
+    onSend({ fromTeamId, toTeamId, legs, drops: dropsNow, note })
   }
 
   return (
@@ -236,7 +284,7 @@ export function TradeBuilderView({
             picked={giveNow}
             lockBehavior={lockBehavior}
             onToggle={(id) => setGive((g) => toggle(g, id))}
-            faab={allowFaab ? { text: faabGiveText, onChange: setFaabGiveText, balance: from?.faab_balance ?? null } : null}
+            faab={allowFaab ? { text: faabGiveText, onChange: setFaabGiveText, balance: from?.faab_balance ?? null, over: faabOverBalance(faabGive, from?.faab_balance ?? null) } : null}
             empty="No players on this roster."
           />
           <SideColumn
@@ -246,7 +294,7 @@ export function TradeBuilderView({
             picked={getNow}
             lockBehavior={lockBehavior}
             onToggle={(id) => setGet((g) => toggle(g, id))}
-            faab={allowFaab && to ? { text: faabGetText, onChange: setFaabGetText, balance: to.faab_balance } : null}
+            faab={allowFaab && to ? { text: faabGetText, onChange: setFaabGetText, balance: to.faab_balance, over: faabOverBalance(faabGet, to.faab_balance) } : null}
             empty={to ? 'No players on this roster.' : 'Pick a team to see its roster.'}
           />
         </div>
@@ -254,8 +302,8 @@ export function TradeBuilderView({
         <div className="flex flex-col gap-1.5" data-trade-drops={dropsOpen ? 'open' : 'closed'}>
           {dropsOpen ? (
             <>
-              <p className={cn('text-[11px] font-bold', overflowIsMine ? 'text-ink' : 'text-n-3')} data-trade-drops-prompt={overflowIsMine ? overflow!.more : undefined}>
-                {overflowIsMine ? dropsPromptCopy(overflow!.more) : 'Players to drop (only if your roster would be over its size) — dropped only if the trade goes through.'}
+              <p className={cn('text-[11px] font-bold', dropsNeed > 0 ? 'text-ink' : 'text-n-3')} data-trade-drops-prompt={dropsNeed > 0 ? dropsNeed : undefined}>
+                {dropsPrompt}
               </p>
               <DropPicker
                 roster={(from?.roster ?? []).filter((p) => !giveNow.includes(p.player_id))}
@@ -264,7 +312,7 @@ export function TradeBuilderView({
                 onToggle={(id) => setDrops((d) => toggle(d, id))}
               />
             </>
-          ) : (
+          ) : gate.checked ? null : (
             <span>
               <Button variant="ghost" size="sm" onClick={() => setShowDrops(true)} data-trade-drops-open>
                 Drop players to make room…
@@ -287,10 +335,12 @@ export function TradeBuilderView({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="blue" size="sm" shadow disabled={pending || problem !== null || locked !== null} onClick={send} data-trade-send>
+          <Button variant="blue" size="sm" shadow disabled={pending || !gate.canSend || locked !== null} onClick={send} data-trade-send>
             {pending ? 'Sending…' : mode === 'counter' ? 'Send counter-offer' : 'Send offer'}
           </Button>
-          <span className="text-[10px] font-medium text-n-3">{problem ?? 'The league checks both rosters, the deadline and any FAAB when you send — its answer is what you see.'}</span>
+          <span className={cn('text-[10px] font-medium', gateTag === 'blocked' ? 'text-ink' : 'text-n-3')} data-trade-gate={gateTag}>
+            {gate.reason}
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -317,7 +367,7 @@ function SideColumn({
   picked: readonly string[]
   lockBehavior: string
   onToggle: (playerId: string) => void
-  faab: { text: string; onChange: (text: string) => void; balance: number | null } | null
+  faab: { text: string; onChange: (text: string) => void; balance: number | null; over: boolean } | null
   empty: string
 }) {
   return (
@@ -340,10 +390,12 @@ function SideColumn({
             onChange={(e) => faab.onChange(e.target.value)}
             inputMode="numeric"
             aria-label={`${title}: FAAB dollars`}
-            className="h-btn-sm w-20 px-2 text-[12px]"
+            aria-invalid={faab.over || undefined}
+            className={cn('h-btn-sm w-20 px-2 text-[12px]', faab.over && 'border-negative')}
             data-trade-faab={side}
+            data-faab-over={faab.over || undefined}
           />
-          {faab.balance !== null && <span className="text-[10px] font-medium text-n-3">${faab.balance} left</span>}
+          {faab.balance !== null && <span className={cn('text-[10px] font-medium', faab.over ? 'text-negative-strong' : 'text-n-3')}>${faab.balance} left</span>}
         </label>
       )}
     </div>
@@ -364,21 +416,40 @@ export function PlayerPickRow({
   onToggle: (playerId: string) => void
 }) {
   const lock = lockBadgeFor(player.game_lock, true)
+  // Q75 `reject`: a started player cannot be in a trade — not pickable, and
+  // the reason is on the row itself (readable on a phone, where there is no
+  // hover), not only in the 🔒's title.
+  const unpickable = lockedPickReason(lockBehavior, lock.locked)
+  const on = checked && unpickable === null
   const id = `pick-${player.player_id}`
   return (
     <li
-      className={cn('flex items-center gap-2 rounded-sm border px-2 py-1', checked ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white')}
+      className={cn('flex items-center gap-2 rounded-sm border px-2 py-1', on ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white')}
       data-trade-pick={player.player_id}
-      data-picked={checked || undefined}
+      data-picked={on || undefined}
+      data-unpickable={unpickable ? 'locked' : undefined}
+      title={unpickable ?? undefined}
     >
-      <Checkbox id={id} checked={checked} onCheckedChange={() => onToggle(player.player_id)} aria-label={`Pick ${player.full_name}`} />
-      <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5">
+      <Checkbox
+        id={id}
+        checked={on}
+        disabled={unpickable !== null}
+        onCheckedChange={() => onToggle(player.player_id)}
+        aria-label={`Pick ${player.full_name}`}
+        aria-describedby={unpickable ? `${id}-why` : undefined}
+      />
+      <label htmlFor={id} className={cn('flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5', unpickable ? 'cursor-not-allowed' : 'cursor-pointer')}>
         <PositionBadge position={player.position} size="sm" />
-        <span className="truncate text-[12px] font-bold text-ink">{player.full_name}</span>
+        <span className={cn('truncate text-[12px] font-bold', unpickable ? 'text-n-3' : 'text-ink')}>{player.full_name}</span>
         <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
+        {unpickable && (
+          <span id={`${id}-why`} className="basis-full text-[10px] font-medium text-n-3" data-unpickable-why>
+            {unpickable}
+          </span>
+        )}
       </label>
       {lock.locked && (
-        <Badge variant="black" title={lockedAssetTitle(lockBehavior)} data-lock>
+        <Badge variant="black" title={unpickable ?? lockedAssetTitle(lockBehavior)} data-lock>
           🔒
         </Badge>
       )}

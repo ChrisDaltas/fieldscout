@@ -15,6 +15,10 @@ import {
   TRADE_PROPOSE_FORBIDDEN_MESSAGE,
   TRADE_RESPOND_FORBIDDEN_MESSAGE,
   TRADE_VOTE_FORBIDDEN_MESSAGE,
+  TRADE_CHECKS_FORBIDDEN_MESSAGE,
+  TRADE_CHECKS_UNAVAILABLE_MESSAGE,
+  previewTrade,
+  readTradeDeadline,
   actOnTrade,
   commishTrade,
   isMissingSchemaObject,
@@ -295,5 +299,88 @@ describe('readTrades against a database without the trade tables (deploy before 
   it('an unknown query key is a 400 before any read', async () => {
     const client = { rpc: vi.fn(), from: vi.fn() } as never
     expect((await readTrades(client, L, 'u', { peek: 'x' }, new Date('2099-01-01T00:00:00Z'))).status).toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — the deadline and the legality preview (162)
+// ---------------------------------------------------------------------------
+
+// As measured on the local stack (2026-09-29): PostgREST's answer for a
+// function the schema cache does not have — the shape a database without
+// 162 gives for each door, argument names sorted.
+const DEADLINE_MISSING = { code: 'PGRST202', message: 'Could not find the function public.trade_deadline(p_league_id) in the schema cache' }
+const PREVIEW_MISSING = {
+  code: 'PGRST202',
+  message: 'Could not find the function public.trade_preview(p_from_team_id, p_items, p_league_id, p_to_team_id) in the schema cache',
+}
+
+describe('readTradeDeadline (GET …/trades/deadline → trade_deadline, 162)', () => {
+  it('passes the document through; asks with the league only', async () => {
+    const view = { league_id: L, deadline_week: 7, deadline_at: '2026-10-28T04:00:00+00:00', passed: false }
+    const { client, rpc } = rpcClient({ data: view, error: null })
+    expect(await readTradeDeadline(client, L)).toStrictEqual({ status: 200, body: view })
+    expect(rpc).toHaveBeenCalledWith('trade_deadline', { p_league_id: L })
+  })
+  it('before 162: the missing function is the named 503 (the screen falls back); 42501 is the no-leak 403; an empty answer is a loud 500', async () => {
+    expect(await readTradeDeadline(rpcClient({ data: null, error: DEADLINE_MISSING }).client, L)).toStrictEqual({
+      status: 503,
+      body: { error: TRADE_CHECKS_UNAVAILABLE_MESSAGE },
+    })
+    expect(await readTradeDeadline(rpcClient({ data: null, error: { code: '42501', message: 'trade_deadline: not a member of this league' } }).client, L)).toStrictEqual({
+      status: 403,
+      body: { error: TRADE_CHECKS_FORBIDDEN_MESSAGE },
+    })
+    expect((await readTradeDeadline(rpcClient({ data: null, error: null }).client, L)).status).toBe(500)
+  })
+  it('the 503 is anchored on the door’s NAME — a longer name that starts the same is not "not pushed"', async () => {
+    const other = { code: 'PGRST202', message: 'Could not find the function public.trade_deadline_read_internal(p_at, p_league_id) in the schema cache' }
+    expect((await readTradeDeadline(rpcClient({ data: null, error: other }).client, L)).status).toBe(500)
+  })
+})
+
+describe('previewTrade (POST …/trades/preview → trade_preview, 162)', () => {
+  const offer = { from_team_id: TA, to_team_id: TB, items: [{ player_id: 'p1', from_team_id: TA }, { faab_amount: 5, from_team_id: TB }], drops: ['p2'] }
+  it('OFFER: both teams, the legs and the offering team’s drops — nothing else', async () => {
+    const { client, rpc } = rpcClient({ data: { ok: true }, error: null })
+    expect(await previewTrade(client, L, offer)).toStrictEqual({ status: 200, body: { ok: true } })
+    expect(rpc).toHaveBeenCalledWith('trade_preview', {
+      p_league_id: L,
+      p_from_team_id: TA,
+      p_to_team_id: TB,
+      p_items: offer.items,
+      p_drops: ['p2'],
+    })
+  })
+  it('ACCEPT: the trade only, plus the receiving team’s drops (omitted when none)', async () => {
+    const { client, rpc } = rpcClient({ data: { ok: false }, error: null })
+    await previewTrade(client, L, { trade_id: TID, drops: [] })
+    expect(rpc).toHaveBeenCalledWith('trade_preview', { p_league_id: L, p_trade_id: TID })
+    await previewTrade(client, L, { trade_id: TID, drops: ['p9'] })
+    expect(rpc).toHaveBeenLastCalledWith('trade_preview', { p_league_id: L, p_trade_id: TID, p_drops: ['p9'] })
+  })
+  it('a malformed body is a 400 before the wire — both arms at once, a team with itself, no legs, an unknown key', async () => {
+    const { client, rpc } = rpcClient({ data: null, error: null })
+    for (const body of [
+      { ...offer, trade_id: TID },
+      { ...offer, to_team_id: TA },
+      { ...offer, items: [] },
+      { trade_id: TID, note: 'x' },
+      null,
+    ]) {
+      expect((await previewTrade(client, L, body)).status).toBe(400)
+    }
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('before 162: the missing function is the named 503; 42501 → 403 no-leak; P0001 (another league’s team / trade) → 409; 22023 → 400', async () => {
+    const cases: Array<[RpcAnswer['error'], number, unknown]> = [
+      [PREVIEW_MISSING, 503, TRADE_CHECKS_UNAVAILABLE_MESSAGE],
+      [{ code: '42501', message: 'trade_preview: not a member of this league' }, 403, TRADE_CHECKS_FORBIDDEN_MESSAGE],
+      [{ code: 'P0001', message: 'trade_preview: team x is not a franchise of league y' }, 409, 'trade_preview: team x is not a franchise of league y'],
+      [{ code: '22023', message: 'trade_preview: trade leg {} must be …' }, 400, 'trade_preview: trade leg {} must be …'],
+    ]
+    for (const [error, status, message] of cases) {
+      expect(await previewTrade(rpcClient({ data: null, error }).client, L, offer)).toStrictEqual({ status, body: { error: message } })
+    }
   })
 })

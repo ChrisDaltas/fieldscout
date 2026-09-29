@@ -4,7 +4,7 @@
  * two rosters in the rosters route's shape. Test-only.
  */
 import type { RosterPlayer, RosterTeam } from '@/lib/leagues/api/rosters-service'
-import type { TradeView, TradeVoteTally, TradesDocument } from '@/lib/leagues/api/trades-service'
+import type { TradeDeadlineView, TradePreview, TradeRosterFacts, TradeView, TradeVoteTally, TradesDocument } from '@/lib/leagues/api/trades-service'
 
 export const ALPHA = 'aaaaaaaa-0000-4000-8000-000000000001'
 export const BRAVO = 'aaaaaaaa-0000-4000-8000-000000000002'
@@ -124,3 +124,55 @@ export const TEAMS: RosterTeam[] = [
   ]),
   rosterTeam(CHARLIE, 'Charlie', [rosterPlayer('p-c1', 'Cal One')]),
 ]
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — the server's deadline and its legality preview (162), in the
+// shapes `trade_deadline` / `trade_preview` answer (pgTAP 110 pins them).
+// ---------------------------------------------------------------------------
+
+export function deadlineView(over: Partial<TradeDeadlineView> = {}): TradeDeadlineView {
+  return {
+    league_id: LEAGUE,
+    deadline_week: 11,
+    deadline_at: '2099-11-18T05:00:00.000Z',
+    why: 'next_week_starts',
+    label: 'Wed 2099-11-18 00:00 America/New_York',
+    passed: false,
+    ms_remaining: 86_400_000,
+    evaluated_at: '2099-11-17T05:00:00.000Z',
+    ...over,
+  }
+}
+
+export function facts(teamId: string, over: Partial<TradeRosterFacts> = {}): TradeRosterFacts {
+  return {
+    team_id: teamId,
+    count_before: 3,
+    players_out: 1,
+    players_in: 1,
+    drops: 0,
+    count_after: 3,
+    roster_size: 3,
+    must_drop: 0,
+    enforced: true,
+    ...over,
+  }
+}
+
+export function preview(over: Partial<TradePreview> = {}, sides: { proposer?: Partial<TradeRosterFacts>; recipient?: Partial<TradeRosterFacts> } = {}): TradePreview {
+  return {
+    mode: 'offer',
+    league_id: LEAGUE,
+    trade_id: null,
+    proposer_team_id: ALPHA,
+    recipient_team_id: BRAVO,
+    ok: true,
+    league_status: 'in_season',
+    in_season: true,
+    deadline: deadlineView(),
+    refusal: null,
+    rosters: { proposer: facts(ALPHA, sides.proposer), recipient: facts(BRAVO, { enforced: false, ...sides.recipient }) },
+    evaluated_at: '2099-11-17T05:00:00.000Z',
+    ...over,
+  }
+}

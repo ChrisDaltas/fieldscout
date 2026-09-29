@@ -12,8 +12,9 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import type { TradePreviewDraft, TradePreviewState, UseTradePreview } from '@/hooks/use-trade-preview'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
-import type { CommishTradeResult } from '@/lib/leagues/api/trades-service'
+import type { CommishTradeResult, TradePreview } from '@/lib/leagues/api/trades-service'
 
 import { CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
 import { TradeBuilderView, type TradeBuilderViewProps } from './trade-builder'
@@ -26,7 +27,7 @@ import {
   TRADES_UNAVAILABLE_TITLE,
   lockedAssetTitle,
 } from './trades-ops'
-import { ALPHA, BRAVO, CHARLIE, LEAGUE, TEAMS, doc, player, tally, trade } from './trades.fixtures'
+import { ALPHA, BRAVO, CHARLIE, LEAGUE, TEAMS, deadlineView, doc, player, preview, rosterTeam, tally, trade } from './trades.fixtures'
 
 function unescapeHtml(html: string): string {
   return html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
@@ -38,6 +39,9 @@ function render(element: React.ReactElement): string {
 const noop = () => {}
 const fmt = (iso: string) => `[${iso}]`
 const bravoManager = { teamId: BRAVO, isCommissioner: false, overrideMode: false }
+/** The league's answer as a stub (L.D3.12): before 162 is pushed the check is
+ *  `unavailable`, and every D419 cell below renders exactly as it did. */
+const beforePush: UseTradePreview = () => ({ state: 'unavailable', reason: 'not pushed' })
 
 function center(over: Partial<TradeCenterViewProps> = {}): string {
   return render(
@@ -62,6 +66,7 @@ function center(over: Partial<TradeCenterViewProps> = {}): string {
       pendingTradeId: null,
       refusalFor: () => null,
       commishResultFor: () => null,
+      usePreview: beforePush,
       ...over,
     }),
   )
@@ -84,6 +89,7 @@ function card(over: Partial<TradeCardProps> = {}): string {
       onRespond: noop,
       onVote: noop,
       onCommish: noop,
+      usePreview: beforePush,
       ...over,
     }),
   )
@@ -92,6 +98,8 @@ function card(over: Partial<TradeCardProps> = {}): string {
 function builder(over: Partial<TradeBuilderViewProps> = {}): string {
   return render(
     createElement(TradeBuilderView, {
+      leagueId: LEAGUE,
+      usePreview: beforePush,
       mode: 'propose',
       teams: TEAMS,
       fromTeamId: ALPHA,
@@ -375,5 +383,227 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     const html = builder({ sentTo: 'Bravo' })
     expect(html).toContain('data-trade-builder="sent"')
     expect(html).toContain('Offer sent to Bravo.')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.D3.12 — the trade screen never lets a manager build an offer the league
+// would refuse (Chris 2026-09-29). The league's answer is migration 162's
+// `trade_preview` / `trade_deadline`; here it is handed in as a stub.
+// ---------------------------------------------------------------------------
+
+const answer = (p: TradePreview): UseTradePreview => () => ({ state: 'ready', preview: p })
+const checking: UseTradePreview = () => ({ state: 'checking', last: null })
+/** Records every draft the builder / card asks the league about. */
+function recorder(state: TradePreviewState = { state: 'unavailable', reason: 'x' }) {
+  const drafts: Array<TradePreviewDraft | null> = []
+  const hook: UseTradePreview = (_leagueId, draft) => {
+    drafts.push(draft)
+    return draft === null ? { state: 'off' } : state
+  }
+  return { hook, drafts }
+}
+const sendOff = (html: string) => /<button[^>]*disabled=""[^>]*data-trade-send/.test(html)
+const gateOf = (html: string) => /data-trade-gate="([a-z]+)"/.exec(html)?.[1]
+const rowOf = (html: string, id: string) => html.slice(html.indexOf(`data-trade-pick="${id}"`), html.indexOf('</li>', html.indexOf(`data-trade-pick="${id}"`)))
+
+describe('L.D3.12 — the deadline is the server’s instant (F452)', () => {
+  it('before it: the date and time it closes, in words', () => {
+    const html = center({ deadline: { state: 'known', view: deadlineView() } })
+    expect(html).toContain('Trade deadline: [2099-11-18T05:00:00.000Z], when Week 12 begins — offers can be made and accepted until then.')
+    expect(html).toContain('data-trade-deadline-at="2099-11-18T05:00:00.000Z"')
+    expect(html).not.toContain('data-trade-deadline-passed')
+  })
+  it('past it: said plainly with the date — and a waiting offer can’t be accepted or countered (Turn down stays)', () => {
+    const view = deadlineView({ passed: true, ms_remaining: null })
+    const html = center({ deadline: { state: 'known', view }, doc: doc([trade()]) })
+    expect(html).toContain('The trade deadline has passed — trades closed [2099-11-18T05:00:00.000Z], when Week 12 began.')
+    expect(html).toContain('data-trade-deadline-passed="true"')
+    expect(html).toContain('data-accept-gate="blocked"')
+    expect(html).toContain('The trade deadline passed on [2099-11-18T05:00:00.000Z] — this offer can’t be accepted or countered now.')
+    expect(ops(html)).toStrictEqual(['reject'])
+  })
+  it('past it, the league is not even asked about accepting', () => {
+    const rec = recorder()
+    card({ deadline: deadlineView({ passed: true }), usePreview: rec.hook })
+    expect(rec.drafts).toStrictEqual([null])
+  })
+  it('before 162 is pushed (unavailable) or while loading: the week-only line, as before', () => {
+    expect(center({ deadline: { state: 'unavailable', reason: 'x' } })).toContain('Trade deadline: Week 11 — offers can be made and accepted until Week 12 begins.')
+    expect(center({ deadline: null })).toContain('Trade deadline: Week 11 — offers can be made and accepted until Week 12 begins.')
+  })
+})
+
+describe('L.D3.12 — the builder: Send only when the league would take it', () => {
+  it('asks the league about exactly the offer on screen (the legs and the drops)', () => {
+    const rec = recorder()
+    builder({ usePreview: rec.hook, initial: { toTeamId: BRAVO, give: ['p-a1'], get: ['p-b1'], drops: ['p-a2'] } })
+    expect(rec.drafts.at(-1)).toStrictEqual({
+      kind: 'offer',
+      fromTeamId: ALPHA,
+      toTeamId: BRAVO,
+      legs: [
+        { playerId: 'p-a1', fromTeamId: ALPHA },
+        { playerId: 'p-b1', fromTeamId: BRAVO },
+      ],
+      drops: ['p-a2'],
+    })
+  })
+  it('the offering roster would be over → the drop picker opens with how many more, and Send stays off', () => {
+    const html = builder({ usePreview: answer(preview({ ok: false }, { proposer: { count_after: 4, must_drop: 1 } })) })
+    expect(html).toContain('data-trade-drops="open"')
+    expect(html).toContain('data-trade-drops-prompt="1"')
+    expect(html).toContain('Your roster would be over its size — pick 1 more player to drop. He is dropped only if the trade goes through.')
+    expect(sendOff(html)).toBe(true)
+    expect(gateOf(html)).toBe('blocked')
+    expect(html).toContain('Pick 1 more player to drop so your roster fits.')
+  })
+  it('…needing two, it says two', () => {
+    const html = builder({ usePreview: answer(preview({ ok: false }, { proposer: { must_drop: 2 } })) })
+    expect(html).toContain('data-trade-drops-prompt="2"')
+    expect(html).toContain('pick 2 more players to drop. They are dropped')
+  })
+  it('once enough drops are picked the league says ok → Send is on; the other team’s overflow is said (it picks at accept)', () => {
+    const html = builder({
+      initial: { toTeamId: BRAVO, get: ['p-b1'], drops: ['p-a2'] },
+      usePreview: answer(preview({}, { proposer: { drops: 1, must_drop: 0 }, recipient: { count_after: 4, must_drop: 1 } })),
+    })
+    expect(sendOff(html)).toBe(false)
+    expect(gateOf(html)).toBe('ok')
+    expect(html).toMatch(/data-trade-pick="p-a2" data-picked="true"/)
+    expect(html).toContain('Both rosters fit and the league will take this offer. Bravo would be 1 over, so they’ll pick a player to drop when they accept.')
+  })
+  it('a refusal the league would give (exclusivity, one-sided, FAAB) is the reason Send is off — in plain words', () => {
+    const refusal = 'trade_preview: Alpha gives nothing in this trade — this league does not allow future considerations (allow_future_considerations is off, §7.3.5), so each team gives at least one player or FAAB'
+    const html = builder({ usePreview: answer(preview({ ok: false, refusal, rosters: null })) })
+    expect(sendOff(html)).toBe(true)
+    expect(html).toContain('Alpha gives nothing in this trade — this league does not allow future considerations, so each team gives at least one player or FAAB')
+    expect(html).not.toContain('trade_preview:')
+    expect(html).not.toContain('§7.3.5')
+  })
+  it('while the league is checking the newest picks, Send waits', () => {
+    const html = builder({ usePreview: checking })
+    expect(sendOff(html)).toBe(true)
+    expect(gateOf(html)).toBe('checking')
+    expect(html).toContain('Checking the offer with the league…')
+  })
+  it('FAAB above what the team has: refused on the spot, and the league is not asked', () => {
+    const rec = recorder({ state: 'ready', preview: preview() })
+    const teams = [rosterTeam(ALPHA, 'Alpha', TEAMS[0].roster, { faab_balance: 40 }), ...TEAMS.slice(1)]
+    const html = builder({ allowFaab: true, teams, usePreview: rec.hook, initial: { toTeamId: BRAVO, get: ['p-b1'], faabGive: 41 } })
+    expect(sendOff(html)).toBe(true)
+    expect(html).toContain('Alpha has $40 of FAAB — offer $40 or less.')
+    expect(html).toContain('data-faab-over="true"')
+    expect(rec.drafts.every((d) => d === null)).toBe(true)
+  })
+  it('…exactly the balance is fine (the league then checks it)', () => {
+    const rec = recorder({ state: 'ready', preview: preview() })
+    const teams = [rosterTeam(ALPHA, 'Alpha', TEAMS[0].roster, { faab_balance: 40 }), ...TEAMS.slice(1)]
+    const html = builder({ allowFaab: true, teams, usePreview: rec.hook, initial: { toTeamId: BRAVO, get: ['p-b1'], faabGive: 40 } })
+    expect(html).not.toContain('data-faab-over')
+    expect(rec.drafts.at(-1)).toMatchObject({ kind: 'offer', legs: [{ playerId: 'p-b1', fromTeamId: BRAVO }, { faabAmount: 40, fromTeamId: ALPHA }] })
+  })
+  it('Q75 `reject`: a started player cannot be picked — the reason is on his row — and a deep-link to him picks nothing', () => {
+    const rec = recorder()
+    const html = builder({ lockBehavior: 'reject', usePreview: rec.hook, initial: { toTeamId: BRAVO, get: ['p-b2'] } })
+    const bo = rowOf(html, 'p-b2')
+    expect(bo).toContain('data-unpickable="locked"')
+    expect(bo).toContain('disabled=""')
+    expect(bo).toContain('His game has started — this league doesn’t trade a player until his week’s games are over.')
+    expect(bo).not.toContain('data-picked')
+    expect(html).toContain('Pick at least one player (or some FAAB) to trade.')
+    expect(rec.drafts.every((d) => d === null)).toBe(true)
+  })
+  it('Q75 `defer`: he stays pickable — the trade waits for the week’s last game', () => {
+    const bo = rowOf(builder({ lockBehavior: 'defer', initial: { toTeamId: BRAVO, get: ['p-b2'] } }), 'p-b2')
+    expect(bo).not.toContain('data-unpickable')
+    expect(bo).toContain('data-picked="true"')
+  })
+  it('before 162 (unavailable): Send works as it did, with the send-and-see line and the optional drop opener', () => {
+    const html = builder()
+    expect(sendOff(html)).toBe(false)
+    expect(gateOf(html)).toBe('unchecked')
+    expect(html).toContain('The league checks both rosters, the deadline and any FAAB when you send — its answer is what you see.')
+    expect(html).toContain('data-trade-drops-open')
+  })
+  it('the commissioner offering for a team: the drops are that team’s, said by name', () => {
+    const html = builder({
+      fromChoices: TEAMS.map((t) => ({ id: t.team_id, name: t.name })),
+      usePreview: answer(preview({ ok: false }, { proposer: { must_drop: 1 } })),
+    })
+    expect(html).toContain('Alpha’s roster would be over its size — pick 1 more player to drop.')
+  })
+})
+
+describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
+  const acceptAnswer = (over: Parameters<typeof preview>[0] = {}, sides: Parameters<typeof preview>[1] = {}) =>
+    answer(preview({ mode: 'accept', trade_id: 'tr-1', ...over }, sides))
+
+  it('the receiving roster fits → a plain Accept, on', () => {
+    const html = card({ usePreview: acceptAnswer() })
+    expect(ops(html)).toStrictEqual(['accept', 'counter', 'reject'])
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*data-trade-op="accept"/)
+    expect(html).not.toContain('data-accept-drops')
+  })
+  it('it would be over → the picker is open before anything is pressed, with the count; Accept waits for the drops', () => {
+    const html = card({ usePreview: acceptAnswer({ ok: false }, { recipient: { enforced: true, count_after: 4, must_drop: 1 } }) })
+    expect(html).toContain('data-accept-drops="true"')
+    expect(html).toContain('data-accept-must-drop="1"')
+    expect(html).toContain('Your roster would be over its size — pick 1 more player to drop.')
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-accept-with-drops/)
+    expect(ops(html)).toStrictEqual(['counter', 'reject'])
+    // Bravo gives Ben One, so he is not offered as a drop; Bo Two (started) is, under `defer`.
+    const picker = html.slice(html.indexOf('data-drop-picker'))
+    expect(picker).not.toContain('data-trade-pick="p-b1"')
+    expect(picker).toContain('data-trade-pick="p-b2"')
+  })
+  it('the league is asked about THIS offer with the drops picked so far', () => {
+    const rec = recorder()
+    card({ usePreview: rec.hook })
+    expect(rec.drafts).toStrictEqual([{ kind: 'accept', tradeId: 'tr-1', drops: [] }])
+  })
+  it('Q75 `reject`: a started player can’t be picked as the drop either', () => {
+    const html = card({ lockBehavior: 'reject', usePreview: acceptAnswer({ ok: false }, { recipient: { must_drop: 1 } }) })
+    expect(rowOf(html, 'p-b2')).toContain('data-unpickable="locked"')
+  })
+  it('F414: the offering team no longer fits (it added players) → Accept is off, and why — only they can fix it', () => {
+    const html = card({ usePreview: acceptAnswer({ ok: false }, { proposer: { must_drop: 1 } }) })
+    expect(html).toContain('data-accept-gate="blocked"')
+    expect(html).toContain('This offer no longer fits Alpha’s roster — they’ve added players since sending it. Ask them to call it off and send a new one.')
+    expect(ops(html)).toStrictEqual(['counter', 'reject'])
+  })
+  it('a refusal the league would give (a FAAB amount the giver no longer has) → Accept off, in plain words', () => {
+    const html = card({ usePreview: acceptAnswer({ ok: false, refusal: 'trade_preview: Alpha cannot give $60 of FAAB — its balance is $50 (§13.3)', rosters: null }) })
+    expect(html).toContain('Alpha cannot give $60 of FAAB — its balance is $50')
+    expect(html).not.toContain('§13.3')
+    expect(ops(html)).toStrictEqual(['counter', 'reject'])
+  })
+  it('Q75 `reject` with no review: a player in it already played → Accept off until the week’s games are over', () => {
+    const html = card({ lockBehavior: 'reject', review: 'none', lockedIds: new Set(['p-b1']), usePreview: acceptAnswer() })
+    expect(html).toContain('Ben One has already played this week — this league doesn’t let a trade go through until the week’s games are over. You can accept once they are.')
+    expect(ops(html)).toStrictEqual(['counter', 'reject'])
+  })
+  it('…under `defer` it just waits — Accept stays on', () => {
+    const html = card({ lockBehavior: 'defer', review: 'none', lockedIds: new Set(['p-b1']), usePreview: acceptAnswer() })
+    expect(ops(html)).toStrictEqual(['accept', 'counter', 'reject'])
+  })
+  it('while the league checks: Accept is shown but off', () => {
+    const html = card({ usePreview: checking })
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-trade-op="accept"/)
+    expect(html).toContain('Checking the offer with the league…')
+  })
+  it('the proposer and a bystander ask nothing', () => {
+    const rec = recorder()
+    card({ viewer: { teamId: ALPHA, isCommissioner: false, overrideMode: false }, usePreview: rec.hook })
+    card({ viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false }, usePreview: rec.hook })
+    expect(rec.drafts.every((d) => d === null)).toBe(true)
+  })
+  it('the commissioner answering for the team: the drops are that team’s, and the button says for whom', () => {
+    const html = card({
+      viewer: { teamId: null, isCommissioner: true, overrideMode: true },
+      usePreview: acceptAnswer({ ok: false }, { recipient: { must_drop: 1 } }),
+    })
+    expect(html).toContain('Bravo’s roster would be over its size — pick 1 more player to drop.')
+    expect(html).toContain('Accept for Bravo with these drops')
   })
 })

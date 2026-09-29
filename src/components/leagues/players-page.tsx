@@ -20,6 +20,7 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeaguePoolLive } from '@/hooks/use-league-pool'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSubmitClaim } from '@/hooks/use-submit-claim'
+import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { useAddDrop, type AddDropResult } from '@/hooks/use-transactions'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
@@ -150,6 +151,11 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const waiverType = detail.settings.waiver_type
   // R1219: a database without the claims (pre-149) — no Claim, no panel.
   const claimsLive = detail.waivers_live !== false
+  // L.D3.12 (Q76 / Chris 2026-09-29): past the trade deadline there is no
+  // Trade door on another roster's player — the server's `passed` (162);
+  // loading / before 162 keeps the door (the verb still refuses).
+  const tradeDeadline = useTradeDeadline(leagueId)
+  const tradesClosed = tradeDeadlinePassed(tradeDeadline.data)
   const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
   const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
 
@@ -306,6 +312,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           waiverWindow={waiverWindow}
           nextRunLocal={nextRunLocal}
           claimsLive={claimsLive}
+          tradesClosed={tradesClosed}
           faHoldHours={detail.settings.fa_hold_hours}
           onClaim={(row) => {
             claim.reset()
@@ -475,6 +482,7 @@ export function PoolTable({
   waiverWindow = null,
   nextRunLocal = null,
   claimsLive = true,
+  tradesClosed = false,
   faHoldHours = 0,
   onAdd,
   onDrop,
@@ -493,6 +501,8 @@ export function PoolTable({
   nextRunLocal?: string | null
   /** R1219: false = no claim verb on this database (pre-149). */
   claimsLive?: boolean
+  /** L.D3.12: the trade deadline has passed (the server's word) — no Trade door. */
+  tradesClosed?: boolean
   faHoldHours?: number
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
@@ -572,6 +582,7 @@ export function PoolTable({
                       waiverWindow={waiverWindow}
                       nextRunLocal={nextRunLocal}
                       claimsLive={claimsLive}
+                      tradesClosed={tradesClosed}
                       onAdd={onAdd}
                       onDrop={onDrop}
                       onClaim={onClaim}
@@ -649,6 +660,7 @@ function MoveButton({
   waiverWindow,
   nextRunLocal,
   claimsLive,
+  tradesClosed,
   onAdd,
   onDrop,
   onClaim,
@@ -660,6 +672,7 @@ function MoveButton({
   waiverWindow: WaiverWindowView | null
   nextRunLocal: string | null
   claimsLive: boolean
+  tradesClosed: boolean
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
   onClaim: (row: PoolPlayerRow) => void
@@ -667,8 +680,10 @@ function MoveButton({
   const a = row.availability
   if (a.kind === 'rostered') {
     // L.D3.7: another team's player — the door to the trade builder, toward
-    // his team with him picked (§16.5.2: "player row → propose").
+    // his team with him picked (§16.5.2: "player row → propose"). L.D3.12:
+    // none past the trade deadline.
     if (!a.mine) {
+      if (tradesClosed) return null
       return (
         <Button variant="stroke" size="sm" asChild title={ROSTERED_ELSEWHERE_TITLE}>
           <Link href={tradesHref(leagueId, { teamId: a.teamId, playerId: row.player.id })} data-action="trade">

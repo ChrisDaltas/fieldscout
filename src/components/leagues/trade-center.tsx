@@ -1,5 +1,6 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -18,8 +19,10 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useProposeTrade } from '@/hooks/use-propose-trade'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useTradeAction } from '@/hooks/use-trade-action'
+import { tradeDeadlinePassed, useTradeDeadline, type TradeDeadlineState } from '@/hooks/use-trade-deadline'
+import { tradePreviewKeys, useTradePreview, type UseTradePreview } from '@/hooks/use-trade-preview'
 import { useTradesLive } from '@/hooks/use-trades'
-import type { CommishTradeOp, CommishTradeResult, TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
+import type { CommishTradeOp, CommishTradeResult, TradeDeadlineView, TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
 import type { LeagueRosters, RosterTeam } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
@@ -33,6 +36,7 @@ import { DropPicker, TradeBuilderView, type TradeBuilderSend } from './trade-bui
 import {
   COMMISH_OP_LABELS,
   COMMISH_TRADE_MODE_COPY,
+  DEADLINE_PASSED_TITLE,
   NEVER_WHO_VOTED_COPY,
   NOT_IN_SEASON_TRADE_COPY,
   NO_TEAM_TRADE_COPY,
@@ -41,21 +45,25 @@ import {
   TRADES_PENDING_EMPTY_COPY,
   TRADES_TITLE,
   TRADES_UNAVAILABLE_TITLE,
+  acceptGate,
   commishConfirmCopy,
   commishConfirmLines,
   commishConfirmTitle,
   commishOutcomeCopy,
   counterSeed,
+  deadlinePassedCopy,
   dropsNeeded,
+  dropsNeededCopy,
   dropsPromptCopy,
   isDeadlineRefusal,
   isTradesUnavailable,
   lockedAssetTitle,
   reviewModeCopy,
+  rosterWords,
   splitTrades,
   tallyWords,
   tradeActions,
-  tradeDeadlineCopy,
+  tradeDeadlineLine,
   tradeDoorStep,
   type TradeDoorOpen,
   tradeSides,
@@ -89,6 +97,16 @@ import {
  * a league vote or a deferred trade live INSIDE override mode (F451 — the ONE
  * switch, PROGRESS §3 rule (h); no reason field, Q66 / F343). Force and
  * reverse confirm with before → after (§10.4).
+ *
+ * **Prevent, don't refuse (L.D3.12, D426 — Chris 2026-09-29).** The deadline
+ * is the server's instant (`useTradeDeadline`, migration 162 — F452): past it
+ * there is no Propose door, and an offer waiting for an answer cannot be
+ * accepted or countered (said with the date). Accepting is gated by the
+ * league's answer (`acceptGate` over `useTradePreview` — 162's
+ * `trade_preview`, F462): when the receiving roster would be over its size
+ * the drop picker is PART of accepting — Accept works once enough drops are
+ * picked. Before 162 is pushed both reads answer a named 503 and the page
+ * behaves as D419 built it (the verb's refusal is the answer).
  *
  * States (§16.5.4): skeleton · empty per tab · error with retry · the named
  * 503 · reconnecting banner. No clock: every countdown is the read's own.
@@ -124,6 +142,15 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const { user } = useAuth()
   const trades = useTradesLive(leagueId)
   const rosters = useRostersLive(leagueId)
+  const deadline = useTradeDeadline(leagueId)
+  const deadlineState = deadline.data ?? null
+  const pastDeadline = tradeDeadlinePassed(deadlineState)
+  // A preview answers for the rosters it read: when rosters or trades re-read
+  // (an event, a rejoin, a move), every preview on the page asks again.
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: tradePreviewKeys.all(leagueId) })
+  }, [queryClient, leagueId, rosters.dataUpdatedAt, trades.dataUpdatedAt])
   const propose = useProposeTrade(leagueId)
   const act = useTradeAction(leagueId)
   const commish = useCommishTrade(leagueId)
@@ -246,6 +273,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
         error={trades.isError && !trades.data ? trades.error : null}
         onRetry={() => void trades.refetch()}
         deadlineWeek={trades.data?.settings.trade_deadline_week ?? detail.settings.trade_deadline_week}
+        deadline={deadlineState}
         deadlineRefusal={deadlineRefusal}
         tab={tab}
         onTab={setTab}
@@ -262,9 +290,17 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
             <StatusBanner tone="neutral" className="text-n-3">
               {NO_TEAM_TRADE_COPY}
             </StatusBanner>
+          ) : pastDeadline && deadlineState?.state === 'known' ? (
+            // Q76 / Chris 2026-09-29: past the deadline there is no door to
+            // propose (or counter) — said with the date, never a refusal.
+            <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2" role="status" data-trade-deadline-passed>
+              <p className="text-[12px] font-bold">🔒 {DEADLINE_PASSED_TITLE}</p>
+              <p className="text-[11px] font-medium text-ink">{deadlinePassedCopy(deadlineState.view, fmt)}</p>
+            </div>
           ) : builder && defaultFrom ? (
             <TradeBuilderView
               key={builderKey}
+              leagueId={leagueId}
               mode={builder.mode}
               teams={teams}
               fromTeamId={builder.fromTeamId}
@@ -372,6 +408,9 @@ export interface TradeCenterViewProps {
   error: unknown
   onRetry: () => void
   deadlineWeek: number | null
+  /** The server's deadline (162); null while loading — `unavailable` before
+   *  162 is pushed — both keep the week-only line. */
+  deadline?: TradeDeadlineState | null
   deadlineRefusal: string | null
   tab: Tab
   onTab: (tab: Tab) => void
@@ -380,6 +419,9 @@ export interface TradeCenterViewProps {
   fmt: (iso: string) => string
   /** The builder, its opener, or why there is none. */
   proposeDoor: React.ReactNode
+  /** The league's answer to accepting (162), per card; injected so a static
+   *  render can hand it any answer. */
+  usePreview?: UseTradePreview
   onCounter: (trade: TradeView) => void
   onRespond: (trade: TradeView, op: 'accept' | 'reject' | 'cancel', drops?: string[]) => void
   onVote: (trade: TradeView, vote: 'veto' | 'approve') => void
@@ -408,12 +450,15 @@ export function TradeCenterView(props: TradeCenterViewProps) {
     (props.rosters?.teams ?? []).flatMap((t) => t.roster.filter((p) => lockBadgeFor(p.game_lock, true).locked).map((p) => p.player_id)),
   )
   const shown = tab === 'pending' ? pending : history
+  const deadlineView = props.deadline?.state === 'known' ? props.deadline.view : null
 
   return (
     <div className="flex flex-col gap-3" data-trade-center>
       <div className="flex flex-col gap-1.5">
-        <StatusBanner tone={deadlineRefusal ? 'caution' : 'neutral'}>
-          <span data-trade-deadline={deadlineWeek ?? 'none'}>{deadlineRefusal ? `🔒 ${deadlineRefusal}` : tradeDeadlineCopy(deadlineWeek)}</span>
+        <StatusBanner tone={deadlineRefusal || deadlineView?.passed ? 'caution' : 'neutral'}>
+          <span data-trade-deadline={deadlineWeek ?? 'none'} data-trade-deadline-at={deadlineView?.deadline_at ?? undefined} data-trade-deadline-passed={deadlineView?.passed || undefined}>
+            {deadlineRefusal ? `🔒 ${deadlineRefusal}` : tradeDeadlineLine(deadlineWeek, deadlineView, props.fmt)}
+          </span>
         </StatusBanner>
         {doc && <p className="text-[11px] font-medium text-n-3" data-trade-review-mode={doc.settings.trade_review}>{reviewModeCopy(doc.settings)}</p>}
       </div>
@@ -461,6 +506,9 @@ export function TradeCenterView(props: TradeCenterViewProps) {
                 leagueId={props.leagueId}
                 viewer={props.viewer}
                 lockBehavior={doc?.settings.trade_lock_behavior ?? 'defer'}
+                review={doc?.settings.trade_review ?? 'commissioner'}
+                deadline={deadlineView}
+                usePreview={props.usePreview}
                 lockedIds={lockedIds}
                 rosterOf={(teamId) => props.rosters?.teams.find((t) => t.team_id === teamId) ?? null}
                 fmt={props.fmt}
@@ -497,6 +545,11 @@ export interface TradeCardProps {
   leagueId: string
   viewer: TradeViewer
   lockBehavior: string
+  /** The league's `trade_review` (the reject-lock gate needs to know whether
+   *  an accept runs the trade at once). */
+  review?: string
+  /** The server's deadline (162) — null = not readable (before 162). */
+  deadline?: TradeDeadlineView | null
   lockedIds: ReadonlySet<string>
   rosterOf: (teamId: string) => RosterTeam | null
   fmt: (iso: string) => string
@@ -507,6 +560,7 @@ export interface TradeCardProps {
   onRespond: (trade: TradeView, op: 'accept' | 'reject' | 'cancel', drops?: string[]) => void
   onVote: (trade: TradeView, vote: 'veto' | 'approve') => void
   onCommish: (trade: TradeView, op: CommishTradeOp) => void
+  usePreview?: UseTradePreview
 }
 
 export function TradeCard({
@@ -514,6 +568,8 @@ export function TradeCard({
   leagueId,
   viewer,
   lockBehavior,
+  review = 'commissioner',
+  deadline = null,
   lockedIds,
   rosterOf,
   fmt,
@@ -524,15 +580,36 @@ export function TradeCard({
   onRespond,
   onVote,
   onCommish,
+  usePreview = useTradePreview,
 }: TradeCardProps) {
   const status = tradeStatusView(trade, fmt)
   const actions = tradeActions(trade, viewer)
   const sides = tradeSides(trade)
   const [acceptDrops, setAcceptDrops] = useState<string[] | null>(null)
+  const recipientRoster = rosterOf(trade.recipient.team_id)
+
+  // L.D3.12 — the Accept gate: the league's answer to accepting THIS offer
+  // with the drops picked so far (162). Asked only when this viewer answers
+  // it and the deadline has not passed.
+  const answering = actions.accept && trade.status === 'proposed'
+  const preview = usePreview(leagueId, answering && !deadline?.passed ? { kind: 'accept', tradeId: trade.id, drops: acceptDrops ?? [] } : null)
+  const lockedNames = [
+    ...trade.items.filter((i) => i.player && lockedIds.has(i.player.player_id)).map((i) => i.player!.full_name ?? i.player!.player_id),
+    ...trade.drops.filter((d) => lockedIds.has(d.player.player_id)).map((d) => d.player.full_name ?? d.player.player_id),
+  ]
+  const gate = answering
+    ? acceptGate({ preview, deadline, lockBehavior, review, lockedNames, proposerName: trade.proposer.name ?? 'the other team', fmt })
+    : null
+  const checked = gate !== null && gate.state !== 'fallback'
+
+  // Before 162 (fallback): the server said the receiving roster overflows —
+  // the picker opens with the count from its sentence (D419).
   const overflow = refusal ? dropsNeeded(refusal) : null
   const recipientOverflows = overflow !== null && overflow.teamName === trade.recipient.name
-  const pickingDrops = actions.accept && (acceptDrops !== null || recipientOverflows)
-  const recipientRoster = rosterOf(trade.recipient.team_id)
+  const pickingDrops = checked
+    ? gate.state === 'needs_drops' || (acceptDrops ?? []).length > 0
+    : actions.accept && (acceptDrops !== null || recipientOverflows)
+  const dropWords = rosterWords(trade.recipient.name, viewer.teamId === trade.recipient.team_id)
   const giving = new Set(trade.items.filter((i) => i.from_team_id === trade.recipient.team_id && i.player).map((i) => i.player!.player_id))
   const tally = trade.status === 'in_review' && trade.tally ? tallyWords(trade.tally) : null
   const playerName = (id: string) => trade.items.find((i) => i.player?.player_id === id)?.player?.full_name ?? null
@@ -623,11 +700,23 @@ export function TradeCard({
           </StatusBanner>
         )}
 
+        {gate && gate.reason && gate.state !== 'checking' && (
+          <p className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[11px] font-medium text-ink" role="status" data-accept-gate={gate.state}>
+            {gate.reason}
+          </p>
+        )}
+
         {pickingDrops && recipientRoster && (
-          <div className="flex flex-col gap-1.5 rounded-sm border border-ink px-2 py-2" data-accept-drops>
-            {recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{plainRefusal(refusal)}</p>}
+          <div className="flex flex-col gap-1.5 rounded-sm border border-ink px-2 py-2" data-accept-drops data-accept-must-drop={checked ? gate.mustDrop : undefined}>
+            {!checked && recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{plainRefusal(refusal)}</p>}
             <p className="text-[11px] font-bold text-ink">
-              {recipientOverflows ? dropsPromptCopy(overflow!.more) : 'Players to drop so your roster fits — dropped only if the trade goes through.'}
+              {checked
+                ? gate.mustDrop > 0
+                  ? dropsNeededCopy(gate.mustDrop, dropWords)
+                  : 'Dropped only if the trade goes through.'
+                : recipientOverflows
+                  ? dropsPromptCopy(overflow!.more)
+                  : 'Players to drop so your roster fits — dropped only if the trade goes through.'}
             </p>
             <DropPicker
               roster={recipientRoster.roster.filter((p) => !giving.has(p.player_id))}
@@ -635,13 +724,23 @@ export function TradeCard({
               lockBehavior={lockBehavior}
               onToggle={(id) => setAcceptDrops((d) => ((d ?? []).includes(id) ? (d ?? []).filter((x) => x !== id) : [...(d ?? []), id]))}
             />
-            <span className="flex flex-wrap gap-2">
-              <Button variant="blue" size="sm" disabled={pending || (acceptDrops ?? []).length === 0} onClick={() => onRespond(trade, 'accept', acceptDrops ?? [])} data-accept-with-drops>
-                {pending ? 'Sending…' : 'Accept with these drops'}
+            <span className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="blue"
+                size="sm"
+                disabled={pending || (checked ? gate.state !== 'ready' : (acceptDrops ?? []).length === 0)}
+                onClick={() => onRespond(trade, 'accept', acceptDrops ?? [])}
+                data-accept-with-drops
+              >
+                {pending ? 'Sending…' : actions.actingFor === 'recipient' ? `Accept for ${trade.recipient.name ?? 'the team'} with these drops` : 'Accept with these drops'}
               </Button>
-              <Button variant="ghost" size="sm" disabled={pending} onClick={() => setAcceptDrops(null)}>
-                Never mind
-              </Button>
+              {checked ? (
+                gate.state === 'checking' && <span className="text-[10px] font-medium text-n-3">{gate.reason}</span>
+              ) : (
+                <Button variant="ghost" size="sm" disabled={pending} onClick={() => setAcceptDrops(null)}>
+                  Never mind
+                </Button>
+              )}
             </span>
           </div>
         )}
@@ -650,7 +749,17 @@ export function TradeCard({
           trade={trade}
           actions={actions}
           pending={pending}
-          pickingDrops={pickingDrops}
+          accept={
+            gate === null || gate.state === 'fallback'
+              ? { show: !pickingDrops, enabled: true, withDrops: true, counter: true, note: null }
+              : {
+                  show: !pickingDrops && gate.state !== 'blocked' && gate.state !== 'needs_drops',
+                  enabled: gate.state === 'ready',
+                  withDrops: false,
+                  counter: !gate.pastDeadline,
+                  note: gate.state === 'checking' && !pickingDrops ? gate.reason : null,
+                }
+          }
           onAccept={() => onRespond(trade, 'accept')}
           onAcceptWithDrops={() => setAcceptDrops([])}
           onRespond={(op) => onRespond(trade, op)}
@@ -663,11 +772,24 @@ export function TradeCard({
   )
 }
 
+/** How the Accept / Counter buttons show (L.D3.12's gate, or D419's
+ *  send-and-see before 162). */
+interface AcceptButtons {
+  show: boolean
+  enabled: boolean
+  /** The "Accept with drops…" opener — the send-and-see path only. */
+  withDrops: boolean
+  /** Counter — off past the deadline. */
+  counter: boolean
+  /** A short line beside a disabled Accept ("Checking…"). */
+  note: string | null
+}
+
 function TradeButtons({
   trade,
   actions,
   pending,
-  pickingDrops,
+  accept,
   onAccept,
   onAcceptWithDrops,
   onRespond,
@@ -678,7 +800,7 @@ function TradeButtons({
   trade: TradeView
   actions: ReturnType<typeof tradeActions>
   pending: boolean
-  pickingDrops: boolean
+  accept: AcceptButtons
   onAccept: () => void
   onAcceptWithDrops: () => void
   onRespond: (op: 'reject' | 'cancel') => void
@@ -694,17 +816,20 @@ function TradeButtons({
     <div className="flex flex-col gap-2">
       {manager && (
         <div className="flex flex-wrap items-center gap-2" data-trade-actions>
-          {actions.accept && !pickingDrops && (
+          {actions.accept && accept.show && (
             <>
-              <Button variant="blue" size="sm" disabled={pending} onClick={onAccept} data-trade-op="accept">
+              <Button variant="blue" size="sm" disabled={pending || !accept.enabled} onClick={onAccept} data-trade-op="accept">
                 {pending ? 'Sending…' : `Accept${acting}`}
               </Button>
-              <Button variant="ghost" size="sm" disabled={pending} onClick={onAcceptWithDrops} data-trade-op="accept-drops">
-                Accept with drops…
-              </Button>
+              {accept.withDrops && (
+                <Button variant="ghost" size="sm" disabled={pending} onClick={onAcceptWithDrops} data-trade-op="accept-drops">
+                  Accept with drops…
+                </Button>
+              )}
+              {accept.note && <span className="text-[10px] font-medium text-n-3">{accept.note}</span>}
             </>
           )}
-          {actions.counter && (
+          {actions.counter && accept.counter && (
             <Button variant="stroke" size="sm" disabled={pending} onClick={onCounter} data-trade-op="counter">
               Counter
             </Button>
