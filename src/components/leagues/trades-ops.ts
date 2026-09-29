@@ -203,7 +203,7 @@ export function builderGate(input: {
   if (!v.in_season) return { canSend: false, reason: NOT_IN_SEASON_TRADE_COPY, checked: true, ...counts }
   if (v.deadline.passed) return { canSend: false, reason: 'The trade deadline has passed — offers can’t be made now.', checked: true, ...counts }
   if (v.refusal) return { canSend: false, reason: previewRefusalCopy(v.refusal), checked: true, ...counts }
-  if (counts.mustDrop > 0) {
+  if (counts.mustDrop > 1) {
     return { canSend: false, reason: `Pick ${counts.mustDrop} more player${counts.mustDrop === 1 ? '' : 's'} to drop so ${input.fromWords} fits.`, checked: true, ...counts }
   }
   if (!v.ok) return { canSend: false, reason: 'The league wouldn’t take this offer as it stands.', checked: true, ...counts }
