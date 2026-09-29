@@ -135,7 +135,9 @@ export const LOCKED_DROP_TITLE =
 export function waiversAddTitle(untilLocal: string): string {
   return `On waivers until ${untilLocal} — put in a claim to get him at that waiver run; an add before then is refused.`
 }
-export const ROSTERED_ELSEWHERE_TITLE = 'On another roster — trades arrive in a later update.'
+/** L.D3.7: another team's player — the row's Trade button opens the trade
+ *  center's builder toward that team with him picked. */
+export const ROSTERED_ELSEWHERE_TITLE = 'On another roster — offer his team a trade for him.'
 
 export function emptyCopy(scope: PoolScope, hadSearch: boolean): string {
   if (scope === 'free_agents') return hadSearch ? NO_MATCH_COPY : NO_FREE_AGENTS_COPY

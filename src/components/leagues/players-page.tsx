@@ -52,6 +52,7 @@ import {
 } from './players-page-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
+import { tradesHref } from './trades-ops'
 import { FA_HOLD_TITLE, WAIVERS_PAUSED_COPY, faHoldUntil, pickupActions, windowLine, type ActionState } from './waiver-claims-ops'
 import { WaiverClaimsPanel } from './waiver-claims-panel'
 
@@ -104,8 +105,9 @@ import { WaiverClaimsPanel } from './waiver-claims-panel'
  * the claims (pre-149, `waivers_live: false` — R1219) shows no Claim and no
  * panel. Claim opens `ClaimDialog` (a FAAB bid or a priority
  * claim, and an optional drop); the team's claims live in
- * `WaiverClaimsPanel` above the table. A player on another roster says
- * trades come later. No button posts nowhere.
+ * `WaiverClaimsPanel` above the table. A player on another roster offers
+ * Trade — a link to the trade center's builder (L.D3.7). No button posts
+ * nowhere.
  *
  * **§16.5.4:** skeleton · empty by reason (per scope, per search) · error-
  * with-retry (`ProblemCard`) · degraded (stale banner + last-good rows; the
@@ -563,6 +565,7 @@ export function PoolTable({
                 {canAct && (
                   <TableCell className="text-right">
                     <MoveButton
+                      leagueId={leagueId}
                       row={row}
                       leagueTimeZone={leagueTimeZone}
                       waiverType={waiverType}
@@ -612,9 +615,8 @@ function AvailabilityCell({
       </span>
     )
   }
-  // The holder was a dead end: there is no Move button for another team's
-  // player (trades come later), so the only useful next step from here is
-  // that team's own page — and `teamId` is non-nullable on this branch.
+  // The holder links to that team's own page (the row's Trade button is the
+  // other door) — and `teamId` is non-nullable on this branch.
   // The accent stays the call site's; the link adds only its underline.
   // §16.5.2's `fa_hold` chip on the viewer's own fresh pickup — the stored
   // pickup instant + the hold, against the SERVER's instant (no clock here).
@@ -636,9 +638,11 @@ function AvailabilityCell({
 /** The action per row: Drop for the viewer's own player (disabled by the
  *  view's lock), nothing for another roster's, and for an UNOWNED player Add
  *  and / or Claim as `pickupActions` decides from the server's window (F425)
+ *  — and Trade (a link to the builder, L.D3.7) for another roster's player
  *  — each disabled only by the view's lock or the window, with the reason in
  *  its title. Never a button that posts nowhere. */
 function MoveButton({
+  leagueId,
   row,
   leagueTimeZone,
   waiverType,
@@ -649,6 +653,7 @@ function MoveButton({
   onDrop,
   onClaim,
 }: {
+  leagueId: string
   row: PoolPlayerRow
   leagueTimeZone: string | null
   waiverType: string
@@ -661,7 +666,17 @@ function MoveButton({
 }) {
   const a = row.availability
   if (a.kind === 'rostered') {
-    if (!a.mine) return <span className="text-[11px] text-n-3">—</span>
+    // L.D3.7: another team's player — the door to the trade builder, toward
+    // his team with him picked (§16.5.2: "player row → propose").
+    if (!a.mine) {
+      return (
+        <Button variant="stroke" size="sm" asChild title={ROSTERED_ELSEWHERE_TITLE}>
+          <Link href={tradesHref(leagueId, { teamId: a.teamId, playerId: row.player.id })} data-action="trade">
+            Trade
+          </Link>
+        </Button>
+      )
+    }
     return (
       <Button variant="stroke" size="sm" disabled={row.lock.locked} title={row.lock.locked ? LOCKED_DROP_TITLE : undefined} onClick={() => onDrop(rosterPlayerOf(row))} data-action="drop">
         Drop

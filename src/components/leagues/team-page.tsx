@@ -25,6 +25,7 @@ import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEdita
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, autopilotSwitchShown, renameArm } from './team-commish-ops'
 import { TeamAutopilotSwitch, TeamCommishTools, TeamFaabEdit, TeamRename } from './team-commish-tools'
+import { tradesHref } from './trades-ops'
 import { waiverSeatCopy } from './waiver-claims-ops'
 
 /**
@@ -220,6 +221,16 @@ function TeamPageContent({
               </Badge>
             )}
             {currentWeek !== null && week === currentWeek && <Badge variant="green">Current week</Badge>}
+            {/* L.D3.7 (§16.5.2 "team page → propose"): another team's page
+                opens the trade builder toward it; the server decides. */}
+            {myTeamId && !isOwnTeam && rosterTeam?.status !== 'retired' && (
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={tradesHref(leagueId, { teamId })} data-propose-trade>
+                  <Icon name="transfer" size={13} />
+                  Propose trade
+                </Link>
+              </Button>
+            )}
           </div>
           <TeamRename
             leagueId={leagueId}

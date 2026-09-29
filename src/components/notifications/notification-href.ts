@@ -28,6 +28,15 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   if (n.type === 'league_member' && typeof data?.league_id === 'string' && data.league_id !== '') {
     return `/app/leagues/${data.league_id}`
   }
+  // F438 (M5 L.D3.7): every trade notification (148 / 151 / 155 / 156 —
+  // `league_trade_proposed` / `_accepted` / `_rejected` / `_cancelled` /
+  // `_countered` / `_executed` / `_deferred` / `_expired` / `_invalid` /
+  // `_vetoed` / `_commissioner`; `trade_notify_team_internal` stamps the
+  // league id) → that league's trade center, where the trade's state and
+  // reason are shown.
+  if (n.type.startsWith('league_trade_') && typeof data?.league_id === 'string' && data.league_id !== '') {
+    return `/app/leagues/${data.league_id}/trades`
+  }
   // List activity (the pre-existing arm).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
     return `/app/lists/${data.list_id}`

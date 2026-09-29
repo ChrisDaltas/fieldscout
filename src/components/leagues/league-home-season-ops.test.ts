@@ -194,7 +194,13 @@ describe('the waiver chip names the next run (L.D2.13); the trade chip prints th
     expect(chip.title).toContain('first come, first served')
   })
   it('trades: the stored deadline week, or none — no "passed" judgement', () => {
-    expect(tradeChip({ trade_deadline_week: 11 })).toEqual({ label: 'Trade deadline · Week 11', title: 'Trades close after Week 11. Trades arrive in a later update.' })
+    expect(tradeChip({ trade_deadline_week: 11 })).toEqual({
+      label: 'Trade deadline · Week 11',
+      title: 'Trades can be offered and accepted until Week 12 begins. Open the trade center to offer one.',
+    })
+    // L.D3.7: trades are built — the chip never says they are coming later.
+    expect(tradeChip({ trade_deadline_week: 11 }).title).not.toMatch(/later update/)
+    expect(tradeChip({ trade_deadline_week: null }).title).not.toMatch(/later update/)
     expect(tradeChip({ trade_deadline_week: null }).label).toBe('No trade deadline')
     expect(tradeChip({ trade_deadline_week: 11 }).title).not.toMatch(/passed|closed already/)
   })

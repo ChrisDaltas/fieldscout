@@ -183,6 +183,11 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // Permanent.
   '/app/leagues/[leagueId]/matchup',
   '/app/leagues/[leagueId]/matchup/[mid]',
+  // M5 L.D3.7 — the TRADE CENTER (spec §16.1 `…/leagues/[id]/trades`
+  // "Trade center"; PROGRESS D419). In `(shell)` for Q12's reason: a
+  // reading-and-answering page, not a draft surface. Gated on
+  // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`. Permanent.
+  '/app/leagues/[leagueId]/trades',
 ]
 
 describe('route groups are invisible to the URL space', () => {
