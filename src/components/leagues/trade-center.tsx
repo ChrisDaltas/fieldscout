@@ -293,7 +293,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
           ) : pastDeadline && deadlineState?.state === 'known' ? (
             // Q76 / Chris 2026-09-29: past the deadline there is no door to
             // propose (or counter) — said with the date, never a refusal.
-            <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2" role="status" data-trade-deadline-passed>
+            <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2" role="status" data-trade-door-closed="deadline">
               <p className="text-[12px] font-bold">🔒 {DEADLINE_PASSED_TITLE}</p>
               <p className="text-[11px] font-medium text-ink">{deadlinePassedCopy(deadlineState.view, fmt)}</p>
             </div>

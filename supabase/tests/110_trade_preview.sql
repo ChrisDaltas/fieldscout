@@ -30,9 +30,10 @@
 -- deadline at −1 s (open) and AT it (passed) — and the verbs refuse exactly
 -- when the door says passed; the preview's must_drop is bound to the verbs:
 -- must_drop − 1 drops refused by E36, must_drop drops accepted (both arms).
--- BREAK PROBES shown red in the PR, then reverted: (1) take the 162
--- substitution out of trade_check_internal ⇒ C1 / D1 red (the preview
--- raises instead of reporting); (2) the view's `<=` → `<` ⇒ B2 red.
+-- BREAK PROBES shown red in the PR, then reverted (commits on the branch):
+-- (1) take the 162 substitution out of trade_check_internal ⇒ A4 / C1 / D1 /
+-- D8 red (the preview raises instead of reporting); (2) the view's `<=` →
+-- `<` ⇒ B2 / C13 / D5 red.
 -- ============================================================================
 begin;
 
