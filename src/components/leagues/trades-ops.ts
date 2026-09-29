@@ -265,7 +265,7 @@ export function acceptGate(input: {
   proposerName: string
   fmt: (iso: string) => string
 }): AcceptGate {
-  const deadline: TradeDeadlineView | null = null // PROBE: the card ignores a passed deadline
+  const deadline = input.deadline?.passed ? input.deadline : input.preview.state === 'ready' && input.preview.preview.deadline.passed ? input.preview.preview.deadline : null
   if (deadline) return { state: 'blocked', mustDrop: 0, reason: offerPastDeadlineCopy(deadline, input.fmt), pastDeadline: true }
   if (input.lockBehavior === 'reject' && input.review === 'none' && input.lockedNames.length > 0) {
     const who = input.lockedNames.join(', ')
