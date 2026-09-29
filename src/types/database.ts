@@ -6854,6 +6854,11 @@ export type Database = {
         Args: { p_after: string; p_sched: Json }
         Returns: string
       }
+      waiver_priority_backfill_internal: { Args: never; Returns: Json }
+      waiver_priority_seed_internal: {
+        Args: { p_league_id: string }
+        Returns: Json
+      }
       waiver_resolve_run_internal: { Args: { p_input: Json }; Returns: Json }
       waiver_schedule_from_legacy_internal: {
         Args: { p_settings: Json }

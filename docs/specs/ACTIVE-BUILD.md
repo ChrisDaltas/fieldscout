@@ -28,9 +28,10 @@
 - *(L.D2.17 built — migration 160 / pgTAP 108: equal FAAB bids go by the rolling waiver order by default (Chris 2026-09-29); the stored old default is rewritten at the push (hosted: 1 league); F478 discharged; D424. Measured: hosted is at 159. NEXT is unchanged.)*
 - *(L.D3.13 built — migration 161 / pgTAP 109: the one-time, ruled, audited re-score of FINAL weeks (Chris 2026-09-29: "re-score weeks 1 and 2 with the actual yards"); `npm run rescore:final-weeks`; D425. NEXT is unchanged.)*
 - *(L.D3.12 built — migration 162 / pgTAP 110: the trade screen never lets a manager build an offer the league would refuse (Chris 2026-09-29); `trade_deadline` + `trade_preview`, F452 / F462 discharged; D426. Until 162 is pushed the app falls back to send-and-see. NEXT is unchanged.)*
+- *(L.D2.18 built — migration 163 / pgTAP 111: the rolling waiver order is stored the moment the draft ends (Chris 2026-09-29: "the waiver priority starts as soon as the draft is over and never resets") and shown as "Waiver priority #N" / "Ties on equal bids: you're #N"; F484 discharged; D427. Until 163 is pushed the app shows no number before the first run, as before. NEXT is unchanged.)*
 - **Process (Chris 2026-09-27, "lighten it"):** FULL rigour for FAAB money, roster exclusivity, trades that move players, permissions; ONE PASS for UI / API / sim / docs; no second re-review after a small fix round; short ledger notes (one checklist line, one session-log row, F-rows only for real follow-ups).
 - **One local DB:** parallel builders share the one local Supabase stack — serialize `db reset` / `test:db`.
-- **Production:** at **161** (2026-09-29: 135–159, then 160 + 161 pushed by the orchestrator; weeks 1–2 re-scored and the player-points backfill applied — PROGRESS F488). Push debt: **162** (L.D3.12 — two reads; no data step).
+- **Production:** at **162** (pushed 2026-09-29 — 135–159, then 160 + 161 + 162; weeks 1–2 re-scored and the player-points backfill applied — PROGRESS F488). Push debt: **163** (L.D2.18 — the waiver order stored from the draft; its backfill seeds the hosted league — read the NOTICE).
 
 ---
 

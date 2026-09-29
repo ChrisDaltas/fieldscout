@@ -26,6 +26,7 @@ import {
   draggableIds,
   dropPlace,
   faabLeftCopy,
+  waiverOrderCopy,
   parseBid,
   type ClaimOutcome,
 } from './waiver-claims-ops'
@@ -131,11 +132,10 @@ export function WaiverClaimsPanelView({
           Your waiver claims
           {doc && (
             <span className="ml-auto text-[11px] font-medium text-n-3" data-claims-budget>
-              {faab
-                ? faabLeftCopy(doc.faab_balance, doc.faab_budget)
-                : doc.waiver_priority !== null
-                  ? `Waiver priority #${doc.waiver_priority}`
-                  : 'Waiver priority set at the first run'}
+              {/* L.D2.18 (F484): the stored order — FAAB: the tie order after the balance. */}
+              {[faab ? faabLeftCopy(doc.faab_balance, doc.faab_budget) : null, waiverOrderCopy(doc, doc.waiver_priority, true)]
+                .filter((p) => p !== null)
+                .join(' · ')}
             </span>
           )}
         </CardTitle>

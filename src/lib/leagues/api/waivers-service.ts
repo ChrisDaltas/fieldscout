@@ -235,6 +235,10 @@ export interface WaiverClaimsDocument {
   /** The team's seat's balance / priority (TD2 / TD8) — null when unset. */
   faab_balance: number | null
   waiver_priority: number | null
+  /** L.D2.18: the STORED `settings.faab_tiebreaker` (null = no key — the
+   *  default, rolling), so the panel can say whether the stored order breaks
+   *  equal bids (`waiverOrderCopy`). Optional so older fixtures stay valid. */
+  faab_tiebreaker?: string | null
   /** Pending first in the team's own order (claim_order), then settled ones
    *  newest first. */
   claims: WaiverClaimView[]
@@ -354,6 +358,7 @@ export async function readClaims(
     faab_min_bid: minBid,
     faab_balance: teamSeatRes.data?.faab_balance ?? null,
     waiver_priority: teamSeatRes.data?.waiver_priority ?? null,
+    faab_tiebreaker: typeof settings.faab_tiebreaker === 'string' ? settings.faab_tiebreaker : null,
     claims,
   }
   return { status: 200, body: doc as unknown as Json }
