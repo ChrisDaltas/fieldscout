@@ -8,11 +8,13 @@
 # across the settings matrix (FAAB / rolling / reverse; each review mode) →
 # the M5 E2E → test:gate:m4"; the L.D6.3 precedent — the gate COMPOSES the
 # existing proofs, never rewrites them):
-#   [1/9]  Fresh `supabase db reset` — the full chain (001-158 at L.D3.10).
-#   [2/9]  `npm run test:db` — the FULL pgTAP suite (093-106 are M5's band:
+#   [1/9]  Fresh `supabase db reset` — the full chain (001-159 at L.D3.10 — 159 is F409's FAAB-budget range,
+#          built here because no M5 task replaced the two setup verbs).
+#   [2/9]  `npm run test:db` — the FULL pgTAP suite (093-107 are M5's band:
 #          claims, FAAB carry, the schedule, the processor + tick, the week
 #          ceiling, commish FAAB, trades core / execution / vote / force,
-#          one-slot-per-week, the played lock, stored points). Runs on the
+#          one-slot-per-week, the played lock, stored points, the budget
+#          range). Runs on the
 #          EMPTY post-reset pool (D144(5)), so before [3.5].
 #   [3/9]  vitest -c vitest.gate-m5.config.ts — 35 files enumerated by name
 #          (F84): exit criterion 2 (the L.D2.8 resolver's worked examples +
@@ -63,6 +65,12 @@
 #     restores them and the census counts any left. The synthetic season's
 #     designations come from the scenario library, never from the day's
 #     injury report.
+#   - F480 (a PRODUCT fix, found by this gate's first run): the trade
+#     center's `?with=&player=` door decided once, in the initial state, and
+#     was lost whenever the league read beat the session (`useAuth` user still
+#     null) — `transactions.spec.ts:155` red inside gate-m3's browser run,
+#     reproduced by construction (the session held 4 s) and fixed: the door
+#     opens the first time the viewer's team is known.
 #   - The sim sweep's team lookup is paged (100 leagues hold ~1,200 teams, past
 #     PostgREST's 1000-row cap — the F406 detach step left the rest attached
 #     and the league delete failed).
@@ -117,7 +125,7 @@ stage "[1/9] Fresh local stack reset (pristine, fully-migrated chain)"
 npx supabase db reset
 took
 
-stage "[2/9] Full pgTAP suite — test:db (093-106 are the M5 files)"
+stage "[2/9] Full pgTAP suite — test:db (093-107 are the M5 files)"
 npm run test:db
 took
 

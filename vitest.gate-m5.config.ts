@@ -18,7 +18,7 @@ import { resolveAlias, sharedExclude } from './vitest.shared'
  * `transactions-api-db` (the activity read the claim / trade rows land in)
  * and `season-sweep-db` (the sim sweep L.D3.8 and L.D3.10 re-ordered and
  * paged). Nothing else: the M4 → M0 suites ride `test:gate:m4`, the whole
- * pgTAP surface (093–106) rides `test:db`.
+ * pgTAP surface (093–107) rides `test:db`.
  *
  * ── Exit criterion 2 — the FAAB tiebreak properties + parity (3) ────────
  *   resolve-waiver-run · resolve-waiver-run-property — the L.D2.8 reference
