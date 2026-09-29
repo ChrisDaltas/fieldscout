@@ -377,7 +377,7 @@ export function waiverOrderListView(
   const rows = teams
     .map((t) => ({ team_id: t.team_id, name: t.name, priority: t.waiver_priority, mine: myTeamId !== null && t.team_id === myTeamId }))
     // Stable: equal keys (only ever the unstored ones, last) keep the read's order.
-    // PROBE: the read order kept (no sort)
+    .sort((a, b) => (a.priority === null ? (b.priority === null ? 0 : 1) : b.priority === null ? -1 : a.priority - b.priority))
   return { kind: 'order', title, caption: faab ? WAIVER_ORDER_TIES_CAPTION : WAIVER_ORDER_ROLLING_CAPTION, rows }
 }
 
