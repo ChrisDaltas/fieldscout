@@ -51,10 +51,17 @@
 --   §2 THE LOCK — `league_week_player_points_lock()`, BEFORE INSERT / UPDATE
 --      / DELETE, ENABLE ALWAYS: a FINAL week's rows never change — not by
 --      the doors, not by the service role, not by a hand-typed statement.
---      Two exits, both named: the one-time backfill's INSERT (a
---      transaction-local flag only `score_backfill_player_points` sets, and
---      only for rows that do not exist — "recompute once"), and the cascade
---      when the week / team / league row itself is deleted. An `upcoming`
+--      Two exits, both named: the one-time backfill's INSERT, and the
+--      cascade when the week / team / league row itself is deleted. The
+--      backfill exit is a CONVENTION, not a security boundary (R1262): it is
+--      a transaction-local setting (`fieldscout.player_points_backfill`)
+--      that `score_backfill_player_points` sets around its own INSERTs, and
+--      anyone who can already write the table as the service role could set
+--      it too — what the lock guards against is every ORDINARY path (the
+--      scoring door, a job, a hand-typed UPDATE / DELETE, an accidental
+--      INSERT) changing a locked week, and it admits only an INSERT of a
+--      `backfill*` row that did not exist ("recompute once"); an UPDATE or
+--      DELETE of a locked row is refused whatever the setting says. An `upcoming`
 --      week holds no rows (nothing has been played). The audited reopen
 --      (110's `final → correction_window` arm, M6) makes a week open again,
 --      and the rows follow it.
@@ -279,7 +286,9 @@ BEGIN
 
   IF v_status = 'final' THEN
     -- The one-time backfill (§5) — INSERT only (a row that did not exist:
-    -- "recompute once"), only while its door holds the transaction-local flag.
+    -- "recompute once"), only while its door holds the transaction-local
+    -- setting. A convention for the ordinary paths, not a boundary (R1262):
+    -- the service role could set it; it can never open an UPDATE or DELETE.
     IF TG_OP = 'INSERT'
        AND NEW.source IN ('backfill', 'backfill_unrecoverable')
        AND current_setting('fieldscout.player_points_backfill', true) = 'on' THEN
@@ -945,16 +954,21 @@ BEGIN
   IF pg_trigger_depth() > 1 THEN
     RETURN NEW;
   END IF;
-  IF TG_OP = 'INSERT' THEN
-    NEW.correction_window_default_ends_at := COALESCE(NEW.correction_window_default_ends_at, NEW.correction_window_ends_at);
-  ELSIF NEW.correction_window_default_ends_at IS NOT DISTINCT FROM OLD.correction_window_default_ends_at THEN
-    -- A direct write of the window (an operator, a fixture's boundary
-    -- instant) is the week's new DEFAULT; a known next-week kickoff still wins.
-    NEW.correction_window_default_ends_at := NEW.correction_window_ends_at;
-  END IF;
   SELECT n.first_kickoff_at INTO v_next
   FROM public.nfl_weeks n
   WHERE n.season = NEW.season AND n.week = NEW.week + 1;
+  IF TG_OP = 'INSERT' THEN
+    NEW.correction_window_default_ends_at := COALESCE(NEW.correction_window_default_ends_at, NEW.correction_window_ends_at);
+  ELSIF NEW.correction_window_default_ends_at IS NOT DISTINCT FROM OLD.correction_window_default_ends_at
+        AND NEW.correction_window_ends_at IS DISTINCT FROM OLD.correction_window_ends_at
+        AND NEW.correction_window_ends_at IS DISTINCT FROM v_next THEN
+    -- A direct write of a NEW window (an operator, a fixture's boundary
+    -- instant) is the week's new DEFAULT; a known next-week kickoff still
+    -- wins. A write of the value it already holds, or of the next week's
+    -- kickoff, is not a new default (R1261 — it would clobber the Thursday
+    -- 06:00 ET one).
+    NEW.correction_window_default_ends_at := NEW.correction_window_ends_at;
+  END IF;
   NEW.correction_window_ends_at := COALESCE(v_next, NEW.correction_window_default_ends_at);
   RETURN NEW;
 END;

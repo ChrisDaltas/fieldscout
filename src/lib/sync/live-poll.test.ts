@@ -102,6 +102,21 @@ describe('planLivePoll — hot / sweep / idle from the tables', () => {
     expect(idle.mode).toBe('idle')
   })
 
+  it('F270 (L.D3.11): the sweep ALSO re-polls an earlier week still inside its correction window — and stops at the window’s end', () => {
+    const games = [game(1, TNF, 'final')]
+    const weeks = [
+      { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00Z' }, // week 2's first kickoff
+      { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+    ]
+    const inside = planLivePoll(games, weeks, new Date('2026-09-17T15:00:30Z')) // Thu 11:00 ET — after the OLD 06:00 close
+    expect([inside.mode, inside.weeks]).toEqual(['sweep', [1, 2]])
+    expect(inside.reasons[0]).toMatch(/week\(s\) 1 still inside their stat-correction window/)
+    const atClose = planLivePoll(games, weeks, new Date('2026-09-18T01:00:00Z'))
+    expect(atClose.weeks).toEqual([2])
+    // a week with no window (pre-039 fixture) is never re-polled
+    expect(planLivePoll(games, [{ ...weeks[0], correction_window_ends_at: null }, weeks[1]], new Date('2026-09-17T15:00:30Z')).weeks).toEqual([2])
+  })
+
   it('an EMPTY calendar sweeps on every invocation (F228: the composite provider can land the rows), targeting the current week', () => {
     const plan = planLivePoll([], WEEKS, new Date('2026-09-17T15:07:00Z'))
     expect(plan.mode).toBe('sweep')

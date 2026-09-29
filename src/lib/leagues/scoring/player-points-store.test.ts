@@ -65,6 +65,8 @@ describe('deploy before push — recognising a pre-158 database BY NAME', () => 
   it('the MEASURED PGRST205 for the table (and Postgres’s 42P01) is the missing store', () => {
     expect(isMissingPlayerPointsStore(PGRST205)).toBe(true)
     expect(isMissingPlayerPointsStore({ code: '42P01', message: 'relation "public.league_week_player_points" does not exist' })).toBe(true)
+    // PostgREST names the schema it served (the stack cell reads it from graphql_public — R1257):
+    expect(isMissingPlayerPointsStore({ code: 'PGRST205', message: "Could not find the table 'graphql_public.league_week_player_points' in the schema cache" })).toBe(true)
   })
   it('anchored: another missing table — even one whose HINT names ours — or any other error is NOT', () => {
     expect(isMissingPlayerPointsStore({ ...PGRST205, message: "Could not find the table 'public.league_week_player_pointz' in the schema cache" })).toBe(false)

@@ -214,6 +214,10 @@ export interface TeamBoxScore {
 
 const NONE_STORED_NOTE =
   'no per-player points are stored for this team-week (it was scored before they were, and the one-time backfill has not reached it) — the lines are computed from today’s stats and may not add up to the final score'
+const OVERRIDDEN_NOTE =
+  'the commissioner set this team’s score for the week, so these player points (what the team was scored on) do not add up to it'
+const NO_GAME_NOTE =
+  'this team has no game this week, so no points were stored for it — the lines are computed from today’s stats'
 const UNRECOVERABLE_NOTE =
   'a stat correction reached a player after this week was scored, and the line he was scored on no longer exists — these points are recomputed from the corrected stats and do not add up to the final score'
 
@@ -294,7 +298,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
 
   const { data: league, error: leagueError } = await supabase
     .from('leagues')
-    .select('id, season, roster_settings, scoring_rules_snapshot')
+    .select('id, season, settings, roster_settings, scoring_rules_snapshot')
     .eq('id', leagueId)
     .is('deleted_at', null)
     .maybeSingle()
@@ -376,6 +380,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
   // stored WITH the team's score. Only the exact pre-158 answer falls back.
   const scoredWeek = weekRes.data.status === 'correction_window' || weekRes.data.status === 'final'
   let stored: StoredPlayerPoints[] | null = null
+  let pairing: 'normal' | 'overridden' | 'none' = 'normal'
   if (scoredWeek) {
     const storedRes = await supabase
       .from('league_week_player_points')
@@ -395,6 +400,23 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     } else {
       stored = (storedRes.data ?? []).map(toStoredRow)
     }
+    // R1263: the team's pairing rows (h2h) say why its lines may not add up
+    // to what the matchup shows — the commissioner's override, or no game.
+    if ((league.settings as { schedule_mode?: unknown } | null)?.schedule_mode !== 'total_points') {
+      const pairRes = await supabase
+        .from('matchups')
+        .select('is_overridden')
+        .eq('league_id', leagueId)
+        .eq('season', league.season)
+        .eq('week', week)
+        .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
+      if (pairRes.error) return { status: 500, body: { error: `matchups: ${pairRes.error.message}` } }
+      const pairs = pairRes.data ?? []
+      if (pairs.length > 0 && pairs.every((m) => m.is_overridden)) pairing = 'overridden'
+      else if (pairs.length === 0) pairing = 'none'
+    }
+    if (pairing === 'overridden' && empty.stored_note !== PRE_158_SENTENCE) empty.stored_note = OVERRIDDEN_NOTE
+    else if (pairing === 'none' && stored === null && empty.stored_note === NONE_STORED_NOTE) empty.stored_note = NO_GAME_NOTE
   }
 
   if (!lineupRes.data && stored === null) return { status: 200, body: empty as unknown as Json }
@@ -467,7 +489,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       no_stat_row: stored.filter((r) => r.reason === 'no_stat_row').map((r) => r.player_id),
       points_source: 'stored',
       stored_source: storedSource,
-      stored_note: storedSource === 'backfill_unrecoverable' ? UNRECOVERABLE_NOTE : null,
+      stored_note: pairing === 'overridden' ? OVERRIDDEN_NOTE : storedSource === 'backfill_unrecoverable' ? UNRECOVERABLE_NOTE : null,
     }
     return { status: 200, body: payload as unknown as Json }
   }

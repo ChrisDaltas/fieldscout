@@ -36,7 +36,10 @@
  *                 ONE poll of the current calendar week (the greatest
  *                 `nfl_weeks.starts_at <= now`, clamped to week 1 before
  *                 the season), so schedule changes (flex moves, E42) reach
- *                 `nfl_games` within the hour with no game in progress.
+ *                 `nfl_games` within the hour with no game in progress —
+ *                 PLUS every earlier week still inside its stat-correction
+ *                 window (F270, closed by M5 L.D3.11: a late correction is
+ *                 ingested and re-scored before the week locks).
  *        * IDLE — nothing due and not a sweep minute: return without a
  *                 provider call, the reason named.
  *   2. POLL — `ingestWeek(provider, time, { db, degradation, season,
@@ -93,6 +96,10 @@ export interface CalendarWeek {
   week: number
   /** ISO instant. */
   starts_at: string
+  /** ISO instant — the end of the week's stat-correction window (M5 L.D3.11 /
+   *  migration 158: the next week's first kickoff; before 158, 039's Thursday
+   *  06:00 ET). A past week still inside it is re-polled on every sweep (F270). */
+  correction_window_ends_at?: string | null
 }
 
 export type PollMode = 'hot' | 'sweep' | 'idle'
@@ -133,6 +140,15 @@ export function currentCalendarWeek(weeks: readonly CalendarWeek[], now: Date): 
   return first ?? 1
 }
 
+/** Weeks before `currentWeek` whose correction window has not closed at `now` (ascending) — F270's re-poll set. */
+export function weeksInCorrectionWindow(weeks: readonly CalendarWeek[], currentWeek: number, now: Date): number[] {
+  const nowMs = now.getTime()
+  return weeks
+    .filter((w) => w.week < currentWeek && w.correction_window_ends_at != null && new Date(w.correction_window_ends_at).getTime() > nowMs)
+    .map((w) => w.week)
+    .sort((a, b) => a - b)
+}
+
 export function planLivePoll(games: readonly CalendarGame[], weeks: readonly CalendarWeek[], now: Date, opts: PlanOptions = {}): PollPlan {
   const leadMs = opts.leadMs ?? POLL_LEAD_MS
   const sweepMinute = opts.sweepMinute ?? SWEEP_MINUTE
@@ -154,15 +170,22 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
     reasons.push(`sweep: the season has NO nfl_games rows — polling week ${currentWeek} so the provider's calendar can land (F228)`)
     return { mode: 'sweep', weeks: [currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
-  // R880 (recorded, PROGRESS F270): the sweep's target is the CURRENT week
-  // only, so a week is not re-polled between the next week's `starts_at`
-  // and its own `correction_window_ends_at` (~30 h) — an in-window Wed/Thu
-  // correction is §14's `sync-stat-corrections` (M6 L.E2), not this poll's.
+  // F270 CLOSED (M5 L.D3.11, R1260): the sweep re-polls the CURRENT week AND
+  // every earlier week still inside its stat-correction window — so a
+  // correction the provider publishes after the next week has started (the
+  // window now runs to that week's first kickoff, F405) reaches player_stats
+  // within the hour and is re-scored while the week is still open. Before
+  // this the sweep polled the current week only and such a correction waited
+  // for a manual `sync:reingest` (R880).
   // The sweep keys on the injected instant's minute: an invocation delayed
   // past :00:59 skips that hour's refresh — a flex move then lands in ≤ 2 h.
   if (now.getUTCMinutes() === sweepMinute) {
-    reasons.push(`sweep: nothing due; top-of-hour schedule refresh of week ${currentWeek} (flex moves reach nfl_games within the hour, E42)`)
-    return { mode: 'sweep', weeks: [currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    const inWindow = weeksInCorrectionWindow(weeks, currentWeek, now)
+    reasons.push(
+      `sweep: nothing due; top-of-hour schedule refresh of week ${currentWeek} (flex moves reach nfl_games within the hour, E42)` +
+        (inWindow.length > 0 ? `; and week(s) ${inWindow.join(', ')} still inside their stat-correction window (F270 — a late correction is re-scored before the week locks)` : ''),
+    )
+    return { mode: 'sweep', weeks: [...inWindow, currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
   reasons.push(`idle: no in-week game within ${leadMs / 60_000} min of kickoff or still open; next sweep at minute ${sweepMinute} — no provider call`)
   return { mode: 'idle', weeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
@@ -179,7 +202,7 @@ export async function readCalendar(db: FlagsClient, season: number): Promise<Cal
   const games = await pageAll<CalendarGame>((from, to) =>
     db.from('nfl_games').select('season, week, kickoff_at, status', { count: 'exact' }).eq('season', season).order('id').range(from, to),
   )
-  const { data, error } = await db.from('nfl_weeks').select('season, week, starts_at').eq('season', season).order('week')
+  const { data, error } = await db.from('nfl_weeks').select('season, week, starts_at, correction_window_ends_at').eq('season', season).order('week')
   if (error) throw new Error(`nfl_weeks read (${season}): ${error.message}`)
   return { games, weeks: (data ?? []) as CalendarWeek[] }
 }

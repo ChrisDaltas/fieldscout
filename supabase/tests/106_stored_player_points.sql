@@ -45,7 +45,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(78);
+select plan(79);
 
 -- 158's four substitutions reversed (innermost first) — the D137 pin.
 create function pg_temp.un158(p_src text) returns text language sql as $un158$
@@ -515,6 +515,12 @@ select is(
   (select correction_window_ends_at::text || ' | ' || correction_window_default_ends_at::text from nfl_weeks where season = 2026 and week = 1),
   '2026-09-18 00:15:00+00 | 2026-09-17 11:00:00+00',
   'E4 …but with the next week''s kickoff known the RULE wins: the write is the new default, the window stays the kickoff');
+update nfl_weeks set correction_window_ends_at = correction_window_ends_at where season = 2026 and week = 1;
+update nfl_weeks set correction_window_ends_at = '2026-09-18 00:15:00+00' where season = 2026 and week = 1;
+select is(
+  (select correction_window_ends_at::text || ' | ' || correction_window_default_ends_at::text from nfl_weeks where season = 2026 and week = 1),
+  '2026-09-18 00:15:00+00 | 2026-09-17 11:00:00+00',
+  'E4b (R1261) a write of the value the window already holds, or of the next week''s kickoff, is NOT a new default — the Thursday default survives');
 update nfl_weeks set first_kickoff_at = '2027-01-09 21:30:00+00' where season = 2026 and week = 18;
 select is(
   (select string_agg(week || '=' || correction_window_ends_at::text, ',' order by week) from nfl_weeks where season = 2026 and week in (17, 18)),

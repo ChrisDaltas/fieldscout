@@ -25,8 +25,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '@/types/database'
 
-import { pageAll } from '@/lib/supabase/page-all'
-
 export const PLAYER_POINTS_TABLE = 'league_week_player_points'
 
 export type StoredPointsSource = 'worker' | 'backfill' | 'backfill_unrecoverable'
@@ -61,14 +59,21 @@ export interface ErrorLike {
 /**
  * True when `error` is the database saying `league_week_player_points` does
  * not EXIST (a pre-158 database): PGRST205 (PostgREST's schema cache —
- * "Could not find the table 'public.league_week_player_points'") or 42P01
- * (Postgres — `relation "public.league_week_player_points" does not exist`),
- * anchored on the table's name.
+ * "Could not find the table 'public.league_week_player_points' in the schema
+ * cache", MEASURED) or 42P01 (Postgres — `relation
+ * "public.league_week_player_points" does not exist`), anchored on the exact
+ * table name between quotes (any schema qualifier — PostgREST names the
+ * schema the request was served from).
+ *
+ * R1257: that answer only ever arrives on a GET. A HEAD request
+ * (`head: true`) on a missing table comes back `{ error: null, status: 204 }`
+ * from supabase-js (the 404 carries no body to parse — measured on the local
+ * stack), so NO pre-158 check may use one.
  */
 export function isMissingPlayerPointsStore(error: ErrorLike | null | undefined): boolean {
   if (!error) return false
   if (!['PGRST205', '42P01'].includes(error.code ?? '')) return false
-  return /(\bpublic\.league_week_player_points\b|"league_week_player_points")/.test(error.message ?? '')
+  return /['"](?:[a-z_][a-z0-9_]*\.)?league_week_player_points['"]/.test(error.message ?? '')
 }
 
 /** The one sentence every reader says when it falls back (pre-158). */
@@ -102,15 +107,13 @@ export async function readStoredPlayerPointsForSeason(
   leagueId: string,
   season: number,
 ): Promise<StoreRead> {
-  // Probe once with the plain read so the pre-158 answer is seen with its
-  // CODE (pageAll re-throws a bare message).
-  const probe = await db.from(PLAYER_POINTS_TABLE).select('team_id', { count: 'exact', head: true }).eq('league_id', leagueId).eq('season', season)
-  if (probe.error) {
-    if (isMissingPlayerPointsStore(probe.error)) return { available: false, reason: PRE_158_SENTENCE }
-    throw new Error(`${PLAYER_POINTS_TABLE} read: ${probe.error.message}`)
-  }
-  const rows = await pageAll<RawRow>((from, to) =>
-    db
+  // Every page is a GET and every page's error is judged with its CODE — the
+  // pre-158 answer can arrive on any page (R1257: a HEAD probe hid it, and
+  // pageAll re-throws a bare message). Paged past the cap on the server's count.
+  const rows: RawRow[] = []
+  let total: number | null = null
+  for (let from = 0; ; ) {
+    const page = await db
       .from(PLAYER_POINTS_TABLE)
       .select(STORED_SELECT, { count: 'exact' })
       .eq('league_id', leagueId)
@@ -118,8 +121,17 @@ export async function readStoredPlayerPointsForSeason(
       .order('week')
       .order('team_id')
       .order('slot')
-      .range(from, to),
-  )
+      .range(from, from + 999)
+    if (page.error) {
+      if (isMissingPlayerPointsStore(page.error)) return { available: false, reason: PRE_158_SENTENCE }
+      throw new Error(`${PLAYER_POINTS_TABLE} read: ${page.error.message}`)
+    }
+    const data = (page.data ?? []) as unknown as RawRow[]
+    if (page.count !== null && page.count !== undefined) total = page.count
+    rows.push(...data)
+    if (data.length === 0 || (total !== null ? rows.length >= total : data.length < 1000)) break
+    from += data.length
+  }
   return { available: true, rows: rows.map(toStoredRow) }
 }
 

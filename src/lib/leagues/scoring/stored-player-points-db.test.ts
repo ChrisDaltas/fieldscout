@@ -29,12 +29,14 @@
  *   SP6  reconcile: no drift; the moved line is `post_window_correction`
  *        [INFO] naming his stored and current points; no warn.
  *   SP7  the lock itself refuses a hand-written change (service role).
- *   SP8  DEPLOY BEFORE PUSH — the three TS paths against a database answering
- *        as a pre-158 one does (the MEASURED PGRST205 for the table; the
- *        119-shaped door report): the worker scores exactly as before and
- *        NAMES `not_stored_pre_158`; the box falls back to the live
- *        computation and says why (200, never a 500); reconcile runs today's
- *        checks and names `player_points_store_missing` once.
+ *   SP8  DEPLOY BEFORE PUSH — the three TS paths against a table that REALLY
+ *        does not exist (the same reads served from `graphql_public`, where
+ *        PostgREST answers a GET with PGRST205 and a HEAD with a silent 204 —
+ *        R1257's trap, pinned as the premise) and the 119-shaped door report:
+ *        the worker scores exactly as before and NAMES `not_stored_pre_158`;
+ *        the box falls back to the live computation and says why (200, never
+ *        a 500); reconcile runs today's checks and names
+ *        `player_points_store_missing` once.
  *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-spp` prefix on players / stats / queue / games,
@@ -49,6 +51,7 @@ import type { Database, Json } from '@/types/database'
 import { readBoxScore, type TeamBoxScore } from '../api/box-score-service'
 import { defaultsForTeamCount, splitSettings } from '../settings/league-settings'
 import { VirtualClock } from '../time/virtual-clock'
+import { PRE_158_SENTENCE, readStoredPlayerPointsForSeason } from './player-points-store'
 import { type ReconcileReport, reconcileSeason } from './reconcile'
 import { runScoreWeekBatch } from './score-week-worker'
 
@@ -187,16 +190,24 @@ async function weekStatus(): Promise<string> {
   return (await must(service.from('league_weeks').select('status').eq('league_id', leagueId).eq('week', 1).single(), 'week'))!.status
 }
 
-/** A client that answers as a pre-158 database does: the MEASURED PGRST205 for the table, and 119's report (no `player_points`). */
-function pre158(real: SupabaseClient<Database>): SupabaseClient<Database> {
-  const missing = { data: null, error: { code: 'PGRST205', details: null, hint: null, message: "Could not find the table 'public.league_week_player_points' in the schema cache" }, count: null, status: 404, statusText: 'Not Found' }
-  const builder: Record<string, unknown> = {}
-  for (const m of ['select', 'eq', 'in', 'order', 'range', 'limit', 'is']) builder[m] = () => builder
-  builder.then = (resolve: (v: unknown) => unknown) => Promise.resolve(missing).then(resolve)
+/**
+ * A client that reads `league_week_player_points` from a schema that REALLY
+ * lacks it (R1257): the local PostgREST also serves `graphql_public`
+ * (supabase/config.toml `schemas`), which has no such table, so every read
+ * of it there gets the real PostgREST answer for a missing table — a GET's
+ * PGRST205 ("Could not find the table 'graphql_public.league_week_player_points'
+ * in the schema cache") and a HEAD's `{ error: null, status: 204 }` — exactly
+ * what production at 134 answers for `public`. Nothing is stubbed on the
+ * read side. Every other table goes to the real public schema. The scoring
+ * door's report is the one thing a 158 database cannot answer as 119 did, so
+ * its `player_points` key is removed (119's report never carries it; 119
+ * reads only team_id / points, so the rows sent were ignored).
+ */
+function pre158(real: SupabaseClient<Database>, absent: SupabaseClient<Database>): SupabaseClient<Database> {
   return new Proxy(real, {
     get(target, prop, receiver) {
       if (prop === 'from') {
-        return (table: string) => (table === 'league_week_player_points' ? builder : target.from(table as never))
+        return (table: string) => (table === 'league_week_player_points' ? absent.from(table as never) : target.from(table as never))
       }
       if (prop === 'rpc') {
         return async (fn: string, args: Record<string, unknown>) => {
@@ -213,6 +224,10 @@ function pre158(real: SupabaseClient<Database>): SupabaseClient<Database> {
     },
   }) as SupabaseClient<Database>
 }
+
+/** The same credentials, served from `graphql_public` — where the table does not exist. */
+const absentService = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false }, db: { schema: 'graphql_public' as 'public' } })
+let absentCommish: SupabaseClient<Database>
 
 beforeAll(async () => {
   await cleanup()
@@ -234,6 +249,9 @@ beforeAll(async () => {
   commishClient = createClient<Database>(LOCAL_URL, LOCAL_ANON_KEY, { auth: { persistSession: false } })
   const { error: signInError } = await commishClient.auth.signInWithPassword({ email: COMMISH.email, password: COMMISH.password })
   if (signInError) throw new Error(`sign-in: ${signInError.message}`)
+  absentCommish = createClient<Database>(LOCAL_URL, LOCAL_ANON_KEY, { auth: { persistSession: false }, db: { schema: 'graphql_public' as 'public' } })
+  const { error: absentSignIn } = await absentCommish.auth.signInWithPassword({ email: COMMISH.email, password: COMMISH.password })
+  if (absentSignIn) throw new Error(`sign-in (graphql_public client): ${absentSignIn.message}`)
   await must(service.from('players').upsert(PLAYERS).select('id'), 'players')
 
   const { columns, blob } = splitSettings(defaultsForTeamCount(8))
@@ -359,12 +377,31 @@ describe('F405 as ruled: stored per-player points + the next-week-kickoff window
     expect(await storedRows()).toBe('T1/wr:0=12.00:worker T1/wr:1=3.00:worker T2/wr:0=4.00:worker')
   })
 
+  it('SP9 (R1263) the box says WHY a scored week’s lines may not match the matchup: a team with no game this week, and a team whose score the commissioner set', async () => {
+    const owner = (await must(service.from('teams').select('owner_id').eq('id', t1).single(), 'owner'))!.owner_id
+    const t3 = (await must(service.from('teams').insert({ owner_id: owner, name: 'SPP Three', league_id: leagueId }).select('id').single(), 'team three'))!.id
+    const noGame = await box(t3)
+    expect([noGame.points_source, noGame.stored_note]).toEqual(['live', 'this team has no game this week, so no points were stored for it — the lines are computed from today’s stats'])
+    // An overridden pairing row (INSERTed — the override guard binds UPDATEs of the flag): the commissioner's number.
+    await must(service.from('matchups').insert({ league_id: leagueId, season: SEASON, week: 1, round_type: 'regular', home_team_id: t3, away_team_id: null, home_score: 20, status: 'final', is_overridden: true }).select('id'), 'overridden row')
+    const overridden = await box(t3)
+    expect(overridden.stored_note).toBe('the commissioner set this team’s score for the week, so these player points (what the team was scored on) do not add up to it')
+    // …and a team with an ordinary row gets no note (T1, stored and adding up).
+    expect((await box(t1)).stored_note).toBeNull()
+  })
+
   it('SP8 DEPLOY BEFORE PUSH — against a pre-158 answer the worker scores as before and names it, the box falls back to live (200, says why), reconcile runs today’s checks and names the missing store once', async () => {
-    // The box, on the locked week, with the MEASURED PGRST205: live computation from today's stats (the pre-158 behaviour), named.
-    const b = await box(t1, pre158(commishClient))
+    // PREMISE — the table REALLY is missing on this client, and R1257's trap is real: a HEAD says nothing, a GET says PGRST205.
+    const head = await absentService.from('league_week_player_points').select('team_id', { count: 'exact', head: true })
+    expect([head.error, head.status]).toEqual([null, 204])
+    const get = await absentService.from('league_week_player_points').select('team_id').limit(1)
+    expect([get.error?.code, get.error?.message]).toEqual(['PGRST205', "Could not find the table 'graphql_public.league_week_player_points' in the schema cache"])
+    expect(await readStoredPlayerPointsForSeason(pre158(service, absentService), leagueId, SEASON)).toEqual({ available: false, reason: PRE_158_SENTENCE })
+    // The box, on the locked week, against the REAL missing table: live computation from today's stats (the pre-158 behaviour), named.
+    const b = await box(t1, pre158(commishClient, absentCommish))
     expect([b.points_source, b.points, b.stored_note]).toEqual(['live', 17, 'the database predates migration 158 (no league_week_player_points table) — per-player points are not stored yet, so this read uses the live computation, as before'])
     // Reconcile: the store read answers PGRST205 ⇒ one info, and the final week goes back to the pre-158 arm (the warn it always gave).
-    const report = await reconcile(pre158(service))
+    const report = await reconcile(pre158(service, absentService))
     const mine = report.findings.filter((f) => f.league_id === leagueId || f.kind === 'player_points_store_missing')
     expect(mine.filter((f) => f.kind === 'player_points_store_missing').map((f) => f.severity)).toEqual(['info'])
     expect(mine.filter((f) => f.kind === 'post_window_correction').map((f) => [f.severity, f.stored, f.recomputed])).toEqual([['warn', 15, 17]])
@@ -378,7 +415,7 @@ describe('F405 as ruled: stored per-player points + the next-week-kickoff window
     ]), 'lineups wk 2')
     await must(service.from('player_stats').upsert([{ player_id: WR1, season: SEASON, week: 2, stat_type: 'weekly', updated_at: LATE_CORRECTION, advanced: {}, receptions: 1, receiving_yards: 20, receiving_tds: 0 }], { onConflict: 'player_id,season,week' }).select('player_id'), 'wk2 stats')
     await must(service.from('score_fanout').upsert([{ season: SEASON, week: 2, player_id: WR1, enqueued_at: LATE_CORRECTION, deferred_until: null }], { onConflict: 'season,week,player_id', ignoreDuplicates: false }).select('player_id'), 'wk2 enqueue')
-    const batch = await drain(pre158(service))
+    const batch = await drain(pre158(service, absentService))
     const entry = batch.leagues.find((l) => l.league_id === leagueId && l.week === 2)!
     expect([entry.outcome, entry.player_points]).toEqual(['written', 'not_stored_pre_158'])
     expect(entry.problems).toContain('per-player points NOT stored: score_write_week_batch answered without a player_points report — the database predates migration 158 (it ignores `players`); the team scores are written exactly as before and box scores stay live until 158 is pushed')
