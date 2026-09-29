@@ -62,6 +62,34 @@ set local search_path = public, extensions;
 
 select plan(85);
 
+-- L.D2.16 (migration 157 — additive, the R992 shape): pg_temp.un157 reverses
+-- 157's substitutions in the seven bodies it replaced (an identity on every
+-- other body), applied INNERMOST so the literals below still prove what
+-- they proved; pgTAP 105 A6 / A7 pin 157's own.
+create function pg_temp.un157(p_src text) returns text language sql as $un157$
+  select replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(p_src,
+    E'  -- 157 / F447: each ROSTERED player\'s kickoff is judged per PLAYER — his\n  -- current NFL team\'s game, or, when that is still ahead (or he has no\n  -- team), a start this league recorded for a game that kicked off or his\n  -- stat line for the week (lineup_player_kickoff_internal): a player the\n  -- NFL released or traded AFTER he played is still locked for the week.\n  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, p_week, v_e ->> \'player_id\', p_at);\n',
+    E'  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, p_week, v_e ->> \'nfl_team\', p_at);\n'),
+    E'      SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, v_league.season, v_current, v_e ->> \'player_id\', p_at);   -- 157 / F447\n',
+    E'      SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_current, v_e ->> \'nfl_team\', p_at);\n'),
+    E'  -- 157 / F447: judged per PLAYER (set_lineup\'s step (6) helper) — a player\n  -- the NFL released or traded after he played is locked, never OPEN.\n  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_player_kickoff_internal(p_league_id, p_season, p_week, v_e ->> \'player_id\', p_at);\n',
+    E'  FOR v_e IN SELECT * FROM jsonb_array_elements(v_roster) LOOP\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n'),
+    E'    v_drop_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_drop, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_drop_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_drop_p.team, p_at);\n'),
+    E'    v_add_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_add, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);\n'),
+    E'  )\n  -- 157 / F447: judged per PLAYER — a player the NFL released or traded\n  -- after he played this week is locked at the run (Q73 / Q74).\n  SELECT COALESCE(jsonb_agg(p.id ORDER BY p.id COLLATE "C"), \'[]\'::jsonb) INTO v_locked\n  FROM public.players p JOIN claim_players cp ON cp.pid = p.id\n  WHERE (public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p.id, p_at) ->> \'locked\')::boolean;\n',
+    E'  ), nfl AS (\n    SELECT DISTINCT p.team FROM public.players p JOIN claim_players cp ON cp.pid = p.id WHERE p.team IS NOT NULL\n  ), locked_nfl AS (\n    SELECT n.team FROM nfl n\n    WHERE (public.pool_game_lock_any_internal(v_league.season, v_current, n.team, p_at) ->> \'locked\')::boolean\n  )\n  SELECT COALESCE(jsonb_agg(p.id ORDER BY p.id COLLATE "C"), \'[]\'::jsonb) INTO v_locked\n  FROM public.players p JOIN claim_players cp ON cp.pid = p.id JOIN locked_nfl ln ON ln.team = p.team;\n'),
+    E'  v_add_lock := public.pool_game_lock_player_internal(p_league_id, v_league.season, v_current, p_add, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'  v_add_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_add_p.team, p_at);\n'),
+    E'    v_lock := public.pool_game_lock_player_internal(p_league.id, p_league.season, v_current, v_p.player_id, p_at);   -- 157 / F447: judged per player (played this week)\n',
+    E'    v_lock := public.pool_game_lock_any_internal(p_league.season, v_current, v_p.nfl_team, p_at);\n'),
+    E'          v_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_pool.nfl_team, p_now);\n          -- 157 / F447: the view agrees with the lock every writer enforces —\n          -- per PLAYER: unlocked by his current team, but he PLAYED this week\n          -- (a start recorded for a real kickoff, or his stat line) ⇒ locked.\n          IF NOT (v_lock ->> \'locked\')::boolean THEN\n            v_lock := COALESCE(public.lineup_played_lock_internal(v_lg.id, v_league.season, v_current, v_pool.player_id, p_now), v_lock);\n          END IF;\n',
+    E'          v_lock := public.pool_game_lock_any_internal(v_league.season, v_current, v_pool.nfl_team, p_now);\n'),
+    E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n            -- 157 / F447: a PASSED kickoff this record holds STAYS when it is a\n            -- real kickoff of the week and his current team\'s game is not\n            -- postponed — he played, and the NFL has released or traded him\n            -- since: never re-read to NULL or to his new team\'s later game.\n            -- A flexed or postponed game still moves it (E42 / E43).\n            IF (v_e ->> \'kickoff_at\')::timestamptz IS DISTINCT FROM v_k.kickoff_at\n               AND public.lineup_record_kicked_off_internal(v_league.season, v_row.week, v_pid, (v_e ->> \'kickoff_at\')::timestamptz, p_now) THEN\n              v_k.kickoff_at := (v_e ->> \'kickoff_at\')::timestamptz;\n            END IF;\n',
+    E'            SELECT * INTO v_k FROM public.lineup_kickoff_internal(v_league.season, v_row.week, v_team, p_now);\n')
+$un157$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 138 replaces ONE function and nothing else
 -- ---------------------------------------------------------------------------
@@ -112,7 +140,7 @@ select ok(
 -- is REVERSED first, so A7 / A7b keep proving exactly what they proved: 138's
 -- text is intact beneath 139, and 125's beneath that.
 select is(
-  (select md5(replace(replace(replace(replace(replace(p.prosrc,
+  (select md5(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
   E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
   E''),
   E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
@@ -127,7 +155,7 @@ select is(
   '2040f93b901c6224e39a973fc958f1a0',
   'A7 lineup_lock_tick is 138''s FILE TEXT beneath 139''s five hunks (prosrc with 139''s hunks reversed — md5 a stored literal; re-pinned by #316''s fix round, R1122: 125''s text plus ONE hunk)');
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(p.prosrc,
+  (select md5(replace(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
   E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
   E''),
   E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
