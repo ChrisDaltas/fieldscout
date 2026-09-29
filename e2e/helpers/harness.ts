@@ -59,7 +59,9 @@ export type Supabase = SupabaseClient<Database>
  *      read-only class, not a new job; **F292's fix adds one more of the
  *      same class — the league's stored scoring reference resolved to the
  *      template NAME, so the journey spec can assert the wizard's card
- *      click is what the league was born on**);
+ *      click is what the league was born on**; M5's L.D3.15 adds two
+ *      more — every seat's stored waiver priority and a trade's stored
+ *      drops);
  *   5. the journey spec's F49 season-year bump (L.B7.1): the settings UI's
  *      schedule picker pins year = the league's SEASON, so a UI-set instant
  *      on a 2026-season league is live-cron auto-start bait from its own
@@ -1919,6 +1921,21 @@ export async function readTrade(service: Supabase, tradeId: string): Promise<Tra
     .single()
   throwIfError(error, 'read trade')
   return data as TradeRow
+}
+
+/** A trade's stored drops (`trade_drops`) — who drops whom if it goes through. */
+export async function readTradeDrops(service: Supabase, tradeId: string): Promise<Array<{ team_id: string; player_id: string }>> {
+  const { data, error } = await service.from('trade_drops').select('team_id, player_id').eq('trade_id', tradeId).order('player_id')
+  throwIfError(error, 'read trade drops')
+  return data ?? []
+}
+
+/** Every seat's STORED waiver priority (`league_members.waiver_priority`),
+ *  by team — the server's word on the order the standings page lists. */
+export async function readWaiverPriorities(service: Supabase, leagueId: string): Promise<Map<string, number | null>> {
+  const { data, error } = await service.from('league_members').select('team_id, waiver_priority').eq('league_id', leagueId).not('team_id', 'is', null)
+  throwIfError(error, 'read waiver priorities')
+  return new Map((data ?? []).map((m) => [m.team_id as string, m.waiver_priority]))
 }
 
 /** Which team holds a player in a league now (null = on no roster). */
