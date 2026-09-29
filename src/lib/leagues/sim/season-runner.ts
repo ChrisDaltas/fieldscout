@@ -29,6 +29,14 @@
  *      `authenticated`;
  *   8. `ingestWeek`'s writer client (`nfl_games` / `nfl_weeks` bounds /
  *      `player_stats` / `score_fanout` are service-role surfaces by design).
+ * and, with `--transact` only (M5 L.D3.8 — transact-personas.ts banner):
+ *   9. the Ghost's SUCCESSOR provisioned by `auth.admin.createUser` under the
+ *      bot pool's username prefix (the bot-pool job's shape, so the sweep
+ *      removes it) — plus `waiver_tick` / `trade_tick` joining job 6's
+ *      `p_now`-injected, league-scoped job RPCs;
+ *  10. `--probe`'s ONE planted fault in the sim's own league.
+ * Every transaction itself goes through a manager's or a commissioner's own
+ * JWT (the services / RPCs a route calls).
  *
  * ── TIME ───────────────────────────────────────────────────────────────────
  * ONE `VirtualClock` (speed 0 — step-driven) carries the whole season, and it
@@ -151,8 +159,25 @@ import {
   type ScenarioAssertion,
   type SeasonLeagueResult,
   type SeasonRunReport,
+  type TransactionRunReport,
 } from './sim-types'
 import { SYNTHETIC_SEASON } from './synthetic-season'
+import {
+  applyBreakProbe,
+  collectTransactionAudit,
+  driveTransactions,
+  ghostSeatClaim,
+  type TransactDeps,
+  type TransactRun,
+} from './transact-personas'
+import {
+  claimPrivacyPopulation,
+  exclusivityPopulation,
+  faabLedgerPopulation,
+  poolPopulation,
+  sweepTransactionAudit,
+  type TransactionProbe,
+} from './transaction-invariants'
 
 type Supabase = SupabaseClient<Database>
 
@@ -168,6 +193,11 @@ export interface SeasonRunConfig {
   weeks: number
   concurrency?: number
   verbose?: boolean
+  /** M5 L.D3.8: drive the transacting personas + the Ghost (OPT-IN — the
+   *  gate-m4 population stays transaction-free; see transact-personas.ts). */
+  transact?: boolean
+  /** M5 L.D3.8: plant ONE fault so the named invariant must go red. */
+  probe?: TransactionProbe | null
 }
 
 export interface SeasonRunDeps extends SimRunDeps {
@@ -398,9 +428,13 @@ export async function runSeasonSim(
     censusBefore: '',
     censusAfter: '',
     problems: [],
-    coverageGaps: seasonCoverageGaps(cfg.scenario),
+    coverageGaps: seasonCoverageGaps(cfg.scenario, cfg.transact === true),
+    transactions: null,
     reason: null,
     green: false,
+  }
+  if (cfg.probe != null && cfg.transact !== true) {
+    throw new Error(`--probe ${cfg.probe} breaks a TRANSACTION invariant and needs --transact`)
   }
 
   // ---- F199: the census BEFORE anything (a run must not inherit a mess) ----
@@ -498,8 +532,46 @@ export async function runSeasonSim(
     // already sees every switch.
     await switchAutopilotSeats(service, botClients, leagueStates, cfg.seed, deps.runTag, report.problems, deps.log)
 
+    // ---- Phase 3d: the TRANSACTING personas + the Ghost (M5 L.D3.8) -------
+    // OPT-IN. Pre-kickoff by construction (transact-personas.ts TIME): every
+    // client verb takes wall now(), which on season 2099 is the league's
+    // first week, so roster traffic lands before the first driven week opens.
+    const transactDeps: TransactDeps = {
+      service,
+      bots: botClients,
+      url: deps.url,
+      anonKey: deps.anonKey,
+      seed: cfg.seed,
+      runTag: deps.runTag,
+      log,
+      sleep: deps.clock.sleep,
+      bridged: bridgedIds,
+    }
+    let transactRun: TransactRun | null = null
+    const successorIndex = { next: 1 }
+    if (cfg.transact === true) {
+      transactRun = await driveTransactions(transactDeps, leagueStates)
+      for (const s of transactRun.byLeague.values()) {
+        for (const line of s.lines) log(`${s.label}: ${line}`)
+      }
+    }
+
     // ---- Phase 4: drive the season --------------------------------------
-    const driven = await driveSeason(service, botClients, cfg, deps, base, bridge, leagueStates)
+    const driven = await driveSeason(service, botClients, cfg, deps, base, bridge, leagueStates, {
+      // The Ghost's SEAT CLAIM lands at the season's first `finalize` beat,
+      // after every week that has OPENED so far was played unmanaged.
+      onFirstFinalize:
+        transactRun === null
+          ? undefined
+          : async (openedWeeks) => ghostSeatClaim(transactDeps, leagueStates, transactRun!, openedWeeks, successorIndex),
+    })
+
+    // ---- Phase 4b: the break probe (M5 L.D3.8), planted before the sweep --
+    let probeDetail: string | null = null
+    if (transactRun !== null && cfg.probe != null) {
+      probeDetail = await applyBreakProbe(transactDeps, transactRun, cfg.probe)
+      log(`BREAK PROBE PLANTED — ${probeDetail}`)
+    }
     report.autopilotSelection.chainLines = driven.chainLines
     if (driven.weeksDriven.length === 0) {
       report.reason = 'no_weeks_driven'
@@ -649,6 +721,10 @@ export async function runSeasonSim(
           `${(result.durationMs / 1000).toFixed(1)}s`,
       )
     }
+    // ---- M5 L.D3.8: the TRANSACTION sweep (T1–T4 + the Ghost) ------------
+    if (transactRun !== null) {
+      report.transactions = await sweepTransactions(transactDeps, transactRun, leagueStates, cfg.probe ?? null, probeDetail, report)
+    }
     // ---- M6A L.E1.14: the two PREMISES, measured and never assumed --------
     // (§4 rule 14(c)). Invariant 8 over zero unmanaged seats, and invariant
     // 6's provenance arm over zero overrides, both pass having asserted
@@ -731,6 +807,109 @@ export async function runSeasonSim(
     }
   }
   return finish(report, deps)
+}
+
+/**
+ * M5 L.D3.8 — collect each league's transaction audit, sweep T1–T4 + the
+ * Ghost, and MEASURE every population. A zero population is a run PROBLEM
+ * (the task row: "each invariant reported with its non-zero population
+ * count") — a transacting run that iterated nothing has proved nothing.
+ */
+async function sweepTransactions(
+  deps: TransactDeps,
+  run: TransactRun,
+  leagues: readonly LeagueState[],
+  probe: TransactionProbe | null,
+  probeDetail: string | null,
+  report: SeasonRunReport,
+): Promise<TransactionRunReport> {
+  const out: TransactionRunReport = {
+    probe,
+    probeDetail,
+    leagues: run.byLeague.size,
+    leaguesAborted: 0,
+    claims: { submitted: 0, won: 0, lost: 0, invalid: 0 },
+    addDrops: 0,
+    trades: { commissioner: 0, none: 0, league_vote: 0, reversed: 0, votes: 0 },
+    commishFaabEdits: 0,
+    ghosts: { attempted: 0, completed: 0 },
+    populations: {
+      exclusivityMoved: 0,
+      faabTeams: 0,
+      faabTerms: { won_claim: 0, trade_leg: 0, reversal_leg: 0, commissioner_edit: 0 },
+      poolByState: {},
+      privacyHiddenPairs: 0,
+      privacyOwnVisible: 0,
+      privacyLostClaims: 0,
+    },
+    lines: [],
+  }
+  // The claim-privacy probe breaks ONE read, in the first league that ran.
+  const probeLeagueId = [...run.byLeague.values()].find((s) => s.aborted === null)?.leagueId ?? null
+  for (const league of leagues) {
+    const state = run.byLeague.get(league.leagueId)
+    if (state === undefined) continue
+    for (const line of state.lines) out.lines.push(`${state.label}: ${line}`)
+    if (state.aborted !== null) {
+      // Loud, and still AUDITED: what the league did before it stopped is
+      // real state the invariants must hold over.
+      out.leaguesAborted += 1
+      report.problems.push(`${state.label}: the transacting script ABORTED — ${state.aborted}`)
+    }
+    out.claims.submitted += state.counts.claimsSubmitted
+    out.claims.won += state.counts.won
+    out.claims.lost += state.counts.lost
+    out.claims.invalid += state.counts.invalid
+    out.addDrops += state.counts.addDrops
+    out.trades.commissioner += state.counts.trades.commissioner
+    out.trades.none += state.counts.trades.none
+    out.trades.league_vote += state.counts.trades.league_vote
+    out.trades.reversed += state.counts.reversed
+    out.trades.votes += state.counts.votes
+    out.commishFaabEdits += state.counts.commishFaabEdits
+    if (state.ghost !== null) {
+      out.ghosts.attempted += 1
+      if (state.ghost.incomplete === null) out.ghosts.completed += 1
+    }
+    const audit = await collectTransactionAudit(deps, state, league, probe, probeLeagueId)
+    report.invariantFailures.push(...sweepTransactionAudit(audit))
+    out.populations.exclusivityMoved += exclusivityPopulation(audit)
+    const faab = faabLedgerPopulation(audit)
+    out.populations.faabTeams += faab.teams
+    for (const [k, n] of Object.entries(faab.byKind) as Array<[keyof typeof faab.byKind, number]>) out.populations.faabTerms[k] += n
+    for (const [k, n] of Object.entries(poolPopulation(audit))) out.populations.poolByState[k] = (out.populations.poolByState[k] ?? 0) + n
+    const privacy = claimPrivacyPopulation(audit)
+    out.populations.privacyHiddenPairs += privacy.hiddenPairs
+    out.populations.privacyOwnVisible += privacy.ownVisible
+    out.populations.privacyLostClaims += privacy.lost
+  }
+  // ---- THE PREMISES (non-vacuity, measured — never assumed) -------------
+  const p = out.populations
+  const need = (ok: boolean, what: string): void => {
+    if (!ok) report.problems.push(`TRANSACTION PREMISE: ${what}`)
+  }
+  need(p.exclusivityMoved > 0, `T1 transaction-exclusivity iterated ${p.exclusivityMoved} moved player(s)`)
+  need(
+    p.faabTeams > 0 && p.faabTerms.won_claim > 0 && p.faabTerms.trade_leg > 0 && p.faabTerms.reversal_leg > 0 && p.faabTerms.commissioner_edit > 0,
+    `T2 faab-ledger iterated ${p.faabTeams} franchise(s) with terms ${JSON.stringify(p.faabTerms)} — every kind (won claim, trade leg, reversal leg, commissioner edit) must be reached`,
+  )
+  const rosteredRows = p.poolByState.rostered ?? 0
+  const otherRows = Object.entries(p.poolByState).filter(([k]) => k !== 'rostered').reduce((n, [, v]) => n + v, 0)
+  need(
+    rosteredRows > 0 && otherRows > 0,
+    `T3 pool-roster-mirror (invariant 4) read ${JSON.stringify(p.poolByState)} — both arms (a 'rostered' row, and a non-rostered one) must be reached (F300)`,
+  )
+  need(
+    p.privacyHiddenPairs > 0 && p.privacyOwnVisible > 0 && p.privacyLostClaims > 0,
+    `T4 claim-privacy asserted ${p.privacyHiddenPairs} hidden pair(s), ${p.privacyOwnVisible} own claim(s) seen, over ${p.privacyLostClaims} LOST claim(s) — all three must be > 0 (TD3: blind after processing too)`,
+  )
+  need(out.ghosts.completed > 0, `the Ghost completed in ${out.ghosts.completed} of ${out.ghosts.attempted} league(s) (F211)`)
+  need(
+    out.trades.commissioner > 0 && out.trades.none > 0 && out.trades.league_vote > 0 && out.trades.reversed > 0,
+    `trades by review mode ${JSON.stringify(out.trades)} — each of commissioner / none / league_vote, and a reversal, must execute`,
+  )
+  need(out.addDrops > 0, `${out.addDrops} add/drop(s) went through`)
+  return out
 }
 
 function finish(report: SeasonRunReport, deps: SeasonRunDeps): SeasonRunReport {
@@ -1006,8 +1185,13 @@ async function driveSeason(
   base: ReturnType<typeof makeScenario>,
   bridge: PlayerBridge,
   leagues: LeagueState[],
+  hooks: { onFirstFinalize?: (openedWeeks: number[]) => Promise<void> } = {},
 ): Promise<DriveOutcome> {
   const { log } = deps
+  // M5 L.D3.8: the weeks whose OPEN beat has run, and whether the one-shot
+  // first-finalize hook (the Ghost's seat claim) has fired.
+  const openedWeeks: number[] = []
+  let firstFinalizeHookRan = false
   const jobs: SeasonRunReport['jobs'] = { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 }
   const workerErrors: string[] = []
   const workerErrorsByLeague = new Map<string, string[]>()
@@ -1328,6 +1512,7 @@ async function driveSeason(
     }
 
     if (entry.kind === 'open') {
+      openedWeeks.push(entry.week)
       // M6A L.E1.22 — invariant 9's BASELINE: what the week's carry gave each
       // OFF seat, read right after the advance and BEFORE any tick of the week.
       await captureOffSeatCarry(service, leagues, entry.week)
@@ -1571,6 +1756,11 @@ async function driveSeason(
     if (entry.kind === 'finalize' && lawfulOverride === null) {
       lawfulOverride = await injectLawfulOverride(service, botClients, leagues, overrideRng, problems)
       if (lawfulOverride !== null) log(`LAWFUL OVERRIDE INJECTED: ${lawfulOverride.leagueLabel} — ${lawfulOverride.detail}`)
+    }
+    // M5 L.D3.8: the one-shot hook, LAST in the season's first finalize beat.
+    if (entry.kind === 'finalize' && !firstFinalizeHookRan && hooks.onFirstFinalize !== undefined) {
+      firstFinalizeHookRan = true
+      await hooks.onFirstFinalize([...openedWeeks])
     }
     if (cfg.verbose === true) log(`  ${pNow} w${entry.week} ${entry.kind}: ${entry.label}`)
   }
@@ -3721,17 +3911,36 @@ const POOL_MIRROR_GAP =
   'elsewhere: the `roster_add_drop` door is walked by pgTAP and by L.D6.2\'s inseason-lock.spec.ts, and ' +
   'mirror coverage itself waits on M5\'s transactions/waivers sim work. F300.'
 
-function seasonCoverageGaps(scenario: ScenarioId): string[] {
+/**
+ * M5 L.D3.8 — what a TRANSACTING run (`--transact`) still does not assert.
+ * It REPLACES F284(b)'s "drives no transactions" line and the F300 withdrawal
+ * (the mirror is live in such a run and its population is printed), and says
+ * exactly how far the driving reaches.
+ */
+const TRANSACT_TIME_GAP =
+  'IN-SEASON TRANSACTIONS are driven PRE-KICKOFF ONLY: every client verb (waiver_claim_submit, roster_add_drop, ' +
+  'trade_propose / respond / vote, the commissioner verbs) passes the transaction\'s now() (145:567, 113:912, 148:946), ' +
+  'which on season 2099 is the league\'s FIRST week — so the personas act before the first driven week opens, and the ' +
+  'waiver run and the league-vote execution take VIRTUAL instants through the jobs (waiver_tick / trade_tick). A ' +
+  'mid-season claim, a trade across a lock, E35\'s deferred trade and a claim whose drop already played are NOT driven ' +
+  'here (pgTAP 098/099 pin them). The Ghost\'s seat claim DOES land mid-season (it moves no roster). The Remix flow is ' +
+  'not driven by the season sim (L.D6.2\'s inseason-remix spec). F458.'
+
+function seasonCoverageGaps(scenario: ScenarioId, transact = false): string[] {
   const gaps: string[] = [
     'E32 lineup-edit LOCK REFUSAL (set_lineup at the door) is NOT asserted: `set_lineup` takes no caller ' +
       'clock, its DEFINER wrapper passes the transaction\'s now() (112:1233), and season 2099 lies before ' +
       'every kickoff — so nothing this harness submits is ever locked at submit. Covered by pgTAP ' +
       '(060/062/063) only; the roster_add_drop half is walked by L.D6.2\'s e2e (inseason-lock.spec.ts). ' +
       'F284(a)/F296. Closes when a caller clock reaches the door, or a browser can reach a locked editor.',
-    'IN-SEASON TRANSACTIONS and the Remix flow are NOT driven by the season sim: it only ever sees a ' +
-      'post-draft pool. Covered by L.D6.2\'s Playwright specs (inseason-week / inseason-lock / ' +
-      'inseason-remix), which the gate runs as its own stage. F284(b).',
-    POOL_MIRROR_GAP,
+    ...(transact
+      ? [TRANSACT_TIME_GAP]
+      : [
+          'IN-SEASON TRANSACTIONS and the Remix flow are NOT driven by the season sim: it only ever sees a ' +
+            'post-draft pool. Covered by L.D6.2\'s Playwright specs (inseason-week / inseason-lock / ' +
+            'inseason-remix), which the gate runs as its own stage. F284(b).',
+          POOL_MIRROR_GAP,
+        ]),
     'Q42 (a STARTER with a final game and no stat line) is COUNTED and CLASSIFIED, never asserted on: the ' +
       '§23.6 world publishes lines for eighteen players, so every other starter is a lawful no_stat_row by ' +
       'construction. Asserting either reading would harden an OPEN question (D327(9)).',
@@ -3856,6 +4065,7 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
       : `LAWFUL OVERRIDE (invariant 6's provenance arm, D345): ${report.lawfulOverride.leagueLabel} matchup ` +
           `${report.lawfulOverride.matchupId} — ${report.lawfulOverride.detail}`,
   )
+  lines.push(...transactionReportLines(report))
   const off = report.leagues.filter((l) => !l.allowIllegalLineups)
   if (off.length > 0) {
     lines.push(
@@ -3891,6 +4101,29 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
     }
   }
   lines.push(report.green ? 'RESULT: GREEN' : 'RESULT: RED')
+  return lines
+}
+
+/** M5 L.D3.8 — the transacting phase's block, invariant populations first. */
+export function transactionReportLines(report: SeasonRunReport): string[] {
+  const t = report.transactions
+  if (t === null) return ['TRANSACTIONS: none driven (no --transact) — invariant 4 is vacuous by declaration (F300)']
+  const p = t.populations
+  const lines = [
+    `TRANSACTIONS (M5 L.D3.8, --transact): ${t.leagues} league(s), ${t.leaguesAborted} aborted · claims ${t.claims.submitted} submitted → ` +
+      `${t.claims.won} won / ${t.claims.lost} lost / ${t.claims.invalid} invalid · add/drops ${t.addDrops} · trades: commissioner-review ` +
+      `${t.trades.commissioner} · no-review ${t.trades.none} · league-vote ${t.trades.league_vote} (${t.trades.votes} votes) · reversed ` +
+      `${t.trades.reversed} · commish_edit_faab ${t.commishFaabEdits} · Ghost ${t.ghosts.completed}/${t.ghosts.attempted} completed`,
+    `  T1 transaction-exclusivity — population: ${p.exclusivityMoved} player(s) moved by acknowledged transactions`,
+    `  T2 faab-ledger             — population: ${p.faabTeams} franchise(s) · terms won_claim ${p.faabTerms.won_claim} · trade_leg ` +
+      `${p.faabTerms.trade_leg} · reversal_leg ${p.faabTerms.reversal_leg} · commissioner_edit ${p.faabTerms.commissioner_edit}`,
+    `  T3 pool-roster-mirror      — population: ${Object.values(p.poolByState).reduce((n, v) => n + v, 0)} pool row(s) ` +
+      `${JSON.stringify(p.poolByState)} (invariant 4, now LIVE — F300)`,
+    `  T4 claim-privacy           — population: ${p.privacyHiddenPairs} (viewer, other team's claim) pair(s) hidden · ` +
+      `${p.privacyOwnVisible} own claim(s) seen · ${p.privacyLostClaims} lost claim(s) in the set`,
+  ]
+  if (t.probe !== null) lines.push(`  BREAK PROBE: ${t.probeDetail ?? t.probe} — this run MUST be RED by that invariant`)
+  for (const line of t.lines) lines.push(`  ${line}`)
   return lines
 }
 

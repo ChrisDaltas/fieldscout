@@ -667,6 +667,14 @@ export function checkStandingsRecompute(a: SeasonAudit): SeasonInvariantFailure[
  * transition), so its absence is not a violation and a naive sweep
  * false-positives here.
  *
+ * **M5 L.D3.8 (D418) — A TRANSACTING RUN MAKES THIS LIVE.** `sim season
+ * --transact` drives claims, a waiver run, trades and add/drops through the
+ * real verbs, so its pool is NON-EMPTY (`rostered` / `on_waivers` /
+ * `free_agent` / `locked_in_game` rows), the run prints the population by
+ * state and REQUIRES both arms reached, and `--probe pool-mirror` shows this
+ * function red. The paragraph below still describes the DEFAULT season run
+ * — the gate-m4 population, which drives no transactions and is unchanged.
+ *
  * **F300 — READ THIS BEFORE TRUSTING A PASS FROM THIS FUNCTION IN A SEASON
  * RUN.** `league_player_pool` is a SPARSE table whose only writers are
  * `roster_add_drop_internal`'s two INSERTs (113:713/734, 115:646/667). The
@@ -712,7 +720,17 @@ export function checkPoolMirror(a: SeasonAudit): SeasonInvariantFailure[] {
 
   for (const row of a.pool) {
     const owner = ownerByPlayer.get(row.player_id)
-    if (row.state === 'rostered' || row.state === 'locked_in_game') {
+    // M5 L.D3.8 (D418) CORRECTS this arm, found by the first NON-EMPTY pool a
+    // season run ever produced (F300's own prophecy): `locked_in_game` is NOT
+    // a rostered state. Its ONLY writer, the lineup-lock job, moves a row
+    // `free_agent` → `locked_in_game` at kickoff and back at release and
+    // leaves `rostered` / `on_waivers` alone (139:1170-1173, 116:665-668) — it
+    // is an UNOWNED player whose game is live. The production reconciler reads
+    // it the same way (reconcile.ts:648-662: only `rostered` mirrors a roster
+    // row). The first cut grouped it with `rostered`, unexercised while the
+    // table was empty, and a transacting run then red-flagged four locked FREE
+    // AGENTS as "no roster holds him".
+    if (row.state === 'rostered') {
       if (owner === undefined) {
         out.push(
           fail(

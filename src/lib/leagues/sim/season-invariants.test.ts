@@ -350,10 +350,23 @@ describe('4 — pool/roster mirror (§12.19; D294)', () => {
     expect(checkPoolMirror(a)).toEqual([])
   })
 
-  it("'locked_in_game' mirrors a roster row exactly as 'rostered' does", () => {
+  // M5 L.D3.8 (D418): `locked_in_game` is a live-game FREE AGENT — the lock
+  // job moves only `free_agent` ↔ `locked_in_game` (139:1170-1173), and the
+  // reconciler mirrors only `rostered` (reconcile.ts:648-662). The first cut
+  // pinned the opposite reading while the pool was never populated.
+  it("'locked_in_game' is an UNOWNED state: a locked free agent nobody rosters is legal", () => {
+    const a = greenAudit()
+    a.pool = [...a.pool, { player_id: 'p7', state: 'locked_in_game' }]
+    expect(checkPoolMirror(a)).toEqual([])
+  })
+
+  it("'locked_in_game' on a ROSTERED player names him (the lock job never writes it over a rostered row)", () => {
     const a = greenAudit()
     a.pool = [{ player_id: 'p1', state: 'locked_in_game' }, ...a.pool.slice(1)]
-    expect(checkPoolMirror(a)).toEqual([])
+    const failures = checkPoolMirror(a)
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain("'locked_in_game'")
+    expect(failures[0]!.detail).toContain('team A rosters him')
   })
 })
 
