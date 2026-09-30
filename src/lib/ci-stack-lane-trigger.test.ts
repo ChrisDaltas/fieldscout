@@ -96,6 +96,7 @@ const SOURCE_PATHS = [
   'src/lib/sports-data/**',
   'src/lib/email/**',
   'src/lib/nfl-teams.ts',
+  'src/lib/scoring/personal-scoring-system.ts',
   'src/utils/**',
   'src/types/database.ts',
   'src/components/draft/auction-budget.ts',

@@ -1104,6 +1104,13 @@ select throws_like(
      where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 10 $$,
   '%reopening a final week (season 2026 week 10) requires a NEW reopened_by_action_id%',
   'F4 reopen: final → correction_window WITHOUT an action id refuses by name');
+-- 170 (L.E1.31, TD10 (iii)): a pointer at the log may only be set to the
+-- receipt the writing transaction just produced (app.commish_action_id —
+-- what log_commissioner_action_internal sets). An audited reopen (not built,
+-- Q64) would write its receipt first; these cells model that by setting the
+-- GUC to the receipt they point at, and clear it after (pgTAP 118 §G proves
+-- the guard itself).
+select set_config('app.commish_action_id', 'a0000000-0000-4000-8000-000000000001', true);
 select results_eq(
   $$ with r as (update league_weeks set status = 'correction_window', reopened_by_action_id = 'a0000000-0000-4000-8000-000000000001'
      where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 10 returning 1) select count(*) from r $$,
@@ -1119,11 +1126,13 @@ select throws_like(
      where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 10 $$,
   '%requires a NEW reopened_by_action_id%',
   'F4 reopen: the SAME action id a second time refuses — every reopen carries its own audit id');
+select set_config('app.commish_action_id', 'a0000000-0000-4000-8000-000000000002', true);
 select results_eq(
   $$ with r as (update league_weeks set status = 'correction_window', reopened_by_action_id = 'a0000000-0000-4000-8000-000000000002'
      where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 10 returning 1) select count(*) from r $$,
   $$ values (1::bigint) $$,
   '…a DIFFERENT id reopens again (the one-unit sibling)');
+select set_config('app.commish_action_id', '', true);
 -- Illegal jumps, each from a fresh row, each by name.
 select throws_like(
   $$ update league_weeks set status = 'correction_window' where league_id = 'b1000000-0000-4000-8000-000000000008' and week = 11 $$,

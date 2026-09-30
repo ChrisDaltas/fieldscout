@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { requireProUser } from '@/lib/auth/require-pro'
-import type { Json } from '@/types/database'
+import { savePersonalScoringSystem } from '@/lib/scoring/personal-scoring-system'
 
 // Custom scoring systems are Pro-only (business rule 6). This route is the
 // enforcement point — the settings UI also disables the controls for free
@@ -32,42 +32,15 @@ export async function PUT(request: Request) {
     )
   }
 
-  const payload = {
+  // The PERSONAL row only — never a league fork the user also owns (R1335,
+  // F523; the one test lives in personal-scoring-system.ts).
+  const result = await savePersonalScoringSystem(supabase, user.id, {
     name: parsed.data.name,
-    rules: parsed.data.rules as Json,
-    updated_at: new Date().toISOString(),
+    rules: parsed.data.rules,
+    updatedAt: new Date().toISOString(),
+  })
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
   }
-
-  // One custom system per user on this surface: update the existing row or
-  // insert the first. RLS also restricts rows to owner_id = auth.uid().
-  const { data: existing } = await supabase
-    .from('scoring_systems')
-    .select('id')
-    .eq('owner_id', user.id)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (existing) {
-    const { data, error } = await supabase
-      .from('scoring_systems')
-      .update(payload)
-      .eq('id', existing.id)
-      .select()
-      .single()
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    return NextResponse.json(data)
-  }
-
-  const { data, error } = await supabase
-    .from('scoring_systems')
-    .insert({ owner_id: user.id, ...payload })
-    .select()
-    .single()
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-  return NextResponse.json(data, { status: 201 })
+  return NextResponse.json(result.row, { status: result.status })
 }

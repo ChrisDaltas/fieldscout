@@ -138,10 +138,20 @@ async function cleanup(): Promise<void> {
       const { error } = await service.from(table).delete().in('league_id', ids)
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
-    const { error: teamsError } = await service.from('teams').delete().in('league_id', ids)
-    if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
+    // F406's order (170 / D451): the commissioner's lineup, force add / drop
+    // and rename receipts now name the team they acted for
+    // (commissioner_actions.acting_as_team_id — an FK with no ON DELETE on an
+    // immutable log, cleared only by the league's CASCADE), so detach the
+    // teams, delete the league (taking its receipts), THEN delete the teams.
+    const { data: teams, error: teamsReadError } = await service.from('teams').select('id').in('league_id', ids)
+    if (teamsReadError) throw new Error(`cleanup teams read: ${teamsReadError.message}`)
+    const teamIds = (teams ?? []).map((row) => row.id)
+    const { error: detachError } = await service.from('teams').update({ league_id: null }).in('id', teamIds)
+    if (detachError) throw new Error(`cleanup teams detach: ${detachError.message}`)
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
+    const { error: teamsError } = await service.from('teams').delete().in('id', teamIds)
+    if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
   }
   for (const u of [COMMISH, MEMBER, OUTSIDER]) {
     await deleteUserByUsername(u.username)
