@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 
+import { invalidateCommishLog } from './use-commish-log'
 import { draftKeys } from './use-draft'
 import {
   adjustBudgetRequest,
@@ -58,6 +59,9 @@ function useControlMutation<TVars>(
       // placeholder key, which would silently evict a real league's cache.
       if (leagueId !== null) {
         void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+        // F535(d): each control writes its commissioner receipt (168) — the
+        // league's log and the console's "needs you" read re-read with it.
+        invalidateCommishLog(queryClient, leagueId)
       }
     },
   })
@@ -254,6 +258,7 @@ export function useSetMemberAutodraft(leagueId: string) {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 168's set_autodraft receipt
     },
   })
 }

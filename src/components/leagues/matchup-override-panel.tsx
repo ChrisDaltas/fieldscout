@@ -21,6 +21,7 @@ import {
   OVERRIDE_BAR_ON_COPY,
   OVERRIDE_PANEL_TITLE,
   bypassedCopy,
+  declareWinnerConfirm,
   overrideLockState,
   overrideOutcome,
   scoreGate,
@@ -89,6 +90,9 @@ export function MatchupOverrideTools({
   const lock = overrideLockState({ data: lockRead.data, error: lockRead.error })
   // Which door spoke last — the panel shows ONE outcome, the latest.
   const [last, setLast] = useState<'score' | 'result' | null>(null)
+  // §10.4 (L.E1.33): a winner is declared only after the before → after
+  // confirmation — the side waiting for his yes, or null.
+  const [confirming, setConfirming] = useState<'home' | 'away' | null>(null)
   // R1064: what he TYPED, or null while a field is untouched — an untouched
   // field follows the stored score through live-scoring ticks; typed text is
   // never overwritten (`shownScoreDraft`).
@@ -127,8 +131,17 @@ export function MatchupOverrideTools({
             setLast('score')
             score.submit({ matchupId: row.id, week: row.week, homeScore: gate.home, awayScore: gate.away })
           }}
+          stored={{ home_score: row.home_score, away_score: row.away_score, result: row.result }}
+          confirming={confirming}
           onDeclareWinner={(side) => {
-            const winnerTeamId = side === 'home' ? row.home_team_id : row.away_team_id
+            if (pending) return
+            setConfirming(side)
+          }}
+          onCancelWinner={() => setConfirming(null)}
+          onConfirmWinner={() => {
+            const side = confirming
+            const winnerTeamId = side === 'home' ? row.home_team_id : side === 'away' ? row.away_team_id : null
+            setConfirming(null)
             if (!winnerTeamId || pending) return
             score.reset()
             setLast('result')
@@ -158,6 +171,10 @@ export function MatchupOverridePanelView({
   refusal,
   onSaveScores,
   onDeclareWinner,
+  stored = null,
+  confirming = null,
+  onConfirmWinner = () => {},
+  onCancelWinner = () => {},
 }: {
   homeName: string
   /** Null on a BYE row: one score field, no winner arm (F366). */
@@ -176,7 +193,14 @@ export function MatchupOverridePanelView({
   refusal: string | null
   /** Handed the gate it was enabled by — the numbers sent are the numbers shown. */
   onSaveScores: (gate: ScoreGate) => void
+  /** Asks for the §10.4 confirmation — nothing is written until he says yes. */
   onDeclareWinner: (side: 'home' | 'away') => void
+  /** The row as STORED — the confirmation's "before" (L.E1.33). */
+  stored?: { home_score: number | null; away_score: number | null; result: string | null } | null
+  /** The side waiting for his yes, or null. */
+  confirming?: 'home' | 'away' | null
+  onConfirmWinner?: () => void
+  onCancelWinner?: () => void
 }) {
   const id = useId()
   const gate = scoreGate({ homeDraft, awayDraft, homeName, awayName })
@@ -258,6 +282,13 @@ export function MatchupOverridePanelView({
                   </span>
                 )}
               </div>
+              {confirming && stored && (
+                <WinnerConfirm
+                  confirm={declareWinnerConfirm({ side: confirming, homeName, awayName, stored })}
+                  onConfirm={onConfirmWinner}
+                  onCancel={onCancelWinner}
+                />
+              )}
             </div>
           )}
         </>
@@ -289,6 +320,38 @@ export function MatchupOverridePanelView({
         </div>
       )}
     </section>
+  )
+}
+
+/** §10.4's before → after, inline (the draft panel's INLINE-expand
+ *  precedent — no nested dialog), asking for nothing but the yes (C82). */
+function WinnerConfirm({
+  confirm,
+  onConfirm,
+  onCancel,
+}: {
+  confirm: ReturnType<typeof declareWinnerConfirm>
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div role="group" aria-label={confirm.title} className="flex flex-col gap-1.5 rounded-sm border border-ink bg-caution-soft px-3 py-2" data-declare-confirm>
+      <p className="text-[12px] font-bold text-ink">{confirm.title}</p>
+      <p className="text-[11px] font-semibold text-ink" data-confirm-before>
+        {confirm.before}
+      </p>
+      <p className="text-[11px] font-semibold text-ink" data-confirm-after>
+        {confirm.after}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="blue" size="sm" onClick={onConfirm} data-declare-confirm-yes>
+          {confirm.confirmLabel}
+        </Button>
+        <Button variant="stroke" size="sm" onClick={onCancel} data-declare-confirm-cancel>
+          Cancel
+        </Button>
+      </div>
+    </div>
   )
 }
 

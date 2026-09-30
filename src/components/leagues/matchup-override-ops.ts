@@ -16,6 +16,8 @@
  */
 import type { CommishMatchupEditLock, CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 
+import { formatPoints } from './standings-table-ops'
+
 export const OVERRIDE_BAR_OFF_COPY =
   'Commissioner — override mode lets you correct this matchup: set both scores, or declare a winner. It stays on until you turn it off, and every change is recorded.'
 export const OVERRIDE_BAR_ON_COPY =
@@ -36,6 +38,52 @@ export const DECLARE_WINNER_COPY =
  * `p_away: null`, which is what `131:1058-1062` asks for). This line sits
  * where the declare-a-winner arm would be.
  */
+// ---------------------------------------------------------------------------
+// Declare a winner — §10.4's confirmation, before → after (M6 L.E1.33)
+// ---------------------------------------------------------------------------
+
+/**
+ * §10.4: *"Confirmation dialogs on destructive/cascade actions (reset draft,
+ * reverse trade, set result) showing the before/after"* — and, per C82,
+ * asking for nothing else (no reason field). The declare-a-winner arm had
+ * none: one tap wrote the result (L.E1.33 adds it, the task's "where a
+ * surface lacks one"). BEFORE is the row as STORED — the scores on the
+ * matchup and the result the league has recorded (none until the week is
+ * finalized, F245); AFTER is what 126's result arm writes: the chosen side
+ * wins and the scores are left alone (DECLARE_WINNER_COPY). Nothing is
+ * worked out here — no leader, no margin.
+ */
+export interface DeclareWinnerConfirm {
+  title: string
+  before: string
+  after: string
+  confirmLabel: string
+}
+
+function storedResultWords(result: string | null, homeName: string, awayName: string): string {
+  if (result === 'home') return `${homeName} won`
+  if (result === 'away') return `${awayName} won`
+  if (result === 'tie') return 'a tie'
+  return 'no result recorded yet'
+}
+
+export function declareWinnerConfirm(args: {
+  side: 'home' | 'away'
+  homeName: string
+  awayName: string
+  stored: { home_score: number | null; away_score: number | null; result: string | null }
+}): DeclareWinnerConfirm {
+  const { side, homeName, awayName, stored } = args
+  const winner = side === 'home' ? homeName : awayName
+  const score = (v: number | null) => (v === null ? '—' : formatPoints(v))
+  return {
+    title: `Declare ${winner} the winner?`,
+    before: `Now: ${homeName} ${score(stored.home_score)} – ${score(stored.away_score)} ${awayName} · ${storedResultWords(stored.result, homeName, awayName)}.`,
+    after: `After: ${winner} wins this matchup. The scores stay as they are, and the change is shown to the league.`,
+    confirmLabel: `Yes, declare ${winner} the winner`,
+  }
+}
+
 export const BYE_ROW_COPY = 'This is a bye — there is no opponent and no winner to declare. Only the team’s score can be corrected.'
 
 // ---------------------------------------------------------------------------

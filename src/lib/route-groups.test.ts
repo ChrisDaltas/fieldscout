@@ -188,6 +188,13 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // reading-and-answering page, not a draft surface. Gated on
   // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/trades',
+  // M6 L.E1.33 — the COMMISSIONER CONSOLE (spec §10.1 as folded by v2.16.77
+  // `…/leagues/[id]/commish`: the launchpad; PROGRESS D443, D457). In
+  // `(shell)` for Q12's reason: a page of doors, not a draft surface. Gated
+  // on `featureFlags.leagues` by `(shell)/leagues/layout.tsx`, and on the
+  // viewer being a commissioner by its own server component (a redirect to
+  // the league page otherwise). Permanent.
+  '/app/leagues/[leagueId]/commish',
 ]
 
 describe('route groups are invisible to the URL space', () => {

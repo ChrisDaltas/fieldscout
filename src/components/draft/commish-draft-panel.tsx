@@ -77,6 +77,7 @@ import {
   moveOrderEntry,
   pauseFirstGate,
   pickTimerLabel,
+  resetDraftBeforeAfter,
   type ControlGate,
   type UndoTarget,
 } from './commish-panel-ops'
@@ -422,7 +423,7 @@ export function CommishDraftPanel({
         )}
         {sections.has('reset') && (
           <div id={sectionDomId('reset')} tabIndex={-1}>
-            <ResetSection leagueId={leagueId} draftId={draft.id} onError={surfaceError} />
+            <ResetSection leagueId={leagueId} draftId={draft.id} pickCount={livePicks.length} draftStatus={draft.status} onError={surfaceError} />
           </div>
         )}
         {sections.has('end') && (
@@ -1308,12 +1309,18 @@ const RESET_CONFIRM_WORD = 'RESET'
 function ResetSection({
   leagueId,
   draftId,
+  pickCount,
+  draftStatus,
   onError,
 }: {
   leagueId: string
   draftId: string
+  /** The picks still on the board (undone picks excluded). */
+  pickCount: number
+  draftStatus: string
   onError: (error: unknown, title: string) => void
 }) {
+  const beforeAfter = resetDraftBeforeAfter(pickCount, draftStatus)
   const reset = useResetDraft(leagueId, draftId)
   const [open, setOpen] = useState(false)
   const [confirmText, setConfirmText] = useState('')
@@ -1346,6 +1353,10 @@ function ResetSection({
               room sees a system post; this cannot be undone from here.
             </DialogDescription>
           </DialogHeader>
+          <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[11px] font-semibold text-ink" data-reset-before-after>
+            <p data-confirm-before>{beforeAfter.before}</p>
+            <p data-confirm-after>{beforeAfter.after}</p>
+          </div>
           <div className="flex flex-col gap-1">
             <Label className="text-[11px]">
               Type <span className="fs-num font-bold">{RESET_CONFIRM_WORD}</span> to confirm

@@ -20,9 +20,10 @@ import { commishLogKeys } from './use-commish-log'
  * `commishLogKeys.all` on success AND on error (R822(i); the last five since
  * R1360), and each can change what needs him (a seat put on autopilot, a
  * trade approved, a score corrected) — so the list re-reads after each
- * without a second invalidation list to keep in step. The draft-room,
- * membership / invite and settings hooks write receipts too (168 / 169) but
- * do not re-read the log yet — the minute poll covers them (F535(d)).
+ * without a second invalidation list to keep in step. Since L.E1.33 the
+ * draft-room, membership / invite, settings and `set_lineup` hooks — which
+ * write receipts too (168 / 169) — re-read the same root through
+ * `invalidateCommishLog` (F535(d), pinned per hook).
  *
  * Games finish, managers accept trades and seats empty on their own clock,
  * so the read also re-polls once a minute — until it is refused (a 403 is

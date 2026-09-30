@@ -243,6 +243,12 @@ describe('the nav and the two post-draft doors', () => {
     ])
     expect(leagueNav('L', null).map((i) => i.key)).toEqual(['matchups', 'standings', 'schedule', 'players'])
   })
+  it('nav (M6 L.E1.33): the Commissioner door is last, and only for a commissioner — never by default', () => {
+    expect(leagueNav('L', 'T', true).at(-1)).toEqual({ key: 'commish', label: 'Commissioner', href: '/app/leagues/L/commish' })
+    expect(leagueNav('L', null, true).map((i) => i.key)).toEqual(['matchups', 'standings', 'schedule', 'players', 'commish'])
+    expect(leagueNav('L', 'T', false).some((i) => i.key === 'commish')).toBe(false)
+    expect(leagueNav('L', 'T').some((i) => i.key === 'commish')).toBe(false)
+  })
   it('doors: the recap route and the launcher SEAM (`?practice=1` — mock-launcher-entry’s printed destination)', () => {
     expect(draftDoors('L')).toEqual({ recap: '/app/leagues/L/draft/recap', practice: '/app/leagues/L/draft?practice=1' })
   })
