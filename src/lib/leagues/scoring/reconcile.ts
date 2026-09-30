@@ -278,6 +278,20 @@ export interface CorrectionEventLite {
   old_value: number | null
   new_value: number | null
   detected_at: string
+  /** 167: the NFL week's state when the fix was seen. */
+  week_state: 'open' | 'final'
+}
+
+/**
+ * R1344: the events behind a LOCKED week's moved line are only those seen
+ * after the week locked — recorded with the NFL week `final`, or seen after
+ * THIS league finalized the week (another league may still have held it
+ * open). An in-window event is already in the stored points (the door
+ * re-scored it) and is never cited as the reason a locked line moved.
+ */
+export function postLockEvents(events: readonly CorrectionEventLite[], finalizedAt: string | null | undefined): CorrectionEventLite[] {
+  const lockedAt = finalizedAt ? Date.parse(finalizedAt) : null
+  return events.filter((e) => e.week_state === 'final' || (lockedAt !== null && Date.parse(e.detected_at) >= lockedAt))
 }
 
 /**
@@ -547,6 +561,8 @@ interface LeagueWeekRow {
   status: string
   /** 144 / F397: the rules THIS week is played with — every cell of the week is recomputed under them. */
   scoring_rules_snapshot: unknown
+  /** When the league finalized the week (NULL until final) — a correction seen after it moved the line past the lock (R1344). */
+  finalized_at?: string | null
 }
 
 interface MatchupRow {
@@ -756,7 +772,7 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
       })
     }
 
-    const weeks = must(await db.from('league_weeks').select('week, status, scoring_rules_snapshot').eq('league_id', league.id).eq('season', season).order('week'), 'league_weeks read') as LeagueWeekRow[]
+    const weeks = must(await db.from('league_weeks').select('week, status, scoring_rules_snapshot, finalized_at').eq('league_id', league.id).eq('season', season).order('week'), 'league_weeks read') as LeagueWeekRow[]
     const started = weeks.filter((w) => w.status === 'live' || w.status === 'correction_window' || w.status === 'final')
     report.league_weeks += started.length
 
@@ -984,8 +1000,10 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
         if (lockedRows && lockedRows.length > 0) {
           // The exact check (158 / F405): stored vs Σ stored rows; today's
           // stats vs the stored rows is information, never a warn.
+          const weekEvents = correctionEvents.byWeek.get(week) ?? new Map<string, CorrectionEventLite[]>()
+          const postLock = new Map([...weekEvents].map(([pid, list]) => [pid, postLockEvents(list, lw.finalized_at)]))
           for (const v of classifyLockedCell(cell.stored, lockedRows, computed, {
-            byPlayer: correctionEvents.byWeek.get(week) ?? new Map(),
+            byPlayer: postLock,
             available: correctionEvents.available,
           })) {
             findings.push({
@@ -1073,13 +1091,13 @@ async function readCorrectionEventsForSeason(
   season: number,
 ): Promise<{ byWeek: Map<number, Map<string, CorrectionEventLite[]>>; available: boolean }> {
   const byWeek = new Map<number, Map<string, CorrectionEventLite[]>>()
-  type Row = { id: string; week: number; player_id: string; stat_key: string; old_value: number | null; new_value: number | null; detected_at: string }
+  type Row = { id: string; week: number; player_id: string; stat_key: string; old_value: number | null; new_value: number | null; detected_at: string; week_state: 'open' | 'final' }
   const rows: Row[] = []
   let total: number | null = null
   for (let offset = 0; ; ) {
     const page = await db
       .from('stat_correction_events')
-      .select('id, week, player_id, stat_key, old_value, new_value, detected_at', { count: 'exact' })
+      .select('id, week, player_id, stat_key, old_value, new_value, detected_at, week_state', { count: 'exact' })
       .eq('season', season)
       .order('id', { ascending: true })
       .range(offset, offset + 999)
@@ -1100,7 +1118,7 @@ async function readCorrectionEventsForSeason(
       byWeek.set(r.week, week)
     }
     const list = week.get(r.player_id) ?? []
-    list.push({ stat_key: r.stat_key, old_value: r.old_value === null ? null : Number(r.old_value), new_value: r.new_value === null ? null : Number(r.new_value), detected_at: r.detected_at })
+    list.push({ stat_key: r.stat_key, old_value: r.old_value === null ? null : Number(r.old_value), new_value: r.new_value === null ? null : Number(r.new_value), detected_at: r.detected_at, week_state: r.week_state })
     week.set(r.player_id, list)
   }
   for (const week of byWeek.values()) for (const list of week.values()) list.sort((a, b) => a.detected_at.localeCompare(b.detected_at) || a.stat_key.localeCompare(b.stat_key))

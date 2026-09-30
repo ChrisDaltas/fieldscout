@@ -45,8 +45,12 @@
 --       element; nothing moves in any league cell.
 --   §V  the element''s shape — refused by name (not an array, without
 --       players, a non-uuid, an event of another week).
---   §P  APPLIED — stat_correction_mark_applied stamps an event only when its
---       player-week has no queue row left; a replay stamps nothing.
+--   §P  APPLIED — stat_correction_mark_applied stamps the named, unapplied
+--       events at the caller''s instant; a replay stamps nothing.
+--   §W  THE ONE-TIME BACKFILL (R1342(a)) — events recorded before 172 whose
+--       row is drained are stamped at their own detected_at; queued ones wait.
+--   (§S S6–S8, R1342) an event this league already recorded is never
+--       re-announced by a later correction to the same player-week.
 --   §K  F476 — bracket_resync_due on the last regular week of a league with
 --       a bracket (and not without one); score_bracket_resync runs the sync.
 -- Worlds (season 2089 — its own calendar; measured unused 2026-09-30):
@@ -63,7 +67,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(64);
+select plan(72);
 
 -- 172's five fenced hunks reversed on the live body (D137) — ONE regexp.
 create function pg_temp.un172(p_src text) returns text language sql as $un172$
@@ -103,19 +107,19 @@ select ok(
                    and not has_function_privilege('anon', p.oid, 'EXECUTE')
                    and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
                    and (not p.prosecdef or has_function_privilege('service_role', p.oid, 'EXECUTE')))
-          and count(*) = 5
+          and count(*) = 6
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('score_write_week_batch', 'stat_correction_mark_applied', 'score_bracket_resync',
-                       'stat_key_label_internal', 'stat_correction_week_state_internal')),
-  'A4 the three doors are SECURITY DEFINER with EXECUTE for the service role, the two helpers plain; all five search_path empty and REVOKEd from anon and authenticated');
+                       'stat_key_label_internal', 'stat_correction_week_state_internal', 'stat_correction_backfill_applied_internal')),
+  'A4 the three doors are SECURITY DEFINER with EXECUTE for the service role, the three helpers plain; all six search_path empty and REVOKEd from anon and authenticated');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'score_write_week_batch'),
   1, 'A5 score_write_week_batch is still ONE overload — the element rides the same signature (074 K3)');
 select is(
   (select md5(prosrc) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
-  '4d0a9d0f75cd1e7a1fc814af055db0c0',
+  '7fbb74085768afd0f9d56a235f1ebabb',
   'A6 score_write_week_batch is 172''s body — a STORED LITERAL md5 (derive_172.py: 158:409-720 plus five fenced hunks)');
 select is(
   (select md5(pg_temp.un172(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
@@ -233,7 +237,9 @@ insert into stat_correction_events (id, season, week, player_id, stat_key, old_v
  ('e1200000-0000-4000-8000-000000000003', 2089, 2, 'pgtap-lsc-q1', 'targets',         5,  6,  '2089-09-16 15:00+00', 'open', 'pgtap', 'pgtap-lsc-g2'),
  ('e1200000-0000-4000-8000-000000000004', 2089, 1, 'pgtap-lsc-w1', 'receiving_yards', 20, 30, '2089-09-16 15:00+00', 'final', 'pgtap', 'pgtap-lsc-g1'),
  ('e1200000-0000-4000-8000-000000000005', 2089, 3, 'pgtap-lsc-q1', 'pass_yards',      100, 125, '2089-09-21 03:00+00', 'open', 'pgtap', 'pgtap-lsc-g3'),
- ('e1200000-0000-4000-8000-000000000006', 2089, 2, 'pgtap-lsc-b1', 'pass_yards',      200, 225, '2089-09-16 15:00+00', 'open', 'pgtap', 'pgtap-lsc-g2');
+ ('e1200000-0000-4000-8000-000000000006', 2089, 2, 'pgtap-lsc-b1', 'pass_yards',      200, 225, '2089-09-16 15:00+00', 'open', 'pgtap', 'pgtap-lsc-g2'),
+ ('e1200000-0000-4000-8000-000000000007', 2089, 2, 'pgtap-lsc-w1', 'receiving_yards', 37,  42,  '2089-09-17 15:00+00', 'open', 'pgtap', 'pgtap-lsc-g2'),
+ ('e1200000-0000-4000-8000-000000000008', 2089, 3, 'pgtap-lsc-q1', 'pass_yards',      125, 150, '2089-09-21 04:00+00', 'open', 'pgtap', 'pgtap-lsc-g3');
 
 -- Every stored cell of LB (the "nothing moves" digest) and LA week 1.
 create function pg_temp.cells(p_league uuid, p_week int) returns text language sql as $dg$
@@ -315,10 +321,10 @@ select set_config('pgtap.r', public.score_write_week_batch('b1200000-0000-4000-8
    "corrections": ["e1200000-0000-4000-8000-000000000002", "e1200000-0000-4000-8000-000000000003", "e1200000-0000-4000-8000-000000000001"]}]')::text, true);
 select is(
   current_setting('pgtap.r')::jsonb -> 'corrections' -> 'skipped',
-  '[{"reason": "no_points_moved", "team_id": "c1200000-0000-4000-8000-000000000001", "player_id": "pgtap-lsc-q1"},
-    {"reason": "no_points_moved", "team_id": "c1200000-0000-4000-8000-000000000001", "player_id": "pgtap-lsc-w1"},
+  '[{"reason": "already_recorded", "team_id": "c1200000-0000-4000-8000-000000000001", "event_id": "e1200000-0000-4000-8000-000000000001", "player_id": "pgtap-lsc-w1"},
+    {"reason": "no_points_moved", "team_id": "c1200000-0000-4000-8000-000000000001", "player_id": "pgtap-lsc-q1"},
     {"reason": "not_started", "team_id": "c1200000-0000-4000-8000-000000000001", "player_id": "pgtap-lsc-w2"}]'::jsonb,
-  'S1 every non-record NAMED: his benched WR (not_started — the starter filter), his QB''s targets (a stat the league does not score — no_points_moved), and the identical re-send of the first correction');
+  'S1 every non-record NAMED: his benched WR (not_started — the starter filter), his QB''s targets (a stat the league does not score — no_points_moved), and the re-send of the first correction (already_recorded — R1342)');
 select is(
   (select count(*)::int from league_stat_corrections where player_id = 'pgtap-lsc-w2')
   || ':' || (select count(*)::int from league_stat_corrections where league_id = 'b1200000-0000-4000-8000-00000000000a'),
@@ -340,6 +346,29 @@ select is(
   'S4 an OVERRIDDEN row: the commissioner''s number stands — no record (score_not_written), nothing written');
 select is(pg_temp.cells('b1200000-0000-4000-8000-00000000000b', 2), current_setting('pgtap.lb0'),
   'S5 …and every LB cell is byte-identical');
+
+-- R1342 — AT MOST ONCE: a later correction to the same player-week drains
+-- while the first event is still unapplied (a stamp that failed, or an event
+-- recorded before 172 was pushed). The first event is NOT re-announced.
+select set_config('pgtap.r', public.score_write_week_batch('b1200000-0000-4000-8000-00000000000a', 2, '[
+  {"team_id": "c1200000-0000-4000-8000-000000000001", "points": 94.50,
+   "players": [{"slot": "qb:0", "player_id": "pgtap-lsc-q1", "points": 60, "pending": [], "reason": "scored"},
+               {"slot": "wr:0", "player_id": "pgtap-lsc-w1", "points": 34.5, "pending": [], "reason": "scored"}],
+   "corrections": ["e1200000-0000-4000-8000-000000000001", "e1200000-0000-4000-8000-000000000007"]}]')::text, true);
+select is(
+  (current_setting('pgtap.r')::jsonb -> 'corrections' -> 'skipped')::text || ' '
+  || (select stat_changes::text || ' ' || array_to_string(event_ids, ',') from league_stat_corrections
+      where league_id = 'b1200000-0000-4000-8000-00000000000a' and week = 2 and 'e1200000-0000-4000-8000-000000000007' = any (event_ids)),
+  '[{"reason": "already_recorded", "team_id": "c1200000-0000-4000-8000-000000000001", "event_id": "e1200000-0000-4000-8000-000000000001", "player_id": "pgtap-lsc-w1"}] '
+  '[{"new": 42, "old": 37, "label": "receiving yards", "event_id": "e1200000-0000-4000-8000-000000000007", "stat_key": "receiving_yards"}] e1200000-0000-4000-8000-000000000007',
+  'S6 R1342 AT MOST ONCE: the event this league already recorded is skipped by name (already_recorded); the new record carries ONLY the new event');
+select is(
+  (select message from league_chat where league_id = 'b1200000-0000-4000-8000-00000000000a' and is_system and message like '%37 → 42%'),
+  'Stat correction (Week 2): Wade One''s receiving yards 37 → 42 — Team One 94.00 → 94.50.',
+  'S7 …and the post names only the new correction — "97 → 37" is never re-announced (no result flipped, so no result sentence)');
+select is(
+  (select count(*)::int from league_chat where league_id = 'b1200000-0000-4000-8000-00000000000a' and is_system and message like '%97 → 37%'),
+  1, 'S8 …the first correction was announced exactly once');
 
 -- ---------------------------------------------------------------------------
 -- L. A LIVE WEEK — recorded without results, posted, nobody notified
@@ -376,7 +405,7 @@ select throws_ok(
   $$ select public.score_write_week_batch('b1200000-0000-4000-8000-00000000000a', 3, '[
        {"team_id": "c1200000-0000-4000-8000-000000000001", "points": 12.00,
         "players": [{"slot": "qb:0", "player_id": "pgtap-lsc-q1", "points": 12, "pending": [], "reason": "scored"}],
-        "corrections": ["e1200000-0000-4000-8000-000000000005"]}]') $$,
+        "corrections": ["e1200000-0000-4000-8000-000000000008"]}]') $$,
   'P0001', 'pgtap: the record write failed',
   'R1 a failure writing the record fails the whole call');
 select is(pg_temp.cells('b1200000-0000-4000-8000-00000000000a', 3), current_setting('pgtap.la3'),
@@ -466,27 +495,50 @@ select is(
      {"team_id": "c1200000-0000-4000-8000-000000000013", "points": 51.00,
       "players": [{"slot": "qb:0", "player_id": "pgtap-lsc-b3", "points": 51, "pending": [], "reason": "scored"}]}]') ->> 'bracket_resync_due')),
   'false', 'K2 …but an identical re-send (nothing written) owes nothing');
-select ok(
-  (public.score_bracket_resync('b1200000-0000-4000-8000-00000000000b', '2089-09-17 12:00+00') ->> 'league_id') = 'b1200000-0000-4000-8000-00000000000b',
-  'K3 score_bracket_resync runs the ONE bracket writer at the caller''s instant for the league (service role)');
+select set_config('pgtap.k3', public.score_bracket_resync('b1200000-0000-4000-8000-00000000000b', '2089-09-17 12:00+00')::text, true);
+select is(
+  (select (r ->> 'league_id') || ' ' || (r ->> 'action') || ' round ' || (r ->> 'round') || ' ' || (r ->> 'source') || ' ' || (r ->> 'games') || ' flipped=' || (r ->> 'status_flipped')
+   from (select current_setting('pgtap.k3')::jsonb as r) x)
+  || ' ' || (select status from leagues where id = 'b1200000-0000-4000-8000-00000000000b')
+  || ' ' || (select count(*)::text from matchups where league_id = 'b1200000-0000-4000-8000-00000000000b' and week = 3 and round_type <> 'secondary'),
+  'b1200000-0000-4000-8000-00000000000b built round 1 provisional 1:c1200000-0000-4000-8000-000000000011v2:c1200000-0000-4000-8000-000000000013 flipped=true playoffs 1',
+  'K3 F476 AT ONCE: score_bracket_resync runs the ONE bracket writer at the caller''s instant — round 1 BUILT from the re-scored week (seed 1 Bees One v seed 2 Bees Three), the league into its playoffs, the round-1 row written');
 
 -- ---------------------------------------------------------------------------
--- P. APPLIED (§12.21) — stamped only once no queue row is left
+-- P. APPLIED (§12.21) — the worker stamps the events of the rows it is about
+--    to consume, BEFORE its ack (R1342); a replay stamps nothing
 -- ---------------------------------------------------------------------------
-insert into score_fanout (season, week, player_id, enqueued_at) values (2089, 2, 'pgtap-lsc-w2', '2089-09-16 15:00+00');
 select is(
   public.stat_correction_mark_applied(array['e1200000-0000-4000-8000-000000000001', 'e1200000-0000-4000-8000-000000000002']::uuid[], '2089-09-16 15:05+00')::text,
-  '{"named": 2, "reason": null, "stamped": 1, "unknown": 0, "still_queued": 1, "already_applied": 0}',
-  'P1 an event whose player-week has no queue row is stamped; one still queued (a newer delta, a held row) is NOT — it waits for its drain');
+  '{"named": 2, "reason": null, "stamped": 2, "unknown": 0, "already_applied": 0}',
+  'P1 the named, still-unapplied events are stamped (the worker names the events of the rows it consumes)');
 select is(
   (select string_agg(id::text || '=' || coalesce(applied_at::text, 'NULL'), ' ' order by id) from stat_correction_events
    where id in ('e1200000-0000-4000-8000-000000000001', 'e1200000-0000-4000-8000-000000000002')),
-  'e1200000-0000-4000-8000-000000000001=2089-09-16 15:05:00+00 e1200000-0000-4000-8000-000000000002=NULL',
+  'e1200000-0000-4000-8000-000000000001=2089-09-16 15:05:00+00 e1200000-0000-4000-8000-000000000002=2089-09-16 15:05:00+00',
   'P2 …stamped at the CALLER''s instant (p_now), never the wall clock');
 select is(
-  public.stat_correction_mark_applied(array['e1200000-0000-4000-8000-000000000001']::uuid[], '2089-09-17 00:00+00')::text,
-  '{"named": 1, "reason": "nothing_to_stamp", "stamped": 0, "unknown": 0, "still_queued": 0, "already_applied": 1}',
-  'P3 a replay stamps nothing and says why (already applied — the first stamp stands)');
+  public.stat_correction_mark_applied(array['e1200000-0000-4000-8000-000000000001', 'e1200000-0000-4000-8000-0000000000ff']::uuid[], '2089-09-17 00:00+00')::text,
+  '{"named": 2, "reason": "nothing_to_stamp", "stamped": 0, "unknown": 1, "already_applied": 1}',
+  'P3 a replay stamps nothing and says why (the first stamp stands); an unknown id is counted, never invented');
+
+-- ---------------------------------------------------------------------------
+-- W. THE ONE-TIME BACKFILL (R1342(a), the D38 waiver): an event recorded
+--    before 172 whose queue row is already drained was re-scored into every
+--    league — stamped applied_at = detected_at; one still queued is in flight
+-- ---------------------------------------------------------------------------
+insert into score_fanout (season, week, player_id, enqueued_at) values (2089, 2, 'pgtap-lsc-q1', '2089-09-16 15:00+00');
+select is(
+  (select count(*)::int from stat_correction_events where applied_at is null and id::text like 'e1200000-%'),
+  6, 'W0 PREMISE: six fixture events are unapplied (e3 — its row still queued — and e4, e5, e6, e7, e8 — drained)');
+select is(public.stat_correction_backfill_applied_internal(), 5,
+  'W1 the backfill stamps the FIVE whose player-week has no queue row left');
+select is(
+  (select string_agg(right(id::text, 2) || '=' || coalesce((applied_at = detected_at)::text, 'NULL'), ' ' order by id) from stat_correction_events
+   where id::text like 'e1200000-%' and id not in ('e1200000-0000-4000-8000-000000000001', 'e1200000-0000-4000-8000-000000000002')),
+  '03=NULL 04=true 05=true 06=true 07=true 08=true',
+  'W2 …each at its OWN detected_at (no clock read); e3, still queued, stays unapplied for the next drain to deliver');
+select is(public.stat_correction_backfill_applied_internal(), 0, 'W3 …and it is idempotent');
 
 -- ---------------------------------------------------------------------------
 -- Z. DEPLOY BEFORE PUSH — the door as production has it (158: the live body
@@ -511,6 +563,15 @@ select is(
 select is((select count(*)::text from league_stat_corrections), current_setting('pgtap.nrec'),
   'Z2 …and writes no record');
 
+-- R1345: B7 is only falsifiable if ANOTHER league holds a record — seed one in
+-- LB (postgres; the table's shape, not the door, is under test here).
+insert into league_stat_corrections (league_id, season, week, team_id, player_id, slot, event_ids, stat_changes,
+                                     player_points_before, player_points_after, team_score_before, team_score_after, result_changed)
+values ('b1200000-0000-4000-8000-00000000000b', 2089, 2, 'c1200000-0000-4000-8000-000000000013', 'pgtap-lsc-b3', 'qb:0',
+        array['e1200000-0000-4000-8000-000000000006']::uuid[], '[]', 50, 51, 50, 51, false);
+select is((select count(*)::int from league_stat_corrections where league_id = 'b1200000-0000-4000-8000-00000000000b'), 1,
+  'B0 PREMISE: LB holds a record (so B7 below can fail)');
+
 -- ---------------------------------------------------------------------------
 -- B. ROLES — members read, nobody writes, no signed-in caller runs a door
 -- ---------------------------------------------------------------------------
@@ -530,10 +591,10 @@ select results_eq($$ with w as (delete from league_stat_corrections returning 1)
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f120000-0000-4000-8000-000000000004", "role": "authenticated"}', true);
-select is((select count(*)::int from league_stat_corrections where league_id = 'b1200000-0000-4000-8000-00000000000a'), 2,
-  'B6 a league MEMBER (T4, whose result never moved) reads his league''s records — both of them');
+select is((select count(*)::int from league_stat_corrections where league_id = 'b1200000-0000-4000-8000-00000000000a'), 3,
+  'B6 a league MEMBER (T4, whose result never moved) reads his league''s records — all three');
 select is((select count(*)::int from league_stat_corrections where league_id <> 'b1200000-0000-4000-8000-00000000000a'), 0,
-  'B7 …and none of a league he is not in');
+  'B7 …and NOT LB''s record (B0) — none of a league he is not in');
 select results_eq($$ with w as (update league_stat_corrections set team_score_after = 0 returning 1) select count(*) from w $$, $$ values (0::bigint) $$,
   'B8 the member: UPDATE touches 0 rows');
 select throws_ok($$ insert into league_stat_corrections (league_id, season, week, team_id, player_id, slot, event_ids, stat_changes, player_points_after, result_changed)

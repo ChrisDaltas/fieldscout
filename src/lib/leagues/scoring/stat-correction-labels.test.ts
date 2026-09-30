@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ADVANCED_KEYS as INGEST_ADVANCED_KEYS, STAT_KEY_BY_COLUMN } from '@/lib/sync/ingest-week'
 
-import { classifyLockedCell, correctionEventsWords } from './reconcile'
+import { classifyLockedCell, correctionEventsWords, postLockEvents } from './reconcile'
 import { correctionsStorageOf, type DoorReport, PRE_172_DOOR_SENTENCE } from './score-week-worker'
 import { CORRECTION_LABELS, correctionLabel, sentenceLabel } from './stat-correction-labels'
 
@@ -75,7 +75,7 @@ describe('F268 — reconcile names the stat correction behind a locked week’s 
     team_id: 'T', points: 14, pending: [], no_stat_row: [],
     starters: [{ player_id: 'w1', position: 'WR', points: 14, pending: [], reason: 'scored' as const }],
   }
-  const event = { stat_key: 'receiving_yards', old_value: 120, new_value: 140, detected_at: '2026-10-02T11:00:00+00:00' }
+  const event = { stat_key: 'receiving_yards', old_value: 120, new_value: 140, detected_at: '2026-10-02T11:00:00+00:00', week_state: 'final' as const }
   it('the moved line carries its event: key, old → new, when it was seen', () => {
     const v = classifyLockedCell(12, rows, today, { byPlayer: new Map([['w1', [event]]]), available: true })
     expect(v.map((x) => [x.kind, x.severity])).toEqual([['post_window_correction', 'info']])
@@ -85,6 +85,13 @@ describe('F268 — reconcile names the stat correction behind a locked week’s 
     expect(classifyLockedCell(12, rows, today, { byPlayer: new Map(), available: true })[0].explanation).toContain('no stat correction was recorded for him')
     expect(classifyLockedCell(12, rows, today, { byPlayer: new Map(), available: false })[0].explanation).toContain('predates migration 167')
     expect(classifyLockedCell(12, rows, today)[0].explanation).toContain("w1 (wr:0) stored 12, today's stats 14 — a correction")
+  })
+  it('R1344 only a POST-LOCK event is cited — week_state final, or seen at / after this league finalized the week; an in-window event (already in the stored points) never is', () => {
+    const inWindow = { ...event, week_state: 'open' as const, detected_at: '2026-09-30T15:00:00+00:00' }
+    const openElsewhere = { ...event, week_state: 'open' as const, detected_at: '2026-10-02T12:00:00+00:00' }
+    expect(postLockEvents([inWindow, event], '2026-10-02T01:05:00+00:00')).toEqual([event])
+    expect(postLockEvents([inWindow, openElsewhere], '2026-10-02T01:05:00+00:00')).toEqual([openElsewhere])
+    expect(postLockEvents([inWindow], null)).toEqual([])
   })
   it('the words for several events', () => {
     expect(correctionEventsWords([event, { ...event, stat_key: 'receptions', old_value: 5, new_value: 6 }], true)).toBe(

@@ -6650,6 +6650,10 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      stat_correction_backfill_applied_internal: {
+        Args: never
+        Returns: number
+      }
       stat_correction_mark_applied: {
         Args: { p_event_ids: string[]; p_now: string }
         Returns: Json

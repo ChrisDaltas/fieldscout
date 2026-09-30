@@ -60,10 +60,11 @@
 --      below). The report gains `corrections` (its presence is how the
 --      worker knows the door is 172's) and `bracket_resync_due` (F476).
 --   §5 `stat_correction_mark_applied(p_event_ids, p_now)` — §12.21's
---      `applied_at`: stamped at the worker's instant for each named event
---      whose player-week has NO queue row left (no league still has an
---      undrained re-score for it — the queue row is per player, drained once
---      every league it maps to has been scored or skipped by name).
+--      `applied_at`: stamped at the worker's instant, BEFORE its ack, for
+--      the events of every queue row the drain consumes — delivered to every
+--      league the row maps to (scored, recorded, or skipped by name), so no
+--      event is ever sent twice (R1342). §5b stamps, once, every event
+--      recorded before this migration whose row is already drained.
 --   §6 `score_bracket_resync(p_league_id, p_now)` — F476: the worker's
 --      immediate bracket sync after a re-score of the last regular-season
 --      week or a playoff round (118 / 140's `playoff_bracket_sync_internal`,
@@ -106,7 +107,7 @@
 -- function text's md5 b3bc0597efff3d161eac90d8aad728fc; live prosrc md5
 -- 548958d0a402c352c91c23fa924a2a0f = pgTAP 106 A7's stored literal), by
 -- derive_172.py (PR body — every anchor asserted to hit once, the reversal
--- asserted to reproduce 158's text byte for byte): **5 hunks, +284 / −0**
+-- asserted to reproduce 158's text byte for byte): **5 hunks, +297 / −0**
 -- (DECLARE · the shape loop's `corrections` check · the pre-write read ·
 -- the records / post / notifications / bracket flag before the RETURN ·
 -- the report's two keys). Each hunk is fenced `-- @172{` … `-- @172}` on
@@ -148,10 +149,15 @@
 --   `scores_updated` (119); the records' own broadcast ships with its first
 --   subscriber, the corrections view (D38 — PROGRESS F527).
 --   WAIVERS: R6 — no staging clone; rehearsal evidence = the fresh local
---   `db reset` 001–172 and the full pgTAP run in the PR. D38 — no backfill:
---   no correction was recorded before 167 reached production (0 events on
---   production, measured 2026-09-30 10:18Z), so there is nothing to record
---   retroactively.
+--   `db reset` 001–172 and the full pgTAP run in the PR. D38 — ONE
+--   backfill (§5b, R1342(a)): every stat_correction_events row recorded
+--   between 167's push and this one whose queue row is already drained was
+--   re-scored into every league by the pre-172 worker and is stamped
+--   `applied_at = detected_at` (no clock read), so a later correction never
+--   re-announces it; a row still queued stays unapplied and is delivered by
+--   the next drain. No league record is made retroactively (a past
+--   re-score's before / after cannot be recovered — the lines were
+--   overwritten; 0 events on production at 2026-09-30 10:18Z).
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -718,7 +724,10 @@ BEGIN
   --       STARTER FILTER (spec §12.21 / §23.4, "filtered to that league's
   --       starters");
   --   (c) his points MOVED (a stat the league does not score moves nothing
-  --       and writes nothing — named, never silent).
+  --       and writes nothing — named, never silent);
+  -- and an event THIS league has already recorded is never recorded again
+  -- (`already_recorded` — R1342: an event still unapplied when a later
+  -- correction to the same player-week drains is not re-announced).
   -- matchups.result is NOT written here (TD8 as measured, D453): an open
   -- week's rows carry NULL until finalize_matchups derives it from the
   -- final scores (118), so a stored result can never disagree with its
@@ -743,6 +752,14 @@ BEGIN
       v_tb := v_before -> 'teams' -> (v_tid::text);
       v_ta := v_after  -> 'teams' -> (v_tid::text);
       SELECT t.name INTO v_tname FROM public.teams t WHERE t.id = v_tid;
+      -- R1342: an event already named by one of this league's records is
+      -- announced at most once — skipped by name, never re-worded.
+      SELECT v_cskip || COALESCE(jsonb_agg(jsonb_build_object('team_id', v_tid, 'event_id', ev.id, 'player_id', ev.player_id, 'reason', 'already_recorded') ORDER BY ev.id), '[]'::jsonb)
+        INTO v_cskip
+      FROM public.stat_correction_events ev
+      WHERE ev.id IN (SELECT (c #>> '{}')::uuid FROM jsonb_array_elements(v_e -> 'corrections') c)
+        AND EXISTS (SELECT 1 FROM public.league_stat_corrections r
+                    WHERE r.league_id = p_league_id AND ev.id = ANY (r.event_ids));
       FOR v_pl IN
         SELECT ev.player_id,
                array_agg(ev.id ORDER BY ev.stat_key, ev.id) AS ids,
@@ -754,6 +771,8 @@ BEGIN
                             || COALESCE(trim_scale(ev.new_value)::text, 'none'), ', ' ORDER BY ev.stat_key, ev.id) AS words
         FROM public.stat_correction_events ev
         WHERE ev.id IN (SELECT (c #>> '{}')::uuid FROM jsonb_array_elements(v_e -> 'corrections') c)
+          AND NOT EXISTS (SELECT 1 FROM public.league_stat_corrections r
+                          WHERE r.league_id = p_league_id AND ev.id = ANY (r.event_ids))
         GROUP BY ev.player_id
         ORDER BY ev.player_id
       LOOP
@@ -953,6 +972,15 @@ REVOKE EXECUTE ON FUNCTION score_write_week_batch(UUID, INTEGER, JSONB)
 -- ---------------------------------------------------------------------------
 -- 5. stat_correction_mark_applied — §12.21's `applied_at` ("when the league
 --    recompute fan-out completed"), at the worker's instant
+--    The score worker calls it with the events it read for the queue rows
+--    it is about to CONSUME, BEFORE its ack (R1342): those events were
+--    delivered to every league the row maps to in this drain (scored,
+--    recorded, or skipped by name — week_final, not scheduled, not
+--    rostered, a quarantined league's D292 skip; PROGRESS D453(7) / F531),
+--    so none is ever sent again. A stamp that fails fails the drain before
+--    its ack: the rows stay queued and the next drain re-delivers the same
+--    events against the same lines — no points move, nothing is recorded
+--    twice (the door's `no_points_moved` / `already_recorded`).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION stat_correction_mark_applied(
   p_event_ids UUID[],
@@ -965,7 +993,6 @@ AS $$
 DECLARE
   v_named   INTEGER;
   v_stamped INTEGER;
-  v_queued  INTEGER;
   v_already INTEGER;
 BEGIN
   IF auth.uid() IS NOT NULL OR coalesce(auth.role(), '') IN ('anon', 'authenticated') THEN
@@ -977,39 +1004,63 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
   SELECT count(DISTINCT x) INTO v_named FROM unnest(p_event_ids) x;
-
-  -- An event is APPLIED once no league still has an undrained re-score for
-  -- it: its player-week has no `score_fanout` row left (the row is per
-  -- player, and the worker drains it only after every league it maps to
-  -- has been scored — or skipped by name: week_final, not scheduled, not
-  -- rostered). A row still queued (held, deferred, re-stamped by a newer
-  -- delta) keeps the event unapplied until a later drain.
-  SELECT count(*) INTO v_queued
-  FROM public.stat_correction_events e
-  WHERE e.id = ANY (p_event_ids) AND e.applied_at IS NULL
-    AND EXISTS (SELECT 1 FROM public.score_fanout q
-                WHERE q.season = e.season AND q.week = e.week AND q.player_id = e.player_id);
   SELECT count(*) INTO v_already
   FROM public.stat_correction_events e
   WHERE e.id = ANY (p_event_ids) AND e.applied_at IS NOT NULL;
 
   UPDATE public.stat_correction_events e
   SET applied_at = p_now
-  WHERE e.id = ANY (p_event_ids) AND e.applied_at IS NULL
-    AND NOT EXISTS (SELECT 1 FROM public.score_fanout q
-                    WHERE q.season = e.season AND q.week = e.week AND q.player_id = e.player_id);
+  WHERE e.id = ANY (p_event_ids) AND e.applied_at IS NULL;
   GET DIAGNOSTICS v_stamped = ROW_COUNT;
 
   RETURN jsonb_build_object(
-    'named', v_named, 'stamped', v_stamped, 'still_queued', v_queued, 'already_applied', v_already,
-    'unknown', v_named - v_stamped - v_queued - v_already,
+    'named', v_named, 'stamped', v_stamped, 'already_applied', v_already,
+    'unknown', v_named - v_stamped - v_already,
     'reason', CASE WHEN v_named = 0 THEN 'none_named'
-                   WHEN v_stamped = 0 AND v_queued > 0 THEN 'still_queued'
                    WHEN v_stamped = 0 THEN 'nothing_to_stamp' ELSE NULL END);
 END;
 $$;
 REVOKE EXECUTE ON FUNCTION stat_correction_mark_applied(UUID[], TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION stat_correction_mark_applied(UUID[], TIMESTAMPTZ) TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- 5b. stat_correction_backfill_applied_internal — the ONE-TIME stamp of the
+--     events recorded before this migration (R1342(a), the D38 backfill).
+--     Between 167's push and 172's, the stats poll records events and the
+--     worker drains their queue rows, but nothing stamps `applied_at` (the
+--     door above does not exist yet). Every such event whose player-week has
+--     NO `score_fanout` row left was already re-scored into every league —
+--     it is reflected, and a later correction must never re-announce it — so
+--     it is stamped `applied_at = detected_at` (no clock read; the instant it
+--     was seen is the latest it can have been applied from). An event whose
+--     row is still queued is in flight: left unapplied, the next drain
+--     delivers it. Plain, REVOKEd; run once below; pgTAP 120 §W drives it.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION stat_correction_backfill_applied_internal()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_cnt INTEGER;
+BEGIN
+  UPDATE public.stat_correction_events e
+  SET applied_at = e.detected_at
+  WHERE e.applied_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM public.score_fanout q
+                    WHERE q.season = e.season AND q.week = e.week AND q.player_id = e.player_id);
+  GET DIAGNOSTICS v_cnt = ROW_COUNT;
+  RETURN v_cnt;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION stat_correction_backfill_applied_internal() FROM PUBLIC, anon, authenticated;
+
+DO $bf$
+DECLARE
+  v_n INTEGER := public.stat_correction_backfill_applied_internal();
+BEGIN
+  RAISE NOTICE '172: % stat_correction_events recorded before this migration stamped applied (applied_at = detected_at — already re-scored, never re-announced; R1342)', v_n;
+END $bf$;
 
 -- ---------------------------------------------------------------------------
 -- 6. score_bracket_resync — F476: the bracket sync at once after a re-score
@@ -1058,4 +1109,4 @@ GRANT EXECUTE ON FUNCTION score_bracket_resync(UUID, TIMESTAMPTZ) TO service_rol
 COMMENT ON FUNCTION score_bracket_resync(UUID, TIMESTAMPTZ) IS
   '172 (L.E2.2, F476): the score worker''s immediate bracket sync after a re-score of the last regular-season week or a playoff round (score_write_week_batch reports bracket_resync_due) — playoff_bracket_sync_internal at the worker''s injected instant, the league row locked first. Service role only.';
 COMMENT ON FUNCTION stat_correction_mark_applied(UUID[], TIMESTAMPTZ) IS
-  '172 (L.E2.2, spec §12.21): stamps stat_correction_events.applied_at = p_now for each named event whose player-week has no score_fanout row left (no league still has an undrained re-score for it). Service role only.';
+  '172 (L.E2.2, spec §12.21): stamps stat_correction_events.applied_at = p_now for each named, still-unapplied event — the score worker''s call, BEFORE its ack, with the events of the queue rows it consumes (delivered to every league they map to in that drain; R1342). Service role only.';

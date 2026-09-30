@@ -33,7 +33,7 @@ function report(over: Partial<BatchReport> = {}): BatchReport {
     released: 0,
     ack_missed: { restamped: 0, lease_lost: 0, gone: 0 },
     leagues: [],
-    corrections_applied: { read: 0, sent: 0, stamped: 0, still_queued: 0, reason: 'no event read — no ready player carries an unapplied correction' },
+    corrections_applied: { read: 0, sent: 0, stamped: 0, already_applied: 0, reason: 'no event read — no ready player carries an unapplied correction' },
     written: 0,
     no_change: 0,
     nothing_writable: 0,

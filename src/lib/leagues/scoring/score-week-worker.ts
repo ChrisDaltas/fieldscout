@@ -113,9 +113,9 @@
  * re-score's transaction — the starter filter, the "no points moved" test,
  * the league post and the result-flip notifications are the door's; (7b) a
  * re-score of the last regular-season week or a playoff round runs the
- * bracket sync at once (`score_bracket_resync`, F476); (8c) after the ack the
- * events of every CONSUMED player are stamped `applied_at` at this drain's
- * instant. Deploy before push: a 158 door ignores `corrections` and answers
+ * bracket sync at once (`score_bracket_resync`, F476); (8a′) BEFORE the ack
+ * the events of every CONSUMED row are stamped `applied_at` at this drain's
+ * instant (R1342 — an event is sent once). Deploy before push: a 158 door ignores `corrections` and answers
  * without a `corrections` report — named (`not_recorded_pre_172`), and the
  * scores are written exactly as before; the two new doors absent (PGRST202)
  * ⇒ named and skipped. A final week is still `week_final` (nothing records).
@@ -817,14 +817,15 @@ export interface BatchReport {
   ack_missed: Record<AckMissReason, number>
   leagues: LeagueWeekReport[]
   /** 172 (L.E2.2, §12.21 `applied_at`): the unapplied correction events of
-   *  the drained players and what the stamp did with them after the ack. */
+   *  the drained players and what the stamp did with them (before the ack — R1342). */
   corrections_applied: {
     /** Events read for the ready players (unapplied). */
     read: number
     /** Event ids of CONSUMED players sent to the stamp. */
     sent: number
     stamped: number
-    still_queued: number
+    /** Named events another drain had already stamped (a lease lost / a replay). */
+    already_applied: number
     /** Why the numbers are what they are (never an unexplained zero). */
     reason: string
   }
@@ -1453,7 +1454,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     released: 0,
     ack_missed: { restamped: 0, lease_lost: 0, gone: 0 },
     leagues: [],
-    corrections_applied: { read: 0, sent: 0, stamped: 0, still_queued: 0, reason: 'no event read — no ready player carries an unapplied correction' },
+    corrections_applied: { read: 0, sent: 0, stamped: 0, already_applied: 0, reason: 'no event read — no ready player carries an unapplied correction' },
     written: 0,
     no_change: 0,
     nothing_writable: 0,
@@ -1654,23 +1655,13 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     //      the ack measured (R869) and counted.
     //      The held rows are DEFERRED to the injected instant + the window
     //      (D291: the deferral reads no clock the worker does not).
-    const deferUntil = toDefer.length > 0 ? new Date(deps.time.now().getTime() + deferSeconds * 1000).toISOString() : null
-    const ack = await ackQueue(db, token, toDelete, toDefer, deferUntil)
-    acked = true
-    report.drained = ack.deleted
-    report.deferred = ack.deferred
-    report.released = ack.released
-    if (toDefer.length > 0) {
-      report.problems.push(
-        `queue hold: ${ack.deferred} of ${toDefer.length} held rows deferred until ${deferUntil} (R872 — not_ready ${report.not_ready}, week_not_open ${report.held}; a row re-stamped mid-drain is released, not deferred)`,
-      )
-    }
-    for (const miss of ack.missed) report.ack_missed[miss.reason] += 1
-
-    // (8c) 172 (§12.21 `applied_at`): the events of every CONSUMED player are
-    //      stamped at this drain's instant — the door stamps only an event
-    //      whose player-week has no queue row left (a re-stamped / held row
-    //      keeps it unapplied for the next drain). Absent door ⇒ named.
+    // (8a′) 172 (§12.21 `applied_at`; R1342): the events of every row this
+    //      drain is about to CONSUME were delivered to every league the row
+    //      maps to — stamped at this drain's instant BEFORE the ack, so none
+    //      is ever sent again. A failed stamp throws before the ack: the rows
+    //      stay queued, the next drain re-delivers the same events against
+    //      the same lines, and nothing moves or is recorded twice (the door's
+    //      `no_points_moved` / `already_recorded`). Absent door ⇒ named.
     const consumedIds = [...new Set(toDelete.flatMap((row) => [...(eventsByRow.get(`${row.season}:${row.week}:${row.player_id}`) ?? [])]))].sort()
     report.corrections_applied.sent = consumedIds.length
     if (eventsMissing) {
@@ -1685,12 +1676,25 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
         report.corrections_applied.reason = `${consumedIds.length} event(s) NOT stamped applied: stat_correction_mark_applied is absent — the database predates migration 172`
         report.problems.push(`correction events: ${report.corrections_applied.reason}`)
       } else {
-        const r = stamp.data as unknown as { stamped: number; still_queued: number }
+        const r = stamp.data as unknown as { stamped: number; already_applied: number }
         report.corrections_applied.stamped = r.stamped
-        report.corrections_applied.still_queued = r.still_queued
-        report.corrections_applied.reason = `${r.stamped} of ${consumedIds.length} stamped applied${r.still_queued > 0 ? `; ${r.still_queued} still queued (a newer delta — the next drain applies them)` : ''}`
+        report.corrections_applied.already_applied = r.already_applied
+        report.corrections_applied.reason = `${r.stamped} of ${consumedIds.length} stamped applied${r.already_applied > 0 ? `; ${r.already_applied} already applied` : ''}`
       }
     }
+    const deferUntil = toDefer.length > 0 ? new Date(deps.time.now().getTime() + deferSeconds * 1000).toISOString() : null
+    const ack = await ackQueue(db, token, toDelete, toDefer, deferUntil)
+    acked = true
+    report.drained = ack.deleted
+    report.deferred = ack.deferred
+    report.released = ack.released
+    if (toDefer.length > 0) {
+      report.problems.push(
+        `queue hold: ${ack.deferred} of ${toDefer.length} held rows deferred until ${deferUntil} (R872 — not_ready ${report.not_ready}, week_not_open ${report.held}; a row re-stamped mid-drain is released, not deferred)`,
+      )
+    }
+    for (const miss of ack.missed) report.ack_missed[miss.reason] += 1
+
     if (ack.missed.length > 0) {
       const by = (reason: AckMissReason) => ack.missed.filter((m) => m.reason === reason).map((m) => `${m.season}/${m.week}/${m.player_id}`)
       const restamped = by('restamped')
