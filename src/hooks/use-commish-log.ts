@@ -1,6 +1,6 @@
 'use client'
 
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, type QueryClient } from '@tanstack/react-query'
 
 import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishLogPage } from '@/lib/leagues/api/commish-log-service'
@@ -27,9 +27,10 @@ import type { CommishLogPage } from '@/lib/leagues/api/commish-log-service'
  * trade / claim hooks invalidate `commishLogKeys.all` on success AND on
  * error (R822(i)), so a landed override re-reads the log without a realtime
  * subscription; the league room's `league_chat` system post reaches the
- * activity feed through its own channel. The draft-room, membership / invite
- * and settings hooks write receipts (168 / 169) but do not re-read the log
- * yet (F535(d)).
+ * activity feed through its own channel. Since L.E1.33 (F535(d)) the
+ * draft-room controls, draft create / order / start, membership, invites,
+ * settings / status / profile / scoring and `set_lineup` (whose commissioner
+ * arm writes a receipt, 169) re-read it too, through `invalidateCommishLog`.
  */
 
 export interface CommishLogFilters {
@@ -60,6 +61,17 @@ export const commishLogKeys = {
         week: filters.week,
       },
     ] as const,
+}
+
+/**
+ * Re-read this league's audit log AND everything under its root — the
+ * console's "needs you" read lives there (`commishSummaryKeys.one`) — after a
+ * write that can leave a §10.3 receipt (168 / 169's draft, membership, invite
+ * and setup receipts; `set_lineup`'s commissioner arm). One call, one key, so
+ * the hooks cannot drift apart (F535(d), L.E1.33).
+ */
+export function invalidateCommishLog(queryClient: QueryClient, leagueId: string): void {
+  void queryClient.invalidateQueries({ queryKey: commishLogKeys.all(leagueId) })
 }
 
 /** Only the params that are SET reach the query string; `cursor` is the

@@ -27,6 +27,7 @@ import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
+import { CONSOLE_NAV_LABEL, commishConsoleHref } from './commish-console-ops'
 import { teamPageHref } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
 import { splitRows } from './matchup-view-ops'
@@ -230,14 +231,16 @@ export function championName(detail: Pick<LeagueDetail, 'league' | 'teams'>): st
 // ---------------------------------------------------------------------------
 
 export interface LeagueNavItem {
-  key: 'team' | 'matchups' | 'standings' | 'schedule' | 'players'
+  key: 'team' | 'matchups' | 'standings' | 'schedule' | 'players' | 'commish'
   label: string
   href: string
 }
 
 /** The in-season surfaces, in reading order. The team entry is the viewer's
- *  OWN franchise and is absent when they manage none. */
-export function leagueNav(leagueId: string, myTeamId: string | null): LeagueNavItem[] {
+ *  OWN franchise and is absent when they manage none. The Commissioner door
+ *  (M6 L.E1.33) is last and only for a commissioner or co-commissioner — a
+ *  hidden door, not the gate: the console's page redirects anyone else. */
+export function leagueNav(leagueId: string, myTeamId: string | null, isCommish = false): LeagueNavItem[] {
   const base = `/app/leagues/${leagueId}`
   const items: LeagueNavItem[] = []
   if (myTeamId) items.push({ key: 'team', label: 'My team', href: teamPageHref(leagueId, myTeamId) })
@@ -247,6 +250,7 @@ export function leagueNav(leagueId: string, myTeamId: string | null): LeagueNavI
     { key: 'schedule', label: 'Schedule', href: `${base}/schedule` },
     { key: 'players', label: 'Players', href: `${base}/players` },
   )
+  if (isCommish) items.push({ key: 'commish', label: CONSOLE_NAV_LABEL, href: commishConsoleHref(leagueId) })
   return items
 }
 

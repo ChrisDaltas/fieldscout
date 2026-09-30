@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 
+import { invalidateCommishLog } from './use-commish-log'
 import { leagueInvitesKeys } from './use-league-invites'
 import { leaguesKeys } from './use-leagues'
 
@@ -32,6 +33,8 @@ function useInvalidateMembers(leagueId: string) {
     void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
     void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
     void queryClient.invalidateQueries({ queryKey: leagueInvitesKeys.all(leagueId) })
+    // F535(d): seat / role / assign / remove each write a receipt (169).
+    invalidateCommishLog(queryClient, leagueId)
   }
 }
 

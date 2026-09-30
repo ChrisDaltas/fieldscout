@@ -6,6 +6,7 @@ import type { PendingInviteInput } from '@/components/leagues/invite-panel-ops'
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { createBrowserClient } from '@/lib/supabase/client'
 
+import { invalidateCommishLog } from './use-commish-log'
 import { leaguesKeys } from './use-leagues'
 
 /**
@@ -60,6 +61,8 @@ function useInvalidateInvites(leagueId: string) {
   return () => {
     void queryClient.invalidateQueries({ queryKey: leagueInvitesKeys.all(leagueId) })
     void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+    // F535(d): create / revoke / rotate / slug each write a receipt (169).
+    invalidateCommishLog(queryClient, leagueId)
   }
 }
 

@@ -494,3 +494,49 @@ describe('Q61 — no score or winner control while a starter is still playing (t
     expect(between(html, 'data-override-refusal', '</p>')).toContain(LINE)
   })
 })
+
+// ---------------------------------------------------------------------------
+// §10.4 — declaring a winner asks first, with the before → after (M6 L.E1.33)
+// ---------------------------------------------------------------------------
+
+describe('declare a winner — the before → after confirmation (§10.4; C82: nothing else asked)', () => {
+  const base: Parameters<typeof MatchupOverridePanelView>[0] = {
+    homeName: 'Alpha',
+    awayName: 'Bravo',
+    homeDraft: '98.4',
+    awayDraft: '97.1',
+    onHomeDraft: () => {},
+    onAwayDraft: () => {},
+    pending: null,
+    outcome: null,
+    refusal: null,
+    onSaveScores: () => {},
+    onDeclareWinner: () => {},
+    stored: { home_score: 98.4, away_score: 97.1, result: null },
+  }
+  const panel = (over: Partial<typeof base> = {}) =>
+    renderToStaticMarkup(createElement(MatchupOverridePanelView, { ...base, ...over })).replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+
+  it('no confirmation until a winner is chosen — the two declare buttons only ask', () => {
+    const html = panel()
+    expect(html).toContain('data-declare-winner="home"')
+    expect(html).not.toContain('data-declare-confirm')
+  })
+
+  it('choosing Bravo shows the STORED before and what the result arm writes after — and a yes / cancel, no field', () => {
+    const html = panel({ confirming: 'away' })
+    const confirm = html.slice(html.indexOf('data-declare-confirm'))
+    expect(confirm).toContain('Declare Bravo the winner?')
+    expect(confirm).toContain('Now: Alpha 98.40 – 97.10 Bravo · no result recorded yet.')
+    expect(confirm).toContain('After: Bravo wins this matchup. The scores stay as they are, and the change is shown to the league.')
+    expect(confirm).toContain('data-declare-confirm-yes')
+    expect(confirm).toContain('Yes, declare Bravo the winner')
+    expect(confirm).toContain('data-declare-confirm-cancel')
+    expect(confirm.slice(0, confirm.indexOf('</div></div>'))).not.toContain('<input')
+  })
+
+  it('the before names a result already recorded, and an unscored side as a dash — never a zero', () => {
+    expect(panel({ confirming: 'home', stored: { home_score: 88, away_score: 90.5, result: 'away' } })).toContain('Now: Alpha 88.00 – 90.50 Bravo · Bravo won.')
+    expect(panel({ confirming: 'home', stored: { home_score: null, away_score: 12, result: null } })).toContain('Now: Alpha — – 12.00 Bravo')
+  })
+})

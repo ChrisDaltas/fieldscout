@@ -10,6 +10,7 @@ import type { DraftPickSummary } from '@/hooks/use-draft'
 
 import {
   canUseCommishPanel,
+  resetDraftBeforeAfter,
   cascadeTargetBounds,
   deriveUndoPreview,
   moveOrderEntry,
@@ -161,5 +162,16 @@ describe('deriveUndoPreview (R273 — the dialog stores the TARGET; the preview 
     const allUndone = PICKS.map((p) => ({ ...p, is_undone: true }))
     expect(deriveUndoPreview(allUndone, { kind: 'single' }).reverts).toEqual([])
     expect(deriveUndoPreview(allUndone, { kind: 'cascade', from: 1 }).reverts).toEqual([])
+  })
+})
+
+describe('resetDraftBeforeAfter — §10.4’s before → after for the reset (M6 L.E1.33)', () => {
+  it('names the picks still on the board and the draft’s state, then what the reset leaves', () => {
+    expect(resetDraftBeforeAfter(37, 'paused')).toEqual({
+      before: 'Now: 37 picks made · the draft is paused.',
+      after: 'After: no picks, and the league is back to “draft scheduled” with no draft time set.',
+    })
+    expect(resetDraftBeforeAfter(1, 'live').before).toBe('Now: 1 pick made · the draft is under way.')
+    expect(resetDraftBeforeAfter(0, 'live').before).toBe('Now: 0 picks made · the draft is under way.')
   })
 })

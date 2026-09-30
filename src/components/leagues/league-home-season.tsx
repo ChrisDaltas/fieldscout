@@ -126,7 +126,7 @@ export function SeasonHero({
 
   return (
     <div className="flex flex-col gap-4" data-season-hero={state}>
-      <LeagueNav leagueId={leagueId} myTeamId={myTeamId} />
+      <LeagueNav leagueId={leagueId} myTeamId={myTeamId} isCommish={data.my_role === 'commissioner' || data.my_role === 'co_commissioner'} />
 
       {connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {matchupsProblem && matchups.data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
@@ -277,10 +277,10 @@ function BracketCard({
 // The league nav — the in-season pages, one row (F251(c) / F253(c) / F275(c))
 // ---------------------------------------------------------------------------
 
-function LeagueNav({ leagueId, myTeamId }: { leagueId: string; myTeamId: string | null }) {
+function LeagueNav({ leagueId, myTeamId, isCommish }: { leagueId: string; myTeamId: string | null; isCommish: boolean }) {
   return (
     <nav className="flex flex-wrap items-center gap-2" aria-label="League pages" data-league-nav>
-      {leagueNav(leagueId, myTeamId).map((item) => (
+      {leagueNav(leagueId, myTeamId, isCommish).map((item) => (
         <Button key={item.key} variant="stroke" size="sm" asChild>
           <Link href={item.href} data-nav={item.key}>
             {item.label}
@@ -786,7 +786,9 @@ function EmptyCard({
   )
 }
 
-function InlineProblem({
+/** Exported for the Commissioner Console's second mount (L.E1.33 R1374 —
+ *  one error-with-retry block, not a copy). */
+export function InlineProblem({
   title,
   detail,
   onRetry,
