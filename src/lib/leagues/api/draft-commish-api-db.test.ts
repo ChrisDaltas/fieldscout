@@ -205,8 +205,16 @@ async function cleanup(): Promise<void> {
   const ids = (stale ?? []).map((row) => row.id)
   if (ids.length > 0) {
     await service.from('drafts').delete().in('league_id', ids)
-    await service.from('teams').delete().in('league_id', ids)
+    // 168 (M6 L.E1.29, D449 / R1320): a commissioner force pick now writes a
+    // commissioner_actions receipt whose `acting_as_team_id` references the
+    // team acted for (123:304, no ON DELETE), and the log is immutable except
+    // through the league's ON DELETE CASCADE — so the F406 order: detach the
+    // teams, delete the league (taking its receipts), THEN delete the teams.
+    const { data: teams } = await service.from('teams').select('id').in('league_id', ids)
+    const teamIds = (teams ?? []).map((row) => row.id)
+    await service.from('teams').update({ league_id: null }).in('id', teamIds)
     await service.from('leagues').delete().in('id', ids)
+    await service.from('teams').delete().in('id', teamIds)
   }
   await service
     .from('players')

@@ -12,17 +12,21 @@
 -- same transaction AFTER the state write and the existing `league_chat`
 -- post, carrying the before / after of what moved (the pick, the price, the
 -- clock, the order, the budget, the status). Nothing else changes:
---   * every refusal, every message, every result shape and every chat post is
---     byte-identical (the hunks below only ADD lines — the one exception is
+--   * every existing refusal, every message, every result shape and every
+--     chat post is byte-identical (the hunks below only ADD lines — the one exception is
 --     draft_pause's `RETURN public.draft_pause_internal(...)`, which becomes
 --     `v_result := ...; <receipt>; RETURN v_result;`);
---   * no new refusal is possible: the reason is normalised, never refused
---     (blank / whitespace-only ⇒ NULL, Q66; a reason longer than
---     commissioner_actions' 500-character CHECK is cut to 500 rather than
---     refused — the routes already bound it at 500, `draft-service.ts`, so
---     only a direct RPC caller can reach the cut); the actor is `auth.uid()`,
---     non-NULL on every path that reaches a receipt (each is behind
---     is_league_commish);
+--   * ONE new refusal, and only for a caller the routes already refuse: a
+--     reason longer than 500 characters (after trimming) is refused BY NAME,
+--     22023, with 131's sentence ("<verb>: the reason is N characters — at
+--     most 500 (the league_chat bound; §12.13)") — the bound every other
+--     commissioner verb enforces at the verb (D363(3); R1321). It fires in
+--     the seam, after the state write, so the RAISE rolls the change back
+--     with it. The routes already bound the reason at 500 (`draft-service.ts`
+--     `.max(500)`), so only a direct RPC caller can meet it. A blank or
+--     whitespace-only reason is NULL (Q66), never refused. The actor is
+--     `auth.uid()`, non-NULL on every path that reaches a receipt (each is
+--     behind is_league_commish);
 --   * no signature changes (draft_start / draft_create take no reason and
 --     their receipts carry NULL — the §5 sketch's "an optional p_reason where
 --     missing" is not needed to write a receipt, and a new parameter is a
@@ -64,14 +68,16 @@
 -- non-retired teams with NO league_members row carrying a user — D339's
 -- predicate, the one autopilot and the draft room's autopick both read (a
 -- placeholder seat autopicks, D93). `[]` when every seat has a manager.
--- `acting_as_team_id` is set ONLY by set_team_autodraft (the toggled team):
--- it is the one §8.7 control that is also a MANAGER verb (§8.4 "Auto-draft
--- me"), so the log says "for <team>" (D448) and L.E1.31's manager-verb
--- census finds it. The other fifteen act on the draft, not as a team: NULL,
--- with the team in `metadata` (force pick's `for_team_id`,
--- `affected_team_ids`). Kept narrow on purpose: acting_as_team_id is an FK
--- with no ON DELETE and the log is immutable, so every row carrying it pins
--- its team row for the league's life (PROGRESS F406's teardown order).
+-- `acting_as_team_id` is set where the commissioner acts ON BEHALF OF a
+-- team (§8.7 "Pick for a manager … on behalf of the team on the clock";
+-- §10.3 captures the team acted for; League Home's "(acting for X)" reads
+-- the column — R1320): draft_force_pick (both arms — the team on the clock)
+-- and set_team_autodraft (the toggled team). The other fourteen act on the
+-- draft, not as a team: NULL. The team also rides in `metadata`
+-- (`for_team_id`, `affected_team_ids`). acting_as_team_id is an FK with no
+-- ON DELETE on an immutable log, so a row carrying it pins its team for the
+-- league's life — suites that tear a league down take PROGRESS F406's order
+-- (detach the teams, delete the league, then the teams).
 --
 -- VOCABULARY (§12.12's comment, extended in the spec in this PR, v2.16.79):
 -- draft_pause | draft_resume | draft_set_clock | draft_undo | draft_reassign
@@ -93,10 +99,10 @@
 --   draft_pause              095:3089-3147  prosrc md5 df4069d2… → c64c91f5…  3 hunks (+13 / -1)
 --   draft_resume             095:3151-3217  prosrc md5 3537c6a8… → c4a7f571…  1 hunk  (+9 / -0)
 --   draft_set_clock          101:150-360    prosrc md5 798d32ad… → 765ff3d9…  4 hunks (+30 / -0)
---   draft_undo               100:334-558    prosrc md5 f8d28d3a… → 8a7dd058…  3 hunks (+28 / -0)
+--   draft_undo               100:334-558    prosrc md5 f8d28d3a… → eb0cdea7…  3 hunks (+31 / -0)
 --   draft_reassign_pick      100:567-860    prosrc md5 b2facabe… → 83f63daf…  3 hunks (+19 / -0)
 --   draft_move_player        100:871-1125   prosrc md5 a602b5d5… → 7d884731…  3 hunks (+17 / -0)
---   draft_force_pick         100:1136-1437  prosrc md5 882946e8… → de1d7804…  2 hunks (+29 / -0)
+--   draft_force_pick         100:1136-1437  prosrc md5 882946e8… → 2528782f…  2 hunks (+31 / -0)
 --   draft_reverse_won_bid    100:1447-1604  prosrc md5 9dca39fd… → c7712085…  1 hunk  (+17 / -0)
 --   draft_adjust_budget      100:1614-1834  prosrc md5 0383a75e… → be871523…  1 hunk  (+13 / -0)
 --   draft_cancel_nomination  100:1844-1968  prosrc md5 7ef2d633… → 3cea8921…  1 hunk  (+14 / -0)
@@ -182,13 +188,15 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- The reason is OPTIONAL (Q66) and NEVER a refusal here: blank or
-  -- whitespace-only (the explicit class, 123:295) is NULL, and a reason past
-  -- the table's 500-character CHECK is cut to it — before 168 these verbs
-  -- accepted any reason, and a receipt must not add a refusal.
+  -- The reason is OPTIONAL (Q66): blank or whitespace-only (the explicit
+  -- class, 123:295) is NULL. Past 500 characters it is REFUSED BY NAME with
+  -- 131's sentence (R1321 — the bound every commissioner verb enforces,
+  -- D363(3)); the RAISE rolls the verb's state write back with it.
   v_reason := NULLIF(btrim(COALESCE(p_reason, ''), E' \t\r\n'), '');
-  IF length(v_reason) > 500 THEN
-    v_reason := left(v_reason, 500);
+  IF char_length(v_reason) > 500 THEN
+    RAISE EXCEPTION
+      '%: the reason is % characters — at most 500 (the league_chat bound; §12.13)', p_verb, char_length(v_reason)
+      USING ERRCODE = '22023';
   END IF;
 
   -- (c) EXACTLY ONE row (D336 part 2), after the verb's state write.
@@ -619,7 +627,7 @@ REVOKE EXECUTE ON FUNCTION
   FROM PUBLIC, anon;
 
 -- ---------------------------------------------------------------------------
--- draft_undo — 100:334-558's FILE TEXT (D137), 3 hunks (+28 / -0).
+-- draft_undo — 100:334-558's FILE TEXT (D137), 3 hunks (+31 / -0).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_undo(
   p_draft_id UUID,
@@ -858,7 +866,10 @@ BEGIN
     v_draft.league_id, v_draft.is_mock, 'draft_undo', 'draft_undo', 'draft',
     p_draft_id::text, p_reason, v_before,
     jsonb_build_object(
-      'last_live_pick',   v_to,
+      -- the REAL highest live pick after the revert — not v_to, which an
+      -- earlier reversed won bid (a hole below v_to) would make a lie
+      'last_live_pick',   (SELECT max(p.pick_number) FROM public.draft_picks p
+                           WHERE p.draft_id = p_draft_id AND NOT p.is_undone),
       'on_clock_team_id', v_draft.on_clock_team_id,
       'picks',            '[]'::jsonb),
     jsonb_build_object(
@@ -1479,7 +1490,7 @@ REVOKE EXECUTE ON FUNCTION
   FROM PUBLIC, anon;
 
 -- ---------------------------------------------------------------------------
--- draft_force_pick — 100:1136-1437's FILE TEXT (D137), 2 hunks (+29 / -0).
+-- draft_force_pick — 100:1136-1437's FILE TEXT (D137), 2 hunks (+31 / -0).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_force_pick(
   p_draft_id UUID,
@@ -1726,7 +1737,8 @@ BEGIN
       jsonb_build_object(
         'draft_id', p_draft_id, 'uncontested', v_uncontested,
         'for_team_id', v_bid.team_id,
-        'affected_team_ids', jsonb_build_array(v_bid.team_id)));
+        'affected_team_ids', jsonb_build_array(v_bid.team_id)),
+      v_bid.team_id);  -- acting_as: the team on the clock (§8.7 "on behalf of", §10.3)
 
     RETURN jsonb_build_object('draft', to_jsonb(v_draft), 'bid', to_jsonb(v_bid));
   END IF;
@@ -1807,7 +1819,8 @@ BEGIN
                        'team_id', v_result->'pick'->'team_id', 'player_id', p_player_id),
     jsonb_build_object(
       'draft_id', p_draft_id, 'for_team_id', v_draft.on_clock_team_id,
-      'affected_team_ids', jsonb_build_array(v_draft.on_clock_team_id)));
+      'affected_team_ids', jsonb_build_array(v_draft.on_clock_team_id)),
+    v_draft.on_clock_team_id);  -- acting_as: the team on the clock (§8.7 "on behalf of", §10.3)
 
   RETURN v_result;
 END;
