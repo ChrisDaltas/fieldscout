@@ -1,10 +1,13 @@
 'use client'
 
+import Link from 'next/link'
+
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
 
+import { commishTeamHref } from './activity-page-ops'
 import { Crest, TeamNameLink } from './league-cells'
 import {
   STANDINGS_OVERRIDDEN_LEGEND,
@@ -137,11 +140,18 @@ export function StandingsTable({
                         viewer's row deliberately suppresses the table's row
                         wash (`hover:bg-accent-soft` above). */}
                     <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className="font-bold text-ink" />
+                    {/* §10.3 / F233(d): the ✸ lands on the log — every action naming this team. */}
                     {overriddenWeeks && (
-                      <Badge variant="stroke-purple" className="shrink-0" title={overriddenTitle(overriddenWeeks)} data-overridden={overriddenWeeks.join(',')}>
-                        <span aria-hidden="true">{STANDINGS_OVERRIDDEN_MARK}</span>
-                        <span className="sr-only">{overriddenTitle(overriddenWeeks)}</span>
-                      </Badge>
+                      <Link
+                        href={commishTeamHref(doc.league_id, row.team_id)}
+                        className="shrink-0 rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                        data-overridden-link
+                      >
+                        <Badge variant="stroke-purple" className="hover:bg-accent-soft" title={overriddenTitle(overriddenWeeks)} data-overridden={overriddenWeeks.join(',')}>
+                          <span aria-hidden="true">{STANDINGS_OVERRIDDEN_MARK}</span>
+                          <span className="sr-only">{overriddenTitle(overriddenWeeks)}</span>
+                        </Badge>
+                      </Link>
                     )}
                   </span>
                 </TableCell>

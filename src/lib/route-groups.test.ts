@@ -189,12 +189,18 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/trades',
   // M6 L.E2.4 — the league's STAT CORRECTIONS (spec §23.4's league-facing
-  // view; PROGRESS D456). Its own page until the Activity page (L.E1.34)
-  // mounts the same `CorrectionsView` as its "Stat corrections" tab; kept
-  // then as that tab's deep link (the matchup note links `?week=`). In
-  // `(shell)` for Q12's reason: a reading page. Gated on
-  // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`.
+  // view; PROGRESS D456). Since L.E1.34 (F536, D459) a DEEP LINK only: it
+  // redirects to the Activity page's "Stat corrections" tab with its week.
+  // In `(shell)` for Q12's reason. Gated on `featureFlags.leagues` by
+  // `(shell)/leagues/layout.tsx`.
   '/app/leagues/[leagueId]/corrections',
+  // M6 L.E1.34 — LEAGUE ACTIVITY (spec §16.1 `…/leagues/[id]/activity`
+  // "Activity + Commissioner Action Log"; PROGRESS D459): the feed's tabs,
+  // the whole commissioner log, the stat corrections. In `(shell)` for
+  // Q12's reason: a reading page. Gated on `featureFlags.leagues` by
+  // `(shell)/leagues/layout.tsx`, and on the viewer being a member by its
+  // own server component (a redirect to the league page otherwise). Permanent.
+  '/app/leagues/[leagueId]/activity',
   // M6 L.E1.33 — the COMMISSIONER CONSOLE (spec §10.1 as folded by v2.16.77
   // `…/leagues/[id]/commish`: the launchpad; PROGRESS D443, D457). In
   // `(shell)` for Q12's reason: a page of doors, not a draft surface. Gated

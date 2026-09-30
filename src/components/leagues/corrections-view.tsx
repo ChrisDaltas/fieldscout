@@ -1,17 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useLeague } from '@/hooks/use-league'
 import { useSchedule } from '@/hooks/use-schedule'
 import { useStatCorrectionsLive } from '@/hooks/use-stat-corrections'
 
@@ -37,20 +34,19 @@ import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { ChoiceSelect } from './settings-form-controls'
 import { ReconnectingBanner, StaleDataBanner } from './status-banners'
-import { ProblemCard, problemCopy } from './team-page'
+import { problemCopy } from './team-page'
 
 /**
  * The league's stat corrections — M6 task L.E2.4 (spec §23.4 "League-facing
  * 'Stat Corrections' view", §16.2 `corrections-view`, §16.5.2 *Stat
  * corrections*; tasks-M6 §6 L.E2.4 read through Q81; PROGRESS D454 / D456).
  *
- * **Two exports, one view.** `CorrectionsView` is the tab body — the week
- * filter and the list — and is what the Activity page (L.E1.34) mounts as
- * its "Stat corrections" tab; `CorrectionsPage` is the stand-alone route
- * (`/app/leagues/[id]/corrections`) that hosts it until then: the
- * membership gate, the page header and the same view. Neither forks the
- * other. `MatchupCorrectionNote` is the matchup page's change note over
- * the same read.
+ * **One view.** `CorrectionsView` is the tab body — the week filter and the
+ * list — mounted by the Activity page as its "Stat corrections" tab (L.E1.34,
+ * F536; the page owns the membership gate, the header and the `?week=`
+ * write-back; the old `/corrections` route redirects there).
+ * `MatchupCorrectionNote` is the matchup page's change note over the same
+ * read.
  *
  * **Data.** L.E2.3's `GET …/corrections?week=` through
  * `useStatCorrectionsLive`: only corrections that CHANGED a league score
@@ -66,54 +62,6 @@ import { ProblemCard, problemCopy } from './team-page'
  * 172: the server's named sentence, never an empty list or an error) ·
  * more (`Show older` follows the server's cursor).
  */
-export function CorrectionsPage({ leagueId, initialWeek = null }: { leagueId: string; initialWeek?: number | null }) {
-  const league = useLeague(leagueId)
-  const router = useRouter()
-  if (league.isPending) {
-    return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title={CORRECTIONS_TITLE} />
-        <ListSkeleton />
-      </div>
-    )
-  }
-  if (league.isError || !league.data) {
-    return (
-      <ProblemCard
-        heading={CORRECTIONS_TITLE}
-        title="Couldn’t load this league."
-        detail={problemCopy(league.error)}
-        onRetry={() => league.refetch()}
-        leagueId={null}
-      />
-    )
-  }
-  return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title={CORRECTIONS_TITLE}
-        actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {league.data.league.name}
-            </Link>
-          </Button>
-        }
-      />
-      {/* R1369: the filter writes `?week=` back (the deep link works both ways), and the view is
-          keyed on the URL's week so a link to another week re-opens the filter on it. */}
-      <CorrectionsView
-        key={initialWeek ?? 'all'}
-        leagueId={leagueId}
-        initialWeek={initialWeek}
-        leagueTimeZone={league.data.settings.draft.time_zone ?? null}
-        onWeekChange={(week) => router.replace(correctionsHref(leagueId, week), { scroll: false })}
-      />
-    </div>
-  )
-}
-
 export function CorrectionsView({
   leagueId,
   initialWeek = null,

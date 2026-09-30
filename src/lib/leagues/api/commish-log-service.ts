@@ -89,6 +89,9 @@
  *     round). A row with no `metadata.week` (a trade, a roster move, a
  *     setting) is in no week's log; `current_week` — the week it HAPPENED
  *     in — is deliberately not read as "the week it was about".
+ *   - `entry` (L.E1.34) — an action id of THIS league (else a 404 by name):
+ *     the page starts AT that row and runs older, so a ✸ line's door lands
+ *     on its entry (F233(d)); combines with the filters and the cursor.
  *
  * No Date/random read anywhere in this file (the `src/lib/leagues/**`
  * ESLint fences): the cursor is the caller's, the ordering is the database's.
@@ -171,8 +174,25 @@ export const commishLogQuerySchema = z.strictObject({
   /** L.E1.32: only rows whose verb recorded acting on this week
    *  (`metadata.week`) — the house week bound (matchups, box score). */
   week: z.coerce.number().int().min(1).max(18).optional(),
+  /** L.E1.34 (F233(d)): open the log AT this entry — the page starts with it
+   *  and runs older (a ✸ line's door lands on its entry). */
+  entry: normalizedUuid.optional(),
 })
 export type CommishLogQuery = z.input<typeof commishLogQuerySchema>
+
+/** The 404 for an `entry` that is not one of this league's log rows. */
+export const COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE = 'That commissioner action isn’t in this league’s log.'
+
+/**
+ * The page boundary that STARTS at an entry: the entry itself and everything
+ * older — `created_at < T OR (created_at = T AND id <= ID)`, the inclusive
+ * twin of `activityCursorFilter` (L.E1.34). A later page's cursor is stricter
+ * and is ANDed with it (two PostgREST trees), so paging on past the entry is
+ * the log's ordinary paging.
+ */
+export function commishLogEntryFilter(createdAt: string, id: string): string {
+  return `created_at.lt."${createdAt}",and(created_at.eq."${createdAt}",id.lte."${id}")`
+}
 
 /** One audit row as rendered. A CLAIM (see the header) — no field here says
  *  a verb ran. */
@@ -197,6 +217,8 @@ export interface CommishLogAppliedFilters {
   type: string[] | null
   team_id: string | null
   week: number | null
+  /** L.E1.34: present only when the page was opened at an entry. */
+  entry?: string
 }
 
 export interface CommishLogPage {
@@ -261,6 +283,22 @@ export async function readCommishLog(
     if (!team) return { status: 404, body: { error: COMMISH_LOG_UNKNOWN_TEAM_MESSAGE } }
   }
 
+  // An entry names a row of THIS league's log, or it is refused by name —
+  // never answered with the top of the log as if it were there.
+  const entryId = parsed.data.entry ?? null
+  let entryBoundary: { createdAt: string; id: string } | null = null
+  if (entryId !== null) {
+    const { data: row, error: entryError } = await supabase
+      .from('commissioner_actions')
+      .select('id, created_at')
+      .eq('id', entryId)
+      .eq('league_id', leagueId)
+      .maybeSingle()
+    if (entryError) return { status: 500, body: { error: `commissioner_actions: ${entryError.message}` } }
+    if (!row) return { status: 404, body: { error: COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE } }
+    entryBoundary = { createdAt: row.created_at, id: row.id }
+  }
+
   const fetchLimit = limit + 1
   let query = supabase
     .from('commissioner_actions')
@@ -280,6 +318,7 @@ export async function readCommishLog(
   if (types !== null) query = query.in('action_type', types)
   if (teamId !== null) query = query.or(commishLogTeamFilter(teamId))
   if (week !== null) query = query.eq('metadata->>week', String(week))
+  if (entryBoundary !== null) query = query.or(commishLogEntryFilter(entryBoundary.createdAt, entryBoundary.id))
 
   const { data, error } = await query
   if (error) {
@@ -306,7 +345,7 @@ export async function readCommishLog(
   const page: CommishLogPage = {
     items,
     limit,
-    filters: { type: types, team_id: teamId, week },
+    filters: { type: types, team_id: teamId, week, ...(entryId !== null ? { entry: entryId } : {}) },
     has_more: hasMore,
     next_cursor: hasMore && last ? encodeCommishLogCursor(last.created_at, last.id) : null,
   }

@@ -250,6 +250,12 @@ function block(html: string, marker: string): string {
 
 const toolGroupKeys = (html: string) => [...html.matchAll(/data-tool-group="([^"]+)"/g)].map((m) => m[1])
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1])
+/** The Tools card alone — the recent-actions card (and its "See all") follows it. */
+const toolsOnly = (html: string) => {
+  const tools = block(html, 'data-commish-tools-groups')
+  const end = tools.indexOf('data-commish-recent')
+  return end === -1 ? tools : tools.slice(0, end)
+}
 
 // ---------------------------------------------------------------------------
 // In season — the full launchpad
@@ -348,7 +354,8 @@ describe('in season — needs you, the tool doors, recent actions', () => {
     const recent = block(html, 'data-commish-recent')
     expect([...recent.matchAll(/data-commish-log-item="/g)]).toHaveLength(5)
     expect(recent).toContain('Recent actions')
-    expect(recent).toContain(`href="${BASE}#activity"`)
+    // L.E1.34 (F538): "See all" opens the Activity page's Commissioner tab.
+    expect(recent).toContain(`href="${BASE}/activity?tab=commissioner"`)
     expect(recent).toContain(RECENT_MORE_LABEL)
   })
 
@@ -387,7 +394,7 @@ describe('pre-draft — the draft tools and members lead', () => {
     const html = renderConsole({ detail: detailWith('setup'), summary: summaryWith({ trades_awaiting_review: { state: 'ok', review_mode: 'commissioner', trades: [] }, matchup_corrections: EMPTY_SECTIONS.matchup_corrections }, 'setup') })
     expect(html).toContain('data-commish-console="setup"')
     expect(toolGroupKeys(html)).toEqual(['draft', 'members', 'settings'])
-    const tools = block(html, 'data-commish-tools-groups')
+    const tools = toolsOnly(html)
     expect(hrefs(tools)).toEqual([BASE, `${BASE}/settings`, `${BASE}#invites`, `${BASE}/settings`])
     expect(tools).toContain(TOOLS_AFTER_DRAFT_NOTE)
     expect(tools).not.toContain('/matchup')
@@ -395,13 +402,13 @@ describe('pre-draft — the draft tools and members lead', () => {
     expect(tools).not.toContain('/team/')
   })
 
-  it('setup: an open seat needs a MANAGER (the invites), never "autopilot" — and League Home shows no log yet, so no "more" door', () => {
+  it('setup: an open seat needs a MANAGER (the invites), never "autopilot" — and "See all" opens the whole log even before the draft (L.E1.34, F538)', () => {
     const html = renderConsole({ detail: detailWith('setup'), summary: summaryWith({ matchup_corrections: EMPTY_SECTIONS.matchup_corrections }, 'setup') })
     const needs = block(html, 'data-needs-items')
     expect(needs).toContain('Delta has no manager yet.')
     expect(needs).toContain(`href="${BASE}#invites"`)
     expect(needs).not.toContain('autopilot is off')
-    expect(html).not.toContain('data-commish-recent-more')
+    expect(block(html, 'data-commish-recent')).toContain(`href="${BASE}/activity?tab=commissioner"`)
   })
 
   it('scheduled: the draft lobby leads', () => {
@@ -414,7 +421,7 @@ describe('pre-draft — the draft tools and members lead', () => {
   it('drafting: every draft and seat control is in the room — both groups open it', () => {
     const html = renderConsole({ detail: detailWith('drafting'), summary: summaryWith({ matchup_corrections: EMPTY_SECTIONS.matchup_corrections }, 'drafting') })
     expect(toolGroupKeys(html)).toEqual(['draft', 'members', 'settings'])
-    const tools = block(html, 'data-commish-tools-groups')
+    const tools = toolsOnly(html)
     expect(hrefs(tools)).toEqual([`${BASE}/draft`, `${BASE}/draft`, `${BASE}/settings`])
     expect(block(html, 'data-needs-items')).toContain('Autopick drafts for it.')
   })

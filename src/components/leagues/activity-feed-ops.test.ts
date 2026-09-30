@@ -8,7 +8,8 @@ import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/ac
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
 import * as ops from './activity-feed-ops'
-import { COMMISH_LOG_UNNAMED_ACTOR, COMMISSIONER_LABEL, SYSTEM_LABEL, commishLogLines, feedLines, transactionText } from './activity-feed-ops'
+import { COMMISH_LOG_UNNAMED_ACTOR, COMMISSIONER_LABEL, SYSTEM_LABEL, commishLogLines, feedLines, memberNamesOf, transactionText } from './activity-feed-ops'
+import { UNKNOWN_ACTION_WORDS } from './commish-log-copy'
 
 function tx(over: Partial<TransactionActivityItem>): TransactionActivityItem {
   return { kind: 'transaction', id: 'tx1', created_at: '2099-09-10T12:00:00Z', type: 'add_drop', status: 'complete', week: 3, team_id: 't1', actor_id: 'u1', action_id: 'a1', payload: {}, ...over }
@@ -27,6 +28,9 @@ describe('transactionText — 113’s payload names, nothing computed', () => {
     expect(transactionText(tx({ payload: {} }))).toBe('Roster move')
     expect(transactionText(tx({ type: 'waiver_claim', status: 'pending', payload: {} }))).toBe('Waiver claim (pending)')
     expect(transactionText(tx({ type: 'some_future_type', payload: null }))).toBe('some future type')
+    // L.E1.34: every type §12.9's CHECK allows has a label.
+    expect(transactionText(tx({ type: 'add', payload: {} }))).toBe('Added a player')
+    expect(transactionText(tx({ type: 'drop', payload: {} }))).toBe('Dropped a player')
   })
 })
 
@@ -65,6 +69,8 @@ describe('transactionText — trades (M5 L.D3.7, F415 / F438): the deal from the
   it('an executed trade (151’s row) names the deal; a forced one says so', () => {
     expect(transactionText(tx({ type: 'trade', payload: { type: 'trade', summary, via: 'review_none' } }))).toBe(`completed a trade: ${summary}`)
     expect(transactionText(tx({ type: 'trade', payload: { summary, via: 'commissioner_force' } }))).toBe(`completed a trade (forced through by the commissioner): ${summary}`)
+    // L.E1.34: 156's approve executes with via 'commissioner_approve'.
+    expect(transactionText(tx({ type: 'trade', payload: { summary, via: 'commissioner_approve' } }))).toBe(`completed a trade (approved by the commissioner): ${summary}`)
     expect(transactionText(tx({ type: 'trade', payload: {} }))).toBe('completed a trade')
   })
   it('the commissioner’s reversal (156’s commissioner_move row, kind trade_reversal) says every player went back', () => {
@@ -105,10 +111,10 @@ describe('feedLines — transactions carry their team + week; a system post carr
     // team page (§16.1). tx2's `t9` is NOT in `names`, so the line has no name
     // AND no id: a franchise we cannot name gets no link, never a dead one.
     expect(feedLines(items, names)).toEqual([
-      { id: 'tx1', kind: 'transaction', text: 'added Nine', team: 'Alpha', teamId: 't1', week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: false },
-      { id: 'c1', kind: 'system', text: 'Schedule remixed (seed 42).', team: null, teamId: null, week: null, createdAt: '2099-09-11T12:00:00Z', commissioner: true },
-      { id: 'tx2', kind: 'transaction', text: 'Commissioner move', team: null, teamId: null, week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: true },
-      { id: 'c2', kind: 'system', text: 'Week 3 finalized with a postponed game.', team: null, teamId: null, week: null, createdAt: '2099-09-12T12:00:00Z', commissioner: false },
+      { id: 'tx1', kind: 'transaction', text: 'added Nine', team: 'Alpha', teamId: 't1', week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: false, commishActionId: null },
+      { id: 'c1', kind: 'system', text: 'Schedule remixed (seed 42).', team: null, teamId: null, week: null, createdAt: '2099-09-11T12:00:00Z', commissioner: true, commishActionId: null },
+      { id: 'tx2', kind: 'transaction', text: 'Commissioner move', team: null, teamId: null, week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: true, commishActionId: null },
+      { id: 'c2', kind: 'system', text: 'Week 3 finalized with a postponed game.', team: null, teamId: null, week: null, createdAt: '2099-09-12T12:00:00Z', commissioner: false, commishActionId: null },
     ])
     expect(COMMISSIONER_LABEL).toBe('✸ commissioner')
     expect(SYSTEM_LABEL).toBe('system')
@@ -154,8 +160,9 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ target_type: 'player', after: { team_id: 't2', slot_key: 'bn', acquisition_type: 'commissioner' }, before: { team_id: 't1', slot_key: 'bn', acquisition_type: 'draft' }, metadata: { player_name: 'P', from_team_name: 'Alpha', to_team_name: 'Bravo' } }).text).toBe('moved P from Alpha to Bravo')
     expect(line({ target_type: 'player', after: { team_id: 't2', slot_key: 'bn', acquisition_type: 'commissioner' }, before: { team_id: null, slot_key: null, acquisition_type: null }, metadata: { player_name: 'P', to_team_name: 'Bravo' } }).text).toBe('added P to Bravo')
     expect(line({ target_type: 'player', after: { team_id: null, slot_key: null, acquisition_type: null }, before: { team_id: 't1', slot_key: 'rb', acquisition_type: 'draft' }, metadata: { player_name: 'P', from_team_name: 'Alpha' } }).text).toBe('dropped P from Alpha')
-    expect(line({ target_type: 'setting', target_id: 'trade_deadline_week', before: { trade_deadline_week: 10 }, after: { trade_deadline_week: null } }).text).toBe('changed the trade deadline week setting: 10 → none')
-    expect(line({ target_type: 'setting', target_id: 'roster_settings', before: { roster_settings: { bench: 6 } }, after: { roster_settings: { bench: 7 } } }).text).toBe('changed the roster settings setting: (updated) → (updated)')
+    // L.E1.34 (TD12): the key in words, never the key.
+    expect(line({ target_type: 'setting', target_id: 'trade_deadline_week', before: { trade_deadline_week: 10 }, after: { trade_deadline_week: null } }).text).toBe('changed the trade deadline week: 10 → none')
+    expect(line({ target_type: 'setting', target_id: 'roster_settings', before: { roster_settings: { bench: 6 } }, after: { roster_settings: { bench: 7 } } }).text).toBe('changed the roster spots: (updated) → (updated)')
     expect(line({ target_type: 'schedule', before: { schedule_seed: 1 }, after: { schedule_seed: 2 }, metadata: { change_count: 42 } }).text).toBe('remixed the schedule (42 team-week pairings changed)')
     expect(line({ target_type: 'schedule', before: { home_team_id: 'a' }, after: { home_team_id: 'b' }, metadata: { week: 4 } }).text).toBe('edited a Week 4 matchup pairing')
   })
@@ -202,11 +209,12 @@ describe('commishLogLines — the act is read from before/after, the reason is o
         [{ ...base, action_type: actionType, target_type: 'trade', target_id: 'tr1', acting_as_team_id: 't2', before: { status: 'proposed' }, after: { status: 'proposed' }, metadata: { verb, summary } }],
         new Map([['t2', 'Bravo']]),
       )[0].text
-    expect(arm('propose_trade', 'trade_propose')).toBe(`offered a trade: ${summary} (acting for Bravo)`)
-    expect(arm('accept_trade', 'trade_respond')).toBe(`accepted a trade: ${summary} (acting for Bravo)`)
-    expect(arm('reject_trade', 'trade_respond')).toBe(`turned down a trade: ${summary} (acting for Bravo)`)
-    expect(arm('cancel_trade', 'trade_respond')).toBe(`called off a trade offer: ${summary} (acting for Bravo)`)
-    expect(arm('counter_trade', 'trade_respond')).toBe(`made a counter-offer: ${summary} (acting for Bravo)`)
+    // L.E1.34 (TD16): "(for <team>)" — the deal names both teams, so the suffix says whose side he took.
+    expect(arm('propose_trade', 'trade_propose')).toBe(`offered a trade: ${summary} (for Bravo)`)
+    expect(arm('accept_trade', 'trade_respond')).toBe(`accepted a trade: ${summary} (for Bravo)`)
+    expect(arm('reject_trade', 'trade_respond')).toBe(`turned down a trade: ${summary} (for Bravo)`)
+    expect(arm('cancel_trade', 'trade_respond')).toBe(`called off a trade offer: ${summary} (for Bravo)`)
+    expect(arm('counter_trade', 'trade_respond')).toBe(`made a counter-offer: ${summary} (for Bravo)`)
     // The generic "accept trade" line R1174 found is gone.
     expect(arm('accept_trade', 'trade_respond')).not.toMatch(/^accept trade/)
   })
@@ -215,8 +223,9 @@ describe('commishLogLines — the act is read from before/after, the reason is o
     expect(line({ action_type: 'reassign_team', before: { name: 'Old' }, after: { name: 'New' } }).text).not.toContain('reassign')
   })
 
-  it('a shape this file does not know falls back to the action’s own name — NEVER an empty line', () => {
-    expect(line({ action_type: 'some_future_power', target_type: 'thing', before: null, after: null }).text).toBe('some future power')
+  it('L.E1.34 (TD12): a type this file does not know reads in plain words — NEVER its code name, NEVER an empty line', () => {
+    expect(line({ action_type: 'some_future_power', target_type: 'thing', before: null, after: null }).text).toBe(UNKNOWN_ACTION_WORDS)
+    expect(line({ action_type: 'some_future_power', target_type: 'thing', before: null, after: null }).text).not.toContain('future power')
   })
 
   it('the reason: given ⇒ carried TRIMMED; NULL or blank ⇒ null (rendered as ABSENT — §10.3, Q66)', () => {
@@ -227,6 +236,69 @@ describe('commishLogLines — the act is read from before/after, the reason is o
 
   it('an unnamed actor is "A commissioner", and acting-as names the team (§7.2.1)', () => {
     expect(line({ actor: { id: 'u1', username: null } }).actor).toBe(COMMISH_LOG_UNNAMED_ACTOR)
-    expect(line({ after: { slot_map: {} }, metadata: { week: 1 }, acting_as_team_id: 't2' }).text).toBe('set Alpha’s Week 1 lineup (acting for Bravo)')
+    expect(line({ after: { slot_map: {} }, metadata: { week: 1 }, acting_as_team_id: 't2' }).text).toBe('set Alpha’s Week 1 lineup (for Bravo)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.E1.34 — one line per act (Q84 / F463), the ✸ line's entry (F233(d)),
+// "(for <team>)" only when the sentence has not named it (F518)
+// ---------------------------------------------------------------------------
+
+describe('feedLines — one line per act, and the ✸ line carries its log entry (L.E1.34)', () => {
+  const names = new Map([['t1', 'Alpha'], ['t2', 'Bravo']])
+  const post = (over: Partial<Extract<ActivityItem, { kind: 'system' }>>): ActivityItem => ({
+    kind: 'system', id: 'p1', created_at: '2099-09-10T12:00:00Z', context: 'league', message: 'chris (commissioner) reversed a trade — …', actor_id: 'u1', topic: null, week: null, ...over,
+  })
+
+  it('a reversal (156: a commissioner_move row + the actor’s post + ONE receipt) is ONE line — the transaction’s, ✸, linked to the entry', () => {
+    const lines = feedLines(
+      [tx({ id: 'rev', type: 'commissioner_move', team_id: null, payload: { kind: 'trade_reversal', summary: 'Alpha gives A; Bravo gives B' }, commish_action_id: 'ca-rev' }), post({ commish_action_id: 'ca-rev' })],
+      names,
+    )
+    expect(lines.map((l) => [l.id, l.commissioner, l.commishActionId])).toEqual([['rev', true, 'ca-rev']])
+  })
+
+  it('a forced trade: the trade row takes the receipt written in its transaction — ONE ✸ line saying so', () => {
+    const lines = feedLines([tx({ id: 'tr', type: 'trade', payload: { summary: 'S', via: 'commissioner_force' }, commish_action_id: 'ca-f' }), post({ id: 'pf', commish_action_id: 'ca-f' })], names)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatchObject({ id: 'tr', commissioner: true, commishActionId: 'ca-f', text: 'completed a trade (forced through by the commissioner): S' })
+  })
+
+  it('a commissioner post with no feed row (a veto, a score fix) stays, ✸ and linked; a manager’s move and a system notice carry no entry', () => {
+    const lines = feedLines([post({ id: 'veto', message: 'chris (commissioner) vetoed a trade: S', commish_action_id: 'ca-v' }), tx({ id: 'mine' }), post({ id: 'sys', actor_id: null, message: 'Week 3 was finalized.' })], names)
+    expect(lines.map((l) => [l.id, l.commissioner, l.commishActionId])).toEqual([
+      ['veto', true, 'ca-v'],
+      ['mine', false, null],
+      ['sys', false, null],
+    ])
+  })
+
+  it('a stat-correction post shows the week it names', () => {
+    expect(feedLines([post({ actor_id: null, topic: 'stat_correction', week: 3, message: 'Stat correction (Week 3): …' })], names)[0].week).toBe(3)
+  })
+})
+
+describe('commishLogLines — "(for <team>)" and member names (L.E1.34; F518, D451)', () => {
+  const item = (over: Partial<CommishLogItem>): CommishLogItem => ({
+    id: 'ca', action_type: 'edit_lineup', actor: { id: 'u1', username: 'chris' }, target_type: 'team', target_id: 't1', reason: null,
+    before: null, after: null, metadata: null, acting_as_team_id: null, reverts_action_id: null, created_at: '2099-09-14T18:00:00.000Z', ...over,
+  })
+  const names = new Map([['t1', 'Alpha'], ['t2', 'Bravo']])
+  const text = (over: Partial<CommishLogItem>, members = new Map<string, string>()) => commishLogLines([item(over)], names, members)[0].text
+
+  it('F518: the suffix drops when the sentence already names the team he acted for', () => {
+    expect(text({ after: { slot_map: {} }, metadata: { week: 3 }, acting_as_team_id: 't1' })).toBe('set Alpha’s Week 3 lineup')
+    expect(text({ action_type: 'draft_force_pick', target_type: 'draft_pick', after: { pick_number: 12, team_id: 't2' }, metadata: { for_team_id: 't2' }, acting_as_team_id: 't2' })).toBe('made pick 12 for Bravo')
+    expect(text({ action_type: 'set_autodraft', target_id: 't2', before: { autodraft: false }, after: { autodraft: true }, acting_as_team_id: 't2' })).toBe('turned autodraft on for Bravo')
+    expect(text({ action_type: 'reassign_team', target_id: 't1', before: { name: 'Old' }, after: { name: 'Alpha' }, acting_as_team_id: 't1' })).toBe('renamed Old to Alpha')
+    expect(text({ action_type: 'force_add', target_type: 'player', after: { acquisition_type: 'commissioner' }, before: { acquisition_type: null }, metadata: { player_name: 'P', to_team_name: 'Bravo' }, acting_as_team_id: 't2' })).toBe('added P to Bravo')
+  })
+
+  it('a membership receipt names the member from the league’s member list — and says what happened without it', () => {
+    const members = new Map([['u7', 'dana']])
+    expect(text({ action_type: 'promote_member', target_type: 'member', before: { role: 'manager' }, after: { role: 'co_commissioner' }, metadata: { user_id: 'u7' } }, members)).toBe('made dana a co-commissioner')
+    expect(text({ action_type: 'promote_member', target_type: 'member', before: { role: 'manager' }, after: { role: 'co_commissioner' }, metadata: { user_id: 'u7' } })).toBe('made a member a co-commissioner')
+    expect(memberNamesOf([{ user_id: 'u7', profiles: { username: 'dana' } }, { user_id: null, profiles: null }])).toEqual(new Map([['u7', 'dana']]))
   })
 })

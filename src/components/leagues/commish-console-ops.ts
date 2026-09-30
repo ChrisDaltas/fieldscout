@@ -34,6 +34,7 @@ import type {
 import { commishConsoleHref } from '@/lib/leagues/api/commish-console-gate'
 import type { TradeView } from '@/lib/leagues/api/trades-service'
 
+import { activityHref } from './activity-page-ops'
 import { membersPageHref } from './invite-panel-ops'
 import { teamPageHref } from './league-cells'
 import { tradesHref } from './trades-ops'
@@ -103,7 +104,7 @@ export const TOOLS_AFTER_DRAFT_NOTE =
 export const RECENT_TITLE = 'Recent actions'
 /** How many of his actions the console shows (the task: "the last five"). */
 export const RECENT_LIMIT = 5
-export const RECENT_MORE_LABEL = 'More in league activity'
+export const RECENT_MORE_LABEL = 'See all'
 
 export const NOT_COMMISSIONER_COPY =
   'Only this league’s commissioner (or a co-commissioner) can use this page.'
@@ -484,9 +485,8 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
   ]
 }
 
-/** "See more" of his actions: League Home's activity section is the one
- *  place the log is shown today (8 newest), and only after the draft —
- *  before it there is nowhere to send him (F538: L.E1.34's Activity page). */
-export function recentMoreHref(leagueId: string, phase: ConsolePhase): string | null {
-  return afterDraft(phase) ? `/app/leagues/${leagueId}#activity` : null
+/** "See all" of his actions: the Activity page's Commissioner tab — the
+ *  whole log, paged, in every state of the league (L.E1.34; F538). */
+export function recentMoreHref(leagueId: string): string {
+  return activityHref(leagueId, { tab: 'commissioner' })
 }

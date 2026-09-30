@@ -185,9 +185,9 @@ describe('the list’s state — asserted from the server, never inferred', () =
     expect(correctionWeekOptions([], 5).map((o) => o.value)).toEqual(['all', '5'])
   })
 
-  it('the door carries the week', () => {
-    expect(correctionsHref('L', null)).toBe('/app/leagues/L/corrections')
-    expect(correctionsHref('L', 4)).toBe('/app/leagues/L/corrections?week=4')
+  it('the door carries the week — to the Activity page’s tab (L.E1.34, F536)', () => {
+    expect(correctionsHref('L', null)).toBe('/app/leagues/L/activity?tab=corrections')
+    expect(correctionsHref('L', 4)).toBe('/app/leagues/L/activity?tab=corrections&week=4')
   })
 })
 

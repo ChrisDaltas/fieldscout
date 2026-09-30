@@ -11,7 +11,7 @@
  *
  * States: loading · empty week (the server's sentence) · error-with-retry ·
  * degraded (last-good rows + the banner) · pre-push (the named 503's
- * sentence) · items in words · "Show older" · the page's gate. Then the
+ * sentence) · items in words · "Show older". Then the
  * matchup page's change note (score / result / none / pre-push hidden /
  * failed read said) and the box's points note on a final week (F477).
  */
@@ -33,7 +33,7 @@ import type { StatCorrectionItem, StatCorrectionsPage } from '@/lib/leagues/api/
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
-import { CorrectionsPage, CorrectionsView } from './corrections-view'
+import { CorrectionsView } from './corrections-view'
 import {
   BOX_FINAL_STORED_COPY,
   CORRECTIONS_INTRO_COPY,
@@ -258,36 +258,9 @@ describe('the corrections view — every state', () => {
   })
 })
 
-describe('the stand-alone page — the membership gate first', () => {
-  it('a league that will not load is the family’s problem card', () => {
-    const qc = client()
-    failQuery(qc, leaguesKeys.detail(LEAGUE), new Error('League not found'))
-    const html = render(qc, createElement(CorrectionsPage, { leagueId: LEAGUE }))
-    expect(html).toContain('Couldn’t load this league.')
-    expect(html).not.toContain('data-corrections-view')
-  })
-
-  // (The header and its door back to the league are `PageHeader`'s — an effect into the shell's
-  // header store, which a static render does not run.)
-  it('a member sees the view, opened on the linked week', () => {
-    const qc = client()
-    qc.setQueryData(leaguesKeys.detail(LEAGUE), DETAIL)
-    qc.setQueryData(scheduleKeys.all(LEAGUE), SCHEDULE)
-    seedCorrections(qc, { week: 1 }, [page({ week: 1, items: [item()] })])
-    const html = render(qc, createElement(CorrectionsPage, { leagueId: LEAGUE, initialWeek: 1 }))
-    expect(html).toContain('Stat corrections')
-    expect(html).toContain('data-corrections-view')
-    expect(html).toContain('Receiving yards 100 → 94')
-  })
-
-  it('R1369: the page writes the filter back to `?week=` and keys the view on the URL’s week (source — a static render cannot pick)', async () => {
-    const { readFileSync } = await import('node:fs')
-    const src = readFileSync(`${process.cwd()}/src/components/leagues/corrections-view.tsx`, 'utf8')
-    expect(src).toContain("key={initialWeek ?? 'all'}")
-    expect(src).toContain('onWeekChange={(week) => router.replace(correctionsHref(leagueId, week), { scroll: false })}')
-    expect(src).toContain('onWeekChange?.(next)')
-  })
-})
+// L.E1.34 (F536): the stand-alone page is gone — the Activity page hosts the
+// view as its "Stat corrections" tab; its gate, the linked week and the
+// `?week=` write-back are pinned in `activity-page.render.test.ts`.
 
 // ---------------------------------------------------------------------------
 // The matchup page — the change note and the box's points note
@@ -359,7 +332,7 @@ describe('the matchup page’s change note (§16.5.2)', () => {
     expect(html).toContain(MATCHUP_NOTE_RESULT_TITLE)
     expect(html).toContain('Lou Receiver’s receiving yards 100 → 94 — Alpha 101.20 → 100.60')
     expect(html).toContain('Alpha — Matchup: win → loss')
-    expect(html).toContain(`href="/app/leagues/${LEAGUE}/corrections?week=1"`)
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/activity?tab=corrections&week=1"`)
   })
 
   it('a score-only change: the score title', () => {

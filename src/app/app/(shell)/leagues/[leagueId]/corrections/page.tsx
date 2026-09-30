@@ -1,7 +1,7 @@
-import { CorrectionsPage } from '@/components/leagues/corrections-view'
-import { weekFromParam } from '@/components/leagues/matchup-view-ops'
+import { redirect } from 'next/navigation'
 
-export const metadata = { title: 'Stat corrections · FieldScout' }
+import { correctionsHref } from '@/components/leagues/corrections-view-ops'
+import { weekFromParam } from '@/components/leagues/matchup-view-ops'
 
 interface CorrectionsRouteProps {
   params: Promise<{ leagueId: string }>
@@ -9,15 +9,14 @@ interface CorrectionsRouteProps {
 }
 
 /**
- * The league's stat corrections — spec §23.4's league-facing view (M6 task
- * L.E2.4; PROGRESS D456). Its own route until the Activity page (L.E1.34)
- * lands and mounts the same `CorrectionsView` as its "Stat corrections" tab.
- * A SHELL page covered by the `(shell)/leagues/layout.tsx` flag gate; the
- * page is a client component (`useLeague` gates membership first). `?week=`
- * is read here and handed down (the matchup note links to its week).
+ * The league's stat corrections — kept as a DEEP LINK only (M6 L.E1.34,
+ * F536; PROGRESS D459). The view (L.E2.4's `CorrectionsView`) now lives on
+ * the Activity page as its "Stat corrections" tab; this route sends any old
+ * link there, week and all (`?week=3` → `…/activity?tab=corrections&week=3`),
+ * so there is one home for the list and no second copy of its page.
  */
 export default async function LeagueCorrectionsRoute({ params, searchParams }: CorrectionsRouteProps) {
   const { leagueId } = await params
   const query = await searchParams
-  return <CorrectionsPage leagueId={leagueId} initialWeek={weekFromParam(query.week)} />
+  redirect(correctionsHref(leagueId, weekFromParam(query.week)))
 }
