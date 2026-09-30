@@ -5,6 +5,7 @@ import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishEditLineupResult } from '@/lib/leagues/api/commish-lineup-service'
 
+import { commishLogKeys } from './use-commish-log'
 import { teamLineupKeys } from './use-lineup'
 import { leagueRosterKeys } from './use-rosters'
 
@@ -24,9 +25,10 @@ import { leagueRosterKeys } from './use-rosters'
  * The invalidation contract is `setLineupMutationOptions`': re-read BOTH the
  * week's lineup and the league's rosters on success AND on error (R822(i) —
  * a refusal means the VIEW the client evaluated was stale, which is the same
- * two entries either way). The override also writes `league_chat` and
- * `commissioner_actions`; neither is read by this surface, so neither is
- * invalidated here.
+ * two entries either way). The override also writes `commissioner_actions`,
+ * which League Home's commissioner section and the console's "needs you"
+ * read show, so the audit log's root is re-read too (L.E1.32 R1360); its
+ * `league_chat` post reaches the feed through the league channel.
  *
  * NOT optimistic and NOT retried, for the same reason the manager's mutation
  * is neither: the server returns the CANONICAL map (E16 may re-seat a
@@ -68,6 +70,10 @@ export function commishEditLineupMutationOptions(
   const reread = (teamId: string, week: number) => {
     void queryClient.invalidateQueries({ queryKey: teamLineupKeys.week(teamId, week) })
     void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
+    // The §10.3 receipt this wrote — the audit log, League Home's
+    // commissioner section and the console's "needs you" read, which
+    // lives under the log's root (L.E1.32 R1360).
+    void queryClient.invalidateQueries({ queryKey: commishLogKeys.all(leagueId) })
   }
   return {
     mutationFn: (variables: CommishEditLineupVariables) =>

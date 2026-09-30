@@ -5,6 +5,7 @@ import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 
+import { commishLogKeys } from './use-commish-log'
 import { leagueActivityKeys } from './use-league-activity'
 import { leagueMatchupKeys } from './use-matchups'
 import { leagueStandingsKeys } from './use-standings'
@@ -27,8 +28,10 @@ import { leagueStandingsKeys } from './use-standings'
  *
  * Invalidation on success AND on error (R822(i)): the WEEK's matchups (the
  * row this restated), the standings (a FINAL week rebuilds them in-body —
- * D344 — and an open week's projection reads the row) and the activity feed
- * (the §10.3 system post). A refusal means the view this client evaluated
+ * D344 — and an open week's projection reads the row), the activity feed
+ * (the §10.3 system post) and the audit log's root (the receipt — League
+ * Home's commissioner section and the console's "needs you" read; L.E1.32
+ * R1360). A refusal means the view this client evaluated
  * was stale — a re-read is how the server's answer reaches the screen.
  *
  * REASON is OPTIONAL (Q66, spec v2.16.41). Transitional: until L.E1.15
@@ -66,6 +69,10 @@ export function commishEditScoreMutationOptions(
     void queryClient.invalidateQueries({ queryKey: leagueMatchupKeys.week(leagueId, week) })
     void queryClient.invalidateQueries({ queryKey: leagueStandingsKeys.all(leagueId) })
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
+    // The §10.3 receipt this wrote — the audit log, League Home's
+    // commissioner section and the console's "needs you" read, which
+    // lives under the log's root (L.E1.32 R1360).
+    void queryClient.invalidateQueries({ queryKey: commishLogKeys.all(leagueId) })
   }
   return {
     retry: false,

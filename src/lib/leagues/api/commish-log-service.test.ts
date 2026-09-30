@@ -24,7 +24,10 @@ import {
   COMMISH_LOG_BAD_CURSOR_MESSAGE,
   COMMISH_LOG_DEFAULT_LIMIT,
   COMMISH_LOG_MAX_LIMIT,
+  COMMISH_LOG_MAX_TYPES,
+  COMMISH_LOG_UNKNOWN_TEAM_MESSAGE,
   commishLogQuerySchema,
+  commishLogTeamFilter,
   decodeCommishLogCursor,
   encodeCommishLogCursor,
   readCommishLog,
@@ -72,7 +75,7 @@ describe('commishLogQuerySchema', () => {
     expect(commishLogQuerySchema.safeParse({ limit: String(COMMISH_LOG_MAX_LIMIT + 1) }).success).toBe(false)
     expect(commishLogQuerySchema.safeParse({ limit: '0' }).success).toBe(false)
     expect(commishLogQuerySchema.safeParse({ limit: '1.5' }).success).toBe(false)
-    expect(commishLogQuerySchema.safeParse({ week: '3' }).success).toBe(false)
+    expect(commishLogQuerySchema.safeParse({ bogus: '3' }).success).toBe(false)
   })
 })
 
@@ -190,5 +193,120 @@ describe('readCommishLog', () => {
   it('a PostgREST error is a 500 with the driver’s message — never an empty log (rule 10)', async () => {
     const { client } = clientDouble({ member: true, readError: { message: 'relation exploded' } })
     expect(await readCommishLog(client, LEAGUE, {})).toStrictEqual({ status: 500, body: { error: 'relation exploded' } })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.E1.32 — the filters (type / team_id / week; D455)
+// ---------------------------------------------------------------------------
+
+describe('commishLogQuerySchema — the L.E1.32 filters', () => {
+  it('type: one slug or a comma-separated list, de-duplicated; a malformed slug, an empty list or more than the bound is refused', () => {
+    expect(commishLogQuerySchema.parse({ type: 'edit_score' }).type).toStrictEqual(['edit_score'])
+    expect(commishLogQuerySchema.parse({ type: 'edit_score,set_result,edit_score' }).type).toStrictEqual(['edit_score', 'set_result'])
+    const tooMany = Array.from({ length: COMMISH_LOG_MAX_TYPES + 1 }, (_, i) => `t${i}`).join(',')
+    for (const bad of ['Edit_Score', 'edit score', 'edit_score,', ',', 'edit-score', 'x'.repeat(65), tooMany]) {
+      expect(commishLogQuerySchema.safeParse({ type: bad }).success, bad).toBe(false)
+    }
+  })
+
+  it('team_id: a uuid, lower-cased (R768); anything else refused', () => {
+    expect(commishLogQuerySchema.parse({ team_id: 'C1180051-0000-4000-8000-000000000002' }).team_id).toBe('c1180051-0000-4000-8000-000000000002')
+    expect(commishLogQuerySchema.safeParse({ team_id: 'not-a-team' }).success).toBe(false)
+  })
+
+  it('week: the house week bound, 1–18, coerced from the query string', () => {
+    expect(commishLogQuerySchema.parse({ week: '7' }).week).toBe(7)
+    for (const bad of ['0', '19', '1.5', 'seven']) expect(commishLogQuerySchema.safeParse({ week: bad }).success, bad).toBe(false)
+  })
+})
+
+const TEAM = 'c1180051-0000-4000-8000-000000000002'
+
+/** A double that answers the team check and the log read separately and
+ *  records each chain. */
+function filterDouble(opts: { team?: 'of-this-league' | 'unknown' | 'error'; rows?: unknown[] }) {
+  const calls: Array<[string, unknown[]]> = []
+  const teamCalls: Array<[string, unknown[]]> = []
+  const chainOf = (sink: Array<[string, unknown[]]>, answer: () => { data: unknown; error: unknown }) => {
+    const proxy: Record<string, unknown> = new Proxy(
+      {},
+      {
+        get(_t, prop: string) {
+          if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(answer())
+          if (prop === 'maybeSingle') return async () => answer()
+          return (...args: unknown[]) => {
+            sink.push([prop, args])
+            return proxy
+          }
+        },
+      },
+    )
+    return proxy
+  }
+  const leaguesFrom = { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: { id: LEAGUE }, error: null }) }) }) }) }
+  const tables: string[] = []
+  const client = {
+    rpc: vi.fn(async () => ({ data: true, error: null })),
+    from: (table: string) => {
+      tables.push(table)
+      if (table === 'leagues') return leaguesFrom
+      if (table === 'teams') {
+        return chainOf(teamCalls, () =>
+          opts.team === 'error'
+            ? { data: null, error: { message: 'teams exploded' } }
+            : { data: opts.team === 'unknown' ? null : { id: TEAM }, error: null },
+        )
+      }
+      return chainOf(calls, () => ({ data: opts.rows ?? [], error: null }))
+    },
+  }
+  return { client: client as never, calls, teamCalls, tables }
+}
+
+describe('readCommishLog — the L.E1.32 filters on the ordered read', () => {
+  it('type ⇒ `action_type IN (…)`; week ⇒ `metadata->>week = N` (the week the verb recorded acting on); no team check without a team filter', async () => {
+    const { client, calls, tables } = filterDouble({})
+    const res = await readCommishLog(client, LEAGUE, { type: 'edit_score,set_result', week: '5' })
+    expect(res.status).toBe(200)
+    expect(calls).toContainEqual(['in', ['action_type', ['edit_score', 'set_result']]])
+    expect(calls).toContainEqual(['eq', ['metadata->>week', '5']])
+    expect(tables).not.toContain('teams')
+    expect((res.body as { filters: unknown }).filters).toStrictEqual({ type: ['edit_score', 'set_result'], team_id: null, week: 5 })
+  })
+
+  it('team_id ⇒ checked to be a team of THIS league first, then the three places a receipt names a team, as one `or` tree', async () => {
+    const { client, calls, teamCalls } = filterDouble({ team: 'of-this-league' })
+    const res = await readCommishLog(client, LEAGUE, { team_id: TEAM.toUpperCase() })
+    expect(res.status).toBe(200)
+    expect(teamCalls).toContainEqual(['eq', ['id', TEAM]])
+    expect(teamCalls).toContainEqual(['eq', ['league_id', LEAGUE]])
+    expect(calls).toContainEqual(['or', [commishLogTeamFilter(TEAM)]])
+    expect(commishLogTeamFilter(TEAM)).toBe(
+      'acting_as_team_id.eq.' + TEAM + ',and(target_type.eq.team,target_id.eq.' + TEAM + '),metadata->affected_team_ids.cs.["' + TEAM + '"]',
+    )
+    expect((res.body as { filters: unknown }).filters).toStrictEqual({ type: null, team_id: TEAM, week: null })
+  })
+
+  it('a team filter and a cursor are TWO `or` trees on the one read (both sent — the stack suite proves PostgREST ANDs them)', async () => {
+    const { client, calls } = filterDouble({ team: 'of-this-league' })
+    await readCommishLog(client, LEAGUE, { team_id: TEAM, cursor: encodeCommishLogCursor(T, ID_A) })
+    expect(calls.filter(([m]) => m === 'or').map(([, a]) => a[0])).toStrictEqual([activityCursorFilter(T, ID_A), commishLogTeamFilter(TEAM)])
+  })
+
+  it('another league’s (or an unknown) team is a 404 by name and the log is never read — never an empty log that says "nothing happened to it"', async () => {
+    const { client, calls } = filterDouble({ team: 'unknown' })
+    expect(await readCommishLog(client, LEAGUE, { team_id: TEAM })).toStrictEqual({ status: 404, body: { error: COMMISH_LOG_UNKNOWN_TEAM_MESSAGE } })
+    expect(calls).toStrictEqual([])
+    const failing = filterDouble({ team: 'error' })
+    expect(await readCommishLog(failing.client, LEAGUE, { team_id: TEAM })).toStrictEqual({ status: 500, body: { error: 'teams: teams exploded' } })
+  })
+
+  it('no filter ⇒ none applied, and the page says so', async () => {
+    const { client, calls } = filterDouble({})
+    const res = await readCommishLog(client, LEAGUE, {})
+    expect(calls.map(([m]) => m)).not.toContain('in')
+    expect(calls.find(([m, a]) => m === 'eq' && a[0] === 'metadata->>week')).toBeUndefined()
+    expect((res.body as { filters: unknown }).filters).toStrictEqual({ type: null, team_id: null, week: null })
   })
 })

@@ -248,7 +248,7 @@ describe('useCommishLog — the read hook’s query string', () => {
     expect(commishLogSearchParams({ limit: 5, cursor: 'tok' })).toBe('?limit=5&cursor=tok')
   })
 
-  it('its page key is a child of `all`, so one invalidation reaches every page', () => {
-    expect(commishLogKeys.page(LEAGUE, 'tok', 5).slice(0, 2)).toStrictEqual([...commishLogKeys.all(LEAGUE)])
+  it('its list key is a child of `all`, so one invalidation reaches every page (L.E1.32: an infinite query — the cursor is the page param, not the key)', () => {
+    expect(commishLogKeys.list(LEAGUE, { limit: 5 }).slice(0, 2)).toStrictEqual([...commishLogKeys.all(LEAGUE)])
   })
 })

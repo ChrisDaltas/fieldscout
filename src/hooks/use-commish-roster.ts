@@ -5,6 +5,7 @@ import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishRosterOverrideResult } from '@/lib/leagues/api/commish-roster-service'
 
+import { commishLogKeys } from './use-commish-log'
 import { leagueActivityKeys } from './use-league-activity'
 import { leaguePoolKeys } from './use-league-pool'
 import { teamLineupKeys } from './use-lineup'
@@ -19,7 +20,8 @@ import { leagueRosterKeys } from './use-rosters'
  * (D350). SEPARATE from `useAddDrop` (the manager's door, unchanged), NOT
  * optimistic, NOT retried (explicit `retry: false`), one `action_id` per
  * `submit()`, and the same views re-read on success AND on error (R822(i)):
- * the league's rosters and pool, the team's lineups, the activity feed. See
+ * the league's rosters and pool, the team's lineups, the activity feed, the
+ * audit log's root (L.E1.32 R1360). See
  * `use-commish-move-player.ts` for why.
  *
  * REASON is OPTIONAL (Q66). Transitional until L.E1.15 / F362: 127's in-body
@@ -51,6 +53,10 @@ export function commishForceAddDropMutationOptions(
     void queryClient.invalidateQueries({ queryKey: leaguePoolKeys.all(leagueId) })
     void queryClient.invalidateQueries({ queryKey: teamLineupKeys.all(teamId) })
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
+    // The §10.3 receipt this wrote — the audit log, League Home's
+    // commissioner section and the console's "needs you" read, which
+    // lives under the log's root (L.E1.32 R1360).
+    void queryClient.invalidateQueries({ queryKey: commishLogKeys.all(leagueId) })
   }
   return {
     retry: false,

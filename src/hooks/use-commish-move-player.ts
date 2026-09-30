@@ -5,6 +5,7 @@ import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishRosterOverrideResult } from '@/lib/leagues/api/commish-roster-service'
 
+import { commishLogKeys } from './use-commish-log'
 import { leagueActivityKeys } from './use-league-activity'
 import { leaguePoolKeys } from './use-league-pool'
 import { teamLineupKeys } from './use-lineup'
@@ -29,8 +30,9 @@ import { leagueRosterKeys } from './use-rosters'
  *
  * Invalidation on success AND on error (R822(i)): the league's rosters and
  * pool (the two views a move changes — D294's mirror), BOTH teams' lineups
- * (127 re-seats each — `lineups[]`), and the activity feed (the
- * `transactions` row + the §10.3 post).
+ * (127 re-seats each — `lineups[]`), the activity feed (the
+ * `transactions` row + the §10.3 post), and the audit log's root (the
+ * receipt — L.E1.32 R1360).
  *
  * REASON is OPTIONAL (Q66). Transitional until L.E1.15 / F362: 127's in-body
  * gate still answers a missing reason with a 400, surfaced verbatim.
@@ -62,6 +64,10 @@ export function commishMovePlayerMutationOptions(
     void queryClient.invalidateQueries({ queryKey: teamLineupKeys.all(fromTeamId) })
     void queryClient.invalidateQueries({ queryKey: teamLineupKeys.all(toTeamId) })
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
+    // The §10.3 receipt this wrote — the audit log, League Home's
+    // commissioner section and the console's "needs you" read, which
+    // lives under the log's root (L.E1.32 R1360).
+    void queryClient.invalidateQueries({ queryKey: commishLogKeys.all(leagueId) })
   }
   return {
     retry: false,

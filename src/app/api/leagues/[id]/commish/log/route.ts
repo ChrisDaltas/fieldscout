@@ -17,8 +17,11 @@ const idSchema = z.uuid()
  *
  *  Query: `limit` (≤ 100) · `cursor` (the opaque token a previous page's
  *  `next_cursor` handed back — the composite `(created_at, id)` boundary,
- *  R770). Only the params present are forwarded; the service refuses an
- *  unrecognized key or a malformed cursor by name.
+ *  R770) · M6 L.E1.32's filters: `type` (one `action_type` or a
+ *  comma-separated list) · `team_id` (a team of this league — rows that name
+ *  it) · `week` (rows whose verb recorded acting on that week). Only the
+ *  params present are forwarded; the service refuses an unrecognized key, a
+ *  malformed cursor or filter, and another league's team, by name.
  *
  *  Membership is asserted in the service before any read (R807): a
  *  non-member gets the in-season family's one no-leak 403, never an empty

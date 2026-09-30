@@ -65,6 +65,31 @@
  * over-fetch of `limit + 1`, and the page size is bounded far below
  * PostgREST's 1000-row cap.
  *
+ * **THE FILTERS (M6 L.E1.32; PROGRESS D455).** `type` / `team_id` / `week`
+ * narrow the log for the console and the Activity page (L.E1.33 / L.E1.34);
+ * each is a PostgREST filter on the same ordered read, so the cursor pages a
+ * filtered log exactly as it pages the whole one (a client-side filter would
+ * serve short pages and lie about `has_more`). What each one matches is what
+ * the receipts STORE — measured over every commissioner verb's real receipt
+ * (pgTAP 118's matrix world, 2026-09-30), never a guess:
+ *   - `type` — `action_type`, one value or a comma-separated list (≤ 25).
+ *     The vocabulary is not a CHECK (123:283), so any well-formed slug is
+ *     accepted; one that no receipt carries matches nothing.
+ *   - `team_id` — a team of THIS league (a foreign or unknown id is a 404 by
+ *     name, never an empty log). A row concerns the team when ANY of the
+ *     three places a receipt names a team holds it: `acting_as_team_id` (the
+ *     team the commissioner acted for, D451), `target_type = 'team'` with
+ *     `target_id` = the team (a lineup, a rename, autopilot, FAAB, a seat),
+ *     or `metadata.affected_team_ids` containing it (a score, a result, a
+ *     move, a trade, a draft pick, a schedule edit). A league-wide row (a
+ *     setting, the draft clock, an invite) names no team and is in no
+ *     team's log.
+ *   - `week` — `metadata.week`, the week the verb recorded it ACTED ON (a
+ *     score, a result, a lineup, a one-week schedule edit, a bracket
+ *     round). A row with no `metadata.week` (a trade, a roster move, a
+ *     setting) is in no week's log; `current_week` — the week it HAPPENED
+ *     in — is deliberately not read as "the week it was about".
+ *
  * No Date/random read anywhere in this file (the `src/lib/leagues/**`
  * ESLint fences): the cursor is the caller's, the ordering is the database's.
  */
@@ -74,6 +99,7 @@ import { z } from 'zod'
 import type { Database, Json } from '@/types/database'
 
 import { activityCursorFilter } from './activity-service'
+import { normalizedUuid } from './inseason-ids'
 import { assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
@@ -110,12 +136,41 @@ export function decodeCommishLogCursor(token: string): { before: string; beforeI
   return { before: tuple.data[0], beforeId: tuple.data[1] }
 }
 
+/** The most `action_type`s one `type` filter may name. */
+export const COMMISH_LOG_MAX_TYPES = 25
+
+/** The 404 for a `team_id` that is not one of this league's teams. */
+export const COMMISH_LOG_UNKNOWN_TEAM_MESSAGE = 'That team isn’t part of this league.'
+
+/** One `action_type` slug as the verbs write them (`edit_score`, `draft_pause`). */
+const ACTION_TYPE_SLUG = /^[a-z][a-z0-9_]{0,63}$/
+
+/** `type=edit_score,set_result` → the distinct slugs, each well-formed. */
+const typeFilterSchema = z
+  .string()
+  .min(1)
+  .max(COMMISH_LOG_MAX_TYPES * 65)
+  .transform((raw) => [...new Set(raw.split(',').map((t) => t.trim()))])
+  .refine((types) => types.length >= 1 && types.length <= COMMISH_LOG_MAX_TYPES, {
+    message: `Name between 1 and ${COMMISH_LOG_MAX_TYPES} action types.`,
+  })
+  .refine((types) => types.every((t) => ACTION_TYPE_SLUG.test(t)), {
+    message: 'Each action type is a lower-case word like edit_score.',
+  })
+
 /** Query-string shape. Values arrive as strings, so each is coerced
  *  explicitly rather than trusted. */
 export const commishLogQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(COMMISH_LOG_MAX_LIMIT).default(COMMISH_LOG_DEFAULT_LIMIT),
   /** The opaque token from a previous page's `next_cursor`. */
   cursor: z.string().min(1).max(512).optional(),
+  /** L.E1.32: only these `action_type`s (comma-separated). */
+  type: typeFilterSchema.optional(),
+  /** L.E1.32: only rows that name this team (see the header). */
+  team_id: normalizedUuid.optional(),
+  /** L.E1.32: only rows whose verb recorded acting on this week
+   *  (`metadata.week`) — the house week bound (matchups, box score). */
+  week: z.coerce.number().int().min(1).max(18).optional(),
 })
 export type CommishLogQuery = z.input<typeof commishLogQuerySchema>
 
@@ -137,12 +192,31 @@ export interface CommishLogItem {
   created_at: string
 }
 
+/** The filters a page was read with, echoed (null = not filtered). */
+export interface CommishLogAppliedFilters {
+  type: string[] | null
+  team_id: string | null
+  week: number | null
+}
+
 export interface CommishLogPage {
   items: CommishLogItem[]
   limit: number
+  /** L.E1.32: what this page is filtered by — the next page must be asked
+   *  for with the same filters and the `next_cursor`. */
+  filters: CommishLogAppliedFilters
   has_more: boolean
   /** Pass back as `cursor` for the next page; null when the log is done. */
   next_cursor: string | null
+}
+
+/**
+ * The team filter's PostgREST `or` tree: the three places a receipt names a
+ * team (the header's `team_id` paragraph). `teamId` is a validated,
+ * lower-cased uuid, so nothing in it can break out of the tree.
+ */
+export function commishLogTeamFilter(teamId: string): string {
+  return `acting_as_team_id.eq.${teamId},and(target_type.eq.team,target_id.eq.${teamId}),metadata->affected_team_ids.cs.["${teamId}"]`
 }
 
 /**
@@ -158,6 +232,9 @@ export async function readCommishLog(
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
   const { limit, cursor } = parsed.data
+  const types = parsed.data.type ?? null
+  const teamId = parsed.data.team_id ?? null
+  const week = parsed.data.week ?? null
 
   // A malformed cursor is refused BY NAME before any read — never demoted
   // to "no cursor", which would page from the top and look like a reset.
@@ -170,6 +247,19 @@ export async function readCommishLog(
   // refused by name, never handed an empty log.
   const refused = await assertLeagueMember(supabase, leagueId)
   if (refused) return refused
+
+  // A team filter names a team of THIS league, or it is refused by name —
+  // never answered with an empty log that reads as "nothing happened to it".
+  if (teamId !== null) {
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .select('id')
+      .eq('id', teamId)
+      .eq('league_id', leagueId)
+      .maybeSingle()
+    if (teamError) return { status: 500, body: { error: `teams: ${teamError.message}` } }
+    if (!team) return { status: 404, body: { error: COMMISH_LOG_UNKNOWN_TEAM_MESSAGE } }
+  }
 
   const fetchLimit = limit + 1
   let query = supabase
@@ -184,6 +274,12 @@ export async function readCommishLog(
   if (boundary) {
     query = query.or(activityCursorFilter(boundary.before, boundary.beforeId))
   }
+  // The filters (L.E1.32). A second `or` is ANDed with the cursor's — two
+  // separate PostgREST filter trees (proved on the stack: a filtered page
+  // walk serves each matching row exactly once).
+  if (types !== null) query = query.in('action_type', types)
+  if (teamId !== null) query = query.or(commishLogTeamFilter(teamId))
+  if (week !== null) query = query.eq('metadata->>week', String(week))
 
   const { data, error } = await query
   if (error) {
@@ -210,6 +306,7 @@ export async function readCommishLog(
   const page: CommishLogPage = {
     items,
     limit,
+    filters: { type: types, team_id: teamId, week },
     has_more: hasMore,
     next_cursor: hasMore && last ? encodeCommishLogCursor(last.created_at, last.id) : null,
   }

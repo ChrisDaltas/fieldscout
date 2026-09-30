@@ -222,6 +222,7 @@ const logItem = (over: Partial<CommishLogItem> & Pick<CommishLogItem, 'id'>): Co
 /** One row per verb's receipt shape, as the migrations write them (131). */
 const LOG: CommishLogPage = {
   limit: 8,
+  filters: { type: null, team_id: null, week: null },
   has_more: false,
   next_cursor: null,
   items: [
@@ -261,9 +262,12 @@ function renderHome(seed: Seed = {}): string {
   else if (feed !== 'missing') qc.setQueryData(leagueActivityKeys.feed(LEAGUE, { limit: 8 }), feed)
 
   const log = seed.log ?? LOG
-  if (log === 'error') failQuery(qc, commishLogKeys.page(LEAGUE, undefined, 8), new Error('commissioner_actions: boom'))
-  else if (log === 'degraded') failQuery(qc, commishLogKeys.page(LEAGUE, undefined, 8), new Error('refetch failed'), LOG)
-  else if (log !== 'missing') qc.setQueryData(commishLogKeys.page(LEAGUE, undefined, 8), log)
+  // L.E1.32: the log is an infinite query — League Home reads `pages[0]`.
+  const logKey = commishLogKeys.list(LEAGUE, { limit: 8 })
+  const pagesOf = (page: CommishLogPage) => ({ pages: [page], pageParams: [undefined] })
+  if (log === 'error') failQuery(qc, logKey, new Error('commissioner_actions: boom'))
+  else if (log === 'degraded') failQuery(qc, logKey, new Error('refetch failed'), pagesOf(LOG))
+  else if (log !== 'missing') qc.setQueryData(logKey, pagesOf(log))
 
   qc.setQueryData(statsDegradedKeys.flag(), seed.flag ?? FLAG_OK)
 
