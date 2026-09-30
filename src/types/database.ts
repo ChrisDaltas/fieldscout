@@ -5633,6 +5633,22 @@ export type Database = {
         Args: { p_draft_id: string; p_reason?: string }
         Returns: Json
       }
+      draft_commish_receipt_internal: {
+        Args: {
+          p_acting_as_team_id?: string
+          p_action_type: string
+          p_after: Json
+          p_before: Json
+          p_is_mock: boolean
+          p_league_id: string
+          p_metadata: Json
+          p_reason: string
+          p_target_id: string
+          p_target_type: string
+          p_verb: string
+        }
+        Returns: string
+      }
       draft_complete_internal: {
         Args: { p_draft_id: string; p_now?: string }
         Returns: {
