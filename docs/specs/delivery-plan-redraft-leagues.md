@@ -93,7 +93,7 @@ Maps spec §18 Phases A–F onto milestones with the v2.0 work slotted in. **Pre
 | Unit + property | Vitest + fast-check | scoring math (vs Appendix B fixtures), snake/3RR order, max-bid & solvency, FAAB resolution, bipartite slot-fit, tiebreaker chains, median/second results, schedule invariants (§11.7) — property tests over random seeds/team counts | every commit |
 | DB (pgTAP) | supabase test | every RLS policy per role incl. non-member + blind-bid privacy; unique/exclusion constraints (E1, E8, matchup uniqueness); audit immutability incl. backstop trigger; RPC authorization *inside* functions | every commit |
 | Integration | Vitest + local supabase | RPC flows end-to-end (pick race, undo cascade, trade execute, waiver run, remix confirm), idempotency replays, correction recompute honoring overrides | every commit |
-| E2E | Playwright | full snake draft, full auction, disconnect/reconnect, commissioner override flows incl. illegal-lineup, a scored week, waiver morning, trade lifecycle, Remix preview/confirm | merge to main + nightly |
+| E2E | Playwright | full snake draft, full auction, disconnect/reconnect, commissioner override flows ~~incl. illegal-lineup~~ (the illegal-lineup flow was dropped — spec v2.16.77, PROGRESS Q83), a scored week, waiver morning, trade lifecycle, Remix preview/confirm | merge to main + nightly |
 | **League Simulator** | custom harness (the crown jewel) | see §4.2 | nightly + milestone gates |
 | Load/chaos | k6 + fault injection | §22.6 suite; kill realtime mid-draft; delay/duplicate provider rows; crash a worker mid-batch | weekly + M7 gate |
 
