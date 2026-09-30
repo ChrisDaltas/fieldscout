@@ -86,13 +86,16 @@ select has_index('public', 'commissioner_actions', 'idx_commish_actions_league',
 
 select is((select rowsecurity from pg_tables where schemaname = 'public' and tablename = 'commissioner_actions'), true,
   'RLS enabled on commissioner_actions');
+-- RE-CUT by migration 175 (F555): 123's client INSERT policy is DROPPED and
+-- INSERT is REVOKEd from anon / authenticated — a receipt is written only by
+-- a verb (as the owner). pgTAP 123 owns the full census and the refusals.
 select policies_are('public', 'commissioner_actions',
-  array['Audit log readable by all league members', 'Only commish can append'],
-  'EXACTLY two policies — the member SELECT and the commissioner INSERT. The ABSENCE of UPDATE and DELETE policies IS §12.12''s immutability (spec:1205); a third policy here is a defect');
+  array['Audit log readable by all league members'],
+  'EXACTLY one policy since 175 (F555) — the member SELECT. The ABSENCE of UPDATE and DELETE policies IS §12.12''s immutability (spec:1205), and the absence of an INSERT policy means only a verb writes a receipt; a second policy here is a defect');
 select policy_cmd_is('public', 'commissioner_actions', 'Audit log readable by all league members', 'SELECT',
   'the read policy is SELECT — visible to ALL members (§10.3:702 transparency), not commissioner-only');
-select policy_cmd_is('public', 'commissioner_actions', 'Only commish can append', 'INSERT',
-  'the write policy is INSERT only (§12.12:1208)');
+select is((select count(*)::int from pg_policy where polrelid = 'public.commissioner_actions'::regclass and polcmd in ('a', 'w', 'd', '*')), 0,
+  'NO client write policy of any command on the audit log since 175 (F555 — 123''s INSERT policy dropped; was: the write policy is INSERT only)');
 
 -- The backstop RLS cannot provide. R616 (104:489): a trigger at the default
 -- tgenabled='O' is SKIPPED under session_replication_role='replica' — the mode
@@ -292,11 +295,12 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select is((select count(*)::int from commissioner_actions), 1,
   'the COMMISSIONER reads the audit log (the SELECT-sees-N premise)');
-select lives_ok(
+select throws_ok(
   $$ insert into commissioner_actions (league_id, actor_id, action_type, reason)
      values ('b4000000-0000-4000-8000-000000000001', '94000000-0000-4000-8000-000000000001', 'change_setting', 'client append') $$,
-  '§12.12:1208''s INSERT policy: a commissioner MAY append directly (the spec names this policy, so it ships — delivery plan §8.2)');
-select is((select count(*)::int from commissioner_actions), 2, '…and the appended row is there');
+  '42501', 'permission denied for table commissioner_actions',
+  'RE-CUT by 175 (F555): a commissioner may NOT append directly — his client holds no INSERT; a receipt is written only by a verb');
+select is((select count(*)::int from commissioner_actions), 1, '…and nothing was appended (the seed row only)');
 -- IMMUTABLE to the commissioner: no UPDATE and no DELETE policy exists, so
 -- the rows are not even visible to the statement — 0 rows affected, no error.
 -- (A data-modifying CTE is legal only at the top level of a statement, so the
@@ -315,12 +319,12 @@ select is((select reason from commissioner_actions where id = 'a4000000-0000-400
   '…and the row is untouched');
 
 select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000004", "role": "authenticated"}', true);
-select is((select count(*)::int from commissioner_actions), 2,
+select is((select count(*)::int from commissioner_actions), 1,
   'a league member with NO team reads the audit log — §10.3:702 visibility is MEMBER, not commissioner');
 select throws_ok(
   $$ insert into commissioner_actions (league_id, actor_id, action_type, reason)
      values ('b4000000-0000-4000-8000-000000000001', '94000000-0000-4000-8000-000000000004', 'edit_score', 'not mine') $$,
-  '42501', null, 'a non-commissioner member cannot append (the INSERT policy''s is_league_commish half)');
+  '42501', null, 'a non-commissioner member cannot append (since 175 no client role holds INSERT — F555)');
 
 select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
 select is((select count(*)::int from commissioner_actions), 0, 'an OUTSIDER reads nothing (is_league_member)');
@@ -330,7 +334,7 @@ select is((select count(*)::int from commissioner_actions), 0, 'anon reads nothi
 reset role;
 
 -- THE OWNER HALF — the claim RLS cannot make, and the break probe's target.
-select is((select count(*)::int from commissioner_actions), 2, 'postgres sees both rows (the SELECT-sees-N premise for the owner cells)');
+select is((select count(*)::int from commissioner_actions), 1, 'postgres sees the seed row (the SELECT-sees-N premise for the owner cells; 175 — the client append no longer lands)');
 select throws_ok(
   $$ update commissioner_actions set reason = 'tampered by the owner' where id = 'a4000000-0000-4000-8000-00000000000f' $$,
   'P0001', null,
@@ -339,7 +343,7 @@ select throws_ok(
   $$ delete from commissioner_actions where id = 'a4000000-0000-4000-8000-00000000000f' $$,
   'P0001', null,
   'OWNER HALF: a DELETE as the TABLE OWNER is REFUSED by the same trigger (§12.12: "undoing" an override is a NEW row, never an edit)');
-select is((select count(*)::int from commissioner_actions), 2, '…and nothing moved');
+select is((select count(*)::int from commissioner_actions), 1, '…and nothing moved');
 
 -- TRUNCATE — the same hole one operation over (R967). A FOR EACH ROW trigger
 -- never fires for TRUNCATE and RLS does not apply to it at all, and Supabase's

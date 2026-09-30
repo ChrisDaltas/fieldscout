@@ -29,9 +29,13 @@
  * differently from "not a member".
  *
  * **A ROW IS A CLAIM, NOT PROOF A VERB RAN (tasks-M6A §9 C70).** `123:335`
- * ships a client INSERT policy (`is_league_commish(league_id) AND actor_id
- * = auth.uid()`), so a commissioner's own client can append a row that no
- * verb wrote. What a row proves is that a commissioner CLAIMED an action;
+ * shipped a client INSERT policy (`is_league_commish(league_id) AND actor_id
+ * = auth.uid()`), so a commissioner's own client could append a row that no
+ * verb wrote. Migration 175 (F555, PROGRESS D466) drops it and revokes the
+ * client INSERT, so a row written since is a verb's — but rows appended
+ * before stay (the log is immutable), and a database not yet at 175 still
+ * takes them, so this read keeps treating every row as a claim. What a row
+ * proves is that a commissioner CLAIMED an action;
  * what proves a verb ran is the verb's OWN state (the matchup's
  * `override_action_id`, the roster row, the team's name) and its replay
  * ledger. This endpoint therefore renders rows as they are and adds NO
@@ -99,8 +103,9 @@
  * people still in it — and the manager a takeover, a vacate or a retirement
  * REMOVED is by definition no longer there, so the log could never say who
  * left. Each item therefore carries `usernames`, resolved under three rules
- * that exist because a row is a CLAIM (C70 — a commissioner's client can
- * INSERT any receipt it likes, `123:335`; F555):
+ * that exist because a row is a CLAIM (C70 — a commissioner's client could
+ * INSERT any receipt it liked through `123:335` until migration 175, F555,
+ * and those rows stay):
  *   - ONLY THE KEYS THE WORDS READ (R1424): `RECEIPT_PEOPLE_KEYS`, per
  *     `action_type` — the `member(…)` reads of `commish-log-copy.ts`, pinned
  *     by a parity cell — so a forged row stuffed with hundreds of

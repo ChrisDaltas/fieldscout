@@ -21,6 +21,10 @@
  *     its receipt; the D97 post it also wrote folds into it — and the log
  *     names each removal (retire / vacate / takeover) with the manager who
  *     left, although he is no longer in the league's member list.
+ *   - F555 (migration 175): the commissioner's own client cannot append a
+ *     receipt at all (42501 by name, nothing written); the log read's
+ *     hardening against a forged row is still proven, on a row planted as
+ *     the service role (a legacy or out-of-band row).
  *
  * Requires the local stack — D59(5); FAILS loudly when the stack is down,
  * never skips (§4.3). No clock or random read anywhere here.
@@ -361,13 +365,37 @@ describe('F549 — one line per retirement; the removal receipts in words', () =
     expect(lines.every((l) => plainText(l.marked) === l.text)).toBe(true)
   })
 
-  it('R1424 / R1425: a receipt a commissioner’s client forged (123:335) — 400+ user-id keys, naming an outsider — leaves the log readable (200) and names no outsider', async () => {
+  it('F555 (migration 175): the commissioner’s own client can NOT append a receipt — refused 42501 by name, nothing written', async () => {
+    const count = async () => {
+      const { count: n, error } = await service.from('commissioner_actions').select('id', { count: 'exact', head: true }).eq('league_id', leagueId)
+      if (error) throw new Error(`count receipts: ${error.message}`)
+      return n
+    }
+    const before = await count()
+    expect(before, 'the league already holds the removals’ receipts (the count is not vacuous)').toBeGreaterThan(0)
+    const { data, error } = await commishClient
+      .from('commissioner_actions')
+      .insert({
+        league_id: leagueId, actor_id: commishId, action_type: 'replace_manager', target_type: 'team', target_id: teamB,
+        before: { manager_user_id: ids.outsider }, after: { manager_user_id: ids.d }, metadata: { team_name: 'MRET T3' },
+      })
+      .select('id')
+      .single()
+    expect(data).toBeNull()
+    expect([error?.code, error?.message]).toEqual(['42501', 'permission denied for table commissioner_actions'])
+    expect(await count(), 'nothing was written').toBe(before)
+  })
+
+  it('R1424 / R1425: a forged receipt already in the log (a pre-175 client append, or an out-of-band row — planted here as the service role) — 400+ user-id keys, naming an outsider — leaves the log readable (200) and names no outsider', async () => {
     const stuffed = Object.fromEntries(Array.from({ length: 420 }, (_, n) => [`k${n}_user_id`, `ab000000-0000-4000-8000-${String(n).padStart(12, '0')}`]))
     // THE PREMISE (a): 400 ids in ONE `.in` is refused by PostgREST (the URL is too long) — the old read's shape.
     const { error: tooLong } = await service.from('profiles').select('id').in('id', Object.values(stuffed).slice(0, 400))
     expect(tooLong, 'a 400-id .in must fail, or this cell proves nothing').not.toBeNull()
-    // THE PREMISE (b): the commissioner's own client can append a receipt no verb wrote (C70).
-    const { data: forged, error: forgeError } = await commishClient
+    // THE PREMISE (b): such a row exists. Since 175 (F555) no client can
+    // write one, but rows appended through 123:335's policy before the push
+    // stay (the log is immutable) — so the read's hardening still has to
+    // hold. The service role bypasses RLS and keeps INSERT (pgTAP 123 A4).
+    const { data: forged, error: forgeError } = await service
       .from('commissioner_actions')
       .insert({
         league_id: leagueId, actor_id: commishId, action_type: 'replace_manager', target_type: 'team', target_id: teamB,

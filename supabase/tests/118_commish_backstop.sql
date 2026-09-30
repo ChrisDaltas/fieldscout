@@ -1654,7 +1654,9 @@ select lives_ok(
 create temp table _polv (tbl text, pol text, verdict text not null, why text not null, primary key (tbl, pol));
 insert into _polv values
   -- league state, each with how it stays honest
-  ('public.commissioner_actions', 'Only commish can append',              'the log itself',   'the audit log §12.12 prints — a row written this way is attributed to its writer (actor_id = auth.uid()) and changes no state'),
+  -- (175 / F555: 123's "Only commish can append" is DROPPED and INSERT
+  --  REVOKEd — a receipt is written only by a verb, so the audit log has no
+  --  client write policy left and no verdict here; pgTAP 123 pins it.)
   ('public.draft_dnd_marks',      'Own DND marks',                        'own act',          'a user own do-not-draft marks, visible to him alone'),
   ('public.draft_queues',         'Own queue write',                      'own act',          'a manager own draft queue — the commissioner sets another team queue through draft_queue_replace, which writes his receipt (171, F521); BUT the owner arm reads teams.owner_id, so a commissioner who owns a placeholder or vacated team row writes that queue straight through this policy with no receipt — a named receipt bypass, F525 (R1339)'),
   ('public.league_chat',          'Members post their own chat',          'own act',          'a member own chat post (is_system false, bounded) — never a system or commissioner post'),
@@ -1728,7 +1730,7 @@ select is(
   (select string_agg(v.tbl || '.' || v.pol || ':' || s.cmd || '=' || v.verdict, ' | ' order by v.tbl, v.pol)
    from _polv v join _polscan s on s.tbl = v.tbl and s.pol = v.pol
    where v.verdict <> 'not league state'),
-  'public.commissioner_actions.Only commish can append:a=the log itself | public.draft_dnd_marks.Own DND marks:*=own act | '
+  'public.draft_dnd_marks.Own DND marks:*=own act | '
   || 'public.draft_queues.Own queue write:*=own act | public.league_chat.Members post their own chat:a=own act | '
   || 'public.league_lists.Members manage their own attachments:*=own act | '
   || 'public.scoring_systems.Users can manage own scoring systems:*=guarded by 170 | '
@@ -1736,14 +1738,14 @@ select is(
   || 'public.teams.Users can update own standalone teams:w=standalone only | '
   || 'storage.objects.league-avatars commish delete:d=cosmetic (F522) | storage.objects.league-avatars commish insert:a=cosmetic (F522) | '
   || 'storage.objects.league-avatars commish update:w=cosmetic (F522)',
-  'Q13 THE LEAGUE-STATE VERDICTS (stored literal): twelve client write policies touch league state, each with how — none a commissioner route without a receipt');
+  'Q13 THE LEAGUE-STATE VERDICTS (stored literal): eleven client write policies touch league state, each with how — none a commissioner route without a receipt (175 / F555: the audit log INSERT policy is gone)');
 select is(
   (select format('%s|%s', count(*) filter (where verdict = 'not league state'),
-                 count(*) filter (where verdict not in ('the log itself', 'own act', 'not league state', 'guarded by 170', 'standalone only', 'cosmetic (F522)')
+                 count(*) filter (where verdict not in ('own act', 'not league state', 'guarded by 170', 'standalone only', 'cosmetic (F522)')
                                      or length(why) < 20))
    from _polv),
   '38|0',
-  'Q14 thirty-eight policies are outside any league (lists, social, research, own files), and every verdict is one of the six named kinds with a reason');
+  'Q14 thirty-eight policies are outside any league (lists, social, research, own files), and every verdict is one of the five named kinds with a reason (175 / F555: the log itself kind retired with its policy)');
 
 select * from finish();
 rollback;
