@@ -5830,6 +5830,7 @@ export type Database = {
           p_draft_id: string
           p_nomination_seq?: number
           p_player_id?: string
+          p_team_id?: string
         }
         Returns: Json
       }

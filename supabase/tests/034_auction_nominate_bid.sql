@@ -144,9 +144,12 @@ select plan(96);
 select has_function('public', 'draft_nominate',
   array['uuid', 'text', 'integer', 'uuid'],
   'draft_nominate(uuid,text,integer,uuid) exists — §8.6.2''s action verb');
+-- RE-CUT by 171 (L.E1.38, F521): the signature gained a third optional
+-- trailing argument, p_team_id (the commissioner's door); the five-argument
+-- form no longer exists, so the three cells naming it name the new one.
 select has_function('public', 'draft_place_bid',
-  array['uuid', 'integer', 'uuid', 'integer', 'text'],
-  'draft_place_bid(uuid,integer,uuid,integer,text) exists — §8.6.3''s action verb, with the R330 nomination-identity pair (p_nomination_seq, p_player_id) as the two OPTIONAL trailing arguments');
+  array['uuid', 'integer', 'uuid', 'integer', 'text', 'uuid'],
+  'draft_place_bid(uuid,integer,uuid,integer,text,uuid) exists — §8.6.3''s action verb, with the R330 nomination-identity pair (p_nomination_seq, p_player_id) and 171''s p_team_id as the OPTIONAL trailing arguments');
 select ok(
   (select count(*) = 2 and bool_and(p.prosecdef)
       and bool_and(array_to_string(p.proconfig, ',') = 'search_path=""')
@@ -156,11 +159,11 @@ select ok(
   'both are SECURITY DEFINER with the exact spec-form SET search_path = '''' (R70) — they write append-only draft_bids rows that carry NO client write policy (083)');
 select ok(
   not has_function_privilege('anon', 'public.draft_nominate(uuid,text,integer,uuid)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_place_bid(uuid,integer,uuid,integer,text)', 'EXECUTE'),
+  and not has_function_privilege('anon', 'public.draft_place_bid(uuid,integer,uuid,integer,text,uuid)', 'EXECUTE'),
   'anon holds EXECUTE on neither (the REVOKE … FROM PUBLIC, anon half of the doctrine)');
 select ok(
   has_function_privilege('authenticated', 'public.draft_nominate(uuid,text,integer,uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.draft_place_bid(uuid,integer,uuid,integer,text)', 'EXECUTE'),
+  and has_function_privilege('authenticated', 'public.draft_place_bid(uuid,integer,uuid,integer,text,uuid)', 'EXECUTE'),
   '…and authenticated KEEPS it — these are the room''s own verbs (the draft_make_pick posture), reached through L.C2.1''s routes');
 select ok(
   (select p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=""'

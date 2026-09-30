@@ -8,12 +8,18 @@
 -- exercised inside one rolled-back pgTAP txn; the concurrency face is pinned
 -- at the wire in `draft-queue-api-db.test.ts` (parallel volleys, both faces)
 -- and proven under load by the L.B6.1 sim's chaos persona, 92 → 0):
---   * Shape: SECURITY INVOKER — DELIBERATE and load-bearing (the ONE draft
---     RPC that is not DEFINER: `draft_queues` is the §12.6 client-writable
---     table and 065's policies are the auth law; running as invoker keeps
---     the RLS backstop live inside the function). prosecdef = false is a
---     GOLDEN pin — flipping the function to DEFINER without re-deriving the
---     policy law in-body would be a silent privilege widening.
+--   * Shape: SECURITY INVOKER as built here (082) — then 171 (L.E1.38,
+--     F521) made it DEFINER: the commissioner's arm writes a receipt through
+--     a seam no client may call, so the in-body guard is now the whole
+--     auth law. The guard re-derived 065's two queue-policy arms (stricter
+--     by the league conjunct), but under INVOKER both arms also ran behind
+--     the drafts read policy (a league member, or a league-less mock's
+--     launcher); DEFINER drops that, so 171 re-states it in the body (R1338
+--     — without it a user who LEFT the league, still teams.owner_id or
+--     still a league mock's launcher, was admitted). The golden pin below
+--     moved with it, re-cut NAMED in 171's PR; every other admit / refusal
+--     cell here is unchanged and still green, and pgTAP 119 pins the new arm
+--     and the non-member refusals (Q22a / Q22b).
 --   * search_path pinned to '' (the 004 doctrine, invoker or not).
 --   * ACL: anon has NO execute; authenticated + service_role do; PUBLIC
 --     revoked (execute as a random OTHER role fails).
@@ -62,8 +68,8 @@ select is(
   (select p.prosecdef from pg_proc p
    join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'draft_queue_replace'),
-  false,
-  'SECURITY INVOKER — deliberate (the 065 policies stay the auth law; golden pin)');
+  true,
+  'SECURITY DEFINER since 171 (F521 — the in-body guard is the auth law; golden pin, re-cut from INVOKER)');
 
 select is(
   (select count(*) from pg_proc p
@@ -302,13 +308,20 @@ select is(
     {"player_id": "pgtap-qr-p4", "rank": 2}]'::jsonb,
   'the mock launcher replaces the human seat''s queue (D103(3) arm)');
 
--- ...and u1 on the REAL draft may only write HIS OWN seat: t2 is refused.
-select throws_ok(
-  $$ select draft_queue_replace(
-       'e1000000-0000-4000-8000-000000000001', 'c2000000-0000-4000-8000-000000000002',
-       array['pgtap-qr-p1']) $$,
-  '42501', 'You do not manage this queue.',
-  'the commissioner is NOT special here: another manager''s real-draft queue refused');
+-- ...and u1 on the REAL draft: until 171 he could write only HIS OWN seat
+-- (t2 was refused 42501).
+-- RE-CUT by 171 (L.E1.38, F521 — standing rule (a)): this cell pinned the
+-- defect ("the commissioner is NOT special here"). u1 commissions L1, so his
+-- arm now ADMITS him on t2's real-draft queue; he writes the queue it
+-- already holds (a no-op — nothing receipted, pgTAP 119 Q4), leaving H's
+-- reads below exactly as before.
+select is(
+  draft_queue_replace(
+    'e1000000-0000-4000-8000-000000000001', 'c2000000-0000-4000-8000-000000000002',
+    array['pgtap-qr-p1', 'pgtap-qr-p4']),
+  '[{"player_id": "pgtap-qr-p1", "rank": 1},
+    {"player_id": "pgtap-qr-p4", "rank": 2}]'::jsonb,
+  'the commissioner arm (171): another manager''s real-draft queue is admitted for the league commissioner');
 
 -- The real-draft owner arm still works for u1's own seat.
 select is(

@@ -130,8 +130,9 @@ select ok(
 select ok(
   not has_function_privilege('anon', 'public.draft_nominate(uuid, text, integer, uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.draft_nominate(uuid, text, integer, uuid)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.draft_place_bid(uuid, integer, uuid, integer, text)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.draft_place_bid(uuid, integer, uuid, integer, text)', 'EXECUTE')
+  -- RE-CUT by 171 (L.E1.38, F521): the signature gained p_team_id.
+  and not has_function_privilege('anon', 'public.draft_place_bid(uuid, integer, uuid, integer, text, uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.draft_place_bid(uuid, integer, uuid, integer, text, uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb, integer)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.create_mock_draft(uuid, uuid, text, uuid, jsonb, integer)', 'EXECUTE'),
   'the three replaced RPCs keep their posture: anon none, authenticated EXECUTE (CREATE OR REPLACE preserved the ACLs; the REVOKEs restated)');
