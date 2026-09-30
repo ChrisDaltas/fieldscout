@@ -684,6 +684,9 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
   // any member). Re-read by every commissioner mutation hook on settle; a
   // row is a claim, not proof a verb ran (C70 — `use-commish-log.ts`).
   const log = useCommishLog(leagueId, { limit: COMMISH_LOG_HOME_LIMIT })
+  // League Home shows the newest page only (L.E1.32: the log is an infinite
+  // query; the Activity page is the one that calls `fetchNextPage`).
+  const newest = log.data?.pages[0]
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
   return (
     <ActivityFeed
@@ -695,11 +698,11 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
       teamNames={teamNames}
       leagueTimeZone={data.settings.draft.time_zone ?? null}
       commishLog={{
-        items: log.data?.items,
+        items: newest?.items,
         pending: log.isPending,
         problem: log.isError ? log.error : null,
         onRetry: () => log.refetch(),
-        hasMore: log.data?.has_more ?? false,
+        hasMore: newest?.has_more ?? false,
       }}
     />
   )
