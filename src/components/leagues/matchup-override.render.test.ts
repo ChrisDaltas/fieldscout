@@ -299,8 +299,10 @@ describe('the ✸ Adjusted marker is present EXACTLY when `is_overridden` is (th
     expect(clean).not.toContain('✸')
 
     const selected = renderPage({ week: weekDoc({ matchups: [{ ...M1, is_overridden: true }, M2] }) })
-    expect([...selected.matchAll(/data-overridden/g)]).toHaveLength(1)
+    expect([...selected.matchAll(/data-overridden=/g)]).toHaveLength(1)
     expect(between(selected, 'data-matchup="m1"', 'data-side=')).toContain('✸ Adjusted')
+    // L.E1.34 (F233(d), §10.3): the ✸ lands on the log — this week, this matchup's teams.
+    expect(between(selected, 'data-matchup="m1"', 'data-side=')).toMatch(/data-overridden-link="true" href="\/app\/leagues\/[^"]+\/activity\?tab=commissioner&week=\d+&team=[^"]+"/)
     expect(between(selected, 'data-matchup-row="m2"', '</a>')).not.toContain('✸')
 
     const other = renderPage({ week: weekDoc({ matchups: [M1, { ...M2, is_overridden: true }] }) })

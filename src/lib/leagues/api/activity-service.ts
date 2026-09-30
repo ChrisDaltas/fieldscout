@@ -47,11 +47,9 @@
  * over-fetch — the feed never infers "that was everything" from a result set
  * that happens to be short.
  *
- * The M6 enrichment (rendering a commissioner action with the "✸
- * commissioner" treatment and linking it to its audit entry) needs
- * `commissioner_actions`, which does not exist — the task text says so
- * outright. `kind`/`type`/`context` ride on every item so the UI can label
- * today and link later.
+ * The M6 enrichment (the "✸ commissioner" treatment linking to its audit
+ * entry) landed with L.E1.34: every item carries `commish_action_id`, the
+ * receipt its act wrote (see `readActivity` / `attachReceipts`).
  *
  * **The cursor is COMPOSITE — `(created_at, id)`, never the instant alone
  * (R770).** The feed orders by `(created_at DESC, id DESC)`, so an instant
@@ -93,6 +91,32 @@ export const TRANSACTION_TYPES = [
  *  context grammar; the draft room's is `draft:<draft_id>`). */
 export const LEAGUE_CHAT_CONTEXT = 'league'
 
+/** M6 L.E1.34: the feed's topics (the Activity page's Trades tab). */
+export const ACTIVITY_TOPICS = ['trades'] as const
+export type ActivityTopic = (typeof ACTIVITY_TOPICS)[number]
+
+/**
+ * M6 L.E1.34 (Q84 / F463): the executed trade's SECOND line. Every path that
+ * executes a trade (151 / 153's `trade_execute_internal`, 156's) writes ONE
+ * `transactions` row AND a NULL-actor league post opening with this literal,
+ * in the same transaction; the feed shows the transaction's line ("completed
+ * a trade: …") and never this post. Excluded in SQL — so a page's size and
+ * `has_more` stay measured, never thinned after the read. The actor check
+ * keeps a commissioner post that happens to open with the words (a team
+ * renamed to them) in the feed (R1349's rule: a system post nobody wrote
+ * opens with a fixed literal; every commissioner post carries its actor).
+ * `activity-service.test.ts` reads 151 / 153 / 156 and fails if the literal
+ * and the migrations ever part.
+ */
+export const TRADE_COMPLETED_POST_PREFIX = 'Trade completed: '
+/** The league-vote veto's post (155, NULL actor) — a Trades-tab line. */
+export const TRADE_VOTE_VETO_POST_PREFIX = 'Trade vetoed by league vote: '
+
+/** The PostgREST tree that keeps every post EXCEPT the executed trade's (see above). */
+export const NOT_TRADE_COMPLETED_POST_FILTER = `user_id.not.is.null,message.not.like."${TRADE_COMPLETED_POST_PREFIX}*"`
+/** The Trades tab's transactions: a trade that went through, and a reversal. */
+export const TRADE_TRANSACTIONS_FILTER = 'type.eq.trade,and(type.eq.commissioner_move,payload->>kind.eq.trade_reversal)'
+
 /** Page size ceiling. PostgREST's default row cap on this stack is 1000
  *  (the CLAUDE.md "exactly 1000 rows looked like the whole table" rule): a
  *  100-row ceiling means the over-fetch of `limit + 1` per source can never
@@ -108,6 +132,11 @@ export const ACTIVITY_DEFAULT_LIMIT = 50
  */
 export const activityQuerySchema = z.strictObject({
   kind: z.enum(['all', 'transaction', 'system']).default('all'),
+  /** M6 L.E1.34 (Q84): `trades` — only the trades that went through, were
+   *  vetoed or were reversed, one line each (see `readActivity`). Stands
+   *  alone: it is its own filter, so a `type`, `week` or `team_id` beside it
+   *  is refused by name rather than half-applied. */
+  topic: z.enum(ACTIVITY_TOPICS).optional(),
   /** Comma-separated `transactions.type` values; absent = every type. */
   type: z
     .string()
@@ -133,6 +162,10 @@ export const activityQuerySchema = z.strictObject({
     message: 'before_id needs the before instant it belongs to.',
     path: ['before_id'],
   })
+  .refine((query) => query.topic === undefined || (query.type === undefined && query.week === undefined && query.team_id === undefined), {
+    message: 'topic is its own filter — it can’t be combined with type, week or team_id.',
+    path: ['topic'],
+  })
 export type ActivityQuery = z.input<typeof activityQuerySchema>
 
 export interface TransactionActivityItem {
@@ -146,6 +179,12 @@ export interface TransactionActivityItem {
   actor_id: string | null
   action_id: string | null
   payload: Json
+  /** M6 L.E1.34 (F233(d)): the §10.3 receipt this row's act wrote — the
+   *  row's own `related_action_id` (a commissioner's move), else the receipt
+   *  written in the same transaction (a trade he forced or approved); null
+   *  when none. Optional only so older fixtures stay valid — the read always
+   *  sets it. */
+  commish_action_id?: string | null
 }
 
 export interface SystemActivityItem {
@@ -161,6 +200,11 @@ export interface SystemActivityItem {
   topic: SystemPostTopic | null
   /** The NFL week a stat-correction post names; `null` for every other post. */
   week: number | null
+  /** M6 L.E1.34 (F233(d)): the §10.3 receipt written in the same transaction
+   *  by the post's actor — the ✸ line's log entry; null for a post nobody
+   *  wrote or one with no receipt (a pre-123 post). Optional only so older
+   *  fixtures stay valid — the read always sets it. */
+  commish_action_id?: string | null
 }
 
 export type SystemPostTopic = 'stat_correction'
@@ -222,8 +266,27 @@ export interface ActivityFeed {
  *  compare was rejected because it is only accidentally correct while every
  *  row carries the same UTC offset. */
 function sortKey(item: ActivityItem): [number, string] {
-  const ms = item.created_at ? Date.parse(item.created_at) : Number.NEGATIVE_INFINITY
-  return [Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms, item.id]
+  return [instantMicros(item.created_at), item.id]
+}
+
+/**
+ * R1393: the instant in MICROSECONDS — the database's own precision. The
+ * page boundary the next read sends (`activityCursorFilter`) is compared by
+ * PostgreSQL to the microsecond, so the merge must order the streams to the
+ * microsecond too: ordered by the millisecond, two rows of different streams
+ * inside one millisecond fell back to the id tie-break, and the NEWER one
+ * could land after the cut and never be served on either page. The fraction
+ * is padded to 6 digits (PostgREST drops trailing zeros); the whole-ms part
+ * is `Date.parse`'s (a pure parse, never a clock read). Pure; exported for
+ * its pin. Unparseable / NULL → −∞ (sorts last, as before).
+ */
+export function instantMicros(instant: string | null): number {
+  if (!instant) return Number.NEGATIVE_INFINITY
+  const ms = Date.parse(instant)
+  if (Number.isNaN(ms)) return Number.NEGATIVE_INFINITY
+  const fraction = /T\d{2}:\d{2}:\d{2}\.(\d+)/.exec(instant)?.[1] ?? ''
+  const extraMicros = Number(fraction.padEnd(6, '0').slice(3, 6))
+  return ms * 1000 + extraMicros
 }
 
 /** Pure merge of the two already-sorted streams (exported for the node
@@ -235,8 +298,12 @@ export function mergeActivity(
   transactions: TransactionActivityItem[],
   systemPosts: SystemActivityItem[],
   limit: number,
+  /** M6 L.E1.34: a third stream (the Trades tab's commissioner vetoes, read
+   *  from the log) — over-fetched to `limit + 1` and cut at the same
+   *  boundary like the other two. */
+  receiptPosts: SystemActivityItem[] = [],
 ): ActivityFeed {
-  const merged = [...transactions, ...systemPosts].sort((a, b) => {
+  const merged = [...transactions, ...systemPosts, ...receiptPosts].sort((a, b) => {
     const [aMs, aId] = sortKey(a)
     const [bMs, bId] = sortKey(b)
     if (aMs !== bMs) return bMs - aMs
@@ -275,7 +342,92 @@ export function activityCursorFilter(before: string, beforeId: string): string {
 }
 
 /**
+ * The Trades tab's commissioner veto, read from its receipt (M6 L.E1.34,
+ * Q84): 156's veto writes ONE receipt (`veto_trade`) and ONE post opening
+ * with the commissioner's name — which no SQL filter can tell from his other
+ * posts. The receipt is the exact, pageable record, so the tab reads it and
+ * words the line exactly as 156 words the post (`draft_actor_name()` —
+ * the username since 077 — then " (commissioner) vetoed a trade: <deal>",
+ * then the reason when one was given).
+ *
+ * R1394: the name is the commissioner's CURRENT username (the receipt's
+ * actor, read through `profiles` now), while the post froze the name he had
+ * when he vetoed — so after a username change the Trades tab and the All
+ * tab (which shows the post) name him differently. The deal and the reason
+ * are the receipt's own stored values.
+ */
+export function vetoReceiptPost(row: {
+  id: string
+  created_at: string
+  actor_id: string
+  reason: string | null
+  metadata: Json | null
+  actor: { username: string | null } | null
+}): SystemActivityItem {
+  const metadata = row.metadata !== null && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {}
+  const summary = typeof metadata.summary === 'string' && metadata.summary !== '' ? metadata.summary : 'a trade'
+  const reason = row.reason?.trim() ? ` — reason: ${row.reason}` : ''
+  return {
+    kind: 'system',
+    id: row.id,
+    created_at: row.created_at,
+    context: LEAGUE_CHAT_CONTEXT,
+    message: `${row.actor?.username ?? 'a commissioner'} (commissioner) vetoed a trade: ${summary}${reason}`,
+    actor_id: row.actor_id,
+    topic: null,
+    week: null,
+    commish_action_id: row.id,
+  }
+}
+
+/**
+ * Pure: each page item's receipt (F233(d)). A commissioner's verb writes its
+ * receipt, its post and any `transactions` row in ONE transaction, and every
+ * one of those columns defaults to that transaction's `now()` — so they share
+ * the instant exactly. A post takes the receipt its own actor wrote at its
+ * instant; a transaction takes its own `related_action_id` when it has one,
+ * else the receipt written at its instant (a trade executed inside a force or
+ * an approval — the proposer is the row's initiator, not the commissioner).
+ */
+export function attachReceipts(
+  items: ActivityItem[],
+  relatedActionIds: ReadonlyMap<string, string | null>,
+  receipts: ReadonlyArray<{ id: string; actor_id: string; created_at: string }>,
+): ActivityItem[] {
+  // Keyed on the instant's TEXT: PostgREST renders every timestamptz the same
+  // way, to the microsecond, and the receipts were read with `in` on these
+  // very strings — so equal text is the database's own equality. (A parsed
+  // `Date` would round to the millisecond and could pair two transactions.)
+  const byInstant = new Map<string, Array<{ id: string; actor_id: string; created_at: string }>>()
+  for (const receipt of [...receipts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    byInstant.set(receipt.created_at, [...(byInstant.get(receipt.created_at) ?? []), receipt])
+  }
+  return items.map((item) => {
+    if (item.commish_action_id) return item
+    const atInstant = item.created_at === null ? [] : (byInstant.get(item.created_at) ?? [])
+    if (item.kind === 'system') {
+      const own = item.actor_id === null ? undefined : atInstant.find((r) => r.actor_id === item.actor_id)
+      return { ...item, commish_action_id: own?.id ?? null }
+    }
+    const related = relatedActionIds.get(item.id) ?? null
+    return { ...item, commish_action_id: related ?? atInstant[0]?.id ?? null }
+  })
+}
+
+/**
  * GET /api/leagues/[id]/activity — the unified feed (§15.3).
+ *
+ * **M6 L.E1.34 — what the feed shows (Q84, F463, F532; PROGRESS D459):**
+ *  - the executed trade ONCE: its `transactions` line; the "Trade completed:"
+ *    post is excluded in SQL (`NOT_TRADE_COMPLETED_POST_FILTER`);
+ *  - `topic=trades` — the trades that went through, were vetoed or were
+ *    reversed, one line each: `trade` rows, reversal rows, the league-vote
+ *    veto post, and the commissioner's veto read from its receipt;
+ *  - a `week` filter keeps THAT week's stat-correction posts (F532 — the only
+ *    posts that carry a week, D454(4)); every other post has none and stays
+ *    out of a week's feed, as before;
+ *  - every item names the receipt its act wrote (`commish_action_id`), read
+ *    by instant in one more query per page (`attachReceipts`).
  */
 export async function readActivity(
   supabase: Supabase,
@@ -286,7 +438,7 @@ export async function readActivity(
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
-  const { kind, type, week, team_id, limit, before, before_id } = parsed.data
+  const { kind, topic, type, week, team_id, limit, before, before_id } = parsed.data
 
   // The family's gate BEFORE the first `.from(` (R807): a non-member is
   // refused by name, never handed an empty feed.
@@ -296,16 +448,19 @@ export async function readActivity(
   // Over-fetch by one PER SOURCE — that extra row is what makes `has_more`
   // a measurement instead of a guess.
   const fetchLimit = limit + 1
+  const trades = topic === 'trades'
 
   let transactions: TransactionActivityItem[] = []
+  const relatedActionIds = new Map<string, string | null>()
   if (kind !== 'system') {
     let query = supabase
       .from('transactions')
-      .select('id, created_at, type, status, week, initiator_team_id, initiated_by, action_id, payload')
+      .select('id, created_at, type, status, week, initiator_team_id, initiated_by, action_id, related_action_id, payload')
       .eq('league_id', leagueId)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(fetchLimit)
+    if (trades) query = query.or(TRADE_TRANSACTIONS_FILTER)
     if (type) query = query.in('type', type)
     if (week !== undefined) query = query.eq('week', week)
     if (team_id) query = query.eq('initiator_team_id', team_id)
@@ -322,26 +477,29 @@ export async function readActivity(
     if (error) {
       return { status: 500, body: { error: error.message } }
     }
-    transactions = (data ?? []).map((row) => ({
-      kind: 'transaction',
-      id: row.id,
-      created_at: row.created_at,
-      type: row.type,
-      status: row.status,
-      week: row.week,
-      team_id: row.initiator_team_id,
-      actor_id: row.initiated_by,
-      action_id: row.action_id,
-      payload: row.payload,
-    }))
+    transactions = (data ?? []).map((row) => {
+      relatedActionIds.set(row.id, row.related_action_id)
+      return {
+        kind: 'transaction',
+        id: row.id,
+        created_at: row.created_at,
+        type: row.type,
+        status: row.status,
+        week: row.week,
+        team_id: row.initiator_team_id,
+        actor_id: row.initiated_by,
+        action_id: row.action_id,
+        payload: row.payload,
+      }
+    })
   }
 
   let systemPosts: SystemActivityItem[] = []
-  // A `type`, `week` or `team_id` filter is a TRANSACTION filter: system
-  // posts carry none of those columns, so applying one means the caller
-  // asked for transactions and the posts are correctly absent. Said out
-  // loud rather than left to a silent empty branch.
-  const systemFilteredOut = type !== undefined || week !== undefined || team_id !== undefined
+  // A `type` or `team_id` filter is a TRANSACTION filter: system posts carry
+  // neither column, so the posts are correctly absent. A `week` keeps only
+  // that week's stat-correction posts (F532). Said out loud rather than left
+  // to a silent empty branch.
+  const systemFilteredOut = type !== undefined || team_id !== undefined
   if (kind !== 'transaction' && !systemFilteredOut) {
     let query = supabase
       .from('league_chat')
@@ -349,9 +507,19 @@ export async function readActivity(
       .eq('league_id', leagueId)
       .eq('context', LEAGUE_CHAT_CONTEXT)
       .eq('is_system', true)
+      .or(NOT_TRADE_COMPLETED_POST_FILTER)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(fetchLimit)
+    if (week !== undefined) {
+      // The scoring door's post for THIS week: no actor and its literal (R1349).
+      query = query.is('user_id', null).like('message', `${STAT_CORRECTION_POST_PREFIX}${week}): *`)
+    }
+    if (trades) {
+      // The league vote's veto (155) — a fixed literal nobody wrote. The
+      // commissioner's veto is read from its receipt below.
+      query = query.is('user_id', null).like('message', `${TRADE_VOTE_VETO_POST_PREFIX}*`)
+    }
     if (before) {
       query = before_id
         ? query.or(activityCursorFilter(before, before_id))
@@ -377,8 +545,55 @@ export async function readActivity(
     })
   }
 
+  let vetoPosts: SystemActivityItem[] = []
+  if (trades && kind !== 'transaction') {
+    let query = supabase
+      .from('commissioner_actions')
+      .select('id, created_at, actor_id, reason, metadata, actor:profiles!commissioner_actions_actor_id_fkey(username)')
+      .eq('league_id', leagueId)
+      .eq('action_type', 'veto_trade')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(fetchLimit)
+    if (before) {
+      query = before_id
+        ? query.or(activityCursorFilter(before, before_id))
+        : query.lt('created_at', before)
+    }
+    const { data, error } = await query
+    if (error) {
+      return { status: 500, body: { error: `commissioner_actions: ${error.message}` } }
+    }
+    vetoPosts = (data ?? []).map((row) => vetoReceiptPost({ ...row, actor: row.actor ?? null }))
+  }
+
+  const page = mergeActivity(transactions, systemPosts, limit, vetoPosts)
+
+  // F233(d): each item's receipt, by instant — one read per page, only the
+  // instants on it (≤ 100), never the whole log.
+  const instants = [
+    ...new Set(
+      page.items
+        .filter((item) => !item.commish_action_id && (item.kind === 'transaction' ? !relatedActionIds.get(item.id) : item.actor_id !== null))
+        .map((item) => item.created_at)
+        .filter((instant): instant is string => instant !== null),
+    ),
+  ]
+  let receipts: Array<{ id: string; actor_id: string; created_at: string }> = []
+  if (instants.length > 0) {
+    const { data, error } = await supabase
+      .from('commissioner_actions')
+      .select('id, actor_id, created_at')
+      .eq('league_id', leagueId)
+      .in('created_at', instants)
+    if (error) {
+      return { status: 500, body: { error: `commissioner_actions: ${error.message}` } }
+    }
+    receipts = data ?? []
+  }
+
   return {
     status: 200,
-    body: mergeActivity(transactions, systemPosts, limit) as unknown as Json,
+    body: { ...page, items: attachReceipts(page.items, relatedActionIds, receipts) } as unknown as Json,
   }
 }

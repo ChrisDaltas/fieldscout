@@ -20,6 +20,7 @@ import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
 
+import { commishMatchupHref } from './activity-page-ops'
 import { MatchupCorrectionNote } from './corrections-view'
 import { boxPointsNote, weekMayHaveCorrections } from './corrections-view-ops'
 import { Crest, TeamNameLink } from './league-cells'
@@ -431,9 +432,17 @@ export function Scoreboard({
             </Badge>
           )}
           {row.is_overridden && (
-            <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} data-overridden>
-              {OVERRIDDEN_LABEL}
-            </Badge>
+            // §10.3 / F233(d): the ✸ badge lands on the commissioner's log — this
+            // week, this matchup's teams (a score / result receipt records both).
+            <Link
+              href={commishMatchupHref(doc.league_id, doc.week, row.home_team_id)}
+              className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              data-overridden-link
+            >
+              <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} className="hover:bg-accent-soft" data-overridden>
+                {OVERRIDDEN_LABEL}
+              </Badge>
+            </Link>
           )}
           {children && <span className="ml-auto">{children}</span>}
         </CardTitle>

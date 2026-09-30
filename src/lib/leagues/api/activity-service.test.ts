@@ -28,9 +28,17 @@ import {
   statCorrectionPostWeek,
   ACTIVITY_DEFAULT_LIMIT,
   ACTIVITY_MAX_LIMIT,
+  NOT_TRADE_COMPLETED_POST_FILTER,
+  TRADE_COMPLETED_POST_PREFIX,
+  TRADE_TRANSACTIONS_FILTER,
+  TRADE_VOTE_VETO_POST_PREFIX,
   activityCursorFilter,
   activityQuerySchema,
+  attachReceipts,
+  instantMicros,
   mergeActivity,
+  readActivity,
+  vetoReceiptPost,
   type SystemActivityItem,
   type TransactionActivityItem,
 } from './activity-service'
@@ -282,5 +290,207 @@ describe('the stat-correction league post is tagged (L.E2.3; D453(4) / D454)', (
     ]) {
       expect(statCorrectionPostWeek(post, 'commish-uid'), post).toBeNull()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.E1.34 — one line per trade (Q84 / F463), the Trades topic, the week's
+// correction posts (F532), each item's receipt (F233(d)); PROGRESS D459
+// ---------------------------------------------------------------------------
+
+const MIGRATION = (file: string) => readFileSync(path.resolve(process.cwd(), 'supabase/migrations', file), 'utf8')
+
+describe('the literals the feed filters on are the migrations’ own (they cannot part)', () => {
+  it('"Trade completed: " — every path that executes a trade writes it with NO actor, beside its transactions row (151 / 153 / 156)', () => {
+    for (const file of ['151_trade_execution.sql', '153_week_ceiling.sql', '156_commish_force_or_reverse_trade.sql']) {
+      const sql = MIGRATION(file)
+      expect(sql, file).toContain(`v_post := '${TRADE_COMPLETED_POST_PREFIX}' || v_summary;`)
+      expect(sql, file).toMatch(/INSERT INTO public\.transactions \(id, league_id, type, status, initiator_team_id, initiated_by, payload, week\)\s+VALUES \(v_txn_id, v_league\.id, 'trade', 'complete'/)
+      expect(sql, file).toContain("VALUES (v_league.id, NULL, v_post, 'league', TRUE);")
+    }
+  })
+
+  it('"Trade vetoed by league vote: " — 155’s post, no actor; the commissioner’s veto post is worded as 156 words it', () => {
+    const vote = MIGRATION('155_trade_league_vote.sql')
+    expect(vote).toContain(`v_post := '${TRADE_VOTE_VETO_POST_PREFIX}' || v_summary;`)
+    expect(vote).toContain("VALUES (p_league.id, NULL, v_post, 'league', TRUE);")
+    const force = MIGRATION('156_commish_force_or_reverse_trade.sql')
+    expect(force).toContain("WHEN 'vetoed'            THEN 'vetoed a trade'")
+    expect(force).toContain("v_message := public.draft_actor_name() || ' (commissioner) ' || v_act_text || ': ' || v_summary")
+    expect(force).toContain("|| CASE WHEN v_reason IS NOT NULL THEN ' — reason: ' || v_reason ELSE '' END;")
+  })
+
+  it('the filter strings', () => {
+    expect(NOT_TRADE_COMPLETED_POST_FILTER).toBe('user_id.not.is.null,message.not.like."Trade completed: *"')
+    expect(TRADE_TRANSACTIONS_FILTER).toBe('type.eq.trade,and(type.eq.commissioner_move,payload->>kind.eq.trade_reversal)')
+  })
+})
+
+describe('activityQuerySchema — `topic` (L.E1.34)', () => {
+  it('trades is a topic; it stands alone — beside a type, a week or a team it is refused by name', () => {
+    expect(activityQuerySchema.parse({ topic: 'trades' }).topic).toBe('trades')
+    expect(activityQuerySchema.safeParse({ topic: 'offers' }).success).toBe(false)
+    for (const extra of [{ type: 'trade' }, { week: '3' }, { team_id: 'aa000000-0000-4000-8000-000000000001' }]) {
+      const parsed = activityQuerySchema.safeParse({ topic: 'trades', ...extra })
+      expect(parsed.success, JSON.stringify(extra)).toBe(false)
+      expect(JSON.stringify(parsed.error)).toContain('topic is its own filter')
+    }
+  })
+})
+
+describe('attachReceipts — each item’s receipt, by the instant its transaction wrote (pure)', () => {
+  const T0 = '2099-09-10T12:00:00.123456+00:00'
+  const T1 = '2099-09-10T12:00:00.123457+00:00' // one microsecond later — a different transaction
+  const actorPost = (id: string, at: string, actor: string | null): SystemActivityItem => ({ ...post(id, at), actor_id: actor })
+
+  it('a post takes the receipt ITS actor wrote at its instant; another actor’s receipt at the same instant is not its', () => {
+    const [mine, theirs] = attachReceipts([actorPost('p1', T0, 'u1'), actorPost('p2', T0, 'u9')], new Map(), [{ id: 'ca1', actor_id: 'u1', created_at: T0 }])
+    expect(mine.commish_action_id).toBe('ca1')
+    expect(theirs.commish_action_id).toBeNull()
+  })
+
+  it('a post nobody wrote takes none, even at a receipt’s instant; a microsecond apart is another transaction', () => {
+    const [nobody, later] = attachReceipts([actorPost('p1', T0, null), actorPost('p2', T1, 'u1')], new Map(), [{ id: 'ca1', actor_id: 'u1', created_at: T0 }])
+    expect(nobody.commish_action_id).toBeNull()
+    expect(later.commish_action_id).toBeNull()
+  })
+
+  it('a transaction takes its own related_action_id first, else the receipt at its instant (a trade executed inside a force)', () => {
+    const [rev, forced, plain] = attachReceipts(
+      [txn('t-rev', T0), txn('t-forced', T0), txn('t-plain', T1)],
+      new Map([
+        ['t-rev', 'ca-rel'],
+        ['t-forced', null],
+        ['t-plain', null],
+      ]),
+      [{ id: 'ca-at', actor_id: 'u1', created_at: T0 }],
+    )
+    expect(rev.commish_action_id).toBe('ca-rel')
+    expect(forced.commish_action_id).toBe('ca-at')
+    expect(plain.commish_action_id).toBeNull()
+  })
+})
+
+describe('R1393 — the merge orders to the MICROSECOND (the boundary the next read sends is compared at µs)', () => {
+  it('instantMicros: the fraction padded to 6 digits; no fraction, a Z, an offset; NULL / garbage sort last', () => {
+    const base = Date.parse('2099-09-10T12:00:00Z') * 1000
+    expect(instantMicros('2099-09-10T12:00:00.123456+00:00')).toBe(base + 123456)
+    expect(instantMicros('2099-09-10T12:00:00.1234+00:00')).toBe(base + 123400) // PostgREST drops trailing zeros
+    expect(instantMicros('2099-09-10T12:00:00.5Z')).toBe(base + 500000)
+    expect(instantMicros('2099-09-10T12:00:00Z')).toBe(base)
+    expect(instantMicros('2099-09-10T14:00:00.000001+02:00')).toBe(base + 1)
+    expect(instantMicros(null)).toBe(Number.NEGATIVE_INFINITY)
+    expect(instantMicros('not a time')).toBe(Number.NEGATIVE_INFINITY)
+  })
+
+  it('the reviewer’s demo: two streams inside ONE millisecond — the newer row is served first, so the cut cannot skip it', () => {
+    // A transaction at .123400 with the LARGER id, a post at .123900. Ordered by
+    // the millisecond, the id tie-break served the transaction and cut there; the
+    // next read (created_at < .1234 at µs) could never return the .1239 post.
+    const older = txn('ffffffff-0000-4000-8000-000000000001', '2099-09-10T12:00:00.1234+00:00')
+    const newer = post('00000000-0000-4000-8000-000000000001', '2099-09-10T12:00:00.1239+00:00')
+    const page1 = mergeActivity([older], [newer], 1)
+    expect(page1.items.map((i) => i.id)).toStrictEqual([newer.id])
+    expect([page1.next_before, page1.next_before_id]).toStrictEqual([newer.created_at, newer.id])
+    // …and the next page (what the database returns under that boundary) serves the transaction.
+    expect(mergeActivity([older], [], 1).items.map((i) => i.id)).toStrictEqual([older.id])
+  })
+})
+
+describe('mergeActivity — a third stream (the Trades tab’s vetoes) cuts at the same boundary', () => {
+  it('interleaves by instant and counts toward has_more like the others', () => {
+    const veto = vetoReceiptPost({ id: 'v1', created_at: '2099-09-10T12:30:00Z', actor_id: 'u1', reason: null, metadata: { summary: 'S' }, actor: { username: 'chris' } })
+    const feed = mergeActivity([txn('a', '2099-09-10T12:00:00Z')], [post('b', '2099-09-10T13:00:00Z')], 2, [veto])
+    expect(feed.items.map((i) => i.id)).toStrictEqual(['b', 'v1'])
+    expect(feed.has_more).toBe(true)
+  })
+
+  it('the veto line reads as 156’s post reads — the reason only when one was given', () => {
+    const base = { id: 'v1', created_at: '2099-09-10T12:30:00Z', actor_id: 'u1', metadata: { summary: 'Alpha gives A; Bravo gives B' }, actor: { username: 'chris' } }
+    expect(vetoReceiptPost({ ...base, reason: null }).message).toBe('chris (commissioner) vetoed a trade: Alpha gives A; Bravo gives B')
+    expect(vetoReceiptPost({ ...base, reason: 'lopsided' }).message).toBe('chris (commissioner) vetoed a trade: Alpha gives A; Bravo gives B — reason: lopsided')
+    expect(vetoReceiptPost({ ...base, reason: null }).commish_action_id).toBe('v1')
+  })
+})
+
+/** A double that records each table's chains and answers per table, in order. */
+function feedDouble(answers: Record<string, Array<{ data: unknown; error: unknown }>>) {
+  const chains: Record<string, Array<Array<[string, unknown[]]>>> = {}
+  const client = {
+    rpc: async () => ({ data: true, error: null }),
+    from: (table: string) => {
+      if (table === 'leagues') {
+        return { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: { id: 'L' }, error: null }) }) }) }) }
+      }
+      const sink: Array<[string, unknown[]]> = []
+      ;(chains[table] ??= []).push(sink)
+      const answer = answers[table]?.shift() ?? { data: [], error: null }
+      const proxy: Record<string, unknown> = new Proxy(
+        {},
+        {
+          get(_t, prop: string) {
+            if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(answer)
+            return (...args: unknown[]) => {
+              sink.push([prop, args])
+              return proxy
+            }
+          },
+        },
+      )
+      return proxy
+    },
+  }
+  return { client: client as never, chains }
+}
+
+describe('readActivity — what each read asks for (L.E1.34)', () => {
+  const AT = '2099-09-10T12:00:00.123456+00:00'
+
+  it('every read drops the executed trade’s post in SQL (one line per trade), and names each item’s receipt from ONE read of the page’s instants', async () => {
+    const { client, chains } = feedDouble({
+      transactions: [{ data: [{ id: 'tx', created_at: AT, type: 'trade', status: 'complete', week: 3, initiator_team_id: null, initiated_by: 'u2', action_id: null, related_action_id: null, payload: {} }], error: null }],
+      league_chat: [{ data: [{ id: 'p1', created_at: AT, context: 'league', message: 'chris (commissioner) forced a trade through: S', user_id: 'u1' }], error: null }],
+      commissioner_actions: [{ data: [{ id: 'ca-force', actor_id: 'u1', created_at: AT }], error: null }],
+    })
+    const res = await readActivity(client, 'L', {})
+    expect(res.status).toBe(200)
+    expect(chains.league_chat[0]).toContainEqual(['or', [NOT_TRADE_COMPLETED_POST_FILTER]])
+    expect(chains.transactions[0]).toContainEqual(['select', ['id, created_at, type, status, week, initiator_team_id, initiated_by, action_id, related_action_id, payload']])
+    expect(chains.commissioner_actions).toHaveLength(1)
+    expect(chains.commissioner_actions[0]).toContainEqual(['in', ['created_at', [AT]]])
+    const items = (res.body as { items: Array<{ id: string; commish_action_id: string | null }> }).items
+    expect(items.map((i) => [i.id, i.commish_action_id])).toStrictEqual([
+      ['tx', 'ca-force'],
+      ['p1', 'ca-force'],
+    ])
+  })
+
+  it('topic=trades: trade + reversal rows, the league vote’s veto post, the commissioner’s vetoes from the log', async () => {
+    const { client, chains } = feedDouble({})
+    const res = await readActivity(client, 'L', { topic: 'trades' })
+    expect(res.status).toBe(200)
+    expect(chains.transactions[0]).toContainEqual(['or', [TRADE_TRANSACTIONS_FILTER]])
+    expect(chains.league_chat[0]).toContainEqual(['is', ['user_id', null]])
+    expect(chains.league_chat[0]).toContainEqual(['like', ['message', `${TRADE_VOTE_VETO_POST_PREFIX}*`]])
+    expect(chains.commissioner_actions[0]).toContainEqual(['eq', ['action_type', 'veto_trade']])
+  })
+
+  it('F532: a week keeps THAT week’s stat-correction posts (the door’s — no actor, its literal); a type or team still drops every post', async () => {
+    const week = feedDouble({})
+    await readActivity(week.client, 'L', { week: '3' })
+    expect(week.chains.league_chat[0]).toContainEqual(['is', ['user_id', null]])
+    expect(week.chains.league_chat[0]).toContainEqual(['like', ['message', 'Stat correction (Week 3): *']])
+    expect(week.chains.transactions[0]).toContainEqual(['eq', ['week', 3]])
+    const typed = feedDouble({})
+    await readActivity(typed.client, 'L', { type: 'add_drop', week: '3' })
+    expect(typed.chains.league_chat).toBeUndefined()
+  })
+
+  it('a failed receipt read is a 500 by name — never items quietly missing their ✸ links', async () => {
+    const { client } = feedDouble({
+      league_chat: [{ data: [{ id: 'p1', created_at: AT, context: 'league', message: 'x', user_id: 'u1' }], error: null }],
+      commissioner_actions: [{ data: null, error: { message: 'boom' } }],
+    })
+    expect(await readActivity(client, 'L', {})).toStrictEqual({ status: 500, body: { error: 'commissioner_actions: boom' } })
   })
 })

@@ -35,7 +35,7 @@ export const TEAM_TOOLS_EMPTY_ROSTER_COPY = 'This roster is empty — there is n
  */
 export const COMMISH_CHANGED_BADGE = '✸ changed by commissioner'
 export const COMMISH_CHANGED_TITLE =
-  'The commissioner changed this week’s lineup — by setting it, or by a roster move that took a player out of a starting slot. The details are in League Home’s activity.'
+  'The commissioner changed this week’s lineup — by setting it, or by a roster move that took a player out of a starting slot. Tap to see the commissioner’s changes to this team.'
 
 // ---------------------------------------------------------------------------
 // The roster verbs' consequence copy — §4 rule 15: never a bare "Saved."
