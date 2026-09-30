@@ -152,6 +152,7 @@ export default async function TagFeedPage(props: PageProps) {
                   likeCount={list.like_count}
                   updatedAt={list.updated_at}
                   owner={list.owner}
+                  linkOwner
                 />
               </li>
             ))}

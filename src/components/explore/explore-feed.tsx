@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { FollowButton } from '@/components/explore/follow-button'
+import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -97,7 +98,14 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           )}
         </div>
         <div className="mt-0.5 truncate text-[10px] font-semibold text-n-3">
-          {item.author.name ? `${item.author.name} · ` : ''}@{item.author.handle}
+          {/* L.E1.41: a person's handle opens his profile, above the row's
+              stretched link. An AI persona (it has a name) keeps its plain
+              handle — its page is /personas/…, not a person's profile. */}
+          {item.author.name ? (
+            `${item.author.name} · @${item.author.handle}`
+          ) : (
+            <UsernameLink username={item.author.handle} className="relative z-10" />
+          )}
           {item.tag && (
             <>
               {' · '}

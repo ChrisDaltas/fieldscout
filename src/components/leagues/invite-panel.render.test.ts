@@ -24,7 +24,9 @@ import { leagueInvitesKeys } from '@/hooks/use-league-invites'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
-import { InvitePanel } from './invite-panel'
+import { Dialog } from '@/components/ui/dialog'
+
+import { InvitePanel, LeaveLeagueSteps } from './invite-panel'
 import {
   CREATOR_SEAT_NOTE,
   LINK_CLOSED_INVITE_HINT,
@@ -36,11 +38,16 @@ import {
   RETIRE_UNMANAGED_NOTE,
   creatorSeatBlocked,
   defaultRemoveMode,
+  leaveConfirms,
+  leaveLeagueCopy,
   memberControls,
   membersPhase,
+  nextLeaveStep,
   removeOptionCopy,
   retireConsequences,
   retireOptionCopy,
+  type LeaveStep,
+  type MembersPhase,
   type PendingInviteInput,
 } from './invite-panel-ops'
 import { MembersPage } from './members-page'
@@ -499,5 +506,146 @@ describe('MembersPage — the same panel, after the draft', () => {
       expect(t, t).toMatch(/^(hover|active|focus-visible|group-hover):/)
     }
     expect(html).not.toContain('dark:')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.E1.41 — every manager's name opens his profile; leaving takes TWO
+// confirmations (Chris 2026-09-30, both rulings verbatim in PROGRESS D462)
+// ---------------------------------------------------------------------------
+
+describe('L.E1.41 — a seat’s manager is a door to his profile', () => {
+  it.each(STATES)('%s: every claimed seat’s @username links to /u/<username>, for a commissioner and a manager', (status) => {
+    for (const [viewer, role] of [['user-commish', 'commissioner'], ['user-manager', 'manager']] as const) {
+      const html = renderPanel(detailWith(status, { my_role: role }), viewer)
+      for (const name of ['chris', 'jason', 'tim']) {
+        expect(html, `${status} / ${role} / ${name}`).toContain(`<a data-username-link="${name}" class="`)
+        expect(html, `${status} / ${role} / ${name}`).toContain(`href="/u/${name}">@${name}</a>`)
+      }
+      // A seat with no manager names no one — nothing to link.
+      expect(html.match(/data-username-link=/g)).toHaveLength(3)
+    }
+  })
+  it('an invite by username names a real account — that name links too', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    auth.userId = 'user-commish'
+    qc.setQueryData(leagueInvitesKeys.all(LEAGUE), [{ ...INVITES[0], invited_email: null, invited_username: 'newbie_gm' }])
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: qc }, createElement(InvitePanel, { leagueId: LEAGUE, detail: detailWith('in_season') })),
+    )
+    expect(html).toContain('Invited <a data-username-link="newbie_gm"')
+  })
+  it('in the live draft room (team links off) a name opens in a NEW TAB — leaving the room can cost a pick', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    auth.userId = 'user-commish'
+    seedInvites(qc, detailWith('drafting'))
+    const room = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: qc }, createElement(InvitePanel, { leagueId: LEAGUE, detail: detailWith('drafting'), linkTeams: false })),
+    )
+    expect(room).toMatch(/<a data-username-link="jason" target="_blank" rel="noopener noreferrer"/)
+    expect(renderPanel(detailWith('in_season'))).not.toContain('target="_blank"')
+  })
+})
+
+describe('L.E1.41 — leaving a league takes two confirmations', () => {
+  it('the step machine: open → the consequences; continue → the last check; back / cancel; nothing else moves it', () => {
+    expect(nextLeaveStep('closed', 'open')).toBe('consequences')
+    expect(nextLeaveStep('consequences', 'continue')).toBe('final')
+    expect(nextLeaveStep('final', 'back')).toBe('consequences')
+    expect(nextLeaveStep('final', 'cancel')).toBe('closed')
+    expect(nextLeaveStep('consequences', 'cancel')).toBe('closed')
+    // A stray event never skips a step.
+    expect(nextLeaveStep('closed', 'continue')).toBe('closed')
+    expect(nextLeaveStep('consequences', 'open')).toBe('consequences')
+    expect(nextLeaveStep('final', 'continue')).toBe('final')
+  })
+  it('only the SECOND confirmation leaves — never the first, never a closed dialog', () => {
+    expect(leaveConfirms('closed')).toBe(false)
+    expect(leaveConfirms('consequences')).toBe(false)
+    expect(leaveConfirms('final')).toBe(true)
+  })
+  it('the panel’s leave handler is gated on that rule, and the first step’s button only moves on (source pin)', () => {
+    const src = readFileSync(path.join(__dirname, 'invite-panel.tsx'), 'utf8')
+    const self = src.slice(src.indexOf('function SelfSeatControls('), src.indexOf('export function LeaveLeagueSteps('))
+    expect(self).toContain('if (!seat.memberId || !leaveConfirms(step)) return')
+    const steps = src.slice(src.indexOf('export function LeaveLeagueSteps('))
+    const first = steps.slice(steps.indexOf('data-leave-step="consequences"'))
+    expect(first).toContain("onClick={() => onStep('continue')} data-leave-continue")
+    expect(first.slice(0, first.indexOf('</DialogFooter>'))).not.toContain('onConfirm')
+  })
+
+  function renderStep(step: LeaveStep, phase: MembersPhase, pending = false): string {
+    const calls: string[] = []
+    const html = renderToStaticMarkup(
+      createElement(
+        Dialog,
+        { open: true },
+        createElement(LeaveLeagueSteps, {
+          step,
+          copy: leaveLeagueCopy(phase, 'Bravo', 'Members League'),
+          pending,
+          onStep: (e: string) => calls.push(e),
+          onConfirm: () => calls.push('confirm'),
+        }),
+      ),
+    )
+    return html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+  }
+
+  it.each(['pre_draft', 'drafting', 'in_season', 'playoffs', 'complete'] as const)(
+    '%s — step one says what happens to the team and offers Continue (no leave); step two is the last check with "Yes, leave this league"',
+    (phase) => {
+      const copy = leaveLeagueCopy(phase, 'Bravo', 'Members League')
+      const first = renderStep('consequences', phase)
+      expect(first).toContain('data-leave-step="consequences"')
+      expect(first).toContain('Leave Members League?')
+      expect(first).toContain(copy.consequences)
+      expect(first).toContain('will have no manager')
+      expect(first).toContain('>Continue</button>')
+      expect(first).not.toContain('data-leave-confirm')
+      expect(first).not.toContain(copy.confirmLabel)
+
+      const final = renderStep('final', phase)
+      expect(final).toContain('data-leave-step="final"')
+      expect(final).toContain('Are you sure you want to leave?')
+      expect(final).toContain(copy.finalBody)
+      expect(final).toContain('data-leave-confirm')
+      expect(final).toContain('>Yes, leave this league</button>')
+      expect(final).toContain('>Back</button>')
+      expect(final).toContain('>Stay in the league</button>')
+      expect(renderStep('final', phase, true)).toContain('Leaving…')
+    },
+  )
+  it('R1405: the last check says how you could come back — the league link before the draft, a commissioner’s invite after', () => {
+    expect(leaveLeagueCopy('pre_draft', 'Bravo', 'Members League').finalBody).toBe(
+      'You’ll leave Members League and give up Bravo. To come back you’d need the league link again, and a spot still open.',
+    )
+    for (const phase of ['drafting', 'in_season', 'playoffs', 'complete'] as const) {
+      expect(leaveLeagueCopy(phase, 'Bravo', 'Members League').finalBody, phase).toBe(
+        'You’ll leave Members League and give up Bravo. You can’t undo this yourself — a commissioner can invite you back.',
+      )
+    }
+    for (const phase of ['pre_draft', 'drafting', 'in_season', 'playoffs', 'complete'] as const) {
+      expect(leaveLeagueCopy(phase, 'Bravo', 'L').finalBody, phase).not.toMatch(/only the commissioner|for good/)
+    }
+  })
+  it('mid-season the consequences are in plain words: no manager, players / record / FAAB kept, claims cancelled, the commissioner or autopilot runs it', () => {
+    const inSeason = leaveLeagueCopy('in_season', 'Bravo', 'Members League').consequences
+    expect(inSeason).toBe(
+      'Your team (Bravo) will have no manager. It keeps its players, record and FAAB, and its pending waiver claims are cancelled. The commissioner runs it — or puts it on autopilot — for the rest of the season, until someone new takes it over.',
+    )
+    expect(leaveLeagueCopy('drafting', 'Bravo', 'L').consequences).toContain('autopick makes its picks')
+    expect(leaveLeagueCopy('pre_draft', 'Bravo', 'L').consequences).toContain('becomes an open seat')
+    for (const phase of ['pre_draft', 'drafting', 'in_season', 'playoffs', 'complete'] as const) {
+      const c = leaveLeagueCopy(phase, 'Bravo', 'L')
+      expect(`${c.consequences} ${c.finalBody}`).not.toMatch(/leave_league|in_season|orphan|franchise|\b\d{3}\b/)
+    }
+  })
+  it('leaving stays offered in every state (a manager’s own seat) — the double confirm, not a refusal', () => {
+    for (const status of STATES) {
+      const html = renderPanel(detailWith(status, { my_role: 'manager' }), 'user-manager')
+      expect(html, status).toContain('data-leave-league')
+      expect(html, status).not.toContain('data-leave-step') // the dialog opens only on a press
+    }
   })
 })

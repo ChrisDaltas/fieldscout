@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { GuestShell } from '@/components/layout/guest-shell'
 import { ProfileListRow } from '@/components/profile/profile-list-row'
 import { createServerClient } from '@/lib/supabase/server'
+import { userProfileHref } from '@/components/shared/username-link-ops'
 
 interface PageProps {
   params: Promise<{ username: string }>
@@ -62,7 +63,7 @@ export default async function FollowingPage({ params }: PageProps) {
       <div className="mx-auto max-w-2xl space-y-[19px]">
         <header>
           <Link
-            href={`/u/${profile.username}`}
+            href={userProfileHref(profile.username)}
             className="text-[11px] font-bold text-n-3 transition-colors hover:text-ink hover:underline"
           >
             ← @{profile.username}
