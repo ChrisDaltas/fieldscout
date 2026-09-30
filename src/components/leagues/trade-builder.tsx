@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { lockBadgeFor } from './lineup-editor-ops'
 import { StatusBanner } from './status-banners'
 import {
+  builderDoor,
   builderGate,
   builderLegs,
   builderProblem,
@@ -33,7 +34,6 @@ import {
   type BuilderLeg,
   type BuilderSides,
   plainRefusal,
-  tradePartners,
 } from './trades-ops'
 
 /**
@@ -129,27 +129,15 @@ export function TradeBuilderView({
   onClose,
   usePreview = useTradePreview,
 }: TradeBuilderViewProps) {
-  // R1410: in a propose, only a team with a manager can be offered a trade.
-  // A counter's partner is fixed — the proposer — and the card offers no
-  // Counter when it has no manager (R1413, `tradeActions`).
-  const partners =
-    mode === 'counter' ? teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired') : tradePartners(teams, fromTeamId)
-  const initialTo = initial?.toTeamId && partners.some((t) => t.team_id === initial.toTeamId) ? initial.toTeamId : null
-  const unanswerable =
-    mode === 'propose' && initial?.toTeamId && !initialTo
-      ? (teams.find((t) => t.team_id === initial.toTeamId && t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id === null) ?? null)
-      : null
-  // L.E1.36 (F554): the door's team is DERIVED from the current team list
-  // until the manager picks one. R1410's partner check reads the rosters,
-  // which can land AFTER the builder mounts (a fresh load of the `?with=` /
-  // team-page / player-row door — the trade center mounts the builder once
-  // the viewer's team is known, from the league read); seeding state once
-  // from an empty list lost the door's team for good.
-  const [pickedTo, setPickedTo] = useState<{ id: string } | null>(null)
-  const toTeamId = pickedTo ? pickedTo.id : initialTo
-  const [give, setGive] = useState<string[]>([...(initial?.give ?? [])])
+  // The door — partners, the team, the "they give" picks — is DERIVED from
+  // the current team list every render (`builderDoor`: F554, R1410, R1420).
+  // The trade center mounts the builder only once the rosters have answered
+  // (R1419, `rostersGate`), and a live re-read can still change the list.
+  const [pickedTo, setPickedTo] = useState<string | null>(null)
   const [pickedGet, setPickedGet] = useState<string[] | null>(null)
-  const get = pickedGet ?? (initialTo ? [...(initial?.get ?? [])] : [])
+  const door = builderDoor({ mode, teams, fromTeamId, initial, pickedTo, pickedGet })
+  const { partners, toTeamId, get, unanswerable } = door
+  const [give, setGive] = useState<string[]>([...(initial?.give ?? [])])
   const [faabGiveText, setFaabGiveText] = useState(initial?.faabGive ? String(initial.faabGive) : '')
   const [faabGetText, setFaabGetText] = useState(initial?.faabGet ? String(initial.faabGet) : '')
   const [drops, setDrops] = useState<string[]>([...(initial?.drops ?? [])])
@@ -220,7 +208,7 @@ export function TradeBuilderView({
   }
 
   // R1410: nobody to offer a trade to — said in words, no dead Send.
-  if (mode === 'propose' && partners.length === 0) {
+  if (door.noPartner) {
     return (
       <Card data-trade-builder="no-partner">
         <CardContent className="flex flex-col gap-2 px-card-pad py-3">
@@ -282,7 +270,7 @@ export function TradeBuilderView({
               value={toTeamId ?? ''}
               disabled={mode === 'counter'}
               onValueChange={(v) => {
-                setPickedTo({ id: v })
+                setPickedTo(v)
                 setPickedGet([])
                 setFaabGetText('')
               }}
@@ -318,7 +306,7 @@ export function TradeBuilderView({
             roster={to?.roster ?? []}
             picked={getNow}
             lockBehavior={lockBehavior}
-            onToggle={(id) => setPickedGet(toggle(get, id))}
+            onToggle={(id) => setPickedGet((p) => toggle(p ?? get, id))}
             faab={allowFaab && to ? { text: faabGetText, onChange: setFaabGetText, balance: to.faab_balance, over: faabOverBalance(faabGet, to.faab_balance) } : null}
             empty={to ? 'No players on this roster.' : 'Pick a team to see its roster.'}
           />

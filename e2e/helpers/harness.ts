@@ -169,6 +169,11 @@ function throwIfError(error: { message: string } | null, what: string): void {
  */
 const ID_CHUNK = 100
 
+/** The name the sweep's detach gives a team it is about to delete (R1421):
+ *  under the harness's E2E prefix, so a team stranded by a crash between the
+ *  detach and the delete is found — and only such a team — by the next run. */
+const E2E_DETACHED_TEAM_NAME = `${E2E_LEAGUE_PREFIX} detached team (sweep)`
+
 function chunked<T>(items: readonly T[]): T[][] {
   const out: T[][] = []
   for (let i = 0; i < items.length; i += ID_CHUNK) out.push(items.slice(i, i + ID_CHUNK))
@@ -258,8 +263,19 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
     // league first. So: detach the teams, delete the league (its cascade takes
     // the receipts), then delete the teams by the ids resolved above. The old
     // order (teams, then the league) fails on the first such receipt.
+    //
+    // L.E1.36 fix round (R1421 — PROGRESS D464): the three steps are not one
+    // transaction, and a detached team reads as a standalone (mock-draft)
+    // team to the app. So the detach also MARKS the team with the harness's
+    // own name (`E2E_DETACHED_TEAM_NAME`, under the E2E prefix) in the same
+    // UPDATE, and the orphan pass below collects every marked team a crashed
+    // earlier run left behind — matched by that marker alone, never a team
+    // the harness did not detach.
     for (const part of chunked(teamIds)) {
-      const { error: detachError } = await service.from('teams').update({ league_id: null }).in('id', part)
+      const { error: detachError } = await service
+        .from('teams')
+        .update({ league_id: null, name: E2E_DETACHED_TEAM_NAME })
+        .in('id', part)
       throwIfError(detachError, 'cleanup: teams detach')
     }
     for (const part of chunked(ids)) {
@@ -270,6 +286,19 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
       const { error: teamsError } = await service.from('teams').delete().in('id', part)
       throwIfError(teamsError, 'cleanup: teams delete')
     }
+  }
+  // R1421: teams a crashed earlier sweep detached (and marked) but never
+  // deleted — after the league pass above, whose cascade has taken any
+  // commissioner receipt that still pointed at them.
+  const { data: orphans, error: orphanError } = await service
+    .from('teams')
+    .select('id')
+    .is('league_id', null)
+    .eq('name', E2E_DETACHED_TEAM_NAME)
+  throwIfError(orphanError, 'cleanup: detached-team lookup')
+  for (const part of chunked((orphans ?? []).map((t) => t.id))) {
+    const { error: orphanDeleteError } = await service.from('teams').delete().in('id', part)
+    throwIfError(orphanDeleteError, 'cleanup: detached-team delete')
   }
   const season = await sweepSeasonFixtures(service)
   // Job 6's teardown half (L.C5.1): the storm-bot users, by their own
@@ -293,6 +322,14 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
   throwIfError(verifyError, 'cleanup: verification')
   if ((count ?? -1) !== 0) {
     throw new Error(`cleanup: stack NOT clean — ${count} e2e leagues remain`)
+  }
+  const { count: detachedCount, error: detachedVerifyError } = await service
+    .from('teams')
+    .select('id', { count: 'exact', head: true })
+    .eq('name', E2E_DETACHED_TEAM_NAME)
+  throwIfError(detachedVerifyError, 'cleanup: detached-team verification')
+  if ((detachedCount ?? -1) !== 0) {
+    throw new Error(`cleanup: stack NOT clean — ${detachedCount} detached e2e teams remain`)
   }
   const { count: botCount, error: botVerifyError } = await service
     .from('profiles')

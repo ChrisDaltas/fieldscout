@@ -385,8 +385,17 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
       // §10.4: Force confirms with the before → after first.
       const confirm = cPage.getByRole('dialog').locator('[data-commish-confirm="force"]')
       await expect(confirm).toBeVisible({ timeout: 30_000 })
-      await expect(confirm).toContainText(forced.give.full_name)
-      await expect(confirm).toContainText(forced.get.full_name)
+      // R1422: the before → after lines themselves — each player, from the
+      // team that holds him now to the team he goes to (`commishConfirmLines`).
+      const teamName = new Map((await readLeagueTeams(service, league.leagueId)).map((t) => [t.id, t.name]))
+      // (The read's item order is not the offer's, so the lines compare as a set.)
+      await expect(confirm.locator('li')).toHaveCount(2)
+      expect((await confirm.locator('li').allTextContents()).sort()).toEqual(
+        [
+          `${forced.give.full_name}: ${teamName.get(managerTeam)} → ${teamName.get(bot1Team)}`,
+          `${forced.get.full_name}: ${teamName.get(bot1Team)} → ${teamName.get(managerTeam)}`,
+        ].sort(),
+      )
       const forcedPost = cPage.waitForResponse(
         (res) => new URL(res.url()).pathname === `/api/leagues/${league.leagueId}/commish/trade` && res.request().method() === 'POST',
         { timeout: 60_000 },

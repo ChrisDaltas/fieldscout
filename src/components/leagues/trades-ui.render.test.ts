@@ -16,9 +16,9 @@ import type { TradePreviewDraft, TradePreviewState, UseTradePreview } from '@/ho
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { CommishTradeResult, TradePreview } from '@/lib/leagues/api/trades-service'
 
-import { CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
+import { BuilderRostersWait, CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
 import { TradeBuilderView, type TradeBuilderViewProps } from './trade-builder'
-import { NO_TRADE_PARTNER_COPY, noManagerCopy, plainRefusal } from './trades-ops'
+import { BUILDER_ROSTERS_ERROR_TITLE, NO_TRADE_PARTNER_COPY, noManagerCopy, plainRefusal } from './trades-ops'
 import {
   NEVER_WHO_VOTED_COPY,
   TRADES_ERROR_TITLE,
@@ -426,6 +426,18 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     const html = builder({ mode: 'counter', fromTeamId: BRAVO, initial: { toTeamId: ALPHA, give: ['p-b1'], get: ['p-a1'] } })
     expect(html).toContain('Counter-offer to Alpha')
     expect(html).not.toContain('data-trade-builder="no-partner"')
+  })
+  it('L.E1.36 fix round (R1419): while the rosters load the builder’s door is a skeleton; a failed read is an error with Retry — never the “no partner” sentence', () => {
+    const loading = render(createElement(BuilderRostersWait, { state: 'loading', error: null, onRetry: () => {} }))
+    expect(loading).toContain('data-skeleton="trade-builder"')
+    expect(loading).not.toContain(NO_TRADE_PARTNER_COPY)
+    const failed = render(createElement(BuilderRostersWait, { state: 'error', error: new Error('rosters read failed (503)'), onRetry: () => {} }))
+    expect(failed).toContain('data-trade-builder="rosters-error"')
+    expect(failed).toContain('role="alert"')
+    expect(failed).toContain(BUILDER_ROSTERS_ERROR_TITLE)
+    expect(failed).toContain('rosters read failed (503)')
+    expect(failed).toContain('Retry')
+    expect(failed).not.toContain(NO_TRADE_PARTNER_COPY)
   })
   it('sent: says who gets it and where it is listed', () => {
     const html = builder({ sentTo: 'Bravo' })
