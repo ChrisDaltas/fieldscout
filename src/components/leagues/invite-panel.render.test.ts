@@ -34,8 +34,8 @@ import {
   MEMBERS_INTRO_COMMISH,
   MEMBERS_INTRO_MEMBER,
   RETIRE_BEFORE_DRAFT_WHY,
-  RETIRE_NO_SCREEN_WHY,
   RETIRE_PLAYOFFS_WHY,
+  RETIRE_UNMANAGED_NOTE,
   creatorSeatBlocked,
   defaultRemoveMode,
   leaveConfirms,
@@ -44,6 +44,8 @@ import {
   membersPhase,
   nextLeaveStep,
   removeOptionCopy,
+  retireConsequences,
+  retireOptionCopy,
   type LeaveStep,
   type MembersPhase,
   type PendingInviteInput,
@@ -329,16 +331,74 @@ describe('a co-commissioner and the league creator’s seat (169:442 / :787)', (
 // The remove chooser's words per state (dialogs are closed in a static render)
 // ---------------------------------------------------------------------------
 
-describe('the remove chooser per state — retire never offered, its reason said; vacate / takeover say what they do now', () => {
-  it('memberControls: the table the panel renders from', () => {
+describe('the remove chooser per state — retire offered where its verb accepts it (L.E1.40), its reason said elsewhere; vacate / takeover say what they do now', () => {
+  it('memberControls: the table the panel renders from — retire in season and after the season only', () => {
+    const closed = { retire: false, retireUnmanagedNote: null }
+    const open = { retire: true, retireWhy: null, retireUnmanagedNote: null }
     expect(STATES.map((s) => [s, memberControls(s)])).toEqual([
-      ['setup', { phase: 'pre_draft', shareLink: true, linkClosedNote: null, addSeats: true, retireWhy: RETIRE_BEFORE_DRAFT_WHY }],
-      ['scheduled', { phase: 'pre_draft', shareLink: true, linkClosedNote: null, addSeats: true, retireWhy: RETIRE_BEFORE_DRAFT_WHY }],
-      ['drafting', { phase: 'drafting', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, retireWhy: RETIRE_BEFORE_DRAFT_WHY }],
-      ['in_season', { phase: 'in_season', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, retireWhy: RETIRE_NO_SCREEN_WHY }],
-      ['playoffs', { phase: 'playoffs', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, retireWhy: RETIRE_PLAYOFFS_WHY }],
-      ['complete', { phase: 'complete', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, retireWhy: RETIRE_NO_SCREEN_WHY }],
+      ['setup', { phase: 'pre_draft', shareLink: true, linkClosedNote: null, addSeats: true, ...closed, retireWhy: RETIRE_BEFORE_DRAFT_WHY }],
+      ['scheduled', { phase: 'pre_draft', shareLink: true, linkClosedNote: null, addSeats: true, ...closed, retireWhy: RETIRE_BEFORE_DRAFT_WHY }],
+      ['drafting', { phase: 'drafting', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, ...closed, retireWhy: RETIRE_BEFORE_DRAFT_WHY }],
+      ['in_season', { phase: 'in_season', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, ...open }],
+      ['playoffs', { phase: 'playoffs', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, ...closed, retireWhy: RETIRE_PLAYOFFS_WHY }],
+      ['complete', { phase: 'complete', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, ...open }],
     ])
+  })
+
+  it('F548: the unmanaged-seat note only where retire is offered AND a team has no manager', () => {
+    expect(STATES.map((s) => memberControls(s, true).retireUnmanagedNote)).toEqual([
+      null,
+      null,
+      null,
+      RETIRE_UNMANAGED_NOTE,
+      null,
+      RETIRE_UNMANAGED_NOTE,
+    ])
+    expect(memberControls('in_season', false).retireUnmanagedNote).toBeNull()
+  })
+
+  it('the panel renders the note once under the list for a commissioner in season with an open seat — never for a manager', () => {
+    const html = renderPanel(detailWith('in_season'))
+    expect(html.match(/data-retire-unmanaged/g)).toHaveLength(1)
+    expect(html).toContain(RETIRE_UNMANAGED_NOTE)
+    expect(renderPanel(detailWith('in_season', { my_role: 'manager' }), 'user-manager')).not.toContain('data-retire-unmanaged')
+    expect(renderPanel(detailWith('playoffs'))).not.toContain('data-retire-unmanaged')
+  })
+
+  it('E49: the retire confirmation says what the new team inherits and where the history splits, in season', () => {
+    const lines = retireConsequences('in_season', 'Bravo', '@jason')
+    expect(lines).toEqual([
+      'Bravo stops playing. Its name and the weeks it has finished stay in the league’s history under @jason.',
+      'A new team with no manager takes its place from the first week that isn’t finished: it gets Bravo’s players, FAAB and spot in the schedule.',
+      'For playoff seeding the new team starts with Bravo’s win-loss record and points. Head-to-head results don’t carry over.',
+      '@jason leaves the league and is told. Invite someone to the new team afterward — until then you run it.',
+      'This can’t be undone.',
+    ])
+    // Measured on the verb: the players move to the new team — never to waivers or free agency.
+    expect(lines.join(' ')).not.toMatch(/waiver|free agen/i)
+  })
+
+  it('E49 after the season: the whole season stays with the retired team; no seeding line (there is nothing left to seed)', () => {
+    const lines = retireConsequences('complete', 'Bravo', '@jason')
+    expect(lines[0]).toBe('Bravo is retired. Its name and its whole season stay in the league’s history under @jason.')
+    expect(lines.join(' ')).not.toContain('seeding')
+    expect(lines.at(-1)).toBe('This can’t be undone.')
+    expect(retireOptionCopy('complete')).toContain('retired with its season')
+    expect(retireOptionCopy('in_season')).toContain('from the first week that isn’t finished')
+  })
+
+  it('the dialog wiring (closed in a static render — pinned at the source): retire selectable where offered, its confirmation and button, the reason optional, the toast from the verb', () => {
+    const source = readFileSync(path.join(__dirname, 'invite-panel.tsx'), 'utf8')
+    expect(source).toContain('{controls.retire ? (')
+    expect(source).toContain("onSelect={() => setMode('retire')}")
+    expect(source).toContain('retireConsequences(controls.phase, seat.teamName, managerLabel)')
+    // R1400: the list is a SIBLING of the option (never inside its <button>).
+    const option = source.slice(source.indexOf('title="Retire the team"\n                body={retireOptionCopy(controls.phase)}'))
+    expect(option.slice(0, option.indexOf('data-retire-consequences'))).toContain('/>')
+    expect(source).not.toMatch(/body=\{retireOptionCopy\(controls\.phase\)\}\s*>/)
+    expect(source).toContain('`Retire ${seat.teamName}`')
+    expect(source).toContain('Reason (optional)')
+    expect(source).toContain('successor_team_name')
   })
 
   it('memberControls with a team that has no manager: the invite hint joins the closed-link note after the draft only', () => {
@@ -381,7 +441,14 @@ describe('the remove chooser per state — retire never offered, its reason said
     const copies = STATES.flatMap((s) => {
       const c = memberControls(s)
       const r = removeOptionCopy(c.phase)
-      return [c.retireWhy, c.linkClosedNote ?? '', r.vacate, r.takeover]
+      return [
+        c.retireWhy ?? '',
+        c.linkClosedNote ?? '',
+        r.vacate,
+        r.takeover,
+        ...(c.retire ? [retireOptionCopy(c.phase), ...retireConsequences(c.phase, 'Bravo', '@jason')] : []),
+        RETIRE_UNMANAGED_NOTE,
+      ]
     })
     for (const text of copies) {
       expect(text).not.toMatch(/in_season|remove_manager|add_placeholder|\b1\d\d\b|Q41|F262/)

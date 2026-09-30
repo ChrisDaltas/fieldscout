@@ -80,6 +80,21 @@ describe('transactionText — trades (M5 L.D3.7, F415 / F438): the deal from the
   })
 })
 
+describe('transactionText — a retirement (L.E1.40, F262(a)): the ledger row in words, from the verb payload', () => {
+  it('in season: the retired team, the team taking its place and the week', () => {
+    expect(transactionText(tx({ type: 'commissioner_move', team_id: null,
+      payload: { verb: 'retire_franchise', retired_team_name: 'Bravo', successor_team_name: 'Team 9', retired_at_week: 6, reason: null } })))
+      .toBe('retired Bravo — Team 9 takes its place from Week 6')
+  })
+  it('after the season (no founding week) it says so; a missing name never renders as undefined', () => {
+    expect(transactionText(tx({ type: 'commissioner_move', team_id: null,
+      payload: { verb: 'retire_franchise', retired_team_name: 'Bravo', successor_team_name: 'Team 9', retired_at_week: null } })))
+      .toBe('retired Bravo — Team 9 takes its place after the season')
+    expect(transactionText(tx({ type: 'commissioner_move', team_id: null, payload: { verb: 'retire_franchise' } })))
+      .toBe('retired a team — a new team takes its place after the season')
+  })
+})
+
 describe('feedLines — transactions carry their team + week; a system post carries the commissioner treatment ONLY when an actor wrote it', () => {
   const names = new Map([['t1', 'Alpha']])
   const items: ActivityItem[] = [

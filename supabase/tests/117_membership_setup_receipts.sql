@@ -442,6 +442,38 @@ $o$);  -- set_lineup_internal
 end
 $un$;
 
+-- L.E1.40 (migration 173 — additive, the R992 shape): pg_temp.un173 reverses
+-- 173's three remove_manager hunks (verbatim from pgTAP 121). Applied
+-- INNERMOST, so A3 / A4 keep the literals 169 stored.
+create function pg_temp.un173(s text) returns text language plpgsql as $un$
+begin
+  s := replace(s, $r$    -- (b) The audit stamp and the reason (E49 "audited override"; D290's
+    --     interim posture: reason REQUIRED, stored on the ledger row).
+    --     173 / F363(a) — Q66 (v2.16.41, C82): the reason is OPTIONAL. Blank
+    --     or whitespace-only (the explicit class, 123:295 — R1328: the same
+    --     class the receipt seam trims) is NULL; past 500 characters the
+    --     receipt seam refuses it BY NAME (168:196) and the whole retirement
+    --     rolls back. The action_id stays REQUIRED (the replay stamp).
+$r$, $o$    -- (b) The audit stamp and the reason (E49 "audited override"; D290's
+    --     interim posture: reason REQUIRED, stored on the ledger row).
+$o$);
+  s := replace(s, $r$    v_reason := NULLIF(btrim(COALESCE(p_reason, ''), E' \t\r\n'), '');
+$r$, $o$    v_reason := NULLIF(btrim(COALESCE(p_reason, '')), '');
+    IF v_reason IS NULL THEN
+      RAISE EXCEPTION 'remove_manager: retiring a franchise is an audited override — a reason is required (E49 / D290)'
+        USING ERRCODE = '22023';
+    END IF;
+$o$);
+  s := replace(s, $r$      || ' (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))'
+      -- 173 / Q66: no reason, no "— reason:" tail (league_chat.message is
+      -- NOT NULL — `|| NULL` would null the whole post).
+      || CASE WHEN v_reason IS NOT NULL THEN ' — reason: ' || v_reason ELSE '' END;
+$r$, $o$      || ' (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b)) — reason: ' || v_reason;
+$o$);
+  return s;
+end
+$un$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form, and D137 in the database
 -- ---------------------------------------------------------------------------
@@ -475,7 +507,7 @@ select is(
   || 'update_league_settings:t:search_path="":f:t',
   'A2 the fifteen replaced bodies keep one overload each, their DEFINER / plain posture, search_path empty, anon closed, and authenticated on the fourteen doors only');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un169(p.prosrc)), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un169(pg_temp.un173(p.prosrc))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in (
      'add_placeholder_seat', 'set_member_role', 'assign_manager', 'remove_manager',
@@ -492,7 +524,7 @@ select is(
   || 'update_league_settings=fa301876833c5cba5fe27ae4455e7a2e',
   'A3 D137: each live body with 169 reversed is its NEWEST definer FILE TEXT (063 / 150 / 062 / 118 / 064 / 059 / 060 / 105 / 157 — stored md5 literals measured on the 168 chain)');
 select is(
-  (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un173(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in (
      'add_placeholder_seat', 'set_member_role', 'assign_manager', 'remove_manager',
@@ -507,7 +539,7 @@ select is(
   || 'set_lineup_internal=36a62aed801182faf52dcd3f58f1a723 set_member_role=516483c5b214da865a808d26afceff50 '
   || 'soft_delete_league=cdcd56355f0cfc7404436753056729c0 update_league_profile=034aff016a77968b1b4eb4e17bf73098 '
   || 'update_league_settings=0afb6fffbfc688dc96a0fcc5bb4ad9d1',
-  'A4 the fifteen live prosrc md5s — 169 as written (stored literals)');
+  'A4 the fifteen live prosrc md5s — 169 as written (stored literals; remove_manager through pg_temp.un173 since 173, additive)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname not in (

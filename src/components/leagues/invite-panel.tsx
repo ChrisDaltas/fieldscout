@@ -59,6 +59,8 @@ import {
   preferredShareCode,
   readSeatCounts,
   removeOptionCopy,
+  retireConsequences,
+  retireOptionCopy,
   validateSlug,
   type LeaveCopy,
   type LeaveStep,
@@ -81,14 +83,17 @@ import {
  * placeholder) with email-first seat-targeted invites (username + copyable link
  * secondary) + revoke, placeholder-seat creation, the roles UI (promote/demote
  * + the atomic commissioner transfer), and the D42 remove chooser (takeover /
- * vacate; retire disabled with its reason).
+ * vacate / retire — retire where its verb accepts it, disabled with its
+ * reason elsewhere).
  *
  * L.E1.39 (F539; PROGRESS D460): mounted in every league state — League Home
  * before the draft, the draft room's Draft Options, and the members page
  * after it — so each control is offered only where its verb accepts it in
  * THIS state (`memberControls`, measured per verb in `invite-panel-ops.ts`):
  * the share link and new seats before the draft only; seat invites, assign,
- * roles, takeover / vacate and leave in every state; retire in none.
+ * roles, takeover / vacate and leave in every state; retire (L.E1.40 —
+ * F546 / F262(a); PROGRESS D461) in season and after the season, on a seat
+ * with a manager, with the E49 confirmation and the reason optional.
  *
  * THE PRIVACY INVARIANT (§7.2/§12.23): the seat identity comes from
  * `deriveSeats` — a claimed seat renders *Team — @username* and
@@ -416,6 +421,15 @@ function SeatsCard({
           />
         ))}
       </div>
+
+      {/* F548: the remove chooser (and so "Retire the team") is on managed
+          seats only — a team with no manager can be retired only if it once
+          had one, which this list cannot tell. Said once, not per seat. */}
+      {canManage && controls.retireUnmanagedNote && (
+        <p className="border-t border-n-4 px-card-pad py-2.5 text-[11px] font-semibold text-n-3" data-retire-unmanaged>
+          {controls.retireUnmanagedNote}
+        </p>
+      )}
 
       {canManage && controls.addSeats && openCount > 0 && (
         <div className="border-t border-n-4 px-card-pad py-3">
@@ -769,9 +783,10 @@ function TransferCommishButton({ seat, leagueId }: { seat: Seat; leagueId: strin
   )
 }
 
-/** D42 remove chooser — takeover (needs a successor) / vacate (→ placeholder);
- *  retire is disabled with its reason for the league's state (L.E1.39 —
- *  `memberControls`; F262(a) owns its wiring). */
+/** D42 remove chooser — takeover (needs a successor) / vacate (→ placeholder)
+ *  / retire (L.E1.40: offered where `memberControls().retire` — in season and
+ *  after the season; disabled with its reason before the draft and in the
+ *  playoffs). */
 function RemoveManagerButton({
   seat,
   leagueId,
@@ -832,26 +847,21 @@ function RemoveManagerDialog({
       if (mode === 'takeover') {
         successorUserId = await resolveUsername(successorHandle)
       }
-      await remove.mutateAsync({
+      const result = await remove.mutateAsync({
         memberId: seat.memberId,
         mode,
         successorUserId,
         reason: reason.trim() || undefined,
       })
       onClose()
-      toast({
-        title: mode === 'takeover' ? 'Team handed over' : 'Seat opened',
-        description:
-          mode === 'takeover'
-            ? `${seat.teamName} has a new manager.`
-            : `${seat.teamName} is now an open seat — invite a replacement.`,
-      })
+      toast(removeToast(mode, seat.teamName, result))
     } catch (cause) {
       setError(messageOf(cause))
     }
   }
 
   const takeoverReady = mode !== 'takeover' || successorHandle.trim().length > 0
+  const managerLabel = seat.identity ?? 'Its manager'
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -895,12 +905,38 @@ function RemoveManagerDialog({
               </div>
             )}
           </ModeOption>
-          <ModeOption
-            active={false}
-            disabled
-            title="Retire the team"
-            body={controls.retireWhy}
-          />
+          {controls.retire ? (
+            <>
+              <ModeOption
+                active={mode === 'retire'}
+                onSelect={() => setMode('retire')}
+                title="Retire the team"
+                body={retireOptionCopy(controls.phase)}
+              />
+              {mode === 'retire' && (
+                // E49: both consequences — what the new team inherits and
+                // where the history splits — said before Retire is pressed.
+                // OUTSIDE the option's <button> (R1400): a list inside a
+                // button is invalid, and a screen reader would read the whole
+                // list as the button's name.
+                <ul
+                  className="-mt-1 list-disc space-y-1 rounded-sm border border-n-4 py-2.5 pl-7 pr-3 text-[11px] font-semibold text-ink"
+                  data-retire-consequences
+                >
+                  {retireConsequences(controls.phase, seat.teamName, managerLabel).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <ModeOption
+              active={false}
+              disabled
+              title="Retire the team"
+              body={controls.retireWhy ?? ''}
+            />
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -929,12 +965,35 @@ function RemoveManagerDialog({
             disabled={remove.isPending || !takeoverReady}
             onClick={confirm}
           >
-            {remove.isPending ? 'Removing…' : 'Remove manager'}
+            {remove.isPending
+              ? mode === 'retire'
+                ? 'Retiring…'
+                : 'Removing…'
+              : mode === 'retire'
+                ? `Retire ${seat.teamName}`
+                : 'Remove manager'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
+}
+
+/** The toast after a removal. A retirement names the new team from the
+ *  verb's own result (`successor_team_name`), never a guess. */
+function removeToast(mode: RemoveMode, teamName: string, result: unknown): { title: string; description: string } {
+  if (mode === 'retire') {
+    const successor = (result as { successor_team_name?: unknown } | null)?.successor_team_name
+    return {
+      title: 'Team retired',
+      description:
+        typeof successor === 'string'
+          ? `${successor} takes ${teamName}’s place — invite someone to it.`
+          : `${teamName} is retired — invite someone to the team that takes its place.`,
+    }
+  }
+  if (mode === 'takeover') return { title: 'Team handed over', description: `${teamName} has a new manager.` }
+  return { title: 'Seat opened', description: `${teamName} is now an open seat — invite a replacement.` }
 }
 
 function ModeOption({
