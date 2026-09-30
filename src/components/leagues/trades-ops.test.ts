@@ -13,6 +13,7 @@ import { userFacingMessage } from '@/lib/leagues/api/client-fetch'
 
 import * as ops from './trades-ops'
 import {
+  builderDoor,
   builderLegs,
   builderProblem,
   bypassedWords,
@@ -30,6 +31,7 @@ import {
   plainServerSentence,
   plainRefusal,
   reviewModeCopy,
+  rostersGate,
   splitTrades,
   tallyWords,
   tradeActions,
@@ -299,6 +301,56 @@ describe('the builder: legs, FAAB, problems, the counter seed', () => {
     const open = [...TEAMS.map((t) => (t.team_id === BRAVO ? { ...t, manager_user_id: null } : t)), rosterTeam('t-ret', 'Retired', [], { status: 'retired' })]
     expect(tradePartners(open, ALPHA).map((t) => t.name)).toEqual(['Charlie'])
     expect(tradePartners(open.map((t) => (t.team_id === CHARLIE ? { ...t, manager_user_id: null } : t)), ALPHA)).toEqual([])
+  })
+})
+
+describe('L.E1.36 fix round (R1419 / R1420, F554): the builder’s door is derived from the CURRENT rosters list', () => {
+  const door = { toTeamId: BRAVO, get: ['p-b1'] }
+  const unmanaged = (id: string) => TEAMS.map((t) => (t.team_id === id ? { ...t, manager_user_id: null } : t))
+  it('F554: an empty list (the rosters not landed) then the full list — the door’s team and its picked player come back', () => {
+    const empty = builderDoor({ mode: 'propose', teams: [], fromTeamId: ALPHA, initial: door, pickedTo: null, pickedGet: null })
+    expect(empty).toEqual({ partners: [], toTeamId: null, get: [], unanswerable: null, noPartner: true })
+    const full = builderDoor({ mode: 'propose', teams: TEAMS, fromTeamId: ALPHA, initial: door, pickedTo: null, pickedGet: null })
+    expect(full.partners.map((t) => t.team_id)).toEqual([BRAVO, CHARLIE])
+    expect(full.toTeamId).toBe(BRAVO)
+    expect(full.get).toEqual(['p-b1'])
+    expect(full.unanswerable).toBeNull()
+    expect(full.noPartner).toBe(false)
+  })
+  it('R1410: a `?with=` target with no manager — nobody picked, no picked players, the team named for the reason', () => {
+    const d = builderDoor({ mode: 'propose', teams: unmanaged(BRAVO), fromTeamId: ALPHA, initial: door, pickedTo: null, pickedGet: null })
+    expect(d.toTeamId).toBeNull()
+    expect(d.get).toEqual([])
+    expect(d.unanswerable?.team_id).toBe(BRAVO)
+    expect(d.partners.map((t) => t.team_id)).toEqual([CHARLIE])
+    // …a target that is the offering team itself, or unknown, names nobody.
+    expect(builderDoor({ mode: 'propose', teams: TEAMS, fromTeamId: ALPHA, initial: { toTeamId: ALPHA }, pickedTo: null, pickedGet: null }).unanswerable).toBeNull()
+    expect(builderDoor({ mode: 'propose', teams: TEAMS, fromTeamId: ALPHA, initial: { toTeamId: 't-gone' }, pickedTo: null, pickedGet: null }).unanswerable).toBeNull()
+  })
+  it('an explicit pick overrides the door’s team and survives a list re-read; the door’s players do not follow it', () => {
+    const picked = { mode: 'propose' as const, fromTeamId: ALPHA, initial: door, pickedTo: CHARLIE, pickedGet: null }
+    expect(builderDoor({ ...picked, teams: TEAMS })).toMatchObject({ toTeamId: CHARLIE, get: [] })
+    const reread = [...TEAMS].reverse().concat(rosterTeam('t-new', 'Delta', []))
+    expect(builderDoor({ ...picked, teams: reread })).toMatchObject({ toTeamId: CHARLIE, get: [] })
+    expect(builderDoor({ ...picked, teams: reread, pickedGet: ['p-c1'] }).get).toEqual(['p-c1'])
+    // …a pick whose team loses its manager in the re-read is no pick, and says why.
+    expect(builderDoor({ ...picked, teams: unmanaged(CHARLIE) })).toMatchObject({ toTeamId: null, unanswerable: { team_id: CHARLIE } })
+  })
+  it('a counter is fixed to the proposer: a pick never moves it, its seed stands, and it is never “no partner”', () => {
+    const c = builderDoor({ mode: 'counter', teams: TEAMS, fromTeamId: BRAVO, initial: { toTeamId: ALPHA, get: ['p-a1'] }, pickedTo: CHARLIE, pickedGet: null })
+    expect(c.toTeamId).toBe(ALPHA)
+    expect(c.get).toEqual(['p-a1'])
+    expect(c.noPartner).toBe(false)
+    expect(c.unanswerable).toBeNull()
+    // the proposer lost his manager after the offer: the counter still names him (the card offers no Counter then, R1413)
+    expect(builderDoor({ mode: 'counter', teams: unmanaged(ALPHA), fromTeamId: BRAVO, initial: { toTeamId: ALPHA }, pickedTo: null, pickedGet: null }).toTeamId).toBe(ALPHA)
+  })
+  it('R1419: rostersGate — the builder opens only once the rosters read has answered; a failure with nothing read is an error, never an empty list', () => {
+    expect(rostersGate({ hasData: false, isPending: true, isError: false })).toBe('loading')
+    expect(rostersGate({ hasData: false, isPending: false, isError: true })).toBe('error')
+    expect(rostersGate({ hasData: true, isPending: false, isError: false })).toBe('ready')
+    // a re-read that fails over rows already read keeps the builder on them
+    expect(rostersGate({ hasData: true, isPending: false, isError: true })).toBe('ready')
   })
 })
 

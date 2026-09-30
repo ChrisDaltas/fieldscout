@@ -660,6 +660,73 @@ export function noManagerCopy(teamName: string): string {
   return `${teamName} has no manager right now, so there’s no one to answer a trade offer. Pick another team.`
 }
 
+/**
+ * Whether the builder can open yet (L.E1.36 fix round, R1419 — PROGRESS
+ * D464): the builder's partners and both columns ARE the rosters read, so it
+ * mounts only once that read has answered. Until then the door is a skeleton;
+ * a failed read (with nothing read before it) is an error with a retry —
+ * never the builder over an empty list, which would claim "no other team has
+ * a manager" (CLAUDE.md: a load or an error never renders as a plausible
+ * empty state). A re-read that fails over rows already read keeps the builder
+ * on those rows.
+ */
+export function rostersGate(rosters: { hasData: boolean; isPending: boolean; isError: boolean }): 'loading' | 'error' | 'ready' {
+  if (rosters.hasData) return 'ready'
+  if (rosters.isError) return 'error'
+  return 'loading'
+}
+
+/** The builder's door when the rosters read failed. */
+export const BUILDER_ROSTERS_ERROR_TITLE = 'Couldn’t load the league’s rosters, so the trade builder can’t open.'
+
+/**
+ * The builder's door, derived from the CURRENT team list every render
+ * (L.E1.36 F554 + fix round R1420 — PROGRESS D464):
+ *
+ *   - partners come from the current list — in a propose only a team with a
+ *     manager (`tradePartners`, R1410); in a counter, the other non-retired
+ *     teams (its partner is fixed);
+ *   - the team is the manager's explicit pick when he made one, else the
+ *     door's (`initial.toTeamId`) — and only while it is a partner in the
+ *     current list; a target with no manager is no pick plus the team to name
+ *     (`unanswerable`, `noManagerCopy`);
+ *   - a counter is fixed to the proposer — a pick never moves it;
+ *   - the "they give" picks are the manager's own once he touched them, else
+ *     the door's `initial.get` while the door's team stands;
+ *   - `noPartner`: a propose with nobody to offer to (NO_TRADE_PARTNER_COPY).
+ */
+export interface BuilderDoor {
+  partners: RosterTeam[]
+  toTeamId: string | null
+  get: string[]
+  unanswerable: RosterTeam | null
+  noPartner: boolean
+}
+
+export function builderDoor(args: {
+  mode: 'propose' | 'counter'
+  teams: readonly RosterTeam[]
+  fromTeamId: string
+  initial?: { toTeamId?: string; get?: readonly string[] }
+  /** The team the manager picked in "Trade with" (null = none yet). */
+  pickedTo: string | null
+  /** The "they give" picks once the manager touched them (null = untouched). */
+  pickedGet: readonly string[] | null
+}): BuilderDoor {
+  const { mode, teams, fromTeamId, initial, pickedTo, pickedGet } = args
+  const partners =
+    mode === 'counter' ? teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired') : tradePartners(teams, fromTeamId)
+  const fromDoor = mode === 'counter' || pickedTo === null
+  const wanted = fromDoor ? (initial?.toTeamId ?? null) : pickedTo
+  const toTeamId = wanted !== null && partners.some((t) => t.team_id === wanted) ? wanted : null
+  const unanswerable =
+    mode === 'propose' && wanted !== null && toTeamId === null
+      ? (teams.find((t) => t.team_id === wanted && t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id === null) ?? null)
+      : null
+  const get = pickedGet !== null ? [...pickedGet] : fromDoor && toTeamId !== null ? [...(initial?.get ?? [])] : []
+  return { partners, toTeamId, get, unanswerable, noPartner: mode === 'propose' && partners.length === 0 }
+}
+
 /** A counter-offer starts from the offer, turned around: the receiving team
  *  now offers — what it was asked for is what it gives. */
 export function counterSeed(trade: TradeView): BuilderSides {

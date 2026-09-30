@@ -34,6 +34,7 @@ import { ReconnectingBanner, StatusBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
 import { DropPicker, TradeBuilderView, type TradeBuilderSend } from './trade-builder'
 import {
+  BUILDER_ROSTERS_ERROR_TITLE,
   COMMISH_OP_LABELS,
   COMMISH_TRADE_MODE_COPY,
   DEADLINE_PASSED_TITLE,
@@ -60,6 +61,7 @@ import {
   lockedAssetTitle,
   reviewModeCopy,
   rosterWords,
+  rostersGate,
   splitTrades,
   tallyWords,
   tradeActions,
@@ -211,6 +213,9 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   }
 
   const teams = rosters.data?.teams ?? []
+  // R1419: the builder's partners and columns ARE the rosters read — it opens
+  // only once that read has answered (never over a still-empty list).
+  const rostersState = rostersGate({ hasData: rosters.data !== undefined, isPending: rosters.isPending, isError: rosters.isError })
   // 174 / D463: an offer is the offering team's own — the commissioner offers
   // only for the team he manages (no offering-team chooser in override mode).
   const canPropose = inSeason && myTeamId !== null
@@ -301,6 +306,8 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
               <p className="text-[12px] font-bold">🔒 {DEADLINE_PASSED_TITLE}</p>
               <p className="text-[11px] font-medium text-ink">{deadlinePassedCopy(deadlineState.view, fmt)}</p>
             </div>
+          ) : builder && defaultFrom && rostersState !== 'ready' ? (
+            <BuilderRostersWait state={rostersState} error={rosters.error} onRetry={() => void rosters.refetch()} />
           ) : builder && defaultFrom ? (
             <TradeBuilderView
               key={builderKey}
@@ -923,6 +930,29 @@ export function CommishConfirm({
           Cancel
         </Button>
       </div>
+    </div>
+  )
+}
+
+/** The builder's door while the rosters read hasn't answered (R1419): a
+ *  skeleton, or the failure with a retry — never the builder over an empty
+ *  list. */
+export function BuilderRostersWait({ state, error, onRetry }: { state: 'loading' | 'error'; error: unknown; onRetry: () => void }) {
+  if (state === 'loading') {
+    return (
+      <div className="flex flex-col gap-2" data-skeleton="trade-builder" aria-busy="true">
+        <Skeleton className="h-9 rounded-sm" />
+        <Skeleton className="h-40 rounded-sm" />
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-trade-builder="rosters-error">
+      <p className="text-[12px] font-bold">{BUILDER_ROSTERS_ERROR_TITLE}</p>
+      <p className="text-[11px] font-medium text-n-3">{error instanceof Error ? error.message : 'The rosters read failed.'}</p>
+      <Button variant="stroke" size="sm" onClick={onRetry}>
+        <Icon name="reset" size={13} /> Retry
+      </Button>
     </div>
   )
 }
