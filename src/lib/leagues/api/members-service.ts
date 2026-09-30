@@ -19,21 +19,21 @@
  *   is the UX copy) · 22023 → 400 (argument shape) · everything else → 500.
  *
  * These RPCs RAISE rather than returning outcome jsonb (unlike claim/join):
- * no refusal here has side effects worth preserving, and L.A2.5 renders the
- * unavailable `retire` mode as a DISABLED control with an "after the draft"
- * note rather than as a submitted state (D74(7)). One style per route family.
+ * no refusal here has side effects worth preserving, and the members panel
+ * offers each removal outcome only in the league states its verb accepts
+ * (`memberControls`, invite-panel-ops.ts). One style per route family.
  *
- * §15.1's `reason` is accepted and validated here and passed to the RPC so
- * the documented request shape is stable from day one — but nothing stores
- * it: `commissioner_actions` (the audit table every "audited" annotation
- * refers to) does not exist anywhere in the repo yet; it is Phase E/M6.
- * Ledger row **F32** carries the write-it-down obligation.
+ * §15.1's `reason` is OPTIONAL (Q66): validated here and passed to the RPC,
+ * which stores it on the `commissioner_actions` receipt (169, F32 — NULL
+ * when none was given).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
+import { optionalReason } from './commish-matchup-service'
+import { normalizedUuid } from './inseason-ids'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -180,14 +180,24 @@ export async function patchMember(
 // DELETE /api/leagues/[id]/members/[mid] — remove a manager, or leave
 // ---------------------------------------------------------------------------
 
-/** §15.1 body: { mode, successor_user_id?, reason }. `takeover` reseats a
- *  NAMED successor (§7.2.1(a)); the "invite a replacement" journey is
- *  `vacate` + a seat-targeted invite (D74(6)). */
+/** §15.1 body: { mode, successor_user_id?, reason?, action_id? }. `takeover`
+ *  reseats a NAMED successor (§7.2.1(a)); the "invite a replacement" journey
+ *  is `vacate` + a seat-targeted invite (D74(6)).
+ *
+ *  L.E1.40 (F262(a) / F546; PROGRESS D461): `retire` (§7.2.1(b)) needs an
+ *  `action_id` — one UUID per retirement, minted per submit by the HOOK and
+ *  reused on a retry (120's replay stamp, 113's contract; the verb refuses
+ *  without one). It is REQUIRED here for retire and refused on the other two
+ *  modes (the RPC ignores it there — a stamp that stamps nothing is a
+ *  mis-shaped request). The reason is OPTIONAL in every mode (Q66 / C82; 173
+ *  made the retire arm agree): `optionalReason` — trimmed, ≤ 500, blank
+ *  normalised to absent — the one shape every commissioner route uses. */
 export const removeMemberInputSchema = z
   .strictObject({
     mode: z.enum(['takeover', 'retire', 'vacate']),
     successor_user_id: z.uuid().nullish(),
-    reason: z.string().trim().max(500).nullish(),
+    reason: optionalReason,
+    action_id: normalizedUuid.optional(),
   })
   .refine((body) => body.mode !== 'takeover' || !!body.successor_user_id, {
     message: 'A takeover needs the successor to seat on the franchise.',
@@ -197,6 +207,28 @@ export const removeMemberInputSchema = z
     message: 'successor_user_id only applies to a takeover.',
     path: ['successor_user_id'],
   })
+  .refine((body) => body.mode !== 'retire' || body.action_id !== undefined, {
+    message: 'Retiring a team needs an action_id (one per retirement, reused on a retry).',
+    path: ['action_id'],
+  })
+  .refine((body) => body.mode === 'retire' || body.action_id === undefined, {
+    message: 'action_id only applies to retiring a team.',
+    path: ['action_id'],
+  })
+
+/** The 409 for a retirement whose stored result is not the one just asked
+ *  for (the F65(b) class). 120's replay already refuses an action_id reused on
+ *  another member or verb (22023, by name), so this guard should never fire;
+ *  it is the route's own check that a 200 reports the submit it answers. */
+export const RETIRE_ACTION_ID_REUSED_MESSAGE =
+  'That didn’t go through — we couldn’t confirm it as the retirement you just asked for. Check the members list and try again.'
+
+/** The slice of 120's retire payload this layer READS for the identity guard. */
+interface RetireResultShape {
+  verb?: unknown
+  action_id?: unknown
+  member_id?: unknown
+}
 
 /**
  * §15.1 prints NO leave endpoint — the only removal verb is
@@ -248,19 +280,34 @@ export async function removeMember(
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
-  const { mode, successor_user_id, reason } = parsed.data
+  const { mode, successor_user_id, reason, action_id } = parsed.data
 
   const { data, error } = await supabase.rpc('remove_manager', {
     p_league_id: leagueId,
     p_member_id: memberId,
     p_mode: mode,
     // Optional args: omit rather than send null (the generated Args type
-    // cannot express per-arg nullability, and the RPC defaults both).
+    // cannot express per-arg nullability, and the RPC defaults them).
     ...(successor_user_id ? { p_successor_user_id: successor_user_id } : {}),
     ...(reason ? { p_reason: reason } : {}),
+    ...(action_id ? { p_action_id: action_id } : {}),
   })
   if (error) {
     return mapMemberRpcError(error, 'Only the commissioner can remove a manager.')
+  }
+
+  // F65(b): a retirement is identified by (verb, action_id, member). 120's
+  // replay returns the STORED payload for a known action_id, so a 200 must be
+  // the retirement of THIS seat under THIS stamp — never another's result.
+  if (mode === 'retire') {
+    const result = (data ?? {}) as RetireResultShape
+    if (
+      result.verb !== 'retire_franchise' ||
+      result.action_id !== action_id ||
+      result.member_id !== memberId.toLowerCase()
+    ) {
+      return { status: 409, body: { error: RETIRE_ACTION_ID_REUSED_MESSAGE } }
+    }
   }
   return { status: 200, body: data as unknown as Json }
 }
