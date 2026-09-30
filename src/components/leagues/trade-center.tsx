@@ -281,7 +281,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
         deadlineRefusal={deadlineRefusal}
         tab={tab}
         onTab={setTab}
-        viewer={{ teamId: myTeamId, isCommissioner: isCommish, overrideMode: inOverride }}
+        viewer={{ teamId: myTeamId, isCommissioner: isCommish, overrideMode: inOverride, inSeason }}
         rosters={rosters.data ?? null}
         fmt={fmt}
         leagueId={leagueId}
@@ -584,7 +584,7 @@ export function TradeCard({
   usePreview = useTradePreview,
 }: TradeCardProps) {
   const status = tradeStatusView(trade, fmt)
-  const actions = tradeActions(trade, viewer)
+  const actions = tradeActions(trade, viewer, { proposerHasManager: (rosterOf(trade.proposer.team_id)?.manager_user_id ?? null) !== null })
   const sides = tradeSides(trade)
   const [acceptDrops, setAcceptDrops] = useState<string[] | null>(null)
   const recipientRoster = rosterOf(trade.recipient.team_id)

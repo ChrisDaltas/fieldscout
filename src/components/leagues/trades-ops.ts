@@ -465,6 +465,21 @@ export interface TradeViewer {
   isCommissioner: boolean
   /** The ONE override-mode switch (PROGRESS §3 rule (h)), commissioners only. */
   overrideMode: boolean
+  /** The league is in season or in the playoffs (174 fix round 2, R1414).
+   *  Outside them the server takes no accept / counter (151's respond gate)
+   *  and no commissioner tool (the executor's gate; 174's veto gate — Chris
+   *  2026-09-30: "Locked once complete"), so none is offered. */
+  inSeason: boolean
+}
+
+/** What the card knows about the trade's teams beyond the trade itself. */
+export interface TradeTeamsContext {
+  /** The proposing team has a manager (the rosters read's `manager_user_id`,
+   *  D339). A counter-offer is a new offer TO it, and only a team's own
+   *  manager answers an offer, so without one there is no Counter (174 fix
+   *  round 2, R1413 — the server refuses it by name too). Unknown (the
+   *  rosters not read yet) counts as no. */
+  proposerHasManager: boolean
 }
 
 export interface TradeActionSet {
@@ -499,8 +514,10 @@ const NONE: TradeActionSet = {
   force: false,
 }
 
-export function tradeActions(trade: TradeView, viewer: TradeViewer): TradeActionSet {
-  const commish = viewer.isCommissioner
+export function tradeActions(trade: TradeView, viewer: TradeViewer, teams: TradeTeamsContext): TradeActionSet {
+  // R1414: outside in_season / playoffs the commissioner has no tool on any
+  // trade — the server refuses approve / force (the executor) and veto (174).
+  const commish = viewer.isCommissioner && viewer.inSeason
   const override = commish && viewer.overrideMode
   const isProposer = viewer.teamId !== null && viewer.teamId === trade.proposer.team_id
   const isRecipient = viewer.teamId !== null && viewer.teamId === trade.recipient.team_id
@@ -510,8 +527,17 @@ export function tradeActions(trade: TradeView, viewer: TradeViewer): TradeAction
       // proposing manager may call it off. The commissioner has no move on it
       // (Chris 2026-09-30: "A commissioner cannot do anything to a trade
       // unless it's already been accepted" — L.D3.16); a commissioner who
-      // manages one of the teams answers as its manager.
-      return { ...NONE, accept: isRecipient, reject: isRecipient, counter: isRecipient, cancel: isProposer }
+      // manages one of the teams answers as its manager. Accept and Counter
+      // only in season / the playoffs (the server's gate — reject and cancel
+      // stay open, R1414); Counter only toward a proposer with a manager
+      // (R1413).
+      return {
+        ...NONE,
+        accept: isRecipient && viewer.inSeason,
+        reject: isRecipient,
+        counter: isRecipient && viewer.inSeason && teams.proposerHasManager,
+        cancel: isProposer,
+      }
     case 'in_review': {
       const mode = trade.review?.mode ?? 'commissioner'
       const canVote = mode === 'league_vote' && trade.tally !== null && trade.tally.can_vote && votingOpen(trade.tally)

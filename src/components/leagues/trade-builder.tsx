@@ -130,6 +130,8 @@ export function TradeBuilderView({
   usePreview = useTradePreview,
 }: TradeBuilderViewProps) {
   // R1410: in a propose, only a team with a manager can be offered a trade.
+  // A counter's partner is fixed — the proposer — and the card offers no
+  // Counter when it has no manager (R1413, `tradeActions`).
   const partners =
     mode === 'counter' ? teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired') : tradePartners(teams, fromTeamId)
   const initialTo = initial?.toTeamId && partners.some((t) => t.team_id === initial.toTeamId) ? initial.toTeamId : null
