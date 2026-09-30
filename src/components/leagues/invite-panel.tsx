@@ -43,14 +43,19 @@ import { cn } from '@/lib/utils'
 import { InlineIssue } from './settings-form-controls'
 import { Crest, TeamNameLink } from './league-cells'
 import {
+  CREATOR_SEAT_NOTE,
   buildJoinLink,
+  creatorSeatBlocked,
   deriveSeats,
   fillOutcome,
   inviteState,
   isAlreadyFullRefusal,
+  memberControls,
   preferredShareCode,
   readSeatCounts,
+  removeOptionCopy,
   validateSlug,
+  type MemberControls,
   type PendingInviteInput,
   type Seat,
   type SeatCounts,
@@ -68,7 +73,14 @@ import {
  * placeholder) with email-first seat-targeted invites (username + copyable link
  * secondary) + revoke, placeholder-seat creation, the roles UI (promote/demote
  * + the atomic commissioner transfer), and the D42 remove chooser (takeover /
- * vacate; retire disabled with the "after the draft" note).
+ * vacate; retire disabled with its reason).
+ *
+ * L.E1.39 (F539; PROGRESS D460): mounted in every league state — League Home
+ * before the draft, the draft room's Draft Options, and the members page
+ * after it — so each control is offered only where its verb accepts it in
+ * THIS state (`memberControls`, measured per verb in `invite-panel-ops.ts`):
+ * the share link and new seats before the draft only; seat invites, assign,
+ * roles, takeover / vacate and leave in every state; retire in none.
  *
  * THE PRIVACY INVARIANT (§7.2/§12.23): the seat identity comes from
  * `deriveSeats` — a claimed seat renders *Team — @username* and
@@ -112,10 +124,11 @@ export function InvitePanel({
     },
     nowMs,
   )
+  const controls = memberControls(detail.league.status)
 
   return (
     <div className="flex flex-col gap-[19px]">
-      {canManage && (
+      {canManage && controls.shareLink && (
         <ShareLinkCard
           leagueId={leagueId}
           inviteCode={detail.league.invite_code}
@@ -132,6 +145,7 @@ export function InvitePanel({
         claimedCount={model.claimedCount}
         openCount={model.openCount}
         canManage={canManage}
+        controls={controls}
         myRole={detail.my_role}
         nowMs={nowMs}
         invitesLoading={canManage && invitesQuery.isPending}
@@ -335,6 +349,7 @@ function SeatsCard({
   claimedCount,
   openCount,
   canManage,
+  controls,
   myRole,
   nowMs,
   invitesLoading,
@@ -348,6 +363,7 @@ function SeatsCard({
   claimedCount: number
   openCount: number
   canManage: boolean
+  controls: MemberControls
   myRole: string | null
   nowMs: number
   invitesLoading: boolean
@@ -360,6 +376,14 @@ function SeatsCard({
           <span className="fs-num">{claimedCount}</span> / {total} claimed
         </Badge>
       </CardHeader>
+
+      {/* The league link seats nobody once the draft has started (062) —
+          said, in the link card's place, for the commissioner. */}
+      {canManage && controls.linkClosedNote && (
+        <p className="px-card-pad pb-2 text-[11px] font-semibold text-n-3" data-link-closed>
+          {controls.linkClosedNote}
+        </p>
+      )}
 
       {invitesLoading && (
         <p className="px-card-pad pb-2 text-[11px] font-semibold text-n-3">Loading invites…</p>
@@ -374,6 +398,7 @@ function SeatsCard({
             linkTeams={linkTeams}
             detail={detail}
             canManage={canManage}
+            controls={controls}
             myRole={myRole}
             nowMs={nowMs}
             last={i === seats.length - 1}
@@ -381,7 +406,7 @@ function SeatsCard({
         ))}
       </div>
 
-      {canManage && openCount > 0 && (
+      {canManage && controls.addSeats && openCount > 0 && (
         <div className="border-t border-n-4 px-card-pad py-3">
           <AddSeatButton leagueId={leagueId} openCount={openCount} />
         </div>
@@ -484,6 +509,7 @@ function SeatRow({
   leagueId,
   detail,
   canManage,
+  controls,
   myRole,
   nowMs,
   last,
@@ -494,6 +520,7 @@ function SeatRow({
   linkTeams: boolean
   detail: LeagueDetail
   canManage: boolean
+  controls: MemberControls
   myRole: string | null
   nowMs: number
   last: boolean
@@ -516,9 +543,7 @@ function SeatRow({
               carries `teamId: null` (`invite-panel-ops.ts`) and stays plain
               text — no door where there is no team; and `linkTeams` is FALSE
               in the live draft room, where navigating away can cost a pick.
-              NOTE this panel is NOT mounted on the in-season league home, so
-              in-season the commissioner's index is the STANDINGS table, not
-              this list. */}
+              After the draft this list lives on the members page (L.E1.39). */}
           <div className="truncate text-[12px] font-extrabold leading-tight">
             <TeamNameLink
               name={seat.status === 'open' ? 'Open seat' : seat.teamName}
@@ -536,7 +561,7 @@ function SeatRow({
 
       {/* Management affordances (commissioner only), per status. */}
       {seat.status === 'claimed' && canManage && !seat.isSelf && (
-        <ClaimedSeatControls seat={seat} leagueId={leagueId} myRole={myRole} detail={detail} />
+        <ClaimedSeatControls seat={seat} leagueId={leagueId} myRole={myRole} detail={detail} controls={controls} />
       )}
       {seat.status === 'invited' && seat.invite && (
         <InvitedSeatControls
@@ -600,20 +625,32 @@ function ClaimedSeatControls({
   leagueId,
   myRole,
   detail,
+  controls,
 }: {
   seat: Seat
   leagueId: string
   myRole: string | null
   detail: LeagueDetail
+  controls: MemberControls
 }) {
   // The sitting commissioner can never be removed and needs no role buttons.
   if (seat.role === 'commissioner') {
     return <p className="text-[11px] font-semibold text-n-3">The league commissioner runs the show.</p>
   }
+  // §7.2 anti-coup (169:442 / :787): a co-commissioner is refused on the
+  // league creator's seat — so nothing is offered there; it is said.
+  const seatUserId = detail.members.find((m) => m.id === seat.memberId)?.user_id ?? null
+  if (creatorSeatBlocked({ myRole, seatUserId, leagueOwnerId: detail.league.owner_id })) {
+    return (
+      <p className="text-[11px] font-semibold text-n-3" data-creator-seat>
+        {CREATOR_SEAT_NOTE}
+      </p>
+    )
+  }
   return (
     <div className="flex flex-wrap items-center gap-2">
       <RoleControls seat={seat} leagueId={leagueId} myRole={myRole} />
-      <RemoveManagerButton seat={seat} leagueId={leagueId} detail={detail} />
+      <RemoveManagerButton seat={seat} leagueId={leagueId} detail={detail} controls={controls} />
     </div>
   )
 }
@@ -712,15 +749,18 @@ function TransferCommishButton({ seat, leagueId }: { seat: Seat; leagueId: strin
 }
 
 /** D42 remove chooser — takeover (needs a successor) / vacate (→ placeholder);
- *  retire is disabled with the "after the draft" note (M1 pre-draft). */
+ *  retire is disabled with its reason for the league's state (L.E1.39 —
+ *  `memberControls`; F262(a) owns its wiring). */
 function RemoveManagerButton({
   seat,
   leagueId,
   detail,
+  controls,
 }: {
   seat: Seat
   leagueId: string
   detail: LeagueDetail
+  controls: MemberControls
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -733,6 +773,7 @@ function RemoveManagerButton({
           seat={seat}
           leagueId={leagueId}
           leagueName={detail.league.name}
+          controls={controls}
           onClose={() => setOpen(false)}
         />
       )}
@@ -744,13 +785,16 @@ function RemoveManagerDialog({
   seat,
   leagueId,
   leagueName,
+  controls,
   onClose,
 }: {
   seat: Seat
   leagueId: string
   leagueName: string
+  controls: MemberControls
   onClose: () => void
 }) {
+  const optionCopy = removeOptionCopy(controls.phase)
   const [mode, setMode] = useState<RemoveMode>('vacate')
   const [successorHandle, setSuccessorHandle] = useState('')
   const [reason, setReason] = useState('')
@@ -802,13 +846,13 @@ function RemoveManagerDialog({
             active={mode === 'vacate'}
             onSelect={() => setMode('vacate')}
             title="Open the seat (vacate)"
-            body="The franchise stays put and becomes an open seat. Invite a replacement to it afterward — the recommended path before the draft."
+            body={optionCopy.vacate}
           />
           <ModeOption
             active={mode === 'takeover'}
             onSelect={() => setMode('takeover')}
             title="Hand it to someone (takeover)"
-            body="A specific person takes over this franchise right now. They must have a FieldScout account and not already be in this league."
+            body={optionCopy.takeover}
           >
             {mode === 'takeover' && (
               <div className="mt-2 space-y-1.5">
@@ -831,8 +875,8 @@ function RemoveManagerDialog({
           <ModeOption
             active={false}
             disabled
-            title="Retire the franchise"
-            body="Seals the franchise and starts a successor — not available before the draft. It arrives with the in-season tools."
+            title="Retire the team"
+            body={controls.retireWhy}
           />
         </div>
 
@@ -898,7 +942,7 @@ function ModeOption({
     >
       <div className="flex items-center gap-2 text-[13px] font-bold">
         {title}
-        {disabled && <Badge variant="stroke">After the draft</Badge>}
+        {disabled && <Badge variant="stroke">Not available</Badge>}
       </div>
       <p className="mt-0.5 text-[11px] font-semibold text-n-3">{body}</p>
       {children}

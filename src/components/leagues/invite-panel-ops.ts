@@ -403,3 +403,133 @@ export function fillOutcome(
         : `Stopped after ${added} of ${requested}. Reload the page to see the current seats.`,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Which controls each league state accepts — L.E1.39 (F539; PROGRESS D460)
+// ---------------------------------------------------------------------------
+
+/**
+ * The panel's league states. Every control was MEASURED against the newest
+ * definition of its verb (the chain head), not assumed:
+ *
+ *   - `add_placeholder_seat` (169:292) — setup / scheduled only ("seats can
+ *     only be added before the draft starts"). After that: not offered.
+ *   - joining by the league link — the general claim (062:907) and
+ *     `join_league_by_code` (062:998) answer "joining by link is closed" from
+ *     `drafting` on. `rotate_invite_code` (169:1412) and
+ *     `set_league_invite_slug` (169:1470) still accept, but their only job is
+ *     that link — so the link card is offered before the draft only, and a
+ *     sentence says why in its place.
+ *   - `create_league_invite` to a seat (169:1180) + its claim (062:858),
+ *     `revoke_league_invite` (169:1355), `assign_manager` (169:509),
+ *     `set_member_role` (169:349), `remove_manager` takeover / vacate
+ *     (169:642) and `leave_league` (150:2426) carry no league-state gate:
+ *     offered in every state. (Each refuses a retired franchise, which has
+ *     no seat row after 120 — so it is never a seat in this list.)
+ *   - `remove_manager` retire (169:724) — accepted in_season / complete only
+ *     (playoffs refused pending Q41) and it needs an `action_id` the members
+ *     route does not carry (F262(a)) — so it has no door in ANY state; the
+ *     reason is said per state.
+ */
+export type MembersPhase = 'pre_draft' | 'drafting' | 'in_season' | 'playoffs' | 'complete'
+
+export function membersPhase(status: string): MembersPhase {
+  if (status === 'setup' || status === 'scheduled') return 'pre_draft'
+  if (status === 'drafting' || status === 'in_season' || status === 'playoffs' || status === 'complete') return status
+  // An unknown status: the conservative arm — nothing only a pre-draft league
+  // accepts is offered.
+  return 'complete'
+}
+
+export const LINK_CLOSED_NOTE =
+  'Joining by the league link closed when the draft started. To fill a team, invite someone to that team below.'
+
+export const RETIRE_BEFORE_DRAFT_WHY = 'Retiring a team is only possible after the draft.'
+export const RETIRE_PLAYOFFS_WHY = 'A team can’t be retired during the playoffs.'
+export const RETIRE_NO_SCREEN_WHY =
+  'Retiring a team doesn’t have a screen yet — open the seat or hand the team to someone instead.'
+
+export interface MemberControls {
+  phase: MembersPhase
+  /** The league share link card (copy, custom link, rotate). */
+  shareLink: boolean
+  /** Said in the link card's place once joining by link has closed. */
+  linkClosedNote: string | null
+  /** "Add an open seat" / "Fill all seats". */
+  addSeats: boolean
+  /** Why retire is not offered — it never is on this screen (F262(a)). */
+  retireWhy: string
+}
+
+export function memberControls(status: string): MemberControls {
+  const phase = membersPhase(status)
+  const preDraft = phase === 'pre_draft'
+  return {
+    phase,
+    shareLink: preDraft,
+    linkClosedNote: preDraft ? null : LINK_CLOSED_NOTE,
+    addSeats: preDraft,
+    retireWhy:
+      phase === 'pre_draft' || phase === 'drafting'
+        ? RETIRE_BEFORE_DRAFT_WHY
+        : phase === 'playoffs'
+          ? RETIRE_PLAYOFFS_WHY
+          : RETIRE_NO_SCREEN_WHY,
+  }
+}
+
+export interface RemoveOptionCopy {
+  vacate: string
+  takeover: string
+}
+
+/** What vacate and takeover do, said for the league's state (§7.2.1 (a) /
+ *  (c); 146: once the draft has started the team keeps its FAAB through
+ *  either; 150: a vacate cancels the team's pending waiver claims). */
+export function removeOptionCopy(phase: MembersPhase): RemoveOptionCopy {
+  if (phase === 'pre_draft') {
+    return {
+      vacate:
+        'The team stays put and becomes an open seat. Invite a replacement to it afterward — the recommended path before the draft.',
+      takeover:
+        'A specific person takes over this team right now. They must have a FieldScout account and not already be in this league.',
+    }
+  }
+  if (phase === 'drafting') {
+    return {
+      vacate: 'The team stays in the draft with no manager. Invite a replacement to it afterward.',
+      takeover:
+        'A specific person takes over this team right now, picks included. They must have a FieldScout account and not already be in this league.',
+    }
+  }
+  return {
+    vacate:
+      'The team stays in the league with no manager — its players, record and FAAB stay with it, and its waiver claims are cancelled. Until you seat someone, you run it: set its lineup on its page, or switch its autopilot on.',
+    takeover:
+      'A specific person takes over this team right now, with its players, record and FAAB. They must have a FieldScout account and not already be in this league.',
+  }
+}
+
+/** §7.2's anti-coup rule (169: `set_member_role` :442, `remove_manager`
+ *  :787): a co-commissioner cannot change or remove the league CREATOR's
+ *  seat (keyed on `leagues.owner_id`, never on role). */
+export const CREATOR_SEAT_NOTE = 'Only the commissioner can change the league creator’s seat.'
+
+export function creatorSeatBlocked(args: {
+  myRole: string | null
+  seatUserId: string | null
+  leagueOwnerId: string
+}): boolean {
+  return args.myRole === 'co_commissioner' && args.seatUserId !== null && args.seatUserId === args.leagueOwnerId
+}
+
+/** The members page (L.E1.39) — the seat list after the draft. */
+export function membersPageHref(leagueId: string): string {
+  return `/app/leagues/${leagueId}/members`
+}
+
+export const MEMBERS_TITLE = 'Members'
+export const MEMBERS_NAV_LABEL = 'Members'
+export const MEMBERS_INTRO_COMMISH =
+  'Invite someone to a team that has no manager, hand a team to someone else, name co-commissioners, or remove a manager.'
+export const MEMBERS_INTRO_MEMBER = 'Everyone in the league and the team each one runs.'
