@@ -105,6 +105,21 @@
  *      error costs no lease wait; if that release fails too, the lease
  *      expiry is the backstop.
  *
+ * STAT CORRECTIONS (M6 L.E2.2 — migration 172; spec §23.4 v2.16.83; tasks-M6
+ * TD6 / TD7 / TD8 as ruled by Q81 — PROGRESS D438 / D439 / D440 / D453).
+ * (2b) the drain reads the UNAPPLIED `stat_correction_events` of its ready
+ * players; (7) a team whose starters include one of them names those events
+ * (`corrections`) and the door records the league's correction IN the
+ * re-score's transaction — the starter filter, the "no points moved" test,
+ * the league post and the result-flip notifications are the door's; (7b) a
+ * re-score of the last regular-season week or a playoff round runs the
+ * bracket sync at once (`score_bracket_resync`, F476); (8c) after the ack the
+ * events of every CONSUMED player are stamped `applied_at` at this drain's
+ * instant. Deploy before push: a 158 door ignores `corrections` and answers
+ * without a `corrections` report — named (`not_recorded_pre_172`), and the
+ * scores are written exactly as before; the two new doors absent (PGRST202)
+ * ⇒ named and skipped. A final week is still `week_final` (nothing records).
+ *
  * TWO DRAINS AT ONCE (§22.3 "concurrent invocations are safe by
  * construction" — R866, the reviewer's interleaving, a permanent stack
  * cell): before 121 the drain was read-then-ack and nothing stopped a
@@ -168,6 +183,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/types/database'
 
 import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
+import { isDoorNotPushed, isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 
 import { NULL_IS_PENDING_KEYS, STAT_KEYS } from '../stats/stat-keys'
 import type { TimeProvider } from '../time/time-provider'
@@ -634,7 +650,62 @@ export interface DoorReport {
   /** 158 (F405): the per-player arm's count. ABSENT on a pre-158 door (119),
    *  which ignores `players` — that absence is how the worker knows. */
   player_points?: { teams_sent: number; teams_written: number; rows_written: number; rows_removed: number }
+  /** 172 (L.E2.2): the corrections arm's report. ABSENT on a pre-172 door
+   *  (158), which ignores the `corrections` element — named, never silent. */
+  corrections?: DoorCorrectionsReport
+  /** 172 (F476): a re-score of the last regular-season week or a playoff
+   *  round owes the bracket its sync now — the worker runs it. */
+  bracket_resync_due?: boolean
 }
+
+/** One league record the door wrote (172, `league_stat_corrections`). */
+export interface DoorCorrectionRecord {
+  id: string
+  team_id: string
+  player_id: string
+  event_ids: string[]
+  player_points_before: number | null
+  player_points_after: number
+  team_score_before: number | null
+  team_score_after: number | null
+}
+
+/** 172 (L.E2.2): what the door did with the `corrections` element. */
+export interface DoorCorrectionsReport {
+  teams_sent: number
+  events_sent: number
+  recorded: number
+  records: DoorCorrectionRecord[]
+  /** Named non-records: `not_started` (the starter filter — a bench player),
+   *  `no_points_moved` (a stat the league does not score), `score_not_written`
+   *  (an overridden / final row — the commissioner's number stands). */
+  skipped: Array<{ team_id: string; player_id?: string; reason: 'not_started' | 'no_points_moved' | 'score_not_written' }>
+  /** The week's games are over (`correction_window`) — results are recorded and announced. */
+  results_final: boolean
+  /** The ONE league post, or null when nothing was recorded. */
+  post: string | null
+  notified: Array<{ team_id: string; user_id: string; body: string }>
+  not_notified: Array<{ team_id: string; why: string }>
+  reason: 'none_sent' | 'nothing_recorded' | null
+}
+
+/** 172: what became of the corrections sent with a league-week's scores. */
+export type CorrectionsStorage = 'none_sent' | 'recorded' | 'nothing_recorded' | 'not_recorded_pre_172'
+
+/**
+ * What the door did with the `corrections` element (pure): nothing sent ⇒
+ * `none_sent`; a 172 door's report carries `corrections`; a 158 door's
+ * never does (it ignores the key and scores exactly as before).
+ */
+export function correctionsStorageOf(sent: number, door: DoorReport): CorrectionsStorage {
+  if (sent === 0) return 'none_sent'
+  if (door.corrections === undefined || door.corrections === null) return 'not_recorded_pre_172'
+  return door.corrections.recorded > 0 ? 'recorded' : 'nothing_recorded'
+}
+
+/** The sentence a pre-172 door earns — named on the drain, never silent. */
+export const PRE_172_DOOR_SENTENCE =
+  'stat corrections NOT recorded: score_write_week_batch answered without a corrections report — the database predates migration 172 (it ignores `corrections`); the team scores are written exactly as before, and no league record, post or notification is made until 172 is pushed'
 
 /** 158 (F405): what became of the per-player rows sent with a league-week's scores. */
 export type PlayerPointsStorage = 'stored' | 'not_stored_pre_158'
@@ -691,6 +762,19 @@ export interface LeagueWeekReport {
   /** 158 (F405): set when the door was called — `stored` (the rows went with
    *  the scores) or `not_stored_pre_158` (a pre-158 door; named in problems). */
   player_points?: PlayerPointsStorage
+  /** 172 (L.E2.2): set when the door was called — what became of the
+   *  unapplied correction events sent with the scores. */
+  corrections?: CorrectionsStorage
+  /** 172 (L.E2.2): the correction event ids sent, per team (empty = none). */
+  corrections_sent?: Record<string, string[]>
+  /** 172 (L.E2.2): what the corrections did, in one line — never an
+   *  unexplained zero (rule 6). Information, not a problem: a correction that
+   *  moves no league score (a stat the league does not score, a benched
+   *  player) is ordinary and says why here. */
+  corrections_note?: string
+  /** 172 (F476): the immediate bracket sync's answer when the door said it
+   *  was due (`skipped_pre_172` when the database lacks the door). */
+  bracket_resync?: Json | 'skipped_pre_172'
   problems: string[]
 }
 
@@ -732,6 +816,18 @@ export interface BatchReport {
    *  door write for it may be STALE too. Alert on `lease_lost + gone > 0`. */
   ack_missed: Record<AckMissReason, number>
   leagues: LeagueWeekReport[]
+  /** 172 (L.E2.2, §12.21 `applied_at`): the unapplied correction events of
+   *  the drained players and what the stamp did with them after the ack. */
+  corrections_applied: {
+    /** Events read for the ready players (unapplied). */
+    read: number
+    /** Event ids of CONSUMED players sent to the stamp. */
+    sent: number
+    stamped: number
+    still_queued: number
+    /** Why the numbers are what they are (never an unexplained zero). */
+    reason: string
+  }
   written: number
   no_change: number
   nothing_writable: number
@@ -911,6 +1007,54 @@ async function readStatLines(
   return out
 }
 
+/** 172 (L.E2.2): the unapplied correction events of a week's ready players. */
+interface UnappliedEvents {
+  byPlayer: Map<string, string[]>
+  /** false ⇒ the database has no `stat_correction_events` (pre-167) — named, none sent. */
+  available: boolean
+}
+
+/**
+ * The unapplied `stat_correction_events` of `playerIds` for (season, week)
+ * — the ids the scoring door records a league's correction from (172). Read
+ * by GET (R1257: a HEAD on a missing table answers 204), paged past the cap
+ * with an exact count (pageAll's contract); a database without the table
+ * (pre-167 — PGRST205 / 42P01 naming it) answers `available: false`.
+ */
+async function readUnappliedEvents(db: ScoreWorkerClient, season: number, week: number, playerIds: readonly string[]): Promise<UnappliedEvents> {
+  const byPlayer = new Map<string, string[]>()
+  for (const ids of chunk(playerIds, IN_CHUNK)) {
+    let offset = 0
+    let total: number | null = null
+    for (;;) {
+      const page = await db
+        .from('stat_correction_events')
+        .select('id, player_id', { count: 'exact' })
+        .eq('season', season)
+        .eq('week', week)
+        .is('applied_at', null)
+        .in('player_id', ids)
+        .order('id', { ascending: true })
+        .range(offset, offset + POSTGREST_ROW_CAP - 1)
+      if (page.error) {
+        if (isMissingSchemaObject(page.error, ['stat_correction_events'])) return { byPlayer: new Map(), available: false }
+        throw new Error(`stat_correction_events read: ${page.error.message}`)
+      }
+      const rows = page.data ?? []
+      if (page.count !== null && page.count !== undefined) total = page.count
+      for (const row of rows) {
+        const list = byPlayer.get(row.player_id)
+        if (list) list.push(row.id)
+        else byPlayer.set(row.player_id, [row.id])
+      }
+      offset += rows.length
+      if (rows.length === 0 || (total !== null && offset >= total)) break
+      if (total === null && rows.length < POSTGREST_ROW_CAP) break
+    }
+  }
+  return { byPlayer, available: true }
+}
+
 interface RosterHit {
   league_id: string
   player_id: string
@@ -996,6 +1140,9 @@ interface LeagueWeekInput {
   /** Ready players this league rosters. */
   players: string[]
   statsByPlayer: ReadonlyMap<string, StatLineRow>
+  /** 172 (L.E2.2): the unapplied `stat_correction_events` ids of the ready
+   *  players (empty when none, or on a database without the table). */
+  eventsByPlayer: ReadonlyMap<string, readonly string[]>
 }
 
 /**
@@ -1004,7 +1151,7 @@ interface LeagueWeekInput {
  * deterministic refusal (recorded by the caller); anything else propagates
  * (a transport error aborts the drain with the queue intact).
  */
-async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): Promise<LeagueWeekReport> {
+async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input: LeagueWeekInput): Promise<LeagueWeekReport> {
   const { league, season, week } = input
   const report: LeagueWeekReport = {
     league_id: league.id,
@@ -1196,11 +1343,25 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
   //     a scored week's box score always adds up to it. A pre-158 door
   //     ignores the key (119 reads team_id / points only) and says nothing
   //     of it: that silence is named below.
-  const batch = scores.map((s) => ({
-    team_id: s.team_id,
-    points: s.points,
-    players: playerPointsRows(slotsByTeam.get(s.team_id) ?? [], s),
-  }))
+  //     From 172 (L.E2.2 — TD6, D438 / D453) a team whose STARTERS include a
+  //     drained player carrying unapplied correction events also names those
+  //     events (`corrections`); the door writes the league's record in the
+  //     same transaction as the re-score — the starter filter and the "no
+  //     points moved" test are the door's (server-authoritative), this only
+  //     says which events the drained lines carry. A pre-172 door ignores
+  //     the key (158 reads team_id / points / players) — named below.
+  const sent: Record<string, string[]> = {}
+  const batch = scores.map((s) => {
+    const slots = slotsByTeam.get(s.team_id) ?? []
+    const eventIds = [...new Set(slots.flatMap((slot) => (mapped.has(slot.player_id) ? [...(input.eventsByPlayer.get(slot.player_id) ?? [])] : [])))].sort()
+    if (eventIds.length > 0) sent[s.team_id] = eventIds
+    return {
+      team_id: s.team_id,
+      points: s.points,
+      players: playerPointsRows(slots, s),
+      ...(eventIds.length > 0 ? { corrections: eventIds } : {}),
+    }
+  })
   const { data, error } = await db.rpc('score_write_week_batch', {
     p_league_id: league.id,
     p_week: week,
@@ -1219,6 +1380,40 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, input: LeagueWeekInput): P
   if (report.player_points === 'not_stored_pre_158') report.problems.push(PRE_158_DOOR_SENTENCE)
   for (const skip of door.skipped ?? []) {
     report.problems.push(`door skipped ${skip.team_id ?? skip.matchup_id ?? '?'}: ${skip.reason}`)
+  }
+
+  // 172 (L.E2.2): what the door did with the corrections — never silent.
+  const sentCount = Object.values(sent).reduce((n, ids) => n + ids.length, 0)
+  report.corrections_sent = sent
+  report.corrections = correctionsStorageOf(sentCount, door)
+  if (report.corrections === 'not_recorded_pre_172') report.problems.push(PRE_172_DOOR_SENTENCE)
+  if (door.corrections !== undefined && door.corrections !== null && sentCount > 0) {
+    // Loud emptiness (rule 6): what the correction did to this league, and why
+    // nothing where nothing — information on the report, never a problem.
+    const why = (door.corrections.skipped ?? []).map((s) => `${s.team_id}${s.player_id ? `/${s.player_id}` : ''}: ${s.reason}`)
+    report.corrections_note =
+      report.corrections === 'recorded'
+        ? `stat corrections: ${door.corrections.recorded} record(s) written for league ${league.id} week ${week} (${sentCount} event(s) sent), the league post made, ${door.corrections.notified.length} manager(s) notified${why.length > 0 ? `; not recorded: ${why.join('; ')}` : ''}`
+        : `stat corrections recorded nothing for league ${league.id} week ${week} (${sentCount} event(s) sent): ${why.join('; ') || 'no reason given'}`
+  }
+
+  // 172 (F476): the bracket sync at once after a re-score of the last
+  // regular-season week or a playoff round — at THIS drain's injected
+  // instant (the jobs' contract). A failure is named, never a rollback of
+  // the committed re-score; the hourly beat retries as before.
+  if (door.bracket_resync_due === true) {
+    const at = time.now().toISOString()
+    const resync = await db.rpc('score_bracket_resync', { p_league_id: league.id, p_now: at })
+    if (resync.error) {
+      if (isDoorNotPushed(resync.error, { score_bracket_resync: ['p_league_id', 'p_now'] })) {
+        report.bracket_resync = 'skipped_pre_172'
+        report.problems.push('bracket re-sync skipped: score_bracket_resync is absent — the database predates migration 172; the hourly beat syncs the bracket as before')
+      } else {
+        report.problems.push(`bracket re-sync FAILED for league ${league.id} week ${week}: ${resync.error.message} — the hourly beat retries`)
+      }
+    } else {
+      report.bracket_resync = resync.data as Json
+    }
   }
   if (door.reason === 'nothing_writable') {
     report.outcome = 'nothing_writable'
@@ -1258,6 +1453,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     released: 0,
     ack_missed: { restamped: 0, lease_lost: 0, gone: 0 },
     leagues: [],
+    corrections_applied: { read: 0, sent: 0, stamped: 0, still_queued: 0, reason: 'no event read — no ready player carries an unapplied correction' },
     written: 0,
     no_change: 0,
     nothing_writable: 0,
@@ -1304,6 +1500,11 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     }
 
     const toDelete: QueueRow[] = []
+    // 172 (L.E2.2): the unapplied correction events read for each week's
+    // ready players, by `season:week:player` — stamped `applied_at` after
+    // the ack for the players this drain CONSUMED (§12.21).
+    const eventsByRow = new Map<string, readonly string[]>()
+    let eventsMissing = false
     // The HELD rows — not ready (step 2) or week_not_open (step 4) — go back
     // deferred (122, R872) so the next claims skip them for `deferSeconds`.
     const toDefer: QueueRow[] = []
@@ -1335,6 +1536,15 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
       }
       if (ready.length === 0) continue
       anyReady = true
+
+      // (2b) 172 (L.E2.2): the ready players' UNAPPLIED correction events —
+      //      the door records each league's correction from them.
+      const events = await readUnappliedEvents(db, season, week, ready.map((r) => r.player_id))
+      if (!events.available) eventsMissing = true
+      for (const [pid, ids] of events.byPlayer) {
+        eventsByRow.set(`${season}:${week}:${pid}`, ids)
+        report.corrections_applied.read += ids.length
+      }
 
       // (3) MAP — roster index ∩ in-season leagues of the season (scoped
       //     and paged in the read — R868).
@@ -1379,7 +1589,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
         const league = leagues.get(leagueId)!
         let entry: LeagueWeekReport
         try {
-          entry = await scoreLeagueWeek(db, { league, season, week, players, statsByPlayer: lines })
+          entry = await scoreLeagueWeek(db, deps.time, { league, season, week, players, statsByPlayer: lines, eventsByPlayer: events.byPlayer })
         } catch (err) {
           if (!(err instanceof LeagueWeekFailure)) throw err
           entry = {
@@ -1456,6 +1666,31 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
       )
     }
     for (const miss of ack.missed) report.ack_missed[miss.reason] += 1
+
+    // (8c) 172 (§12.21 `applied_at`): the events of every CONSUMED player are
+    //      stamped at this drain's instant — the door stamps only an event
+    //      whose player-week has no queue row left (a re-stamped / held row
+    //      keeps it unapplied for the next drain). Absent door ⇒ named.
+    const consumedIds = [...new Set(toDelete.flatMap((row) => [...(eventsByRow.get(`${row.season}:${row.week}:${row.player_id}`) ?? [])]))].sort()
+    report.corrections_applied.sent = consumedIds.length
+    if (eventsMissing) {
+      report.corrections_applied.reason = 'stat_correction_events is absent — the database predates migration 167; no correction event exists to apply'
+    } else if (consumedIds.length === 0) {
+      report.corrections_applied.reason =
+        report.corrections_applied.read === 0 ? 'no event read — no ready player carries an unapplied correction' : `${report.corrections_applied.read} event(s) read, none on a consumed row — they stay unapplied until their row drains`
+    } else {
+      const stamp = await db.rpc('stat_correction_mark_applied', { p_event_ids: consumedIds, p_now: deps.time.now().toISOString() })
+      if (stamp.error) {
+        if (!isDoorNotPushed(stamp.error, { stat_correction_mark_applied: ['p_event_ids', 'p_now'] })) throw new Error(`stat_correction_mark_applied: ${stamp.error.message}`)
+        report.corrections_applied.reason = `${consumedIds.length} event(s) NOT stamped applied: stat_correction_mark_applied is absent — the database predates migration 172`
+        report.problems.push(`correction events: ${report.corrections_applied.reason}`)
+      } else {
+        const r = stamp.data as unknown as { stamped: number; still_queued: number }
+        report.corrections_applied.stamped = r.stamped
+        report.corrections_applied.still_queued = r.still_queued
+        report.corrections_applied.reason = `${r.stamped} of ${consumedIds.length} stamped applied${r.still_queued > 0 ? `; ${r.still_queued} still queued (a newer delta — the next drain applies them)` : ''}`
+      }
+    }
     if (ack.missed.length > 0) {
       const by = (reason: AckMissReason) => ack.missed.filter((m) => m.reason === reason).map((m) => `${m.season}/${m.week}/${m.player_id}`)
       const restamped = by('restamped')

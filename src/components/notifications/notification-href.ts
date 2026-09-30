@@ -43,6 +43,12 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   if (n.type === 'league_week_rescored' && typeof data?.league_id === 'string' && data.league_id !== '') {
     return `/app/leagues/${data.league_id}`
   }
+  // M6 L.E2.2 (172, D453): a stat correction changed the manager's result
+  // (`stat_correction_result`) → that league's home, where the league's post
+  // about the correction and the standings are (the corrections view is L.E2.4's).
+  if (n.type === 'stat_correction_result' && typeof data?.league_id === 'string' && data.league_id !== '') {
+    return `/app/leagues/${data.league_id}`
+  }
   // List activity (the pre-existing arm).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
     return `/app/lists/${data.list_id}`

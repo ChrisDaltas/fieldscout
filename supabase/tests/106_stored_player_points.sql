@@ -47,6 +47,12 @@ set local search_path = public, extensions;
 
 select plan(79);
 
+-- M6 L.E2.2 (migration 172 — additive, the R992 shape): 172's five fenced
+-- hunks reversed on the live body (pgTAP 120 §A pins the 172 body itself).
+create function pg_temp.un172(p_src text) returns text language sql as $un172$
+  select regexp_replace(p_src, E'[ ]*-- @172\\{[^@]*-- @172\\}\\n', '', 'g');
+$un172$;
+
 -- 158's four substitutions reversed (innermost first) — the D137 pin.
 create function pg_temp.un158(p_src text) returns text language sql as $un158$
   select replace(replace(replace(replace(p_src,
@@ -119,11 +125,11 @@ select ok(
   and has_function_privilege('service_role', 'public.score_backfill_player_points(uuid, integer, jsonb)', 'EXECUTE'),
   'A6 …and the service role (the worker, the backfill CLI) can run both doors');
 select is(
-  (select md5(prosrc) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select md5(pg_temp.un172(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '548958d0a402c352c91c23fa924a2a0f',
-  'A7 score_write_week_batch is 158''s body — a STORED LITERAL md5 (derive_158.py, 119:453-683 plus four hunks)');
+  'A7 score_write_week_batch is 158''s body — a STORED LITERAL md5 (derive_158.py, 119:453-683 plus four hunks) — read under 172''s five fenced hunks reversed (pg_temp.un172; 120 A6 pins 172''s own)');
 select is(
-  (select md5(pg_temp.un158(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select md5(pg_temp.un158(pg_temp.un172(prosrc))) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   'ebacf6a5485b1883781fab7bcd26a19c',
   'A8 …and with 158''s four hunks reversed it is 119''s body BYTE FOR BYTE (D137 — every other byte is 119''s)');
 select is(

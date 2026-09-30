@@ -46,6 +46,13 @@
  * writes; a final week's line still moves (research, Q81) and nothing here
  * touches a league table (158's lock; the worker's `week_final`).
  *
+ * THE SETTLE GRACE (M6 L.E2.2 — F511, TD2 amended; PROGRESS D453(6)): a
+ * change to a final game's line within `SETTLE_GRACE_MS` (6 h) of the game
+ * first being seen final — or, with no game on the line, of the week's last
+ * game being seen final — is ordinary post-game settling: written, queued and
+ * re-scored as always, never recorded as a correction (`corrections.settled`
+ * counts it and a reason line says so).
+ *
  * DEPLOY BEFORE PUSH (TD15). Until migration 167 is pushed the door is absent:
  * PostgREST answers PGRST202 (measured on the 166 stack, 2026-09-29: "Could
  * not find the function public.ingest_write_batch(p_now, p_rows) in the
@@ -232,6 +239,10 @@ export interface IngestCorrectionsReport {
   replayed: number
   /** Named keys whose stored value already equalled the new one at write (a concurrent poll landed it first). */
   unchangedAtWrite: number
+  /** M6 L.E2.2 (F511, D453 — the TD2 amendment): keys that moved on a final game's line
+   *  inside the SETTLE GRACE after the game was first seen final — ordinary post-game
+   *  settling: written, queued and re-scored as always, never recorded as a correction. */
+  settled: number
   /** The door's week state at detection (null when nothing was sent to it). */
   weekState: 'open' | 'final' | null
   keys: DetectedCorrection[]
@@ -656,6 +667,87 @@ export function classifyCorrections(
   return out
 }
 
+/**
+ * THE SETTLE GRACE (M6 L.E2.2 — F511, an amendment to TD2 / D434; PROGRESS
+ * D453(6)). A finished game's line routinely settles after the whistle — the
+ * provider's post-game cleanup of a yard or a target, seen by the first
+ * sweeps after fast polling stops (R711). The standard platforms re-score
+ * that silently and announce only real corrections, so a change to a final
+ * game's line inside this window after the game was FIRST SEEN FINAL is not
+ * a correction: it is written, queued and re-scored exactly as before, and
+ * no `stat_correction_events` row is made (so no league record, post or
+ * notification follows, and L.E2.5 cannot mistake it for a real one). At
+ * the boundary and after, it is a correction. "First seen final" is the
+ * stored `nfl_games.updated_at` of the line's game (the poll that flipped it
+ * to final stamped it; a final game's row is rewritten only if it changes);
+ * with no game on the line (production's feed, F468(a)) the week stands in —
+ * the latest such instant over its in-week games, i.e. when its last game
+ * was seen final. An unknown instant (NULL) grants no grace.
+ *
+ * Six hours: every production week so far settled inside the poll that saw
+ * its last game final (2026 wks 1–3: the whole week rewritten at that poll,
+ * then no line moved in the 31 hourly sweeps measured after week 3 — PROGRESS
+ * D453(6)); the platforms' official corrections come days later (Tuesday
+ * onward), so the grace covers the overnight cleanup without swallowing
+ * them. L.E2.5 re-measures it on the first real corrections.
+ */
+export const SETTLE_GRACE_MS = 6 * 60 * 60_000
+
+/** When this line's game (or, with no game id, its week's last game) was first seen final — null when unknown. */
+export function finalObservedAt(
+  row: StatRow,
+  prior: StatRow | undefined,
+  gamesBeforePoll: ReadonlyMap<string, GameRow>,
+  observedAt: ReadonlyMap<string, string | null>,
+  season: number,
+  week: number,
+): string | null {
+  const gameId = row.game_id ?? prior?.game_id ?? null
+  if (gameId !== null) return observedAt.get(gameId) ?? null
+  let latest: string | null = null
+  for (const g of gamesBeforePoll.values()) {
+    if (g.season !== season || g.week !== week || !IN_WEEK_STATUSES.has(g.status)) continue
+    const at = observedAt.get(g.id) ?? null
+    if (at === null) return null
+    if (latest === null || Date.parse(at) > Date.parse(latest)) latest = at
+  }
+  return latest
+}
+
+export interface SettleContext {
+  /** This poll's instant. */
+  polledAt: Date
+  /** `nfl_games.updated_at` by game id, as stored BEFORE this poll (ISO). */
+  observedAt: ReadonlyMap<string, string | null>
+  graceMs: number
+}
+
+/**
+ * TD2 as amended by F511: the corrections of a poll's diff (`classifyCorrections`)
+ * split into those past the settle grace (`corrections` — recorded) and those
+ * inside it (`settled` — ordinary settling, not recorded).
+ */
+export function classifyCorrectionsWithSettle(
+  diff: StatDiff,
+  existing: ReadonlyMap<string, StatRow>,
+  gamesBeforePoll: ReadonlyMap<string, GameRow>,
+  season: number,
+  week: number,
+  settle: SettleContext,
+): { corrections: Map<string, MovedKey[]>; settled: Map<string, MovedKey[]> } {
+  const all = classifyCorrections(diff, existing, gamesBeforePoll, season, week)
+  const rows = new Map([...diff.inserts, ...diff.updates].map((r) => [r.player_id, r]))
+  const corrections = new Map<string, MovedKey[]>()
+  const settled = new Map<string, MovedKey[]>()
+  for (const [playerId, keys] of all) {
+    const row = rows.get(playerId)!
+    const at = finalObservedAt(row, existing.get(playerId), gamesBeforePoll, settle.observedAt, season, week)
+    const inGrace = at !== null && settle.polledAt.getTime() < Date.parse(at) + settle.graceMs
+    ;(inGrace ? settled : corrections).set(playerId, keys)
+  }
+  return { corrections, settled }
+}
+
 // ── DB reads (paged past the PostgREST cap — page-all.ts) ──────────────────
 
 interface DbGameRow {
@@ -666,13 +758,16 @@ interface DbGameRow {
   away_team: string
   kickoff_at: string
   status: string
+  updated_at: string | null
 }
 
-async function readGames(db: SyncClient, season: number): Promise<Map<string, GameRow>> {
+/** The stored games (the diff's shape) — and, into `observedAt`, each row's
+ *  `updated_at` (F511's settle grace: when a final game was first seen final). */
+async function readGames(db: SyncClient, season: number, observedAt?: Map<string, string | null>): Promise<Map<string, GameRow>> {
   const rows = await pageAll<DbGameRow>((from, to) =>
     db
       .from('nfl_games')
-      .select('id, season, week, home_team, away_team, kickoff_at, status', { count: 'exact' })
+      .select('id, season, week, home_team, away_team, kickoff_at, status, updated_at', { count: 'exact' })
       .eq('season', season)
       .order('id')
       .range(from, to),
@@ -688,6 +783,7 @@ async function readGames(db: SyncClient, season: number): Promise<Map<string, Ga
       kickoff_at: isoOf(row.kickoff_at),
       status: row.status as ProviderGame['status'],
     })
+    observedAt?.set(row.id, row.updated_at === null || row.updated_at === undefined ? null : isoOf(row.updated_at))
   }
   return out
 }
@@ -839,6 +935,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       recorded: 0,
       replayed: 0,
       unchangedAtWrite: 0,
+      settled: 0,
       weekState: null,
       keys: [],
       reason: 'nothing written — no line to classify',
@@ -1015,6 +1112,8 @@ function correctionsReason(report: IngestReport, deltas: number, writes: number)
   const c = report.corrections
   if (writes === 0) return 'nothing written — no line to classify'
   if (deltas === 0) return 'no scoring delta — a metadata-only rewrite is never a correction'
+  if (c.detected === 0 && c.settled > 0)
+    return `${deltas} scoring delta(s): ${c.settled} key(s) moved within ${SETTLE_GRACE_MS / 3_600_000} h of the game being seen final — ordinary post-game settling, re-scored, not a correction (F511)`
   if (c.detected === 0) return `${deltas} scoring delta(s), none to a line whose game was final before this poll — ordinary live deltas, no correction`
   if (report.write.path === 'two_call_fallback') return `${c.detected} detected, NOT recorded — the database predates migration 167`
   if (c.recorded === 0) return `${c.detected} detected, none recorded — ${c.replayed} already recorded at this instant, ${c.unchangedAtWrite} already equal when written`
@@ -1065,8 +1164,9 @@ export async function ingestWeek(
     else gameRows.push(row)
   }
 
+  const gamesObservedAt = new Map<string, string | null>()
   const [existingGames, existingWeeks, known, existingStats] = await Promise.all([
-    readGames(db, season),
+    readGames(db, season, gamesObservedAt),
     readWeeks(db, season),
     fetchKnownPlayerIds(db),
     readStats(db, season, week),
@@ -1134,7 +1234,14 @@ export async function ingestWeek(
   // TD2 — against the games as stored BEFORE this poll (`existingGames`),
   // never `merged`: the poll that first sees a game final carries its last
   // in-game changes, and those are not corrections.
-  const corrections = classifyCorrections(statDiff, existingStats, existingGames, season, week)
+  // M6 L.E2.2 (F511 — the TD2 amendment): a change inside the settle grace
+  // after the game was first seen final is ordinary settling, not recorded.
+  const { corrections, settled } = classifyCorrectionsWithSettle(statDiff, existingStats, existingGames, season, week, {
+    polledAt,
+    observedAt: gamesObservedAt,
+    graceMs: SETTLE_GRACE_MS,
+  })
+  for (const keys of settled.values()) report.corrections.settled += keys.length
 
   // ── Writes: games → weeks → (stats + events + queue: one door call per batch) ──
   const gameWrites = [...gameDiff.inserts, ...gameDiff.updates]
@@ -1226,6 +1333,11 @@ export async function ingestWeek(
   if (report.write.path === 'two_call_fallback') {
     report.reasons.push(
       `${door} absent — the database predates migration 167 (PGRST202): the lines and the queue were written through the pre-167 two-call path (queue, then stats — R706); no stat_correction_events recorded`,
+    )
+  }
+  if (report.corrections.settled > 0) {
+    report.reasons.push(
+      `stat settle: ${report.corrections.settled} key(s) on a final game's line moved within ${SETTLE_GRACE_MS / 3_600_000} h of the game being seen final — ordinary post-game settling (F511): re-scored as always, not recorded as a correction`,
     )
   }
   if (report.corrections.detected > 0) {

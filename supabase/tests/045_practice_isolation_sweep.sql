@@ -210,6 +210,13 @@ select is(
         -- UNCHANGED — the delta cells are the proof. Census 74 → 75.
         'league_player_values',
         'league_rosters',
+        -- 172 / M6 L.E2.2: each league's record of a stat correction.
+        -- UNREACHABLE from a mock (no write policy for any role; written only
+        -- by score_write_week_batch, the service-role scoring door over an
+        -- in-season league's open week — a mock has no league), so §C's and
+        -- §E's mid-state allowlists are re-derived UNCHANGED — the delta cells
+        -- are the proof. Census 90 → 91.
+        'league_stat_corrections',
         -- 158 / M5 L.D3.11: each starter's points stored with the team's
         -- score. UNREACHABLE from a mock (no write policy for any role;
         -- written only by score_write_week_batch and the one-time
@@ -290,7 +297,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 90 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 91 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -335,8 +342,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 90 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 90::bigint,
+  'BASELINE: all 91 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 91::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------

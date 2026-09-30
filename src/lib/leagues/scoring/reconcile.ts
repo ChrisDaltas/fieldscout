@@ -156,6 +156,7 @@
 import type { Json } from '@/types/database'
 
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
+import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 
 import type { TimeProvider } from '../time/time-provider'
 import { roundHalfUp } from './calculator'
@@ -271,10 +272,35 @@ const SEVERITY: Record<FindingKind, Severity> = {
  * locked — research moved, the league cell did not (§23.4) — named as INFO.
  * Returns the findings for the cell (empty = clean).
  */
+/** One recorded stat correction behind a moved line (167's `stat_correction_events`). */
+export interface CorrectionEventLite {
+  stat_key: string
+  old_value: number | null
+  new_value: number | null
+  detected_at: string
+}
+
+/**
+ * The events that moved a locked week's starter (M6 L.E2.2 — F268's last
+ * half, D453): each recorded correction by key, old → new and when it was
+ * seen; none recorded ⇒ said so (a move before detection existed — 167 —
+ * or the operator's own re-ingest); the event table absent ⇒ said so.
+ * `events` undefined = the table is absent (pre-167).
+ */
+export function correctionEventsWords(events: readonly CorrectionEventLite[] | undefined, available: boolean): string {
+  if (!available) return 'the stat-correction record is unavailable (the database predates migration 167)'
+  if (!events || events.length === 0) return 'no stat correction was recorded for him (the line moved before corrections were recorded — migration 167 — or by the operator’s re-ingest)'
+  return `the stat correction${events.length === 1 ? '' : 's'} behind it: ${events
+    .map((e) => `${e.stat_key} ${e.old_value ?? 'none'} → ${e.new_value ?? 'none'} (seen ${e.detected_at})`)
+    .join(', ')}`
+}
+
 export function classifyLockedCell(
   stored: number | null,
   rows: readonly StoredPlayerPoints[],
   computed: TeamWeekScore | null,
+  /** M6 L.E2.2 (F268): this week's recorded corrections by player — omitted by callers that have none to name. */
+  events?: { byPlayer: ReadonlyMap<string, readonly CorrectionEventLite[]>; available: boolean },
 ): Array<{ kind: FindingKind; severity: Severity; explanation: string }> {
   const sum = storedTeamPoints(rows)
   if (rows.some((r) => r.source === 'backfill_unrecoverable')) {
@@ -305,7 +331,10 @@ export function classifyLockedCell(
       continue
     }
     if (!sameScore(now.points, r.points) || now.pending.length !== r.pending.length) {
-      moved.push(`${r.player_id} (${r.slot}) stored ${r.points}, today's stats ${now.pending.length > 0 ? 'pending' : now.points}`)
+      moved.push(
+        `${r.player_id} (${r.slot}) stored ${r.points}, today's stats ${now.pending.length > 0 ? 'pending' : now.points}` +
+          (events ? ` — ${correctionEventsWords(events.byPlayer.get(r.player_id), events.available)}` : ''),
+      )
     }
   }
   if (moved.length === 0) return []
@@ -697,6 +726,11 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
     m.set(q.player_id, q.enqueued_at)
   }
 
+  // M6 L.E2.2 (F268's last half): the season's recorded stat corrections —
+  // a locked week's moved line names the event behind it. Read once, paged;
+  // absent table (pre-167) ⇒ said in the finding, today's checks unchanged.
+  const correctionEvents = await readCorrectionEventsForSeason(db, season)
+
   // LEAGUES in scope.
   let storeMissingNamed = false
   const leagues = await readLeagues(db, season, opts.leagueIds ?? null)
@@ -950,7 +984,10 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
         if (lockedRows && lockedRows.length > 0) {
           // The exact check (158 / F405): stored vs Σ stored rows; today's
           // stats vs the stored rows is information, never a warn.
-          for (const v of classifyLockedCell(cell.stored, lockedRows, computed)) {
+          for (const v of classifyLockedCell(cell.stored, lockedRows, computed, {
+            byPlayer: correctionEvents.byWeek.get(week) ?? new Map(),
+            available: correctionEvents.available,
+          })) {
             findings.push({
               kind: v.kind,
               severity: v.severity,
@@ -1024,6 +1061,50 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
     else report.infos += 1
   }
   return report
+}
+
+/**
+ * The season's `stat_correction_events` (167) by week → player — read by GET,
+ * paged past the cap with an exact count; the table absent (PGRST205 /
+ * 42P01 naming it — a database before 167) ⇒ `available: false`.
+ */
+async function readCorrectionEventsForSeason(
+  db: ScoreWorkerClient,
+  season: number,
+): Promise<{ byWeek: Map<number, Map<string, CorrectionEventLite[]>>; available: boolean }> {
+  const byWeek = new Map<number, Map<string, CorrectionEventLite[]>>()
+  type Row = { id: string; week: number; player_id: string; stat_key: string; old_value: number | null; new_value: number | null; detected_at: string }
+  const rows: Row[] = []
+  let total: number | null = null
+  for (let offset = 0; ; ) {
+    const page = await db
+      .from('stat_correction_events')
+      .select('id, week, player_id, stat_key, old_value, new_value, detected_at', { count: 'exact' })
+      .eq('season', season)
+      .order('id', { ascending: true })
+      .range(offset, offset + 999)
+    if (page.error) {
+      if (isMissingSchemaObject(page.error, ['stat_correction_events'])) return { byWeek, available: false }
+      throw new Error(`stat_correction_events read: ${page.error.message}`)
+    }
+    const data = (page.data ?? []) as Row[]
+    if (page.count !== null && page.count !== undefined) total = page.count
+    rows.push(...data)
+    offset += data.length
+    if (data.length === 0 || (total !== null && offset >= total) || (total === null && data.length < 1000)) break
+  }
+  for (const r of rows) {
+    let week = byWeek.get(r.week)
+    if (!week) {
+      week = new Map()
+      byWeek.set(r.week, week)
+    }
+    const list = week.get(r.player_id) ?? []
+    list.push({ stat_key: r.stat_key, old_value: r.old_value === null ? null : Number(r.old_value), new_value: r.new_value === null ? null : Number(r.new_value), detected_at: r.detected_at })
+    week.set(r.player_id, list)
+  }
+  for (const week of byWeek.values()) for (const list of week.values()) list.sort((a, b) => a.detected_at.localeCompare(b.detected_at) || a.stat_key.localeCompare(b.stat_key))
+  return { byWeek, available: true }
 }
 
 /** One line per finding, the alerts first — what the route logs and the CLI prints. */

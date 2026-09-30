@@ -1995,6 +1995,105 @@ export type Database = {
           },
         ]
       }
+      league_stat_corrections: {
+        Row: {
+          event_ids: string[]
+          id: string
+          league_id: string
+          matchup_id: string | null
+          player_id: string
+          player_points_after: number
+          player_points_before: number | null
+          recorded_at: string
+          result_after: Json | null
+          result_before: Json | null
+          result_changed: boolean
+          season: number
+          slot: string
+          stat_changes: Json
+          team_id: string
+          team_score_after: number | null
+          team_score_before: number | null
+          week: number
+        }
+        Insert: {
+          event_ids: string[]
+          id?: string
+          league_id: string
+          matchup_id?: string | null
+          player_id: string
+          player_points_after: number
+          player_points_before?: number | null
+          recorded_at?: string
+          result_after?: Json | null
+          result_before?: Json | null
+          result_changed: boolean
+          season: number
+          slot: string
+          stat_changes: Json
+          team_id: string
+          team_score_after?: number | null
+          team_score_before?: number | null
+          week: number
+        }
+        Update: {
+          event_ids?: string[]
+          id?: string
+          league_id?: string
+          matchup_id?: string | null
+          player_id?: string
+          player_points_after?: number
+          player_points_before?: number | null
+          recorded_at?: string
+          result_after?: Json | null
+          result_before?: Json | null
+          result_changed?: boolean
+          season?: number
+          slot?: string
+          stat_changes?: Json
+          team_id?: string
+          team_score_after?: number | null
+          team_score_before?: number | null
+          week?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_stat_corrections_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_stat_corrections_league_id_season_week_fkey"
+            columns: ["league_id", "season", "week"]
+            isOneToOne: false
+            referencedRelation: "league_weeks"
+            referencedColumns: ["league_id", "season", "week"]
+          },
+          {
+            foreignKeyName: "league_stat_corrections_matchup_id_fkey"
+            columns: ["matchup_id"]
+            isOneToOne: false
+            referencedRelation: "matchups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_stat_corrections_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "league_stat_corrections_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_week_player_points: {
         Row: {
           league_id: string
@@ -6442,6 +6541,10 @@ export type Database = {
         Args: { p_league_id: string; p_teams: Json; p_week: number }
         Returns: Json
       }
+      score_bracket_resync: {
+        Args: { p_league_id: string; p_now: string }
+        Returns: Json
+      }
       score_fanout_ack: {
         Args: {
           p_claim_token: string
@@ -6547,6 +6650,15 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      stat_correction_mark_applied: {
+        Args: { p_event_ids: string[]; p_now: string }
+        Returns: Json
+      }
+      stat_correction_week_state_internal: {
+        Args: { p_league_id: string; p_season: number; p_week: number }
+        Returns: Json
+      }
+      stat_key_label_internal: { Args: { p_key: string }; Returns: string }
       team_broadcast_payload: {
         Args: { t: Database["public"]["Tables"]["teams"]["Row"] }
         Returns: Json
