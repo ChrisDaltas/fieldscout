@@ -128,8 +128,9 @@ select is(md5(pg_temp.un161((select prosrc from pg_proc where proname = 'league_
   '3b032dac03f1ba65174684c57cfae3fe', 'A8 D137: 161''s one hunk reversed on the LIVE body = 158''s prosrc byte for byte');
 select is((select tgenabled::text from pg_trigger where tgname = 'trg_league_week_player_points_lock'),
   'A', 'A9 the lock trigger is still ENABLE ALWAYS');
-select is(md5((select prosrc from pg_proc where proname = 'score_write_week_batch')),
-  '548958d0a402c352c91c23fa924a2a0f', 'A10 the scoring door is 158''s, untouched — the worker still refuses a final week');
+-- M6 L.E2.2 (172) re-pin, additive (the R992 shape): read under 172's five fenced hunks reversed.
+select is(md5(regexp_replace((select prosrc from pg_proc where proname = 'score_write_week_batch'), E'[ ]*-- @172\\{[^@]*-- @172\\}\\n', '', 'g')),
+  '548958d0a402c352c91c23fa924a2a0f', 'A10 the scoring door is 158''s, untouched by this migration — the worker still refuses a final week (172''s correction hunks reversed; 120 A6 pins them)');
 
 -- ---------------------------------------------------------------------------
 -- FIXTURES (postgres, JWT cleared).

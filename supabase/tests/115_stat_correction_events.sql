@@ -72,9 +72,10 @@ select is(
   '097b59192ea1e4b0e1755ec34d36c843',
   'A7 the door''s body is 167''s — a STORED-LITERAL md5');
 select is(
-  (select md5(prosrc) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  -- M6 L.E2.2 (172) re-pin, additive (the R992 shape): read under 172's five fenced hunks reversed.
+  (select md5(regexp_replace(prosrc, E'[ ]*-- @172\\{[^@]*-- @172\\}\\n', '', 'g')) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '548958d0a402c352c91c23fa924a2a0f',
-  'A8 no other body replaced: the scoring door is still 158''s byte for byte (pgTAP 106 A7) — a final week is still refused by name');
+  'A8 no other body replaced BY 167: the scoring door is 158''s byte for byte under 172''s hunks (pgTAP 106 A7 / 120 A7) — a final week is still refused by name');
 select ok(
   not has_table_privilege('anon', 'public.stat_correction_events', 'TRUNCATE')
   and not has_table_privilege('authenticated', 'public.stat_correction_events', 'TRUNCATE')
