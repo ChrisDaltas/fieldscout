@@ -32,7 +32,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(114);
+select plan(115);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -547,9 +547,11 @@ select is(
 --    148 / 151's TD5 arm let him propose and answer FOR any team, one audit
 --    row each (the old F1–F10); now a commissioner who is not that team's
 --    manager is refused BY NAME and nothing is written, and as his own
---    team's manager he is bound like anyone. F1 (d1 for o1, to the OPEN
---    seat) is now TR Delta's own offer, so it stays PROPOSED (nobody answers
---    for an open seat) — G3 / G8 / G10 follow it.
+--    team's manager he is bound like anyone. F1 (d1 for e1, to TR Echo) is
+--    now TR Delta's own offer, so it stays PROPOSED (nobody answers for
+--    another team) — G3 / G8 / G10 follow it. 174's fix round (R1410): an
+--    offer to the OPEN seat is refused BY NAME (F1b) — nobody could answer
+--    it — so F1 goes to a managed team (it was d1 for o1, to the open seat).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -558,15 +560,22 @@ select throws_ok(
        '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-o1", "from_team_id": "c9600000-0000-4000-8000-000000000005"}]', null, null, 'a9600000-0000-4000-8000-000000000301', 'manager away') $$,
   'P0001', 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)',
   'F1 RE-CUT (174): the commissioner proposing FOR TR Delta is refused BY NAME, not a no-leak 42501 (he is a member)');
--- F1 (the offer itself): TR Delta's OWN manager makes it
+-- F1b (174's fix round, R1410): TR Delta's OWN manager offering to the OPEN
+-- seat is refused by name — nobody could answer it
 select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
-insert into r96 select 'F1', public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000005',
-  '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-o1", "from_team_id": "c9600000-0000-4000-8000-000000000005"}]', null, null, 'a9600000-0000-4000-8000-000000000305');
+select throws_ok(
+  $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000005',
+       '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-o1", "from_team_id": "c9600000-0000-4000-8000-000000000005"}]', null, null, 'a9600000-0000-4000-8000-000000000307') $$,
+  'P0001', 'trade_propose: TR Open has no manager to answer a trade right now — only a team''s own manager accepts or turns down an offer (§13.3)',
+  'F1b RE-CUT (174 fix round, R1410): an offer to the OPEN seat is refused BY NAME — nobody could answer it');
+-- F1 (the offer itself): TR Delta's OWN manager makes it, to TR Echo
+insert into r96 select 'F1', public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000008',
+  '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-e1", "from_team_id": "c9600000-0000-4000-8000-000000000008"}]', null, null, 'a9600000-0000-4000-8000-000000000305');
 select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select throws_ok(
   format($$ select public.trade_respond('b9600000-0000-4000-8000-000000000001', '%s', 'accept', null, null, null, 'a9600000-0000-4000-8000-000000000302') $$, pg_temp.tid('F1')),
   'P0001', 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)',
-  'F2 RE-CUT (174): accepting it FOR the open seat is refused BY NAME too — the offer stays with the two teams');
+  'F2 RE-CUT (174): accepting it FOR TR Echo is refused BY NAME too — the offer stays with the two teams');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-b3", "from_team_id": "c9600000-0000-4000-8000-000000000001"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000303') $$,
@@ -596,8 +605,8 @@ select is(
   (select format('%s|%s|%s|%s', r ->> 'acted_as_commissioner', coalesce(r ->> 'commissioner_action_id', 'null'), r ->> 'notified_user_ids',
                  (select status from trades where id = pg_temp.tid('F1')))
    from r96 where tag = 'F1'),
-  'false|null|[]|proposed',
-  'F7 RE-CUT (174): the own offer of TR Delta to the OPEN seat: no receipt, nobody to notify (an open seat), and it waits PROPOSED');
+  'false|null|["99600000-0000-4000-8000-000000000007"]|proposed',
+  'F7 RE-CUT (174): the own offer of TR Delta to TR Echo: no receipt, the manager of TR Echo told, and it waits PROPOSED');
 select is(
   (select count(*)::int from notifications n where n.user_id = '99600000-0000-4000-8000-000000000006' and n.type like 'league_trade%'),
   0,
@@ -616,7 +625,7 @@ select is(
 -- G. E37 — a trade in flight goes invalid the moment one of its players
 --    leaves the team it takes him from; every roster writer; both told.
 --    In flight now: P3 (accepted; a1 a2 ↔ b1, TR Bravo drops b3), F1
---    (proposed since 174 — no one answers for the open seat; d1 ↔ o1). New
+--    (proposed since 174 — no one answers for TR Echo; d1 ↔ e1). New
 --    for this section: G0a (a3 ↔ b2, proposed),
 --    G0b (e1 ↔ d1, proposed by TR Echo).
 -- ---------------------------------------------------------------------------
@@ -764,7 +773,7 @@ select is(
   'J1 trade_view_internal lists every leg');
 select is(
   public.trade_summary_internal(pg_temp.tid('F1')),
-  'TR Delta gives TR D One; TR Open gives TR O One',
+  'TR Delta gives TR D One; TR Echo gives TR E One',
   'J2 trade_summary_internal names each side in order (proposer first)');
 
 select * from finish();

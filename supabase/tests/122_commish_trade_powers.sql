@@ -10,7 +10,7 @@
 --
 -- What this file proves, over REAL calls:
 --   §A  form and D137 in the database — pg_temp.un174 reverses 174's
---       fifteen hunks to each body's newest definer (the pre-174 prosrc md5s,
+--       eighteen hunks to each body's newest definer (the pre-174 prosrc md5s,
 --       stored literals); the live md5s; un174 an identity elsewhere; the two
 --       dropped functions gone; the ledger still admits a stored 'reverse'.
 --   §P  PROPOSE — the commissioner (and the co-commissioner) offering FOR a
@@ -36,6 +36,14 @@
 --   §K  APPROVE / VETO unchanged — approve runs the executor, veto closes an
 --       in-review trade; their refusals of an offer / a completed trade no
 --       longer point at the removed arms.
+--   §X  THE FIX ROUND (PR #377): R1412 — a commissioner-arm offer / answer
+--       stored before 174 replays its stored answer, a fresh one is refused
+--       by name, and a commissioner who manages the other party hears that
+--       party's sentence; R1410 — an offer to a team with NO manager is
+--       refused by name (nothing written), one to a managed team goes in, and
+--       an offer already addressed to a team whose manager then leaves is
+--       called off by E47; R1411 — in a COMPLETE league veto (the new gate),
+--       force and approve are all refused, nothing written.
 --   §N  the whole file's receipts: approve / veto / force only, none acting
 --       for a team, no arm post.
 --
@@ -61,43 +69,47 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(52);
+select plan(66);
 
--- pg_temp.un174 — 174's fifteen hunks reversed (derive_174.py; each
+-- pg_temp.un174 — 174's eighteen hunks reversed (derive_174.py; each
 -- replacement text occurs once, in its own body only).
 create function pg_temp.un174(s text) returns text language plpgsql as $un$
 begin
   -- trade_propose_internal
-  s := replace(s, $r$  -- (2) AUTH — the proposing team's manager. One no-leak 42501.
-  --     174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything
-  --     to a trade unless it's already been accepted and the only option is
-  --     veto or instantly push it through."):
-  --     the TD5 commissioner arm is gone. A commissioner who does not manage
-  --     this team is refused BY NAME (P0001 — he is a member, so there is
-  --     nothing to leak); one who does manage it proposes as its manager.
-  v_is_manager := v_found AND EXISTS (
-    SELECT 1 FROM public.league_members m
-    WHERE m.league_id = p_league_id AND m.user_id = auth.uid() AND m.team_id = p_from_team_id);
-  v_is_commish := v_found AND public.is_league_commish(p_league_id);
-  IF NOT v_found OR NOT v_is_manager THEN
-    IF v_is_commish THEN
-      RAISE EXCEPTION 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)'
-        USING ERRCODE = 'P0001';
-    END IF;
-    RAISE EXCEPTION 'trade_propose: not a manager of this team'
-      USING ERRCODE = '42501';
-  END IF;
+  s := replace(s, $r$  -- (2) AUTH — the proposing team's manager, or a commissioner (174: only
+  --     to be refused BY NAME after the replay, below). One no-leak 42501.
 $r$, $o$  -- (2) AUTH — the proposing team's manager, or a commissioner acting for
   --     ANY team (TD5). One no-leak 42501.
-  v_is_manager := v_found AND EXISTS (
-    SELECT 1 FROM public.league_members m
-    WHERE m.league_id = p_league_id AND m.user_id = auth.uid() AND m.team_id = p_from_team_id);
-  v_is_commish := v_found AND public.is_league_commish(p_league_id);
-  IF NOT v_found OR NOT (v_is_manager OR v_is_commish) THEN
-    RAISE EXCEPTION 'trade_propose: not a manager of this team'
-      USING ERRCODE = '42501';
-  END IF;
 $o$);
+  s := replace(s, $r$  -- 174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything to
+  -- a trade unless it's already been accepted and the only option is veto or
+  -- instantly push it through."): the TD5 commissioner arm is gone. A
+  -- commissioner who does not manage this team is refused BY NAME (P0001 —
+  -- he is a member, so there is nothing to leak); one who does manage it
+  -- proposes as its manager. AFTER the replay (R1412, as reverse's): a retry
+  -- of an offer he made for a team before 174 replays its stored answer.
+  IF NOT v_is_manager THEN
+    RAISE EXCEPTION 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+$r$, '');
+  s := replace(s, $r$  -- 174 (L.D3.16, R1410 — a consequence of the 2026-09-30 ruling): only the
+  -- receiving team's own manager answers an offer now, so an offer to a team
+  -- with NO manager could never be answered — it would sit until it expired.
+  -- Refused BY NAME. "Has a manager" is D339's predicate, the one autopilot
+  -- (125), its switch (139) and the rosters read use: a league_members row
+  -- for the team carrying a user_id. A retired or foreign team falls through
+  -- to the core's own sentences.
+  IF EXISTS (SELECT 1 FROM public.teams t
+             WHERE t.id = p_to_team_id AND t.league_id = p_league_id AND t.status <> 'retired')
+     AND NOT EXISTS (SELECT 1 FROM public.league_members m
+                     WHERE m.league_id = p_league_id AND m.team_id = p_to_team_id AND m.user_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'trade_propose: % has no manager to answer a trade right now — only a team''s own manager accepts or turns down an offer (§13.3)',
+      (SELECT t.name FROM public.teams t WHERE t.id = p_to_team_id)
+      USING ERRCODE = 'P0001';
+  END IF;
+$r$, '');
   s := replace(s, $r$  -- (7) 174 (L.D3.16): NO commissioner arm — only the team's manager gets
   --     here, so nothing is receipted: the result's acted_as_commissioner is
   --     FALSE and commissioner_action_id / system_post / reason are NULL (the
@@ -112,20 +124,25 @@ $o$);
   -- trade_respond_internal
   s := replace(s, $r$  -- 174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything to
   -- a trade unless it's already been accepted and the only option is veto or
-  -- instantly push it through."): the TD5 commissioner arm is gone. A
-  -- commissioner who manages neither team is refused BY NAME (P0001 — a
-  -- member, nothing to leak); one who manages a party answers as its manager.
-  IF NOT (v_is_manager OR v_is_other) THEN
+  -- instantly push it through."): the TD5 commissioner arm is gone. AFTER the
+  -- replay (R1412, as reverse's), so a retry of an answer he gave for a team
+  -- before 174 replays its stored answer. A commissioner who manages the
+  -- OTHER party is that party's manager and hears the other party's sentence;
+  -- one who manages neither team is refused BY NAME (P0001 — a member,
+  -- nothing to leak). One who manages this side answers as its manager.
+  IF NOT v_is_manager THEN
+    IF v_is_other THEN
+      RAISE EXCEPTION '%',
+        CASE WHEN p_op = 'cancel'
+             THEN 'trade_respond: only the team that proposed a trade can cancel it — you received this offer, so reject it instead (§13.3)'
+             ELSE 'trade_respond: only the team that received a trade can ' || p_op || ' it — you proposed this one, so cancel it instead (§13.3)' END
+        USING ERRCODE = 'P0001';
+    END IF;
     RAISE EXCEPTION 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)'
       USING ERRCODE = 'P0001';
   END IF;
-  -- The OTHER party asked for this side's move — it is his trade too, so he
-  -- is told by name which move is his.
-  IF NOT v_is_manager THEN
-$r$, $o$  -- The OTHER party (not a commissioner) asked for this side's move — it is
-  -- his trade too, so he is told by name which move is his.
-  IF NOT (v_is_manager OR v_is_commish) THEN
-$o$);
+
+$r$, '');
   s := replace(s, $r$  -- (7) 174 (L.D3.16): NO commissioner arm — only a party's manager gets
   --     here, so nothing is receipted: the result's acted_as_commissioner is
   --     FALSE and commissioner_action_id / system_post / reason are NULL (the
@@ -190,6 +207,17 @@ $r$, $o$    ELSIF v_trade.status = 'proposed' THEN
         'commish_force_or_reverse_trade: this trade already went through, so it cannot be vetoed — reverse it instead (op reverse)'
         USING ERRCODE = 'P0001';
 $o$);
+  s := replace(s, $r$      -- 174 (L.D3.16, R1411 — Chris 2026-09-30: "Locked once complete"): a
+      -- veto is decided only while the league is in season or in the
+      -- playoffs, as approve and force already are (the executor's own gate,
+      -- the same sentence family).
+      IF v_league.status NOT IN ('in_season', 'playoffs') THEN
+        RAISE EXCEPTION
+          'commish_force_or_reverse_trade: the league is % — a trade is vetoed only while the league is in season or in the playoffs (§7.1 / §13.3)',
+          v_league.status
+          USING ERRCODE = 'P0001';
+      END IF;
+$r$, '');
   s := replace(s, $r$  ELSIF p_op = 'force' THEN
     -- 174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything
     --     to a trade unless it's already been accepted and the only option is
@@ -409,8 +437,8 @@ select is(
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('trade_propose_internal', 'trade_respond_internal', 'commish_force_or_reverse_trade_internal', 'trade_rescind_on_stint_close')),
-  'commish_force_or_reverse_trade_internal=457f949db92b1f4d2d28812d7ea1ddc1 trade_propose_internal=23893078572cd3495d21a61570145937 '
-  || 'trade_rescind_on_stint_close=6208b2fb96b446cccf49267b2a8823ae trade_respond_internal=05ae76c9ee0ef69b6e37974d26604f95',
+  'commish_force_or_reverse_trade_internal=e97786981af97fa27dd06e6f9f8e9a86 trade_propose_internal=ea09b34e418c41735418835d51a66e6c '
+  || 'trade_rescind_on_stint_close=6208b2fb96b446cccf49267b2a8823ae trade_respond_internal=66f43b815f3519d8392d06f6e88f2c73',
   'A3 the four live prosrc md5s — 174 as written (stored literals)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -833,6 +861,97 @@ select throws_ok($$ select pg_temp.try_cx(1, 1, 'TC', 'approve', '2026-10-28 06:
 select throws_ok($$ select pg_temp.try_cx(1, 1, 'TA', 'undo', '2026-10-28 06:50:00+00', 69) $$,
   '22023', 'commish_force_or_reverse_trade: op undo is not one of approve / veto / force (§10.1 / §13.3)',
   'K7 an unknown op is refused by name (22023) — the list no longer names reverse');
+
+-- ---------------------------------------------------------------------------
+-- X. THE FIX ROUND (PR #377 — R1410 / R1411 / R1412).
+-- ---------------------------------------------------------------------------
+-- R1412: a commissioner-arm offer / answer stored BEFORE 174 replays its
+-- stored answer (the by-name refusal sits after the replay, as reverse's);
+-- a fresh one is refused.
+insert into trade_actions (league_id, team_id, verb, action_id, actor_id, result)
+values (pg_temp.lg(1), pg_temp.team('K Alpha'), 'trade_propose', pg_temp.act(80), pg_temp.uid(1),
+        '{"verb": "trade_propose", "answered": "before 174", "acted_as_commissioner": true}'::jsonb),
+       (pg_temp.lg(1), pg_temp.team('K Delta'), 'trade_respond', pg_temp.act(81), pg_temp.uid(1),
+        jsonb_build_object('verb', 'trade_respond', 'op', 'accept', 'trade_id', pg_temp.tid('TH'), 'answered', 'before 174'));
+select is(
+  pg_temp.try_prop(1, 1, 'K Alpha', 'K Bravo', pg_temp.swap('k-e1', 'K Alpha', 'k-b2', 'K Bravo'), '2026-10-27 13:00:00+00', 80)::text,
+  '{"verb": "trade_propose", "answered": "before 174", "acted_as_commissioner": true}',
+  'X1 R1412: a retry of an offer the commissioner made FOR a team before 174 replays its stored answer byte-identically');
+select throws_ok(
+  $$ select pg_temp.try_prop(1, 1, 'K Alpha', 'K Bravo', pg_temp.swap('k-e1', 'K Alpha', 'k-b2', 'K Bravo'), '2026-10-27 13:00:00+00', 82) $$,
+  'P0001', 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)',
+  'X2 …the same offer under a FRESH action id is refused by name');
+select is(
+  (select r ->> 'answered' from (select pg_temp.try_resp(1, 1, 'TH', 'accept', null, '2026-10-27 13:05:00+00', 81) as r) x)
+    || ' / ' || pg_temp.st('TH'),
+  'before 174 / proposed',
+  'X3 R1412: a retry of an answer the commissioner gave FOR a team before 174 replays its stored answer (nothing moves)');
+select throws_ok($$ select pg_temp.try_resp(1, 1, 'TH', 'accept', null, '2026-10-27 13:05:00+00', 89) $$,
+  'P0001', 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)',
+  'X4 …the same answer under a FRESH action id is refused by name');
+select pg_temp.prop('OC', 1, 1, 'K Commish', 'K Delta', pg_temp.swap('k-c1', 'K Commish', 'k-e3', 'K Delta'), '2026-10-27 13:10:00+00', 83);
+select throws_ok($$ select pg_temp.try_resp(1, 1, 'OC', 'accept', null, '2026-10-27 13:15:00+00', 90) $$,
+  'P0001', 'trade_respond: only the team that received a trade can accept it — you proposed this one, so cancel it instead (§13.3)',
+  'X5 a commissioner who manages the OTHER party is that party: he hears its own sentence (after the replay)');
+
+-- R1410: an offer to a team with NO manager is refused by name (nobody
+-- could answer it since 174). K Foxtrot is an open seat.
+insert into teams (id, owner_id, name, league_id, status)
+values ('c1220000-0000-4000-8000-000000000017', pg_temp.uid(1), 'K Foxtrot', pg_temp.lg(1), 'active');
+insert into league_members (league_id, user_id, team_id, role, is_placeholder, faab_balance)
+values (pg_temp.lg(1), null, pg_temp.team('K Foxtrot'), 'manager', true, 100);
+insert into players (id, full_name, position, team, status) values ('k-f1', 'K F One', 'QB', 'TXC', 'Active');
+insert into league_rosters (league_id, team_id, player_id, slot_key) values (pg_temp.lg(1), pg_temp.team('K Foxtrot'), 'k-f1', 'bn');
+insert into league_player_pool (league_id, player_id, state, waivers_until, updated_at)
+values (pg_temp.lg(1), 'k-f1', 'rostered', null, '2026-10-01 00:00:00+00');
+create temp table x122_before as select (select count(*) from trades where league_id = pg_temp.lg(1)) as trades;
+select throws_ok(
+  $$ select pg_temp.try_prop(1, 2, 'K Alpha', 'K Foxtrot', pg_temp.swap('k-e1', 'K Alpha', 'k-f1', 'K Foxtrot'), '2026-10-27 13:20:00+00', 84) $$,
+  'P0001', 'trade_propose: K Foxtrot has no manager to answer a trade right now — only a team''s own manager accepts or turns down an offer (§13.3)',
+  'X6 R1410: an offer to a team with NO manager (an open seat) is refused BY NAME');
+select is((select count(*) from trades where league_id = pg_temp.lg(1)) - (select trades from x122_before), 0::bigint,
+  'X7 …and nothing was written');
+select pg_temp.prop('OE', 1, 2, 'K Alpha', 'K Echo', pg_temp.swap('k-e1', 'K Alpha', 'k-b1', 'K Echo'), '2026-10-27 13:30:00+00', 85);
+select is(pg_temp.st('OE'), 'proposed', 'X8 R1410 positive: the same manager offers to a MANAGED team — it goes in');
+-- An offer ALREADY addressed to K Echo when its manager leaves: E47.
+insert into team_managers (league_id, team_id, user_id, started_at)
+values (pg_temp.lg(1), pg_temp.team('K Echo'), pg_temp.uid(6), '2026-09-01 00:00:00+00');
+select pg_temp.as_user(6);
+select leave_league(pg_temp.lg(1));
+select set_config('request.jwt.claims', '', true);
+select is(
+  (select status || ' / ' || status_reason from trades where id = pg_temp.tid('OE')),
+  'invalid / K Echo''s manager is no longer managing it (left) — a trade offered or agreed by the previous manager is called off (E47); the team''s next manager can offer it again',
+  'X9 an offer already addressed to a team whose manager then LEAVES is called off by E47 (the stint closing), in 174''s words');
+select throws_ok(
+  $$ select pg_temp.try_prop(1, 2, 'K Alpha', 'K Echo', pg_temp.swap('k-e1', 'K Alpha', 'k-b1', 'K Echo'), '2026-10-27 13:40:00+00', 86) $$,
+  'P0001', 'trade_propose: K Echo has no manager to answer a trade right now — only a team''s own manager accepts or turns down an offer (§13.3)',
+  'X10 …and a new offer to the now-unmanaged team is refused by name');
+
+-- R1411: "Locked once complete" — once the league is complete the
+-- commissioner neither vetoes nor pushes through a trade still in review.
+select pg_temp.prop('CT', 1, 2, 'K Alpha', 'K Bravo', pg_temp.swap('k-a1', 'K Alpha', 'k-a2', 'K Bravo'), '2026-10-27 13:50:00+00', 87);
+select pg_temp.resp('CTa', 1, 3, 'CT', 'accept', '2026-10-27 14:00:00+00', 88);
+update leagues set status = 'complete' where id = pg_temp.lg(1);
+create temp table c122_before as
+select (select count(*) from commish_trade_actions where league_id = pg_temp.lg(1)) as ledger,
+       (select count(*) from commissioner_actions where league_id = pg_temp.lg(1)) as receipts;
+select throws_ok($$ select pg_temp.try_cx(1, 1, 'CT', 'veto', '2026-10-27 15:00:00+00', 91) $$,
+  'P0001', 'commish_force_or_reverse_trade: the league is complete — a trade is vetoed only while the league is in season or in the playoffs (§7.1 / §13.3)',
+  'X11 R1411: a VETO in a complete league is refused BY NAME (the new gate)');
+select throws_like($$ select pg_temp.try_cx(1, 1, 'CT', 'force', '2026-10-27 15:00:00+00', 92) $$,
+  '%the league is complete — a trade goes through only while the league is in season or in the playoffs%',
+  'X12 …a FORCE is refused by the executor, in the same sentence family (unchanged)');
+select throws_like($$ select pg_temp.try_cx(1, 1, 'CT', 'approve', '2026-10-27 15:00:00+00', 93) $$,
+  '%the league is complete — a trade goes through only while the league is in season or in the playoffs%',
+  'X13 …and so is an APPROVE (unchanged)');
+select is(
+  pg_temp.st('CT') || ' / ' || pg_temp.roster('K Alpha') || ' ' || pg_temp.roster('K Bravo')
+    || ' / ' || ((select count(*) from commish_trade_actions where league_id = pg_temp.lg(1)) - (select ledger from c122_before))
+    || '|' || ((select count(*) from commissioner_actions where league_id = pg_temp.lg(1)) - (select receipts from c122_before)),
+  'in_review / k-a1,k-e1 k-a2,k-b2 / 0|0',
+  'X14 …and nothing was written: still in review, rosters as they were, no ledger row, no receipt');
+update leagues set status = 'in_season' where id = pg_temp.lg(1);
 
 -- ---------------------------------------------------------------------------
 -- N. THE WHOLE FILE — only the commissioner tools on an accepted trade wrote

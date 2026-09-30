@@ -20,10 +20,17 @@
 --      no-leak 42501 stays for everyone else):
 --        "A commissioner acts on a trade only after it's accepted: veto it or
 --         push it through. …"
---      A commissioner who IS that team's (a party's) manager acts as that
---      manager, unchanged. No commissioner receipt is written by either verb
---      any more; the result keeps its keys (acted_as_commissioner FALSE,
---      commissioner_action_id / system_post / reason NULL).
+--      The refusal sits AFTER the replay (fix round R1412, as reverse's), so
+--      a retry of an offer / answer he made for a team before 174 replays its
+--      stored answer. A commissioner who IS that team's (a party's) manager
+--      acts as that manager, unchanged. No commissioner receipt is written by
+--      either verb any more; the result keeps its keys (acted_as_commissioner
+--      FALSE, commissioner_action_id / system_post / reason NULL).
+--      `trade_propose_internal` also refuses BY NAME an offer TO a team with
+--      no manager (fix round R1410 — a consequence of the ruling: nobody
+--      could answer it any more): "<Team> has no manager to answer a trade
+--      right now — …" (D339's predicate: no league_members row for the team
+--      carrying a user_id).
 --      `trade_rescind_on_stint_close` (E47): its called-off sentence said
 --      "the commissioner can re-propose it acting for the team" — now "the
 --      team's next manager can offer it again".
@@ -42,7 +49,11 @@
 --        Receipts `reverse_trade`, the `commissioner_move` / `trade_reversal`
 --        transactions rows and `trades.status = 'reversed'` rows written
 --        before 174 are history and are untouched.
---      * `approve` / `veto` UNCHANGED in behaviour; four of their refusal
+--      * `veto` gains the league-status gate approve / force already meet in
+--        the executor (fix round R1411 — "Locked once complete"): in a
+--        league that is not in season / in the playoffs a veto is refused
+--        BY NAME, in the executor's sentence family.
+--      * `approve` / `veto` otherwise UNCHANGED in behaviour; four of their refusal
 --        sentences pointed at the removed arms ("the commissioner can accept /
 --        reject for it with trade_respond", "force puts it through", "reverse
 --        it instead") and are re-worded (the ops, states and codes are the
@@ -64,19 +75,26 @@
 -- 122 A-cells pin it in the database through `pg_temp.un174`). Newest
 -- definers MEASURED over 001–173 (`grep -n "FUNCTION[^(]*<name>"`):
 --   trade_propose_internal                    148 → 151; source 151:475-619
---       (md5 of those lines 1abead9e91057c44f9429cf5cb492829) — 2 hunks
---       (+16 / -9): H1 the auth gate, H2 the arm's receipt removed.
+--       (md5 of those lines 1abead9e91057c44f9429cf5cb492829) — 4 hunks
+--       (+33 / -8): H1 the auth gate's comment (the gate itself is 151's —
+--       the commissioner still passes it, to reach the replay), H2 the
+--       commissioner refused by name AFTER the replay (R1412), H3 an offer
+--       to a team with no manager refused by name (R1410), H4 the arm's
+--       receipt removed.
 --   trade_respond_internal                    148 → 151; source 151:1216-1535
---       (md5 63ce5d2fbf3c396e610d6985a7431546) — 2 hunks (+16 / -16): H1 the
---       commissioner refused by name ahead of the other-party sentence, H2
---       the arm's receipt removed.
+--       (md5 63ce5d2fbf3c396e610d6985a7431546) — 2 hunks (+24 / -13): H1 the
+--       commissioner refused by name AFTER the replay (R1412) — a
+--       commissioner who manages the other party hears that party's
+--       sentence, as before 174 the other party did (151's pre-replay
+--       other-party gate is kept verbatim); H2 the arm's receipt removed.
 --   commish_force_or_reverse_trade_internal   156 only; source 156:1284-1734
---       (md5 cf4c886df1c96c574d7739dab5227366) — 10 hunks (+38 / -99): H1
+--       (md5 cf4c886df1c96c574d7739dab5227366) — 11 hunks (+48 / -99): H1
 --       the shape gate's words, H2 / H3 approve's and veto's re-worded
 --       refusals, H4 force's status filter + the accept-for arm removed, H5
 --       the offer refused by name, H6 reverse refused by name, H7 the
 --       reversal's re-score arm, H8 the reversal's transactions row, H9 / H10
---       the reversal's words in the post and the notification.
+--       the reversal's words in the post and the notification, H11 veto's
+--       league-status gate (R1411).
 --   trade_rescind_on_stint_close              151 only; source 151:1545-1573
 --       (md5 9bc1056acc6d6b37547e1be5db7a8ee7) — 1 hunk (+3 / -1): the E47 sentence.
 -- 152–173 define none of the four (measured). Every other line of the four
@@ -116,11 +134,15 @@
 --
 -- Proof: pgTAP 122 (form + D137 in the database; the commissioner refused by
 -- name on propose and on every respond op for a team he does not manage,
--- nothing written; a commissioner who manages a party acts as its manager
--- with no receipt; force refused on proposed / expired, accepted on in_review
--- / accepted (deferred) past the review, the vote, the lock and the deadline;
--- reverse refused by name, a pre-174 reverse action replayed; approve / veto
--- unchanged). 096 / 099 / 104 / 118 re-cut where they pinned the removed arms
+-- nothing written, and a pre-174 arm action of his replayed (R1412); an offer
+-- to a team with no manager refused by name, one to a managed team accepted
+-- (R1410), and an offer already addressed to a team whose manager then
+-- leaves called off by E47; a commissioner who manages a party acts as its
+-- manager with no receipt; force refused on proposed / expired, accepted on
+-- in_review / accepted (deferred) past the review, the vote, the lock and the
+-- deadline; reverse refused by name, a pre-174 reverse action replayed;
+-- approve / veto unchanged, and none of the three in a complete league
+-- (R1411)). 096 / 099 / 104 / 118 re-cut where they pinned the removed arms
 -- (each cell named in PROGRESS D463). Break probes shown red then reverted in
 -- the PR.
 -- ============================================================================
@@ -177,22 +199,13 @@ BEGIN
   FOR UPDATE;
   v_found := FOUND;
 
-  -- (2) AUTH — the proposing team's manager. One no-leak 42501.
-  --     174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything
-  --     to a trade unless it's already been accepted and the only option is
-  --     veto or instantly push it through."):
-  --     the TD5 commissioner arm is gone. A commissioner who does not manage
-  --     this team is refused BY NAME (P0001 — he is a member, so there is
-  --     nothing to leak); one who does manage it proposes as its manager.
+  -- (2) AUTH — the proposing team's manager, or a commissioner (174: only
+  --     to be refused BY NAME after the replay, below). One no-leak 42501.
   v_is_manager := v_found AND EXISTS (
     SELECT 1 FROM public.league_members m
     WHERE m.league_id = p_league_id AND m.user_id = auth.uid() AND m.team_id = p_from_team_id);
   v_is_commish := v_found AND public.is_league_commish(p_league_id);
-  IF NOT v_found OR NOT v_is_manager THEN
-    IF v_is_commish THEN
-      RAISE EXCEPTION 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)'
-        USING ERRCODE = 'P0001';
-    END IF;
+  IF NOT v_found OR NOT (v_is_manager OR v_is_commish) THEN
     RAISE EXCEPTION 'trade_propose: not a manager of this team'
       USING ERRCODE = '42501';
   END IF;
@@ -209,6 +222,18 @@ BEGIN
         USING ERRCODE = 'P0001';
     END IF;
     RETURN v_ledger.result;
+  END IF;
+
+  -- 174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything to
+  -- a trade unless it's already been accepted and the only option is veto or
+  -- instantly push it through."): the TD5 commissioner arm is gone. A
+  -- commissioner who does not manage this team is refused BY NAME (P0001 —
+  -- he is a member, so there is nothing to leak); one who does manage it
+  -- proposes as its manager. AFTER the replay (R1412, as reverse's): a retry
+  -- of an offer he made for a team before 174 replays its stored answer.
+  IF NOT v_is_manager THEN
+    RAISE EXCEPTION 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- (4) THE REASON, OPTIONAL (Q66 / 131). Stored only on the commissioner arm.
@@ -232,6 +257,21 @@ BEGIN
     RAISE EXCEPTION
       'trade_propose: the trade deadline has passed — trades could be proposed until week % began (%; trade_deadline_week %, §13.3 / Q76)',
       (v_deadline ->> 'deadline_week')::int + 1, v_deadline ->> 'label', v_deadline ->> 'deadline_week'
+      USING ERRCODE = 'P0001';
+  END IF;
+  -- 174 (L.D3.16, R1410 — a consequence of the 2026-09-30 ruling): only the
+  -- receiving team's own manager answers an offer now, so an offer to a team
+  -- with NO manager could never be answered — it would sit until it expired.
+  -- Refused BY NAME. "Has a manager" is D339's predicate, the one autopilot
+  -- (125), its switch (139) and the rosters read use: a league_members row
+  -- for the team carrying a user_id. A retired or foreign team falls through
+  -- to the core's own sentences.
+  IF EXISTS (SELECT 1 FROM public.teams t
+             WHERE t.id = p_to_team_id AND t.league_id = p_league_id AND t.status <> 'retired')
+     AND NOT EXISTS (SELECT 1 FROM public.league_members m
+                     WHERE m.league_id = p_league_id AND m.team_id = p_to_team_id AND m.user_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'trade_propose: % has no manager to answer a trade right now — only a team''s own manager accepts or turns down an offer (§13.3)',
+      (SELECT t.name FROM public.teams t WHERE t.id = p_to_team_id)
       USING ERRCODE = 'P0001';
   END IF;
 
@@ -390,18 +430,9 @@ BEGIN
     RAISE EXCEPTION 'trade_respond: no trade % in league %', p_trade_id, p_league_id
       USING ERRCODE = 'P0001';
   END IF;
-  -- 174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything to
-  -- a trade unless it's already been accepted and the only option is veto or
-  -- instantly push it through."): the TD5 commissioner arm is gone. A
-  -- commissioner who manages neither team is refused BY NAME (P0001 — a
-  -- member, nothing to leak); one who manages a party answers as its manager.
-  IF NOT (v_is_manager OR v_is_other) THEN
-    RAISE EXCEPTION 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)'
-      USING ERRCODE = 'P0001';
-  END IF;
-  -- The OTHER party asked for this side's move — it is his trade too, so he
-  -- is told by name which move is his.
-  IF NOT v_is_manager THEN
+  -- The OTHER party (not a commissioner) asked for this side's move — it is
+  -- his trade too, so he is told by name which move is his.
+  IF NOT (v_is_manager OR v_is_commish) THEN
     RAISE EXCEPTION '%',
       CASE WHEN p_op = 'cancel'
            THEN 'trade_respond: only the team that proposed a trade can cancel it — you received this offer, so reject it instead (§13.3)'
@@ -423,6 +454,26 @@ BEGIN
         USING ERRCODE = 'P0001';
     END IF;
     RETURN v_ledger.result;
+  END IF;
+
+  -- 174 (L.D3.16 — Chris 2026-09-30: "A commissioner cannot do anything to
+  -- a trade unless it's already been accepted and the only option is veto or
+  -- instantly push it through."): the TD5 commissioner arm is gone. AFTER the
+  -- replay (R1412, as reverse's), so a retry of an answer he gave for a team
+  -- before 174 replays its stored answer. A commissioner who manages the
+  -- OTHER party is that party's manager and hears the other party's sentence;
+  -- one who manages neither team is refused BY NAME (P0001 — a member,
+  -- nothing to leak). One who manages this side answers as its manager.
+  IF NOT v_is_manager THEN
+    IF v_is_other THEN
+      RAISE EXCEPTION '%',
+        CASE WHEN p_op = 'cancel'
+             THEN 'trade_respond: only the team that proposed a trade can cancel it — you received this offer, so reject it instead (§13.3)'
+             ELSE 'trade_respond: only the team that received a trade can ' || p_op || ' it — you proposed this one, so cancel it instead (§13.3)' END
+        USING ERRCODE = 'P0001';
+    END IF;
+    RAISE EXCEPTION 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)'
+      USING ERRCODE = 'P0001';
   END IF;
 
   -- (4) THE REASON, OPTIONAL.
@@ -832,6 +883,16 @@ BEGIN
 
   ELSIF p_op = 'veto' THEN
     IF v_trade.status IN ('in_review', 'accepted') THEN
+      -- 174 (L.D3.16, R1411 — Chris 2026-09-30: "Locked once complete"): a
+      -- veto is decided only while the league is in season or in the
+      -- playoffs, as approve and force already are (the executor's own gate,
+      -- the same sentence family).
+      IF v_league.status NOT IN ('in_season', 'playoffs') THEN
+        RAISE EXCEPTION
+          'commish_force_or_reverse_trade: the league is % — a trade is vetoed only while the league is in season or in the playoffs (§7.1 / §13.3)',
+          v_league.status
+          USING ERRCODE = 'P0001';
+      END IF;
       UPDATE public.trades t
       SET status = 'vetoed',
           status_reason = 'vetoed by the commissioner' || CASE WHEN v_reason IS NOT NULL THEN ' — ' || v_reason ELSE '' END,
