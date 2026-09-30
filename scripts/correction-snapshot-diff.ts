@@ -12,8 +12,12 @@
  * production's first-seen-final instants (`nfl_games.updated_at`, exported
  * read-only by `scripts/export-correction-events.ts`).
  *
- * Output: EVERY change to a line whose game was already final at snapshot 1
- * (TD2 / D434's test, the ingest's own: `toStatRow` + `movedStatKeys`, so
+ * Output: EVERY change to a line already final at snapshot 1 ON THE ARM
+ * PRODUCTION APPLIES (R1378): the line's own game only when the line names
+ * one, else the WEEK — every in-week game final, the grace measured from the
+ * week's last game first seen final (D432(3) / D453(6); every Sleeper line
+ * today, F468(a)). The player's own game (via his team) is printed as
+ * information only. (TD2 / D434's test, the ingest's own: `toStatRow` + `movedStatKeys`, so
  * "absent ≡ 0 except a NULL_IS_PENDING column" is the ingest's equality,
  * byte for byte — never a second definition), each named — player, key,
  * old → new, game — with F528's measurement: the minutes between the game
@@ -113,7 +117,17 @@ export interface SnapshotChange {
   new: number | null
   /** `added` = no storable line at snapshot 1 (a gap filled late). */
   line: 'updated' | 'added'
-  /** The game (or, by week, every in-week game) was final at snapshot 1. */
+  /**
+   * R1378 — the arm PRODUCTION applies (D432(3) / D453(6)): its own game only
+   * when the LINE carries a game id; otherwise the WEEK (every Sleeper line
+   * today, F468(a)) — final = every in-week game final, the grace measured
+   * from the week's last game first seen final. `finalAtFirst`, the minutes
+   * and the verdict below are ALL on this arm, so "outside" means what
+   * production would record; the player's own game is information only
+   * (`playerGame`).
+   */
+  productionArm: 'game' | 'week'
+  /** Final at snapshot 1 on the production arm. */
   finalAtFirst: boolean
   finalSeenAt: string | null
   /** `production` = the exact first observation; `recorder` = the earliest
@@ -126,6 +140,9 @@ export interface SnapshotChange {
    *  where a bound is unknown. */
   minutesAfterFinal: { min: number | null; max: number | null }
   grace: GraceVerdict
+  /** The player's own game (via his team) — INFORMATION ONLY when production
+   *  measures by the week: its finality and minutes, never the verdict. */
+  playerGame: { finalAtFirst: boolean; finalSeenAt: string | null; minutesAfterFinal: { min: number | null; max: number | null } } | null
   /** Production's event for the same player, key and new value, if any. */
   productionEvent: ProductionEvent | null
   notes: string[]
@@ -318,8 +335,11 @@ export function diffSnapshots(first: Snapshot, second: Snapshot, opts: DiffOptio
     const meta1 = s1.lines[playerId]
     const team = meta2?.team ?? meta1?.team ?? null
     const game = gameFor(playerId, cur.line.gameId ? cur.line : prior?.line, team)
-    const finalAtFirst = game.gameId !== null ? s1.status.get(game.gameId) === 'final' : weekFinalAtFirst
-    const seen = finalSeenFor(game.gameId)
+    // R1378: production's arm — the game only when the line names one.
+    const productionArm: SnapshotChange['productionArm'] = game.by === 'line' ? 'game' : 'week'
+    const armGameId = productionArm === 'game' ? game.gameId : null
+    const finalAtFirst = armGameId !== null ? s1.status.get(armGameId) === 'final' : weekFinalAtFirst
+    const seen = finalSeenFor(armGameId)
 
     // The change happened after snapshot 1 read the old value and no later
     // than snapshot 2 — or Sleeper's stamp of the line's last modification,
@@ -337,15 +357,18 @@ export function diffSnapshots(first: Snapshot, second: Snapshot, opts: DiffOptio
         lineNotes.push(`Sleeper's last-modified stamp (${stamp}) is not after snapshot 1 — the snapshot bounds are used`)
       }
     }
-    let min: number | null = null
-    let max: number | null = null
-    if (seen.at !== null) {
-      min = minutes(seen.at, s1.t)
-      if (seen.source === 'production') max = minutes(seen.at, changedBy)
-    }
+    const bounds = (at: { at: string | null; source: SnapshotChange['finalSeenSource'] }) => ({
+      min: at.at === null ? null : minutes(at.at, s1.t),
+      max: at.at !== null && at.source === 'production' ? minutes(at.at, changedBy) : null,
+    })
+    const { min, max } = bounds(seen)
     const graceMin = graceMs / 60_000
     const grace: GraceVerdict =
       min !== null && min >= graceMin ? 'outside' : max !== null && max < graceMin ? 'inside' : 'undetermined'
+    const playerGame =
+      productionArm === 'week' && game.gameId !== null
+        ? { finalAtFirst: s1.status.get(game.gameId) === 'final', finalSeenAt: finalSeenFor(game.gameId).at, minutesAfterFinal: bounds(finalSeenFor(game.gameId)) }
+        : null
 
     for (const key of moved) {
       const def = DEF_BY_KEY.get(key.stat_key)
@@ -368,6 +391,7 @@ export function diffSnapshots(first: Snapshot, second: Snapshot, opts: DiffOptio
         old: key.old,
         new: key.new,
         line: prior ? 'updated' : 'added',
+        productionArm,
         finalAtFirst,
         finalSeenAt: seen.at,
         finalSeenSource: seen.source,
@@ -376,6 +400,7 @@ export function diffSnapshots(first: Snapshot, second: Snapshot, opts: DiffOptio
         changedBySource,
         minutesAfterFinal: { min, max },
         grace,
+        playerGame,
         productionEvent,
         notes: lineNotes,
       }
@@ -477,14 +502,21 @@ function value(v: number | null): string {
   return v === null ? '(none)' : String(v)
 }
 
+function spanOf(m: { min: number | null; max: number | null }): string {
+  return m.min === null && m.max === null ? 'minutes unknown' : m.max === null ? `≥ ${m.min} min after final` : `${m.min}–${m.max} min after final`
+}
+
 function renderChange(c: SnapshotChange, i: number): string[] {
   const who = `${c.name ?? `player ${c.playerId}`} (${[c.position, c.team].filter(Boolean).join(', ') || 'position/team unknown'}; id ${c.playerId})`
   const game = c.gameId !== null ? `game ${c.gameId} (by ${c.gameBy})` : 'game unknown — the week stands in'
   const out = [`  ${i + 1}. ${who} — ${c.statKey} "${c.label}" ${value(c.old)} → ${value(c.new)} [${c.surface}] — ${game} — line ${c.line}`]
+  const arm = c.productionArm === 'week' ? "the WEEK's last game (production's arm — no game on the line, F468(a))" : 'the line\'s own game (production\'s arm)'
   const seen = c.finalSeenAt === null ? 'first-seen-final unknown' : `${c.finalSeenSource === 'production' ? 'first seen final' : 'recorded final by'} ${c.finalSeenAt} (${c.finalSeenSource})`
-  const { min, max } = c.minutesAfterFinal
-  const span = min === null && max === null ? 'minutes unknown' : max === null ? `≥ ${min} min after final` : `${min}–${max} min after final`
-  out.push(`     ${seen}; changed after ${c.changedAfter}, by ${c.changedBy} (${c.changedBySource === 'sleeper_last_modified' ? "Sleeper's stamp" : 'snapshot 2'}) → ${span} — settle grace: ${c.grace}`)
+  const span = spanOf(c.minutesAfterFinal)
+  out.push(`     measured from ${arm}: ${seen}; changed after ${c.changedAfter}, by ${c.changedBy} (${c.changedBySource === 'sleeper_last_modified' ? "Sleeper's stamp" : 'snapshot 2'}) → ${span} — settle grace: ${c.grace}`)
+  if (c.playerGame) {
+    out.push(`     info only — his own game: ${c.playerGame.finalAtFirst ? 'final' : 'NOT final'} at snapshot 1, first seen final ${c.playerGame.finalSeenAt ?? 'unknown'} → ${spanOf(c.playerGame.minutesAfterFinal)} (not the verdict: production measures by the week)`)
+  }
   if (c.productionEvent) out.push(`     production recorded it: detected ${c.productionEvent.detectedAt}, ${value(c.productionEvent.oldValue)} → ${value(c.productionEvent.newValue)}, week_state ${c.productionEvent.weekState}`)
   for (const n of c.notes) out.push(`     note: ${n}`)
   return out
@@ -501,13 +533,13 @@ export function renderSnapshotDiff(d: SnapshotDiff): string[] {
   )
   const scorable = d.changes.filter((c) => c.surface === 'scorable').length
   if (d.changes.length === 0) {
-    out.push(`FINAL-GAME CHANGES: none — no line of a game final at "${d.first.label}" moved by "${d.second.label}". Nothing to capture this week (never fabricated).`)
+    out.push(`FINAL-GAME CHANGES: none — no line final at "${d.first.label}" (on production's arm) moved by "${d.second.label}". Nothing to capture this week (never fabricated).`)
   } else {
-    out.push(`FINAL-GAME CHANGES: ${d.changes.length} (${scorable} on a scorable key) — each a stat correction under TD2 unless its grace verdict says "inside":`)
+    out.push(`FINAL-GAME CHANGES: ${d.changes.length} (${scorable} on a scorable key) — final and measured on production's arm (the week, for a line with no game id); a correction production would record only where the grace verdict says "outside":`)
     d.changes.forEach((c, i) => out.push(...renderChange(c, i)))
   }
   if (d.notFinal.length > 0) {
-    out.push(`IN-GAME CHANGES (game not final at "${d.first.label}" — not corrections): ${d.notFinal.length}`)
+    out.push(`CHANGES NOT FINAL ON PRODUCTION'S ARM at "${d.first.label}" (production records none of these): ${d.notFinal.length}`)
     d.notFinal.forEach((c, i) => out.push(...renderChange(c, i)))
   }
   if (d.vanished.length > 0) {

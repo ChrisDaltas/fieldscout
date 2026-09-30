@@ -151,20 +151,47 @@ describe('diffSnapshots — names every final-game change', () => {
     expect(c.finalSeenSource).toBe('production')
     expect(c.changedBy).toBe('2031-10-01T00:08:41.000Z')
     expect(c.changedBySource).toBe('sleeper_last_modified')
-    expect(c.minutesAfterFinal).toEqual({ min: 2260, max: 2888.7 }) // 13:40Z +1d = 37h40m; 00:08:41Z +2d = 48h08.7m
+    // R1378: measured on production's arm — the WEEK's last game (SF, 03:00Z 9-29): 34h40m / 45h08.7m.
+    expect(c.productionArm).toBe('week')
+    expect(c.minutesAfterFinal).toEqual({ min: 2080, max: 2708.7 })
     expect(c.grace).toBe('outside')
+    // His own game (ATL@GB, 00:00Z) is information only.
+    expect(c.playerGame).toEqual({ finalAtFirst: true, finalSeenAt: '2031-09-29T00:00:00.000Z', minutesAfterFinal: { min: 2260, max: 2888.7 } })
     const text = renderSnapshotDiff(d).join('\n')
     expect(text).toContain('Drake London (WR, ATL; id 8112) — receiving_yards "Receiving Yards" 100 → 94 [scorable] — game 2031_03_ATL_GB (by team)')
-    expect(text).toContain('2260–2888.7 min after final — settle grace: outside')
+    expect(text).toContain("measured from the WEEK's last game")
+    expect(text).toContain('2080–2708.7 min after final — settle grace: outside')
+    expect(text).toContain('info only — his own game: final at snapshot 1, first seen final 2031-09-29T00:00:00.000Z → 2260–2888.7 min after final')
   })
 
-  it('C2 a change within 6 h of the game first seen final is "inside" the grace (a settle, not a correction)', () => {
-    const t1 = '2031-09-29T00:30:00.000Z'
-    const t2 = '2031-09-29T04:00:00.000Z'
-    const d = diffSnapshots(snap('final', recording({ t: t1, lines: [LONDON] }), META1), snap('window-end', recording({ t: t2, lines: [corrected] }), META1), { finalSeen: FINAL_SEEN })
-    // Sleeper's stamp (01:00Z) falls between the snapshots, so it tightens the upper bound.
-    expect(d.changes[0].minutesAfterFinal).toEqual({ min: 30, max: 60 })
-    expect(d.changes[0].grace).toBe('inside')
+  it("C2 (R1378) the verdict is on PRODUCTION's arm: a Sunday player's fix inside 6 h of MONDAY NIGHT is inside, though hours after his own game", () => {
+    // The reviewer's case: his Sunday game first seen final Sun 20:30Z, Monday night's final Tue 03:30Z,
+    // snapshot 1 Tue 04:00Z, Sleeper's stamp Tue 05:08Z. Production (no game id on the line) measures from
+    // the week's last game: 30–98 min ⇒ inside — a settle it re-scores silently, never a correction.
+    const finalSeen: FinalSeenGame[] = [
+      { week: WEEK, homeTeam: 'GB', awayTeam: 'ATL', status: 'final', firstSeenFinalAt: '2031-09-28T20:30:00.000Z' },
+      { week: WEEK, homeTeam: 'SF', awayTeam: 'ARI', status: 'final', firstSeenFinalAt: '2031-09-30T03:30:00.000Z' },
+    ]
+    const stamped = { ...META1, '8112': meta('ATL', 'Drake London', '2031-09-30T05:08:00.000Z') }
+    const d = diffSnapshots(
+      snap('final', recording({ t: '2031-09-30T04:00:00.000Z', lines: [LONDON] }), META1),
+      snap('window-end', recording({ t: T2, lines: [corrected] }), stamped),
+      { finalSeen },
+    )
+    const c = d.changes[0]
+    expect(c.productionArm).toBe('week')
+    expect(c.finalSeenAt).toBe('2031-09-30T03:30:00.000Z')
+    expect(c.minutesAfterFinal).toEqual({ min: 30, max: 98 })
+    expect(c.grace).toBe('inside')
+    // Measured from his own game it would read "outside" (≥ 1890 min) — shown as information only.
+    expect(c.playerGame?.minutesAfterFinal.min).toBe(1890)
+  })
+
+  it("C9 (R1378) his game final but another in-week game not ⇒ NOT final on production's arm (production records none)", () => {
+    const status = { '2031_03_ARI_SF': 'live' as const }
+    const d = diffSnapshots(snap('final', recording({ t: T1, lines: [LONDON], status }), META1), snap('window-end', recording({ t: T2, lines: [corrected] }), META1))
+    expect(d.changes).toEqual([])
+    expect(d.notFinal.map((c) => [c.statKey, c.productionArm, c.finalAtFirst, c.playerGame?.finalAtFirst])).toEqual([['receiving_yards', 'week', false, true]])
   })
 
   it('C3 a change on a game NOT final at snapshot 1 is listed apart — an in-game change, not a correction', () => {
@@ -172,7 +199,7 @@ describe('diffSnapshots — names every final-game change', () => {
     const d = diffSnapshots(snap('final', recording({ t: T1, lines: [LONDON], status }), META1), snap('window-end', recording({ t: T2, lines: [corrected] }), META1))
     expect(d.changes).toEqual([])
     expect(d.notFinal.map((c) => [c.statKey, c.old, c.new, c.finalAtFirst])).toEqual([['receiving_yards', 100, 94, false]])
-    expect(renderSnapshotDiff(d).join('\n')).toContain('IN-GAME CHANGES')
+    expect(renderSnapshotDiff(d).join('\n')).toContain("CHANGES NOT FINAL ON PRODUCTION'S ARM")
   })
 
   it('C4 no sidecar ⇒ the whole week stands in (D432(3)); a change counts only if every in-week game was final', () => {

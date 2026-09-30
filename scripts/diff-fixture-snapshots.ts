@@ -4,7 +4,7 @@
  * network, no database.
  *
  *   npm run diff:fixtures -- --season 2026 --week 3                 (prints)
- *   npm run diff:fixtures -- --season 2026 --week 3 --write         (also writes the week's snapshot-diff.txt)
+ *   npm run diff:fixtures -- --season 2026 --week 3 --write         (also writes the week's snapshot-diff.txt; refuses to replace one without --overwrite)
  *
  * Reads fixtures/nfl/<season>/wk<NN>/<provider>.final.jsonl.gz and
  * <provider>.window-end.jsonl.gz (written by `record:fixtures --snapshot`),
@@ -17,14 +17,14 @@
  * The diff never invents a change: it reads only the two recorded bodies,
  * and a snapshot missing a successful read of the week's lines THROWS
  * (correction-snapshot-diff.ts). Exit 0 with or without changes — a week with
- * none prints so, in words.
+ * none prints so, in words. It loads no `.env.local` and reaches no database
+ * (R1379 — a local `fail`, not `_sync-cli`'s, which loads the env on import).
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 
 import { parseFixture } from '../src/lib/leagues/stats/fixtures/fixture-format'
-import { fail } from './_sync-cli'
 import type { ExportedEvent } from './correction-events-export'
 import {
   diffSnapshots,
@@ -35,6 +35,11 @@ import {
   type LinesSidecar,
   type Snapshot,
 } from './correction-snapshot-diff'
+
+function fail(err: unknown): never {
+  console.error(err)
+  process.exit(1)
+}
 
 function flag(name: string): string | undefined {
   const args = process.argv.slice(2)
@@ -52,7 +57,7 @@ function intFlag(name: string, lo: number, hi: number): number {
   const raw = flag(name)
   const n = Number(raw)
   if (raw === undefined || !Number.isInteger(n) || n < lo || n > hi) {
-    console.error('usage: npm run diff:fixtures -- --season <yyyy> --week <n> [--provider <name>] [--write]')
+    console.error('usage: npm run diff:fixtures -- --season <yyyy> --week <n> [--provider <name>] [--write [--overwrite]] [--profile-only]')
     process.exit(2)
   }
   return n
@@ -104,6 +109,11 @@ function main(): void {
 
   if (process.argv.includes('--write')) {
     const outPath = resolve(dir, 'snapshot-diff.txt')
+    // R1380: a committed diff is never replaced by accident.
+    if (existsSync(outPath) && !process.argv.includes('--overwrite')) {
+      console.error(`--write refused: ${outPath} exists (add --overwrite to replace it)`)
+      process.exit(1)
+    }
     writeFileSync(outPath, out.join('\n') + '\n')
     console.log(`Wrote ${outPath}`)
   }
