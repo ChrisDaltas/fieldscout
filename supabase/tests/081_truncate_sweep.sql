@@ -131,8 +131,13 @@ select is_empty(
                    ('REFERENCES'), ('TRIGGER'), ('MAINTAIN')) p(priv)
       where t.schemaname = 'public'
         and not has_table_privilege(r.rolname, format('%I.%I', t.schemaname, t.tablename), p.priv)
+        -- 175 (F555) — the ONE deliberate narrowing since this sweep (D23: an
+        -- explicit REVOKE): the audit log's INSERT, from the two client
+        -- roles only. pgTAP 123 pins that exact grant matrix.
+        and (t.tablename, r.rolname, p.priv) not in (('commissioner_actions', 'anon', 'INSERT'),
+                                                     ('commissioner_actions', 'authenticated', 'INSERT'))
       order by 1, 2, 3 $$,
-  'C3 every one of the SEVEN non-TRUNCATE privileges is still held by all three API roles on EVERY public table — the revoke removed nothing else'
+  'C3 every one of the SEVEN non-TRUNCATE privileges is still held by all three API roles on EVERY public table — the revoke removed nothing else (175 / F555: bar the audit log INSERT for anon / authenticated, named)'
 );
 
 -- ---------------------------------------------------------------------------

@@ -243,7 +243,8 @@ export const SYSTEM_LABEL = 'system'
 //
 // Three rules the rendering keeps (D364(8)/(9)):
 //  * A row is a CLAIM that a commissioner acted, not proof a verb ran (C70 —
-//    123:335 lets a commissioner's client append one). Nothing here says
+//    123:335 let a commissioner's client append one until migration 175,
+//    F555; those rows stay). Nothing here says
 //    "applied" / "verified", and the section's title is the LOG's.
 //  * The ACT is read from the `before`/`after` KEY SET, never from
 //    `action_type` alone (F355 — a rename's `action_type` is

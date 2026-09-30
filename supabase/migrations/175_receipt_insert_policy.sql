@@ -1,0 +1,94 @@
+-- ============================================================================
+-- 175 — a commissioner receipt is written ONLY by the server's verbs: the
+--       client INSERT route into the audit log is closed (M6 follow-up F555)
+--       (spec §12.12 — audit-log immutability, NEVER weakened; §10.3;
+--        PROGRESS F555, D465(7), D451, C70 (tasks-M6A §9), D23's REVOKE rule)
+-- ============================================================================
+--
+-- THE DEFECT (F555, filed by the F549 fix round, measured 2026-09-30 by
+-- `members-retire-api-db.test.ts`, R1424 / R1425). 123:333-335's
+--     CREATE POLICY "Only commish can append" ON commissioner_actions
+--       FOR INSERT WITH CHECK (is_league_commish(league_id) AND actor_id = auth.uid());
+-- let a commissioner's OWN CLIENT (PostgREST, role `authenticated`) append
+-- any receipt — any action_type, any before / after / metadata. The rows are
+-- immutable (123's ENABLE ALWAYS trigger), and League Home, the console and
+-- the Activity page render them as sentences, so a forged row read to every
+-- member, forever, as a thing that happened ("replaced Bravo's manager:
+-- dana → eli" with no takeover). C70 recorded it as "a row is a claim, not
+-- proof a verb ran"; this migration makes a NEW row proof a verb ran.
+--
+-- THE PREMISE, MEASURED ON 001–174 BEFORE WRITING (the F555 builder, local
+-- stack, `pg_proc` / `pg_policy` / `pg_trigger` / `pg_views` / `pg_rules`):
+--   * exactly ONE function body INSERTs into commissioner_actions:
+--     `log_commissioner_action_internal` (123; SECURITY INVOKER,
+--     search_path '', owner postgres). No dynamic-SQL insert anywhere
+--     (every `EXECUTE … commissioner_actions` hit is a read). No view, no
+--     rule, no trigger writes the table.
+--   * nothing a client can call reaches it as the client: `authenticated`,
+--     `anon` and PUBLIC hold NO EXECUTE on it, on its draft seam
+--     `draft_commish_receipt_internal`, or on any of the 16 SECURITY
+--     INVOKER internals that call either (has_function_privilege, each
+--     false). Its 34 SECURITY DEFINER callers are all owned by `postgres`
+--     (rolbypassrls = t; the table is NOT `FORCE ROW LEVEL SECURITY`), so
+--     every receipt a verb writes is written AS THE OWNER and never
+--     consulted this policy.
+--   * app code (src/, scripts/, e2e/; no supabase/functions/ exists) never
+--     INSERTs the table: every `.from('commissioner_actions')` is a read,
+--     or a SERVICE-ROLE plant in a stack test (RLS-bypassing, unaffected).
+-- So the policy's only user was a client writing a receipt no verb wrote.
+--
+-- THE CHANGE — two statements, no function body touched (D137 not engaged):
+--   (1) DROP POLICY "Only commish can append". With RLS on and no INSERT
+--       policy, a client INSERT is refused (42501, "new row violates
+--       row-level security policy").
+--   (2) REVOKE INSERT ON TABLE commissioner_actions FROM PUBLIC, anon,
+--       authenticated — D23: a deliberate narrowing of the default-ACL
+--       grant is an explicit REVOKE in the migration. The privilege check
+--       runs BEFORE RLS, so a client INSERT is now refused twice over
+--       (42501, "permission denied for table commissioner_actions"); a
+--       future policy added by mistake would not reopen the route alone.
+--       `service_role` keeps INSERT (it bypasses RLS regardless — §12.12's
+--       own caveat; the stack suites plant legacy-shaped rows through it).
+--   NOT changed, deliberately: the member SELECT policy ("Audit log
+--   readable by all league members", §10.3 transparency) is untouched;
+--   UPDATE / DELETE stay unpoliced (§12.12's absence-IS-immutability) and
+--   refused for the owner too by `trg_commish_actions_immutable` (ENABLE
+--   ALWAYS); TRUNCATE stays REVOKEd + trigger-guarded (123:410). The
+--   UPDATE / DELETE table grants are left as they are: RLS already makes
+--   them 0-row no-ops for every client and 071 §C / 123 pin that shape —
+--   revoking them too is not F555's scope. Immutability is therefore
+--   unchanged, and the log's INSERT side strictly narrower.
+--   OLD ROWS STAY: a row a client wrote before 175 is immutable and is not
+--   (cannot be) told apart — the log READ's hardening (D465(7)) is what
+--   keeps such a row harmless; C70's caveat still holds for them.
+--
+-- DEGRADE-BEFORE-PUSH (TD15): main deploys to Vercel before Chris pushes
+-- 175. The app never used the policy (above), so a database at 174 and one
+-- at 175 behave identically for every app path; only a hand-rolled client
+-- INSERT differs. No app code changes with this migration.
+--
+-- MIGRATION CHECKLIST (tasks-M* §4.4)
+--   Dropped: 1 policy. Revoked: INSERT on 1 table from PUBLIC / anon /
+--   authenticated. No table, column, index, function, trigger or cron row.
+--   Time: none. Typegen: no change expected (no shape moved — measured in
+--   the PR). Realtime: none. search_path: nothing SECURITY DEFINER touched.
+--   WAIVERS: R6 — no staging clone; rehearsal evidence = the fresh local
+--   `db reset` 001–175 and the full pgTAP run in the PR. D38 — no backfill:
+--   the change removes a write route and rewrites no row.
+-- Rollback = re-create 123:333-335's policy verbatim and
+--   GRANT INSERT ON TABLE commissioner_actions TO anon, authenticated.
+--
+-- Proof: pgTAP 123 (the policy census on the table; the grant matrix; a
+-- well-formed receipt refused 42501 for the commissioner, a co-commissioner,
+-- a member, a non-member and anon — nothing written; the SELECT policy
+-- still serves members only; a real verb (`commish_rename_team`) still
+-- writes exactly one receipt as the owner; UPDATE / DELETE still 0 rows for
+-- the commissioner and refused for the owner). 071 A (policies_are /
+-- policy_cmd_is) and C (the commissioner's client append) and 118 Q11–Q14
+-- (L.E1.31's client-write-policy census) re-cut. Break probes shown red then
+-- reverted in the PR.
+-- ============================================================================
+
+DROP POLICY IF EXISTS "Only commish can append" ON commissioner_actions;
+
+REVOKE INSERT ON TABLE commissioner_actions FROM PUBLIC, anon, authenticated;
