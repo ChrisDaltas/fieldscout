@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { createBrowserClient } from '@/lib/supabase/client'
+import { userProfileHref } from '@/components/shared/username-link-ops'
 
 // Community feed (package screen 08). No dedicated feed API exists yet, so
 // this hook reads public lists directly through the browser Supabase client —
@@ -119,7 +120,7 @@ function mapRows(rows: FeedRowShape[], likedIds: Set<string>): ExploreFeedItem[]
         href: `/u/${owner.username}/lists/${row.slug}`,
         author_href: persona
           ? `/personas/${persona.username}`
-          : `/u/${owner.username}`,
+          : userProfileHref(owner.username),
         author_id: persona ? null : owner.id,
         is_liked: likedIds.has(row.id),
         tag: first(row.tag_links?.[0]?.tag ?? null),

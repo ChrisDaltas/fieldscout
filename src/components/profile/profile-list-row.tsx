@@ -1,8 +1,7 @@
 'use client'
 
-import Link from 'next/link'
-
 import { FollowButton } from '@/components/explore/follow-button'
+import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/user-avatar'
 
@@ -40,12 +39,10 @@ export function ProfileListRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <Link
-            href={`/u/${username}`}
+          <UsernameLink
+            username={username}
             className="truncate text-[13px] font-extrabold leading-tight text-ink after:absolute after:inset-0"
-          >
-            @{username}
-          </Link>
+          />
           {isPro && <Badge variant="accent">Pro</Badge>}
         </div>
         {bio && (

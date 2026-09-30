@@ -21,6 +21,9 @@ export interface PanelListRow {
   isMine: boolean
   /** `@username` when a shared row belongs to a fellow member. */
   ownerLabel: string | null
+  /** That fellow member's bare username — the label opens his profile
+   *  (L.E1.41); null when the row is mine or the owner is unknown. */
+  ownerUsername: string | null
   isPrimary: boolean
   isShared: boolean
   isBigBoard: boolean
@@ -55,6 +58,7 @@ export function deriveListsPanelRows(
       playerCount: row.lists?.player_count ?? null,
       isMine: mine,
       ownerLabel: mine ? null : username ? `@${username}` : 'League member',
+      ownerUsername: mine ? null : (username ?? null),
       isPrimary: row.is_primary_board === true,
       isShared: row.shared_with_league === true,
       isBigBoard: bigBoard !== null && row.list_id === bigBoard.id,
@@ -80,6 +84,7 @@ export function deriveListsPanelRows(
       playerCount: bigBoard.player_count,
       isMine: true,
       ownerLabel: null,
+      ownerUsername: null,
       isPrimary: false,
       isShared: false,
       isBigBoard: true,
@@ -131,6 +136,7 @@ export function standaloneListRows(
     playerCount: list.player_count,
     isMine: true,
     ownerLabel: null,
+    ownerUsername: null,
     isPrimary: false,
     isShared: false,
     isBigBoard: list.is_big_board === true,

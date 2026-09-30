@@ -1,8 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
 
+import { UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -163,12 +163,7 @@ export function ListHeroShell({
             className="h-[17px] w-[17px]"
             fallbackClassName="text-[8px]"
           />
-          <Link
-            href={`/u/${owner.username}`}
-            className="text-[9.5px] font-bold text-ink underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current"
-          >
-            @{owner.username}
-          </Link>
+          <UsernameLink username={owner.username} className="text-[9.5px] font-bold text-ink" />
           <span className="whitespace-nowrap text-[9px] font-medium text-n-3">
             created {formatCreated(list.created_at)}
           </span>

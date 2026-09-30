@@ -1,9 +1,8 @@
 'use client'
 
-import Link from 'next/link'
-
 import { FollowButton } from '@/components/explore/follow-button'
 import { CollapsibleCard } from '@/components/layout/two-column-layout'
+import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { UserAvatar } from '@/components/ui/user-avatar'
@@ -50,12 +49,10 @@ export function TopScoutsCard() {
                   className="h-7 w-7 shrink-0"
                 />
                 <div className="min-w-0 flex-1">
-                  <Link
-                    href={`/u/${scout.username}`}
+                  <UsernameLink
+                    username={scout.username}
                     className="block truncate text-[10px] font-extrabold text-ink after:absolute after:inset-0"
-                  >
-                    @{scout.username}
-                  </Link>
+                  />
                   <div className="fs-num text-[9px] font-semibold text-n-3">
                     {scout.cred_score.toLocaleString()} cred
                   </div>

@@ -3,6 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 
+import { UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
@@ -139,12 +140,7 @@ export function ListCommentsTab({
           />
           <div className="min-w-0">
             <div className="flex items-baseline gap-1.5">
-              <Link
-                href={`/u/${comment.author.username}`}
-                className="text-[11px] font-bold text-ink underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current"
-              >
-                @{comment.author.username}
-              </Link>
+              <UsernameLink username={comment.author.username} className="text-[11px] font-bold text-ink" />
               <span className="text-[10px] font-medium text-n-3">
                 {formatRelative(comment.created_at)}
               </span>

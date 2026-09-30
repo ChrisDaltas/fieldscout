@@ -699,6 +699,7 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
       problem={feed.isError ? feed.error : null}
       onRetry={() => feed.refetch()}
       teamNames={teamNames}
+      memberNames={memberNamesOf(data.members)}
       leagueTimeZone={data.settings.draft.time_zone ?? null}
       correctionsHref={correctionsHref(leagueId, null)}
       // L.E1.34 (F371): the short list stays; the whole feed is the Activity page.

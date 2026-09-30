@@ -317,7 +317,9 @@ describe('Adds & drops and Trades — the feed read with each tab’s filter', (
 describe('Commissioner — the whole §10.3 log, by team and week, paged, opened at an entry', () => {
   it('every action in words, members named, "Show older" on the cursor (F371)', () => {
     const html = panel(render({ tab: 'commissioner' }, { log: { filters: { limit: 50 }, seed: [logPage([logItem()], { has_more: true, next_cursor: 'tok' })] } }), 'commissioner')
-    expect(html).toContain('made dana a co-commissioner')
+    // L.E1.41: the member the sentence names opens his profile.
+    expect(html).toContain('made <a data-username-link="dana"')
+    expect(html).toContain('href="/u/dana">dana</a> a co-commissioner')
     expect(html).toContain(SHOW_OLDER_LABEL)
     expect(html).toContain(TAB_INTRO_COPY.commissioner)
     expect(html).toContain('id="commish-log-team"')

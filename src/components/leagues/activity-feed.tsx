@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TextWithActor, TextWithUsernames, UsernameLink } from '@/components/shared/username-link'
 import { cn } from '@/lib/utils'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
@@ -82,6 +83,7 @@ export function ActivityFeed({
   intro,
   emptyCopy = FEED_EMPTY_COPY,
   older,
+  memberNames,
 }: {
   leagueId: string
   items: readonly ActivityItem[] | undefined
@@ -103,8 +105,11 @@ export function ActivityFeed({
   emptyCopy?: string
   /** "Show older" (the Activity page). Omitted ⇒ no control. */
   older?: ShowOlderProps
+  /** user id → username (the league's members), so a post's actor is a door
+   *  to his profile (L.E1.41). Omitted ⇒ post text is plain. */
+  memberNames?: ReadonlyMap<string, string>
 }) {
-  const lines = items ? feedLines(items, teamNames) : []
+  const lines = items ? feedLines(items, teamNames, memberNames) : []
   return (
     // `id="activity"` — League Home's section anchor (the console linked
     // here before the Activity page existed — D457(7)).
@@ -199,7 +204,8 @@ export function ActivityFeed({
                         the item could only ever be containment — and containment passes against a
                         regression that wraps or prefixes the message. */}
                     <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink" data-feed-text>
-                      {line.text}
+                      {/* L.E1.41: a post's actor — named in its text — is a door to his profile. */}
+                      <TextWithActor text={line.text} actor={line.actorUsername} />
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
@@ -339,7 +345,13 @@ export function CommishLogSection({
                     {COMMISSIONER_LABEL}
                   </Badge>
                   <span className="min-w-0 flex-1 text-[12px] font-medium text-ink" data-commish-log-text>
-                    <span className="font-bold">{line.actor}</span> {line.text}
+                    {/* L.E1.41: the commissioner, and every member the sentence names, is a door to his profile. */}
+                    {line.actorUsername ? (
+                      <UsernameLink username={line.actorUsername} at={false} className="font-bold" />
+                    ) : (
+                      <span className="font-bold">{line.actor}</span>
+                    )}{' '}
+                    <TextWithUsernames marked={line.marked} />
                     {/* A NULL reason is ABSENT — no clause, no empty quote (§10.3). */}
                     {line.reason !== null && <span data-commish-log-reason>{` — reason: “${line.reason}”`}</span>}
                   </span>

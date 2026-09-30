@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 
 import { TierBadge } from '@/components/lists/tier-badge'
+import { UsernameLink } from '@/components/shared/username-link'
 import { PlayerRow } from '@/components/players/player-row'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -366,33 +367,41 @@ export function MyListsPanel({
                   overlay?.listId === row.listId ? 'border-ink bg-accent-soft' : 'border-n-4',
                 )}
               >
-                <button
-                  type="button"
-                  className="mr-auto min-w-0 text-left"
-                  title="Open cheat sheet"
-                  onClick={() =>
-                    row.dangling ? undefined : setCheatSheet({ listId: row.listId, title: row.title })
-                  }
-                >
-                  <span
-                    className={cn(
-                      'block truncate text-[12px] font-bold',
-                      row.dangling && 'text-n-3',
-                    )}
+                {/* L.E1.41: the owner's name opens his profile (new tab — the
+                    room is never left mid-draft), so the sub line sits beside
+                    the cheat-sheet button, not inside it (no link in a button). */}
+                <div className="mr-auto min-w-0">
+                  <button
+                    type="button"
+                    className="block max-w-full text-left"
+                    title="Open cheat sheet"
+                    onClick={() =>
+                      row.dangling ? undefined : setCheatSheet({ listId: row.listId, title: row.title })
+                    }
                   >
-                    {row.title}
+                    <span
+                      className={cn(
+                        'block truncate text-[12px] font-bold',
+                        row.dangling && 'text-n-3',
+                      )}
+                    >
+                      {row.title}
+                    </span>
+                  </button>
+                  <span className="block truncate text-[10px] font-medium text-n-3" data-list-row-sub>
+                    {row.dangling ? (
+                      'Deleted by its owner — detach to clear it'
+                    ) : row.playerCount == null && !row.ownerLabel ? (
+                      '—'
+                    ) : (
+                      <>
+                        {row.playerCount != null ? `${row.playerCount} players` : null}
+                        {row.playerCount != null && row.ownerLabel ? ' · ' : null}
+                        {row.ownerUsername ? <UsernameLink username={row.ownerUsername} newTab /> : row.ownerLabel}
+                      </>
+                    )}
                   </span>
-                  <span className="block truncate text-[10px] font-medium text-n-3">
-                    {row.dangling
-                      ? 'Deleted by its owner — detach to clear it'
-                      : [
-                          row.playerCount != null ? `${row.playerCount} players` : null,
-                          row.ownerLabel,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ') || '—'}
-                  </span>
-                </button>
+                </div>
 
                 {row.isPrimary && <Badge variant="green">Primary</Badge>}
                 {row.isShared && !row.isPrimary && <Badge variant="stroke">Shared</Badge>}

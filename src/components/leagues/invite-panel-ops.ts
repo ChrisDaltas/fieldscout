@@ -118,6 +118,9 @@ export interface Seat {
   isSelf: boolean
   /** claimed only — the manager's *@username*; null otherwise. */
   identity: string | null
+  /** claimed only — the manager's bare username, so the seat links to his
+   *  profile (L.E1.41); null otherwise. */
+  username: string | null
   /** invited only — the commissioner-visible invited email; NULL for claimed. */
   emailTarget: string | null
   /** invited only — the commissioner-visible invited username; NULL for claimed. */
@@ -208,6 +211,7 @@ export function deriveSeats(
       role: member.role,
       isSelf: member.user_id != null && member.user_id === currentUserId,
       identity: status === 'claimed' ? formatManagerIdentity(member.profiles) : null,
+      username: status === 'claimed' ? (member.profiles?.username ?? null) : null,
       emailTarget: invited?.invited_email ?? null,
       usernameTarget: invited?.invited_username ?? null,
       invite: invited,
@@ -228,6 +232,7 @@ export function deriveSeats(
       role: null,
       isSelf: false,
       identity: null,
+      username: null,
       emailTarget: null,
       usernameTarget: null,
       invite: null,
@@ -568,6 +573,77 @@ export function removeOptionCopy(phase: MembersPhase): RemoveOptionCopy {
       'The team stays in the league with no manager — its players, record and FAAB stay with it, and its waiver claims are cancelled. Until you seat someone, you run it: set its lineup on its page, or switch its autopilot on.',
     takeover:
       'A specific person takes over this team right now, with its players, record and FAAB. They must have a FieldScout account and not already be in this league.',
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Leaving the league — two confirmations (M6 L.E1.41; PROGRESS D462, F547)
+// ---------------------------------------------------------------------------
+
+/**
+ * Chris, 2026-09-30: *"A user should have to double confirm they want to
+ * leave a league."* Leaving stays allowed in every state (`leave_league`,
+ * 150:2426, has no league-state gate). The first step says what happens to
+ * the team in plain words; the second is the last check, and only its button
+ * leaves. `closed` → open → `consequences` → continue → `final` → confirm;
+ * back returns to the first step, cancel closes from either.
+ */
+export type LeaveStep = 'closed' | 'consequences' | 'final'
+export type LeaveEvent = 'open' | 'continue' | 'back' | 'cancel'
+
+export function nextLeaveStep(step: LeaveStep, event: LeaveEvent): LeaveStep {
+  if (event === 'cancel') return 'closed'
+  if (event === 'open') return step === 'closed' ? 'consequences' : step
+  if (event === 'continue') return step === 'consequences' ? 'final' : step
+  return step === 'final' ? 'consequences' : step
+}
+
+/** Only the final step's button calls `leave_league` — never the first. */
+export function leaveConfirms(step: LeaveStep): boolean {
+  return step === 'final'
+}
+
+export interface LeaveCopy {
+  title: string
+  /** What happens to the team, for the league's state. */
+  consequences: string
+  continueLabel: string
+  finalTitle: string
+  finalBody: string
+  confirmLabel: string
+  stayLabel: string
+}
+
+/** The two steps' words, per league state — what `leave_league` does
+ *  (150:2426): the seat has no manager from then on; once the draft has
+ *  started the team keeps its players, record and FAAB (146) and its pending
+ *  waiver claims are cancelled (150 / F411); the commissioner runs it (or
+ *  switches its autopilot on) until someone is seated. During the draft a
+ *  seat with no manager autopicks (E48 / D102). */
+export function leaveLeagueCopy(phase: MembersPhase, teamName: string, leagueName: string): LeaveCopy {
+  const consequences =
+    phase === 'pre_draft'
+      ? `Your team (${teamName}) will have no manager and becomes an open seat. The commissioner can invite someone else to it.`
+      : phase === 'drafting'
+        ? `Your team (${teamName}) will have no manager. It stays in the draft and autopick makes its picks until the commissioner seats someone.`
+        : phase === 'complete'
+          ? `Your team (${teamName}) will have no manager. It keeps its players and record.`
+          : `Your team (${teamName}) will have no manager. It keeps its players, record and FAAB, and its pending waiver claims are cancelled. The commissioner runs it — or puts it on autopilot — for the rest of the season, until someone new takes it over.`
+  return {
+    title: `Leave ${leagueName}?`,
+    consequences,
+    continueLabel: 'Continue',
+    finalTitle: 'Are you sure you want to leave?',
+    // R1405: coming back differs by state — before the draft anyone with the
+    // league link can join while a spot is open (062 `join_league_by_code`:
+    // setup / scheduled only, capped at the team count); once it starts that
+    // door is closed and only a seat invite (any commissioner) brings you back.
+    finalBody:
+      phase === 'pre_draft'
+        ? `You’ll leave ${leagueName} and give up ${teamName}. To come back you’d need the league link again, and a spot still open.`
+        : `You’ll leave ${leagueName} and give up ${teamName}. You can’t undo this yourself — a commissioner can invite you back.`,
+    confirmLabel: 'Yes, leave this league',
+    stayLabel: 'Stay in the league',
   }
 }
 

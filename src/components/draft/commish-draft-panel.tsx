@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { InvitePanel } from '@/components/leagues/invite-panel'
+import { UsernameLink } from '@/components/shared/username-link'
 import { type DraftPickSummary } from '@/hooks/use-draft'
 import {
   useAdjustBudget,
@@ -1240,7 +1241,12 @@ function AutopickSection({
               <span className="min-w-0 truncate text-[12px] font-semibold">
                 {teamName}
                 {member.profiles && (
-                  <span className="text-n-3"> — @{member.profiles.username}</span>
+                  // L.E1.41: the manager's name opens his profile — in a new
+                  // tab, so the commissioner never leaves the live room.
+                  <span className="text-n-3">
+                    {' — '}
+                    <UsernameLink username={member.profiles.username} newTab />
+                  </span>
                 )}
               </span>
               {noUser ? (
