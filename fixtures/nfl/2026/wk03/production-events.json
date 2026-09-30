@@ -1,0 +1,168 @@
+{
+ "note": "Production stat_correction_events for this week, exported READ ONLY by scripts/export-correction-events.ts (M6 L.E2.5, PROGRESS D458): each event's player, stat key, old → new, detection instant, week state and game; the week's games with the instant production first saw each final (nfl_games.updated_at — the settle grace's clock); the week's bounds. Public NFL stat facts only.",
+ "season": 2026,
+ "week": 3,
+ "readAt": "2026-09-30T13:40:39.182Z",
+ "thisWeek": {
+  "week": 3,
+  "starts_at": "2026-09-23T04:00:00+00:00",
+  "first_kickoff_at": "2026-09-25T00:15:00+00:00",
+  "last_game_ends_at": "2026-09-29T07:00:00+00:00",
+  "correction_window_ends_at": "2026-10-02T00:15:00+00:00"
+ },
+ "nextWeek": {
+  "week": 4,
+  "starts_at": "2026-09-30T04:00:00+00:00",
+  "first_kickoff_at": "2026-10-02T00:15:00+00:00",
+  "last_game_ends_at": null,
+  "correction_window_ends_at": "2026-10-09T00:15:00+00:00"
+ },
+ "weekFinalSeenAt": "2026-09-29T03:18:00.554+00:00",
+ "games": [
+  {
+   "gameId": "2026_03_ARI_SF",
+   "week": 3,
+   "homeTeam": "SF",
+   "awayTeam": "ARI",
+   "status": "final",
+   "kickoffAt": "2026-09-27T20:05:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T23:25:25.795+00:00"
+  },
+  {
+   "gameId": "2026_03_ATL_GB",
+   "week": 3,
+   "homeTeam": "GB",
+   "awayTeam": "ATL",
+   "status": "final",
+   "kickoffAt": "2026-09-25T00:15:00+00:00",
+   "firstSeenFinalAt": "2026-09-25T03:24:00.606+00:00"
+  },
+  {
+   "gameId": "2026_03_BAL_DAL",
+   "week": 3,
+   "homeTeam": "DAL",
+   "awayTeam": "BAL",
+   "status": "final",
+   "kickoffAt": "2026-09-27T20:25:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T23:45:35.732+00:00"
+  },
+  {
+   "gameId": "2026_03_CAR_CLE",
+   "week": 3,
+   "homeTeam": "CLE",
+   "awayTeam": "CAR",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:34:12.773+00:00"
+  },
+  {
+   "gameId": "2026_03_CIN_PIT",
+   "week": 3,
+   "homeTeam": "PIT",
+   "awayTeam": "CIN",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:15:15.813+00:00"
+  },
+  {
+   "gameId": "2026_03_HOU_IND",
+   "week": 3,
+   "homeTeam": "IND",
+   "awayTeam": "HOU",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:15:15.813+00:00"
+  },
+  {
+   "gameId": "2026_03_KC_MIA",
+   "week": 3,
+   "homeTeam": "MIA",
+   "awayTeam": "KC",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:05:43.443+00:00"
+  },
+  {
+   "gameId": "2026_03_LA_DEN",
+   "week": 3,
+   "homeTeam": "DEN",
+   "awayTeam": "LAR",
+   "status": "final",
+   "kickoffAt": "2026-09-28T00:20:00+00:00",
+   "firstSeenFinalAt": "2026-09-28T03:56:00.531+00:00"
+  },
+  {
+   "gameId": "2026_03_LAC_BUF",
+   "week": 3,
+   "homeTeam": "BUF",
+   "awayTeam": "LAC",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:15:15.813+00:00"
+  },
+  {
+   "gameId": "2026_03_LV_NO",
+   "week": 3,
+   "homeTeam": "NO",
+   "awayTeam": "LV",
+   "status": "final",
+   "kickoffAt": "2026-09-27T20:25:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T23:45:35.732+00:00"
+  },
+  {
+   "gameId": "2026_03_MIN_TB",
+   "week": 3,
+   "homeTeam": "TB",
+   "awayTeam": "MIN",
+   "status": "final",
+   "kickoffAt": "2026-09-27T20:05:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T23:25:47.614+00:00"
+  },
+  {
+   "gameId": "2026_03_NE_JAX",
+   "week": 3,
+   "homeTeam": "JAX",
+   "awayTeam": "NE",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:05:43.443+00:00"
+  },
+  {
+   "gameId": "2026_03_NYJ_DET",
+   "week": 3,
+   "homeTeam": "DET",
+   "awayTeam": "NYJ",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:04:45.455+00:00"
+  },
+  {
+   "gameId": "2026_03_PHI_CHI",
+   "week": 3,
+   "homeTeam": "CHI",
+   "awayTeam": "PHI",
+   "status": "final",
+   "kickoffAt": "2026-09-29T00:15:00+00:00",
+   "firstSeenFinalAt": "2026-09-29T03:18:00.554+00:00"
+  },
+  {
+   "gameId": "2026_03_SEA_WAS",
+   "week": 3,
+   "homeTeam": "WAS",
+   "awayTeam": "SEA",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:34:12.773+00:00"
+  },
+  {
+   "gameId": "2026_03_TEN_NYG",
+   "week": 3,
+   "homeTeam": "NYG",
+   "awayTeam": "TEN",
+   "status": "final",
+   "kickoffAt": "2026-09-27T17:00:00+00:00",
+   "firstSeenFinalAt": "2026-09-27T20:05:43.443+00:00"
+  }
+ ],
+ "events": []
+}
