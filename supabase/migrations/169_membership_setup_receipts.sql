@@ -20,7 +20,7 @@
 --     rule (D449(8), R1321). Only `remove_manager` and `set_lineup` take a
 --     reason; the members route bounds it at 500 already, and set_lineup's
 --     own 500 check fires first (so set_lineup meets nothing new). The
---     other twelve take no reason and store NULL (no signature changes —
+--     other thirteen take no reason and store NULL (no signature changes —
 --     the D449(5) precedent; a reason stays optional, Q66);
 --   * no new chat posts (none of these functions posted before; the rows
 --     reach League Home's activity list, §10.3 / Q66).
@@ -74,8 +74,10 @@
 -- receipt says "an invite for <team>" and its kind (email / username / link)
 -- — NEVER the token, the email or the username. Neither invite code is
 -- recorded on a rotation (the code is the league's join credential). The
--- slug IS recorded (a name the commissioner chose to share; members already
--- read it on the league). pgTAP 117 asserts by value over every row it
+-- slug IS recorded: like the code it is a join credential (062:970-980), but
+-- every member can already read both on the league row (the SELECT policy +
+-- column grants), so the receipt exposes nothing new; the code is left out as
+-- the conservative choice (R1326). pgTAP 117 asserts by value over every row it
 -- writes that no before / after / metadata contains a token, an
 -- invited_email, an invited_username or an invite code.
 --
