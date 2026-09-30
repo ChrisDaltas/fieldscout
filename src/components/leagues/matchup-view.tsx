@@ -20,6 +20,8 @@ import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
 
+import { MatchupCorrectionNote } from './corrections-view'
+import { boxPointsNote, weekMayHaveCorrections } from './corrections-view-ops'
 import { Crest, TeamNameLink } from './league-cells'
 import { scoringLive } from './league-home-season-ops'
 import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
@@ -104,6 +106,14 @@ import { ProblemCard, problemCopy } from './team-page'
  * `✸ Adjusted` marker above it reads `matchups.is_overridden`, which these
  * verbs are the first to set. A `total_points` week has no matchup row to
  * correct, so nothing mounts there.
+ *
+ * **Stat corrections (M6 L.E2.4 — §16.5.2, F477):** under the scoreboard,
+ * `MatchupCorrectionNote` says when a stat correction changed a score or
+ * the result of this matchup (the corrections read, live on the room), with
+ * the door to the week's list; each box says in words where its points come
+ * from (`boxPointsNote` over the box read's `points_source` / `stored_note`
+ * — a final week's points are the ones the team was scored on, while the
+ * stat line is today's).
  *
  * **Deliberately not here (each an F-row):** the ⚑ report-illegal-lineup
  * entry (§10.2 — its route and audit table are M6's); the league-home
@@ -330,6 +340,10 @@ function HeadToHeadWeek({
     <div className="flex flex-col gap-4" data-variant="h2h">
       <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} badge={false} />
 
+      {weekMayHaveCorrections(doc.league_week.status) && (
+        <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selected.home_team_id, selected.away_team_id]} />
+      )}
+
       {/* THE COMMISSIONER'S OVERRIDE (M6A L.E1.12; §15.4:1692-1693; PROGRESS
           §3(h)): the mode switch is here in EVERY week state — never behind a
           refusal — and the correction panel opens under it while the mode is
@@ -346,9 +360,9 @@ function HeadToHeadWeek({
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <TeamBox leagueId={leagueId} week={doc.week} teamId={selected.home_team_id} name={teamName(doc, selected.home_team_id)} leagueTimeZone={leagueTimeZone} />
+        <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selected.home_team_id} name={teamName(doc, selected.home_team_id)} leagueTimeZone={leagueTimeZone} />
         {selected.away_team_id ? (
-          <TeamBox leagueId={leagueId} week={doc.week} teamId={selected.away_team_id} name={teamName(doc, selected.away_team_id)} leagueTimeZone={leagueTimeZone} />
+          <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selected.away_team_id} name={teamName(doc, selected.away_team_id)} leagueTimeZone={leagueTimeZone} />
         ) : (
           <Card>
             <CardHeader>
@@ -656,8 +670,11 @@ function TotalPointsWeek({
           ))}
         </CardContent>
       </Card>
+      {selectedId && weekMayHaveCorrections(doc.league_week.status) && (
+        <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selectedId]} />
+      )}
       {selectedId && (
-        <TeamBox leagueId={leagueId} week={doc.week} teamId={selectedId} name={teamName(doc, selectedId)} leagueTimeZone={leagueTimeZone} />
+        <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selectedId} name={teamName(doc, selectedId)} leagueTimeZone={leagueTimeZone} />
       )}
     </div>
   )
@@ -670,12 +687,15 @@ function TotalPointsWeek({
 function TeamBox({
   leagueId,
   week,
+  weekStatus,
   teamId,
   name,
   leagueTimeZone,
 }: {
   leagueId: string
   week: number
+  /** `league_weeks.status` — the box's points note depends on it (F477). */
+  weekStatus: string
   teamId: string
   name: string
   leagueTimeZone: string | null
@@ -685,6 +705,8 @@ function TeamBox({
   const data = box.data
   // No lineup ⇒ no sum to speak of (the empty state says why), not `pending`.
   const sum = data && data.lineup ? boxSumCell(data) : null
+  // F477: where the points come from, in words (null = nothing to say).
+  const pointsNote = data ? boxPointsNote(data, weekStatus) : null
 
   return (
     <Card className="min-w-0 overflow-hidden" data-box={teamId}>
@@ -706,6 +728,11 @@ function TeamBox({
       </CardHeader>
       <CardContent className="flex flex-col gap-2 px-card-pad py-2">
         {problem && data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
+        {pointsNote && (
+          <p className="text-[11px] font-medium text-n-3" data-box-note>
+            {pointsNote}
+          </p>
+        )}
         {box.isPending ? (
           <div className="flex flex-col gap-1.5" data-skeleton="box">
             {Array.from({ length: 5 }, (_, i) => (

@@ -24,6 +24,7 @@ import { leaguesKeys } from '@/hooks/use-leagues'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
+import { STAT_FIX_RULE_COPY } from './corrections-view-ops'
 import { InSeasonOverrideBlock, SettingsPanel } from './settings-panel'
 import {
   SETTINGS_OVERRIDE_BAR_OFF_COPY,
@@ -327,4 +328,20 @@ describe('InSeasonOverrideBlock — one line per key, never a bare "Saved."', ()
     expect(block).not.toMatch(/shadow-/)
     expect(block).not.toMatch(/\bdark:/)
   })
+})
+
+// M6 L.E2.4 — Q86 (Chris 2026-09-29, spec §7.3.6 v2.16.77; PROGRESS F475): one stat-fix rule for
+// every league this season, stated as text — the old "Thu 6:00 AM ET" / custom-hours control is gone.
+describe('the stat-fix rule is stated, not chosen (Q86 / F475)', () => {
+  for (const status of ['pre_draft', 'in_season']) {
+    it(`${status}: the settings page states the rule and offers no window choice`, () => {
+      const html = renderPanel({ detail: withStatus(status) })
+      expect(html).toContain(STAT_FIX_RULE_COPY)
+      expect(html).toContain('data-stat-fix-rule')
+      expect(html).not.toContain('Thu 6:00 AM ET')
+      expect(html).not.toContain('Custom hours')
+      expect(html).not.toContain('set-correction-mode')
+      expect(html).not.toContain('set-correction-hours')
+    })
+  }
 })

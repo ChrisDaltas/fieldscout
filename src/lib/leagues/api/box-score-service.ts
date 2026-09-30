@@ -114,6 +114,12 @@ import {
   type StatLineRow,
   weekScoringRules,
 } from '../scoring/score-week-worker'
+import {
+  BOX_NO_GAME_NOTE as NO_GAME_NOTE,
+  BOX_NONE_STORED_NOTE as NONE_STORED_NOTE,
+  BOX_OVERRIDDEN_NOTE as OVERRIDDEN_NOTE,
+  BOX_UNRECOVERABLE_NOTE as UNRECOVERABLE_NOTE,
+} from './box-score-copy'
 import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
@@ -211,15 +217,6 @@ export interface TeamBoxScore {
    *  adding-up ones — null otherwise. */
   stored_note: string | null
 }
-
-const NONE_STORED_NOTE =
-  'no per-player points are stored for this team-week (it was scored before they were, and the one-time backfill has not reached it) — the lines are computed from today’s stats and may not add up to the final score'
-const OVERRIDDEN_NOTE =
-  'the commissioner set this team’s score for the week, so these player points (what the team was scored on) do not add up to it'
-const NO_GAME_NOTE =
-  'this team has no game this week, so no points were stored for it — the lines are computed from today’s stats'
-const UNRECOVERABLE_NOTE =
-  'a stat correction reached a player after this week was scored, and the line he was scored on no longer exists — these points are recomputed from the corrected stats and do not add up to the final score'
 
 interface SlotDef {
   key: string
