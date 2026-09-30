@@ -93,16 +93,33 @@
  *     the page starts AT that row and runs older, so a ✸ line's door lands
  *     on its entry (F233(d)); combines with the filters and the cursor.
  *
- * **THE PEOPLE A RECEIPT NAMES (F549; PROGRESS D465).** A membership
- * receipt names people by user id (`manager_user_id`, `user_id`,
- * `commissioner_user_id`, …). The league's member list can name only the
+ * **THE PEOPLE A RECEIPT NAMES (F549; PROGRESS D465, D465(7)).** A
+ * membership receipt names people by user id (`manager_user_id`, `user_id`,
+ * `commissioner_user_id`). The league's member list can name only the
  * people still in it — and the manager a takeover, a vacate or a retirement
  * REMOVED is by definition no longer there, so the log could never say who
- * left. Each item therefore carries `usernames`: every user id its before /
- * after / metadata holds under a `user_id` / `*_user_id` key, by his current
- * username, read in ONE extra `profiles` query per page (public identity —
- * `profiles` is readable by everyone, 001:581). No such id ⇒ no query; a
- * failed read is a 500 by name, never a receipt that silently lost a name.
+ * left. Each item therefore carries `usernames`, resolved under three rules
+ * that exist because a row is a CLAIM (C70 — a commissioner's client can
+ * INSERT any receipt it likes, `123:335`; F555):
+ *   - ONLY THE KEYS THE WORDS READ (R1424): `RECEIPT_PEOPLE_KEYS`, per
+ *     `action_type` — the `member(…)` reads of `commish-log-copy.ts`, pinned
+ *     by a parity cell — so a forged row stuffed with hundreds of
+ *     `*_user_id` keys contributes at most two ids, never a 414 URL. The page
+ *     total is capped (`COMMISH_LOG_MAX_NAMED_PEOPLE`) and every `.in` is
+ *     batched at `COMMISH_LOG_NAME_BATCH` ids.
+ *   - ONLY PEOPLE OF THIS LEAGUE (R1425): an id is named only when it has a
+ *     `team_managers` stint in this league (member-readable, 053:99 — the
+ *     manager a removal took out keeps his) or a current `league_members`
+ *     row (052:111), each read with its `profiles` embed — so a forged
+ *     receipt cannot turn an arbitrary FieldScout user into a profile link.
+ *     Anyone else falls back to the words that name no one.
+ *   - A FAILED NAME READ COSTS NAMES, NEVER THE PAGE (R1424): the one soft
+ *     fallback in this file, and deliberately so. Rows are immutable, so a
+ *     500 here would make every page holding that row — and all history
+ *     behind it — unreadable for every member, forever; the history must
+ *     stay readable. The failure is logged loudly (`console.error`) and the
+ *     affected rows render the unnamed wording, which the words already
+ *     carry for a person they cannot find.
  *
  * No Date/random read anywhere in this file (the `src/lib/leagues/**`
  * ESLint fences): the cursor is the caller's, the ordering is the database's.
@@ -221,8 +238,10 @@ export interface CommishLogItem {
   acting_as_team_id: string | null
   reverts_action_id: string | null
   created_at: string
-  /** F549: user id → current username for every person the receipt names
-   *  (`receiptUserIds`) — including one no longer in the league. Always
+  /** F549: user id → current username for every person the receipt's
+   *  words name (`receiptUserIds`) who is a person of THIS league — a
+   *  current member, or a manager of one of its teams, including one no
+   *  longer in it (R1425). An id not found here is left unnamed. Always
    *  set by this read; optional so a hand-built item (a test, a cached page
    *  from before F549) still types. */
   usernames?: Record<string, string>
@@ -230,19 +249,72 @@ export interface CommishLogItem {
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** F549: the user ids a receipt names — every top-level `user_id` /
- *  `*_user_id` key of its before / after / metadata holding a uuid. */
-export function receiptUserIds(row: { before: Json | null; after: Json | null; metadata: Json | null }): string[] {
+/** R1424: the (document, key) pairs each receipt's WORDS read a person from
+ *  — exactly the `member(…)` calls in `commish-log-copy.ts`'s DETAIL (169 /
+ *  173's membership receipts), pinned by the parity cell in
+ *  `activity-feed-ops.test.ts`. Any other key a receipt holds is ignored.
+ *  (`transfer_commissioner`'s `metadata.previous_commissioner_user_id` is
+ *  the actor, already named by the log's `actor` embed — the words never
+ *  read it.) */
+export const RECEIPT_PEOPLE_KEYS: Readonly<Record<string, ReadonlyArray<readonly ['before' | 'after' | 'metadata', string]>>> = {
+  assign_manager: [['after', 'manager_user_id']],
+  replace_manager: [['before', 'manager_user_id'], ['after', 'manager_user_id']],
+  retire_franchise: [['before', 'manager_user_id']],
+  vacate_seat: [['before', 'manager_user_id']],
+  promote_member: [['metadata', 'user_id']],
+  demote_member: [['metadata', 'user_id']],
+  transfer_commissioner: [['after', 'commissioner_user_id']],
+}
+
+/** R1424: at most this many people named per page — the real receipts name
+ *  at most two each, so a 100-row page of them fits; beyond it an id is left
+ *  unnamed (defence in depth, should a key table ever grow). */
+export const COMMISH_LOG_MAX_NAMED_PEOPLE = 2 * COMMISH_LOG_MAX_LIMIT
+/** R1424: the most ids one `.in` filter carries (400 ids measured a 414). */
+export const COMMISH_LOG_NAME_BATCH = 100
+
+/** F549 / R1424: the user ids a receipt's words name — only the keys
+ *  `RECEIPT_PEOPLE_KEYS` lists for its `action_type`, each a uuid. */
+export function receiptUserIds(row: { action_type: string; before: Json | null; after: Json | null; metadata: Json | null }): string[] {
+  const keys = RECEIPT_PEOPLE_KEYS[row.action_type]
+  if (!keys) return []
   const ids = new Set<string>()
-  for (const doc of [row.before, row.after, row.metadata]) {
+  for (const [where, key] of keys) {
+    const doc = row[where]
     if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) continue
-    for (const [key, value] of Object.entries(doc)) {
-      if ((key === 'user_id' || key.endsWith('_user_id')) && typeof value === 'string' && UUID_SHAPE.test(value)) {
-        ids.add(value.toLowerCase())
-      }
-    }
+    const value = (doc as Record<string, Json | undefined>)[key]
+    if (typeof value === 'string' && UUID_SHAPE.test(value)) ids.add(value.toLowerCase())
   }
   return [...ids]
+}
+
+/**
+ * R1425: the usernames of the ids that are people of THIS league — a stint
+ * on one of its teams, or a current membership — read in batches of
+ * `COMMISH_LOG_NAME_BATCH`. A failed batch is logged and leaves its ids
+ * unnamed (the header's third rule); it never fails the page.
+ */
+async function leaguePeopleNames(supabase: Supabase, leagueId: string, userIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>()
+  const wanted = userIds.slice(0, COMMISH_LOG_MAX_NAMED_PEOPLE)
+  for (let i = 0; i < wanted.length; i += COMMISH_LOG_NAME_BATCH) {
+    const batch = wanted.slice(i, i + COMMISH_LOG_NAME_BATCH)
+    const [stints, members] = await Promise.all([
+      supabase.from('team_managers').select('user_id, profiles!team_managers_user_id_fkey(username)').eq('league_id', leagueId).in('user_id', batch),
+      supabase.from('league_members').select('user_id, profiles(username)').eq('league_id', leagueId).in('user_id', batch),
+    ])
+    const failure = stints.error ?? members.error
+    if (failure) {
+      // eslint-disable-next-line no-console -- loud by design: the page is served with these people unnamed (header, third rule)
+      console.error(`commish log: naming ${batch.length} people failed for league ${leagueId} — served unnamed: ${failure.message}`)
+      continue
+    }
+    for (const person of [...(stints.data ?? []), ...(members.data ?? [])]) {
+      const username = person.profiles?.username
+      if (person.user_id && username) names.set(person.user_id.toLowerCase(), username)
+    }
+  }
+  return names
 }
 
 /** The filters a page was read with, echoed (null = not filtered). */
@@ -361,15 +433,11 @@ export async function readCommishLog(
   const hasMore = rows.length > limit
   const served = rows.slice(0, limit)
 
-  // F549: the people these receipts name, by username — one read per page,
-  // only the ids on it (a page is ≤ 100 rows; each names at most a few).
+  // F549: the people these receipts' words name, by username — only the
+  // keys the words read (R1424), only people of this league (R1425), a
+  // failed read unnamed rather than a 500 (the header). None ⇒ no read.
   const userIds = [...new Set(served.flatMap((row) => receiptUserIds(row)))]
-  const usernameOf = new Map<string, string>()
-  if (userIds.length > 0) {
-    const { data: people, error: peopleError } = await supabase.from('profiles').select('id, username').in('id', userIds)
-    if (peopleError) return { status: 500, body: { error: `profiles: ${peopleError.message}` } }
-    for (const person of people ?? []) usernameOf.set(person.id.toLowerCase(), person.username)
-  }
+  const usernameOf = userIds.length > 0 ? await leaguePeopleNames(supabase, leagueId, userIds) : new Map<string, string>()
 
   const items: CommishLogItem[] = served.map((row) => ({
     id: row.id,

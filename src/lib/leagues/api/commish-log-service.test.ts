@@ -24,7 +24,9 @@ import {
   COMMISH_LOG_BAD_CURSOR_MESSAGE,
   COMMISH_LOG_DEFAULT_LIMIT,
   COMMISH_LOG_MAX_LIMIT,
+  COMMISH_LOG_MAX_NAMED_PEOPLE,
   COMMISH_LOG_MAX_TYPES,
+  COMMISH_LOG_NAME_BATCH,
   COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE,
   COMMISH_LOG_UNKNOWN_TEAM_MESSAGE,
   commishLogEntryFilter,
@@ -402,21 +404,31 @@ describe('F549 (D465) — the people a receipt names, by username, from the log 
   const DANA = 'ab000000-0000-4000-8000-0000000000d7'
   const ELI = 'ab000000-0000-4000-8000-0000000000e8'
 
-  it('receiptUserIds: every top-level user_id / *_user_id uuid of before / after / metadata, once — nothing else', () => {
-    expect(receiptUserIds({ before: { manager_user_id: DANA, team_status: 'active' }, after: { manager_user_id: ELI }, metadata: { user_id: DANA.toUpperCase(), member_id: ID_A } })).toStrictEqual([DANA, ELI])
-    expect(receiptUserIds({ before: { manager_user_id: null }, after: { commissioner_user_id: 'not-a-uuid', team_id: ID_A }, metadata: [DANA] })).toStrictEqual([])
-    expect(receiptUserIds({ before: null, after: { nested: { manager_user_id: DANA } }, metadata: null })).toStrictEqual([])
+  it('receiptUserIds (R1424): ONLY the keys the words read for that action_type, each a uuid, once — no other key, no other type', () => {
+    expect(receiptUserIds({ action_type: 'replace_manager', before: { manager_user_id: DANA, team_status: 'active' }, after: { manager_user_id: ELI.toUpperCase() }, metadata: { user_id: ID_A, member_id: ID_A } })).toStrictEqual([DANA, ELI])
+    expect(receiptUserIds({ action_type: 'promote_member', before: { manager_user_id: DANA }, after: {}, metadata: { user_id: ELI } })).toStrictEqual([ELI])
+    expect(receiptUserIds({ action_type: 'transfer_commissioner', before: { commissioner_user_id: DANA }, after: { commissioner_user_id: ELI }, metadata: { previous_commissioner_user_id: DANA } })).toStrictEqual([ELI])
+    expect(receiptUserIds({ action_type: 'vacate_seat', before: { manager_user_id: null }, after: { manager_user_id: DANA }, metadata: [DANA] })).toStrictEqual([])
+    expect(receiptUserIds({ action_type: 'assign_manager', before: null, after: { manager_user_id: 'not-a-uuid', nested: { manager_user_id: DANA } }, metadata: null })).toStrictEqual([])
+    // A type whose words name no one reads no one, whatever it holds.
+    expect(receiptUserIds({ action_type: 'edit_schedule', before: { manager_user_id: DANA }, after: { user_id: ELI }, metadata: { x_user_id: DANA } })).toStrictEqual([])
   })
 
-  /** A double that tells the tables apart: the log rows, then the profiles read. */
-  function peopleDouble(opts: { rows: unknown[]; people?: unknown[]; peopleError?: { message: string } }) {
-    const profileIns: unknown[][] = []
-    const thenable = (response: unknown, onIn?: (args: unknown[]) => void) => {
+  /** A double that tells the tables apart: the log rows, then the two
+   *  league-scoped name reads (stints, members), each recording its filters. */
+  function peopleDouble(opts: { rows: unknown[]; stints?: unknown[]; members?: unknown[]; failOn?: 'team_managers' | 'league_members'; failBatch?: number }) {
+    const calls: Array<{ table: string; select: unknown; eq: unknown[][]; in: unknown[][] }> = []
+    const batches = { team_managers: 0, league_members: 0 }
+    const thenable = (table: string, respond: (call: (typeof calls)[number]) => unknown) => {
+      const call = { table, select: undefined as unknown, eq: [] as unknown[][], in: [] as unknown[][] }
+      calls.push(call)
       const query: Record<string, unknown> = new Proxy({}, {
         get(_t, prop: string) {
-          if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(response)
+          if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(respond(call))
           return (...args: unknown[]) => {
-            if (prop === 'in' && onIn) onIn(args)
+            if (prop === 'select') call.select = args[0]
+            if (prop === 'eq') call.eq.push(args)
+            if (prop === 'in') call.in.push(args)
             return query
           }
         },
@@ -424,39 +436,104 @@ describe('F549 (D465) — the people a receipt names, by username, from the log 
       return query
     }
     const leaguesFrom = { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: { id: LEAGUE }, error: null }) }) }) }) }
-    const tables: string[] = []
+    /** The rows of `pool` whose user_id is in this call's `.in` list — the database's own filter. */
+    const filtered = (pool: unknown[], call: (typeof calls)[number]) => {
+      const ids = (call.in[0]?.[1] as string[] | undefined) ?? []
+      return pool.filter((p) => ids.includes((p as { user_id: string }).user_id))
+    }
     const client = {
       rpc: async () => ({ data: true, error: null }),
       from: (table: string) => {
-        tables.push(table)
         if (table === 'leagues') return leaguesFrom
-        if (table === 'profiles') return thenable(opts.peopleError ? { data: null, error: opts.peopleError } : { data: opts.people ?? [], error: null }, (args) => profileIns.push(args))
-        return thenable({ data: opts.rows, error: null })
+        if (table === 'team_managers' || table === 'league_members') {
+          return thenable(table, (call) => {
+            const n = batches[table]++
+            if (opts.failOn === table && (opts.failBatch === undefined || opts.failBatch === n)) return { data: null, error: { message: `${table} exploded` } }
+            return { data: filtered((table === 'team_managers' ? opts.stints : opts.members) ?? [], call), error: null }
+          })
+        }
+        return thenable(table, () => ({ data: opts.rows, error: null }))
       },
     }
-    return { client: client as never, tables, profileIns }
+    return { client: client as never, calls, nameCalls: () => calls.filter((c) => c.table === 'team_managers' || c.table === 'league_members') }
   }
+  const person = (userId: string, username: string) => ({ user_id: userId, profiles: { username } })
+  type Served = { items: Array<{ id: string; usernames: Record<string, string> }> }
 
-  it('a removal receipt carries its people by username — the removed manager too — read in ONE profiles query for the page', async () => {
+  it('a removal receipt carries its people by username — the removed manager via his stint, the new one via his membership — each read scoped to THIS league', async () => {
     const takeover = row(ID_B, T, { action_type: 'replace_manager', target_type: 'team', before: { manager_user_id: DANA }, after: { manager_user_id: ELI }, metadata: { mode: 'takeover' } })
     const vacate = row(ID_A, T, { action_type: 'vacate_seat', target_type: 'team', before: { manager_user_id: DANA }, after: { manager_user_id: null }, metadata: { mode: 'vacate' } })
-    const { client, tables, profileIns } = peopleDouble({ rows: [takeover, vacate], people: [{ id: DANA, username: 'dana' }, { id: ELI, username: 'eli' }] })
+    const { client, nameCalls } = peopleDouble({ rows: [takeover, vacate], stints: [person(DANA, 'dana'), person(ELI, 'eli')], members: [person(ELI, 'eli')] })
     const res = await readCommishLog(client, LEAGUE, {})
     expect(res.status).toBe(200)
-    const items = (res.body as { items: Array<{ id: string; usernames: Record<string, string> }> }).items
+    const items = (res.body as Served).items
     expect(items.map((i) => [i.id, i.usernames])).toStrictEqual([[ID_B, { [DANA]: 'dana', [ELI]: 'eli' }], [ID_A, { [DANA]: 'dana' }]])
-    expect(tables.filter((t) => t === 'profiles')).toHaveLength(1)
-    expect(profileIns).toStrictEqual([['id', [DANA, ELI]]])
+    expect(nameCalls().map((c) => [c.table, c.select, c.eq, c.in])).toStrictEqual([
+      ['team_managers', 'user_id, profiles!team_managers_user_id_fkey(username)', [['league_id', LEAGUE]], [['user_id', [DANA, ELI]]]],
+      ['league_members', 'user_id, profiles(username)', [['league_id', LEAGUE]], [['user_id', [DANA, ELI]]]],
+    ])
   })
 
-  it('a page that names no one reads no profiles; a failed profiles read is a 500 by name — never a receipt that silently lost its names', async () => {
+  it('R1425: an id with no stint and no membership in this league is left unnamed — a forged receipt cannot make an outsider a profile link', async () => {
+    const forged = row(ID_A, T, { action_type: 'replace_manager', target_type: 'team', before: { manager_user_id: DANA }, after: { manager_user_id: ELI } })
+    const { client } = peopleDouble({ rows: [forged], stints: [person(DANA, 'dana')], members: [] })
+    const res = await readCommishLog(client, LEAGUE, {})
+    expect(res.status).toBe(200)
+    expect((res.body as Served).items[0].usernames).toStrictEqual({ [DANA]: 'dana' })
+  })
+
+  it('R1424: a forged receipt stuffed with 500 *_user_id keys reads only its two word keys — and a page naming more than a batch is read in batches of ≤ 100, capped', async () => {
+    const stuffed = Object.fromEntries(Array.from({ length: 500 }, (_, n) => [`k${n}_user_id`, `ab000000-0000-4000-8000-${String(n).padStart(12, '0')}`]))
+    const forged = row(ID_A, T, { action_type: 'replace_manager', before: { ...stuffed, manager_user_id: DANA }, after: { ...stuffed, manager_user_id: ELI }, metadata: { ...stuffed, user_id: DANA } })
+    const one = peopleDouble({ rows: [forged], stints: [person(DANA, 'dana')] })
+    expect((await readCommishLog(one.client, LEAGUE, {})).status).toBe(200)
+    expect(one.nameCalls().map((c) => c.in[0][1])).toStrictEqual([[DANA, ELI], [DANA, ELI]])
+
+    // 100 real rows naming 2 distinct people each = 200 ids: two batches per table, none over 100.
+    const uid = (n: number) => `ac000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+    const rows = Array.from({ length: 101 }, (_, n) =>
+      row(`aa000000-0000-4000-8000-${String(n).padStart(12, '0')}`, T, { action_type: 'replace_manager', before: { manager_user_id: uid(2 * n) }, after: { manager_user_id: uid(2 * n + 1) } }),
+    )
+    const many = peopleDouble({ rows, stints: Array.from({ length: 203 }, (_, n) => person(uid(n), `p${n}`)) })
+    const res = await readCommishLog(many.client, LEAGUE, { limit: '100' })
+    expect(res.status).toBe(200)
+    const sizes = many.nameCalls().map((c) => (c.in[0][1] as string[]).length)
+    expect(sizes).toStrictEqual([100, 100, 100, 100])
+    expect(COMMISH_LOG_NAME_BATCH).toBe(100)
+    expect(COMMISH_LOG_MAX_NAMED_PEOPLE).toBe(200)
+    // The over-fetched 101st row is not served, so its people are never read.
+    expect((res.body as Served).items).toHaveLength(100)
+    expect((res.body as Served).items[99].usernames).toStrictEqual({ [uid(198)]: 'p198', [uid(199)]: 'p199' })
+  })
+
+  it('a page that names no one reads no names; a FAILED name read serves the page (200) with those people unnamed, loudly — never a 500 over immutable history', async () => {
     const quiet = peopleDouble({ rows: [row(ID_A, T)] })
     const res = await readCommishLog(quiet.client, LEAGUE, {})
     expect(res.status).toBe(200)
-    expect((res.body as { items: Array<{ usernames: unknown }> }).items[0].usernames).toStrictEqual({})
-    expect(quiet.tables).not.toContain('profiles')
+    expect((res.body as Served).items[0].usernames).toStrictEqual({})
+    expect(quiet.nameCalls()).toHaveLength(0)
 
-    const failing = peopleDouble({ rows: [row(ID_A, T, { before: { manager_user_id: DANA } })], peopleError: { message: 'profiles exploded' } })
-    expect(await readCommishLog(failing.client, LEAGUE, {})).toStrictEqual({ status: 500, body: { error: 'profiles: profiles exploded' } })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      for (const failOn of ['team_managers', 'league_members'] as const) {
+        errors.mockClear()
+        const failing = peopleDouble({ rows: [row(ID_A, T, { action_type: 'vacate_seat', before: { manager_user_id: DANA } })], stints: [person(DANA, 'dana')], failOn })
+        const failed = await readCommishLog(failing.client, LEAGUE, {})
+        expect(failed.status, failOn).toBe(200)
+        expect((failed.body as Served).items.map((i) => [i.id, i.usernames])).toStrictEqual([[ID_A, {}]])
+        expect(errors).toHaveBeenCalledTimes(1)
+        expect(String(errors.mock.calls[0][0])).toContain(`${failOn} exploded`)
+      }
+      // One failed batch unnames only ITS ids; the other batch still names its people.
+      const uid = (n: number) => `ac000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+      const rows = Array.from({ length: 100 }, (_, n) => row(`aa000000-0000-4000-8000-${String(n).padStart(12, '0')}`, T, { action_type: 'replace_manager', before: { manager_user_id: uid(2 * n) }, after: { manager_user_id: uid(2 * n + 1) } }))
+      const half = peopleDouble({ rows, stints: Array.from({ length: 200 }, (_, n) => person(uid(n), `p${n}`)), failOn: 'team_managers', failBatch: 0 })
+      const partial = await readCommishLog(half.client, LEAGUE, { limit: '100' })
+      expect(partial.status).toBe(200)
+      const served = (partial.body as Served).items
+      expect([served[0].usernames, served[99].usernames]).toStrictEqual([{}, { [uid(198)]: 'p198', [uid(199)]: 'p199' }])
+    } finally {
+      errors.mockRestore()
+    }
   })
 })

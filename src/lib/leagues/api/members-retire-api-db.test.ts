@@ -58,6 +58,8 @@ const MGR_B = { email: 'members-retire-b@fieldscout.test', password: 'pgtap-mret
 const MGR_C = { email: 'members-retire-c@fieldscout.test', password: 'pgtap-mret-pass-4', username: 'mret_mgr_four' }
 /** F549: the successor a takeover seats — not a member before it. */
 const MGR_D = { email: 'members-retire-d@fieldscout.test', password: 'pgtap-mret-pass-5', username: 'mret_mgr_five' }
+/** R1425: a FieldScout user with no stint and no membership in the league. */
+const OUTSIDER = { email: 'members-retire-outsider@fieldscout.test', password: 'pgtap-mret-pass-6', username: 'mret_outsider' }
 
 const ACTION = {
   retireA: 'e1400000-0000-4000-8000-000000000001',
@@ -71,7 +73,7 @@ const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth
 let commishClient: SupabaseClient<Database>
 let mgrAClient: SupabaseClient<Database>
 let commishId: string
-let ids: { a: string; b: string; c: string; d: string }
+let ids: { a: string; b: string; c: string; d: string; outsider: string }
 let mgrBClient: SupabaseClient<Database>
 let leagueId: string
 let playoffLeagueId: string
@@ -100,7 +102,7 @@ async function cleanup(): Promise<void> {
     const { error: teamsError } = await service.from('teams').delete().in('id', teamIds)
     if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
   }
-  for (const u of [COMMISH, MGR_A, MGR_B, MGR_C, MGR_D]) await deleteUserByUsername(u.username)
+  for (const u of [COMMISH, MGR_A, MGR_B, MGR_C, MGR_D, OUTSIDER]) await deleteUserByUsername(u.username)
 }
 
 async function createUser(user: { email: string; password: string; username: string }): Promise<string> {
@@ -170,7 +172,7 @@ async function trail(): Promise<{ receipts: Array<{ target_id: string | null; re
 beforeAll(async () => {
   await cleanup()
   commishId = await createUser(COMMISH)
-  ids = { a: await createUser(MGR_A), b: await createUser(MGR_B), c: await createUser(MGR_C), d: await createUser(MGR_D) }
+  ids = { a: await createUser(MGR_A), b: await createUser(MGR_B), c: await createUser(MGR_C), d: await createUser(MGR_D), outsider: await createUser(OUTSIDER) }
   commishClient = await signIn(COMMISH)
   mgrAClient = await signIn(MGR_A)
   mgrBClient = await signIn(MGR_B)
@@ -357,5 +359,39 @@ describe('F549 — one line per retirement; the removal receipts in words', () =
       [MGR_A.username],
     ])
     expect(lines.every((l) => plainText(l.marked) === l.text)).toBe(true)
+  })
+
+  it('R1424 / R1425: a receipt a commissioner’s client forged (123:335) — 400+ user-id keys, naming an outsider — leaves the log readable (200) and names no outsider', async () => {
+    const stuffed = Object.fromEntries(Array.from({ length: 420 }, (_, n) => [`k${n}_user_id`, `ab000000-0000-4000-8000-${String(n).padStart(12, '0')}`]))
+    // THE PREMISE (a): 400 ids in ONE `.in` is refused by PostgREST (the URL is too long) — the old read's shape.
+    const { error: tooLong } = await service.from('profiles').select('id').in('id', Object.values(stuffed).slice(0, 400))
+    expect(tooLong, 'a 400-id .in must fail, or this cell proves nothing').not.toBeNull()
+    // THE PREMISE (b): the commissioner's own client can append a receipt no verb wrote (C70).
+    const { data: forged, error: forgeError } = await commishClient
+      .from('commissioner_actions')
+      .insert({
+        league_id: leagueId, actor_id: commishId, action_type: 'replace_manager', target_type: 'team', target_id: teamB,
+        before: { ...stuffed, manager_user_id: ids.outsider }, after: { ...stuffed, manager_user_id: ids.d }, metadata: { ...stuffed, team_name: 'MRET T3', user_id: ids.outsider },
+      })
+      .select('id')
+      .single()
+    expect(forgeError, forgeError?.message).toBeNull()
+    const { data: outsiderRows } = await service.from('league_members').select('id').eq('league_id', leagueId).eq('user_id', ids.outsider)
+    const { data: outsiderStints } = await service.from('team_managers').select('id').eq('league_id', leagueId).eq('user_id', ids.outsider)
+    expect([outsiderRows?.length, outsiderStints?.length]).toEqual([0, 0])
+
+    const res = await readCommishLog(commishClient, leagueId, {})
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const items = (res.body as unknown as { items: CommishLogItem[] }).items
+    const row = items.find((i) => i.id === forged!.id)
+    expect(row, 'the forged row is served').toBeDefined()
+    // Only the word keys were read, and only the league's own person is named.
+    expect(row!.usernames).toEqual({ [ids.d]: MGR_D.username })
+    // The earlier removals still name their managers on the same page.
+    expect(items.filter((i) => i.action_type === 'vacate_seat').map((i) => i.usernames)).toEqual([{ [ids.c]: MGR_C.username }])
+    const names = await leagueNames()
+    const [line] = commishLogLines([row!], names.teams, names.members)
+    expect(line.text).toBe('made mret_mgr_five the new manager of MRET T3')
+    expect(usernameParts(line.marked).flatMap((p) => (typeof p === 'string' ? [] : [p.username]))).toEqual([MGR_D.username])
   })
 })

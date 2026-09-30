@@ -2,15 +2,17 @@
  * activity-feed-ops.test.ts — the feed's sentences from STORED payloads
  * (spec §13.4, §16.2 `activity-feed`; PROGRESS D310(5), D324).
  */
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
-import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
+import { RECEIPT_PEOPLE_KEYS, receiptUserIds, type CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 import { usernameParts } from '@/components/shared/username-link-ops'
 
 import * as ops from './activity-feed-ops'
 import { COMMISH_LOG_UNNAMED_ACTOR, COMMISSIONER_LABEL, SYSTEM_LABEL, commishLogLines, feedLines, memberNamesOf, transactionText } from './activity-feed-ops'
-import { UNKNOWN_ACTION_WORDS } from './commish-log-copy'
+import { DETAILED_ACTION_TYPES, UNKNOWN_ACTION_WORDS } from './commish-log-copy'
 
 function tx(over: Partial<TransactionActivityItem>): TransactionActivityItem {
   return { kind: 'transaction', id: 'tx1', created_at: '2099-09-10T12:00:00Z', type: 'add_drop', status: 'complete', week: 3, team_id: 't1', actor_id: 'u1', action_id: 'a1', payload: {}, ...over }
@@ -381,5 +383,58 @@ describe('F549 (D465) — one retirement is ONE feed line; the three removal rec
     const line = commishLogLines([retire], forged, members)[0]
     expect(linked(line.marked)).toEqual(['dana'])
     expect(line.text).toBe('retired victim (managed by dana) — Team 9 takes its place from Week 6')
+  })
+})
+
+describe('R1424 — the log read names people from EXACTLY the keys the words read (RECEIPT_PEOPLE_KEYS ≡ the copy’s member(…) reads)', () => {
+  // Every `…user_id` key the renderer's source mentions — so a new member(…) read on a new key joins the universe by itself.
+  const source = ['commish-log-copy.ts', 'activity-feed-ops.ts'].map((f) => readFileSync(`${process.cwd()}/src/components/leagues/${f}`, 'utf8')).join('\n')
+  const universe = [...new Set(source.match(/\b[a-z_]*user_id\b/g) ?? [])]
+  const docs = ['before', 'after', 'metadata'] as const
+  const idOf = (doc: string, key: string) => `${doc}:${key}`
+  const receipt = (actionType: string): CommishLogItem => {
+    const fill = (doc: string) => ({ team_name: 'Bravo', ...Object.fromEntries(universe.map((key) => [key, idOf(doc, key)])) })
+    return {
+      id: 'ca', action_type: actionType, actor: { id: 'u1', username: 'chris' }, target_type: 'team', target_id: 't2', reason: null,
+      before: fill('before'), after: fill('after'), metadata: fill('metadata'), acting_as_team_id: null, reverts_action_id: null, created_at: '2099-09-14T18:00:00.000Z',
+    }
+  }
+  const everyone = Object.fromEntries(docs.flatMap((doc) => universe.map((key) => [idOf(doc, key), `p_${doc}_${key}`])))
+  const render = (item: CommishLogItem, usernames: Record<string, string>) => commishLogLines([{ ...item, usernames }], new Map([['t2', 'Bravo']]), new Map())[0].text
+  // `receiptUserIds` keeps only uuids; the parity question is WHICH keys, so read the table directly.
+  const tableIds = (actionType: string) => (RECEIPT_PEOPLE_KEYS[actionType] ?? []).map(([doc, key]) => idOf(doc, key))
+
+  it('the key universe is the one the words use (premise: it is not empty and holds the four keys)', () => {
+    expect(universe).toEqual(expect.arrayContaining(['manager_user_id', 'user_id', 'commissioner_user_id']))
+  })
+
+  it('for every receipt type with words: naming ONLY the table’s keys renders exactly what naming every key renders', () => {
+    for (const actionType of new Set([...DETAILED_ACTION_TYPES, ...Object.keys(RECEIPT_PEOPLE_KEYS)])) {
+      const item = receipt(actionType)
+      const only = Object.fromEntries(tableIds(actionType).map((id) => [id, everyone[id]]))
+      expect(render(item, only), actionType).toBe(render(item, everyone))
+    }
+  })
+
+  it('and every key in the table is one the words read — dropping it changes the sentence (no dead key widening the read)', () => {
+    for (const [actionType, keys] of Object.entries(RECEIPT_PEOPLE_KEYS)) {
+      expect(DETAILED_ACTION_TYPES, actionType).toContain(actionType)
+      const item = receipt(actionType)
+      for (const [doc, key] of keys) {
+        const without = { ...everyone }
+        delete without[idOf(doc, key)]
+        expect(render(item, without), `${actionType} ${doc}.${key}`).not.toBe(render(item, everyone))
+      }
+    }
+  })
+
+  it('receiptUserIds reads the table’s keys and nothing else (the uuid-shaped twin of the cell above)', () => {
+    const uuid = (n: number) => `ab000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+    const byKey = new Map(docs.flatMap((doc, d) => universe.map((key, k) => [idOf(doc, key), uuid(d * 100 + k)] as const)))
+    for (const actionType of Object.keys(RECEIPT_PEOPLE_KEYS)) {
+      const fill = (doc: string) => Object.fromEntries(universe.map((key) => [key, byKey.get(idOf(doc, key))!]))
+      const got = receiptUserIds({ action_type: actionType, before: fill('before'), after: fill('after'), metadata: fill('metadata') })
+      expect(got, actionType).toEqual(tableIds(actionType).map((id) => byKey.get(id)))
+    }
   })
 })
