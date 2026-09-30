@@ -814,9 +814,9 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     expect(afterRefuse.budget_adjustments).toEqual({ [commishTeamId]: EXACT_CUT })
     expect((await budgetOf(commishTeamId)).max_bid).toBe(HIGH_BID)
 
-    // F40 — `reason` accepted, validated, STORED NOWHERE: exactly ONE post
-    // landed (the D97 budget post), it carries the money and not the reason,
-    // the drafts row carries it nowhere, and the audit table does not exist.
+    // F40 — `reason` accepted and validated: exactly ONE post landed (the D97
+    // budget post), it carries the money and not the reason, and the drafts
+    // row carries it nowhere. Since 168 its home is the receipt (below).
     const posts = await systemPosts()
     expect(posts).toHaveLength(postsBefore + 1)
     const budgetPost = posts[posts.length - 1]
@@ -824,21 +824,29 @@ describe('auction commissioner routes over PostgREST (§8.7 auction rows / §15.
     expect(budgetPost).toContain(`${COMMISH_TEAM_NAME} -$${-EXACT_CUT} (total adjustment -$${-EXACT_CUT}`)
     expect(budgetPost).not.toContain(REASON)
     expect(JSON.stringify(afterRefuse)).not.toContain(REASON)
-    // F40, HALF DISCHARGED by migration 123. This probe used to assert that
-    // `commissioner_actions` DID NOT EXIST. It exists now — M6A L.E1.1 built
-    // the audit spine — so the pin INVERTS rather than being deleted: the
-    // table is readable, and `draft_adjust_budget` still writes NOTHING to it.
-    // That is the accurate state, and it is F40's remaining half: the budget
-    // adjustment is an §8.1 DRAFT control, not one of §15.4's ten overrides,
-    // so it got the table without getting the receipt. Asserting the empty
-    // read (rather than a missing table) means the day that verb starts
-    // logging, this cell reds and someone updates it deliberately.
+    // F40, DISCHARGED for the draft controls by migration 168 (M6 L.E1.29,
+    // PROGRESS D449). This probe first asserted that `commissioner_actions`
+    // did not exist, then (123) that `draft_adjust_budget` wrote nothing to
+    // it, and said "the day that verb starts logging, this cell reds and
+    // someone updates it deliberately". That day is 168: the landed cut
+    // writes EXACTLY ONE receipt carrying the reason and the adjustment
+    // before / after, while the replay, the unstamped 400 and the refused
+    // one-more-dollar cut write none (a replay returns before the receipt; a
+    // refusal rolls back with it).
     const { data: auditRows, error: auditErr } = await service
       .from('commissioner_actions')
-      .select('id, action_type, reason')
+      .select('action_type, reason, before, after')
       .eq('league_id', leagueId)
+      .eq('action_type', 'draft_adjust_budget')
     expect(auditErr).toBeNull()
-    expect(auditRows).toEqual([])
+    expect(auditRows).toEqual([
+      {
+        action_type: 'draft_adjust_budget',
+        reason: REASON,
+        before: { budget_adjustment: 0 },
+        after: { budget_adjustment: EXACT_CUT },
+      },
+    ])
   }, 60_000)
 
   it('cancel-nomination PAUSED: lands; the bid row is VOIDED not deleted (D162), the sequence number is NOT consumed (D143), same nominator', async () => {

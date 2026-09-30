@@ -16,7 +16,8 @@
 - **NEXT TAKEABLE TASK: `L.E2.1`** (in build in parallel), then **`L.E1.29`** when the local DB is free. Builders read the ruled form of the breakdown: spec v2.16.77 + PROGRESS D438 / D439 / D445 + **F510** (the breakdown sentences Q81 / Q83 superseded). **L.E2.1** is FULL — stat-correction events + detection + the daily re-poll of final weeks; it changes the production poll, so today's path stays as the pre-push fallback. **L.E1.29** is FULL — receipts for the draft-room controls. Schema tasks share the one local DB: one at a time.
 - *(L.E2.1 built — migration 167 / pgTAP 115: `stat_correction_events` + `ingest_write_batch` (lines, events and queue in one transaction, F267); detection against the games stored before the poll; the daily 11:00Z re-poll of weeks locked within 7 days; the pre-167 two-call path kept as the named fallback; D432, F507–F509. **Push debt: 167** — Chris pushes it before L.E2.2's migration so the poll is on one path. The local DB is free: L.E1.29 next.)*
 - **Process:** unchanged — the lighter pre-launch rule (Chris 2026-09-27): FULL rigour for scoring / standings / permissions / production writes; ONE PASS for UI / API / docs / e2e; no second re-review after a small fix round unless it touched scoring or permissions.
-- **Production:** at **166**, push debt none (2026-09-29).
+- *(L.E1.29 built — migration 168 / pgTAP 116: every draft-room control writes its `commissioner_actions` receipt through one seam (one row per real change, none for a no-op, a mock or the tick's start); a start names its no-manager seats (F45); D449, F40 / F45 discharged, F512–F514 filed — **F514: `set_lineup`'s commissioner arm still writes no receipt**, for L.E1.31. NEXT in the schema lane: L.E2.2 / L.E1.30 per the suggested order.)*
+- **Production:** at **167** (2026-09-29). Push debt: **168** (receipts only — no route, hook or type the app reads changes shape, so merged code behaves the same at 167 and 168).
 
 ---
 
