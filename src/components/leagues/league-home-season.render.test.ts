@@ -560,7 +560,8 @@ describe('§16.5.4 — the required states', () => {
     expect(section).not.toContain('reassign')
     expect(section).toContain('moved Moved Guy from Alpha to Bravo')
     expect(section).toContain('changed the waiver period: 48 hours → 72 hours') // L.E1.34 (TD12 / R1395): the key in words, the value with its unit
-    expect(section).toContain('<span class="font-bold">chris</span>')
+    // L.E1.41: the actor is named — and his name opens his profile.
+    expect(section).toMatch(/<a data-username-link="chris"[^>]*font-bold[^>]*href="\/u\/chris">chris<\/a>/)
     // C70: a row is a CLAIM — nothing says a verb ran.
     expect(section).not.toMatch(/applied|verified|executed/i)
   })

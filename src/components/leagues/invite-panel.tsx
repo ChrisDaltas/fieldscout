@@ -17,6 +17,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
 import {
@@ -51,12 +52,18 @@ import {
   fillOutcome,
   inviteState,
   isAlreadyFullRefusal,
+  leaveConfirms,
+  leaveLeagueCopy,
+  nextLeaveStep,
   memberControls,
   preferredShareCode,
   readSeatCounts,
   removeOptionCopy,
   validateSlug,
+  type LeaveCopy,
+  type LeaveStep,
   type MemberControls,
+  type MembersPhase,
   type PendingInviteInput,
   type Seat,
   type SeatCounts,
@@ -555,7 +562,9 @@ function SeatRow({
               teamId={linkTeams ? seat.teamId : null}
             />
           </div>
-          <SeatSubline seat={seat} />
+          {/* L.E1.41: a manager's name opens his profile — in a new tab in the
+              live draft room (`linkTeams` false), where leaving can cost a pick. */}
+          <SeatSubline seat={seat} newTab={!linkTeams} />
         </div>
         <SeatStatusBadge seat={seat} />
         {seat.role && seat.status === 'claimed' && (
@@ -578,23 +587,31 @@ function SeatRow({
       {seat.status === 'placeholder' && canManage && seat.teamId && (
         <SeatInviteForm leagueId={leagueId} teamId={seat.teamId} />
       )}
-      {seat.isSelf && <SelfSeatControls seat={seat} leagueId={leagueId} myRole={myRole} />}
+      {seat.isSelf && (
+        <SelfSeatControls seat={seat} leagueId={leagueId} myRole={myRole} phase={controls.phase} leagueName={detail.league.name} />
+      )}
     </div>
   )
 }
 
-function SeatSubline({ seat }: { seat: Seat }) {
+function SeatSubline({ seat, newTab }: { seat: Seat; newTab: boolean }) {
   if (seat.status === 'claimed') {
     return (
-      <div className="truncate text-[11px] font-semibold leading-tight text-n-3">{seat.identity}</div>
+      <div className="truncate text-[11px] font-semibold leading-tight text-n-3" data-seat-identity>
+        {seat.username ? <UsernameLink username={seat.username} newTab={newTab} /> : seat.identity}
+      </div>
     )
   }
   if (seat.status === 'invited') {
     // §7.2/§12.23: the invited email/username is commissioner-visible on a
-    // pending invite — this branch never runs for a claimed seat.
-    const target = seat.emailTarget ?? (seat.usernameTarget ? `@${seat.usernameTarget}` : 'a shared link')
+    // pending invite — this branch never runs for a claimed seat. An invite
+    // by username names a real account, so that name opens its profile too.
     return (
-      <div className="truncate text-[11px] font-semibold leading-tight text-n-3">Invited {target}</div>
+      <div className="truncate text-[11px] font-semibold leading-tight text-n-3">
+        Invited{' '}
+        {seat.emailTarget ??
+          (seat.usernameTarget ? <UsernameLink username={seat.usernameTarget} newTab={newTab} /> : 'a shared link')}
+      </div>
     )
   }
   if (seat.status === 'placeholder') {
@@ -1150,24 +1167,30 @@ function SelfSeatControls({
   seat,
   leagueId,
   myRole,
+  phase,
+  leagueName,
 }: {
   seat: Seat
   leagueId: string
   myRole: string | null
+  phase: MembersPhase
+  leagueName: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [step, setStep] = useState<LeaveStep>('closed')
   const router = useRouter()
   const leave = useLeaveLeague(leagueId)
   // Only the SITTING commissioner must transfer first (§7.2.1:192); a
   // co-commissioner leaves freely.
   const mustTransferFirst = myRole === 'commissioner'
+  const copy = leaveLeagueCopy(phase, seat.teamName, leagueName)
 
   async function confirm() {
-    if (!seat.memberId) return
+    // L.E1.41: only the SECOND confirmation leaves (Chris 2026-09-30).
+    if (!seat.memberId || !leaveConfirms(step)) return
     try {
       await leave.mutateAsync(seat.memberId)
-      setOpen(false)
-      toast({ title: 'You left the league', description: `${seat.teamName} is now an open seat.` })
+      setStep('closed')
+      toast({ title: 'You left the league', description: `${seat.teamName} no longer has you as its manager.` })
       router.push('/app/leagues')
     } catch (cause) {
       toast({ title: "Couldn't leave the league", description: messageOf(cause) })
@@ -1182,7 +1205,8 @@ function SelfSeatControls({
         variant="ghost"
         size="sm"
         disabled={mustTransferFirst}
-        onClick={() => setOpen(true)}
+        onClick={() => setStep((s) => nextLeaveStep(s, 'open'))}
+        data-leave-league
       >
         <Icon name="transfer" size={13} /> Leave league
       </Button>
@@ -1191,24 +1215,75 @@ function SelfSeatControls({
           Transfer the commissioner role to another member before you can leave.
         </span>
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={step !== 'closed'} onOpenChange={(open) => !open && setStep('closed')}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Leave this league?</DialogTitle>
-            <DialogDescription>
-              Your team ({seat.teamName}) becomes an open seat. You can be re-invited later.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="stroke" size="sm" onClick={() => setOpen(false)}>
-              Stay
-            </Button>
-            <Button type="button" variant="destructive" size="sm" disabled={leave.isPending} onClick={confirm}>
-              {leave.isPending ? 'Leaving…' : 'Leave league'}
-            </Button>
-          </DialogFooter>
+          <LeaveLeagueSteps
+            step={step}
+            copy={copy}
+            pending={leave.isPending}
+            onStep={(event) => setStep((s) => nextLeaveStep(s, event))}
+            onConfirm={confirm}
+          />
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/**
+ * The two confirmations of leaving a league (L.E1.41) — the dialog's body,
+ * exported so the render proof can mount each step. Step one says what
+ * happens to the team; step two is the last check, and only its button
+ * leaves.
+ */
+export function LeaveLeagueSteps({
+  step,
+  copy,
+  pending,
+  onStep,
+  onConfirm,
+}: {
+  step: LeaveStep
+  copy: LeaveCopy
+  pending: boolean
+  onStep: (event: 'continue' | 'back' | 'cancel') => void
+  onConfirm: () => void
+}) {
+  if (step === 'final') {
+    return (
+      <div className="flex flex-col gap-4" data-leave-step="final">
+        <DialogHeader>
+          <DialogTitle>{copy.finalTitle}</DialogTitle>
+          <DialogDescription>{copy.finalBody}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="stroke" size="sm" onClick={() => onStep('back')}>
+            Back
+          </Button>
+          <Button type="button" variant="stroke" size="sm" onClick={() => onStep('cancel')}>
+            {copy.stayLabel}
+          </Button>
+          <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={onConfirm} data-leave-confirm>
+            {pending ? 'Leaving…' : copy.confirmLabel}
+          </Button>
+        </DialogFooter>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-4" data-leave-step="consequences">
+      <DialogHeader>
+        <DialogTitle>{copy.title}</DialogTitle>
+        <DialogDescription>{copy.consequences}</DialogDescription>
+      </DialogHeader>
+      <DialogFooter className="gap-2">
+        <Button type="button" variant="stroke" size="sm" onClick={() => onStep('cancel')}>
+          {copy.stayLabel}
+        </Button>
+        <Button type="button" variant="destructive" size="sm" onClick={() => onStep('continue')} data-leave-continue>
+          {copy.continueLabel}
+        </Button>
+      </DialogFooter>
     </div>
   )
 }

@@ -19,6 +19,7 @@ import { Icon, type IconName } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { featureFlags } from '@/lib/feature-flags'
 import { useUIStore } from '@/stores/ui-store'
+import { userProfileHref } from './username-link-ops'
 
 interface PlayerHit {
   id: string
@@ -266,7 +267,7 @@ export function CommandPalette() {
               <CommandItem
                 key={u.id}
                 value={`${u.username} ${u.id}`}
-                onSelect={() => navigate(`/u/${u.username}`)}
+                onSelect={() => navigate(userProfileHref(u.username))}
                 className="gap-2.5"
               >
                 <UserAvatar

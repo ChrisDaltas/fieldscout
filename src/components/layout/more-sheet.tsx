@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { useAuth } from '@/hooks/use-auth'
 import { featureFlags } from '@/lib/feature-flags'
 import { useHistoryStore } from '@/stores/history-store'
+import { userProfileHref } from '@/components/shared/username-link-ops'
 
 interface MoreSheetProps {
   open: boolean
@@ -113,7 +114,7 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
           <ul>
             {profile && (
               <Row
-                href={`/u/${profile.username}`}
+                href={userProfileHref(profile.username)}
                 icon="profile"
                 label="My profile"
                 onClick={close}

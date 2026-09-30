@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TextWithActor, UsernameLink } from '@/components/shared/username-link'
 import { useDraftChat, useSendDraftChat } from '@/hooks/use-draft-chat'
 import {
   CHAT_MAX_LENGTH,
@@ -67,9 +68,18 @@ export function DraftChat({ scope, draftId, userId, className }: DraftChatProps)
     () => chatAuthorsById(scope.members, scope.teams),
     [scope.members, scope.teams],
   )
+  // L.E1.41: user id → username, so an author's (or a post's actor's) name
+  // opens his profile — in a new tab, so the room is never left mid-draft.
+  const usernames = useMemo(
+    () =>
+      new Map(
+        scope.members.flatMap((m): Array<[string, string]> => (m.user_id && m.profiles ? [[m.user_id, m.profiles.username]] : [])),
+      ),
+    [scope.members],
+  )
   const items = useMemo(
-    () => (chat.data ?? []).map((row) => ({ id: row.id, view: chatItemView(row, authors, userId) })),
-    [chat.data, authors, userId],
+    () => (chat.data ?? []).map((row) => ({ id: row.id, view: chatItemView(row, authors, userId, usernames) })),
+    [chat.data, authors, userId, usernames],
   )
 
   // Follow the newest message (the room's live transparency loop — a system
@@ -172,14 +182,14 @@ export function DraftChat({ scope, draftId, userId, className }: DraftChatProps)
   )
 }
 
-function ChatItem({ view }: { view: ChatItemView }) {
+export function ChatItem({ view }: { view: ChatItemView }) {
   if (view.kind === 'system') {
     // §16.3: system posts are DISTINCT (accent treatment) and non-hideable —
     // the actor is named in the message text itself (D108(15): actorless by
     // shape; the tick's posts carry user_id NULL and render identically).
     return (
       <p className="rounded-sm border-l-2 border-accent bg-accent-soft px-2 py-1 text-[12px] font-semibold text-ink">
-        {view.message}
+        <TextWithActor text={view.message} actor={view.username} newTab />
       </p>
     )
   }
@@ -192,12 +202,25 @@ function ChatItem({ view }: { view: ChatItemView }) {
           view.mine && 'text-accent-strong',
         )}
       >
-        {view.authorLabel}
+        <ChatAuthor label={view.authorLabel} username={view.username} />
         {view.mine ? ' (You)' : ''}
       </span>
       <p className="whitespace-pre-wrap break-words text-[12px] font-medium text-ink">
         {view.message}
       </p>
     </div>
+  )
+}
+
+/** "Team — @username" with the handle a door to his profile (new tab — the
+ *  room is never left mid-draft). A label without the handle stays plain. */
+function ChatAuthor({ label, username }: { label: string | null; username: string | null }) {
+  const handle = username ? `@${username}` : null
+  if (!label || !handle || !label.endsWith(handle)) return <>{label}</>
+  return (
+    <>
+      {label.slice(0, label.length - handle.length)}
+      <UsernameLink username={username as string} newTab />
+    </>
   )
 }

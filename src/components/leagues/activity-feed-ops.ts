@@ -21,6 +21,8 @@
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
+import { markUsername, plainText } from '@/components/shared/username-link-ops'
+
 import { COMMISH_ACTION_WORDS, actionWords, receiptDetail, settingChange } from './commish-log-copy'
 
 export interface FeedLine {
@@ -48,6 +50,11 @@ export interface FeedLine {
   /** The §10.3 log entry this line's act wrote (F233(d)) — the ✸ line links
    *  to it; null when the act left no receipt. */
   commishActionId: string | null
+  /** A system post's actor, by his CURRENT username (the league's member
+   *  list) — the post's text names him, and that name links to his profile
+   *  (L.E1.41, `splitActorName`). Null for a transaction, a NULL-actor post,
+   *  or an actor no longer in the league. */
+  actorUsername: string | null
 }
 
 interface AddDropPayloadShape {
@@ -152,7 +159,11 @@ export function transactionText(item: TransactionActivityItem): string {
  * transaction's line wears the ✸ treatment and links to the entry. Pass
  * every loaded page at once so a pair split across two pages still folds.
  */
-export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap<string, string>): FeedLine[] {
+export function feedLines(
+  items: readonly ActivityItem[],
+  teamNames: ReadonlyMap<string, string>,
+  memberNames: ReadonlyMap<string, string> = new Map(),
+): FeedLine[] {
   const receiptsOnTransactions = new Set(
     items.flatMap((item) => (item.kind === 'transaction' && item.commish_action_id ? [item.commish_action_id] : [])),
   )
@@ -171,6 +182,7 @@ export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap
           createdAt: item.created_at,
           commissioner: item.actor_id !== null,
           commishActionId,
+          actorUsername: item.actor_id ? (memberNames.get(item.actor_id) ?? null) : null,
         },
       ]
     }
@@ -186,6 +198,7 @@ export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap
         createdAt: item.created_at,
         commissioner: item.type === 'commissioner_move' || commishActionId !== null,
         commishActionId,
+        actorUsername: null,
       },
     ]
   })
@@ -225,8 +238,14 @@ export const COMMISH_LOG_UNNAMED_ACTOR = 'A commissioner'
 export interface CommishLogLine {
   id: string
   actor: string
+  /** The actor's username — his name is a door to his profile (L.E1.41);
+   *  null when the log names no one ("A commissioner"). */
+  actorUsername: string | null
   /** What the row records, in words — never empty. */
   text: string
+  /** The same words with each member's username marked (`markUsername`), so
+   *  the renderer links exactly the names the sentence interpolated (L.E1.41). */
+  marked: string
   /** The reason AS GIVEN, or null when none was (rendered as absent). */
   reason: string | null
   createdAt: string
@@ -265,7 +284,12 @@ function actText(
     named.add(name)
     return name
   }
-  const member = (userId: unknown): string | null => (typeof userId === 'string' ? (names.memberNames.get(userId) ?? null) : null)
+  // L.E1.41: a member's name is MARKED where the sentence names him, so the
+  // log links that person — and only him — to his profile.
+  const member = (userId: unknown): string | null => {
+    const username = typeof userId === 'string' ? (names.memberNames.get(userId) ?? null) : null
+    return username === null ? null : markUsername(username)
+  }
 
   // A LEAGUE's name or picture (169) — before the team-rename branch below,
   // which reads the same {name} key set.
@@ -389,10 +413,14 @@ export function commishLogLines(
     const named = new Set<string>()
     const sentence = actText(item, { teamNames, memberNames }, named)
     const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
+    const marked = actingFor && !named.has(actingFor) ? `${sentence} (for ${actingFor})` : sentence
+    const actorUsername = text(item.actor.username)
     return {
       id: item.id,
-      actor: text(item.actor.username) ?? COMMISH_LOG_UNNAMED_ACTOR,
-      text: actingFor && !named.has(actingFor) ? `${sentence} (for ${actingFor})` : sentence,
+      actor: actorUsername ?? COMMISH_LOG_UNNAMED_ACTOR,
+      actorUsername,
+      text: plainText(marked),
+      marked,
       reason: text(item.reason)?.trim() ?? null,
       createdAt: item.created_at,
     }

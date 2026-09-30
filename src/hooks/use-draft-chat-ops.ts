@@ -105,6 +105,10 @@ export interface ChatItemView {
   message: string
   /** True when the viewer authored the row (alignment/emphasis only). */
   mine: boolean
+  /** The person behind the row, by username — the author of a member's
+   *  message, or the actor a system post names ("Draft paused by chris.") —
+   *  so that name opens his profile (L.E1.41). Null when there is none. */
+  username: string | null
 }
 
 /** The authorless-ordinary fallback label (D108(15): a deleted account's
@@ -153,9 +157,12 @@ export function chatItemView(
   row: DraftChatRow,
   authors: ReadonlyMap<string, string>,
   viewerUserId: string | null,
+  /** user id → username (the league's members) — L.E1.41's profile doors. */
+  usernames: ReadonlyMap<string, string> = new Map(),
 ): ChatItemView {
+  const username = row.user_id ? (usernames.get(row.user_id) ?? null) : null
   if (row.is_system === true) {
-    return { kind: 'system', authorLabel: null, message: row.message, mine: false }
+    return { kind: 'system', authorLabel: null, message: row.message, mine: false, username }
   }
   if (row.user_id === null) {
     return {
@@ -163,6 +170,7 @@ export function chatItemView(
       authorLabel: FORMER_MEMBER_LABEL,
       message: row.message,
       mine: false,
+      username: null,
     }
   }
   const label = authors.get(row.user_id)
@@ -172,6 +180,7 @@ export function chatItemView(
       authorLabel: FORMER_MEMBER_LABEL,
       message: row.message,
       mine: row.user_id === viewerUserId,
+      username: null,
     }
   }
   return {
@@ -179,6 +188,7 @@ export function chatItemView(
     authorLabel: label,
     message: row.message,
     mine: row.user_id === viewerUserId,
+    username,
   }
 }
 

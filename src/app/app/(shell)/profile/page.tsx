@@ -12,6 +12,7 @@ import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { featureFlags } from '@/lib/feature-flags'
+import { userProfileHref } from '@/components/shared/username-link-ops'
 
 /**
  * My stats — how the user's profile performs (package screen 09). The shell
@@ -67,7 +68,7 @@ export default function ProfilePage() {
               </Link>
             </Button>
             <Button asChild variant="blue" size="md">
-              <Link href={`/u/${profile.username}`}>
+              <Link href={userProfileHref(profile.username)}>
                 <Icon name="external-link" />
                 View public profile
               </Link>

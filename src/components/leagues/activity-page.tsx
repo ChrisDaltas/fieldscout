@@ -117,6 +117,7 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
 
   const data = league.data
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
+  const memberNames = memberNamesOf(data.members)
   const leagueTimeZone = data.settings.draft.time_zone ?? null
 
   return (
@@ -143,13 +144,13 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
         </TabsList>
 
         <TabsContent value="all" className="mt-3" data-tab-panel="all">
-          <FeedTab leagueId={leagueId} tab="all" filters={{}} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />
+          <FeedTab leagueId={leagueId} tab="all" filters={{}} teamNames={teamNames} memberNames={memberNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
         <TabsContent value="adds" className="mt-3" data-tab-panel="adds">
-          <FeedTab leagueId={leagueId} tab="adds" filters={{ type: ADD_DROP_TYPES }} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />
+          <FeedTab leagueId={leagueId} tab="adds" filters={{ type: ADD_DROP_TYPES }} teamNames={teamNames} memberNames={memberNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
         <TabsContent value="trades" className="mt-3" data-tab-panel="trades">
-          <FeedTab leagueId={leagueId} tab="trades" filters={{ topic: 'trades' }} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />
+          <FeedTab leagueId={leagueId} tab="trades" filters={{ topic: 'trades' }} teamNames={teamNames} memberNames={memberNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
         <TabsContent value="commissioner" className="mt-3" data-tab-panel="commissioner">
           <CommishTab leagueId={leagueId} data={data} route={route} onRoute={go} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />
@@ -176,12 +177,14 @@ function FeedTab({
   tab,
   filters,
   teamNames,
+  memberNames,
   leagueTimeZone,
 }: {
   leagueId: string
   tab: 'all' | 'adds' | 'trades'
   filters: Omit<ActivityFilters, 'before' | 'beforeId'>
   teamNames: ReadonlyMap<string, string>
+  memberNames: ReadonlyMap<string, string>
   leagueTimeZone: string | null
 }) {
   const feed = useLeagueActivityPages(leagueId, filters)
@@ -199,6 +202,7 @@ function FeedTab({
       problem={feed.isError && !nextFailed ? feed.error : null}
       onRetry={() => void feed.refetch()}
       teamNames={teamNames}
+      memberNames={memberNames}
       leagueTimeZone={leagueTimeZone}
       older={{
         hasMore: feed.hasNextPage,

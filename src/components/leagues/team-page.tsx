@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -169,6 +170,8 @@ function TeamPageContent({
   // D339 / F539(b): does the team have a seat row at all (the summary's
   // `no_seat_row` predicate — any `league_members` row for the team)?
   const hasSeatRow = detail.members.some((m) => m.team_id === teamId)
+  // L.E1.41: the manager's name, a door to his profile (Chris 2026-09-30).
+  const managerUsername = detail.members.find((m) => m.team_id === teamId && m.user_id)?.profiles?.username ?? null
   const canEdit = isOwnTeam || isCommish
   const editability = weekEditability(weeks, week, currentWeek)
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
@@ -226,7 +229,18 @@ function TeamPageContent({
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="text-[13px] font-bold text-ink">{teamName}</span>
             <span className="text-[11px] font-medium text-n-3">
-              {isOwnTeam ? 'Your team' : rosterTeam?.manager_user_id ? 'Managed by another member' : 'No manager seated'}
+              {/* Your own team says so — your own name here would only point at yourself. */}
+              {isOwnTeam ? (
+                'Your team'
+              ) : managerUsername ? (
+                <span data-team-manager>
+                  Managed by <UsernameLink username={managerUsername} className="font-bold text-ink" />
+                </span>
+              ) : rosterTeam?.manager_user_id ? (
+                'Managed by another member'
+              ) : (
+                'No manager seated'
+              )}
               {isCommish && !isOwnTeam ? ' · you are acting as commissioner' : ''}
             </span>
             {/* L.D2.13: the seat's FAAB balance / waiver priority (public to

@@ -1023,3 +1023,31 @@ describe('the Propose trade door and the trade deadline (L.D3.12)', () => {
     expect(renderTeamPage({ detail: elsewhere, deadline: view(true) })).not.toContain('data-propose-trade')
   })
 })
+
+// ---------------------------------------------------------------------------
+// L.E1.41 — the manager's name opens his profile (Chris 2026-09-30: "Clicking
+// a user name should always take a user to the user profile they clicked on")
+// ---------------------------------------------------------------------------
+
+describe('the team page names its manager — a door to his profile (L.E1.41)', () => {
+  it('another team: "Managed by @<username>", the handle a link to /u/<username>', () => {
+    const named = {
+      ...detail,
+      members: detail.members.map((m) =>
+        m.user_id === 'user-manager'
+          ? { ...m, team_id: 'team-2' }
+          : { ...m, team_id: TEAM, profiles: { username: 'chris_gm', avatar_url: null } },
+      ),
+    }
+    const html = renderTeamPage({ detail: named })
+    const line = html.slice(html.indexOf('data-team-manager'), html.indexOf('</span>', html.indexOf('data-team-manager')) + 60)
+    expect(line).toContain('Managed by <a data-username-link="chris_gm"')
+    expect(line).toContain('href="/u/chris_gm">@chris_gm</a>')
+    expect(html).not.toContain('Managed by another member')
+  })
+  it('your own team says "Your team" — no link to yourself', () => {
+    const html = renderTeamPage()
+    expect(html).toContain('Your team')
+    expect(html).not.toContain('data-team-manager')
+  })
+})
