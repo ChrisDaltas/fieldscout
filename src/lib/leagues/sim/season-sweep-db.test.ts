@@ -167,8 +167,14 @@ async function cleanup(): Promise<void> {
       if (error) throw new Error(`cleanup ${table}: ${error.message}`)
     }
     must(await service.from('leagues').update({ champion_team_id: null }).in('id', ids).select('id'), 'cleanup champion')
-    must(await service.from('teams').delete().in('league_id', ids).select('id'), 'cleanup teams')
+    // F406's order (169 / F514): the sim's commissioner sets lineups for
+    // teams he does not manage, and each receipt names the team he acted for
+    // (commissioner_actions.acting_as_team_id — an FK with no ON DELETE on an
+    // immutable log, cleared only by the league's CASCADE), so detach the
+    // teams, delete the league (taking its receipts), THEN delete the teams.
+    must(await service.from('teams').update({ league_id: null }).in('id', tIds).select('id'), 'cleanup teams detach')
     must(await service.from('leagues').delete().in('id', ids).select('id'), 'cleanup leagues')
+    if (tIds.length > 0) must(await service.from('teams').delete().in('id', tIds).select('id'), 'cleanup teams')
   }
   const playerIds = PLAYERS.map((p) => p.id)
   for (const table of ['score_fanout', 'player_stats'] as const) {

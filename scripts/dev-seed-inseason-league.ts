@@ -155,10 +155,23 @@ async function cleanup(): Promise<void> {
     // measured 2026-09-08 on the first driven season).
     const { error: championError } = await service.from('leagues').update({ champion_team_id: null }).in('id', ids)
     if (championError) throw new Error(`cleanup champion: ${championError.message}`)
-    const { error: teamsError } = await service.from('teams').delete().in('league_id', ids)
-    if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
+    // L.E1.30 (R1325): the F406 order — a commissioner receipt that names a
+    // team (`commissioner_actions.acting_as_team_id`, no ON DELETE) pins it, so
+    // detach the teams, delete the leagues (their receipts cascade), then the
+    // teams — as sim/runner.ts's cleanup does.
+    const { data: teamRows, error: teamReadError } = await service.from('teams').select('id').in('league_id', ids)
+    if (teamReadError) throw new Error(`cleanup teams read: ${teamReadError.message}`)
+    const teamIds = (teamRows ?? []).map((t) => t.id as string)
+    if (teamIds.length > 0) {
+      const { error: detachError } = await service.from('teams').update({ league_id: null }).in('id', teamIds)
+      if (detachError) throw new Error(`cleanup teams detach: ${detachError.message}`)
+    }
     const { error: leaguesError } = await service.from('leagues').delete().in('id', ids)
     if (leaguesError) throw new Error(`cleanup leagues: ${leaguesError.message}`)
+    if (teamIds.length > 0) {
+      const { error: teamsError } = await service.from('teams').delete().in('id', teamIds)
+      if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
+    }
   }
   const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID, GAME_FINAL_ID, GAME_FA_LOCKED_ID])
   if (gamesError) throw new Error(`cleanup nfl_games: ${gamesError.message}`)

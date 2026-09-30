@@ -6025,8 +6025,16 @@ export type Database = {
         Returns: Json
       }
       league_playoff_bracket: { Args: { p_league_id: string }; Returns: Json }
+      league_receipt_diff_internal: {
+        Args: { p_depth?: number; p_new: Json; p_old: Json; p_prefix?: string }
+        Returns: Json
+      }
       league_roster_broadcast_payload: {
         Args: { r: Database["public"]["Tables"]["league_rosters"]["Row"] }
+        Returns: Json
+      }
+      league_settings_doc_internal: {
+        Args: { p_league_id: string }
         Returns: Json
       }
       league_standings: { Args: { p_league_id: string }; Returns: Json }
