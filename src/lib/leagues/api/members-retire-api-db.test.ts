@@ -16,6 +16,11 @@
  *     the stored payload byte for byte and writes nothing more; the same id
  *     on ANOTHER seat is the verb's refusal by name, nothing written;
  *   - a manager gets the family's 403; the playoffs refuse by name (Q41).
+ *   - F549 (PROGRESS D465): the retirement is ONE line in League Home's
+ *     activity and the Activity page's All tab — the ledger row, ✸-linked to
+ *     its receipt; the D97 post it also wrote folds into it — and the log
+ *     names each removal (retire / vacate / takeover) with the manager who
+ *     left, although he is no longer in the league's member list.
  *
  * Requires the local stack — D59(5); FAILS loudly when the stack is down,
  * never skips (§4.3). No clock or random read anywhere here.
@@ -30,6 +35,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { Database } from '@/types/database'
 
+import { commishLogLines, feedLines } from '@/components/leagues/activity-feed-ops'
+import { plainText, usernameParts } from '@/components/shared/username-link-ops'
+
+import { readActivity, type ActivityItem } from './activity-service'
+import { readCommishLog, type CommishLogItem } from './commish-log-service'
 import { removeMember } from './members-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -46,6 +56,10 @@ const COMMISH = { email: 'members-retire-commish@fieldscout.test', password: 'pg
 const MGR_A = { email: 'members-retire-a@fieldscout.test', password: 'pgtap-mret-pass-2', username: 'mret_mgr_two' }
 const MGR_B = { email: 'members-retire-b@fieldscout.test', password: 'pgtap-mret-pass-3', username: 'mret_mgr_three' }
 const MGR_C = { email: 'members-retire-c@fieldscout.test', password: 'pgtap-mret-pass-4', username: 'mret_mgr_four' }
+/** F549: the successor a takeover seats — not a member before it. */
+const MGR_D = { email: 'members-retire-d@fieldscout.test', password: 'pgtap-mret-pass-5', username: 'mret_mgr_five' }
+/** R1425: a FieldScout user with no stint and no membership in the league. */
+const OUTSIDER = { email: 'members-retire-outsider@fieldscout.test', password: 'pgtap-mret-pass-6', username: 'mret_outsider' }
 
 const ACTION = {
   retireA: 'e1400000-0000-4000-8000-000000000001',
@@ -59,7 +73,8 @@ const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth
 let commishClient: SupabaseClient<Database>
 let mgrAClient: SupabaseClient<Database>
 let commishId: string
-let ids: { a: string; b: string; c: string }
+let ids: { a: string; b: string; c: string; d: string; outsider: string }
+let mgrBClient: SupabaseClient<Database>
 let leagueId: string
 let playoffLeagueId: string
 let teamA: string
@@ -87,7 +102,7 @@ async function cleanup(): Promise<void> {
     const { error: teamsError } = await service.from('teams').delete().in('id', teamIds)
     if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
   }
-  for (const u of [COMMISH, MGR_A, MGR_B, MGR_C]) await deleteUserByUsername(u.username)
+  for (const u of [COMMISH, MGR_A, MGR_B, MGR_C, MGR_D, OUTSIDER]) await deleteUserByUsername(u.username)
 }
 
 async function createUser(user: { email: string; password: string; username: string }): Promise<string> {
@@ -157,9 +172,10 @@ async function trail(): Promise<{ receipts: Array<{ target_id: string | null; re
 beforeAll(async () => {
   await cleanup()
   commishId = await createUser(COMMISH)
-  ids = { a: await createUser(MGR_A), b: await createUser(MGR_B), c: await createUser(MGR_C) }
+  ids = { a: await createUser(MGR_A), b: await createUser(MGR_B), c: await createUser(MGR_C), d: await createUser(MGR_D), outsider: await createUser(OUTSIDER) }
   commishClient = await signIn(COMMISH)
   mgrAClient = await signIn(MGR_A)
+  mgrBClient = await signIn(MGR_B)
 
   const inSeason = await seedLeague(`${LEAGUE_NAME}-season`, 'in_season')
   leagueId = inSeason.league
@@ -277,5 +293,105 @@ describe('DELETE …/members/[mid] mode retire — the route carries the action_
     const res = await removeMember(commishClient, playoffLeagueId, mid, commishId, { mode: 'retire', action_id: ACTION.playoffs })
     expect(res.status).toBe(400)
     expect(errorText(res)).toContain('retiring a franchise during the playoffs is not defined yet')
+  })
+})
+
+/** What League Home and the Activity page hand the renderer: the league's
+ *  teams by name and its CURRENT members by username (the league detail). */
+async function leagueNames(): Promise<{ teams: Map<string, string>; members: Map<string, string> }> {
+  const [{ data: teams }, { data: members }] = await Promise.all([
+    service.from('teams').select('id, name').eq('league_id', leagueId),
+    service.from('league_members').select('user_id, profiles(username)').eq('league_id', leagueId),
+  ])
+  return {
+    teams: new Map((teams ?? []).map((t) => [t.id, t.name])),
+    members: new Map(
+      (members ?? []).flatMap((m) => (m.user_id && m.profiles?.username ? [[m.user_id, m.profiles.username] as const] : [])),
+    ),
+  }
+}
+
+describe('F549 — one line per retirement; the removal receipts in words', () => {
+  it('League Home (limit 8) and the Activity page’s All tab show the retirement as ONE ✸ line linked to its receipt — the ledger row and the post are two rows, one line', async () => {
+    const { data: receipt } = await service.from('commissioner_actions').select('id').eq('league_id', leagueId).eq('action_type', 'retire_franchise').single()
+    const names = await leagueNames()
+    for (const query of [{ limit: '8' }, {}]) {
+      const res = await readActivity(mgrBClient, leagueId, query)
+      expect(res.status, JSON.stringify(res.body)).toBe(200)
+      const items = (res.body as unknown as { items: ActivityItem[] }).items
+      // THE PREMISE: the retirement wrote two feed rows — its ledger row and its D97 post.
+      const rows = items.filter((i) => (i.kind === 'transaction' ? i.type === 'commissioner_move' : i.message.includes(' was retired by ')))
+      expect(rows.map((i) => [i.kind, i.commish_action_id])).toEqual(
+        expect.arrayContaining([['transaction', receipt!.id], ['system', receipt!.id]]),
+      )
+      expect(rows).toHaveLength(2)
+      const lines = feedLines(items, names.teams, names.members).filter((l) => /retired/.test(l.text))
+      expect(lines.map((l) => ({ kind: l.kind, text: l.text, commissioner: l.commissioner, commishActionId: l.commishActionId }))).toEqual([
+        { kind: 'transaction', text: 'retired MRET T2 — Team 5 takes its place from Week 3', commissioner: true, commishActionId: receipt!.id },
+      ])
+    }
+  })
+
+  it('a vacate and a takeover: the log names every removed manager (no longer a member) and the new one, each a profile link', async () => {
+    const vacate = await removeMember(commishClient, leagueId, await memberIdOf(leagueId, ids.c), commishId, { mode: 'vacate' })
+    expect(vacate.status, errorText(vacate)).toBe(200)
+    const takeover = await removeMember(commishClient, leagueId, await memberIdOf(leagueId, ids.b), commishId, { mode: 'takeover', successor_user_id: ids.d })
+    expect(takeover.status, errorText(takeover)).toBe(200)
+
+    const names = await leagueNames()
+    // THE PREMISE: the league's member list no longer names the removed managers.
+    expect([names.members.has(ids.a), names.members.has(ids.b), names.members.has(ids.c), names.members.get(ids.d)]).toEqual([false, false, false, MGR_D.username])
+
+    const res = await readCommishLog(commishClient, leagueId, {})
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const items = (res.body as unknown as { items: CommishLogItem[] }).items
+    const removals = items.filter((i) => ['retire_franchise', 'vacate_seat', 'replace_manager'].includes(i.action_type))
+    const lines = commishLogLines(removals, names.teams, names.members)
+    expect(lines.map((l) => ({ actor: l.actor, text: l.text }))).toEqual([
+      { actor: COMMISH.username, text: 'replaced MRET T3’s manager: mret_mgr_three → mret_mgr_five' },
+      { actor: COMMISH.username, text: 'removed mret_mgr_four as MRET T4’s manager — the team has no manager now' },
+      { actor: COMMISH.username, text: 'retired MRET T2 (managed by mret_mgr_two) — Team 5 takes its place from Week 3' },
+    ])
+    // Each person is a door to his profile — exactly the names the sentence interpolated.
+    expect(lines.map((l) => usernameParts(l.marked).flatMap((p) => (typeof p === 'string' ? [] : [p.username])))).toEqual([
+      [MGR_B.username, MGR_D.username],
+      [MGR_C.username],
+      [MGR_A.username],
+    ])
+    expect(lines.every((l) => plainText(l.marked) === l.text)).toBe(true)
+  })
+
+  it('R1424 / R1425: a receipt a commissioner’s client forged (123:335) — 400+ user-id keys, naming an outsider — leaves the log readable (200) and names no outsider', async () => {
+    const stuffed = Object.fromEntries(Array.from({ length: 420 }, (_, n) => [`k${n}_user_id`, `ab000000-0000-4000-8000-${String(n).padStart(12, '0')}`]))
+    // THE PREMISE (a): 400 ids in ONE `.in` is refused by PostgREST (the URL is too long) — the old read's shape.
+    const { error: tooLong } = await service.from('profiles').select('id').in('id', Object.values(stuffed).slice(0, 400))
+    expect(tooLong, 'a 400-id .in must fail, or this cell proves nothing').not.toBeNull()
+    // THE PREMISE (b): the commissioner's own client can append a receipt no verb wrote (C70).
+    const { data: forged, error: forgeError } = await commishClient
+      .from('commissioner_actions')
+      .insert({
+        league_id: leagueId, actor_id: commishId, action_type: 'replace_manager', target_type: 'team', target_id: teamB,
+        before: { ...stuffed, manager_user_id: ids.outsider }, after: { ...stuffed, manager_user_id: ids.d }, metadata: { ...stuffed, team_name: 'MRET T3', user_id: ids.outsider },
+      })
+      .select('id')
+      .single()
+    expect(forgeError, forgeError?.message).toBeNull()
+    const { data: outsiderRows } = await service.from('league_members').select('id').eq('league_id', leagueId).eq('user_id', ids.outsider)
+    const { data: outsiderStints } = await service.from('team_managers').select('id').eq('league_id', leagueId).eq('user_id', ids.outsider)
+    expect([outsiderRows?.length, outsiderStints?.length]).toEqual([0, 0])
+
+    const res = await readCommishLog(commishClient, leagueId, {})
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    const items = (res.body as unknown as { items: CommishLogItem[] }).items
+    const row = items.find((i) => i.id === forged!.id)
+    expect(row, 'the forged row is served').toBeDefined()
+    // Only the word keys were read, and only the league's own person is named.
+    expect(row!.usernames).toEqual({ [ids.d]: MGR_D.username })
+    // The earlier removals still name their managers on the same page.
+    expect(items.filter((i) => i.action_type === 'vacate_seat').map((i) => i.usernames)).toEqual([{ [ids.c]: MGR_C.username }])
+    const names = await leagueNames()
+    const [line] = commishLogLines([row!], names.teams, names.members)
+    expect(line.text).toBe('made mret_mgr_five the new manager of MRET T3')
+    expect(usernameParts(line.marked).flatMap((p) => (typeof p === 'string' ? [] : [p.username]))).toEqual([MGR_D.username])
   })
 })

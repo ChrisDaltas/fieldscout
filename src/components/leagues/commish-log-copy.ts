@@ -409,15 +409,29 @@ const DETAIL: Readonly<Record<string, (c: ReceiptContext) => string | null>> = {
     const name = team(targetId, metadata.team_name)
     return who ? `made ${who} the manager of ${name}` : `gave ${name} a manager`
   },
+  // F549 (D465): the three ways a commissioner removes a manager (169 / 173's
+  // `remove_manager`). The removed manager is named by the log's own read
+  // (`CommishLogItem.usernames`) — he is no longer in the league's members.
   replace_manager: ({ targetId, before, after, metadata, member, team }) => {
     const name = team(targetId, metadata.team_name)
     const from = member(before.manager_user_id)
     const to = member(after.manager_user_id)
-    return from && to ? `replaced ${name}’s manager: ${from} → ${to}` : `replaced ${name}’s manager`
+    if (from && to) return `replaced ${name}’s manager: ${from} → ${to}`
+    if (to) return `made ${to} the new manager of ${name}`
+    if (from) return `replaced ${from} as ${name}’s manager`
+    return `replaced ${name}’s manager`
   },
-  retire_franchise: ({ targetId, after, metadata, team }) => {
+  // The feed's words for the same act (`retireTransactionText`), plus who
+  // managed the retired team: "retired Bravo (managed by dana) — Team 9
+  // takes its place from Week 6". A receipt with no week recorded (a
+  // complete league) says "after the season"; one with no such key says
+  // nothing about when.
+  retire_franchise: ({ targetId, before, after, metadata, member, team }) => {
     const successor = after.successor_team_id ? team(after.successor_team_id, after.successor_team_name) : str(after.successor_team_name)
-    return `retired ${team(targetId, metadata.team_name)}${successor ? ` — ${successor} takes its place` : ''}`
+    const who = member(before.manager_user_id)
+    const week = num(after.retired_at_week)
+    const when = week !== null ? ` from Week ${week}` : 'retired_at_week' in after ? ' after the season' : ''
+    return `retired ${team(targetId, metadata.team_name)}${who ? ` (managed by ${who})` : ''}${successor ? ` — ${successor} takes its place${when}` : ''}`
   },
   vacate_seat: ({ targetId, before, metadata, member, team }) => {
     const who = member(before.manager_user_id)

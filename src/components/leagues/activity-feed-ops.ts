@@ -448,7 +448,11 @@ export function commishLogLines(
       metadata: unmarked(raw.metadata) as CommishLogItem['metadata'],
     }
     const named = new Set<string>()
-    const sentence = actText(item, { teamNames, memberNames }, named)
+    // F549: the people this receipt names, as the log's own read resolved
+    // them (a removed manager is no longer in the league's member list),
+    // under the member list (the league detail's current usernames).
+    const people = item.usernames ? new Map([...Object.entries(item.usernames), ...memberNames]) : memberNames
+    const sentence = actText(item, { teamNames, memberNames: people }, named)
     const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
     const marked = actingFor && !named.has(actingFor) ? `${sentence} (for ${actingFor})` : sentence
     const actorUsername = text(item.actor.username)

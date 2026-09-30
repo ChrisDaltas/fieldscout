@@ -43,8 +43,10 @@ name: Database
 # measured TRANSITIVE IMPORT CLOSURE of the stack suites, not a guess — which
 # is why it reaches strays outside `src/lib/leagues/**`: `src/lib/sports-data`
 # (via `sync/projections.ts`), `src/types/database.ts` (via `stat-keys.ts`),
-# `src/utils` (via `commish-auction-ops.ts`), and three pure-logic helpers that
-# happen to live under `src/components/draft/`.
+# `src/utils` (via `commish-auction-ops.ts`), three pure-logic helpers that
+# happen to live under `src/components/draft/`, and (F549) the activity feed's
+# pure line builders under `src/components/leagues/` + `shared/` — the
+# retirement suite renders its feed / log rows through them.
 #
 # The broad `src/**` is STILL deliberately excluded, for the unchanged reason:
 # a React-only PR cannot break a migration replay and must stay out of the
@@ -116,6 +118,9 @@ on:
       - 'src/components/draft/auction-budget.ts'
       - 'src/components/draft/commish-auction-ops.ts'
       - 'src/components/draft/draft-order.ts'
+      - 'src/components/leagues/activity-feed-ops.ts'
+      - 'src/components/leagues/commish-log-copy.ts'
+      - 'src/components/shared/username-link-ops.ts'
   push:
     branches: [main]
     paths:
@@ -144,6 +149,9 @@ on:
       - 'src/components/draft/auction-budget.ts'
       - 'src/components/draft/commish-auction-ops.ts'
       - 'src/components/draft/draft-order.ts'
+      - 'src/components/leagues/activity-feed-ops.ts'
+      - 'src/components/leagues/commish-log-copy.ts'
+      - 'src/components/shared/username-link-ops.ts'
 
 concurrency:
   group: db-${{ github.workflow }}-${{ github.ref }}
