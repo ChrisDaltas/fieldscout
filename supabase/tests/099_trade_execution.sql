@@ -673,8 +673,8 @@ select is(pg_temp.st('Y3'), 'proposed|-', 'I1 a stint UPDATE that does not close
 update team_managers set ended_at = now(), end_reason = 'kicked' where team_id = pg_temp.team('TX5 Victor') and ended_at is null;
 select is(
   pg_temp.st('Y1') || ' // ' || pg_temp.st('Y2'),
-  'invalid|TX5 Victor''s manager is no longer managing it (kicked) — a trade offered or agreed by the previous manager is called off (E47); the commissioner can re-propose it acting for the team // invalid|TX5 Victor''s manager is no longer managing it (kicked) — a trade offered or agreed by the previous manager is called off (E47); the commissioner can re-propose it acting for the team',
-  'I2 E47: the stint closing calls off the team''s offer (a FAAB-only side — E37 could never see it, F413 (e)) AND the offer it received');
+  'invalid|TX5 Victor''s manager is no longer managing it (kicked) — a trade offered or agreed by the previous manager is called off (E47); the team''s next manager can offer it again // invalid|TX5 Victor''s manager is no longer managing it (kicked) — a trade offered or agreed by the previous manager is called off (E47); the team''s next manager can offer it again',
+  'I2 E47: the stint closing calls off the team''s offer (a FAAB-only side — E37 could never see it, F413 (e)) AND the offer it received — the reason re-cut by 174: no commissioner re-proposal (ruled 2026-09-30)');
 select is(
   pg_temp.st('Y3') || ' ' || (select count(*)::int from notifications where type = 'league_trade_invalid' and (data ->> 'trade_id')::uuid = pg_temp.tid('Y1')),
   'proposed|- 2',
