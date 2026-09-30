@@ -9,6 +9,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 
+import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { CommishLogPage } from '@/lib/leagues/api/commish-log-service'
 
 import { commishLogKeys, commishLogNextCursor, commishLogSearchParams } from './use-commish-log'
@@ -56,7 +57,13 @@ describe('useCommishSummary — the poll (R1363)', () => {
   it('re-polls each minute while it answers and stops once refused (a manager’s 403 is not asked again)', () => {
     expect(commishSummaryRefetchInterval({ state: { error: null } })).toBe(COMMISH_SUMMARY_REPOLL_MS)
     expect(COMMISH_SUMMARY_REPOLL_MS).toBe(60_000)
-    expect(commishSummaryRefetchInterval({ state: { error: new Error('403') } })).toBe(false)
+    expect(commishSummaryRefetchInterval({ state: { error: new LeagueActionError(403, 'Only this league’s commissioner…') } })).toBe(false)
+  })
+
+  it('R1375: any failure that is NOT a refusal keeps polling — a blip or a 500 heals on its own', () => {
+    expect(commishSummaryRefetchInterval({ state: { error: new LeagueActionError(500, 'boom') } })).toBe(COMMISH_SUMMARY_REPOLL_MS)
+    expect(commishSummaryRefetchInterval({ state: { error: new LeagueActionError(503, 'unavailable') } })).toBe(COMMISH_SUMMARY_REPOLL_MS)
+    expect(commishSummaryRefetchInterval({ state: { error: new TypeError('Failed to fetch') } })).toBe(COMMISH_SUMMARY_REPOLL_MS)
   })
 })
 

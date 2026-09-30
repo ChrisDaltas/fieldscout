@@ -9,6 +9,7 @@ import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 // SE.6: the scoring query key comes from the READER's own module (see
 // `leagueScoringInvalidationKeys`) — one factory, so the key a mutation
 // invalidates is by construction the key the query is stored under.
+import { invalidateCommishLog } from './use-commish-log'
 import { auctionPoolKeys } from './use-draft-pool'
 import { leaguesKeys } from './use-leagues'
 
@@ -166,7 +167,10 @@ export function useUpdateLeagueSettings(leagueId: string) {
     // `['league-scoring-family', id]`), so React Query's prefix matching does
     // not cover one with the other — this was the writer SE.6's first cut
     // missed while its docblock addressed "any future writer".
-    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
+    onSuccess: () => {
+      invalidateLeagueScoring(queryClient, leagueId)
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 169's per-key settings receipt
+    },
   })
 }
 
@@ -211,6 +215,7 @@ export function useSetLeagueStatus(leagueId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 169's set_league_status receipt
     },
   })
 }
@@ -254,6 +259,7 @@ export function useLeagueProfile(leagueId: string) {
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
     void queryClient.invalidateQueries({ queryKey: leaguesKeys.all })
+    invalidateCommishLog(queryClient, leagueId) // F535(d): 169's update_league_profile receipt
   }
 
   const throwOnError = async (response: Response) => {
@@ -459,7 +465,11 @@ export function forkScoringTemplateMutationOptions(queryClient: QueryClient, lea
     // onSuccess, never onSettled: a REFUSED fork changed nothing, and
     // invalidating on failure would refetch the document the room already
     // holds — noise that looks like a fix and hides the next real staleness.
-    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
+    // F535(d): the fork writes a receipt (169) — the log re-reads with it.
+    onSuccess: () => {
+      invalidateLeagueScoring(queryClient, leagueId)
+      invalidateCommishLog(queryClient, leagueId)
+    },
   }
 }
 
@@ -482,7 +492,10 @@ export function updateLeagueScoringMutationOptions(queryClient: QueryClient, lea
         { rules },
         'Failed to save scoring.',
       ),
-    onSuccess: () => invalidateLeagueScoring(queryClient, leagueId),
+    onSuccess: () => {
+      invalidateLeagueScoring(queryClient, leagueId)
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 169's scoring_update_rules receipt
+    },
   }
 }
 

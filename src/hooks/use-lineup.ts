@@ -6,6 +6,7 @@ import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { LineupStarter, SetLineupResult } from '@/lib/leagues/api/lineup-service'
 import { createBrowserClient } from '@/lib/supabase/client'
 
+import { invalidateCommishLog } from './use-commish-log'
 import { leagueRosterKeys } from './use-rosters'
 
 /**
@@ -168,6 +169,9 @@ export function setLineupMutationOptions(
   const reread = (week: number) => {
     void queryClient.invalidateQueries({ queryKey: teamLineupKeys.week(teamId, week) })
     void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
+    // F535(d): the commissioner arm (a commissioner setting another team's
+    // lineup) writes an `edit_lineup` receipt since 169 — re-read the log.
+    invalidateCommishLog(queryClient, leagueId)
   }
   return {
     mutationFn: (variables: SetLineupVariables) =>

@@ -7,6 +7,7 @@ import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { mintScheduleSeed } from '@/lib/leagues/settings/league-settings'
 
+import { invalidateCommishLog } from './use-commish-log'
 import { leagueActivityKeys } from './use-league-activity'
 import { useLeagueChannel } from './use-league-channel'
 import { invalidatingHandlers, scheduleEventInvalidates } from './use-league-channel-ops'
@@ -286,6 +287,8 @@ export function useConfirmRemix(leagueId: string) {
       void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
       // …and it re-minted `settings.schedule_seed` on the league row.
       void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
+      // R1373 (F535(d)): the remix writes its commissioner receipt (131).
+      invalidateCommishLog(queryClient, leagueId)
     },
   })
 
@@ -363,6 +366,8 @@ export function useEditMatchup(leagueId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: scheduleKeys.all(leagueId) })
       void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
+      // R1373 (F535(d)): the edit writes its commissioner receipt (130 / 131).
+      invalidateCommishLog(queryClient, leagueId)
     },
   })
 

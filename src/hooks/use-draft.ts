@@ -8,6 +8,7 @@ import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import { createBrowserClient } from '@/lib/supabase/client'
 import type { Draft } from '@/types/database'
 
+import { invalidateCommishLog } from './use-commish-log'
 import { draftVerbPath } from './use-draft-action-path'
 import {
   applyDraftRoomEvent,
@@ -619,6 +620,7 @@ function useInvalidateLeagueDetail(leagueId: string) {
 
 /** POST /api/leagues/[id]/draft — create/schedule (commish; idempotent). */
 export function useCreateDraft(leagueId: string) {
+  const queryClient = useQueryClient()
   const invalidate = useInvalidateLeagueDetail(leagueId)
   return useMutation({
     mutationFn: async () =>
@@ -626,7 +628,10 @@ export function useCreateDraft(leagueId: string) {
         `/api/leagues/${leagueId}/draft`,
         jsonInit('POST'),
       ),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 168's draft_create receipt
+    },
   })
 }
 
@@ -654,6 +659,7 @@ export function useDraftOrder(leagueId: string) {
     onSuccess: (data) => {
       invalidate()
       void queryClient.invalidateQueries({ queryKey: draftKeys.detail(data.draft.id) })
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 168's draft_set_order receipt
     },
   })
 }
@@ -728,6 +734,7 @@ export function useStartDraft(leagueId: string) {
     onSuccess: (data) => {
       invalidate()
       void queryClient.invalidateQueries({ queryKey: draftKeys.detail(data.draft.id) })
+      invalidateCommishLog(queryClient, leagueId) // F535(d): 168's draft_start receipt
     },
   })
 }

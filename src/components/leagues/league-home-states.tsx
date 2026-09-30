@@ -32,6 +32,7 @@ import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 import { AddDraftListCta } from './attach-list-modal'
+import { CONSOLE_NAV_LABEL, commishConsoleHref } from './commish-console-ops'
 import { InvitePanel } from './invite-panel'
 import { Crest } from './league-cells'
 import { SeasonHero } from './league-home-season'
@@ -124,12 +125,22 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
         title={league.name}
         actions={
           isCommish ? (
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={settingsHref}>
-                <Icon name="setup" size={13} />
-                League settings
-              </Link>
-            </Button>
+            <>
+              {/* M6 L.E1.33: the Commissioner Console's door, for commissioners
+                  alone (the page's server gate redirects anyone else). */}
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={commishConsoleHref(leagueId)} data-door="commish">
+                  <Icon name="gear" size={13} />
+                  {CONSOLE_NAV_LABEL}
+                </Link>
+              </Button>
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={settingsHref}>
+                  <Icon name="setup" size={13} />
+                  League settings
+                </Link>
+              </Button>
+            </>
           ) : undefined
         }
       />

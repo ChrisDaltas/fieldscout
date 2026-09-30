@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
@@ -78,7 +79,9 @@ export function ActivityFeed({
 }) {
   const lines = items ? feedLines(items, teamNames) : []
   return (
-    <Card data-activity-feed>
+    // `id="activity"` — the Commissioner Console's "More in league activity"
+    // door lands here (L.E1.33; F538 until the Activity page exists).
+    <Card id="activity" data-activity-feed>
       <CardHeader className="min-h-0 py-2">
         <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
           <span className="min-w-0 flex-1">{FEED_TITLE}</span>
@@ -177,7 +180,13 @@ export interface CommishLogSectionProps {
   hasMore: boolean
 }
 
-function CommishLogSection({
+/**
+ * The §10.3 log's list with its four states — League Home's section, and
+ * (L.E1.33) the Commissioner Console's "Recent actions" (TD12 / D444: one
+ * renderer — the console passes its own `title` and drops the divider it
+ * does not sit under). Exported for that second mount, not re-built.
+ */
+export function CommishLogSection({
   items,
   pending,
   problem,
@@ -185,11 +194,19 @@ function CommishLogSection({
   hasMore,
   teamNames,
   leagueTimeZone,
-}: CommishLogSectionProps & { teamNames: ReadonlyMap<string, string>; leagueTimeZone: string | null }) {
+  title = COMMISH_LOG_TITLE,
+  className,
+}: CommishLogSectionProps & {
+  teamNames: ReadonlyMap<string, string>
+  leagueTimeZone: string | null
+  /** The section's heading (League Home: "Commissioner actions"). */
+  title?: string
+  className?: string
+}) {
   const lines = items ? commishLogLines(items, teamNames) : []
   return (
-    <section className="flex flex-col gap-2 border-t border-ink pt-2" aria-label={COMMISH_LOG_TITLE} data-commish-log>
-      <h3 className="text-[12px] font-bold text-ink">{COMMISH_LOG_TITLE}</h3>
+    <section className={cn('flex flex-col gap-2 border-t border-ink pt-2', className)} aria-label={title} data-commish-log>
+      <h3 className="text-[12px] font-bold text-ink">{title}</h3>
       {problem != null && items && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
       {pending && !items ? (
         <div className="flex flex-col gap-1.5" data-skeleton="commish-log">

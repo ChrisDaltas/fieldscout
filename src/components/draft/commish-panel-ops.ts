@@ -201,3 +201,17 @@ export function moveOrderEntry(
   ;[next[index], next[target]] = [next[target], next[index]]
   return next
 }
+
+/** §10.4's before → after for the reset (M6 L.E1.33 — the task's
+ *  "confirmations with before / after … where a surface lacks one"): the
+ *  board as it stands (the picks still on it, the draft's stored status) and
+ *  what 069's reset leaves (no picks, the league back to scheduled, no time).
+ *  Pinned in commish-panel-ops.test.ts. */
+export function resetDraftBeforeAfter(pickCount: number, draftStatus: string): { before: string; after: string } {
+  const picks = pickCount === 1 ? '1 pick made' : `${pickCount} picks made`
+  const state = draftStatus === 'paused' ? 'the draft is paused' : draftStatus === 'live' ? 'the draft is under way' : 'the draft has started'
+  return {
+    before: `Now: ${picks} · ${state}.`,
+    after: 'After: no picks, and the league is back to “draft scheduled” with no draft time set.',
+  }
+}
