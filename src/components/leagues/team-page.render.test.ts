@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -37,7 +37,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import { LineupEditor } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
-import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE } from './team-commish-ops'
+import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
 import { TeamPage } from './team-page'
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -65,6 +65,13 @@ vi.mock('@/stores/commish-override-store', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
   return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }
 })
+// R1386: `PageHeader` portals its actions into the app header through a store
+// effect a static render never runs — rendered inline so the header's doors
+// are observable (the console / members rigs' shape).
+vi.mock('@/components/layout/app-header', () => ({
+  PageHeader: ({ title, actions }: { title: ReactNode; actions?: ReactNode }) =>
+    createElement('header', { 'data-page-header': '' }, createElement('h1', null, title), actions ?? null),
+}))
 
 // ---------------------------------------------------------------------------
 // Rig
@@ -845,6 +852,47 @@ describe('the team page’s autopilot switch (L.E1.22) — free vs gated', () =>
     try {
       const manager = { ...unmanagedDetail, my_role: 'manager' as const }
       expect(renderTeamPage({ detail: manager, rosters: unmanagedRosters(false) })).not.toContain('data-autopilot-switch')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  // L.E1.39 (F539(b)): a team with NO seat row at all (D339's unsafe
+  // direction) — 139 refuses its switch, so the page offers none and says
+  // why, the console's F535(b) rule.
+  it('MODE ON, commissioner, a team with NO seat row: no switch — the sentence in its place; a seated unmanaged team never shows the sentence', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const seatless = { ...asCommish, members: detail.members.filter((m) => m.team_id !== TEAM) }
+      const html = renderTeamPage({ detail: seatless, rosters: unmanagedRosters(false) })
+      expect(html).not.toContain('data-autopilot-switch')
+      expect(html).toContain('data-no-seat-row')
+      expect(html).toContain(NO_SEAT_ROW_AUTOPILOT_COPY)
+      const seated = renderTeamPage({ detail: unmanagedDetail, rosters: unmanagedRosters(false) })
+      expect(seated).toContain('data-autopilot-switch="off"')
+      expect(seated).not.toContain('data-no-seat-row')
+    } finally {
+      vi.mocked(useOverrideMode).mockReset()
+    }
+  })
+
+  // R1386 (§16.5.2 "Replace a GM": console → Membership · team page).
+  it('the Members door in the team page header — for a commissioner, never for a manager', () => {
+    const commish = renderTeamPage({ detail: asCommish })
+    const door = commish.match(/<a [^>]*data-door="members"[^>]*>/)?.[0] ?? ''
+    expect(door).toContain(`href="/app/leagues/${LEAGUE}/members"`)
+    const manager = renderTeamPage()
+    expect(manager).not.toContain('data-door="members"')
+    expect(manager).not.toContain(`/app/leagues/${LEAGUE}/members`)
+  })
+
+  it('MODE OFF: a seatless team shows neither the switch nor the sentence (both are faces of the mode)', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(false)
+    try {
+      const seatless = { ...asCommish, members: detail.members.filter((m) => m.team_id !== TEAM) }
+      const html = renderTeamPage({ detail: seatless, rosters: unmanagedRosters(false) })
+      expect(html).not.toContain('data-autopilot-switch')
+      expect(html).not.toContain('data-no-seat-row')
     } finally {
       vi.mocked(useOverrideMode).mockReset()
     }

@@ -26,6 +26,7 @@ import {
   TEAM_TOOLS_EMPTY_ROSTER_COPY,
   addCandidates,
   autopilotSwitchShown,
+  noSeatRowAutopilotShown,
   renameArm,
   renameGate,
   renameOutcome,
@@ -339,11 +340,21 @@ describe('TeamRenameView — one form, two arms', () => {
 
 describe('autopilotSwitchShown — a face of override mode, for an unmanaged, playing seat only', () => {
   it('shown ONLY inside the mode, ONLY for a seat with no manager, NEVER for a retired franchise', () => {
-    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'active' })).toBe(true)
-    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'orphaned' })).toBe(true)
-    expect(autopilotSwitchShown({ inOverride: false, managerUserId: null, status: 'active' })).toBe(false)
-    expect(autopilotSwitchShown({ inOverride: true, managerUserId: 'u1', status: 'active' })).toBe(false)
-    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'retired' })).toBe(false)
+    const seated = { hasSeatRow: true }
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'active', ...seated })).toBe(true)
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'orphaned', ...seated })).toBe(true)
+    expect(autopilotSwitchShown({ inOverride: false, managerUserId: null, status: 'active', ...seated })).toBe(false)
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: 'u1', status: 'active', ...seated })).toBe(false)
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'retired', ...seated })).toBe(false)
+  })
+
+  // L.E1.39 (F539(b)): 139 refuses a team with no seat row at all (D339).
+  it('NEVER for a team with no seat row — the sentence shows in its place, inside the mode only', () => {
+    expect(autopilotSwitchShown({ inOverride: true, managerUserId: null, status: 'active', hasSeatRow: false })).toBe(false)
+    expect(noSeatRowAutopilotShown({ inOverride: true, hasSeatRow: false, status: 'active' })).toBe(true)
+    expect(noSeatRowAutopilotShown({ inOverride: false, hasSeatRow: false, status: 'active' })).toBe(false)
+    expect(noSeatRowAutopilotShown({ inOverride: true, hasSeatRow: true, status: 'active' })).toBe(false)
+    expect(noSeatRowAutopilotShown({ inOverride: true, hasSeatRow: false, status: 'retired' })).toBe(false)
   })
 })
 

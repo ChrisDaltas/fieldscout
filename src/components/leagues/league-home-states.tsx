@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { AddDraftListCta } from './attach-list-modal'
 import { CONSOLE_NAV_LABEL, commishConsoleHref } from './commish-console-ops'
 import { InvitePanel } from './invite-panel'
+import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest } from './league-cells'
 import { SeasonHero } from './league-home-season'
 import {
@@ -134,6 +135,17 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
                   {CONSOLE_NAV_LABEL}
                 </Link>
               </Button>
+              {/* L.E1.39 (F539): after the draft the seat list moves off this
+                  page (before it, it is right here under #invites; during it,
+                  in the draft room) — so the header carries its door. */}
+              {(state === 'in_season' || state === 'playoffs' || state === 'complete') && (
+                <Button variant="stroke" size="sm" asChild>
+                  <Link href={membersPageHref(leagueId)} data-door="members">
+                    <Icon name="team" size={13} />
+                    {MEMBERS_NAV_LABEL}
+                  </Link>
+                </Button>
+              )}
               <Button variant="stroke" size="sm" asChild>
                 <Link href={settingsHref}>
                   <Icon name="setup" size={13} />
