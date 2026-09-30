@@ -34,11 +34,12 @@ import {
   tallyWords,
   tradeActions,
   tradeDeadlineCopy,
+  tradePartners,
   tradeStatusView,
   tradesHref,
   votingOpen,
 } from './trades-ops'
-import { ALPHA, BRAVO, CHARLIE, player, tally, trade } from './trades.fixtures'
+import { ALPHA, BRAVO, CHARLIE, TEAMS, player, rosterTeam, tally, trade } from './trades.fixtures'
 
 const fmt = (iso: string) => `<${iso}>`
 
@@ -270,6 +271,12 @@ describe('the builder: legs, FAAB, problems, the counter seed', () => {
       ],
     })
     expect(counterSeed(t)).toEqual({ fromTeamId: BRAVO, toTeamId: ALPHA, give: ['p-b1'], get: ['p-a1'], faabGive: null, faabGet: 7 })
+  })
+  it('174 fix round (R1410): tradePartners — only a team WITH a manager can be offered a trade; never the offering team or a retired franchise', () => {
+    expect(tradePartners(TEAMS, ALPHA).map((t) => t.name)).toEqual(['Bravo', 'Charlie'])
+    const open = [...TEAMS.map((t) => (t.team_id === BRAVO ? { ...t, manager_user_id: null } : t)), rosterTeam('t-ret', 'Retired', [], { status: 'retired' })]
+    expect(tradePartners(open, ALPHA).map((t) => t.name)).toEqual(['Charlie'])
+    expect(tradePartners(open.map((t) => (t.team_id === CHARLIE ? { ...t, manager_user_id: null } : t)), ALPHA)).toEqual([])
   })
 })
 

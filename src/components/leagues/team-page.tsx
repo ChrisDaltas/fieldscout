@@ -273,8 +273,10 @@ function TeamPageContent({
             )}
             {currentWeek !== null && week === currentWeek && <Badge variant="green">Current week</Badge>}
             {/* L.D3.7 (§16.5.2 "team page → propose"): another team's page
-                opens the trade builder toward it; the server decides. */}
-            {myTeamId && !isOwnTeam && rosterTeam?.status !== 'retired' && !tradesClosed && (
+                opens the trade builder toward it; the server decides.
+                174 fix round (R1410, D463): not toward a team with no
+                manager — nobody could answer the offer. */}
+            {myTeamId && !isOwnTeam && rosterTeam?.status !== 'retired' && rosterTeam?.manager_user_id != null && !tradesClosed && (
               <Button variant="stroke" size="sm" asChild>
                 <Link href={tradesHref(leagueId, { teamId })} data-propose-trade>
                   <Icon name="transfer" size={13} />

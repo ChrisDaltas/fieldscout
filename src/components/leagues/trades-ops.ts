@@ -28,6 +28,7 @@
  * down", "called off", "goes through" — never a status enum on screen.
  */
 import type { TradePreviewState } from '@/hooks/use-trade-preview'
+import type { RosterTeam } from '@/lib/leagues/api/rosters-service'
 import type {
   CommishTradeOp,
   CommishTradeResult,
@@ -609,6 +610,28 @@ export function builderProblem(sides: Partial<BuilderSides> & { faabValid?: bool
   const anything = (sides.give?.length ?? 0) + (sides.get?.length ?? 0) > 0 || (sides.faabGive ?? 0) > 0 || (sides.faabGet ?? 0) > 0
   if (!anything) return 'Pick at least one player (or some FAAB) to trade.'
   return null
+}
+
+/**
+ * Who an offer can go to (174 fix round, R1410 — a consequence of Chris's
+ * 2026-09-30 ruling; PROGRESS D463): only the receiving team's own manager
+ * answers an offer now, so a team with NO manager (an open or orphaned seat —
+ * the rosters read's `manager_user_id`, D339's predicate) is not offered, nor
+ * the offering team itself or a retired franchise. The server refuses such an
+ * offer by name too; this list makes it impossible to build (prevent, don't
+ * refuse).
+ */
+export function tradePartners(teams: readonly RosterTeam[], fromTeamId: string): RosterTeam[] {
+  return teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id !== null)
+}
+
+/** The builder when no other team has a manager to answer an offer. */
+export const NO_TRADE_PARTNER_COPY =
+  'No other team has a manager right now, so there’s no one to answer a trade offer. Offers open up again once another team has a manager.'
+
+/** A deep link toward a team with no manager (a player row, an old link). */
+export function noManagerCopy(teamName: string): string {
+  return `${teamName} has no manager right now, so there’s no one to answer a trade offer. Pick another team.`
 }
 
 /** A counter-offer starts from the offer, turned around: the receiving team

@@ -26,11 +26,14 @@ import {
   faabOverCopy,
   isDeadlineRefusal,
   lockedAssetTitle,
+  NO_TRADE_PARTNER_COPY,
+  noManagerCopy,
   parseFaab,
   rosterWords,
   type BuilderLeg,
   type BuilderSides,
   plainRefusal,
+  tradePartners,
 } from './trades-ops'
 
 /**
@@ -67,6 +70,13 @@ import {
  *
  * Also the COUNTER-OFFER form (`mode = 'counter'`): the teams are fixed, the
  * picks start from the offer turned around (`counterSeed`).
+ *
+ * **Only a team with a manager can be offered a trade** (174 fix round, R1410
+ * — PROGRESS D463): since the commissioner no longer answers for a team, an
+ * offer to an open or orphaned seat could never be answered, so "Trade with"
+ * lists only teams with a manager (`tradePartners`). A deep link toward a
+ * team with no manager opens with nobody picked and says why; when no other
+ * team has a manager the builder says so instead of offering a dead Send.
  *
  * Not optimistic; one `action_id` per send (the hooks'). No clock read.
  */
@@ -119,9 +129,17 @@ export function TradeBuilderView({
   onClose,
   usePreview = useTradePreview,
 }: TradeBuilderViewProps) {
-  const [toTeamId, setToTeamId] = useState<string | null>(initial?.toTeamId && initial.toTeamId !== fromTeamId ? initial.toTeamId : null)
+  // R1410: in a propose, only a team with a manager can be offered a trade.
+  const partners =
+    mode === 'counter' ? teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired') : tradePartners(teams, fromTeamId)
+  const initialTo = initial?.toTeamId && partners.some((t) => t.team_id === initial.toTeamId) ? initial.toTeamId : null
+  const unanswerable =
+    mode === 'propose' && initial?.toTeamId && !initialTo
+      ? (teams.find((t) => t.team_id === initial.toTeamId && t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id === null) ?? null)
+      : null
+  const [toTeamId, setToTeamId] = useState<string | null>(initialTo)
   const [give, setGive] = useState<string[]>([...(initial?.give ?? [])])
-  const [get, setGet] = useState<string[]>([...(initial?.get ?? [])])
+  const [get, setGet] = useState<string[]>(initialTo ? [...(initial?.get ?? [])] : [])
   const [faabGiveText, setFaabGiveText] = useState(initial?.faabGive ? String(initial.faabGive) : '')
   const [faabGetText, setFaabGetText] = useState(initial?.faabGet ? String(initial.faabGet) : '')
   const [drops, setDrops] = useState<string[]>([...(initial?.drops ?? [])])
@@ -130,7 +148,6 @@ export function TradeBuilderView({
 
   const from = teams.find((t) => t.team_id === fromTeamId) ?? null
   const to = toTeamId ? (teams.find((t) => t.team_id === toTeamId) ?? null) : null
-  const partners = teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired')
 
   const faabGive = allowFaab ? parseFaab(faabGiveText) : null
   const faabGet = allowFaab ? parseFaab(faabGetText) : null
@@ -192,6 +209,24 @@ export function TradeBuilderView({
     )
   }
 
+  // R1410: nobody to offer a trade to — said in words, no dead Send.
+  if (mode === 'propose' && partners.length === 0) {
+    return (
+      <Card data-trade-builder="no-partner">
+        <CardContent className="flex flex-col gap-2 px-card-pad py-3">
+          <StatusBanner tone="neutral" className="text-n-3">
+            {NO_TRADE_PARTNER_COPY}
+          </StatusBanner>
+          <span>
+            <Button variant="stroke" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </span>
+        </CardContent>
+      </Card>
+    )
+  }
+
   const send = () => {
     if (!gate.canSend || !toTeamId || locked) return
     onSend({ fromTeamId, toTeamId, legs, drops: dropsNow, note })
@@ -216,6 +251,12 @@ export function TradeBuilderView({
             {/* VERBATIM — the server names the week and the instant (F452). */}
             <p className="text-[11px] font-medium text-ink">{locked}</p>
           </div>
+        )}
+
+        {unanswerable && !toTeamId && (
+          <p className="text-[11px] font-medium text-ink" role="status" data-trade-no-manager={unanswerable.team_id}>
+            {noManagerCopy(unanswerable.name)}
+          </p>
         )}
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

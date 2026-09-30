@@ -310,7 +310,7 @@ describe('the players table per window', () => {
   it('the fa_hold chip on my fresh pickup — the stored pickup + hold against the server instant', () => {
     const mine: PoolPlayerRow = {
       player: { ...PLAYER, id: 'mine' } as PoolPlayer,
-      availability: { kind: 'rostered', teamId: 't', teamName: 'Mine', mine: true },
+      availability: { kind: 'rostered', teamId: 't', teamName: 'Mine', mine: true, managed: true },
       lock: { locked: false },
       poolState: 'rostered',
       roster: rp({ player_id: 'mine', full_name: 'Mine', acquisition_type: 'free_agent', acquired_at: '2099-09-15T00:00:00.000Z' }),

@@ -18,7 +18,7 @@ import type { CommishTradeResult, TradePreview } from '@/lib/leagues/api/trades-
 
 import { CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
 import { TradeBuilderView, type TradeBuilderViewProps } from './trade-builder'
-import { plainRefusal } from './trades-ops'
+import { NO_TRADE_PARTNER_COPY, noManagerCopy, plainRefusal } from './trades-ops'
 import {
   NEVER_WHO_VOTED_COPY,
   TRADES_ERROR_TITLE,
@@ -378,6 +378,29 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     const html = builder()
     expect(html).toContain('data-trade-from="' + ALPHA + '"')
     expect(html).not.toContain('acting as commissioner')
+  })
+  it('174 fix round (R1410): a deep link toward a team with NO manager opens with nobody picked and says why — no offer to it can be built', () => {
+    const teams = TEAMS.map((t) => (t.team_id === BRAVO ? { ...t, manager_user_id: null } : t))
+    const html = builder({ teams })
+    expect(html).toContain(`data-trade-no-manager="${BRAVO}"`)
+    expect(html).toContain(noManagerCopy('Bravo'))
+    expect(html).toContain('data-trade-to=""')
+    expect(html).not.toMatch(/data-trade-pick="p-b1" data-picked="true"/)
+    expect(html).toContain('Pick a team to see its roster.')
+    expect(sendOff(html)).toBe(true)
+  })
+  it('174 fix round (R1410): when no other team has a manager, the builder says so in words — no team list, no dead Send', () => {
+    const teams = TEAMS.map((t) => (t.team_id === ALPHA ? t : { ...t, manager_user_id: null }))
+    const html = builder({ teams, initial: undefined })
+    expect(html).toContain('data-trade-builder="no-partner"')
+    expect(html).toContain(NO_TRADE_PARTNER_COPY)
+    expect(html).not.toContain('data-trade-send')
+    expect(html).not.toContain('data-trade-to')
+  })
+  it('…a counter-offer keeps its fixed partner (the proposer has a manager, or E47 called the offer off)', () => {
+    const html = builder({ mode: 'counter', fromTeamId: BRAVO, initial: { toTeamId: ALPHA, give: ['p-b1'], get: ['p-a1'] } })
+    expect(html).toContain('Counter-offer to Alpha')
+    expect(html).not.toContain('data-trade-builder="no-partner"')
   })
   it('sent: says who gets it and where it is listed', () => {
     const html = builder({ sentTo: 'Bravo' })

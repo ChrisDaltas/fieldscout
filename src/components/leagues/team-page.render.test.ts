@@ -1019,6 +1019,10 @@ describe('the Propose trade door and the trade deadline (L.D3.12)', () => {
     expect(renderTeamPage({ detail: elsewhere })).toContain('data-propose-trade')
     expect(renderTeamPage({ detail: elsewhere, deadline: { state: 'unavailable', reason: 'not pushed' } })).toContain('data-propose-trade')
   })
+  it('174 fix round (R1410): no door toward a team with NO manager — nobody could answer the offer', () => {
+    const unmanaged = { ...rosters, teams: rosters.teams.map((t) => (t.team_id === TEAM ? { ...t, manager_user_id: null } : t)) }
+    expect(renderTeamPage({ detail: elsewhere, deadline: view(false), rosters: unmanaged })).not.toContain('data-propose-trade')
+  })
   it('past it (the server said so): no door', () => {
     expect(renderTeamPage({ detail: elsewhere, deadline: view(true) })).not.toContain('data-propose-trade')
   })

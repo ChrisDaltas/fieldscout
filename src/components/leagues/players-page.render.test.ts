@@ -272,6 +272,16 @@ describe('PoolTable — the rostered scope: Drop for mine (disabled by the view�
     expect(row).not.toContain('data-action="trade"')
     expect(closed).toContain('data-action="drop"')
   })
+  it('174 fix round (R1410): no Trade door on a player whose team has NO manager — nobody could answer the offer', () => {
+    const open = { ...rosters, teams: rosters.teams.map((t) => (t.team_id === OTHER ? { ...t, manager_user_id: null } : t)) }
+    const rows = poolRows(players, open, pool, MINE, 'rostered')
+    const html2 = unescapeHtml(
+      renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows, scope: 'rostered', hadSearch: false, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })),
+    )
+    const row = html2.slice(html2.indexOf('data-pool-row="theirs"'), html2.indexOf('</tr>', html2.indexOf('data-pool-row="theirs"')))
+    expect(row).toContain('Their Team')
+    expect(row).not.toContain('data-action="trade"')
+  })
   it('empty by reason: no free agents vs no match', () => {
     const none = (scope: 'free_agents' | 'rostered', hadSearch: boolean) =>
       unescapeHtml(renderToStaticMarkup(createElement(PoolTable, { leagueId: LEAGUE, rows: [], scope, hadSearch, canAct: true, intent: { add: null, drop: null }, leagueTimeZone: null, onAdd: () => {}, onDrop: () => {} })))

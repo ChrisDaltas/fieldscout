@@ -98,8 +98,8 @@ describe('poolRows — §12.19’s derived truth per player: the rosters are the
     expect(row.lock.locked).toBe(false)
   })
   it('a rostered player is rostered whatever a lagging pool row says; mine is marked; the lock rides the rosters route', () => {
-    expect(by('r1').availability).toEqual({ kind: 'rostered', teamId: MINE, teamName: 'My Team', mine: true })
-    expect(by('r2').availability).toEqual({ kind: 'rostered', teamId: OTHER, teamName: 'Their Team', mine: false })
+    expect(by('r1').availability).toEqual({ kind: 'rostered', teamId: MINE, teamName: 'My Team', mine: true, managed: true })
+    expect(by('r2').availability).toEqual({ kind: 'rostered', teamId: OTHER, teamName: 'Their Team', mine: false, managed: true })
     expect(by('r-locked').lock).toEqual({ locked: true, copy: "locked — the week's last game has not ended", until: null })
   })
   it('scopes: free_agents drops rostered rows; rostered keeps only them', () => {
