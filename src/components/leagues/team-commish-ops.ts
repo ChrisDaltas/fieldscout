@@ -136,10 +136,27 @@ export const AUTOPILOT_SWITCH_LABEL = 'Put on autopilot'
 /** Whether the team page shows the switch: a face of override mode (rule
  *  (h)) — so only while the commissioner is IN the mode — and only for a seat
  *  with NO manager that still plays (139 refuses ON for a managed or a
- *  retired seat; showing the control there would be a dead control). */
-export function autopilotSwitchShown(args: { inOverride: boolean; managerUserId: string | null; status: string }): boolean {
-  return args.inOverride && args.managerUserId === null && args.status !== 'retired'
+ *  retired seat; showing the control there would be a dead control).
+ *  L.E1.39 (F539(b)): 139 also refuses a team with NO seat row at all (D339's
+ *  unsafe direction — `hasSeatRow`: a `league_members` row for the team), the
+ *  console's F535(b) rule; there the page says so instead
+ *  (`NO_SEAT_ROW_AUTOPILOT_COPY`). */
+export function autopilotSwitchShown(args: {
+  inOverride: boolean
+  managerUserId: string | null
+  status: string
+  hasSeatRow: boolean
+}): boolean {
+  return args.inOverride && args.hasSeatRow && args.managerUserId === null && args.status !== 'retired'
 }
+
+/** Said where the switch would be, for a seatless team in override mode. */
+export function noSeatRowAutopilotShown(args: { inOverride: boolean; hasSeatRow: boolean; status: string }): boolean {
+  return args.inOverride && !args.hasSeatRow && args.status !== 'retired'
+}
+
+export const NO_SEAT_ROW_AUTOPILOT_COPY =
+  'This team is missing its seat in the league’s member list, so it can’t be put on autopilot. This is a problem on our side — please let us know.'
 
 export type RenameGate = { ok: true; name: string } | { ok: false; why: string }
 

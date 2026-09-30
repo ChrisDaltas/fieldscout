@@ -54,9 +54,13 @@ vi.mock('@/hooks/use-auth', () => ({
 vi.mock('@/hooks/use-league-channel', () => ({
   useLeagueChannel: vi.fn(() => ({ connection: 'live' })),
 }))
+/** R1392: what `useSearchParams()` answers — null (a static render: the page
+ *  falls back to the server's parse) unless a cell sets the URL. */
+const url: { params: URLSearchParams | null } = { params: null }
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }),
   usePathname: () => '/',
+  useSearchParams: () => url.params,
 }))
 
 // ---------------------------------------------------------------------------
@@ -218,6 +222,32 @@ describe('the page — its tabs, and the league it needs first', () => {
   it('no resting elevation anywhere on the page (CLAUDE.md)', () => {
     const html = render({}, { feed: { ...ALL, seed: [feedPage([trade(), post(), addDrop], { has_more: true, next_before: AT, next_before_id: 'tx-add' })] } })
     expect(html).not.toMatch(/(?<![a-z-]:)shadow-hard/)
+  })
+})
+
+describe('R1392 — the tab and its filters FOLLOW THE URL (a ✸ link on the page, Back / Forward)', () => {
+  it('the same mounted page, the URL changed under it (a search-param-only navigation): the tab and filter shown are the URL’s, not the first render’s', () => {
+    const seed = { log: { filters: { limit: 50, entry: ENTRY }, seed: [logPage([logItem({ id: ENTRY })])] as CommishLogPage[] } }
+    try {
+      // First visit: All. Then a ✸ line on the All tab is followed — only the query changes.
+      url.params = new URLSearchParams('')
+      expect(render({ tab: 'all' }, { feed: { ...ALL, seed: [feedPage([])] } })).toContain('data-activity-page="all"')
+      url.params = new URLSearchParams(`tab=commissioner&entry=${ENTRY}`)
+      const after = render({ tab: 'all' }, seed)
+      expect(after).toContain('data-activity-page="commissioner"')
+      expect(panel(after, 'commissioner')).toContain(`data-commish-log-item="${ENTRY}" data-highlighted=""`)
+      // Back: the URL says All again — so does the page.
+      url.params = new URLSearchParams('')
+      expect(render({ tab: 'commissioner', entry: ENTRY }, { feed: { ...ALL, seed: [feedPage([])] } })).toContain('data-activity-page="all"')
+    } finally {
+      url.params = null
+    }
+  })
+
+  it('no route state is held: a tab change is a URL write the render reads back (source)', () => {
+    const src = readFileSync(`${process.cwd()}/src/components/leagues/activity-page.tsx`, 'utf8')
+    expect(src).toContain('const route = activityRouteFrom(searchParams, initial)')
+    expect(src).not.toMatch(/useState<ActivityRoute>/)
   })
 })
 

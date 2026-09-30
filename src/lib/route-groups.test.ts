@@ -208,6 +208,12 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // viewer being a commissioner by its own server component (a redirect to
   // the league page otherwise). Permanent.
   '/app/leagues/[leagueId]/commish',
+  // M6 L.E1.39 — the league's MEMBERS (F539; PROGRESS D460): the same
+  // `InvitePanel` League Home mounts before the draft, so a commissioner can
+  // change who runs a team after it. In `(shell)` for Q12's reason: a page of
+  // seats, not a draft surface. Gated on `featureFlags.leagues` by
+  // `(shell)/leagues/layout.tsx`. Permanent.
+  '/app/leagues/[leagueId]/members',
 ]
 
 describe('route groups are invisible to the URL space', () => {

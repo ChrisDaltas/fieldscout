@@ -559,7 +559,7 @@ describe('§16.5.4 — the required states', () => {
     expect(section).toContain('renamed Old Name to New Name')
     expect(section).not.toContain('reassign')
     expect(section).toContain('moved Moved Guy from Alpha to Bravo')
-    expect(section).toContain('changed the waiver period (hours): 48 → 72') // L.E1.34 (TD12): the key in words
+    expect(section).toContain('changed the waiver period: 48 hours → 72 hours') // L.E1.34 (TD12 / R1395): the key in words, the value with its unit
     expect(section).toContain('<span class="font-bold">chris</span>')
     // C70: a row is a CLAIM — nothing says a verb ran.
     expect(section).not.toMatch(/applied|verified|executed/i)

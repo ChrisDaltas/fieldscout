@@ -21,11 +21,19 @@ import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
 import { commishTeamHref } from './activity-page-ops'
+import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest } from './league-cells'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
-import { COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, autopilotSwitchShown, renameArm } from './team-commish-ops'
+import {
+  COMMISH_CHANGED_BADGE,
+  COMMISH_CHANGED_TITLE,
+  NO_SEAT_ROW_AUTOPILOT_COPY,
+  autopilotSwitchShown,
+  noSeatRowAutopilotShown,
+  renameArm,
+} from './team-commish-ops'
 import { TeamAutopilotSwitch, TeamCommishTools, TeamFaabEdit, TeamRename } from './team-commish-tools'
 import { tradesHref } from './trades-ops'
 import { waiverSeatCopy } from './waiver-claims-ops'
@@ -158,6 +166,9 @@ function TeamPageContent({
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const isOwnTeam = myTeamId === teamId
+  // D339 / F539(b): does the team have a seat row at all (the summary's
+  // `no_seat_row` predicate — any `league_members` row for the team)?
+  const hasSeatRow = detail.members.some((m) => m.team_id === teamId)
   const canEdit = isOwnTeam || isCommish
   const editability = weekEditability(weeks, week, currentWeek)
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
@@ -183,12 +194,25 @@ function TeamPageContent({
       <PageHeader
         title={teamName}
         actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {detail.league.name}
-            </Link>
-          </Button>
+          <>
+            {/* R1386 (§16.5.2 "Replace a GM": console → Membership · team
+                page): a commissioner's door to the members page, where a
+                team's manager is changed. Never offered to a manager. */}
+            {isCommish && (
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={membersPageHref(leagueId)} data-door="members">
+                  <Icon name="team" size={13} />
+                  {MEMBERS_NAV_LABEL}
+                </Link>
+              </Button>
+            )}
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}`}>
+                <Icon name="cup" size={13} />
+                {detail.league.name}
+              </Link>
+            </Button>
+          </>
         }
       />
 
@@ -254,8 +278,15 @@ function TeamPageContent({
           />
           {/* M6A L.E1.22 (Q63): the per-team autopilot switch — a face of
               override mode, for a seat with no manager only. */}
-          {rosterTeam && autopilotSwitchShown({ inOverride, managerUserId: rosterTeam.manager_user_id, status: rosterTeam.status }) && (
+          {rosterTeam && autopilotSwitchShown({ inOverride, managerUserId: rosterTeam.manager_user_id, status: rosterTeam.status, hasSeatRow }) && (
             <TeamAutopilotSwitch leagueId={leagueId} teamId={teamId} on={rosterTeam.autopilot} />
+          )}
+          {/* L.E1.39 (F539(b)): a team with no seat row — 139 refuses its
+              switch, so no switch; said in words (the console's F535(b)). */}
+          {rosterTeam && noSeatRowAutopilotShown({ inOverride, hasSeatRow, status: rosterTeam.status }) && (
+            <p className="basis-full text-[11px] font-semibold text-n-3" data-no-seat-row>
+              {NO_SEAT_ROW_AUTOPILOT_COPY}
+            </p>
           )}
         </CardContent>
       </Card>

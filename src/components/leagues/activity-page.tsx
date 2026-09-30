@@ -2,8 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
@@ -33,6 +32,7 @@ import {
   TAB_EMPTY_COPY,
   TAB_INTRO_COPY,
   activityHref,
+  activityRouteFrom,
   type ActivityRoute,
   type ActivityTab,
 } from './activity-page-ops'
@@ -68,7 +68,14 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
   const league = useLeague(leagueId)
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [route, setRoute] = useState<ActivityRoute>(initial)
+  // R1392: the tab and its filters are READ FROM THE URL on every render, never
+  // held in state — Next keeps a client component mounted across a
+  // search-param-only navigation, so state seeded once would ignore a ✸ link on
+  // this very page (All → Commissioner) and drift on Back / Forward. `initial`
+  // (the server's parse of the same URL) is only the fallback when there are no
+  // search params to read (a static render).
+  const searchParams = useSearchParams()
+  const route = activityRouteFrom(searchParams, initial)
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
@@ -79,8 +86,8 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
   for (const event of LEAGUE_CHANNEL_EVENTS.filter(activityEventInvalidates)) handlers[event] = invalidate
   const { connection } = useLeagueChannel(leagueId, handlers, { onJoin: invalidate, onDrop: invalidate })
 
+  // A tab or a filter is a URL change; the render above reads it back.
   const go = (next: ActivityRoute) => {
-    setRoute(next)
     router.replace(activityHref(leagueId, next), { scroll: false })
   }
 

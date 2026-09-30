@@ -127,7 +127,7 @@ export const SETTING_WORDS: Readonly<Record<string, string>> = {
   format: 'league format',
   team_count: 'number of teams',
   divisions: 'number of divisions',
-  regular_season_weeks: 'regular season length (weeks)',
+  regular_season_weeks: 'regular season length',
   playoff_teams: 'number of playoff teams',
   playoff_start_week: 'playoffs start week',
   playoff_weeks_per_round: 'weeks per playoff round',
@@ -152,10 +152,10 @@ export const SETTING_WORDS: Readonly<Record<string, string>> = {
   free_agency_open_time: 'free agency time',
   acquisitions_per_week: 'pickups allowed each week',
   acquisitions_per_season: 'pickups allowed each season',
-  fa_hold_hours: 'hold on dropped players (hours)',
+  fa_hold_hours: 'hold on dropped players',
   trade_review: 'trade review',
   trade_veto_votes: 'votes needed to veto a trade',
-  trade_review_period_hours: 'trade review period (hours)',
+  trade_review_period_hours: 'trade review period',
   trade_deadline_week: 'trade deadline week',
   allow_faab_in_trades: 'FAAB in trades',
   allow_future_considerations: 'future considerations in trades',
@@ -171,7 +171,7 @@ export const SETTING_WORDS: Readonly<Record<string, string>> = {
   // The waiver keys retired by 149 — an older receipt can still hold them.
   waiver_process_day: 'waiver day',
   waiver_process_time: 'waiver time',
-  waiver_period_hours: 'waiver period (hours)',
+  waiver_period_hours: 'waiver period',
   free_agency: 'free agency',
   bench_lock: 'bench lock',
 }
@@ -182,7 +182,7 @@ export function settingWords(key: string): string {
 }
 
 /** Enum values in words, by the value itself (the settings vocabulary shares them). */
-const VALUE_WORDS: Readonly<Record<string, string>> = {
+export const SETTING_VALUE_WORDS: Readonly<Record<string, string>> = {
   faab: 'FAAB bidding',
   rolling_priority: 'rolling waiver order',
   reverse_standings: 'reverse standings',
@@ -209,16 +209,35 @@ const VALUE_WORDS: Readonly<Record<string, string>> = {
   thu: 'Thu',
   fri: 'Fri',
   sat: 'Sat',
+  // The standings tiebreak chain (`TIEBREAKERS`, R1395).
+  win_pct: 'win percentage',
+  points_for: 'points scored',
+  head_to_head: 'head-to-head record',
+  points_against: 'points against',
+  division_record: 'division record',
+  coin_flip: 'coin flip',
+}
+
+/** R1395: the keys whose number is a count of hours or weeks — said with its unit. */
+const SETTING_UNITS: Readonly<Record<string, readonly [string, string]>> = {
+  fa_hold_hours: ['hour', 'hours'],
+  trade_review_period_hours: ['hour', 'hours'],
+  waiver_period_hours: ['hour', 'hours'],
+  stat_correction_window: ['hour', 'hours'],
+  regular_season_weeks: ['week', 'weeks'],
 }
 
 /** One stored setting value in words: `null` is "none", a boolean on / off, an
  *  enum value its words, a list of values joined, anything structured
  *  "(updated)" — never `[object Object]`, never "null", never a code word. */
-export function settingValueWords(value: unknown): string {
+export function settingValueWords(value: unknown, key?: string): string {
   if (value === null || value === undefined) return 'none'
   if (typeof value === 'boolean') return value ? 'on' : 'off'
-  if (typeof value === 'number') return String(value)
-  if (typeof value === 'string') return VALUE_WORDS[value] ?? (/_/.test(value) ? value.replace(/_/g, ' ') : value)
+  if (typeof value === 'number') {
+    const unit = key ? SETTING_UNITS[key] : undefined
+    return unit ? `${value} ${value === 1 ? unit[0] : unit[1]}` : String(value)
+  }
+  if (typeof value === 'string') return SETTING_VALUE_WORDS[value] ?? (/_/.test(value) ? value.replace(/_/g, ' ') : value)
   if (Array.isArray(value) && value.every((v) => typeof v === 'string' || typeof v === 'number')) {
     return value.length === 0 ? 'none' : value.map((v) => settingValueWords(v)).join(', ')
   }
@@ -227,7 +246,7 @@ export function settingValueWords(value: unknown): string {
 
 /** "the waiver type: FAAB bidding → rolling waiver order" — one changed key. */
 export function settingChange(key: string, before: unknown, after: unknown): string {
-  return `${settingWords(key)}: ${settingValueWords(before)} → ${settingValueWords(after)}`
+  return `${settingWords(key)}: ${settingValueWords(before, key)} → ${settingValueWords(after, key)}`
 }
 
 // ---------------------------------------------------------------------------

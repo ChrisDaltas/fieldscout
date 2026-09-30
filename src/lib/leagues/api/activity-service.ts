@@ -266,8 +266,27 @@ export interface ActivityFeed {
  *  compare was rejected because it is only accidentally correct while every
  *  row carries the same UTC offset. */
 function sortKey(item: ActivityItem): [number, string] {
-  const ms = item.created_at ? Date.parse(item.created_at) : Number.NEGATIVE_INFINITY
-  return [Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms, item.id]
+  return [instantMicros(item.created_at), item.id]
+}
+
+/**
+ * R1393: the instant in MICROSECONDS — the database's own precision. The
+ * page boundary the next read sends (`activityCursorFilter`) is compared by
+ * PostgreSQL to the microsecond, so the merge must order the streams to the
+ * microsecond too: ordered by the millisecond, two rows of different streams
+ * inside one millisecond fell back to the id tie-break, and the NEWER one
+ * could land after the cut and never be served on either page. The fraction
+ * is padded to 6 digits (PostgREST drops trailing zeros); the whole-ms part
+ * is `Date.parse`'s (a pure parse, never a clock read). Pure; exported for
+ * its pin. Unparseable / NULL → −∞ (sorts last, as before).
+ */
+export function instantMicros(instant: string | null): number {
+  if (!instant) return Number.NEGATIVE_INFINITY
+  const ms = Date.parse(instant)
+  if (Number.isNaN(ms)) return Number.NEGATIVE_INFINITY
+  const fraction = /T\d{2}:\d{2}:\d{2}\.(\d+)/.exec(instant)?.[1] ?? ''
+  const extraMicros = Number(fraction.padEnd(6, '0').slice(3, 6))
+  return ms * 1000 + extraMicros
 }
 
 /** Pure merge of the two already-sorted streams (exported for the node
@@ -330,6 +349,12 @@ export function activityCursorFilter(before: string, beforeId: string): string {
  * words the line exactly as 156 words the post (`draft_actor_name()` —
  * the username since 077 — then " (commissioner) vetoed a trade: <deal>",
  * then the reason when one was given).
+ *
+ * R1394: the name is the commissioner's CURRENT username (the receipt's
+ * actor, read through `profiles` now), while the post froze the name he had
+ * when he vetoed — so after a username change the Trades tab and the All
+ * tab (which shows the post) name him differently. The deal and the reason
+ * are the receipt's own stored values.
  */
 export function vetoReceiptPost(row: {
   id: string

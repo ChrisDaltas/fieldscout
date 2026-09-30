@@ -27,6 +27,7 @@ import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
+import { activityHref } from './activity-page-ops'
 import { CONSOLE_NAV_LABEL, commishConsoleHref } from './commish-console-ops'
 import { teamPageHref } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
@@ -230,8 +231,11 @@ export function championName(detail: Pick<LeagueDetail, 'league' | 'teams'>): st
 // Navigation — the league's in-season pages (F251(c) / F253(c) / F275(c))
 // ---------------------------------------------------------------------------
 
+/** The Activity page's door in the league nav (L.E1.34, F544). */
+export const ACTIVITY_NAV_LABEL = 'Activity'
+
 export interface LeagueNavItem {
-  key: 'team' | 'matchups' | 'standings' | 'schedule' | 'players' | 'commish'
+  key: 'team' | 'matchups' | 'standings' | 'schedule' | 'players' | 'activity' | 'commish'
   label: string
   href: string
 }
@@ -249,6 +253,8 @@ export function leagueNav(leagueId: string, myTeamId: string | null, isCommish =
     { key: 'standings', label: 'Standings', href: `${base}/standings` },
     { key: 'schedule', label: 'Schedule', href: `${base}/schedule` },
     { key: 'players', label: 'Players', href: `${base}/players` },
+    // L.E1.34 (F544): the whole feed, the commissioner log, the stat corrections.
+    { key: 'activity', label: ACTIVITY_NAV_LABEL, href: activityHref(leagueId) },
   )
   if (isCommish) items.push({ key: 'commish', label: CONSOLE_NAV_LABEL, href: commishConsoleHref(leagueId) })
   return items

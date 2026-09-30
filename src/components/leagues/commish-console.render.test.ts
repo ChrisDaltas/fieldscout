@@ -30,8 +30,9 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import { COMMISH_LOG_PROBLEM_COPY } from './activity-feed-ops'
 import { CommishConsole } from './commish-console'
 import {
+  AUTOPILOT_NOTE,
   FAAB_NOTE,
-  MEMBERS_AFTER_DRAFT_NOTE,
+  MEMBERS_AFTER_DRAFT_BLURB,
   NEEDS_PROBLEM_COPY,
   NEEDS_STALE_COPY,
   NOTHING_NEEDS_YOU_COMPLETE_COPY,
@@ -323,20 +324,29 @@ describe('in season — needs you, the tool doors, recent actions', () => {
     expect(tools).not.toMatch(/<input|<form|role="switch"/)
   })
 
-  it('a FAAB league says where a FAAB balance is set; the members group says in words what has no screen yet', () => {
+  it('a FAAB league says where a FAAB balance is set; the members group is a real door to the members page (L.E1.39 / F539)', () => {
     const faab = renderConsole({ detail: detailWith('in_season', {}, { waiver_type: 'faab' }) })
     expect(faab).toContain(FAAB_NOTE)
-    expect(faab).toContain(MEMBERS_AFTER_DRAFT_NOTE)
+    const group = block(faab, 'data-tool-group="members"')
+    const members = group.slice(0, group.indexOf('</section>'))
+    expect(members).toContain(MEMBERS_AFTER_DRAFT_BLURB)
+    expect(members).toContain(AUTOPILOT_NOTE)
+    // R1388: a view door — the members page does not use override mode.
+    expect(members).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/members"`))
+    expect(members).not.toContain('doesn’t have a screen yet')
     const rolling = renderConsole({ detail: detailWith('in_season', {}, { waiver_type: 'rolling_priority' }) })
     expect(rolling).not.toContain(FAAB_NOTE)
   })
 
-  it('EVERY door turns override mode on as it is followed (each link carries the marker)', () => {
+  it('EVERY door to an acting screen turns override mode on as it is followed (each link carries the marker); the members door alone is a view (R1388)', () => {
     const html = renderConsole()
     const body = html.slice(html.indexOf('data-commish-needs'), html.indexOf('data-commish-recent'))
     const links = [...body.matchAll(/<a [^>]*>/g)].map((m) => m[0])
     expect(links.length).toBeGreaterThan(8)
-    for (const a of links) expect(a, a).toContain('data-override-door="on"')
+    for (const a of links) {
+      if (a.includes(`href="${BASE}/members"`)) expect(a, a).toContain('data-override-door="view"')
+      else expect(a, a).toContain('data-override-door="on"')
+    }
   })
 
   it('recent actions: the last five through League Home’s own log renderer, and a door to league activity', () => {
@@ -439,9 +449,13 @@ describe('playoffs and complete', () => {
     expect(html).toContain('data-commish-console="complete"')
     expect(html).not.toContain('data-needs-items')
     expect(html).toContain(NOTHING_NEEDS_YOU_COMPLETE_COPY)
-    expect(toolGroupKeys(html)).toEqual(['schedule', 'settings'])
+    // L.E1.39: members too — seat invites, assign, roles, takeover / vacate have no league-state gate (169).
+    expect(toolGroupKeys(html)).toEqual(['schedule', 'settings', 'members'])
     const tools = block(html, 'data-commish-tools-groups')
     expect(tools).toContain('The season is over')
+    expect(tools).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/members"`))
+    // Autopilot runs no lineups once the season is over — no autopilot note.
+    expect(tools).not.toContain(AUTOPILOT_NOTE)
     // Lineups / rosters (165 / 170), scores (135), trades (156), schedule edits (130) and
     // bracket picks (134) are all refused once the league is complete — no door, no "you can".
     for (const gone of ['/team/', '/matchup', '/trades', 'Set any team', 'Correct a matchup', 'Approve or veto', 'Change a week', 'Pick who plays']) {
@@ -560,6 +574,26 @@ describe('a manager never sees the console', () => {
     const setup = render(detailWith('setup'))
     expect(setup).toContain('data-door="commish"')
     expect(render(detailWith('setup', { my_role: 'manager' }))).not.toContain(`${BASE}/commish`)
+  })
+
+  // L.E1.39 (F539): after the draft the seat list lives on the members page;
+  // before it, it is on League Home itself (#invites) and during it in the
+  // draft room — so the header door is offered after the draft only.
+  it('League Home: the Members door in the header — after the draft, for a commissioner, and for nobody else', () => {
+    const render = (detail: LeagueDetail) => {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+      qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
+      return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(LeagueHomeStates, { leagueId: LEAGUE })))
+    }
+    for (const status of ['in_season', 'playoffs', 'complete']) {
+      const commish = render(detailWith(status))
+      const door = commish.match(/<a [^>]*data-door="members"[^>]*>/)?.[0] ?? ''
+      expect(door, status).toContain(`href="${BASE}/members"`)
+      expect(render(detailWith(status, { my_role: 'manager' })), status).not.toContain(`${BASE}/members`)
+    }
+    for (const status of ['setup', 'scheduled', 'drafting']) {
+      expect(render(detailWith(status)), status).not.toContain('data-door="members"')
+    }
   })
 })
 

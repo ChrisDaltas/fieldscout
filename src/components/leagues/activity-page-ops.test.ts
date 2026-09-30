@@ -12,6 +12,7 @@ import {
   ACTIVITY_TABS,
   ACTIVITY_TAB_LABELS,
   activityHref,
+  activityRouteFrom,
   commishEntryHref,
   commishMatchupHref,
   commishTeamHref,
@@ -81,5 +82,14 @@ describe('copy', () => {
   it('F534: the week filter says in words what it shows and what it does not', () => {
     expect(ops.COMMISH_WEEK_NOTE).toContain('lineups, scores, results')
     expect(ops.COMMISH_WEEK_NOTE).toContain('Trades, roster moves, settings and member changes aren’t tied to a week')
+  })
+})
+
+describe('activityRouteFrom — R1392: the URL is the state', () => {
+  const fallback = { tab: 'trades', week: null, team: null, entry: null } as const
+  it('the search params win over the first render’s route; no params to read ⇒ the server’s parse', () => {
+    expect(activityRouteFrom(new URLSearchParams(`tab=commissioner&entry=${ENTRY}`), fallback)).toStrictEqual({ tab: 'commissioner', week: null, team: null, entry: ENTRY })
+    expect(activityRouteFrom(new URLSearchParams(''), fallback)).toStrictEqual({ tab: 'all', week: null, team: null, entry: null })
+    expect(activityRouteFrom(null, fallback)).toBe(fallback)
   })
 })

@@ -115,3 +115,13 @@ export function parseActivityRoute(query: Record<string, string | string[] | und
     entry: tab === 'commissioner' ? uuid(one(query.entry)) : null,
   }
 }
+
+/**
+ * R1392: the page's state is the URL's. `useSearchParams()` → the route on
+ * every render; `fallback` (the server's parse of the same URL) only when there
+ * is nothing to read. Pure; the page's one reader.
+ */
+export function activityRouteFrom(searchParams: { entries(): IterableIterator<[string, string]> } | null, fallback: ActivityRoute): ActivityRoute {
+  if (!searchParams) return fallback
+  return parseActivityRoute(Object.fromEntries(searchParams.entries()))
+}

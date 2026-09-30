@@ -35,6 +35,7 @@ import {
   activityCursorFilter,
   activityQuerySchema,
   attachReceipts,
+  instantMicros,
   mergeActivity,
   readActivity,
   vetoReceiptPost,
@@ -367,6 +368,32 @@ describe('attachReceipts — each item’s receipt, by the instant its transacti
     expect(rev.commish_action_id).toBe('ca-rel')
     expect(forced.commish_action_id).toBe('ca-at')
     expect(plain.commish_action_id).toBeNull()
+  })
+})
+
+describe('R1393 — the merge orders to the MICROSECOND (the boundary the next read sends is compared at µs)', () => {
+  it('instantMicros: the fraction padded to 6 digits; no fraction, a Z, an offset; NULL / garbage sort last', () => {
+    const base = Date.parse('2099-09-10T12:00:00Z') * 1000
+    expect(instantMicros('2099-09-10T12:00:00.123456+00:00')).toBe(base + 123456)
+    expect(instantMicros('2099-09-10T12:00:00.1234+00:00')).toBe(base + 123400) // PostgREST drops trailing zeros
+    expect(instantMicros('2099-09-10T12:00:00.5Z')).toBe(base + 500000)
+    expect(instantMicros('2099-09-10T12:00:00Z')).toBe(base)
+    expect(instantMicros('2099-09-10T14:00:00.000001+02:00')).toBe(base + 1)
+    expect(instantMicros(null)).toBe(Number.NEGATIVE_INFINITY)
+    expect(instantMicros('not a time')).toBe(Number.NEGATIVE_INFINITY)
+  })
+
+  it('the reviewer’s demo: two streams inside ONE millisecond — the newer row is served first, so the cut cannot skip it', () => {
+    // A transaction at .123400 with the LARGER id, a post at .123900. Ordered by
+    // the millisecond, the id tie-break served the transaction and cut there; the
+    // next read (created_at < .1234 at µs) could never return the .1239 post.
+    const older = txn('ffffffff-0000-4000-8000-000000000001', '2099-09-10T12:00:00.1234+00:00')
+    const newer = post('00000000-0000-4000-8000-000000000001', '2099-09-10T12:00:00.1239+00:00')
+    const page1 = mergeActivity([older], [newer], 1)
+    expect(page1.items.map((i) => i.id)).toStrictEqual([newer.id])
+    expect([page1.next_before, page1.next_before_id]).toStrictEqual([newer.created_at, newer.id])
+    // …and the next page (what the database returns under that boundary) serves the transaction.
+    expect(mergeActivity([older], [], 1).items.map((i) => i.id)).toStrictEqual([older.id])
   })
 })
 

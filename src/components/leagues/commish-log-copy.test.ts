@@ -29,10 +29,12 @@ import { RETIRED_WAIVER_KEYS, leagueSettingsSchema } from '@/lib/leagues/setting
 import { commishLogLines } from './activity-feed-ops'
 import {
   COMMISH_ACTION_WORDS,
+  SETTING_VALUE_WORDS,
   SETTING_WORDS,
   UNKNOWN_ACTION_WORDS,
   clockWords,
   scoringRuleWords,
+  settingChange,
   settingValueWords,
 } from './commish-log-copy'
 
@@ -208,6 +210,68 @@ describe('TD12 census — every setting key has plain words (fails by name)', ()
       expect(text).not.toMatch(NO_CODE_WORDS)
       expect(text).toContain(SETTING_WORDS[key])
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R1395 — the census reaches the VALUES where it is cheap: every string an
+// enum / literal in `leagueSettingsSchema` admits has words, and the counts
+// that are hours or weeks are said with their unit
+// ---------------------------------------------------------------------------
+
+/** Every string value a settings key's schema admits (enums, literals, arrays
+ *  and unions of them), read from zod's own definitions — never a hand list. */
+function enumStrings(schema: unknown, out = new Set<string>()): Set<string> {
+  const def = (schema as { _zod?: { def?: Record<string, unknown> } })?._zod?.def
+  if (!def) return out
+  switch (def.type) {
+    case 'enum':
+      for (const v of Object.values(def.entries as Record<string, unknown>)) if (typeof v === 'string') out.add(v)
+      break
+    case 'literal':
+      for (const v of def.values as unknown[]) if (typeof v === 'string') out.add(v)
+      break
+    case 'union':
+      for (const option of def.options as unknown[]) enumStrings(option, out)
+      break
+    case 'array':
+      enumStrings(def.element, out)
+      break
+    case 'pipe':
+      enumStrings(def.in, out)
+      break
+    case 'default':
+    case 'prefault':
+    case 'nullable':
+    case 'optional':
+      enumStrings(def.innerType, out)
+      break
+  }
+  return out
+}
+
+describe('R1395 census — every enum value a setting admits has words (fails by name)', () => {
+  const values = [...new Set(Object.values(leagueSettingsSchema.shape).flatMap((schema) => [...enumStrings(schema)]))].sort()
+
+  it('the value source is real (waiver types, trade review, weekdays, the tiebreak chain)', () => {
+    for (const known of ['faab', 'league_vote', 'wed', 'win_pct', 'coin_flip', 'per_player_kickoff', 'thu_06_00_et']) expect(values, known).toContain(known)
+  })
+
+  it.each(values)('%s', (value) => {
+    expect(SETTING_VALUE_WORDS[value], `${value} has no words in SETTING_VALUE_WORDS`).toBeTruthy()
+    expect(settingValueWords(value)).not.toMatch(NO_CODE_WORDS)
+  })
+
+  it('the standings tiebreak chain reads as a list of words', () => {
+    expect(settingChange('tiebreakers', ['win_pct', 'points_for'], ['head_to_head', 'coin_flip'])).toBe('standings tiebreakers: win percentage, points scored → head-to-head record, coin flip')
+  })
+
+  it('counts of hours and weeks carry their unit (one / many)', () => {
+    expect(settingChange('fa_hold_hours', 1, 24)).toBe('hold on dropped players: 1 hour → 24 hours')
+    expect(settingChange('trade_review_period_hours', 48, 0)).toBe('trade review period: 48 hours → 0 hours')
+    expect(settingChange('stat_correction_window', 'thu_06_00_et', 72)).toBe('stat correction window: Thursday 6:00 AM ET → 72 hours')
+    expect(settingChange('regular_season_weeks', 14, 13)).toBe('regular season length: 14 weeks → 13 weeks')
+    expect(settingChange('faab_budget', 100, 200)).toBe('FAAB budget: 100 → 200')
   })
 })
 

@@ -35,6 +35,7 @@ import { commishConsoleHref } from '@/lib/leagues/api/commish-console-gate'
 import type { TradeView } from '@/lib/leagues/api/trades-service'
 
 import { activityHref } from './activity-page-ops'
+import { membersPageHref } from './invite-panel-ops'
 import { teamPageHref } from './league-cells'
 import { tradesHref } from './trades-ops'
 
@@ -319,8 +320,12 @@ export interface ToolGroup {
   note: string | null
 }
 
-export const MEMBERS_AFTER_DRAFT_NOTE =
-  'Changing who manages a team after the draft doesn’t have a screen yet.'
+/** L.E1.39 (F539): after the draft the members page carries the seat tools;
+ *  autopilot stays a face of the team page (Q63 / 139). */
+export const MEMBERS_AFTER_DRAFT_BLURB =
+  'Invite someone to a team that has no manager, hand a team to someone else, name co-commissioners, or remove a manager.'
+export const AUTOPILOT_NOTE =
+  'Autopilot for a team with no manager is switched on that team’s page — pick it under Lineups & rosters.'
 export const FAAB_NOTE = 'A team’s FAAB balance is set on its page — pick the team under Lineups & rosters.'
 
 export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiverType: string | null | undefined }): ToolGroup[] {
@@ -393,6 +398,21 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
 
   if (!afterDraft(phase)) return [settings]
 
+  // L.E1.39 (F539): the members page — the same seat tools as before the
+  // draft, each offered there only where its verb accepts it in this state
+  // (`memberControls`; seat invites, assign, roles, takeover / vacate carry
+  // no league-state gate — 169). A real door in every after-draft state.
+  const members: ToolGroup = {
+    key: 'members',
+    title: 'Members & autopilot',
+    blurb: MEMBERS_AFTER_DRAFT_BLURB,
+    // R1388: the members page has no override bar and nothing on it reads
+    // the mode — the door does not switch it on (R1372's view-door shape).
+    doors: [{ label: 'Members', href: membersPageHref(leagueId), view: true }],
+    teamDoors: false,
+    note: phase === 'complete' ? null : AUTOPILOT_NOTE,
+  }
+
   // R1372 — every group says only what its screen accepts IN THIS STATE
   // (D446). Measured over the chain heads: a lineup (165:261 / 170), an add /
   // drop / move (170:1407), a score or result (135) and a trade (156:299) are
@@ -412,6 +432,7 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
         note: null,
       },
       { ...settings, blurb: 'The league’s settings.' },
+      members,
     ]
   }
 
@@ -460,14 +481,7 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
       note: null,
     },
     settings,
-    {
-      key: 'members',
-      title: 'Members & autopilot',
-      blurb: 'Switch autopilot on for a team with no manager — on the team’s page.',
-      doors: [],
-      teamDoors: false,
-      note: MEMBERS_AFTER_DRAFT_NOTE,
-    },
+    members,
   ]
 }
 

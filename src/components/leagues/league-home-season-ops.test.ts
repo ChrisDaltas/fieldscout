@@ -240,12 +240,13 @@ describe('the nav and the two post-draft doors', () => {
       '/app/leagues/L/standings',
       '/app/leagues/L/schedule',
       '/app/leagues/L/players',
+      '/app/leagues/L/activity', // L.E1.34 (F544)
     ])
-    expect(leagueNav('L', null).map((i) => i.key)).toEqual(['matchups', 'standings', 'schedule', 'players'])
+    expect(leagueNav('L', null).map((i) => i.key)).toEqual(['matchups', 'standings', 'schedule', 'players', 'activity'])
   })
   it('nav (M6 L.E1.33): the Commissioner door is last, and only for a commissioner — never by default', () => {
     expect(leagueNav('L', 'T', true).at(-1)).toEqual({ key: 'commish', label: 'Commissioner', href: '/app/leagues/L/commish' })
-    expect(leagueNav('L', null, true).map((i) => i.key)).toEqual(['matchups', 'standings', 'schedule', 'players', 'commish'])
+    expect(leagueNav('L', null, true).map((i) => i.key)).toEqual(['matchups', 'standings', 'schedule', 'players', 'activity', 'commish'])
     expect(leagueNav('L', 'T', false).some((i) => i.key === 'commish')).toBe(false)
     expect(leagueNav('L', 'T').some((i) => i.key === 'commish')).toBe(false)
   })
