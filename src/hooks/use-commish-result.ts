@@ -5,6 +5,7 @@ import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 
+import { commishLogKeys } from './use-commish-log'
 import { leagueActivityKeys } from './use-league-activity'
 import { leagueMatchupKeys } from './use-matchups'
 import { leagueStandingsKeys } from './use-standings'
@@ -17,9 +18,9 @@ import { leagueStandingsKeys } from './use-standings'
  * The sibling of `useCommishEditScore` over the SAME verb family and ledger
  * (D350): the number stands and the outcome is restated. Same contract —
  * SEPARATE from every manager hook, NOT optimistic, NOT retried (explicit
- * `retry: false`), one `action_id` per `submit()`, and the same three keys
+ * `retry: false`), one `action_id` per `submit()`, and the same four keys
  * re-read on success AND on error (R822(i)): the week's matchups, the
- * standings, the activity feed. See `use-commish-score.ts` for why.
+ * standings, the activity feed, the audit log's root (L.E1.32 R1360). See `use-commish-score.ts` for why.
  *
  * A tie cannot be expressed here — a winner id names a side (F351); the
  * score hook with equal scores records one.
@@ -53,6 +54,10 @@ export function commishSetResultMutationOptions(
     void queryClient.invalidateQueries({ queryKey: leagueMatchupKeys.week(leagueId, week) })
     void queryClient.invalidateQueries({ queryKey: leagueStandingsKeys.all(leagueId) })
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
+    // The §10.3 receipt this wrote — the audit log, League Home's
+    // commissioner section and the console's "needs you" read, which
+    // lives under the log's root (L.E1.32 R1360).
+    void queryClient.invalidateQueries({ queryKey: commishLogKeys.all(leagueId) })
   }
   return {
     retry: false,

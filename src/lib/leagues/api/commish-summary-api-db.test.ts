@@ -347,7 +347,9 @@ describe('GET …/commish/summary — readCommishSummary over the real stack', (
     expect(summary).toStrictEqual({
       league_id: emptyLeagueId,
       season: SYNTHETIC_SEASON,
-      league_status: summary.league_status,
+      // R1364: the literal a new league stands in — create_league (118:2224)
+      // sets no status, so `leagues.status`' column default applies.
+      league_status: 'setup',
       evaluated_at: NOW.toISOString(),
       sections: {
         unmanaged_teams: { state: 'ok', teams: [], no_seat_row: [] },

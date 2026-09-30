@@ -22,11 +22,14 @@ import type { CommishLogPage } from '@/lib/leagues/api/commish-log-service'
  * encoded so half a boundary cannot be sent). M6 L.E1.32 (D455): an
  * infinite query with `fetchNextPage`, filterable by `type` / `team_id` /
  * `week` — each filter the server's (the header of `commish-log-service.ts`
- * says what each one matches). Every commissioner mutation hook
- * (`use-commish-*.ts`) invalidates `commishLogKeys.all` on success AND on
+ * says what each one matches). Every `use-commish-*.ts` mutation hook (the
+ * score / result / lineup / move / add-drop five since L.E1.32 R1360) and the
+ * trade / claim hooks invalidate `commishLogKeys.all` on success AND on
  * error (R822(i)), so a landed override re-reads the log without a realtime
  * subscription; the league room's `league_chat` system post reaches the
- * activity feed through its own channel.
+ * activity feed through its own channel. The draft-room, membership / invite
+ * and settings hooks write receipts (168 / 169) but do not re-read the log
+ * yet (F535(d)).
  */
 
 export interface CommishLogFilters {

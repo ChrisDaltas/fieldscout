@@ -15,15 +15,19 @@ import { commishLogKeys } from './use-commish-log'
  * answer yet arrives as `{ state: 'unavailable', missing, message }` (say
  * the message; never render it as "nothing needs you").
  *
- * THE KEY LIVES UNDER THE AUDIT LOG'S ROOT on purpose: every commissioner
- * mutation hook invalidates `commishLogKeys.all` on success AND on error
- * (R822(i)), and every one of them can change what needs him (a seat put on
- * autopilot, a trade approved, a score corrected) — so the list re-reads
- * after each without a second invalidation list to keep in step.
+ * THE KEY LIVES UNDER THE AUDIT LOG'S ROOT on purpose: every `use-commish-*`
+ * mutation hook (and the trade / claim hooks' commissioner arms) invalidates
+ * `commishLogKeys.all` on success AND on error (R822(i); the last five since
+ * R1360), and each can change what needs him (a seat put on autopilot, a
+ * trade approved, a score corrected) — so the list re-reads after each
+ * without a second invalidation list to keep in step. The draft-room,
+ * membership / invite and settings hooks write receipts too (168 / 169) but
+ * do not re-read the log yet — the minute poll covers them (F535(d)).
  *
  * Games finish, managers accept trades and seats empty on their own clock,
- * so the read also re-polls once a minute. Reads only; `retry: false` (a
- * 403 is an answer, not a blip).
+ * so the read also re-polls once a minute — until it is refused (a 403 is
+ * an answer, not a blip: no retry, and the poll stops, R1363). `enabled`
+ * lets the console mount it for commissioners only. Reads only.
  */
 export const commishSummaryKeys = {
   one: (leagueId: string) => [...commishLogKeys.all(leagueId), 'summary'] as const,
@@ -32,12 +36,19 @@ export const commishSummaryKeys = {
 /** How often the list re-reads itself (the matchup lock's cadence). */
 export const COMMISH_SUMMARY_REPOLL_MS = 60_000
 
+/** Poll each minute while the read answers; stop once it has been refused
+ *  (a manager's 403 will not turn into a yes by asking again). Exported for
+ *  its pin. */
+export function commishSummaryRefetchInterval(query: { state: { error: unknown } }): number | false {
+  return query.state.error ? false : COMMISH_SUMMARY_REPOLL_MS
+}
+
 export function useCommishSummary(leagueId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: commishSummaryKeys.one(leagueId ?? 'none'),
     enabled: Boolean(leagueId) && enabled,
     retry: false,
-    refetchInterval: COMMISH_SUMMARY_REPOLL_MS,
+    refetchInterval: commishSummaryRefetchInterval,
     queryFn: () => sendLeagueAction<CommishSummary>(`/api/leagues/${leagueId!}/commish/summary`),
   })
 }

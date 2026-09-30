@@ -37,7 +37,7 @@ import {
   type CommishSummary,
 } from './commish-summary-service'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
-import { TRADES_UNAVAILABLE_MESSAGE, type TradeView } from './trades-service'
+import { TRADE_SCHEMA_OBJECTS, TRADES_UNAVAILABLE_MESSAGE, type TradeView } from './trades-service'
 
 const LEAGUE = 'c3200000-0000-4000-8000-000000000001'
 const USER = 'c3200000-0000-4000-8000-0000000000aa'
@@ -249,6 +249,18 @@ describe('unmanaged_teams — D339’s predicate with 139’s switch', () => {
     expect(summary.sections.matchup_corrections.state).toBe('ok')
   })
 
+  it('R1361: with the switch table absent AND the teams / members read failing, the failure is loud (500 by name) — "unavailable" never masks it', async () => {
+    for (const [table, what] of [['teams', 'teams'], ['league_members', 'league_members']] as const) {
+      const res = await readCommishSummary(
+        clientDouble({ tables: { team_autopilot: missingTable('team_autopilot'), [table]: { data: null, error: { message: 'boom' } } } }).client,
+        LEAGUE,
+        USER,
+        NOW,
+      )
+      expect(res, table).toStrictEqual({ status: 500, body: { error: `${what}: boom` } })
+    }
+  })
+
   it('a missing table that is NOT this section’s object, or any other error, is the whole read’s 500 by name — never a quietly missing section', async () => {
     const other = await readCommishSummary(clientDouble({ tables: { team_autopilot: missingTable('team_autopilotz') } }).client, LEAGUE, USER, NOW)
     expect(other.status).toBe(500)
@@ -284,8 +296,13 @@ describe('trades_awaiting_review — the open-trades read, in review under the c
   it('PRE-PUSH: the trade read’s named 503 (no trade objects) ⇒ the section is unavailable by name; the other sections still answer', async () => {
     readTrades.mockResolvedValueOnce({ status: 503, body: { error: TRADES_UNAVAILABLE_MESSAGE } })
     const summary = summaryOf(await readCommishSummary(clientDouble().client, LEAGUE, USER, NOW))
-    expect(summary.sections.trades_awaiting_review).toStrictEqual({ state: 'unavailable', missing: ['trades'], message: TRADES_UNAVAILABLE_MESSAGE })
+    expect(summary.sections.trades_awaiting_review).toStrictEqual({ state: 'unavailable', missing: [...TRADE_SCHEMA_OBJECTS], message: TRADES_UNAVAILABLE_MESSAGE })
     expect(summary.sections.unmanaged_teams.state).toBe('ok')
+  })
+
+  it('R1362: a 503 that is NOT the trade read’s named "no trade objects" answer is the whole read’s 500, never "unavailable"', async () => {
+    readTrades.mockResolvedValueOnce({ status: 503, body: { error: 'some other service is down' } })
+    expect(await readCommishSummary(clientDouble().client, LEAGUE, USER, NOW)).toStrictEqual({ status: 500, body: { error: 'trades: some other service is down' } })
   })
 
   it('any other failure of the trade read is the whole read’s 500, naming it', async () => {

@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import type { CommishLogPage } from '@/lib/leagues/api/commish-log-service'
 
 import { commishLogKeys, commishLogNextCursor, commishLogSearchParams } from './use-commish-log'
-import { commishSummaryKeys } from './use-commish-summary'
+import { COMMISH_SUMMARY_REPOLL_MS, commishSummaryKeys, commishSummaryRefetchInterval } from './use-commish-summary'
 
 const LEAGUE = 'c3200000-0000-4000-8000-000000000001'
 const OTHER = 'c3200000-0000-4000-8000-000000000002'
@@ -49,6 +49,14 @@ describe('useCommishLog — the filters on the wire', () => {
     expect(commishLogNextCursor(page(true, 'tok'))).toBe('tok')
     expect(commishLogNextCursor(page(false, null))).toBeUndefined()
     expect(commishLogNextCursor(page(true, null))).toBeUndefined()
+  })
+})
+
+describe('useCommishSummary — the poll (R1363)', () => {
+  it('re-polls each minute while it answers and stops once refused (a manager’s 403 is not asked again)', () => {
+    expect(commishSummaryRefetchInterval({ state: { error: null } })).toBe(COMMISH_SUMMARY_REPOLL_MS)
+    expect(COMMISH_SUMMARY_REPOLL_MS).toBe(60_000)
+    expect(commishSummaryRefetchInterval({ state: { error: new Error('403') } })).toBe(false)
   })
 })
 

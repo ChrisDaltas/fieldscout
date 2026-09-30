@@ -63,7 +63,7 @@ import { isDoorNotPushed, isMissingSchemaObject } from '@/lib/supabase/postgrest
 import type { CommishMatchupEditLock } from './commish-matchup-service'
 import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
-import { readTrades, TRADES_UNAVAILABLE_MESSAGE, type TradesDocument, type TradeView } from './trades-service'
+import { readTrades, TRADE_SCHEMA_OBJECTS, TRADES_UNAVAILABLE_MESSAGE, type TradesDocument, type TradeView } from './trades-service'
 
 type Supabase = SupabaseClient<Database>
 
@@ -189,11 +189,14 @@ async function unmanagedTeams(supabase: Supabase, leagueId: string): Promise<Sec
     supabase.from('league_members').select('team_id, user_id').eq('league_id', leagueId),
     supabase.from('team_autopilot').select('team_id, is_on, teams!inner(league_id)').eq('teams.league_id', leagueId),
   ])
+  // R1361: a failure of the two tables every database has is loud FIRST —
+  // "unavailable" is only ever the switch table's absence, never a mask for
+  // a broken teams / members read.
+  if (teamsRes.error) return fault('teams', teamsRes.error.message)
+  if (membersRes.error) return fault('league_members', membersRes.error.message)
   if (autopilotRes.error && isMissingSchemaObject(autopilotRes.error, UNMANAGED_TEAMS_OBJECTS)) {
     return { section: { state: 'unavailable', missing: [...UNMANAGED_TEAMS_OBJECTS], message: UNMANAGED_TEAMS_UNAVAILABLE_MESSAGE } }
   }
-  if (teamsRes.error) return fault('teams', teamsRes.error.message)
-  if (membersRes.error) return fault('league_members', membersRes.error.message)
   if (autopilotRes.error) return fault('team_autopilot', autopilotRes.error.message)
   const teams = teamsRes.data ?? []
   const members = membersRes.data ?? []
@@ -241,12 +244,16 @@ async function tradesAwaitingReview(
   now: Date,
 ): Promise<SectionResult<TradesAwaitingReviewSection>> {
   const res = await readTrades(supabase, leagueId, userId, { status: 'open' }, now)
-  if (res.status === 503) {
-    return { section: { state: 'unavailable', missing: ['trades'], message: TRADES_UNAVAILABLE_MESSAGE } }
+  // R1362: the trade read's 503 is its named "no trade objects" answer
+  // (`isMissingSchemaObject` over TRADE_SCHEMA_OBJECTS) and does not say
+  // WHICH was absent — so the section names the set it stands for, and any
+  // other 503 is not taken for it.
+  const refusal = (res.body as { error?: unknown } | null)?.error
+  if (res.status === 503 && refusal === TRADES_UNAVAILABLE_MESSAGE) {
+    return { section: { state: 'unavailable', missing: [...TRADE_SCHEMA_OBJECTS], message: TRADES_UNAVAILABLE_MESSAGE } }
   }
   if (res.status !== 200) {
-    const error = (res.body as { error?: unknown } | null)?.error
-    return fault('trades', typeof error === 'string' ? error : JSON.stringify(error ?? res.body))
+    return fault('trades', typeof refusal === 'string' ? refusal : JSON.stringify(refusal ?? res.body))
   }
   const doc = res.body as unknown as TradesDocument
   const reviewMode = doc.settings.trade_review
