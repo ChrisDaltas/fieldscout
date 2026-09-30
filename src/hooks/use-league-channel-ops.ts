@@ -345,6 +345,27 @@ export function tradesEventInvalidates(name: string): boolean {
 }
 
 /**
+ * Which events make the STAT-CORRECTIONS list stale (M6 L.E2.4 — F527).
+ *
+ * The records (172's `league_stat_corrections`) have no broadcast of their
+ * own, and need none: every record is written in the SAME transaction as
+ * the scoring door's ONE league post announcing it (D453(4)), and that post
+ * is a `league_chat` INSERT, which 070 already broadcasts on this topic. So
+ * the post IS the records' carrier — the corrections hook narrows it
+ * further to the door's own posts (`statCorrectionsEventEffect`: the
+ * system flag, no actor, the door's prefix), so a chat message or a
+ * commissioner notice refetches nothing. `matchups` is deliberately NOT
+ * here: a score tick every few seconds cannot create a record without its
+ * post. Remove `league_chat` and an open corrections list really does stop
+ * refreshing when a fix lands.
+ */
+export const CORRECTIONS_INVALIDATING_EVENTS: readonly LeagueChannelEvent[] = ['league_chat']
+
+export function correctionsEventInvalidates(name: string): boolean {
+  return (CORRECTIONS_INVALIDATING_EVENTS as readonly string[]).includes(name)
+}
+
+/**
  * The R773 shape as ONE function: a handler map DERIVED from a predicate
  * over the closed event set, every admitted event bound to the same
  * `invalidate`. A consumer passes the result to `useLeagueChannel`, so the
