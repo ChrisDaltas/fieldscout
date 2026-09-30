@@ -2,8 +2,8 @@
  * use-commish-log-receipt-hooks.test.ts — M6 L.E1.33, PROGRESS F535(d): the
  * hooks whose writes leave a §10.3 receipt since 168 / 169 but did not re-read
  * the audit log — the draft-room controls, draft create / order / start,
- * membership, invites, settings / status / profile / scoring, and
- * `set_lineup` (its commissioner arm writes `edit_lineup`, 169) — now
+ * membership, invites, settings / status / profile / scoring, the schedule's
+ * remix and one-matchup edit (R1373), and `set_lineup` (its commissioner arm writes `edit_lineup`, 169) — now
  * invalidate `commishLogKeys.all`, which reaches League Home's commissioner
  * section AND the console's "needs you" read (`commishSummaryKeys.one`, under
  * the same root). ONE CELL PER HOOK, each driving the hook's REAL options
@@ -72,6 +72,7 @@ import {
 import { useCreateInvite, useRevokeInvite, useRotateInviteCode, useSetInviteSlug } from './use-league-invites'
 import { useAddPlaceholderSeat, useAssignManager, useRemoveManager, useSetMemberRole } from './use-league-members'
 import { useSetLineup } from './use-lineup'
+import { useConfirmRemix, useEditMatchup } from './use-schedule'
 
 const LEAGUE = 'c3310000-0000-4000-8000-000000000301'
 const OTHER_LEAGUE = 'c3310000-0000-4000-8000-000000000302'
@@ -153,6 +154,10 @@ const CELLS: Cell[] = [
   { name: 'useLeagueProfile.removeAvatar', useMount: () => useLeagueProfile(LEAGUE), pick: 2, variables: undefined, both: false },
   { name: 'useForkScoringTemplate', useMount: () => useForkScoringTemplate(LEAGUE), variables: 'tpl1', both: false },
   { name: 'useUpdateLeagueScoring', useMount: () => useUpdateLeagueScoring(LEAGUE), variables: {}, both: false },
+  // The schedule's two commissioner writes (R1373): the remix (131) and the
+  // one-matchup edit (130 / 131), both over 111's routes.
+  { name: 'useConfirmRemix', useMount: () => useConfirmRemix(LEAGUE), variables: { seed: 7, action_id: ACTION }, both: false },
+  { name: 'useEditMatchup', useMount: () => useEditMatchup(LEAGUE), variables: { matchup_id: 'mx1', home_team_id: TEAM, away_team_id: 'other', action_id: ACTION }, both: false },
   // set_lineup — its commissioner arm writes `edit_lineup` (169).
   { name: 'useSetLineup', useMount: () => useSetLineup(LEAGUE, TEAM), variables: { week: 3, slot_map: {}, action_id: ACTION }, both: true },
 ]

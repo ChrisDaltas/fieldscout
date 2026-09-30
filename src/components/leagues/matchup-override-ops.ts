@@ -30,14 +30,6 @@ export const BOTH_SCORES_COPY =
   'Both scores are saved together — correcting one side restates the other as written here.'
 export const DECLARE_WINNER_COPY =
   'Or leave the numbers alone and declare the winner. For a tie, save equal scores instead.'
-/**
- * A BYE row (no away side). The result arm is refused by design
- * (`131:1052-1057` — a bye has no winner) and is not offered; the SCORE arm
- * is the team's points alone, sent with `away_score: null` (PROGRESS F366,
- * fixed by L.E1.16: the schema is nullable and the service sends
- * `p_away: null`, which is what `131:1058-1062` asks for). This line sits
- * where the declare-a-winner arm would be.
- */
 // ---------------------------------------------------------------------------
 // Declare a winner — §10.4's confirmation, before → after (M6 L.E1.33)
 // ---------------------------------------------------------------------------
@@ -84,6 +76,14 @@ export function declareWinnerConfirm(args: {
   }
 }
 
+/**
+ * A BYE row (no away side). The result arm is refused by design
+ * (`131:1052-1057` — a bye has no winner) and is not offered; the SCORE arm
+ * is the team's points alone, sent with `away_score: null` (PROGRESS F366,
+ * fixed by L.E1.16: the schema is nullable and the service sends
+ * `p_away: null`, which is what `131:1058-1062` asks for). This line sits
+ * where the declare-a-winner arm would be.
+ */
 export const BYE_ROW_COPY = 'This is a bye — there is no opponent and no winner to declare. Only the team’s score can be corrected.'
 
 // ---------------------------------------------------------------------------

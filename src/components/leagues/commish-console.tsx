@@ -20,6 +20,7 @@ import {
   CORRECTIONS_HINT,
   CORRECTIONS_TITLE,
   NEEDS_PROBLEM_COPY,
+  NEEDS_STALE_COPY,
   NEEDS_TITLE,
   NOT_COMMISSIONER_COPY,
   OVERRIDE_OFF_COPY,
@@ -43,8 +44,9 @@ import {
 import { teamPageHref } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { OverrideModeBar } from './override-mode-bar'
-import { StaleDataBanner, StatusBanner, STALE_LEAGUE_COPY } from './status-banners'
-import { problemCopy } from './team-page'
+import { StaleDataBanner, StatusBanner } from './status-banners'
+import { InlineProblem } from './league-home-season'
+import { ProblemCard, problemCopy } from './team-page'
 
 /**
  * The Commissioner Console — M6 task L.E1.33 (`/app/leagues/[id]/commish`;
@@ -87,9 +89,16 @@ export function CommishConsole({ leagueId }: { leagueId: string }) {
   if (league.isPending) return <ConsoleSkeleton />
   if (league.isError || !league.data) {
     return (
-      <div className="flex flex-col gap-4" data-commish-console="error">
-        <PageHeader title={CONSOLE_TITLE} />
-        <Problem title="Couldn’t load this league." detail={league.error ? problemCopy(league.error) : null} onRetry={() => void league.refetch()} />
+      // R1374: the team page's ProblemCard (its own header, Retry and the
+      // way back to the league) — not a second copy.
+      <div data-commish-console="error">
+        <ProblemCard
+          title="Couldn’t load this league."
+          detail={league.error ? problemCopy(league.error) : 'It may have been removed, or you no longer have access.'}
+          onRetry={() => void league.refetch()}
+          leagueId={leagueId}
+          heading={CONSOLE_TITLE}
+        />
       </div>
     )
   }
@@ -199,7 +208,15 @@ function ConsoleDoorLink({
   const roomEntry = useRoomEntryTarget()
   return (
     <Button variant={variant} size="sm" asChild>
-      <Link href={door.href} onClick={() => enter(leagueId)} data-override-door="on" {...(door.room ? roomEntry : {})} {...rest}>
+      <Link
+        href={door.href}
+        // R1372: a view-only door (nothing on that screen acts in this
+        // state) does not switch override mode on.
+        onClick={door.view ? undefined : () => enter(leagueId)}
+        data-override-door={door.view ? 'view' : 'on'}
+        {...(door.room ? roomEntry : {})}
+        {...rest}
+      >
         {door.label}
       </Link>
     </Button>
@@ -228,7 +245,17 @@ function NeedsYouCard({
         <CardTitle className="text-[12px]">{NEEDS_TITLE}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 px-card-pad py-3">
-        {summary.isError && doc && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
+        {summary.isError && doc && (
+          // R1375: the stale list says so AND offers the re-read.
+          <StaleDataBanner>
+            <span className="flex flex-wrap items-center gap-2" data-needs-stale>
+              {NEEDS_STALE_COPY}
+              <Button variant="stroke" size="sm" onClick={() => void summary.refetch()} data-needs-stale-retry>
+                <Icon name="reset" size={13} /> Retry
+              </Button>
+            </span>
+          </StaleDataBanner>
+        )}
         {summary.isPending && !doc ? (
           <div className="flex flex-col gap-1.5" data-skeleton="commish-needs">
             {Array.from({ length: 3 }, (_, i) => (
@@ -237,7 +264,7 @@ function NeedsYouCard({
           </div>
         ) : !doc ? (
           // A FAILED read is never "nothing needs you" (CLAUDE.md; F535(a)).
-          <Problem title={NEEDS_PROBLEM_COPY} detail={summary.error ? problemCopy(summary.error) : null} onRetry={() => void summary.refetch()} inline />
+          <InlineProblem title={NEEDS_PROBLEM_COPY} detail={summary.error ? problemCopy(summary.error) : null} onRetry={() => void summary.refetch()} inline />
         ) : (
           <NeedsYouList leagueId={leagueId} phase={phase} doc={doc} leagueTimeZone={leagueTimeZone} />
         )}
@@ -401,27 +428,4 @@ function ConsoleSkeleton() {
       <Skeleton className="h-32 rounded-sm" />
     </div>
   )
-}
-
-function Problem({
-  title,
-  detail,
-  onRetry,
-  inline = false,
-}: {
-  title: string
-  detail: string | null
-  onRetry: () => void
-  inline?: boolean
-}) {
-  const body = (
-    <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-problem>
-      <p className="text-[12px] font-bold">{title}</p>
-      {detail && <p className="text-[11px] font-medium text-n-3">{detail}</p>}
-      <Button variant="stroke" size="sm" onClick={onRetry}>
-        <Icon name="reset" size={13} /> Retry
-      </Button>
-    </div>
-  )
-  return inline ? body : <Card className="border-0 p-0">{body}</Card>
 }

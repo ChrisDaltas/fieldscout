@@ -89,6 +89,7 @@ export const NOTHING_NEEDS_YOU_COPY =
 export const NOTHING_NEEDS_YOU_PRE_DRAFT_COPY = 'Nothing needs you right now — every seat has a manager.'
 export const NOTHING_NEEDS_YOU_COMPLETE_COPY = 'The season is over, and nothing needs you.'
 export const NEEDS_PROBLEM_COPY = 'Couldn’t check what needs you.'
+export const NEEDS_STALE_COPY = 'This list isn’t refreshing — showing the last check.'
 
 export const CORRECTIONS_TITLE = 'Correcting scores'
 export const CORRECTIONS_HINT =
@@ -117,6 +118,9 @@ export interface ConsoleDoor {
    *  split (`useRoomEntryTarget` — a new tab on a measured desktop), like
    *  every other entry into the room (room-entry.test.ts). */
   room?: true
+  /** A screen he can LOOK at in this state but not act on (R1372): the
+   *  door does not turn override mode on and carries no action copy. */
+  view?: true
 }
 
 /** The draft room — the console's ONE spelling of its URL (room-entry.test.ts
@@ -388,10 +392,37 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
 
   if (!afterDraft(phase)) return [settings]
 
-  const scheduleDoors: ConsoleDoor[] = [{ label: 'Schedule', href: `${base}/schedule` }]
-  if (phase === 'playoffs' || phase === 'complete') {
-    scheduleDoors.push({ label: 'Playoff bracket', href: `${base}/standings?tab=playoffs` })
+  // R1372 — every group says only what its screen accepts IN THIS STATE
+  // (D446). Measured over the chain heads: a lineup (165:261 / 170), an add /
+  // drop / move (170:1407), a score or result (135) and a trade (156:299) are
+  // accepted only in_season / playoffs; a schedule edit or remix (130:382 /
+  // 131) only in_season; a bracket hand-pick (134:299) only in playoffs.
+  if (phase === 'complete') {
+    return [
+      {
+        key: 'schedule',
+        title: 'Schedule & playoffs',
+        blurb: 'The season is over — look back at the schedule and the playoff bracket.',
+        doors: [
+          { label: 'Schedule', href: `${base}/schedule`, view: true },
+          { label: 'Playoff bracket', href: `${base}/standings?tab=playoffs`, view: true },
+        ],
+        teamDoors: false,
+        note: null,
+      },
+      { ...settings, blurb: 'The league’s settings.' },
+    ]
   }
+
+  const inSeason = phase === 'in_season'
+  const scheduleDoors: ConsoleDoor[] = inSeason
+    ? [{ label: 'Schedule', href: `${base}/schedule` }]
+    : [
+        // In the playoffs the regular season's pairings are settled (130 edits
+        // them only in_season) — the schedule is a view; the bracket acts.
+        { label: 'Playoff bracket', href: `${base}/standings?tab=playoffs` },
+        { label: 'Schedule', href: `${base}/schedule`, view: true },
+      ]
   return [
     {
       key: 'lineups',
@@ -420,7 +451,9 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
     {
       key: 'schedule',
       title: 'Schedule & playoffs',
-      blurb: phase === 'in_season' ? 'Change a week’s matchups or remix the rest of the schedule.' : 'Change a week’s matchups, or pick who plays whom in a playoff round.',
+      blurb: inSeason
+        ? 'Change a week’s matchups or remix the rest of the schedule.'
+        : 'Pick who plays whom in a playoff round. The regular-season schedule is settled — you can still look at it.',
       doors: scheduleDoors,
       teamDoors: false,
       note: null,

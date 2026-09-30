@@ -93,6 +93,12 @@ export function MatchupOverrideTools({
   // §10.4 (L.E1.33): a winner is declared only after the before → after
   // confirmation — the side waiting for his yes, or null.
   const [confirming, setConfirming] = useState<'home' | 'away' | null>(null)
+  // R1377: a pending confirmation does not outlive the state it was asked
+  // in — leaving override mode, or the server no longer saying the matchup
+  // is editable, drops it (React's adjust-state-during-render pattern), so
+  // re-entering never resurfaces a stale "yes".
+  const confirmable = overrideMode && lock.kind === 'open'
+  if (confirming !== null && !confirmable) setConfirming(null)
   // R1064: what he TYPED, or null while a field is untouched — an untouched
   // field follows the stored score through live-scoring ticks; typed text is
   // never overwritten (`shownScoreDraft`).
@@ -132,7 +138,7 @@ export function MatchupOverrideTools({
             score.submit({ matchupId: row.id, week: row.week, homeScore: gate.home, awayScore: gate.away })
           }}
           stored={{ home_score: row.home_score, away_score: row.away_score, result: row.result }}
-          confirming={confirming}
+          confirming={confirmable ? confirming : null}
           onDeclareWinner={(side) => {
             if (pending) return
             setConfirming(side)
@@ -142,7 +148,7 @@ export function MatchupOverrideTools({
             const side = confirming
             const winnerTeamId = side === 'home' ? row.home_team_id : side === 'away' ? row.away_team_id : null
             setConfirming(null)
-            if (!winnerTeamId || pending) return
+            if (!winnerTeamId || pending || !confirmable) return
             score.reset()
             setLast('result')
             result.submit({ matchupId: row.id, week: row.week, winnerTeamId })

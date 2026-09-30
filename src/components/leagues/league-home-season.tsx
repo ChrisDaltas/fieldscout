@@ -786,7 +786,9 @@ function EmptyCard({
   )
 }
 
-function InlineProblem({
+/** Exported for the Commissioner Console's second mount (L.E1.33 R1374 —
+ *  one error-with-retry block, not a copy). */
+export function InlineProblem({
   title,
   detail,
   onRetry,

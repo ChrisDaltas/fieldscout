@@ -33,6 +33,7 @@ import {
   FAAB_NOTE,
   MEMBERS_AFTER_DRAFT_NOTE,
   NEEDS_PROBLEM_COPY,
+  NEEDS_STALE_COPY,
   NOTHING_NEEDS_YOU_COMPLETE_COPY,
   NOTHING_NEEDS_YOU_COPY,
   NOTHING_NEEDS_YOU_PRE_DRAFT_COPY,
@@ -410,13 +411,20 @@ describe('pre-draft — the draft tools and members lead', () => {
 })
 
 describe('playoffs and complete', () => {
-  it('playoffs: the bracket joins the schedule group', () => {
+  it('playoffs: the bracket door ACTS (override on); the schedule is a view — no "change a week’s matchups" (R1372: 130 edits only in_season)', () => {
     const html = renderConsole({ detail: detailWith('playoffs') })
     expect(html).toContain('data-commish-console="playoffs"')
-    expect(block(html, 'data-commish-tools-groups')).toContain(`href="${BASE}/standings?tab=playoffs"`)
+    const group = block(html, 'data-tool-group="schedule"')
+    const schedule = group.slice(0, group.indexOf('</section>'))
+    expect(schedule).toMatch(new RegExp(`data-override-door="on"[^>]*href="${BASE}/standings\\?tab=playoffs"`))
+    expect(schedule).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/schedule"`))
+    expect(schedule).not.toContain('Change a week')
+    expect(schedule).not.toContain('remix')
+    // Lineups, rosters, scores and trades are still accepted in the playoffs (165 / 170 / 135 / 156).
+    expect(toolGroupKeys(html)).toEqual(['lineups', 'scores', 'trades', 'schedule', 'settings', 'members'])
   })
 
-  it('complete: a seat without a manager no longer needs him; the season-over copy; the doors stay', () => {
+  it('complete (R1372): the season is over — only screens that act now, and views without action copy; nothing he’d be refused', () => {
     const html = renderConsole({
       detail: detailWith('complete'),
       summary: summaryWith({ trades_awaiting_review: EMPTY_SECTIONS.trades_awaiting_review, matchup_corrections: EMPTY_SECTIONS.matchup_corrections }, 'complete'),
@@ -424,7 +432,18 @@ describe('playoffs and complete', () => {
     expect(html).toContain('data-commish-console="complete"')
     expect(html).not.toContain('data-needs-items')
     expect(html).toContain(NOTHING_NEEDS_YOU_COMPLETE_COPY)
-    expect(toolGroupKeys(html)).toEqual(['lineups', 'scores', 'trades', 'schedule', 'settings', 'members'])
+    expect(toolGroupKeys(html)).toEqual(['schedule', 'settings'])
+    const tools = block(html, 'data-commish-tools-groups')
+    expect(tools).toContain('The season is over')
+    // Lineups / rosters (165 / 170), scores (135), trades (156), schedule edits (130) and
+    // bracket picks (134) are all refused once the league is complete — no door, no "you can".
+    for (const gone of ['/team/', '/matchup', '/trades', 'Set any team', 'Correct a matchup', 'Approve or veto', 'Change a week', 'Pick who plays']) {
+      expect(tools, gone).not.toContain(gone)
+    }
+    // The schedule and the bracket are views: they do not switch override mode on.
+    expect(tools).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/schedule"`))
+    expect(tools).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/standings\\?tab=playoffs"`))
+    expect(tools).toMatch(new RegExp(`data-override-door="on"[^>]*href="${BASE}/settings"`))
   })
 })
 
@@ -478,6 +497,9 @@ describe('loading and error', () => {
     expect(html).toContain('data-commish-console="error"')
     expect(html).toContain('Couldn’t load this league.')
     expect(html).toContain('Retry')
+    // R1374: the team page's ProblemCard — with its way back to the league.
+    expect(html).toContain(`href="${BASE}"`)
+    expect(html).toContain('Back to league')
   })
 
   it('the needs-you read failed: its error with retry — never "nothing needs you"; the tools still open', () => {
@@ -491,7 +513,9 @@ describe('loading and error', () => {
 
   it('degraded: a failed refetch keeps the last good list under the stale banner', () => {
     const html = renderConsole({ summary: 'degraded' })
-    expect(html).toContain('isn\'t refreshing')
+    expect(html).toContain(NEEDS_STALE_COPY)
+    // R1375: the stale banner carries its own re-read.
+    expect(block(html, 'data-needs-stale')).toContain('data-needs-stale-retry')
     expect(html).toContain('Delta has no manager, and autopilot is off.')
   })
 })

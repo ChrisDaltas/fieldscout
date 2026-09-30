@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
-import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import { LeagueActionError, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { CommishSummary } from '@/lib/leagues/api/commish-summary-service'
 
 import { commishLogKeys } from './use-commish-log'
@@ -27,7 +27,8 @@ import { commishLogKeys } from './use-commish-log'
  *
  * Games finish, managers accept trades and seats empty on their own clock,
  * so the read also re-polls once a minute — until it is refused (a 403 is
- * an answer, not a blip: no retry, and the poll stops, R1363). `enabled`
+ * an answer, not a blip: no retry, and the poll stops, R1363; any other
+ * failure keeps polling, R1375). `enabled`
  * lets the console mount it for commissioners only. Reads only.
  */
 export const commishSummaryKeys = {
@@ -37,11 +38,13 @@ export const commishSummaryKeys = {
 /** How often the list re-reads itself (the matchup lock's cadence). */
 export const COMMISH_SUMMARY_REPOLL_MS = 60_000
 
-/** Poll each minute while the read answers; stop once it has been refused
- *  (a manager's 403 will not turn into a yes by asking again). Exported for
- *  its pin. */
+/** Poll each minute; stop only once the read has been REFUSED (a 403 — a
+ *  manager's answer will not turn into a yes by asking again). Any other
+ *  failure — a network blip, a 500 — keeps polling, so the console's stale
+ *  list heals on its own (R1375). Exported for its pin. */
 export function commishSummaryRefetchInterval(query: { state: { error: unknown } }): number | false {
-  return query.state.error ? false : COMMISH_SUMMARY_REPOLL_MS
+  const error = query.state.error
+  return error instanceof LeagueActionError && error.status === 403 ? false : COMMISH_SUMMARY_REPOLL_MS
 }
 
 export function useCommishSummary(leagueId: string | undefined, enabled = true) {
