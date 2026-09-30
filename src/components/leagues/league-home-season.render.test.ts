@@ -166,9 +166,9 @@ const LINEUP: TeamLineupRow = {
 const FEED: ActivityFeed = {
   items: [
     { kind: 'transaction', id: 'tx1', created_at: '2099-09-10T12:00:00Z', type: 'add_drop', status: 'complete', week: 2, team_id: T1, actor_id: 'user-commish', action_id: 'a1', payload: { add: { name: 'Nine', player_id: 'p9', position: 'WR', nfl_team: 'AAA' }, drop: null } },
-    { kind: 'system', id: 'c1', created_at: '2099-09-11T12:00:00Z', context: 'league', message: 'Schedule remixed by the commissioner.', actor_id: 'user-commish' },
+    { kind: 'system', id: 'c1', created_at: '2099-09-11T12:00:00Z', context: 'league', message: 'Schedule remixed by the commissioner.', actor_id: 'user-commish', topic: null, week: null },
     // R895: a week worker's notice — `user_id NULL` (116→118 `finalize_matchups`).
-    { kind: 'system', id: 'c2', created_at: '2099-09-12T12:00:00Z', context: 'league', message: 'Week 2 finalized with a postponed game.', actor_id: null },
+    { kind: 'system', id: 'c2', created_at: '2099-09-12T12:00:00Z', context: 'league', message: 'Week 2 finalized with a postponed game.', actor_id: null, topic: null, week: null },
   ],
   limit: 8,
   has_more: false,

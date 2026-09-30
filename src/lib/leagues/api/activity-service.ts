@@ -155,6 +155,49 @@ export interface SystemActivityItem {
   context: string | null
   message: string
   actor_id: string | null
+  /** What the post is about, when the feed can say (M6 L.E2.3): a stat
+   *  correction's league post (172's door) is `'stat_correction'`; every
+   *  other post `null`. */
+  topic: SystemPostTopic | null
+  /** The NFL week a stat-correction post names; `null` for every other post. */
+  week: number | null
+}
+
+export type SystemPostTopic = 'stat_correction'
+
+/**
+ * M6 L.E2.3 — the stat-correction posts ARE feed items already (172's door
+ * writes ONE `league_chat` system post per re-score, `context = 'league'`, in
+ * the re-score's own transaction — D453(4)), so the feed reads them exactly
+ * as every other league post; what it adds is the TAG, so the Activity page
+ * can render and group a correction without matching copy itself.
+ *
+ * **Two markers, both required (R1349 — the spoofing finding).** (1) The
+ * door's literal prefix (`v_post := 'Stat correction (Week ' || p_week ||
+ * '): '`, 172 — `activity-service.test.ts` reads the migration and fails if
+ * the two ever part). (2) **No actor**: the door writes `user_id = NULL`.
+ * The prefix alone is not enough — a manager can name his team "Stat
+ * correction (Week 3): …", and every commissioner post that OPENS with a
+ * team name (the rename 170:2423, FAAB 147:293, autopilot 139:439, the
+ * retire 169:1052) would then carry the prefix; every one of those writes
+ * the acting commissioner (`auth.uid()`), never NULL. A member cannot write
+ * a system post at all (065's policy: `is_system = FALSE`, `user_id =
+ * auth.uid()`), and the other actor-less league posts (116 / 117 / 118
+ * "Week N was finalized…", 151 / 153 / 156 "Trade completed:", 155 "Trade
+ * vetoed…", 161 "Week N was re-scored:") open with fixed literals.
+ * (Considered and not used: matching the post's `created_at` to a record's
+ * `recorded_at` — the same transaction's now() — costs a second read per
+ * page and couples the feed to 172's table on a pre-push database.)
+ */
+export const STAT_CORRECTION_POST_PREFIX = 'Stat correction (Week '
+const STAT_CORRECTION_POST = /^Stat correction \(Week (\d+)\): /
+
+/** Pure: the week a post names when it is the scoring door's correction post
+ *  — the prefix AND no actor (R1349); `null` for every other post. */
+export function statCorrectionPostWeek(message: string, actorId: string | null): number | null {
+  if (actorId !== null) return null
+  const match = STAT_CORRECTION_POST.exec(message)
+  return match ? Number(match[1]) : null
 }
 
 export type ActivityItem = TransactionActivityItem | SystemActivityItem
@@ -319,14 +362,19 @@ export async function readActivity(
     if (error) {
       return { status: 500, body: { error: error.message } }
     }
-    systemPosts = (data ?? []).map((row) => ({
-      kind: 'system',
-      id: row.id,
-      created_at: row.created_at,
-      context: row.context,
-      message: row.message,
-      actor_id: row.user_id,
-    }))
+    systemPosts = (data ?? []).map((row) => {
+      const correctionWeek = statCorrectionPostWeek(row.message, row.user_id)
+      return {
+        kind: 'system',
+        id: row.id,
+        created_at: row.created_at,
+        context: row.context,
+        message: row.message,
+        actor_id: row.user_id,
+        topic: correctionWeek === null ? null : 'stat_correction',
+        week: correctionWeek,
+      }
+    })
   }
 
   return {
