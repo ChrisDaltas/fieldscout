@@ -32,7 +32,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(111);
+select plan(115);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -66,8 +66,8 @@ select is(
                             has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and (p.proname like 'trade%' or p.proname = 'broadcast_trade_change')),
-  'broadcast_trade_change:t:search_path="":f:f trade_broadcast_payload:f:search_path="":f:f trade_check_internal:f:search_path="":f:f trade_close_internal:f:search_path="":f:f trade_deadline:t:search_path="":f:t trade_deadline_internal:f:search_path="":f:f trade_deadline_read_internal:f:search_path="":f:f trade_deadline_view_internal:f:search_path="":f:f trade_execute_internal:f:search_path="":f:f trade_invalidate_on_roster_change:t:search_path="":f:f trade_lock_internal:f:search_path="":f:f trade_notify_team_internal:f:search_path="":f:f trade_preview:t:search_path="":f:t trade_preview_internal:f:search_path="":f:f trade_propose:t:search_path="":f:t trade_propose_core_internal:f:search_path="":f:f trade_propose_internal:f:search_path="":f:f trade_receipt_internal:f:search_path="":f:f trade_rescind_on_stint_close:t:search_path="":f:f trade_respond:t:search_path="":f:t trade_respond_internal:f:search_path="":f:f trade_summary_internal:f:search_path="":f:f trade_tick:f:search_path="":f:f trade_view_internal:f:search_path="":f:f trade_vote:t:search_path="":f:t trade_vote_internal:f:search_path="":f:f trade_vote_tally:t:search_path="":f:t trade_vote_tally_internal:f:search_path="":f:f trade_vote_veto_internal:f:search_path="":f:f trade_vote_view_internal:f:search_path="":f:f',
-  'A6 thirty functions (148''s thirteen + 151''s six + 155''s six + 162''s five — re-cut by L.D3.3, L.D3.4 and L.D3.12), one overload each: six DEFINER doors (authenticated EXECUTE, the in-body gate authorizes), three DEFINER trigger functions and twenty-one PLAIN internals REVOKEd from anon and authenticated; all search_path empty');
+  'broadcast_trade_change:t:search_path="":f:f trade_broadcast_payload:f:search_path="":f:f trade_check_internal:f:search_path="":f:f trade_close_internal:f:search_path="":f:f trade_deadline:t:search_path="":f:t trade_deadline_internal:f:search_path="":f:f trade_deadline_read_internal:f:search_path="":f:f trade_deadline_view_internal:f:search_path="":f:f trade_execute_internal:f:search_path="":f:f trade_invalidate_on_roster_change:t:search_path="":f:f trade_lock_internal:f:search_path="":f:f trade_notify_team_internal:f:search_path="":f:f trade_preview:t:search_path="":f:t trade_preview_internal:f:search_path="":f:f trade_propose:t:search_path="":f:t trade_propose_core_internal:f:search_path="":f:f trade_propose_internal:f:search_path="":f:f trade_rescind_on_stint_close:t:search_path="":f:f trade_respond:t:search_path="":f:t trade_respond_internal:f:search_path="":f:f trade_summary_internal:f:search_path="":f:f trade_tick:f:search_path="":f:f trade_view_internal:f:search_path="":f:f trade_vote:t:search_path="":f:t trade_vote_internal:f:search_path="":f:f trade_vote_tally:t:search_path="":f:t trade_vote_tally_internal:f:search_path="":f:f trade_vote_veto_internal:f:search_path="":f:f trade_vote_view_internal:f:search_path="":f:f',
+  'A6 twenty-nine functions (148 thirteen + 151 six + 155 six + 162 five, less trade_receipt_internal dropped by 174 — re-cut by L.D3.3, L.D3.4, L.D3.12 and L.D3.16), one overload each: six DEFINER doors (authenticated EXECUTE, the in-body gate authorizes), three DEFINER trigger functions and twenty PLAIN internals REVOKEd from anon and authenticated; all search_path empty');
 select ok(
   not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -541,59 +541,92 @@ select is(
   'E21 no manager answer wrote an audit row');
 
 -- ---------------------------------------------------------------------------
--- F. The commissioner arm (TD5) — either side, one audit row each
+-- F. NO commissioner arm (re-cut by 174, L.D3.16 — Chris 2026-09-30: "A
+--    commissioner cannot do anything to a trade unless it's already been
+--    accepted and the only option is veto or instantly push it through.").
+--    148 / 151's TD5 arm let him propose and answer FOR any team, one audit
+--    row each (the old F1–F10); now a commissioner who is not that team's
+--    manager is refused BY NAME and nothing is written, and as his own
+--    team's manager he is bound like anyone. F1 (d1 for e1, to TR Echo) is
+--    now TR Delta's own offer, so it stays PROPOSED (nobody answers for
+--    another team) — G3 / G8 / G10 follow it. 174's fix round (R1410): an
+--    offer to the OPEN seat is refused BY NAME (F1b) — nobody could answer
+--    it — so F1 goes to a managed team (it was d1 for o1, to the open seat).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
--- F1: the commissioner proposes FOR TR Delta, to the OPEN seat
-insert into r96 select 'F1', public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000005',
-  '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-o1", "from_team_id": "c9600000-0000-4000-8000-000000000005"}]', null, null, 'a9600000-0000-4000-8000-000000000301', 'manager away');
--- F2: …and accepts it FOR the open seat
-insert into r96 select 'F2', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('F1'), 'accept', null, null, null, 'a9600000-0000-4000-8000-000000000302');
 select throws_ok(
-  $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
-       '[{"player_id": "tr-b3", "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000303') $$,
-  'P0001', 'trade_propose: TR B Three (tr-b3) is on TR Bravo''s roster, not TR Alpha''s — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)',
-  'F3 the commissioner is BOUND by exclusivity (standing rule (i)) — refused by name like anyone');
--- F4: the CO-commissioner cancels TR Bravo''s counter (E15) for TR Bravo (the proposer)
+  $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000005',
+       '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-o1", "from_team_id": "c9600000-0000-4000-8000-000000000005"}]', null, null, 'a9600000-0000-4000-8000-000000000301', 'manager away') $$,
+  'P0001', 'trade_propose: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only a team''s own manager offers a trade for it (§13.3)',
+  'F1 RE-CUT (174): the commissioner proposing FOR TR Delta is refused BY NAME, not a no-leak 42501 (he is a member)');
+-- F1b (174's fix round, R1410): TR Delta's OWN manager offering to the OPEN
+-- seat is refused by name — nobody could answer it
+select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
+select throws_ok(
+  $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000005',
+       '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-o1", "from_team_id": "c9600000-0000-4000-8000-000000000005"}]', null, null, 'a9600000-0000-4000-8000-000000000307') $$,
+  'P0001', 'trade_propose: TR Open has no manager to answer a trade right now — only a team''s own manager accepts or turns down an offer (§13.3)',
+  'F1b RE-CUT (174 fix round, R1410): an offer to the OPEN seat is refused BY NAME — nobody could answer it');
+-- F1 (the offer itself): TR Delta's OWN manager makes it, to TR Echo
+insert into r96 select 'F1', public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000008',
+  '[{"player_id": "tr-d1", "from_team_id": "c9600000-0000-4000-8000-000000000007"}, {"player_id": "tr-e1", "from_team_id": "c9600000-0000-4000-8000-000000000008"}]', null, null, 'a9600000-0000-4000-8000-000000000305');
+select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
+select throws_ok(
+  format($$ select public.trade_respond('b9600000-0000-4000-8000-000000000001', '%s', 'accept', null, null, null, 'a9600000-0000-4000-8000-000000000302') $$, pg_temp.tid('F1')),
+  'P0001', 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)',
+  'F2 RE-CUT (174): accepting it FOR TR Echo is refused BY NAME too — the offer stays with the two teams');
+select throws_ok(
+  $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000004',
+       '[{"player_id": "tr-b3", "from_team_id": "c9600000-0000-4000-8000-000000000001"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000303') $$,
+  'P0001', 'trade_propose: TR B Three (tr-b3) is on TR Bravo''s roster, not TR Commish''s — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)',
+  'F3 RE-CUT (174): as the manager of HIS OWN team the commissioner is BOUND by exclusivity (standing rule (i)) — refused by name like anyone');
+-- F4: the CO-commissioner (TR CoCommish, not in E15) tries to cancel TR Bravo's counter FOR TR Bravo
 select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
-insert into r96 select 'F4', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('E15'), 'cancel', null, null, null, 'a9600000-0000-4000-8000-000000000304');
+select throws_ok(
+  format($$ select public.trade_respond('b9600000-0000-4000-8000-000000000001', '%s', 'cancel', null, null, null, 'a9600000-0000-4000-8000-000000000304') $$, pg_temp.tid('E15')),
+  'P0001', 'trade_respond: A commissioner acts on a trade only after it''s accepted: veto it or push it through. Only the two teams in this trade answer the offer (§13.3)',
+  'F4 RE-CUT (174): the CO-commissioner calling off a trade FOR its proposer is refused BY NAME');
+-- …and TR Bravo's OWN manager calls it off
+select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000004", "role": "authenticated"}', true);
+insert into r96 select 'F4', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('E15'), 'cancel', null, null, null, 'a9600000-0000-4000-8000-000000000306');
 reset role;
 select set_config('request.jwt.claims', '', true);
 
 select is(
-  (select string_agg(format('%s|%s|%s|%s|%s', a.action_type, a.target_type, a.acting_as_team_id, coalesce(a.reason, 'null'), a.actor_id), ' ' order by a.action_type)
-   from commissioner_actions a where a.league_id = 'b9600000-0000-4000-8000-000000000001'),
-  'accept_trade|trade|c9600000-0000-4000-8000-000000000005|null|99600000-0000-4000-8000-000000000001 cancel_trade|trade|c9600000-0000-4000-8000-000000000004|null|99600000-0000-4000-8000-000000000002 propose_trade|trade|c9600000-0000-4000-8000-000000000007|manager away|99600000-0000-4000-8000-000000000001',
-  'F5 exactly THREE audit rows — one per commissioner act, each acting as the side he moved for, the reason kept when given');
+  (select count(*)::int from commissioner_actions where league_id = 'b9600000-0000-4000-8000-000000000001') - (select n from audit0),
+  0,
+  'F5 RE-CUT (174): ZERO audit rows — the refused acts wrote nothing, and the own offer or call-off of a manager is not a commissioner action');
 select is(
-  (select count(*)::int from league_chat where league_id = 'b9600000-0000-4000-8000-000000000001' and is_system
-     and message = 'tr_user1 (commissioner) proposed a trade for TR Delta: TR Delta gives TR D One; TR Open gives TR O One — reason: manager away'),
-  1,
-  'F6 the non-disableable system post names the act, the team and the deal (§10.3)');
+  (select count(*)::int from league_chat where league_id = 'b9600000-0000-4000-8000-000000000001' and is_system and message like '%(commissioner)%'),
+  0,
+  'F6 RE-CUT (174): no commissioner system post in the league');
 select is(
-  (select format('%s|%s|%s', r ->> 'acted_as_commissioner', r ->> 'notified_user_ids', (select status from trades where id = pg_temp.tid('F1')))
-   from r96 where tag = 'F2'),
-  'true|["99600000-0000-4000-8000-000000000006"]|in_review',
-  'F7 the commissioner''s accept for the OPEN seat: accepted (in review — §13.3), and TR Delta''s manager is told');
+  (select format('%s|%s|%s|%s', r ->> 'acted_as_commissioner', coalesce(r ->> 'commissioner_action_id', 'null'), r ->> 'notified_user_ids',
+                 (select status from trades where id = pg_temp.tid('F1')))
+   from r96 where tag = 'F1'),
+  'false|null|["99600000-0000-4000-8000-000000000007"]|proposed',
+  'F7 RE-CUT (174): the own offer of TR Delta to TR Echo: no receipt, the manager of TR Echo told, and it waits PROPOSED');
 select is(
-  (select string_agg(n.type, ',' order by n.type) from notifications n where n.user_id = '99600000-0000-4000-8000-000000000006' and n.type like 'league_trade%'),
-  'league_trade_accepted,league_trade_commissioner',
-  'F8 TR Delta''s manager: told the commissioner proposed for his team, and that it was accepted');
+  (select count(*)::int from notifications n where n.user_id = '99600000-0000-4000-8000-000000000006' and n.type like 'league_trade%'),
+  0,
+  'F8 RE-CUT (174): the manager of TR Delta is told nothing — nobody acted for his team');
 select is(
   (select format('%s|%s|%s', t.status, t.status_reason, t.resolved_by) from trades t where t.id = pg_temp.tid('E15')),
-  'cancelled|cancelled by TR Bravo|99600000-0000-4000-8000-000000000002',
-  'F9 the CO-commissioner cancels for the proposer: cancelled, recorded as him');
+  'cancelled|cancelled by TR Bravo|99600000-0000-4000-8000-000000000004',
+  'F9 RE-CUT (174): the counter is called off by the own manager of TR Bravo, recorded as him');
 select is(
-  (select count(*)::int from notifications where user_id = '99600000-0000-4000-8000-000000000004' and type = 'league_trade_commissioner'),
-  1,
-  'F10 …and TR Bravo''s manager is told the commissioner acted for his team');
+  (select count(*)::int from notifications where type = 'league_trade_commissioner'
+     and user_id in (select user_id from league_members where league_id = 'b9600000-0000-4000-8000-000000000001')),
+  0,
+  'F10 RE-CUT (174): no league_trade_commissioner notification anywhere in the league');
 
 -- ---------------------------------------------------------------------------
 -- G. E37 — a trade in flight goes invalid the moment one of its players
 --    leaves the team it takes him from; every roster writer; both told.
 --    In flight now: P3 (accepted; a1 a2 ↔ b1, TR Bravo drops b3), F1
---    (accepted; d1 ↔ o1). New for this section: G0a (a3 ↔ b2, proposed),
+--    (proposed since 174 — no one answers for TR Echo; d1 ↔ e1). New
+--    for this section: G0a (a3 ↔ b2, proposed),
 --    G0b (e1 ↔ d1, proposed by TR Echo).
 -- ---------------------------------------------------------------------------
 set local role authenticated;
@@ -619,7 +652,7 @@ select is(
 select is(
   (select format('%s|%s|%s', (select status from trades where id = pg_temp.tid('G0a')), (select status from trades where id = pg_temp.tid('F1')),
                  (select status from trades where id = pg_temp.tid('G0b')))),
-  'proposed|in_review|proposed',
+  'proposed|proposed|proposed',   -- F1 proposed since 174 (was in_review)
   'G3 …and ONLY that one: trades not naming b3 are untouched');
 select is(
   (select string_agg(n.user_id::text, ',' order by n.user_id) from notifications n
@@ -648,7 +681,7 @@ update league_rosters set team_id = 'c9600000-0000-4000-8000-000000000005' where
 select set_config('app.executing_trade_id', '', true);
 select is(
   (select format('%s|%s', (select status from trades where id = pg_temp.tid('F1')), (select status from trades where id = pg_temp.tid('G0b')))),
-  'in_review|invalid',
+  'proposed|invalid',   -- F1 proposed since 174 (was in_review)
   'G8 the EXECUTING trade (app.executing_trade_id) is exempt from its own moves; another trade naming d1 from TR Delta still goes invalid');
 -- G9: an UPDATE that keeps the team (a slot change) invalidates nothing
 create temp table g9_before as select id, status from trades;
@@ -657,8 +690,8 @@ select set_eq($$ select id, status from trades $$, $$ select id, status from g9_
   'G9 a roster UPDATE that leaves team_id alone (a slot change) touches NO trade');
 select is(
   (select string_agg(status, ',' order by status) from trades where league_id = 'b9600000-0000-4000-8000-000000000001'),
-  'cancelled,cancelled,in_review,invalid,invalid,invalid,rejected,rejected',
-  'G10 the ledger of outcomes: three invalid (one per E37 event), one still in review, the manual closures untouched');
+  'cancelled,cancelled,invalid,invalid,invalid,proposed,rejected,rejected',   -- F1 proposed since 174 (was in_review)
+  'G10 the ledger of outcomes: three invalid (one per E37 event), one still proposed (F1, re-cut by 174 — was in review), the manual closures untouched');
 
 -- ---------------------------------------------------------------------------
 -- H. PER ROLE — who reads a trade; nobody writes one directly
@@ -740,7 +773,7 @@ select is(
   'J1 trade_view_internal lists every leg');
 select is(
   public.trade_summary_internal(pg_temp.tid('F1')),
-  'TR Delta gives TR D One; TR Open gives TR O One',
+  'TR Delta gives TR D One; TR Echo gives TR E One',
   'J2 trade_summary_internal names each side in order (proposer first)');
 
 select * from finish();

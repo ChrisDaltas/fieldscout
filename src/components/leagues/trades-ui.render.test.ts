@@ -18,7 +18,7 @@ import type { CommishTradeResult, TradePreview } from '@/lib/leagues/api/trades-
 
 import { CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
 import { TradeBuilderView, type TradeBuilderViewProps } from './trade-builder'
-import { plainRefusal } from './trades-ops'
+import { NO_TRADE_PARTNER_COPY, noManagerCopy, plainRefusal } from './trades-ops'
 import {
   NEVER_WHO_VOTED_COPY,
   TRADES_ERROR_TITLE,
@@ -38,7 +38,7 @@ function render(element: React.ReactElement): string {
 }
 const noop = () => {}
 const fmt = (iso: string) => `[${iso}]`
-const bravoManager = { teamId: BRAVO, isCommissioner: false, overrideMode: false }
+const bravoManager = { teamId: BRAVO, isCommissioner: false, overrideMode: false, inSeason: true }
 /** The league's answer as a stub (L.D3.12): before 162 is pushed the check is
  *  `unavailable`, and every D419 cell below renders exactly as it did. */
 const beforePush: UseTradePreview = () => ({ state: 'unavailable', reason: 'not pushed' })
@@ -103,7 +103,6 @@ function builder(over: Partial<TradeBuilderViewProps> = {}): string {
       mode: 'propose',
       teams: TEAMS,
       fromTeamId: ALPHA,
-      fromChoices: null,
       initial: { toTeamId: BRAVO, get: ['p-b1'] },
       allowFaab: false,
       lockBehavior: 'defer',
@@ -192,10 +191,10 @@ describe('trade card — an offer', () => {
     expect(html).toContain('Waiting for Bravo to answer.')
   })
   it('the proposer: Call off offer only', () => {
-    expect(ops(card({ viewer: { teamId: ALPHA, isCommissioner: false, overrideMode: false } }))).toEqual(['cancel'])
+    expect(ops(card({ viewer: { teamId: ALPHA, isCommissioner: false, overrideMode: false, inSeason: true } }))).toEqual(['cancel'])
   })
   it('a bystander: no buttons', () => {
-    expect(ops(card({ viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false } }))).toEqual([])
+    expect(ops(card({ viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false, inSeason: true } }))).toEqual([])
   })
   it('the server’s refusal renders VERBATIM on the card', () => {
     const refusal = 'only the team that received a trade can accept it — you proposed this one, so cancel it instead'
@@ -216,18 +215,31 @@ describe('trade card — an offer', () => {
     expect(picker).toContain('data-trade-pick="p-b3"')
     expect(html).toContain('data-accept-with-drops')
   })
-  it('the commissioner in override mode answers for the receiving team — the Accept says for whom — and may force', () => {
-    const html = card({ viewer: { teamId: null, isCommissioner: true, overrideMode: true } })
-    expect(html).toContain('Accept for Bravo')
-    expect(ops(html)).toEqual(['accept', 'accept-drops', 'counter', 'reject', 'cancel', 'force'])
-    expect(html).toContain('data-trade-override')
+  it('174 fix round 2 (R1413): an offer FROM a team with no manager — the receiving manager can accept or turn it down, but there is no Counter', () => {
+    const unmanaged = (teamId: string) => {
+      const t = TEAMS.find((x) => x.team_id === teamId) ?? null
+      return t && t.team_id === ALPHA ? { ...t, manager_user_id: null } : t
+    }
+    expect(ops(card({ rosterOf: unmanaged }))).toEqual(['accept', 'accept-drops', 'reject'])
+    // The rosters not read yet: no Counter either (unknown counts as no).
+    expect(ops(card({ rosterOf: () => null }))).not.toContain('counter')
+  })
+  it('174 fix round 2 (R1414): outside in_season / playoffs the receiving manager sees only Turn down, the proposer Call off', () => {
+    expect(ops(card({ viewer: { teamId: BRAVO, isCommissioner: false, overrideMode: false, inSeason: false } }))).toEqual(['reject'])
+    expect(ops(card({ viewer: { teamId: ALPHA, isCommissioner: false, overrideMode: false, inSeason: false } }))).toEqual(['cancel'])
+  })
+  it('an offer is the two teams own: the commissioner, override mode on, has no button on it — no answering for a team, no force (174 / D463)', () => {
+    const html = card({ viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } })
+    expect(ops(html)).toEqual([])
+    expect(html).not.toContain('Accept for')
+    expect(html).not.toContain('data-trade-override')
   })
 })
 
 describe('trade card — under review', () => {
   const commishReview = trade({ status: 'in_review', review: { mode: 'commissioner', ends_at: '2099-09-15T15:00:00.000Z', ms_remaining: 19 * 3_600_000 } })
   it('the countdown from the read (never a clock); the commissioner’s Approve / Veto without override mode', () => {
-    const html = card({ trade: commishReview, viewer: { teamId: null, isCommissioner: true, overrideMode: false } })
+    const html = card({ trade: commishReview, viewer: { teamId: null, isCommissioner: true, overrideMode: false, inSeason: true } })
     expect(html).toContain('Under review')
     expect(html).toContain('Goes through [2099-09-15T15:00:00.000Z] (about 19 hours left) unless the commissioner vetoes it.')
     expect(ops(html)).toEqual(['approve', 'veto'])
@@ -242,7 +254,7 @@ describe('trade card — under review', () => {
       review: { mode: 'league_vote', ends_at: '2099-09-15T15:00:00.000Z', ms_remaining: 3_600_000 },
       tally: tally({ veto_votes: 2, eligible_voters: 3, setting: 5, veto_number: 3, capped: true }),
     })
-    const html = card({ trade: t, viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false } })
+    const html = card({ trade: t, viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false, inSeason: true } })
     expect(html).toContain('data-trade-tally="2/3"')
     expect(html).toContain('2 veto votes so far')
     expect(html).toContain('data-trade-tally-rule="capped"')
@@ -258,18 +270,25 @@ describe('trade card — under review', () => {
       review: { mode: 'league_vote', ends_at: '2099-09-15T15:00:00.000Z', ms_remaining: 60_000 },
       tally: tally({ closes_at: '2099-09-14T20:00:00.000Z', evaluated_at: '2099-09-14T20:00:00.000Z' }),
     })
-    expect(ops(card({ trade: t, viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false } }))).toEqual([])
+    expect(ops(card({ trade: t, viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false, inSeason: true } }))).toEqual([])
   })
   it('the voter’s own vote disables that button and is said', () => {
     const t = trade({ status: 'in_review', review: { mode: 'league_vote', ends_at: null, ms_remaining: null }, tally: tally({ my_vote: 'veto' }) })
-    const html = card({ trade: t, viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false } })
+    const html = card({ trade: t, viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false, inSeason: true } })
     expect(html).toContain('You voted to veto.')
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-trade-op="vote-veto"/)
   })
+  it('174 fix round 2 (R1414): outside in_season / playoffs the commissioner has no tool on a trade in review, override mode or not', () => {
+    for (const overrideMode of [false, true]) {
+      const html = card({ trade: commishReview, viewer: { teamId: null, isCommissioner: true, overrideMode, inSeason: false } })
+      expect(ops(html), `override ${overrideMode}`).toEqual([])
+      expect(html).not.toContain('data-trade-override')
+    }
+  })
   it('the commissioner overrides a league vote only in override mode', () => {
     const t = trade({ status: 'in_review', review: { mode: 'league_vote', ends_at: null, ms_remaining: null }, tally: tally({ can_vote: false, cannot_vote_because: 'no_team' }) })
-    expect(ops(card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: false } }))).toEqual([])
-    expect(ops(card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: true } }))).toEqual(['approve', 'veto', 'force'])
+    expect(ops(card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: false, inSeason: true } }))).toEqual([])
+    expect(ops(card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } }))).toEqual(['approve', 'veto', 'force'])
   })
 })
 
@@ -280,6 +299,11 @@ describe('trade card — waiting, closed, and the commissioner’s answer', () =
     expect(html).toContain('data-trade-deferred="2099-09-16T07:00:00.000Z"')
     expect(html).toContain('Goes through after the games · [2099-09-16T07:00:00.000Z]')
     expect(card({ trade: trade({ status: 'accepted', deferred: { until: null, ms_remaining: null } }) })).toContain('Goes through after this week’s last game')
+  })
+  it('174 fix round 2 (R1414): a trade waiting for the games carries Veto / Force in season, nothing once the league is out of season', () => {
+    const waiting = trade({ status: 'accepted', deferred: { until: null, ms_remaining: null } })
+    expect(ops(card({ trade: waiting, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } }))).toEqual(['veto', 'force'])
+    expect(ops(card({ trade: waiting, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: false } }))).toEqual([])
   })
   it('vetoed / invalid / expired carry their reason; no buttons for a manager', () => {
     const vetoed = card({ trade: trade({ status: 'vetoed', in_flight: false, status_reason: 'the commissioner vetoed it — lopsided' }) })
@@ -294,10 +318,12 @@ describe('trade card — waiting, closed, and the commissioner’s answer', () =
     expect(expired).toContain('Expired')
     expect(expired).toContain('The trade deadline passed before it was answered')
   })
-  it('a completed trade: the commissioner’s Reverse lives inside override mode; the 🔒 is not shown on history', () => {
+  it('a completed trade stands: no Reverse, even in override mode (174 — “Remove reverse”); the 🔒 is not shown on history', () => {
     const done = trade({ status: 'complete', in_flight: false, resolved_at: '2099-09-15T00:00:00.000Z' })
-    expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: false } }))).toEqual([])
-    expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: true } }))).toEqual(['reverse'])
+    expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: false, inSeason: true } }))).toEqual([])
+    expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } }))).toEqual([])
+    const expired = trade({ status: 'expired', in_flight: false })
+    expect(ops(card({ trade: expired, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } }))).toEqual([])
     expect(card({ trade: done, lockedIds: new Set(['p-a1']) })).not.toContain('data-lock')
   })
   it('F451: the commissioner’s answer in words — what he stood outside, named', () => {
@@ -308,16 +334,14 @@ describe('trade card — waiting, closed, and the commissioner’s answer', () =
   })
 })
 
-describe('§10.4 — force and reverse confirm with before → after', () => {
+describe('§10.4 — force confirms with before → after (the one confirmation since 174 removed reverse)', () => {
   it('force', () => {
-    const html = render(createElement(CommishConfirm, { trade: trade(), op: 'force', pending: false, onConfirm: noop, onCancel: noop }))
+    const html = render(createElement(CommishConfirm, { trade: trade({ status: 'in_review' }), pending: false, onConfirm: noop, onCancel: noop }))
+    expect(html).toContain('data-commish-confirm="force"')
     expect(html).toContain('Andy One: Alpha → Bravo')
     expect(html).toContain('Ben One: Bravo → Alpha')
     expect(html).toContain('data-commish-confirm-go')
-  })
-  it('reverse', () => {
-    const html = render(createElement(CommishConfirm, { trade: trade({ status: 'complete', in_flight: false }), op: 'reverse', pending: false, onConfirm: noop, onCancel: noop }))
-    expect(html).toContain('Andy One: Bravo → Alpha')
+    expect(html).toContain('Force it through')
   })
 })
 
@@ -375,9 +399,33 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     expect(html).toMatch(/data-trade-pick="p-a1" data-picked="true"/)
     expect(html).toContain('Send counter-offer')
   })
-  it('the commissioner in override mode picks the offering team', () => {
-    const html = builder({ fromChoices: TEAMS.map((t) => ({ id: t.team_id, name: t.name })) })
-    expect(html).toContain('Offering team (acting as commissioner)')
+  it('the offering team is fixed — the viewer’s own; there is no chooser to offer for another team (174 / D463)', () => {
+    const html = builder()
+    expect(html).toContain('data-trade-from="' + ALPHA + '"')
+    expect(html).not.toContain('acting as commissioner')
+  })
+  it('174 fix round (R1410): a deep link toward a team with NO manager opens with nobody picked and says why — no offer to it can be built', () => {
+    const teams = TEAMS.map((t) => (t.team_id === BRAVO ? { ...t, manager_user_id: null } : t))
+    const html = builder({ teams })
+    expect(html).toContain(`data-trade-no-manager="${BRAVO}"`)
+    expect(html).toContain(noManagerCopy('Bravo'))
+    expect(html).toContain('data-trade-to=""')
+    expect(html).not.toMatch(/data-trade-pick="p-b1" data-picked="true"/)
+    expect(html).toContain('Pick a team to see its roster.')
+    expect(sendOff(html)).toBe(true)
+  })
+  it('174 fix round (R1410): when no other team has a manager, the builder says so in words — no team list, no dead Send', () => {
+    const teams = TEAMS.map((t) => (t.team_id === ALPHA ? t : { ...t, manager_user_id: null }))
+    const html = builder({ teams, initial: undefined })
+    expect(html).toContain('data-trade-builder="no-partner"')
+    expect(html).toContain(NO_TRADE_PARTNER_COPY)
+    expect(html).not.toContain('data-trade-send')
+    expect(html).not.toContain('data-trade-to')
+  })
+  it('…a counter-offer keeps its fixed partner — the proposer (the card offers Counter only toward a proposer with a manager, R1413)', () => {
+    const html = builder({ mode: 'counter', fromTeamId: BRAVO, initial: { toTeamId: ALPHA, give: ['p-b1'], get: ['p-a1'] } })
+    expect(html).toContain('Counter-offer to Alpha')
+    expect(html).not.toContain('data-trade-builder="no-partner"')
   })
   it('sent: says who gets it and where it is listed', () => {
     const html = builder({ sentTo: 'Bravo' })
@@ -541,13 +589,6 @@ describe('L.D3.12 — the builder: Send only when the league would take it', () 
     expect(html).toContain('The league checks both rosters, the deadline and any FAAB when you send — its answer is what you see.')
     expect(html).toContain('data-trade-drops-open')
   })
-  it('the commissioner offering for a team: the drops are that team’s, said by name', () => {
-    const html = builder({
-      fromChoices: TEAMS.map((t) => ({ id: t.team_id, name: t.name })),
-      usePreview: answer(preview({ ok: false }, { proposer: { must_drop: 1 } })),
-    })
-    expect(html).toContain('Alpha’s roster would be over its size — pick 1 more player to drop.')
-  })
 })
 
 describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
@@ -617,16 +658,15 @@ describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
   })
   it('the proposer and a bystander ask nothing', () => {
     const rec = recorder()
-    card({ viewer: { teamId: ALPHA, isCommissioner: false, overrideMode: false }, usePreview: rec.hook })
-    card({ viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false }, usePreview: rec.hook })
+    card({ viewer: { teamId: ALPHA, isCommissioner: false, overrideMode: false, inSeason: true }, usePreview: rec.hook })
+    card({ viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false, inSeason: true }, usePreview: rec.hook })
     expect(rec.drafts.every((d) => d === null)).toBe(true)
   })
-  it('the commissioner answering for the team: the drops are that team’s, and the button says for whom', () => {
-    const html = card({
-      viewer: { teamId: null, isCommissioner: true, overrideMode: true },
-      usePreview: acceptAnswer({ ok: false }, { recipient: { must_drop: 1 } }),
-    })
-    expect(html).toContain('Bravo’s roster would be over its size — pick 1 more player to drop.')
-    expect(html).toContain('Accept for Bravo with these drops')
+  it('the commissioner (override mode on) asks nothing either and gets no Accept — the offer is the two teams own (174 / D463)', () => {
+    const rec = recorder()
+    const html = card({ viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true }, usePreview: rec.hook })
+    expect(rec.drafts.every((d) => d === null)).toBe(true)
+    expect(html).not.toContain('data-accept-with-drops')
+    expect(ops(html)).toEqual([])
   })
 })

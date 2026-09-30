@@ -40,7 +40,16 @@ export const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 export type Availability =
   | { kind: 'free_agent' }
   | { kind: 'on_waivers'; until: string }
-  | { kind: 'rostered'; teamId: string; teamName: string; mine: boolean }
+  | {
+      kind: 'rostered'
+      teamId: string
+      teamName: string
+      mine: boolean
+      /** The holding team has a manager (the rosters read's
+       *  `manager_user_id`, D339) — only then can it be offered a trade
+       *  (174 fix round, R1410). */
+      managed: boolean
+    }
 
 export interface PoolPlayerRow {
   player: PoolPlayer
@@ -57,10 +66,13 @@ export interface PoolPlayerRow {
 }
 
 /** Who holds each rostered player, from the rosters route (one map). */
-export function holdersOf(rosters: Pick<LeagueRosters, 'teams'> | undefined): Map<string, { teamId: string; teamName: string; player: RosterPlayer }> {
-  const out = new Map<string, { teamId: string; teamName: string; player: RosterPlayer }>()
+export function holdersOf(
+  rosters: Pick<LeagueRosters, 'teams'> | undefined,
+): Map<string, { teamId: string; teamName: string; managed: boolean; player: RosterPlayer }> {
+  const out = new Map<string, { teamId: string; teamName: string; managed: boolean; player: RosterPlayer }>()
   for (const team of rosters?.teams ?? []) {
-    for (const player of team.roster) out.set(player.player_id, { teamId: team.team_id, teamName: team.name, player })
+    for (const player of team.roster)
+      out.set(player.player_id, { teamId: team.team_id, teamName: team.name, managed: team.manager_user_id !== null, player })
   }
   return out
 }
@@ -94,7 +106,7 @@ export function poolRows(
     const row = poolById.get(player.id)
     let availability: Availability
     if (held) {
-      availability = { kind: 'rostered', teamId: held.teamId, teamName: held.teamName, mine: held.teamId === myTeamId }
+      availability = { kind: 'rostered', teamId: held.teamId, teamName: held.teamName, mine: held.teamId === myTeamId, managed: held.managed }
     } else if (row && row.state === 'on_waivers' && row.waivers_until) {
       availability = { kind: 'on_waivers', until: row.waivers_until }
     } else {

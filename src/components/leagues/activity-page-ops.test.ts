@@ -76,7 +76,7 @@ describe('copy', () => {
     }
   })
   it('the Trades tab says what Q84 ruled: offers stay between the two teams', () => {
-    expect(ops.TAB_INTRO_COPY.trades).toContain('went through, were vetoed or were reversed')
+    expect(ops.TAB_INTRO_COPY.trades).toContain('went through or were vetoed')   // 174 / D463: reverse removed (a pre-174 reversal still lists)
     expect(ops.TAB_INTRO_COPY.trades).toContain('Offers stay between the two teams')
   })
   it('F534: the week filter says in words what it shows and what it does not', () => {

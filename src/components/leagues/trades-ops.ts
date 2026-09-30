@@ -28,6 +28,7 @@
  * down", "called off", "goes through" — never a status enum on screen.
  */
 import type { TradePreviewState } from '@/hooks/use-trade-preview'
+import type { RosterTeam } from '@/lib/leagues/api/rosters-service'
 import type {
   CommishTradeOp,
   CommishTradeResult,
@@ -64,7 +65,11 @@ export const TRADES_ERROR_TITLE = 'Couldn’t load this league’s trades.'
 export const TRADES_UNAVAILABLE_TITLE = 'Trades aren’t switched on for this league yet'
 export const NO_TEAM_TRADE_COPY = 'You don’t manage a team in this league, so you can’t offer trades — but you can follow every trade here.'
 export const NOT_IN_SEASON_TRADE_COPY = 'Trades open once the season starts — offers can be made while the league is in season or in the playoffs.'
-export const COMMISH_TRADE_MODE_COPY = 'Force a trade through now, veto one that’s waiting, or reverse a completed one — each is logged for the whole league.'
+/** Chris 2026-09-30 (L.D3.16, D463): the commissioner acts on a trade only
+ *  once it has been accepted — veto it, or push it through now. Offers and
+ *  answers are the two teams’ own; a completed trade stands. */
+export const COMMISH_TRADE_MODE_COPY =
+  'Once a trade has been accepted you can veto it or push it through now — each is logged for the whole league. Offers and answers stay with the two teams.'
 export const NEVER_WHO_VOTED_COPY = 'Votes are secret — the league sees the count, never who voted.'
 
 /** The deadline as its WEEK — the words when the instant is not readable yet
@@ -240,8 +245,8 @@ export interface AcceptGate {
 }
 
 /**
- * The Accept gate on an offer (L.D3.12). The receiving manager (or the
- * commissioner answering for him) picks the drops his roster needs AS PART
+ * The Accept gate on an offer (L.D3.12). The receiving manager picks the
+ * drops his roster needs AS PART
  * of accepting — the picker is there before he presses anything, never a
  * reaction to a refusal.
  *
@@ -460,6 +465,21 @@ export interface TradeViewer {
   isCommissioner: boolean
   /** The ONE override-mode switch (PROGRESS §3 rule (h)), commissioners only. */
   overrideMode: boolean
+  /** The league is in season or in the playoffs (174 fix round 2, R1414).
+   *  Outside them the server takes no accept / counter (151's respond gate)
+   *  and no commissioner tool (the executor's gate; 174's veto gate — Chris
+   *  2026-09-30: "Locked once complete"), so none is offered. */
+  inSeason: boolean
+}
+
+/** What the card knows about the trade's teams beyond the trade itself. */
+export interface TradeTeamsContext {
+  /** The proposing team has a manager (the rosters read's `manager_user_id`,
+   *  D339). A counter-offer is a new offer TO it, and only a team's own
+   *  manager answers an offer, so without one there is no Counter (174 fix
+   *  round 2, R1413 — the server refuses it by name too). Unknown (the
+   *  rosters not read yet) counts as no. */
+  proposerHasManager: boolean
 }
 
 export interface TradeActionSet {
@@ -473,14 +493,12 @@ export interface TradeActionSet {
   reviewApprove: boolean
   reviewVeto: boolean
   /** Override mode (F451): approve / veto a league-vote trade or a trade
-   *  waiting for the week's games, force, reverse. */
+   *  waiting for the week's games, force. Only ever on an ACCEPTED trade
+   *  (Chris 2026-09-30 — L.D3.16 / D463: no answering an offer for a team,
+   *  no force on an offer, no reverse). */
   overrideApprove: boolean
   overrideVeto: boolean
   force: boolean
-  reverse: boolean
-  /** The team the commissioner is answering FOR (TD5), when he acts on an
-   *  offer for a team that is not his — shown so the act is never ambiguous. */
-  actingFor: 'proposer' | 'recipient' | null
 }
 
 const NONE: TradeActionSet = {
@@ -494,31 +512,32 @@ const NONE: TradeActionSet = {
   overrideApprove: false,
   overrideVeto: false,
   force: false,
-  reverse: false,
-  actingFor: null,
 }
 
-export function tradeActions(trade: TradeView, viewer: TradeViewer): TradeActionSet {
-  const commish = viewer.isCommissioner
+export function tradeActions(trade: TradeView, viewer: TradeViewer, teams: TradeTeamsContext): TradeActionSet {
+  // R1414: outside in_season / playoffs the commissioner has no tool on any
+  // trade — the server refuses approve / force (the executor) and veto (174).
+  const commish = viewer.isCommissioner && viewer.inSeason
   const override = commish && viewer.overrideMode
   const isProposer = viewer.teamId !== null && viewer.teamId === trade.proposer.team_id
   const isRecipient = viewer.teamId !== null && viewer.teamId === trade.recipient.team_id
   switch (trade.status) {
-    case 'proposed': {
-      // A manager answers his own side; the commissioner in override mode may
-      // answer either side (TD5 — "act like any GM"), and force it (D416(4)).
-      const recipientSide = isRecipient || (override && !isProposer)
-      const proposerSide = isProposer || (override && !isRecipient)
+    case 'proposed':
+      // An offer is the two teams' own: the receiving manager answers it, the
+      // proposing manager may call it off. The commissioner has no move on it
+      // (Chris 2026-09-30: "A commissioner cannot do anything to a trade
+      // unless it's already been accepted" — L.D3.16); a commissioner who
+      // manages one of the teams answers as its manager. Accept and Counter
+      // only in season / the playoffs (the server's gate — reject and cancel
+      // stay open, R1414); Counter only toward a proposer with a manager
+      // (R1413).
       return {
         ...NONE,
-        accept: recipientSide,
-        reject: recipientSide,
-        counter: recipientSide,
-        cancel: proposerSide,
-        force: override,
-        actingFor: override && !isRecipient && !isProposer ? 'recipient' : null,
+        accept: isRecipient && viewer.inSeason,
+        reject: isRecipient,
+        counter: isRecipient && viewer.inSeason && teams.proposerHasManager,
+        cancel: isProposer,
       }
-    }
     case 'in_review': {
       const mode = trade.review?.mode ?? 'commissioner'
       const canVote = mode === 'league_vote' && trade.tally !== null && trade.tally.can_vote && votingOpen(trade.tally)
@@ -536,11 +555,8 @@ export function tradeActions(trade: TradeView, viewer: TradeViewer): TradeAction
       // Waiting for the week's last game (or mid-flight): the commissioner may
       // call it off or put it through now — override mode.
       return { ...NONE, overrideVeto: override, force: override }
-    case 'expired':
-      // D416(4): an offer the deadline closed is closed by timing alone.
-      return { ...NONE, force: override }
-    case 'complete':
-      return { ...NONE, reverse: override }
+    // An offer the deadline closed was never accepted, and a completed trade
+    // stands ("Remove reverse") — no commissioner move on either (D463).
     default:
       return NONE
   }
@@ -622,6 +638,28 @@ export function builderProblem(sides: Partial<BuilderSides> & { faabValid?: bool
   return null
 }
 
+/**
+ * Who an offer can go to (174 fix round, R1410 — a consequence of Chris's
+ * 2026-09-30 ruling; PROGRESS D463): only the receiving team's own manager
+ * answers an offer now, so a team with NO manager (an open or orphaned seat —
+ * the rosters read's `manager_user_id`, D339's predicate) is not offered, nor
+ * the offering team itself or a retired franchise. The server refuses such an
+ * offer by name too; this list makes it impossible to build (prevent, don't
+ * refuse).
+ */
+export function tradePartners(teams: readonly RosterTeam[], fromTeamId: string): RosterTeam[] {
+  return teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id !== null)
+}
+
+/** The builder when no other team has a manager to answer an offer. */
+export const NO_TRADE_PARTNER_COPY =
+  'No other team has a manager right now, so there’s no one to answer a trade offer. Offers open up again once another team has a manager.'
+
+/** A deep link toward a team with no manager (a player row, an old link). */
+export function noManagerCopy(teamName: string): string {
+  return `${teamName} has no manager right now, so there’s no one to answer a trade offer. Pick another team.`
+}
+
 /** A counter-offer starts from the offer, turned around: the receiving team
  *  now offers — what it was asked for is what it gives. */
 export function counterSeed(trade: TradeView): BuilderSides {
@@ -667,37 +705,33 @@ export const COMMISH_OP_LABELS: Record<CommishTradeOp, string> = {
   approve: 'Approve',
   veto: 'Veto',
   force: 'Force it through',
-  reverse: 'Reverse trade',
 }
 
 /**
- * §10.4's confirmation for the two ops that move players at once — force and
- * reverse — as before → after lines, one per player / FAAB amount / drop.
+ * §10.4's confirmation for the op that moves players at once — force (the
+ * only one since 174 removed reverse) — as before → after lines, one per
+ * player / FAAB amount / drop.
  */
-export function commishConfirmLines(trade: TradeView, op: 'force' | 'reverse'): string[] {
+export function commishConfirmLines(trade: TradeView): string[] {
   const name = (teamId: string) => (teamId === trade.proposer.team_id ? trade.proposer.name : trade.recipient.name) ?? 'a team'
   const lines: string[] = []
   for (const item of trade.items) {
     const what = item.player ? (item.player.full_name ?? item.player.player_id) : `$${item.faab_amount} FAAB`
-    const [before, after] = op === 'force' ? [item.from_team_id, item.to_team_id] : [item.to_team_id, item.from_team_id]
-    lines.push(`${what}: ${name(before)} → ${name(after)}`)
+    lines.push(`${what}: ${name(item.from_team_id)} → ${name(item.to_team_id)}`)
   }
   for (const drop of trade.drops) {
     const who = drop.player.full_name ?? drop.player.player_id
-    lines.push(op === 'force' ? `${who}: dropped by ${name(drop.team_id)}` : `${who}: back to ${name(drop.team_id)}`)
+    lines.push(`${who}: dropped by ${name(drop.team_id)}`)
   }
   return lines
 }
 
-export function commishConfirmTitle(op: 'force' | 'reverse'): string {
-  return op === 'force' ? 'Force this trade through now?' : 'Reverse this trade?'
-}
+export const COMMISH_CONFIRM_TITLE = 'Force this trade through now?'
 
-export function commishConfirmCopy(op: 'force' | 'reverse'): string {
-  return op === 'force'
-    ? 'It goes through now — past any review, league vote, trade deadline or game-day lock. Every player must still be on the team giving him, and both rosters must fit.'
-    : 'Every player goes back to the team that had him, every dropped player comes back, and any FAAB is returned. Past weeks’ scores stay as they are.'
-}
+/** 174: force is for an accepted trade only, which the deadline never binds
+ *  (Q76), so the deadline is not named. */
+export const COMMISH_CONFIRM_COPY =
+  'It goes through now — past any review, league vote or game-day lock. Every player must still be on the team giving him, and both rosters must fit.'
 
 /** One `bypassed` entry in words (156: `review_period`, `league_vote`,
  *  `trade_deadline`, `game_day_lock:<player_id>`). */
@@ -730,8 +764,6 @@ export function commishOutcomeCopy(result: Pick<CommishTradeResult, 'outcome' | 
       const past = result.bypassed.map((b) => bypassedWords(b, playerName))
       return `Forced through${past.length > 0 ? ` — past ${joinWords(past)}` : ''}.${result.score_stale ? ' The week’s scores are being updated.' : ''}`
     }
-    case 'reversed':
-      return `Reversed — every player is back with the team that had him.${result.score_stale ? ' The week’s scores are being updated.' : ''}`
     case 'no_change':
       return result.no_changes_why ? `Nothing changed — ${plainServerSentence(result.no_changes_why)}` : 'Nothing changed — it was already that way.'
   }

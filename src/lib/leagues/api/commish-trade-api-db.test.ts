@@ -9,10 +9,11 @@
  *   - approve → the executor puts the trade through; the same body replays
  *     byte-identically; the same action_id for ANOTHER op is 156's by-name
  *     refusal, a 409 verbatim (R732);
- *   - reverse → the players are back; a second reverse is the no-op (no
- *     receipt — standing rule (b));
- *   - veto of a trade in review; force of an offer nobody accepted (accepted
- *     for the receiving team; no review had begun, so nothing is bypassed);
+ *   - reverse is not an op since 174 (Chris 2026-09-30, "Remove reverse") —
+ *     a 400 before the wire; the approved trade stands;
+ *   - veto of a trade in review; force of an offer nobody accepted is a 409
+ *     BY NAME (174 / D463 — an accepted trade only), and force of the same
+ *     trade once accepted goes through past the review;
  *   - a refusal by name (veto of a completed trade) is a 409 with the
  *     database's sentence; a malformed body a 400 before the wire;
  *   - the trades read reflects every op (status + reason).
@@ -70,6 +71,8 @@ const ACTION = {
   reverseT1Again: A(45),
   vetoT2: A(46),
   forceT3: A(47),
+  forceT3Offer: A(49),
+  acceptT3: A(32),
   vetoComplete: A(48),
 } as const
 
@@ -272,7 +275,7 @@ describe('POST …/commish/trade — who may use it', () => {
   })
 })
 
-describe('POST …/commish/trade — the four ops over the real verb', () => {
+describe('POST …/commish/trade — the three ops over the real verb (174: reverse removed)', () => {
   it('approve: the trade goes through (the executor), one receipt; the same body replays byte-identically', async () => {
     const res = await commishTrade(commishClient, leagueId, { trade_id: trade.t1, op: 'approve', action_id: ACTION.approveT1, reason: 'looks fair' })
     expect(res.status, JSON.stringify(res.body)).toBe(200)
@@ -291,22 +294,15 @@ describe('POST …/commish/trade — the four ops over the real verb', () => {
   })
 
   it('the same action_id for ANOTHER op is 156’s refusal by name — a 409 verbatim, never a replay (R732)', async () => {
-    const res = await commishTrade(commishClient, leagueId, { trade_id: trade.t1, op: 'reverse', action_id: ACTION.approveT1 })
+    const res = await commishTrade(commishClient, leagueId, { trade_id: trade.t1, op: 'veto', action_id: ACTION.approveT1 })
     expect(res.status).toBe(409)
     expect(JSON.stringify(res.body)).toContain('already names a approve of another trade or another op in this league')
   })
 
-  it('reverse: the players are back where they were; a second reverse is the no-op (no receipt)', async () => {
+  it('reverse is not an op (174 — “Remove reverse”): a 400 before the wire, and the approved trade stands', async () => {
     const res = await commishTrade(commishClient, leagueId, { trade_id: trade.t1, op: 'reverse', action_id: ACTION.reverseT1 })
-    expect(res.status, JSON.stringify(res.body)).toBe(200)
-    const r = result(res.body)
-    expect([r.outcome, r.status, r.transaction_id !== null]).toStrictEqual(['reversed', 'reversed', true])
-    expect([await holderOf('vitest-ctapi-1'), await holderOf('vitest-ctapi-3')]).toStrictEqual([[teamAId], [teamBId]])
-
-    const again = await commishTrade(commishClient, leagueId, { trade_id: trade.t1, op: 'reverse', action_id: ACTION.reverseT1Again })
-    expect(again.status, JSON.stringify(again.body)).toBe(200)
-    const g = result(again.body)
-    expect([g.outcome, g.no_changes, g.commissioner_action_id, g.system_post]).toStrictEqual(['no_change', true, null, null])
+    expect(res.status).toBe(400)
+    expect([await holderOf('vitest-ctapi-1'), await holderOf('vitest-ctapi-3')]).toStrictEqual([[teamBId], [teamAId]])
   })
 
   it('veto: a trade in review is closed vetoed with the commissioner’s reason', async () => {
@@ -318,16 +314,23 @@ describe('POST …/commish/trade — the four ops over the real verb', () => {
     expect(await holderOf('vitest-ctapi-2')).toStrictEqual([teamAId])
   })
 
-  it('force: an offer nobody accepted goes through now, accepted for the receiving team — no review had begun, so `bypassed` is empty and says why', async () => {
+  it('force: an offer nobody accepted is a 409 BY NAME; once team B accepts it, force puts it through past the review (174 / D463)', async () => {
     trade.t3 = await offer(ACTION.proposeT3, 'vitest-ctapi-2', 'vitest-ctapi-4')
+    const early = await commishTrade(commishClient, leagueId, { trade_id: trade.t3, op: 'force', action_id: ACTION.forceT3Offer })
+    expect(early).toStrictEqual({
+      status: 409,
+      body: {
+        error:
+          "commish_force_or_reverse_trade: this offer has not been accepted yet, so it cannot be forced — a commissioner acts on a trade only after it's accepted: veto it or push it through (§13.3)",
+      },
+    })
+    expect(await holderOf('vitest-ctapi-2')).toStrictEqual([teamAId])
+    await accept(trade.t3, ACTION.acceptT3)
     const res = await commishTrade(commishClient, leagueId, { trade_id: trade.t3, op: 'force', action_id: ACTION.forceT3 })
     expect(res.status, JSON.stringify(res.body)).toBe(200)
     const r = result(res.body)
-    expect([r.outcome, r.status_before, r.status, r.accepted_for_team_id]).toStrictEqual(['forced', 'proposed', 'complete', teamBId])
-    // 156:1498 names `review_period` only for a trade IN review; an offer
-    // before the deadline stands outside no timing rule.
-    expect(r.bypassed).toStrictEqual([])
-    expect(r.bypassed_why).toMatch(/^nothing to bypass/)
+    expect([r.outcome, r.status_before, r.status, r.accepted_for_team_id]).toStrictEqual(['forced', 'in_review', 'complete', null])
+    expect(r.bypassed).toStrictEqual(['review_period'])
     expect([await holderOf('vitest-ctapi-2'), await holderOf('vitest-ctapi-4')]).toStrictEqual([[teamBId], [teamAId]])
   })
 
@@ -337,14 +340,14 @@ describe('POST …/commish/trade — the four ops over the real verb', () => {
     expect((res.body as { error: string }).error).toMatch(/^commish_force_or_reverse_trade: /)
   })
 
-  it('the trades read reflects every op — reversed, vetoed with its reason, complete', async () => {
+  it('the trades read reflects every op — approved, vetoed with its reason, forced', async () => {
     const res = await readTrades(managerBClient, leagueId, managerBId, { status: 'closed' }, AT)
     expect(res.status).toBe(200)
     const d = res.body as unknown as TradesDocument
     expect(d.trades.map((t) => [t.id, t.status])).toStrictEqual([
       [trade.t3, 'complete'],
       [trade.t2, 'vetoed'],
-      [trade.t1, 'reversed'],
+      [trade.t1, 'complete'],
     ])
     expect(d.trades.find((t) => t.id === trade.t2)?.status_reason).toContain('lopsided')
   })

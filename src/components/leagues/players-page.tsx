@@ -681,9 +681,10 @@ function MoveButton({
   if (a.kind === 'rostered') {
     // L.D3.7: another team's player — the door to the trade builder, toward
     // his team with him picked (§16.5.2: "player row → propose"). L.D3.12:
-    // none past the trade deadline.
+    // none past the trade deadline. 174 fix round (R1410, D463): none toward
+    // a team with no manager — nobody could answer the offer.
     if (!a.mine) {
-      if (tradesClosed) return null
+      if (tradesClosed || !a.managed) return null
       return (
         <Button variant="stroke" size="sm" asChild title={ROSTERED_ELSEWHERE_TITLE}>
           <Link href={tradesHref(leagueId, { teamId: a.teamId, playerId: row.player.id })} data-action="trade">

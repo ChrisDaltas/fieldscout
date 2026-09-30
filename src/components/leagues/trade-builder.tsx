@@ -26,11 +26,14 @@ import {
   faabOverCopy,
   isDeadlineRefusal,
   lockedAssetTitle,
+  NO_TRADE_PARTNER_COPY,
+  noManagerCopy,
   parseFaab,
   rosterWords,
   type BuilderLeg,
   type BuilderSides,
   plainRefusal,
+  tradePartners,
 } from './trades-ops'
 
 /**
@@ -68,6 +71,13 @@ import {
  * Also the COUNTER-OFFER form (`mode = 'counter'`): the teams are fixed, the
  * picks start from the offer turned around (`counterSeed`).
  *
+ * **Only a team with a manager can be offered a trade** (174 fix round, R1410
+ * — PROGRESS D463): since the commissioner no longer answers for a team, an
+ * offer to an open or orphaned seat could never be answered, so "Trade with"
+ * lists only teams with a manager (`tradePartners`). A deep link toward a
+ * team with no manager opens with nobody picked and says why; when no other
+ * team has a manager the builder says so instead of offering a dead Send.
+ *
  * Not optimistic; one `action_id` per send (the hooks'). No clock read.
  */
 
@@ -83,11 +93,9 @@ export interface TradeBuilderViewProps {
   leagueId: string
   mode: 'propose' | 'counter'
   teams: readonly RosterTeam[]
-  /** The offering team. */
+  /** The offering team — the viewer's own (174 / D463: the commissioner
+   *  offers only for the team he manages, so there is no chooser). */
   fromTeamId: string
-  /** A commissioner in override mode may offer for any team (TD5): the
-   *  choices; null = the offering team is fixed (the viewer's own). */
-  fromChoices: readonly { id: string; name: string }[] | null
   initial?: Partial<Pick<BuilderSides, 'toTeamId' | 'give' | 'get' | 'faabGive' | 'faabGet'>> & { drops?: readonly string[] }
   allowFaab: boolean
   lockBehavior: string
@@ -98,7 +106,6 @@ export interface TradeBuilderViewProps {
   deadlineRefusal: string | null
   /** The offer went in — the receiving team's name. */
   sentTo: string | null
-  onFromTeam?: (teamId: string) => void
   onSend: (send: TradeBuilderSend) => void
   onClose: () => void
   /** The league's answer as the offer is built (162); injected so a static
@@ -111,7 +118,6 @@ export function TradeBuilderView({
   mode,
   teams,
   fromTeamId,
-  fromChoices,
   initial,
   allowFaab,
   lockBehavior,
@@ -119,14 +125,23 @@ export function TradeBuilderView({
   refusal,
   deadlineRefusal,
   sentTo,
-  onFromTeam,
   onSend,
   onClose,
   usePreview = useTradePreview,
 }: TradeBuilderViewProps) {
-  const [toTeamId, setToTeamId] = useState<string | null>(initial?.toTeamId && initial.toTeamId !== fromTeamId ? initial.toTeamId : null)
+  // R1410: in a propose, only a team with a manager can be offered a trade.
+  // A counter's partner is fixed — the proposer — and the card offers no
+  // Counter when it has no manager (R1413, `tradeActions`).
+  const partners =
+    mode === 'counter' ? teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired') : tradePartners(teams, fromTeamId)
+  const initialTo = initial?.toTeamId && partners.some((t) => t.team_id === initial.toTeamId) ? initial.toTeamId : null
+  const unanswerable =
+    mode === 'propose' && initial?.toTeamId && !initialTo
+      ? (teams.find((t) => t.team_id === initial.toTeamId && t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id === null) ?? null)
+      : null
+  const [toTeamId, setToTeamId] = useState<string | null>(initialTo)
   const [give, setGive] = useState<string[]>([...(initial?.give ?? [])])
-  const [get, setGet] = useState<string[]>([...(initial?.get ?? [])])
+  const [get, setGet] = useState<string[]>(initialTo ? [...(initial?.get ?? [])] : [])
   const [faabGiveText, setFaabGiveText] = useState(initial?.faabGive ? String(initial.faabGive) : '')
   const [faabGetText, setFaabGetText] = useState(initial?.faabGet ? String(initial.faabGet) : '')
   const [drops, setDrops] = useState<string[]>([...(initial?.drops ?? [])])
@@ -135,7 +150,6 @@ export function TradeBuilderView({
 
   const from = teams.find((t) => t.team_id === fromTeamId) ?? null
   const to = toTeamId ? (teams.find((t) => t.team_id === toTeamId) ?? null) : null
-  const partners = teams.filter((t) => t.team_id !== fromTeamId && t.status !== 'retired')
 
   const faabGive = allowFaab ? parseFaab(faabGiveText) : null
   const faabGet = allowFaab ? parseFaab(faabGetText) : null
@@ -160,7 +174,7 @@ export function TradeBuilderView({
     leagueId,
     !problem && !faabProblem && toTeamId && !locked && !sentTo ? { kind: 'offer', fromTeamId, toTeamId, legs, drops: dropsNow } : null,
   )
-  const words = rosterWords(from?.name ?? null, fromChoices === null)
+  const words = rosterWords(from?.name ?? null, true)
   const gate = builderGate({ problem, faabProblem, preview, fromWords: words, toName: to?.name ?? 'the other team' })
 
   // Before 162: the server said the offering team overflows — open the
@@ -197,6 +211,24 @@ export function TradeBuilderView({
     )
   }
 
+  // R1410: nobody to offer a trade to — said in words, no dead Send.
+  if (mode === 'propose' && partners.length === 0) {
+    return (
+      <Card data-trade-builder="no-partner">
+        <CardContent className="flex flex-col gap-2 px-card-pad py-3">
+          <StatusBanner tone="neutral" className="text-n-3">
+            {NO_TRADE_PARTNER_COPY}
+          </StatusBanner>
+          <span>
+            <Button variant="stroke" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </span>
+        </CardContent>
+      </Card>
+    )
+  }
+
   const send = () => {
     if (!gate.canSend || !toTeamId || locked) return
     onSend({ fromTeamId, toTeamId, legs, drops: dropsNow, note })
@@ -223,31 +255,19 @@ export function TradeBuilderView({
           </div>
         )}
 
+        {unanswerable && !toTeamId && (
+          <p className="text-[11px] font-medium text-ink" role="status" data-trade-no-manager={unanswerable.team_id}>
+            {noManagerCopy(unanswerable.name)}
+          </p>
+        )}
+
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {fromChoices ? (
-            <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
-              Offering team (acting as commissioner)
-              <Select value={fromTeamId} onValueChange={(v) => onFromTeam?.(v)}>
-                <SelectTrigger className="h-btn-md px-2 text-[12px]" data-trade-from={fromTeamId}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fromChoices.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-          ) : (
-            <div className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
-              Offering team
-              <span className="flex h-btn-md items-center px-0.5 text-[12px] font-bold text-ink" data-trade-from={fromTeamId}>
-                {from?.name ?? 'Your team'}
-              </span>
-            </div>
-          )}
+          <div className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+            Offering team
+            <span className="flex h-btn-md items-center px-0.5 text-[12px] font-bold text-ink" data-trade-from={fromTeamId}>
+              {from?.name ?? 'Your team'}
+            </span>
+          </div>
           <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
             Trade with
             <Select

@@ -199,16 +199,16 @@ describe('useTradeAction — PATCH …/trades/[tid]', () => {
 
 describe('useCommishTrade — POST …/commish/trade (F451’s hook half)', () => {
   it('the variables: blank reason dropped, one action_id', () => {
-    expect(commishTradeVariables({ tradeId: 't', op: 'reverse', reason: '  ' }, 'id')).toStrictEqual({ trade_id: 't', op: 'reverse', action_id: 'id' })
+    expect(commishTradeVariables({ tradeId: 't', op: 'veto', reason: '  ' }, 'id')).toStrictEqual({ trade_id: 't', op: 'veto', action_id: 'id' })
     expect(commishTradeVariables({ tradeId: 't', op: 'force', reason: 'ok' }, 'id')).toStrictEqual({ trade_id: 't', op: 'force', reason: 'ok', action_id: 'id' })
   })
 
   it('success re-reads the trades, every moved surface (both lineups by the answer’s teams), the audit log and the matchups', async () => {
     const client = seeded()
-    const fetchMock = respond(200, { op: 'reverse', trade: { proposer_team_id: TA, recipient_team_id: TB } })
+    const fetchMock = respond(200, { op: 'force', trade: { proposer_team_id: TA, recipient_team_id: TB } })
     vi.stubGlobal('fetch', fetchMock)
-    await new MutationObserver(client, commishTradeMutationOptions(client, LEAGUE)).mutate({ trade_id: 't', op: 'reverse', action_id: 'x' })
-    expect(sent(fetchMock)).toStrictEqual({ url: `/api/leagues/${LEAGUE}/commish/trade`, method: 'POST', body: { trade_id: 't', op: 'reverse', action_id: 'x' } })
+    await new MutationObserver(client, commishTradeMutationOptions(client, LEAGUE)).mutate({ trade_id: 't', op: 'force', action_id: 'x' })
+    expect(sent(fetchMock)).toStrictEqual({ url: `/api/leagues/${LEAGUE}/commish/trade`, method: 'POST', body: { trade_id: 't', op: 'force', action_id: 'x' } })
     for (const key of [...MOVED, tradeKeys.list(LEAGUE, 'all', null), commishLogKeys.all(LEAGUE), leagueMatchupKeys.all(LEAGUE)]) {
       expect(stale(client, key), JSON.stringify(key)).toBe(true)
     }
@@ -219,7 +219,7 @@ describe('useCommishTrade — POST …/commish/trade (F451’s hook half)', () =
     const client = seeded()
     const fetchMock = respond(409, { error: 'commish_force_or_reverse_trade: One is no longer on Team B' })
     vi.stubGlobal('fetch', fetchMock)
-    await new MutationObserver(client, commishTradeMutationOptions(client, LEAGUE)).mutate({ trade_id: 't', op: 'reverse', action_id: 'x' }).catch(() => undefined)
+    await new MutationObserver(client, commishTradeMutationOptions(client, LEAGUE)).mutate({ trade_id: 't', op: 'force', action_id: 'x' }).catch(() => undefined)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(client.getQueryData(tradeKeys.list(LEAGUE, 'all', null))).toBe(DOC)
     expect(stale(client, tradeKeys.list(LEAGUE, 'all', null))).toBe(true)

@@ -36,7 +36,7 @@ describe('POST /api/leagues/[id]/commish/trade', () => {
   it('the body reaches the service whole; its status and body are the response', async () => {
     getUser.mockResolvedValueOnce({ data: { user: { id: 'u1' } } })
     commishTrade.mockResolvedValueOnce({ status: 409, body: { error: 'refused by name' } })
-    const body = { trade_id: 't', op: 'reverse', action_id: 'a' }
+    const body = { trade_id: 't', op: 'force', action_id: 'a' }
     const res = await POST(post(body), params(LEAGUE))
     expect([res.status, await res.json()]).toStrictEqual([409, { error: 'refused by name' }])
     const [client, leagueId, passed] = commishTrade.mock.calls[0]

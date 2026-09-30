@@ -861,7 +861,7 @@ async function sweepTransactions(
     leaguesAborted: 0,
     claims: { submitted: 0, won: 0, lost: 0, invalid: 0 },
     addDrops: 0,
-    trades: { commissioner: 0, none: 0, league_vote: 0, reversed: 0, votes: 0 },
+    trades: { commissioner: 0, none: 0, league_vote: 0, reverseRefused: 0, votes: 0 },
     commishFaabEdits: 0,
     ghosts: { attempted: 0, completed: 0 },
     byWaiverType: Object.fromEntries(WAIVER_TYPE_MATRIX.map((t) => [t, { leagues: 0, resolved: 0, won: 0, lost: 0, invalid: 0 }])),
@@ -896,7 +896,7 @@ async function sweepTransactions(
     out.trades.commissioner += state.counts.trades.commissioner
     out.trades.none += state.counts.trades.none
     out.trades.league_vote += state.counts.trades.league_vote
-    out.trades.reversed += state.counts.reversed
+    out.trades.reverseRefused += state.counts.reverseRefused
     out.trades.votes += state.counts.votes
     out.commishFaabEdits += state.counts.commishFaabEdits
     {
@@ -929,9 +929,12 @@ async function sweepTransactions(
     if (!ok) report.problems.push(`TRANSACTION PREMISE: ${what}`)
   }
   need(p.exclusivityMoved > 0, `T1 transaction-exclusivity iterated ${p.exclusivityMoved} moved player(s)`)
+  // 174 (L.D3.16, "Remove reverse"): a reversal leg is no longer reachable —
+  // the term stays in the ledger for a reversal written before 174, and is
+  // reported, not required.
   need(
-    p.faabTeams > 0 && p.faabTerms.won_claim > 0 && p.faabTerms.trade_leg > 0 && p.faabTerms.reversal_leg > 0 && p.faabTerms.commissioner_edit > 0,
-    `T2 faab-ledger iterated ${p.faabTeams} franchise(s) with terms ${JSON.stringify(p.faabTerms)} — every kind (won claim, trade leg, reversal leg, commissioner edit) must be reached`,
+    p.faabTeams > 0 && p.faabTerms.won_claim > 0 && p.faabTerms.trade_leg > 0 && p.faabTerms.commissioner_edit > 0,
+    `T2 faab-ledger iterated ${p.faabTeams} franchise(s) with terms ${JSON.stringify(p.faabTerms)} — every reachable kind (won claim, trade leg, commissioner edit) must be reached`,
   )
   const rosteredRows = p.poolByState.rostered ?? 0
   const otherRows = Object.entries(p.poolByState).filter(([k]) => k !== 'rostered').reduce((n, [, v]) => n + v, 0)
@@ -945,8 +948,8 @@ async function sweepTransactions(
   )
   need(out.ghosts.completed > 0, `the Ghost completed in ${out.ghosts.completed} of ${out.ghosts.attempted} league(s) (F211)`)
   need(
-    out.trades.commissioner > 0 && out.trades.none > 0 && out.trades.league_vote > 0 && out.trades.reversed > 0,
-    `trades by review mode ${JSON.stringify(out.trades)} — each of commissioner / none / league_vote, and a reversal, must execute`,
+    out.trades.commissioner > 0 && out.trades.none > 0 && out.trades.league_vote > 0 && out.trades.reverseRefused > 0,
+    `trades by review mode ${JSON.stringify(out.trades)} — each of commissioner / none / league_vote must execute, and a commissioner reverse must be refused by name (174)`,
   )
   need(out.addDrops > 0, `${out.addDrops} add/drop(s) went through`)
   // M5 L.D3.10 (D423): the claim-type axis. With fewer than three leagues the
@@ -4322,8 +4325,8 @@ export function transactionReportLines(report: SeasonRunReport): string[] {
   const lines = [
     `TRANSACTIONS (M5 L.D3.8, --transact): ${t.leagues} league(s), ${t.leaguesAborted} aborted · claims ${t.claims.submitted} submitted → ` +
       `${t.claims.won} won / ${t.claims.lost} lost / ${t.claims.invalid} invalid · add/drops ${t.addDrops} · trades: commissioner-review ` +
-      `${t.trades.commissioner} · no-review ${t.trades.none} · league-vote ${t.trades.league_vote} (${t.trades.votes} votes) · reversed ` +
-      `${t.trades.reversed} · commish_edit_faab ${t.commishFaabEdits} · Ghost ${t.ghosts.completed}/${t.ghosts.attempted} completed`,
+      `${t.trades.commissioner} · no-review ${t.trades.none} · league-vote ${t.trades.league_vote} (${t.trades.votes} votes) · reverse refused ` +
+      `${t.trades.reverseRefused} · commish_edit_faab ${t.commishFaabEdits} · Ghost ${t.ghosts.completed}/${t.ghosts.attempted} completed`,
     `  WAIVER TYPES (D423): ${Object.entries(t.byWaiverType)
       .map(([k, w]) => `${k} ${w.leagues} league(s), ${w.resolved} resolved (${w.won} won / ${w.lost} lost / ${w.invalid} invalid)`)
       .join(' · ')}`,
