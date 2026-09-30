@@ -25,7 +25,9 @@ import {
   COMMISH_LOG_DEFAULT_LIMIT,
   COMMISH_LOG_MAX_LIMIT,
   COMMISH_LOG_MAX_TYPES,
+  COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE,
   COMMISH_LOG_UNKNOWN_TEAM_MESSAGE,
+  commishLogEntryFilter,
   commishLogQuerySchema,
   commishLogTeamFilter,
   decodeCommishLogCursor,
@@ -308,5 +310,89 @@ describe('readCommishLog — the L.E1.32 filters on the ordered read', () => {
     expect(calls.map(([m]) => m)).not.toContain('in')
     expect(calls.find(([m, a]) => m === 'eq' && a[0] === 'metadata->>week')).toBeUndefined()
     expect((res.body as { filters: unknown }).filters).toStrictEqual({ type: null, team_id: null, week: null })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// L.E1.34 — `entry`: open the log AT a row (F233(d); D459)
+// ---------------------------------------------------------------------------
+
+const ENTRY = 'ca340000-0000-4000-8000-000000000034'
+const ENTRY_AT = '2026-09-20T10:00:00.123456+00:00'
+
+/** The entry lookup (first `commissioner_actions` chain) and the page read
+ *  (second) answered and recorded separately. */
+function entryDouble(opts: { entry: 'found' | 'unknown' | 'error'; rows?: unknown[] }) {
+  const lookup: Array<[string, unknown[]]> = []
+  const read: Array<[string, unknown[]]> = []
+  let reads = 0
+  const chainOf = (sink: Array<[string, unknown[]]>, answer: () => { data: unknown; error: unknown }) => {
+    const proxy: Record<string, unknown> = new Proxy(
+      {},
+      {
+        get(_t, prop: string) {
+          if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(answer())
+          if (prop === 'maybeSingle') return async () => answer()
+          return (...args: unknown[]) => {
+            sink.push([prop, args])
+            return proxy
+          }
+        },
+      },
+    )
+    return proxy
+  }
+  const leaguesFrom = { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: { id: LEAGUE }, error: null }) }) }) }) }
+  const client = {
+    rpc: vi.fn(async () => ({ data: true, error: null })),
+    from: (table: string) => {
+      if (table === 'leagues') return leaguesFrom
+      reads += 1
+      if (reads === 1) {
+        return chainOf(lookup, () =>
+          opts.entry === 'error'
+            ? { data: null, error: { message: 'lookup exploded' } }
+            : { data: opts.entry === 'found' ? { id: ENTRY, created_at: ENTRY_AT } : null, error: null },
+        )
+      }
+      return chainOf(read, () => ({ data: opts.rows ?? [], error: null }))
+    },
+  }
+  return { client: client as never, lookup, read }
+}
+
+describe('readCommishLog — `entry` (L.E1.34): the page starts AT the entry and runs older', () => {
+  it('the schema takes a uuid (lower-cased) and refuses anything else', () => {
+    expect(commishLogQuerySchema.parse({ entry: ENTRY.toUpperCase() }).entry).toBe(ENTRY)
+    expect(commishLogQuerySchema.safeParse({ entry: 'nope' }).success).toBe(false)
+  })
+
+  it('the boundary is the INCLUSIVE twin of the cursor: created_at < T OR (created_at = T AND id <= ID)', () => {
+    expect(commishLogEntryFilter(ENTRY_AT, ENTRY)).toBe(`created_at.lt."${ENTRY_AT}",and(created_at.eq."${ENTRY_AT}",id.lte."${ENTRY}")`)
+    expect(commishLogEntryFilter(ENTRY_AT, ENTRY)).not.toBe(activityCursorFilter(ENTRY_AT, ENTRY)) // lte, not lt — the entry itself is served
+  })
+
+  it('an entry of THIS league: looked up by id AND league, then the read carries the boundary; the page echoes it', async () => {
+    const { client, lookup, read } = entryDouble({ entry: 'found' })
+    const res = await readCommishLog(client, LEAGUE, { entry: ENTRY })
+    expect(res.status).toBe(200)
+    expect(lookup).toContainEqual(['eq', ['id', ENTRY]])
+    expect(lookup).toContainEqual(['eq', ['league_id', LEAGUE]])
+    expect(read).toContainEqual(['or', [commishLogEntryFilter(ENTRY_AT, ENTRY)]])
+    expect((res.body as { filters: unknown }).filters).toStrictEqual({ type: null, team_id: null, week: null, entry: ENTRY })
+  })
+
+  it('with a later page’s cursor, both boundaries are sent (the stricter cursor wins — two ANDed trees)', async () => {
+    const { client, read } = entryDouble({ entry: 'found' })
+    await readCommishLog(client, LEAGUE, { entry: ENTRY, cursor: encodeCommishLogCursor(T, ID_A) })
+    expect(read.filter(([m]) => m === 'or').map(([, a]) => a[0])).toStrictEqual([activityCursorFilter(T, ID_A), commishLogEntryFilter(ENTRY_AT, ENTRY)])
+  })
+
+  it('another league’s (or an unknown) entry is a 404 by name and the log is never read — never the top of the log as if it were there', async () => {
+    const unknown = entryDouble({ entry: 'unknown' })
+    expect(await readCommishLog(unknown.client, LEAGUE, { entry: ENTRY })).toStrictEqual({ status: 404, body: { error: COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE } })
+    expect(unknown.read).toStrictEqual([])
+    const failing = entryDouble({ entry: 'error' })
+    expect(await readCommishLog(failing.client, LEAGUE, { entry: ENTRY })).toStrictEqual({ status: 500, body: { error: 'commissioner_actions: lookup exploded' } })
   })
 })

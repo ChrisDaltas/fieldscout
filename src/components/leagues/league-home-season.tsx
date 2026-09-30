@@ -24,6 +24,8 @@ import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
 
 import { ActivityFeed } from './activity-feed'
+import { memberNamesOf } from './activity-feed-ops'
+import { activityHref } from './activity-page-ops'
 import { correctionsHref } from './corrections-view-ops'
 import { Crest, TeamNameLink, teamPageHref } from './league-cells'
 import {
@@ -699,12 +701,16 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
       teamNames={teamNames}
       leagueTimeZone={data.settings.draft.time_zone ?? null}
       correctionsHref={correctionsHref(leagueId, null)}
+      // L.E1.34 (F371): the short list stays; the whole feed is the Activity page.
+      seeAllHref={activityHref(leagueId)}
       commishLog={{
         items: newest?.items,
         pending: log.isPending,
         problem: log.isError ? log.error : null,
         onRetry: () => log.refetch(),
         hasMore: newest?.has_more ?? false,
+        moreHref: activityHref(leagueId, { tab: 'commissioner' }),
+        memberNames: memberNamesOf(data.members),
       }}
     />
   )

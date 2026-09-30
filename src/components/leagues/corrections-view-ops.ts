@@ -30,6 +30,8 @@ import type { CorrectionStatChange, StatCorrectionItem } from '@/lib/leagues/api
 import { correctionLabel } from '@/lib/leagues/scoring/stat-correction-labels'
 import { PRE_158_SENTENCE } from '@/lib/leagues/scoring/player-points-store'
 
+import { activityHref } from './activity-page-ops'
+
 // ---------------------------------------------------------------------------
 // Copy — single-sourced
 // ---------------------------------------------------------------------------
@@ -166,8 +168,10 @@ export function correctionWeekOptions(weeks: readonly number[], selected: number
   return [{ value: 'all', label: CORRECTIONS_ALL_WEEKS_LABEL }, ...all.map((w) => ({ value: String(w), label: `Week ${w}` }))]
 }
 
+/** The league's stat corrections — the Activity page's "Stat corrections" tab
+ *  (L.E1.34, F536; the old `/corrections` route redirects here). */
 export function correctionsHref(leagueId: string, week: number | null): string {
-  return `/app/leagues/${leagueId}/corrections${week === null ? '' : `?week=${week}`}`
+  return activityHref(leagueId, { tab: 'corrections', week })
 }
 
 // ---------------------------------------------------------------------------

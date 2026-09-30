@@ -10,6 +10,7 @@ import type { BracketGame, BracketRound, PlayoffBracket as PlayoffBracketDoc, Pr
 import { cn } from '@/lib/utils'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
+import { commishEntryHref, commishMatchupHref } from './activity-page-ops'
 import { HAND_PICKED_BADGE, HAND_PICK_OPEN_LABEL, gameHandPickable, gameHandPicked } from './bracket-hand-pick-ops'
 import { BracketHandPickTools } from './bracket-hand-pick-panel'
 import { Crest, TeamNameLink } from './league-cells'
@@ -425,15 +426,29 @@ function BuiltGame({
             Not played yet
           </span>
         )}
+        {/* §10.3 / F233(d): each ✸ badge lands on the commissioner's log — the
+            adjusted week for this game's teams; the hand-pick on its own entry. */}
         {game.weeks.some((w) => w.is_overridden) && (
-          <Badge variant="stroke" className="text-[9px]">
-            ✸ commissioner-adjusted
-          </Badge>
+          <Link
+            href={commishMatchupHref(leagueId, game.weeks.find((w) => w.is_overridden)?.week ?? null, game.home_team_id)}
+            className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            data-overridden-link
+          >
+            <Badge variant="stroke" className="text-[9px] hover:bg-accent-soft">
+              ✸ commissioner-adjusted
+            </Badge>
+          </Link>
         )}
         {gameHandPicked(game) && (
-          <Badge variant="stroke-purple" className="text-[9px]" data-hand-picked-badge>
-            {HAND_PICKED_BADGE}
-          </Badge>
+          <Link
+            href={commishEntryHref(leagueId, game.weeks.find((w) => w.hand_picked_action_id != null)?.hand_picked_action_id ?? '')}
+            className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            data-hand-picked-link
+          >
+            <Badge variant="stroke-purple" className="text-[9px] hover:bg-accent-soft" data-hand-picked-badge>
+              {HAND_PICKED_BADGE}
+            </Badge>
+          </Link>
         )}
         {onPick && (
           <Button variant="stroke" size="sm" className="ml-auto" onClick={onPick} aria-pressed={picking} data-hand-pick-open>

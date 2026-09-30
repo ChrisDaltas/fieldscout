@@ -622,6 +622,8 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     const html = renderTeamPage({ lineup: evicted })
     expect(html).toContain('data-commish-changed')
     expect(html).toContain(COMMISH_CHANGED_BADGE)
+    // L.E1.34 (F233(d), §10.3): the ✸ lands on the log — every action naming this team.
+    expect(html).toMatch(/data-commish-changed-link="true" href="[^"]*\/activity\?tab=commissioner&team=/)
     expect(html).toContain(COMMISH_CHANGED_TITLE)
     // The old words are GONE: nobody SET this lineup (`set_at` did not move).
     expect(html).not.toContain('commissioner-set')

@@ -7,15 +7,21 @@
  * rows + the league room's D97 system posts). A transaction's sentence is
  * read from its STORED payload (113 writes the names into it) and the team
  * from the league detail's list; nothing is computed. The "✸ commissioner"
- * treatment §13.4 names is a LABEL today, worn by a system post ONLY when
- * an actor wrote it (a NULL actor is a worker's notice and wears a plain
- * "system" chip — R895) — the link to the audit entry needs
- * `commissioner_actions`, which is a later milestone's (F233(d)); the feed
- * carries `kind`/`context` so the label renders now and the link lands
- * without a shape change.
+ * treatment §13.4 names is worn by a system post ONLY when an actor wrote it
+ * (a NULL actor is a worker's notice and wears a plain "system" chip — R895)
+ * and by a commissioner's roster move.
+ *
+ * **M6 L.E1.34 (F233(d), F463, Q84; PROGRESS D459).** Each feed item carries
+ * the §10.3 receipt written in its own transaction (`commish_action_id`,
+ * `activity-service.ts`), so a ✸ line links to its log entry. When a
+ * commissioner's act wrote BOTH a feed row and a post (a reversal, a forced
+ * or approved trade, a force add / drop), the feed shows ONE line — the
+ * transaction's, with the ✸ treatment — never the pair (`feedLines`).
  */
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
+
+import { COMMISH_ACTION_WORDS, actionWords, receiptDetail, settingChange } from './commish-log-copy'
 
 export interface FeedLine {
   id: string
@@ -39,6 +45,9 @@ export interface FeedLine {
    *  postponed-game post) carry `user_id NULL` — the engine's, labelled as
    *  such, never as a person's (R895). */
   commissioner: boolean
+  /** The §10.3 log entry this line's act wrote (F233(d)) — the ✸ line links
+   *  to it; null when the act left no receipt. */
+  commishActionId: string | null
 }
 
 interface AddDropPayloadShape {
@@ -55,6 +64,8 @@ function playerLabel(p: { name?: unknown; player_id?: unknown; position?: unknow
 }
 
 export const TRANSACTION_TYPE_LABELS: Record<string, string> = {
+  add: 'Added a player',
+  drop: 'Dropped a player',
   add_drop: 'Roster move',
   waiver_claim: 'Waiver claim',
   trade: 'Trade',
@@ -95,7 +106,12 @@ interface TradePayloadShape {
 export function tradeTransactionText(type: string, payload: TradePayloadShape): string | null {
   const summary = typeof payload.summary === 'string' && payload.summary.trim() !== '' ? payload.summary : null
   if (type === 'trade') {
-    const how = payload.via === 'commissioner_force' ? ' (forced through by the commissioner)' : ''
+    const how =
+      payload.via === 'commissioner_force'
+        ? ' (forced through by the commissioner)'
+        : payload.via === 'commissioner_approve'
+          ? ' (approved by the commissioner)'
+          : ''
     return summary ? `completed a trade${how}: ${summary}` : `completed a trade${how}`
   }
   if (type === 'commissioner_move' && payload.kind === 'trade_reversal') {
@@ -128,31 +144,50 @@ export function transactionText(item: TransactionActivityItem): string {
   return item.status === 'complete' ? label : `${label} (${item.status})`
 }
 
+/**
+ * The feed's items as lines, newest first, ONE line per act (Q84 / F463):
+ * when a transaction and a system post carry the same receipt (the
+ * commissioner's act wrote both in one transaction — a reversal, a forced or
+ * approved trade, a force add / drop), the post is dropped and the
+ * transaction's line wears the ✸ treatment and links to the entry. Pass
+ * every loaded page at once so a pair split across two pages still folds.
+ */
 export function feedLines(items: readonly ActivityItem[], teamNames: ReadonlyMap<string, string>): FeedLine[] {
-  return items.map((item) => {
+  const receiptsOnTransactions = new Set(
+    items.flatMap((item) => (item.kind === 'transaction' && item.commish_action_id ? [item.commish_action_id] : [])),
+  )
+  return items.flatMap((item): FeedLine[] => {
+    const commishActionId = item.commish_action_id ?? null
     if (item.kind === 'system') {
-      return {
-        id: item.id,
-        kind: 'system',
-        text: item.message,
-        team: null,
-        teamId: null,
-        week: null,
-        createdAt: item.created_at,
-        commissioner: item.actor_id !== null,
-      }
+      if (commishActionId !== null && receiptsOnTransactions.has(commishActionId)) return []
+      return [
+        {
+          id: item.id,
+          kind: 'system',
+          text: item.message,
+          team: null,
+          teamId: null,
+          week: item.week ?? null,
+          createdAt: item.created_at,
+          commissioner: item.actor_id !== null,
+          commishActionId,
+        },
+      ]
     }
     const team = item.team_id ? (teamNames.get(item.team_id) ?? null) : null
-    return {
-      id: item.id,
-      kind: 'transaction',
-      text: transactionText(item),
-      team,
-      teamId: team !== null ? item.team_id : null,
-      week: item.week,
-      createdAt: item.created_at,
-      commissioner: item.type === 'commissioner_move',
-    }
+    return [
+      {
+        id: item.id,
+        kind: 'transaction',
+        text: transactionText(item),
+        team,
+        teamId: team !== null ? item.team_id : null,
+        week: item.week,
+        createdAt: item.created_at,
+        commissioner: item.type === 'commissioner_move' || commishActionId !== null,
+        commishActionId,
+      },
+    ]
   })
 }
 
@@ -202,47 +237,66 @@ const asDoc = (value: unknown): Doc => (value !== null && typeof value === 'obje
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value : null)
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
+
 function weekClause(metadata: Doc): string {
   const week = num(metadata.week)
   return week === null ? '' : `Week ${week} `
 }
 
-/** A settings value in words: a scalar as itself, null as "none", anything
- *  structured as "(updated)" — never `[object Object]`, never "null". */
-function settingValue(value: unknown): string {
-  if (value === null || value === undefined) return 'none'
-  if (typeof value === 'object') return '(updated)'
-  return String(value)
-}
-
 const score = (value: unknown): string => (num(value) === null ? '—' : String(value))
 
-function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'target_id' | 'before' | 'after' | 'metadata'>, teamNames: ReadonlyMap<string, string>): string {
+/** Everything the words for one receipt need: the team and member names, and
+ *  a record of which teams the sentence named (F518). */
+interface LineNames {
+  teamNames: ReadonlyMap<string, string>
+  memberNames: ReadonlyMap<string, string>
+}
+
+function actText(
+  item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'target_id' | 'before' | 'after' | 'metadata'>,
+  names: LineNames,
+  named: Set<string>,
+): string {
   const before = asDoc(item.before)
   const after = asDoc(item.after)
   const metadata = asDoc(item.metadata)
+  const team = (id: unknown, fallback?: unknown): string => {
+    const name = (typeof id === 'string' ? names.teamNames.get(id) : undefined) ?? text(fallback) ?? 'a team'
+    named.add(name)
+    return name
+  }
+  const member = (userId: unknown): string | null => (typeof userId === 'string' ? (names.memberNames.get(userId) ?? null) : null)
 
+  // A LEAGUE's name or picture (169) — before the team-rename branch below,
+  // which reads the same {name} key set.
+  if (item.action_type === 'edit_league_profile') {
+    return receiptDetail({ actionType: item.action_type, targetId: item.target_id, before, after, metadata, team, member }) ?? actionWords(item.action_type)
+  }
   // A RENAME — 128 writes {name} both sides (action_type 'reassign_team', F355).
   if ('name' in after && 'name' in before) {
-    return `renamed ${text(before.name) ?? 'a team'} to ${text(after.name) ?? 'a new name'}`
+    const renamed = `renamed ${text(before.name) ?? 'a team'} to ${text(after.name) ?? 'a new name'}`
+    named.add(text(after.name) ?? '')
+    named.add(text(before.name) ?? '')
+    if (item.target_id) named.add(names.teamNames.get(item.target_id) ?? '')
+    return renamed
   }
   // THE AUTOPILOT SWITCH — 139 writes {autopilot} both sides (M6A L.E1.22,
   // Q63). Read from the key set like every other act (F355), so the words
   // follow the switch's direction and never the verb's name.
   if ('autopilot' in after && typeof after.autopilot === 'boolean') {
-    const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
-    return after.autopilot ? `put ${team} on autopilot` : `took ${team} off autopilot`
+    const name = team(item.target_id, metadata.team_name)
+    return after.autopilot ? `put ${name} on autopilot` : `took ${name} off autopilot`
   }
   // A FAAB EDIT — 147 writes {faab_balance} both sides (M5 L.D2.11). The
   // balance is member-visible, so the amounts are shown; an unset one reads
   // "unset", never "null".
   if ('faab_balance' in after) {
-    const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
+    const name = team(item.target_id, metadata.team_name)
     const dollars = (value: unknown): string => {
       const amount = num(value)
       return amount === null ? 'unset' : `$${amount}`
     }
-    return `set ${team}’s FAAB balance: ${dollars(before.faab_balance)} → ${dollars(after.faab_balance)}`
+    return `set ${name}’s FAAB balance: ${dollars(before.faab_balance)} → ${dollars(after.faab_balance)}`
   }
   // A TRADE OVERRIDE — 156 writes {status} both sides and names the op and
   // the deal in metadata (M5 L.D3.5). Trades are member-visible, so the deal
@@ -258,26 +312,17 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
   // A MANAGER'S TRADE MOVE MADE BY THE COMMISSIONER — 148 / 151's TD5 arm
   // (M5 L.D3.7, F415): `propose_trade` / `accept_trade` / `reject_trade` /
   // `cancel_trade` / `counter_trade`, {status} both sides, the deal in
-  // metadata; the team he acted for is the caller's "(acting for …)".
+  // metadata; the team he acted for is the caller's "(for …)".
   if (item.target_type === 'trade' && (metadata.verb === 'trade_propose' || metadata.verb === 'trade_respond')) {
-    const act = (
-      {
-        propose_trade: 'offered a trade',
-        accept_trade: 'accepted a trade',
-        reject_trade: 'turned down a trade',
-        cancel_trade: 'called off a trade offer',
-        counter_trade: 'made a counter-offer',
-      } as Record<string, string>
-    )[item.action_type]
+    const act = COMMISH_ACTION_WORDS[item.action_type]
     if (act) {
       const summary = text(metadata.summary)
       return summary ? `${act}: ${summary}` : act
     }
   }
-  // A LINEUP — 123 writes the whole lineup row both sides.
+  // A LINEUP — 123 / 169 write the whole lineup row both sides.
   if ('slot_map' in after) {
-    const team = (item.target_id ? teamNames.get(item.target_id) : undefined) ?? text(metadata.team_name) ?? 'a team'
-    return `set ${team}’s ${weekClause(metadata)}lineup`
+    return `set ${team(item.target_id, metadata.team_name)}’s ${weekClause(metadata)}lineup`
   }
   // A RULED RE-SCORE OF A FINAL WEEK — 161 writes {week_scores} both sides
   // (M5 L.D3.13, D425). Not a commissioner's own act: the actor is the
@@ -304,31 +349,61 @@ function actText(item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'tar
     const player = text(metadata.player_name) ?? 'a player'
     const from = text(metadata.from_team_name)
     const to = text(metadata.to_team_name)
+    if (from) named.add(from)
+    if (to) named.add(to)
     if (from && to) return `moved ${player} from ${from} to ${to}`
     if (to) return `added ${player} to ${to}`
     if (from) return `dropped ${player} from ${from}`
     return `changed ${player}’s roster spot`
   }
-  // A SETTING — 129 writes {<key>: value} both sides, ONE key.
+  // A SETTING — 129 writes {<key>: value} both sides, ONE key (TD12: the key
+  // and its values in words — `commish-log-copy.ts`).
   if (item.target_type === 'setting') {
-    const key = Object.keys(after)[0] ?? item.target_id ?? 'a setting'
-    return `changed the ${key.replace(/_/g, ' ')} setting: ${settingValue(before[key])} → ${settingValue(after[key])}`
+    const key = Object.keys(after)[0] ?? item.target_id
+    return key ? `changed the ${settingChange(key, before[key], after[key])}` : actionWords(item.action_type)
   }
   // A SCHEDULE EDIT — 130/131 write the pairing both sides.
   if (item.target_type === 'schedule') return `edited a ${weekClause(metadata)}matchup pairing`
-  // Anything newer than this file: the action's own name — never an empty line.
-  return item.action_type.replace(/_/g, ' ')
+  // Every other receipt (L.E1.34 — TD12, F512 / F516): its detailed sentence
+  // when this file knows its shape, else its type's words. Never a code word.
+  return receiptDetail({ actionType: item.action_type, targetId: item.target_id, before, after, metadata, team, member }) ?? actionWords(item.action_type)
 }
 
-export function commishLogLines(items: readonly CommishLogItem[], teamNames: ReadonlyMap<string, string>): CommishLogLine[] {
+/**
+ * The §10.3 log as lines. `memberNames` (user id → username, from the league
+ * detail) lets a membership receipt name the member; without it the line says
+ * what happened without the name.
+ *
+ * **"(for <team>)" (TD12 / TD16; F518).** A receipt the commissioner wrote
+ * while doing one team's manager act (`acting_as_team_id`, D451) says which
+ * team he did it for — unless the sentence already names that team ("set
+ * Alpha's Week 3 lineup", "made pick 12 for Alpha"), where the suffix would
+ * only repeat it.
+ */
+export function commishLogLines(
+  items: readonly CommishLogItem[],
+  teamNames: ReadonlyMap<string, string>,
+  memberNames: ReadonlyMap<string, string> = new Map(),
+): CommishLogLine[] {
   return items.map((item) => {
+    const named = new Set<string>()
+    const sentence = actText(item, { teamNames, memberNames }, named)
     const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
     return {
       id: item.id,
       actor: text(item.actor.username) ?? COMMISH_LOG_UNNAMED_ACTOR,
-      text: `${actText(item, teamNames)}${actingFor ? ` (acting for ${actingFor})` : ''}`,
+      text: actingFor && !named.has(actingFor) ? `${sentence} (for ${actingFor})` : sentence,
       reason: text(item.reason)?.trim() ?? null,
       createdAt: item.created_at,
     }
   })
+}
+
+/** user id → username, from the league detail's members (a placeholder seat has no user). */
+export function memberNamesOf(members: ReadonlyArray<{ user_id: string | null; profiles: { username: string } | null }>): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const m of members) {
+    if (m.user_id && m.profiles?.username) map.set(m.user_id, m.profiles.username)
+  }
+  return map
 }

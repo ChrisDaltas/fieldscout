@@ -1,9 +1,9 @@
 'use client'
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
-import type { ActivityFeed } from '@/lib/leagues/api/activity-service'
+import type { ActivityFeed, ActivityTopic } from '@/lib/leagues/api/activity-service'
 
 import { useLeagueChannel, type LeagueChannelHandlers } from './use-league-channel'
 import { LEAGUE_CHANNEL_EVENTS, activityEventInvalidates } from './use-league-channel-ops'
@@ -44,6 +44,8 @@ export type ActivityKindFilter = 'all' | 'transaction' | 'system'
 
 export interface ActivityFilters {
   kind?: ActivityKindFilter
+  /** L.E1.34: `trades` — the Trades tab (Q84; see `readActivity`). */
+  topic?: ActivityTopic
   /** `transactions.type` values; omit for every type. */
   type?: readonly string[]
   week?: number
@@ -62,6 +64,38 @@ export const leagueActivityKeys = {
   all: (leagueId: string) => ['league-activity', leagueId] as const,
   feed: (leagueId: string, filters: ActivityFilters) =>
     ['league-activity', leagueId, filters] as const,
+  /** L.E1.34: one filtered feed with all its loaded pages (the cursor is the
+   *  page param, never part of the key). Under `all`, so every invalidation
+   *  of the feed re-reads it too. */
+  pages: (leagueId: string, filters: Omit<ActivityFilters, 'before' | 'beforeId'>) =>
+    ['league-activity', leagueId, 'pages', filters] as const,
+}
+
+/** The cursor of the page after `last`, or `undefined` when the feed is done
+ *  (both halves travel together — R770). Exported for its pin. */
+export function activityNextCursor(last: ActivityFeed): { before: string; beforeId: string } | undefined {
+  return last.has_more && last.next_before && last.next_before_id ? { before: last.next_before, beforeId: last.next_before_id } : undefined
+}
+
+/**
+ * The feed one page at a time, for the Activity page (M6 L.E1.34, F371):
+ * `data.pages` newest first, `fetchNextPage()` asks for the next page with
+ * the same filters and the last page's two-half cursor, `hasNextPage` is the
+ * server's `has_more`. No subscription of its own — the page joins the one
+ * `league:<id>` room once and invalidates `leagueActivityKeys.all`.
+ */
+export function useLeagueActivityPages(leagueId: string | undefined, filters: Omit<ActivityFilters, 'before' | 'beforeId'> = {}) {
+  return useInfiniteQuery({
+    queryKey: leagueActivityKeys.pages(leagueId ?? 'none', filters),
+    enabled: Boolean(leagueId),
+    retry: false,
+    initialPageParam: undefined as { before: string; beforeId: string } | undefined,
+    getNextPageParam: activityNextCursor,
+    queryFn: ({ pageParam }) =>
+      sendLeagueAction<ActivityFeed>(
+        `/api/leagues/${leagueId!}/activity${activitySearchParams({ ...filters, before: pageParam?.before, beforeId: pageParam?.beforeId })}`,
+      ),
+  })
 }
 
 /** Only the filters that are SET reach the query string: an absent filter is
@@ -69,6 +103,7 @@ export const leagueActivityKeys = {
 export function activitySearchParams(filters: ActivityFilters): string {
   const params = new URLSearchParams()
   if (filters.kind && filters.kind !== 'all') params.set('kind', filters.kind)
+  if (filters.topic) params.set('topic', filters.topic)
   if (filters.type && filters.type.length > 0) params.set('type', filters.type.join(','))
   if (filters.week !== undefined) params.set('week', String(filters.week))
   if (filters.teamId) params.set('team_id', filters.teamId)

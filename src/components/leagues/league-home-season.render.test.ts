@@ -541,6 +541,14 @@ describe('§16.5.4 — the required states', () => {
     expect(renderHome({ feed: { ...FEED, items: [] } })).toContain(FEED_EMPTY_COPY)
     expect(renderHome({ feed: 'error' })).toContain('Couldn’t load the activity feed.')
   })
+  it('L.E1.34 (F371, F536): the short list stays and gains "See all activity"; "Stat corrections" opens the Activity page’s tab', () => {
+    const html = renderHome()
+    const card = html.slice(html.indexOf('data-activity-feed'))
+    const tag = (marker: string) => /<a [^>]*>/.exec(card.slice(card.lastIndexOf('<a ', card.indexOf(marker))))?.[0] ?? ''
+    expect(tag('data-see-all-activity')).toContain('href="/app/leagues/league-1/activity"')
+    expect(card).toContain('See all activity')
+    expect(tag('data-corrections-link')).toContain('href="/app/leagues/league-1/activity?tab=corrections"')
+  })
   it('Q66 — COMMISSIONER ACTIONS are shown in League Home’s activity section, read from the §10.3 log: one line per receipt, the actor named, the act read from before/after (a rename says "renamed", never "reassign team" — F355)', () => {
     const html = renderHome()
     const section = html.slice(html.indexOf('data-commish-log'))
@@ -551,7 +559,7 @@ describe('§16.5.4 — the required states', () => {
     expect(section).toContain('renamed Old Name to New Name')
     expect(section).not.toContain('reassign')
     expect(section).toContain('moved Moved Guy from Alpha to Bravo')
-    expect(section).toContain('changed the waiver period hours setting: 48 → 72')
+    expect(section).toContain('changed the waiver period (hours): 48 → 72') // L.E1.34 (TD12): the key in words
     expect(section).toContain('<span class="font-bold">chris</span>')
     // C70: a row is a CLAIM — nothing says a verb ran.
     expect(section).not.toMatch(/applied|verified|executed/i)

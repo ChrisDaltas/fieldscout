@@ -16,6 +16,7 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useEditMatchup, useScheduleLive, type EditMatchupResult } from '@/hooks/use-schedule'
 import { cn } from '@/lib/utils'
 
+import { commishMatchupHref } from './activity-page-ops'
 import { Crest, TeamNameLink } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
 import { ScheduleRemixModal } from './schedule-remix-modal'
@@ -237,7 +238,7 @@ function WeekCard({
             {week.note}
           </p>
         ) : (
-          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} row={row} myTeamId={myTeamId} teams={teams} />)
+          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} row={row} myTeamId={myTeamId} teams={teams} />)
         )}
       </CardContent>
     </Card>
@@ -246,11 +247,13 @@ function WeekCard({
 
 function MatchupRowView({
   leagueId,
+  week,
   row,
   myTeamId,
   teams,
 }: {
   leagueId: string
+  week: number
   row: MatchupCell
   myTeamId: string | null
   teams: TeamRef[]
@@ -278,7 +281,18 @@ function MatchupRowView({
         <span className="ml-auto flex items-center gap-1.5">
           {row.round_type === 'secondary' && <Badge variant="stroke">second game</Badge>}
           {row.result === 'tie' && <Badge variant="yellow">tie</Badge>}
-          {row.is_overridden && <Badge variant="stroke-purple">✸ commissioner-adjusted</Badge>}
+          {/* §10.3 / F233(d): the ✸ badge lands on the log — this week, this matchup's teams. */}
+          {row.is_overridden && (
+            <Link
+              href={commishMatchupHref(leagueId, week, row.home.id)}
+              className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              data-overridden-link
+            >
+              <Badge variant="stroke-purple" className="hover:bg-accent-soft">
+                ✸ commissioner-adjusted
+              </Badge>
+            </Link>
+          )}
           {row.editable && !editing && (
             <Button variant="stroke" size="sm" onClick={() => setEditing(true)} data-edit-matchup>
               <Icon name="edit" size={13} /> Edit

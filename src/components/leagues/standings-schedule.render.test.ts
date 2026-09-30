@@ -310,6 +310,8 @@ describe('standings — the ✸ marker is present EXACTLY when `matchups.is_over
       const row = rowOf(html, teamId)
       expect(row, teamId).toContain('data-overridden="1"')
       expect(row, teamId).toContain('✸')
+      // L.E1.34 (F233(d), §10.3): the ✸ lands on the log — every action naming this team.
+      expect(row, teamId).toContain(`activity?tab=commissioner&team=${teamId}`)
       // The words are there for a screen reader, not only in a title.
       expect(row, teamId).toContain('<span class="sr-only">Commissioner-adjusted — the score or result of this team’s Week 1 matchup was set by the commissioner.</span>')
     }
@@ -393,6 +395,8 @@ describe('schedule — the grid and the commissioner’s doors', () => {
     expect(html).toContain(PLAYOFF_PENDING_COPY)
     expect(between(html, 'data-week="1"', 'data-week="2"')).toContain('>Final<')
     expect(between(html, 'data-week="1"', 'data-week="2"')).toContain('✸ commissioner-adjusted')
+    // L.E1.34 (F233(d)): the badge lands on the log — this week, this matchup's teams.
+    expect(between(html, 'data-week="1"', 'data-week="2"')).toMatch(/data-overridden-link="true" href="[^"]*\/activity\?tab=commissioner&week=1&team=/)
     expect(between(html, 'data-week="1"', 'data-week="2"')).toContain('120.50')
     expect(between(html, 'data-week="2"', 'data-week="3"')).toContain('>Live<')
     expect(between(html, 'data-week="2"', 'data-week="3"')).toContain('>Current<')

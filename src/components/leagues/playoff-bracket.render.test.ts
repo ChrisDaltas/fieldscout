@@ -335,6 +335,8 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(r2).toContain('>pending<')
     expect(r2).toContain('Leads on points')
     expect(r2).toContain('✸ commissioner-adjusted')
+    // L.E1.34 (F233(d)): the badge lands on the log — the adjusted week, this game's teams.
+    expect(r2).toMatch(/data-overridden-link="true" href="[^"]*\/activity\?tab=commissioner&week=\d+&team=/)
     expect(between(html, 'data-round="3"', 'data-bracket-hand-pick')).toContain('data-game="tbd"')
     // R911: BUILT_DOC's regular season is FINAL — the document-level close is the regular
     // season's (a past instant) and must NOT render under a final bracket; each round's badge
@@ -505,6 +507,8 @@ describe('the commissioner’s playoff hand-pick (§11.5, L.E1.16)', () => {
     const html = renderTab({ bracket: marked })
     expect(between(html, 'data-round="2"', 'data-round="3"').match(/data-hand-picked-badge/g)).toHaveLength(2)
     expect(between(html, 'data-round="1"', 'data-round="2"')).not.toContain('data-hand-picked-badge')
+    // L.E1.34 (F233(d)): a hand-pick's ✸ opens the log AT its own entry.
+    expect(between(html, 'data-round="2"', 'data-round="3"')).toContain('activity?tab=commissioner&entry=aa000000-0000-4000-8000-000000000001')
     expect(html).toContain(HAND_PICKED_BADGE)
   })
 

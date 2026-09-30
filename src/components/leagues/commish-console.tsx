@@ -15,6 +15,7 @@ import type { CommishSummary } from '@/lib/leagues/api/commish-summary-service'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
 import { CommishLogSection } from './activity-feed'
+import { memberNamesOf } from './activity-feed-ops'
 import {
   CONSOLE_TITLE,
   CORRECTIONS_HINT,
@@ -135,7 +136,7 @@ function ConsoleContent({
   const newest = log.data?.pages[0]
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
   const leagueTimeZone = data.settings.draft.time_zone ?? null
-  const more = recentMoreHref(leagueId, phase)
+  const more = recentMoreHref(leagueId)
 
   return (
     <div className="flex flex-col gap-4" data-commish-console={phase}>
@@ -170,18 +171,17 @@ function ConsoleContent({
             problem={log.isError ? log.error : null}
             onRetry={() => void log.refetch()}
             hasMore={newest?.has_more ?? false}
+            memberNames={memberNamesOf(data.members)}
             teamNames={teamNames}
             leagueTimeZone={leagueTimeZone}
           />
-          {more && (
-            <div>
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={more} data-commish-recent-more>
-                  {RECENT_MORE_LABEL}
-                </Link>
-              </Button>
-            </div>
-          )}
+          <div>
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={more} data-commish-recent-more>
+                {RECENT_MORE_LABEL}
+              </Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

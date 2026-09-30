@@ -42,6 +42,8 @@ export interface CommishLogFilters {
   team_id?: string
   /** L.E1.32: only rows whose verb recorded acting on this week. */
   week?: number
+  /** L.E1.34: open the log AT this entry (it and everything older). */
+  entry?: string
 }
 
 export const commishLogKeys = {
@@ -59,6 +61,7 @@ export const commishLogKeys = {
         type: filters.type && filters.type.length > 0 ? filters.type.join(',') : undefined,
         team_id: filters.team_id,
         week: filters.week,
+        entry: filters.entry,
       },
     ] as const,
 }
@@ -83,6 +86,7 @@ export function commishLogSearchParams(filters: CommishLogFilters & { cursor?: s
   if (filters.type && filters.type.length > 0) params.set('type', filters.type.join(','))
   if (filters.team_id) params.set('team_id', filters.team_id)
   if (filters.week !== undefined) params.set('week', String(filters.week))
+  if (filters.entry) params.set('entry', filters.entry)
   const query = params.toString()
   return query ? `?${query}` : ''
 }

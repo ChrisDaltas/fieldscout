@@ -20,6 +20,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@/lib/leagues/api/inseason-reads'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
+import { commishTeamHref } from './activity-page-ops'
 import { Crest } from './league-cells'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
@@ -220,10 +221,17 @@ function TeamPageContent({
             {inOverride && <Badge variant="lime" data-override-mode-badge>✸ Override mode ON</Badge>}
             {/* F344: the flag now also means "a roster move changed this row",
                 so the words widened with it (`team-commish-ops.ts`). */}
+            {/* §10.3 / F233(d): the ✸ badge lands on the log — every action naming this team. */}
             {lineup.data?.edited_by_commish && (
-              <Badge variant="stroke-purple" title={COMMISH_CHANGED_TITLE} data-commish-changed>
-                {COMMISH_CHANGED_BADGE}
-              </Badge>
+              <Link
+                href={commishTeamHref(leagueId, teamId)}
+                className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                data-commish-changed-link
+              >
+                <Badge variant="stroke-purple" title={COMMISH_CHANGED_TITLE} className="hover:bg-accent-soft" data-commish-changed>
+                  {COMMISH_CHANGED_BADGE}
+                </Badge>
+              </Link>
             )}
             {currentWeek !== null && week === currentWeek && <Badge variant="green">Current week</Badge>}
             {/* L.D3.7 (§16.5.2 "team page → propose"): another team's page
