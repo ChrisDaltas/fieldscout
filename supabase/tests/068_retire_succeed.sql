@@ -46,6 +46,10 @@
 --   * EVERY REFUSAL BY NAME beside its success twin (rule 9 / D272(20)):
 --     playoffs (Q41) / setup (D42's text, byte-identical) / a manager on
 --     his own seat / anon / no action_id / blank reason / already sealed.
+--     [173 / L.E1.40 (F363(a), Q66): a blank reason is NO LONGER refused —
+--     C0d is re-cut to the ruled behaviour (the retirement proceeds with the
+--     reason null, run inside a rolled-back subtransaction so the golden
+--     below is untouched); pgTAP 121 pins the landed shape.]
 --   * GOLDENS AS STORED LITERALS (D62): every count and rendering below is
 --     a literal written before the first run.
 --   * THE #266 FIX ROUND (R855–R862; 120 edited in place, its md5 moved):
@@ -434,6 +438,23 @@ select is(pg_temp.rs_order('be000000-0000-4000-8000-000000000001', true),
 -- ---------------------------------------------------------------------------
 -- C. The §7.2.1(b) golden — the retirement, every write pinned.
 -- ---------------------------------------------------------------------------
+-- 173 / L.E1.40: C0d's probe — the blank-reason retirement, run and rolled
+-- back (the subtransaction raises its own result; nothing it wrote survives).
+create function pg_temp.rs_try_blank_retire() returns jsonb language plpgsql as $f$
+declare r jsonb;
+begin
+  begin
+    r := public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000001',
+                               'retire', null, '   ', 'ae000000-0000-4000-8000-0000000000d0');
+    raise exception using errcode = 'P0099', message = r::text;
+  exception
+    when sqlstate 'P0099' then r := sqlerrm::jsonb;
+    -- A refusal is REPORTED (so C0d fails as a value, not an aborted run).
+    when others then return jsonb_build_array('refused', sqlstate, sqlerrm);
+  end;
+  return jsonb_build_array(r ->> 'verb', r -> 'reason', r ->> 'retired_team_name', r ->> 'successor_team_name');
+end
+$f$;
 -- C0 refusals first, each beside the success that follows (rule 9).
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
@@ -449,12 +470,16 @@ select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000
 select throws_ok(
   $$ select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000001', 'retire', null, 'a reason') $$,
   '22023', null, 'C0c retire without action_id is an argument-shape violation (113''s contract)');
-select throws_ok(
-  $$ select public.remove_manager('be000000-0000-4000-8000-000000000001', 'de000000-0000-4000-8000-000000000001', 'retire', null, '   ', 'ae000000-0000-4000-8000-000000000001') $$,
-  '22023', null, 'C0d a blank reason is refused — an audited override carries its reason (E49 / D290)');
+-- C0d RE-CUT (173 / L.E1.40 — F363(a), Q66 / C82): the reason is OPTIONAL, so a
+-- blank one RETIRES the team. The call runs inside a subtransaction that
+-- raises its own result and is rolled back, so the golden retirement below
+-- (and its realtime baseline) sees the world the refusals left.
+select is(pg_temp.rs_try_blank_retire(),
+  '["retire_franchise", null, "RS A", "Team 5"]'::jsonb,
+  'C0d a blank reason is NOT refused (Q66, migration 173) — the retirement proceeds with the reason null (rolled back here; pgTAP 121 pins the landed shape)');
 reset role;
 select is((select count(*)::int from teams where league_id = 'be000000-0000-4000-8000-000000000001'), 4,
-  'C0e the four refusals wrote NOTHING (no successor minted)');
+  'C0e the three refusals and the rolled-back C0d retirement wrote NOTHING (no successor minted)');
 
 -- The retirement (u1, the commissioner; action_id …01). The realtime
 -- baseline is taken HERE (the four refusals above wrote nothing).

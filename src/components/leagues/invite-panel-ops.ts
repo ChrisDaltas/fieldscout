@@ -426,18 +426,27 @@ export function fillOutcome(
  *     (169:642) and `leave_league` (150:2426) carry no league-state gate:
  *     offered in every state. (Each refuses a retired franchise, which has
  *     no seat row after 120 — so it is never a seat in this list.)
- *   - `remove_manager` retire (169:724) — accepted in_season / complete only
- *     (playoffs refused pending Q41) and it needs an `action_id` the members
- *     route does not carry (F262(a)) — so it has no door in ANY state; the
- *     reason is said per state.
+ *   - `remove_manager` retire (173, the retire arm of 169:724) — accepted
+ *     in_season / complete only (before the draft D42's refusal; the playoffs
+ *     refused pending Q41), the reason optional (173 / Q66), an `action_id`
+ *     per submit (the route carries it since L.E1.40 — F262(a) / F546). So
+ *     it is offered on a MANAGED seat in those two states; before the draft
+ *     and in the playoffs it is shown disabled with its reason. An UNMANAGED
+ *     seat is retirable only when its team once had a manager (a vacated
+ *     one; a never-managed one refuses — R855), which the seat list cannot
+ *     tell without a read of the team's manager history — so the remove
+ *     chooser (claimed seats only) is its only door, and the list says so
+ *     once (F548).
  */
 export type MembersPhase = 'pre_draft' | 'drafting' | 'in_season' | 'playoffs' | 'complete'
 
 export function membersPhase(status: string): MembersPhase {
   if (status === 'setup' || status === 'scheduled') return 'pre_draft'
   if (status === 'drafting' || status === 'in_season' || status === 'playoffs' || status === 'complete') return status
-  // An unknown status: the conservative arm — nothing only a pre-draft league
-  // accepts is offered.
+  // Unreachable: `leagues_status_valid` (059:119) admits only the six states
+  // above. The fallback exists for type totality only; it offers nothing only
+  // a pre-draft league accepts (it would offer retire — the server's own
+  // status gate still decides that). R1401.
   return 'complete'
 }
 
@@ -447,8 +456,9 @@ export const LINK_CLOSED_INVITE_HINT = 'To fill a team, invite someone to that t
 
 export const RETIRE_BEFORE_DRAFT_WHY = 'Retiring a team is only possible after the draft.'
 export const RETIRE_PLAYOFFS_WHY = 'A team can’t be retired during the playoffs.'
-export const RETIRE_NO_SCREEN_WHY =
-  'Retiring a team doesn’t have a screen yet — open the seat or hand the team to someone instead.'
+/** F548: said once under the seat list where retiring is possible but a team
+ *  there has no manager (the chooser is on managed seats only). */
+export const RETIRE_UNMANAGED_NOTE = 'Only a team with a manager can be retired from this screen.'
 
 export interface MemberControls {
   phase: MembersPhase
@@ -458,8 +468,14 @@ export interface MemberControls {
   linkClosedNote: string | null
   /** "Add an open seat" / "Fill all seats". */
   addSeats: boolean
-  /** Why retire is not offered — it never is on this screen (F262(a)). */
-  retireWhy: string
+  /** "Retire the team" is offered in the remove chooser (in season / after
+   *  the season — the states the verb accepts). */
+  retire: boolean
+  /** Why retire is not offered, when it is not; null when it is. */
+  retireWhy: string | null
+  /** F548 — said under the list when retire is offered and a team below has
+   *  no manager (its chooser does not exist). */
+  retireUnmanagedNote: string | null
 }
 
 /** `hasUnmanagedSeat`: a seat below with no manager (open or invited) — the
@@ -467,18 +483,51 @@ export interface MemberControls {
 export function memberControls(status: string, hasUnmanagedSeat = false): MemberControls {
   const phase = membersPhase(status)
   const preDraft = phase === 'pre_draft'
+  const retire = phase === 'in_season' || phase === 'complete'
   return {
     phase,
     shareLink: preDraft,
     linkClosedNote: preDraft ? null : hasUnmanagedSeat ? `${LINK_CLOSED_NOTE} ${LINK_CLOSED_INVITE_HINT}` : LINK_CLOSED_NOTE,
     addSeats: preDraft,
-    retireWhy:
-      phase === 'pre_draft' || phase === 'drafting'
-        ? RETIRE_BEFORE_DRAFT_WHY
-        : phase === 'playoffs'
-          ? RETIRE_PLAYOFFS_WHY
-          : RETIRE_NO_SCREEN_WHY,
+    retire,
+    retireWhy: retire ? null : phase === 'playoffs' ? RETIRE_PLAYOFFS_WHY : RETIRE_BEFORE_DRAFT_WHY,
+    retireUnmanagedNote: retire && hasUnmanagedSeat ? RETIRE_UNMANAGED_NOTE : null,
   }
+}
+
+/** What "Retire the team" does, in one line, for the chooser (§7.2.1(b)).
+ *  Only asked for where retire is offered. */
+export function retireOptionCopy(phase: MembersPhase): string {
+  return phase === 'complete'
+    ? 'The team is retired with its season. A new team with no manager takes its place in the league, with its players and FAAB.'
+    : 'The team stops playing. A new team with no manager takes its place — with its players, FAAB and spot in the schedule — from the first week that isn’t finished.'
+}
+
+/** The confirmation, said before "Retire" is pressed (E49: both consequences —
+ *  what the new team inherits and where the history splits — in the dialog;
+ *  §7.2.1(b)). What the verb does, measured on 173 (the retire arm, =
+ *  169:884-1060): the roster moves WHOLE to a new team with no manager; that
+ *  team takes the seat (its FAAB balance kept) and — in season — this and
+ *  later weeks' lineups, matchups and results; earlier weeks stay the retired
+ *  team's; the standings seed the new team with the retired team's record
+ *  while its head-to-head does not carry; the manager's seat closes and he is
+ *  told; nothing reverses it. No player goes to waivers or free agency. */
+export function retireConsequences(phase: MembersPhase, teamName: string, managerLabel: string): string[] {
+  if (phase === 'complete') {
+    return [
+      `${teamName} is retired. Its name and its whole season stay in the league’s history under ${managerLabel}.`,
+      `A new team with no manager takes its place in the league, with ${teamName}’s players and FAAB.`,
+      `${managerLabel} leaves the league and is told. Invite someone to the new team afterward.`,
+      'This can’t be undone.',
+    ]
+  }
+  return [
+    `${teamName} stops playing. Its name and the weeks it has finished stay in the league’s history under ${managerLabel}.`,
+    `A new team with no manager takes its place from the first week that isn’t finished: it gets ${teamName}’s players, FAAB and spot in the schedule.`,
+    `For playoff seeding the new team starts with ${teamName}’s win-loss record and points. Head-to-head results don’t carry over.`,
+    `${managerLabel} leaves the league and is told. Invite someone to the new team afterward — until then you run it.`,
+    'This can’t be undone.',
+  ]
 }
 
 export interface RemoveOptionCopy {

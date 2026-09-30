@@ -120,6 +120,25 @@ export function tradeTransactionText(type: string, payload: TradePayloadShape): 
   return null
 }
 
+/** A retirement's ledger row (120 / 173: a `commissioner_move` whose payload
+ *  is the verb's own result, `verb = 'retire_franchise'`) — F262(a), L.E1.40:
+ *  the retired team, the team that takes its place and from when, from the
+ *  stored payload; never a bare "Commissioner move". */
+interface RetirePayloadShape {
+  verb?: unknown
+  retired_team_name?: unknown
+  successor_team_name?: unknown
+  retired_at_week?: unknown
+}
+
+export function retireTransactionText(payload: RetirePayloadShape): string | null {
+  if (payload.verb !== 'retire_franchise') return null
+  const retired = typeof payload.retired_team_name === 'string' && payload.retired_team_name.trim() !== '' ? payload.retired_team_name : 'a team'
+  const successor = typeof payload.successor_team_name === 'string' && payload.successor_team_name.trim() !== '' ? payload.successor_team_name : 'a new team'
+  const when = typeof payload.retired_at_week === 'number' ? ` from Week ${payload.retired_at_week}` : ' after the season'
+  return `retired ${retired} — ${successor} takes its place${when}`
+}
+
 /** One transaction as a sentence: `add_drop` from its payload's names; any
  *  other type by its label (the table is read whole — a later writer's rows
  *  land here labelled, never hidden). */
@@ -139,6 +158,10 @@ export function transactionText(item: TransactionActivityItem): string {
   if ((item.type === 'trade' || item.type === 'commissioner_move') && item.status === 'complete' && item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)) {
     const line = tradeTransactionText(item.type, item.payload as TradePayloadShape)
     if (line) return line
+    if (item.type === 'commissioner_move') {
+      const retired = retireTransactionText(item.payload as RetirePayloadShape)
+      if (retired) return retired
+    }
   }
   const label = TRANSACTION_TYPE_LABELS[item.type] ?? item.type.replace(/_/g, ' ')
   return item.status === 'complete' ? label : `${label} (${item.status})`
