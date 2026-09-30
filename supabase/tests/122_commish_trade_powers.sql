@@ -10,7 +10,7 @@
 --
 -- What this file proves, over REAL calls:
 --   §A  form and D137 in the database — pg_temp.un174 reverses 174's
---       eighteen hunks to each body's newest definer (the pre-174 prosrc md5s,
+--       nineteen hunks to each body's newest definer (the pre-174 prosrc md5s,
 --       stored literals); the live md5s; un174 an identity elsewhere; the two
 --       dropped functions gone; the ledger still admits a stored 'reverse'.
 --   §P  PROPOSE — the commissioner (and the co-commissioner) offering FOR a
@@ -44,6 +44,12 @@
 --       an offer already addressed to a team whose manager then leaves is
 --       called off by E47; R1411 — in a COMPLETE league veto (the new gate),
 --       force and approve are all refused, nothing written.
+--   §Y  FIX ROUND 2 (PR #377): R1413 — a COUNTER to a proposing team with no
+--       manager is refused by name, nothing written, and the offer can still
+--       be turned down; R1414 — in a complete league the receiving manager's
+--       accept is refused and his reject goes in (what the trade card offers
+--       there), and the trade tick then calls off every trade still in
+--       flight, in its sentence.
 --   §N  the whole file's receipts: approve / veto / force only, none acting
 --       for a team, no arm post.
 --
@@ -69,10 +75,11 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(66);
+select plan(74);
 
--- pg_temp.un174 — 174's eighteen hunks reversed (derive_174.py; each
--- replacement text occurs once, in its own body only).
+-- pg_temp.un174 — 174's nineteen hunks reversed (derive_174.py, then the two
+-- fix rounds by hand; each replacement text occurs once, in its own body
+-- only — scratchpad check174.py re-derives the file text from it).
 create function pg_temp.un174(s text) returns text language plpgsql as $un$
 begin
   -- trade_propose_internal
@@ -142,6 +149,21 @@ $o$);
       USING ERRCODE = 'P0001';
   END IF;
 
+$r$, '');
+  s := replace(s, $r$    -- 174 (L.D3.16, R1413 — R1410's rule for the counter): a counter-offer
+    -- is a new offer TO the proposing team, and only a team's own manager
+    -- answers an offer now, so a counter to a proposing team with NO manager
+    -- (an offer the commissioner made for it before 174) could never be
+    -- answered. Refused BY NAME before any write — D339's predicate, as
+    -- trade_propose's; the offer itself can still be turned down. A retired
+    -- proposer falls through to the core's own sentence.
+    IF v_proposer.status <> 'retired'
+       AND NOT EXISTS (SELECT 1 FROM public.league_members m
+                       WHERE m.league_id = p_league_id AND m.team_id = v_proposer.id AND m.user_id IS NOT NULL) THEN
+      RAISE EXCEPTION 'trade_respond: % has no manager to answer a counter-offer right now — only a team''s own manager accepts or turns down an offer, so turn this one down instead (§13.3)',
+        v_proposer.name
+        USING ERRCODE = 'P0001';
+    END IF;
 $r$, '');
   s := replace(s, $r$  -- (7) 174 (L.D3.16): NO commissioner arm — only a party's manager gets
   --     here, so nothing is receipted: the result's acted_as_commissioner is
@@ -438,7 +460,7 @@ select is(
    where n.nspname = 'public'
      and p.proname in ('trade_propose_internal', 'trade_respond_internal', 'commish_force_or_reverse_trade_internal', 'trade_rescind_on_stint_close')),
   'commish_force_or_reverse_trade_internal=e97786981af97fa27dd06e6f9f8e9a86 trade_propose_internal=ea09b34e418c41735418835d51a66e6c '
-  || 'trade_rescind_on_stint_close=6208b2fb96b446cccf49267b2a8823ae trade_respond_internal=66f43b815f3519d8392d06f6e88f2c73',
+  || 'trade_rescind_on_stint_close=6208b2fb96b446cccf49267b2a8823ae trade_respond_internal=ff54aa5c668978125755de39d60905c3',
   'A3 the four live prosrc md5s — 174 as written (stored literals)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -951,6 +973,60 @@ select is(
     || '|' || ((select count(*) from commissioner_actions where league_id = pg_temp.lg(1)) - (select receipts from c122_before)),
   'in_review / k-a1,k-e1 k-a2,k-b2 / 0|0',
   'X14 …and nothing was written: still in review, rosters as they were, no ledger row, no receipt');
+update leagues set status = 'in_season' where id = pg_temp.lg(1);
+
+-- ---------------------------------------------------------------------------
+-- Y. FIX ROUND 2 (PR #377 — R1413 / R1414).
+-- ---------------------------------------------------------------------------
+-- R1413: a COUNTER is a new offer TO the proposing team, so a counter to a
+-- team with no manager is refused by name, as an offer to one is (R1410).
+-- K Foxtrot (X6's open seat) holds an offer it "made" before 174 — the
+-- commissioner arm's write, reproduced through the core the arm called.
+select pg_temp.as_user(1);
+insert into r122
+select 'OF', jsonb_build_object('trade', jsonb_build_object('id',
+  public.trade_propose_core_internal('trade_propose', l, pg_temp.team('K Foxtrot'), pg_temp.team('K Bravo'),
+    pg_temp.swap('k-f1', 'K Foxtrot', 'k-b2', 'K Bravo'), null, null, pg_temp.act(94), '2026-10-27 16:00:00+00', null) ->> 'trade_id'))
+from leagues l where l.id = pg_temp.lg(1);
+select set_config('request.jwt.claims', '', true);
+create temp table y122_before as
+select (select count(*) from trades where league_id = pg_temp.lg(1)) as trades,
+       (select count(*) from trade_actions where league_id = pg_temp.lg(1)) as ledger;
+select is(
+  pg_temp.st('OF') || ' / ' || (select count(*) from league_members where team_id = pg_temp.team('K Foxtrot') and user_id is not null),
+  'proposed / 0',
+  'Y1 PREMISE: an open offer FROM K Foxtrot, a team with no manager, to K Bravo');
+select throws_ok(
+  $$ select pg_temp.try_resp(1, 3, 'OF', 'counter', pg_temp.swap('k-b2', 'K Bravo', 'k-f1', 'K Foxtrot'), '2026-10-27 16:10:00+00', 95) $$,
+  'P0001', 'trade_respond: K Foxtrot has no manager to answer a counter-offer right now — only a team''s own manager accepts or turns down an offer, so turn this one down instead (§13.3)',
+  'Y2 R1413: K Bravo COUNTERS to K Foxtrot (no manager) — refused BY NAME');
+select is(
+  pg_temp.st('OF') || ' / ' || ((select count(*) from trades where league_id = pg_temp.lg(1)) - (select trades from y122_before))
+    || '|' || ((select count(*) from trade_actions where league_id = pg_temp.lg(1)) - (select ledger from y122_before)),
+  'proposed / 0|0',
+  'Y3 …and nothing was written: the offer still proposed, no counter trade, no ledger row');
+select pg_temp.resp('OFr', 1, 3, 'OF', 'reject', '2026-10-27 16:20:00+00', 96);
+select is(pg_temp.st('OF'), 'rejected', 'Y4 R1413 positive: K Bravo can still turn the offer down (what the card offers instead of Counter)');
+
+-- R1414: in a COMPLETE league the trade card offers the receiving manager
+-- Turn down, not Accept / Counter, and no commissioner tool — because that is
+-- what the server takes. Then the trade tick calls off what is still in
+-- flight (151 / 155's backstop sweep: a trade goes through only in season).
+update leagues set status = 'complete' where id = pg_temp.lg(1);
+select throws_like($$ select pg_temp.try_resp(1, 5, 'TH', 'accept', null, '2026-10-27 16:30:00+00', 97) $$,
+  '%is complete — a trade is accepted or countered only while the league is in season or in the playoffs%',
+  'Y5 R1414: in a complete league the receiving manager ACCEPT is refused by name (so the card offers no Accept / Counter)');
+select pg_temp.resp('THr', 1, 5, 'TH', 'reject', '2026-10-27 16:31:00+00', 98);
+select is(pg_temp.st('TH'), 'rejected', 'Y6 R1414: …his TURN DOWN goes in (so the card keeps it)');
+create temp table y122_tick as select public.trade_tick('2026-10-27 16:32:00+00', pg_temp.lg(1)) as r;
+select is(
+  (select t.status || ' / ' || t.status_reason from trades t where t.id = pg_temp.tid('CT')),
+  'invalid / the trade can no longer go through: the league is complete — a trade goes through only while the league is in season or in the playoffs (§7.1 / §13.3)',
+  'Y7 R1414: a trade still in review when the league completes is called off by the next trade tick, in its sentence');
+select is(
+  (select count(*)::int from trades where league_id = pg_temp.lg(1) and status in ('proposed', 'accepted', 'in_review')),
+  0,
+  'Y8 …and so is every other trade still in flight: nothing is left pending in a complete league');
 update leagues set status = 'in_season' where id = pg_temp.lg(1);
 
 -- ---------------------------------------------------------------------------

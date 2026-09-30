@@ -30,7 +30,11 @@
 --      no manager (fix round R1410 — a consequence of the ruling: nobody
 --      could answer it any more): "<Team> has no manager to answer a trade
 --      right now — …" (D339's predicate: no league_members row for the team
---      carrying a user_id).
+--      carrying a user_id). `trade_respond_internal` refuses a COUNTER to a
+--      proposing team with no manager the same way (fix round 2, R1413 — a
+--      counter-offer is a new offer to that team): "<Team> has no manager to
+--      answer a counter-offer right now — …"; the offer can still be turned
+--      down.
 --      `trade_rescind_on_stint_close` (E47): its called-off sentence said
 --      "the commissioner can re-propose it acting for the team" — now "the
 --      team's next manager can offer it again".
@@ -82,11 +86,13 @@
 --       to a team with no manager refused by name (R1410), H4 the arm's
 --       receipt removed.
 --   trade_respond_internal                    148 → 151; source 151:1216-1535
---       (md5 63ce5d2fbf3c396e610d6985a7431546) — 2 hunks (+24 / -13): H1 the
+--       (md5 63ce5d2fbf3c396e610d6985a7431546) — 3 hunks (+38 / -13): H1 the
 --       commissioner refused by name AFTER the replay (R1412) — a
 --       commissioner who manages the other party hears that party's
 --       sentence, as before 174 the other party did (151's pre-replay
---       other-party gate is kept verbatim); H2 the arm's receipt removed.
+--       other-party gate is kept verbatim); H2 a counter to a proposing team
+--       with no manager refused by name (R1413); H3 the arm's receipt
+--       removed.
 --   commish_force_or_reverse_trade_internal   156 only; source 156:1284-1734
 --       (md5 cf4c886df1c96c574d7739dab5227366) — 11 hunks (+48 / -99): H1
 --       the shape gate's words, H2 / H3 approve's and veto's re-worded
@@ -97,6 +103,8 @@
 --       league-status gate (R1411).
 --   trade_rescind_on_stint_close              151 only; source 151:1545-1573
 --       (md5 9bc1056acc6d6b37547e1be5db7a8ee7) — 1 hunk (+3 / -1): the E47 sentence.
+-- 19 hunks in all (4 + 3 + 11 + 1); "+a / -b" is `diff`'s line count of each
+-- body against its source (pgTAP 122's un174 carries one replace per hunk).
 -- 152–173 define none of the four (measured). Every other line of the four
 -- bodies is byte-identical: the league lock first, the no-leak 42501s, the
 -- R732 replays, the reason's normalisation, the deadline and state gates,
@@ -120,7 +128,12 @@
 --   `db reset` 001–174 and the full pgTAP run in the PR. D38 — no backfill:
 --   nothing stored changes meaning (receipts, trades and transactions rows
 --   written by the removed arms stay as history, as do E47 reasons already
---   stored).
+--   stored). No call-off of open offers either (fix round 2, R1413): an
+--   open offer involving a team with no manager — the only case the new
+--   refusals would strand — was MEASURED absent: 0 open trades of any status
+--   ('proposed', 'accepted', 'in_review') in production on 2026-09-30
+--   (read-only, the orchestrator); the orchestrator re-measures before the
+--   push.
 --
 -- DEPLOY ORDER (production at 173 when this merges; the app deploys at once):
 --   the app stops OFFERING the removed acts first (no "answer for a team", no
@@ -136,19 +149,22 @@
 -- name on propose and on every respond op for a team he does not manage,
 -- nothing written, and a pre-174 arm action of his replayed (R1412); an offer
 -- to a team with no manager refused by name, one to a managed team accepted
--- (R1410), and an offer already addressed to a team whose manager then
--- leaves called off by E47; a commissioner who manages a party acts as its
--- manager with no receipt; force refused on proposed / expired, accepted on
--- in_review / accepted (deferred) past the review, the vote, the lock and the
--- deadline; reverse refused by name, a pre-174 reverse action replayed;
--- approve / veto unchanged, and none of the three in a complete league
--- (R1411)). 096 / 099 / 104 / 118 re-cut where they pinned the removed arms
+-- (R1410), a counter to a proposing team with no manager refused by name and
+-- nothing written, the offer still turned down (R1413), and an offer already
+-- addressed to a team whose manager then leaves called off by E47; a
+-- commissioner who manages a party acts as its manager with no receipt;
+-- force refused on proposed / expired, accepted on in_review / accepted
+-- (deferred) past the review, the vote, the lock and the deadline; reverse
+-- refused by name, a pre-174 reverse action replayed; approve / veto
+-- unchanged, and none of the three in a complete league (R1411); there a
+-- manager's accept refused, his turn-down taken, and the trade tick calling
+-- off every trade still pending (R1414)). 096 / 099 / 104 / 118 re-cut where they pinned the removed arms
 -- (each cell named in PROGRESS D463). Break probes shown red then reverted in
 -- the PR.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- A1. trade_propose_internal — 151:475-619's FILE TEXT (D137), 2 hunks.
+-- A1. trade_propose_internal — 151:475-619's FILE TEXT (D137), 4 hunks.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION trade_propose_internal(
   p_league_id    UUID,
@@ -324,7 +340,7 @@ REVOKE EXECUTE ON FUNCTION trade_propose_internal(UUID, UUID, UUID, JSONB, TEXT[
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- A2. trade_respond_internal — 151:1216-1535's FILE TEXT (D137), 2 hunks.
+-- A2. trade_respond_internal — 151:1216-1535's FILE TEXT (D137), 3 hunks.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION trade_respond_internal(
   p_league_id UUID,
@@ -571,6 +587,20 @@ BEGIN
     GET DIAGNOSTICS v_cnt = ROW_COUNT;
   ELSE
     -- COUNTER = reject + a new proposal the other way, linked (task text).
+    -- 174 (L.D3.16, R1413 — R1410's rule for the counter): a counter-offer
+    -- is a new offer TO the proposing team, and only a team's own manager
+    -- answers an offer now, so a counter to a proposing team with NO manager
+    -- (an offer the commissioner made for it before 174) could never be
+    -- answered. Refused BY NAME before any write — D339's predicate, as
+    -- trade_propose's; the offer itself can still be turned down. A retired
+    -- proposer falls through to the core's own sentence.
+    IF v_proposer.status <> 'retired'
+       AND NOT EXISTS (SELECT 1 FROM public.league_members m
+                       WHERE m.league_id = p_league_id AND m.team_id = v_proposer.id AND m.user_id IS NOT NULL) THEN
+      RAISE EXCEPTION 'trade_respond: % has no manager to answer a counter-offer right now — only a team''s own manager accepts or turns down an offer, so turn this one down instead (§13.3)',
+        v_proposer.name
+        USING ERRCODE = 'P0001';
+    END IF;
     v_status := 'rejected';
     UPDATE public.trades t
     SET status = 'rejected', status_reason = 'countered by ' || v_recipient.name, resolved_at = p_at, resolved_by = auth.uid()
@@ -700,7 +730,7 @@ REVOKE EXECUTE ON FUNCTION trade_rescind_on_stint_close() FROM PUBLIC, anon, aut
 
 -- ---------------------------------------------------------------------------
 -- B. commish_force_or_reverse_trade_internal — 156:1284-1734's FILE TEXT
---    (D137), 10 hunks.
+--    (D137), 11 hunks.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION commish_force_or_reverse_trade_internal(
   p_league_id UUID,
