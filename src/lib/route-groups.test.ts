@@ -188,6 +188,13 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // reading-and-answering page, not a draft surface. Gated on
   // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/trades',
+  // M6 L.E2.4 — the league's STAT CORRECTIONS (spec §23.4's league-facing
+  // view; PROGRESS D456). Its own page until the Activity page (L.E1.34)
+  // mounts the same `CorrectionsView` as its "Stat corrections" tab; kept
+  // then as that tab's deep link (the matchup note links `?week=`). In
+  // `(shell)` for Q12's reason: a reading page. Gated on
+  // `featureFlags.leagues` by `(shell)/leagues/layout.tsx`.
+  '/app/leagues/[leagueId]/corrections',
   // M6 L.E1.33 — the COMMISSIONER CONSOLE (spec §10.1 as folded by v2.16.77
   // `…/leagues/[id]/commish`: the launchpad; PROGRESS D443, D457). In
   // `(shell)` for Q12's reason: a page of doors, not a draft surface. Gated

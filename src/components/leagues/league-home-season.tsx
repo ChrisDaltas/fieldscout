@@ -24,6 +24,7 @@ import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
 
 import { ActivityFeed } from './activity-feed'
+import { correctionsHref } from './corrections-view-ops'
 import { Crest, TeamNameLink, teamPageHref } from './league-cells'
 import {
   CHAMPION_UNRECORDED_COPY,
@@ -697,6 +698,7 @@ function ActivityFeedCard({ leagueId, data }: { leagueId: string; data: LeagueDe
       onRetry={() => feed.refetch()}
       teamNames={teamNames}
       leagueTimeZone={data.settings.draft.time_zone ?? null}
+      correctionsHref={correctionsHref(leagueId, null)}
       commishLog={{
         items: newest?.items,
         pending: log.isPending,

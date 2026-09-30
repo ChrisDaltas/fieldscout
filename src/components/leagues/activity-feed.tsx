@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -60,6 +62,7 @@ export function ActivityFeed({
   teamNames,
   leagueTimeZone,
   commishLog,
+  correctionsHref,
 }: {
   leagueId: string
   items: readonly ActivityItem[] | undefined
@@ -70,6 +73,9 @@ export function ActivityFeed({
   leagueTimeZone: string | null
   /** The §10.3 commissioner log (Q66). Omitted ⇒ the section is not mounted. */
   commishLog?: CommishLogSectionProps
+  /** M6 L.E2.4: the door to the league's stat corrections (until the
+   *  Activity page hosts them as a tab — L.E1.34). Omitted ⇒ no link. */
+  correctionsHref?: string
 }) {
   const lines = items ? feedLines(items, teamNames) : []
   return (
@@ -77,7 +83,18 @@ export function ActivityFeed({
     // door lands here (L.E1.33; F538 until the Activity page exists).
     <Card id="activity" data-activity-feed>
       <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">{FEED_TITLE}</CardTitle>
+        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span className="min-w-0 flex-1">{FEED_TITLE}</span>
+          {correctionsHref && (
+            <Link
+              href={correctionsHref}
+              className="text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              data-corrections-link
+            >
+              Stat corrections
+            </Link>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 px-card-pad py-2">
         {problem != null && items && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}

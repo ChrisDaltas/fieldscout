@@ -37,6 +37,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
+import { STAT_FIX_RULE_COPY } from './corrections-view-ops'
 import { Crest } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
 import { OverrideModeBar } from './override-mode-bar'
@@ -1357,7 +1358,6 @@ function LineupsGroup({
   s: LeagueSettings
   onSettings: (patch: Partial<LeagueSettings>) => void
 }) {
-  const windowIsHours = typeof s.stat_correction_window === 'number'
   return (
     <GroupCard title="Lineups & lock">
       {/* v2.16.20 (Q34(A), Chris 2026-09-05; migration 114): the lineup lock has ONE value —
@@ -1383,37 +1383,14 @@ function LineupsGroup({
         onCheckedChange={(auto_sub_inactives) => onSettings({ auto_sub_inactives })}
       />
 
-      <FieldRow label="Stat-correction window" htmlFor="set-correction-mode" hint="How long corrections auto-apply.">
-        <div className="flex items-center gap-2">
-          {windowIsHours && (
-            <Input
-              id="set-correction-hours"
-              type="number"
-              min={0}
-              max={168}
-              value={s.stat_correction_window as number}
-              onChange={(e) =>
-                onSettings({
-                  stat_correction_window: clampInt(e.target.value, 0, 168, s.stat_correction_window as number),
-                })
-              }
-              className="h-btn-md w-20 text-[12px]"
-            />
-          )}
-          <ChoiceSelect
-            id="set-correction-mode"
-            ariaLabel="Stat-correction window"
-            value={windowIsHours ? 'hours' : 'thu_06_00_et'}
-            width="w-36"
-            options={[
-              { value: 'thu_06_00_et', label: 'Thu 6:00 AM ET' },
-              { value: 'hours', label: 'Custom hours' },
-            ]}
-            onValueChange={(v) =>
-              onSettings({ stat_correction_window: v === 'thu_06_00_et' ? 'thu_06_00_et' : 48 })
-            }
-          />
-        </div>
+      {/* Q86 (Chris 2026-09-29, spec §7.3.6 v2.16.77; PROGRESS F475, M6 L.E2.4): one stat-fix
+          rule for every league this season — stated as text, no choice. The old "Thu 6:00 AM ET" /
+          custom-hours control changed nothing (no job reads `stat_correction_window`; since 158 the
+          window is the next week's first kickoff), so it is gone; the stored value is untouched. */}
+      <FieldRow label="Stat corrections" hint={`${STAT_FIX_RULE_COPY}. The same rule for every league this season.`}>
+        <span className="text-[12px] font-semibold text-n-3" data-stat-fix-rule>
+          Next week’s first game
+        </span>
       </FieldRow>
     </GroupCard>
   )
