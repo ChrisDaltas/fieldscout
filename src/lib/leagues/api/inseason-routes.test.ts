@@ -85,6 +85,12 @@ const ROUTES = [
     verb: 'GET',
     service: 'readPlayoffBracket',
   },
+  // M6 L.E2.3: the league's stat corrections (§15.3 / §23.4; D454).
+  {
+    file: 'src/app/api/leagues/[id]/corrections/route.ts',
+    verb: 'GET',
+    service: 'readStatCorrections',
+  },
 ] as const
 
 const SCHEDULE_SERVICE = 'src/lib/leagues/api/schedule-service.ts'
@@ -99,6 +105,7 @@ const STANDINGS_SERVICE = 'src/lib/leagues/api/standings-service.ts'
 const PLAYOFFS_SERVICE = 'src/lib/leagues/api/playoffs-service.ts'
 const READS = 'src/lib/leagues/api/inseason-reads.ts'
 const ACTIVITY_SERVICE = 'src/lib/leagues/api/activity-service.ts'
+const CORRECTIONS_SERVICE = 'src/lib/leagues/api/corrections-service.ts'
 
 /** File text with block comments and `//` lines removed, so a docblock that
  *  merely MENTIONS a guard cannot satisfy a pin about the code. */
@@ -181,7 +188,7 @@ describe('the in-season Route Handlers keep the house shape (§15.3)', () => {
 // ---------------------------------------------------------------------------
 
 describe('the direct-read services assert membership BEFORE any table read (D92 + rule 10; the activity feed since R807)', () => {
-  for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, ACTIVITY_SERVICE]) {
+  for (const rel of [ROSTERS_SERVICE, MATCHUPS_SERVICE, ACTIVITY_SERVICE, CORRECTIONS_SERVICE]) {
     it(`${rel} calls assertLeagueMember before its first .from(`, () => {
       const source = code(rel)
       expect(source).toMatch(/import \{ [^}]*assertLeagueMember[^}]* \} from '\.\/inseason-reads'/)
