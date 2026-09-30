@@ -6472,6 +6472,10 @@ export type Database = {
       }
       scoring_rules_validate: { Args: { p_rules: Json }; Returns: undefined }
       scoring_stall_check: { Args: { p_now?: string }; Returns: Json }
+      scoring_system_league_use_internal: {
+        Args: { p_scoring_system_id: string }
+        Returns: string
+      }
       scoring_tier_keys_from_cuts: {
         Args: { p_cuts: Json; p_prefix: string }
         Returns: string[]

@@ -389,8 +389,26 @@ describe('SE.4b — the three write walls, over the wire (migration 104; D175/D1
     expect(body.message).toContain('guardrail 2')
   })
 
-  it('act 1 control: a VALID edit through the very same path LANDS', async () => {
-    const { error, data } = await commishClient
+  it('act 1 control: a VALID edit is refused on the CLIENT route (170) and LANDS as the owner', async () => {
+    // RE-CUT BY 170 (L.E1.31, R1330 — PROGRESS D451(9)): this cell pinned the
+    // commissioner writing a VALID document straight into his league's scoring
+    // row through the owner policy — a rules change with no receipt. Since 170
+    // that client write is refused by name (42501, the league named); a league's
+    // rules change only through scoring_update_rules, which records it. The
+    // validator's control — "the wall does not refuse everything" — moves to
+    // the service client, which stands outside the client-route guard.
+    const { error: clientError } = await commishClient
+      .from('scoring_systems')
+      .update({
+        rules: VALID_FLAT as unknown as Database['public']['Tables']['scoring_systems']['Update']['rules'],
+      })
+      .eq('id', forkId)
+      .select('id')
+    expect(clientError?.code).toBe('42501')
+    expect(clientError?.message).toContain(`is the scoring of league "${LEAGUE_NAME}"`)
+    expect(clientError?.message).toContain('scoring_update_rules')
+
+    const { error, data } = await service
       .from('scoring_systems')
       .update({
         rules: VALID_FLAT as unknown as Database['public']['Tables']['scoring_systems']['Update']['rules'],
@@ -404,7 +422,7 @@ describe('SE.4b — the three write walls, over the wire (migration 104; D175/D1
     // …and each half of the F21 pair is legal on its own, so the refusal above
     // is provably about the PAIR — the defect — not about either key name.
     for (const [key, value] of Object.entries(F21_DOUBLE_PAY)) {
-      const { error: soloError } = await commishClient
+      const { error: soloError } = await service
         .from('scoring_systems')
         .update({
           rules: {
@@ -416,7 +434,7 @@ describe('SE.4b — the three write walls, over the wire (migration 104; D175/D1
     }
 
     // Restore the fork document for act 3.
-    const { error: restoreError } = await commishClient
+    const { error: restoreError } = await service
       .from('scoring_systems')
       .update({
         rules: forkTemplateDoc(

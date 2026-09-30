@@ -195,6 +195,16 @@ select cron.unschedule('draft-tick');
 - A `CREATE OR REPLACE FUNCTION` hotfix must be authored against the current
   head of the chain, not against the body that happens to be deployed. `073` is
   the counter-example that caused all of this.
+- **A data-only restore or table copy must disable the commissioner-log
+  pointer guards for its duration (migration 170, PROGRESS D451 / R1333).**
+  They are `ENABLE ALWAYS`, so `pg_restore --data-only`, `COPY` or
+  `INSERT … SELECT` of `matchups` / `transactions` / `league_weeks` rows that
+  carry `override_action_id`, `pairing_set_by_action_id`, `related_action_id`,
+  `reopened_by_action_id` or `scoring_rules_action_id` is refused row by row.
+  In one transaction: `ALTER TABLE <t> DISABLE TRIGGER trg_zz_<column>_guard_ins`
+  (and `_upd`), load, `ALTER TABLE <t> ENABLE ALWAYS TRIGGER …` again. A
+  schema-and-data restore (triggers created after the data — pg_restore's
+  default order) is unaffected.
 
 ---
 

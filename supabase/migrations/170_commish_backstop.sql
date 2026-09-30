@@ -52,13 +52,23 @@
 --      app.commish_action_id — the receipt log_commissioner_action_internal
 --      wrote in this transaction (123:447) — and, when that receipt exists,
 --      it belongs to the row's own league (a missing one is left to the FK,
---      23503, so a dangling id keeps its old refusal). The one job arm: the
---      backfill's copy, guarded to exactly the value it copies (a
---      change_setting receipt of the week's own league for the key
---      scoring_system_id). Everything else — a direct owner-role or service-
---      role write outside a verb, a clear to NULL, a pointer at another
---      receipt — is REFUSED BY NAME (P0001, the table, the column, the row,
+--      23503, so a dangling id keeps its old refusal). The one job arm is
+--      the backfill's own shape and nothing wider (R1329): an UPDATE of a
+--      week whose rules AND pointer are both still NULL, sourced backfill /
+--      backfill_ambiguous, naming a scoring-system change the league's own
+--      commish_setting_actions ledger records. Everything else — a direct
+--      owner-role or service-role write outside a verb, a clear to NULL, a
+--      pointer at another receipt, a re-point of a set pointer dressed as a
+--      backfill — is REFUSED BY NAME (P0001, the table, the column, the row,
 --      both values and the GUC).
+--    A DATA-ONLY RESTORE OR TABLE COPY MUST DISABLE THESE TRIGGERS FOR ITS
+--    DURATION (R1333). They are ENABLE ALWAYS, so pg_restore --data-only,
+--    COPY or INSERT … SELECT of matchups / transactions / league_weeks rows
+--    that carry a pointer is refused row by row (the INSERT guards) — ALTER
+--    TABLE … DISABLE TRIGGER trg_zz_…_guard_ins / _upd, load, ENABLE ALWAYS
+--    again, in one transaction (runbook-hosted-migration-reconciliation.md
+--    says so too). A schema-and-data restore that creates the triggers after
+--    the data (pg_restore's default order) is unaffected.
 --    THE GUC IS NOT THE SECURITY BOUNDARY (R1010, restated): no client role
 --    holds a write policy on any of these three tables; the guard catches a
 --    DEFINER body, a job, the service role or the owner writing a pointer
@@ -87,8 +97,10 @@
 --    own example — wrote the SAME action_type (edit_lineup) with it NULL.
 --    THE RULE (D451): the team is set whenever the commissioner does, for ONE
 --    team, what that team's manager could do himself — through the manager
---    verb's commissioner arm OR through its override twin. So, one hunk each
---    (the helper's last argument, NULL → the team):
+--    verb's commissioner arm OR through its override twin — and it is NULL on
+--    the team he manages himself (his own act, not one on its behalf —
+--    169's set_lineup arm, R1334). So, one hunk each (the helper's last
+--    argument, NULL → the team unless it is his own):
 --      commish_edit_lineup_internal     edit_lineup · the team (set_lineup's twin)
 --      commish_roster_override_internal force_add / force_drop · the team on
 --                                       the add / drop arm (roster_add_drop's
@@ -112,13 +124,37 @@
 -- chain) by an exact-match script (derive_170.py: the substitution hits
 -- exactly once, the reversal reproduces the source byte for byte; pgTAP
 -- 118's pg_temp.un170 is the same reversal in the database):
---   commish_edit_lineup_internal     166:144   prosrc md5 cee39d86… → 467d4bd0…  1 hunk (+6 / -1)
---   commish_roster_override_internal 164:209   prosrc md5 a078d3e9… → 7ffd4e44…  1 hunk (+7 / -1)
---   commish_rename_team_internal     131:2304  prosrc md5 7c4a25c5… → 8a4e4eba…  1 hunk (+4 / -1)
+--   commish_edit_lineup_internal     166:144   prosrc md5 cee39d86… → dfef11dc…  1 hunk (+9 / -1)
+--   commish_roster_override_internal 164:209   prosrc md5 a078d3e9… → c5ccb460…  1 hunk (+9 / -1)
+--   commish_rename_team_internal     131:2304  prosrc md5 7c4a25c5… → 5248f36b…  1 hunk (+7 / -1)
 -- Each hunk replaces the helper call's final `NULL` argument and adds its
 -- comment; the REVOKE is restated after each (093 / 095 / 100 / 168 / 169
 -- precedent). Older suites that pin these bodies by md5 apply pg_temp.un170
 -- INNERMOST, so they pin exactly what they pinned (additive, R992).
+--
+-- 3. A LEAGUE'S SCORING RULES, WRITTEN STRAIGHT THROUGH THE TABLE (R1330).
+--    The census reads pg_proc; a client write POLICY is a route it cannot
+--    see. "Users can manage own scoring systems" (FOR ALL, auth.uid() =
+--    owner_id) let a commissioner UPDATE his league's forked
+--    scoring_systems.rules directly — no receipt (measured by the review:
+--    receptions 1 → 0.5, commissioner_actions unchanged). Closed by a guard,
+--    not by narrowing the policy (a narrowed policy answers "0 rows" — the
+--    silent success CLAUDE.md forbids): scoring_systems_league_rules_guard_
+--    internal (PLAIN, BEFORE UPDATE, after 104's validator) refuses a CLIENT
+--    statement (current_user authenticated / anon — a DEFINER door such as
+--    scoring_update_rules runs as its owner) that changes `rules` on a row a
+--    live league plays by, BY NAME (42501, the league named), pointing at
+--    the receipted door. The reference is read by scoring_system_league_use_
+--    internal (DEFINER, search_path '', in-body gate: it answers only about
+--    the CALLER'S OWN row — the one RLS already let him write — so nothing
+--    about another user's system is ever told; EXECUTE for authenticated
+--    only, because the trigger runs as the caller). A personal system no
+--    league uses stays editable (the research editor). A DELETE of a
+--    referenced row is already refused by leagues' FK. The owner and the
+--    service role stand outside it as they stand outside RLS (R1010's
+--    posture: the threat closed is the client route). pgTAP 118 §P pins it
+--    and adds a POLICY CENSUS — every client write policy in the schema with
+--    a verdict — so a policy route cannot hide again.
 --
 -- WHAT IS NOT CHANGED, AND WHY (the census's allowlist — pgTAP 118 §C holds
 -- each reason next to its name): leave_league / claim_league_invite (a
@@ -132,7 +168,11 @@
 -- commissioner door: roster_add_drop and rename_own_team keep refusing him
 -- on another team BY DESIGN — their own refusal copy names the override twin
 -- he uses instead (transactions-service.ts / team-rename-service.ts; standing
--- rules (c) / (h); TD16 "delivered by override mode").
+-- rules (c) / (h); TD16 "delivered by override mode"). TWO MANAGER ACTS THE
+-- COMMISSIONER CANNOT DO FOR ANOTHER TEAM TODAY are a standing rule (a)
+-- defect, filed and NOT built here (PROGRESS F521, its own FULL task): a bid
+-- in a live auction (draft_place_bid takes no team) and another team's draft
+-- queue (draft_queue_replace refuses him). pgTAP 118 T8 / T9 pin them.
 --
 -- DEPLOY BEFORE PUSH (TD15). No route, hook, page or type changes shape. On
 -- a database at 169 merged code behaves as today; at 170 the three receipt
@@ -141,19 +181,23 @@
 -- makes one (measured: src/ and scripts/ write none of the five columns).
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4)
---   New: 1 trigger function (PLAIN, search_path '', REVOKEd from PUBLIC /
---   anon / authenticated) + 10 triggers (ENABLE ALWAYS). Replaced: 3 bodies
+--   New: 2 trigger functions (PLAIN, search_path '', REVOKEd from PUBLIC /
+--   anon / authenticated) + 11 triggers (ENABLE ALWAYS); 1 DEFINER helper
+--   (search_path '', in-body gate, REVOKEd from PUBLIC / anon, EXECUTE for
+--   authenticated — the trigger runs as the caller). Replaced: 3 bodies
 --   (signatures, volatility, DEFINER-ness and search_path unchanged). No
---   table, column, index, policy or cron row. Time: none read. Typegen: no
---   change (no new callable function, no column). Realtime: none.
+--   table, column, index, policy or cron row. Time: none read. Typegen: the
+--   one new callable function (additive). Realtime: none.
+--   RESTORES: a data-only restore / table copy must disable the ten pointer
+--   guards for its duration (R1333; see §1 and the hosted runbook).
 --   WAIVERS: R6 — no staging clone; rehearsal evidence = the fresh local
 --   `db reset` 001–170 and the full pgTAP run in the PR. D38 — no backfill:
 --   receipts written before 170 keep acting_as_team_id NULL (the log is
 --   immutable, §12.12 — there is nothing to rewrite, and nothing may be);
 --   the guards judge only a CHANGE to a pointer, so no existing row is
 --   re-judged and no stored value has to satisfy them.
--- Rollback = DROP the ten triggers and the function; re-apply the three head
--- bodies named above verbatim.
+-- Rollback = DROP the eleven triggers, the two trigger functions and the
+-- helper; re-apply the three head bodies named above verbatim.
 --
 -- Proof: pgTAP 118 (the census, the matrix, the manager-verb census, the
 -- guard cells per column and per role, D137 in the database). Break probes
@@ -207,17 +251,23 @@ BEGIN
         TG_TABLE_NAME, v_col, v_row ->> 'id', v_new, v_league, v_row ->> 'league_id'
         USING ERRCODE = 'P0001';
     END IF;
-    -- (b) THE ONE JOB (TD10: guarded to the value it copies): 144's backfill
-    --     copies the week's own league's scoring-system change receipt.
-    IF v_col = 'scoring_rules_action_id' AND TG_TABLE_NAME = 'league_weeks'
+    -- (b) THE ONE JOB, held to its own shape (TD10; R1329): 144's backfill
+    --     fills a week that holds NO rules and NO pointer yet (its UPDATE is
+    --     `WHERE … scoring_rules_snapshot IS NULL`), and the id it copies is
+    --     a scoring-system change that the league's OWN commish_setting_
+    --     actions ledger records (the backfill reads exactly that ledger,
+    --     144:385-395). A pointer already set is never re-pointed this way.
+    IF v_col = 'scoring_rules_action_id' AND TG_TABLE_NAME = 'league_weeks' AND TG_OP = 'UPDATE'
+       AND v_old IS NULL
+       AND (to_jsonb(OLD) ->> 'scoring_rules_snapshot') IS NULL
        AND (v_row ->> 'scoring_rules_source') IN ('backfill', 'backfill_ambiguous')
        AND EXISTS (
-         SELECT 1 FROM public.commissioner_actions a
-         WHERE a.id = v_new::uuid
-           AND a.league_id = (v_row ->> 'league_id')::uuid
-           AND a.action_type = 'change_setting'
-           AND a.target_type = 'setting'
-           AND a.target_id = 'scoring_system_id') THEN
+         SELECT 1 FROM public.commish_setting_actions s
+         JOIN public.commissioner_actions a ON a.id = v_new::uuid AND a.league_id = s.league_id
+         WHERE s.league_id = (v_row ->> 'league_id')::uuid
+           AND s.setting_key = 'scoring_system_id'
+           AND s.result ->> 'no_changes' = 'false'
+           AND s.result ->> 'commissioner_action_id' = v_new) THEN
       RETURN NEW;
     END IF;
   END IF;
@@ -1047,8 +1097,11 @@ BEGIN
       -- set this team's lineup: a manager's act done for the team (§10.3:711
       -- "set when the commissioner acts on behalf of any team, most commonly
       -- an orphaned one"). set_lineup's commissioner arm has written the same
-      -- action_type with it since 169; one action_type, one shape.
-      p_team_id);
+      -- action_type with it since 169; one action_type, one shape. His OWN
+      -- team is his own act, not one on its behalf: NULL (169's arm, R1334).
+      CASE WHEN EXISTS (SELECT 1 FROM public.league_members m
+                        WHERE m.league_id = p_league_id AND m.user_id = auth.uid() AND m.team_id = p_team_id)
+           THEN NULL ELSE p_team_id END);
     IF v_audit_id IS NULL THEN
       RAISE EXCEPTION 'commish_edit_lineup: the audit row was not written — refusing to let the edit stand without its receipt (§10.3)'
         USING ERRCODE = 'P0001';
@@ -2044,8 +2097,10 @@ BEGIN
       -- act roster_add_drop gives its manager (§10.3:711; TD16 — the manager
       -- verb's commissioner door is this override, standing rule (h)). A MOVE
       -- acts on two teams and for neither: NULL, both ride in
-      -- affected_team_ids (D353).
-      CASE WHEN v_is_move THEN NULL ELSE p_team_id END);
+      -- affected_team_ids (D353). His OWN team is his own act: NULL (R1334).
+      CASE WHEN v_is_move OR EXISTS (SELECT 1 FROM public.league_members m
+                                     WHERE m.league_id = p_league_id AND m.user_id = auth.uid() AND m.team_id = p_team_id)
+           THEN NULL ELSE p_team_id END);
     IF v_audit_id IS NULL THEN
       RAISE EXCEPTION '%: the audit row was not written — refusing to let the roster move stand without its receipt (§10.3)', p_verb
         USING ERRCODE = 'P0001';
@@ -2353,8 +2408,11 @@ BEGIN
         'frozen_receipts_for_this_team', v_frozen),
       -- 170/L.E1.31 (D451) — acting_as_team_id = THE TEAM: the commissioner
       -- renamed it, the act rename_own_team gives its manager (§10.3:711;
-      -- TD16 — the manager verb's commissioner door is this override).
-      p_team_id);
+      -- TD16 — the manager verb's commissioner door is this override). His
+      -- OWN team is his own act: NULL (R1334).
+      CASE WHEN EXISTS (SELECT 1 FROM public.league_members m
+                        WHERE m.league_id = p_league_id AND m.user_id = auth.uid() AND m.team_id = p_team_id)
+           THEN NULL ELSE p_team_id END);
     IF v_audit_id IS NULL THEN
       RAISE EXCEPTION 'commish_rename_team: the audit row was not written — refusing to let the rename stand without its receipt (§10.3)'
         USING ERRCODE = 'P0001';
@@ -2415,3 +2473,61 @@ END;
 $$;
 REVOKE EXECUTE ON FUNCTION commish_rename_team_internal(UUID, UUID, TEXT, UUID, TIMESTAMPTZ, TEXT)
   FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3. A LEAGUE'S SCORING RULES CHANGE ONLY THROUGH THE RECEIPTED DOOR (R1330)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION scoring_system_league_use_internal(p_scoring_system_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  -- The name of a live league that plays by this scoring system — asked
+  -- ONLY about the caller's own row (the in-body gate: owner_id =
+  -- auth.uid()); for anyone else's row the answer is NULL, so nothing about
+  -- another user's system is ever told.
+  SELECT l.name
+  FROM public.scoring_systems s
+  JOIN public.leagues l ON l.scoring_system_id = s.id AND l.deleted_at IS NULL
+  WHERE s.id = p_scoring_system_id AND s.owner_id = (SELECT auth.uid())
+  ORDER BY l.created_at, l.id
+  LIMIT 1
+$$;
+REVOKE EXECUTE ON FUNCTION scoring_system_league_use_internal(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION scoring_system_league_use_internal(UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION scoring_systems_league_rules_guard_internal()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_league TEXT;
+BEGIN
+  -- A CLIENT statement only: through RLS the statement runs AS authenticated
+  -- (or anon); inside a DEFINER door (scoring_update_rules, scoring_fork_
+  -- template) it runs as the door's owner and is the receipted path.
+  IF current_user NOT IN ('authenticated', 'anon') OR NEW.rules IS NOT DISTINCT FROM OLD.rules THEN
+    RETURN NEW;
+  END IF;
+  v_league := public.scoring_system_league_use_internal(OLD.id);
+  IF v_league IS NOT NULL THEN
+    RAISE EXCEPTION
+      'scoring system % is the scoring of league "%" — its rules change only through the league scoring editor (scoring_update_rules), which records the change in the commissioner log (§7.3.3.1, §10.3); a direct write to the table is refused',
+      OLD.id, v_league
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION scoring_systems_league_rules_guard_internal() FROM PUBLIC, anon, authenticated;
+
+-- trg_zz_… fires after trg_scoring_systems_rules_guard (104's validator), so
+-- an invalid document keeps its validator refusal.
+CREATE TRIGGER trg_zz_scoring_systems_league_rules
+  BEFORE UPDATE ON scoring_systems FOR EACH ROW
+  WHEN (NEW.rules IS DISTINCT FROM OLD.rules)
+  EXECUTE FUNCTION scoring_systems_league_rules_guard_internal();
+ALTER TABLE scoring_systems ENABLE ALWAYS TRIGGER trg_zz_scoring_systems_league_rules;
