@@ -155,6 +155,34 @@ export interface SystemActivityItem {
   context: string | null
   message: string
   actor_id: string | null
+  /** What the post is about, when the feed can say (M6 L.E2.3): a stat
+   *  correction's league post (172's door) is `'stat_correction'`; every
+   *  other post `null`. */
+  topic: SystemPostTopic | null
+  /** The NFL week a stat-correction post names; `null` for every other post. */
+  week: number | null
+}
+
+export type SystemPostTopic = 'stat_correction'
+
+/**
+ * M6 L.E2.3 — the stat-correction posts ARE feed items already (172's door
+ * writes ONE `league_chat` system post per re-score, `context = 'league'`, in
+ * the re-score's own transaction — D453(4)), so the feed reads them exactly
+ * as every other league post; what it adds is the TAG, so the Activity page
+ * can render and group a correction without matching copy itself. The
+ * prefix is the door's literal (`v_post := 'Stat correction (Week ' ||
+ * p_week || '): '`, 172) — `activity-service.test.ts` reads the migration and
+ * fails if the two ever part. Only `is_system` rows are read, so a member's
+ * own chat message can never be mistaken for one.
+ */
+export const STAT_CORRECTION_POST_PREFIX = 'Stat correction (Week '
+const STAT_CORRECTION_POST = /^Stat correction \(Week (\d+)\): /
+
+/** Pure: the week a stat-correction post names, or `null` when the post is not one. */
+export function statCorrectionPostWeek(message: string): number | null {
+  const match = STAT_CORRECTION_POST.exec(message)
+  return match ? Number(match[1]) : null
 }
 
 export type ActivityItem = TransactionActivityItem | SystemActivityItem
@@ -319,14 +347,19 @@ export async function readActivity(
     if (error) {
       return { status: 500, body: { error: error.message } }
     }
-    systemPosts = (data ?? []).map((row) => ({
-      kind: 'system',
-      id: row.id,
-      created_at: row.created_at,
-      context: row.context,
-      message: row.message,
-      actor_id: row.user_id,
-    }))
+    systemPosts = (data ?? []).map((row) => {
+      const correctionWeek = statCorrectionPostWeek(row.message)
+      return {
+        kind: 'system',
+        id: row.id,
+        created_at: row.created_at,
+        context: row.context,
+        message: row.message,
+        actor_id: row.user_id,
+        topic: correctionWeek === null ? null : 'stat_correction',
+        week: correctionWeek,
+      }
+    })
   }
 
   return {

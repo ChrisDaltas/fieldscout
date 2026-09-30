@@ -18,9 +18,14 @@
  * cells below are the missing half, and `transactions-api-db.test.ts` walks
  * the same two-row tie over the real PostgREST wire.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
+  STAT_CORRECTION_POST_PREFIX,
+  statCorrectionPostWeek,
   ACTIVITY_DEFAULT_LIMIT,
   ACTIVITY_MAX_LIMIT,
   activityCursorFilter,
@@ -53,6 +58,8 @@ function post(id: string, createdAt: string | null): SystemActivityItem {
     context: 'league',
     message: 'Schedule remixed',
     actor_id: null,
+    topic: null,
+    week: null,
   }
 }
 
@@ -230,5 +237,30 @@ describe('mergeActivity — the two streams interleave by instant, newest first'
     const bad = txn('bad', 'not-a-timestamp')
     const feed = mergeActivity([t2, bad], [], 10)
     expect(feed.items.map((i) => i.id)).toEqual(['t2', 'bad'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// M6 L.E2.3 — a stat correction's league post is TAGGED in the feed
+// ---------------------------------------------------------------------------
+
+describe('the stat-correction league post is tagged (L.E2.3; D453(4) / D454)', () => {
+  it('the prefix is the scoring door\'s own literal — the feed and migration 172 cannot part', () => {
+    const sql = readFileSync(path.resolve(process.cwd(), 'supabase/migrations/172_league_stat_corrections.sql'), 'utf8')
+    expect(sql).toContain(`v_post := '${STAT_CORRECTION_POST_PREFIX}' || p_week || '): '`)
+  })
+
+  it('reads the week from a correction post (the door\'s real sentence, stack LC3), and nothing from any other post', () => {
+    expect(
+      statCorrectionPostWeek(
+        "Stat correction (Week 1): Lou Receiver's receiving yards 100 → 94 — Team One 10.00 → 9.40. Result changed: Team Two now beats Team One 9.80–9.40.",
+      ),
+    ).toBe(1)
+    expect(statCorrectionPostWeek('Stat correction (Week 14): X')).toBe(14)
+    expect(statCorrectionPostWeek('Schedule remixed by the commissioner.')).toBeNull()
+    // Anchored at the start and on the full shape — a post that merely mentions one is not one.
+    expect(statCorrectionPostWeek('Commissioner note: Stat correction (Week 3): pending')).toBeNull()
+    expect(statCorrectionPostWeek('Stat correction (Week three): X')).toBeNull()
+    expect(statCorrectionPostWeek('Stat correction (Week 3) X')).toBeNull()
   })
 })

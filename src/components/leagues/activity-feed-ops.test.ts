@@ -78,12 +78,12 @@ describe('feedLines — transactions carry their team + week; a system post carr
   const names = new Map([['t1', 'Alpha']])
   const items: ActivityItem[] = [
     tx({ payload: { add: { name: 'Nine', player_id: 'p9' }, drop: null } }),
-    { kind: 'system', id: 'c1', created_at: '2099-09-11T12:00:00Z', context: 'league', message: 'Schedule remixed (seed 42).', actor_id: 'u2' },
+    { kind: 'system', id: 'c1', created_at: '2099-09-11T12:00:00Z', context: 'league', message: 'Schedule remixed (seed 42).', actor_id: 'u2', topic: null, week: null },
     tx({ id: 'tx2', type: 'commissioner_move', team_id: 't9', payload: {} }),
     // R895: the week worker's notice (116→118 `finalize_matchups`, the
     // postponed-game arm) is written with `user_id NULL` — the engine's
     // post, not a commissioner's act.
-    { kind: 'system', id: 'c2', created_at: '2099-09-12T12:00:00Z', context: 'league', message: 'Week 3 finalized with a postponed game.', actor_id: null },
+    { kind: 'system', id: 'c2', created_at: '2099-09-12T12:00:00Z', context: 'league', message: 'Week 3 finalized with a postponed game.', actor_id: null, topic: null, week: null },
   ]
   it('the shapes — an actor’s system post is the commissioner’s; a NULL actor is the system’s; a named team carries its id, an unnameable one carries none', () => {
     // `teamId` rides beside `team` so the rendered name can be a door to the
