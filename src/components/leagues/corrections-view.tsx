@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
@@ -19,18 +20,23 @@ import {
   CORRECTIONS_LINK_LABEL,
   CORRECTIONS_PROBLEM_COPY,
   CORRECTIONS_SHOW_OLDER_LABEL,
+  CORRECTIONS_STALE_COPY,
   CORRECTIONS_TITLE,
   MATCHUP_NOTE_PROBLEM_COPY,
+  OTHER_RESULTS_LINE,
+  type CorrectionNoteScope,
   correctionCard,
   correctionWeekOptions,
   correctionsHref,
   correctionsListView,
   matchupCorrectionNote,
+  noteReadState,
+  noteShouldFetchNextPage,
 } from './corrections-view-ops'
 import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { ChoiceSelect } from './settings-form-controls'
-import { ReconnectingBanner, STALE_SCORES_COPY, StaleDataBanner } from './status-banners'
+import { ReconnectingBanner, StaleDataBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
 
 /**
@@ -62,6 +68,7 @@ import { ProblemCard, problemCopy } from './team-page'
  */
 export function CorrectionsPage({ leagueId, initialWeek = null }: { leagueId: string; initialWeek?: number | null }) {
   const league = useLeague(leagueId)
+  const router = useRouter()
   if (league.isPending) {
     return (
       <div className="flex flex-col gap-4">
@@ -94,7 +101,15 @@ export function CorrectionsPage({ leagueId, initialWeek = null }: { leagueId: st
           </Button>
         }
       />
-      <CorrectionsView leagueId={leagueId} initialWeek={initialWeek} leagueTimeZone={league.data.settings.draft.time_zone ?? null} />
+      {/* R1369: the filter writes `?week=` back (the deep link works both ways), and the view is
+          keyed on the URL's week so a link to another week re-opens the filter on it. */}
+      <CorrectionsView
+        key={initialWeek ?? 'all'}
+        leagueId={leagueId}
+        initialWeek={initialWeek}
+        leagueTimeZone={league.data.settings.draft.time_zone ?? null}
+        onWeekChange={(week) => router.replace(correctionsHref(leagueId, week), { scroll: false })}
+      />
     </div>
   )
 }
@@ -103,10 +118,13 @@ export function CorrectionsView({
   leagueId,
   initialWeek = null,
   leagueTimeZone,
+  onWeekChange,
 }: {
   leagueId: string
   initialWeek?: number | null
   leagueTimeZone: string | null
+  /** The host's URL write-back for the week filter (R1369); a tab host passes its own. */
+  onWeekChange?: (week: number | null) => void
 }) {
   const [week, setWeek] = useState<number | null>(initialWeek)
   const schedule = useSchedule(leagueId)
@@ -127,7 +145,11 @@ export function CorrectionsView({
             value={week === null ? 'all' : String(week)}
             width="w-32"
             options={weekOptions}
-            onValueChange={(v) => setWeek(v === 'all' ? null : Number(v))}
+            onValueChange={(v) => {
+              const next = v === 'all' ? null : Number(v)
+              setWeek(next)
+              onWeekChange?.(next)
+            }}
           />
         </CardTitle>
       </CardHeader>
@@ -136,7 +158,7 @@ export function CorrectionsView({
           {CORRECTIONS_INTRO_COPY}
         </p>
         {corrections.connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
-        {problem != null && pages && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
+        {problem != null && pages && <StaleDataBanner>{CORRECTIONS_STALE_COPY}</StaleDataBanner>}
 
         {corrections.isPending ? (
           <ListSkeleton />
@@ -264,24 +286,41 @@ export function MatchupCorrectionNote({
   leagueId,
   week,
   teamIds,
+  scope = 'matchup',
 }: {
   leagueId: string
   week: number
   teamIds: readonly (string | null)[]
+  /** The game the host row shows (R1365), or `team` for a `total_points` week (R1368). */
+  scope?: CorrectionNoteScope
 }) {
   const corrections = useStatCorrectionsLive(leagueId, { week, limit: 100 })
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = corrections
+  const flags = {
+    hasData: Boolean(corrections.data),
+    isError: corrections.isError,
+    isFetchNextPageError: corrections.isFetchNextPageError,
+    hasNextPage: corrections.hasNextPage,
+    isFetchingNextPage: corrections.isFetchingNextPage,
+  }
+  const fetchMore = noteShouldFetchNextPage(flags)
+  const { fetchNextPage } = corrections
   useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+    // R1366: never re-ask for a page whose last ask failed (retry: false) — the error line below offers the retry.
+    if (fetchMore) void fetchNextPage()
+  }, [fetchMore, fetchNextPage])
 
+  const state = noteReadState(flags)
+  if (state === 'wait') return null
   const pages = corrections.data?.pages
-  if (!pages) {
-    if (!corrections.isError) return null
+  if (state === 'error' || !pages) {
     return (
       <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-n-3" data-correction-note="error">
         <span>{MATCHUP_NOTE_PROBLEM_COPY}</span>
-        <Button variant="stroke" size="sm" onClick={() => corrections.refetch()}>
+        <Button
+          variant="stroke"
+          size="sm"
+          onClick={() => (corrections.isFetchNextPageError ? corrections.fetchNextPage() : corrections.refetch())}
+        >
           <Icon name="reset" size={13} /> Retry
         </Button>
       </div>
@@ -289,7 +328,7 @@ export function MatchupCorrectionNote({
   }
   const view = correctionsListView(pages)
   if (view.kind !== 'items') return null
-  const note = matchupCorrectionNote(view.items, teamIds)
+  const note = matchupCorrectionNote(view.items, teamIds, scope)
   if (!note) return null
   return (
     <div
@@ -312,6 +351,16 @@ export function MatchupCorrectionNote({
           </li>
         ))}
       </ul>
+      {note.otherResults.length > 0 && (
+        <div className="flex flex-col gap-0.5 text-[11px] font-medium text-ink" data-correction-note-other>
+          <span className="text-n-3">{OTHER_RESULTS_LINE}</span>
+          {note.otherResults.map((r) => (
+            <span key={r} className="font-bold">
+              {r}
+            </span>
+          ))}
+        </div>
+      )}
       <Link
         href={correctionsHref(leagueId, week)}
         className="self-start text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"

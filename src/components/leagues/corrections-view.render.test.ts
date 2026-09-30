@@ -39,17 +39,21 @@ import {
   CORRECTIONS_INTRO_COPY,
   CORRECTIONS_PROBLEM_COPY,
   CORRECTIONS_SHOW_OLDER_LABEL,
+  CORRECTIONS_STALE_COPY,
   MATCHUP_NOTE_PROBLEM_COPY,
   MATCHUP_NOTE_RESULT_TITLE,
   MATCHUP_NOTE_SCORE_TITLE,
+  OTHER_RESULTS_LINE,
   RESULT_NOT_YET_COPY,
 } from './corrections-view-ops'
 import { MatchupPage } from './matchup-view'
-import { RECONNECTING_COPY, STALE_SCORES_COPY } from './status-banners'
+import { STALE_SCORES_COPY } from './status-banners'
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-commish' }, profile: { username: 'chris' } }),
 }))
+const replace = vi.fn()
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace, refresh: () => {} }) }))
 vi.mock('@/hooks/use-league-channel', () => ({
   useLeagueChannel: vi.fn(() => ({ connection: 'live' })),
 }))
@@ -128,7 +132,13 @@ function page(over: Partial<StatCorrectionsPage> = {}): StatCorrectionsState {
   return { state: 'known', page: { week: null, items: [], limit: 50, has_more: false, next_cursor: null, note: null, ...over } }
 }
 
-type CorrectionsSeed = StatCorrectionsState[] | 'error' | { degraded: StatCorrectionsState[] } | 'missing'
+type CorrectionsSeed =
+  | StatCorrectionsState[]
+  | 'error'
+  | { degraded: StatCorrectionsState[] }
+  /** R1366: the first page is in and says there is more; the NEXT page failed. */
+  | { laterPageFailed: StatCorrectionsState[] }
+  | 'missing'
 
 function client(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
@@ -146,7 +156,12 @@ function seedCorrections(qc: QueryClient, filters: StatCorrectionsFilters, seed:
   if (seed === 'missing') return
   if (seed === 'error') failQuery(qc, key, new Error('stat corrections read failed'))
   else if (Array.isArray(seed)) qc.setQueryData(key, infinite(seed))
-  else failQuery(qc, key, new Error('refetch failed'), infinite(seed.degraded))
+  else if ('laterPageFailed' in seed) {
+    const query = qc.getQueryCache().build(qc, { queryKey: key })
+    query.setData(infinite(seed.laterPageFailed))
+    // TanStack's own marker for a failed `fetchNextPage` (`isFetchNextPageError`).
+    query.setState({ status: 'error', error: new Error('page 2 failed'), fetchStatus: 'idle', fetchMeta: { fetchMore: { direction: 'forward' } } })
+  } else failQuery(qc, key, new Error('refetch failed'), infinite(seed.degraded))
 }
 
 function render(qc: QueryClient, element: React.ReactElement): string {
@@ -199,7 +214,9 @@ describe('the corrections view — every state', () => {
 
   it('degraded: the last-good rows stay, behind the stale banner', () => {
     const html = renderView({ degraded: [page({ items: [item()] })] })
-    expect(html).toContain(STALE_SCORES_COPY)
+    // R1371: this list's own words, not the scoreboard's.
+    expect(html).toContain(CORRECTIONS_STALE_COPY)
+    expect(html).not.toContain(STALE_SCORES_COPY)
     expect(stateOf(html)).toBe('items')
     expect(html).toContain('Lou Receiver')
   })
@@ -232,7 +249,7 @@ describe('the corrections view — every state', () => {
   })
 
   it('the room dropping says so (the list refreshes on the door’s post — F527)', () => {
-    expect(renderView([page({ items: [item()] })], { connection: 'reconnecting' })).toContain(RECONNECTING_COPY.split('—')[0].trim())
+    expect(renderView([page({ items: [item()] })], { connection: 'reconnecting' })).toContain('Reconnecting — syncing this league…')
   })
 
   it('no resting elevation on anything the view draws (CLAUDE.md)', () => {
@@ -261,6 +278,14 @@ describe('the stand-alone page — the membership gate first', () => {
     expect(html).toContain('Stat corrections')
     expect(html).toContain('data-corrections-view')
     expect(html).toContain('Receiving yards 100 → 94')
+  })
+
+  it('R1369: the page writes the filter back to `?week=` and keys the view on the URL’s week (source — a static render cannot pick)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(`${process.cwd()}/src/components/leagues/corrections-view.tsx`, 'utf8')
+    expect(src).toContain("key={initialWeek ?? 'all'}")
+    expect(src).toContain('onWeekChange={(week) => router.replace(correctionsHref(leagueId, week), { scroll: false })}')
+    expect(src).toContain('onWeekChange?.(next)')
   })
 })
 
@@ -353,6 +378,25 @@ describe('the matchup page’s change note (§16.5.2)', () => {
     const failed = renderMatchup('error')
     expect(failed).toContain('data-correction-note="error"')
     expect(failed).toContain(MATCHUP_NOTE_PROBLEM_COPY)
+  })
+
+  it('R1365: a MEDIAN-game flip alone is not this matchup’s result — the score title, the flip under the neutral line', () => {
+    const html = renderMatchup([
+      page({ week: 1, items: [item({ result: { known: true, changed: true, changes: [{ game: 'median_game', before: 'win', after: 'loss', words: 'Median game: win → loss' }] } })] }),
+    ])
+    expect(html).toContain('data-correction-note="score"')
+    expect(html).toContain(MATCHUP_NOTE_SCORE_TITLE)
+    expect(html).not.toContain(MATCHUP_NOTE_RESULT_TITLE)
+    expect(html).toContain('data-correction-note-other')
+    expect(html).toContain(OTHER_RESULTS_LINE)
+    expect(html).toContain('Alpha — Median game: win → loss')
+  })
+
+  it('R1366: a LATER page that failed is said (with a retry) — never a partial note', () => {
+    const html = renderMatchup({ laterPageFailed: [page({ week: 1, items: [item()], has_more: true, next_cursor: 'tok' })] })
+    expect(html).toContain('data-correction-note="error"')
+    expect(html).toContain(MATCHUP_NOTE_PROBLEM_COPY)
+    expect(html).not.toContain(MATCHUP_NOTE_RESULT_TITLE)
   })
 
   it('an upcoming week never asks (and shows no note)', () => {

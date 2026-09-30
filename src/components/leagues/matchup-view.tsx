@@ -341,7 +341,8 @@ function HeadToHeadWeek({
       <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} badge={false} />
 
       {weekMayHaveCorrections(doc.league_week.status) && (
-        <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selected.home_team_id, selected.away_team_id]} />
+        // The selected row is always a PRIMARY row (`selectedMatchup` over `splitRows`' primary list) — its game is `matchup` (R1365).
+        <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selected.home_team_id, selected.away_team_id]} scope="matchup" />
       )}
 
       {/* THE COMMISSIONER'S OVERRIDE (M6A L.E1.12; §15.4:1692-1693; PROGRESS
@@ -671,7 +672,7 @@ function TotalPointsWeek({
         </CardContent>
       </Card>
       {selectedId && weekMayHaveCorrections(doc.league_week.status) && (
-        <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selectedId]} />
+        <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selectedId]} scope="team" />
       )}
       {selectedId && (
         <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selectedId} name={teamName(doc, selectedId)} leagueTimeZone={leagueTimeZone} />

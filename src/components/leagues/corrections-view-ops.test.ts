@@ -33,6 +33,9 @@ import {
   BOX_UNRECOVERABLE_COPY,
   CORRECTIONS_EMPTY_FALLBACK_COPY,
   MATCHUP_NOTE_RESULT_TITLE,
+  OTHER_RESULTS_LINE,
+  TEAM_NOTE_RESULT_TITLE,
+  TEAM_NOTE_SCORE_TITLE,
   MATCHUP_NOTE_SCORE_TITLE,
   RESULT_NOT_YET_COPY,
   RESULT_UNCHANGED_COPY,
@@ -43,6 +46,8 @@ import {
   correctionsHref,
   correctionsListView,
   matchupCorrectionNote,
+  noteReadState,
+  noteShouldFetchNextPage,
   statChangeText,
   weekMayHaveCorrections,
 } from './corrections-view-ops'
@@ -203,6 +208,7 @@ describe('the matchup page’s change note (§16.5.2)', () => {
       resultChanged: false,
       title: MATCHUP_NOTE_SCORE_TITLE,
       lines: [{ id: 'c1', text: 'Lou Receiver’s receiving yards 100 → 94 — Team One 101.20 → 100.60', results: [] }],
+      otherResults: [],
     })
   })
 
@@ -221,8 +227,80 @@ describe('the matchup page’s change note (§16.5.2)', () => {
     expect(note?.lines[0].results).toEqual(['Team Two — Matchup: loss → win'])
   })
 
+  // R1365 — one cell per game kind: the title claims THIS row's result only when THIS row's game flipped.
+  const flip = (game: 'matchup' | 'second_game' | 'median_game', words: string) =>
+    correctionItem({ result: { known: true, changed: true, changes: [{ game, before: 'win', after: 'loss', words }] } })
+
+  it('R1365: a MEDIAN-game flip alone is not this matchup’s result — the score title, the flip under the neutral line', () => {
+    const note = matchupCorrectionNote([flip('median_game', 'Median game: win → loss')], [T1, T2], 'matchup')
+    expect(note?.title).toBe(MATCHUP_NOTE_SCORE_TITLE)
+    expect(note?.resultChanged).toBe(false)
+    expect(note?.lines[0].results).toEqual([])
+    expect(note?.otherResults).toEqual(['Team One — Median game: win → loss'])
+    expect(OTHER_RESULTS_LINE).toContain('changed a result this week')
+  })
+
+  it('R1365: a SECOND-game flip is the other row’s — on the primary row it is listed apart; on a secondary row it IS the result', () => {
+    const onPrimary = matchupCorrectionNote([flip('second_game', 'Second game: win → loss')], [T1, T2], 'matchup')
+    expect([onPrimary?.title, onPrimary?.otherResults]).toEqual([MATCHUP_NOTE_SCORE_TITLE, ['Team One — Second game: win → loss']])
+    const onSecondary = matchupCorrectionNote([flip('second_game', 'Second game: win → loss')], [T1, T2], 'second_game')
+    expect([onSecondary?.title, onSecondary?.lines[0].results, onSecondary?.otherResults]).toEqual([
+      MATCHUP_NOTE_RESULT_TITLE,
+      ['Team One — Second game: win → loss'],
+      [],
+    ])
+  })
+
+  it('R1365: a MATCHUP flip on the primary row is its result; a median flip beside it stays apart', () => {
+    const both = correctionItem({
+      result: {
+        known: true,
+        changed: true,
+        changes: [
+          { game: 'matchup', before: 'win', after: 'loss', words: 'Matchup: win → loss' },
+          { game: 'median_game', before: 'win', after: 'loss', words: 'Median game: win → loss' },
+        ],
+      },
+    })
+    const note = matchupCorrectionNote([both], [T1, T2], 'matchup')
+    expect([note?.title, note?.lines[0].results, note?.otherResults]).toEqual([
+      MATCHUP_NOTE_RESULT_TITLE,
+      ['Team One — Matchup: win → loss'],
+      ['Team One — Median game: win → loss'],
+    ])
+  })
+
+  it('R1368: a total_points week speaks of the one team — its score, or its result', () => {
+    expect(matchupCorrectionNote([correctionItem()], [T1], 'team')?.title).toBe(TEAM_NOTE_SCORE_TITLE)
+    const flipped = matchupCorrectionNote([flip('median_game', 'Median game: win → loss')], [T1], 'team')
+    expect([flipped?.title, flipped?.lines[0].results, flipped?.otherResults]).toEqual([TEAM_NOTE_RESULT_TITLE, ['Team One — Median game: win → loss'], []])
+  })
+
   it('a bye side (null id) is ignored, not matched', () => {
     expect(matchupCorrectionNote([correctionItem()], [T1, null])?.lines).toHaveLength(1)
+  })
+})
+
+describe('R1366 — the note reads every page, and never re-asks for a page that failed', () => {
+  const base = { hasData: true, isError: false, isFetchNextPageError: false, hasNextPage: false, isFetchingNextPage: false }
+
+  it('waits for the first page and for every later page; ready once the last is in', () => {
+    expect(noteReadState({ ...base, hasData: false })).toBe('wait')
+    expect(noteReadState({ ...base, hasNextPage: true })).toBe('wait')
+    expect(noteReadState(base)).toBe('ready')
+  })
+
+  it('a failed first page OR a failed later page is said — never a partial note, never "none"', () => {
+    expect(noteReadState({ ...base, hasData: false, isError: true })).toBe('error')
+    expect(noteReadState({ ...base, isError: true, isFetchNextPageError: true, hasNextPage: true })).toBe('error')
+  })
+
+  it('asks for the next page only while none is in flight and the last ask did not fail (the 25-calls loop)', () => {
+    expect(noteShouldFetchNextPage({ ...base, hasNextPage: true })).toBe(true)
+    expect(noteShouldFetchNextPage({ ...base, hasNextPage: true, isFetchingNextPage: true })).toBe(false)
+    expect(noteShouldFetchNextPage({ ...base, hasNextPage: true, isError: true, isFetchNextPageError: true })).toBe(false)
+    expect(noteShouldFetchNextPage({ ...base, hasNextPage: true, isError: true })).toBe(false)
+    expect(noteShouldFetchNextPage({ ...base, hasNextPage: false })).toBe(false)
   })
 })
 
@@ -241,6 +319,10 @@ describe('the box score’s points note (F477)', () => {
 
   it('a FINAL week on the stored points says the stat line may have moved since (80 yards beside 12.00)', () => {
     expect(boxPointsNote({ points_source: 'stored', stored_note: null }, 'final')).toBe(BOX_FINAL_STORED_COPY)
+    // R1367: "final", never "locked" (a lineup lock is not the week being final); one short line.
+    expect(BOX_FINAL_STORED_COPY).toContain('after the week was final')
+    expect(BOX_FINAL_STORED_COPY).not.toMatch(/lock/i)
+    expect(BOX_FINAL_STORED_COPY.split(/[.!?](\s|$)/).filter((x) => x && x.trim()).length).toBe(1)
   })
 
   it('a live week, and a week still in its window (a fix there re-scores), say nothing', () => {

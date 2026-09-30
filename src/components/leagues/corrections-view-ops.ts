@@ -40,6 +40,8 @@ export const STAT_FIX_RULE_COPY = 'Stat fixes count until next week’s first ga
 export const CORRECTIONS_TITLE = 'Stat corrections'
 export const CORRECTIONS_INTRO_COPY = `Official stat fixes that changed a score in this league. ${STAT_FIX_RULE_COPY} — after that, a week’s scores never change.`
 export const CORRECTIONS_PROBLEM_COPY = 'Couldn’t load the stat corrections.'
+/** R1371: the degraded banner's words for THIS list (not the scoreboard's). */
+export const CORRECTIONS_STALE_COPY = "Stat corrections aren't refreshing — showing the last list we read."
 /** Only if the server ever sent an empty first page without its own words (it always sends `note`). */
 export const CORRECTIONS_EMPTY_FALLBACK_COPY = 'No stat correction has changed a score in this league.'
 export const CORRECTIONS_SHOW_OLDER_LABEL = 'Show older'
@@ -51,11 +53,16 @@ export const RESULT_UNCHANGED_COPY = 'Result unchanged.'
 
 export const MATCHUP_NOTE_SCORE_TITLE = 'A stat correction changed a score in this matchup.'
 export const MATCHUP_NOTE_RESULT_TITLE = 'A stat correction changed the result of this matchup.'
+/** R1368: a `total_points` week has no matchup — the note is about the one team shown. */
+export const TEAM_NOTE_SCORE_TITLE = 'A stat correction changed this team’s score.'
+export const TEAM_NOTE_RESULT_TITLE = 'A stat correction changed this team’s result this week.'
+/** R1365: a flip of ANOTHER game (the median game, the second game) — listed under this neutral line, never as this matchup's result. */
+export const OTHER_RESULTS_LINE = 'It also changed a result this week:'
 export const MATCHUP_NOTE_PROBLEM_COPY = 'Couldn’t check this week’s stat corrections.'
 
 // The box score's points note (F477) — each server note, in a member's words.
-export const BOX_FINAL_STORED_COPY =
-  'Final points, as this team was scored. A stat fix after the week locked updates a player’s stat line here, not his points.'
+/** R1367: "final", not "locked" (a lineup lock is not the week being final); one short line. */
+export const BOX_FINAL_STORED_COPY = 'Final points as scored — a stat fix after the week was final changes the stat line only.'
 export const BOX_NONE_STORED_COPY =
   'These points are worked out from the latest stats — this week was scored before FieldScout kept each player’s points, so they may not add up to the final score.'
 export const BOX_NO_GAME_COPY = 'This team had no game this week, so these points are worked out from the latest stats.'
@@ -172,28 +179,90 @@ export function weekMayHaveCorrections(weekStatus: string | null | undefined): b
   return weekStatus === 'live' || weekStatus === 'correction_window' || weekStatus === 'final'
 }
 
+/** Which game the note's host row shows (R1365): a primary h2h row is `matchup`, a secondary row `second_game`; `team` = a `total_points` week's one team (R1368). */
+export type CorrectionNoteScope = 'matchup' | 'second_game' | 'team'
+
 export interface MatchupCorrectionNote {
   resultChanged: boolean
   title: string
-  /** One per correction to a team of this matchup, newest first — the record's own sentence. */
+  /** One per correction to a team of this matchup, newest first — the record's own sentence, and the flips of THIS game. */
   lines: Array<{ id: string; text: string; results: string[] }>
+  /** Flips of the team's OTHER games this week (median, the other matchup row) — shown under `OTHER_RESULTS_LINE`. */
+  otherResults: string[]
 }
 
-/** The note for one matchup's teams, or null when no correction touched them. */
-export function matchupCorrectionNote(items: readonly StatCorrectionItem[], teamIds: readonly (string | null)[]): MatchupCorrectionNote | null {
+/**
+ * The note for one matchup's teams (or a `total_points` week's one team), or
+ * null when no correction touched them. The title says "the result of this
+ * matchup" ONLY when the game this row shows flipped (R1365): a flip of the
+ * team's median game or its other matchup row is listed under a neutral
+ * line, never claimed for this one. In a `total_points` week every flip is
+ * the team's own result (there is no matchup row).
+ */
+export function matchupCorrectionNote(
+  items: readonly StatCorrectionItem[],
+  teamIds: readonly (string | null)[],
+  scope: CorrectionNoteScope = 'matchup',
+): MatchupCorrectionNote | null {
   const ids = new Set(teamIds.filter((id): id is string => id !== null))
   const mine = items.filter((item) => ids.has(item.team.id))
   if (mine.length === 0) return null
-  const resultChanged = mine.some((item) => item.result.known && item.result.changes.length > 0)
+  const isThisGame = (game: string) => scope === 'team' || game === scope
+  const flips = (item: StatCorrectionItem) => (item.result.known ? item.result.changes : [])
+  const resultChanged = mine.some((item) => flips(item).some((c) => isThisGame(c.game)))
+  const title =
+    scope === 'team'
+      ? resultChanged
+        ? TEAM_NOTE_RESULT_TITLE
+        : TEAM_NOTE_SCORE_TITLE
+      : resultChanged
+        ? MATCHUP_NOTE_RESULT_TITLE
+        : MATCHUP_NOTE_SCORE_TITLE
   return {
     resultChanged,
-    title: resultChanged ? MATCHUP_NOTE_RESULT_TITLE : MATCHUP_NOTE_SCORE_TITLE,
+    title,
     lines: mine.map((item) => ({
       id: item.id,
       text: item.summary,
-      results: item.result.known ? item.result.changes.map((c) => `${item.team.name} — ${c.words}`) : [],
+      results: flips(item)
+        .filter((c) => isThisGame(c.game))
+        .map((c) => `${item.team.name} — ${c.words}`),
     })),
+    otherResults: mine.flatMap((item) =>
+      flips(item)
+        .filter((c) => !isThisGame(c.game))
+        .map((c) => `${item.team.name} — ${c.words}`),
+    ),
   }
+}
+
+/**
+ * The note's read, decided (R1366). The note reads EVERY page of the week, so
+ * it waits until the last page is in, and asks for the next page only while
+ * none is in flight AND the last ask did not fail (`retry: false` — a failed
+ * page would otherwise be asked for again on every render, forever). A
+ * failed page — first or later — is said ("Couldn't check…"), never shown as
+ * a partial note or as "no corrections".
+ */
+export interface NoteReadFlags {
+  hasData: boolean
+  isError: boolean
+  isFetchNextPageError: boolean
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+}
+
+export type NoteReadState = 'wait' | 'error' | 'ready'
+
+export function noteReadState(f: NoteReadFlags): NoteReadState {
+  if (f.isFetchNextPageError) return 'error'
+  if (!f.hasData) return f.isError ? 'error' : 'wait'
+  if (f.hasNextPage) return 'wait'
+  return 'ready'
+}
+
+export function noteShouldFetchNextPage(f: NoteReadFlags): boolean {
+  return f.hasData && f.hasNextPage && !f.isFetchingNextPage && !f.isFetchNextPageError && !f.isError
 }
 
 // ---------------------------------------------------------------------------
