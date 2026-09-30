@@ -39,7 +39,13 @@
  *                 `nfl_games` within the hour with no game in progress —
  *                 PLUS every earlier week still inside its stat-correction
  *                 window (F270, closed by M5 L.D3.11: a late correction is
- *                 ingested and re-scored before the week locks).
+ *                 ingested and re-scored before the week locks) — PLUS, at
+ *                 the sweep of FINAL_WEEK_REPOLL_UTC_HOUR only, every week
+ *                 whose window closed within FINAL_WEEK_REPOLL_DAYS (TD5, M6
+ *                 L.E2.1: once a day for 7 days after it locks, so a late
+ *                 correction is RECORDED — `stat_correction_events` — and
+ *                 research stays right; the worker consumes its deltas as
+ *                 `week_final` and no score moves).
  *        * IDLE — nothing due and not a sweep minute: return without a
  *                 provider call, the reason named.
  *   2. POLL — `ingestWeek(provider, time, { db, degradation, season,
@@ -79,6 +85,15 @@ export const POLL_CADENCE_MS = 20_000
 export const LIVE_POLL_BUDGET_MS = 45_000
 /** The sweep minute — one schedule refresh per hour when nothing is due. */
 export const SWEEP_MINUTE = 0
+/** TD5 (M6 L.E2.1): a FINAL week (its correction window closed) is re-polled
+ *  once a day for this many days after it locks, so a late correction is
+ *  recorded (`stat_correction_events`) and research stays right. Nothing it
+ *  finds changes a score: the worker consumes a final week's deltas as
+ *  `week_final` (D295(b)) and the scoring door refuses the week (158). */
+export const FINAL_WEEK_REPOLL_DAYS = 7
+/** …at the sweep of this UTC hour (11:00Z = 07:00 ET / 06:00 EST — before the
+ *  11:15Z reconcile, which then sees the morning's re-poll). */
+export const FINAL_WEEK_REPOLL_UTC_HOUR = 11
 
 // ── The plan (pure) ────────────────────────────────────────────────────────
 
@@ -120,6 +135,8 @@ export interface PollPlan {
 export interface PlanOptions {
   leadMs?: number
   sweepMinute?: number
+  /** TD5's daily re-poll hour (UTC); default FINAL_WEEK_REPOLL_UTC_HOUR. */
+  finalRepollHourUtc?: number
 }
 
 const OPEN_STATUSES: ReadonlySet<string> = new Set(['scheduled', 'live'])
@@ -145,6 +162,31 @@ export function weeksInCorrectionWindow(weeks: readonly CalendarWeek[], currentW
   const nowMs = now.getTime()
   return weeks
     .filter((w) => w.week < currentWeek && w.correction_window_ends_at != null && new Date(w.correction_window_ends_at).getTime() > nowMs)
+    .map((w) => w.week)
+    .sort((a, b) => a - b)
+}
+
+/**
+ * TD5 — weeks before `currentWeek` whose correction window has CLOSED at
+ * `now`, and closed less than `days` days ago (ascending). The window's end
+ * is the lock's instant to within the hourly finalize (158); a week whose
+ * window is still open is F270's set, never this one. Cheap by construction:
+ * with a weekly calendar this is one week (two for a moment at a boundary).
+ */
+export function finalWeeksForRepoll(
+  weeks: readonly CalendarWeek[],
+  currentWeek: number,
+  now: Date,
+  days: number = FINAL_WEEK_REPOLL_DAYS,
+): number[] {
+  const nowMs = now.getTime()
+  const reachMs = days * 86_400_000
+  return weeks
+    .filter((w) => {
+      if (w.week >= currentWeek || w.correction_window_ends_at == null) return false
+      const endsMs = new Date(w.correction_window_ends_at).getTime()
+      return endsMs <= nowMs && nowMs < endsMs + reachMs
+    })
     .map((w) => w.week)
     .sort((a, b) => a - b)
 }
@@ -181,12 +223,23 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
   // past :00:59 skips that hour's refresh — a flex move then lands in ≤ 2 h.
   if (now.getUTCMinutes() === sweepMinute) {
     const inWindow = weeksInCorrectionWindow(weeks, currentWeek, now)
+    // TD5 (M6 L.E2.1): once a day, each week locked within the last
+    // FINAL_WEEK_REPOLL_DAYS days too — its late corrections are RECORDED
+    // (stat_correction_events) and player_stats stays right for research;
+    // no score moves (the worker's week_final, 158's lock).
+    const finalRepoll =
+      now.getUTCHours() === (opts.finalRepollHourUtc ?? FINAL_WEEK_REPOLL_UTC_HOUR)
+        ? finalWeeksForRepoll(weeks, currentWeek, now).filter((w) => !inWindow.includes(w))
+        : []
     reasons.push(
       `sweep: nothing due; top-of-hour schedule refresh of week ${currentWeek} (flex moves reach nfl_games within the hour, E42)` +
-        (inWindow.length > 0 ? `; and week(s) ${inWindow.join(', ')} still inside their stat-correction window (F270 — a late correction is re-scored before the week locks)` : ''),
+        (inWindow.length > 0 ? `; and week(s) ${inWindow.join(', ')} still inside their stat-correction window (F270 — a late correction is re-scored before the week locks)` : '') +
+        (finalRepoll.length > 0
+          ? `; and final week(s) ${finalRepoll.join(', ')} — the daily re-poll of weeks locked within ${FINAL_WEEK_REPOLL_DAYS} days (TD5 — a late correction is recorded, never scored)`
+          : ''),
     )
     // R1265: the current week first — a throw on an earlier week never skips its refresh.
-    return { mode: 'sweep', weeks: [currentWeek, ...inWindow], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    return { mode: 'sweep', weeks: [currentWeek, ...inWindow, ...finalRepoll], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
   reasons.push(`idle: no in-week game within ${leadMs / 60_000} min of kickoff or still open; next sweep at minute ${sweepMinute} — no provider call`)
   return { mode: 'idle', weeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
@@ -314,6 +367,15 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
           if (reason.startsWith('nfl_games untouched') || reason.startsWith('provider returned zero games')) {
             report.problems.push(`week ${week}: ${reason}`)
           }
+        }
+        // TD15 (M6 L.E2.1): the pre-167 two-call path is the deploy-before-
+        // push fallback — never silent. Every poll that takes it says so
+        // (the route console.warns each problem) until 167 is pushed.
+        if (poll.write.path === 'two_call_fallback') {
+          report.problems.push(
+            `week ${week}: wrote through the pre-167 two-call path — ${poll.write.door} is absent (PGRST202; push migration 167)` +
+              (poll.corrections.detected > 0 ? `; ${poll.corrections.detected} stat correction key(s) NOT recorded` : ''),
+          )
         }
       }
     }

@@ -69,6 +69,8 @@ function report(week: number, polledAt: string, ok: boolean, degraded: boolean):
     games: { seen: 0, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 0 },
     weeks: { touched: 0, updated: 0, unchanged: 0, outsideCalendar: 0 },
     stats: { seen: 0, unknownPlayer: 0, empty: 0, droppedAdvancedKeys: 0, inserted: 0, updated: 0, metaOnly: 0, unchanged: 0, deltas: 0, enqueued: 0, restamped: 0 },
+    write: { path: 'none', door: 'ingest_write_batch' },
+    corrections: { detected: 0, players: 0, recorded: 0, replayed: 0, unchangedAtWrite: 0, weekState: null, keys: [], reason: 'nothing written — no line to classify' },
     reasons: [],
   }
 }

@@ -4067,6 +4067,59 @@ export type Database = {
           },
         ]
       }
+      stat_correction_events: {
+        Row: {
+          applied_at: string | null
+          detected_at: string
+          game_id: string | null
+          id: string
+          new_value: number | null
+          old_value: number | null
+          player_id: string
+          season: number
+          source: string
+          stat_key: string
+          week: number
+          week_state: string
+        }
+        Insert: {
+          applied_at?: string | null
+          detected_at: string
+          game_id?: string | null
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          player_id: string
+          season: number
+          source: string
+          stat_key: string
+          week: number
+          week_state: string
+        }
+        Update: {
+          applied_at?: string | null
+          detected_at?: string
+          game_id?: string | null
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          player_id?: string
+          season?: number
+          source?: string
+          stat_key?: string
+          week?: number
+          week_state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stat_correction_events_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_flags: {
         Row: {
           key: string
@@ -5932,6 +5985,10 @@ export type Database = {
         Returns: Json
       }
       get_join_preview: { Args: { p_value: string }; Returns: Json }
+      ingest_write_batch: {
+        Args: { p_now: string; p_rows: Json }
+        Returns: Json
+      }
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
       is_standalone_mock_launcher: {

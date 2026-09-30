@@ -240,7 +240,9 @@ async function queued(): Promise<string[]> {
 }
 
 /** A db whose `player_stats` WRITE throws — the invocation dying between the
- *  enqueue and the stats upsert (R706). Reads are untouched. */
+ *  enqueue and the stats upsert (R706). Reads are untouched; RPCs pass
+ *  through (the door is asked first — the R706 cells ask it under a name
+ *  the database lacks, so the PRE-167 two-call path is what they exercise). */
 function crashingBeforeStatsWrite(): SyncClient {
   return {
     from(table: string) {
@@ -252,8 +254,14 @@ function crashingBeforeStatsWrite(): SyncClient {
       }
       return builder
     },
+    rpc: service.rpc.bind(service),
   } as unknown as SyncClient
 }
+
+/** M6 L.E2.1: a door name no database defines — PostgREST answers it with the
+ *  same PGRST202 a 166 database answers for `ingest_write_batch` (measured),
+ *  so `ingestWeek` takes the pre-167 two-call path, the one R706 pins. */
+const PRE_167_DOOR = 'ingest_write_batch_pre167'
 
 const G1_PLAYERS = ['syn-g1-def', 'syn-g1-k', 'syn-g1-qb', 'syn-g1-rb', 'syn-g1-te', 'syn-g1-wr']
 
@@ -585,7 +593,7 @@ describe('F13 — provenance follows provider.name, per provider', () => {
   })
 })
 
-describe('R706 — the queue is written BEFORE player_stats, so a crash between them is at-least-once, never lost', () => {
+describe('R706 — on the PRE-167 two-call path (the deploy-before-push fallback) the queue is written BEFORE player_stats, so a crash between them is at-least-once, never lost', () => {
   it('a crash after the enqueue leaves the stored row stale; the next poll re-detects and re-enqueues the delta (the probe — stats first — re-enqueues 0)', async () => {
     const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
     const provider = synthetic('happy_path', clock)
@@ -595,7 +603,7 @@ describe('R706 — the queue is written BEFORE player_stats, so a crash between 
 
     // +20 min: every G1 line moved (measured, the moved-poll pin), and the
     // invocation dies between the two PostgREST calls.
-    const crashed = { ...deps, db: crashingBeforeStatsWrite() }
+    const crashed = { ...deps, db: crashingBeforeStatsWrite(), door: PRE_167_DOOR }
     await expect(poll(provider, clock, '2026-09-20T18:20:00Z', crashed)).rejects.toThrow(
       'simulated crash between the enqueue and the player_stats write',
     )
@@ -613,9 +621,11 @@ describe('R706 — the queue is written BEFORE player_stats, so a crash between 
     // instant sees stored ≠ incoming, so the delta is re-detected and
     // re-enqueued — at-least-once. (Stats-first would have written 18:20
     // before dying, the re-poll would read `unchanged`, and this is the line
-    // the probe turns red: expected 6, received 0.)
+    // the probe turns red: expected 6, received 0.) Since 167 the recovering
+    // poll goes through the door (one transaction — it cannot split the pair).
     await must(service.from('score_fanout').delete().eq('season', SEASON).eq('week', WEEK).like('player_id', 'syn-%'), 'drain')
     const repoll = await poll(provider, clock, '2026-09-20T18:20:00Z', deps)
+    expect(repoll.write.path).toBe('door')
     expect(repoll.stats).toMatchObject({ updated: 6, unchanged: 0, deltas: 6, enqueued: 6 })
     expect(await queued()).toEqual(G1_PLAYERS)
     const landed = await storedStats()
