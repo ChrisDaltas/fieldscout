@@ -40,6 +40,11 @@ describe('useStatCorrections — the pure halves', () => {
     expect(fetchMock.mock.calls[0]).toEqual([`/api/leagues/${LEAGUE}/corrections?week=2`, undefined])
   })
 
+  it('R1350: a 503 that is NOT the named sentence (a gateway, an upstream outage) still throws', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Service Unavailable' }), { status: 503 })))
+    await expect(fetchStatCorrections(LEAGUE, {})).rejects.toMatchObject({ status: 503, message: 'Service Unavailable' })
+  })
+
   it('any other failure still throws — a 403 is never demoted to "unavailable"', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Only members of this league can view it.' }), { status: 403 })))
     await expect(fetchStatCorrections(LEAGUE, {})).rejects.toMatchObject({ status: 403, message: 'Only members of this league can view it.' })

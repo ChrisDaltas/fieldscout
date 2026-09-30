@@ -248,19 +248,39 @@ describe('the stat-correction league post is tagged (L.E2.3; D453(4) / D454)', (
   it('the prefix is the scoring door\'s own literal — the feed and migration 172 cannot part', () => {
     const sql = readFileSync(path.resolve(process.cwd(), 'supabase/migrations/172_league_stat_corrections.sql'), 'utf8')
     expect(sql).toContain(`v_post := '${STAT_CORRECTION_POST_PREFIX}' || p_week || '): '`)
+    // …and it writes the post with NO actor — the second marker (R1349).
+    expect(sql).toContain("VALUES (p_league_id, NULL, v_post, 'league', TRUE);")
   })
 
-  it('reads the week from a correction post (the door\'s real sentence, stack LC3), and nothing from any other post', () => {
+  it('reads the week from the DOOR\'s post — the prefix and no actor (its real sentence, stack LC3) — and nothing from any other post', () => {
     expect(
       statCorrectionPostWeek(
         "Stat correction (Week 1): Lou Receiver's receiving yards 100 → 94 — Team One 10.00 → 9.40. Result changed: Team Two now beats Team One 9.80–9.40.",
+        null,
       ),
     ).toBe(1)
-    expect(statCorrectionPostWeek('Stat correction (Week 14): X')).toBe(14)
-    expect(statCorrectionPostWeek('Schedule remixed by the commissioner.')).toBeNull()
+    expect(statCorrectionPostWeek('Stat correction (Week 14): X', null)).toBe(14)
+    expect(statCorrectionPostWeek('Schedule remixed by the commissioner.', null)).toBeNull()
     // Anchored at the start and on the full shape — a post that merely mentions one is not one.
-    expect(statCorrectionPostWeek('Commissioner note: Stat correction (Week 3): pending')).toBeNull()
-    expect(statCorrectionPostWeek('Stat correction (Week three): X')).toBeNull()
-    expect(statCorrectionPostWeek('Stat correction (Week 3) X')).toBeNull()
+    expect(statCorrectionPostWeek('Commissioner note: Stat correction (Week 3): pending', null)).toBeNull()
+    expect(statCorrectionPostWeek('Stat correction (Week three): X', null)).toBeNull()
+    expect(statCorrectionPostWeek('Stat correction (Week 3) X', null)).toBeNull()
+  })
+
+  it('R1349: the prefix WITH an actor stays untagged — the door writes user_id NULL, every commissioner post its actor', () => {
+    expect(statCorrectionPostWeek("Stat correction (Week 1): Lou Receiver's receiving yards 100 → 94 — Team One 10.00 → 9.40.", 'commish-uid')).toBeNull()
+  })
+
+  it('R1349: the reviewer\'s rename scenario — a team named "Stat correction (Week 3): …" cannot plant a week through the commissioner posts that open with a team name', () => {
+    const spoof = 'Stat correction (Week 3): Team Two 99.00 → 120.00'
+    // 170:2423 the rename (opens with the OLD name); 147:293 FAAB; 139:439 autopilot; 169:1052 the retire — each writes auth.uid().
+    for (const post of [
+      `${spoof} is now Team Two — renamed by Commish (commissioner override)`,
+      `${spoof}'s FAAB balance is now $5 (was $100) — set by Commish (commissioner override)`,
+      `${spoof} is now on autopilot — set by Commish (commissioner override)`,
+      `${spoof} was retired by Commish — the vacant franchise is sealed under its last manager`,
+    ]) {
+      expect(statCorrectionPostWeek(post, 'commish-uid'), post).toBeNull()
+    }
   })
 })

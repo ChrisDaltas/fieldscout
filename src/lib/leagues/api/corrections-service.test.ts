@@ -60,6 +60,11 @@ describe('each correction in plain words (tasks-M6 §4 rule 10 — never a stat 
     ])
   })
 
+  it('R1351: the stat words are the record\'s STORED label (the door\'s post words); the TS map only when an entry has none', () => {
+    expect(correctionStatChanges([{ stat_key: 'receiving_yards', label: 'rec yards as stored', old: 1, new: 2 }] as Json)[0]).toMatchObject({ stat: 'rec yards as stored', words: 'rec yards as stored 1 → 2' })
+    expect(correctionStatChanges([{ stat_key: 'receiving_yards', label: '', old: 1, new: 2 }] as Json)[0].stat).toBe('receiving yards')
+  })
+
   it('the summary is the league post\'s own sentence for the one record (stack LC3\'s post, verbatim prefix)', () => {
     const item = toCorrectionItem(row())
     expect(item.summary).toBe("Lou Receiver's receiving yards 100 → 94 — Team One 10.00 → 9.40")

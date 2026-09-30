@@ -15,13 +15,16 @@
  * state field is sent at all).
  *
  * **Each correction, in plain words** (tasks-M6 §4 rule 10): the player, each
- * moved stat by its words (`stat-correction-labels.ts` — the same map the
- * door's post is generated from, so the view and the post say the same
- * words), old → new, the team, his points before → after, the team's score
- * before → after, and the result change — the matchup, the second game and
- * the median game — once the week's games were over (NULL results before
+ * moved stat by its words — the record's STORED label (`stat_changes[].label`,
+ * written by the door from `stat_key_label_internal`, the same words its post
+ * used; R1351), falling back to `stat-correction-labels.ts` only for an entry
+ * without one — old → new, the team, his points before → after, the team's
+ * score before → after, and the result change — the matchup, the second game
+ * and the median game — once the week's games were over (NULL results before
  * that: the record carries the score change only, D453(4)). `summary` is the
- * post's own sentence shape for the one record.
+ * post's sentence SHAPE for the one record, with the CURRENT player and team
+ * names (the record stores ids, not names — a team renamed since reads under
+ * its new name; R1351).
  *
  * **Membership first — the in-season family's no-leak 403 (R807; D387(3)'s
  * precedent).** The task's proof line says "non-member 404"; the family
@@ -56,6 +59,7 @@ import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 import type { Database, Json } from '@/types/database'
 
 import { decodeCommishLogCursor, encodeCommishLogCursor } from './commish-log-service'
+import { CORRECTIONS_UNAVAILABLE_MESSAGE } from './corrections-copy'
 import { assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
@@ -67,9 +71,9 @@ export const CORRECTIONS_DEFAULT_LIMIT = 50
 /** The table this read needs (172). */
 export const CORRECTIONS_TABLE = 'league_stat_corrections'
 
-/** The deploy-before-push answer (503): the database predates 172. */
-export const CORRECTIONS_UNAVAILABLE_MESSAGE =
-  'Stat corrections aren’t available yet — the league database hasn’t been updated for them. Try again after the next update.'
+/** The deploy-before-push answer (503): the database predates 172. Lives in
+ *  `corrections-copy.ts` so the browser hook can match it (R1350). */
+export { CORRECTIONS_UNAVAILABLE_MESSAGE }
 
 /** The 400 for a cursor this read did not issue. */
 export const CORRECTIONS_BAD_CURSOR_MESSAGE =
@@ -133,7 +137,7 @@ export interface StatCorrectionItem {
     /** Only the games whose result moved. */
     changes: CorrectionResultChange[]
   }
-  /** "Lou Receiver's receiving yards 100 → 94 — Team One 10.00 → 9.40". */
+  /** The post's sentence shape with the CURRENT names: "Lou Receiver's receiving yards 100 → 94 — Team One 10.00 → 9.40". */
   summary: string
 }
 
@@ -188,7 +192,8 @@ export function correctionStatChanges(raw: Json): CorrectionStatChange[] {
   return raw.map((entry) => {
     const e = (entry ?? {}) as Record<string, unknown>
     const statKey = String(e.stat_key ?? '')
-    const stat = correctionLabel(statKey)
+    // R1351: the words the door stored with the record (its post's words); the TS map only when absent.
+    const stat = typeof e.label === 'string' && e.label.trim() !== '' ? e.label : correctionLabel(statKey)
     const oldValue = num(e.old)
     const newValue = num(e.new)
     return { stat_key: statKey, stat, old: oldValue, new: newValue, words: `${stat} ${statWords(oldValue)} → ${statWords(newValue)}` }

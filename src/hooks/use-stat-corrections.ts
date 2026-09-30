@@ -3,6 +3,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 
 import { LeagueActionError, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import { CORRECTIONS_UNAVAILABLE_MESSAGE } from '@/lib/leagues/api/corrections-copy'
 import type { StatCorrectionsPage } from '@/lib/leagues/api/corrections-service'
 
 /**
@@ -18,7 +19,8 @@ import type { StatCorrectionsPage } from '@/lib/leagues/api/corrections-service'
  * render it, never infer emptiness.
  *
  * DEPLOY BEFORE PUSH (TD15): a database without migration 172 answers a
- * named 503, and the page says `unavailable` with the server's sentence —
+ * named 503, and the page says `unavailable` with the server's sentence (only
+ * THAT sentence — any other 503 still throws; R1350) —
  * a caller shows that, never an empty list and never an error screen.
  *
  * No realtime yet — the records' own broadcast ships with the corrections
@@ -63,7 +65,10 @@ export async function fetchStatCorrections(
     )
     return { state: 'known', page }
   } catch (error) {
-    if (error instanceof LeagueActionError && error.status === 503) return { state: 'unavailable', reason: error.message }
+    // R1350: only THE named 503 means "172 not pushed yet"; any other 503 is an error.
+    if (error instanceof LeagueActionError && error.status === 503 && error.message === CORRECTIONS_UNAVAILABLE_MESSAGE) {
+      return { state: 'unavailable', reason: error.message }
+    }
     throw error
   }
 }

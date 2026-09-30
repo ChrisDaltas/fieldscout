@@ -24,7 +24,9 @@
  *        MEASURED here on a GET, renamed to this table ⇒ the named 503 —
  *        never a 500, never an empty list.
  *   CA6  the activity feed carries both correction posts tagged
- *        `stat_correction` with their week; an ordinary system post is not.
+ *        `stat_correction` with their week; an ordinary system post is not,
+ *        nor a commissioner post that opens with the prefix (R1349 — a team
+ *        named like a correction; the door's post has no actor).
  *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-capi` prefix on players / stats / queue /
@@ -159,7 +161,7 @@ async function signIn(u: (typeof USERS)[number]): Promise<SupabaseClient<Databas
 
 async function correctionPosts(): Promise<string[]> {
   const rows = await must(
-    service.from('league_chat').select('message').eq('league_id', leagueId).eq('is_system', true).like('message', 'Stat correction (Week %').order('created_at', { ascending: false }),
+    service.from('league_chat').select('message').eq('league_id', leagueId).eq('is_system', true).is('user_id', null).like('message', 'Stat correction (Week %').order('created_at', { ascending: false }),
     'posts',
   )
   return (rows ?? []).map((r) => r.message)
@@ -235,8 +237,13 @@ beforeAll(async () => {
   await pollAndDrain(T_FIX_1)
   feed.lines = { ...feed.lines, [WR2]: { receiving_yards: 90 } }
   await pollAndDrain(T_FIX_2)
-  // An ordinary league post beside them (CA6's negative).
+  // An ordinary league post beside them (CA6's negative)…
   await must(service.from('league_chat').insert({ league_id: leagueId, user_id: null, message: 'Schedule remixed by the commissioner.', context: 'league', is_system: true }), 'plain post')
+  // …and R1349's spoof: a commissioner post (it carries its actor) that opens with a team named like a correction.
+  await must(
+    service.from('league_chat').insert({ league_id: leagueId, user_id: userIds[0], message: "Stat correction (Week 3): Team Two 99.00 → 120.00's FAAB balance is now $5 (was $100) — set by capi_commish_one (commissioner override)", context: 'league', is_system: true }),
+    'spoof post',
+  )
 }, 120_000)
 
 afterAll(cleanup, 60_000)
@@ -336,13 +343,14 @@ describe('L.E2.3 — the league’s stat corrections read, over records the REAL
     expect(await readStatCorrections(pre172, leagueId, { week: '1' })).toStrictEqual({ status: 503, body: { error: CORRECTIONS_UNAVAILABLE_MESSAGE } })
   })
 
-  it('CA6 the activity feed carries both correction posts, tagged stat_correction with their week — an ordinary post is untagged', async () => {
+  it('CA6 the activity feed carries both correction posts, tagged stat_correction with their week — an ordinary post, and a commissioner post opening with the prefix (R1349), are untagged', async () => {
     const result = await readActivity(memberClient, leagueId, { kind: 'system' })
     expect(result.status).toBe(200)
     const items = (result.body as unknown as ActivityFeed).items
     const tagged = items.map((i) => (i.kind === 'system' ? [i.topic, i.week, i.message] : null))
     const [fix2, fix1] = await correctionPosts()
     expect(tagged).toEqual([
+      [null, null, "Stat correction (Week 3): Team Two 99.00 → 120.00's FAAB balance is now $5 (was $100) — set by capi_commish_one (commissioner override)"],
       [null, null, 'Schedule remixed by the commissioner.'],
       ['stat_correction', 1, fix2],
       ['stat_correction', 1, fix1],
