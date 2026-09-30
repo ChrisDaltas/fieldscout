@@ -608,7 +608,7 @@ describe('L.E1.41 — leaving a league takes two confirmations', () => {
       const final = renderStep('final', phase)
       expect(final).toContain('data-leave-step="final"')
       expect(final).toContain('Are you sure you want to leave?')
-      expect(final).toContain('only the commissioner can invite you back')
+      expect(final).toContain(copy.finalBody)
       expect(final).toContain('data-leave-confirm')
       expect(final).toContain('>Yes, leave this league</button>')
       expect(final).toContain('>Back</button>')
@@ -616,6 +616,19 @@ describe('L.E1.41 — leaving a league takes two confirmations', () => {
       expect(renderStep('final', phase, true)).toContain('Leaving…')
     },
   )
+  it('R1405: the last check says how you could come back — the league link before the draft, a commissioner’s invite after', () => {
+    expect(leaveLeagueCopy('pre_draft', 'Bravo', 'Members League').finalBody).toBe(
+      'You’ll leave Members League and give up Bravo. To come back you’d need the league link again, and a spot still open.',
+    )
+    for (const phase of ['drafting', 'in_season', 'playoffs', 'complete'] as const) {
+      expect(leaveLeagueCopy(phase, 'Bravo', 'Members League').finalBody, phase).toBe(
+        'You’ll leave Members League and give up Bravo. You can’t undo this yourself — a commissioner can invite you back.',
+      )
+    }
+    for (const phase of ['pre_draft', 'drafting', 'in_season', 'playoffs', 'complete'] as const) {
+      expect(leaveLeagueCopy(phase, 'Bravo', 'L').finalBody, phase).not.toMatch(/only the commissioner|for good/)
+    }
+  })
   it('mid-season the consequences are in plain words: no manager, players / record / FAAB kept, claims cancelled, the commissioner or autopilot runs it', () => {
     const inSeason = leaveLeagueCopy('in_season', 'Bravo', 'Members League').consequences
     expect(inSeason).toBe(

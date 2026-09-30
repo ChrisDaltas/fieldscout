@@ -634,7 +634,14 @@ export function leaveLeagueCopy(phase: MembersPhase, teamName: string, leagueNam
     consequences,
     continueLabel: 'Continue',
     finalTitle: 'Are you sure you want to leave?',
-    finalBody: `You’ll leave ${leagueName} and ${teamName} for good. You can’t undo this yourself — only the commissioner can invite you back.`,
+    // R1405: coming back differs by state — before the draft anyone with the
+    // league link can join while a spot is open (062 `join_league_by_code`:
+    // setup / scheduled only, capped at the team count); once it starts that
+    // door is closed and only a seat invite (any commissioner) brings you back.
+    finalBody:
+      phase === 'pre_draft'
+        ? `You’ll leave ${leagueName} and give up ${teamName}. To come back you’d need the league link again, and a spot still open.`
+        : `You’ll leave ${leagueName} and give up ${teamName}. You can’t undo this yourself — a commissioner can invite you back.`,
     confirmLabel: 'Yes, leave this league',
     stayLabel: 'Stay in the league',
   }

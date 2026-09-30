@@ -21,7 +21,7 @@
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
-import { markUsername, plainText } from '@/components/shared/username-link-ops'
+import { markUsername, plainText, stripMarks } from '@/components/shared/username-link-ops'
 
 import { COMMISH_ACTION_WORDS, actionWords, receiptDetail, settingChange } from './commish-log-copy'
 
@@ -429,10 +429,24 @@ function actText(
  */
 export function commishLogLines(
   items: readonly CommishLogItem[],
-  teamNames: ReadonlyMap<string, string>,
+  rawTeamNames: ReadonlyMap<string, string>,
   memberNames: ReadonlyMap<string, string> = new Map(),
 ): CommishLogLine[] {
-  return items.map((item) => {
+  // R1403: the sentence marks usernames in-band, so every OTHER string it can
+  // interpolate — team names (free text: 128's rename only trims and caps),
+  // and whatever the receipt's before / after / metadata carry (player names,
+  // trade summaries, from / to teams, setting values) — loses the marks first.
+  // Stripped here, once, so no interpolation site (here or `receiptDetail`)
+  // can forget. Usernames are marked by `member()` only.
+  const teamNames = new Map([...rawTeamNames].map(([id, name]) => [id, stripMarks(name)]))
+  return items.map((raw) => {
+    const item = {
+      ...raw,
+      target_id: raw.target_id === null ? null : stripMarks(raw.target_id),
+      before: unmarked(raw.before) as CommishLogItem['before'],
+      after: unmarked(raw.after) as CommishLogItem['after'],
+      metadata: unmarked(raw.metadata) as CommishLogItem['metadata'],
+    }
     const named = new Set<string>()
     const sentence = actText(item, { teamNames, memberNames }, named)
     const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
@@ -448,6 +462,16 @@ export function commishLogLines(
       createdAt: item.created_at,
     }
   })
+}
+
+/** Every string inside a receipt's JSON, with the username marks removed (R1403). */
+function unmarked(value: unknown): unknown {
+  if (typeof value === 'string') return stripMarks(value)
+  if (Array.isArray(value)) return value.map(unmarked)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [stripMarks(key), unmarked(inner)]))
+  }
+  return value
 }
 
 /** user id → username, from the league detail's members (a placeholder seat has no user). */

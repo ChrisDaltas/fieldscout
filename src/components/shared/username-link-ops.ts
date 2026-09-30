@@ -14,6 +14,11 @@
  *    characters, so the renderer knows exactly which words are a person —
  *    never guessing from the text. `plainText` strips the marks for every
  *    reader that wants the words only (a test, a title, an aria-label).
+ *    The marks are in-band, so EVERY other string a composer interpolates
+ *    (a team name, a player name, a trade summary — free text a manager can
+ *    type, and 128's rename only trims and caps it) must pass `stripMarks`
+ *    first; otherwise a team named `\uE000victim\uE001` would forge a link
+ *    (R1403). `markUsername` strips its own input too.
  *  - **The actor of a stored post** (`splitActorName`). A league post the
  *    database wrote ("Draft paused by chris.", "chris (commissioner) vetoed a
  *    trade: …") names its actor with `draft_actor_name()` — the username —
@@ -29,13 +34,25 @@ export function userProfileHref(username: string): string {
   return `/u/${encodeURIComponent(username)}`
 }
 
-/** Private-use code points: no username, team name or player name holds them. */
-const OPEN = ''
-const CLOSE = ''
+/**
+ * Private-use code points (U+E000 / U+E001). A username cannot hold them
+ * (spec §3: `[a-z0-9_]`), but a team name, a player name or any other free
+ * text CAN — so a composer strips them from everything it interpolates that
+ * is not a marked username (`stripMarks`; R1403).
+ */
+const OPEN = '\uE000'
+const CLOSE = '\uE001'
+const MARKS = /[\uE000\uE001]/g
+
+/** The text with every mark removed — apply to each non-username string a
+ *  composed sentence interpolates, so no free text can forge a person link. */
+export function stripMarks(value: string): string {
+  return value.replace(MARKS, '')
+}
 
 /** Wrap a username interpolated into a composed sentence (see file doc). */
 export function markUsername(username: string): string {
-  return `${OPEN}${username}${CLOSE}`
+  return `${OPEN}${stripMarks(username)}${CLOSE}`
 }
 
 export type UsernamePart = string | { username: string }

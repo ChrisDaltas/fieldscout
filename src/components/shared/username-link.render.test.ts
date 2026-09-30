@@ -10,10 +10,15 @@
  *     feed's posts, the commissioner log's sentences, the draft chat, the
  *     draft room's lists panel rows. (The seat list, League Home, the
  *     Activity page and the team page are pinned in their own render suites.)
- *  3. THE CENSUS — every place the source renders a person's handle by hand
- *     (`@{…username}`, `` `@${…username}` ``, a hand-built `/u/${…}` profile
- *     URL) must be on the list below with the reason it is not a link. A new
- *     plain handle anywhere in the app fails here BY FILE AND LINE.
+ *  3. THE CENSUS (R1406: exactly what it catches) — a source line under
+ *     src/components, src/app or src/hooks that renders an `@`-PREFIXED
+ *     handle from a field whose name contains `username` / `handle`
+ *     (`@{…username}`, `` `@${…username}` ``), or builds a `/u/${…}` URL by
+ *     hand, must be on the list below with the reason it is not a link; each
+ *     entry is pinned to its exact line count. It does NOT catch a bare
+ *     `{x.username}` with no `@`, a handle held under another name, or a
+ *     name inside server-composed text (F550) — those are covered by the
+ *     surface proofs above and by review, not by this scan.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
@@ -30,7 +35,7 @@ import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
 import { TextWithActor, TextWithUsernames, UsernameLink } from './username-link'
-import { markUsername, plainText, splitActorName, userProfileHref, usernameParts } from './username-link-ops'
+import { markUsername, plainText, splitActorName, stripMarks, userProfileHref, usernameParts } from './username-link-ops'
 
 const html = (el: ReturnType<typeof createElement>) =>
   renderToStaticMarkup(el).replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
@@ -74,6 +79,15 @@ describe('marked names — the app’s own sentences link exactly the names they
   it('a sentence with no marks is its own words; a stray mark never leaks to the screen', () => {
     expect(usernameParts('set Alpha’s Week 3 lineup')).toEqual(['set Alpha’s Week 3 lineup'])
     expect(plainText('half open')).toBe('half open')
+  })
+})
+
+describe('stripMarks — free text cannot carry a mark into a composed sentence (R1403)', () => {
+  it('removes both marks, paired or lone; markUsername strips its own input', () => {
+    expect(stripMarks('\uE000victim_gm\uE001')).toBe('victim_gm')
+    expect(stripMarks('Alpha\uE000')).toBe('Alpha')
+    expect(stripMarks('Bra\uE001vo')).toBe('Bravo')
+    expect(usernameParts(markUsername('\uE000x\uE001'))).toEqual([{ username: 'x' }])
   })
 })
 
@@ -170,6 +184,35 @@ describe('the commissioner log (League Home, the console, the Activity page) —
     const out = render([item({})])
     expect(out).toMatch(/<a data-username-link="chris"[^>]*font-bold[^>]*href="\/u\/chris">chris<\/a> made <a data-username-link="dana"[^>]*href="\/u\/dana">dana<\/a> a co-commissioner/)
   })
+  it('R1403: a team / player name / trade summary / reason holding the marks forges no link — whole pair, lone mark, or "..”', () => {
+    const O = '\uE000'
+    const C = '\uE001'
+    const renderWith = (teamNames: Map<string, string>, items: CommishLogItem[]) =>
+      html(createElement(CommishLogSection, { items, pending: false, problem: null, onRetry: () => {}, hasMore: false, memberNames: MEMBERS, teamNames, leagueTimeZone: null }))
+    const out = renderWith(new Map([['t2', `${O}victim_gm${C}`], ['t3', `Alpha${O}`]]), [
+      // a manager renames his team to a marked handle (128 only trims + caps)
+      item({ id: 'ca-rename', action_type: 'reassign_team', target_type: 'team', target_id: 't2', before: { name: `Bravo${C}` }, after: { name: `${O}victim_gm${C}` }, metadata: {} }),
+      // the team looked up by id, and "(for …)" from acting_as_team_id
+      item({ id: 'ca-auto', action_type: 'set_autopilot', target_type: 'team', target_id: 't2', before: { autopilot: false }, after: { autopilot: true }, metadata: {}, acting_as_team_id: 't3' }),
+      // a lone mark in each of two names would capture the words between them
+      item({ id: 'ca-move', action_type: 'commish_move_player', target_type: 'roster', before: { acquisition_type: 'draft' }, after: { acquisition_type: 'commish' }, metadata: { player_name: `Jo${O}e`, from_team_name: `${O}..${C}`, to_team_name: `Bra${C}vo` } }),
+      // a trade summary, and a reason (rendered as words, never parsed)
+      item({ id: 'ca-veto', action_type: 'commish_veto_trade', target_type: 'trade', before: { status: 'accepted' }, after: { status: 'vetoed' }, metadata: { verb: 'commish_force_or_reverse_trade', op: 'veto', summary: `Alpha gives ${O}victim_gm${C}` }, reason: `ask ${O}victim_gm${C}` }),
+    ])
+    // Only the four actors (chris) are doors — no forged name, no /u/..
+    expect(out.match(/data-username-link=/g)).toHaveLength(4)
+    expect(out.match(/data-username-link="chris"/g)).toHaveLength(4)
+    expect(out).not.toContain('/u/victim_gm')
+    expect(out).not.toContain('href="/u/.."')
+    // The composed sentences carry no mark; the reason is shown AS GIVEN
+    // (never parsed for names — it is words, and it links nothing).
+    expect(out.replace(/<span data-commish-log-reason[^>]*>[^<]*<\/span>/g, '')).not.toMatch(/[\uE000\uE001]/)
+    expect(out).toContain(`reason: “ask ${O}victim_gm${C}”`)
+    expect(out).toContain('renamed Bravo to victim_gm')
+    expect(out).toContain('put victim_gm on autopilot (for Alpha)')
+    expect(out).toContain('moved Joe from .. to Bravo')
+    expect(out).toContain('vetoed a trade: Alpha gives victim_gm')
+  })
   it('a receipt with no named actor reads "A commissioner" — plain, never a dead link', () => {
     const out = render([item({ actor: { id: 'user-x', username: null } })])
     expect(out).toContain('<span class="font-bold">A commissioner</span>')
@@ -217,7 +260,7 @@ describe('the draft room — names open in a new tab (leaving the room can cost 
 
 const ROOT = path.resolve(__dirname, '../../..')
 const SCAN = ['src/components', 'src/app', 'src/hooks']
-/** A handle rendered by hand, or a person's profile URL built by hand. */
+/** An `@`-prefixed username / handle interpolation, or a `/u/${…}` URL built by hand (see header §3 for what this misses). */
 const PATTERNS = [
   /@\{[^}]*(?:username|handle)[^}]*\}/, // JSX text: @{x.username}
   /@\$\{[^}]*(?:username|handle)[^}]*\}/, // a template: `@${x.username}`
@@ -226,9 +269,10 @@ const PATTERNS = [
 
 /**
  * Every hit, and why it is not a `UsernameLink`. `contains` is a substring of
- * the hit's line. An entry that matches nothing fails too (no dead reasons).
+ * the hit's line; each entry matches exactly `lines` lines (default 1), so an
+ * entry that matches nothing — or silently covers a new line — fails too.
  */
-const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = [
+const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; lines?: number }> = [
   { file: 'src/components/shared/username-link.tsx', contains: '{at ? `@${username}` : username}', why: 'the primitive itself' },
   { file: 'src/components/shared/username-link-ops.ts', contains: 'return `/u/${encodeURIComponent(username)}`', why: 'the one spelling of the URL' },
   { file: 'src/components/draft/draft-chat.tsx', contains: 'const handle = username ? `@${username}` : null', why: 'ChatAuthor finds the handle in the label to render it as a UsernameLink' },
@@ -252,8 +296,8 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
   { file: 'src/app/u/[username]/following/page.tsx', contains: '← @{profile.username}', why: 'already inside the back link to the profile' },
   { file: 'src/app/u/[username]/following/page.tsx', contains: 'Scouts @{profile.username} follows', why: 'the empty state under the back link to the same profile' },
   { file: 'src/app/u/[username]/lists/[listSlug]/page.tsx', contains: 'const handle = `@${profile.username}`', why: 'page metadata' },
-  { file: 'src/app/u/[username]/big-board/page.tsx', contains: 'const handle = `@${data.profile.username}`', why: 'metadata, and the page header title string (big board is flag-gated at launch — F551)' },
-  { file: 'src/app/u/[username]/big-board/week/[week]/page.tsx', contains: 'const handle = `@${data.profile.username}`', why: 'metadata, and the page header title string (big board is flag-gated at launch — F551)' },
+  { file: 'src/app/u/[username]/big-board/page.tsx', contains: 'const handle = `@${data.profile.username}`', why: 'metadata, and the page header title string (big board is flag-gated at launch — F551)', lines: 2 },
+  { file: 'src/app/u/[username]/big-board/week/[week]/page.tsx', contains: 'const handle = `@${data.profile.username}`', why: 'metadata, and the page header title string (big board is flag-gated at launch — F551)', lines: 2 },
   { file: 'src/app/personas/[username]/page.tsx', contains: '@{persona.username}', why: 'an AI persona’s own page — not a person' },
 ]
 
@@ -280,7 +324,7 @@ describe('the census — no person’s handle is rendered plain without a reason
     const allowed = ALLOWED.some((a) => a.file === hit.file && hit.text.includes(a.contains))
     expect(allowed, `${hit.file}:${hit.line} renders a handle or builds a profile URL by hand — use UsernameLink / userProfileHref, or add it to ALLOWED with the reason: ${hit.text}`).toBe(true)
   })
-  it.each(ALLOWED.map((a) => [`${a.file} — ${a.contains}`, a] as const))('allowlist entry is live: %s', (_label, entry) => {
-    expect(hits.some((h) => h.file === entry.file && h.text.includes(entry.contains))).toBe(true)
+  it.each(ALLOWED.map((a) => [`${a.file} — ${a.contains}`, a] as const))('allowlist entry is live and pinned to its line count: %s', (_label, entry) => {
+    expect(hits.filter((h) => h.file === entry.file && h.text.includes(entry.contains))).toHaveLength(entry.lines ?? 1)
   })
 })
