@@ -139,9 +139,17 @@ export function TradeBuilderView({
     mode === 'propose' && initial?.toTeamId && !initialTo
       ? (teams.find((t) => t.team_id === initial.toTeamId && t.team_id !== fromTeamId && t.status !== 'retired' && t.manager_user_id === null) ?? null)
       : null
-  const [toTeamId, setToTeamId] = useState<string | null>(initialTo)
+  // L.E1.36 (F554): the door's team is DERIVED from the current team list
+  // until the manager picks one. R1410's partner check reads the rosters,
+  // which can land AFTER the builder mounts (a fresh load of the `?with=` /
+  // team-page / player-row door — the trade center mounts the builder once
+  // the viewer's team is known, from the league read); seeding state once
+  // from an empty list lost the door's team for good.
+  const [pickedTo, setPickedTo] = useState<{ id: string } | null>(null)
+  const toTeamId = pickedTo ? pickedTo.id : initialTo
   const [give, setGive] = useState<string[]>([...(initial?.give ?? [])])
-  const [get, setGet] = useState<string[]>(initialTo ? [...(initial?.get ?? [])] : [])
+  const [pickedGet, setPickedGet] = useState<string[] | null>(null)
+  const get = pickedGet ?? (initialTo ? [...(initial?.get ?? [])] : [])
   const [faabGiveText, setFaabGiveText] = useState(initial?.faabGive ? String(initial.faabGive) : '')
   const [faabGetText, setFaabGetText] = useState(initial?.faabGet ? String(initial.faabGet) : '')
   const [drops, setDrops] = useState<string[]>([...(initial?.drops ?? [])])
@@ -274,8 +282,8 @@ export function TradeBuilderView({
               value={toTeamId ?? ''}
               disabled={mode === 'counter'}
               onValueChange={(v) => {
-                setToTeamId(v)
-                setGet([])
+                setPickedTo({ id: v })
+                setPickedGet([])
                 setFaabGetText('')
               }}
             >
@@ -310,7 +318,7 @@ export function TradeBuilderView({
             roster={to?.roster ?? []}
             picked={getNow}
             lockBehavior={lockBehavior}
-            onToggle={(id) => setGet((g) => toggle(g, id))}
+            onToggle={(id) => setPickedGet(toggle(get, id))}
             faab={allowFaab && to ? { text: faabGetText, onChange: setFaabGetText, balance: to.faab_balance, over: faabOverBalance(faabGet, to.faab_balance) } : null}
             empty={to ? 'No players on this roster.' : 'Pick a team to see its roster.'}
           />
