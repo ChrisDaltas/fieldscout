@@ -345,6 +345,17 @@ BEGIN
         BEGIN
           IF v_col IS NOT NULL THEN
             v_old := (v_stored ->> v_col)::numeric;
+            -- R1317: a STORED line's NULL box column reads as the column's
+            -- DEFAULT (0) — what the scorer and ingestWeek's `readStats`
+            -- read — except a column with NO default (143's
+            -- `def_yards_allowed`: NULL is "not delivered", F390), which
+            -- stays NULL. No stored line at all (a gap filled late) stays NULL.
+            IF v_old IS NULL AND v_stored IS NOT NULL THEN
+              v_old := (SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid)
+                          FROM pg_catalog.pg_attrdef d
+                          JOIN pg_catalog.pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+                         WHERE d.adrelid = 'public.player_stats'::regclass AND a.attname = v_col)::numeric;
+            END IF;
             v_new := (v_stat ->> v_col)::numeric;
           ELSE
             v_old := (v_stored -> 'advanced' ->> v_key)::numeric;

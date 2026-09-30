@@ -110,7 +110,6 @@
  * the entry point (the cron route / the gate harness), never in here.
  */
 
-import { isDoorNotPushed } from '@/lib/leagues/api/trades-service'
 import type { DegradationTracker } from '@/lib/leagues/stats/degradation'
 import { NULL_IS_PENDING_KEYS, STAT_KEYS } from '@/lib/leagues/stats/stat-keys'
 import type {
@@ -121,6 +120,7 @@ import type {
 import { weekReleaseFloor } from '@/lib/leagues/time/release-floor'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
+import { isDoorNotPushed } from '@/lib/supabase/postgrest-errors'
 
 import { STAT_COLUMN_BY_KEY, toStatColumns } from './live-stats'
 import { fetchKnownPlayerIds } from './projections'

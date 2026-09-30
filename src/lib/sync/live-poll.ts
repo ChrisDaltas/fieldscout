@@ -350,13 +350,24 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
 
     provider.resetScheduleMemo()
     const round: PollRound = { plan, polls: [] }
+    // R1314 (M6 L.E2.1): a SWEEP round reads the provider for up to three
+    // weeks at one instant (the current week, F270's open-window weeks,
+    // TD5's final weeks), so one provider blip would fail all of them at
+    // once. §23.2's "3 failed polls" means three polls in TIME — a sweep's
+    // failures count ONCE toward it: after the round's first failed poll,
+    // a further failure is not persisted (a success still is — it clears).
+    let sweepFailureCounted = false
     for (const week of plan.weeks) {
       const tracker = await loadTracker(deps.db)
       const poll = await ingest(provider, deps.time, { db: deps.db, degradation: tracker, season: deps.season, week })
-      const flag = await persist(deps.db, tracker, poll)
+      const alreadyCounted = plan.mode === 'sweep' && !poll.ok && sweepFailureCounted
+      const flag = alreadyCounted && report.flag !== null ? report.flag : await persist(deps.db, tracker, poll)
+      if (plan.mode === 'sweep' && !poll.ok) sweepFailureCounted = true
       round.polls.push({ week, report: poll, flag })
       report.flag = flag
-      if (!poll.ok) {
+      if (alreadyCounted) {
+        report.problems.push(`week ${week}: provider poll FAILED again in the same sweep (${poll.error ?? 'unknown'}) — nothing written; counted once per sweep toward stats_degraded (R1314)`)
+      } else if (!poll.ok) {
         report.problems.push(
           `week ${week}: provider poll FAILED (${poll.error ?? 'unknown'}) — nothing written; consecutive failures ${flag.consecutive_failures}${flag.degraded ? ' — stats_degraded RAISED (§23.2/E45)' : ''}`,
         )

@@ -137,6 +137,8 @@ interface FakeWorld {
   flag: StatsDegradedFlag
   sleeps: number[]
   scheduleReads: number
+  /** The calendar the fake db serves (default WEEKS). */
+  weeks?: CalendarWeek[]
 }
 
 function fakeReport(season: number, week: number, polledAt: string, ok: boolean, degraded: boolean): IngestReport {
@@ -167,7 +169,7 @@ function fakeDb(world: FakeWorld): FlagsClient {
       range: () => chain,
       then: (onFulfilled: (v: { data: unknown; error: null; count?: number }) => unknown) => {
         if (table === 'nfl_games') return Promise.resolve({ data: world.games, error: null, count: world.games.length }).then(onFulfilled)
-        if (table === 'nfl_weeks') return Promise.resolve({ data: WEEKS, error: null }).then(onFulfilled)
+        if (table === 'nfl_weeks') return Promise.resolve({ data: world.weeks ?? WEEKS, error: null }).then(onFulfilled)
         throw new Error(`fake db: unexpected table ${table}`)
       },
     }
@@ -431,5 +433,31 @@ describe('TD15 (L.E2.1) — the pre-167 two-call path is NAMED in the invocation
       mutate: (r) => ({ ...r, write: { path: 'door', door: 'ingest_write_batch' } }),
     })
     expect(door.problems).toEqual([])
+  })
+})
+
+describe('R1314 (L.E2.1) — one sweep’s failures count ONCE toward stats_degraded (§23.2’s three polls are three polls in time)', () => {
+  const weeks: CalendarWeek[] = [
+    { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00.000Z' },
+    { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+    { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
+  ]
+
+  it('the 11:00Z sweep polls three weeks; a provider blip fails all three — ONE failure is persisted, stats_degraded stays down, the other two are named', async () => {
+    const world = { ...makeWorld([game(1, TNF, 'final'), game(2, SNF, 'final')]), weeks }
+    const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:30Z')), { failPolls: true })
+    expect(report.rounds[0]!.plan.weeks).toEqual([3, 2, 1])
+    expect(world.polls.map((p) => p.week)).toEqual([3, 2, 1]) // every week still asked
+    expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([1, false])
+    expect(report.problems).toEqual([
+      'week 3: provider poll FAILED (boom) — nothing written; consecutive failures 1',
+      'week 2: provider poll FAILED again in the same sweep (boom) — nothing written; counted once per sweep toward stats_degraded (R1314)',
+      'week 1: provider poll FAILED again in the same sweep (boom) — nothing written; counted once per sweep toward stats_degraded (R1314)',
+    ])
+    // Three SWEEPS in a row (three hours) still raise it on the third — the threshold itself is unchanged.
+    await run(world, new VirtualClock(new Date('2026-09-24T12:00:30Z')), { failPolls: true })
+    expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([2, false])
+    await run(world, new VirtualClock(new Date('2026-09-24T13:00:30Z')), { failPolls: true })
+    expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([3, true])
   })
 })

@@ -55,6 +55,8 @@ import { z } from 'zod'
 import type { Database, Json } from '@/types/database'
 
 import { optionalReason } from './commish-matchup-service'
+import { isDoorNotPushed as isDoorNotPushedFor, isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
+
 import { mapInSeasonRpcError, type RpcErrorLike } from './inseason-errors'
 import { normalizedUuid } from './inseason-ids'
 import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'
@@ -111,25 +113,10 @@ export const TRADE_SCHEMA_OBJECTS = [
   'commish_force_or_reverse_trade',
 ] as const
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * True when `error` is the database saying one of `names` does not EXIST —
- * PostgREST's schema-cache answers (PGRST205 "Could not find the table
- * 'public.x'", PGRST202 "Could not find the function public.x(…)" — both
- * measured on the local stack 2026-09-28) or Postgres's own (42P01 relation /
- * 42883 function). Anchored on the object's NAME so an unrelated missing
- * object is never mistaken for "trades are not deployed" (R1222's lesson:
- * anchor the match). Exported for its pins and the stack cell.
- */
-export function isMissingSchemaObject(error: RpcErrorLike | null | undefined, names: readonly string[]): boolean {
-  if (!error) return false
-  if (!['PGRST205', 'PGRST202', '42P01', '42883'].includes(error.code ?? '')) return false
-  const message = error.message ?? ''
-  return names.some((name) => new RegExp(`(\\bpublic\\.${escapeRegExp(name)}\\b|"${escapeRegExp(name)}")`).test(message))
-}
+// R1316 (L.E2.1 review): the two "not deployed yet" predicates live in
+// `@/lib/supabase/postgrest-errors` (shared with the stats poll's ingest
+// door); re-exported here for this file's callers and pins, unchanged.
+export { isMissingSchemaObject }
 
 function unavailable(): ServiceResult {
   return { status: 503, body: { error: TRADES_UNAVAILABLE_MESSAGE } }
@@ -820,32 +807,13 @@ export const TRADE_CHECK_DOORS: Readonly<Record<string, readonly string[]>> = {
   trade_preview: ['p_league_id', 'p_trade_id', 'p_from_team_id', 'p_to_team_id', 'p_items', 'p_drops'],
 }
 
-/**
- * R1282: true ONLY when the database has no such door — 162 not pushed yet —
- * never for a call the door exists for but does not match (argument drift).
- * PostgREST answers both with PGRST202 (measured on the local stack
- * 2026-09-29), so a PGRST202 counts as "not pushed" only when (a) its hint
- * does not offer the SAME function under another signature ("Perhaps you
- * meant to call the function public.trade_deadline(p_league_id)" — the door
- * is there) and (b) every argument it names is one of the door's own (a
- * `p_bogus` means the CALL drifted — the hint is not always given, measured:
- * `trade_preview(p_bogus, p_league_id)` came back with `hint: null`).
- * Anything else is a loud 500, never the quiet fallback.
- */
+/** R1282: true ONLY when 162 is not pushed yet — never for argument drift. The
+ *  rule lives in `@/lib/supabase/postgrest-errors` (R1316); this binds 162's doors. */
 export function isDoorNotPushed(
   error: (RpcErrorLike & { hint?: string | null }) | null | undefined,
   doors: Readonly<Record<string, readonly string[]>> = TRADE_CHECK_DOORS,
 ): boolean {
-  if (!error) return false
-  for (const [name, params] of Object.entries(doors)) {
-    if (!isMissingSchemaObject(error, [name])) continue
-    if (error.code !== 'PGRST202') return true
-    if ((error.hint ?? '').includes(`public.${name}(`)) return false
-    const args = new RegExp(`public\\.${escapeRegExp(name)}\\(([^)]*)\\)`).exec(error.message ?? '')
-    const named = (args?.[1] ?? '').split(',').map((a) => a.trim()).filter(Boolean)
-    return named.every((a) => params.includes(a))
-  }
-  return false
+  return isDoorNotPushedFor(error, doors)
 }
 
 function checksFailure(error: RpcErrorLike & { hint?: string | null }): ServiceResult {

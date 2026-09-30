@@ -31,7 +31,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(71);
+select plan(73);
 
 -- ---------------------------------------------------------------------------
 -- A. FORM
@@ -69,7 +69,7 @@ select is(
   1, 'A6 one overload');
 select is(
   (select md5(prosrc) from pg_proc where oid = 'public.ingest_write_batch(jsonb, timestamptz)'::regprocedure),
-  'd0813084364adff72381898b8437a8fa',
+  '097b59192ea1e4b0e1755ec34d36c843',
   'A7 the door''s body is 167''s — a STORED-LITERAL md5');
 select is(
   (select md5(prosrc) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
@@ -206,6 +206,24 @@ select is(
   (select string_agg(stat_key || ' ' || coalesce(old_value::text, 'null') || '>' || new_value::text, ', ' order by stat_key) from stat_correction_events where player_id = 'pgtap-sce-k1'),
   'fg_made null>1, pat_made null>2', 'C15 …from NULL (no line stored), under the CANONICAL key (pat_made, stored in xp_made — D33)');
 
+-- C15b / C15c (R1317): a STORED line's NULL box column is the column's DEFAULT (0) — what the scorer and
+-- ingestWeek's readStats read, so the event agrees with the poll's report — EXCEPT a column with no default
+-- (143's def_yards_allowed: NULL is "not delivered", F390), which stays NULL.
+update player_stats set fg_made = null, def_yards_allowed = null where player_id = 'pgtap-sce-k1' and season = 2093;
+select is(
+  public.ingest_write_batch(jsonb_build_array(jsonb_build_object(
+     'stat', jsonb_build_object('player_id', 'pgtap-sce-k1', 'season', 2093, 'week', 1, 'stat_type', 'weekly', 'game_id', 'pgtap-sce-g1',
+                                'is_live', false, 'source', 'fixture', 'advanced', '{}'::jsonb, 'fg_made', 2, 'xp_made', 2, 'def_yards_allowed', 300),
+     'enqueue', true,
+     'corrections', '[{"stat_key": "fg_made", "column": "fg_made"}, {"stat_key": "def_yards_allowed", "column": "def_yards_allowed"}]'::jsonb)),
+    '2093-09-15T20:00:00Z') ->> 'events_written',
+  '2', 'C15b a stored NULL moved: both keys recorded');
+select is(
+  (select string_agg(stat_key || ' ' || coalesce(old_value::text, 'null') || '>' || new_value::text, ', ' order by stat_key)
+     from stat_correction_events where player_id = 'pgtap-sce-k1' and detected_at = '2093-09-15T20:00:00Z'),
+  'def_yards_allowed null>300, fg_made 0>2',
+  'C15c …a defaulted column''s stored NULL is recorded as its DEFAULT 0 (as readStats reads it); def_yards_allowed (no default — not delivered) stays NULL');
+
 -- C16 THE WEEK STATE — the window''s end, the D146 pair: one second before it is open …
 select is(
   public.ingest_write_batch(jsonb_build_array(jsonb_build_object('stat', pg_temp.line('pgtap-sce-w2', 2, 21), 'enqueue', true,
@@ -341,7 +359,7 @@ select throws_ok($$ select public.ingest_write_batch('[]', '2093-09-20T12:00:00Z
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f700000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select is((select count(*)::int from stat_correction_events where player_id like 'pgtap-sce-%'), 11, 'B6 a signed-in user reads the events (NFL data, as player_stats — research)');
+select is((select count(*)::int from stat_correction_events where player_id like 'pgtap-sce-%'), 13, 'B6 a signed-in user reads the events (NFL data, as player_stats — research)');
 select results_eq($$ with w as (update stat_correction_events set new_value = 0 returning 1) select count(*) from w $$, $$ values (0::bigint) $$, 'B7 the signed-in user: UPDATE touches 0 rows');
 select results_eq($$ with w as (delete from stat_correction_events returning 1) select count(*) from w $$, $$ values (0::bigint) $$, 'B8 the signed-in user: DELETE touches 0 rows');
 select throws_ok($$ insert into stat_correction_events (season, week, player_id, stat_key, old_value, new_value, detected_at, week_state, source)
@@ -362,7 +380,7 @@ select is(
       "source": "fixture", "advanced": {}, "receptions": 5, "receiving_yards": 96, "receiving_tds": 0}, "enqueue": true,
       "corrections": [{"stat_key": "receiving_yards", "column": "receiving_yards"}]}]', '2093-09-21T12:00:00Z') ->> 'events_written',
   '1', 'B13 the SERVICE ROLE runs the door (the stats poll): 95 > 96 recorded');
-select is((select count(*)::int from stat_correction_events where player_id like 'pgtap-sce-%'), 12, 'B14 …and reads every event');
+select is((select count(*)::int from stat_correction_events where player_id like 'pgtap-sce-%'), 14, 'B14 …and reads every event');
 reset role;
 select set_config('request.jwt.claims', '', true);
 
