@@ -443,8 +443,10 @@ export type MembersPhase = 'pre_draft' | 'drafting' | 'in_season' | 'playoffs' |
 export function membersPhase(status: string): MembersPhase {
   if (status === 'setup' || status === 'scheduled') return 'pre_draft'
   if (status === 'drafting' || status === 'in_season' || status === 'playoffs' || status === 'complete') return status
-  // An unknown status: the conservative arm — nothing only a pre-draft league
-  // accepts is offered.
+  // Unreachable: `leagues_status_valid` (059:119) admits only the six states
+  // above. The fallback exists for type totality only; it offers nothing only
+  // a pre-draft league accepts (it would offer retire — the server's own
+  // status gate still decides that). R1401.
   return 'complete'
 }
 

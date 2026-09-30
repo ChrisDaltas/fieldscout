@@ -889,22 +889,29 @@ function RemoveManagerDialog({
             )}
           </ModeOption>
           {controls.retire ? (
-            <ModeOption
-              active={mode === 'retire'}
-              onSelect={() => setMode('retire')}
-              title="Retire the team"
-              body={retireOptionCopy(controls.phase)}
-            >
+            <>
+              <ModeOption
+                active={mode === 'retire'}
+                onSelect={() => setMode('retire')}
+                title="Retire the team"
+                body={retireOptionCopy(controls.phase)}
+              />
               {mode === 'retire' && (
                 // E49: both consequences — what the new team inherits and
                 // where the history splits — said before Retire is pressed.
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-[11px] font-semibold text-ink" data-retire-consequences>
+                // OUTSIDE the option's <button> (R1400): a list inside a
+                // button is invalid, and a screen reader would read the whole
+                // list as the button's name.
+                <ul
+                  className="-mt-1 list-disc space-y-1 rounded-sm border border-n-4 py-2.5 pl-7 pr-3 text-[11px] font-semibold text-ink"
+                  data-retire-consequences
+                >
                   {retireConsequences(controls.phase, seat.teamName, managerLabel).map((line) => (
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
               )}
-            </ModeOption>
+            </>
           ) : (
             <ModeOption
               active={false}

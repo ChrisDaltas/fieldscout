@@ -385,6 +385,10 @@ describe('the remove chooser per state — retire offered where its verb accepts
     expect(source).toContain('{controls.retire ? (')
     expect(source).toContain("onSelect={() => setMode('retire')}")
     expect(source).toContain('retireConsequences(controls.phase, seat.teamName, managerLabel)')
+    // R1400: the list is a SIBLING of the option (never inside its <button>).
+    const option = source.slice(source.indexOf('title="Retire the team"\n                body={retireOptionCopy(controls.phase)}'))
+    expect(option.slice(0, option.indexOf('data-retire-consequences'))).toContain('/>')
+    expect(source).not.toMatch(/body=\{retireOptionCopy\(controls\.phase\)\}\s*>/)
     expect(source).toContain('`Retire ${seat.teamName}`')
     expect(source).toContain('Reason (optional)')
     expect(source).toContain('successor_team_name')

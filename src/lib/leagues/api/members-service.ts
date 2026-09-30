@@ -185,9 +185,9 @@ export async function patchMember(
  *  is `vacate` + a seat-targeted invite (D74(6)).
  *
  *  L.E1.40 (F262(a) / F546; PROGRESS D461): `retire` (§7.2.1(b)) needs an
- *  `action_id` — one UUID per retirement, minted per submit by the HOOK and
- *  reused on a retry (120's replay stamp, 113's contract; the verb refuses
- *  without one). It is REQUIRED here for retire and refused on the other two
+ *  `action_id` — one UUID per submit, minted by the HOOK (which never
+ *  retries: a new gesture is a new id — 120's replay stamp, 113's contract;
+ *  the verb refuses without one). It is REQUIRED here for retire and refused on the other two
  *  modes (the RPC ignores it there — a stamp that stamps nothing is a
  *  mis-shaped request). The reason is OPTIONAL in every mode (Q66 / C82; 173
  *  made the retire arm agree): `optionalReason` — trimmed, ≤ 500, blank
@@ -208,7 +208,7 @@ export const removeMemberInputSchema = z
     path: ['successor_user_id'],
   })
   .refine((body) => body.mode !== 'retire' || body.action_id !== undefined, {
-    message: 'Retiring a team needs an action_id (one per retirement, reused on a retry).',
+    message: 'Retiring a team needs an action_id (one per submit).',
     path: ['action_id'],
   })
   .refine((body) => body.mode === 'retire' || body.action_id === undefined, {
