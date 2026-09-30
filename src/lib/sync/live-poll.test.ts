@@ -21,8 +21,12 @@ import {
   type CalendarGame,
   type CalendarWeek,
   currentCalendarWeek,
+  FINAL_WEEK_REPOLL_DAYS,
+  FINAL_WEEK_REPOLL_UTC_HOUR,
+  finalWeeksForRepoll,
   LIVE_POLL_BUDGET_MS,
   planLivePoll,
+  weeksInCorrectionWindow,
   POLL_CADENCE_MS,
   POLL_LEAD_MS,
   runLivePollInvocation,
@@ -133,6 +137,8 @@ interface FakeWorld {
   flag: StatsDegradedFlag
   sleeps: number[]
   scheduleReads: number
+  /** The calendar the fake db serves (default WEEKS). */
+  weeks?: CalendarWeek[]
 }
 
 function fakeReport(season: number, week: number, polledAt: string, ok: boolean, degraded: boolean): IngestReport {
@@ -147,6 +153,8 @@ function fakeReport(season: number, week: number, polledAt: string, ok: boolean,
     games: { seen: 1, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 1 },
     weeks: { touched: 1, updated: 0, unchanged: 1, outsideCalendar: 0 },
     stats: { seen: 0, unknownPlayer: 0, empty: 0, droppedAdvancedKeys: 0, inserted: 0, updated: 0, metaOnly: 0, unchanged: 0, deltas: 0, enqueued: 0, restamped: 0 },
+    write: { path: 'none', door: 'ingest_write_batch' },
+    corrections: { detected: 0, players: 0, recorded: 0, replayed: 0, unchangedAtWrite: 0, weekState: null, keys: [], reason: 'nothing written — no line to classify' },
     reasons: ok ? [] : ['provider poll failed — nothing written (§23.2 never partial data)'],
   }
 }
@@ -161,7 +169,7 @@ function fakeDb(world: FakeWorld): FlagsClient {
       range: () => chain,
       then: (onFulfilled: (v: { data: unknown; error: null; count?: number }) => unknown) => {
         if (table === 'nfl_games') return Promise.resolve({ data: world.games, error: null, count: world.games.length }).then(onFulfilled)
-        if (table === 'nfl_weeks') return Promise.resolve({ data: WEEKS, error: null }).then(onFulfilled)
+        if (table === 'nfl_weeks') return Promise.resolve({ data: world.weeks ?? WEEKS, error: null }).then(onFulfilled)
         throw new Error(`fake db: unexpected table ${table}`)
       },
     }
@@ -195,7 +203,11 @@ function makeWorld(games: CalendarGame[]): FakeWorld {
   }
 }
 
-function run(world: FakeWorld, clock: VirtualClock, opts: { failPolls?: boolean; onPoll?: (week: number) => void; budgetMs?: number } = {}) {
+function run(
+  world: FakeWorld,
+  clock: VirtualClock,
+  opts: { failPolls?: boolean; onPoll?: (week: number) => void; budgetMs?: number; mutate?: (r: IngestReport) => IngestReport } = {},
+) {
   return runLivePollInvocation({
     db: fakeDb(world),
     provider: fakeProvider(world),
@@ -212,7 +224,8 @@ function run(world: FakeWorld, clock: VirtualClock, opts: { failPolls?: boolean;
       io.degradation.recordPollResult(ok)
       world.polls.push({ week: io.week, at: time.now().toISOString(), failures: io.degradation.consecutiveFailures })
       opts.onPoll?.(io.week)
-      return fakeReport(io.season, io.week, time.now().toISOString(), ok, io.degradation.degraded)
+      const report = fakeReport(io.season, io.week, time.now().toISOString(), ok, io.degradation.degraded)
+      return opts.mutate ? opts.mutate(report) : report
     },
     loadTracker: async () => new DegradationTracker(world.flag.consecutive_failures),
     persist: async (_db, tracker, report) => {
@@ -345,5 +358,106 @@ describe('withScheduleMemo', () => {
     await memo.getSchedule(2025)
     expect(reads).toBe(3)
     expect(memo.name).toBe('b')
+  })
+})
+
+// ── M6 L.E2.1 — TD5's daily re-poll of FINAL weeks + the fallback, named ───
+
+describe('TD5 (L.E2.1) — a final week is re-polled once a day for 7 days after it locks, and never more', () => {
+  // Week 1 locks at week 2's first kickoff (158's window); week 2 at week 3's.
+  const W1_ENDS = '2026-09-18T00:15:00.000Z'
+  const weeks: CalendarWeek[] = [
+    { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: W1_ENDS },
+    { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+    { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
+  ]
+  const at = (iso: string) => new Date(iso)
+  const plus = (iso: string, ms: number) => new Date(Date.parse(iso) + ms)
+
+  it('R1 finalWeeksForRepoll: from the window’s end INCLUSIVE to end + 7 days EXCLUSIVE (D146 pairs); the current week and an open window never', () => {
+    expect([FINAL_WEEK_REPOLL_DAYS, FINAL_WEEK_REPOLL_UTC_HOUR]).toEqual([7, 11])
+    expect(finalWeeksForRepoll(weeks, 2, plus(W1_ENDS, -1000))).toEqual([]) // one second before the lock: still F270's
+    expect(finalWeeksForRepoll(weeks, 2, at(W1_ENDS))).toEqual([1]) // at the lock
+    expect(finalWeeksForRepoll([weeks[0]], 3, plus(W1_ENDS, 7 * 86_400_000 - 1000))).toEqual([1]) // the last second of day 7
+    expect(finalWeeksForRepoll([weeks[0]], 3, plus(W1_ENDS, 7 * 86_400_000))).toEqual([]) // day 8: out of TD5's reach
+    expect(finalWeeksForRepoll(weeks, 1, at('2026-09-30T00:00:00Z'))).toEqual([]) // never the current week or later
+    expect(finalWeeksForRepoll([{ ...weeks[0], correction_window_ends_at: null }], 2, at('2026-09-20T00:00:00Z'))).toEqual([])
+  })
+
+  it('R2 the sweep at 11:00Z adds the final week(s) AFTER the current week and the open-window weeks; any other hour does not; off the sweep minute nothing', () => {
+    const games = [game(1, TNF, 'final'), game(2, SNF, 'final')]
+    // Thu 2026-09-24 11:00:30Z: week 3 current, week 2 inside its window, week 1 locked 6.5 days ago.
+    const sweep = planLivePoll(games, weeks, at('2026-09-24T11:00:30Z'))
+    expect([sweep.mode, sweep.weeks]).toEqual(['sweep', [3, 2, 1]])
+    expect(sweep.reasons[0]).toContain('and final week(s) 1 — the daily re-poll of weeks locked within 7 days (TD5 — a late correction is recorded, never scored)')
+    const otherHour = planLivePoll(games, weeks, at('2026-09-24T12:00:30Z'))
+    expect(otherHour.weeks).toEqual([3, 2]) // F270's set only
+    expect(otherHour.reasons[0]).not.toContain('final week')
+    expect(planLivePoll(games, weeks, at('2026-09-24T11:01:00Z')).mode).toBe('idle') // one sweep a day, not an hour of polls
+    // the hour is a plan option (the gates' clocks), and a final week never doubles an open-window one
+    expect(planLivePoll(games, weeks, at('2026-09-24T12:00:30Z'), { finalRepollHourUtc: 12 }).weeks).toEqual([3, 2, 1])
+  })
+
+  it('R3 cheap: over a whole season of daily 11:00Z sweeps, each final week is re-polled on exactly 7 mornings', () => {
+    const season: CalendarWeek[] = Array.from({ length: 18 }, (_, i) => ({
+      season: 2026,
+      week: i + 1,
+      starts_at: new Date(Date.parse('2026-09-09T04:00:00Z') + i * 7 * 86_400_000).toISOString(),
+      correction_window_ends_at: new Date(Date.parse('2026-09-18T00:15:00Z') + i * 7 * 86_400_000).toISOString(),
+    }))
+    const count = new Map<number, number>()
+    let maxPerDay = 0
+    for (let d = 0; d < 140; d++) {
+      const now = new Date(Date.parse('2026-09-10T11:00:30Z') + d * 86_400_000)
+      const plan = planLivePoll([game(1, TNF, 'final')], season, now)
+      const current = plan.currentWeek
+      const extra = plan.weeks.filter((w) => w < current && !weeksInCorrectionWindow(season, current, now).includes(w))
+      maxPerDay = Math.max(maxPerDay, extra.length)
+      for (const w of extra) count.set(w, (count.get(w) ?? 0) + 1)
+    }
+    expect(maxPerDay).toBe(1)
+    for (let w = 1; w <= 16; w++) expect(count.get(w), `week ${w}`).toBe(7)
+  })
+})
+
+describe('TD15 (L.E2.1) — the pre-167 two-call path is NAMED in the invocation’s problems, every poll', () => {
+  it('a poll that wrote through the fallback is a problem line (with the correction keys it could not record); a door poll is not', async () => {
+    const world = makeWorld([game(1, TNF, 'final')])
+    const fallback = await run(world, new VirtualClock(new Date('2026-09-11T15:00:30Z')), {
+      mutate: (r) => ({ ...r, write: { path: 'two_call_fallback', door: 'ingest_write_batch' }, corrections: { ...r.corrections, detected: 2 } }),
+    })
+    expect(fallback.problems).toEqual([
+      'week 1: wrote through the pre-167 two-call path — ingest_write_batch is absent (PGRST202; push migration 167); 2 stat correction key(s) NOT recorded',
+    ])
+    const door = await run(makeWorld([game(1, TNF, 'final')]), new VirtualClock(new Date('2026-09-11T15:00:30Z')), {
+      mutate: (r) => ({ ...r, write: { path: 'door', door: 'ingest_write_batch' } }),
+    })
+    expect(door.problems).toEqual([])
+  })
+})
+
+describe('R1314 (L.E2.1) — one sweep’s failures count ONCE toward stats_degraded (§23.2’s three polls are three polls in time)', () => {
+  const weeks: CalendarWeek[] = [
+    { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00.000Z' },
+    { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+    { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
+  ]
+
+  it('the 11:00Z sweep polls three weeks; a provider blip fails all three — ONE failure is persisted, stats_degraded stays down, the other two are named', async () => {
+    const world = { ...makeWorld([game(1, TNF, 'final'), game(2, SNF, 'final')]), weeks }
+    const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:30Z')), { failPolls: true })
+    expect(report.rounds[0]!.plan.weeks).toEqual([3, 2, 1])
+    expect(world.polls.map((p) => p.week)).toEqual([3, 2, 1]) // every week still asked
+    expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([1, false])
+    expect(report.problems).toEqual([
+      'week 3: provider poll FAILED (boom) — nothing written; consecutive failures 1',
+      'week 2: provider poll FAILED again in the same sweep (boom) — nothing written; counted once per sweep toward stats_degraded (R1314)',
+      'week 1: provider poll FAILED again in the same sweep (boom) — nothing written; counted once per sweep toward stats_degraded (R1314)',
+    ])
+    // Three SWEEPS in a row (three hours) still raise it on the third — the threshold itself is unchanged.
+    await run(world, new VirtualClock(new Date('2026-09-24T12:00:30Z')), { failPolls: true })
+    expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([2, false])
+    await run(world, new VirtualClock(new Date('2026-09-24T13:00:30Z')), { failPolls: true })
+    expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([3, true])
   })
 })

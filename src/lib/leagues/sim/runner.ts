@@ -2425,6 +2425,14 @@ export async function cleanupSweep(service: Supabase, log: (line: string) => voi
     .delete()
     .eq('season', SYNTHETIC_SEASON)
   throwIfError(queueError, 'cleanup: score_fanout delete')
+  // M6 L.E2.1 (R1312): the ingest door (167) records stat-correction events
+  // keyed by the SEASON; the sim's players are REAL players, so no player
+  // cascade ever fires — swept here, or the next run reads them as replays.
+  const { error: eventsError } = await service
+    .from('stat_correction_events')
+    .delete()
+    .eq('season', SYNTHETIC_SEASON)
+  throwIfError(eventsError, 'cleanup: stat_correction_events delete')
   const { error: statsError } = await service
     .from('player_stats')
     .delete()
@@ -2554,6 +2562,8 @@ export async function simCensus(service: Supabase): Promise<CensusCell[]> {
     await count(`nfl_games(${SIM_SEASON_GAME_PREFIX}*)`, () => service.from('nfl_games').select('id', { count: 'exact', head: true }).like('id', `${SIM_SEASON_GAME_PREFIX}%`)),
     await count(`player_stats(${SYNTHETIC_SEASON})`, () => service.from('player_stats').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
     await count(`score_fanout(${SYNTHETIC_SEASON})`, () => service.from('score_fanout').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
+    // R1312 (M6 L.E2.1): the correction events the season's ingestion recorded.
+    await count(`stat_correction_events(${SYNTHETIC_SEASON})`, () => service.from('stat_correction_events').select('id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
     await count(`player_weekly_projections(${SYNTHETIC_SEASON})`, () => service.from('player_weekly_projections').select('player_id', { count: 'exact', head: true }).eq('season', SYNTHETIC_SEASON)),
     // BOTH columns cleanup resets, not just one (R923): an abort between
     // the `nfl_games` delete and the bounds reset, on a run whose only
