@@ -499,10 +499,15 @@ select is((select metadata ->> 'team_name' from commissioner_actions
            where target_id = 'cf000000-0000-4000-8000-000000000002'
              and metadata ->> 'action_id' = '0f000000-0000-4000-8000-000000000010'),
   'CR Alpha', 'H2 …and §E''s ALREADY-WRITTEN receipt still reads `CR Alpha`. A receipt records what was true (§18, §12.12) — this migration writes NO propagation pass, and 123:339-410''s ENABLE ALWAYS trigger would refuse one anyway');
-select ok((select message like 'CR Alpha is now Alpha Reborn%'
+-- (L.E1.31: this cell read `order by created_at limit 1`, but every post in
+-- this rolled-back transaction carries the SAME created_at (now()), so the
+-- "first" row was the heap's choice — green alone, red in a full run after
+-- earlier suites left free space. It asks whether the already-written post
+-- still says what it said, which is an existence question.)
+select ok(exists(select 1
            from league_chat
            where league_id = 'bf000000-0000-4000-8000-000000000001' and is_system
-           order by created_at limit 1),
+             and message like 'CR Alpha is now Alpha Reborn%'),
   'H3 …and the ALREADY-WRITTEN chat post still says `CR Alpha is now Alpha Reborn`: the league''s conversation is history, not a view');
 select is(current_setting('pgtap.tr_h')::jsonb -> 'propagation' ->> 'frozen_receipts_for_this_team', '1',
   'H4 …and the number is MEASURED, not asserted: exactly ONE receipt about this franchise records a name it no longer carries (§E''s), and the document says so rather than implying it (§4 rule 15)');

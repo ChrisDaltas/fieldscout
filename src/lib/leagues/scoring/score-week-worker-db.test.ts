@@ -407,8 +407,14 @@ async function cleanup(): Promise<void> {
     }
     // A successor FK: clear the lineage before the rows go.
     await must(service.from('teams').update({ successor_team_id: null }).in('league_id', ids), 'cleanup teams lineage')
-    await must(service.from('teams').delete().in('league_id', ids), 'cleanup teams')
+    // F406's order (170 / D451): commish_edit_lineup's receipt now names the
+    // team it acted for (commissioner_actions.acting_as_team_id — an FK with
+    // no ON DELETE on an immutable log, cleared only by the league's
+    // CASCADE), so detach the teams, delete the league (taking its
+    // receipts), THEN delete the teams.
+    await must(service.from('teams').update({ league_id: null }).in('id', teamIds), 'cleanup teams detach')
     await must(service.from('leagues').delete().in('id', ids), 'cleanup leagues')
+    if (teamIds.length > 0) await must(service.from('teams').delete().in('id', teamIds), 'cleanup teams')
   }
   await must(service.from('players').delete().like('id', `${PREFIX}-%`), 'cleanup players')
   for (const u of [COMMISH, MANAGER]) await deleteUserByUsername(u.username)

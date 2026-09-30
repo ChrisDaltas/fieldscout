@@ -420,11 +420,16 @@ select throws_ok(
 -- feature. Every count cell below is scoped to action_type = 'edit_lineup'
 -- for exactly this reason.
 
--- A parked FK actually refuses an orphan.
+-- A parked FK actually refuses an orphan. (170, L.E1.31: the GUC is set to
+-- the orphan id so the TD10 (iii) pointer guard — a BEFORE trigger, which
+-- would otherwise refuse the direct write first — lets the row reach the FK;
+-- pgTAP 118 §G proves the guard.)
+select set_config('app.commish_action_id', 'a4000000-0000-4000-8000-0000000000ee', true);
 select throws_ok(
   $$ update league_weeks set reopened_by_action_id = 'a4000000-0000-4000-8000-0000000000ee'
      where league_id = 'b4000000-0000-4000-8000-000000000001' and week = 1 $$,
   '23503', null, 'league_weeks.reopened_by_action_id now REFUSES an id no audit row has (056:68''s parked FK, landed)');
+select set_config('app.commish_action_id', '', true);
 
 -- ---------------------------------------------------------------------------
 -- E. THE LOCK CONTRAST — arm (a), then arm (b). Each `commish_edit_lineup`
