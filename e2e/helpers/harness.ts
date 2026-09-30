@@ -5,7 +5,13 @@ import type { AuctionDraftAudit, AuctionAuditBid, AuctionAuditBudget, AuctionAud
 import { auctionKnobsOf } from '@/components/draft/auction-budget'
 import { runScoreWeekBatch, type BatchReport } from '@/lib/leagues/scoring/score-week-worker'
 import { SYNTHETIC_SEASON } from '@/lib/leagues/sim/synthetic-season'
+import { DegradationTracker } from '@/lib/leagues/stats/degradation'
+import type { ProviderPlayerWeekStats, StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import { systemTime } from '@/lib/leagues/time/time-provider'
+import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
+import { STAT_COLUMN_SURFACE, STAT_KEY_BY_COLUMN, ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
+import { STAT_COLUMN_BY_KEY } from '@/lib/sync/live-stats'
+import type { SyncClient } from '@/lib/sync/types'
 
 import {
   E2E_BOT_EMAIL_DOMAIN,
@@ -61,7 +67,8 @@ export type Supabase = SupabaseClient<Database>
  *      template NAME, so the journey spec can assert the wizard's card
  *      click is what the league was born on**; M5's L.D3.15 adds two
  *      more — every seat's stored waiver priority and a trade's stored
- *      drops);
+ *      drops; M6's L.E1.36 adds two more — a league's commissioner
+ *      receipts and its stat-correction records);
  *   5. the journey spec's F49 season-year bump (L.B7.1): the settings UI's
  *      schedule picker pins year = the league's SEASON, so a UI-set instant
  *      on a 2026-season league is live-cron auto-start bait from its own
@@ -103,7 +110,15 @@ export type Supabase = SupabaseClient<Database>
  *      `authenticated` and refuse a JWT caller in-body, take `p_now`, and
  *      are driven league-scoped here (`waiverTickAt` / `tradeTickAt`) —
  *      each THROWS when this league was not processed the way the caller
- *      needs (a run that settled nothing, a tick that did nothing);
+ *      needs (a run that settled nothing, a tick that did nothing). **M6's
+ *      L.E1.36 adds one more of the same class**: `injectStatCorrection` —
+ *      the PRODUCTION `ingestWeek` over a one-line fixture provider at an
+ *      injected instant, so a stat fix to a planted line reaches the ingest
+ *      door (`ingest_write_batch`, 167 — service role only) exactly as a
+ *      provider's correction would: TS classifies it, the door records the
+ *      `stat_correction_events` row and re-queues the player, and the worker
+ *      (`driveScoreBatch`) then sends it to 172's scoring door. It THROWS
+ *      unless the door recorded exactly the keys the caller changed;
  *  10. (L.D6.2) the SEASON-SURFACE half of the sweep and its door check.
  *      The synthetic season (2099) is shared ground with the sim and the
  *      dev seeder, and no league delete cascades to `nfl_games`,
@@ -233,10 +248,27 @@ export async function cleanupSweep(service: Supabase): Promise<string> {
         .update({ champion_team_id: null })
         .in('id', part)
       throwIfError(championError, 'cleanup: champion clear')
-      const { error: teamsError } = await service.from('teams').delete().in('league_id', part)
-      throwIfError(teamsError, 'cleanup: teams delete')
+    }
+    // PROGRESS F406's order (F519, M6 L.E1.36 — the sim's `cleanupSweep` and
+    // the stack suites since 168–170): a commissioner who acted FOR a team
+    // (the override lineup, force add / drop, rename — D451) leaves an
+    // immutable `commissioner_actions` row whose `acting_as_team_id`
+    // references `teams` with no ON DELETE (123:304), removable only by the
+    // league's ON DELETE CASCADE — while `teams.league_id` blocks deleting the
+    // league first. So: detach the teams, delete the league (its cascade takes
+    // the receipts), then delete the teams by the ids resolved above. The old
+    // order (teams, then the league) fails on the first such receipt.
+    for (const part of chunked(teamIds)) {
+      const { error: detachError } = await service.from('teams').update({ league_id: null }).in('id', part)
+      throwIfError(detachError, 'cleanup: teams detach')
+    }
+    for (const part of chunked(ids)) {
       const { error: leaguesError } = await service.from('leagues').delete().in('id', part)
       throwIfError(leaguesError, 'cleanup: leagues delete')
+    }
+    for (const part of chunked(teamIds)) {
+      const { error: teamsError } = await service.from('teams').delete().in('id', part)
+      throwIfError(teamsError, 'cleanup: teams delete')
     }
   }
   const season = await sweepSeasonFixtures(service)
@@ -339,6 +371,18 @@ async function sweepSeasonFixtures(service: Supabase): Promise<string> {
   for (const week of weeks) {
     const playerIds = tuples.filter((t) => t.week === week).map((t) => t.playerId)
     for (const part of chunked(playerIds)) {
+      // M6 L.E1.36: `injectStatCorrection` runs the ingest door (167), which
+      // records `stat_correction_events` for a planted tuple. Keyed by the
+      // SEASON and a REAL player, so no league delete or player cascade ever
+      // reaches them — swept by the same tuples, or the next run's worker
+      // reads them as unapplied corrections.
+      const { error: eventsError } = await service
+        .from('stat_correction_events')
+        .delete()
+        .eq('season', SYNTHETIC_SEASON)
+        .eq('week', week)
+        .in('player_id', part)
+      throwIfError(eventsError, 'cleanup: stat_correction_events delete (planted tuples)')
       const { error: queueError } = await service
         .from('score_fanout')
         .delete()
@@ -489,10 +533,12 @@ export async function assertNoForeignSeasonFixtures(service: Supabase): Promise<
         `columns for season ${SYNTHETIC_SEASON}.`,
     )
   }
-  // The two tables the LEDGER is the sole record of. A crashed run leaves
+  // The tables the LEDGER is the sole record of. A crashed run leaves
   // them resident and the next sweep cannot know about them; the census
-  // counts them season-wide, so this door must too.
-  for (const table of ['player_stats', 'score_fanout'] as const) {
+  // counts them season-wide, so this door must too. M6 L.E1.36 adds
+  // `stat_correction_events` (the sweep's new by-tuple arm — an unapplied
+  // event left by a crashed run would be sent with the next run's scores).
+  for (const table of ['player_stats', 'score_fanout', 'stat_correction_events'] as const) {
     const { data: rows, error: rowsError } = await service
       .from(table)
       .select('week, player_id')
@@ -1729,6 +1775,179 @@ export async function upsertLineupRow(
       `upsertLineupRow: team ${teamId} week ${week} wrote ${(data ?? []).length} rows, expected 1`,
     )
   }
+}
+
+/** What `injectStatCorrection` recorded — the ingest report's own numbers
+ *  and the event rows the door wrote, for the caller's evidence line. */
+export interface InjectedCorrection {
+  report: IngestReport
+  events: Array<{ id: string; stat_key: string; old_value: number | null; new_value: number | null; week_state: string }>
+}
+
+/**
+ * A STAT CORRECTION to one planted line, through the PRODUCTION ingest path
+ * (job 9's M6 half — M6 L.E1.36; spec §23.4, §12.21; tasks-M6 TD2 / TD3).
+ *
+ * `ingestWeek` (`src/lib/sync/ingest-week.ts`) runs at `pNow` (a
+ * `VirtualClock` — never the wall clock) over a fixture provider that
+ * carries ONE line: the player's STORED `player_stats` row, read back into
+ * the canonical key namespace (`STAT_KEY_BY_COLUMN`, D33), with `changes`
+ * applied. Its schedule is empty on purpose — the stored `nfl_games` rows
+ * stay exactly as planted (no game or week-bound write), and TD2 classifies
+ * the line against them: the line carries no game id, so the WEEK stands in
+ * and every in-week game must already be `final` (`setInWeekGamesFinal`
+ * first). The ingest door then writes the line, its `stat_correction_events`
+ * and its `score_fanout` re-queue in one transaction; `driveScoreBatch`
+ * afterwards sends the event to the scoring door (172).
+ *
+ * The planted tuple is already in the sweep's ledger (`plantStatLines`), and
+ * the sweep deletes its events by the same tuples.
+ *
+ * THROWS unless the poll went through the door (not the pre-167 fallback)
+ * and recorded exactly one event per changed key, each with the old and new
+ * values the caller named — a poll that "found nothing" is never a pass.
+ */
+export async function injectStatCorrection(
+  service: Supabase,
+  input: { week: number; playerId: string; changes: Record<string, number>; pNow: string },
+): Promise<InjectedCorrection> {
+  const { week, playerId, changes, pNow } = input
+  if (!seasonFixtures.statTuples.has(tupleKey(week, playerId))) {
+    throw new Error(
+      `injectStatCorrection: ${playerId} has no line planted by this process on ${SYNTHETIC_SEASON} week ${week} — ` +
+        'plant it first (plantStatLines); a correction to a line nobody planted is not a fixture this suite owns',
+    )
+  }
+  const select = ['player_id', 'advanced', ...STAT_COLUMN_SURFACE].join(', ')
+  const { data: stored, error: storedError } = await service
+    .from('player_stats')
+    .select(select)
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+    .eq('player_id', playerId)
+    .single()
+  throwIfError(storedError, 'injectStatCorrection: stored line read')
+  const row = stored as unknown as Record<string, unknown>
+  const stats: Record<string, number> = {}
+  for (const [column, key] of STAT_KEY_BY_COLUMN) {
+    const value = row[column]
+    if (value !== null && value !== undefined) stats[key] = Number(value)
+  }
+  const before: Record<string, number | null> = {}
+  for (const [key, value] of Object.entries(changes)) {
+    if (!STAT_COLUMN_BY_KEY[key]) throw new Error(`injectStatCorrection: ${key} is not a column-stored stat key (D33)`)
+    before[key] = stats[key] ?? null
+    if (before[key] === value) throw new Error(`injectStatCorrection: ${key} is already ${value} — a correction must move it`)
+    stats[key] = value
+  }
+  const advanced: Record<string, number> = {}
+  for (const [key, value] of Object.entries((row.advanced ?? {}) as Record<string, unknown>)) {
+    if (typeof value === 'number') advanced[key] = value
+  }
+  const provider: StatsProvider = {
+    name: 'e2e:stat-correction',
+    capabilities: new Set(['core_box']),
+    getSchedule: async () => [],
+    getGameStates: async () => [],
+    getWeekStats: async (): Promise<ProviderPlayerWeekStats[]> => [
+      { playerId, season: SYNTHETIC_SEASON, week, stats, advanced },
+    ],
+    getInjuries: async () => [],
+    getInactives: async () => [],
+  }
+  const report = await ingestWeek(provider, new VirtualClock(new Date(pNow)), {
+    db: service as unknown as SyncClient,
+    degradation: new DegradationTracker(),
+    season: SYNTHETIC_SEASON,
+    week,
+  })
+  const changed = Object.keys(changes).length
+  if (!report.ok || report.write.path !== 'door' || report.corrections.recorded !== changed) {
+    throw new Error(
+      `injectStatCorrection: the poll at ${pNow} did not record ${changed} correction(s) through the ingest door — ` +
+        `ok ${report.ok}, path ${report.write.path}, detected ${report.corrections.detected}, recorded ${report.corrections.recorded}, ` +
+        `settled ${report.corrections.settled}; reasons ${JSON.stringify(report.reasons)}`,
+    )
+  }
+  const { data: events, error: eventsError } = await service
+    .from('stat_correction_events')
+    .select('id, stat_key, old_value, new_value, week_state')
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+    .eq('player_id', playerId)
+    .eq('detected_at', new Date(pNow).toISOString())
+    .order('stat_key')
+  throwIfError(eventsError, 'injectStatCorrection: events read')
+  const got = (events ?? []).map((e) => ({ ...e, old_value: e.old_value === null ? null : Number(e.old_value), new_value: e.new_value === null ? null : Number(e.new_value) }))
+  const wrong = Object.entries(changes).filter(([key, value]) => {
+    const event = got.find((e) => e.stat_key === key)
+    return !event || event.new_value !== value || event.old_value !== before[key]
+  })
+  if (got.length !== changed || wrong.length > 0) {
+    throw new Error(
+      `injectStatCorrection: the door's events for ${playerId} at ${pNow} are ${JSON.stringify(got)}, ` +
+        `expected ${JSON.stringify(Object.entries(changes).map(([key, value]) => ({ stat_key: key, old_value: before[key], new_value: value })))}`,
+    )
+  }
+  return { report, events: got }
+}
+
+/** One league's commissioner receipts, oldest first (job 4 — the log's own
+ *  rows, asserted beside the screen). */
+export interface CommishActionRow {
+  id: string
+  action_type: string
+  acting_as_team_id: string | null
+  target_id: string | null
+  created_at: string
+}
+
+export async function readCommishActions(service: Supabase, leagueId: string): Promise<CommishActionRow[]> {
+  const { data, error } = await service
+    .from('commissioner_actions')
+    .select('id, action_type, acting_as_team_id, target_id, created_at')
+    .eq('league_id', leagueId)
+    .order('created_at')
+    .order('id')
+  throwIfError(error, 'read commissioner_actions')
+  return (data ?? []) as CommishActionRow[]
+}
+
+/** A league's teams (id + name), by id — the names the screen's copy uses. */
+export async function readLeagueTeams(service: Supabase, leagueId: string): Promise<Array<{ id: string; name: string }>> {
+  const { data, error } = await service.from('teams').select('id, name').eq('league_id', leagueId).order('id')
+  throwIfError(error, 'read league teams')
+  return (data ?? []) as Array<{ id: string; name: string }>
+}
+
+/** One league's stat-correction records (172), oldest first (job 4). */
+export interface LeagueCorrectionRow {
+  id: string
+  team_id: string
+  player_id: string
+  week: number
+  team_score_before: number | null
+  team_score_after: number | null
+  player_points_before: number | null
+  player_points_after: number
+  result_changed: boolean
+}
+
+export async function readLeagueCorrections(service: Supabase, leagueId: string): Promise<LeagueCorrectionRow[]> {
+  const { data, error } = await service
+    .from('league_stat_corrections')
+    .select('id, team_id, player_id, week, team_score_before, team_score_after, player_points_before, player_points_after, result_changed')
+    .eq('league_id', leagueId)
+    .order('recorded_at')
+    .order('id')
+  throwIfError(error, 'read league_stat_corrections')
+  return (data ?? []).map((r) => ({
+    ...r,
+    team_score_before: r.team_score_before === null ? null : Number(r.team_score_before),
+    team_score_after: r.team_score_after === null ? null : Number(r.team_score_after),
+    player_points_before: r.player_points_before === null ? null : Number(r.player_points_before),
+    player_points_after: Number(r.player_points_after),
+  }))
 }
 
 /**
