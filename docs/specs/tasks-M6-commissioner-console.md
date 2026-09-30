@@ -8,6 +8,13 @@
 >
 > **Seven product questions (§11, to be filed as PROGRESS §3 Q81–Q87 at merge — numbers measured then) block specific tasks only.** Ten of the sixteen tasks need no answer at all; L.E2.1, L.E1.29 and L.E2.5's recorder route can start the day this merges (§7).
 
+>
+> **APPROVED 2026-09-29 by Chris ("Approve and start"), with these rulings — they override §11's recommendations where they differ:**
+> - **Q81 — RULED: no.** *"Q81 should not be a commish decision. if the stat window has closed I think we have to forget it because if our platform is scoring differently from the others that could be a problem."* After the correction window closes, a late stat fix never changes league scores and there is **no** commissioner apply button; it only updates the player's real stats (research). The league corrections view lists only corrections that changed a league score. L.E2.2 / L.E2.4 drop every "would-be" number and the commissioner door.
+> - **Q82 — already ruled (E43):** a game postponed out of the week (indefinitely or rescheduled) → its players score 0, locks release, the week finalizes without it; a game moved within the week → the week is not final until it ends, and fixes count until then. No new ruling; L.E1.28 folds the sentence.
+> - **Q83 — RULED: drop.** *"this is not a thing."* **L.E1.35 is DROPPED** (no report flow; the commissioner's existing lineup / score / result tools are the remedy). L.E1.31 no longer waits on it; L.E1.36's E2E drops its report leg; the gate's criterion 1 drops "the illegal-lineup flow"; L.E1.28 strikes §10.2's flag/report steps from the spec (the commissioner remedies stay). F272 closes as not built.
+> - **Q84 — as recommended** (feed: trades that go through / are vetoed / are reversed, one line each; offers stay between the two teams). **Q85 — as recommended** (no Undo in M6). **Q86 — as recommended** (one stat-fix rule for every league; the settings page states it). **Q87 — a design choice, not a ruling** (the console as a "needs you now" launchpad + one button per tool).
+
 ---
 
 ## 1. Scope & exit criteria
@@ -182,7 +189,7 @@ Each posts to `league_chat` or nothing; none leaves an audit row. Until they do,
 - **Scope:** `/app/leagues/[leagueId]/activity` — tabs *All · Adds & drops · Trades · Commissioner · Stat corrections*; the commissioner log filterable by team and week, "show older" on the cursor (F371); every row with the ✸ treatment links to its entry and every ✸ badge on a matchup / roster lands on it (F233(d), §10.3); TD12's copy census (every `action_type` and setting key in words; `acting_as_team_id` → "for <team>"); the executed trade shown once (F463) and the other trade lines per Q84; League Home keeps its short list and gains "See all activity".
 - **Proofs:** the copy census test; render tests per tab and state; ops tests for the new receipt copy (draft, membership, setup).
 
-### L.E1.35 — The illegal-lineup report + the guided fix (§10.2, F272) · **FULL** (migration, permissions) — the UI half ONE PASS
+### ~~L.E1.35 — The illegal-lineup report + the guided fix (§10.2, F272)~~ — **DROPPED 2026-09-29 (Q83: Chris, "this is not a thing")** · **FULL** (migration, permissions) — the UI half ONE PASS
 - **Blocked by:** Q83. **Depends:** L.E1.30 (schema lane), L.E1.32.
 - **Scope:** `lineup_reports` + `report_lineup` (any member, own league, a matchup of a started week) + `resolve_lineup_report` (TD13's four remedies through the existing verbs, one receipt per verb, the report resolved in the same transaction; a dismissal per Q83); `/commish/flag-illegal` + `/reports`; the ⚑ *Report lineup* door on the matchup scoreboard for members; the commissioner's guided fix (flag → remedy picker with the before / after score → apply) opened from the report, the console's "needs you", or ⚑ on a matchup directly; the reporter's pending / resolved chip.
 - **Acceptance:** a member reports; the commissioner sets the result from the flow; every member sees the new result, the ✸ badge and the log entry; the reporter is told.
@@ -215,7 +222,7 @@ Each posts to `league_chat` or nothing; none leaves an audit row. Until they do,
 | L.E1.32 console read + log filters | L.E1.29 | — |
 | L.E1.33 console page | L.E1.32 | **Q87** |
 | L.E1.34 activity page + completeness | L.E1.32 (L.E2.4 for its tab) | Q84 (trade lines only) |
-| L.E1.35 report + guided fix | L.E1.30, L.E1.32 | **Q83** |
+| ~~L.E1.35 report + guided fix~~ | — | **DROPPED (Q83)** |
 | L.E1.36 E2E | L.E1.33, L.E1.34, L.E1.35, L.E2.4 | — |
 | L.E1.37 M6 gate | all of the above | — |
 
