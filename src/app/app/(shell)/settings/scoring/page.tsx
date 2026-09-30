@@ -30,6 +30,7 @@ import {
   type ScoringPresetId,
   type ScoringRules,
 } from '@/lib/scoring/default'
+import { readPersonalScoringSystem } from '@/lib/scoring/personal-scoring-system'
 import { createBrowserClient } from '@/lib/supabase/client'
 import type { Database, Json } from '@/types/database'
 
@@ -195,18 +196,9 @@ export default function ScoringSettingsPage() {
   const { data: savedSystem, isLoading: isSystemLoading } = useQuery({
     queryKey: ['scoring-system', user?.id],
     enabled: Boolean(user),
-    queryFn: async (): Promise<ScoringSystemRow | null> => {
-      const { data, error } = await supabase
-        .from('scoring_systems')
-        .select('*')
-        .eq('owner_id', user!.id)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (error) throw error
-      return data
-    },
+    // The PERSONAL row only — never a league fork the user also owns
+    // (R1335, F523; the same test the save uses).
+    queryFn: (): Promise<ScoringSystemRow | null> => readPersonalScoringSystem(supabase, user!.id),
   })
 
   const [mode, setMode] = useState<ScoringMode>(DEFAULT_SCORING_PRESET)
