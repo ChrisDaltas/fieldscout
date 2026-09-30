@@ -10,12 +10,16 @@
 -- and proven under load by the L.B6.1 sim's chaos persona, 92 → 0):
 --   * Shape: SECURITY INVOKER as built here (082) — then 171 (L.E1.38,
 --     F521) made it DEFINER: the commissioner's arm writes a receipt through
---     a seam no client may call, so the in-body guard (which already
---     re-derived 065's two arms exactly, stricter by the league conjunct)
---     is now the whole auth law. The golden pin below moved with it,
---     re-cut NAMED in 171's PR; every admit / refusal cell here is
---     unchanged and still green, which is the proof the manager and
---     launcher admits did not widen (pgTAP 119 pins the new arm).
+--     a seam no client may call, so the in-body guard is now the whole
+--     auth law. The guard re-derived 065's two queue-policy arms (stricter
+--     by the league conjunct), but under INVOKER both arms also ran behind
+--     the drafts read policy (a league member, or a league-less mock's
+--     launcher); DEFINER drops that, so 171 re-states it in the body (R1338
+--     — without it a user who LEFT the league, still teams.owner_id or
+--     still a league mock's launcher, was admitted). The golden pin below
+--     moved with it, re-cut NAMED in 171's PR; every other admit / refusal
+--     cell here is unchanged and still green, and pgTAP 119 pins the new arm
+--     and the non-member refusals (Q22a / Q22b).
 --   * search_path pinned to '' (the 004 doctrine, invoker or not).
 --   * ACL: anon has NO execute; authenticated + service_role do; PUBLIC
 --     revoked (execute as a random OTHER role fails).

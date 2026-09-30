@@ -40,11 +40,19 @@
 --     co-commissioner) may replace the queue of any active franchise of a
 --     REAL draft's league that is not his own seat. The receipt seam is
 --     REVOKEd from clients, so the function becomes SECURITY DEFINER; its
---     in-body guard (082) already re-derived 065's two policy arms exactly
---     (stricter by the league-consistency conjunct, 031), so a manager and a
---     mock launcher are admitted precisely as before, and the guard is now
---     the whole auth law for this door (065's policies still govern every
---     direct table read and write). The same shape rules run first for him.
+--     in-body guard (082) re-derived 065's two queue-policy arms (stricter by
+--     the league-consistency conjunct, 031) — but under INVOKER both arms
+--     ALSO ran behind the drafts read policy ("Drafts viewable by league
+--     members": a member, or the launcher of a league-less mock), since
+--     each reads public.drafts. DEFINER drops that silently, so it is
+--     re-stated in the body and ANDed onto both arms (R1338): a user who left
+--     the league — still teams.owner_id of his old team, or still the
+--     launcher of a league mock — is refused as he was under INVOKER. With
+--     it, a manager and a mock launcher are admitted exactly as before
+--     (pgTAP 031 unchanged but its defect cell; 119 Q22a / Q22b), and the
+--     guard is the whole auth law for this door (065's policies still govern
+--     every direct table read and write). The same shape rules run first for
+--     him.
 --
 -- WHOSE TEAM IS "HIS OWN". The seat he manages: league_members.user_id =
 -- him on that team (set_team_autodraft's v_is_self, 168; D451's "seated
@@ -87,15 +95,15 @@
 --                        (the header hunk adds p_team_id; prosrc: 5 hunks, +77 / -1 —
 --                         the one removed line is `RETURN public.draft_place_bid_internal(`
 --                         → `v_result := …`, D449's draft_pause shape)
---   draft_queue_replace  082:64-172     prosrc md5 c844590b… → d219e899…  5 hunks (+81 / -2)
---                        (the header hunk is INVOKER → DEFINER; prosrc: 4 hunks, +80 / -1 —
---                         the one changed line is the guard's `IF NOT (` → `IF NOT v_commish AND NOT (`)
+--   draft_queue_replace  082:64-172     prosrc md5 c844590b… → 5b54fe07…  6 hunks (+97 / -3)
+--                        (the header hunk is INVOKER → DEFINER; prosrc: 5 hunks, +96 / -2 —
+--                         the two changed lines are the guard's `IF NOT (` → `IF NOT v_commish
+--                         AND (NOT v_visible OR NOT (` and its `) THEN` → `)) THEN`, R1338)
 -- draft_place_bid_internal (092:1982, the one validator the tick's CPU arm
 -- shares) is NOT touched. Older suites re-cut because they pin what changed,
 -- each NAMED in the PR: 031 A2 (prosecdef false → true) and 031 E "the
 -- commissioner is NOT special here" (now: the commissioner's arm lands);
--- 034 section A (has_function + the anon / authenticated EXECUTE pins) and
--- 038 section A (the ACL pin) — the signature they name gains p_team_id;
+-- 034 A2 / A4 / A5 and 038 A5 (the signature they name gains p_team_id);
 -- 118 C4 / M0 / M1 / T1 / T8 / T9 (the census gains the two verbs as
 -- receipt writers, the matrix gains their rows, T8 / T9 flip from the
 -- defect to the doors). 038's call-form pin (the validator called exactly
@@ -418,7 +426,7 @@ REVOKE EXECUTE ON FUNCTION draft_place_bid(UUID, INTEGER, UUID, INTEGER, TEXT, U
 GRANT EXECUTE ON FUNCTION draft_place_bid(UUID, INTEGER, UUID, INTEGER, TEXT, UUID) TO authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- 2. draft_queue_replace — 082:64-172's FILE TEXT (D137), 5 hunks (+81 / -2).
+-- 2. draft_queue_replace — 082:64-172's FILE TEXT (D137), 6 hunks (+97 / -3).
 --    INVOKER → DEFINER (see the banner); signature unchanged, ACL kept.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION draft_queue_replace(
@@ -439,6 +447,7 @@ DECLARE
   v_commish   BOOLEAN := FALSE;    -- 171: the commissioner edits a team he does not manage
   v_old       TEXT[];              -- 171: the queue before, for the no-op test (never recorded)
   v_team_name TEXT;                -- 171
+  v_visible   BOOLEAN := FALSE;    -- 171 (R1338): the drafts read policy, re-stated
 BEGIN
   -- Shape (22023 — friendly, surfaced as a 400 by the service).
   IF p_draft_id IS NULL OR p_team_id IS NULL OR p_players IS NULL THEN
@@ -471,11 +480,18 @@ BEGIN
   -- (§8.8), so its one admit stays the launcher's. The arm writes a receipt
   -- and a room post, and the receipt seam is not a client's to call, so the
   -- function now runs SECURITY DEFINER: THIS guard is the whole auth law.
-  -- The two arms below are 065's two policies re-derived exactly (the owner
-  -- arm here is stricter — the league-consistency conjunct, 031), so a
-  -- manager or a mock launcher is admitted precisely as before, and the
-  -- comments below that say "invoker" / "RLS-checked" describe the pre-171
-  -- posture; 065's policies still govern every direct table read and write.
+  -- The two arms below are 065's two queue policies re-derived (the owner
+  -- arm here is stricter — the league-consistency conjunct, 031). Under
+  -- INVOKER they ALSO ran behind the drafts read policy ("Drafts viewable by
+  -- league members": a league member, or the launcher of a league-less
+  -- mock), because each arm reads public.drafts; a DEFINER body does not,
+  -- so that predicate is re-stated here as v_visible and ANDed onto both
+  -- arms (R1338) — a user who left the league (still teams.owner_id, or
+  -- still the launcher of a league mock) is refused as he was under
+  -- INVOKER. With it, a manager or a mock launcher is admitted precisely as
+  -- before. The comments below that say "invoker" / "RLS-checked" describe
+  -- the pre-171 posture; 065's policies still govern every direct table
+  -- read and write.
   -- Validity is unchanged for him: the same shape rules (500 players, no
   -- duplicate, known ids) run before anything is touched.
   SELECT d.* INTO v_draft FROM public.drafts d WHERE d.id = p_draft_id;
@@ -493,7 +509,14 @@ BEGIN
       WHERE m.league_id = v_draft.league_id AND m.user_id = v_uid
         AND m.team_id = p_team_id
     ), FALSE);
-  IF NOT v_commish AND NOT (
+  v_visible := EXISTS (
+    SELECT 1 FROM public.drafts d
+    WHERE d.id = p_draft_id
+      AND (public.is_league_member(d.league_id)
+           OR (d.league_id IS NULL AND d.is_mock
+               AND ((d.config -> 'mock') ->> 'launched_by') = v_uid::text))
+  );
+  IF NOT v_commish AND (NOT v_visible OR NOT (
     EXISTS (
       SELECT 1
       FROM public.teams t
@@ -511,7 +534,7 @@ BEGIN
         AND d.config->'mock'->>'launched_by' = v_uid::text
         AND d.config->'mock'->>'human_team_id' = p_team_id::text
     )
-  ) THEN
+  )) THEN
     RAISE EXCEPTION 'You do not manage this queue.' USING ERRCODE = '42501';
   END IF;
 

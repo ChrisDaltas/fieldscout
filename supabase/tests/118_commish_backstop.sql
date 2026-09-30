@@ -1657,7 +1657,7 @@ insert into _polv values
   -- league state, each with how it stays honest
   ('public.commissioner_actions', 'Only commish can append',              'the log itself',   'the audit log §12.12 prints — a row written this way is attributed to its writer (actor_id = auth.uid()) and changes no state'),
   ('public.draft_dnd_marks',      'Own DND marks',                        'own act',          'a user own do-not-draft marks, visible to him alone'),
-  ('public.draft_queues',         'Own queue write',                      'own act',          'a manager own draft queue (the commissioner sets another team queue only through draft_queue_replace, which writes his receipt — 171, F521)'),
+  ('public.draft_queues',         'Own queue write',                      'own act',          'a manager own draft queue — the commissioner sets another team queue through draft_queue_replace, which writes his receipt (171, F521); BUT the owner arm reads teams.owner_id, so a commissioner who owns a placeholder or vacated team row writes that queue straight through this policy with no receipt — a named receipt bypass, F525 (R1339)'),
   ('public.league_chat',          'Members post their own chat',          'own act',          'a member own chat post (is_system false, bounded) — never a system or commissioner post'),
   ('public.league_lists',         'Members manage their own attachments', 'own act',          'a member own list attachments to a league'),
   ('public.scoring_systems',      'Users can manage own scoring systems', 'guarded by 170',   'a league scoring rules change is refused on the client route (trg_zz_scoring_systems_league_rules — Q3); personal systems stay editable'),
