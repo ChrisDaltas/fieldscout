@@ -20,6 +20,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@/lib/leagues/api/inseason-reads'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
+import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest } from './league-cells'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
@@ -192,12 +193,25 @@ function TeamPageContent({
       <PageHeader
         title={teamName}
         actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {detail.league.name}
-            </Link>
-          </Button>
+          <>
+            {/* R1386 (§16.5.2 "Replace a GM": console → Membership · team
+                page): a commissioner's door to the members page, where a
+                team's manager is changed. Never offered to a manager. */}
+            {isCommish && (
+              <Button variant="stroke" size="sm" asChild>
+                <Link href={membersPageHref(leagueId)} data-door="members">
+                  <Icon name="team" size={13} />
+                  {MEMBERS_NAV_LABEL}
+                </Link>
+              </Button>
+            )}
+            <Button variant="stroke" size="sm" asChild>
+              <Link href={`/app/leagues/${leagueId}`}>
+                <Icon name="cup" size={13} />
+                {detail.league.name}
+              </Link>
+            </Button>
+          </>
         }
       />
 

@@ -325,18 +325,22 @@ describe('in season — needs you, the tool doors, recent actions', () => {
     const members = group.slice(0, group.indexOf('</section>'))
     expect(members).toContain(MEMBERS_AFTER_DRAFT_BLURB)
     expect(members).toContain(AUTOPILOT_NOTE)
-    expect(members).toMatch(new RegExp(`data-override-door="on"[^>]*href="${BASE}/members"`))
+    // R1388: a view door — the members page does not use override mode.
+    expect(members).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/members"`))
     expect(members).not.toContain('doesn’t have a screen yet')
     const rolling = renderConsole({ detail: detailWith('in_season', {}, { waiver_type: 'rolling_priority' }) })
     expect(rolling).not.toContain(FAAB_NOTE)
   })
 
-  it('EVERY door turns override mode on as it is followed (each link carries the marker)', () => {
+  it('EVERY door to an acting screen turns override mode on as it is followed (each link carries the marker); the members door alone is a view (R1388)', () => {
     const html = renderConsole()
     const body = html.slice(html.indexOf('data-commish-needs'), html.indexOf('data-commish-recent'))
     const links = [...body.matchAll(/<a [^>]*>/g)].map((m) => m[0])
     expect(links.length).toBeGreaterThan(8)
-    for (const a of links) expect(a, a).toContain('data-override-door="on"')
+    for (const a of links) {
+      if (a.includes(`href="${BASE}/members"`)) expect(a, a).toContain('data-override-door="view"')
+      else expect(a, a).toContain('data-override-door="on"')
+    }
   })
 
   it('recent actions: the last five through League Home’s own log renderer, and a door to league activity', () => {
@@ -442,7 +446,7 @@ describe('playoffs and complete', () => {
     expect(toolGroupKeys(html)).toEqual(['schedule', 'settings', 'members'])
     const tools = block(html, 'data-commish-tools-groups')
     expect(tools).toContain('The season is over')
-    expect(tools).toMatch(new RegExp(`data-override-door="on"[^>]*href="${BASE}/members"`))
+    expect(tools).toMatch(new RegExp(`data-override-door="view"[^>]*href="${BASE}/members"`))
     // Autopilot runs no lineups once the season is over — no autopilot note.
     expect(tools).not.toContain(AUTOPILOT_NOTE)
     // Lineups / rosters (165 / 170), scores (135), trades (156), schedule edits (130) and

@@ -441,8 +441,9 @@ export function membersPhase(status: string): MembersPhase {
   return 'complete'
 }
 
-export const LINK_CLOSED_NOTE =
-  'Joining by the league link closed when the draft started. To fill a team, invite someone to that team below.'
+export const LINK_CLOSED_NOTE = 'Joining by the league link closed when the draft started.'
+/** R1390: added only when a team below has no manager to invite someone to. */
+export const LINK_CLOSED_INVITE_HINT = 'To fill a team, invite someone to that team below.'
 
 export const RETIRE_BEFORE_DRAFT_WHY = 'Retiring a team is only possible after the draft.'
 export const RETIRE_PLAYOFFS_WHY = 'A team can’t be retired during the playoffs.'
@@ -461,13 +462,15 @@ export interface MemberControls {
   retireWhy: string
 }
 
-export function memberControls(status: string): MemberControls {
+/** `hasUnmanagedSeat`: a seat below with no manager (open or invited) — the
+ *  only case where "invite someone to that team below" is true (R1390). */
+export function memberControls(status: string, hasUnmanagedSeat = false): MemberControls {
   const phase = membersPhase(status)
   const preDraft = phase === 'pre_draft'
   return {
     phase,
     shareLink: preDraft,
-    linkClosedNote: preDraft ? null : LINK_CLOSED_NOTE,
+    linkClosedNote: preDraft ? null : hasUnmanagedSeat ? `${LINK_CLOSED_NOTE} ${LINK_CLOSED_INVITE_HINT}` : LINK_CLOSED_NOTE,
     addSeats: preDraft,
     retireWhy:
       phase === 'pre_draft' || phase === 'drafting'
@@ -481,6 +484,15 @@ export function memberControls(status: string): MemberControls {
 export interface RemoveOptionCopy {
   vacate: string
   takeover: string
+}
+
+/** R1385 — the remove chooser's preselected outcome. §7.2.1(a): takeover is
+ *  the default ("the right call mid-season"); once the draft has started a
+ *  mistaken vacate cancels the team's pending waiver claims (150), which
+ *  cannot be undone. Before the draft vacate stays the recommended path.
+ *  (Remove stays disabled under takeover until a username is typed.) */
+export function defaultRemoveMode(phase: MembersPhase): 'takeover' | 'vacate' {
+  return phase === 'pre_draft' ? 'vacate' : 'takeover'
 }
 
 /** What vacate and takeover do, said for the league's state (§7.2.1 (a) /

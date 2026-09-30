@@ -46,6 +46,7 @@ import {
   CREATOR_SEAT_NOTE,
   buildJoinLink,
   creatorSeatBlocked,
+  defaultRemoveMode,
   deriveSeats,
   fillOutcome,
   inviteState,
@@ -124,7 +125,10 @@ export function InvitePanel({
     },
     nowMs,
   )
-  const controls = memberControls(detail.league.status)
+  const controls = memberControls(
+    detail.league.status,
+    model.seats.some((s) => s.status === 'placeholder' || s.status === 'invited'),
+  )
 
   return (
     <div className="flex flex-col gap-[19px]">
@@ -795,7 +799,9 @@ function RemoveManagerDialog({
   onClose: () => void
 }) {
   const optionCopy = removeOptionCopy(controls.phase)
-  const [mode, setMode] = useState<RemoveMode>('vacate')
+  // R1385: §7.2.1(a) — takeover is the default once the draft has started
+  // (a mistaken vacate cancels the team's waiver claims); before it, vacate.
+  const [mode, setMode] = useState<RemoveMode>(defaultRemoveMode(controls.phase))
   const [successorHandle, setSuccessorHandle] = useState('')
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -817,7 +823,7 @@ function RemoveManagerDialog({
       })
       onClose()
       toast({
-        title: mode === 'takeover' ? 'Franchise handed over' : 'Seat opened',
+        title: mode === 'takeover' ? 'Team handed over' : 'Seat opened',
         description:
           mode === 'takeover'
             ? `${seat.teamName} has a new manager.`
@@ -837,7 +843,7 @@ function RemoveManagerDialog({
           <DialogTitle>Remove {seat.teamName}</DialogTitle>
           <DialogDescription>
             {seat.identity} manages {seat.teamName} in {leagueName}. Choose what happens to the
-            franchise.
+            team.
           </DialogDescription>
         </DialogHeader>
 
@@ -1190,7 +1196,7 @@ function SelfSeatControls({
           <DialogHeader>
             <DialogTitle>Leave this league?</DialogTitle>
             <DialogDescription>
-              Your franchise ({seat.teamName}) becomes an open seat. You can be re-invited later.
+              Your team ({seat.teamName}) becomes an open seat. You can be re-invited later.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

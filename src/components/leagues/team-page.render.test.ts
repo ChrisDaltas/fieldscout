@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -65,6 +65,13 @@ vi.mock('@/stores/commish-override-store', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
   return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }
 })
+// R1386: `PageHeader` portals its actions into the app header through a store
+// effect a static render never runs — rendered inline so the header's doors
+// are observable (the console / members rigs' shape).
+vi.mock('@/components/layout/app-header', () => ({
+  PageHeader: ({ title, actions }: { title: ReactNode; actions?: ReactNode }) =>
+    createElement('header', { 'data-page-header': '' }, createElement('h1', null, title), actions ?? null),
+}))
 
 // ---------------------------------------------------------------------------
 // Rig
@@ -867,6 +874,16 @@ describe('the team page’s autopilot switch (L.E1.22) — free vs gated', () =>
     } finally {
       vi.mocked(useOverrideMode).mockReset()
     }
+  })
+
+  // R1386 (§16.5.2 "Replace a GM": console → Membership · team page).
+  it('the Members door in the team page header — for a commissioner, never for a manager', () => {
+    const commish = renderTeamPage({ detail: asCommish })
+    const door = commish.match(/<a [^>]*data-door="members"[^>]*>/)?.[0] ?? ''
+    expect(door).toContain(`href="/app/leagues/${LEAGUE}/members"`)
+    const manager = renderTeamPage()
+    expect(manager).not.toContain('data-door="members"')
+    expect(manager).not.toContain(`/app/leagues/${LEAGUE}/members`)
   })
 
   it('MODE OFF: a seatless team shows neither the switch nor the sentence (both are faces of the mode)', () => {

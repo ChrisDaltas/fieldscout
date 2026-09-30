@@ -11,6 +11,9 @@
  * closed in a static render, so what the remove chooser says per state is
  * pinned on its pure copy (`memberControls` / `removeOptionCopy`).
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -24,6 +27,7 @@ import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { InvitePanel } from './invite-panel'
 import {
   CREATOR_SEAT_NOTE,
+  LINK_CLOSED_INVITE_HINT,
   LINK_CLOSED_NOTE,
   MEMBERS_INTRO_COMMISH,
   MEMBERS_INTRO_MEMBER,
@@ -31,6 +35,7 @@ import {
   RETIRE_NO_SCREEN_WHY,
   RETIRE_PLAYOFFS_WHY,
   creatorSeatBlocked,
+  defaultRemoveMode,
   memberControls,
   membersPhase,
   removeOptionCopy,
@@ -212,6 +217,17 @@ describe('InvitePanel — each control only where its verb accepts it, per leagu
     expect(renderPanel(detailWith('setup'))).not.toContain(LINK_CLOSED_NOTE)
   })
 
+  it('R1390: "invite someone to that team below" is said only when a team below has no manager', () => {
+    const withOpen = renderPanel(detailWith('in_season'))
+    expect(withOpen).toContain(`${LINK_CLOSED_NOTE} ${LINK_CLOSED_INVITE_HINT}`)
+    // Every seat has a manager (the two open seats seated): the note stands alone.
+    const full = detailWith('in_season')
+    full.members = full.members.map((m, i) => (m.user_id ? m : { ...m, user_id: `user-seated-${i}`, is_placeholder: false }))
+    const html = renderPanel(full)
+    expect(html).toContain(LINK_CLOSED_NOTE)
+    expect(html).not.toContain(LINK_CLOSED_INVITE_HINT)
+  })
+
   it('after the draft, "Add a seat" is never offered — even with an open seat still showing (169:292 refuses it)', () => {
     for (const status of ['drafting', 'in_season', 'playoffs', 'complete']) {
       const html = renderPanel(detailWith(status))
@@ -316,6 +332,27 @@ describe('the remove chooser per state — retire never offered, its reason said
       ['playoffs', { phase: 'playoffs', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, retireWhy: RETIRE_PLAYOFFS_WHY }],
       ['complete', { phase: 'complete', shareLink: false, linkClosedNote: LINK_CLOSED_NOTE, addSeats: false, retireWhy: RETIRE_NO_SCREEN_WHY }],
     ])
+  })
+
+  it('memberControls with a team that has no manager: the invite hint joins the closed-link note after the draft only', () => {
+    expect(memberControls('in_season', true).linkClosedNote).toBe(`${LINK_CLOSED_NOTE} ${LINK_CLOSED_INVITE_HINT}`)
+    expect(memberControls('setup', true).linkClosedNote).toBeNull()
+  })
+
+  it('R1385: the chooser preselects TAKEOVER once the draft has started (§7.2.1(a) — a mistaken vacate cancels waiver claims); vacate before it', () => {
+    expect(STATES.map((s) => defaultRemoveMode(membersPhase(s)))).toEqual([
+      'vacate',
+      'vacate',
+      'takeover',
+      'takeover',
+      'takeover',
+      'takeover',
+    ])
+    // The dialog is closed in a static render, so its seed is pinned at the source:
+    // the chooser's state starts from this rule, never a literal.
+    const source = readFileSync(path.join(__dirname, 'invite-panel.tsx'), 'utf8')
+    expect(source).toContain('useState<RemoveMode>(defaultRemoveMode(controls.phase))')
+    expect(source).not.toContain("useState<RemoveMode>('vacate')")
   })
 
   it('an unknown status offers nothing only a pre-draft league accepts', () => {

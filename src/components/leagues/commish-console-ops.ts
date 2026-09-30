@@ -405,7 +405,9 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
     key: 'members',
     title: 'Members & autopilot',
     blurb: MEMBERS_AFTER_DRAFT_BLURB,
-    doors: [{ label: 'Members', href: membersPageHref(leagueId) }],
+    // R1388: the members page has no override bar and nothing on it reads
+    // the mode — the door does not switch it on (R1372's view-door shape).
+    doors: [{ label: 'Members', href: membersPageHref(leagueId), view: true }],
     teamDoors: false,
     note: phase === 'complete' ? null : AUTOPILOT_NOTE,
   }
