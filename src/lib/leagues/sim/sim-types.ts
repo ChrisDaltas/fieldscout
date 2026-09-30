@@ -536,7 +536,9 @@ export interface TransactionRunReport {
   leaguesAborted: number
   claims: { submitted: number; won: number; lost: number; invalid: number }
   addDrops: number
-  trades: { commissioner: number; none: number; league_vote: number; reversed: number; votes: number }
+  /** `reverseRefused` — the commissioner's reverse refused by name (174,
+   *  L.D3.16: "Remove reverse"); was `reversed` (E11) before 174. */
+  trades: { commissioner: number; none: number; league_vote: number; reverseRefused: number; votes: number }
   commishFaabEdits: number
   ghosts: { attempted: number; completed: number }
   /** M5 L.D3.10 (D423): the waiver-type axis — per `waiver_type`, the leagues

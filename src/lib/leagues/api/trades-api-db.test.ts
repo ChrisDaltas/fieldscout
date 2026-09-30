@@ -3,9 +3,11 @@
  * (`trades-service.ts` → migrations 148 / 151 / 155) driven as signed-in
  * users over the real PostgREST wire.
  *
- *   POST  …/trades        propose — the manager, the commissioner for a team
- *                         (TD5); a non-member and a member for ANOTHER team
- *                         are the one no-leak 403; F65(b) on a reused id;
+ *   POST  …/trades        propose — the manager; a non-member and a member
+ *                         for ANOTHER team are the one no-leak 403; the
+ *                         commissioner for a team he does not manage is a 409
+ *                         BY NAME (174 / D463 — the TD5 arm removed, Chris
+ *                         2026-09-30); F65(b) on a reused id;
  *   GET   …/trades        every member reads every trade (not blind — §12.11)
  *                         with names, status, reason and the review countdown
  *                         at the injected instant; a non-member is the
@@ -90,6 +92,7 @@ const ACTION = {
   proposeForeign: A(12),
   proposeOutsider: A(13),
   proposeCommish: A(14),
+  proposeT2: A(18),
   proposeT3: A(15),
   proposeT4: A(16),
   acceptWrongSide: A(21),
@@ -322,7 +325,7 @@ describe('POST …/trades — proposeTrade over the real verb', () => {
     })
   })
 
-  it('the commissioner offers FOR team A (TD5) — acted_as_commissioner, a receipt, the reason kept', async () => {
+  it('the commissioner offering FOR team A is refused BY NAME — a 409 with the sentence, nothing written (174 / D463)', async () => {
     const res = await proposeTrade(commishClient, leagueId, {
       from_team_id: teamAId,
       to_team_id: teamBId,
@@ -330,9 +333,21 @@ describe('POST …/trades — proposeTrade over the real verb', () => {
       action_id: ACTION.proposeCommish,
       reason: 'he asked me to',
     })
+    expect(res).toStrictEqual({ status: 409, body: { error: "trade_propose: A commissioner acts on a trade only after it's accepted: veto it or push it through. Only a team's own manager offers a trade for it (§13.3)" } })
+    const { count } = await service.from('trades').select('id', { count: 'exact', head: true }).eq('league_id', leagueId)
+    expect(count).toBe(1)
+  })
+
+  it('manager A makes the second offer himself (Two for Four)', async () => {
+    const res = await proposeTrade(managerAClient, leagueId, {
+      from_team_id: teamAId,
+      to_team_id: teamBId,
+      items: oneForOne('vitest-tapi-2', 'vitest-tapi-4'),
+      action_id: ACTION.proposeT2,
+    })
     expect(res.status, JSON.stringify(res.body)).toBe(200)
-    const body = res.body as { trade: { id: string }; acted_as_commissioner: boolean; commissioner_action_id: string | null; reason: string }
-    expect([body.acted_as_commissioner, body.commissioner_action_id !== null, body.reason]).toStrictEqual([true, true, 'he asked me to'])
+    const body = res.body as { trade: { id: string }; acted_as_commissioner: boolean; commissioner_action_id: string | null }
+    expect([body.acted_as_commissioner, body.commissioner_action_id]).toStrictEqual([false, null])
     trade.t2 = body.trade.id
   })
 })
@@ -409,7 +424,7 @@ describe('PATCH …/trades/[tid] — answer', () => {
     expect(after.review?.ms_remaining).toBe(0)
   })
 
-  it('manager A cancels the commissioner’s offer; history shows it closed with its reason', async () => {
+  it('manager A cancels his second offer; history shows it closed with its reason', async () => {
     const res = await actOnTrade(managerAClient, leagueId, trade.t2, { op: 'cancel', action_id: ACTION.cancelT2 })
     expect(res.status, JSON.stringify(res.body)).toBe(200)
     const closed = doc((await readTrades(managerBClient, leagueId, ids.b, { status: 'closed' }, AT)).body)

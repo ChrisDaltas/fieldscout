@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   COMMISH_TRADE_FORBIDDEN_MESSAGE,
+  COMMISH_TRADE_OPS,
   TRADES_UNAVAILABLE_MESSAGE,
   TRADE_ACTION_ID_REUSED_MESSAGE,
   TRADE_PROPOSE_FORBIDDEN_MESSAGE,
@@ -229,7 +230,16 @@ describe('commishTrade (POST …/commish/trade — F451)', () => {
     }
     const { client, rpc } = rpcClient({ data: echo, error: null })
     expect((await commishTrade(client, L, { trade_id: TID, op: 'undo', action_id: ACT })).status).toBe(400)
+    // 174 / D463 (Chris 2026-09-30, "Remove reverse"): reverse is no longer an op — refused before the wire.
+    expect((await commishTrade(client, L, { trade_id: TID, op: 'reverse', action_id: ACT })).status).toBe(400)
     expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('the ops are approve / veto / force; the no-leak copy names only those (174)', () => {
+    expect(COMMISH_TRADE_OPS).toStrictEqual(['approve', 'veto', 'force'])
+    expect(COMMISH_TRADE_FORBIDDEN_MESSAGE).toBe('Only this league’s commissioner can approve, veto or force a trade.')
+    expect(TRADE_PROPOSE_FORBIDDEN_MESSAGE).toBe('Only this team’s manager can offer a trade for it.')
+    expect(TRADE_RESPOND_FORBIDDEN_MESSAGE).toBe('Only the two teams in this trade can answer it.')
   })
 
   it('42501 → 403 no-leak; P0001 → 409 with the refusal verbatim; 22023 → 400', async () => {
@@ -240,7 +250,7 @@ describe('commishTrade (POST …/commish/trade — F451)', () => {
       [{ code: '22023', message: 'commish_force_or_reverse_trade: the reason is 501 characters' }, 400, 'commish_force_or_reverse_trade: the reason is 501 characters'],
     ] as const) {
       const { client } = rpcClient({ data: null, error })
-      expect(await commishTrade(client, L, { trade_id: TID, op: 'reverse', action_id: ACT })).toStrictEqual({ status, body: { error: message } })
+      expect(await commishTrade(client, L, { trade_id: TID, op: 'veto', action_id: ACT })).toStrictEqual({ status, body: { error: message } })
     }
   })
 })

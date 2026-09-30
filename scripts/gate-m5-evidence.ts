@@ -75,7 +75,9 @@ function transact(path: string): void {
   check(t.trades.commissioner > 0, `a trade executed under commissioner review (${t.trades.commissioner})`)
   check(t.trades.none > 0, `a trade executed with no review (${t.trades.none})`)
   check(t.trades.league_vote > 0, `a trade executed under league vote (${t.trades.league_vote}, ${t.trades.votes} votes)`)
-  check(t.trades.reversed > 0, `a trade was reversed by the commissioner — E11 (${t.trades.reversed})`)
+  // 174 (L.D3.16 — Chris 2026-09-30, "Remove reverse"): E11's reversal is gone;
+  // the evidence is now that the commissioner's reverse was refused by name.
+  check(t.trades.reverseRefused > 0, `the commissioner's reverse was refused by name — 174 (${t.trades.reverseRefused})`)
   check(t.addDrops > 0, `add/drops went through (${t.addDrops})`)
   check(t.commishFaabEdits > 0, `commissioner FAAB edits (${t.commishFaabEdits})`)
   check(t.ghosts.attempted > 0 && t.ghosts.completed === t.ghosts.attempted, `the Ghost completed ${t.ghosts.completed} of ${t.ghosts.attempted}`)

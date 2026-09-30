@@ -39,8 +39,10 @@
  *        A `commissioner` review (the default): + a $2 FAAB leg, accepted,
  *          then APPROVED by the commissioner (`commish_force_or_reverse_trade`
  *          op `approve` — L.D3.5).
- *        B `none`: + a $3 FAAB leg, executes at accept — then REVERSED by the
- *          commissioner (op `reverse`, E11: rosters and the FAAB leg back).
+ *        B `none`: + a $3 FAAB leg, executes at accept — then the
+ *          commissioner's `reverse` is REFUSED BY NAME (174 / L.D3.16 — Chris
+ *          2026-09-30, "Remove reverse"): the trade stands, the players and
+ *          the FAAB leg stay where it put them.
  *        C `league_vote` (L.D3.4): accepted, one veto vote and one approve
  *          vote (below the number), then executed by `trade_tick` at a
  *          virtual instant past its review deadline.
@@ -186,7 +188,8 @@ export interface LeagueTransactState {
     invalid: number
     addDrops: number
     trades: Record<'commissioner' | 'none' | 'league_vote', number>
-    reversed: number
+    /** 174: the commissioner's reverse, refused by name — the trade stood. */
+    reverseRefused: number
     votes: number
     commishFaabEdits: number
   }
@@ -411,7 +414,7 @@ export async function driveTransactions(deps: TransactDeps, leagues: readonly Tr
       commishUserId: league.ownerId ?? '',
       waiverType: waiverTypeFor(league.label, index),
       expectedHolder: new Map(),
-      counts: { claimsSubmitted: 0, won: 0, lost: 0, invalid: 0, addDrops: 0, trades: { commissioner: 0, none: 0, league_vote: 0 }, reversed: 0, votes: 0, commishFaabEdits: 0 },
+      counts: { claimsSubmitted: 0, won: 0, lost: 0, invalid: 0, addDrops: 0, trades: { commissioner: 0, none: 0, league_vote: 0 }, reverseRefused: 0, votes: 0, commishFaabEdits: 0 },
       ghost: null,
       aborted: null,
       lines: [],
@@ -652,7 +655,7 @@ async function driveLeague(
     })
     if (error) throw new StepError(`trade_respond accept ${tradeId}: ${error.message}`)
   }
-  const commishOp = async (tradeId: string, op: 'approve' | 'reverse'): Promise<void> => {
+  const commishOp = async (tradeId: string, op: 'approve'): Promise<void> => {
     const { error } = await rpc(commish)('commish_force_or_reverse_trade', {
       p_league_id: league.leagueId,
       p_trade_id: tradeId,
@@ -660,6 +663,22 @@ async function driveLeague(
       p_action_id: uuidFromRng(ids),
     })
     if (error) throw new StepError(`commish_force_or_reverse_trade ${op} ${tradeId}: ${error.message}`)
+  }
+  // 174 (L.D3.16 — Chris 2026-09-30, "Remove reverse"): the verb refuses a
+  // reverse BY NAME (22023) and writes nothing. Anything else — a landing, or
+  // another refusal — is a step failure.
+  const REVERSE_REFUSAL = 'reversing a trade is no longer a commissioner tool'
+  const refuseReverse = async (tradeId: string): Promise<void> => {
+    const { data, error } = await rpc(commish)('commish_force_or_reverse_trade', {
+      p_league_id: league.leagueId,
+      p_trade_id: tradeId,
+      p_op: 'reverse',
+      p_action_id: uuidFromRng(ids),
+    })
+    if (!error) throw new StepError(`commish_force_or_reverse_trade reverse ${tradeId} LANDED (${JSON.stringify(data)}) — 174 removed reverse`)
+    if (error.code !== '22023' || !error.message.includes(REVERSE_REFUSAL)) {
+      throw new StepError(`commish_force_or_reverse_trade reverse ${tradeId}: expected 174's refusal by name, got ${error.code} ${error.message}`)
+    }
   }
   const expectStatus = async (tradeId: string, want: string, what: string): Promise<void> => {
     const got = await tradeStatus(service, tradeId)
@@ -689,7 +708,8 @@ async function driveLeague(
     state.counts.trades.commissioner += 1
     note(`trade A (commissioner review): ${pa.position} ${pa.id} ↔ ${pb.id}${priced ? ' + $2' : ''} — approved by the commissioner → complete`)
   }
-  // B — no review: executes at accept; then REVERSED (E11).
+  // B — no review: executes at accept; the commissioner's reverse is then
+  // REFUSED by name (174 — "Remove reverse") and the trade stands.
   await setting('trade_review', 'none')
   {
     const { a, b, pa, pb } = world.pickTrade(others, inTrades)
@@ -698,13 +718,11 @@ async function driveLeague(
     await expectStatus(t, 'complete', 'trade B after accept (no review)')
     swap(a, pa.id, b, pb.id)
     state.counts.trades.none += 1
-    await commishOp(t, 'reverse')
-    await expectStatus(t, 'reversed', 'trade B after the commissioner reversed it')
-    state.expectedHolder.set(pa.id, a.teamId)
-    state.expectedHolder.set(pb.id, b.teamId)
+    await refuseReverse(t)
+    await expectStatus(t, 'complete', 'trade B after the commissioner tried to reverse it (refused — 174)')
     inTrades.add(a.teamId).add(b.teamId)
-    state.counts.reversed += 1
-    note(`trade B (no review): ${pa.position} ${pa.id} ↔ ${pb.id}${priced ? ' + $3' : ''} — complete at accept, then REVERSED by the commissioner (E11)`)
+    state.counts.reverseRefused += 1
+    note(`trade B (no review): ${pa.position} ${pa.id} ↔ ${pb.id}${priced ? ' + $3' : ''} — complete at accept; the commissioner's reverse REFUSED by name (174), the trade stands`)
   }
   // C — league vote (L.D3.4): one veto + one approve (below the number), then
   // the tick executes it at a virtual instant past the review deadline.

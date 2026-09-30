@@ -83,11 +83,9 @@ export interface TradeBuilderViewProps {
   leagueId: string
   mode: 'propose' | 'counter'
   teams: readonly RosterTeam[]
-  /** The offering team. */
+  /** The offering team — the viewer's own (174 / D463: the commissioner
+   *  offers only for the team he manages, so there is no chooser). */
   fromTeamId: string
-  /** A commissioner in override mode may offer for any team (TD5): the
-   *  choices; null = the offering team is fixed (the viewer's own). */
-  fromChoices: readonly { id: string; name: string }[] | null
   initial?: Partial<Pick<BuilderSides, 'toTeamId' | 'give' | 'get' | 'faabGive' | 'faabGet'>> & { drops?: readonly string[] }
   allowFaab: boolean
   lockBehavior: string
@@ -98,7 +96,6 @@ export interface TradeBuilderViewProps {
   deadlineRefusal: string | null
   /** The offer went in — the receiving team's name. */
   sentTo: string | null
-  onFromTeam?: (teamId: string) => void
   onSend: (send: TradeBuilderSend) => void
   onClose: () => void
   /** The league's answer as the offer is built (162); injected so a static
@@ -111,7 +108,6 @@ export function TradeBuilderView({
   mode,
   teams,
   fromTeamId,
-  fromChoices,
   initial,
   allowFaab,
   lockBehavior,
@@ -119,7 +115,6 @@ export function TradeBuilderView({
   refusal,
   deadlineRefusal,
   sentTo,
-  onFromTeam,
   onSend,
   onClose,
   usePreview = useTradePreview,
@@ -160,7 +155,7 @@ export function TradeBuilderView({
     leagueId,
     !problem && !faabProblem && toTeamId && !locked && !sentTo ? { kind: 'offer', fromTeamId, toTeamId, legs, drops: dropsNow } : null,
   )
-  const words = rosterWords(from?.name ?? null, fromChoices === null)
+  const words = rosterWords(from?.name ?? null, true)
   const gate = builderGate({ problem, faabProblem, preview, fromWords: words, toName: to?.name ?? 'the other team' })
 
   // Before 162: the server said the offering team overflows — open the
@@ -224,30 +219,12 @@ export function TradeBuilderView({
         )}
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {fromChoices ? (
-            <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
-              Offering team (acting as commissioner)
-              <Select value={fromTeamId} onValueChange={(v) => onFromTeam?.(v)}>
-                <SelectTrigger className="h-btn-md px-2 text-[12px]" data-trade-from={fromTeamId}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fromChoices.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-          ) : (
-            <div className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
-              Offering team
-              <span className="flex h-btn-md items-center px-0.5 text-[12px] font-bold text-ink" data-trade-from={fromTeamId}>
-                {from?.name ?? 'Your team'}
-              </span>
-            </div>
-          )}
+          <div className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+            Offering team
+            <span className="flex h-btn-md items-center px-0.5 text-[12px] font-bold text-ink" data-trade-from={fromTeamId}>
+              {from?.name ?? 'Your team'}
+            </span>
+          </div>
           <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
             Trade with
             <Select

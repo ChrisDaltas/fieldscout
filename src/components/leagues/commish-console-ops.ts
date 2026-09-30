@@ -465,7 +465,7 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
     {
       key: 'trades',
       title: 'Trades & waivers',
-      blurb: 'Approve or veto a trade, push one through, or reverse a completed one.',
+      blurb: 'Once a trade is accepted, veto it or push it through now.',   // 174 / D463 — Chris 2026-09-30
       doors: [{ label: 'Trade center', href: tradesHref(leagueId) }],
       teamDoors: false,
       note: args.waiverType === 'faab' ? FAAB_NOTE : null,

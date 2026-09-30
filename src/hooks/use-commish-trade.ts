@@ -16,14 +16,14 @@ import { tradeKeys } from './use-trades'
  * D416; tasks-M5 §5 `useCommishTrade`; PROGRESS F451's hook half).
  *
  * `op`: approve (a trade in review goes to the executor), veto, force (now,
- * past the review, the vote, the deadline and the game-day lock — validity
- * still binds), reverse (a complete trade undone as a whole). Reason
+ * past the review, the vote and the game-day lock — validity
+ * still binds; an accepted trade only since 174 — reverse removed, D463). Reason
  * OPTIONAL (Q66). NOT optimistic (players and FAAB move — the response is
  * the truth), NOT retried, one `action_id` per `submit()`.
  *
  * On success AND error it re-reads the trades, every surface a trade moves
  * (rosters, pool, both teams' lineups, standings, the league detail, the
- * claims, activity), the audit log, and the matchups (a force / reverse in a
+ * claims, activity), the audit log, and the matchups (a force in a
  * live week queues a re-score — 156 §2c, R1228). On error the trade may
  * have moved on, and nothing is lost by re-reading (a validity refusal rolls
  * back — D416(5) — so the lineups are re-read on success only).

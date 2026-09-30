@@ -16,6 +16,9 @@ import {
   builderLegs,
   builderProblem,
   bypassedWords,
+  COMMISH_CONFIRM_COPY,
+  COMMISH_CONFIRM_TITLE,
+  COMMISH_OP_LABELS,
   commishConfirmLines,
   commishOutcomeCopy,
   counterSeed,
@@ -205,13 +208,16 @@ describe('tradeActions — who sees which button (the server decides every move)
     expect(tradeActions(trade(), manager(BRAVO))).toMatchObject({ accept: true, reject: true, counter: true, cancel: false, force: false })
     expect(tradeActions(trade(), manager(ALPHA))).toMatchObject({ accept: false, reject: false, counter: false, cancel: true })
     const none = tradeActions(trade(), manager(CHARLIE))
-    expect(Object.entries(none).filter(([k, v]) => k !== 'actingFor' && v === true)).toEqual([])
+    expect(Object.entries(none).filter(([, v]) => v === true)).toEqual([])
   })
-  it('a commissioner outside override mode is a bystander on another team’s offer; inside it he answers either side and may force (TD5, D416(4))', () => {
-    expect(tradeActions(trade(), commish(false)).accept).toBe(false)
-    expect(tradeActions(trade(), commish(true))).toMatchObject({ accept: true, reject: true, counter: true, cancel: true, force: true, actingFor: 'recipient' })
-    // His own team's offer: only his own side.
-    expect(tradeActions(trade(), commish(true, ALPHA))).toMatchObject({ accept: false, cancel: true, force: true, actingFor: null })
+  it('an offer is the two teams own: the commissioner has NO move on it, override mode or not (Chris 2026-09-30 — L.D3.16 / D463)', () => {
+    for (const overrideMode of [false, true]) {
+      const set = tradeActions(trade(), commish(overrideMode))
+      expect(Object.entries(set).filter(([, v]) => v === true), `override ${overrideMode}`).toEqual([])
+    }
+    // A commissioner who manages one of the teams answers as its manager — his own side only, no force.
+    expect(tradeActions(trade(), commish(true, ALPHA))).toMatchObject({ accept: false, reject: false, cancel: true, force: false })
+    expect(tradeActions(trade(), commish(true, BRAVO))).toMatchObject({ accept: true, reject: true, counter: true, cancel: false, force: false })
   })
   it('under commissioner review: Approve / Veto are his job (no override needed); force is an override', () => {
     const t = trade({ status: 'in_review', review: { mode: 'commissioner', ends_at: null, ms_remaining: null } })
@@ -226,14 +232,11 @@ describe('tradeActions — who sees which button (the server decides every move)
     expect(tradeActions(t, commish(false))).toMatchObject({ reviewApprove: false, overrideApprove: false })
     expect(tradeActions(t, commish(true))).toMatchObject({ overrideApprove: true, overrideVeto: true, force: true })
   })
-  it('waiting for the games: override veto / force; expired: force; complete: reverse; every other closed state: nothing', () => {
+  it('waiting for the games: override veto / force; expired, complete and every other closed state: nothing (174 — no force on an offer, no reverse)', () => {
     expect(tradeActions(trade({ status: 'accepted', deferred: { until: null, ms_remaining: null } }), commish(true))).toMatchObject({ overrideVeto: true, force: true })
-    expect(tradeActions(trade({ status: 'expired', in_flight: false }), commish(true))).toMatchObject({ force: true, reverse: false })
-    expect(tradeActions(trade({ status: 'complete', in_flight: false }), commish(true))).toMatchObject({ reverse: true, force: false })
-    expect(tradeActions(trade({ status: 'complete', in_flight: false }), commish(false)).reverse).toBe(false)
-    for (const status of ['rejected', 'cancelled', 'vetoed', 'invalid', 'reversed'] as const) {
+    for (const status of ['expired', 'complete', 'rejected', 'cancelled', 'vetoed', 'invalid', 'reversed'] as const) {
       const set = tradeActions(trade({ status, in_flight: false }), commish(true))
-      expect(Object.entries(set).filter(([k, v]) => k !== 'actingFor' && v === true), status).toEqual([])
+      expect(Object.entries(set).filter(([, v]) => v === true), status).toEqual([])
     }
   })
 })
@@ -272,11 +275,11 @@ describe('the builder: legs, FAAB, problems, the counter seed', () => {
 
 describe('F451 — the commissioner’s tools: before → after, the answer in words', () => {
   const t = trade({ drops: [{ team_id: BRAVO, player: player('p-b3', 'Bud Three') }] })
-  it('force: each asset from its team to the other; the drop leaves', () => {
-    expect(commishConfirmLines(t, 'force')).toEqual(['Andy One: Alpha → Bravo', 'Ben One: Bravo → Alpha', 'Bud Three: dropped by Bravo'])
-  })
-  it('reverse: each asset back; the drop comes back', () => {
-    expect(commishConfirmLines(t, 'reverse')).toEqual(['Andy One: Bravo → Alpha', 'Ben One: Alpha → Bravo', 'Bud Three: back to Bravo'])
+  it('force: each asset from its team to the other; the drop leaves (the only confirmation since 174 removed reverse)', () => {
+    expect(commishConfirmLines(t)).toEqual(['Andy One: Alpha → Bravo', 'Ben One: Bravo → Alpha', 'Bud Three: dropped by Bravo'])
+    expect(COMMISH_CONFIRM_TITLE).toBe('Force this trade through now?')
+    expect(COMMISH_CONFIRM_COPY).not.toMatch(/deadline/)
+    expect(COMMISH_OP_LABELS).toStrictEqual({ approve: 'Approve', veto: 'Veto', force: 'Force it through' })
   })
   it('bypassed in words, a game-day lock naming the player', () => {
     const name = (id: string) => (id === 'p-a1' ? 'Andy One' : null)

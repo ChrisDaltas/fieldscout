@@ -93,10 +93,11 @@
 --   Dropped: 2 internal functions (no caller left; neither was ever
 --   executable by anon / authenticated). No table, column, index, policy,
 --   trigger or cron row. Time: no new clock read (p_at / now() as before).
---   Typegen: no change (no client-visible signature moved; the two dropped
---   functions were never granted to a client role, so neither is in
---   `src/types/database.ts`). Realtime: nothing new (a trade's status change
---   is broadcast by 148 as before).
+--   Typegen: SUBTRACTIVE by exactly the two dropped internals (24 lines —
+--   `commish_trade_reverse_internal`, `trade_receipt_internal`; nothing in
+--   src/ names either); no signature moved; the hand-written alias block
+--   kept. Realtime: nothing new (a trade's status change is broadcast by 148
+--   as before).
 --   WAIVERS: R6 — no staging clone; rehearsal evidence = the fresh local
 --   `db reset` 001–174 and the full pgTAP run in the PR. D38 — no backfill:
 --   nothing stored changes meaning (receipts, trades and transactions rows

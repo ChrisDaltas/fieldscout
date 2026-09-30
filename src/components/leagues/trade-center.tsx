@@ -46,9 +46,9 @@ import {
   TRADES_TITLE,
   TRADES_UNAVAILABLE_TITLE,
   acceptGate,
-  commishConfirmCopy,
+  COMMISH_CONFIRM_COPY,
+  COMMISH_CONFIRM_TITLE,
   commishConfirmLines,
-  commishConfirmTitle,
   commishOutcomeCopy,
   counterSeed,
   deadlinePassedCopy,
@@ -93,10 +93,13 @@ import {
  * **Who presses what** is `tradeActions` — buttons only; every move is the
  * server's, and a refusal renders VERBATIM on the card it came from. The
  * commissioner's review of a trade under commissioner review is his job, so
- * Approve / Veto show without override mode; force, reverse, and overriding
- * a league vote or a deferred trade live INSIDE override mode (F451 — the ONE
- * switch, PROGRESS §3 rule (h); no reason field, Q66 / F343). Force and
- * reverse confirm with before → after (§10.4).
+ * Approve / Veto show without override mode; force, and overriding a league
+ * vote or a deferred trade, live INSIDE override mode (F451 — the ONE switch,
+ * PROGRESS §3 rule (h); no reason field, Q66 / F343). Force confirms with
+ * before → after (§10.4). **Only on an accepted trade** (Chris 2026-09-30 —
+ * L.D3.16, D463): the commissioner never answers an offer for a team, never
+ * offers for a team he does not manage, never forces an offer, and there is
+ * no Reverse — a completed trade stands.
  *
  * **Prevent, don't refuse (L.D3.12, D426 — Chris 2026-09-29).** The deadline
  * is the server's instant (`useTradeDeadline`, migration 162 — F452): past it
@@ -194,7 +197,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const [builderKey, setBuilderKey] = useState(0)
   const [deadlineRefusal, setDeadlineRefusal] = useState<string | null>(null)
   const [lastCard, setLastCard] = useState<{ tradeId: string; kind: 'respond' | 'commish' } | null>(null)
-  const [confirm, setConfirm] = useState<{ trade: TradeView; op: 'force' | 'reverse' } | null>(null)
+  const [confirm, setConfirm] = useState<{ trade: TradeView } | null>(null)
 
   const noteRefusal = (message: string) => {
     if (isDeadlineRefusal(message)) setDeadlineRefusal(message)
@@ -208,9 +211,10 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   }
 
   const teams = rosters.data?.teams ?? []
-  const fromChoices = inOverride ? teams.filter((t) => t.status !== 'retired').map((t) => ({ id: t.team_id, name: t.name })) : null
-  const canPropose = inSeason && (myTeamId !== null || inOverride)
-  const defaultFrom = myTeamId ?? fromChoices?.[0]?.id ?? null
+  // 174 / D463: an offer is the offering team's own — the commissioner offers
+  // only for the team he manages (no offering-team chooser in override mode).
+  const canPropose = inSeason && myTeamId !== null
+  const defaultFrom = myTeamId
 
   const counterSending = builder?.mode === 'counter'
   const builderMutation = counterSending ? act : propose
@@ -304,7 +308,6 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
               mode={builder.mode}
               teams={teams}
               fromTeamId={builder.fromTeamId}
-              fromChoices={builder.mode === 'propose' ? fromChoices : null}
               initial={
                 builder.counterOf
                   ? counterSeed(builder.counterOf)
@@ -316,7 +319,6 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
               refusal={builderRefusal}
               deadlineRefusal={deadlineRefusal}
               sentTo={sentTo}
-              onFromTeam={(teamId) => openBuilder({ ...builder, fromTeamId: teamId, initialTo: null, initialGet: [] })}
               onSend={sendFromBuilder}
               onClose={() => {
                 setBuilder(null)
@@ -357,8 +359,8 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
           act.submitAsync({ tradeId: trade.id, op: 'vote', vote }).catch(() => {})
         }}
         onCommish={(trade, op) => {
-          if (op === 'force' || op === 'reverse') {
-            setConfirm({ trade, op })
+          if (op === 'force') {
+            setConfirm({ trade })
             return
           }
           setLastCard({ tradeId: trade.id, kind: 'commish' })
@@ -374,19 +376,18 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
         <DialogContent className="max-w-md">
           {confirm && (
             <DialogHeader>
-              <DialogTitle>{commishConfirmTitle(confirm.op)}</DialogTitle>
-              <DialogDescription>{commishConfirmCopy(confirm.op)}</DialogDescription>
+              <DialogTitle>{COMMISH_CONFIRM_TITLE}</DialogTitle>
+              <DialogDescription>{COMMISH_CONFIRM_COPY}</DialogDescription>
             </DialogHeader>
           )}
           {confirm && (
             <CommishConfirm
               trade={confirm.trade}
-              op={confirm.op}
               pending={commish.isPending}
               onConfirm={() => {
                 setLastCard({ tradeId: confirm.trade.id, kind: 'commish' })
                 act.reset()
-                commish.submitAsync({ tradeId: confirm.trade.id, op: confirm.op }).catch(() => {}).finally(() => setConfirm(null))
+                commish.submitAsync({ tradeId: confirm.trade.id, op: 'force' }).catch(() => {}).finally(() => setConfirm(null))
               }}
               onCancel={() => setConfirm(null)}
             />
@@ -733,7 +734,7 @@ export function TradeCard({
                 onClick={() => onRespond(trade, 'accept', acceptDrops ?? [])}
                 data-accept-with-drops
               >
-                {pending ? 'Sending…' : actions.actingFor === 'recipient' ? `Accept for ${trade.recipient.name ?? 'the team'} with these drops` : 'Accept with these drops'}
+                {pending ? 'Sending…' : 'Accept with these drops'}
               </Button>
               {checked && gate.state === 'checking' && <span className="text-[10px] font-medium text-n-3">{gate.reason}</span>}
               {(!checked || (gate.state !== 'needs_drops' && gate.mustDrop === 0)) && (
@@ -809,9 +810,8 @@ function TradeButtons({
   onCommish: (op: CommishTradeOp) => void
 }) {
   const manager = actions.accept || actions.reject || actions.counter || actions.cancel || actions.vote || actions.reviewApprove || actions.reviewVeto
-  const override = actions.overrideApprove || actions.overrideVeto || actions.force || actions.reverse
+  const override = actions.overrideApprove || actions.overrideVeto || actions.force
   if (!manager && !override) return null
-  const acting = actions.actingFor === 'recipient' ? ` for ${trade.recipient.name ?? 'the team'}` : ''
   return (
     <div className="flex flex-col gap-2">
       {manager && (
@@ -819,7 +819,7 @@ function TradeButtons({
           {actions.accept && accept.show && (
             <>
               <Button variant="blue" size="sm" disabled={pending || !accept.enabled} onClick={onAccept} data-trade-op="accept">
-                {pending ? 'Sending…' : `Accept${acting}`}
+                {pending ? 'Sending…' : 'Accept'}
               </Button>
               {accept.withDrops && (
                 <Button variant="ghost" size="sm" disabled={pending} onClick={onAcceptWithDrops} data-trade-op="accept-drops">
@@ -886,44 +886,38 @@ function TradeButtons({
               {COMMISH_OP_LABELS.force}
             </Button>
           )}
-          {actions.reverse && (
-            <Button variant="stroke" size="sm" disabled={pending} onClick={() => onCommish('reverse')} data-trade-op="reverse">
-              {COMMISH_OP_LABELS.reverse}
-            </Button>
-          )}
         </div>
       )}
     </div>
   )
 }
 
-/** §10.4's confirmation — before → after for force and reverse: the dialog's
- *  body (its title and description are the host's `DialogHeader`). Rendered
- *  inside a dialog (a true overlay: the primitive's resting shadow). */
+/** §10.4's confirmation — before → after for force (the one op that moves
+ *  players at once since 174 removed reverse): the dialog's body (its title
+ *  and description are the host's `DialogHeader`). Rendered inside a dialog
+ *  (a true overlay: the primitive's resting shadow). */
 export function CommishConfirm({
   trade,
-  op,
   pending,
   onConfirm,
   onCancel,
 }: {
   trade: TradeView
-  op: 'force' | 'reverse'
   pending: boolean
   onConfirm: () => void
   onCancel: () => void
 }) {
   return (
-    <div className="flex flex-col gap-3" data-commish-confirm={op}>
+    <div className="flex flex-col gap-3" data-commish-confirm="force">
       <ul className="flex flex-col gap-1 rounded-sm border border-n-4 px-2 py-2 text-[12px] font-medium text-ink">
-        {commishConfirmLines(trade, op).map((line) => (
+        {commishConfirmLines(trade).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
       <p className="text-[11px] font-medium text-n-3">Logged for the whole league, and both managers are told.</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="blue" size="sm" shadow disabled={pending} onClick={onConfirm} data-commish-confirm-go>
-          {pending ? 'Working…' : COMMISH_OP_LABELS[op]}
+          {pending ? 'Working…' : COMMISH_OP_LABELS.force}
         </Button>
         <Button variant="stroke" size="sm" disabled={pending} onClick={onCancel}>
           Cancel

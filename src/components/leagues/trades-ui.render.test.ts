@@ -103,7 +103,6 @@ function builder(over: Partial<TradeBuilderViewProps> = {}): string {
       mode: 'propose',
       teams: TEAMS,
       fromTeamId: ALPHA,
-      fromChoices: null,
       initial: { toTeamId: BRAVO, get: ['p-b1'] },
       allowFaab: false,
       lockBehavior: 'defer',
@@ -216,11 +215,11 @@ describe('trade card — an offer', () => {
     expect(picker).toContain('data-trade-pick="p-b3"')
     expect(html).toContain('data-accept-with-drops')
   })
-  it('the commissioner in override mode answers for the receiving team — the Accept says for whom — and may force', () => {
+  it('an offer is the two teams own: the commissioner, override mode on, has no button on it — no answering for a team, no force (174 / D463)', () => {
     const html = card({ viewer: { teamId: null, isCommissioner: true, overrideMode: true } })
-    expect(html).toContain('Accept for Bravo')
-    expect(ops(html)).toEqual(['accept', 'accept-drops', 'counter', 'reject', 'cancel', 'force'])
-    expect(html).toContain('data-trade-override')
+    expect(ops(html)).toEqual([])
+    expect(html).not.toContain('Accept for')
+    expect(html).not.toContain('data-trade-override')
   })
 })
 
@@ -294,10 +293,12 @@ describe('trade card — waiting, closed, and the commissioner’s answer', () =
     expect(expired).toContain('Expired')
     expect(expired).toContain('The trade deadline passed before it was answered')
   })
-  it('a completed trade: the commissioner’s Reverse lives inside override mode; the 🔒 is not shown on history', () => {
+  it('a completed trade stands: no Reverse, even in override mode (174 — “Remove reverse”); the 🔒 is not shown on history', () => {
     const done = trade({ status: 'complete', in_flight: false, resolved_at: '2099-09-15T00:00:00.000Z' })
     expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: false } }))).toEqual([])
-    expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: true } }))).toEqual(['reverse'])
+    expect(ops(card({ trade: done, viewer: { teamId: null, isCommissioner: true, overrideMode: true } }))).toEqual([])
+    const expired = trade({ status: 'expired', in_flight: false })
+    expect(ops(card({ trade: expired, viewer: { teamId: null, isCommissioner: true, overrideMode: true } }))).toEqual([])
     expect(card({ trade: done, lockedIds: new Set(['p-a1']) })).not.toContain('data-lock')
   })
   it('F451: the commissioner’s answer in words — what he stood outside, named', () => {
@@ -308,16 +309,14 @@ describe('trade card — waiting, closed, and the commissioner’s answer', () =
   })
 })
 
-describe('§10.4 — force and reverse confirm with before → after', () => {
+describe('§10.4 — force confirms with before → after (the one confirmation since 174 removed reverse)', () => {
   it('force', () => {
-    const html = render(createElement(CommishConfirm, { trade: trade(), op: 'force', pending: false, onConfirm: noop, onCancel: noop }))
+    const html = render(createElement(CommishConfirm, { trade: trade({ status: 'in_review' }), pending: false, onConfirm: noop, onCancel: noop }))
+    expect(html).toContain('data-commish-confirm="force"')
     expect(html).toContain('Andy One: Alpha → Bravo')
     expect(html).toContain('Ben One: Bravo → Alpha')
     expect(html).toContain('data-commish-confirm-go')
-  })
-  it('reverse', () => {
-    const html = render(createElement(CommishConfirm, { trade: trade({ status: 'complete', in_flight: false }), op: 'reverse', pending: false, onConfirm: noop, onCancel: noop }))
-    expect(html).toContain('Andy One: Bravo → Alpha')
+    expect(html).toContain('Force it through')
   })
 })
 
@@ -375,9 +374,10 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     expect(html).toMatch(/data-trade-pick="p-a1" data-picked="true"/)
     expect(html).toContain('Send counter-offer')
   })
-  it('the commissioner in override mode picks the offering team', () => {
-    const html = builder({ fromChoices: TEAMS.map((t) => ({ id: t.team_id, name: t.name })) })
-    expect(html).toContain('Offering team (acting as commissioner)')
+  it('the offering team is fixed — the viewer’s own; there is no chooser to offer for another team (174 / D463)', () => {
+    const html = builder()
+    expect(html).toContain('data-trade-from="' + ALPHA + '"')
+    expect(html).not.toContain('acting as commissioner')
   })
   it('sent: says who gets it and where it is listed', () => {
     const html = builder({ sentTo: 'Bravo' })
@@ -541,13 +541,6 @@ describe('L.D3.12 — the builder: Send only when the league would take it', () 
     expect(html).toContain('The league checks both rosters, the deadline and any FAAB when you send — its answer is what you see.')
     expect(html).toContain('data-trade-drops-open')
   })
-  it('the commissioner offering for a team: the drops are that team’s, said by name', () => {
-    const html = builder({
-      fromChoices: TEAMS.map((t) => ({ id: t.team_id, name: t.name })),
-      usePreview: answer(preview({ ok: false }, { proposer: { must_drop: 1 } })),
-    })
-    expect(html).toContain('Alpha’s roster would be over its size — pick 1 more player to drop.')
-  })
 })
 
 describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
@@ -621,12 +614,11 @@ describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
     card({ viewer: { teamId: CHARLIE, isCommissioner: false, overrideMode: false }, usePreview: rec.hook })
     expect(rec.drafts.every((d) => d === null)).toBe(true)
   })
-  it('the commissioner answering for the team: the drops are that team’s, and the button says for whom', () => {
-    const html = card({
-      viewer: { teamId: null, isCommissioner: true, overrideMode: true },
-      usePreview: acceptAnswer({ ok: false }, { recipient: { must_drop: 1 } }),
-    })
-    expect(html).toContain('Bravo’s roster would be over its size — pick 1 more player to drop.')
-    expect(html).toContain('Accept for Bravo with these drops')
+  it('the commissioner (override mode on) asks nothing either and gets no Accept — the offer is the two teams own (174 / D463)', () => {
+    const rec = recorder()
+    const html = card({ viewer: { teamId: null, isCommissioner: true, overrideMode: true }, usePreview: rec.hook })
+    expect(rec.drafts.every((d) => d === null)).toBe(true)
+    expect(html).not.toContain('data-accept-with-drops')
+    expect(ops(html)).toEqual([])
   })
 })

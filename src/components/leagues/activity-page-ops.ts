@@ -33,7 +33,7 @@ export const SHOW_NEWEST_LABEL = 'Back to the newest'
 export const TAB_INTRO_COPY: Readonly<Record<Exclude<ActivityTab, 'corrections'>, string>> = {
   all: 'Everything that happened in the league, newest first. Lines marked ✸ are the commissioner’s — tap ✸ to see the entry in his log.',
   adds: 'Players added and dropped by the teams, and waiver claims that went through. The commissioner’s roster changes are on the Commissioner tab.',
-  trades: 'Trades that went through, were vetoed or were reversed. Offers stay between the two teams, in their trade center.',
+  trades: 'Trades that went through or were vetoed. Offers stay between the two teams, in their trade center.',
   commissioner: 'Every change a commissioner made, for the whole league to see.',
 }
 
@@ -41,7 +41,7 @@ export const TAB_INTRO_COPY: Readonly<Record<Exclude<ActivityTab, 'corrections'>
 export const TAB_EMPTY_COPY: Readonly<Record<'all' | 'adds' | 'trades', string>> = {
   all: 'Nothing has happened in this league yet.',
   adds: 'No adds or drops yet.',
-  trades: 'No trades have gone through, been vetoed or been reversed yet.',
+  trades: 'No trades have gone through or been vetoed yet.',
 }
 
 /** The commissioner log filtered to nothing (the unfiltered empty copy is the log's own). */

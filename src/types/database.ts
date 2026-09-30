@@ -5615,14 +5615,6 @@ export type Database = {
         }
         Returns: Json
       }
-      commish_trade_reverse_internal: {
-        Args: {
-          p_at: string
-          p_league: Database["public"]["Tables"]["leagues"]["Row"]
-          p_trade_id: string
-        }
-        Returns: Json
-      }
       create_league: {
         Args: {
           p_action_id: string
@@ -6806,22 +6798,6 @@ export type Database = {
           p_note: string
           p_reason: string
           p_to_team_id: string
-        }
-        Returns: Json
-      }
-      trade_receipt_internal: {
-        Args: {
-          p_act_text: string
-          p_action_id: string
-          p_action_type: string
-          p_after: Json
-          p_before: Json
-          p_league_id: string
-          p_reason: string
-          p_season: number
-          p_team: Database["public"]["Tables"]["teams"]["Row"]
-          p_trade_id: string
-          p_verb: string
         }
         Returns: Json
       }

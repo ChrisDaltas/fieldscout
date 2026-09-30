@@ -18,8 +18,10 @@ const idSchema = z.uuid()
  *  RPC, the mapping and the F65(b) guard on the echoed op + trade are
  *  `trades-service.ts`'s.
  *
- *  Body: { trade_id, op: 'approve' | 'veto' | 'force' | 'reverse',
- *  action_id, reason? } — reason OPTIONAL (Q66). Authorization is the RPC's
+ *  Body: { trade_id, op: 'approve' | 'veto' | 'force', action_id, reason? }
+ *  — reason OPTIONAL (Q66); `reverse` is not an op since 174 (Chris
+ *  2026-09-30, "Remove reverse" — a 400 here, and refused by name in the
+ *  database). Force is for an accepted trade only. Authorization is the RPC's
  *  (one no-leak 42501 → 403); a refusal by name is a 409 with the database's
  *  sentence; a malformed argument a 400. */
 export async function POST(request: Request, { params }: RouteParams) {

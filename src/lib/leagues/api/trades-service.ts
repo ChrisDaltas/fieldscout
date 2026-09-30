@@ -8,7 +8,7 @@
  *                                           review countdown and the vote count (Q77)
  *   PATCH /api/leagues/[id]/trades/[tid]    accept / reject / cancel / counter → trade_respond (151)
  *                                           vote (veto / approve)              → trade_vote (155)
- *   POST  /api/leagues/[id]/commish/trade   approve / veto / force / reverse   → commish_force_or_reverse_trade (156)
+ *   POST  /api/leagues/[id]/commish/trade   approve / veto / force             → commish_force_or_reverse_trade (156 / 174)
  *
  * The D68/D71 layering of the in-season family (`waivers-service.ts` is the
  * template, copied not re-derived): the Route Handlers are auth + param
@@ -19,7 +19,9 @@
  * **The whole verb is the RPC's** (server-authoritative — CLAUDE.md). Whose
  * move an op is, the roster fit (E36), exclusivity, the FAAB legs, the
  * deadline (Q76), review, the game-day lock (Q75), who votes (Q77) and what
- * the commissioner may override (D416) are all decided in the database,
+ * the commissioner may do (D416, narrowed by 174 / D463 — Chris 2026-09-30:
+ * an accepted trade only, veto it or push it through) are all decided in the
+ * database,
  * under the league row lock. This layer owns the wire shape, the idempotency
  * stamp, the F65(b) identity guard and making a refusal readable
  * (`inseason-errors.ts`: 42501→403, P0001→409 verbatim, 22023→400).
@@ -70,15 +72,15 @@ type Supabase = SupabaseClient<Database>
 // ---------------------------------------------------------------------------
 
 /** 148's one no-leak 42501 for propose: no such league / not a member / not
- *  this team's manager and not the commissioner. */
-export const TRADE_PROPOSE_FORBIDDEN_MESSAGE =
-  'Only this team’s manager (or the league’s commissioner) can offer a trade for it.'
+ *  this team's manager. (A commissioner who does not manage the team is
+ *  refused BY NAME since 174 — a 409 with the database's sentence.) */
+export const TRADE_PROPOSE_FORBIDDEN_MESSAGE = 'Only this team’s manager can offer a trade for it.'
 
 /** 151's one no-leak 42501 for respond: no such league / not a member / a
- *  member who is not one of the two teams (and not the commissioner) / no
- *  such trade. The OTHER party asking for the wrong move is a 409 by name. */
-export const TRADE_RESPOND_FORBIDDEN_MESSAGE =
-  'Only the two teams in this trade (or the league’s commissioner) can answer it.'
+ *  member who is not one of the two teams / no such trade. The OTHER party
+ *  asking for the wrong move, and (since 174) a commissioner who manages
+ *  neither team, are 409s by name. */
+export const TRADE_RESPOND_FORBIDDEN_MESSAGE = 'Only the two teams in this trade can answer it.'
 
 /** 155's 42501 for a vote: not a member of this league (a party, a member
  *  with no team and a retired team are refused BY NAME — 409). */
@@ -87,7 +89,7 @@ export const TRADE_VOTE_FORBIDDEN_MESSAGE = 'Only managers in this league can vo
 /** 156's one no-leak 42501: no such league / not a member / a manager —
  *  even one of the trade's own teams. */
 export const COMMISH_TRADE_FORBIDDEN_MESSAGE =
-  'Only this league’s commissioner can approve, veto, force or reverse a trade.'
+  'Only this league’s commissioner can approve, veto or force a trade.'
 
 /** The 409 for a REUSED action_id naming a different request (F65(b)). */
 export const TRADE_ACTION_ID_REUSED_MESSAGE =
@@ -204,8 +206,8 @@ function reused(): ServiceResult {
 
 export const proposeTradeInputSchema = z
   .strictObject({
-    /** The team making the offer — the caller's own, or any team for the
-     *  commissioner (TD5). */
+    /** The team making the offer — the caller's own (174: the commissioner
+     *  offers only for the team he manages). */
     from_team_id: normalizedUuid,
     to_team_id: normalizedUuid,
     items: legs,
@@ -214,7 +216,8 @@ export const proposeTradeInputSchema = z
     drops: drops.optional(),
     note,
     action_id: normalizedUuid,
-    /** Stored only on the commissioner arm (Q66: optional). */
+    /** Accepted and ignored since 174 (the commissioner arm that stored it
+     *  is gone); kept so an older client's body still parses. */
     reason: optionalReason,
   })
   .refine((body) => body.from_team_id !== body.to_team_id, {
@@ -356,10 +359,11 @@ export async function actOnTrade(supabase: Supabase, leagueId: string, tradeId: 
 }
 
 // ---------------------------------------------------------------------------
-// POST …/commish/trade — approve / veto / force / reverse (F451)
+// POST …/commish/trade — approve / veto / force (F451; 174 / D463: reverse
+// removed — Chris 2026-09-30, "Remove reverse")
 // ---------------------------------------------------------------------------
 
-export const COMMISH_TRADE_OPS = ['approve', 'veto', 'force', 'reverse'] as const
+export const COMMISH_TRADE_OPS = ['approve', 'veto', 'force'] as const
 export type CommishTradeOp = (typeof COMMISH_TRADE_OPS)[number]
 
 export const commishTradeInputSchema = z.strictObject({
@@ -384,7 +388,7 @@ export interface CommishTradeResult {
   trade_review: string
   status_before: string
   status: string
-  outcome: 'approved' | 'approved_deferred' | 'vetoed' | 'forced' | 'reversed' | 'no_change'
+  outcome: 'approved' | 'approved_deferred' | 'vetoed' | 'forced' | 'no_change'
   trade: Record<string, unknown>
   summary: string
   accepted_for_team_id: string | null
