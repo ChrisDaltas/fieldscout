@@ -9,7 +9,16 @@
 
 ---
 
-## Active: **Redraft Leagues M5 — Transactions (waivers / FAAB / trades)** *(breakdown approved by Chris 2026-09-27 — "approve M5, all recommendations"; PR #323)*
+## Active: **Redraft Leagues M6 — Commissioner Console + Audit, and Stat Corrections** *(breakdown approved by Chris 2026-09-29 — "Approve and start"; PR #360)*
+
+- **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M6-commissioner-console.md` §6 (+ its APPROVED note — Q81 ruled no, Q82 per E43, **Q83 dropped: L.E1.35 is not built**, Q84–Q86 as recommended, Q87 a design choice). **Memory:** `docs/specs/PROGRESS-leagues.md`. **Task-id prefixes:** `L.E1.*` (from L.E1.28 — console, audit, backstop proof, gate) and `L.E2.*` (the stat-corrections pipeline and view).
+- **NEXT TAKEABLE TASK: `L.E1.28`** (spec fold-back of the M6 rulings + ledger transcription — docs only, ONE PASS). Then **L.E2.1** (FULL — stat-correction events + detection + the daily re-poll of final weeks; changes the production poll — keep today's path as the pre-push fallback) and **L.E1.29** (FULL — receipts for the draft-room controls). Schema tasks share the one local DB: one at a time.
+- **Process:** unchanged — the lighter pre-launch rule (Chris 2026-09-27): FULL rigour for scoring / standings / permissions / production writes; ONE PASS for UI / API / docs / e2e; no second re-review after a small fix round unless it touched scoring or permissions.
+- **Production:** at **166**, push debt none (2026-09-29).
+
+---
+
+## Closed: **Redraft Leagues M5 — Transactions (waivers / FAAB / trades)** *(breakdown approved by Chris 2026-09-27 — "approve M5, all recommendations"; PR #323)*
 
 - **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M5-transactions.md` §6 (+ its approval note). **Memory:** `docs/specs/PROGRESS-leagues.md` (Q70–Q79 ruled as recommended; D383, D384; F406–F409, F411). **Task-id prefixes:** `L.D2.*` (waivers / FAAB / free agency) and `L.D3.*` (trades).
 - **Landed:** L.D2.5 (PR #325, migration 145 / pgTAP 093); L.D2.6 (migration 146 / pgTAP 094 — C72 fixed); L.D2.11 (migration 147 / pgTAP 095 — `commish_edit_faab`, F412's reset re-seed); L.D3.2 (migration 148 / pgTAP 096 — trade tables, propose / accept / reject / cancel / counter, the E37 trigger; F413 for L.D3.3); L.D2.12 (no migration — waiver claim routes + `/commish/faab` + hooks; FAAB balance / waiver priority on the rosters, standings and league-detail reads; D387); L.D2.8 (no migration — the pure TS resolver, D389); L.D2.4 (docs — the M5 rulings folded, v2.16.58); L.D2.7 (migration 149 / pgTAP 097 — the waiver schedule, D388); **L.D2.9 in review** (migration 150 / pgTAP 098 — the resolver re-cut to Chris's F422 rulings, the SQL twin, the processor + per-minute `waiver_tick`, `waiver_claim_edit`; D406).
