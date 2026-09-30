@@ -33,6 +33,7 @@ import {
   decodeCommishLogCursor,
   encodeCommishLogCursor,
   readCommishLog,
+  receiptUserIds,
 } from './commish-log-service'
 import { INSEASON_READ_FORBIDDEN_MESSAGE } from './inseason-reads'
 
@@ -394,5 +395,68 @@ describe('readCommishLog — `entry` (L.E1.34): the page starts AT the entry and
     expect(unknown.read).toStrictEqual([])
     const failing = entryDouble({ entry: 'error' })
     expect(await readCommishLog(failing.client, LEAGUE, { entry: ENTRY })).toStrictEqual({ status: 500, body: { error: 'commissioner_actions: lookup exploded' } })
+  })
+})
+
+describe('F549 (D465) — the people a receipt names, by username, from the log read itself', () => {
+  const DANA = 'ab000000-0000-4000-8000-0000000000d7'
+  const ELI = 'ab000000-0000-4000-8000-0000000000e8'
+
+  it('receiptUserIds: every top-level user_id / *_user_id uuid of before / after / metadata, once — nothing else', () => {
+    expect(receiptUserIds({ before: { manager_user_id: DANA, team_status: 'active' }, after: { manager_user_id: ELI }, metadata: { user_id: DANA.toUpperCase(), member_id: ID_A } })).toStrictEqual([DANA, ELI])
+    expect(receiptUserIds({ before: { manager_user_id: null }, after: { commissioner_user_id: 'not-a-uuid', team_id: ID_A }, metadata: [DANA] })).toStrictEqual([])
+    expect(receiptUserIds({ before: null, after: { nested: { manager_user_id: DANA } }, metadata: null })).toStrictEqual([])
+  })
+
+  /** A double that tells the tables apart: the log rows, then the profiles read. */
+  function peopleDouble(opts: { rows: unknown[]; people?: unknown[]; peopleError?: { message: string } }) {
+    const profileIns: unknown[][] = []
+    const thenable = (response: unknown, onIn?: (args: unknown[]) => void) => {
+      const query: Record<string, unknown> = new Proxy({}, {
+        get(_t, prop: string) {
+          if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(response)
+          return (...args: unknown[]) => {
+            if (prop === 'in' && onIn) onIn(args)
+            return query
+          }
+        },
+      })
+      return query
+    }
+    const leaguesFrom = { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: { id: LEAGUE }, error: null }) }) }) }) }
+    const tables: string[] = []
+    const client = {
+      rpc: async () => ({ data: true, error: null }),
+      from: (table: string) => {
+        tables.push(table)
+        if (table === 'leagues') return leaguesFrom
+        if (table === 'profiles') return thenable(opts.peopleError ? { data: null, error: opts.peopleError } : { data: opts.people ?? [], error: null }, (args) => profileIns.push(args))
+        return thenable({ data: opts.rows, error: null })
+      },
+    }
+    return { client: client as never, tables, profileIns }
+  }
+
+  it('a removal receipt carries its people by username — the removed manager too — read in ONE profiles query for the page', async () => {
+    const takeover = row(ID_B, T, { action_type: 'replace_manager', target_type: 'team', before: { manager_user_id: DANA }, after: { manager_user_id: ELI }, metadata: { mode: 'takeover' } })
+    const vacate = row(ID_A, T, { action_type: 'vacate_seat', target_type: 'team', before: { manager_user_id: DANA }, after: { manager_user_id: null }, metadata: { mode: 'vacate' } })
+    const { client, tables, profileIns } = peopleDouble({ rows: [takeover, vacate], people: [{ id: DANA, username: 'dana' }, { id: ELI, username: 'eli' }] })
+    const res = await readCommishLog(client, LEAGUE, {})
+    expect(res.status).toBe(200)
+    const items = (res.body as { items: Array<{ id: string; usernames: Record<string, string> }> }).items
+    expect(items.map((i) => [i.id, i.usernames])).toStrictEqual([[ID_B, { [DANA]: 'dana', [ELI]: 'eli' }], [ID_A, { [DANA]: 'dana' }]])
+    expect(tables.filter((t) => t === 'profiles')).toHaveLength(1)
+    expect(profileIns).toStrictEqual([['id', [DANA, ELI]]])
+  })
+
+  it('a page that names no one reads no profiles; a failed profiles read is a 500 by name — never a receipt that silently lost its names', async () => {
+    const quiet = peopleDouble({ rows: [row(ID_A, T)] })
+    const res = await readCommishLog(quiet.client, LEAGUE, {})
+    expect(res.status).toBe(200)
+    expect((res.body as { items: Array<{ usernames: unknown }> }).items[0].usernames).toStrictEqual({})
+    expect(quiet.tables).not.toContain('profiles')
+
+    const failing = peopleDouble({ rows: [row(ID_A, T, { before: { manager_user_id: DANA } })], peopleError: { message: 'profiles exploded' } })
+    expect(await readCommishLog(failing.client, LEAGUE, {})).toStrictEqual({ status: 500, body: { error: 'profiles: profiles exploded' } })
   })
 })

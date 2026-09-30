@@ -93,6 +93,17 @@
  *     the page starts AT that row and runs older, so a ✸ line's door lands
  *     on its entry (F233(d)); combines with the filters and the cursor.
  *
+ * **THE PEOPLE A RECEIPT NAMES (F549; PROGRESS D465).** A membership
+ * receipt names people by user id (`manager_user_id`, `user_id`,
+ * `commissioner_user_id`, …). The league's member list can name only the
+ * people still in it — and the manager a takeover, a vacate or a retirement
+ * REMOVED is by definition no longer there, so the log could never say who
+ * left. Each item therefore carries `usernames`: every user id its before /
+ * after / metadata holds under a `user_id` / `*_user_id` key, by his current
+ * username, read in ONE extra `profiles` query per page (public identity —
+ * `profiles` is readable by everyone, 001:581). No such id ⇒ no query; a
+ * failed read is a 500 by name, never a receipt that silently lost a name.
+ *
  * No Date/random read anywhere in this file (the `src/lib/leagues/**`
  * ESLint fences): the cursor is the caller's, the ordering is the database's.
  */
@@ -210,6 +221,28 @@ export interface CommishLogItem {
   acting_as_team_id: string | null
   reverts_action_id: string | null
   created_at: string
+  /** F549: user id → current username for every person the receipt names
+   *  (`receiptUserIds`) — including one no longer in the league. Always
+   *  set by this read; optional so a hand-built item (a test, a cached page
+   *  from before F549) still types. */
+  usernames?: Record<string, string>
+}
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** F549: the user ids a receipt names — every top-level `user_id` /
+ *  `*_user_id` key of its before / after / metadata holding a uuid. */
+export function receiptUserIds(row: { before: Json | null; after: Json | null; metadata: Json | null }): string[] {
+  const ids = new Set<string>()
+  for (const doc of [row.before, row.after, row.metadata]) {
+    if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) continue
+    for (const [key, value] of Object.entries(doc)) {
+      if ((key === 'user_id' || key.endsWith('_user_id')) && typeof value === 'string' && UUID_SHAPE.test(value)) {
+        ids.add(value.toLowerCase())
+      }
+    }
+  }
+  return [...ids]
 }
 
 /** The filters a page was read with, echoed (null = not filtered). */
@@ -326,7 +359,19 @@ export async function readCommishLog(
   }
   const rows = data ?? []
   const hasMore = rows.length > limit
-  const items: CommishLogItem[] = rows.slice(0, limit).map((row) => ({
+  const served = rows.slice(0, limit)
+
+  // F549: the people these receipts name, by username — one read per page,
+  // only the ids on it (a page is ≤ 100 rows; each names at most a few).
+  const userIds = [...new Set(served.flatMap((row) => receiptUserIds(row)))]
+  const usernameOf = new Map<string, string>()
+  if (userIds.length > 0) {
+    const { data: people, error: peopleError } = await supabase.from('profiles').select('id, username').in('id', userIds)
+    if (peopleError) return { status: 500, body: { error: `profiles: ${peopleError.message}` } }
+    for (const person of people ?? []) usernameOf.set(person.id.toLowerCase(), person.username)
+  }
+
+  const items: CommishLogItem[] = served.map((row) => ({
     id: row.id,
     action_type: row.action_type,
     actor: { id: row.actor_id, username: row.actor?.username ?? null },
@@ -339,6 +384,12 @@ export async function readCommishLog(
     acting_as_team_id: row.acting_as_team_id,
     reverts_action_id: row.reverts_action_id,
     created_at: row.created_at,
+    usernames: Object.fromEntries(
+      receiptUserIds(row).flatMap((id) => {
+        const username = usernameOf.get(id)
+        return username ? [[id, username] as const] : []
+      }),
+    ),
   }))
   const last = items[items.length - 1]
 

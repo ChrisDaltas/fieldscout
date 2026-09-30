@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
 import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
+import { usernameParts } from '@/components/shared/username-link-ops'
 
 import * as ops from './activity-feed-ops'
 import { COMMISH_LOG_UNNAMED_ACTOR, COMMISSIONER_LABEL, SYSTEM_LABEL, commishLogLines, feedLines, memberNamesOf, transactionText } from './activity-feed-ops'
@@ -300,5 +301,85 @@ describe('commishLogLines — "(for <team>)" and member names (L.E1.34; F518, D4
     expect(text({ action_type: 'promote_member', target_type: 'member', before: { role: 'manager' }, after: { role: 'co_commissioner' }, metadata: { user_id: 'u7' } }, members)).toBe('made dana a co-commissioner')
     expect(text({ action_type: 'promote_member', target_type: 'member', before: { role: 'manager' }, after: { role: 'co_commissioner' }, metadata: { user_id: 'u7' } })).toBe('made a member a co-commissioner')
     expect(memberNamesOf([{ user_id: 'u7', profiles: { username: 'dana' } }, { user_id: null, profiles: null }])).toEqual(new Map([['u7', 'dana']]))
+  })
+})
+
+describe('F549 (D465) — one retirement is ONE feed line; the three removal receipts in words, the removed manager named', () => {
+  const names = new Map([['t2', 'Bravo'], ['t9', 'Team 9']])
+  // 173's retirement, as the feed read serves it: the ledger row and the D97
+  // post, both carrying the ONE receipt written at their instant.
+  const ledger = tx({
+    id: 'retire-tx', type: 'commissioner_move', team_id: null, week: 6, commish_action_id: 'ca-ret',
+    payload: { verb: 'retire_franchise', retired_team_name: 'Bravo', successor_team_name: 'Team 9', retired_at_week: 6, reason: null },
+  })
+  const d97: ActivityItem = {
+    kind: 'system', id: 'retire-post', created_at: '2099-09-10T12:00:00Z', context: 'league', actor_id: 'u1', topic: null, week: null, commish_action_id: 'ca-ret',
+    message: 'Bravo was retired by chris — the franchise is sealed under its final manager; Team 9 takes its slot from Week 6 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))',
+  }
+  const pick = (lines: ReturnType<typeof feedLines>) => lines.map(({ id, kind, text, commissioner, commishActionId }) => ({ id, kind, text, commissioner, commishActionId }))
+
+  it('the ledger row and the post are ONE line — the ledger row’s words, ✸, linked to the receipt — in either order, and with other rows between', () => {
+    const want = [{ id: 'retire-tx', kind: 'transaction', text: 'retired Bravo — Team 9 takes its place from Week 6', commissioner: true, commishActionId: 'ca-ret' }]
+    expect(pick(feedLines([ledger, d97], names))).toEqual(want)
+    expect(pick(feedLines([d97, ledger], names))).toEqual(want)
+    // A pair split by a page boundary folds once both pages are loaded (feedLines runs over every page).
+    expect(pick(feedLines([d97, tx({ id: 'other' }), ledger], names)).filter((l) => l.id !== 'other')).toEqual(want)
+  })
+
+  const item = (over: Partial<CommishLogItem>): CommishLogItem => ({
+    id: 'ca', action_type: 'retire_franchise', actor: { id: 'u1', username: 'chris' }, target_type: 'team', target_id: 't2', reason: null,
+    before: null, after: null, metadata: null, acting_as_team_id: null, reverts_action_id: null, created_at: '2099-09-14T18:00:00.000Z', ...over,
+  })
+  // 173's receipts, key for key (before / after = the seat before and after; metadata = mode, member, team name).
+  const retire = item({
+    before: { manager_user_id: 'u7', team_status: 'active' },
+    after: { manager_user_id: null, team_status: 'retired', successor_team_id: 't9', successor_team_name: 'Team 9', retired_at_week: 6 },
+    metadata: { mode: 'retire', member_id: 'm2', team_name: 'Bravo', affected_team_ids: ['t2', 't9'] },
+    usernames: { u7: 'dana' },
+  })
+  const vacate = item({
+    action_type: 'vacate_seat', before: { manager_user_id: 'u7', team_status: 'active' }, after: { manager_user_id: null, team_status: 'orphaned' },
+    metadata: { mode: 'vacate', member_id: 'm2', team_name: 'Bravo', affected_team_ids: ['t2'] }, usernames: { u7: 'dana' },
+  })
+  const takeover = item({
+    action_type: 'replace_manager', before: { manager_user_id: 'u7', team_status: 'active' }, after: { manager_user_id: 'u8', team_status: 'active' },
+    metadata: { mode: 'takeover', member_id: 'm2', team_name: 'Bravo', affected_team_ids: ['t2'] }, usernames: { u7: 'dana', u8: 'eli' },
+  })
+  // The league's CURRENT members: the removed manager is not among them.
+  const members = new Map([['u1', 'chris'], ['u8', 'eli']])
+  const linked = (marked: string) => usernameParts(marked).flatMap((p) => (typeof p === 'string' ? [] : [p.username]))
+
+  it('each receipt in plain words, naming the manager who left although the member list no longer has him — each name a profile link', () => {
+    const lines = commishLogLines([retire, vacate, takeover], names, members)
+    expect(lines.map((l) => l.text)).toEqual([
+      'retired Bravo (managed by dana) — Team 9 takes its place from Week 6',
+      'removed dana as Bravo’s manager — the team has no manager now',
+      'replaced Bravo’s manager: dana → eli',
+    ])
+    expect(lines.map((l) => linked(l.marked))).toEqual([['dana'], ['dana'], ['dana', 'eli']])
+    expect(lines.map((l) => [l.actor, l.actorUsername])).toEqual([['chris', 'chris'], ['chris', 'chris'], ['chris', 'chris']])
+    for (const line of lines) expect(line.text).not.toMatch(new RegExp(`${UNKNOWN_ACTION_WORDS}|_`))
+  })
+
+  it('after the season the retirement says so; an unmanaged seat’s retirement names no one; a name that cannot be found is left out, never "undefined"', () => {
+    const complete = { ...retire, after: { ...(retire.after as Record<string, unknown>), retired_at_week: null } } as CommishLogItem
+    expect(commishLogLines([complete], names, members)[0].text).toBe('retired Bravo (managed by dana) — Team 9 takes its place after the season')
+    const unmanaged = { ...retire, before: { manager_user_id: null, team_status: 'orphaned' } }
+    expect(commishLogLines([unmanaged], names, members)[0].text).toBe('retired Bravo — Team 9 takes its place from Week 6')
+    const lost = (i: CommishLogItem) => commishLogLines([{ ...i, usernames: {} }], names, new Map())[0].text
+    expect([lost(retire), lost(vacate), lost(takeover)]).toEqual([
+      'retired Bravo — Team 9 takes its place from Week 6',
+      'removed Bravo’s manager — the team has no manager now',
+      'replaced Bravo’s manager',
+    ])
+    expect(commishLogLines([{ ...takeover, usernames: { u8: 'eli' } }], names, new Map())[0].text).toBe('made eli the new manager of Bravo')
+    expect(commishLogLines([{ ...takeover, usernames: { u7: 'dana' } }], names, new Map())[0].text).toBe('replaced dana as Bravo’s manager')
+  })
+
+  it('R1403 holds: a team name carrying the marks forges no link; a username from the log read is marked only where the sentence names him', () => {
+    const forged = new Map([['t2', 'victim'], ['t9', 'Team 9']])
+    const line = commishLogLines([retire], forged, members)[0]
+    expect(linked(line.marked)).toEqual(['dana'])
+    expect(line.text).toBe('retired victim (managed by dana) — Team 9 takes its place from Week 6')
   })
 })

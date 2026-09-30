@@ -213,6 +213,19 @@ describe('the commissioner log (League Home, the console, the Activity page) —
     expect(out).toContain('moved Joe from .. to Bravo')
     expect(out).toContain('vetoed a trade: Alpha gives victim_gm')
   })
+  it('F549: a retirement, a vacate and a takeover name the manager who left — no longer a member, named by the log read — as a door, with the actor', () => {
+    const seat = (action_type: string, after: Record<string, string | number | null>, usernames: Record<string, string>) =>
+      item({ id: `ca-${action_type}`, action_type, target_type: 'team', target_id: 't2', before: { manager_user_id: 'user-gone', team_status: 'active' }, after, metadata: { mode: action_type, team_name: 'Bravo' }, usernames })
+    const out = render([
+      seat('retire_franchise', { manager_user_id: null, team_status: 'retired', successor_team_id: 't9', successor_team_name: 'Team 9', retired_at_week: 6 }, { 'user-gone': 'ex_gm' }),
+      seat('vacate_seat', { manager_user_id: null, team_status: 'orphaned' }, { 'user-gone': 'ex_gm' }),
+      seat('replace_manager', { manager_user_id: 'user-d', team_status: 'active' }, { 'user-gone': 'ex_gm', 'user-d': 'dana' }),
+    ])
+    expect(out).toMatch(/href="\/u\/chris">chris<\/a> retired Bravo \(managed by <a data-username-link="ex_gm"[^>]*href="\/u\/ex_gm">ex_gm<\/a>\) — Team 9 takes its place from Week 6/)
+    expect(out).toMatch(/href="\/u\/chris">chris<\/a> removed <a data-username-link="ex_gm"[^>]*href="\/u\/ex_gm">ex_gm<\/a> as Bravo’s manager — the team has no manager now/)
+    expect(out).toMatch(/href="\/u\/chris">chris<\/a> replaced Bravo’s manager: <a data-username-link="ex_gm"[^>]*>ex_gm<\/a> → <a data-username-link="dana"[^>]*href="\/u\/dana">dana<\/a>/)
+    expect(out.match(/data-username-link=/g)).toHaveLength(7) // 3 actors + ex_gm ×3 + dana
+  })
   it('a receipt with no named actor reads "A commissioner" — plain, never a dead link', () => {
     const out = render([item({ actor: { id: 'user-x', username: null } })])
     expect(out).toContain('<span class="font-bold">A commissioner</span>')
