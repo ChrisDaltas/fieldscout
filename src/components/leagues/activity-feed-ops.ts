@@ -130,7 +130,9 @@ export function tradeTransactionText(type: string, payload: TradePayloadShape): 
 /** A retirement's ledger row (120 / 173: a `commissioner_move` whose payload
  *  is the verb's own result, `verb = 'retire_franchise'`) — F262(a), L.E1.40:
  *  the retired team, the team that takes its place and from when, from the
- *  stored payload; never a bare "Commissioner move". */
+ *  stored payload; never a bare "Commissioner move". HISTORY ONLY since 176
+ *  (L.E1.42 — a team is never retired): no verb writes one any more, but a
+ *  row written before it is immutable and still reads. */
 interface RetirePayloadShape {
   verb?: unknown
   retired_team_name?: unknown

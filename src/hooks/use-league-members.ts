@@ -5,12 +5,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 
 import { invalidateCommishLog } from './use-commish-log'
-import { leagueActivityKeys } from './use-league-activity'
 import { leagueInvitesKeys } from './use-league-invites'
 import { leaguesKeys } from './use-leagues'
-import { leagueMatchupKeys } from './use-matchups'
-import { leagueRosterKeys } from './use-rosters'
-import { leagueStandingsKeys } from './use-standings'
 
 /**
  * Member-management mutations for the invite panel (M1 task L.A2.5) — all over
@@ -29,7 +25,9 @@ import { leagueStandingsKeys } from './use-standings'
  * invites query (an assign/claim can consume a seat's pending invite).
  */
 
-export type RemoveMode = 'takeover' | 'vacate' | 'retire'
+/** The two outcomes when a manager goes (§7.2.1; L.E1.42 — Chris 2026-10-01:
+ *  a team is never retired, "you can change the manager but the Team lives"). */
+export type RemoveMode = 'takeover' | 'vacate'
 
 function useInvalidateMembers(leagueId: string) {
   const queryClient = useQueryClient()
@@ -101,48 +99,30 @@ export interface RemoveManagerInput {
   reason?: string
 }
 
-/** The DELETE body for one submit (§15.1). `retire` carries an `action_id`
- *  — one per submit, never reused by a new gesture (120's replay stamp; the
- *  route refuses a retire without one and refuses one on the other modes).
- *  Pure: the id is handed in, so the shape is testable. */
-export function removeManagerBody(input: RemoveManagerInput, actionId: string): Record<string, string> {
+/** The DELETE body for one submit (§15.1). Pure, so the shape is testable. */
+export function removeManagerBody(input: RemoveManagerInput): Record<string, string> {
   const reason = input.reason?.trim()
   return {
     mode: input.mode,
     ...(input.successorUserId ? { successor_user_id: input.successorUserId } : {}),
     ...(reason ? { reason } : {}),
-    ...(input.mode === 'retire' ? { action_id: actionId } : {}),
   }
 }
 
 /** DELETE /api/leagues/[id]/members/[mid] — remove a manager via the D42
- *  chooser: takeover (a successor), vacate (→ an open seat) or retire (the
- *  team is sealed and a successor team takes its place — §7.2.1(b)).
- *
- *  NOT retried (`retry: false` — a retire's `action_id` is consumed by its
- *  submit). A retirement moves the roster, the team list, this and later
- *  weeks' matchups and the standings' seeding, so on success the rosters,
- *  matchups, standings and activity re-read too. */
+ *  chooser: takeover (a new manager inherits the team whole) or vacate (the
+ *  team stays, with an open seat the commissioner runs). NOT retried — a
+ *  removal is one gesture. */
 export function useRemoveManager(leagueId: string) {
   const invalidate = useInvalidateMembers(leagueId)
-  const queryClient = useQueryClient()
   return useMutation({
     retry: false,
     mutationFn: (input: RemoveManagerInput) =>
       sendLeagueAction(
         `/api/leagues/${leagueId}/members/${input.memberId}`,
-        // One action_id per submit (D68(1)); a new submit is a new id (R815).
-        jsonInit('DELETE', removeManagerBody(input, crypto.randomUUID())),
+        jsonInit('DELETE', removeManagerBody(input)),
       ),
-    onSuccess: (_data, input) => {
-      invalidate()
-      if (input.mode === 'retire') {
-        void queryClient.invalidateQueries({ queryKey: leagueRosterKeys.all(leagueId) })
-        void queryClient.invalidateQueries({ queryKey: leagueMatchupKeys.all(leagueId) })
-        void queryClient.invalidateQueries({ queryKey: leagueStandingsKeys.all(leagueId) })
-        void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
-      }
-    },
+    onSuccess: invalidate,
   })
 }
 

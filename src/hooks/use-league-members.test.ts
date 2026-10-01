@@ -1,9 +1,8 @@
 /**
- * use-league-members.test.ts — L.E1.40 (F262(a) / F546; PROGRESS D461): the
- * remove chooser's DELETE body. A retirement carries ONE `action_id` per
- * submit (120's replay stamp — the route refuses a retire without one and one
- * on the other modes); the reason is optional and blank never reaches the
- * wire (Q66).
+ * use-league-members.test.ts — the remove chooser's DELETE body. L.E1.42
+ * (Chris 2026-10-01; PROGRESS D467): there are two outcomes, takeover and
+ * vacate — no retire, so no `action_id`. The reason is optional and blank
+ * never reaches the wire (Q66).
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -12,34 +11,29 @@ import { describe, expect, it } from 'vitest'
 
 import { removeManagerBody } from './use-league-members'
 
-const ID = 'a0000000-0000-4000-8000-000000000001'
-
 describe('removeManagerBody — the §15.1 DELETE body per outcome', () => {
-  it('retire carries the action_id and no reason when none was typed', () => {
-    expect(removeManagerBody({ memberId: 'm', mode: 'retire' }, ID)).toEqual({ mode: 'retire', action_id: ID })
-    expect(removeManagerBody({ memberId: 'm', mode: 'retire', reason: '   ' }, ID)).toEqual({ mode: 'retire', action_id: ID })
-  })
-
-  it('retire with a reason sends it trimmed', () => {
-    expect(removeManagerBody({ memberId: 'm', mode: 'retire', reason: '  moving away ' }, ID)).toEqual({
-      mode: 'retire',
-      reason: 'moving away',
-      action_id: ID,
-    })
-  })
-
-  it('takeover and vacate never carry an action_id (the route refuses one there)', () => {
-    expect(removeManagerBody({ memberId: 'm', mode: 'takeover', successorUserId: 'u' }, ID)).toEqual({
+  it('takeover carries the successor; vacate carries only its mode', () => {
+    expect(removeManagerBody({ memberId: 'm', mode: 'takeover', successorUserId: 'u' })).toEqual({
       mode: 'takeover',
       successor_user_id: 'u',
     })
-    expect(removeManagerBody({ memberId: 'm', mode: 'vacate', reason: 'x' }, ID)).toEqual({ mode: 'vacate', reason: 'x' })
+    expect(removeManagerBody({ memberId: 'm', mode: 'vacate' })).toEqual({ mode: 'vacate' })
   })
 
-  it('the hook mints a fresh id per submit and never retries (an action_id is consumed by its submit)', () => {
+  it('a reason is sent trimmed; a blank one is dropped', () => {
+    expect(removeManagerBody({ memberId: 'm', mode: 'vacate', reason: '  moving away ' })).toEqual({
+      mode: 'vacate',
+      reason: 'moving away',
+    })
+    expect(removeManagerBody({ memberId: 'm', mode: 'vacate', reason: '   ' })).toEqual({ mode: 'vacate' })
+  })
+
+  it('L.E1.42: the hook offers no retire — no action_id is minted, and the mutation never retries', () => {
     const source = readFileSync(path.join(__dirname, 'use-league-members.ts'), 'utf8')
     const hook = source.slice(source.indexOf('export function useRemoveManager'), source.indexOf('export function useLeaveLeague'))
-    expect(hook).toContain('removeManagerBody(input, crypto.randomUUID())')
+    expect(hook).toContain('removeManagerBody(input)')
+    expect(hook).not.toContain('randomUUID')
     expect(hook).toContain('retry: false')
+    expect(source).toContain("export type RemoveMode = 'takeover' | 'vacate'\n")
   })
 })

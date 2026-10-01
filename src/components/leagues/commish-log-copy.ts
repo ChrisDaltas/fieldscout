@@ -90,7 +90,7 @@ export const COMMISH_ACTION_WORDS: Readonly<Record<string, string>> = {
   add_seat: 'added a team to the league',
   assign_manager: 'gave a team a manager',
   replace_manager: 'replaced a team’s manager',
-  retire_franchise: 'retired a team',
+  retire_franchise: 'retired a team', // history only — no verb writes it since 176 (L.E1.42); an old receipt still reads
   vacate_seat: 'removed a team’s manager',
   promote_member: 'made a member a co-commissioner',
   demote_member: 'removed a co-commissioner',

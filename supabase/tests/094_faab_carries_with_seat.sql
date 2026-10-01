@@ -225,29 +225,26 @@ select results_eq(
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-create temp table _ret4 as
-select public.remove_manager('b4000000-0000-4000-8000-000000000004', 'd4000000-0000-4000-8000-000000000045',
-                             'retire', null, 'pgtap retire', 'a4000000-0000-4000-8000-000000000045') as r;
+-- RE-CUT BY 176 (M6 L.E1.42 — Chris 2026-10-01: a team is never retired;
+-- "yes drop it"). D6–D8 pinned retire-and-succeed carrying the balance to a
+-- minted successor; retire is now refused by name and the seat keeps its
+-- manager, its team and its 40.
+select throws_ok(
+  $$ select public.remove_manager('b4000000-0000-4000-8000-000000000004', 'd4000000-0000-4000-8000-000000000045',
+                                  'retire', null, 'pgtap retire', 'a4000000-0000-4000-8000-000000000045') $$,
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'D6 RE-CUT (176): retiring the team is refused BY NAME (was: the seat row fronted a minted successor with 40)');
 reset role;
 select results_eq(
-  $$ select lm.user_id is null, lm.is_placeholder, lm.team_id = ((select r ->> 'successor_team_id' from _ret4))::uuid, lm.faab_balance
+  $$ select lm.user_id is not null, lm.is_placeholder, lm.faab_balance
      from league_members lm where lm.id = 'd4000000-0000-4000-8000-000000000045' $$,
-  $$ values (true, true, true, 40) $$,
-  'D6 retire-and-succeed: the seat row fronts the successor franchise with 40 (E49 inherits FAAB; 120 untouched)');
-
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select public.assign_manager('b4000000-0000-4000-8000-000000000004',
-                             ((select r ->> 'successor_team_id' from _ret4))::uuid,
-                             '94000000-0000-4000-8000-000000000009');
-reset role;
-select results_eq(
-  $$ select lm.user_id, lm.is_placeholder, lm.faab_balance from league_members lm where lm.id = 'd4000000-0000-4000-8000-000000000045' $$,
-  $$ values ('94000000-0000-4000-8000-000000000009'::uuid, false, 40) $$,
-  'D7 retire + seating the successor: the new manager inherits 40');
+  $$ values (true, false, 40) $$,
+  'D7 RE-CUT (176): …the seat keeps its manager and its 40 (was: the successor manager inherited 40)');
 select is(
-  (select r -> 'inherits' ->> 'faab' from _ret4), 'seat_balance_kept',
-  'D8 the retire payload still names the FAAB inheritance (120 byte-identical)');
+  (select count(*)::int from teams t where t.league_id = 'b4000000-0000-4000-8000-000000000004'
+     and (t.status = 'retired' or t.successor_team_id is not null)),
+  0,
+  'D8 RE-CUT (176): …and no team was sealed or succeeded (was: the payload named the FAAB inheritance)');
 
 -- ---------------------------------------------------------------------------
 -- E. PRE-DRAFT UNCHANGED (league 1, setup) — every path re-seeds.
@@ -377,8 +374,8 @@ select is(
   (select string_agg(t.name || '=' || lm.faab_balance, ' ' order by t.name collate "C")
    from league_members lm join teams t on t.id = lm.team_id
    where lm.league_id = 'b4000000-0000-4000-8000-000000000004'),
-  'FC4 Commish=100 FC4 Leave=40 FC4 Occupied=40 FC4 Takeover=40 FC4 Vacate=40 Team 8=40',
-  'H1 in season: every seat balance after takeover, vacate + assign, leave + claim, retire + seat and both refusals — no seat was handed a fresh budget');
+  'FC4 Commish=100 FC4 Leave=40 FC4 Occupied=40 FC4 Retire=40 FC4 Takeover=40 FC4 Vacate=40',
+  'H1 RE-CUT (176 — the retire seat keeps its own team, FC4 Retire, where Team 8 the successor was): every seat balance after takeover, vacate + assign, leave + claim, the refused retire and both refusals — no seat was handed a fresh budget');
 select is(
   (select string_agg(t.name || '=' || lm.faab_balance, ' ' order by t.name collate "C")
    from league_members lm join teams t on t.id = lm.team_id
