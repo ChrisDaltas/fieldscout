@@ -94,6 +94,11 @@
   body {
     color-scheme: light;
     font-weight: 500; /* body weight per the design system */
+    /* Numerals share the UI face; .fs-num adds tabular digits. */
+    --font-mono: var(--font-sans);
+    /* Inter Display at every size, not just Inter's 32px+ auto switch. */
+    font-optical-sizing: none;
+    font-variation-settings: 'opsz' 32;
   }
   /* Heavy, tight headings — the system's defining trait. Unitless 1.25
      line-height so inline-sized headings keep their descenders. */
