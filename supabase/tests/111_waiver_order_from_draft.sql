@@ -42,7 +42,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(35);
+select plan(36);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 163 replaces nothing
@@ -332,39 +332,43 @@ select is(
 
 -- ---------------------------------------------------------------------------
 -- F. A seat change keeps the team place — takeover, vacate + assign, and
---    retire-and-succeed, through the real verbs
+--    (retire refused since 176), through the real verbs
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "91110000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select public.remove_manager(pg_temp.lg('e'), 'd1110000-0000-4000-8000-0000000000e2', 'takeover', '91110000-0000-4000-8000-000000000005');
 select public.remove_manager(pg_temp.lg('e'), 'd1110000-0000-4000-8000-0000000000e3', 'vacate');
 select public.assign_manager(pg_temp.lg('e'), 'c1110000-0000-4000-8000-0000000000e3', '91110000-0000-4000-8000-000000000006');
-create temp table _ret as
-select public.remove_manager(pg_temp.lg('e'), 'd1110000-0000-4000-8000-0000000000e4',
-                             'retire', null, 'pgtap retire', 'a1110000-0000-4000-8000-0000000000f4') as r;
-select public.assign_manager(pg_temp.lg('e'), ((select r ->> 'successor_team_id' from _ret))::uuid, '91110000-0000-4000-8000-000000000007');
+-- RE-CUT BY 176 (M6 L.E1.42 — Chris 2026-10-01: a team is never retired).
+-- D's retire-and-succeed is refused by name (F0, new); D keeps its manager,
+-- its team and its place (F1 / F2 re-cut).
+select throws_ok(
+  $$ select public.remove_manager(pg_temp.lg('e'), 'd1110000-0000-4000-8000-0000000000e4',
+                                  'retire', null, 'pgtap retire', 'a1110000-0000-4000-8000-0000000000f4') $$,
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'F0 NEW (176): retiring D is refused BY NAME');
 reset role;
 select is(
   (select format('%s|%s|%s|%s',
      (select user_id from league_members where id = 'd1110000-0000-4000-8000-0000000000e2'),
      (select user_id from league_members where id = 'd1110000-0000-4000-8000-0000000000e3'),
-     (select team_id = ((select r ->> 'successor_team_id' from _ret))::uuid from league_members where id = 'd1110000-0000-4000-8000-0000000000e4'),
+     (select team_id = 'c1110000-0000-4000-8000-0000000000e4'::uuid and user_id is not null from league_members where id = 'd1110000-0000-4000-8000-0000000000e4'),
      (select status from teams where id = 'c1110000-0000-4000-8000-0000000000e4'))),
-  '91110000-0000-4000-8000-000000000005|91110000-0000-4000-8000-000000000006|t|retired',
-  'F1 PREMISE: B taken over, C vacated and re-assigned, D retired with its seat fronting the successor');
+  '91110000-0000-4000-8000-000000000005|91110000-0000-4000-8000-000000000006|t|active',
+  'F1 RE-CUT (176) PREMISE: B taken over, C vacated and re-assigned, D unchanged — its own team and manager, active (was: D retired, its seat fronting the successor)');
 select is(
   pg_temp.prio(pg_temp.lg('e')),
   'C=1 B=2 D=3 A=4',
-  'F2 every team keeps its place through the seat changes — the successor holds D place');
+  'F2 every team keeps its place through the seat changes — D holds its place (re-cut by 176: no successor)');
 
 select pg_temp.claim('e31', 1, 'wo-z', 1);    -- A $1 on Z
-select pg_temp.claim('e34', 4, 'wo-z', 1);    -- the successor $1 on Z
+select pg_temp.claim('e34', 4, 'wo-z', 1);    -- D $1 on Z
 insert into r111 select 'R3', public.process_waivers_internal(pg_temp.lg('e'), '2026-11-03 12:00:00+00');
 select is(
   format('%s|%s|%s|%s', (select r ->> 'status' from r111 where tag = 'R3'), (select r #>> '{priority,source}' from r111 where tag = 'R3'),
          pg_temp.claims(pg_temp.lg('e'), 'wo-z'), pg_temp.prio(pg_temp.lg('e'))),
   'settled|rolling|A:lost:lost_on_priority D:won|C=1 B=2 A=3 D=4',
-  'F3 R3 runs on the carried order: the successor (#3) beats A (#4) on the tie and goes to the back');
+  'F3 R3 runs on the carried order: D (#3) beats A (#4) on the tie and goes to the back');
 
 -- ---------------------------------------------------------------------------
 -- G. The backfill — leagues already in season with no stored order

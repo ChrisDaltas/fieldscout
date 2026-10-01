@@ -1,26 +1,20 @@
 /**
- * members-retire-api-db.test.ts — M6 L.E1.40 (F262(a) / F546 / F363(a);
- * PROGRESS D461) at the SERVICE layer: "Retire the team" through the members
- * route (`DELETE …/members/[mid]` → `removeMember` → `remove_manager(mode =
- * retire)`, migration 173) against the LOCAL Supabase stack over PostgREST,
- * with real signed-in clients.
- *
- * pgTAP 121 / 068 cover the verb DB-side. What THIS suite proves is the
- * layer above it:
- *   - the route now carries the retire `action_id` (the verb refuses without
- *     one) — required for retire, refused on the other modes, at the schema;
- *   - NO reason retires the team (Q66 / 173): 200, the payload reason null,
- *     ONE receipt with a NULL reason, ONE ledger row, the league post with no
- *     "— reason:" clause;
- *   - the replay: the same body (even with the id upper-cased — R768) returns
- *     the stored payload byte for byte and writes nothing more; the same id
- *     on ANOTHER seat is the verb's refusal by name, nothing written;
- *   - a manager gets the family's 403; the playoffs refuse by name (Q41).
- *   - F549 (PROGRESS D465): the retirement is ONE line in League Home's
- *     activity and the Activity page's All tab — the ledger row, ✸-linked to
- *     its receipt; the D97 post it also wrote folds into it — and the log
- *     names each removal (retire / vacate / takeover) with the manager who
- *     left, although he is no longer in the league's member list.
+ * members-retire-api-db.test.ts — the members route's removal outcomes
+ * against the LOCAL Supabase stack over PostgREST, with real signed-in
+ * clients. Born with M6 L.E1.40 ("Retire the team"); RE-CUT BY L.E1.42
+ * (Chris 2026-10-01: "you can't simply retire a Team, you can change the
+ * manager but the Team lives" / "yes drop it"; PROGRESS D467, migration 176):
+ *   - the route refuses `mode: retire` itself, 400 in plain words, before
+ *     any database call — for the commissioner and anyone else, with or
+ *     without an action id or a reason, in season and in the playoffs —
+ *     and nothing is written (so main says the same before 176 is pushed);
+ *   - the verb, called straight over PostgREST, refuses by name too (176);
+ *   - F549 (PROGRESS D465), now over a PLANTED pre-176 retirement (176
+ *     cannot write one; a receipt is immutable, so an old one must still
+ *     read): ONE line in League Home's activity and the Activity page's All
+ *     tab — the ledger row, ✸-linked to its receipt, its D97 post folded in
+ *     — and the log names each removal (the old retirement / vacate /
+ *     takeover) with the manager it names.
  *   - F555 (migration 175): the commissioner's own client cannot append a
  *     receipt at all (42501 by name, nothing written); the log read's
  *     hardening against a forged row is still proven, on a row planted as
@@ -44,7 +38,7 @@ import { plainText, usernameParts } from '@/components/shared/username-link-ops'
 
 import { readActivity, type ActivityItem } from './activity-service'
 import { readCommishLog, type CommishLogItem } from './commish-log-service'
-import { removeMember } from './members-service'
+import { RETIRE_REMOVED_MESSAGE, removeMember } from './members-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -70,7 +64,10 @@ const ACTION = {
   noId: 'e1400000-0000-4000-8000-000000000002',
   playoffs: 'e1400000-0000-4000-8000-000000000003',
   manager: 'e1400000-0000-4000-8000-000000000004',
+  planted: 'e1400000-0000-4000-8000-000000000005',
 } as const
+
+const RETIRE_400 = { status: 400, body: { error: RETIRE_REMOVED_MESSAGE } }
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
@@ -206,99 +203,84 @@ afterAll(async () => {
   expect(data ?? []).toHaveLength(0)
 })
 
-describe('DELETE …/members/[mid] mode retire — the route carries the action_id; the reason is optional', () => {
-  it('a manager gets the family 403 and nothing is written', async () => {
-    const mid = await memberIdOf(leagueId, ids.b)
-    const res = await removeMember(mgrAClient, leagueId, mid, ids.a, { mode: 'retire', action_id: ACTION.manager })
-    expect(res.status).toBe(403)
-    expect(errorText(res)).toContain('Only the commissioner can remove a manager.')
-    expect(await trail()).toEqual({ receipts: [], ledger: 0, posts: [] })
-  })
-
-  it('retire WITHOUT an action_id is a 400 at the schema, naming it — the verb is never reached', async () => {
+describe('DELETE …/members/[mid] mode retire — refused by the route in plain words, nothing written (L.E1.42)', () => {
+  it('the commissioner: with an action id, without one, with a reason — each a 400 naming the two outcomes; nothing written', async () => {
     const mid = await memberIdOf(leagueId, ids.a)
-    const res = await removeMember(commishClient, leagueId, mid, commishId, { mode: 'retire' })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toContain('action_id')
-    expect(errorText(res)).toContain('Retiring a team needs an action_id')
+    for (const body of [
+      { mode: 'retire', action_id: ACTION.retireA },
+      { mode: 'retire' },
+      { mode: 'retire', action_id: ACTION.noId, reason: 'moving away' },
+    ]) {
+      expect(await removeMember(commishClient, leagueId, mid, commishId, body)).toEqual(RETIRE_400)
+    }
+    expect(RETIRE_REMOVED_MESSAGE).toBe('A team can’t be retired — seat a new manager or leave it vacant.')
+    expect(await trail()).toEqual({ receipts: [], ledger: 0, posts: [] })
+    const { data: team } = await service.from('teams').select('status, retired_at_week, successor_team_id').eq('id', teamA).single()
+    expect(team).toEqual({ status: 'active', retired_at_week: null, successor_team_id: null })
+    const { data: seat } = await service.from('league_members').select('user_id, team_id').eq('id', mid).single()
+    expect(seat).toEqual({ user_id: ids.a, team_id: teamA })
+  })
+
+  it('a manager and the playoffs: the same 400 (the route never asks the verb)', async () => {
+    const mid = await memberIdOf(leagueId, ids.b)
+    expect(await removeMember(mgrAClient, leagueId, mid, ids.a, { mode: 'retire', action_id: ACTION.manager })).toEqual(RETIRE_400)
+    const playoffMid = await memberIdOf(playoffLeagueId, ids.a)
+    expect(await removeMember(commishClient, playoffLeagueId, playoffMid, commishId, { mode: 'retire', action_id: ACTION.playoffs })).toEqual(RETIRE_400)
     expect(await trail()).toEqual({ receipts: [], ledger: 0, posts: [] })
   })
 
-  it('an action_id on a vacate is refused at the schema (a stamp that stamps nothing)', async () => {
+  it('an action_id on a vacate is refused at the schema (no mode takes one any more)', async () => {
     const mid = await memberIdOf(leagueId, ids.a)
     const res = await removeMember(commishClient, leagueId, mid, commishId, { mode: 'vacate', action_id: ACTION.noId })
     expect(res.status).toBe(400)
-    expect(errorText(res)).toContain('action_id only applies to retiring a team.')
+    expect(errorText(res)).toContain('action_id')
   })
 
-  it('the commissioner retires A’s team with NO reason: 200, reason null, ONE receipt (NULL reason), ONE ledger row, the post with no reason clause', async () => {
+  it('migration 176: the verb itself, called straight over PostgREST, refuses retire by name — nothing written', async () => {
     const mid = await memberIdOf(leagueId, ids.a)
-    const res = await removeMember(commishClient, leagueId, mid, commishId, { mode: 'retire', action_id: ACTION.retireA })
-    expect(res.status, errorText(res)).toBe(200)
-    const body = res.body as Record<string, unknown>
-    expect({
-      verb: body.verb,
-      action_id: body.action_id,
-      member_id: body.member_id,
-      retired_team_id: body.retired_team_id,
-      retired_team_name: body.retired_team_name,
-      successor_team_name: body.successor_team_name,
-      retired_at_week: body.retired_at_week,
-      reason: body.reason,
-    }).toEqual({
-      verb: 'retire_franchise',
-      action_id: ACTION.retireA,
-      member_id: mid,
-      retired_team_id: teamA,
-      retired_team_name: 'MRET T2',
-      successor_team_name: 'Team 5',
-      retired_at_week: 3,
-      reason: null,
+    const { data, error } = await commishClient.rpc('remove_manager', {
+      p_league_id: leagueId, p_member_id: mid, p_mode: 'retire', p_action_id: ACTION.retireA,
     })
-    expect(await trail()).toEqual({
-      receipts: [{ target_id: teamA, reason: null }],
-      ledger: 1,
-      posts: [
-        'MRET T2 was retired by mret_commish_one — the franchise is sealed under its final manager; Team 5 takes its slot from Week 3 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))',
-      ],
-    })
-    const { data: sealed } = await service.from('teams').select('status, retired_at_week').eq('id', teamA).single()
-    expect(sealed).toEqual({ status: 'retired', retired_at_week: 3 })
-  })
-
-  it('REPLAY: the same body — even with the id upper-cased (R768) — returns the stored payload byte for byte and writes nothing more', async () => {
-    // After the retirement the seat row fronts the new team (one row per seat, §12.2).
-    const { data: successor } = await service.from('teams').select('id').eq('league_id', leagueId).eq('name', 'Team 5').single()
-    const mid = await memberIdOf(leagueId, null, successor!.id)
-    const first = await service.from('transactions').select('payload').eq('league_id', leagueId).eq('action_id', ACTION.retireA).single()
-    const res = await removeMember(commishClient, leagueId, mid, commishId, {
-      mode: 'retire',
-      action_id: ACTION.retireA.toUpperCase(),
-      reason: 'a reason on the retry',
-    })
-    expect(res.status, errorText(res)).toBe(200)
-    expect(res.body).toEqual(first.data!.payload)
-    expect((await trail()).receipts).toHaveLength(1)
-    expect((await trail()).ledger).toBe(1)
-  })
-
-  it('the same action_id on ANOTHER seat is the verb’s refusal by name — B stays seated, nothing written', async () => {
-    const mid = await memberIdOf(leagueId, ids.b)
-    const res = await removeMember(commishClient, leagueId, mid, commishId, { mode: 'retire', action_id: ACTION.retireA })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toContain(`action_id ${ACTION.retireA} already names another action in this league`)
-    const { data: seat } = await service.from('league_members').select('user_id, team_id').eq('id', mid).single()
-    expect(seat).toEqual({ user_id: ids.b, team_id: teamB })
-    expect((await trail()).ledger).toBe(1)
-  })
-
-  it('the playoffs still refuse by name (pending Q41) — with no reason too', async () => {
-    const mid = await memberIdOf(playoffLeagueId, ids.a)
-    const res = await removeMember(commishClient, playoffLeagueId, mid, commishId, { mode: 'retire', action_id: ACTION.playoffs })
-    expect(res.status).toBe(400)
-    expect(errorText(res)).toContain('retiring a franchise during the playoffs is not defined yet')
+    expect(data).toBeNull()
+    expect([error?.code, error?.message]).toEqual(['P0001', 'remove_manager: a team can\'t be retired — seat a new manager or leave it vacant (§7.2.1)'])
+    expect(await trail()).toEqual({ receipts: [], ledger: 0, posts: [] })
   })
 })
+
+/** A retirement COMMITTED BEFORE 176, planted as the service role (176 cannot
+ *  write one; production holds none — measured 2026-10-01): its receipt, its
+ *  ledger row and its D97 post at the receipt’s
+ *  instant, in 173's shapes. History the log and the feed must still read. */
+async function plantPre176Retirement(): Promise<string> {
+  const mid = await memberIdOf(leagueId, ids.a)
+  const { data: receipt, error: receiptError } = await service
+    .from('commissioner_actions')
+    .insert({
+      league_id: leagueId, actor_id: commishId, action_type: 'retire_franchise', target_type: 'team', target_id: teamA,
+      before: { manager_user_id: ids.a, team_status: 'active' },
+      after: { manager_user_id: null, team_status: 'retired', successor_team_name: 'Team 5', retired_at_week: 3 },
+      metadata: { mode: 'retire', member_id: mid, team_name: 'MRET T2', affected_team_ids: [teamA], action_id: ACTION.planted },
+    })
+    .select('id, created_at')
+    .single()
+  if (receiptError) throw new Error(`plant receipt: ${receiptError.message}`)
+  const { error: ledgerError } = await service.from('transactions').insert({
+    league_id: leagueId, type: 'commissioner_move', status: 'complete', action_id: ACTION.planted,
+    created_at: receipt.created_at, // the receipt instant links them (related_action_id is guarded to a verb — TD10)
+    payload: {
+      ok: true, mode: 'retire', verb: 'retire_franchise', action_id: ACTION.planted, member_id: mid,
+      retired_team_id: teamA, retired_team_name: 'MRET T2', successor_team_name: 'Team 5', retired_at_week: 3, reason: null,
+    },
+  })
+  if (ledgerError) throw new Error(`plant ledger: ${ledgerError.message}`)
+  const { error: postError } = await service.from('league_chat').insert({
+    league_id: leagueId, user_id: commishId, is_system: true, created_at: receipt.created_at,
+    message:
+      'MRET T2 was retired by mret_commish_one — the franchise is sealed under its final manager; Team 5 takes its slot from Week 3 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))',
+  })
+  if (postError) throw new Error(`plant post: ${postError.message}`)
+  return receipt.id
+}
 
 /** What League Home and the Activity page hand the renderer: the league's
  *  teams by name and its CURRENT members by username (the league detail). */
@@ -315,9 +297,11 @@ async function leagueNames(): Promise<{ teams: Map<string, string>; members: Map
   }
 }
 
-describe('F549 — one line per retirement; the removal receipts in words', () => {
-  it('League Home (limit 8) and the Activity page’s All tab show the retirement as ONE ✸ line linked to its receipt — the ledger row and the post are two rows, one line', async () => {
+describe('F549 — a pre-176 retirement still reads as one line; the removal receipts in words', () => {
+  it('League Home (limit 8) and the Activity page’s All tab show a pre-176 retirement as ONE ✸ line linked to its receipt — the ledger row and the post are two rows, one line', async () => {
+    const receiptId = await plantPre176Retirement()
     const { data: receipt } = await service.from('commissioner_actions').select('id').eq('league_id', leagueId).eq('action_type', 'retire_franchise').single()
+    expect(receipt!.id).toBe(receiptId)
     const names = await leagueNames()
     for (const query of [{ limit: '8' }, {}]) {
       const res = await readActivity(mgrBClient, leagueId, query)
@@ -343,8 +327,9 @@ describe('F549 — one line per retirement; the removal receipts in words', () =
     expect(takeover.status, errorText(takeover)).toBe(200)
 
     const names = await leagueNames()
-    // THE PREMISE: the league's member list no longer names the removed managers.
-    expect([names.members.has(ids.a), names.members.has(ids.b), names.members.has(ids.c), names.members.get(ids.d)]).toEqual([false, false, false, MGR_D.username])
+    // THE PREMISE: the league's member list no longer names the removed managers
+    // (A never left — 176 refused his team's retirement; the planted receipt is history).
+    expect([names.members.has(ids.a), names.members.has(ids.b), names.members.has(ids.c), names.members.get(ids.d)]).toEqual([true, false, false, MGR_D.username])
 
     const res = await readCommishLog(commishClient, leagueId, {})
     expect(res.status, JSON.stringify(res.body)).toBe(200)

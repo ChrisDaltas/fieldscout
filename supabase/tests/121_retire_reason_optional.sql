@@ -21,6 +21,12 @@
 --   * D137 in the database: pg_temp.un173 reverses 173's three hunks to
 --     169's live body (the md5 pgTAP 117 A4 stores).
 --
+-- RE-CUT BY 176 (M6 L.E1.42 — Chris 2026-10-01: a team is never retired;
+-- "yes drop it"). The retire arm is gone: every call above is refused BY
+-- NAME and writes nothing; each cell keeps its id and says what it was.
+-- A2 / A3 read the live body through pg_temp.un176 INNERMOST (additive,
+-- R992 — the literals 169 / 173 stored are unchanged); pgTAP 124 pins 176.
+--
 -- Worlds (fabricated inside this rolled-back transaction):
 --   LI b121…01  in_season, weeks 1–5 final, week 6 live — u1 commissioner
 --               (t1), u2..u7 managers (t2..t7)
@@ -68,6 +74,286 @@ $o$);
 end
 $un$;
 
+-- pg_temp.un176 — 176's three hunks reversed (derive_176.py; pgTAP 124).
+create function pg_temp.un176(s text) returns text language plpgsql as $un$
+begin
+  s := replace(s, $r$    RAISE EXCEPTION 'remove_manager: mode must be takeover or vacate (§7.2.1)'
+$r$, $o$    RAISE EXCEPTION 'remove_manager: mode must be takeover, retire, or vacate (§7.2.1)'
+$o$);
+  s := replace(s, $r$  -- 176 (L.E1.42 — Chris 2026-10-01): a team is NEVER retired. "you can't
+  -- simply retire a Team, you can change the manager but the Team lives."
+  -- When a manager goes there are two outcomes: takeover (a new manager
+  -- inherits the team whole) or vacate (the team stays; the commissioner
+  -- runs it). 'retire' stays a NAMED mode so it is refused in plain words,
+  -- in every league state. The refusal sits AFTER the replay (L.D3.16's
+  -- shape): a retry of a retirement committed before 176 still returns its
+  -- stored payload byte-identical (none exist in production — measured
+  -- 2026-10-01). Nothing below this block can see p_mode = 'retire'.
+  IF p_mode = 'retire' THEN
+    IF p_action_id IS NOT NULL THEN
+      SELECT t.type, t.payload INTO v_replay
+      FROM public.transactions t
+      WHERE t.league_id = p_league_id AND t.action_id = p_action_id;
+      IF FOUND
+         AND v_replay.type = 'commissioner_move'
+         AND v_replay.payload ->> 'verb' = 'retire_franchise'
+         AND (v_replay.payload ->> 'member_id')::uuid = p_member_id THEN
+        RETURN v_replay.payload;
+      END IF;
+    END IF;
+    RAISE EXCEPTION 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)'
+      USING ERRCODE = 'P0001';
+  END IF;
+$r$, $o$  -- 120 (L.D1.10): retire-and-succeed is REAL now (§7.2.1(b) / D301 / F31).
+  IF p_mode = 'retire' THEN
+    -- (a) The status gate. Before the draft D42's refusal stands byte for
+    --     byte (017 J pins it; a franchise has no roster or record to
+    --     inherit). `in_season` (the LAW's "mid-season … audited override")
+    --     and `complete` ("primarily an offseason action") proceed.
+    --     `playoffs` REFUSES BY NAME: §7.2.1(b) / §11.5 print nothing about
+    --     a retired franchise's bracket line (does the successor play it,
+    --     or is it forfeited?) and 118's sync derives later rounds from the
+    --     played rows' team ids — PROGRESS Q41 carries the question; this
+    --     arm is a refusal, never a fold (R801).
+    IF v_league.status IN ('setup', 'scheduled', 'drafting') THEN
+      RAISE EXCEPTION 'remove_manager: retiring a franchise isn''t available before the draft — use takeover or vacate (§7.2.1; retire-and-succeed arrives with the in-season milestone)'
+        USING ERRCODE = 'P0001';
+    ELSIF v_league.status = 'playoffs' THEN
+      RAISE EXCEPTION 'remove_manager: retiring a franchise during the playoffs is not defined yet — what the bracket does with a retired franchise''s line is PROGRESS Q41; use takeover or vacate now, or retire the franchise after the season (§7.2.1(b))'
+        USING ERRCODE = 'P0001';
+    ELSIF v_league.status NOT IN ('in_season', 'complete') THEN
+      RAISE EXCEPTION 'remove_manager: league status % admits no retirement (§7.1)', v_league.status
+        USING ERRCODE = 'P0001';
+    END IF;
+    -- (a′) R858: the actor's OWN seat. §7.2.1 gives the leaver no choice of
+    --      outcome — leave_league is the voluntary path — and the route's
+    --      self-DELETE dispatches there; a co-commissioner calling the RPC
+    --      directly must not get the choice back. (A plain manager never
+    --      reaches here: not a commissioner, 42501 above.)
+    IF v_target.user_id = v_uid THEN
+      RAISE EXCEPTION 'remove_manager: you cannot retire your own franchise — a leaver has no choice of outcome (§7.2.1); leave the league, or have the commissioner act on your seat'
+        USING ERRCODE = '42501';
+    END IF;
+    -- (b) The audit stamp and the reason (E49 "audited override"; D290's
+    --     interim posture: reason REQUIRED, stored on the ledger row).
+    --     173 / F363(a) — Q66 (v2.16.41, C82): the reason is OPTIONAL. Blank
+    --     or whitespace-only (the explicit class, 123:295 — R1328: the same
+    --     class the receipt seam trims) is NULL; past 500 characters the
+    --     receipt seam refuses it BY NAME (168:196) and the whole retirement
+    --     rolls back. The action_id stays REQUIRED (the replay stamp).
+    IF p_action_id IS NULL THEN
+      RAISE EXCEPTION 'remove_manager: retire requires action_id (idempotency key — one UUID per retirement, reused on retry; 113''s contract)'
+        USING ERRCODE = '22023';
+    END IF;
+    v_reason := NULLIF(btrim(COALESCE(p_reason, ''), E' \t\r\n'), '');
+    -- (c) REPLAY by (league_id, action_id) — 113's contract (R732): the
+    --     stored payload byte-identical; the same stamp on another verb or
+    --     another member is a shape violation. Checked BEFORE the seat
+    --     checks below: after a committed retirement the seat is an open
+    --     placeholder and would otherwise refuse the retry by name.
+    SELECT t.type, t.payload INTO v_replay
+    FROM public.transactions t
+    WHERE t.league_id = p_league_id AND t.action_id = p_action_id;
+    IF FOUND THEN
+      IF v_replay.type <> 'commissioner_move'
+         OR v_replay.payload ->> 'verb' IS DISTINCT FROM 'retire_franchise'
+         OR (v_replay.payload ->> 'member_id')::uuid IS DISTINCT FROM p_member_id THEN
+        RAISE EXCEPTION 'remove_manager: action_id % already names another action in this league — an action_id identifies ONE submit of ONE verb (R732)', p_action_id
+          USING ERRCODE = '22023';
+      END IF;
+      RETURN v_replay.payload;
+    END IF;
+  END IF;
+$o$);
+  s := replace(s, $r$  ELSE
+    -- vacate (§7.2.1(c)) — the stint closes with no successor.
+$r$, $o$  ELSIF p_mode = 'retire' THEN
+    -- (d) F1: the lineage this franchise sits in must be ACYCLIC before it
+    --     is extended. The successor minted below is a NEW row (it cannot
+    --     close a cycle by construction — said, D267), so the walk is over
+    --     the PREDECESSOR chain as STORED: only privileged writes can
+    --     corrupt it (D53: the column has no client writer), and a corrupt
+    --     chain is refused BY NAME rather than misreported as "already
+    --     sealed" (068 F; the DoD probe drops this block).
+    WITH RECURSIVE lineage AS (
+      SELECT t.id, 0 AS depth FROM public.teams t WHERE t.id = v_team.id
+      UNION ALL
+      SELECT p.id, l.depth + 1
+      FROM lineage l JOIN public.teams p ON p.successor_team_id = l.id
+      WHERE l.depth < 64
+    ) CYCLE id SET is_cycle USING path
+    SELECT l.is_cycle, array_length(l.path, 1) - 1 AS len INTO v_cycle
+    FROM lineage l WHERE l.is_cycle
+    ORDER BY array_length(l.path, 1) LIMIT 1;
+    IF FOUND THEN
+      RAISE EXCEPTION 'remove_manager: % sits in a succession CYCLE of length % (the successor_team_id chain revisits a franchise) — refused; repair the lineage before extending it (§12.22 / F1)', v_team_name, v_cycle.len
+        USING ERRCODE = 'P0001';
+    END IF;
+    IF v_team.status = 'retired' OR v_team.successor_team_id IS NOT NULL THEN
+      RAISE EXCEPTION 'remove_manager: % is already sealed (status %, successor %) — a retired franchise cannot be retired again (§7.2.1(b))', v_team_name, v_team.status, v_team.successor_team_id
+        USING ERRCODE = 'P0001';
+    END IF;
+    -- (d′) R855: an UNMANAGED seat (vacated / left — 'orphaned', §7.2.1(c))
+    --      is admitted when the franchise has a CLOSED stint: the seal
+    --      names the LAST manager (History Mode reads the stints; nothing
+    --      else is written under a name), no stint is open to close (the
+    --      (h) UPDATE matches nothing — D63), no one is notified,
+    --      removed_user_id is NULL in the payload. A franchise that has
+    --      NEVER had a manager — 120's own successor until it is claimed,
+    --      or a placeholder seat autopick-drafted and never claimed — has
+    --      no name to seal under and refuses BY NAME.
+    IF v_removed_user IS NULL THEN
+      PERFORM 1 FROM public.team_managers tm
+      WHERE tm.team_id = v_team.id AND tm.ended_at IS NOT NULL;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'remove_manager: % has never had a manager — there is no one to seal it under; use assign-manager to seat someone on it first (§7.2.1(b))', v_team_name
+          USING ERRCODE = 'P0001';
+      END IF;
+    END IF;
+
+    -- (e) The founding week of the successor's book — the first week the
+    --     league has NOT yet played: 1 + its last correction_window/final
+    --     week (a reopened earlier week stays the predecessor's), else the
+    --     first league week. NULL when that week does not exist (the
+    --     season is over — `complete`, or every week played): nothing is
+    --     re-pointed and History reads the whole book as the retired
+    --     franchise's; retired_at_week / ended_week are NULL (§12.22's
+    --     "NULL preseason" reading, extended to "outside the season").
+    SELECT w.week INTO v_week
+    FROM public.league_weeks w
+    WHERE w.league_id = p_league_id AND w.season = v_league.season
+      AND w.week = COALESCE(
+        (SELECT max(x.week) + 1 FROM public.league_weeks x
+         WHERE x.league_id = p_league_id AND x.season = v_league.season
+           AND x.status IN ('correction_window', 'final')),
+        (SELECT min(x.week) FROM public.league_weeks x
+         WHERE x.league_id = p_league_id AND x.season = v_league.season));
+
+    -- (f) The successor: a NEW franchise in the same slot (§7.2.1(b)),
+    --     named by D74(5)'s series over the league's WHOLE franchise count
+    --     (retired included — a retired franchise keeps its number, so the
+    --     name cannot collide with a seat's default), owned by the acting
+    --     commissioner like every placeholder (add_placeholder_seat),
+    --     'orphaned': no manager until a takeover (§7.2.1(c)'s holding
+    --     state; assign_manager / a seat claim return it to 'active' —
+    --     D74(2)). It counts as seated in every capacity count.
+    SELECT count(*)::int INTO v_franchises FROM public.teams t WHERE t.league_id = p_league_id;
+    v_successor_name := 'Team ' || (v_franchises + 1)::text;
+    INSERT INTO public.teams (owner_id, name, league_id, list_id, status)
+    VALUES (v_uid, v_successor_name, p_league_id, NULL, 'orphaned')
+    RETURNING id INTO v_successor_id;
+
+    -- (g) SEAL the franchise: status, the partition week, the link. owner_id
+    --     moves to the acting commissioner for the vacate arm's reason (the
+    --     removed user's profile deletion would CASCADE the sealed franchise
+    --     away — 001:495); name and record are frozen by the absence of any
+    --     writer (§7.2.1(b)).
+    UPDATE public.teams
+    SET status = 'retired',
+        retired_at_week = v_week,
+        successor_team_id = v_successor_id,
+        owner_id = v_uid,
+        updated_at = now()
+    WHERE id = v_team.id;
+
+    -- (h) The stint closes `seat_retired` — the one §12.22 value M1 never
+    --     wrote (D74(9)); the F3 close shape; a missing open stint is a
+    --     no-op (D63). No stint opens: the successor has no manager yet.
+    UPDATE public.team_managers
+    SET ended_at = now(),
+        ended_week = v_week,
+        end_reason = 'seat_retired',
+        ended_by = v_uid
+    WHERE team_id = v_team.id AND ended_at IS NULL;
+
+    -- (i) The seat: ONE league_members row per seat, always (§12.2) — the
+    --     cache row is re-pointed at the successor as an OPEN placeholder
+    --     (assign_manager / a seat-targeted invite fill it). faab_balance is
+    --     deliberately NOT re-seeded: (b)'s "inherits FAAB" is the seat's
+    --     balance carrying, which the in-place UPDATE does for free (D301:
+    --     vacuous until M5 makes the balance live; the transfer line M5 need
+    --     not write is this one).
+    UPDATE public.league_members
+    SET user_id = NULL,
+        is_placeholder = TRUE,
+        role = 'manager',
+        team_id = v_successor_id
+    WHERE id = v_target.id;
+
+    -- (j) THE INHERITANCE, every re-point COUNTED (rule 10). The roster
+    --     whole (072's per-row trigger broadcasts each row on league:<id>);
+    --     the CURRENT and future weeks' lineups, matchups and results — the
+    --     successor's book opens at v_week; past weeks stay the
+    --     predecessor's (History partitions at retired_at_week — E49).
+    --     league_player_pool carries no team reference (109); transactions,
+    --     lineup_actions and the draft rows are history under the
+    --     predecessor. A game-day lock is per PLAYER, evaluated from
+    --     nfl_games at call time (115/Q34(B)) — a re-point unlocks no one.
+    UPDATE public.league_rosters SET team_id = v_successor_id
+    WHERE league_id = p_league_id AND team_id = v_team.id;
+    GET DIAGNOSTICS v_n_rosters = ROW_COUNT;
+    IF v_week IS NOT NULL THEN
+      UPDATE public.team_lineups SET team_id = v_successor_id
+      WHERE team_id = v_team.id AND season = v_league.season AND week >= v_week;
+      GET DIAGNOSTICS v_n_lineups = ROW_COUNT;
+      UPDATE public.matchups SET home_team_id = v_successor_id, updated_at = now()
+      WHERE league_id = p_league_id AND season = v_league.season AND week >= v_week AND home_team_id = v_team.id;
+      GET DIAGNOSTICS v_n_matchups = ROW_COUNT;
+      UPDATE public.matchups SET away_team_id = v_successor_id, updated_at = now()
+      WHERE league_id = p_league_id AND season = v_league.season AND week >= v_week AND away_team_id = v_team.id;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_n_matchups := v_n_matchups + v_n;
+      UPDATE public.team_week_results SET team_id = v_successor_id
+      WHERE league_id = p_league_id AND season = v_league.season AND week >= v_week AND team_id = v_team.id;
+      GET DIAGNOSTICS v_n_results = ROW_COUNT;
+      UPDATE public.team_week_results SET opponent_team_id = v_successor_id
+      WHERE league_id = p_league_id AND season = v_league.season AND week >= v_week AND opponent_team_id = v_team.id;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_n_results := v_n_results + v_n;
+      UPDATE public.team_week_results SET second_opponent_team_id = v_successor_id
+      WHERE league_id = p_league_id AND season = v_league.season AND week >= v_week AND second_opponent_team_id = v_team.id;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_n_results := v_n_results + v_n;
+    END IF;
+
+    -- (k) The payload — also the LEDGER row's, so a replay is byte-identical.
+    v_result := jsonb_build_object(
+      'ok', true, 'mode', p_mode, 'verb', 'retire_franchise', 'action_id', p_action_id,
+      'member_id', v_target.id, 'team_id', v_team.id,
+      'removed_user_id', v_removed_user, 'successor_user_id', NULL, 'already_vacant', false,
+      'retired_team_id', v_team.id, 'retired_team_name', v_team_name,
+      'successor_team_id', v_successor_id, 'successor_team_name', v_successor_name,
+      'season', v_league.season, 'retired_at_week', v_week, 'reason', v_reason,
+      'repointed', jsonb_build_object(
+        'rosters', v_n_rosters, 'lineups', v_n_lineups, 'matchups', v_n_matchups, 'results', v_n_results),
+      'inherits', jsonb_build_object(
+        'roster', true, 'record', 'seeding_only', 'h2h_history', false, 'faab', 'seat_balance_kept'));
+    -- (l) The ledger (D290 interim; 113's shape): ONE transactions row of
+    --     type commissioner_move, commissioner-initiated (no initiator team),
+    --     stamped with p_action_id; 119's trigger carries it to the feed.
+    INSERT INTO public.transactions
+      (league_id, type, status, initiator_team_id, initiated_by, payload, week, action_id)
+    VALUES (p_league_id, 'commissioner_move', 'complete', NULL, v_uid, v_result, v_week, p_action_id);
+    -- (m) The D97 in-transaction system post (111/113's shape).
+    v_message := v_team_name || ' was retired by ' || public.draft_actor_name()
+      || CASE WHEN v_removed_user IS NULL
+           THEN ' — the vacant franchise is sealed under its last manager (§7.2.1(c)); '
+           ELSE ' — the franchise is sealed under its final manager; ' END
+      || v_successor_name
+      || ' takes its slot' || CASE WHEN v_week IS NULL THEN ' after the season' ELSE ' from Week ' || v_week::text END
+      || ' (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))'
+      -- 173 / Q66: no reason, no "— reason:" tail (league_chat.message is
+      -- NOT NULL — `|| NULL` would null the whole post).
+      || CASE WHEN v_reason IS NOT NULL THEN ' — reason: ' || v_reason ELSE '' END;
+    INSERT INTO public.league_chat (league_id, user_id, message, context, is_system)
+    VALUES (p_league_id, v_uid, v_message, 'league', TRUE);
+  ELSE
+    -- vacate (§7.2.1(c)) — the stint closes with no successor.
+$o$);
+  return s;
+end
+$un$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form, and D137 in the database
 -- ---------------------------------------------------------------------------
@@ -81,20 +367,21 @@ select is(
   'p_league_id uuid, p_member_id uuid, p_mode text, p_successor_user_id uuid, p_reason text, p_action_id uuid:t:search_path="":f:t',
   'A1 remove_manager keeps ONE overload, its six arguments, SECURITY DEFINER, search_path empty, anon closed, authenticated open');
 select is(
-  (select md5(pg_temp.un173(p.prosrc)) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(pg_temp.un173(pg_temp.un176(p.prosrc))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'remove_manager'),
   '06921fe6b49594376fdf7f521ba41c36',
   'A2 D137: the live body with 173 reversed is 169 as written (the stored md5 pgTAP 117 A4 pins)');
 select is(
-  (select md5(p.prosrc) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(pg_temp.un176(p.prosrc)) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'remove_manager'),
   '3698941d72d6efa0f1f7fa599a607a40',
-  'A3 the live prosrc md5 — 173 as written (stored literal)');
+  'A3 RE-CUT (176): the live prosrc with 176 reversed — 173 as written (stored literal; 124 A2 pins the live md5)');
 select ok(
-  (select p.prosrc not like '%a reason is required%' and p.prosrc like '%CASE WHEN v_reason IS NOT NULL THEN %'
+  (select p.prosrc not like '%a reason is required%' and p.prosrc not like '%SET status = ''retired''%'
+          and p.prosrc like '%a team can''''t be retired%'
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'remove_manager'),
-  'A4 the retire arm no longer carries the reason-required refusal, and its post tail is conditional');
+  'A4 RE-CUT (176): no reason-required refusal, no seal (the retire arm is gone), and the plain refusal is there');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname <> 'remove_manager' and pg_temp.un173(p.prosrc) <> p.prosrc),
@@ -177,71 +464,71 @@ create function pg_temp.trail(l int, i int) returns jsonb language sql as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- C. No reason RETIRES the team (LI, in season) — F363(a)
+-- RE-CUT BY 176 (M6 L.E1.42 — Chris 2026-10-01: "you can't simply retire a
+-- Team, you can change the manager but the Team lives" / "yes drop it").
+-- Every section below pinned a RETIREMENT landing (with no reason, a blank,
+-- a tab, a trimmed reason, 500 characters, after the season, an unmanaged
+-- seat). Each cell keeps its id and is re-cut to the ruled behaviour: the
+-- call is refused BY NAME in every league state — whatever the reason, the
+-- action id or the seat — and nothing is written (no seal, no successor, no
+-- ledger row, receipt, post or notification). The one thing a pre-176
+-- retirement still gets is its REPLAY (F2, over a planted ledger row — 176
+-- cannot write one). Vacate is untouched (F4 / F5).
+-- ---------------------------------------------------------------------------
+-- C. No reason — refused (LI, in season)
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "97121000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
--- C1–C4: the reason ABSENT (the route omits it) — t2.
-create temp table _r2 as
-select public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 2), 'retire', NULL, NULL,
-                             'a1210000-0000-4000-8000-000000000002') as r;
-select is(
-  (select jsonb_build_array(r ->> 'ok', r ->> 'verb', r ->> 'retired_team_name', r ->> 'successor_team_name',
-                            r ->> 'retired_at_week', r ? 'reason', r -> 'reason') from _r2),
-  '["true", "retire_franchise", "e121-L1-t2", "Team 8", "6", true, null]'::jsonb,
-  'C1 no reason: the team RETIRES — sealed, its successor Team 8 from Week 6, and the payload reason is null (present, not missing)');
+select throws_ok(
+  format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, NULL,
+                                          'a1210000-0000-4000-8000-000000000002') $$, pg_temp.m(1, 2)),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'C1 RE-CUT (176): no reason — retiring is refused BY NAME (was: the team retired, successor Team 8)');
 select is(pg_temp.trail(1, 2),
-  '{"ledger": [null], "receipt": [null],
-    "post": ["e121-L1-t2 was retired by e121_user_1 — the franchise is sealed under its final manager; Team 8 takes its slot from Week 6 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))"]}'::jsonb,
-  'C2 the audit is written all the same — ONE ledger row and ONE receipt, each with reason null, and ONE league post with no reason tail');
+  '{"ledger": null, "receipt": null, "post": null}'::jsonb,
+  'C2 RE-CUT (176): …no ledger row, no receipt, no post (was: one of each, reason null)');
 reset role;
 select is(
   (select count(*)::int from notifications n
-   where n.user_id = '97121000-0000-4000-8000-000000000002' and n.data ->> 'event' = 'retired'
-     and n.data ->> 'team_id' = 'c1210001-0000-4000-8000-000000000002'),
-  1, 'C3 the retired manager is still notified (event retired)');
+   where n.user_id = '97121000-0000-4000-8000-000000000002' and n.data ->> 'event' = 'retired'),
+  0, 'C3 RE-CUT (176): …and the manager is not notified (was: notified, event retired)');
 select is(
-  (select t.status || ':' || coalesce(t.retired_at_week::text, 'null') from teams t where t.id = 'c1210001-0000-4000-8000-000000000002'),
-  'retired:6', 'C4 the team is sealed as retired at week 6');
+  (select t.status || ':' || coalesce(t.retired_at_week::text, 'null') || ':' || coalesce(t.successor_team_id::text, 'null')
+   from teams t where t.id = 'c1210001-0000-4000-8000-000000000002'),
+  'active:null:null', 'C4 RE-CUT (176): the team lives — active, no retired week, no successor (was: retired:6)');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "97121000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 
--- C5–C6: a BLANK reason (spaces) — t3. Before 173 this was 068 C0d: 22023.
-select is(
-  (public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 3), 'retire', NULL, '    ',
-                         'a1210000-0000-4000-8000-000000000003') -> 'reason'),
-  'null'::jsonb,
-  'C5 a blank reason (spaces only) RETIRES the team with the reason null — never refused (Q66)');
-select is(pg_temp.trail(1, 3) -> 'receipt', '[null]'::jsonb, 'C6 its receipt reason is NULL');
-
--- C7–C8: a tab and a newline only — t4 (R1328: 169 trimmed spaces only, so
--- this passed the check but was stored NULL on the receipt and posted blank).
-select is(
-  (public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 4), 'retire', NULL, E'\t\n \r',
-                         'a1210000-0000-4000-8000-000000000004') -> 'reason'),
-  'null'::jsonb,
-  'C7 a reason of only a tab, a newline and a return is no reason — the payload says null');
+select throws_ok(
+  format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, '    ',
+                                          'a1210000-0000-4000-8000-000000000003') $$, pg_temp.m(1, 3)),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'C5 RE-CUT (176): a blank reason — refused the same way (was: retired with the reason null)');
+select is(pg_temp.trail(1, 3) -> 'receipt', 'null'::jsonb, 'C6 RE-CUT (176): no receipt (was: one, reason NULL)');
+select throws_ok(
+  format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, E'\t\n \r',
+                                          'a1210000-0000-4000-8000-000000000004') $$, pg_temp.m(1, 4)),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'C7 RE-CUT (176): a tab and a newline — refused the same way');
 select is(pg_temp.trail(1, 4),
-  '{"ledger": [null], "receipt": [null],
-    "post": ["e121-L1-t4 was retired by e121_user_1 — the franchise is sealed under its final manager; Team 10 takes its slot from Week 6 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))"]}'::jsonb,
-  'C8 …and the ledger, the receipt and the post agree (null, NULL, no tail)');
+  '{"ledger": null, "receipt": null, "post": null}'::jsonb,
+  'C8 RE-CUT (176): …nothing written');
 
 -- ---------------------------------------------------------------------------
--- D. A reason given is stored TRIMMED and closes the post — t5
+-- D. A reason given — refused all the same (t5)
 -- ---------------------------------------------------------------------------
-select is(
-  (public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 5), 'retire', NULL, E'  moving away \t',
-                         'a1210000-0000-4000-8000-000000000005') ->> 'reason'),
-  'moving away',
-  'D1 a padded reason is stored trimmed on the payload');
+select throws_ok(
+  format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, E'  moving away \t',
+                                          'a1210000-0000-4000-8000-000000000005') $$, pg_temp.m(1, 5)),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'D1 RE-CUT (176): a real reason does not open retire (was: stored trimmed)');
 select is(pg_temp.trail(1, 5),
-  '{"ledger": ["moving away"], "receipt": ["moving away"],
-    "post": ["e121-L1-t5 was retired by e121_user_1 — the franchise is sealed under its final manager; Team 11 takes its slot from Week 6 (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b)) — reason: moving away"]}'::jsonb,
-  'D2 the ledger, the receipt and the post carry the trimmed reason — the post exactly as before 173');
+  '{"ledger": null, "receipt": null, "post": null}'::jsonb,
+  'D2 RE-CUT (176): …nothing written');
 
 -- ---------------------------------------------------------------------------
--- E. The 500 bound — 501 refused by name, nothing written; 500 retires (t6)
+-- E. The 500 bound — the refusal comes first, at any length (t6)
 -- ---------------------------------------------------------------------------
 reset role;
 create temp table _before as
@@ -256,8 +543,8 @@ select throws_ok(
   format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, %L,
                                           'a1210000-0000-4000-8000-000000000006') $$,
          pg_temp.m(1, 6), '  ' || repeat('x', 501) || '  '),
-  '22023', 'remove_manager: the reason is 501 characters — at most 500 (the league_chat bound; §12.13)',
-  'E1 a 501-character reason (after trimming) is refused BY NAME with the seam sentence');
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'E1 RE-CUT (176): a 501-character reason meets the retire refusal, not the seam (was: the seam sentence, 22023)');
 reset role;
 select is(
   (select jsonb_build_array(
@@ -269,31 +556,41 @@ select is(
      (select t.status from teams t where t.id = 'c1210001-0000-4000-8000-000000000006'))
    from _before b),
   '[0, 0, 0, 0, 0, "active"]'::jsonb,
-  'E2 …and NOTHING was written: no successor, no ledger row, no receipt, no post, no notification; t6 still active');
+  'E2 …and NOTHING was written: no successor, no ledger row, no receipt, no post, no notification; t6 still active (unchanged)');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "97121000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select is(
-  (select char_length(public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 6), 'retire', NULL,
-                                            repeat('y', 500), 'a1210000-0000-4000-8000-000000000006') ->> 'reason')),
-  500,
-  'E3 exactly 500 characters RETIRE the team (the boundary, one unit from E1)');
-select is((select jsonb_array_length(pg_temp.trail(1, 6) -> 'receipt')), 1, 'E4 …with ONE receipt');
+select throws_ok(
+  format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, %L,
+                                          'a1210000-0000-4000-8000-000000000006') $$, pg_temp.m(1, 6), repeat('y', 500)),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'E3 RE-CUT (176): exactly 500 characters — refused the same way (was: retired)');
+select is(pg_temp.trail(1, 6) -> 'receipt', 'null'::jsonb, 'E4 RE-CUT (176): …no receipt (was: one)');
 
 -- ---------------------------------------------------------------------------
--- F. What did not move (LI)
+-- F. The action id, the replay, vacate, the own seat (LI)
 -- ---------------------------------------------------------------------------
 select throws_ok(
   format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, NULL) $$, pg_temp.m(1, 7)),
-  '22023', 'remove_manager: retire requires action_id (idempotency key — one UUID per retirement, reused on retry; 113''s contract)',
-  'F1 the action_id is still REQUIRED (the replay stamp) — refused by name, reason or no reason');
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'F1 RE-CUT (176): no action id — the same refusal (was: 22023 retire requires action_id)');
+-- F2: a retirement COMMITTED BEFORE 176 (planted — 176 cannot write one;
+-- production holds none) replays its stored payload byte for byte.
+reset role;
+insert into transactions (league_id, type, status, payload, action_id)
+values ('b1210000-0000-4000-8000-000000000001', 'commissioner_move', 'complete',
+        jsonb_build_object('ok', true, 'mode', 'retire', 'verb', 'retire_franchise',
+                           'action_id', 'a1210000-0000-4000-8000-0000000000e2', 'member_id', pg_temp.m(1, 2),
+                           'retired_team_name', 'e121-L1-t2', 'reason', null),
+        'a1210000-0000-4000-8000-0000000000e2');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub": "97121000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 select is(
-  (public.remove_manager('b1210000-0000-4000-8000-000000000001',
-     (select m.id from league_members m join teams t on t.id = m.team_id
-      where m.league_id = 'b1210000-0000-4000-8000-000000000001' and t.name = 'Team 8'),
-     'retire', NULL, 'a reason on the retry', 'a1210000-0000-4000-8000-000000000002')),
-  (select r from _r2),
-  'F2 REPLAY: the same action_id returns the stored payload byte for byte (reason null — the retry reason is ignored)');
-select is((select jsonb_array_length(pg_temp.trail(1, 2) -> 'receipt')), 1, 'F3 …and writes no second receipt');
+  public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 2), 'retire', NULL, 'a reason on the retry',
+                        'a1210000-0000-4000-8000-0000000000e2'),
+  (select t.payload from transactions t where t.action_id = 'a1210000-0000-4000-8000-0000000000e2'),
+  'F2 RE-CUT (176): REPLAY of a pre-176 retirement returns its stored payload byte for byte (the refusal sits after the replay)');
+select is(pg_temp.trail(1, 2) -> 'receipt', 'null'::jsonb,
+  'F3 RE-CUT (176): …and writes nothing — no receipt');
 select is(
   (select jsonb_build_array(r ->> 'mode', r ->> 'already_vacant', r ? 'reason')
    from (select public.remove_manager('b1210000-0000-4000-8000-000000000001', pg_temp.m(1, 7), 'vacate', NULL, '   ') as r) x),
@@ -308,95 +605,85 @@ select is(
 select throws_ok(
   format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, NULL,
                                           'a1210000-0000-4000-8000-0000000000f7') $$, pg_temp.m(1, 1)),
-  '42501', 'remove_manager: you cannot retire your own franchise — a leaver has no choice of outcome (§7.2.1); leave the league, or have the commissioner act on your seat',
-  'F6 the own-seat guard still fires first for the commissioner (R858) — with no reason too');
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'F6 RE-CUT (176): the commissioner own seat — the same refusal (was: 42501, the own-seat guard)');
 
 -- ---------------------------------------------------------------------------
--- G. The status gate, unchanged — with NO reason (LP / LS / LC)
+-- G. Every league state refuses (LP / LS / LC)
 -- ---------------------------------------------------------------------------
 select throws_ok(
   format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000002', %L, 'retire', NULL, NULL,
                                           'a1210000-0000-4000-8000-0000000000b2') $$, pg_temp.m(2, 2)),
-  'P0001', 'remove_manager: retiring a franchise during the playoffs is not defined yet — what the bracket does with a retired franchise''s line is PROGRESS Q41; use takeover or vacate now, or retire the franchise after the season (§7.2.1(b))',
-  'G1 the playoffs still refuse BY NAME (pending Q41) — the reason rule does not open them');
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'G1 RE-CUT (176): the playoffs — the same refusal (was: refused pending Q41; Q41 is moot)');
 select throws_ok(
   format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000003', %L, 'retire', NULL, NULL,
                                           'a1210000-0000-4000-8000-0000000000b3') $$, pg_temp.m(3, 2)),
-  'P0001', 'remove_manager: retiring a franchise isn''t available before the draft — use takeover or vacate (§7.2.1; retire-and-succeed arrives with the in-season milestone)',
-  'G2 before the draft still refuses (D42 text, byte for byte)');
-select is(
-  (select jsonb_build_array(r ->> 'successor_team_name', r -> 'retired_at_week', r -> 'reason')
-   from (select public.remove_manager('b1210000-0000-4000-8000-000000000004', pg_temp.m(4, 2), 'retire', NULL, '',
-                                      'a1210000-0000-4000-8000-0000000000b4') as r) x),
-  '["Team 3", null, null]'::jsonb,
-  'G3 a complete league retires with an empty reason — successor Team 3, no founding week (after the season), reason null');
-select is(pg_temp.trail(4, 2) -> 'post',
-  '["e121-L4-t2 was retired by e121_user_1 — the franchise is sealed under its final manager; Team 3 takes its slot after the season (roster and record carry over for seeding only; head-to-head history does not — §7.2.1(b))"]'::jsonb,
-  'G4 …its post says after the season, with no reason tail');
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'G2 RE-CUT (176): before the draft — the same refusal (was: D42 text)');
+select throws_ok(
+  format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000004', %L, 'retire', NULL, '',
+                                          'a1210000-0000-4000-8000-0000000000b4') $$, pg_temp.m(4, 2)),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'G3 RE-CUT (176): a complete league — the same refusal (was: retired after the season)');
+select is(pg_temp.trail(4, 2) -> 'post', 'null'::jsonb, 'G4 RE-CUT (176): …no post');
 
 -- ---------------------------------------------------------------------------
--- H. An UNMANAGED seat (F546 part 3) — the verb rule the UI reads, unchanged
+-- H. An UNMANAGED seat — the same refusal (t7, vacated in F4)
 -- ---------------------------------------------------------------------------
--- t7 was vacated in F4 (a closed stint): retirable with no reason, sealed
--- under its last manager, no one notified. Team 8 (t2 successor) has never
--- had a manager: refused by name.
-select is(
-  (select jsonb_build_array(r -> 'removed_user_id', r -> 'reason', r ->> 'retired_team_name')
-   from (select public.remove_manager('b1210000-0000-4000-8000-000000000001',
-           (select m.id from league_members m where m.team_id = 'c1210001-0000-4000-8000-000000000007'),
-           'retire', NULL, NULL, 'a1210000-0000-4000-8000-0000000000c7') as r) x),
-  '[null, null, "e121-L1-t7"]'::jsonb,
-  'H1 a VACATED team (a closed stint) retires with no reason — sealed under its last manager, removed_user_id null');
 select throws_ok(
   format($$ select public.remove_manager('b1210000-0000-4000-8000-000000000001', %L, 'retire', NULL, NULL,
-                                          'a1210000-0000-4000-8000-0000000000c8') $$,
-         (select m.id from league_members m join teams t on t.id = m.team_id
-          where m.league_id = 'b1210000-0000-4000-8000-000000000001' and t.name = 'Team 8')),
-  'P0001', 'remove_manager: Team 8 has never had a manager — there is no one to seal it under; use assign-manager to seat someone on it first (§7.2.1(b))',
-  'H2 a team that NEVER had a manager (a successor) still refuses by name — the case the members page keeps closed (F548)');
+                                          'a1210000-0000-4000-8000-0000000000c7') $$,
+         (select m.id from league_members m where m.team_id = 'c1210001-0000-4000-8000-000000000007')),
+  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
+  'H1 RE-CUT (176): a VACATED team — the same refusal (was: retired, sealed under its last manager)');
+select is(
+  (select t.status || ':' || coalesce(t.successor_team_id::text, 'null') from teams t where t.id = 'c1210001-0000-4000-8000-000000000007'),
+  'orphaned:null',
+  'H2 RE-CUT (176): …it stays orphaned — the commissioner runs it (was: a never-managed successor refused by name; no successor exists any more)');
 reset role;
 select is(
   (select count(*)::int from notifications n where n.user_id = '97121000-0000-4000-8000-000000000007' and n.data ->> 'event' = 'retired'),
-  0, 'H3 no one is notified for the unmanaged retirement (its last manager heard at the vacate)');
+  0, 'H3 no one is notified of a retirement (unchanged count)');
 
 -- ---------------------------------------------------------------------------
--- I. Totals — every retirement above wrote ONE ledger row and ONE receipt
+-- I. Totals — nothing above wrote a retirement
 -- ---------------------------------------------------------------------------
 select is(
   (select count(*)::int from transactions
    where league_id = 'b1210000-0000-4000-8000-000000000001' and type = 'commissioner_move' and payload ->> 'verb' = 'retire_franchise'),
-  6, 'I1 LI: six retirements (t2 t3 t4 t5 t6 t7), six ledger rows — the refusals and the replay wrote none');
+  1, 'I1 RE-CUT (176): LI holds ONE retire ledger row — the planted pre-176 one F2 replayed (was: six)');
 select is(
   (select count(*)::int from commissioner_actions
    where league_id = 'b1210000-0000-4000-8000-000000000001' and action_type = 'retire_franchise'),
-  6, 'I2 LI: six retire_franchise receipts');
+  0, 'I2 RE-CUT (176): no retire_franchise receipt (was: six)');
 select is(
   (select count(*)::int from commissioner_actions
-   where league_id = 'b1210000-0000-4000-8000-000000000001' and action_type = 'retire_franchise' and reason is null),
-  4, 'I3 four of them with reason NULL (absent, blank, tab and newline, the vacated seat)');
+   where league_id in ('b1210000-0000-4000-8000-000000000001', 'b1210000-0000-4000-8000-000000000002',
+                       'b1210000-0000-4000-8000-000000000003', 'b1210000-0000-4000-8000-000000000004')
+     and action_type = 'retire_franchise'),
+  0, 'I3 RE-CUT (176): none in any of the four leagues');
 select is(
   (select count(*)::int from league_chat
-   where league_id = 'b1210000-0000-4000-8000-000000000001' and is_system and message like '% was retired by %'
-     and message not like '% — reason: %'),
-  4, 'I4 four posts without a reason tail, and (I5) two with one');
+   where league_id = 'b1210000-0000-4000-8000-000000000001' and is_system and message like '% was retired by %'),
+  0, 'I4 RE-CUT (176): no retirement post (was: four without a tail)');
 select is(
   (select count(*)::int from league_chat
-   where league_id = 'b1210000-0000-4000-8000-000000000001' and is_system and message like '% was retired by %'
-     and message like '% — reason: %'),
-  2, 'I5 two posts with a reason tail (t5 moving away, t6 the 500 y)');
+   where league_id = 'b1210000-0000-4000-8000-000000000004' and is_system and message like '% was retired by %'),
+  0, 'I5 RE-CUT (176): none in the complete league either (was: two with a tail)');
 select is(
-  (select count(*)::int from teams where league_id = 'b1210000-0000-4000-8000-000000000001' and status = 'retired'),
-  6, 'I6 six teams sealed retired');
+  (select count(*)::int from teams where league_id::text like 'b1210000-%' and (status = 'retired' or successor_team_id is not null)),
+  0, 'I6 RE-CUT (176): no team sealed or succeeded in any league (was: six)');
 select is(
-  (select count(*)::int from teams where league_id = 'b1210000-0000-4000-8000-000000000001' and status <> 'retired'),
-  7, 'I7 the league still fields seven teams (every successor fills its slot)');
+  (select count(*)::int from teams where league_id = 'b1210000-0000-4000-8000-000000000001'),
+  7, 'I7 RE-CUT (176): LI still fields its own seven teams — none minted (was: seven non-retired of thirteen)');
 select is(
   (select count(*)::int from league_members where league_id = 'b1210000-0000-4000-8000-000000000001'),
   7, 'I8 still seven seats — no seat row minted or deleted');
 select is(
   (select count(*)::int from team_managers
-   where league_id = 'b1210000-0000-4000-8000-000000000001' and end_reason = 'seat_retired'),
-  5, 'I9 five stints closed seat_retired (t2..t6) — t7 closed kicked at its vacate and was not touched');
+   where league_id::text like 'b1210000-%' and end_reason = 'seat_retired'),
+  0, 'I9 RE-CUT (176): no stint closed seat_retired (was: five)');
 
 select * from finish();
 rollback;

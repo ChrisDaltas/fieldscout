@@ -398,17 +398,14 @@ describe('PATCH .../members/[mid] — roles and the deferred autodraft toggle', 
 })
 
 describe('DELETE .../members/[mid] — the three outcomes and the leave dispatch', () => {
-  it('retire is a friendly 400 before the draft (D42) and writes nothing', async () => {
+  it('retire is a friendly 400 (L.E1.42: a team is never retired, in any state) and writes nothing', async () => {
     const mid = await memberIdOf(league1Id, targetId)
-    // L.E1.40: the route carries the retire action_id now, so this reaches the
-    // VERB's before-the-draft refusal (no reason — Q66 / 173), not the schema.
     const result = await removeMember(commishClient, league1Id, mid, commishId, {
       mode: 'retire',
       action_id: 'af000000-0000-4000-8000-0000000000e1',
     })
     expect(result.status).toBe(400)
-    expect(JSON.stringify(result.body)).toContain('retiring a franchise isn')
-    expect(JSON.stringify(result.body)).toContain('available before the draft')
+    expect(JSON.stringify(result.body)).toContain('A team can’t be retired — seat a new manager or leave it vacant.')
 
     const { data: stints } = await service
       .from('team_managers')

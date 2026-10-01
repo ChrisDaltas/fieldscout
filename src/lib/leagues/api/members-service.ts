@@ -33,7 +33,6 @@ import { z } from 'zod'
 import type { Database, Json } from '@/types/database'
 
 import { optionalReason } from './commish-matchup-service'
-import { normalizedUuid } from './inseason-ids'
 import type { ServiceResult } from './leagues-service'
 
 type Supabase = SupabaseClient<Database>
@@ -180,24 +179,22 @@ export async function patchMember(
 // DELETE /api/leagues/[id]/members/[mid] — remove a manager, or leave
 // ---------------------------------------------------------------------------
 
-/** §15.1 body: { mode, successor_user_id?, reason?, action_id? }. `takeover`
- *  reseats a NAMED successor (§7.2.1(a)); the "invite a replacement" journey
- *  is `vacate` + a seat-targeted invite (D74(6)).
+/** §15.1 body: { mode, successor_user_id?, reason? }. `takeover` reseats a
+ *  NAMED successor (§7.2.1(a)); the "invite a replacement" journey is
+ *  `vacate` + a seat-targeted invite (D74(6)). The reason is OPTIONAL
+ *  (Q66 / C82): `optionalReason` — trimmed, ≤ 500, blank normalised to
+ *  absent — the one shape every commissioner route uses.
  *
- *  L.E1.40 (F262(a) / F546; PROGRESS D461): `retire` (§7.2.1(b)) needs an
- *  `action_id` — one UUID per submit, minted by the HOOK (which never
- *  retries: a new gesture is a new id — 120's replay stamp, 113's contract;
- *  the verb refuses without one). It is REQUIRED here for retire and refused on the other two
- *  modes (the RPC ignores it there — a stamp that stamps nothing is a
- *  mis-shaped request). The reason is OPTIONAL in every mode (Q66 / C82; 173
- *  made the retire arm agree): `optionalReason` — trimmed, ≤ 500, blank
- *  normalised to absent — the one shape every commissioner route uses. */
+ *  L.E1.42 (Chris 2026-10-01 — "you can't simply retire a Team, you can
+ *  change the manager but the Team lives"; PROGRESS D467): there are exactly
+ *  two outcomes, takeover and vacate. `retire` is refused here BY NAME with a
+ *  400 before any database call — so the route says the same thing whether or
+ *  not migration 176 (the verb's own refusal) has been pushed. */
 export const removeMemberInputSchema = z
   .strictObject({
-    mode: z.enum(['takeover', 'retire', 'vacate']),
+    mode: z.enum(['takeover', 'vacate']),
     successor_user_id: z.uuid().nullish(),
     reason: optionalReason,
-    action_id: normalizedUuid.optional(),
   })
   .refine((body) => body.mode !== 'takeover' || !!body.successor_user_id, {
     message: 'A takeover needs the successor to seat on the franchise.',
@@ -207,27 +204,18 @@ export const removeMemberInputSchema = z
     message: 'successor_user_id only applies to a takeover.',
     path: ['successor_user_id'],
   })
-  .refine((body) => body.mode !== 'retire' || body.action_id !== undefined, {
-    message: 'Retiring a team needs an action_id (one per submit).',
-    path: ['action_id'],
-  })
-  .refine((body) => body.mode === 'retire' || body.action_id === undefined, {
-    message: 'action_id only applies to retiring a team.',
-    path: ['action_id'],
-  })
 
-/** The 409 for a retirement whose stored result is not the one just asked
- *  for (the F65(b) class). 120's replay already refuses an action_id reused on
- *  another member or verb (22023, by name), so this guard should never fire;
- *  it is the route's own check that a 200 reports the submit it answers. */
-export const RETIRE_ACTION_ID_REUSED_MESSAGE =
-  'That didn’t go through — we couldn’t confirm it as the retirement you just asked for. Check the members list and try again.'
+/** The 400 a `retire` request gets (L.E1.42) — the verb's sentence in the
+ *  app's words. */
+export const RETIRE_REMOVED_MESSAGE =
+  'A team can’t be retired — seat a new manager or leave it vacant.'
 
-/** The slice of 120's retire payload this layer READS for the identity guard. */
-interface RetireResultShape {
-  verb?: unknown
-  action_id?: unknown
-  member_id?: unknown
+function asksToRetire(rawBody: unknown): boolean {
+  return (
+    typeof rawBody === 'object' &&
+    rawBody !== null &&
+    (rawBody as { mode?: unknown }).mode === 'retire'
+  )
 }
 
 /**
@@ -276,11 +264,14 @@ export async function removeMember(
     return { status: 200, body: data as unknown as Json }
   }
 
+  if (asksToRetire(rawBody)) {
+    return { status: 400, body: { error: RETIRE_REMOVED_MESSAGE } }
+  }
   const parsed = removeMemberInputSchema.safeParse(rawBody)
   if (!parsed.success) {
     return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   }
-  const { mode, successor_user_id, reason, action_id } = parsed.data
+  const { mode, successor_user_id, reason } = parsed.data
 
   const { data, error } = await supabase.rpc('remove_manager', {
     p_league_id: leagueId,
@@ -290,25 +281,11 @@ export async function removeMember(
     // cannot express per-arg nullability, and the RPC defaults them).
     ...(successor_user_id ? { p_successor_user_id: successor_user_id } : {}),
     ...(reason ? { p_reason: reason } : {}),
-    ...(action_id ? { p_action_id: action_id } : {}),
   })
   if (error) {
     return mapMemberRpcError(error, 'Only the commissioner can remove a manager.')
   }
 
-  // F65(b): a retirement is identified by (verb, action_id, member). 120's
-  // replay returns the STORED payload for a known action_id, so a 200 must be
-  // the retirement of THIS seat under THIS stamp — never another's result.
-  if (mode === 'retire') {
-    const result = (data ?? {}) as RetireResultShape
-    if (
-      result.verb !== 'retire_franchise' ||
-      result.action_id !== action_id ||
-      result.member_id !== memberId.toLowerCase()
-    ) {
-      return { status: 409, body: { error: RETIRE_ACTION_ID_REUSED_MESSAGE } }
-    }
-  }
   return { status: 200, body: data as unknown as Json }
 }
 
