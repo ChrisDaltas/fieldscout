@@ -2,7 +2,7 @@
  "note": "Production stat_correction_events for this week, exported READ ONLY by scripts/export-correction-events.ts (M6 L.E2.5, PROGRESS D458): each event's player, stat key, old → new, detection instant, week state and game; the week's games with the instant production first saw each final (nfl_games.updated_at — the settle grace's clock); the week's bounds. Public NFL stat facts only.",
  "season": 2026,
  "week": 3,
- "readAt": "2026-09-30T13:40:39.182Z",
+ "readAt": "2026-10-02T07:53:43.858Z",
  "thisWeek": {
   "week": 3,
   "starts_at": "2026-09-23T04:00:00+00:00",
@@ -164,5 +164,36 @@
    "firstSeenFinalAt": "2026-09-27T20:05:43.443+00:00"
   }
  ],
- "events": []
+ "events": [
+  {
+   "playerId": "11604",
+   "statKey": "targets",
+   "oldValue": 13,
+   "newValue": 14,
+   "detectedAt": "2026-10-01T06:00:03.563+00:00",
+   "weekState": "open",
+   "gameId": null,
+   "name": "Brock Bowers",
+   "position": "TE",
+   "team": "LV",
+   "finalSeenAt": "2026-09-29T03:18:00.554+00:00",
+   "minutesAfterFinal": 3042.1,
+   "grace": "outside"
+  },
+  {
+   "playerId": "13311",
+   "statKey": "targets",
+   "oldValue": 7,
+   "newValue": 8,
+   "detectedAt": "2026-10-01T06:00:03.563+00:00",
+   "weekState": "open",
+   "gameId": null,
+   "name": "Chris Bell",
+   "position": "WR",
+   "team": "MIA",
+   "finalSeenAt": "2026-09-29T03:18:00.554+00:00",
+   "minutesAfterFinal": 3042.1,
+   "grace": "outside"
+  }
+ ]
 }
