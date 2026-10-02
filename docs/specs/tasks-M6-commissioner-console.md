@@ -240,14 +240,12 @@ Each posts to `league_chat` or nothing; none leaves an audit row. Until they do,
 
 ## 9. Exit criteria → proof map
 
-**✅ TICKED 2026-10-02 — L.E1.37's gate GREEN end to end (PROGRESS D470).**
-
 | Exit criterion (§1) | Proven by |
 |---|---|
-| 1. Phase E gate (log row per change, none per no-op, immutable, the illegal-lineup flow visible to all) | L.E1.29 / L.E1.30 / L.E1.35 pgTAP; 071 §C (immutability, re-run); L.E1.36 E2E; L.E1.37 — ✅ **2026-10-02 (D470):** [2/8] pgTAP 116 / 117 / 118 / 071 §C green; [6/8] the M6 E2E green (L.E1.35 dropped, Q83) |
-| 2. No override path mutates state without a log row | L.E1.31 (census + matrix + column guards) + 126's `matchups` backstop, run in L.E1.37 — ✅ **2026-10-02 (D470):** [2/8] 118's census + matrix + column guards and 126's backstop green |
-| 3. A recorded real 2026 correction replays into a changed result with a system note | L.E2.5 (the fixture) + L.E2.6 (the replay, both sides of the lock) — ***RULED 2026-10-02 (Chris): "yeah lets not hold for it."*** *The criterion is met on SYNTHETIC corrections (test fixtures only, marked synthetic); the real-recorded leg is non-blocking — the replay test replays a real capture automatically once F540 commits one. PROGRESS D468.* — ✅ **2026-10-02 (D470), SYNTHETIC:** [3/8] the replay (18/18) + [4/8]–[4.2] the correction arms green; **the real leg is NON-BLOCKING (D468) and still OPEN under F540 / L.E2.5** |
-| 4. Continuity | L.E1.37 runs `test:gate:m5` last — ✅ **2026-10-02 (D470):** [7/8] `test:gate:m5` PASSED (M4 → M0 within) |
+| 1. Phase E gate (log row per change, none per no-op, immutable, the illegal-lineup flow visible to all) | L.E1.29 / L.E1.30 / L.E1.35 pgTAP; 071 §C (immutability, re-run); L.E1.36 E2E; L.E1.37 |
+| 2. No override path mutates state without a log row | L.E1.31 (census + matrix + column guards) + 126's `matchups` backstop, run in L.E1.37 |
+| 3. A recorded real 2026 correction replays into a changed result with a system note | L.E2.5 (the fixture) + L.E2.6 (the replay, both sides of the lock) — ***RULED 2026-10-02 (Chris): "yeah lets not hold for it."*** *The criterion is met on SYNTHETIC corrections (test fixtures only, marked synthetic); the real-recorded leg is non-blocking — the replay test replays a real capture automatically once F540 commits one. PROGRESS D468.* |
+| 4. Continuity | L.E1.37 runs `test:gate:m5` last |
 
 ---
 

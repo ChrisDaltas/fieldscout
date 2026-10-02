@@ -25,12 +25,12 @@
 -- latent door defect F557 names, which the gate's scenario never reaches.
 --
 -- THE CHANGE
---   1. NEW `stat_correction_week_state_moved_internal(league, season, week,
---      before, moves)` — the week as the corrections ALONE moved it: 172's
---      state shape re-derived from the BEFORE state with only the recorded
---      players' points movement applied to their teams; every other team at
---      its before score. h2h, second game and median (§11.7), 118's / 172's
---      rules over the moved scores (see its header).
+--   1. NEW `stat_correction_week_state_but_for_internal(league, season, week,
+--      after, moves)` — the BUT-FOR week (R1446, ruled 2026-10-02): 172's
+--      state shape re-derived from the ACTUAL AFTER state with ONLY this
+--      call's corrections' points movement taken back out; every other team
+--      at its actual after score. h2h, second game and median (§11.7), 118's
+--      / 172's rules over the but-for scores (see its header).
 --   2. `score_write_week_batch` — CREATE OR REPLACE against its NEWEST
 --      defining migration's FILE TEXT (D137; CLAUDE.md's 073 lesson). Newest
 --      definer MEASURED over 001–176 (grep 'FUNCTION[^(]*score_write_week_batch'):
@@ -40,22 +40,23 @@
 --      Four hunks, all inside 172's own `-- @172{ … -- @172}` fences (no new
 --      fence, no `@` added — 109 / 115's fence-strip readings stay valid);
 --      line counts MEASURED as a line diff (difflib) of 172's body against
---      177's (re-cut by R1443, D469(7)):
---        H1 (+6 / -0)   DECLARE: v_moves, v_moved, v_pend, v_pr, v_tm.
+--      177's (re-cut by R1446, D469(10)):
+--        H1 (+6 / -0) DECLARE: v_moves, v_butfor, v_pend, v_pr, v_tf.
 --        H2 (+12 / -16) the record is HELD in the player loop (its movement
 --                       = the corrected player's own points delta, summed
 --                       per team) instead of inserted there.
---        H3 (+37 / -0)  after the loops: v_moved computed, then the held
+--        H3 (+41 / -0) after the loops: v_butfor computed, then the held
 --                       records inserted — result_after from the ACTUAL
---                       after state (v_after); result_changed only where
---                       v_moved AND v_after both differ from v_before on
---                       h2h / second / median (R1443); team_score_after the
+--                       after state (v_after); result_changed ("changed BY
+--                       THE CORRECTION") only where v_after differs from
+--                       v_before AND from v_butfor on h2h / second / median
+--                       (R1446's one but-for test); team_score_after the
 --                       actual written score; result_before unchanged.
---        H4 (+12 / -7)  the post / notification block keeps reading v_after
---                       (the real scores and results) and JOINS v_moved: a
+--        H4 (+13 / -7) the post / notification block keeps reading v_after
+--                       (the real scores and results) and JOINS v_butfor: a
 --                       pairing flip, a median flip, a notified team and
---                       each body clause only where the correction-only
---                       state ALSO changed it (R1443 / R1444).
+--                       each body clause only where the actual week changed
+--                       it AND differs from the but-for week (R1446).
 --    pgTAP 125's pg_temp.un177 reverses all four to 172's text byte for
 --      byte (A3 pins it in the database). Everything else is 172's: ONE post
 --      per re-score, a notification ONLY on a flip, once per seated manager,
@@ -65,8 +66,10 @@
 --   Replaced: 1 body (signature, volatility, SECURITY DEFINER, search_path ''
 --   and the ACL unchanged — the REVOKE is restated verbatim; the service
 --   role's EXECUTE survives CREATE OR REPLACE). Added: 1 plain helper
---   (search_path '', REVOKEd from PUBLIC / anon / authenticated). No table,
---   column, index, policy, trigger or cron row. Time: none (no clock read).
+--   (search_path '', REVOKEd from PUBLIC / anon / authenticated) and 1
+--   COMMENT ON COLUMN (`league_stat_corrections.result_changed` — its
+--   meaning; no data, no type). No table, column, index, policy, trigger or
+--   cron row. Time: none (no clock read).
 --   Typegen: no change (internal helper, REVOKEd; no signature moved).
 --   Realtime: none new. The door's REPORT shape is unchanged.
 --   WAIVERS: R6 — no staging clone; rehearsal evidence = the fresh local
@@ -77,51 +80,54 @@
 --   DEGRADE-BEFORE-PUSH: no app code changes with 177; main on 176 keeps
 --   172's door (the defect is latent — it needs a batch where a non-corrected
 --   team's score also moved inside the correction window).
--- Rollback = re-apply 172:362-969 verbatim and DROP the helper.
+-- Rollback = re-apply 172:362-969 verbatim, DROP the helper and the comment.
 --
--- Proof: pgTAP 125 (form; D137 in the database; the two-teams-moved batch
--- announces only the correction's flip; a flip; a no-flip; second game and
--- median flips; R the correction's flip undone by another team's move —
--- nothing announced, the record equal to the scoreboard; B both flip it the
--- same way — announced with the real scores (R1443); the moved state equals the after state on a single-team
--- batch). 106 / 120 re-cut (un177 innermost). The stack replay's B12 cell.
+-- Proof: pgTAP 125 (form; D137 in the database; the but-for test case by
+-- case — T two teams moved (only what the correction caused, a joint median
+-- flip included); N no flip; S second game and median; R the correction's
+-- flip undone by another team's move (silent); B both move it the same way
+-- (announced, real scores); J R1446's joint flip neither move makes alone
+-- (announced, real scores); O another team alone flips the corrected team
+-- (silent; result_before <> result_after with result_changed false — the
+-- column's meaning pinned); M the helper). 106 / 120 re-cut (un177 innermost). The stack replay's B12 cell.
 -- Break probes shown red then reverted in the PR.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 1. stat_correction_week_state_moved_internal — NEW. The week as the
---    CORRECTION ALONE moved it: 172's `stat_correction_week_state_internal`
---    shape (`teams`, `matchups`, `points`, `median`) re-derived from the
---    BEFORE state with only `p_moves` applied (team id -> the recorded
---    players' points movement in this call). Every other team keeps its
---    BEFORE score, so a flip another team's move caused (a settled line, a
---    live delta in the same batch) is never blamed on the correction
---    (B12 / F557 / F530). The rules are 118's
---    `week_results_derive_internal(…, TRUE)` and 172's state, over the moved
---    scores:
---      * a moved team's score is its BEFORE score (0.00 so far when NULL)
---        plus its movement; an unmoved team's is its BEFORE score, NULL kept;
+-- 1. stat_correction_week_state_but_for_internal — NEW (R1446, D469(10)).
+--    The BUT-FOR week: the week as it ACTUALLY stands after this call, with
+--    ONLY this call's corrections' points movement taken back out —
+--    172's `stat_correction_week_state_internal` shape (`teams`, `matchups`,
+--    `points`, `median`) re-derived from the AFTER state with `p_moves`
+--    (team id -> the recorded players' points movement in this call)
+--    SUBTRACTED. Every other team stays at its ACTUAL after score. A result
+--    is the correction's iff the actual week differs from this one (the
+--    door's but-for test). The rules are 118's
+--    `week_results_derive_internal(…, TRUE)` and 172's state, over the
+--    but-for scores:
+--      * a moved team's score is its AFTER score (0.00 so far when NULL)
+--        minus its movement; an unmoved team's is its AFTER score, NULL kept;
 --      * a pairing whose `matchups.result` is STORED (an override, a row
 --        already finalized) or that is overridden keeps its result — the
 --        derivation reads it, never the scores (118 `COALESCE(m.result, …)`);
---        otherwise `matchup_result_internal` of the moved scores (a NULL side
+--        otherwise `matchup_result_internal` of the but-for scores (a NULL side
 --        reads 0.00 for the teams' h2h / second and leaves the pairing's own
 --        `result` NULL — 172's two readings, unchanged);
 --      * the median (§11.7) is `week_median_internal` over every team's
---        moved points, only where the BEFORE state carried one (median game
+--        but-for points, only where the AFTER state carried one (median game
 --        on, regular season, two teams or more — 172's gate), compared as
 --        172 compares it.
 --    A total_points week has no pairings: `h2h` / `second` are carried from
---    BEFORE; the median is re-derived. With an empty `p_moves` it returns the
---    BEFORE state's results; with every written team's movement it equals
---    172's AFTER state (pgTAP 125 A / C pin both).
+--    AFTER; the median is re-derived. With an empty `p_moves` it returns the
+--    AFTER state's results; on a single-team batch it equals 172's BEFORE
+--    state (pgTAP 125 M1 / M2 pin both).
 --    STABLE (it reads `matchups.result`), plain, search_path '', REVOKEd.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION stat_correction_week_state_moved_internal(
+CREATE OR REPLACE FUNCTION stat_correction_week_state_but_for_internal(
   p_league_id UUID,
   p_season    INTEGER,
   p_week      INTEGER,
-  p_before    JSONB,
+  p_after    JSONB,
   p_moves     JSONB
 ) RETURNS JSONB
 LANGUAGE plpgsql
@@ -141,15 +147,15 @@ BEGIN
   WHERE m.league_id = p_league_id AND m.season = p_season AND m.week = p_week
     AND m.result IS NOT NULL;
 
-  -- each team's moved score (NULL kept for an unmoved pending team)
+  -- each team's but-for score (NULL kept for an unmoved pending team)
   SELECT COALESCE(jsonb_object_agg(t.key, CASE
            WHEN p_moves ? t.key
-             THEN to_jsonb(round(COALESCE((t.value ->> 'score')::numeric, 0) + (p_moves ->> t.key)::numeric, 2))
+             THEN to_jsonb(round(COALESCE((t.value ->> 'score')::numeric, 0) - (p_moves ->> t.key)::numeric, 2))
            ELSE t.value -> 'score' END), '{}'::jsonb)
     INTO v_scores
-  FROM jsonb_each(COALESCE(p_before -> 'teams', '{}'::jsonb)) t;
+  FROM jsonb_each(COALESCE(p_after -> 'teams', '{}'::jsonb)) t;
 
-  -- the pairings over the moved scores
+  -- the pairings over the but-for scores
   SELECT COALESCE(jsonb_object_agg(x.id, x.v || jsonb_build_object(
            'home_score', x.hs, 'away_score', x.aws,
            'result', CASE
@@ -159,15 +165,15 @@ BEGIN
     INTO v_matchups
   FROM (SELECT m.key AS id, m.value AS v,
                CASE WHEN p_moves ? (m.value ->> 'home')
-                    THEN round(COALESCE((m.value ->> 'home_score')::numeric, 0) + (p_moves ->> (m.value ->> 'home'))::numeric, 2)
+                    THEN round(COALESCE((m.value ->> 'home_score')::numeric, 0) - (p_moves ->> (m.value ->> 'home'))::numeric, 2)
                     ELSE (m.value ->> 'home_score')::numeric END AS hs,
                CASE WHEN m.value ->> 'away' IS NOT NULL AND p_moves ? (m.value ->> 'away')
-                    THEN round(COALESCE((m.value ->> 'away_score')::numeric, 0) + (p_moves ->> (m.value ->> 'away'))::numeric, 2)
+                    THEN round(COALESCE((m.value ->> 'away_score')::numeric, 0) - (p_moves ->> (m.value ->> 'away'))::numeric, 2)
                     ELSE (m.value ->> 'away_score')::numeric END AS aws
-        FROM jsonb_each(COALESCE(p_before -> 'matchups', '{}'::jsonb)) m) x;
+        FROM jsonb_each(COALESCE(p_after -> 'matchups', '{}'::jsonb)) m) x;
 
-  -- the median over the moved points (only where BEFORE carried one)
-  IF jsonb_typeof(p_before -> 'median') = 'number' THEN
+  -- the median over the but-for points (only where AFTER carried one)
+  IF jsonb_typeof(p_after -> 'median') = 'number' THEN
     SELECT public.week_median_internal(array_agg(s.p ORDER BY s.p)) INTO v_med
     FROM (SELECT round(COALESCE((e.value #>> '{}')::numeric, 0), 2) AS p FROM jsonb_each(v_scores) e) s;
   END IF;
@@ -196,7 +202,7 @@ BEGIN
                           WHEN round(COALESCE((v_scores ->> t.key)::numeric, 0), 2) < v_med THEN to_jsonb('loss'::text)
                           ELSE to_jsonb('tie'::text) END)), '{}'::jsonb)
     INTO v_teams
-  FROM jsonb_each(COALESCE(p_before -> 'teams', '{}'::jsonb)) t
+  FROM jsonb_each(COALESCE(p_after -> 'teams', '{}'::jsonb)) t
   LEFT JOIN LATERAL (SELECT a.key AS id, a.value AS v FROM jsonb_each(v_matchups) a
                      WHERE a.key = t.value ->> 'matchup_id') pm ON TRUE
   LEFT JOIN LATERAL (SELECT a.key AS id, a.value AS v FROM jsonb_each(v_matchups) a
@@ -205,10 +211,10 @@ BEGIN
                      ORDER BY a.key LIMIT 1) sm ON TRUE;
 
   RETURN jsonb_build_object('teams', v_teams, 'matchups', v_matchups,
-                            'points', COALESCE(p_before -> 'points', '{}'::jsonb), 'median', v_med);
+                            'points', COALESCE(p_after -> 'points', '{}'::jsonb), 'median', v_med);
 END;
 $$;
-REVOKE EXECUTE ON FUNCTION stat_correction_week_state_moved_internal(UUID, INTEGER, INTEGER, JSONB, JSONB) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION stat_correction_week_state_but_for_internal(UUID, INTEGER, INTEGER, JSONB, JSONB) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 2. score_write_week_batch — 172:362-967's FILE TEXT (D137) + H1–H4 (above).
@@ -267,12 +273,12 @@ DECLARE
   v_ta         JSONB;
   v_tname      TEXT;
   v_oname      TEXT;
-  -- 177 (B12 / F557): the week as the CORRECTION alone moved it
+  -- 177 (B12 / F557; R1446): the BUT-FOR week — the actual week without the correction
   v_moves      JSONB := '{}'::jsonb;    -- team -> its recorded players' points movement
-  v_moved      JSONB;                   -- v_before with ONLY those movements applied
-  v_pend       JSONB := '[]'::jsonb;    -- this call's records, held until v_moved is known
+  v_butfor     JSONB;                   -- v_after with ONLY those movements taken back out
+  v_pend       JSONB := '[]'::jsonb;    -- this call's records, held until v_butfor is known
   v_pr         JSONB;
-  v_tm         JSONB;                   -- a team as the corrections alone moved it
+  v_tf         JSONB;                   -- a team in the but-for week
   -- @172}
 BEGIN
   -- The worker's door, never a user verb: a JWT-bearing caller is refused
@@ -669,19 +675,25 @@ BEGIN
       END LOOP;
     END LOOP;
 
-    -- 177 (B12 / F557; R1443): a result is "changed by the correction" only
-    -- when BOTH the week as the corrections ALONE moved it (every other team
-    -- at its before score) AND the week as it now actually stands differ
-    -- from the week before — h2h, second game and median (§11.7). A flip
-    -- another team's move caused, or one another team's move undid, is
-    -- never announced or notified under the correction. Every result and
-    -- score recorded, posted or notified is the ACTUAL after-state's.
-    v_moved := public.stat_correction_week_state_moved_internal(p_league_id, v_league.season, p_week, v_before, v_moves);
+    -- 177 (B12 / F557; R1446 — ONE but-for test, ruled 2026-10-02): a result
+    -- changed BY THE CORRECTION is one that changed (after <> before) AND
+    -- that the correction caused: the actual after week differs from the
+    -- BUT-FOR week (the after week with only this call's corrections taken
+    -- back out, every other team at its actual after score) — per h2h,
+    -- second game and median (§11.7) and per pairing. A flip another team's
+    -- move made alone, or one it undid, is never the correction's; a flip
+    -- that needs both the correction and another team's move IS. Every
+    -- result and score recorded, posted or notified is the ACTUAL after
+    -- week's. `result_changed` therefore means "changed by the correction":
+    -- a record may honestly carry result_before <> result_after with
+    -- result_changed false when another team's move alone changed it
+    -- (pgTAP 125 O pins that meaning; the column comment below says it).
+    v_butfor := public.stat_correction_week_state_but_for_internal(p_league_id, v_league.season, p_week, v_after, v_moves);
     FOR v_pr IN SELECT value FROM jsonb_array_elements(v_pend) WITH ORDINALITY ORDER BY ordinality LOOP
       v_tid := (v_pr ->> 'team_id')::uuid;
       v_tb := v_before -> 'teams' -> (v_tid::text);
       v_ta := v_after  -> 'teams' -> (v_tid::text);
-      v_tm := v_moved  -> 'teams' -> (v_tid::text);
+      v_tf := v_butfor -> 'teams' -> (v_tid::text);
       INSERT INTO public.league_stat_corrections
         (league_id, season, week, team_id, player_id, slot, matchup_id, event_ids, stat_changes,
          player_points_before, player_points_after, team_score_before, team_score_after,
@@ -694,9 +706,9 @@ BEGIN
               CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_tb ->> 'h2h', 'second', v_tb ->> 'second', 'median', v_tb ->> 'median') END,
               CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_ta ->> 'h2h', 'second', v_ta ->> 'second', 'median', v_ta ->> 'median') END,
               v_results_final AND (
-                   ((v_ta ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h') AND (v_tm ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h'))
-                OR ((v_ta ->> 'second') IS DISTINCT FROM (v_tb ->> 'second') AND (v_tm ->> 'second') IS DISTINCT FROM (v_tb ->> 'second'))
-                OR ((v_ta ->> 'median') IS DISTINCT FROM (v_tb ->> 'median') AND (v_tm ->> 'median') IS DISTINCT FROM (v_tb ->> 'median'))))
+                   ((v_ta ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h') AND (v_ta ->> 'h2h') IS DISTINCT FROM (v_tf ->> 'h2h'))
+                OR ((v_ta ->> 'second') IS DISTINCT FROM (v_tb ->> 'second') AND (v_ta ->> 'second') IS DISTINCT FROM (v_tf ->> 'second'))
+                OR ((v_ta ->> 'median') IS DISTINCT FROM (v_tb ->> 'median') AND (v_ta ->> 'median') IS DISTINCT FROM (v_tf ->> 'median'))))
       RETURNING id INTO v_cid;
       v_rec := v_rec || jsonb_build_object(
         'id', v_cid, 'team_id', v_tid, 'player_id', v_pr ->> 'player_id', 'event_ids', v_pr -> 'event_ids',
@@ -727,9 +739,9 @@ BEGIN
                  || CASE WHEN a.value ->> 'round_type' = 'secondary' THEN ' (second game)' ELSE '' END AS words
           FROM jsonb_each(v_after -> 'matchups') a
           JOIN jsonb_each(v_before -> 'matchups') b ON b.key = a.key
-          JOIN jsonb_each(v_moved -> 'matchups') c ON c.key = a.key
+          JOIN jsonb_each(v_butfor -> 'matchups') c ON c.key = a.key
           WHERE (a.value ->> 'result') IS DISTINCT FROM (b.value ->> 'result')
-            AND (c.value ->> 'result') IS DISTINCT FROM (b.value ->> 'result')
+            AND (a.value ->> 'result') IS DISTINCT FROM (c.value ->> 'result')
         ) s;
         IF cardinality(v_flips) > 0 THEN
           v_post := v_post || ' Result changed: ' || array_to_string(v_flips, '; ') || '.';
@@ -740,10 +752,10 @@ BEGIN
           INTO v_body
         FROM jsonb_each(v_after -> 'teams') a
         JOIN jsonb_each(v_before -> 'teams') b ON b.key = a.key
-        JOIN jsonb_each(v_moved -> 'teams') c ON c.key = a.key
+        JOIN jsonb_each(v_butfor -> 'teams') c ON c.key = a.key
         JOIN public.teams t ON t.id = a.key::uuid
         WHERE (a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median')
-          AND (c.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median');
+          AND (a.value ->> 'median') IS DISTINCT FROM (c.value ->> 'median');
         IF v_body IS NOT NULL THEN
           v_post := v_post || ' Median game: ' || v_body || '.';
         END IF;
@@ -757,13 +769,13 @@ BEGIN
       -- view. Once per seated manager; an unseated team is named.
       IF v_results_final THEN
         FOR v_pl IN
-          SELECT a.key::uuid AS team_id, a.value AS aft, b.value AS bef, c.value AS mov
+          SELECT a.key::uuid AS team_id, a.value AS aft, b.value AS bef, c.value AS bf
           FROM jsonb_each(v_after -> 'teams') a
           JOIN jsonb_each(v_before -> 'teams') b ON b.key = a.key
-          JOIN jsonb_each(v_moved -> 'teams') c ON c.key = a.key
-          WHERE ((a.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h') AND (c.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h'))
-             OR ((a.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second') AND (c.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second'))
-             OR ((a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median') AND (c.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median'))
+          JOIN jsonb_each(v_butfor -> 'teams') c ON c.key = a.key
+          WHERE ((a.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h') AND (a.value ->> 'h2h') IS DISTINCT FROM (c.value ->> 'h2h'))
+             OR ((a.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second') AND (a.value ->> 'second') IS DISTINCT FROM (c.value ->> 'second'))
+             OR ((a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median') AND (a.value ->> 'median') IS DISTINCT FROM (c.value ->> 'median'))
           ORDER BY a.key
         LOOP
           v_user := NULL;
@@ -775,7 +787,7 @@ BEGIN
             CONTINUE;
           END IF;
           v_body := 'Stat correction (Week ' || p_week || '): ' || array_to_string(v_lines, '; ') || '.';
-          IF (v_pl.aft ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') AND (v_pl.mov ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') THEN
+          IF (v_pl.aft ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') AND (v_pl.aft ->> 'h2h') IS DISTINCT FROM (v_pl.bf ->> 'h2h') THEN
             SELECT t.name INTO v_oname FROM public.teams t WHERE t.id = (v_pl.aft ->> 'opponent')::uuid;
             v_body := v_body || ' ' || CASE v_pl.aft ->> 'h2h'
                 WHEN 'win'  THEN 'You now beat ' || COALESCE(v_oname, 'your opponent') || ' '
@@ -787,7 +799,7 @@ BEGIN
                 ELSE 'Your matchup has no result yet' END
               || ' (you were ' || CASE v_pl.bef ->> 'h2h' WHEN 'win' THEN 'winning' WHEN 'loss' THEN 'losing' WHEN 'tie' THEN 'tied' ELSE 'without a result' END || ').';
           END IF;
-          IF (v_pl.aft ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') AND (v_pl.mov ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') THEN
+          IF (v_pl.aft ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') AND (v_pl.aft ->> 'second') IS DISTINCT FROM (v_pl.bf ->> 'second') THEN
             SELECT t.name INTO v_oname FROM public.teams t WHERE t.id = (v_pl.aft ->> 'second_opponent')::uuid;
             v_body := v_body || ' In your second game ' || CASE v_pl.aft ->> 'second'
                 WHEN 'win'  THEN 'you now beat ' || COALESCE(v_oname, 'your opponent')
@@ -796,7 +808,7 @@ BEGIN
                 ELSE 'there is no result yet' END
               || ' (you were ' || CASE v_pl.bef ->> 'second' WHEN 'win' THEN 'winning' WHEN 'loss' THEN 'losing' WHEN 'tie' THEN 'tied' ELSE 'without a result' END || ').';
           END IF;
-          IF (v_pl.aft ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') AND (v_pl.mov ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') THEN
+          IF (v_pl.aft ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') AND (v_pl.aft ->> 'median') IS DISTINCT FROM (v_pl.bf ->> 'median') THEN
             v_body := v_body || ' You now ' || CASE v_pl.aft ->> 'median' WHEN 'win' THEN 'win' WHEN 'loss' THEN 'lose' ELSE 'tie' END
               || ' the median game (you were ' || CASE v_pl.bef ->> 'median' WHEN 'win' THEN 'winning' WHEN 'loss' THEN 'losing' WHEN 'tie' THEN 'tied' ELSE 'without a result' END || ').';
           END IF;
@@ -865,3 +877,11 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION score_write_week_batch(UUID, INTEGER, JSONB)
   FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3. The record's meaning, said in the schema (R1446, D469(10)): a record
+--    can honestly read result_before <> result_after with result_changed
+--    false — another team's move alone changed it.
+-- ---------------------------------------------------------------------------
+COMMENT ON COLUMN public.league_stat_corrections.result_changed IS
+  'TRUE exactly when THIS correction changed the team''s result (h2h, second game or median): the result changed (result_after <> result_before) AND the actual week differs from the but-for week (the same week with only this call''s corrections taken back out, every other team at its actual score). result_before / result_after are the actual week''s; they may differ with result_changed FALSE when another team''s move alone changed the result (migration 177; pgTAP 125 O).';

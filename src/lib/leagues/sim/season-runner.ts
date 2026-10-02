@@ -2454,6 +2454,7 @@ async function readCorrectionEvidence(
   // THIS player's only when it names one of THIS player's records.
   const playerRecordIds = new Set(records.map((r) => String(r.id)))
   const notesByLeague = new Map<string, number>()
+  const weekNoteCids = new Map<string, string>() // R1448: every correction id the week's notifications name -> its league
   for (let i = 0; i < leagueIds.length; i += LEAGUE_ID_CHUNK) {
     const part = leagueIds.slice(i, i + LEAGUE_ID_CHUNK)
     const { data: notes, error } = await service
@@ -2467,9 +2468,29 @@ async function readCorrectionEvidence(
     if ((notes ?? []).length === 1000) throw new Error('correction evidence: notifications read hit the 1000-row cap — refusing a truncated count')
     for (const n of notes ?? []) {
       const cids = (n.data as Record<string, unknown>).correction_ids
-      if (!Array.isArray(cids) || !cids.some((c) => playerRecordIds.has(String(c)))) continue
       const lid = String((n.data as Record<string, unknown>).league_id)
+      // R1448: EVERY notification of the week is attributed to a recorded
+      // correction — a non-empty `correction_ids`, each id a record of that
+      // league's week (checked below). An unattributed one is refused loud.
+      if (!Array.isArray(cids) || cids.length === 0) {
+        throw new Error(`correction evidence: a week ${week} stat_correction_result notification in league ${lid} names no correction (correction_ids ${JSON.stringify(cids)})`)
+      }
+      for (const c of cids) weekNoteCids.set(String(c), lid)
+      if (!cids.some((c) => playerRecordIds.has(String(c)))) continue
       notesByLeague.set(lid, (notesByLeague.get(lid) ?? 0) + 1)
+    }
+  }
+  const cidList = [...weekNoteCids.keys()]
+  const found = new Map<string, string>()
+  for (let i = 0; i < cidList.length; i += LEAGUE_ID_CHUNK) {
+    const part = cidList.slice(i, i + LEAGUE_ID_CHUNK)
+    const { data: recs, error } = await service.from('league_stat_corrections').select('id, league_id').in('id', part).eq('week', week)
+    throwIfError(error, 'correction evidence: notification correction_ids')
+    for (const r of recs ?? []) found.set(String(r.id), String(r.league_id))
+  }
+  for (const [cid, lid] of weekNoteCids) {
+    if (found.get(cid) !== lid) {
+      throw new Error(`correction evidence: a week ${week} notification in league ${lid} names correction ${cid}, which is not a recorded correction of that league's week`)
     }
   }
   return {

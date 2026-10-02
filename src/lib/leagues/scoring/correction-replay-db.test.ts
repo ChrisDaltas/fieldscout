@@ -43,8 +43,10 @@
  *     has a record and no notification; week 2's notifications are exactly
  *     the correction's flip (A and B), never C / D; week 3 the correction
  *     would flip A v B but Team B's own move undoes it (nothing announced),
- *     week 4 both flip it the same way (announced, real scores) — R1443
- *     (177; PROGRESS D469).
+ *     week 4 both flip it the same way (announced, real scores) — R1443;
+ *     week 5 the JOINT flip neither move makes alone (announced, real
+ *     scores), week 6 Team B alone flips it (silent; the record win → loss
+ *     with result_changed false) — R1446's one but-for test (177; D469(10)).
  *   AFTER THE LOCK (2082 synthetic / 2085 real) — snapshot 1 scored, the week
  *     FINAL at its window's end, then snapshot 2: the event is NFL data
  *     (`week_state` final), `player_stats` holds the new value (research), the
@@ -548,7 +550,7 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
   beforeAll(async () => {
     await must(
       service.from('nfl_weeks').insert(
-        [1, 2, 3, 4].map((w) => ({
+        [1, 2, 3, 4, 5, 6].map((w) => ({
           season,
           week: w,
           starts_at: new Date(Date.UTC(2086, 8, 2 + 7 * (w - 1), 4)).toISOString(),
@@ -579,9 +581,9 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
           season,
           status: 'in_season',
           team_count: 8,
-          regular_season_weeks: 3,
+          regular_season_weeks: 6,
           playoff_teams: 0,
-          playoff_start_week: 4,
+          playoff_start_week: 7,
           faab_budget: 100,
           scoring_system_id: tpl.id,
           scoring_rules_snapshot: tpl.rules as Json,
@@ -605,11 +607,11 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
       service.from('players').insert(['a', 'b', 'c', 'd'].map((k) => ({ id: P(k), full_name: `B12 Player ${k.toUpperCase()}`, position: 'WR', team: 'CRP', status: 'Active' }))),
       'players',
     )
-    await must(service.from('league_weeks').insert([1, 2, 3, 4].map((w) => ({ league_id: ids.league, season, week: w, status: 'correction_window' }))), 'league weeks')
+    await must(service.from('league_weeks').insert([1, 2, 3, 4, 5, 6].map((w) => ({ league_id: ids.league, season, week: w, status: 'correction_window' }))), 'league weeks')
     // Every week: A 100 v B 97, C 95 v D 80 (every game over — the correction window).
     await must(
       service.from('matchups').insert(
-        [1, 2, 3, 4].flatMap((w) => [
+        [1, 2, 3, 4, 5, 6].flatMap((w) => [
           { league_id: ids.league, season, week: w, round_type: 'regular', home_team_id: ids.teams[0], away_team_id: ids.teams[1], home_score: 100, away_score: 97, status: 'live' },
           { league_id: ids.league, season, week: w, round_type: 'regular', home_team_id: ids.teams[2], away_team_id: ids.teams[3], home_score: 95, away_score: 80, status: 'live' },
         ]),
@@ -619,7 +621,7 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
     const pts = [100, 97, 95, 80]
     await must(
       service.from('league_week_player_points').insert(
-        [1, 2, 3, 4].flatMap((w) =>
+        [1, 2, 3, 4, 5, 6].flatMap((w) =>
           ['a', 'b', 'c', 'd'].map((k, i) => ({ league_id: ids.league, season, week: w, team_id: ids.teams[i], slot: 'wr:0', player_id: P(k), points: pts[i], reason: 'scored', source: 'worker' })),
         ),
       ),
@@ -631,6 +633,8 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
         { id: '3f1b1200-0000-4000-8000-000000000002', season, week: 2, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 40, detected_at: '2086-09-15T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
         { id: '3f1b1200-0000-4000-8000-000000000003', season, week: 3, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 60, detected_at: '2086-09-22T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
         { id: '3f1b1200-0000-4000-8000-000000000004', season, week: 4, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 40, detected_at: '2086-09-29T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
+        { id: '3f1b1200-0000-4000-8000-000000000005', season, week: 5, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 90, detected_at: '2086-10-06T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
+        { id: '3f1b1200-0000-4000-8000-000000000006', season, week: 6, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 90, detected_at: '2086-10-13T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
       ]),
       'events',
     )
@@ -698,7 +702,7 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
     expect(n).toEqual([])
   })
 
-  it('B12-5 (R1443) week 4: the correction and Team B (97 → 99, no correction) flip A v B the same way — announced and notified with the REAL scores 99.00–94.00', async () => {
+  it('B12-5 (R1443, R1446 case d) week 4: the correction and Team B (97 → 99, no correction) flip A v B the same way (but for the correction A wins 100–99) — announced and notified with the REAL scores 99.00–94.00', async () => {
     const r = await door(4, [
       { team_id: ids.teams[0], points: 94, players: [line('a', 94)], corrections: ['3f1b1200-0000-4000-8000-000000000004'] },
       { team_id: ids.teams[1], points: 99, players: [line('b', 99)] },
@@ -710,5 +714,36 @@ describe('B12 — corrections in two weeks, and another team moved in the same r
     expect(post[0].message).not.toContain('97.00')
     const rec = (await must(service.from('league_stat_corrections').select('result_after, result_changed').eq('league_id', ids.league).eq('week', 4), 'record week 4'))!
     expect(rec).toEqual([{ result_after: { h2h: 'loss', second: null, median: null }, result_changed: true }])
+  })
+
+  it('B12-6 (R1446 case e — the joint flip) week 5: the correction moves A 100 → 99 and Team B moved 97 → 99.50 in the same batch — neither alone flips it, both together do (but for the correction A wins 100–99.50): announced and notified with the REAL 99.50–99.00', async () => {
+    const r = await door(5, [
+      { team_id: ids.teams[0], points: 99, players: [line('a', 99)], corrections: ['3f1b1200-0000-4000-8000-000000000005'] },
+      { team_id: ids.teams[1], points: 99.5, players: [line('b', 99.5)] },
+    ])
+    expect(r.corrections.notified.map((x) => names[ids.teams.indexOf(x.team_id)]).sort()).toEqual(['Team A', 'Team B'])
+    const post = await weekPost(5)
+    expect(post).toHaveLength(1)
+    expect(post[0].message).toContain('Result changed: Team B now beats Team A 99.50–99.00')
+    const rec = (await must(service.from('league_stat_corrections').select('result_before, result_after, result_changed').eq('league_id', ids.league).eq('week', 5), 'record week 5'))!
+    expect(rec).toEqual([{ result_before: { h2h: 'win', second: null, median: null }, result_after: { h2h: 'loss', second: null, median: null }, result_changed: true }])
+    const n = (await must(service.from('notifications').select('user_id, body').eq('type', 'stat_correction_result').eq('data->>league_id', ids.league).eq('data->>week', '5'), 'notes week 5'))!
+    expect(n.map((x) => names[ids.users.indexOf(x.user_id)]).sort()).toEqual(['Team A', 'Team B'])
+    expect(n.every((x) => (x.body ?? '').includes('99.50–99.00'))).toBe(true)
+  })
+
+  it('B12-7 (R1446 case b) week 6: the correction moves A 100 → 99 and Team B moved 97 → 101 — A loses with or without the correction: silent, and the record honestly reads win → loss with result_changed FALSE (changed by the correction, not by the week)', async () => {
+    const r = await door(6, [
+      { team_id: ids.teams[0], points: 99, players: [line('a', 99)], corrections: ['3f1b1200-0000-4000-8000-000000000006'] },
+      { team_id: ids.teams[1], points: 101, players: [line('b', 101)] },
+    ])
+    expect([r.corrections.recorded, r.corrections.notified.length]).toEqual([1, 0])
+    const post = await weekPost(6)
+    expect(post).toHaveLength(1)
+    expect(post[0].message).not.toContain('Result changed')
+    const rec = (await must(service.from('league_stat_corrections').select('result_before, result_after, result_changed').eq('league_id', ids.league).eq('week', 6), 'record week 6'))!
+    expect(rec).toEqual([{ result_before: { h2h: 'win', second: null, median: null }, result_after: { h2h: 'loss', second: null, median: null }, result_changed: false }])
+    const n = (await must(service.from('notifications').select('user_id').eq('type', 'stat_correction_result').eq('data->>league_id', ids.league).eq('data->>week', '6'), 'notes week 6'))!
+    expect(n).toEqual([])
   })
 })
