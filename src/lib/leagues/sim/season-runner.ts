@@ -1504,6 +1504,9 @@ async function driveSeason(
     postWindowWritePairs: [] as Array<{ leagueId: string; week: number }>,
     inWindowWrites: 0,
     revisionWrites: 0,
+    // M6 L.E2.6: what the door (172) said it did with each correction, per
+    // league — the starter filter's named skips and the managers it notified.
+    correctionDoor: { skipped: [] as Array<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>, notified: new Map<string, number>() },
     flaggedNoStatRow: 0,
     // R921: WHICH players the worker named, not just how many. The run-wide
     // COUNT is > 0 in every scenario by construction (18 bridged players, a
@@ -2355,6 +2358,128 @@ async function readFinalizeHold(
   }
 }
 
+/**
+ * M6 L.E2.6 — what a synthetic correction did to the run's leagues, read
+ * back from the tables (never from the worker's own report alone): the
+ * correction's events, the stored line, which teams STARTED the player that
+ * week, each league's records (172's `league_stat_corrections`), its
+ * correction posts and its `stat_correction_result` notifications.
+ */
+interface CorrectionEvidence {
+  playerName: string
+  events: Array<{ old: number | null; new: number | null; weekState: string; appliedAt: string | null }>
+  stored: number | null
+  /** `league:team` of every team whose week lineup starts the player. */
+  started: Set<string>
+  records: Array<{ leagueId: string; teamId: string; resultChanged: boolean }>
+  postsByLeague: Map<string, string[]>
+  notesByLeague: Map<string, number>
+}
+
+async function readCorrectionEvidence(
+  service: Supabase,
+  leagueIds: readonly string[],
+  week: number,
+  playerId: string,
+  statKey: string,
+): Promise<CorrectionEvidence> {
+  const { data: player, error: playerError } = await service.from('players').select('full_name').eq('id', playerId).single()
+  throwIfError(playerError, `correction evidence: player ${playerId}`)
+  const { data: ev, error: evError } = await service
+    .from('stat_correction_events')
+    .select('old_value, new_value, week_state, applied_at, detected_at')
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+    .eq('player_id', playerId)
+    .eq('stat_key', statKey)
+    .order('detected_at')
+  throwIfError(evError, 'correction evidence: events')
+  const { data: line, error: lineError } = await service
+    .from('player_stats')
+    .select('*')
+    .eq('season', SYNTHETIC_SEASON)
+    .eq('week', week)
+    .eq('player_id', playerId)
+    .maybeSingle()
+  throwIfError(lineError, 'correction evidence: player_stats')
+  const storedRaw = line === null ? null : (line as unknown as Record<string, unknown>)[statKey]
+  const teams = await pageByLeague<{ id: string; league_id: string | null }>(leagueIds, 'correction evidence: teams', (part, from, to) =>
+    service.from('teams').select('id, league_id', { count: 'exact' }).in('league_id', part).order('id').range(from, to),
+  )
+  const leagueOfTeam = new Map(teams.map((t) => [t.id, t.league_id]))
+  const started = new Set<string>()
+  const teamIds = teams.map((t) => t.id)
+  for (let i = 0; i < teamIds.length; i += LEAGUE_ID_CHUNK) {
+    const part = teamIds.slice(i, i + LEAGUE_ID_CHUNK)
+    const { data: lineups, error } = await service
+      .from('team_lineups')
+      .select('team_id, slot_map')
+      .eq('season', SYNTHETIC_SEASON)
+      .eq('week', week)
+      .in('team_id', part)
+    throwIfError(error, 'correction evidence: lineups')
+    if ((lineups ?? []).length > part.length) throw new Error(`correction evidence: ${(lineups ?? []).length} lineups for ${part.length} teams`)
+    for (const l of lineups ?? []) {
+      if (Object.values((l.slot_map ?? {}) as Record<string, unknown>).includes(playerId)) started.add(`${leagueOfTeam.get(l.team_id)}:${l.team_id}`)
+    }
+  }
+  const records = await pageByLeague<{ league_id: string; team_id: string; result_changed: boolean }>(
+    leagueIds,
+    'correction evidence: records',
+    (part, from, to) =>
+      service
+        .from('league_stat_corrections')
+        .select('league_id, team_id, result_changed, id', { count: 'exact' })
+        .in('league_id', part)
+        .eq('week', week)
+        .eq('player_id', playerId)
+        .order('id')
+        .range(from, to),
+  )
+  const posts = await pageByLeague<{ league_id: string | null; message: string }>(leagueIds, 'correction evidence: posts', (part, from, to) =>
+    service
+      .from('league_chat')
+      .select('league_id, message, id', { count: 'exact' })
+      .in('league_id', part)
+      .eq('is_system', true)
+      .like('message', `Stat correction (Week ${week}):%`)
+      .order('id')
+      .range(from, to),
+  )
+  const postsByLeague = new Map<string, string[]>()
+  for (const p of posts) postsByLeague.set(String(p.league_id), [...(postsByLeague.get(String(p.league_id)) ?? []), p.message])
+  const notesByLeague = new Map<string, number>()
+  for (let i = 0; i < leagueIds.length; i += LEAGUE_ID_CHUNK) {
+    const part = leagueIds.slice(i, i + LEAGUE_ID_CHUNK)
+    const { data: notes, error } = await service
+      .from('notifications')
+      .select('data')
+      .eq('type', 'stat_correction_result')
+      .in('data->>league_id', part)
+      .limit(1000)
+    throwIfError(error, 'correction evidence: notifications')
+    if ((notes ?? []).length === 1000) throw new Error('correction evidence: notifications read hit the 1000-row cap — refusing a truncated count')
+    for (const n of notes ?? []) {
+      const lid = String((n.data as Record<string, unknown>).league_id)
+      notesByLeague.set(lid, (notesByLeague.get(lid) ?? 0) + 1)
+    }
+  }
+  return {
+    playerName: player!.full_name,
+    events: (ev ?? []).map((e) => ({
+      old: e.old_value === null ? null : Number(e.old_value),
+      new: e.new_value === null ? null : Number(e.new_value),
+      weekState: e.week_state,
+      appliedAt: e.applied_at,
+    })),
+    stored: storedRaw === null || storedRaw === undefined ? null : Number(storedRaw),
+    started,
+    records: records.map((r) => ({ leagueId: r.league_id, teamId: r.team_id, resultChanged: r.result_changed })),
+    postsByLeague,
+    notesByLeague,
+  }
+}
+
 /** The two correction arms, measured from the worker's OWN report. */
 function measureCorrectionArms(
   batch: BatchReport,
@@ -2367,12 +2492,18 @@ function measureCorrectionArms(
     postWindowWritePairs: Array<{ leagueId: string; week: number }>
     inWindowWrites: number
     revisionWrites: number
+    correctionDoor: { skipped: Array<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>; notified: Map<string, number> }
   },
 ): void {
   const closeAt = windowEndsAt.get(entry.week)
   const past = closeAt !== undefined && entry.at.getTime() > closeAt
   for (const league of batch.leagues) {
     if (league.week !== entry.week) continue
+    const corr = league.door?.corrections
+    if (corr !== undefined && corr !== null) {
+      for (const k of corr.skipped ?? []) measured.correctionDoor.skipped.push({ leagueId: league.league_id, teamId: k.team_id, playerId: k.player_id ?? null, reason: k.reason })
+      if ((corr.notified ?? []).length > 0) measured.correctionDoor.notified.set(league.league_id, (measured.correctionDoor.notified.get(league.league_id) ?? 0) + corr.notified.length)
+    }
     if (past) {
       if (league.skip_reason === 'week_final') measured.postWindowSkips += 1
       if (league.outcome === 'written') {
@@ -3602,8 +3733,10 @@ async function buildScenarioEvidence(
     postWindowWriteDetail: readonly string[]
     postWindowWroteFinalWeek: number
     postWindowWroteUnexplained: number
+    postWindowWritePairs: ReadonlyArray<{ leagueId: string; week: number }>
     inWindowWrites: number
     revisionWrites: number
+    correctionDoor: { skipped: ReadonlyArray<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>; notified: ReadonlyMap<string, number> }
     chartedPostInstant: string | null
     chartedSlaInstant: string | null
     chartedAdvancedRows: number
@@ -3914,6 +4047,52 @@ async function buildScenarioEvidence(
         `${measured.inWindowWrites} league-weeks written at the correction instant`,
         'an in-window correction recomputes the non-final cell (E44/§23.4)',
       )
+      // M6 L.E2.6 (172 / D453): the correction is RECORDED for each league
+      // team that started the player, ANNOUNCED once per such league, and a
+      // manager is notified only where a result changed — read back from the
+      // tables, cross-checked against the door's own report.
+      const corr = anchored.get(firstWeek)?.corrections[0]
+      if (corr === undefined) throw new Error('correction_in_window: the anchored scenario carries no correction')
+      const e = await readCorrectionEvidence(service, leagues.map((l) => l.leagueId), firstWeek, corr.playerId, corr.key)
+      const ev = e.events
+      const only = ev.length === 1 ? ev[0]! : null
+      const eventOk =
+        only !== null && only.weekState === 'open' && only.appliedAt !== null && only.new !== null && only.new - (only.old ?? 0) === corr.delta && e.stored === only.new
+      const recorded = new Set(e.records.map((r) => `${r.leagueId}:${r.teamId}`))
+      const doorSkips = measured.correctionDoor.skipped.filter((k) => k.playerId === corr.playerId)
+      const unrecorded = [...e.started].filter((k) => !recorded.has(k))
+      const unexplained = unrecorded.filter((k) => !doorSkips.some((d) => `${d.leagueId}:${d.teamId}` === k))
+      const notStarted = [...recorded].filter((k) => !e.started.has(k))
+      const recLeagues = new Set(e.records.map((r) => r.leagueId))
+      const badPosts = leagues.filter((l) => (e.postsByLeague.get(l.leagueId) ?? []).length !== (recLeagues.has(l.leagueId) ? 1 : 0))
+      const allPosts = [...e.postsByLeague.values()].flat()
+      const unnamed = allPosts.filter((m) => !m.includes(`${e.playerName}'s`))
+      const flipLeagues = new Set(e.records.filter((r) => r.resultChanged).map((r) => r.leagueId))
+      const noteTotal = [...e.notesByLeague.values()].reduce((a, b) => a + b, 0)
+      const notesWithoutFlip = [...e.notesByLeague.keys()].filter((l) => !flipLeagues.has(l))
+      const notesVsDoor = [...new Set([...e.notesByLeague.keys(), ...measured.correctionDoor.notified.keys()])].filter(
+        (l) => (e.notesByLeague.get(l) ?? 0) !== (measured.correctionDoor.notified.get(l) ?? 0),
+      )
+      push(
+        'correction_recorded_in_window',
+        eventOk &&
+          e.records.length > 0 &&
+          unexplained.length === 0 &&
+          notStarted.length === 0 &&
+          badPosts.length === 0 &&
+          unnamed.length === 0 &&
+          notesWithoutFlip.length === 0 &&
+          notesVsDoor.length === 0,
+        `event(s) ${JSON.stringify(ev)} (player_stats ${corr.key} = ${e.stored}); ${e.started.size} team(s) started ${e.playerName} → ` +
+          `${e.records.length} record(s) in ${recLeagues.size} league(s) (unrecorded starters ${unrecorded.length}, each named by the door: ` +
+          `${JSON.stringify(doorSkips.map((d) => d.reason))}; unexplained ${JSON.stringify(unexplained)}; recorded but not started ${JSON.stringify(notStarted)}); ` +
+          `correction posts ${allPosts.length} (leagues off one-per-recording-league: ${badPosts.map((l) => l.label).join(', ') || 'none'}; not naming the player: ${unnamed.length}); ` +
+          `notifications ${noteTotal} in ${e.notesByLeague.size} league(s), ${flipLeagues.size} league(s) with a changed result ` +
+          `(notified with no changed result: ${notesWithoutFlip.length}; disagreeing with the door's report: ${notesVsDoor.length})`,
+        'ONE open event of the declared delta, applied, and player_stats holds it; a record for EVERY team that started the player (an unrecorded ' +
+          'starter only where the door named why) and none for a team that did not; ONE league post per recording league naming the player, none ' +
+          "elsewhere; a notification only in a league where a recorded result changed — exactly the door's (spec §23.4 / §16.4; 172; D453)",
+      )
       break
     }
     case 'correction_post_window': {
@@ -3974,6 +4153,34 @@ async function buildScenarioEvidence(
           'week_final (119:566) for every week that HAS finalized, and any week it finds still open is ' +
           "classified by the finalize job's own hold reason (games_not_final 118:2054 / pending_scores " +
           '118:2074); an unclassifiable one fails (D295(b); the window-vs-finality gap is §3 Q47/F302)',
+      )
+      // M6 L.E2.6 (Q81 — "if the stat window has closed I think we have to
+      // forget it"): the late fix is NFL data — an event, player_stats moved —
+      // and nothing in any league whose week had finalized: no record, no
+      // post, no notification. A league the door lawfully found still open
+      // (a §3 Q47 hold, classified above) is excluded by name.
+      const late = anchored.get(firstWeek)?.corrections[0]
+      if (late === undefined) throw new Error('correction_post_window: the anchored scenario carries no correction')
+      const held = new Set(measured.postWindowWritePairs.filter((p) => p.week === firstWeek).map((p) => p.leagueId))
+      const ev2 = await readCorrectionEvidence(
+        service,
+        leagues.map((l) => l.leagueId).filter((id) => !held.has(id)),
+        firstWeek,
+        late.playerId,
+        late.key,
+      )
+      const lastEv = ev2.events[ev2.events.length - 1]
+      const researchOk = lastEv !== undefined && lastEv.new !== null && lastEv.new - (lastEv.old ?? 0) === late.delta && ev2.stored === lastEv.new
+      const leakedPosts = [...ev2.postsByLeague.values()].flat().length
+      const leakedNotes = [...ev2.notesByLeague.values()].reduce((a, b) => a + b, 0)
+      push(
+        'correction_research_only_after_lock',
+        researchOk && (held.size > 0 || lastEv?.weekState === 'final') && ev2.records.length + leakedPosts + leakedNotes === 0,
+        `event(s) ${JSON.stringify(ev2.events)}; player_stats ${late.key} = ${ev2.stored}; over ${leagues.length - held.size} league(s) ` +
+          `(${held.size} lawfully held, excluded): ${ev2.records.length} record(s), ${leakedPosts} correction post(s), ${leakedNotes} notification(s); ` +
+          `${ev2.started.size} team(s) had started ${ev2.playerName}`,
+        'the late fix is NFL data — an event of the declared delta (week_state final when no league holds the week) and player_stats holds it; ' +
+          'no league whose week finalized gets a record, a post or a notification (Q81; spec §23.4; D453)',
       )
       break
     }

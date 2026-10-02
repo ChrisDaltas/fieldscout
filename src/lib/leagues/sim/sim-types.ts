@@ -281,6 +281,10 @@ export type ScenarioAssertionName =
   | 'finalization_unaffected'
   | 'non_final_cells_recomputed'
   | 'no_league_cell_changed'
+  // M6 L.E2.6 (172 / D453 / Q81): the correction arms read the league's
+  // record, post and notifications, not only the cells.
+  | 'correction_recorded_in_window'
+  | 'correction_research_only_after_lock'
   // ── The two charted arms, as they are LEGALLY observable today ───────────
   // L.D6.3/F283/Q44. `example_charted_yards` is the registry's ONLY
   // `tier: 'charted'` key and it carries `scoring_surface: 'reserved'`

@@ -56,8 +56,8 @@ const REQUIRED_BY_SCENARIO: Readonly<Record<string, readonly string[]>> = {
     'backfilled',
     'finalization_unaffected',
   ],
-  correction_in_window: ['non_final_cells_recomputed'],
-  correction_post_window: ['no_league_cell_changed'],
+  correction_in_window: ['non_final_cells_recomputed', 'correction_recorded_in_window'],
+  correction_post_window: ['no_league_cell_changed', 'correction_research_only_after_lock'],
   // F283 / PROGRESS §3 Q44: the task row names `pending_not_zero` (E61) and
   // `recomputed_in_window`. Neither is assertable at league level on this
   // chain without certifying a configuration spec §23.5 forbids, so the two
