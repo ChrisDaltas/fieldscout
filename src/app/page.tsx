@@ -1,61 +1,16 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 
-import { GuestShell } from '@/components/layout/guest-shell'
-import {
-  GuestBigBoard,
-  type GuestBigBoardPlayer,
-} from '@/components/players/guest-big-board'
-import { Button } from '@/components/ui/button'
-import { featureFlags } from '@/lib/feature-flags'
+import { LandingPage } from '@/components/landing/landing-page'
 import { createServerClient } from '@/lib/supabase/server'
 
-// Curated top players for the guest preview big board. We look these up by
-// full_name against the synced players table so the modal can fetch real stats.
-const SEED_NAMES = [
-  'CeeDee Lamb',
-  "Ja'Marr Chase",
-  'Tyreek Hill',
-  'Christian McCaffrey',
-  'Bijan Robinson',
-  'Jahmyr Gibbs',
-  'Justin Jefferson',
-  'Amon-Ra St. Brown',
-  'Saquon Barkley',
-  'Breece Hall',
-  'Jonathan Taylor',
-  'Garrett Wilson',
-  'Patrick Mahomes',
-  'Josh Allen',
-  'Lamar Jackson',
-  'Derrick Henry',
-  'A.J. Brown',
-  'Davante Adams',
-  'Travis Kelce',
-  'Sam LaPorta',
-  'Puka Nacua',
-  'Drake London',
-  'De’Von Achane',
-  'Malik Nabers',
-] as const
-
-async function loadSeedPlayers(): Promise<GuestBigBoardPlayer[]> {
-  const supabase = await createServerClient()
-  const { data } = await supabase
-    .from('players')
-    .select('id, full_name, position, team, headshot_url')
-    .in('full_name', SEED_NAMES as unknown as string[])
-
-  const byName = new Map<string, GuestBigBoardPlayer>(
-    (data ?? []).map((p) => [p.full_name as string, p as GuestBigBoardPlayer]),
-  )
-
-  // Preserve our curated order; drop any names that didn't match the DB.
-  return SEED_NAMES.map((name) => byName.get(name)).filter(
-    (p): p is GuestBigBoardPlayer => Boolean(p),
-  )
+export const metadata: Metadata = {
+  title: 'FieldScout — AI powered fantasy football',
+  description:
+    'Full leagues, live drafts, expert and consensus rankings, waiver wire reports, start or sit and advanced stats. All powered by Scout AI.',
 }
 
+/** Public landing page for signed-out visitors; signed-in users go to the app. */
 export default async function GuestHomePage() {
   const supabase = await createServerClient()
   const {
@@ -66,55 +21,5 @@ export default async function GuestHomePage() {
     redirect('/app')
   }
 
-  const players = await loadSeedPlayers()
-
-  return (
-    <GuestShell wide>
-      <div className="space-y-10">
-        <header className="mx-auto max-w-3xl text-center">
-          <h1 className="text-h2">Welcome to FieldScout</h1>
-          <p className="mt-3 text-base text-n-3 md:text-lg">
-            Get ready for draft season. FieldScout is the ultimate tool 100% focused
-            on fantasy football.
-          </p>
-          <p className="mt-6 text-sm font-medium text-ink">
-            Start building your fantasy rankings now and get ready for draft season.
-          </p>
-          <div className="mt-4 flex justify-center gap-2">
-            <Button size="lg" variant="blue" shadow asChild>
-              <Link href="/signup">Sign up free</Link>
-            </Button>
-            <Button size="lg" variant="stroke" asChild>
-              <Link href="/login">Sign in</Link>
-            </Button>
-          </div>
-        </header>
-
-        <GuestBigBoard players={players} />
-
-        {/* The community surfaces this section advertises (consensus, expert
-            profiles, start or sit) are release-gated out of the 2026 go-live
-            scope — the whole section goes with them so the landing page never
-            links a visitor into a 404. */}
-        {featureFlags.consensus && (
-          <section className="border-t border-ink pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-h6">Explore the community</h3>
-              <Link
-                href="/consensus"
-                className="text-sm font-bold text-accent hover:underline"
-              >
-                View consensus →
-              </Link>
-            </div>
-            <p className="mt-2 max-w-2xl text-sm text-n-3">
-              Public rankings, expert profiles, and weekly start or sit are open to
-              everyone. Sign up free when you want to save your work, follow rankers,
-              or start tracking accuracy.
-            </p>
-          </section>
-        )}
-      </div>
-    </GuestShell>
-  )
+  return <LandingPage />
 }

@@ -18,6 +18,8 @@ const config: Config = {
         mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
         // Wordmark/logo lockup only — never body text.
         wordmark: ['var(--font-silkscreen)', 'monospace'],
+        // FieldScout Landing v13 look (ruled the new app look, 2026-10-02).
+        inter: ['var(--font-inter)', '-apple-system', 'system-ui', 'sans-serif'],
         silkscreen: ['var(--font-silkscreen)', 'monospace'],
       },
       colors: {
@@ -81,6 +83,30 @@ const config: Config = {
           wash: 'rgb(255 255 255 / 0.1)',
           rule: 'rgb(255 255 255 / 0.1)',
           border: 'rgb(255 255 255 / 0.25)',
+        },
+
+        /* ---- FieldScout v13 look (Claude Design "FieldScout Landing v13";
+           ruled the new app look 2026-10-02). Landing page first; the rest
+           of the app moves over later. Use only on v13 surfaces. ---- */
+        fs: {
+          page: '#F5F5F7', // page + sunken fills (inputs, chips, inset panels)
+          raised: '#FBFBFD', // window/card title bars, table heads
+          ink: { DEFAULT: '#1D1D1F', 2: '#2C2C2E', 3: '#3A3A3C' },
+          text: { 2: '#424245', 3: '#6E6E73', 4: '#86868B', 5: '#AEAEB2' },
+          'on-ink': { 2: '#A1A1A6', 3: '#D2D2D7' }, // secondary text on ink cards
+          line: { DEFAULT: '#F0F0F2', strong: '#E5E5EA', field: '#DCDCDF' },
+          fill: { DEFAULT: '#E5E5EA', strong: '#D2D2D7', off: '#C7C7CC' },
+          blue: {
+            DEFAULT: '#0080FF',
+            hover: '#006FDE',
+            deep: '#0060C0',
+            soft: '#E8F2FF',
+            tint: '#EEF6FF',
+            wash: '#F5F9FF',
+          },
+          green: '#00D167',
+          caution: '#FFE58A',
+          violet: { DEFAULT: '#5B2FD1', soft: '#F0EBFF', wash: '#FBFAFF', scout: '#A970FF' },
         },
 
         /* ---- Legacy shadcn compatibility layer (HSL vars in globals.css) ---- */
@@ -151,6 +177,12 @@ const config: Config = {
         '2xl': '1px',
         '3xl': '1px',
         pill: '999px',
+        // v13 look — soft rounded geometry (see colors.fs).
+        'fs-xs': '5px', // position tags
+        'fs-sm': '9px', // nav rows, segmented controls
+        'fs-md': '13px', // inputs, list rows, popovers
+        'fs-lg': '18px', // inner cards
+        'fs-xl': '25px', // feature cards, demo windows
       },
       // Hard un-blurred offset shadows — the neo-brutalist signature.
       // No soft shadows anywhere.
@@ -172,6 +204,14 @@ const config: Config = {
         // Ink fills take an accent shadow — an ink shadow disappears into them.
         'hard-accent-4': '3.2px 3.2px 0 #3d5cff',
         'hard-accent': '4.8px 4.8px 0 #3d5cff',
+        // v13 look — soft depth (supersedes the hard-shadow rule on v13
+        // surfaces only; ruled 2026-10-02). `fs-ring` is the resting
+        // hairline, `fs-float` the big demo windows, `fs-pop` menus.
+        'fs-ring': '0 0 0 1px rgba(0,0,0,.06)',
+        'fs-float': '0 0 0 1px rgba(0,0,0,.06), 0 40px 100px -24px rgba(0,0,0,.2)',
+        'fs-pop': '0 0 0 1px rgba(0,0,0,.08), 0 16px 40px -8px rgba(0,0,0,.25)',
+        'fs-seg': '0 1px 3px rgba(0,0,0,.14)',
+        'fs-inset': '0 0 0 1px #F0F0F2', // inner panels inside a demo window
       },
       // Heading scale (pre-scaled ×0.8; weight applied by base styles).
       fontSize: {
@@ -263,8 +303,29 @@ const config: Config = {
           '85%': { opacity: '1' },
           '100%': { transform: 'translate(-50%, -50%) rotate(360deg)', opacity: '0' },
         },
+        // v13 Scout AI "alive" dot — hue cycle + pulse ring.
+        'fs-scout-hue': {
+          '0%, 100%': { backgroundColor: '#00C8FF', color: '#00C8FF' },
+          '25%': { backgroundColor: '#A970FF', color: '#A970FF' },
+          '50%': { backgroundColor: '#FF4FD8', color: '#FF4FD8' },
+          '75%': { backgroundColor: '#FFB800', color: '#FFB800' },
+        },
+        'fs-scout-ring': {
+          '0%': { boxShadow: '0 0 0 0 currentColor, 0 0 6px 1px currentColor' },
+          '100%': { boxShadow: '0 0 0 8px transparent, 0 0 6px 1px currentColor' },
+        },
+        'fs-blink': { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.2' } },
+        'fs-ticker': {
+          from: { transform: 'translateX(var(--fs-ticker-from, 100vw))' },
+          to: { transform: 'translateX(-100%)' },
+        },
       },
       animation: {
+        'fs-scout': 'fs-scout-hue 6s linear infinite, fs-scout-ring 2s linear infinite',
+        'fs-scout-hue': 'fs-scout-hue 6s linear infinite',
+        'fs-blink': 'fs-blink 1s linear infinite',
+        // Duration is set per run (it scales with the item count).
+        'fs-ticker': 'fs-ticker 60s linear forwards',
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'fade-in': 'fade-in 150ms linear',

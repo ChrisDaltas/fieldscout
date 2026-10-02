@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Roboto_Flex, Roboto_Mono, Silkscreen } from 'next/font/google'
+import { Inter, Roboto_Flex, Roboto_Mono, Silkscreen } from 'next/font/google'
 
 import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
@@ -30,6 +30,14 @@ const silkscreen = Silkscreen({
   variable: '--font-silkscreen',
 })
 
+// v13 look (landing first) — Inter with the optical-size axis, so large
+// headings render as Inter Display like the design.
+const inter = Inter({
+  subsets: ['latin'],
+  axes: ['opsz'],
+  variable: '--font-inter',
+})
+
 export const metadata: Metadata = {
   title: 'FieldScout',
   description: 'The all-in-one community app for fantasy football',
@@ -48,6 +56,7 @@ export default function RootLayout({
           robotoFlex.variable,
           robotoMono.variable,
           silkscreen.variable,
+          inter.variable,
         )}
       >
         <QueryProvider>
