@@ -69,6 +69,104 @@ set local search_path = public, extensions;
 
 select plan(72);
 
+-- pg_temp.un177 — 177's four hunks reversed (derive_177.py; pgTAP 125).
+create function pg_temp.un177(s text) returns text language plpgsql as $un$
+declare a int; b int; seg text;
+begin
+  -- H4 reversed: v_moved -> v_after inside the post / notification block only
+  a := strpos(s, $r$    IF jsonb_array_length(v_rec) > 0 THEN
+$r$);
+  if a > 0 then
+    b := a + strpos(substr(s, a), $r$    v_corr := jsonb_build_object(
+$r$) - 1;
+    seg := substr(s, a, b - a);
+    s := substr(s, 1, a - 1) || replace(seg, 'v_moved', 'v_after') || substr(s, b);
+  end if;
+  s := replace(s, $r$      END LOOP;
+    END LOOP;
+
+    -- 177 (B12 / F557): a result is "changed by the correction" only when
+    -- the week as the corrections ALONE moved it (every other team at its
+    -- before score) differs from the week before — h2h, second game and
+    -- median (§11.7). Any other movement in the batch is not the
+    -- correction's and is never announced or notified under it.
+    v_moved := public.stat_correction_week_state_moved_internal(p_league_id, v_league.season, p_week, v_before, v_moves);
+    FOR v_pr IN SELECT value FROM jsonb_array_elements(v_pend) WITH ORDINALITY ORDER BY ordinality LOOP
+      v_tid := (v_pr ->> 'team_id')::uuid;
+      v_tb := v_before -> 'teams' -> (v_tid::text);
+      v_ta := v_moved  -> 'teams' -> (v_tid::text);
+      INSERT INTO public.league_stat_corrections
+        (league_id, season, week, team_id, player_id, slot, matchup_id, event_ids, stat_changes,
+         player_points_before, player_points_after, team_score_before, team_score_after,
+         result_before, result_after, result_changed)
+      VALUES (p_league_id, v_league.season, p_week, v_tid, v_pr ->> 'player_id', v_pr ->> 'slot',
+              (v_pr ->> 'matchup_id')::uuid,
+              ARRAY(SELECT (x.value #>> '{}')::uuid FROM jsonb_array_elements(v_pr -> 'event_ids') WITH ORDINALITY x ORDER BY x.ordinality),
+              v_pr -> 'changes',
+              (v_pr ->> 'pp_before')::numeric, (v_pr ->> 'pp_after')::numeric, (v_pr ->> 'score_b')::numeric, (v_pr ->> 'score_a')::numeric,
+              CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_tb ->> 'h2h', 'second', v_tb ->> 'second', 'median', v_tb ->> 'median') END,
+              CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_ta ->> 'h2h', 'second', v_ta ->> 'second', 'median', v_ta ->> 'median') END,
+              v_results_final AND ROW(v_tb ->> 'h2h', v_tb ->> 'second', v_tb ->> 'median')
+                                  IS DISTINCT FROM ROW(v_ta ->> 'h2h', v_ta ->> 'second', v_ta ->> 'median'))
+      RETURNING id INTO v_cid;
+      v_rec := v_rec || jsonb_build_object(
+        'id', v_cid, 'team_id', v_tid, 'player_id', v_pr ->> 'player_id', 'event_ids', v_pr -> 'event_ids',
+        'player_points_before', v_pr -> 'pp_before', 'player_points_after', v_pr -> 'pp_after',
+        'team_score_before', v_pr -> 'score_b', 'team_score_after', v_pr -> 'score_a');
+    END LOOP;
+
+    IF jsonb_array_length(v_rec) > 0 THEN
+$r$, $o$      END LOOP;
+    END LOOP;
+
+    IF jsonb_array_length(v_rec) > 0 THEN
+$o$);
+  s := replace(s, $r$        v_score_b := (v_tb ->> 'score')::numeric;
+        v_score_a := (v_ta ->> 'score')::numeric;
+        -- 177 (B12 / F557): the record is HELD — its result is the one THIS
+        -- call's corrections made, which needs every record of the call; the
+        -- team's movement is the corrected players' own points, never the
+        -- rest of its score.
+        v_moves := jsonb_set(v_moves, ARRAY[v_tid::text],
+          to_jsonb(COALESCE((v_moves ->> v_tid::text)::numeric, 0)
+                   + COALESCE((v_pp_after ->> 'points')::numeric, 0) - COALESCE(v_pp_before, 0)));
+        v_pend := v_pend || jsonb_build_object(
+          'team_id', v_tid, 'player_id', v_pl.player_id, 'slot', v_pp_after ->> 'slot',
+          'matchup_id', v_ta ->> 'matchup_id', 'event_ids', to_jsonb(v_pl.ids), 'changes', v_pl.changes,
+          'pp_before', v_pp_before, 'pp_after', (v_pp_after ->> 'points')::numeric,
+          'score_b', v_score_b, 'score_a', v_score_a);
+$r$, $o$        v_score_b := (v_tb ->> 'score')::numeric;
+        v_score_a := (v_ta ->> 'score')::numeric;
+        INSERT INTO public.league_stat_corrections
+          (league_id, season, week, team_id, player_id, slot, matchup_id, event_ids, stat_changes,
+           player_points_before, player_points_after, team_score_before, team_score_after,
+           result_before, result_after, result_changed)
+        VALUES (p_league_id, v_league.season, p_week, v_tid, v_pl.player_id, v_pp_after ->> 'slot',
+                (v_ta ->> 'matchup_id')::uuid, v_pl.ids, v_pl.changes,
+                v_pp_before, (v_pp_after ->> 'points')::numeric, v_score_b, v_score_a,
+                CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_tb ->> 'h2h', 'second', v_tb ->> 'second', 'median', v_tb ->> 'median') END,
+                CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_ta ->> 'h2h', 'second', v_ta ->> 'second', 'median', v_ta ->> 'median') END,
+                v_results_final AND ROW(v_tb ->> 'h2h', v_tb ->> 'second', v_tb ->> 'median')
+                                    IS DISTINCT FROM ROW(v_ta ->> 'h2h', v_ta ->> 'second', v_ta ->> 'median'))
+        RETURNING id INTO v_cid;
+        v_rec := v_rec || jsonb_build_object(
+          'id', v_cid, 'team_id', v_tid, 'player_id', v_pl.player_id, 'event_ids', to_jsonb(v_pl.ids),
+          'player_points_before', v_pp_before, 'player_points_after', (v_pp_after ->> 'points')::numeric,
+          'team_score_before', v_score_b, 'team_score_after', v_score_a);
+$o$);
+  s := replace(s, $r$  v_oname      TEXT;
+  -- 177 (B12 / F557): the week as the CORRECTION alone moved it
+  v_moves      JSONB := '{}'::jsonb;    -- team -> its recorded players' points movement
+  v_moved      JSONB;                   -- v_before with ONLY those movements applied
+  v_pend       JSONB := '[]'::jsonb;    -- this call's records, held until v_moved is known
+  v_pr         JSONB;
+  -- @172}
+$r$, $o$  v_oname      TEXT;
+  -- @172}
+$o$);
+  return s;
+end $un$;
+
 -- 172's five fenced hunks reversed on the live body (D137) — ONE regexp.
 create function pg_temp.un172(p_src text) returns text language sql as $un172$
   select regexp_replace(p_src, E'[ ]*-- @172\\{[^@]*-- @172\\}\\n', '', 'g');
@@ -117,10 +215,12 @@ select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'score_write_week_batch'),
   1, 'A5 score_write_week_batch is still ONE overload — the element rides the same signature (074 K3)');
+-- RE-CUT BY 177 (B12 / F557): A6 reads the live body through pg_temp.un177
+-- INNERMOST (additive — the 172 stored literal unchanged); pgTAP 125 A3 pins 177.
 select is(
-  (select md5(prosrc) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
+  (select md5(pg_temp.un177(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '7fbb74085768afd0f9d56a235f1ebabb',
-  'A6 score_write_week_batch is 172''s body — a STORED LITERAL md5 (derive_172.py: 158:409-720 plus five fenced hunks)');
+  'A6 score_write_week_batch is 172''s body — a STORED LITERAL md5 (derive_172.py: 158:409-720 plus five fenced hunks), read with 177''s four hunks reversed (pg_temp.un177; 125 A3 pins 177)');
 select is(
   (select md5(pg_temp.un172(prosrc)) from pg_proc where oid = 'public.score_write_week_batch(uuid,integer,jsonb)'::regprocedure),
   '548958d0a402c352c91c23fa924a2a0f',

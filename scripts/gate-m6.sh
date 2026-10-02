@@ -9,13 +9,14 @@
 # replay, copy census) → the season sim with the correction scenarios and one
 # commissioner override per run → the M6 E2E → test:gate:m5"; the gate
 # COMPOSES the existing proofs, never rewrites them — the L.D6.3 precedent):
-#   [1/8]  Fresh `supabase db reset` — the full chain (001-176 at L.E1.37).
-#   [2/8]  `npm run test:db` — the FULL pgTAP suite. M6's band is 115-124:
+#   [1/8]  Fresh `supabase db reset` — the full chain (001-177 since B12).
+#   [2/8]  `npm run test:db` — the FULL pgTAP suite. M6's band is 115-125:
 #          the correction events (115), the draft / membership receipts
 #          (116 / 117), L.E1.31's backstop census + matrix + guards (118),
 #          the draft doors (119), the league correction records (120), the
 #          retire door (121), L.D3.16's trade powers (122), F555's receipt
-#          insert policy (123), L.E1.42's retire removal (124).
+#          insert policy (123), L.E1.42's retire removal (124), B12's
+#          correction-flip announcement (125, migration 177).
 #          On the EMPTY post-reset pool (D144(5)).
 #   [3/8]  vitest -c vitest.gate-m6.config.ts — 75 files enumerated by name
 #          (F84); the membership rule is in the config. Serialized (F52).
@@ -86,7 +87,7 @@ stage "[1/8] Fresh local stack reset (pristine, fully-migrated chain)"
 npx supabase db reset
 took
 
-stage "[2/8] Full pgTAP suite — test:db (115-124 are the M6 files, 118 = L.E1.31's census)"
+stage "[2/8] Full pgTAP suite — test:db (115-125 are the M6 files, 118 = L.E1.31's census)"
 npm run test:db
 took
 

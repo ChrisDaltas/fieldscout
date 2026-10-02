@@ -1506,7 +1506,7 @@ async function driveSeason(
     revisionWrites: 0,
     // M6 L.E2.6: what the door (172) said it did with each correction, per
     // league — the starter filter's named skips and the managers it notified.
-    correctionDoor: { skipped: [] as Array<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>, notified: new Map<string, number>() },
+    correctionDoor: { skipped: [] as Array<{ leagueId: string; week: number; teamId: string; playerId: string | null; reason: string }>, notified: new Map<string, number>() },
     flaggedNoStatRow: 0,
     // R921: WHICH players the worker named, not just how many. The run-wide
     // COUNT is > 0 in every scenario by construction (18 bridged players, a
@@ -2455,6 +2455,7 @@ async function readCorrectionEvidence(
       .from('notifications')
       .select('data')
       .eq('type', 'stat_correction_result')
+      .eq('data->>week', String(week)) // B12 (D469): this week's notifications only
       .in('data->>league_id', part)
       .limit(1000)
     throwIfError(error, 'correction evidence: notifications')
@@ -2492,7 +2493,9 @@ function measureCorrectionArms(
     postWindowWritePairs: Array<{ leagueId: string; week: number }>
     inWindowWrites: number
     revisionWrites: number
-    correctionDoor: { skipped: Array<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>; notified: Map<string, number> }
+    // B12 (D469): keyed by WEEK too — the scenario corrects every week, and
+    // the evidence is read for one week; `notified` keys are `${week}|${leagueId}`.
+    correctionDoor: { skipped: Array<{ leagueId: string; week: number; teamId: string; playerId: string | null; reason: string }>; notified: Map<string, number> }
   },
 ): void {
   const closeAt = windowEndsAt.get(entry.week)
@@ -2501,8 +2504,9 @@ function measureCorrectionArms(
     if (league.week !== entry.week) continue
     const corr = league.door?.corrections
     if (corr !== undefined && corr !== null) {
-      for (const k of corr.skipped ?? []) measured.correctionDoor.skipped.push({ leagueId: league.league_id, teamId: k.team_id, playerId: k.player_id ?? null, reason: k.reason })
-      if ((corr.notified ?? []).length > 0) measured.correctionDoor.notified.set(league.league_id, (measured.correctionDoor.notified.get(league.league_id) ?? 0) + corr.notified.length)
+      for (const k of corr.skipped ?? []) measured.correctionDoor.skipped.push({ leagueId: league.league_id, week: league.week, teamId: k.team_id, playerId: k.player_id ?? null, reason: k.reason })
+      const nk = `${league.week}|${league.league_id}`
+      if ((corr.notified ?? []).length > 0) measured.correctionDoor.notified.set(nk, (measured.correctionDoor.notified.get(nk) ?? 0) + corr.notified.length)
     }
     if (past) {
       if (league.skip_reason === 'week_final') measured.postWindowSkips += 1
@@ -3736,7 +3740,7 @@ async function buildScenarioEvidence(
     postWindowWritePairs: ReadonlyArray<{ leagueId: string; week: number }>
     inWindowWrites: number
     revisionWrites: number
-    correctionDoor: { skipped: ReadonlyArray<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>; notified: ReadonlyMap<string, number> }
+    correctionDoor: { skipped: ReadonlyArray<{ leagueId: string; week: number; teamId: string; playerId: string | null; reason: string }>; notified: ReadonlyMap<string, number> }
     chartedPostInstant: string | null
     chartedSlaInstant: string | null
     chartedAdvancedRows: number
@@ -4059,7 +4063,13 @@ async function buildScenarioEvidence(
       const eventOk =
         only !== null && only.weekState === 'open' && only.appliedAt !== null && only.new !== null && only.new - (only.old ?? 0) === corr.delta && e.stored === only.new
       const recorded = new Set(e.records.map((r) => `${r.leagueId}:${r.teamId}`))
-      const doorSkips = measured.correctionDoor.skipped.filter((k) => k.playerId === corr.playerId)
+      // B12 (D469): the scenario plants a correction in EVERY week; the
+      // evidence (records, posts, notifications) and the door's own report
+      // are all read for THIS week — a week-2 flip is not a week-1 record.
+      const doorSkips = measured.correctionDoor.skipped.filter((k) => k.playerId === corr.playerId && k.week === firstWeek)
+      const doorNotified = new Map(
+        [...measured.correctionDoor.notified].filter(([k]) => k.startsWith(`${firstWeek}|`)).map(([k, n]) => [k.slice(k.indexOf('|') + 1), n] as const),
+      )
       const unrecorded = [...e.started].filter((k) => !recorded.has(k))
       const unexplained = unrecorded.filter((k) => !doorSkips.some((d) => `${d.leagueId}:${d.teamId}` === k))
       const notStarted = [...recorded].filter((k) => !e.started.has(k))
@@ -4070,8 +4080,8 @@ async function buildScenarioEvidence(
       const flipLeagues = new Set(e.records.filter((r) => r.resultChanged).map((r) => r.leagueId))
       const noteTotal = [...e.notesByLeague.values()].reduce((a, b) => a + b, 0)
       const notesWithoutFlip = [...e.notesByLeague.keys()].filter((l) => !flipLeagues.has(l))
-      const notesVsDoor = [...new Set([...e.notesByLeague.keys(), ...measured.correctionDoor.notified.keys()])].filter(
-        (l) => (e.notesByLeague.get(l) ?? 0) !== (measured.correctionDoor.notified.get(l) ?? 0),
+      const notesVsDoor = [...new Set([...e.notesByLeague.keys(), ...doorNotified.keys()])].filter(
+        (l) => (e.notesByLeague.get(l) ?? 0) !== (doorNotified.get(l) ?? 0),
       )
       push(
         'correction_recorded_in_window',

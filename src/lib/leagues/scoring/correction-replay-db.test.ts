@@ -35,6 +35,13 @@
  *   SETTLE GRACE   (2081 synthetic) — snapshot 2 polled 1 h after the week was
  *     seen final: re-scored, the result moves, and it is SILENT — no event, no
  *     record, no post, no notification (F511).
+ *   B12 / F557     (2086, the door through PostgREST — the worker's road) —
+ *     the M6 gate's shape: corrections in TWO weeks of one league (week 1
+ *     moves a score without a flip; week 2 flips Team A v Team B) and, in
+ *     week 2's batch, Team D's score also moved with no correction (flipping
+ *     Team C v Team D). Read per week, as the sim's evidence now is: week 1
+ *     has a record and no notification; week 2's notifications are exactly
+ *     the correction's flip (A and B), never C / D (177; PROGRESS D469).
  *   AFTER THE LOCK (2082 synthetic / 2085 real) — snapshot 1 scored, the week
  *     FINAL at its window's end, then snapshot 2: the event is NFL data
  *     (`week_state` final), `player_stats` holds the new value (research), the
@@ -85,7 +92,7 @@ const LOCAL_SERVICE_ROLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
 
 const PREFIX = 'vitest-crp'
-const SEASONS = [2080, 2081, 2082, 2083, 2084, 2085] as const
+const SEASONS = [2080, 2081, 2082, 2083, 2084, 2085, 2086] as const
 const SYN_PLAYER = `${PREFIX}-syn-wr`
 const HOUR = 3_600_000
 
@@ -520,3 +527,146 @@ for (const { pair, seasons } of PAIRS) {
     })
   })
 }
+
+// ── B12 / F557: the gate's shape at the door (177; PROGRESS D469) ───────────
+describe('B12 — corrections in two weeks, and another team moved in the same re-score (177)', () => {
+  const season = 2086
+  const names = ['Team A', 'Team B', 'Team C', 'Team D'] as const
+  const ids = { league: '', teams: [] as string[], users: [] as string[] }
+  const P = (k: string) => `${PREFIX}-b12-${k}`
+  type DoorReport = { corrections: { recorded: number; notified: Array<{ team_id: string }> } }
+
+  async function door(week: number, scores: unknown): Promise<DoorReport> {
+    const { data, error } = await service.rpc('score_write_week_batch', { p_league_id: ids.league, p_week: week, p_scores: scores as Json })
+    if (error) throw new Error(`score_write_week_batch week ${week}: ${error.message}`)
+    return data as unknown as DoorReport
+  }
+
+  beforeAll(async () => {
+    await must(
+      service.from('nfl_weeks').insert(
+        [1, 2].map((w) => ({
+          season,
+          week: w,
+          starts_at: `2086-09-${w === 1 ? '02' : '09'}T04:00:00Z`,
+          first_kickoff_at: `2086-09-${w === 1 ? '04' : '11'}T00:15:00Z`,
+          last_game_ends_at: null,
+          correction_window_ends_at: `2086-09-${w === 1 ? '11' : '18'}T00:15:00Z`,
+        })),
+      ),
+      'nfl_weeks',
+    )
+    for (let i = 0; i < 4; i++) {
+      const { data, error } = await service.auth.admin.createUser({
+        email: `crp-b12-${i}@fieldscout.test`,
+        password: `pgtap-crp-b12-${i}`,
+        email_confirm: true,
+        user_metadata: { username: `crp_b12_${i}` },
+      })
+      if (error) throw new Error(`createUser ${i}: ${error.message}`)
+      ids.users.push(data.user.id)
+    }
+    const tpl = (await must(service.from('scoring_systems').select('id, rules').eq('is_template', true).eq('name', 'ESPN Standard').single(), 'template'))!
+    const league = (await must(
+      service
+        .from('leagues')
+        .insert({
+          owner_id: ids.users[0],
+          name: `${PREFIX}-b12-${season}`,
+          season,
+          status: 'in_season',
+          team_count: 8,
+          regular_season_weeks: 3,
+          playoff_teams: 0,
+          playoff_start_week: 4,
+          faab_budget: 100,
+          scoring_system_id: tpl.id,
+          scoring_rules_snapshot: tpl.rules as Json,
+          lineup_lock: 'per_player_kickoff',
+          settings: { schedule_mode: 'h2h' },
+        })
+        .select('id')
+        .single(),
+      'league',
+    ))!
+    ids.league = league.id
+    for (let i = 0; i < 4; i++) {
+      const t = (await must(service.from('teams').insert({ owner_id: ids.users[i], name: names[i], league_id: ids.league }).select('id').single(), `team ${i}`))!
+      ids.teams.push(t.id)
+      await must(
+        service.from('league_members').insert({ league_id: ids.league, user_id: ids.users[i], team_id: t.id, role: i === 0 ? 'commissioner' : 'manager' }),
+        `member ${i}`,
+      )
+    }
+    await must(
+      service.from('players').insert(['a', 'b', 'c', 'd'].map((k) => ({ id: P(k), full_name: `B12 Player ${k.toUpperCase()}`, position: 'WR', team: 'CRP', status: 'Active' }))),
+      'players',
+    )
+    await must(service.from('league_weeks').insert([1, 2].map((w) => ({ league_id: ids.league, season, week: w, status: 'correction_window' }))), 'league weeks')
+    // Both weeks: A 100 v B 97, C 95 v D 80 (every game over — the correction window).
+    await must(
+      service.from('matchups').insert(
+        [1, 2].flatMap((w) => [
+          { league_id: ids.league, season, week: w, round_type: 'regular', home_team_id: ids.teams[0], away_team_id: ids.teams[1], home_score: 100, away_score: 97, status: 'live' },
+          { league_id: ids.league, season, week: w, round_type: 'regular', home_team_id: ids.teams[2], away_team_id: ids.teams[3], home_score: 95, away_score: 80, status: 'live' },
+        ]),
+      ),
+      'matchups',
+    )
+    const pts = [100, 97, 95, 80]
+    await must(
+      service.from('league_week_player_points').insert(
+        [1, 2].flatMap((w) =>
+          ['a', 'b', 'c', 'd'].map((k, i) => ({ league_id: ids.league, season, week: w, team_id: ids.teams[i], slot: 'wr:0', player_id: P(k), points: pts[i], reason: 'scored', source: 'worker' })),
+        ),
+      ),
+      'player points',
+    )
+    await must(
+      service.from('stat_correction_events').insert([
+        { id: '3f1b1200-0000-4000-8000-000000000001', season, week: 1, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 90, detected_at: '2086-09-08T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
+        { id: '3f1b1200-0000-4000-8000-000000000002', season, week: 2, player_id: P('a'), stat_key: 'receiving_yards', old_value: 100, new_value: 40, detected_at: '2086-09-15T15:00:00Z', week_state: 'open', source: 'vitest-crp' },
+      ]),
+      'events',
+    )
+  }, 90_000)
+
+  const line = (k: string, points: number) => ({ slot: 'wr:0', player_id: P(k), points, pending: [], reason: 'scored' })
+
+  it('B12-1 week 1: the correction moves Team A 100 → 99 — ONE record (no changed result), ONE post, NO notification', async () => {
+    const r = await door(1, [{ team_id: ids.teams[0], points: 99, players: [line('a', 99)], corrections: ['3f1b1200-0000-4000-8000-000000000001'] }])
+    expect([r.corrections.recorded, r.corrections.notified.length]).toEqual([1, 0])
+  })
+
+  it('B12-2 week 2: the correction flips A v B (100 → 94 v 97) while Team D moved 80 → 96 with no correction (flipping C v D) — only A and B are told', async () => {
+    const r = await door(2, [
+      { team_id: ids.teams[0], points: 94, players: [line('a', 94)], corrections: ['3f1b1200-0000-4000-8000-000000000002'] },
+      { team_id: ids.teams[3], points: 96, players: [line('d', 96)] },
+    ])
+    expect(r.corrections.notified.map((n) => names[ids.teams.indexOf(n.team_id)]).sort()).toEqual(['Team A', 'Team B'])
+    const post = (await must(
+      service.from('league_chat').select('message').eq('league_id', ids.league).eq('is_system', true).like('message', 'Stat correction (Week 2):%'),
+      'posts',
+    ))!
+    expect(post).toHaveLength(1)
+    expect(post[0].message).toContain('Result changed: Team B now beats Team A 97.00–94.00')
+    expect(post[0].message).not.toContain('Team D')
+  })
+
+  it('B12-3 read PER WEEK (the sim evidence, fixed): a week with a notification has a record whose result changed — week 1 none, week 2 exactly the correction pair', async () => {
+    const recs = (await must(service.from('league_stat_corrections').select('week, result_changed').eq('league_id', ids.league).order('week'), 'records'))!
+    expect(recs.map((x) => `${x.week}:${x.result_changed}`)).toEqual(['1:false', '2:true'])
+    const byWeek: Record<number, string[]> = {}
+    for (const w of [1, 2]) {
+      const n = (await must(
+        service.from('notifications').select('user_id').eq('type', 'stat_correction_result').eq('data->>league_id', ids.league).eq('data->>week', String(w)),
+        `notes week ${w}`,
+      ))!
+      byWeek[w] = n.map((x) => names[ids.users.indexOf(x.user_id)]).sort()
+    }
+    expect(byWeek).toEqual({ 1: [], 2: ['Team A', 'Team B'] })
+    // The pre-fix reading (every week's notifications against week 1's records) is what the gate printed red.
+    const all = (await must(service.from('notifications').select('user_id').eq('type', 'stat_correction_result').eq('data->>league_id', ids.league), 'notes all weeks'))!
+    expect(all).toHaveLength(2)
+  })
+})
