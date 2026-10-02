@@ -83,9 +83,15 @@ function transact(path: string): void {
   check(t.ghosts.attempted > 0 && t.ghosts.completed === t.ghosts.attempted, `the Ghost completed ${t.ghosts.completed} of ${t.ghosts.attempted}`)
   const p = t.populations
   check(p.exclusivityMoved > 0, `T1 transaction-exclusivity population ${p.exclusivityMoved}`)
+  // L.E1.37 (D469): 174 removed the reverse, so `reversal_leg` can no longer
+  // be populated — it is now required to be ZERO (a reversal leg would be a
+  // breach of L.D3.16), and every OTHER ledger term must still be populated.
+  // L.D3.16 re-cut the reverse check above but missed this term; the M6 gate's
+  // first run went red here on a green transacting season.
+  const { reversal_leg: reversalLegs = 0, ...liveTerms } = p.faabTerms as Record<string, number>
   check(
-    p.faabTeams > 0 && Object.values(p.faabTerms).every((n) => n > 0),
-    `T2 faab-ledger population ${p.faabTeams} franchise(s), terms ${JSON.stringify(p.faabTerms)}`,
+    p.faabTeams > 0 && Object.values(liveTerms).length > 0 && Object.values(liveTerms).every((n) => n > 0) && reversalLegs === 0,
+    `T2 faab-ledger population ${p.faabTeams} franchise(s), terms ${JSON.stringify(p.faabTerms)} (reversal_leg must be 0 — 174)`,
   )
   const rostered = p.poolByState.rostered ?? 0
   const other = Object.entries(p.poolByState).filter(([k]) => k !== 'rostered').reduce((n, [, v]) => n + v, 0)

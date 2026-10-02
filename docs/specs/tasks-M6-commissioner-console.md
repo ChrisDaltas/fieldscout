@@ -240,6 +240,8 @@ Each posts to `league_chat` or nothing; none leaves an audit row. Until they do,
 
 ## 9. Exit criteria → proof map
 
+**✅ ALL MET 2026-10-02 — `npm run test:gate:m6` GREEN on the first run (`0da6eb8`, 4,161 s; PROGRESS D473).** Evidence per criterion: (1) pgTAP 116/117/118 + 071 §C in [2/8] (126 files / 9,240 PASS) and the M6 E2E in [6/8]; (2) 118's census + matrix + column guards and 126's `matchups` backstop in [2/8]; (3) the L.E2.6 replay + the correction arms in [3/8] (75 files) and [4/8]–[4.2], on SYNTHETIC corrections per D468 — the real-recorded leg remains non-blocking, open under F540 / L.E2.5; (4) [7/8] `test:gate:m5` PASSED (M4 → M0 inside it).
+
 | Exit criterion (§1) | Proven by |
 |---|---|
 | 1. Phase E gate (log row per change, none per no-op, immutable, the illegal-lineup flow visible to all) | L.E1.29 / L.E1.30 / L.E1.35 pgTAP; 071 §C (immutability, re-run); L.E1.36 E2E; L.E1.37 |

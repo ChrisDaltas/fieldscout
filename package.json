@@ -47,6 +47,7 @@
     "test:gate:m3": "bash scripts/gate-m3.sh",
     "test:gate:m4": "bash scripts/gate-m4.sh",
     "test:gate:m5": "bash scripts/gate-m5.sh",
+    "test:gate:m6": "bash scripts/gate-m6.sh",
     "test:db": "supabase test db"
   },
   "dependencies": {

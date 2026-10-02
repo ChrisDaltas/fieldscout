@@ -76,6 +76,14 @@
  * what makes 2099 safe. It is also why every job call here still passes
  * `p_league_id`, and why the run must not leave leagues behind.
  *
+ * INERT IS NOT INVISIBLE (F558, 2026-10-02): finding nothing due, the cron
+ * still takes every in-season league row `FOR UPDATE SKIP LOCKED` while it
+ * looks (`lineup_lock_tick` and the advance job select by status alone). A
+ * scoped call here that lands in that window skips the league and reports
+ * `leagues: 0` — so every scoped job call goes through `runScopedJob`
+ * (scoped-job.ts), which re-runs it at the same virtual instant until the job
+ * says it visited the league, and fails loud if it never does.
+ *
  * ── CLEANUP (F199) ─────────────────────────────────────────────────────────
  * The run's `finally` calls `cleanupSweep`, which this task extended to the
  * in-season tables AND to the three season-scoped surfaces no league delete
@@ -105,6 +113,7 @@ import {
 } from '../stats/synthetic/synthetic-stats-provider'
 import { weekReleaseFloor } from '../time/release-floor'
 import { VirtualClock } from '../time/virtual-clock'
+import { reportVisitedLeagues, runScopedJob } from './scoped-job'
 
 import { BLOCKING_DESIGNATIONS, simDesignation } from './designations'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
@@ -414,7 +423,7 @@ export async function runSeasonSim(
     leagues: [],
     scenarioEvidence: { scenario: cfg.scenario, leagues: 0, assertions: [] },
     invariantFailures: [],
-    jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 },
+    jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0, skippedOnLock: 0 },
     provenance: { statRows: 0, synthetic: 0, foreign: 0 },
     poolRows: 0,
     unmanagedSeats: 0,
@@ -1232,6 +1241,47 @@ interface DriveOutcome {
   chainLines: string[]
 }
 
+/**
+ * F558: is the league in `lineup_lock_tick` / `league_week_advance`'s scope —
+ * both select every in-season, undeleted league (`status IN ('in_season',
+ * 'playoffs') AND deleted_at IS NULL`), so a scoped call that visited 0
+ * leagues while this holds was skipped on a row lock (scoped-job.ts).
+ */
+async function leagueInSeason(service: Supabase, leagueId: string): Promise<boolean> {
+  const { data, error } = await service.from('leagues').select('status, deleted_at').eq('id', leagueId).maybeSingle()
+  throwIfError(error, `F558: league ${leagueId} status read`)
+  return data !== null && data.deleted_at === null && (data.status === 'in_season' || data.status === 'playoffs')
+}
+
+/** F558: `finalize_matchups`' own selection predicate, read back — the league
+ *  is in season and holds a week whose correction window has ended at `pNow`
+ *  (`correction_window`, or `live` with no last-game instant). */
+async function leagueFinalizeDue(service: Supabase, leagueId: string, pNow: string): Promise<boolean> {
+  if (!(await leagueInSeason(service, leagueId))) return false
+  const { data: league, error: le } = await service.from('leagues').select('season').eq('id', leagueId).single()
+  throwIfError(le, `F558: league ${leagueId} season read`)
+  const { data: weeks, error: we } = await service
+    .from('league_weeks')
+    .select('week, status')
+    .eq('league_id', leagueId)
+    .eq('season', league!.season)
+    .in('status', ['correction_window', 'live'])
+  throwIfError(we, `F558: league ${leagueId} weeks read`)
+  if ((weeks ?? []).length === 0) return false
+  const { data: cal, error: ce } = await service
+    .from('nfl_weeks')
+    .select('week, correction_window_ends_at, last_game_ends_at')
+    .eq('season', league!.season)
+    .in('week', weeks!.map((w) => w.week))
+  throwIfError(ce, `F558: nfl_weeks read for league ${leagueId}`)
+  const at = Date.parse(pNow)
+  return weeks!.some((w) => {
+    const c = (cal ?? []).find((r) => r.week === w.week)
+    if (c === undefined || c.correction_window_ends_at === null || Date.parse(c.correction_window_ends_at) > at) return false
+    return w.status === 'correction_window' || c.last_game_ends_at === null
+  })
+}
+
 async function driveSeason(
   service: Supabase,
   botClients: ReadonlyMap<string, Supabase>,
@@ -1247,7 +1297,7 @@ async function driveSeason(
   // first-finalize hook (the Ghost's seat claim) has fired.
   const openedWeeks: number[] = []
   let firstFinalizeHookRan = false
-  const jobs: SeasonRunReport['jobs'] = { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 }
+  const jobs: SeasonRunReport['jobs'] = { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0, skippedOnLock: 0 }
   const workerErrors: string[] = []
   const workerErrorsByLeague = new Map<string, string[]>()
   const noStatRowByLeague = new Map<string, number>()
@@ -1506,7 +1556,7 @@ async function driveSeason(
     revisionWrites: 0,
     // M6 L.E2.6: what the door (172) said it did with each correction, per
     // league — the starter filter's named skips and the managers it notified.
-    correctionDoor: { skipped: [] as Array<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>, notified: new Map<string, number>() },
+    correctionDoor: { skipped: [] as Array<{ leagueId: string; week: number; teamId: string; playerId: string | null; reason: string }>, notified: new Map<string, number>() },
     flaggedNoStatRow: 0,
     // R921: WHICH players the worker named, not just how many. The run-wide
     // COUNT is > 0 in every scenario by construction (18 bridged players, a
@@ -1577,8 +1627,18 @@ async function driveSeason(
       // find nothing left to do at the same `p_now`.
       for (const league of leagues) {
         for (let pass = 0; pass < 2; pass++) {
-          const { data, error } = await service.rpc('league_week_advance', { p_now: pNow, p_league_id: league.leagueId })
-          throwIfError(error, `${league.label}: league_week_advance (${entry.kind})`)
+          const { report: data, skippedOnLock } = await runScopedJob({
+            label: `${league.label}: league_week_advance@${pNow}`,
+            call: async () => {
+              const { data, error } = await service.rpc('league_week_advance', { p_now: pNow, p_league_id: league.leagueId })
+              throwIfError(error, `${league.label}: league_week_advance (${entry.kind})`)
+              return data
+            },
+            visited: (r) => reportVisitedLeagues(r) === 1,
+            inScope: () => leagueInSeason(service, league.leagueId),
+            sleep: deps.clock.sleep,
+          })
+          jobs.skippedOnLock += skippedOnLock
           jobs.advance += 1
           collectJobFailures(data, `${league.label} league_week_advance@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
         }
@@ -1622,8 +1682,18 @@ async function driveSeason(
         )
       }
       for (const league of leagues) {
-        const { data, error } = await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: league.leagueId })
-        throwIfError(error, `${league.label}: finalize_matchups`)
+        const { report: data, skippedOnLock } = await runScopedJob({
+          label: `${league.label}: finalize_matchups@${pNow}`,
+          call: async () => {
+            const { data, error } = await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: league.leagueId })
+            throwIfError(error, `${league.label}: finalize_matchups`)
+            return data
+          },
+          visited: (r) => reportVisitedLeagues(r) === 1,
+          inScope: () => leagueFinalizeDue(service, league.leagueId, pNow),
+          sleep: deps.clock.sleep,
+        })
+        jobs.skippedOnLock += skippedOnLock
         jobs.finalize += 1
         collectJobFailures(data, `${league.label} finalize_matchups@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
       }
@@ -1723,8 +1793,18 @@ async function driveSeason(
     }
 
     for (const league of leagues) {
-      const { data, error } = await service.rpc('lineup_lock_tick', { p_now: pNow, p_league_id: league.leagueId })
-      throwIfError(error, `${league.label}: lineup_lock_tick`)
+      const { report: data, skippedOnLock } = await runScopedJob({
+        label: `${league.label}: lineup_lock_tick@${pNow}`,
+        call: async () => {
+          const { data, error } = await service.rpc('lineup_lock_tick', { p_now: pNow, p_league_id: league.leagueId })
+          throwIfError(error, `${league.label}: lineup_lock_tick`)
+          return data
+        },
+        visited: (r) => reportVisitedLeagues(r) === 1,
+        inScope: () => leagueInSeason(service, league.leagueId),
+        sleep: deps.clock.sleep,
+      })
+      jobs.skippedOnLock += skippedOnLock
       jobs.lockTick += 1
       collectJobFailures(data, `${league.label} lineup_lock_tick@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
       // `autopilot_unfillable[]` entries carry no week of their own (125:630-642
@@ -2423,7 +2503,7 @@ async function readCorrectionEvidence(
       if (Object.values((l.slot_map ?? {}) as Record<string, unknown>).includes(playerId)) started.add(`${leagueOfTeam.get(l.team_id)}:${l.team_id}`)
     }
   }
-  const records = await pageByLeague<{ league_id: string; team_id: string; result_changed: boolean }>(
+  const records = await pageByLeague<{ league_id: string; team_id: string; result_changed: boolean; id: string }>(
     leagueIds,
     'correction evidence: records',
     (part, from, to) =>
@@ -2448,20 +2528,49 @@ async function readCorrectionEvidence(
   )
   const postsByLeague = new Map<string, string[]>()
   for (const p of posts) postsByLeague.set(String(p.league_id), [...(postsByLeague.get(String(p.league_id)) ?? []), p.message])
+  // R1445 (D469): a week holds MANY corrected players (the scenario corrects
+  // several), and a notification row carries no player id — it carries the
+  // `correction_ids` of the records its re-score wrote. A notification is
+  // THIS player's only when it names one of THIS player's records.
+  const playerRecordIds = new Set(records.map((r) => String(r.id)))
   const notesByLeague = new Map<string, number>()
+  const weekNoteCids = new Map<string, string>() // R1448: every correction id the week's notifications name -> its league
   for (let i = 0; i < leagueIds.length; i += LEAGUE_ID_CHUNK) {
     const part = leagueIds.slice(i, i + LEAGUE_ID_CHUNK)
     const { data: notes, error } = await service
       .from('notifications')
       .select('data')
       .eq('type', 'stat_correction_result')
+      .eq('data->>week', String(week)) // B12 (D469): this week's notifications only
       .in('data->>league_id', part)
       .limit(1000)
     throwIfError(error, 'correction evidence: notifications')
     if ((notes ?? []).length === 1000) throw new Error('correction evidence: notifications read hit the 1000-row cap — refusing a truncated count')
     for (const n of notes ?? []) {
+      const cids = (n.data as Record<string, unknown>).correction_ids
       const lid = String((n.data as Record<string, unknown>).league_id)
+      // R1448: EVERY notification of the week is attributed to a recorded
+      // correction — a non-empty `correction_ids`, each id a record of that
+      // league's week (checked below). An unattributed one is refused loud.
+      if (!Array.isArray(cids) || cids.length === 0) {
+        throw new Error(`correction evidence: a week ${week} stat_correction_result notification in league ${lid} names no correction (correction_ids ${JSON.stringify(cids)})`)
+      }
+      for (const c of cids) weekNoteCids.set(String(c), lid)
+      if (!cids.some((c) => playerRecordIds.has(String(c)))) continue
       notesByLeague.set(lid, (notesByLeague.get(lid) ?? 0) + 1)
+    }
+  }
+  const cidList = [...weekNoteCids.keys()]
+  const found = new Map<string, string>()
+  for (let i = 0; i < cidList.length; i += LEAGUE_ID_CHUNK) {
+    const part = cidList.slice(i, i + LEAGUE_ID_CHUNK)
+    const { data: recs, error } = await service.from('league_stat_corrections').select('id, league_id').in('id', part).eq('week', week)
+    throwIfError(error, 'correction evidence: notification correction_ids')
+    for (const r of recs ?? []) found.set(String(r.id), String(r.league_id))
+  }
+  for (const [cid, lid] of weekNoteCids) {
+    if (found.get(cid) !== lid) {
+      throw new Error(`correction evidence: a week ${week} notification in league ${lid} names correction ${cid}, which is not a recorded correction of that league's week`)
     }
   }
   return {
@@ -2492,7 +2601,9 @@ function measureCorrectionArms(
     postWindowWritePairs: Array<{ leagueId: string; week: number }>
     inWindowWrites: number
     revisionWrites: number
-    correctionDoor: { skipped: Array<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>; notified: Map<string, number> }
+    // B12 (D469): keyed by WEEK too — the scenario corrects every week, and
+    // the evidence is read for one week; `notified` keys are `${week}|${leagueId}`.
+    correctionDoor: { skipped: Array<{ leagueId: string; week: number; teamId: string; playerId: string | null; reason: string }>; notified: Map<string, number> }
   },
 ): void {
   const closeAt = windowEndsAt.get(entry.week)
@@ -2501,8 +2612,9 @@ function measureCorrectionArms(
     if (league.week !== entry.week) continue
     const corr = league.door?.corrections
     if (corr !== undefined && corr !== null) {
-      for (const k of corr.skipped ?? []) measured.correctionDoor.skipped.push({ leagueId: league.league_id, teamId: k.team_id, playerId: k.player_id ?? null, reason: k.reason })
-      if ((corr.notified ?? []).length > 0) measured.correctionDoor.notified.set(league.league_id, (measured.correctionDoor.notified.get(league.league_id) ?? 0) + corr.notified.length)
+      for (const k of corr.skipped ?? []) measured.correctionDoor.skipped.push({ leagueId: league.league_id, week: league.week, teamId: k.team_id, playerId: k.player_id ?? null, reason: k.reason })
+      const nk = `${league.week}|${league.league_id}`
+      if ((corr.notified ?? []).length > 0) measured.correctionDoor.notified.set(nk, (measured.correctionDoor.notified.get(nk) ?? 0) + corr.notified.length)
     }
     if (past) {
       if (league.skip_reason === 'week_final') measured.postWindowSkips += 1
@@ -3736,7 +3848,7 @@ async function buildScenarioEvidence(
     postWindowWritePairs: ReadonlyArray<{ leagueId: string; week: number }>
     inWindowWrites: number
     revisionWrites: number
-    correctionDoor: { skipped: ReadonlyArray<{ leagueId: string; teamId: string; playerId: string | null; reason: string }>; notified: ReadonlyMap<string, number> }
+    correctionDoor: { skipped: ReadonlyArray<{ leagueId: string; week: number; teamId: string; playerId: string | null; reason: string }>; notified: ReadonlyMap<string, number> }
     chartedPostInstant: string | null
     chartedSlaInstant: string | null
     chartedAdvancedRows: number
@@ -4059,7 +4171,13 @@ async function buildScenarioEvidence(
       const eventOk =
         only !== null && only.weekState === 'open' && only.appliedAt !== null && only.new !== null && only.new - (only.old ?? 0) === corr.delta && e.stored === only.new
       const recorded = new Set(e.records.map((r) => `${r.leagueId}:${r.teamId}`))
-      const doorSkips = measured.correctionDoor.skipped.filter((k) => k.playerId === corr.playerId)
+      // B12 (D469): the scenario plants a correction in EVERY week; the
+      // evidence (records, posts, notifications) and the door's own report
+      // are all read for THIS week — a week-2 flip is not a week-1 record.
+      const doorSkips = measured.correctionDoor.skipped.filter((k) => k.playerId === corr.playerId && k.week === firstWeek)
+      const doorNotified = new Map(
+        [...measured.correctionDoor.notified].filter(([k]) => k.startsWith(`${firstWeek}|`)).map(([k, n]) => [k.slice(k.indexOf('|') + 1), n] as const),
+      )
       const unrecorded = [...e.started].filter((k) => !recorded.has(k))
       const unexplained = unrecorded.filter((k) => !doorSkips.some((d) => `${d.leagueId}:${d.teamId}` === k))
       const notStarted = [...recorded].filter((k) => !e.started.has(k))
@@ -4070,8 +4188,8 @@ async function buildScenarioEvidence(
       const flipLeagues = new Set(e.records.filter((r) => r.resultChanged).map((r) => r.leagueId))
       const noteTotal = [...e.notesByLeague.values()].reduce((a, b) => a + b, 0)
       const notesWithoutFlip = [...e.notesByLeague.keys()].filter((l) => !flipLeagues.has(l))
-      const notesVsDoor = [...new Set([...e.notesByLeague.keys(), ...measured.correctionDoor.notified.keys()])].filter(
-        (l) => (e.notesByLeague.get(l) ?? 0) !== (measured.correctionDoor.notified.get(l) ?? 0),
+      const notesVsDoor = [...new Set([...e.notesByLeague.keys(), ...doorNotified.keys()])].filter(
+        (l) => (e.notesByLeague.get(l) ?? 0) !== (doorNotified.get(l) ?? 0),
       )
       push(
         'correction_recorded_in_window',
@@ -4423,7 +4541,8 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
   lines.push(`WEEKS DRIVEN: ${weeks} per league · ${finals} league-weeks reached 'final'`)
   lines.push(
     `JOBS: advance ${report.jobs.advance} · lock_tick ${report.jobs.lockTick} · finalize ${report.jobs.finalize} · ` +
-      `score batches ${report.jobs.scoreBatches} · ingestion polls ${report.jobs.polls}`,
+      `score batches ${report.jobs.scoreBatches} · ingestion polls ${report.jobs.polls} · ` +
+      `re-run after a lock skip ${report.jobs.skippedOnLock ?? 0} (F558)`,
   )
   lines.push(
     `PROVENANCE: ${report.provenance.statRows} player_stats rows on season ${report.season} — ` +
