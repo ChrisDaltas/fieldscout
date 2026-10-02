@@ -1,0 +1,27 @@
+2026 week 3 — sleeper+nflverse: snapshot "final" (2026-09-30T13:40:10.086Z) → "window-end" (2026-10-02T07:53:41.258Z)
+games at "final": 16 final, 0 not final, 0 postponed — the week was final
+lines: 385 at "final", 385 at "window-end" — 385 in both, 0 added, 0 vanished, 383 unchanged
+FINAL-GAME CHANGES: 2 (0 on a scorable key) — final and measured on production's arm (the week, for a line with no game id); a correction production would record only where the grace verdict says "outside":
+  1. Chris Bell (WR, MIA; id 13311) — targets "Targets" 7 → 8 [context] — game 2026_03_KC_MIA (by team) — line updated
+     measured from the WEEK's last game (production's arm — no game on the line, F468(a)): first seen final 2026-09-29T03:18:00.554+00:00 (production); changed after 2026-09-30T13:40:10.086Z, by 2026-10-01T05:08:44.606Z (Sleeper's stamp) → 2062.2–2990.7 min after final — settle grace: outside
+     info only — his own game: final at snapshot 1, first seen final 2026-09-27T20:05:43.443+00:00 → 3934.4–4863 min after final (not the verdict: production measures by the week)
+     production recorded it: detected 2026-10-01T06:00:03.563+00:00, 7 → 8, week_state open
+  2. Brock Bowers (TE, LV; id 11604) — targets "Targets" 13 → 14 [context] — game 2026_03_LV_NO (by team) — line updated
+     measured from the WEEK's last game (production's arm — no game on the line, F468(a)): first seen final 2026-09-29T03:18:00.554+00:00 (production); changed after 2026-09-30T13:40:10.086Z, by 2026-10-01T05:08:44.819Z (Sleeper's stamp) → 2062.2–2990.7 min after final — settle grace: outside
+     info only — his own game: final at snapshot 1, first seen final 2026-09-27T23:45:35.732+00:00 → 3714.6–4643.2 min after final (not the verdict: production measures by the week)
+     production recorded it: detected 2026-10-01T06:00:03.563+00:00, 13 → 14, week_state open
+production events: 2 match a change above; 0 production-only
+settle profile of "final" (F528 — Sleeper's last-modified stamp vs production's first-seen-final; the stamp moves for any field, so it bounds a line's last stat change from ABOVE): 385 lines measured, 0 not measurable
+  before the game was seen final: 14
+  0–60 min after: 14
+  1–6 h after (inside the grace): 2
+  6–24 h after: 276
+  1–3 days after: 68
+  more than 3 days after: 11
+settle profile of "window-end" (F528 — Sleeper's last-modified stamp vs production's first-seen-final; the stamp moves for any field, so it bounds a line's last stat change from ABOVE): 385 lines measured, 0 not measurable
+  before the game was seen final: 11
+  0–60 min after: 12
+  1–6 h after (inside the grace): 2
+  6–24 h after: 272
+  1–3 days after: 69
+  more than 3 days after: 19
