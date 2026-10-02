@@ -77,6 +77,11 @@ function noneWhy(changes: SnapshotChange[]): string {
   return `${plural}, ${scored} on a scored stat, none a correction outside the settle grace`
 }
 
+/** R1441: a file that marks a week directory as a capture, from any provider. */
+export function isCaptureMarker(f: string): boolean {
+  return /\.(final|window-end)\./.test(f) || f === 'production-events.json' || f === 'snapshot-diff.txt'
+}
+
 export function scanCapturedCorrections(root: string, provider: string = CAPTURE_PROVIDER): CaptureScan {
   const weeks: CaptureWeekStatus[] = []
   const dirs = existsSync(root) ? readdirSync(root).filter((d) => /^wk\d{2}$/.test(d)).sort() : []
@@ -85,15 +90,21 @@ export function scanCapturedCorrections(root: string, provider: string = CAPTURE
     const dir = resolve(root, d)
     const week = Number(d.slice(2))
     const has = (label: string) => existsSync(resolve(dir, `${provider}.${label}.jsonl.gz`))
-    // R1437: a week directory holding no file of the capture provider at all is
-    // not a capture (wk02 holds the M0 synthetic fixture) — named, never scanned.
-    if (!readdirSync(dir).some((f) => f.startsWith(`${provider}.`))) {
-      weeks.push({ dir, week, verdict: 'not_a_capture', candidates: [], sentence: `week ${week}: not a capture (no ${provider} file — e.g. the M0 synthetic fixture)` })
+    // R1437/R1441: a week directory holding no capture marker of ANY provider
+    // (a *.final.* / *.window-end.* snapshot, production-events.json, or
+    // snapshot-diff.txt) is not a capture (wk02 holds the M0 synthetic
+    // fixture) — named, never scanned. Anything else is a capture (perhaps in
+    // progress, perhaps under another provider) and falls through to no_pair.
+    const files = readdirSync(dir)
+    if (!files.some(isCaptureMarker)) {
+      weeks.push({ dir, week, verdict: 'not_a_capture', candidates: [], sentence: `week ${week}: not a capture (no capture marker — e.g. the M0 synthetic fixture)` })
       continue
     }
     if (!has('final') || !has('window-end')) {
       const held = ['final', 'window-end'].filter(has)
-      weeks.push({ dir, week, verdict: 'no_pair', candidates: [], sentence: `week ${week}: no snapshot pair (${held.length === 0 ? 'no snapshot' : `only "${held.join('", "')}"`}) — nothing to replay yet` })
+      const others = files.filter((f) => /\.(final|window-end)\./.test(f) && !f.startsWith(`${provider}.`))
+      const otherNote = others.length > 0 ? `; other-provider files found: ${others.join(', ')}` : ''
+      weeks.push({ dir, week, verdict: 'no_pair', candidates: [], sentence: `week ${week}: no snapshot pair (${held.length === 0 ? 'no snapshot' : `only "${held.join('", "')}"`}${otherNote}) — nothing to replay yet` })
       continue
     }
     const diffPath = resolve(dir, 'snapshot-diff.txt')

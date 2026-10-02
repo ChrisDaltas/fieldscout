@@ -149,8 +149,21 @@ describe('scanCapturedCorrections — the real-capture leg (non-blocking, D468)'
     writeFileSync(join(root, 'wk02', 'synthetic.jsonl.gz'), gzipSync(serializeFixture(PAIR.first)))
     week('notcap/wk03', { pair: false })
     expect(scanCapturedCorrections(root, provider).weeks.map((w) => `${w.verdict}: ${w.sentence}`)).toEqual([
-      `not_a_capture: week 2: not a capture (no ${provider} file — e.g. the M0 synthetic fixture)`,
+      'not_a_capture: week 2: not a capture (no capture marker — e.g. the M0 synthetic fixture)',
       'no_pair: week 3: no snapshot pair (only "final") — nothing to replay yet',
+    ])
+  })
+
+  it('R1441: a pair under ANOTHER provider prefix, and a capture in progress (production-events.json only): no_pair, never "not a capture"', () => {
+    const root = join(tmp, 'markers')
+    mkdirSync(join(root, 'wk04'), { recursive: true })
+    mkdirSync(join(root, 'wk05'), { recursive: true })
+    writeFileSync(join(root, 'wk04', 'sleeper.final.jsonl.gz'), gzipSync(serializeFixture(PAIR.first)))
+    writeFileSync(join(root, 'wk04', 'sleeper.window-end.jsonl.gz'), gzipSync(serializeFixture(PAIR.second)))
+    writeFileSync(join(root, 'wk05', 'production-events.json'), JSON.stringify({ games: [], events: [] }))
+    expect(scanCapturedCorrections(root, provider).weeks.map((w) => `${w.verdict}: ${w.sentence}`)).toEqual([
+      'no_pair: week 4: no snapshot pair (no snapshot; other-provider files found: sleeper.final.jsonl.gz, sleeper.window-end.jsonl.gz) — nothing to replay yet',
+      'no_pair: week 5: no snapshot pair (no snapshot) — nothing to replay yet',
     ])
   })
 
