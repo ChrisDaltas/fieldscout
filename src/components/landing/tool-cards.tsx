@@ -48,7 +48,7 @@ const inset = 'rounded-[16px] bg-fs-page px-4 py-1'
 
 export function ToolCards() {
   return (
-    <div className="mt-11 flex snap-x snap-mandatory gap-5 overflow-x-auto px-[clamp(24px,11vw,160px)] pb-5 [scroll-padding-left:clamp(24px,11vw,160px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="mt-11 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-5 [scroll-padding-left:16px] sm:px-[clamp(24px,11vw,160px)] sm:[scroll-padding-left:clamp(24px,11vw,160px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <Card
         tone="ink"
         eyebrow={

@@ -58,6 +58,10 @@ function pageUrls(): string[] {
     for (const entry of readdirSync(dir)) {
       const full = path.join(dir, entry)
       if (statSync(full).isDirectory()) {
+        // Parallel-route slots (`@modal`) own no URLs: their pages render
+        // into a slot for a URL another page.tsx owns (e.g. @modal/(.)login
+        // intercepts /login, which app/login/page.tsx owns).
+        if (entry.startsWith('@')) continue
         walk(full)
       } else if (entry === 'page.tsx' || entry === 'page.ts') {
         const rel = path.relative(APP_DIR, path.dirname(full))
