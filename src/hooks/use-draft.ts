@@ -11,7 +11,6 @@ import type { Draft } from '@/types/database'
 import { invalidateCommishLog } from './use-commish-log'
 import { draftVerbPath } from './use-draft-action-path'
 import {
-  applyDraftRoomEvent,
   bestClockOffsetMs,
   computeClockOffsetMs,
   connectionAfterJoinFailure,
@@ -37,7 +36,12 @@ import {
 } from '@/components/draft/auction-block-ops'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 
-import { applyChatBroadcast, createFeedSink } from './use-draft-feed-sink'
+import {
+  applyChatBroadcast,
+  applyRoomBroadcast,
+  createFeedSink,
+  createRoomStateSink,
+} from './use-draft-feed-sink'
 import { useLeague } from './use-league'
 import { leaguesKeys } from './use-leagues'
 
@@ -274,6 +278,15 @@ export function useDraftRoom(
       }),
     )
 
+    // F560 (PROGRESS D472): the ROOM STATE rides the same sink as the two
+    // feeds. A `drafts` / `draft_picks` broadcast that lands while a room
+    // refetch is in flight is HELD and replayed onto the fetched state once
+    // it settles — the reducer's version rule (`incoming < known` ⇒ ignore)
+    // makes a replay the snapshot already contains a no-op. Before this, the
+    // patch went straight onto the cache and the resolving fetch replaced it
+    // with its older snapshot (an award rendered, then un-rendered).
+    const roomSink = createRoomStateSink(queryClient, draftKeys.detail(draftId))
+
     const applyBroadcast = (event: string, payload: BroadcastEnvelope) => {
       if (event === 'drafts') {
         const record = payload.record as Record<string, unknown> | undefined
@@ -286,20 +299,13 @@ export function useDraftRoom(
           setUncontestedBeat({ ...announced, atMs: systemTime.now().getTime() })
         }
       }
-      const current = queryClient.getQueryData<DraftState>(draftKeys.detail(draftId))
-      if (!current) {
-        refetchDraft()
-        return
-      }
-      const result = applyDraftRoomEvent(current, {
-        event,
-        operation: payload.operation,
-        record: payload.record,
+      applyRoomBroadcast({
+        queryClient,
+        queryKey: draftKeys.detail(draftId),
+        sink: roomSink,
+        broadcast: { event, operation: payload.operation, record: payload.record },
+        refetch: refetchDraft,
       })
-      if (result.state !== current) {
-        queryClient.setQueryData(draftKeys.detail(draftId), result.state)
-      }
-      if (result.refetch) refetchDraft()
     }
 
     const scheduleReopen = () => {
@@ -502,6 +508,7 @@ export function useDraftRoom(
       channel = null
       bidSink.dispose()
       chatSink.dispose()
+      roomSink.dispose()
     }
   }, [draftId, fetched, presenceTeamId, presenceUserId, queryClient])
 

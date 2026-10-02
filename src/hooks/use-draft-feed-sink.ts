@@ -1,6 +1,11 @@
 import { hashKey, type QueryClient, type QueryKey } from '@tanstack/react-query'
 
-import { chatEventInvalidatesLeagueDetail } from './use-draft-ops'
+import type { DraftState } from './use-draft'
+import {
+  applyDraftRoomEvent,
+  chatEventInvalidatesLeagueDetail,
+  type DraftRoomBroadcast,
+} from './use-draft-ops'
 import { isChatRecord, type DraftChatBroadcast } from './use-draft-chat-ops'
 
 /**
@@ -75,6 +80,40 @@ export function createFeedSink<Row, Event>(
   queryKey: QueryKey,
   reduce: (rows: readonly Row[], event: Event) => FeedReduceResult<Row>,
 ): FeedSink<Event> {
+  return createStateSink<readonly Row[], Event>(queryClient, queryKey, (rows, event) => {
+    const result = reduce(rows, event)
+    return { data: result.rows, refetch: result.refetch }
+  })
+}
+
+/** {@link createStateSink}'s reducer result — the feed shape, over any cache. */
+export interface StateReduceResult<Data> {
+  /** Next cached value — the SAME reference when nothing was applied. */
+  data: Data
+  /** True ⇒ refetch the query (§9.3 doubt ⇒ refetch). */
+  refetch: boolean
+}
+
+/**
+ * The sink's mechanism over ANY cached value, not only a row feed — F560
+ * (PROGRESS D472). The room-state query (`draftKeys.detail`: the drafts row +
+ * its picks) carried the same fetch window R401 closed for the bid feed and
+ * F75 for chat, and it was the one cache on the `draft:<id>` channel still
+ * patched straight through `setQueryData`: a refetch in flight across an
+ * award resolved with its PRE-award snapshot and REPLACED the patched state,
+ * so the room rendered a lot the server had already sold until the next 5 s
+ * heartbeat noticed the deadline gap (measured at the M6 gate: the
+ * `auction-storm` award, manager room — a refused bid's refetch read the
+ * held lot 7 ms before the award committed and landed after its broadcast).
+ * `createFeedSink` is this with `Data = readonly Row[]`; the semantics above
+ * (FIFO, drain only while the key is not in flight, drop with no cache, a
+ * reducer's refetch queues what follows) are unchanged and shared.
+ */
+export function createStateSink<Data, Event>(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  reduce: (data: Data, event: Event) => StateReduceResult<Data>,
+): FeedSink<Event> {
   const hash = hashKey(queryKey)
   const queue: Event[] = []
   let draining = false
@@ -95,12 +134,12 @@ export function createFeedSink<Row, Event>(
     try {
       while (queue.length > 0 && !inFlight()) {
         const event = queue.shift() as Event
-        const rows = queryClient.getQueryData<readonly Row[]>(queryKey)
+        const data = queryClient.getQueryData<Data>(queryKey)
         // No cache to patch (never fetched / gc'd): the mount-time fetch
         // carries the history.
-        if (rows === undefined) continue
-        const result = reduce(rows, event)
-        if (result.rows !== rows) queryClient.setQueryData(queryKey, result.rows)
+        if (data === undefined) continue
+        const result = reduce(data, event)
+        if (result.data !== data) queryClient.setQueryData(queryKey, result.data)
         if (result.refetch) void queryClient.invalidateQueries({ queryKey })
       }
     } finally {
@@ -129,6 +168,49 @@ export function createFeedSink<Row, Event>(
       queue.length = 0
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// The ROOM STATE's sink and its route in (F560; PROGRESS D472)
+// ---------------------------------------------------------------------------
+
+/** The room-state sink `useDraftRoom` builds: {@link createStateSink} over the
+ *  room query's key with the real room reducer (`applyDraftRoomEvent` — its
+ *  `incoming < known` version rule is what makes a replay of an event the
+ *  fetched snapshot already contains a no-op). */
+export function createRoomStateSink(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+): FeedSink<DraftRoomBroadcast> {
+  return createStateSink<DraftState, DraftRoomBroadcast>(queryClient, queryKey, (state, b) => {
+    const result = applyDraftRoomEvent(state, b)
+    return { data: result.state, refetch: result.refetch }
+  })
+}
+
+/**
+ * `use-draft.ts`'s `drafts` / `draft_picks` route, as a callable (the R434
+ * shape — so the wiring has a BEHAVIOURAL pin, not only source pins). With no
+ * room state cached and no fetch in flight there is no baseline to patch ⇒
+ * fetch one (§9.3; unchanged). Otherwise the event goes THROUGH THE SINK —
+ * applied now, or held behind the in-flight fetch (the first one included)
+ * and replayed onto its result. Never straight onto the cache: that was F560.
+ */
+export function applyRoomBroadcast(input: {
+  queryClient: QueryClient
+  queryKey: QueryKey
+  sink: Pick<FeedSink<DraftRoomBroadcast>, 'push'>
+  broadcast: DraftRoomBroadcast
+  refetch: () => void
+}): void {
+  const { queryClient, queryKey } = input
+  const cached = queryClient.getQueryData(queryKey)
+  const fetching = (queryClient.getQueryState(queryKey)?.fetchStatus ?? 'idle') !== 'idle'
+  if (cached === undefined && !fetching) {
+    input.refetch()
+    return
+  }
+  input.sink.push(input.broadcast)
 }
 
 // ---------------------------------------------------------------------------
