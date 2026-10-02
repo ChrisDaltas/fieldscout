@@ -73,28 +73,59 @@ select plan(72);
 create function pg_temp.un177(s text) returns text language plpgsql as $un$
 declare a int; b int; seg text;
 begin
-  -- H4 reversed: v_moved -> v_after inside the post / notification block only
+  -- H4 reversed: inside the post / notification block only (the v_moved
+  -- agreement joins and conditions out — 172 reads v_after alone)
   a := strpos(s, $r$    IF jsonb_array_length(v_rec) > 0 THEN
 $r$);
   if a > 0 then
     b := a + strpos(substr(s, a), $r$    v_corr := jsonb_build_object(
 $r$) - 1;
     seg := substr(s, a, b - a);
-    s := substr(s, 1, a - 1) || replace(seg, 'v_moved', 'v_after') || substr(s, b);
+    seg := replace(seg, $r$          JOIN jsonb_each(v_moved -> 'matchups') c ON c.key = a.key
+$r$, $o$$o$);
+    seg := replace(seg, $r$
+            AND (c.value ->> 'result') IS DISTINCT FROM (b.value ->> 'result')$r$, $o$$o$);
+    seg := replace(seg, $r$        JOIN jsonb_each(v_moved -> 'teams') c ON c.key = a.key
+        JOIN public.teams t$r$, $o$        JOIN public.teams t$o$);
+    seg := replace(seg, $r$
+          AND (c.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median');$r$, $o$;$o$);
+    seg := replace(seg, $r$, b.value AS bef, c.value AS mov
+$r$, $o$, b.value AS bef
+$o$);
+    seg := replace(seg, $r$          JOIN jsonb_each(v_moved -> 'teams') c ON c.key = a.key
+          WHERE ((a.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h') AND (c.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h'))
+             OR ((a.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second') AND (c.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second'))
+             OR ((a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median') AND (c.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median'))
+$r$, $o$          WHERE ROW(a.value ->> 'h2h', a.value ->> 'second', a.value ->> 'median')
+                IS DISTINCT FROM ROW(b.value ->> 'h2h', b.value ->> 'second', b.value ->> 'median')
+$o$);
+    seg := replace(seg, $r$ AND (v_pl.mov ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') THEN
+$r$, $o$ THEN
+$o$);
+    seg := replace(seg, $r$ AND (v_pl.mov ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') THEN
+$r$, $o$ THEN
+$o$);
+    seg := replace(seg, $r$ AND (v_pl.mov ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') THEN
+$r$, $o$ THEN
+$o$);
+    s := substr(s, 1, a - 1) || seg || substr(s, b);
   end if;
   s := replace(s, $r$      END LOOP;
     END LOOP;
 
-    -- 177 (B12 / F557): a result is "changed by the correction" only when
-    -- the week as the corrections ALONE moved it (every other team at its
-    -- before score) differs from the week before — h2h, second game and
-    -- median (§11.7). Any other movement in the batch is not the
-    -- correction's and is never announced or notified under it.
+    -- 177 (B12 / F557; R1443): a result is "changed by the correction" only
+    -- when BOTH the week as the corrections ALONE moved it (every other team
+    -- at its before score) AND the week as it now actually stands differ
+    -- from the week before — h2h, second game and median (§11.7). A flip
+    -- another team's move caused, or one another team's move undid, is
+    -- never announced or notified under the correction. Every result and
+    -- score recorded, posted or notified is the ACTUAL after-state's.
     v_moved := public.stat_correction_week_state_moved_internal(p_league_id, v_league.season, p_week, v_before, v_moves);
     FOR v_pr IN SELECT value FROM jsonb_array_elements(v_pend) WITH ORDINALITY ORDER BY ordinality LOOP
       v_tid := (v_pr ->> 'team_id')::uuid;
       v_tb := v_before -> 'teams' -> (v_tid::text);
-      v_ta := v_moved  -> 'teams' -> (v_tid::text);
+      v_ta := v_after  -> 'teams' -> (v_tid::text);
+      v_tm := v_moved  -> 'teams' -> (v_tid::text);
       INSERT INTO public.league_stat_corrections
         (league_id, season, week, team_id, player_id, slot, matchup_id, event_ids, stat_changes,
          player_points_before, player_points_after, team_score_before, team_score_after,
@@ -106,8 +137,10 @@ $r$) - 1;
               (v_pr ->> 'pp_before')::numeric, (v_pr ->> 'pp_after')::numeric, (v_pr ->> 'score_b')::numeric, (v_pr ->> 'score_a')::numeric,
               CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_tb ->> 'h2h', 'second', v_tb ->> 'second', 'median', v_tb ->> 'median') END,
               CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_ta ->> 'h2h', 'second', v_ta ->> 'second', 'median', v_ta ->> 'median') END,
-              v_results_final AND ROW(v_tb ->> 'h2h', v_tb ->> 'second', v_tb ->> 'median')
-                                  IS DISTINCT FROM ROW(v_ta ->> 'h2h', v_ta ->> 'second', v_ta ->> 'median'))
+              v_results_final AND (
+                   ((v_ta ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h') AND (v_tm ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h'))
+                OR ((v_ta ->> 'second') IS DISTINCT FROM (v_tb ->> 'second') AND (v_tm ->> 'second') IS DISTINCT FROM (v_tb ->> 'second'))
+                OR ((v_ta ->> 'median') IS DISTINCT FROM (v_tb ->> 'median') AND (v_tm ->> 'median') IS DISTINCT FROM (v_tb ->> 'median'))))
       RETURNING id INTO v_cid;
       v_rec := v_rec || jsonb_build_object(
         'id', v_cid, 'team_id', v_tid, 'player_id', v_pr ->> 'player_id', 'event_ids', v_pr -> 'event_ids',
@@ -160,6 +193,7 @@ $o$);
   v_moved      JSONB;                   -- v_before with ONLY those movements applied
   v_pend       JSONB := '[]'::jsonb;    -- this call's records, held until v_moved is known
   v_pr         JSONB;
+  v_tm         JSONB;                   -- a team as the corrections alone moved it
   -- @172}
 $r$, $o$  v_oname      TEXT;
   -- @172}

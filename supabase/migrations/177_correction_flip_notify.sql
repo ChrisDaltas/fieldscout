@@ -38,19 +38,25 @@
 --      extracted programmatically (derive_177.py); its prosrc md5
 --      7fbb74085768afd0f9d56a235f1ebabb = pgTAP 120 A6's stored literal.
 --      Four hunks, all inside 172's own `-- @172{ … -- @172}` fences (no new
---      fence, no `@` added — 109 / 115's fence-strip readings stay valid):
---        H1 (+7 / -2)   DECLARE: v_moves, v_moved, v_pend, v_pr.
---        H2 (+14 / -18) the record is HELD in the player loop (its movement
+--      fence, no `@` added — 109 / 115's fence-strip readings stay valid);
+--      line counts MEASURED as a line diff (difflib) of 172's body against
+--      177's (re-cut by R1443, D469(7)):
+--        H1 (+6 / -0)   DECLARE: v_moves, v_moved, v_pend, v_pr, v_tm.
+--        H2 (+12 / -16) the record is HELD in the player loop (its movement
 --                       = the corrected player's own points delta, summed
 --                       per team) instead of inserted there.
---        H3 (+34 / -4)  after the loops: v_moved computed, then the held
---                       records inserted — result_after / result_changed
---                       from v_moved (team_score_after stays the ACTUAL
---                       written score; result_before unchanged).
---        H4 (6 tokens)  the post / notification block reads v_moved where
---                       it read v_after (the matchup flips, the median
---                       words, the notified set, the bodies' scores).
---      pgTAP 125's pg_temp.un177 reverses all four to 172's text byte for
+--        H3 (+37 / -0)  after the loops: v_moved computed, then the held
+--                       records inserted — result_after from the ACTUAL
+--                       after state (v_after); result_changed only where
+--                       v_moved AND v_after both differ from v_before on
+--                       h2h / second / median (R1443); team_score_after the
+--                       actual written score; result_before unchanged.
+--        H4 (+12 / -7)  the post / notification block keeps reading v_after
+--                       (the real scores and results) and JOINS v_moved: a
+--                       pairing flip, a median flip, a notified team and
+--                       each body clause only where the correction-only
+--                       state ALSO changed it (R1443 / R1444).
+--    pgTAP 125's pg_temp.un177 reverses all four to 172's text byte for
 --      byte (A3 pins it in the database). Everything else is 172's: ONE post
 --      per re-score, a notification ONLY on a flip, once per seated manager,
 --      unseated named; nothing announced while games are still being played.
@@ -75,7 +81,9 @@
 --
 -- Proof: pgTAP 125 (form; D137 in the database; the two-teams-moved batch
 -- announces only the correction's flip; a flip; a no-flip; second game and
--- median flips; the moved state equals the after state on a single-team
+-- median flips; R the correction's flip undone by another team's move —
+-- nothing announced, the record equal to the scoreboard; B both flip it the
+-- same way — announced with the real scores (R1443); the moved state equals the after state on a single-team
 -- batch). 106 / 120 re-cut (un177 innermost). The stack replay's B12 cell.
 -- Break probes shown red then reverted in the PR.
 -- ============================================================================
@@ -264,6 +272,7 @@ DECLARE
   v_moved      JSONB;                   -- v_before with ONLY those movements applied
   v_pend       JSONB := '[]'::jsonb;    -- this call's records, held until v_moved is known
   v_pr         JSONB;
+  v_tm         JSONB;                   -- a team as the corrections alone moved it
   -- @172}
 BEGIN
   -- The worker's door, never a user verb: a JWT-bearing caller is refused
@@ -660,16 +669,19 @@ BEGIN
       END LOOP;
     END LOOP;
 
-    -- 177 (B12 / F557): a result is "changed by the correction" only when
-    -- the week as the corrections ALONE moved it (every other team at its
-    -- before score) differs from the week before — h2h, second game and
-    -- median (§11.7). Any other movement in the batch is not the
-    -- correction's and is never announced or notified under it.
+    -- 177 (B12 / F557; R1443): a result is "changed by the correction" only
+    -- when BOTH the week as the corrections ALONE moved it (every other team
+    -- at its before score) AND the week as it now actually stands differ
+    -- from the week before — h2h, second game and median (§11.7). A flip
+    -- another team's move caused, or one another team's move undid, is
+    -- never announced or notified under the correction. Every result and
+    -- score recorded, posted or notified is the ACTUAL after-state's.
     v_moved := public.stat_correction_week_state_moved_internal(p_league_id, v_league.season, p_week, v_before, v_moves);
     FOR v_pr IN SELECT value FROM jsonb_array_elements(v_pend) WITH ORDINALITY ORDER BY ordinality LOOP
       v_tid := (v_pr ->> 'team_id')::uuid;
       v_tb := v_before -> 'teams' -> (v_tid::text);
-      v_ta := v_moved  -> 'teams' -> (v_tid::text);
+      v_ta := v_after  -> 'teams' -> (v_tid::text);
+      v_tm := v_moved  -> 'teams' -> (v_tid::text);
       INSERT INTO public.league_stat_corrections
         (league_id, season, week, team_id, player_id, slot, matchup_id, event_ids, stat_changes,
          player_points_before, player_points_after, team_score_before, team_score_after,
@@ -681,8 +693,10 @@ BEGIN
               (v_pr ->> 'pp_before')::numeric, (v_pr ->> 'pp_after')::numeric, (v_pr ->> 'score_b')::numeric, (v_pr ->> 'score_a')::numeric,
               CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_tb ->> 'h2h', 'second', v_tb ->> 'second', 'median', v_tb ->> 'median') END,
               CASE WHEN v_results_final THEN jsonb_build_object('h2h', v_ta ->> 'h2h', 'second', v_ta ->> 'second', 'median', v_ta ->> 'median') END,
-              v_results_final AND ROW(v_tb ->> 'h2h', v_tb ->> 'second', v_tb ->> 'median')
-                                  IS DISTINCT FROM ROW(v_ta ->> 'h2h', v_ta ->> 'second', v_ta ->> 'median'))
+              v_results_final AND (
+                   ((v_ta ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h') AND (v_tm ->> 'h2h') IS DISTINCT FROM (v_tb ->> 'h2h'))
+                OR ((v_ta ->> 'second') IS DISTINCT FROM (v_tb ->> 'second') AND (v_tm ->> 'second') IS DISTINCT FROM (v_tb ->> 'second'))
+                OR ((v_ta ->> 'median') IS DISTINCT FROM (v_tb ->> 'median') AND (v_tm ->> 'median') IS DISTINCT FROM (v_tb ->> 'median'))))
       RETURNING id INTO v_cid;
       v_rec := v_rec || jsonb_build_object(
         'id', v_cid, 'team_id', v_tid, 'player_id', v_pr ->> 'player_id', 'event_ids', v_pr -> 'event_ids',
@@ -711,9 +725,11 @@ BEGIN
                                     || to_char((a.value ->> 'home_score')::numeric, 'FM999999990.00') || '–' || to_char((a.value ->> 'away_score')::numeric, 'FM999999990.00')
                    ELSE (a.value ->> 'home_name') || ' v ' || COALESCE(a.value ->> 'away_name', 'bye') || ' has no result yet' END
                  || CASE WHEN a.value ->> 'round_type' = 'secondary' THEN ' (second game)' ELSE '' END AS words
-          FROM jsonb_each(v_moved -> 'matchups') a
+          FROM jsonb_each(v_after -> 'matchups') a
           JOIN jsonb_each(v_before -> 'matchups') b ON b.key = a.key
+          JOIN jsonb_each(v_moved -> 'matchups') c ON c.key = a.key
           WHERE (a.value ->> 'result') IS DISTINCT FROM (b.value ->> 'result')
+            AND (c.value ->> 'result') IS DISTINCT FROM (b.value ->> 'result')
         ) s;
         IF cardinality(v_flips) > 0 THEN
           v_post := v_post || ' Result changed: ' || array_to_string(v_flips, '; ') || '.';
@@ -722,10 +738,12 @@ BEGIN
                           || ' the median game (it ' || CASE b.value ->> 'median' WHEN 'win' THEN 'was winning' WHEN 'loss' THEN 'was losing' WHEN 'tie' THEN 'was tied' ELSE 'had no result' END || ')',
                           '; ' ORDER BY t.name, t.id)
           INTO v_body
-        FROM jsonb_each(v_moved -> 'teams') a
+        FROM jsonb_each(v_after -> 'teams') a
         JOIN jsonb_each(v_before -> 'teams') b ON b.key = a.key
+        JOIN jsonb_each(v_moved -> 'teams') c ON c.key = a.key
         JOIN public.teams t ON t.id = a.key::uuid
-        WHERE (a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median');
+        WHERE (a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median')
+          AND (c.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median');
         IF v_body IS NOT NULL THEN
           v_post := v_post || ' Median game: ' || v_body || '.';
         END IF;
@@ -739,11 +757,13 @@ BEGIN
       -- view. Once per seated manager; an unseated team is named.
       IF v_results_final THEN
         FOR v_pl IN
-          SELECT a.key::uuid AS team_id, a.value AS aft, b.value AS bef
-          FROM jsonb_each(v_moved -> 'teams') a
+          SELECT a.key::uuid AS team_id, a.value AS aft, b.value AS bef, c.value AS mov
+          FROM jsonb_each(v_after -> 'teams') a
           JOIN jsonb_each(v_before -> 'teams') b ON b.key = a.key
-          WHERE ROW(a.value ->> 'h2h', a.value ->> 'second', a.value ->> 'median')
-                IS DISTINCT FROM ROW(b.value ->> 'h2h', b.value ->> 'second', b.value ->> 'median')
+          JOIN jsonb_each(v_moved -> 'teams') c ON c.key = a.key
+          WHERE ((a.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h') AND (c.value ->> 'h2h') IS DISTINCT FROM (b.value ->> 'h2h'))
+             OR ((a.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second') AND (c.value ->> 'second') IS DISTINCT FROM (b.value ->> 'second'))
+             OR ((a.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median') AND (c.value ->> 'median') IS DISTINCT FROM (b.value ->> 'median'))
           ORDER BY a.key
         LOOP
           v_user := NULL;
@@ -755,19 +775,19 @@ BEGIN
             CONTINUE;
           END IF;
           v_body := 'Stat correction (Week ' || p_week || '): ' || array_to_string(v_lines, '; ') || '.';
-          IF (v_pl.aft ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') THEN
+          IF (v_pl.aft ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') AND (v_pl.mov ->> 'h2h') IS DISTINCT FROM (v_pl.bef ->> 'h2h') THEN
             SELECT t.name INTO v_oname FROM public.teams t WHERE t.id = (v_pl.aft ->> 'opponent')::uuid;
             v_body := v_body || ' ' || CASE v_pl.aft ->> 'h2h'
                 WHEN 'win'  THEN 'You now beat ' || COALESCE(v_oname, 'your opponent') || ' '
-                                 || to_char((v_pl.aft ->> 'score')::numeric, 'FM999999990.00') || '–' || to_char((v_moved #>> ARRAY['teams', v_pl.aft ->> 'opponent', 'score'])::numeric, 'FM999999990.00')
+                                 || to_char((v_pl.aft ->> 'score')::numeric, 'FM999999990.00') || '–' || to_char((v_after #>> ARRAY['teams', v_pl.aft ->> 'opponent', 'score'])::numeric, 'FM999999990.00')
                 WHEN 'loss' THEN COALESCE(v_oname, 'Your opponent') || ' now beats you '
-                                 || to_char((v_moved #>> ARRAY['teams', v_pl.aft ->> 'opponent', 'score'])::numeric, 'FM999999990.00') || '–' || to_char((v_pl.aft ->> 'score')::numeric, 'FM999999990.00')
+                                 || to_char((v_after #>> ARRAY['teams', v_pl.aft ->> 'opponent', 'score'])::numeric, 'FM999999990.00') || '–' || to_char((v_pl.aft ->> 'score')::numeric, 'FM999999990.00')
                 WHEN 'tie'  THEN 'You and ' || COALESCE(v_oname, 'your opponent') || ' now tie '
-                                 || to_char((v_pl.aft ->> 'score')::numeric, 'FM999999990.00') || '–' || to_char((v_moved #>> ARRAY['teams', v_pl.aft ->> 'opponent', 'score'])::numeric, 'FM999999990.00')
+                                 || to_char((v_pl.aft ->> 'score')::numeric, 'FM999999990.00') || '–' || to_char((v_after #>> ARRAY['teams', v_pl.aft ->> 'opponent', 'score'])::numeric, 'FM999999990.00')
                 ELSE 'Your matchup has no result yet' END
               || ' (you were ' || CASE v_pl.bef ->> 'h2h' WHEN 'win' THEN 'winning' WHEN 'loss' THEN 'losing' WHEN 'tie' THEN 'tied' ELSE 'without a result' END || ').';
           END IF;
-          IF (v_pl.aft ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') THEN
+          IF (v_pl.aft ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') AND (v_pl.mov ->> 'second') IS DISTINCT FROM (v_pl.bef ->> 'second') THEN
             SELECT t.name INTO v_oname FROM public.teams t WHERE t.id = (v_pl.aft ->> 'second_opponent')::uuid;
             v_body := v_body || ' In your second game ' || CASE v_pl.aft ->> 'second'
                 WHEN 'win'  THEN 'you now beat ' || COALESCE(v_oname, 'your opponent')
@@ -776,7 +796,7 @@ BEGIN
                 ELSE 'there is no result yet' END
               || ' (you were ' || CASE v_pl.bef ->> 'second' WHEN 'win' THEN 'winning' WHEN 'loss' THEN 'losing' WHEN 'tie' THEN 'tied' ELSE 'without a result' END || ').';
           END IF;
-          IF (v_pl.aft ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') THEN
+          IF (v_pl.aft ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') AND (v_pl.mov ->> 'median') IS DISTINCT FROM (v_pl.bef ->> 'median') THEN
             v_body := v_body || ' You now ' || CASE v_pl.aft ->> 'median' WHEN 'win' THEN 'win' WHEN 'loss' THEN 'lose' ELSE 'tie' END
               || ' the median game (you were ' || CASE v_pl.bef ->> 'median' WHEN 'win' THEN 'winning' WHEN 'loss' THEN 'losing' WHEN 'tie' THEN 'tied' ELSE 'without a result' END || ').';
           END IF;

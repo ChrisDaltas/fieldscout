@@ -2423,7 +2423,7 @@ async function readCorrectionEvidence(
       if (Object.values((l.slot_map ?? {}) as Record<string, unknown>).includes(playerId)) started.add(`${leagueOfTeam.get(l.team_id)}:${l.team_id}`)
     }
   }
-  const records = await pageByLeague<{ league_id: string; team_id: string; result_changed: boolean }>(
+  const records = await pageByLeague<{ league_id: string; team_id: string; result_changed: boolean; id: string }>(
     leagueIds,
     'correction evidence: records',
     (part, from, to) =>
@@ -2448,6 +2448,11 @@ async function readCorrectionEvidence(
   )
   const postsByLeague = new Map<string, string[]>()
   for (const p of posts) postsByLeague.set(String(p.league_id), [...(postsByLeague.get(String(p.league_id)) ?? []), p.message])
+  // R1445 (D469): a week holds MANY corrected players (the scenario corrects
+  // several), and a notification row carries no player id — it carries the
+  // `correction_ids` of the records its re-score wrote. A notification is
+  // THIS player's only when it names one of THIS player's records.
+  const playerRecordIds = new Set(records.map((r) => String(r.id)))
   const notesByLeague = new Map<string, number>()
   for (let i = 0; i < leagueIds.length; i += LEAGUE_ID_CHUNK) {
     const part = leagueIds.slice(i, i + LEAGUE_ID_CHUNK)
@@ -2461,6 +2466,8 @@ async function readCorrectionEvidence(
     throwIfError(error, 'correction evidence: notifications')
     if ((notes ?? []).length === 1000) throw new Error('correction evidence: notifications read hit the 1000-row cap — refusing a truncated count')
     for (const n of notes ?? []) {
+      const cids = (n.data as Record<string, unknown>).correction_ids
+      if (!Array.isArray(cids) || !cids.some((c) => playerRecordIds.has(String(c)))) continue
       const lid = String((n.data as Record<string, unknown>).league_id)
       notesByLeague.set(lid, (notesByLeague.get(lid) ?? 0) + 1)
     }
