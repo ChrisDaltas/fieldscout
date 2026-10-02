@@ -113,11 +113,22 @@ export function createStateSink<Data, Event>(
   queryClient: QueryClient,
   queryKey: QueryKey,
   reduce: (data: Data, event: Event) => StateReduceResult<Data>,
+  options: {
+    /** R1452: may this event be held across a fetch and replayed onto its
+     *  result? Default: every event. An event that may NOT is dropped the
+     *  moment a fetch owns the cache, and the query is refetched ONCE after
+     *  that fetch settles (the snapshot may or may not contain it — only the
+     *  server can say). */
+    replayable?: (event: Event) => boolean
+  } = {},
 ): FeedSink<Event> {
   const hash = hashKey(queryKey)
   const queue: Event[] = []
+  const replayable = options.replayable ?? (() => true)
   let draining = false
   let disposed = false
+  /** A non-replayable event was dropped behind the current fetch. */
+  let refetchOnSettle = false
 
   /** A fetch is in flight (or paused offline) for this key. `getQueryState`
    *  reads the query's CURRENT state synchronously — React Query dispatches
@@ -126,6 +137,24 @@ export function createStateSink<Data, Event>(
   const inFlight = () => {
     const state = queryClient.getQueryState(queryKey)
     return state !== undefined && state.fetchStatus !== 'idle'
+  }
+
+  /** A fetch owns the cache: drop what cannot be replayed onto its result. */
+  const dropUnreplayable = () => {
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!replayable(queue[i])) {
+        queue.splice(i, 1)
+        refetchOnSettle = true
+      }
+    }
+  }
+
+  /** At most ONE follow-up refetch per settle — and only when something was
+   *  dropped, so a settle with nothing dropped never refetches (no loop). */
+  const settle = () => {
+    if (!refetchOnSettle || inFlight()) return
+    refetchOnSettle = false
+    void queryClient.invalidateQueries({ queryKey })
   }
 
   const drain = () => {
@@ -140,8 +169,14 @@ export function createStateSink<Data, Event>(
         if (data === undefined) continue
         const result = reduce(data, event)
         if (result.data !== data) queryClient.setQueryData(queryKey, result.data)
-        if (result.refetch) void queryClient.invalidateQueries({ queryKey })
+        if (result.refetch) {
+          // This fetch starts AFTER anything dropped so far, so its snapshot
+          // already covers it — one refetch, not two.
+          refetchOnSettle = false
+          void queryClient.invalidateQueries({ queryKey })
+        }
       }
+      if (queue.length > 0) dropUnreplayable()
     } finally {
       draining = false
     }
@@ -153,6 +188,9 @@ export function createStateSink<Data, Event>(
     // 'fetch' transition simply finds nothing drainable.
     if (event.query.queryHash !== hash) return
     if (queue.length > 0) drain()
+    // Not from inside a drain (a nested setQueryData event): the drain may
+    // yet start a refetch that covers what was dropped.
+    if (!disposed && !draining) settle()
   })
 
   return {
@@ -160,12 +198,14 @@ export function createStateSink<Data, Event>(
       if (disposed) return
       queue.push(event)
       drain()
+      if (inFlight()) dropUnreplayable()
     },
     held: () => queue.length,
     dispose() {
       disposed = true
       unsubscribe()
       queue.length = 0
+      refetchOnSettle = false
     },
   }
 }
@@ -175,17 +215,33 @@ export function createStateSink<Data, Event>(
 // ---------------------------------------------------------------------------
 
 /** The room-state sink `useDraftRoom` builds: {@link createStateSink} over the
- *  room query's key with the real room reducer (`applyDraftRoomEvent` — its
- *  `incoming < known` version rule is what makes a replay of an event the
- *  fetched snapshot already contains a no-op). */
+ *  room query's key with the real room reducer.
+ *
+ *  ONLY `drafts` events are replayed onto a fetched snapshot — they carry a
+ *  version (`updated_at`), and the reducer's `incoming < known` rule makes a
+ *  replay the snapshot already contains a no-op. `draft_picks` events carry
+ *  NO version and no row id (D109(2)), so a held pick event cannot tell
+ *  whether the snapshot post-dates it: R1452 — a held INSERT(#5, P, live)
+ *  replayed onto a snapshot that already shows #5 P undone added a ghost
+ *  live row, and the held undo UPDATE then matched two rows. Treating "same
+ *  (pick_number, player_id) already present" as applied instead would drop a
+ *  genuine re-pick of P at #5 after its undo, so that was not taken. A pick
+ *  event arriving while the room fetch is in flight is dropped and the room
+ *  refetched once after the fetch settles; outside a fetch it applies at
+ *  once, exactly as before. */
 export function createRoomStateSink(
   queryClient: QueryClient,
   queryKey: QueryKey,
 ): FeedSink<DraftRoomBroadcast> {
-  return createStateSink<DraftState, DraftRoomBroadcast>(queryClient, queryKey, (state, b) => {
-    const result = applyDraftRoomEvent(state, b)
-    return { data: result.state, refetch: result.refetch }
-  })
+  return createStateSink<DraftState, DraftRoomBroadcast>(
+    queryClient,
+    queryKey,
+    (state, b) => {
+      const result = applyDraftRoomEvent(state, b)
+      return { data: result.state, refetch: result.refetch }
+    },
+    { replayable: (b) => b.event === 'drafts' },
+  )
 }
 
 /**

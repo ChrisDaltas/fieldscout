@@ -22,7 +22,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { Draft } from '@/types/database'
 
@@ -108,6 +108,7 @@ function rig(seed?: DraftState) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   if (seed) client.setQueryData(KEY, seed)
   const sink = createRoomStateSink(client, KEY)
+  const invalidate = vi.spyOn(client, 'invalidateQueries')
   let refetches = 0
   const route = (broadcast: DraftRoomBroadcast) =>
     applyRoomBroadcast({
@@ -125,7 +126,16 @@ function rig(seed?: DraftState) {
     return { ...d, done }
   }
   const state = () => client.getQueryData<DraftState>(KEY)
-  return { client, sink, route, startFetch, state, refetches: () => refetches }
+  return {
+    client,
+    sink,
+    route,
+    startFetch,
+    state,
+    refetches: () => refetches,
+    /** Refetches the SINK requested (a reducer's doubt, or R1452's settle refetch). */
+    sinkRefetches: () => invalidate.mock.calls.length,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +168,9 @@ describe('F560: the room state survives a refetch that read the pre-award snapsh
     const f = r.startFetch()
     r.route(award)
     r.route(awardPick)
-    expect(r.sink.held()).toBe(2) // held behind the in-flight fetch
+    // The drafts event is held behind the in-flight fetch; the pick event is
+    // NOT (R1452 — unversioned, so not replayable) and asks for one refetch.
+    expect(r.sink.held()).toBe(1)
     f.resolve(heldLot())
     await f.done
     await new Promise((res) => setTimeout(res, 0))
@@ -166,7 +178,8 @@ describe('F560: the room state survives a refetch that read the pre-award snapsh
     expect(s.draft!.on_clock_team_id).toBe(MANAGER_TEAM)
     expect(s.draft!.current_nomination).toBeNull()
     expect(s.draft!.updated_at).toBe('2026-10-02T18:23:19.982053+00:00')
-    expect(s.picks.map((p) => p.pick_number)).toEqual([1])
+    expect(s.picks).toEqual([]) // the pick arrives with the follow-up refetch
+    expect(r.sinkRefetches()).toBe(1) // ONE: the award's gap refetch covers the dropped pick
     expect(r.sink.held()).toBe(0)
   })
 
@@ -211,6 +224,102 @@ describe('F560: the room state survives a refetch that read the pre-award snapsh
     await f.done
     await new Promise((res) => setTimeout(res, 0))
     expect(r.state()!.draft!.on_clock_team_id).toBe(MANAGER_TEAM)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 1b. Pick events are NOT replayed onto a fetched snapshot (R1452)
+// ---------------------------------------------------------------------------
+
+function pick(n: number, player: string, undone: boolean, op: 'INSERT' | 'UPDATE'): DraftRoomBroadcast {
+  return {
+    event: 'draft_picks',
+    operation: op,
+    record: {
+      pick_number: n,
+      round: 1,
+      team_id: MANAGER_TEAM,
+      player_id: player,
+      is_auto: false,
+      is_undone: undone,
+      price: 10,
+      made_via: 'auction',
+    },
+  }
+}
+
+function row(n: number, player: string, undone: boolean) {
+  return {
+    id: `row-${n}-${player}-${undone}`,
+    pick_number: n,
+    round: 1,
+    team_id: MANAGER_TEAM,
+    player_id: player,
+    is_auto: false,
+    is_undone: undone,
+    price: 10,
+    made_via: 'auction',
+    created_at: '2026-10-02T18:23:20+00:00',
+  }
+}
+
+function withPicks(picks: ReturnType<typeof row>[]): DraftState {
+  return { ...heldLot(), picks } as unknown as DraftState
+}
+
+const settled = () => new Promise((res) => setTimeout(res, 0))
+
+describe('R1452: a pick event held across a fetch never leaves a ghost', () => {
+  it("the reviewer's probe: INSERT(#5 P live) + UPDATE(#5 P undone) mid-fetch, snapshot shows #5 P undone ⇒ no live ghost", async () => {
+    const r = rig(withPicks([]))
+    const f = r.startFetch()
+    r.route(pick(5, 'P', false, 'INSERT'))
+    r.route(pick(5, 'P', true, 'UPDATE'))
+    f.resolve(withPicks([row(5, 'P', true)]))
+    await f.done
+    await settled()
+    const live = r.state()!.picks.filter((p) => !p.is_undone)
+    expect(live).toEqual([])
+    expect(r.state()!.picks).toHaveLength(1)
+    // …and exactly ONE follow-up refetch converges on server truth.
+    expect(r.sinkRefetches()).toBe(1)
+  })
+
+  it('a settle with nothing dropped requests no refetch (no loop)', async () => {
+    const r = rig(withPicks([]))
+    const f = r.startFetch()
+    // A drafts hint with no pick gap (so the reducer itself has no doubt).
+    r.route({ ...award, record: { ...(award.record as object), current_pick_number: 1 } })
+    f.resolve(heldLot())
+    await f.done
+    await settled()
+    expect(r.state()!.draft!.on_clock_team_id).toBe(MANAGER_TEAM)
+    expect(r.sinkRefetches()).toBe(0)
+  })
+
+  it('a RE-PICK after an undo (outside a fetch) appends the new live row beside the undone one', () => {
+    const r = rig(withPicks([row(5, 'P', true)]))
+    r.route(pick(5, 'Q', false, 'INSERT'))
+    expect(r.state()!.picks.map((p) => [p.pick_number, p.player_id, p.is_undone])).toEqual([
+      [5, 'P', true],
+      [5, 'Q', false],
+    ])
+    // The SAME player re-picked at the same number is a new row too.
+    const r2 = rig(withPicks([row(5, 'P', true)]))
+    r2.route(pick(5, 'P', false, 'INSERT'))
+    expect(r2.state()!.picks.filter((p) => !p.is_undone).map((p) => p.player_id)).toEqual(['P'])
+    expect(r2.state()!.picks).toHaveLength(2)
+  })
+
+  it('the undo broadcast arriving just AFTER the fetch resolves applies at once onto the snapshot', async () => {
+    const r = rig(withPicks([]))
+    const f = r.startFetch()
+    f.resolve(withPicks([row(5, 'P', false)]))
+    await f.done
+    await settled()
+    r.route(pick(5, 'P', true, 'UPDATE'))
+    expect(r.state()!.picks.map((p) => [p.player_id, p.is_undone])).toEqual([['P', true]])
+    expect(r.sinkRefetches()).toBe(0)
   })
 })
 
