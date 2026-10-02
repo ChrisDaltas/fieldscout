@@ -15,6 +15,8 @@ FieldScout is an all-in-one fantasy football community app for the NFL. Users cr
 
 ## Redesign (In Progress — July 2026)
 
+> **New look ruled (Chris, 2026-10-02): "FieldScout Landing v13" is the new app look** (Claude Design project "FieldScout.gg landing", `d2b1967d-b9d5-4960-8aa9-2813bcdc80ff`) — Inter Display, pill buttons, soft rounded cards and shadows, `#0080FF` blue, green logo tile. First surface: the public landing page (`src/components/landing/`), built on the `fs-*` tokens in `tailwind.config.ts`. On v13 surfaces those tokens supersede the hard-corner / no-resting-shadow rules below; everywhere else the rules below still hold until the app-wide move is planned. Landing ships as designed, including features not yet open to visitors.
+
 A whole-app visual overhaul is underway. The **Claude Design prototype ("Field Scout look") is the design source of truth** — the current UI (an early "make it look like Spotify" pass) carries no design value worth preserving. Rules for all redesign work:
 
 - **Re-skin in place.** Restyle the existing shadcn/Radix/CVA components in `src/components/ui/` via tokens and variant styles. Do not generate a replacement component library or parallel component tree.
