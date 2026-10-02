@@ -45,8 +45,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
+  modal,
 }: Readonly<{
   children: React.ReactNode
+  /** @modal slot — route-intercepted modals (sign-in over the landing page). */
+  modal: React.ReactNode
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -62,6 +65,7 @@ export default function RootLayout({
         <QueryProvider>
           <DevAuthProvider>
             {children}
+            {modal}
             <DevAuthBadge />
           </DevAuthProvider>
           <PlayerWindowsLayer />
