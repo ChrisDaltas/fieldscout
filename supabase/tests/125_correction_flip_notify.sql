@@ -518,7 +518,7 @@ select ok(
    from public.league_stat_corrections r where r.league_id = 'b1250000-0000-4000-8000-000000000007')
   and col_description('public.league_stat_corrections'::regclass,
         (select attnum from pg_attribute where attrelid = 'public.league_stat_corrections'::regclass and attname = 'result_changed'))
-      like 'TRUE exactly when THIS correction changed the team%but-for week%may differ with result_changed FALSE when another team%',
+      like 'TRUE exactly when this re-score''s corrections changed the team%but-for week%may differ with result_changed FALSE when another team%',
   'O4 the MEANING of result_changed is "changed by the correction": a stored row with result_before <> result_after and result_changed false, and the column comment says so');
 
 -- ---------------------------------------------------------------------------

@@ -88,6 +88,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/types/database'
 
 import { commishSetAutopilot } from '../api/commish-autopilot-service'
+import { reportVisitedLeagues, runScopedJob } from './scoped-job'
 import { commishEditFaab } from '../api/commish-faab-service'
 import { commishChangeSetting } from '../api/commish-setting-service'
 import { claimInvite, createInvite } from '../api/invites-service'
@@ -379,10 +380,66 @@ async function tradeStatus(service: Supabase, tradeId: string): Promise<string> 
   return must('trade status', await service.from('trades').select('status').eq('id', tradeId).single()).status
 }
 
-async function tick(deps: TransactDeps, fn: 'waiver_tick' | 'trade_tick', leagueId: string, at: Date): Promise<Record<string, unknown>> {
+async function tickOnce(deps: TransactDeps, fn: 'waiver_tick' | 'trade_tick', leagueId: string, at: Date): Promise<Record<string, unknown>> {
   const { data, error } = await (deps.service.rpc as unknown as Rpc)(fn, { p_now: at.toISOString(), p_league_id: leagueId })
   if (error) throw new StepError(`${fn}@${at.toISOString()}: ${error.message}`)
   return (data ?? {}) as Record<string, unknown>
+}
+
+/**
+ * F559 (and F558's species): both jobs take the league row `FOR UPDATE SKIP
+ * LOCKED`, and the wall-clock pg_cron holds every in-season league row for
+ * the length of its own pass — so a scoped call can come back `leagues: 0`
+ * ("no_league_due") for a league that WAS due. `inScope` is the job's own
+ * selection read back; the call is re-run at the same virtual instant until
+ * it visits the league (scoped-job.ts), loud if it never does.
+ */
+async function tick(
+  deps: TransactDeps,
+  fn: 'waiver_tick' | 'trade_tick',
+  leagueId: string,
+  at: Date,
+  inScope: () => Promise<boolean>,
+): Promise<Record<string, unknown>> {
+  try {
+    const { report } = await runScopedJob({
+      label: `${fn}@${at.toISOString()} for league ${leagueId}`,
+      call: () => tickOnce(deps, fn, leagueId, at),
+      visited: (r) => reportVisitedLeagues(r) === 1,
+      inScope,
+      sleep: deps.sleep,
+    })
+    return report
+  } catch (e) {
+    throw e instanceof StepError ? e : new StepError((e as Error).message)
+  }
+}
+
+/** `waiver_tick`'s selection (150:1333-1343) for a league at `at`: in season,
+ *  and a run due (or untracked) — or claims left under no waivers. */
+function waiverDue(deps: TransactDeps, leagueId: string, at: Date): () => Promise<boolean> {
+  return async () => {
+    const lg = must(
+      'league read',
+      await deps.service.from('leagues').select('status, deleted_at, waiver_type, waiver_next_run_at').eq('id', leagueId).single(),
+    )
+    if (lg.deleted_at !== null || (lg.status !== 'in_season' && lg.status !== 'playoffs')) return false
+    if ((lg.waiver_type ?? 'faab') !== 'none_fcfs') {
+      return lg.waiver_next_run_at === null || Date.parse(lg.waiver_next_run_at) <= at.getTime()
+    }
+    if (lg.waiver_next_run_at !== null) return true
+    const pending = must('pending read', await deps.service.from('waiver_claims').select('id').eq('league_id', leagueId).eq('status', 'pending'))
+    return pending.length > 0
+  }
+}
+
+/** `trade_tick`'s selection: the league holds a proposed / accepted / in-review trade. */
+function tradeDue(deps: TransactDeps, leagueId: string): () => Promise<boolean> {
+  return async () =>
+    must(
+      'open trades read',
+      await deps.service.from('trades').select('id').eq('league_id', leagueId).in('status', ['proposed', 'accepted', 'in_review']),
+    ).length > 0
 }
 
 /** The first driven week's opening instant (the phase must finish before it). */
@@ -484,7 +541,7 @@ async function driveLeague(
   // cron's SKIP LOCKED beat can win is retried.
   let runAt: Date | null = null
   for (let attempt = 0; attempt < 5 && runAt === null; attempt++) {
-    await tick(deps, 'waiver_tick', league.leagueId, seedAt)
+    await tick(deps, 'waiver_tick', league.leagueId, seedAt, waiverDue(deps, league.leagueId, seedAt))
     const row = must('league next run', await service.from('leagues').select('waiver_next_run_at').eq('id', league.leagueId).single())
     const next = row.waiver_next_run_at === null ? null : new Date(row.waiver_next_run_at)
     if (next !== null && next.getTime() > seedAt.getTime()) runAt = next
@@ -560,7 +617,7 @@ async function driveLeague(
     throw new StepError(`${pendingNow} claim(s) pending before the run, ${state.counts.claimsSubmitted} submitted — something settled them early`)
   }
   {
-    const report = await tick(deps, 'waiver_tick', league.leagueId, runAt)
+    const report = await tick(deps, 'waiver_tick', league.leagueId, runAt, waiverDue(deps, league.leagueId, runAt))
     const settled = ((report.settled ?? []) as Array<{ league_id?: string }>).filter((s) => s.league_id === league.leagueId)
     if (settled.length !== 1) throw new StepError(`waiver_tick at ${runAt.toISOString()} settled ${settled.length} runs for the league: ${JSON.stringify(report).slice(0, 400)}`)
     instants.push(runAt.toISOString())
@@ -750,7 +807,7 @@ async function driveLeague(
     await expectStatus(t, 'in_review', 'trade C after one veto + one approve (below the number)')
     const tickAt = new Date(runAt.getTime() + HOUR_MS)
     if (tickAt.getTime() >= opens.getTime()) throw new StepError(`the trade tick instant ${tickAt.toISOString()} is not before the first driven week`)
-    await tick(deps, 'trade_tick', league.leagueId, tickAt)
+    await tick(deps, 'trade_tick', league.leagueId, tickAt, tradeDue(deps, league.leagueId))
     instants.push(tickAt.toISOString())
     await expectStatus(t, 'complete', `trade C after trade_tick@${tickAt.toISOString()} (review deadline passed)`)
     swap(a, pa.id, b, pb.id)

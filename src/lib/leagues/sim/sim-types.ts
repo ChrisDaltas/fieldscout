@@ -441,7 +441,15 @@ export interface SeasonRunReport {
   leagues: SeasonLeagueResult[]
   scenarioEvidence: ScenarioEvidence
   invariantFailures: SeasonFailureLine[]
-  jobs: { advance: number; lockTick: number; finalize: number; scoreBatches: number; polls: number }
+  jobs: {
+    advance: number
+    lockTick: number
+    finalize: number
+    scoreBatches: number
+    polls: number
+    /** F558: scoped calls re-run because the job skipped the league on a row lock. */
+    skippedOnLock: number
+  }
   provenance: { statRows: number; synthetic: number; foreign: number }
   /**
    * `league_player_pool` rows across every league of the run — F300. The season

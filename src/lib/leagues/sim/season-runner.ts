@@ -76,6 +76,14 @@
  * what makes 2099 safe. It is also why every job call here still passes
  * `p_league_id`, and why the run must not leave leagues behind.
  *
+ * INERT IS NOT INVISIBLE (F558, 2026-10-02): finding nothing due, the cron
+ * still takes every in-season league row `FOR UPDATE SKIP LOCKED` while it
+ * looks (`lineup_lock_tick` and the advance job select by status alone). A
+ * scoped call here that lands in that window skips the league and reports
+ * `leagues: 0` — so every scoped job call goes through `runScopedJob`
+ * (scoped-job.ts), which re-runs it at the same virtual instant until the job
+ * says it visited the league, and fails loud if it never does.
+ *
  * ── CLEANUP (F199) ─────────────────────────────────────────────────────────
  * The run's `finally` calls `cleanupSweep`, which this task extended to the
  * in-season tables AND to the three season-scoped surfaces no league delete
@@ -105,6 +113,7 @@ import {
 } from '../stats/synthetic/synthetic-stats-provider'
 import { weekReleaseFloor } from '../time/release-floor'
 import { VirtualClock } from '../time/virtual-clock'
+import { reportVisitedLeagues, runScopedJob } from './scoped-job'
 
 import { BLOCKING_DESIGNATIONS, simDesignation } from './designations'
 import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
@@ -414,7 +423,7 @@ export async function runSeasonSim(
     leagues: [],
     scenarioEvidence: { scenario: cfg.scenario, leagues: 0, assertions: [] },
     invariantFailures: [],
-    jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 },
+    jobs: { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0, skippedOnLock: 0 },
     provenance: { statRows: 0, synthetic: 0, foreign: 0 },
     poolRows: 0,
     unmanagedSeats: 0,
@@ -1232,6 +1241,47 @@ interface DriveOutcome {
   chainLines: string[]
 }
 
+/**
+ * F558: is the league in `lineup_lock_tick` / `league_week_advance`'s scope —
+ * both select every in-season, undeleted league (`status IN ('in_season',
+ * 'playoffs') AND deleted_at IS NULL`), so a scoped call that visited 0
+ * leagues while this holds was skipped on a row lock (scoped-job.ts).
+ */
+async function leagueInSeason(service: Supabase, leagueId: string): Promise<boolean> {
+  const { data, error } = await service.from('leagues').select('status, deleted_at').eq('id', leagueId).maybeSingle()
+  throwIfError(error, `F558: league ${leagueId} status read`)
+  return data !== null && data.deleted_at === null && (data.status === 'in_season' || data.status === 'playoffs')
+}
+
+/** F558: `finalize_matchups`' own selection predicate, read back — the league
+ *  is in season and holds a week whose correction window has ended at `pNow`
+ *  (`correction_window`, or `live` with no last-game instant). */
+async function leagueFinalizeDue(service: Supabase, leagueId: string, pNow: string): Promise<boolean> {
+  if (!(await leagueInSeason(service, leagueId))) return false
+  const { data: league, error: le } = await service.from('leagues').select('season').eq('id', leagueId).single()
+  throwIfError(le, `F558: league ${leagueId} season read`)
+  const { data: weeks, error: we } = await service
+    .from('league_weeks')
+    .select('week, status')
+    .eq('league_id', leagueId)
+    .eq('season', league!.season)
+    .in('status', ['correction_window', 'live'])
+  throwIfError(we, `F558: league ${leagueId} weeks read`)
+  if ((weeks ?? []).length === 0) return false
+  const { data: cal, error: ce } = await service
+    .from('nfl_weeks')
+    .select('week, correction_window_ends_at, last_game_ends_at')
+    .eq('season', league!.season)
+    .in('week', weeks!.map((w) => w.week))
+  throwIfError(ce, `F558: nfl_weeks read for league ${leagueId}`)
+  const at = Date.parse(pNow)
+  return weeks!.some((w) => {
+    const c = (cal ?? []).find((r) => r.week === w.week)
+    if (c === undefined || c.correction_window_ends_at === null || Date.parse(c.correction_window_ends_at) > at) return false
+    return w.status === 'correction_window' || c.last_game_ends_at === null
+  })
+}
+
 async function driveSeason(
   service: Supabase,
   botClients: ReadonlyMap<string, Supabase>,
@@ -1247,7 +1297,7 @@ async function driveSeason(
   // first-finalize hook (the Ghost's seat claim) has fired.
   const openedWeeks: number[] = []
   let firstFinalizeHookRan = false
-  const jobs: SeasonRunReport['jobs'] = { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0 }
+  const jobs: SeasonRunReport['jobs'] = { advance: 0, lockTick: 0, finalize: 0, scoreBatches: 0, polls: 0, skippedOnLock: 0 }
   const workerErrors: string[] = []
   const workerErrorsByLeague = new Map<string, string[]>()
   const noStatRowByLeague = new Map<string, number>()
@@ -1577,8 +1627,18 @@ async function driveSeason(
       // find nothing left to do at the same `p_now`.
       for (const league of leagues) {
         for (let pass = 0; pass < 2; pass++) {
-          const { data, error } = await service.rpc('league_week_advance', { p_now: pNow, p_league_id: league.leagueId })
-          throwIfError(error, `${league.label}: league_week_advance (${entry.kind})`)
+          const { report: data, skippedOnLock } = await runScopedJob({
+            label: `${league.label}: league_week_advance@${pNow}`,
+            call: async () => {
+              const { data, error } = await service.rpc('league_week_advance', { p_now: pNow, p_league_id: league.leagueId })
+              throwIfError(error, `${league.label}: league_week_advance (${entry.kind})`)
+              return data
+            },
+            visited: (r) => reportVisitedLeagues(r) === 1,
+            inScope: () => leagueInSeason(service, league.leagueId),
+            sleep: deps.clock.sleep,
+          })
+          jobs.skippedOnLock += skippedOnLock
           jobs.advance += 1
           collectJobFailures(data, `${league.label} league_week_advance@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
         }
@@ -1622,8 +1682,18 @@ async function driveSeason(
         )
       }
       for (const league of leagues) {
-        const { data, error } = await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: league.leagueId })
-        throwIfError(error, `${league.label}: finalize_matchups`)
+        const { report: data, skippedOnLock } = await runScopedJob({
+          label: `${league.label}: finalize_matchups@${pNow}`,
+          call: async () => {
+            const { data, error } = await service.rpc('finalize_matchups', { p_now: pNow, p_league_id: league.leagueId })
+            throwIfError(error, `${league.label}: finalize_matchups`)
+            return data
+          },
+          visited: (r) => reportVisitedLeagues(r) === 1,
+          inScope: () => leagueFinalizeDue(service, league.leagueId, pNow),
+          sleep: deps.clock.sleep,
+        })
+        jobs.skippedOnLock += skippedOnLock
         jobs.finalize += 1
         collectJobFailures(data, `${league.label} finalize_matchups@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
       }
@@ -1723,8 +1793,18 @@ async function driveSeason(
     }
 
     for (const league of leagues) {
-      const { data, error } = await service.rpc('lineup_lock_tick', { p_now: pNow, p_league_id: league.leagueId })
-      throwIfError(error, `${league.label}: lineup_lock_tick`)
+      const { report: data, skippedOnLock } = await runScopedJob({
+        label: `${league.label}: lineup_lock_tick@${pNow}`,
+        call: async () => {
+          const { data, error } = await service.rpc('lineup_lock_tick', { p_now: pNow, p_league_id: league.leagueId })
+          throwIfError(error, `${league.label}: lineup_lock_tick`)
+          return data
+        },
+        visited: (r) => reportVisitedLeagues(r) === 1,
+        inScope: () => leagueInSeason(service, league.leagueId),
+        sleep: deps.clock.sleep,
+      })
+      jobs.skippedOnLock += skippedOnLock
       jobs.lockTick += 1
       collectJobFailures(data, `${league.label} lineup_lock_tick@${pNow}`, workerErrors, workerErrorsByLeague, league.leagueId)
       // `autopilot_unfillable[]` entries carry no week of their own (125:630-642
@@ -4461,7 +4541,8 @@ export function seasonReportLines(report: SeasonRunReport): string[] {
   lines.push(`WEEKS DRIVEN: ${weeks} per league · ${finals} league-weeks reached 'final'`)
   lines.push(
     `JOBS: advance ${report.jobs.advance} · lock_tick ${report.jobs.lockTick} · finalize ${report.jobs.finalize} · ` +
-      `score batches ${report.jobs.scoreBatches} · ingestion polls ${report.jobs.polls}`,
+      `score batches ${report.jobs.scoreBatches} · ingestion polls ${report.jobs.polls} · ` +
+      `re-run after a lock skip ${report.jobs.skippedOnLock ?? 0} (F558)`,
   )
   lines.push(
     `PROVENANCE: ${report.provenance.statRows} player_stats rows on season ${report.season} — ` +
