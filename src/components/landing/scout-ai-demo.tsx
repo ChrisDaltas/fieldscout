@@ -216,7 +216,7 @@ function FindResult({ t }: { t: number }) {
               <div className="flex min-w-0 items-center gap-2.5">
                 <PosTag pos="WR" />
                 <span className="truncate text-[15px] font-semibold sm:text-[16px]">{r.name}</span>
-                <span className="text-[13px] font-medium text-fs-text-3">{r.team}</span>
+                <span className="hidden text-[13px] font-medium text-fs-text-3 sm:inline">{r.team}</span>
               </div>
               <span className="text-right text-[17px] font-bold text-fs-blue">{r.tgt}</span>
               <span className="hidden text-right text-[14px] font-semibold sm:block">{r.share}</span>

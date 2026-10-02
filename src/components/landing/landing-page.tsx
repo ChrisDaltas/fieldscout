@@ -92,8 +92,10 @@ export function LandingPage() {
               <ScoutDot />
               Powered by Scout AI
             </div>
-            <h1 className="mx-auto mt-[22px] max-w-[900px] text-balance text-[clamp(44px,6.4vw,80px)] font-bold leading-[1.02] tracking-[-0.05em]">
-              AI powered fantasy sports has arrived
+            <h1 className="mx-auto mt-[22px] max-w-[1000px] text-balance text-[clamp(40px,6.4vw,80px)] font-bold leading-[1.02] tracking-[-0.05em]">
+              <span className="text-fs-ink">Welcome to FieldScout.</span>
+              <br />
+              <span className="text-fs-text-4">The first platform 100% dedicated to fantasy football.</span>
             </h1>
             <p className="mx-auto mt-5 max-w-[720px] text-pretty text-[18px] font-medium leading-[1.45] text-fs-text-3 sm:text-[21px]">
               Full leagues, live drafts, expert and consensus rankings, waiver wire reports, start or sit and
@@ -110,9 +112,7 @@ export function LandingPage() {
           {/* Introducing + league home shot */}
           <section className={cn(PAD_X, 'pb-[140px] pt-6')}>
             <h2 className="mx-auto max-w-[960px] text-balance text-center text-[clamp(36px,5vw,64px)] font-semibold leading-[1.06] tracking-[-0.045em]">
-              <span className="text-fs-ink">Introducing FieldScout</span>
-              <br />
-              <span className="text-fs-text-4">The first fantasy football platform that is just fantasy football.</span>
+              AI powered fantasy sports has arrived
             </h2>
             <LeagueHomePreview />
           </section>
