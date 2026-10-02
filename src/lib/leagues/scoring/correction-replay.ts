@@ -129,7 +129,7 @@ export function lineOf(snap: ReplaySnapshot, playerId: string): ProviderPlayerWe
 }
 
 /** What the constructed opponent makes of the real delta. */
-export type ConstructedOutcome = 'flip' | 'from_tie'
+export type ConstructedOutcome = 'flip' | 'from_tie' | 'no_flip'
 
 /**
  * Team B's starter: the corrected player's snapshot-2 line with the corrected
@@ -154,6 +154,26 @@ export function constructOpponentLine(
     advanced: { ...after.advanced },
   }
   return { line, outcome: twoOrMore ? 'flip' : 'from_tie', value }
+}
+
+/**
+ * R1438: the NO-FLIP construction — the opponent's line is the corrected
+ * player's own line with the corrected key set FAR above both values (ten
+ * times the larger, plus 100), so the correction moves Team A's score and
+ * Team A loses before and after. Same key, same template — only the margin.
+ */
+export function constructFarAheadOpponentLine(
+  before: ProviderPlayerWeekStats,
+  after: ProviderPlayerWeekStats,
+  statKey: string,
+  opponentId: string,
+): { line: ProviderPlayerWeekStats; outcome: ConstructedOutcome; value: number } {
+  const oldV = before.stats[statKey] ?? 0
+  const newV = after.stats[statKey] ?? 0
+  if (oldV === newV) throw new Error(`correction replay: ${statKey} did not change (${oldV} → ${newV}) — nothing to replay`)
+  const value = Math.max(Math.abs(oldV), Math.abs(newV)) * 10 + 100
+  const line: ProviderPlayerWeekStats = { ...after, playerId: opponentId, stats: { ...after.stats, [statKey]: value }, advanced: { ...after.advanced } }
+  return { line, outcome: 'no_flip', value }
 }
 
 /**

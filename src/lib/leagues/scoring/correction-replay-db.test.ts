@@ -65,6 +65,7 @@ import type { Database, Json } from '@/types/database'
 import { scanCapturedCorrections } from '../../../../scripts/correction-replay-source'
 import { buildSyntheticCorrectionPair } from './__fixtures__/correction-replay-synthetic'
 import {
+  constructFarAheadOpponentLine,
   constructOpponentLine,
   lineOf,
   readReplaySnapshot,
@@ -139,7 +140,7 @@ function wednesdayBefore(d: Date): Date {
   return day
 }
 
-type Arm = 'in_window' | 'settle_grace' | 'after_window'
+type Arm = 'in_window' | 'settle_grace' | 'after_window' | 'no_flip'
 
 /**
  * One arm's whole world: the calendar, the league built around the corrected
@@ -152,7 +153,7 @@ function story(pair: ReplayPair, arm: Arm, season: number) {
   const cal = replayCalendar(s1)
   const c = pair.change
   const opponentId = `${PREFIX}-opp-${season}`
-  const constructed = constructOpponentLine(lineOf(s1, c.playerId), lineOf(s2, c.playerId), c.statKey, opponentId)
+  const constructed = (arm === 'no_flip' ? constructFarAheadOpponentLine : constructOpponentLine)(lineOf(s1, c.playerId), lineOf(s2, c.playerId), c.statKey, opponentId)
   const provider = new ReplayPairProvider({ 1: s1, 2: s2 }, [constructed.line], pair.origin, pair.first.header.provider)
   const startsAt = wednesdayBefore(cal.firstKickoff)
   // The instants (derived; each asserted in order below).
@@ -329,6 +330,13 @@ describe('L.E2.6 R0 — the real-capture leg (non-blocking, D468)', () => {
     expect(SCAN.sentence).toMatch(SCAN.pick === null ? /^NO REAL 2026 CORRECTION CAPTURED YET/ : /^REAL 2026 CORRECTION REPLAYED/)
     // Never a synthetic pair under the real-capture root.
     if (SCAN.pick !== null) expect(SCAN.pick.origin).toBe('real')
+    // R1437: week 3's committed pair (#384) — 2 changes, both on `targets`, a
+    // context stat — is a pair with nothing scorable: never replayed.
+    const wk3 = SCAN.weeks.find((w) => w.week === 3)
+    expect(wk3?.verdict).toBe('no_outside_change')
+    expect(wk3?.sentence).toBe('week 3: 2 changes, both on context stats (not scored) — no real correction to replay (never fabricated)')
+    // wk02 holds the M0 synthetic fixture: named "not a capture", never scanned.
+    expect(SCAN.weeks.find((w) => w.week === 2)?.verdict).toBe('not_a_capture')
   })
 })
 
@@ -444,6 +452,41 @@ for (const { pair, seasons } of PAIRS) {
         expect(aResult(m.a, m.b)).not.toBe(before.result)
         expect(await s.storedValue()).toBe(s.c.new)
         expect([await s.events(), await s.records(), await s.posts(), await s.notes()]).toEqual([[], [], [], []])
+      })
+    })
+  }
+
+  if (pair.origin === 'synthetic') {
+    // R1438: a correction that MOVES a score without changing the result.
+    describe(`L.E2.6 NO FLIP (opponent far ahead) — ${tag}`, () => {
+      const s = story(pair, 'no_flip', 2084)
+      let before: { a: number; b: number }
+      beforeAll(s.setup, 90_000)
+
+      it('NF1 snapshot 1: Team A trails by a margin no correction of this size can close', async () => {
+        await s.poll(1, s.t.tFinal)
+        await s.drain()
+        const m = await s.matchup()
+        before = { a: m.a, b: m.b }
+        expect(s.constructed.outcome).toBe('no_flip')
+        expect(aResult(m.a, m.b)).toBe('loss')
+        expect(await s.advance(s.t.tAdvance)).toBe('correction_window')
+      })
+
+      it('NF2 snapshot 2 in the window: the score moves, the result does not — ONE record (result unchanged), ONE post, ZERO notifications', async () => {
+        await s.poll(2, s.t.tInWindow)
+        await s.drain()
+        const m = await s.matchup()
+        expect(m.a).not.toBe(before.a)
+        expect(m.b).toBe(before.b)
+        expect(aResult(m.a, m.b)).toBe('loss')
+        const rec = await s.records()
+        expect(rec.map((r) => [r.team_id, Number(r.team_score_before), Number(r.team_score_after), r.result_changed])).toEqual([[s.state.teamA, before.a, m.a, false]])
+        const p = await s.posts()
+        expect(p).toHaveLength(1)
+        expect(p[0]).toContain(`Team A ${before.a.toFixed(2)} → ${m.a.toFixed(2)}`)
+        expect(p[0]).not.toContain('Result changed')
+        expect(await s.notes()).toEqual([])
       })
     })
   }

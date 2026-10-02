@@ -78,6 +78,10 @@ const INFRA_PATHS = [
   // list defining what this job runs.
   'package.json',
   'package-lock.json',
+  // R1434: DATA, not an import — the committed captures the L.E2.6 replay scan
+  // reads at run time (scripts/correction-replay-source.ts). A capture-only PR
+  // must run the replay, and arm 7's import-closure test cannot see a file read.
+  'fixtures/nfl/**',
 ]
 
 /** The SOURCE half (F290): the modules the stack suites import. Enumerated

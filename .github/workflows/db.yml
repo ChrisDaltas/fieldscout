@@ -124,6 +124,8 @@ on:
       - 'scripts/correction-replay-source.ts'
       - 'scripts/correction-snapshot-diff.ts'
       - 'scripts/correction-events-export.ts'
+      # the captures the replay scan reads (R1434) — a capture-only PR must run it
+      - 'fixtures/nfl/**'
   push:
     branches: [main]
     paths:
@@ -158,6 +160,8 @@ on:
       - 'scripts/correction-replay-source.ts'
       - 'scripts/correction-snapshot-diff.ts'
       - 'scripts/correction-events-export.ts'
+      # the captures the replay scan reads (R1434) — a capture-only PR must run it
+      - 'fixtures/nfl/**'
 
 concurrency:
   group: db-${{ github.workflow }}-${{ github.ref }}

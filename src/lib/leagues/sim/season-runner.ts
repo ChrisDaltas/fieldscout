@@ -4083,15 +4083,19 @@ async function buildScenarioEvidence(
           unnamed.length === 0 &&
           notesWithoutFlip.length === 0 &&
           notesVsDoor.length === 0,
+        // R1438: a run where no recorded result changed proves nothing about
+        // who is told — said in the line, never a silent pass (the stack
+        // replay's IW4 is the proof of the flip leg; NF2 of the no-flip one).
         `event(s) ${JSON.stringify(ev)} (player_stats ${corr.key} = ${e.stored}); ${e.started.size} team(s) started ${e.playerName} → ` +
           `${e.records.length} record(s) in ${recLeagues.size} league(s) (unrecorded starters ${unrecorded.length}, each named by the door: ` +
           `${JSON.stringify(doorSkips.map((d) => d.reason))}; unexplained ${JSON.stringify(unexplained)}; recorded but not started ${JSON.stringify(notStarted)}); ` +
           `correction posts ${allPosts.length} (leagues off one-per-recording-league: ${badPosts.map((l) => l.label).join(', ') || 'none'}; not naming the player: ${unnamed.length}); ` +
           `notifications ${noteTotal} in ${e.notesByLeague.size} league(s), ${flipLeagues.size} league(s) with a changed result ` +
-          `(notified with no changed result: ${notesWithoutFlip.length}; disagreeing with the door's report: ${notesVsDoor.length})`,
+          `(notified with no changed result: ${notesWithoutFlip.length}; disagreeing with the door's report: ${notesVsDoor.length})` +
+          (flipLeagues.size === 0 ? ' — FLIP LEG UNEXERCISED: no recorded result changed, so the notification rule was never tested' : ''),
         'ONE open event of the declared delta, applied, and player_stats holds it; a record for EVERY team that started the player (an unrecorded ' +
           'starter only where the door named why) and none for a team that did not; ONE league post per recording league naming the player, none ' +
-          "elsewhere; a notification only in a league where a recorded result changed — exactly the door's (spec §23.4 / §16.4; 172; D453)",
+          "elsewhere; a notification only in a league where a recorded result changed — exactly the door's — a run with no changed result says FLIP LEG UNEXERCISED (spec §23.4 / §16.4; 172; D453; R1438)",
       )
       break
     }

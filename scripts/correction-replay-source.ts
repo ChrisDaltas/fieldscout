@@ -31,7 +31,7 @@ import { diffSnapshots, type FinalSeenGame, type LinesSidecar, type Snapshot, ty
 
 export const CAPTURE_PROVIDER = 'sleeper+nflverse'
 
-export type CaptureWeekVerdict = 'replayable' | 'no_pair' | 'no_diff_record' | 'no_outside_change'
+export type CaptureWeekVerdict = 'replayable' | 'not_a_capture' | 'no_pair' | 'no_diff_record' | 'no_outside_change'
 
 export interface CaptureWeekStatus {
   dir: string
@@ -62,6 +62,21 @@ export function isReplayableChange(c: SnapshotChange): boolean {
   return c.surface === 'scorable' && c.finalAtFirst && c.grace === 'outside' && c.line === 'updated' && c.old !== null && c.new !== null
 }
 
+/** R1437: WHY none of a week's changes is replayable, in plain words. */
+function noneWhy(changes: SnapshotChange[]): string {
+  const n = changes.length
+  if (n === 0) return 'no final-game change'
+  const scored = changes.filter((c) => c.surface === 'scorable').length
+  const plural = n === 1 ? '1 change' : `${n} changes`
+  if (scored === 0) {
+    const allContext = changes.every((c) => c.surface === 'context')
+    const where = n === 1 ? 'on a' : n === 2 ? 'both on' : 'all on'
+    const what = allContext ? (n === 1 ? 'context stat' : 'context stats') : (n === 1 ? 'stat we do not score' : 'stats we do not score')
+    return `${plural}, ${where} ${what} (not scored)`
+  }
+  return `${plural}, ${scored} on a scored stat, none a correction outside the settle grace`
+}
+
 export function scanCapturedCorrections(root: string, provider: string = CAPTURE_PROVIDER): CaptureScan {
   const weeks: CaptureWeekStatus[] = []
   const dirs = existsSync(root) ? readdirSync(root).filter((d) => /^wk\d{2}$/.test(d)).sort() : []
@@ -70,6 +85,12 @@ export function scanCapturedCorrections(root: string, provider: string = CAPTURE
     const dir = resolve(root, d)
     const week = Number(d.slice(2))
     const has = (label: string) => existsSync(resolve(dir, `${provider}.${label}.jsonl.gz`))
+    // R1437: a week directory holding no file of the capture provider at all is
+    // not a capture (wk02 holds the M0 synthetic fixture) — named, never scanned.
+    if (!readdirSync(dir).some((f) => f.startsWith(`${provider}.`))) {
+      weeks.push({ dir, week, verdict: 'not_a_capture', candidates: [], sentence: `week ${week}: not a capture (no ${provider} file — e.g. the M0 synthetic fixture)` })
+      continue
+    }
     if (!has('final') || !has('window-end')) {
       const held = ['final', 'window-end'].filter(has)
       weeks.push({ dir, week, verdict: 'no_pair', candidates: [], sentence: `week ${week}: no snapshot pair (${held.length === 0 ? 'no snapshot' : `only "${held.join('", "')}"`}) — nothing to replay yet` })
@@ -93,7 +114,7 @@ export function scanCapturedCorrections(root: string, provider: string = CAPTURE
       }
     }
     if (candidates.length === 0) {
-      weeks.push({ dir, week, verdict: 'no_outside_change', candidates, sentence: `week ${week}: ${diff.changes.length} final-game change(s), none a scorable correction outside the settle grace — no real correction to replay (never fabricated)` })
+      weeks.push({ dir, week, verdict: 'no_outside_change', candidates, sentence: `week ${week}: ${noneWhy(diff.changes)} — no real correction to replay (never fabricated)` })
       continue
     }
     weeks.push({ dir, week, verdict: 'replayable', candidates, sentence: `week ${week}: ${candidates.length} real scorable correction(s) outside the settle grace` })

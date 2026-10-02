@@ -18,7 +18,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { serializeFixture } from '@/lib/leagues/stats/fixtures/fixture-format'
 
 import { diffSnapshots, renderSnapshotDiff } from '../../../../scripts/correction-snapshot-diff'
-import { scanCapturedCorrections } from '../../../../scripts/correction-replay-source'
+import { isReplayableChange, scanCapturedCorrections } from '../../../../scripts/correction-replay-source'
 import { buildSyntheticCorrectionPair, SYNTHETIC_PROVIDER } from './__fixtures__/correction-replay-synthetic'
 import { constructOpponentLine, lineOf, readReplaySnapshot, replayCalendar, ReplayPairProvider, slotForPosition } from './correction-replay'
 
@@ -90,11 +90,15 @@ describe('scanCapturedCorrections — the real-capture leg (non-blocking, D468)'
   afterAll(() => rmSync(tmp, { recursive: true, force: true }))
   const provider = SYNTHETIC_PROVIDER
   /** A capture-shaped week dir holding the SYNTHETIC pair (in the temp dir only). */
-  function week(name: string, opts: { pair?: boolean; diff?: 'right' | 'wrong' | 'none'; prod?: boolean }) {
+  function week(name: string, opts: { pair?: boolean; diff?: 'right' | 'wrong' | 'none'; prod?: boolean; key?: string }) {
     const dir = join(tmp, name)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, `${provider}.final.jsonl.gz`), gzipSync(serializeFixture(PAIR.first)))
-    if (opts.pair !== false) writeFileSync(join(dir, `${provider}.window-end.jsonl.gz`), gzipSync(serializeFixture(PAIR.second)))
+    // `key` re-keys the corrected stat (receiving_yards → e.g. targets, a context stat).
+    const rekey = <T,>(r: T): T => (opts.key ? (JSON.parse(JSON.stringify(r).replaceAll('"receiving_yards"', JSON.stringify(opts.key))) as T) : r)
+    const first = rekey(PAIR.first)
+    const second = rekey(PAIR.second)
+    writeFileSync(join(dir, `${provider}.final.jsonl.gz`), gzipSync(serializeFixture(first)))
+    if (opts.pair !== false) writeFileSync(join(dir, `${provider}.window-end.jsonl.gz`), gzipSync(serializeFixture(second)))
     const finalSeen = [{ week: 1, homeTeam: 'SYA', awayTeam: 'SYB', status: 'final', firstSeenFinalAt: '2080-09-15T20:30:00.000Z' }]
     if (opts.prod) writeFileSync(join(dir, 'production-events.json'), JSON.stringify({ games: finalSeen, events: [] }))
     const sidecar = (label: string, t: string) => ({ note: 'synthetic', season: 2080, week: 1, capturedAt: t, lines: { 'syn-wr': { name: 'Syn Receiver', position: 'WR', team: 'SYA', opponent: 'SYB', gameDate: '2080-09-15', lastModified: null } }, label })
@@ -103,18 +107,51 @@ describe('scanCapturedCorrections — the real-capture leg (non-blocking, D468)'
     writeFileSync(join(dir, `${provider}.final.lines.json`), JSON.stringify(s1))
     if (opts.pair !== false) writeFileSync(join(dir, `${provider}.window-end.lines.json`), JSON.stringify(s2))
     if (opts.pair !== false && opts.diff !== 'none') {
-      const d = diffSnapshots({ label: 'final', recording: PAIR.first, lines: s1 }, { label: 'window-end', recording: PAIR.second, lines: s2 }, { finalSeen: opts.prod ? finalSeen : null, events: opts.prod ? [] : null })
+      const d = diffSnapshots({ label: 'final', recording: first, lines: s1 }, { label: 'window-end', recording: second, lines: s2 }, { finalSeen: opts.prod ? finalSeen : null, events: opts.prod ? [] : null })
       const text = renderSnapshotDiff(d).join('\n')
       writeFileSync(join(dir, 'snapshot-diff.txt'), opts.diff === 'wrong' ? text.replaceAll('syn-wr', 'someone-else') : text)
     }
     return dir
   }
 
-  it('the committed real root today: no pair anywhere — it SAYS SO and picks nothing', () => {
+  // R1433: the exact-contents cells run on temp roots built here, so a new
+  // capture can never red this file. The one live-root cell asserts only
+  // invariants that must hold for ANY committed capture.
+  it('the committed real root: any contents — no crash, every week named, and a pick (if any) is a real, scorable, outside-the-grace change', () => {
     const scan = scanCapturedCorrections(resolve(process.cwd(), 'fixtures/nfl/2026'))
+    expect(scan.weeks.length).toBeGreaterThan(0)
+    for (const w of scan.weeks) {
+      expect(w.sentence).toMatch(new RegExp(`^week ${w.week}: `))
+      for (const c of w.candidates) expect(isReplayableChange(c)).toBe(true)
+    }
+    if (scan.pick === null) {
+      expect(scan.sentence).toMatch(/^NO REAL 2026 CORRECTION CAPTURED YET — /)
+      expect(scan.sentence).toContain('F540 stays open')
+    } else {
+      expect(scan.pick.origin).toBe('real')
+      const w = scan.weeks.find((x) => x.verdict === 'replayable' && x.candidates.some((c) => c.playerId === scan.pick!.change.playerId && c.statKey === scan.pick!.change.statKey))
+      expect(w).toBeDefined()
+    }
+  })
+
+  it('a pair whose only changes are on a context stat: no_outside_change, and the sentence says why', () => {
+    const root = join(tmp, 'context')
+    mkdirSync(root)
+    week('context/wk03', { prod: true, diff: 'right', key: 'targets' })
+    const scan = scanCapturedCorrections(root, provider)
     expect(scan.pick).toBeNull()
-    expect(scan.sentence).toMatch(/^NO REAL 2026 CORRECTION CAPTURED YET — .*week 3: no snapshot pair \(only "final"\)/)
-    expect(scan.sentence).toContain('F540 stays open')
+    expect(scan.weeks.map((w) => [w.verdict, w.sentence])).toEqual([['no_outside_change', 'week 3: 1 change, on a context stat (not scored) — no real correction to replay (never fabricated)']])
+  })
+
+  it('a week directory with no file of the capture provider (the M0 synthetic fixture shape): named "not a capture", never scanned', () => {
+    const root = join(tmp, 'notcap')
+    mkdirSync(join(root, 'wk02'), { recursive: true })
+    writeFileSync(join(root, 'wk02', 'synthetic.jsonl.gz'), gzipSync(serializeFixture(PAIR.first)))
+    week('notcap/wk03', { pair: false })
+    expect(scanCapturedCorrections(root, provider).weeks.map((w) => `${w.verdict}: ${w.sentence}`)).toEqual([
+      `not_a_capture: week 2: not a capture (no ${provider} file — e.g. the M0 synthetic fixture)`,
+      'no_pair: week 3: no snapshot pair (only "final") — nothing to replay yet',
+    ])
   })
 
   it('a pair whose diff names a scorable change OUTSIDE the grace (production\'s first-seen-final): replayable, picked', () => {
@@ -135,7 +172,7 @@ describe('scanCapturedCorrections — the real-capture leg (non-blocking, D468)'
     const scan = scanCapturedCorrections(root, provider)
     expect(scan.pick).toBeNull()
     expect(scan.weeks[0].verdict).toBe('no_outside_change')
-    expect(scan.sentence).toContain('none a scorable correction outside the settle grace')
+    expect(scan.sentence).toContain('week 1: 1 change, 1 on a scored stat, none a correction outside the settle grace')
   })
 
   it('a week with only its "final" snapshot: no pair — said plainly', () => {
