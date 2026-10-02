@@ -2,6 +2,7 @@
  * Football-field sidelines behind the landing page body: two gutter rails
  * with hash ticks and rotated yard numbers every 600px (10 → 50 → 10).
  * Decorative only; ends 64px above the footer (Claude Design v13).
+ * Hidden on phones (Chris, 2026-10-02) — the gutters eat too much width.
  */
 
 const GUTTER = 'clamp(16px,8vw,120px)'
@@ -10,7 +11,7 @@ const HASHES = 'repeating-linear-gradient(to bottom, #DCDCDF 0 1px, transparent 
 
 export function FieldLines() {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-16 top-0 z-0 overflow-hidden">
+    <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-16 top-0 z-0 hidden overflow-hidden sm:block">
       <div className="absolute bottom-0 left-0 h-px bg-fs-line-field" style={{ width: GUTTER }} />
       <div className="absolute bottom-0 right-0 h-px bg-fs-line-field" style={{ width: GUTTER }} />
       <div className="absolute inset-y-0 w-px bg-fs-line-field" style={{ left: GUTTER }} />

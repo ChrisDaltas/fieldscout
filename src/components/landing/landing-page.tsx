@@ -23,7 +23,8 @@ import { cn } from '@/lib/utils'
  * render as plain text rather than links that go nowhere.
  */
 
-const PAD_X = 'px-[clamp(24px,11vw,160px)]'
+// 16px on phones; the design's fluid gutter from sm up.
+const PAD_X = 'px-4 sm:px-[clamp(24px,11vw,160px)]'
 
 function SectionTitle({
   lead,
@@ -142,7 +143,7 @@ export function LandingPage() {
               muted="Who to start. Who to sit."
               body="Ask for a weekly projection or a lineup change. Scout AI checks the numbers, then does the work."
             />
-            <div className="-mx-[clamp(24px,11vw,160px)] mt-8">
+            <div className="-mx-4 mt-8 sm:-mx-[clamp(24px,11vw,160px)]">
               <AskScoutDuo />
             </div>
           </section>
@@ -222,7 +223,7 @@ export function LandingPage() {
       </main>
 
       <footer className="border-t-1 border-fs-line-strong bg-white">
-        <div className="mx-auto grid max-w-[1120px] grid-cols-2 gap-x-8 gap-y-10 px-6 pb-10 pt-16 sm:px-10 md:grid-cols-[minmax(260px,1.4fr)_repeat(3,minmax(140px,1fr))]">
+        <div className="mx-auto grid max-w-[1120px] grid-cols-2 gap-x-8 gap-y-10 px-4 pb-10 pt-16 sm:px-10 md:grid-cols-[minmax(260px,1.4fr)_repeat(3,minmax(140px,1fr))]">
           <div className="col-span-2 flex flex-col items-start gap-4 md:col-span-1">
             <Logo tile={28} word={15} />
             <p className="max-w-[280px] text-[15px] font-medium leading-normal text-fs-text-3">
@@ -241,7 +242,7 @@ export function LandingPage() {
             </div>
           ))}
         </div>
-        <div className="mx-auto flex max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-3 border-t-1 border-fs-line px-6 pb-7 pt-5 text-[12.5px] font-medium text-fs-text-3 sm:px-10">
+        <div className="mx-auto flex max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-3 border-t-1 border-fs-line px-4 pb-7 pt-5 text-[12.5px] font-medium text-fs-text-3 sm:px-10">
           <span>© 2026 FieldScout. All rights reserved.</span>
           <span>Privacy</span>
           <span>Terms</span>

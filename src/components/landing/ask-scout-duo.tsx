@@ -78,7 +78,7 @@ export function AskScoutDuo() {
   }
 
   const cw = Math.max(320, width)
-  const pw = narrow ? cw - 48 : Math.floor(Math.min(W, cw * 0.8))
+  const pw = narrow ? cw - 32 : Math.floor(Math.min(W, cw * 0.8))
   const scale = narrow ? 1 : pw / W
   const tx = Math.round(cw / 2 - pw / 2 - active * (pw + GAP))
 
