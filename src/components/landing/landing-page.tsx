@@ -112,7 +112,9 @@ export function LandingPage() {
           {/* Introducing + league home shot */}
           <section className={cn(PAD_X, 'pb-[140px] pt-6')}>
             <h2 className="mx-auto max-w-[960px] text-balance text-center text-[clamp(36px,5vw,64px)] font-semibold leading-[1.06] tracking-[-0.045em]">
-              AI powered fantasy sports has arrived
+              <span className="text-fs-ink">Powered by Scout AI.</span>
+              <br />
+              <span className="text-fs-text-4">Next-gen fantasy sports has arrived.</span>
             </h2>
             <LeagueHomePreview />
           </section>
@@ -122,7 +124,7 @@ export function LandingPage() {
             <div className={cn(PAD_X, 'flex flex-wrap items-end gap-6')}>
               <div>
                 <h2 className="text-[clamp(36px,4.6vw,56px)] font-bold leading-[1.05] tracking-[-0.04em]">
-                  The future is finally here.
+                  Everything your league needs.
                 </h2>
                 <p className="mt-3 text-[18px] font-medium text-fs-text-3 sm:text-[21px]">
                   Six tools, all powered by Scout AI.
