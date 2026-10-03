@@ -43,7 +43,7 @@ export const PENDING_SCORE_TITLE =
 export const BOX_SUM_LABEL = 'Box total'
 export const LEADERBOARD_TITLE = 'Week leaderboard'
 export const MEDIAN_ROW_LABEL = 'vs League Median'
-export const MEDIAN_PENDING_TITLE = 'The median line renders once every score of the week is in (§11.7).'
+export const MEDIAN_PENDING_TITLE = 'The median line renders once every score of the week is in.'
 export const SECOND_CHIP_LABEL = '2nd opponent'
 
 // ---------------------------------------------------------------------------
@@ -62,8 +62,8 @@ export interface WeekBadge {
 const WEEK_BADGE_TITLES: Record<WeekBadgeState, string> = {
   upcoming: 'The week has not started.',
   live: 'Scores update as the pipeline writes them.',
-  pending_corrections: 'Every game is over; an official stat correction inside the window still recomputes this matchup (§23.4).',
-  final: 'Finalized — only a commissioner override changes it now (§10).',
+  pending_corrections: 'Every game is over; an official stat correction inside the window still recomputes this matchup.',
+  final: 'Finalized — only a commissioner override changes it now.',
 }
 
 /**
@@ -84,7 +84,7 @@ export function weekBadge(weekStatus: string): WeekBadge {
 }
 
 export const OVERRIDDEN_LABEL = '✸ Adjusted'
-export const OVERRIDDEN_TITLE = 'Commissioner-adjusted — the stored scores and result stand as written (§22.2).'
+export const OVERRIDDEN_TITLE = 'Commissioner-adjusted — the stored scores and result stand as written.'
 
 // ---------------------------------------------------------------------------
 // Scores and results — the server's cells, rendered
@@ -151,7 +151,7 @@ export const PENDING_STARTER_TITLE_PREFIX = 'Pending — not delivered yet: '
 export const ZERO_BY_NAME_TITLE = 'No stat line on record for this game — scored 0 by name.'
 export const PLAYING_NO_LINE_TITLE = 'Playing — no stat line yet; counts as 0 until one lands.'
 export const YET_TO_PLAY_TITLE = 'Yet to play — counts as 0 until a stat line lands.'
-export const BYE_TITLE = 'Bye week — no game on record for this team; scores 0 (§11.2).'
+export const BYE_TITLE = 'Bye week — no game on record for this team; scores 0.'
 export const EMPTY_SEAT_TITLE = 'Empty slot.'
 export const UNKNOWN_PLAYER_TITLE = 'Player not found — not scored.'
 

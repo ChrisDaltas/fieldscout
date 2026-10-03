@@ -24,7 +24,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { commishLogKeys } from '@/hooks/use-commish-log'
+import type { DraftChatRow } from '@/hooks/use-draft-chat-ops'
 import { leagueActivityKeys } from '@/hooks/use-league-activity'
+import { leagueChatKeys } from '@/hooks/use-league-chat'
 import { useLeagueChannel } from '@/hooks/use-league-channel'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguesKeys } from '@/hooks/use-leagues'
@@ -43,12 +45,11 @@ import { COMMISH_LOG_EMPTY_COPY, COMMISH_LOG_PROBLEM_COPY, COMMISH_LOG_TITLE, FE
 import {
   CHAMPION_UNRECORDED_COPY,
   LINEUP_NOT_SET_COPY,
-  NONE_FOR_TEAM_COPY,
   NO_LADDER_COPY,
-  PLAYOFF_NONE_FOR_TEAM_COPY,
   PLAYOFF_NO_ROWS_COPY,
 } from './league-home-season-ops'
 import { LeagueHomeStates } from './league-home-states'
+import { FORMER_MEMBER_LABEL, MESSAGE_BOARD_EMPTY_COPY, MESSAGE_BOARD_ERROR_COPY } from './league-message-board'
 import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 import { NO_FINAL_WEEKS_COPY } from './standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, RECONNECTING_COPY, STALE_LEAGUE_COPY, STALE_SCORES_COPY } from './status-banners'
@@ -202,6 +203,7 @@ interface Seed {
   log?: CommishLogPage | 'error' | 'degraded' | 'missing'
   flag?: LiveScoringFlags
   connection?: 'live' | 'reconnecting' | 'connecting'
+  chat?: DraftChatRow[] | 'error'
 }
 
 const logItem = (over: Partial<CommishLogItem> & Pick<CommishLogItem, 'id'>): CommishLogItem => ({
@@ -271,6 +273,10 @@ function renderHome(seed: Seed = {}): string {
 
   qc.setQueryData(statsDegradedKeys.flag(), seed.flag ?? FLAG_OK)
 
+  const chat = seed.chat ?? []
+  if (chat === 'error') failQuery(qc, leagueChatKeys.board(LEAGUE), new Error('chat read failed'))
+  else qc.setQueryData(leagueChatKeys.board(LEAGUE), chat)
+
   vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
   return unescapeHtml(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(LeagueHomeStates, { leagueId: LEAGUE }))))
 }
@@ -283,18 +289,24 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
   it('renders L.D5.2’s Scoreboard for week 2 (live), with the viewer’s side filled and the door’s stored scores', () => {
     const html = renderHome()
     expect(html).toContain('data-season-hero="in_season"')
+    expect(html).toContain('data-live-scoreboard')
     expect(html).toContain('data-matchup="w2-m1"')
-    expect(html).toContain('Week 2 · Your matchup')
-    expect(html).toContain('data-week-badge="live"')
+    // Every game of the week is on the board, the viewer's first.
+    expect(html).toContain('data-matchup="w2-m2"')
+    expect(html.indexOf('data-matchup="w2-m1"')).toBeLessThan(html.indexOf('data-matchup="w2-m2"'))
+    // "● Live" only while the week is live.
+    expect(html).toContain('data-live-badge')
     expect(html).toContain('data-score="71.50"')
     expect(html).toContain('data-score="35.00"')
     expect(html).toContain(`data-side="${T1}" data-mine="true"`)
     // The probe's negative controls: week 1's row is NOT the hero, and the
     // "no matchup on record" copy (which a week-1 hero would show) is absent.
     expect(html).not.toContain('data-matchup="w1-m2"')
-    expect(html).not.toContain(NONE_FOR_TEAM_COPY)
     // The door into the matchup page names the row.
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/matchup/w2-m1"`)
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/matchup/w2-m1#box-scores"`)
+    // No win-probability meter: there is no source for one, so none is invented.
+    expect(html).not.toMatch(/win prob|data-win-prob/i)
     // The old placeholder is gone for this status.
     expect(html).not.toContain('The in-season experience lands in a later update')
   })
@@ -314,14 +326,56 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/players"`)
   })
 
-  it('the standings peek is 117’s order (Alpha · Bravo · Charlie · Delta) with the viewer’s row filled, never a shadow', () => {
+  it('the standings card lists EVERY team in 117’s order — no partial view (Chris 2026-10-03) — with the viewer’s row filled, never a shadow', () => {
+    // Ten teams: the retired peek showed four (plus the viewer's own row).
+    const extra = ['t5', 't6', 't7', 't8', 't9', 't10'].map((id, i) => ({ ...GOLDEN_STANDINGS.standings[3], rank: 5 + i, team_id: id, name: `Team ${id}` }))
+    const doc = { ...GOLDEN_STANDINGS, standings: [...GOLDEN_STANDINGS.standings, ...extra] }
+    const html = renderHome({ standings: doc })
+    const card = html.slice(html.indexOf('data-home-standings'), html.indexOf('data-set-lineup'))
+    const order = [...card.matchAll(/data-standings-row="([^"]+)"/g)].map((m) => m[1])
+    expect(order).toEqual(['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10'])
+    expect(card).toContain('data-standings-week')
+    expect(card).toContain('3-0')
+    expect(card).toContain('310.50')
+    expect(card).toContain(`href="/app/leagues/${LEAGUE}/standings"`)
+    expect(html).not.toContain('data-peek-row')
+    expect(html).not.toContain('data-peek-elided')
+  })
+
+  it('the standings card names each manager as a profile link', () => {
+    const detail = detailWith()
+    detail.members = detail.members.map((m) => ({ ...m, team_id: m.team_id === T1 ? 't1' : 't2', profiles: { username: m.user_id === 'user-commish' ? 'chris' : 'sam', avatar_url: null } }))
+    const html = renderHome({ detail })
+    const card = html.slice(html.indexOf('data-home-standings'), html.indexOf('data-set-lineup'))
+    expect(card).toContain('href="/u/chris"')
+    expect(card).toContain('href="/u/sam"')
+  })
+
+  it('the scoreboard’s week tabs: the current week and the next one on the ladder', () => {
     const html = renderHome()
-    const peek = html.slice(html.indexOf('data-standings-peek'), html.indexOf('data-activity-feed'))
-    const order = [...peek.matchAll(/data-peek-row="([^"]+)"/g)].map((m) => m[1])
-    expect(order).toEqual(['t1', 't2', 't3', 't4'])
-    expect(peek).toContain('3-0')
-    expect(peek).toContain('310.50')
-    expect(peek).toContain(`href="/app/leagues/${LEAGUE}/standings"`)
+    expect(html).toContain('data-scoreboard-tab="week-2"')
+    expect(html).toContain('data-scoreboard-tab="week-3"')
+    expect(html).not.toContain('data-scoreboard-tab="week-1"')
+    expect(html).not.toContain('data-scoreboard-tab="playoffs"')
+    expect(html).toContain('Updates live · no refresh needed')
+  })
+
+  it('the message board: the league’s member posts with each author a profile link; a composer for members; empty and error by reason', () => {
+    const detail = detailWith()
+    detail.members = detail.members.map((m) => ({ ...m, profiles: { username: m.user_id === 'user-commish' ? 'chris' : 'sam', avatar_url: null } }))
+    const chat = [
+      { id: 'c-1', user_id: 'user-manager', message: 'Good luck this week', context: 'league', is_system: false, created_at: '2099-09-13T12:00:00Z' },
+      { id: 'c-2', user_id: null, message: 'Old post', context: 'league', is_system: false, created_at: '2099-09-13T12:05:00Z' },
+    ]
+    const html = renderHome({ detail, chat })
+    const board = html.slice(html.indexOf('data-message-board'))
+    expect(board).toContain('data-message="c-1"')
+    expect(board).toContain('Good luck this week')
+    expect(board).toContain('href="/u/sam"')
+    expect(board).toContain(FORMER_MEMBER_LABEL)
+    expect(board).toContain('data-message-composer')
+    expect(renderHome({ chat: [] })).toContain(MESSAGE_BOARD_EMPTY_COPY)
+    expect(renderHome({ chat: 'error' })).toContain(MESSAGE_BOARD_ERROR_COPY)
   })
 
   it('an all-zero table with 117’s `no_final_weeks` reason renders the reason — a stored 0 is shown as 0, nothing papered over (F273)', () => {
@@ -396,16 +450,18 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     const detail = detailWith()
     detail.members = detail.members.map((m) => (m.user_id === 'user-commish' ? { ...m, team_id: null } : m))
     const html = renderHome({ detail })
-    expect(html).toContain('data-empty="no_seat"')
+    expect(html).toContain('data-empty="no-seat"')
     expect(html).not.toContain('data-set-lineup-cta')
+    // The scoreboard still shows the whole week; nothing is marked as theirs.
+    expect(html).toContain('data-matchup="w2-m1"')
+    expect(html).not.toContain('data-mine="true"')
     expect(html).not.toContain('data-nav="team"')
   })
 
-  it('a week with rows but none for the viewer → the honest copy, never a stranger’s row', () => {
+  it('a week with rows but none for the viewer → the board shows the league’s games, none marked as the viewer’s', () => {
     const html = renderHome({ weeks: { 2: weekDoc(2, { matchups: [mrow({ id: 'x', week: 2, home_team_id: T3, away_team_id: T4 })] }) } })
-    expect(html).toContain('data-empty="none_for_team"')
-    expect(html).toContain(NONE_FOR_TEAM_COPY)
-    expect(html).not.toContain('data-matchup="x"')
+    expect(html).toContain('data-matchup="x"')
+    expect(html).not.toContain('data-mine="true"')
   })
 })
 
@@ -450,16 +506,17 @@ describe('playoffs — the hero shows the playoff week’s row for the viewer, o
       weeks: { 4: weekDoc(4, { matchups: [mrow({ id: 'p1', week: 4, round_type: 'playoff', home_team_id: T1, away_team_id: T4 })] }) },
     })
     expect(html).toContain('data-season-hero="playoffs"')
-    expect(html).toContain('Week 4 · Playoff matchup')
     expect(html).toContain('data-matchup="p1"')
+    expect(html).toContain('data-scoreboard-tab="week-4"')
+    expect(html).toContain('data-scoreboard-tab="playoffs"')
   })
-  it('no row for the viewer in a playoff week → the honest no-record copy (no bracket pointer at an unbuilt tab, no bye hedge — R896), never "eliminated"', () => {
+  it('no row for the viewer in a playoff week → the week’s games, never "eliminated" (R896)', () => {
     const html = renderHome({
       detail: detailWith({ status: 'playoffs' }),
       schedule: playoffLadder,
       weeks: { 4: weekDoc(4, { matchups: [mrow({ id: 'p2', week: 4, round_type: 'playoff', home_team_id: T2, away_team_id: T3 })] }) },
     })
-    expect(html).toContain(PLAYOFF_NONE_FOR_TEAM_COPY)
+    expect(html).toContain('data-matchup="p2"')
     expect(html).not.toMatch(/eliminated/i)
     expect(html).not.toMatch(/standings page carries the bracket|a bye or/)
   })
@@ -508,7 +565,7 @@ describe('complete — the champion banner from the STORED id, the final standin
 
 describe('§16.5.4 — the required states', () => {
   it('skeleton while the ladder is unknown', () => {
-    expect(renderHome({ schedule: 'missing' })).toContain('data-skeleton="matchup-of-the-week"')
+    expect(renderHome({ schedule: 'missing' })).toContain('data-skeleton="scoreboard"')
   })
   it('empty by reason: no ladder at all', () => {
     expect(renderHome({ schedule: { weeks: [], matchups: [] } })).toContain(NO_LADDER_COPY)
@@ -602,7 +659,7 @@ describe('§16.5.4 — the required states', () => {
     expect(renderHome({ log: { ...LOG, has_more: true, next_cursor: 'x' } })).toContain('data-commish-log-more')
   })
 
-  it('the standings peek: error-with-retry', () => {
+  it('the standings card: error-with-retry', () => {
     expect(renderHome({ standings: 'error' })).toContain('Couldn’t load the standings.')
   })
 })
@@ -612,9 +669,9 @@ describe('§16.5.4 — the required states', () => {
 // ---------------------------------------------------------------------------
 
 describe('the league home is a door to every franchise, not just the viewer’s (§16.1)', () => {
-  it('the standings peek links each row to its OWN team page', () => {
+  it('the standings card links each row to its OWN team page', () => {
     const html = renderHome()
-    const ids = [...html.matchAll(/data-peek-row="([^"]+)"/g)].map((m) => m[1])
+    const ids = [...html.matchAll(/data-standings-row="([^"]+)"/g)].map((m) => m[1])
     expect(ids.length).toBeGreaterThan(1)
     for (const id of ids) expect(html, id).toContain(`href="/app/leagues/${LEAGUE}/team/${id}"`)
     // Not just the viewer's own row — the whole point of the change.
@@ -653,6 +710,8 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.4 fi
   const files = [
     'src/components/leagues/league-home-season.tsx',
     'src/components/leagues/league-home-season-ops.ts',
+    'src/components/leagues/league-message-board.tsx',
+    'src/hooks/use-league-chat.ts',
     'src/components/leagues/activity-feed.tsx',
     // The shared team-name/crest cells — newly shared by every league
     // surface, and NOT covered by ui/'s pin (it stops at ui/).
@@ -694,7 +753,7 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.4 fi
   it('R900: every arbitrary column grid in the heroes uses minmax(0, …fr) — a bare fr floors at min-content and one long feed line pushed the R281 doors off-screen', () => {
     const src = code(read('src/components/leagues/league-home-season.tsx'))
     const grids = [...src.matchAll(/grid-cols-\[([^\]]+)\]/g)].map((m) => m[1])
-    expect(grids.length).toBeGreaterThanOrEqual(2)
+    expect(grids.length).toBeGreaterThanOrEqual(1)
     for (const g of grids) for (const track of g.split('_')) expect(track, g).toMatch(/^minmax\(0,[\d.]+fr\)$/)
   })
   it('no ledger code reaches the screen in any state (F277(a))', () => {

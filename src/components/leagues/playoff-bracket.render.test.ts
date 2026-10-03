@@ -46,7 +46,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { HAND_PICKED_BADGE, HAND_PICK_NO_CHANGES_COPY, STOOD_DOWN_COPY } from './bracket-hand-pick-ops'
 import { BracketHandPickPanelView } from './bracket-hand-pick-panel'
-import { LeagueHomeStates } from './league-home-states'
+import { SeasonHero } from './league-home-season'
 import {
   AWAITING_BUILD_COPY,
   EDIT_RESULT_LABEL,
@@ -606,7 +606,10 @@ function renderHome(seed: { bracket?: PlayoffBracket | 'error' | 'missing'; stat
   const b = seed.bracket ?? BUILT_DOC
   if (b === 'error') failQuery(qc, playoffBracketKeys.all(LEAGUE), new Error('bracket read failed'))
   else if (b !== 'missing') qc.setQueryData(playoffBracketKeys.all(LEAGUE), b)
-  return render(qc, createElement(LeagueHomeStates, { leagueId: LEAGUE }))
+  // League UX batch 4: the bracket is the live scoreboard's "Playoffs" tab —
+  // the hero is mounted open on that tab (a static render cannot click it).
+  const state = (seed.status ?? 'playoffs') as 'in_season' | 'playoffs'
+  return render(qc, createElement(SeasonHero, { leagueId: LEAGUE, data: detail, state, initialBoardTab: 'playoffs' }))
 }
 
 describe('the league home’s playoffs hero embeds the bracket (§16.5.1’s playoffs row — L.D5.5’s component)', () => {
@@ -616,6 +619,7 @@ describe('the league home’s playoffs hero embeds the bracket (§16.5.1’s pla
     expect(html).toContain('data-bracket-card')
     expect(html).toContain('data-playoff-bracket="bracket"')
     expect(html).toContain('data-compact')
+    expect(html).toContain('data-scoreboard-tab="playoffs"')
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/standings?tab=playoffs"`)
     expect(html).not.toContain('data-bracket-hand-pick')
     expect(html).not.toContain('data-result-link') // the commissioner's links are the full tab's, never the hero's (compact)

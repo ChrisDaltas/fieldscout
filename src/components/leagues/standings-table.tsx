@@ -3,6 +3,7 @@
 import Link from 'next/link'
 
 import { Badge } from '@/components/ui/badge'
+import { UsernameLink } from '@/components/shared/username-link'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { cn } from '@/lib/utils'
@@ -55,6 +56,7 @@ export function StandingsTable({
   highlightTeamId,
   overridden = null,
   overridesUnknown = false,
+  managers = null,
 }: {
   doc: LeagueStandings
   /** `waiver_type` (L.D2.13): a FAAB league shows each team's balance. */
@@ -71,6 +73,9 @@ export function StandingsTable({
   overridden?: ReadonlyMap<string, readonly number[]> | null
   /** The flag could not be read — say so rather than show a clean table. */
   overridesUnknown?: boolean
+  /** `team_id → username` (League UX batch 4): renders the Manager column,
+   *  each name a `UsernameLink`. Absent → no column (the bracket's mount). */
+  managers?: ReadonlyMap<string, string> | null
 }) {
   const chain = renderedChain(doc.chain)
   const columns = recordColumns(doc.standings, settings)
@@ -108,6 +113,7 @@ export function StandingsTable({
           <TableRow>
             <TableHead className="w-8 text-right">#</TableHead>
             <TableHead>Team</TableHead>
+            {managers && <TableHead>Manager</TableHead>}
             <TableHead className="text-right">W-L{doc.standings.some((r) => r.ties > 0) ? '-T' : ''}</TableHead>
             <TableHead className="text-right">Win %</TableHead>
             <TableHead className="text-right">PF</TableHead>
@@ -122,6 +128,7 @@ export function StandingsTable({
           {doc.standings.map((row) => {
             const separator = separatorLabel(row.separated_by)
             const overriddenWeeks = overridden?.get(row.team_id) ?? null
+            const manager = managers?.get(row.team_id) ?? null
             return (
               <TableRow
                 key={row.team_id}
@@ -155,6 +162,11 @@ export function StandingsTable({
                     )}
                   </span>
                 </TableCell>
+                {managers && (
+                  <TableCell className="text-[12px]" data-manager={manager ?? ''}>
+                    {manager ? <UsernameLink username={manager} /> : <span className="text-n-3">—</span>}
+                  </TableCell>
+                )}
                 <TableCell className="fs-num text-right">{formatRecord(row)}</TableCell>
                 <TableCell className="fs-num text-right">{formatWinPct(row.win_pct)}</TableCell>
                 <TableCell className="fs-num text-right">{formatPoints(row.points_for)}</TableCell>

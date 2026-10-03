@@ -210,7 +210,7 @@ describe('empty is BY REASON, and the E63/E64 notes read the skips', () => {
         [{ entry: 'head_to_head', reason: 'group_of_3_or_more', teams: ['t1', 't2', 't3'] }],
         names,
       ),
-    ).toEqual(['Head-to-head skipped for a tie of three or more (E63): Alpha, Bravo, Charlie.'])
+    ).toEqual(['Head-to-head skipped for a tie of three or more: Alpha, Bravo, Charlie.'])
     expect(
       skipNotes([{ entry: 'head_to_head', reason: 'total_points', teams: ['t1', 't2'] }], names),
     ).toEqual(['Head-to-head does not apply in a total-points league (E64): Alpha, Bravo.'])

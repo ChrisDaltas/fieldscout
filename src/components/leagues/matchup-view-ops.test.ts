@@ -135,7 +135,8 @@ describe('weekBadge — `Final (pending corrections)` → `Final`, driven by lea
   it('correction_window → the PENDING badge, with the §23.4 title — the window is open, corrections still recompute', () => {
     const badge = weekBadge('correction_window')
     expect(badge).toMatchObject({ state: 'pending_corrections', label: 'Final (pending corrections)', variant: 'yellow' })
-    expect(badge.title).toContain('§23.4')
+    expect(badge.title).toContain('stat correction')
+    expect(badge.title).not.toContain('§') // League UX batch 4: no spec citations on screen
   })
   it('final → Final (black), and ONLY final is the final state', () => {
     expect(weekBadge('final')).toMatchObject({ state: 'final', label: 'Final', variant: 'black' })

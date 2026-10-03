@@ -38,24 +38,6 @@ export function homeStateForStatus(status: string): HomeState {
   return 'later'
 }
 
-/** Human label for the `later` placeholder — an UNKNOWN status since L.D5.4
- *  (the six enum members each have a hero); the enum labels are kept so a
- *  status that leaves the enum still reads as itself. */
-export function laterStatusLabel(status: string): string {
-  switch (status) {
-    case 'drafting':
-      return 'Draft in progress'
-    case 'in_season':
-      return 'In season'
-    case 'playoffs':
-      return 'Playoffs'
-    case 'complete':
-      return 'Season complete'
-    default:
-      return 'Coming soon'
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Seats — n/N (§16.5.1 "seats n/N")
 // ---------------------------------------------------------------------------
