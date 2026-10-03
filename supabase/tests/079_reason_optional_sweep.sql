@@ -265,7 +265,7 @@ select is(
   0, 'E1 commissioner_actions carries NO UPDATE or DELETE policy — 131 added none');
 select is(
   (select count(*)::int from pg_trigger t join pg_class c on c.oid = t.tgrelid
-   where c.relname = 'commissioner_actions' and not t.tgisinternal and t.tgenabled = 'A'),
+   where c.relname = 'commissioner_actions' and not t.tgisinternal and t.tgenabled = 'A' and t.tgname like 'trg\_commish\_actions\_%'), -- 179's guard (F520) is pinned in 123 A5 / 127
   2, 'E2 …and both ENABLE ALWAYS triggers (immutability, no-truncate) are still there');
 
 select * from finish();

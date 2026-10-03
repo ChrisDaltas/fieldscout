@@ -34,7 +34,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(75);
+select plan(77);
 
 -- ---------------------------------------------------------------------------
 -- A. Form pins
@@ -496,6 +496,24 @@ select throws_ok(
   'trade_respond: the trade deadline has passed — trades could be accepted until week 8 began (Wed 2026-10-28 00:00 America/New_York; trade_deadline_week 7, §13.3 / Q76); this offer can no longer be countered',
   'G5 …nor countered (a counter is a new offer)');
 select set_config('request.jwt.claims', '', true);
+-- F506 (R1303): turn down / call off stay open at and after the deadline —
+-- current behaviour PINNED, not changed (151's "Reject / cancel stay open").
+select pg_temp.prop('F506A', 1, 1, 'TX Commish', 'TX Alpha',
+  jsonb_build_array(pg_temp.leg('x-c1', 'TX Commish'), pg_temp.leg('x-b3', 'TX Alpha')), null, '2026-10-28 03:00:03+00', 37);
+select pg_temp.prop('F506B', 1, 4, 'TX Delta', 'TX Commish',
+  jsonb_build_array(pg_temp.leg('x-d2', 'TX Delta'), pg_temp.leg('x-c1', 'TX Commish')), null, '2026-10-28 03:00:04+00', 38);
+select pg_temp.resp('G5a', 1, 2, pg_temp.tid('F506A'), 'reject', null, '2026-10-28 04:00:00+00', 39);
+select set_config('request.jwt.claims', '', true);
+select is(
+  (select format('%s|%s', t.status, t.resolved_at = '2026-10-28 04:00:00+00') from trades t where t.id = pg_temp.tid('F506A')),
+  'rejected|t',
+  'G5a F506: AT the deadline the recipient can still turn an offer down (reject lands, resolved at the instant)');
+select pg_temp.resp('G5b', 1, 4, pg_temp.tid('F506B'), 'cancel', null, '2026-10-28 04:00:01+00', 29);
+select set_config('request.jwt.claims', '', true);
+select is(
+  (select format('%s|%s', t.status, t.resolved_at = '2026-10-28 04:00:01+00') from trades t where t.id = pg_temp.tid('F506B')),
+  'cancelled|t',
+  'G5b F506: AFTER the deadline (+1 s) the proposer can still call an offer off (cancel lands)');
 insert into r99 select 'G6', public.trade_tick('2026-10-28 03:59:59+00', pg_temp.lg(1));
 select is(
   (select format('%s|%s|%s', r ->> 'expired', (select status from trades where id = pg_temp.tid('T4')), (select status from trades where id = pg_temp.tid('T5'))) from r99 where tag = 'G6'),

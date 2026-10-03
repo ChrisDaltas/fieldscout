@@ -80,8 +80,8 @@ select is(
 select is(
   (select string_agg(format('%s:%s', tgname, tgenabled), ' ' order by tgname)
    from pg_trigger where tgrelid = 'public.commissioner_actions'::regclass and not tgisinternal),
-  'trg_commish_actions_immutable:A trg_commish_actions_no_truncate:A',
-  'A5 immutability backstops unchanged: both triggers ENABLE ALWAYS (123; section E exercises them)');
+  'trg_commish_actions_immutable:A trg_commish_actions_no_truncate:A trg_zz_reverts_action_id_league_check:A',
+  'A5 immutability backstops unchanged: both triggers ENABLE ALWAYS (123; section E exercises them) — plus 179''s reverts_action_id guard (F520), also ENABLE ALWAYS');
 select is(
   (select string_agg(format('%s:%s:%s:%s:%s', p.proname, p.prosecdef,
                             has_function_privilege('public', p.oid, 'EXECUTE'),
