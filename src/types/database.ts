@@ -5935,6 +5935,10 @@ export type Database = {
         }
         Returns: Json
       }
+      draft_queue_for_team: {
+        Args: { p_draft_id: string; p_team_id: string }
+        Returns: Json
+      }
       draft_queue_replace: {
         Args: { p_draft_id: string; p_players: string[]; p_team_id: string }
         Returns: Json
@@ -6648,6 +6652,16 @@ export type Database = {
       }
       stat_correction_mark_applied: {
         Args: { p_event_ids: string[]; p_now: string }
+        Returns: Json
+      }
+      stat_correction_week_state_but_for_internal: {
+        Args: {
+          p_after: Json
+          p_league_id: string
+          p_moves: Json
+          p_season: number
+          p_week: number
+        }
         Returns: Json
       }
       stat_correction_week_state_internal: {

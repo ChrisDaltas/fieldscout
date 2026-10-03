@@ -33,6 +33,9 @@ export interface BidIntent {
   nominationSeq: number
   playerId: string
   amount: number
+  /** F524: the team the commissioner bids FOR (another team only — his own
+   *  seat is never named, so the manager's body is unchanged). */
+  forTeamId?: string
 }
 
 /** POST …/draft/nominate — `player_id` + `opening_bid` + the minted `action_id`. */
@@ -65,6 +68,7 @@ export function bidRequest(
       player_id: intent.playerId,
       amount: intent.amount,
       action_id: actionId,
+      ...(intent.forTeamId ? { team_id: intent.forTeamId } : {}),
     },
   }
 }

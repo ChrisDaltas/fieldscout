@@ -37,12 +37,31 @@ interface QueueResponse {
   queue: DraftQueueRow[]
 }
 
-/** My queue for this (draft, seat), rank-ordered (own rows only — RLS). */
-export function useDraftQueue(draftId: string | undefined, teamId: string | undefined) {
+/**
+ * The queue for this (draft, team), rank-ordered. My own seat: own rows only
+ * (RLS). `asCommish` (F524) — a team the commissioner acts for: the table is
+ * that seat's own (178), so the read goes through the queue route's GET
+ * (`draft_queue_for_team`) and a refusal or an unpushed door is an ERROR,
+ * never an empty queue.
+ */
+export function useDraftQueue(
+  draftId: string | undefined,
+  teamId: string | undefined,
+  options: { asCommish?: { leagueId: string } } = {},
+) {
+  const asCommish = options.asCommish
   return useQuery({
     queryKey: draftQueueKeys.queue(draftId ?? 'none', teamId ?? 'none'),
     enabled: Boolean(draftId) && Boolean(teamId),
+    retry: asCommish ? false : undefined,
     queryFn: async (): Promise<DraftQueueRow[]> => {
+      if (asCommish) {
+        const search = new URLSearchParams({ draft_id: draftId!, team_id: teamId! })
+        const body = await sendLeagueAction<QueueResponse>(
+          `${draftVerbPath(asCommish.leagueId, draftId!, 'queue')}?${search.toString()}`,
+        )
+        return body.queue
+      }
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('draft_queues')
@@ -61,14 +80,25 @@ export function useDraftQueue(draftId: string | undefined, teamId: string | unde
  * (§15.6): the new order renders immediately; the server row set (RLS +
  * the 065 policy + the service's player validation) stays the truth.
  */
-export function useUpdateDraftQueue(leagueId: string | null, draftId: string, teamId: string) {
+export function useUpdateDraftQueue(
+  leagueId: string | null,
+  draftId: string,
+  teamId: string,
+  /** F524: true when the commissioner sets another team's Targets — the
+   *  body names the team (the route admits it for a commissioner only). */
+  forAnotherTeam = false,
+) {
   const queryClient = useQueryClient()
   const queryKey = draftQueueKeys.queue(draftId, teamId)
   return useMutation({
     mutationFn: (players: string[]) =>
       sendLeagueAction<QueueResponse>(
         draftVerbPath(leagueId, draftId, 'queue'),
-        jsonInit('POST', { draft_id: draftId, players }),
+        jsonInit('POST', {
+          draft_id: draftId,
+          players,
+          ...(forAnotherTeam ? { team_id: teamId } : {}),
+        }),
       ),
     onMutate: async (players) => {
       await queryClient.cancelQueries({ queryKey })
@@ -100,14 +130,24 @@ export interface QueueFromListVars {
  * queue (replace) / "Add remaining" (append). NOT optimistic: the server
  * computes the skip-drafted result — the settle refetch renders it.
  */
-export function useQueueFromList(leagueId: string | null, draftId: string, teamId: string) {
+export function useQueueFromList(
+  leagueId: string | null,
+  draftId: string,
+  teamId: string,
+  /** F524: as `useUpdateDraftQueue`'s. */
+  forAnotherTeam = false,
+) {
   const queryClient = useQueryClient()
   const queryKey = draftQueueKeys.queue(draftId, teamId)
   return useMutation({
     mutationFn: ({ listId, mode }: QueueFromListVars) =>
       sendLeagueAction<QueueResponse & { added: number; skipped_drafted: number }>(
         queueFromListPath(leagueId, draftId, listId),
-        jsonInit('POST', { draft_id: draftId, ...(mode ? { mode } : {}) }),
+        jsonInit('POST', {
+          draft_id: draftId,
+          ...(mode ? { mode } : {}),
+          ...(forAnotherTeam ? { team_id: teamId } : {}),
+        }),
       ),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey })

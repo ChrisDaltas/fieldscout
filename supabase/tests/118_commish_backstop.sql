@@ -1079,8 +1079,8 @@ select is((select count(*)::int from _allow where length(why) < 60), 0,
 -- C8: gated functions that write nothing are outside the census, named.
 select is(
   (select string_agg(c.fn, ' ' order by c.fn) from _census c where c.writes is null),
-  'commish_matchup_edit_lock is_league_commish schedule_preview',
-  'C8 the three gated functions that write no table (the edit-lock read, the gate itself, the Remix preview) are outside the census, by name');
+  'commish_matchup_edit_lock draft_queue_for_team is_league_commish schedule_preview',
+  'C8 the four gated functions that write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview) are outside the census, by name');
 
 -- C9 / C10: POSITIVE CONTROLS — the census catches a planted offender, and
 -- a helper named only in its comment and a string does not save it.
@@ -1658,7 +1658,7 @@ insert into _polv values
   --  REVOKEd — a receipt is written only by a verb, so the audit log has no
   --  client write policy left and no verdict here; pgTAP 123 pins it.)
   ('public.draft_dnd_marks',      'Own DND marks',                        'own act',          'a user own do-not-draft marks, visible to him alone'),
-  ('public.draft_queues',         'Own queue write',                      'own act',          'a manager own draft queue — the commissioner sets another team queue through draft_queue_replace, which writes his receipt (171, F521); BUT the owner arm reads teams.owner_id, so a commissioner who owns a placeholder or vacated team row writes that queue straight through this policy with no receipt — a named receipt bypass, F525 (R1339)'),
+  ('public.draft_queues',         'Own queue write',                      'own act',          'a manager own draft queue, keyed on his SEAT (league_members.user_id on the team — 178, F525; was teams.owner_id, which let a commissioner who owns a placeholder or vacated team row write it here with no receipt, R1339) — the commissioner sets another team queue only through draft_queue_replace, which writes his receipt (171, F521)'),
   ('public.league_chat',          'Members post their own chat',          'own act',          'a member own chat post (is_system false, bounded) — never a system or commissioner post'),
   ('public.league_lists',         'Members manage their own attachments', 'own act',          'a member own list attachments to a league'),
   ('public.scoring_systems',      'Users can manage own scoring systems', 'guarded by 170',   'a league scoring rules change is refused on the client route (trg_zz_scoring_systems_league_rules — Q3); personal systems stay editable'),

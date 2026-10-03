@@ -80,6 +80,7 @@ import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import {
   ACTION_ID_REUSED_MESSAGE,
   deleteMockDraft,
+  NOT_COMMISH_FOR_TEAM_MESSAGE,
   launchMockDraft,
   leagueScope,
   nominatePlayer,
@@ -245,8 +246,15 @@ async function cleanup(): Promise<void> {
   if (ids.length > 0) {
     await service.from('league_rosters').delete().in('league_id', ids)
     await service.from('drafts').delete().in('league_id', ids)
-    await service.from('teams').delete().in('league_id', ids)
+    // F524: the commissioner's bid for a team writes a receipt whose
+    // `acting_as_team_id` references that team (123, no ON DELETE), and the
+    // log is immutable except through the league's ON DELETE CASCADE — the
+    // F406 order: detach the teams, delete the league, THEN the teams.
+    const { data: teams } = await service.from('teams').select('id').in('league_id', ids)
+    const teamIds = (teams ?? []).map((row) => row.id)
+    await service.from('teams').update({ league_id: null }).in('id', teamIds)
     await service.from('leagues').delete().in('id', ids)
+    await service.from('teams').delete().in('id', teamIds)
   }
   await service
     .from('players')
@@ -1304,4 +1312,83 @@ describe('TS ≡ SQL budget parity (§4.7/D127 — the D90 pattern, stack half):
       .eq('id', draftId)
     expect(restoreError).toBeNull()
   }, 60_000)
+})
+
+// ===========================================================================
+// 5. F524 — the commissioner bids FOR a team through the route (171's
+//    p_team_id; the F65 check keyed on the named team)
+// ===========================================================================
+
+describe('F524 — POST …/draft/bid with team_id: the commissioner bids for a team he does not manage', () => {
+  const COMMISH_FOR_TEAM = 'af300000-0000-4000-8000-0000000000a1'
+  const MANAGER_FOR_TEAM = 'af300000-0000-4000-8000-0000000000a2'
+
+  it('a manager naming another team is a 403 by name, nothing written; the commissioner’s bid for a placeholder lands as THAT team’s bid with one receipt; another member replaying its action_id as his own is the F65 409', async () => {
+    const live = await readDraft(draftId)
+    const nomination = live.current_nomination as { player_id: string; high_bid: number } | null
+    expect(live.status).toBe('live')
+    expect(nomination, 'nomination 2 is still up for bid').not.toBeNull()
+    const placeholder = orderedTeamIds[3]
+    const before = await bidCount(draftId)
+    const receiptsBefore = await service
+      .from('commissioner_actions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('action_type', 'draft_bid')
+
+    const intruder = await placeBid(mgr3Client, leagueScope(leagueId), mgr3Id, {
+      nomination_seq: live.current_pick_number!,
+      player_id: nomination!.player_id,
+      amount: nomination!.high_bid + 1,
+      action_id: MANAGER_FOR_TEAM,
+      team_id: placeholder,
+    })
+    expect(intruder.status).toBe(403)
+    expect(errorText(intruder.body)).toContain(NOT_COMMISH_FOR_TEAM_MESSAGE)
+    expect(await bidCount(draftId)).toBe(before)
+
+    const forTeam = await placeBid(commishClient, leagueScope(leagueId), commishId, {
+      nomination_seq: live.current_pick_number!,
+      player_id: nomination!.player_id,
+      amount: nomination!.high_bid + 1,
+      action_id: COMMISH_FOR_TEAM,
+      team_id: placeholder,
+    })
+    expect(forTeam.status).toBe(200)
+    const body = forTeam.body as unknown as AuctionBody
+    expect(body.bid.team_id).toBe(placeholder)
+    expect(body.bid.amount).toBe(nomination!.high_bid + 1)
+    expect(await bidCount(draftId)).toBe(before + 1)
+    const receiptsAfter = await service
+      .from('commissioner_actions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('action_type', 'draft_bid')
+      .eq('acting_as_team_id', placeholder)
+    expect(receiptsBefore.count).toBe(0)
+    expect(receiptsAfter.count).toBe(1)
+
+    // The same submit replayed (a retry) is the same row, still keyed on the
+    // named team — no second bid.
+    const replay = await placeBid(commishClient, leagueScope(leagueId), commishId, {
+      nomination_seq: live.current_pick_number!,
+      player_id: nomination!.player_id,
+      amount: nomination!.high_bid + 1,
+      action_id: COMMISH_FOR_TEAM,
+      team_id: placeholder,
+    })
+    expect(replay.status).toBe(200)
+    expect(await bidCount(draftId)).toBe(before + 1)
+
+    // R420 with a named team: mgr2 replays the commissioner’s action_id as
+    // HIS bid (no team_id) — the row is the placeholder’s, so it is a 409.
+    const forged = await placeBid(mgr2Client, leagueScope(leagueId), mgr2Id, {
+      nomination_seq: live.current_pick_number!,
+      player_id: nomination!.player_id,
+      amount: nomination!.high_bid + 1,
+      action_id: COMMISH_FOR_TEAM,
+    })
+    expect(forged.status).toBe(409)
+    expect(errorText(forged.body)).toContain(ACTION_ID_REUSED_MESSAGE)
+  })
 })

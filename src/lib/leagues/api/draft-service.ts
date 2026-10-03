@@ -78,6 +78,7 @@ import {
   draftConfigSchema,
   rosterSettingsSchema,
 } from '@/lib/leagues/settings/league-settings'
+import { isDoorNotPushed } from '@/lib/supabase/postgrest-errors'
 import type { Database, Draft, Json } from '@/types/database'
 
 import type { ServiceResult } from './leagues-service'
@@ -524,9 +525,127 @@ async function resolveActingSeat(
   return { teamId: seat.team_id }
 }
 
+export const NOT_COMMISH_FOR_TEAM_MESSAGE = 'Only a commissioner can act for another team.'
+export const COMMISH_QUEUE_READ_NOT_PUSHED_MESSAGE =
+  'Reading another team’s Targets isn’t available yet. Try again after the next update.'
+
+/** The commissioner's read of another team's queue (178 — F48 / F524). */
+export const COMMISH_QUEUE_READ_DOOR = {
+  draft_queue_for_team: ['p_draft_id', 'p_team_id'],
+} as const
+
+/**
+ * THE TEAM THIS REQUEST ACTS FOR — the caller's own seat, or (F524) a team
+ * the commissioner names. `requestedTeamId` absent, or equal to the caller's
+ * own seat, is `resolveActingSeat` unchanged (`acting: false`). Another team
+ * is admitted ONLY for a commissioner / co-commissioner of a real draft's
+ * league, read here from the caller's own `league_members` row — the RPCs
+ * re-check (171: `draft_place_bid` 42501, `draft_queue_replace`'s v_commish)
+ * and own the "active franchise of this league" rule; this check exists so
+ * the F65 integrity test (R420) can key on the named team: a member reading
+ * `draft_bids` cannot name another team and claim its row as his, because
+ * only a commissioner gets this far. A mock has no commissioner (§8.8): its
+ * one seat is the launcher's.
+ */
+async function resolveTargetTeam(
+  supabase: Supabase,
+  scope: DraftActionScope,
+  userId: string,
+  draft: DraftActionRow,
+  requestedTeamId: string | undefined,
+): Promise<{ teamId: string; acting: boolean } | { failure: ServiceResult }> {
+  if (requestedTeamId === undefined || draft.is_mock || scope.kind !== 'league') {
+    const seat = await resolveActingSeat(supabase, scope, userId, draft)
+    if ('failure' in seat) return seat
+    if (requestedTeamId !== undefined && requestedTeamId !== seat.teamId) {
+      return { failure: { status: 403, body: { error: NOT_COMMISH_FOR_TEAM_MESSAGE } } }
+    }
+    return { teamId: seat.teamId, acting: false }
+  }
+  const { data: member, error } = await supabase
+    .from('league_members')
+    .select('team_id, role')
+    .eq('league_id', scope.leagueId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    return { failure: { status: 500, body: { error: error.message } } }
+  }
+  if (member?.team_id && member.team_id === requestedTeamId) {
+    return { teamId: requestedTeamId, acting: false }
+  }
+  if (!member || (member.role !== 'commissioner' && member.role !== 'co_commissioner')) {
+    return { failure: { status: 403, body: { error: NOT_COMMISH_FOR_TEAM_MESSAGE } } }
+  }
+  return { teamId: requestedTeamId, acting: true }
+}
+
 interface QueueRow {
   player_id: string
   rank: number
+}
+
+/**
+ * The commissioner's read of another team's queue — `draft_queue_for_team`
+ * (178). The table is the seat's own (065 / 178 RLS), so a table read for a
+ * team he does not manage would answer an EMPTY queue that is not the truth;
+ * the door answers the rows or a named refusal. On a chain without 178 the
+ * door is missing (PGRST202) and that is a named 503, never an empty queue.
+ */
+async function readQueueAsCommish(
+  supabase: Supabase,
+  draftId: string,
+  teamId: string,
+): Promise<{ rows: QueueRow[] } | { failure: ServiceResult }> {
+  const { data, error } = await supabase.rpc('draft_queue_for_team', {
+    p_draft_id: draftId,
+    p_team_id: teamId,
+  })
+  if (error) {
+    if (isDoorNotPushed(error, COMMISH_QUEUE_READ_DOOR)) {
+      return { failure: { status: 503, body: { error: COMMISH_QUEUE_READ_NOT_PUSHED_MESSAGE } } }
+    }
+    return { failure: mapDraftRpcError(error, NOT_COMMISH_FOR_TEAM_MESSAGE) }
+  }
+  return { rows: (data ?? []) as unknown as QueueRow[] }
+}
+
+export const readTeamQueueInputSchema = z.strictObject({
+  draft_id: z.uuid().optional(),
+  team_id: z.uuid(),
+})
+
+/**
+ * GET /api/leagues/[id]/draft/queue?team_id= — the commissioner reads a
+ * team's Targets so he can edit them (F524). His own seat reads from the
+ * table like any manager's; another team goes through the door.
+ */
+export async function readTeamQueue(
+  supabase: Supabase,
+  scope: DraftActionScope,
+  userId: string,
+  rawQuery: unknown,
+): Promise<ServiceResult> {
+  const parsed = readTeamQueueInputSchema.safeParse(rawQuery)
+  if (!parsed.success) {
+    return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  }
+  const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
+  if ('failure' in resolved) return resolved.failure
+  const target = await resolveTargetTeam(supabase, scope, userId, resolved.draft, parsed.data.team_id)
+  if ('failure' in target) return target.failure
+  let rows: QueueRow[]
+  if (target.acting) {
+    const read = await readQueueAsCommish(supabase, resolved.draft.id, target.teamId)
+    if ('failure' in read) return read.failure
+    rows = read.rows
+  } else {
+    rows = await readQueue(supabase, resolved.draft.id, target.teamId)
+  }
+  return {
+    status: 200,
+    body: { draft_id: resolved.draft.id, team_id: target.teamId, queue: rows } as unknown as Json,
+  }
 }
 
 /** Read back the (draft, team) queue in rank order — the response truth. */
@@ -722,6 +841,9 @@ export const placeBidInputSchema = z.strictObject({
   player_id: z.string().trim().min(1),
   amount: z.number().int().min(0).max(INT4_MAX),
   action_id: z.uuid(),
+  /** F524: the team the bid is FOR — the caller's own seat when absent; any
+   *  other team only from a commissioner (171's p_team_id). */
+  team_id: z.uuid().optional(),
 })
 export type PlaceBidInput = z.infer<typeof placeBidInputSchema>
 
@@ -788,26 +910,54 @@ export async function placeBid(
 
   const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
+  // F524: a NAMED team is resolved BEFORE the call, so it is admitted only
+  // for a commissioner (171's replay short-circuit returns an earlier row
+  // before the RPC's own 42501 gate; this check is what keeps the F65 test
+  // below keyed on a team the caller may act for). No team named is the
+  // manager's bid exactly as before — the RPC first, then the seat.
+  let named: { teamId: string; acting: boolean } | null = null
+  if (parsed.data.team_id !== undefined) {
+    const target = await resolveTargetTeam(
+      supabase,
+      scope,
+      userId,
+      resolved.draft,
+      parsed.data.team_id,
+    )
+    if ('failure' in target) return target.failure
+    named = target
+  }
+  const acting = named?.acting ?? false
 
   // F64: the nomination identity rides EVERY call — never omitted, never
-  // derived server-side from what happens to be live.
+  // derived server-side from what happens to be live. `p_team_id` (171) is
+  // sent only when the commissioner bids for another team: the manager's
+  // call is the five arguments it always was.
   const { data, error } = await supabase.rpc('draft_place_bid', {
     p_draft_id: resolved.draft.id,
     p_amount: parsed.data.amount,
     p_action_id: parsed.data.action_id,
     p_nomination_seq: parsed.data.nomination_seq,
     p_player_id: parsed.data.player_id,
+    ...(acting && named ? { p_team_id: named.teamId } : {}),
   })
-  if (error) return mapDraftRpcError(error, NOT_A_MEMBER_MESSAGE)
+  if (error) {
+    return mapDraftRpcError(error, acting ? NOT_COMMISH_FOR_TEAM_MESSAGE : NOT_A_MEMBER_MESSAGE)
+  }
   const body = data as unknown as AuctionActionBody
 
   // F65(b): the row that came back must be THIS caller's THIS bid (fresh, or
   // the same submit replayed — R338: a retry after the nomination moved on
   // returns its original row, which still matches on both counts) —
   // otherwise the action_id was a nomination's, or another manager's, and
-  // the caller never placed it. Identity FIRST (R420).
-  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
-  if ('failure' in seat) return seat.failure
+  // the caller never placed it. Identity FIRST (R420) — keyed on the team
+  // the bid is FOR (his own seat, or the team the commissioner named).
+  let seat = named
+  if (!seat) {
+    const own = await resolveActingSeat(supabase, scope, userId, resolved.draft)
+    if ('failure' in own) return own.failure
+    seat = { teamId: own.teamId, acting: false }
+  }
   if (
     body.bid.team_id !== seat.teamId ||
     body.bid.nomination_seq !== parsed.data.nomination_seq ||
@@ -830,6 +980,9 @@ export const upsertQueueInputSchema = z
   .strictObject({
     draft_id: z.uuid().optional(),
     players: z.array(z.string().trim().min(1)).max(500),
+    /** F524: the team whose Targets these are — the caller's own seat when
+     *  absent; another team only from a commissioner (receipted, 171). */
+    team_id: z.uuid().optional(),
   })
   .refine((body) => new Set(body.players).size === body.players.length, {
     message: 'A player can appear in the queue only once.',
@@ -849,7 +1002,13 @@ export async function upsertQueue(
 
   const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
-  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
+  const seat = await resolveTargetTeam(
+    supabase,
+    scope,
+    userId,
+    resolved.draft,
+    parsed.data.team_id,
+  )
   if ('failure' in seat) return seat.failure
 
   // Validate every player id BEFORE the destructive replace: PostgREST gives
@@ -908,6 +1067,9 @@ export const queueFromListInputSchema = z.strictObject({
   /** §8.9: "load … in list order" (replace, the default) or "Add remaining"
    *  (append after the current queue tail). */
   mode: z.enum(['replace', 'append']).default('replace'),
+  /** F524: as upsertQueue's — the commissioner loads a list into a team's
+   *  Targets. */
+  team_id: z.uuid().optional(),
 })
 
 export async function queueFromList(
@@ -927,7 +1089,13 @@ export async function queueFromList(
 
   const resolved = await resolveDraftForAction(supabase, scope, parsed.data.draft_id)
   if ('failure' in resolved) return resolved.failure
-  const seat = await resolveActingSeat(supabase, scope, userId, resolved.draft)
+  const seat = await resolveTargetTeam(
+    supabase,
+    scope,
+    userId,
+    resolved.draft,
+    parsed.data.team_id,
+  )
   if ('failure' in seat) return seat.failure
 
   // WHICH LISTS THIS VERB WILL LOAD, and the two arms answer it differently
@@ -996,7 +1164,17 @@ export async function queueFromList(
   }
   const drafted = new Set((picks ?? []).map((row) => row.player_id))
 
-  const existing = await readQueue(supabase, resolved.draft.id, seat.teamId)
+  // F524: another team's queue is not readable from the table (178 — the
+  // seat's own), so the commissioner's append composes from the door's read;
+  // composing from an empty table read would REPLACE that team's Targets.
+  let existing: QueueRow[]
+  if (seat.acting) {
+    const read = await readQueueAsCommish(supabase, resolved.draft.id, seat.teamId)
+    if ('failure' in read) return read.failure
+    existing = read.rows
+  } else {
+    existing = await readQueue(supabase, resolved.draft.id, seat.teamId)
+  }
   const alreadyQueued = new Set(existing.map((row) => row.player_id))
 
   let skippedDrafted = 0
