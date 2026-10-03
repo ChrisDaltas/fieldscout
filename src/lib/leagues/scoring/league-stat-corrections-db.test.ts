@@ -29,7 +29,8 @@
  *   LC4  a benched player's correction (WRB) writes no record.
  *   LC5  a stat the league does not score (WR3's receptions — standard
  *        scoring pays none) writes nothing and SAYS WHY.
- *   (LC5b, the pre-172 deploy-before-push arm, retired with it — F529.)
+ *   LC5b WR4 80 → 90 through the 172 door (F529 retired the pre-172 arm this
+ *        cell used to drive) — scored, no "predates 172" line.
  *   LC6  the real finalize_matchups at week 2's first kickoff: final, the
  *        stored results are the ones the record derived, and the REAL
  *        rebuild finds no result_drift (F245 / TD8).
@@ -98,6 +99,7 @@ const T_ADVANCE = '2088-09-14T08:00:00.000Z'
 const T_IN_WINDOW = '2088-09-15T15:00:00.000Z'
 const T_BENCH = '2088-09-15T16:00:00.000Z'
 const T_UNSCORED = '2088-09-15T17:00:00.000Z'
+const T_WR4 = '2088-09-15T18:00:00.000Z'
 const T_LATE = '2088-09-18T12:00:00.000Z'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
@@ -364,6 +366,15 @@ describe('L.E2.2 — each league’s record of a stat correction, through the RE
     // Information, never a problem: an ordinary correction that moves no score raises no alarm.
     expect(batch.problems.filter((p) => p.includes('stat corrections'))).toEqual([])
     expect([await records(), await posts()].map((x) => x.length)).toEqual([1, 1])
+  })
+
+  it('LC5b (F529 — was the pre-172 arm) WR4 80 → 90 through the 172 door: scored, and no "predates migration 172" line anywhere', async () => {
+    feed.lines = { ...feed.lines, [WR4]: { receiving_yards: 90 } }
+    await poll(T_WR4)
+    const batch = await drain()
+    expect(batch.leagues[0].outcome).toBe('written')
+    expect(await scores()).toBe('regular 9.50-9.00 live - | regular 9.40-9.80 live - | secondary 9.40-9.50 live -')
+    expect(batch.problems.filter((p) => p.includes('predates migration 172'))).toEqual([])
   })
 
   it('LC6 the REAL finalize_matchups at week 2’s first kickoff: the stored results are the record’s, and the REAL rebuild finds no result_drift (F245 / TD8)', async () => {
