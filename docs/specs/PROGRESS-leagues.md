@@ -979,6 +979,15 @@ Chris's own words for the §8.6.9 message were *"No one can bid. Awarding Player
 
 **Recommendation: (b).** The whole posture of §7.3.3.1(c) is *make the bad state unconstructible rather than validation-caught*, and an unbounded list is the one input where that posture is currently not applied. (c) is the weakest: §7.3.3.1(5) is explicit that client validation is UX only. **This one is a genuine spec gap rather than a reversal — a Builder could carry a ruling either way once it exists, but not choose it.** *(SE.4 note: unrelated to Q26's domain cap. SE.4 caps a cut's MAGNITUDE at 2^53 because above that `numeric` and IEEE-754 double disagree about which integer a cut is — a correctness bound, not a size policy, and it is orthogonal to how MANY cuts a list may hold.)*
 
+**Q88–Q94 — M7 (Hardening & GA) breakdown questions (Architect, 2026-10-03; full text, options and recommendations in `docs/specs/tasks-M7-hardening-ga.md` §11; breakdown PR awaiting Chris's approval).**
+- **Q88** — How big should the load test be (2026 size now + GA size before July 2027, GA only, or GA now)? *Recommend: both sizes, same scripts.* Blocks L.F2.2.
+- **Q89** — Where do load tests run (separate hosted test project, local only, or a branch of production)? *Recommend: a separate hosted test project; cost is Chris's call.* Blocks L.F2.2, L.F2.10.
+- **Q90** — Security review internal, outside, or internal now + outside before GA? *Recommend: internal now, outside before GA.* Blocks L.F2.7.
+- **Q91** — Which emergency switches (pause all drafts, stop waivers, freeze scores) and who gets alerts? *Recommend: all three; alerts to Chris only.* Blocks L.F2.4, L.F2.5.
+- **Q92** — When does the 25-league beta weekend happen (2026 test leagues, Aug 2027 real beta, or a mock-filled beta)? *Recommend: Aug 2027, just before GA.* Blocks L.F2.11 and M7 exit criterion 4.
+- **Q93** — Which Phase F extras are in? *Recommend: in — draft-order reveal, league notifications, 16-team performance test; out until after GA — History tab, tamper-proof audit chain, public league page, auto-sub.* Blocks L.F1.3, L.F1.4.
+- **Q94** — M8 (admin console) before, after, or alongside M7? *No recommendation — Chris's placement call.* Blocks L.F2.5's buttons.
+
 ### Resolved
 
 **✅ RULED BY CHRIS 2026-10-18 — THE AUTOMATIC TEAM NAME FOR A LONG USERNAME: THE USERNAME ALONE. (Filed 2026-10-18 under Open with D545 by the team-name-24 review; resolved and moved here the same day.)** Chris confirmed the recommendation: when "<username>'s Team" would be longer than 24 (a username of 18–20 characters), the automatic team name is the username alone, like Sleeper. No Q number — none was reserved for this change; the ruling lives under D545. Docs only: the build already ships it (`team_default_name_internal`, migration 196; pinned by pgTAP 146 §D), so nothing in the app changes; spec §7.2 "Team names" and changelog v2.16.97 now say ruled instead of pending.
