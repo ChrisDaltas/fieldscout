@@ -91,8 +91,8 @@ export async function GET(request: Request) {
           games: p.report.games,
           weeks: p.report.weeks,
           stats: p.report.stats,
-          // M6 L.E2.1: the write path (the 167 door, or the pre-167 two-call
-          // fallback — also in `problems`) and the poll's stat corrections.
+          // M6 L.E2.1: the write path (the 167 door — the only path since F508)
+          // and the poll's stat corrections.
           write: p.report.write,
           corrections: p.report.corrections,
           reasons: p.report.reasons,

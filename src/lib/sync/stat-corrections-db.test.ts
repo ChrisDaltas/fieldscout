@@ -26,10 +26,7 @@
  *        moves (research: 80), the worker consumes the delta as `week_final`,
  *        and EVERY league cell of the week — matchups, team_week_results,
  *        league_week_player_points, league_weeks — is byte-identical.
- *   SC7  DEPLOY BEFORE PUSH on the same week: the door asked under a name the
- *        database lacks answers PostgREST's real PGRST202; the poll writes
- *        through the pre-167 two-call path, says so, records no event, and the
- *        worker still consumes it as `week_final` — nothing moves either.
+ *   (SC7, the pre-167 two-call fallback, retired with the fallback — F508.)
  *
  * Requires the local stack — D59(5); FAILS loudly when it is down. Fixture
  * hygiene (F199): the `vitest-sce` prefix on players / stats / queue / games,
@@ -81,7 +78,6 @@ const T_FINAL_SEEN = '2092-09-14T20:30:00.000Z'
 const T_ADVANCE = '2092-09-16T08:00:00.000Z'
 const T_IN_WINDOW = '2092-09-17T12:00:00.000Z'
 const T_LATE = '2092-09-20T12:00:00.000Z'
-const T_LATE_PRE167 = '2092-09-20T13:00:00.000Z'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 const db = service as unknown as SyncClient
@@ -138,9 +134,9 @@ const provider: StatsProvider = {
   getInactives: async () => [],
 }
 
-function poll(iso: string, door?: string): Promise<IngestReport> {
+function poll(iso: string): Promise<IngestReport> {
   clock.advanceTo(new Date(iso))
-  return ingestWeek(provider, clock, { db, degradation: new DegradationTracker(), season: SEASON, week: 1, ...(door === undefined ? {} : { door }) })
+  return ingestWeek(provider, clock, { db, degradation: new DegradationTracker(), season: SEASON, week: 1 })
 }
 
 function drain() {
@@ -311,30 +307,5 @@ describe('L.E2.1 — stat-correction events through the REAL ingestWeek → door
     expect(batch.problems).toContain(`[${leagueId} wk 1] league ${leagueId} week 1 skipped: week_final`)
     expect(await leagueCells()).toBe(before)
     expect(await scores()).toBe('15.00/4.00 final home')
-  })
-
-  it('SC7 DEPLOY BEFORE PUSH — the door under a name the database lacks answers PostgREST’s REAL PGRST202: the two-call path writes, says so, records nothing; the league still does not move', async () => {
-    // PREMISE — the wire's answer for a missing door, measured here (and, for the real name, on the 166 stack).
-    const probe = await service.rpc('ingest_write_batch_pre167' as never, { p_rows: [], p_now: T_LATE_PRE167 } as never)
-    expect([probe.error?.code, probe.error?.message]).toEqual(['PGRST202', 'Could not find the function public.ingest_write_batch_pre167(p_now, p_rows) in the schema cache'])
-    const before = await leagueCells()
-    feed.lines = { ...feed.lines, [WR1]: { receptions: 6, receiving_yards: 79, receiving_tds: 1 } }
-    const report = await poll(T_LATE_PRE167, 'ingest_write_batch_pre167')
-    expect(report.write).toEqual({ path: 'two_call_fallback', door: 'ingest_write_batch_pre167' })
-    expect(report.stats).toMatchObject({ updated: 1, deltas: 1, enqueued: 1 })
-    expect(report.corrections).toMatchObject({ detected: 1, recorded: 0, reason: '1 detected, NOT recorded — the database predates migration 167' })
-    expect(report.reasons).toContain(
-      'ingest_write_batch_pre167 absent — the database predates migration 167 (PGRST202): the lines and the queue were written through the pre-167 two-call path (queue, then stats — R706); no stat_correction_events recorded',
-    )
-    expect(await events()).toHaveLength(3) // nothing new
-    expect(await research()).toBe(79)
-    const queued = await must(service.from('score_fanout').select('enqueued_at').eq('player_id', WR1).eq('season', SEASON).eq('week', 1).single(), 'queue')
-    expect(new Date(queued!.enqueued_at).toISOString()).toBe(T_LATE_PRE167)
-    const batch = await drain()
-    expect(batch.problems).toContain(`[${leagueId} wk 1] league ${leagueId} week 1 skipped: week_final`)
-    expect(await leagueCells()).toBe(before)
-    // The score from SC6 stands — the week's t1 lineup never changed and neither did its stored points.
-    expect(await scores()).toBe('15.00/4.00 final home')
-    expect(t1).toBeTruthy()
   })
 })

@@ -420,22 +420,6 @@ describe('TD5 (L.E2.1) — a final week is re-polled once a day for 7 days after
   })
 })
 
-describe('TD15 (L.E2.1) — the pre-167 two-call path is NAMED in the invocation’s problems, every poll', () => {
-  it('a poll that wrote through the fallback is a problem line (with the correction keys it could not record); a door poll is not', async () => {
-    const world = makeWorld([game(1, TNF, 'final')])
-    const fallback = await run(world, new VirtualClock(new Date('2026-09-11T15:00:30Z')), {
-      mutate: (r) => ({ ...r, write: { path: 'two_call_fallback', door: 'ingest_write_batch' }, corrections: { ...r.corrections, detected: 2 } }),
-    })
-    expect(fallback.problems).toEqual([
-      'week 1: wrote through the pre-167 two-call path — ingest_write_batch is absent (PGRST202; push migration 167); 2 stat correction key(s) NOT recorded',
-    ])
-    const door = await run(makeWorld([game(1, TNF, 'final')]), new VirtualClock(new Date('2026-09-11T15:00:30Z')), {
-      mutate: (r) => ({ ...r, write: { path: 'door', door: 'ingest_write_batch' } }),
-    })
-    expect(door.problems).toEqual([])
-  })
-})
-
 describe('R1314 (L.E2.1) — one sweep’s failures count ONCE toward stats_degraded (§23.2’s three polls are three polls in time)', () => {
   const weeks: CalendarWeek[] = [
     { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00.000Z' },

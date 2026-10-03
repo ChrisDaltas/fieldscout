@@ -588,7 +588,7 @@ class World {
   doorCalls: Array<{ fn: string; p_rows: DoorElement[]; p_now: string }> = []
   /** The error the door answers with (null = 167 is pushed). */
   doorError: Row | null = null
-  /** The two-call path's writes, in order (the pre-167 fallback). */
+  /** Table writes outside the door, in order — must stay empty (the two-call fallback is retired, F508). */
   twoCall: string[] = []
 
   constructor(playerIds: string[]) {
@@ -870,33 +870,20 @@ describe('L.E2.1 — TD2: what a correction is, poll after poll through the real
     ])
   })
 
-  it('F1 DEPLOY BEFORE PUSH — the measured pre-167 PGRST202: the pre-167 two-call path writes the lines and the queue (queue FIRST, R706), says so, records nothing', async () => {
+  it('F1 a missing door (the measured pre-167 PGRST202) is a PLAIN failure since F508 — the poll throws by name and writes nothing', async () => {
     const world = new World(['p-wr'])
     world.doorError = PRE_167_ANSWER
     const { state, provider } = scripted()
-    world.games.set(WK2_G1, storedGame(WK2_G1))
-    world.games.set(WK2_G3, storedGame(WK2_G3))
-    const blank = Object.fromEntries(STAT_COLUMN_SURFACE.map((c) => [c, NULL_IS_PENDING_COLUMNS.has(c) ? null : 0]))
-    world.stats.set('p-wr', { player_id: 'p-wr', season: 2026, week: 2, game_id: WK2_G1, is_live: false, source: 'fixture', advanced: {}, ...blank, receptions: 3, receiving_yards: 52 })
-    state.games = [wk2Game(WK2_G1, 'final'), wk2Game(WK2_G3, 'final')]
-    state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 3, receiving_yards: 50 })]
-    const report = await ingestWeek(provider, new VirtualClock(new Date('2026-09-22T16:00:00Z')), { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 })
-    expect(world.doorCalls.map((c) => c.fn)).toEqual(['ingest_write_batch']) // asked once, answered "no such function"
-    expect(world.twoCall).toEqual(['score_fanout', 'player_stats']) // R706's order, unchanged
-    expect(world.stats.get('p-wr')!.receiving_yards).toBe(50)
-    expect(world.stats.get('p-wr')!.updated_at).toBe('2026-09-22T16:00:00.000Z')
-    expect(world.queue.get('p-wr')!.enqueued_at).toBe('2026-09-22T16:00:00.000Z')
-    expect(report.write).toEqual({ path: 'two_call_fallback', door: 'ingest_write_batch' })
-    expect(report.stats).toMatchObject({ updated: 1, deltas: 1, enqueued: 1, restamped: 0 })
-    expect([report.corrections.detected, report.corrections.recorded, report.corrections.reason]).toEqual([1, 0, '1 detected, NOT recorded — the database predates migration 167'])
-    expect(report.reasons).toEqual([
-      'nfl_games unchanged: 2 games identical to stored',
-      'ingest_write_batch absent — the database predates migration 167 (PGRST202): the lines and the queue were written through the pre-167 two-call path (queue, then stats — R706); no stat_correction_events recorded',
-      'stat_correction_events: 1 correction key(s) for 1 player(s) detected and NOT recorded — the table arrives with migration 167',
-    ])
+    state.games = [wk2Game(WK2_G1, 'live')]
+    state.lines = [wk2Line('p-wr', WK2_G1, { receptions: 1 })]
+    await expect(
+      ingestWeek(provider, new VirtualClock(new Date('2026-09-20T18:00:00Z')), { db: world.client(), degradation: new DegradationTracker(), season: 2026, week: 2 }),
+    ).rejects.toThrow('ingest_write_batch failed (2026 week 2, lines 1–1): Could not find the function public.ingest_write_batch(p_now, p_rows) in the schema cache')
+    expect(world.twoCall).toEqual([])
+    expect(world.stats.size).toBe(0)
   })
 
-  it('F2 a same-name DRIFT answer (the hint offers the real signature) is NOT "not pushed" — the poll throws and the two-call path writes nothing', async () => {
+  it('F2 a same-name DRIFT answer (the hint offers the real signature) throws by name and nothing is written', async () => {
     const world = new World(['p-wr'])
     world.doorError = DRIFT_ANSWER
     const { state, provider } = scripted()

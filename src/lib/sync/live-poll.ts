@@ -423,15 +423,6 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
             report.problems.push(`week ${week}: ${reason}`)
           }
         }
-        // TD15 (M6 L.E2.1): the pre-167 two-call path is the deploy-before-
-        // push fallback — never silent. Every poll that takes it says so
-        // (the route console.warns each problem) until 167 is pushed.
-        if (poll.write.path === 'two_call_fallback') {
-          report.problems.push(
-            `week ${week}: wrote through the pre-167 two-call path — ${poll.write.door} is absent (PGRST202; push migration 167)` +
-              (poll.corrections.detected > 0 ? `; ${poll.corrections.detected} stat correction key(s) NOT recorded` : ''),
-          )
-        }
       }
     }
     report.rounds.push(round)

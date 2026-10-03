@@ -53,28 +53,10 @@
  * re-scored as always, never recorded as a correction (`corrections.settled`
  * counts it and a reason line says so).
  *
- * DEPLOY BEFORE PUSH (TD15). Until migration 167 is pushed the door is absent:
- * PostgREST answers PGRST202 (measured on the 166 stack, 2026-09-29: "Could
- * not find the function public.ingest_write_batch(p_now, p_rows) in the
- * schema cache", hint null). On exactly that answer — D426's
- * `isDoorNotPushed`, which refuses a same-name signature-drift answer — this
- * poll writes through the PRE-167 TWO-CALL PATH below, unchanged, and SAYS
- * SO (`report.write.path = 'two_call_fallback'`, a reason line, the live
- * poll's problems). No event is recorded pre-push; the detected keys are
- * still counted in `report.corrections`. Any other door error throws.
- *
- * THE PRE-167 TWO-CALL PATH — why the queue is written BEFORE the stats
- * (R706 — at-least-once): the two are separate PostgREST calls, not one
- * transaction. If the invocation dies between them,
- * the stored stat row is still stale, so the NEXT poll re-detects the same
- * delta and re-enqueues it (the PK dedupes an undrained row). Stats-first
- * would lose that delta forever: the stored row would already equal the
- * incoming one, the diff would read `unchanged`, and §23.2's reconciliation
- * only ALERTS on drift — it never re-enqueues. Both stamps come from the one
- * injected instant, so `player_stats.updated_at >= score_fanout.enqueued_at`
- * is the worker's readiness predicate (L.D2.2, F218): a queued player whose
- * stat row is older than its queue row (or absent) is a delta whose stats
- * have not landed yet — leave it queued, never score it stale.
+ * The door is the ONLY write path (F508, 2026-10-03): the pre-167 two-call
+ * fallback was retired once production carried 167 and slates had run
+ * through it. A door answering "no such function" (PGRST202) is a plain
+ * failure — the poll throws, nothing written, never a quiet second path.
  *
  * Why a re-enqueue RE-STAMPS an existing queue row (L.D2.2, D321(2)): the
  * worker claims a row by reading it, scores, and then deletes it BY STAMP
@@ -127,7 +109,6 @@ import type {
 import { weekReleaseFloor } from '@/lib/leagues/time/release-floor'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
-import { isDoorNotPushed } from '@/lib/supabase/postgrest-errors'
 
 import { STAT_COLUMN_BY_KEY, toStatColumns } from './live-stats'
 import { fetchKnownPlayerIds } from './projections'
@@ -143,17 +124,10 @@ export interface IngestIo {
   degradation: DegradationTracker
   season: number
   week: number
-  /** The ingest door's name — `INGEST_DOOR` unless a test points it at a
-   *  name the database lacks, to drive the pre-167 path over the real wire
-   *  (PostgREST's own PGRST202). Production passes nothing. */
-  door?: string
 }
 
 /** Migration 167's one-transaction ingest door (F267, tasks-M6 TD3). */
 export const INGEST_DOOR = 'ingest_write_batch'
-/** Its parameters as 167 defines them — what this file sends (D426's
- *  "not pushed" test compares a PGRST202's named arguments against these). */
-export const INGEST_DOOR_PARAMS: readonly string[] = ['p_now', 'p_rows']
 
 export interface IngestGamesReport {
   /** Games the provider returned for the season. */
@@ -209,10 +183,8 @@ export interface IngestStatsReport {
 /** How this poll's lines and queue rows were written. */
 export interface IngestWriteReport {
   /** `door` — `ingest_write_batch` (167): lines + events + queue, one
-   *  transaction per batch; `two_call_fallback` — the database predates 167
-   *  (the door answered PGRST202): queue, then stats (R706), NO events;
-   *  `none` — nothing to write. */
-  path: 'door' | 'two_call_fallback' | 'none'
+   *  transaction per batch; `none` — nothing to write. */
+  path: 'door' | 'none'
   /** The door this poll asked for. */
   door: string
 }
@@ -928,7 +900,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
       enqueued: 0,
       restamped: 0,
     },
-    write: { path: 'none', door: io.door ?? INGEST_DOOR },
+    write: { path: 'none', door: INGEST_DOOR },
     corrections: {
       detected: 0,
       players: 0,
@@ -944,22 +916,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
   }
 }
 
-/** Player ids already queued for (season, week) — so the report can tell a
- *  NEW queue row from a RE-STAMPED one (paged past the cap). */
-async function readQueuedPlayers(db: SyncClient, season: number, week: number): Promise<Set<string>> {
-  const rows = await pageAll<{ player_id: string }>((from, to) =>
-    db
-      .from('score_fanout')
-      .select('player_id', { count: 'exact' })
-      .eq('season', season)
-      .eq('week', week)
-      .order('player_id')
-      .range(from, to),
-  )
-  return new Set(rows.map((r) => r.player_id))
-}
-
-/** A line as the door writes it (the two-call path adds `updated_at`). */
+/** A line as the door writes it. */
 function statPayload(row: StatRow, season: number, week: number): Record<string, unknown> {
   return {
     player_id: row.player_id,
@@ -986,12 +943,9 @@ interface DoorReport {
 
 /**
  * Migration 167's door (F267, TD3): each batch's lines, their correction
- * events and their enqueue in ONE transaction. Returns `'absent'` when the
- * FIRST call is answered "no such function" (PGRST202 naming this door with
- * only its own arguments — D426's `isDoorNotPushed`: a hint offering the door
- * under another signature is drift, not absence, and throws); nothing was
- * written then. A later batch meeting the same answer throws (the door does
- * not vanish mid-poll). Every count is asserted — loud, never a quiet zero.
+ * events and their enqueue in ONE transaction. Any error — a missing door
+ * (PGRST202) included, since F508 — throws by name. Every count is asserted
+ * — loud, never a quiet zero.
  */
 async function writeThroughDoor(
   db: SyncClient,
@@ -1003,7 +957,7 @@ async function writeThroughDoor(
   deltaIds: ReadonlySet<string>,
   corrections: ReadonlyMap<string, MovedKey[]>,
   report: IngestReport,
-): Promise<'door' | 'absent'> {
+): Promise<void> {
   for (let i = 0; i < statWrites.length; i += BATCH) {
     const batch = statWrites.slice(i, i + BATCH)
     const rows = batch.map((row) => ({
@@ -1015,7 +969,6 @@ async function writeThroughDoor(
     }))
     const { data, error } = await db.rpc(door, { p_rows: rows, p_now: stamp })
     if (error) {
-      if (i === 0 && isDoorNotPushed(error, { [door]: INGEST_DOOR_PARAMS })) return 'absent'
       throw new Error(`${door} failed (${season} week ${week}, lines ${i + 1}–${i + batch.length}): ${error.message}`)
     }
     const r = data as DoorReport | null
@@ -1037,74 +990,6 @@ async function writeThroughDoor(
     report.corrections.unchangedAtWrite += r.events_unchanged
     if (r.week_state !== null) report.corrections.weekState = r.week_state
   }
-  return 'door'
-}
-
-/**
- * THE PRE-167 TWO-CALL PATH — kept ONLY as the deploy-before-push fallback
- * (TD15): exactly what this poll wrote before migration 167, unchanged.
- * Queue BEFORE stats (R706 — see the banner): a crash between the two calls
- * leaves the stored row stale, so the next poll re-detects and re-enqueues
- * the delta. The reverse order loses it permanently.
- */
-async function writeTwoCallFallback(
-  db: SyncClient,
-  season: number,
-  week: number,
-  stamp: string,
-  deltas: StatRow[],
-  statWrites: StatRow[],
-  report: IngestReport,
-): Promise<void> {
-  // ── Queue BEFORE stats (R706 — see the banner): a crash between the two
-  // calls leaves the stored row stale, so the next poll re-detects and
-  // re-enqueues the delta. The reverse order loses it permanently.
-  if (deltas.length > 0) {
-    const alreadyQueued = await readQueuedPlayers(db, season, week)
-    for (let i = 0; i < deltas.length; i += BATCH) {
-      const batch = deltas.slice(i, i + BATCH).map((row) => ({
-        season,
-        week,
-        player_id: row.player_id,
-        enqueued_at: stamp, // the SAME instant as the stat row's updated_at below
-        // 122 (R872 / F263(e)): a fresh delta CLEARS a deferral the worker
-        // put on a held row — it is claimable at once. PostgREST SETs only
-        // the payload's columns, so the lease pair is untouched (121).
-        deferred_until: null,
-      }))
-      // ON CONFLICT DO UPDATE SET enqueued_at, deferred_until — one row per
-      // PK (D292's dedupe, 109's banner), the stamp moved to THIS delta's
-      // instant so the worker's by-stamp ack cannot consume a newer delta
-      // (D321(2)); the deferral cleared (122).
-      const { data, error } = await db
-        .from('score_fanout')
-        .upsert(batch, { onConflict: 'season,week,player_id', ignoreDuplicates: false })
-        .select('player_id')
-      if (error) throw new Error(`score_fanout enqueue failed: ${error.message}`)
-      const returned = data ?? []
-      if (returned.length !== batch.length) {
-        throw new Error(`score_fanout enqueue stamped ${returned.length} of ${batch.length} rows — refusing to call that success`)
-      }
-      for (const row of returned) {
-        if (alreadyQueued.has(row.player_id)) report.stats.restamped += 1
-        else report.stats.enqueued += 1
-      }
-    }
-  }
-
-  if (statWrites.length > 0) {
-    await upsertCounted(
-      db,
-      'player_stats',
-      statWrites.map((row) => ({
-        ...statPayload(row, season, week),
-        updated_at: stamp, // injected time, never the wall (D12)
-      })),
-      'player_id,season,week',
-      'player_id',
-      `player_stats (${season} week ${week})`,
-    )
-  }
 }
 
 /** Why `report.corrections` reads as it does (CLAUDE.md: never an unexplained zero). */
@@ -1115,7 +1000,6 @@ function correctionsReason(report: IngestReport, deltas: number, writes: number)
   if (c.detected === 0 && c.settled > 0)
     return `${deltas} scoring delta(s): ${c.settled} key(s) moved within ${SETTLE_GRACE_MS / 3_600_000} h of the game being seen final — ordinary post-game settling, re-scored, not a correction (F511)`
   if (c.detected === 0) return `${deltas} scoring delta(s), none to a line whose game was final before this poll — ordinary live deltas, no correction`
-  if (report.write.path === 'two_call_fallback') return `${c.detected} detected, NOT recorded — the database predates migration 167`
   if (c.recorded === 0) return `${c.detected} detected, none recorded — ${c.replayed} already recorded at this instant, ${c.unchangedAtWrite} already equal when written`
   return `${c.recorded} recorded`
 }
@@ -1276,7 +1160,7 @@ export async function ingestWeek(
   const deltas = [...statDiff.inserts, ...statDiff.updates]
   report.stats.deltas = deltas.length
   const statWrites = [...statDiff.inserts, ...statDiff.updates, ...statDiff.metaOnly]
-  const door = io.door ?? INGEST_DOOR
+  const door = INGEST_DOOR
   const detected: DetectedCorrection[] = []
   for (const [player_id, keys] of corrections) {
     for (const k of keys) detected.push({ player_id, stat_key: k.stat_key, old: k.old, new: k.new })
@@ -1285,13 +1169,8 @@ export async function ingestWeek(
   report.corrections.players = corrections.size
   report.corrections.keys = detected
   if (statWrites.length > 0) {
-    const through = await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report)
-    if (through === 'absent') {
-      report.write.path = 'two_call_fallback'
-      await writeTwoCallFallback(db, season, week, stamp, deltas, statWrites, report)
-    } else {
-      report.write.path = 'door'
-    }
+    await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report)
+    report.write.path = 'door'
   }
   report.corrections.reason = correctionsReason(report, deltas.length, statWrites.length)
 
@@ -1328,13 +1207,7 @@ export async function ingestWeek(
       `score_fanout: all ${deltas.length} deltas already queued (PK dedupe) — re-stamped to ${stamp} (D321(2))`,
     )
   }
-  // M6 L.E2.1 — the write path when it is the fallback (never silent, TD15),
-  // and the poll's corrections when it found any.
-  if (report.write.path === 'two_call_fallback') {
-    report.reasons.push(
-      `${door} absent — the database predates migration 167 (PGRST202): the lines and the queue were written through the pre-167 two-call path (queue, then stats — R706); no stat_correction_events recorded`,
-    )
-  }
+  // M6 L.E2.1 — the poll's corrections when it found any.
   if (report.corrections.settled > 0) {
     report.reasons.push(
       `stat settle: ${report.corrections.settled} key(s) on a final game's line moved within ${SETTLE_GRACE_MS / 3_600_000} h of the game being seen final — ordinary post-game settling (F511): re-scored as always, not recorded as a correction`,
@@ -1343,11 +1216,9 @@ export async function ingestWeek(
   if (report.corrections.detected > 0) {
     const c = report.corrections
     report.reasons.push(
-      report.write.path === 'door'
-        ? `stat_correction_events: ${c.recorded} recorded for ${c.players} player(s) (week ${c.weekState ?? '?'})` +
-            (c.replayed > 0 ? `; ${c.replayed} already recorded at this instant` : '') +
-            (c.unchangedAtWrite > 0 ? `; ${c.unchangedAtWrite} already equal when written` : '')
-        : `stat_correction_events: ${c.detected} correction key(s) for ${c.players} player(s) detected and NOT recorded — the table arrives with migration 167`,
+      `stat_correction_events: ${c.recorded} recorded for ${c.players} player(s) (week ${c.weekState ?? '?'})` +
+        (c.replayed > 0 ? `; ${c.replayed} already recorded at this instant` : '') +
+        (c.unchangedAtWrite > 0 ? `; ${c.unchangedAtWrite} already equal when written` : ''),
     )
   }
 
