@@ -19,7 +19,6 @@
  */
 import type { LeagueDetail } from '@/hooks/use-league'
 import type { ScheduleWeek } from '@/hooks/use-schedule'
-import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { describeWaiverSchedule, type WAIVER_SCHEDULE_KEYS } from '@/lib/leagues/time/waiver-schedule'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
@@ -27,7 +26,6 @@ import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
 import { currentWeekOf } from './lineup-editor-ops'
-import { splitRows } from './matchup-view-ops'
 
 // ---------------------------------------------------------------------------
 // The week the hero shows
@@ -45,42 +43,8 @@ export function heroWeek(weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]
   return currentWeekOf(weeks)
 }
 
-// ---------------------------------------------------------------------------
-// The viewer's matchup in the week's document
-// ---------------------------------------------------------------------------
-
-export type HeroMatchup =
-  | { kind: 'mine'; row: MatchupRow }
-  | { kind: 'no_seat' }
-  | { kind: 'none_for_team' }
-  | { kind: 'no_rows' }
-
-/**
- * The viewer's PRIMARY matchup this week, strictly theirs — a stranger's row
- * is never the hero (the matchup view's `selectedMatchup` falls back to the
- * first row because a page must show something; a hero card must not
- * pretend). `no_seat` = the viewer manages no franchise here (a commissioner
- * without a team); `none_for_team` = the week has rows but none carries the
- * team (a playoff week after an exit — NOT a bye: 118 writes a bye as a row
- * with `away_team_id NULL`, which lands in `mine`; R896); `no_rows` = the
- * week has no pairings on record yet.
- */
-export function heroMatchup(matchups: readonly MatchupRow[], myTeamId: string | null): HeroMatchup {
-  if (!myTeamId) return { kind: 'no_seat' }
-  const { primary } = splitRows(matchups)
-  if (primary.length === 0) return { kind: 'no_rows' }
-  const row = primary.find((m) => m.home_team_id === myTeamId || m.away_team_id === myTeamId)
-  return row ? { kind: 'mine', row } : { kind: 'none_for_team' }
-}
-
 export const NO_SEAT_COPY = 'You don’t manage a team in this league — the matchups page shows the whole week.'
 export const NO_ROWS_COPY = 'No pairings on record for this week yet.'
-export const NONE_FOR_TEAM_COPY = 'No matchup on record for your team this week.'
-/** R896: no "bye" hedge — under 118 a bye is a ROW (`away_team_id NULL`)
- *  that reaches the `mine` branch and the Scoreboard's own bye copy; this
- *  branch is an early exit. The bracket pointer arrived with L.D5.5: the
- *  bracket card sits on this very page. */
-export const PLAYOFF_NONE_FOR_TEAM_COPY = 'No playoff game on record for your team this week — the bracket below shows the round.'
 export const PLAYOFF_NO_ROWS_COPY = 'Playoff week — the pairings appear when the previous round rolls over.'
 export const NO_LADDER_COPY = 'No schedule yet — it is generated the moment the draft completes.'
 

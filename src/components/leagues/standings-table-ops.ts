@@ -149,7 +149,7 @@ export function skipNotes(skipped: unknown, teamNames: ReadonlyMap<string, strin
       ? teams.map((t) => teamNames.get(String(t)) ?? String(t)).join(', ')
       : ''
     if (reason === 'group_of_3_or_more') {
-      notes.push(`Head-to-head skipped for a tie of three or more (E63): ${names}.`)
+      notes.push(`Head-to-head skipped for a tie of three or more: ${names}.`)
     } else if (reason === 'total_points') {
       notes.push(`Head-to-head does not apply in a total-points league (E64)${names ? `: ${names}` : ''}.`)
     }

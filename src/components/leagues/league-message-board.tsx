@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from 'react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -19,6 +18,16 @@ export const MESSAGE_BOARD_EMPTY_COPY = 'No messages yet — say something to th
 export const MESSAGE_BOARD_ERROR_COPY = 'Couldn’t load the message board.'
 export const FORMER_MEMBER_LABEL = 'Former member'
 const MAX_MESSAGE = 500
+export const POST_NOT_MEMBER_COPY = 'You’re no longer a member of this league.'
+export const POST_FAILED_COPY = 'Couldn’t post — try again.'
+
+/** R1476: never show a raw database error — an RLS refusal reads as lost
+ *  membership, anything else as a plain retry. */
+export function postErrorCopy(error: unknown): string {
+  const msg = error instanceof Error ? error.message : ''
+  if (/row-level security|permission denied|42501/i.test(msg)) return POST_NOT_MEMBER_COPY
+  return POST_FAILED_COPY
+}
 
 /**
  * League Home's "Message board" card (League UX batch 4, D479) — the
@@ -47,12 +56,6 @@ export function LeagueMessageBoard({ leagueId, data, viewerId }: { leagueId: str
       <CardHeader className="min-h-0 py-2">
         <CardTitle className="flex items-center gap-2 text-[12px]">
           Message board
-          {rows.length > 0 && (
-            <Badge variant="stroke" className="ml-auto" data-message-count>
-              <span className="fs-num">{rows.length}</span>
-              {rows.length === 1 ? ' message' : ' messages'}
-            </Badge>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 px-card-pad py-3">
@@ -115,7 +118,7 @@ export function LeagueMessageBoard({ leagueId, data, viewerId }: { leagueId: str
         )}
         {send.isError && (
           <p role="alert" className="text-[11px] font-semibold text-negative">
-            Couldn’t post that — {send.error instanceof Error ? send.error.message : 'try again'}.
+            {postErrorCopy(send.error)}
           </p>
         )}
       </CardContent>

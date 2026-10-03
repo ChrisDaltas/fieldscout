@@ -8,7 +8,6 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LeagueDetail } from '@/hooks/use-league'
-import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
 import * as ops from './league-home-season-ops'
@@ -19,22 +18,12 @@ import {
   LINEUP_READING_COPY,
   championName,
   draftDoors,
-  heroMatchup,
   heroWeek,
   scoringLive,
   setLineupCopy,
   tradeChip,
   waiverChip,
 } from './league-home-season-ops'
-
-const T1 = 't1'
-const T2 = 't2'
-const T3 = 't3'
-const T4 = 't4'
-
-function row(over: Partial<MatchupRow> & Pick<MatchupRow, 'id' | 'home_team_id' | 'away_team_id'>): MatchupRow {
-  return { season: 2099, week: 2, round_type: 'regular', status: 'live', home_score: null, away_score: null, result: null, is_overridden: false, updated_at: null, ...over }
-}
 
 // ---------------------------------------------------------------------------
 // The week — the ladder's current week, never a literal (the DoD probe)
@@ -57,34 +46,6 @@ describe('heroWeek — the ladder’s CURRENT week (D316(2)), never week 1 by ha
   it('a season deep in December: week 14 live over 13 finals', () => {
     const late = Array.from({ length: 14 }, (_, i) => ({ week: i + 1, status: i + 1 === 14 ? 'live' : 'final' }))
     expect(heroWeek(late)).toBe(14)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// The viewer's matchup — strictly theirs
-// ---------------------------------------------------------------------------
-
-describe('heroMatchup — the viewer’s own primary row, or the reason there is none', () => {
-  const rows = [row({ id: 'm1', home_team_id: T1, away_team_id: T2 }), row({ id: 'm2', home_team_id: T3, away_team_id: T4 })]
-  it('mine — home or away', () => {
-    expect(heroMatchup(rows, T1)).toEqual({ kind: 'mine', row: rows[0] })
-    expect(heroMatchup(rows, T4)).toEqual({ kind: 'mine', row: rows[1] })
-  })
-  it('a stranger’s row is NEVER the hero — none_for_team, not the first row', () => {
-    expect(heroMatchup(rows, 't9')).toEqual({ kind: 'none_for_team' })
-  })
-  it('no seat (a commissioner without a franchise) · no rows (a playoff week before its round)', () => {
-    expect(heroMatchup(rows, null)).toEqual({ kind: 'no_seat' })
-    expect(heroMatchup([], T1)).toEqual({ kind: 'no_rows' })
-  })
-  it('a secondary (second-opponent) row never stands in for the primary', () => {
-    const secondary = row({ id: 's1', home_team_id: T1, away_team_id: T3, round_type: 'secondary' })
-    expect(heroMatchup([secondary], T1)).toEqual({ kind: 'no_rows' })
-    expect(heroMatchup([secondary, rows[0]], T1)).toEqual({ kind: 'mine', row: rows[0] })
-  })
-  it('a bye row (away NULL) is still mine', () => {
-    const bye = row({ id: 'b1', home_team_id: T1, away_team_id: null })
-    expect(heroMatchup([bye], T1)).toEqual({ kind: 'mine', row: bye })
   })
 })
 
