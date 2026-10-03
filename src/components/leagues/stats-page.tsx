@@ -85,7 +85,7 @@ function StatsContent({ leagueId, detail }: { leagueId: string; detail: LeagueDe
           <CardHeader className="min-h-0 py-2">
             <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
               {H2H_TITLE}
-              <span className="ml-auto w-full max-w-[220px]">
+              <span className="ml-auto w-56 max-w-full">
                 <Select value={teamId ?? ''} onValueChange={setPicked}>
                   <SelectTrigger className="h-btn-md px-2 text-[12px]" data-stats-team={teamId ?? ''} aria-label="Team">
                     <SelectValue placeholder="Pick a team" />
