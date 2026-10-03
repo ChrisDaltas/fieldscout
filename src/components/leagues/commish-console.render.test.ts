@@ -76,7 +76,6 @@ const T1 = 'c3330000-0000-4000-8000-000000000101'
 const T2 = 'c3330000-0000-4000-8000-000000000102'
 const T3 = 'c3330000-0000-4000-8000-000000000103'
 const T4 = 'c3330000-0000-4000-8000-000000000104'
-const T_RETIRED = 'c3330000-0000-4000-8000-000000000105'
 const TRADE = 'c3330000-0000-4000-8000-000000000301'
 
 const BASE = `/app/leagues/${LEAGUE}`
@@ -109,7 +108,6 @@ function detailWith(status: string, over: Partial<LeagueDetail> = {}, settingsOv
       { id: T2, name: 'Bravo', owner_id: 'user-commish', status: 'active', created_at: null },
       { id: T3, name: 'Charlie', owner_id: 'user-commish', status: 'active', created_at: null },
       { id: T4, name: 'Delta', owner_id: 'user-commish', status: 'orphaned', created_at: null },
-      { id: T_RETIRED, name: 'Old Franchise', owner_id: 'user-commish', status: 'retired', created_at: null },
     ],
     my_role: 'commissioner',
     active_draft: null,
@@ -311,9 +309,8 @@ describe('in season — needs you, the tool doors, recent actions', () => {
     const html = renderConsole()
     expect(toolGroupKeys(html)).toEqual(['lineups', 'scores', 'trades', 'schedule', 'settings', 'members'])
     const tools = block(html, 'data-commish-tools-groups')
-    // Lineups & rosters: every team that still plays — the retired franchise is history.
+    // Lineups & rosters: every team (none is ever retired since 176 — F556).
     for (const id of [T1, T2, T3, T4]) expect(tools).toContain(`href="${BASE}/team/${id}"`)
-    expect(tools).not.toContain(`href="${BASE}/team/${T_RETIRED}"`)
     expect(tools).toContain(`href="${BASE}/matchup"`)
     expect(tools).toContain(`href="${BASE}/trades"`)
     expect(tools).toContain(`href="${BASE}/schedule"`)

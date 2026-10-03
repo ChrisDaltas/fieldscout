@@ -200,7 +200,7 @@ describe('readCommishSummary — an empty league', () => {
 // ---------------------------------------------------------------------------
 
 describe('unmanaged_teams — D339’s predicate with 139’s switch', () => {
-  it('lists a seat with a member row and no manager and autopilot OFF (no row, or a stored false); skips a managed seat, an autopilot-ON seat and a retired franchise; REPORTS a team with no member row', async () => {
+  it('lists a seat with a member row and no manager and autopilot OFF (no row, or a stored false); skips a managed seat, an autopilot-ON seat; REPORTS a team with no member row', async () => {
     const { client } = clientDouble({
       tables: {
         teams: ok([
@@ -208,7 +208,6 @@ describe('unmanaged_teams — D339’s predicate with 139’s switch', () => {
           { id: T(2), name: 'Placeholder', status: 'active' },
           { id: T(3), name: 'Orphaned, switch stored off', status: 'orphaned' },
           { id: T(4), name: 'Orphaned, on autopilot', status: 'orphaned' },
-          { id: T(5), name: 'Retired', status: 'retired' },
           { id: T(6), name: 'No member row', status: 'active' },
         ]),
         league_members: ok([
@@ -216,7 +215,6 @@ describe('unmanaged_teams — D339’s predicate with 139’s switch', () => {
           { team_id: T(2), user_id: null },
           { team_id: T(3), user_id: null },
           { team_id: T(4), user_id: null },
-          { team_id: T(5), user_id: null },
           { team_id: null, user_id: 'c3200000-0000-4000-8000-0000000000bb' }, // a co-commissioner with no team
         ]),
         team_autopilot: ok([

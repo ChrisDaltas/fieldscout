@@ -381,9 +381,8 @@ function ToolsCard({ leagueId, phase, data }: { leagueId: string; phase: Console
 }
 
 function ToolGroupRow({ leagueId, group, data }: { leagueId: string; group: ToolGroup; data: LeagueDetail }) {
-  // Retired franchises play no more weeks (139's seat rule) — their pages are
-  // history, not a place to act.
-  const teams = group.teamDoors ? data.teams.filter((t) => t.status !== 'retired') : []
+  // F556: no team is ever retired since 176 (L.E1.42) — every team has a door.
+  const teams = group.teamDoors ? data.teams : []
   return (
     <section className="flex flex-col gap-1.5 py-2.5" aria-label={group.title} data-tool-group={group.key}>
       <h3 className="text-[12px] font-bold text-ink">{group.title}</h3>

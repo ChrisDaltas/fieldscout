@@ -18,8 +18,8 @@
  *   1. `unmanaged_teams` — teams with no manager and autopilot OFF: D339's
  *      predicate over `league_members` (a member row for the team and none
  *      carrying a `user_id`) with 139's `team_autopilot` (no row = OFF), the
- *      same reads `readRosters` makes. A retired franchise plays no more
- *      weeks and is excluded (139's own seat rule). A team with NO member
+ *      same reads `readRosters` makes. (No team is ever retired since 176 —
+ *      F556: no retired filter.) A team with NO member
  *      row at all is D339's unsafe direction — autopilot declines it and the
  *      switch refuses it — so it is REPORTED in `no_seat_row`, never listed
  *      as switchable and never dropped.
@@ -108,10 +108,10 @@ export interface UnmanagedTeam extends TeamRef {
 export type UnmanagedTeamsSection =
   | {
       state: 'ok'
-      /** No manager, autopilot OFF, not retired — the commissioner's call
+      /** No manager, autopilot OFF — the commissioner's call
        *  (put it on autopilot, or find a manager). */
       teams: UnmanagedTeam[]
-      /** Not retired, but no `league_members` row at all (D339's unsafe
+      /** No `league_members` row at all (D339's unsafe
        *  direction): autopilot declines it and the switch refuses it. */
       no_seat_row: TeamRef[]
     }
@@ -222,7 +222,6 @@ async function unmanagedTeams(supabase: Supabase, leagueId: string): Promise<Sec
   const unmanaged: UnmanagedTeam[] = []
   const noSeatRow: TeamRef[] = []
   for (const team of teams) {
-    if (team.status === 'retired') continue
     if (!seatRow.has(team.id)) {
       noSeatRow.push({ team_id: team.id, name: team.name })
       continue
