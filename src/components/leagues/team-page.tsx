@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,7 +22,7 @@ import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-overr
 
 import { commishTeamHref } from './activity-page-ops'
 import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
-import { Crest } from './league-cells'
+import { Crest, LeaguePageTitle } from './league-cells'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
@@ -194,7 +193,7 @@ function TeamPageContent({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
+      <LeaguePageTitle
         title={teamName}
         actions={
           <>
@@ -209,12 +208,6 @@ function TeamPageContent({
                 </Link>
               </Button>
             )}
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}`}>
-                <Icon name="cup" size={13} />
-                {detail.league.name}
-              </Link>
-            </Button>
           </>
         }
       />
@@ -252,11 +245,9 @@ function TeamPageContent({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {/* The mode, said at the TOP of the page — above the week picker and
-                the editor, so "it's on" is legible on a phone without
-                scrolling. A resting condition, so it is a fill, never a shadow
-                (CLAUDE.md). */}
-            {inOverride && <Badge variant="lime" data-override-mode-badge>✸ Override mode ON</Badge>}
+            {/* League UX batch 1: "override is on" is said ONCE, in the league
+                header (desktop and the mobile copy at the top of the page) —
+                no second badge here. */}
             {/* F344: the flag now also means "a roster move changed this row",
                 so the words widened with it (`team-commish-ops.ts`). */}
             {/* §10.3 / F233(d): the ✸ badge lands on the log — every action naming this team. */}
@@ -354,7 +345,7 @@ function TeamPageContent({
         <>
           {lineup.data === null && (
             <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3">
-              Nothing set for week <span className="fs-num">{week}</span> yet — the week opens with last week’s legal lineup carried over (§11.2); until then every seat is open here.
+              Nothing set for week <span className="fs-num">{week}</span> yet — the week opens with last week’s legal lineup carried over; until then every seat is open here.
             </p>
           )}
           <LineupEditor
@@ -403,7 +394,7 @@ function TeamPageContent({
 function TeamPageSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Team" />
+      <LeaguePageTitle title="Team" />
       <Skeleton className="h-16 rounded-sm" />
       <Skeleton className="h-7 w-64 rounded-sm" />
       <EditorSkeleton />
@@ -437,7 +428,7 @@ export function ProblemCard({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={heading} />
+      <LeaguePageTitle title={heading} />
       <Card className="border-negative bg-negative-soft">
         <CardContent className="flex flex-col items-start gap-2 p-4">
           <p className="text-[13px] font-bold" role="alert">

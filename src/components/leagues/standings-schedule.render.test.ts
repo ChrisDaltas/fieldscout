@@ -46,6 +46,7 @@ import {
   type RemixPreview,
 } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
+import { useOverrideMode } from '@/stores/commish-override-store'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
@@ -64,6 +65,10 @@ import { StandingsPage } from './standings-page'
 import { NO_FINAL_WEEKS_COPY, STANDINGS_OVERRIDES_UNKNOWN_COPY } from './standings-table-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 
+vi.mock('@/stores/commish-override-store', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
+  return { ...orig, useOverrideMode: vi.fn(() => false) }
+})
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-commish' }, profile: { username: 'chris' } }),
 }))
@@ -406,9 +411,23 @@ describe('schedule — the grid and the commissioner’s doors', () => {
     expect(html).not.toMatch(/L\.D\d|Q39|Q30/)
   })
 
-  it('the COMMISSIONER sees Remix and an Edit on every editable row of the upcoming week — and the ladder’s reason hint', () => {
+  it('the COMMISSIONER, override OFF: no Remix, no Edit, no hint — the schedule reads like a manager’s (League UX batch 1)', () => {
     const html = renderSchedule()
-    expect(html).toContain('data-remix-open')
+    expect(html).toContain('data-schedule-grid')
+    expect(html).not.toContain('data-remix-open')
+    expect(html).not.toContain('data-edit-matchup')
+    expect(html).not.toContain(REASON_HINT_COPY)
+  })
+
+  it('the COMMISSIONER, override ON: an Edit on every editable row of the upcoming week and the ladder’s reason hint — and still NO Remix (it lives in the console)', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    let html: string
+    try {
+      html = renderSchedule()
+    } finally {
+      vi.mocked(useOverrideMode).mockReturnValue(false)
+    }
+    expect(html).not.toContain('data-remix-open')
     expect(between(html, 'data-week="1"', 'data-week="2"')).not.toContain('data-edit-matchup')
     expect(between(html, 'data-week="2"', 'data-week="3"')).not.toContain('data-edit-matchup')
     expect(between(html, 'data-week="3"', 'data-week="4"').match(/data-edit-matchup/g)).toHaveLength(4)

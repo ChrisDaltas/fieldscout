@@ -44,7 +44,7 @@ import type { LiveScoringFlags } from '@/lib/sync/ingest-flags'
 
 import { useOverrideMode } from '@/stores/commish-override-store'
 
-import { HAND_PICKED_BADGE, HAND_PICK_BAR_OFF_COPY, HAND_PICK_BAR_ON_COPY, HAND_PICK_NO_CHANGES_COPY, STOOD_DOWN_COPY } from './bracket-hand-pick-ops'
+import { HAND_PICKED_BADGE, HAND_PICK_NO_CHANGES_COPY, STOOD_DOWN_COPY } from './bracket-hand-pick-ops'
 import { BracketHandPickPanelView } from './bracket-hand-pick-panel'
 import { LeagueHomeStates } from './league-home-states'
 import {
@@ -432,29 +432,43 @@ function resultLink(html: string, matchupId: string): string {
 }
 
 describe('commissioner edit affordances (§10.1 / §16.2) — the hand-pick switch (L.E1.16) and "Edit a result" as a LINK to each game’s matchup page (L.E1.23, F377(c))', () => {
-  it('the commissioner sees ONE "Edit a result" link per game with an opponent, each to that game’s matchup page — no pending door; a bye gets none', () => {
-    const commish = renderTab({ bracket: BUILT_DOC })
-    expect(commish).toContain('data-bracket-hand-pick')
-    expect(commish).toContain('data-override-toggle="off"')
-    // The pending door is GONE — no button, no pending copy.
-    expect(commish).not.toContain('data-commish-door')
-    expect(commish).not.toContain('Results are corrected on the matchup page')
-    // Round 1: two byes (m-r1-a, m-r1-b) and two played games; round 2: two live games.
-    expect(commish.match(/data-result-link="/g)).toHaveLength(4)
-    for (const id of ['m-r1-c', 'm-r1-d', 'm-r2-a', 'm-r2-b']) {
-      const link = resultLink(commish, id)
-      expect(link).toContain(`href="/app/leagues/${LEAGUE}/matchup/${id}"`)
-      expect(link).toContain(`>${EDIT_RESULT_LABEL}`)
+  it('override OFF (League UX batch 1): a commissioner sees NO "Edit a result" link and no switch — the commissioner tools wait for override mode', () => {
+    const off = renderTab({ bracket: BUILT_DOC })
+    expect(off).toContain('data-bracket-hand-pick') // premise: the commissioner arm rendered
+    expect(off).not.toContain('data-override-toggle')
+    expect(off).not.toContain('data-result-link')
+  })
+
+  it('override ON: the commissioner sees ONE "Edit a result" link per game with an opponent, each to that game’s matchup page — no pending door; a bye gets none', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
+    try {
+      const commish = renderTab({ bracket: BUILT_DOC })
+      expect(commish).toContain('data-bracket-hand-pick')
+      expect(commish).not.toContain('data-override-toggle')
+      // The pending door is GONE — no button, no pending copy.
+      expect(commish).not.toContain('data-commish-door')
+      expect(commish).not.toContain('Results are corrected on the matchup page')
+      // Round 1: two byes (m-r1-a, m-r1-b) and two played games; round 2: two live games.
+      expect(commish.match(/data-result-link="/g)).toHaveLength(4)
+      for (const id of ['m-r1-c', 'm-r1-d', 'm-r2-a', 'm-r2-b']) {
+        const link = resultLink(commish, id)
+        expect(link).toContain(`href="/app/leagues/${LEAGUE}/matchup/${id}"`)
+        expect(link).toContain(`>${EDIT_RESULT_LABEL}`)
+      }
+      expect(commish).not.toContain('data-result-link="m-r1-a"')
+      expect(commish).not.toContain('data-result-link="m-r1-b"')
+      // Each link sits INSIDE its own round's column — round 1's two in round 1, round 2's in round 2.
+      expect(between(commish, 'data-round="1"', 'data-round="2"').match(/data-result-link="/g)).toHaveLength(2)
+      expect(between(commish, 'data-round="2"', 'data-round="3"').match(/data-result-link="/g)).toHaveLength(2)
+    } finally {
+      vi.mocked(useOverrideMode).mockReturnValue(false)
     }
-    expect(commish).not.toContain('data-result-link="m-r1-a"')
-    expect(commish).not.toContain('data-result-link="m-r1-b"')
-    // Each link sits INSIDE its own round's column — round 1's two in round 1, round 2's in round 2.
-    expect(between(commish, 'data-round="1"', 'data-round="2"').match(/data-result-link="/g)).toHaveLength(2)
-    expect(between(commish, 'data-round="2"', 'data-round="3"').match(/data-result-link="/g)).toHaveLength(2)
   })
 
   it('a two-week game gets one link per week row, each naming its week; a link is an anchor, resting flat', () => {
+    vi.mocked(useOverrideMode).mockReturnValue(true)
     const html = renderTab({ bracket: COMPLETE_DOC, detail: detailWith({ status: 'complete', champion_team_id: T.alpha }) })
+    vi.mocked(useOverrideMode).mockReturnValue(false)
     const w17 = resultLink(html, 'm-r3-w17')
     const w18 = resultLink(html, 'm-r3-w18')
     expect(w17).toMatch(/^<a /)
@@ -478,10 +492,11 @@ describe('commissioner edit affordances (§10.1 / §16.2) — the hand-pick swit
 // ---------------------------------------------------------------------------
 
 describe('the commissioner’s playoff hand-pick (§11.5, L.E1.16)', () => {
-  it('override mode OFF: the switch is present, no game carries a "Change pairing" door', () => {
+  it('override mode OFF: no switch here (it lives in League settings / the console), no game carries a "Change pairing" door', () => {
     vi.mocked(useOverrideMode).mockReturnValue(false)
     const html = renderTab({ bracket: BUILT_UNPLAYED_DOC })
     expect(html).toContain('data-override-mode="off"')
+    expect(html).not.toContain('data-override-toggle')
     expect(html).not.toContain('data-hand-pick-open')
   })
 
@@ -535,7 +550,7 @@ describe('the commissioner’s playoff hand-pick (§11.5, L.E1.16)', () => {
     expect(landed).not.toContain('This change walked past: bracket_sync_rebuild')
     const noop = renderToStaticMarkup(createElement(BracketHandPickPanelView, { ...props, draft: { homeTeamId: game.home_team_id, awayTeamId: null }, outcome: { no_changes: true, bypassed: [] } }))
     expect(noop).toContain('data-hand-pick-outcome="no_changes"')
-    for (const copy of [HAND_PICK_BAR_OFF_COPY, HAND_PICK_BAR_ON_COPY, STOOD_DOWN_COPY, HAND_PICK_NO_CHANGES_COPY]) {
+    for (const copy of [STOOD_DOWN_COPY, HAND_PICK_NO_CHANGES_COPY]) {
       expect(copy).not.toMatch(/\b[QEF]\d+\b|L\.[DE]\d|M6|134/)
     }
   })

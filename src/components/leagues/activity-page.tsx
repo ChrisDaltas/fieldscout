@@ -1,13 +1,10 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { invalidateCommishLog, useCommishLog } from '@/hooks/use-commish-log'
@@ -41,6 +38,7 @@ import { correctionWeekOptions } from './corrections-view-ops'
 import { ChoiceSelect } from './settings-form-controls'
 import { ReconnectingBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
+import { LeaguePageTitle } from './league-cells'
 
 /**
  * League activity — §16.1 `…/leagues/[id]/activity` "Activity + Commissioner
@@ -94,7 +92,7 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
   if (league.isPending) {
     return (
       <div className="flex flex-col gap-4" data-activity-page="loading">
-        <PageHeader title={ACTIVITY_PAGE_TITLE} />
+        <LeaguePageTitle title={ACTIVITY_PAGE_TITLE} />
         <div className="flex flex-col gap-1.5" data-skeleton="activity-page">
           {Array.from({ length: 5 }, (_, i) => (
             <Skeleton key={i} className="h-8 rounded-sm" />
@@ -122,17 +120,7 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
 
   return (
     <div className="flex flex-col gap-4" data-activity-page={route.tab}>
-      <PageHeader
-        title={ACTIVITY_PAGE_TITLE}
-        actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {data.league.name}
-            </Link>
-          </Button>
-        }
-      />
+      <LeaguePageTitle title={ACTIVITY_PAGE_TITLE} />
       {connection === 'reconnecting' && <ReconnectingBanner />}
       <Tabs value={route.tab} onValueChange={(value) => go({ tab: value as ActivityTab, week: null, team: null, entry: null })}>
         <TabsList aria-label={ACTIVITY_PAGE_TITLE} className="flex-wrap" data-activity-tabs>

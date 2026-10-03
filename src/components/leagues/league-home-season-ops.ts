@@ -27,9 +27,6 @@ import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 import { mockLauncherHref } from '@/components/draft/mock-launcher-entry'
 
-import { activityHref } from './activity-page-ops'
-import { CONSOLE_NAV_LABEL, commishConsoleHref } from './commish-console-ops'
-import { teamPageHref } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
 import { splitRows } from './matchup-view-ops'
 
@@ -228,37 +225,9 @@ export function championName(detail: Pick<LeagueDetail, 'league' | 'teams'>): st
 }
 
 // ---------------------------------------------------------------------------
-// Navigation — the league's in-season pages (F251(c) / F253(c) / F275(c))
+// Navigation — the league's pages are the league header's sub-nav now
+// (`league-shell-ops.ts`, League UX batch 1); only the draft doors live here.
 // ---------------------------------------------------------------------------
-
-/** The Activity page's door in the league nav (L.E1.34, F544). */
-export const ACTIVITY_NAV_LABEL = 'Activity'
-
-export interface LeagueNavItem {
-  key: 'team' | 'matchups' | 'standings' | 'schedule' | 'players' | 'activity' | 'commish'
-  label: string
-  href: string
-}
-
-/** The in-season surfaces, in reading order. The team entry is the viewer's
- *  OWN franchise and is absent when they manage none. The Commissioner door
- *  (M6 L.E1.33) is last and only for a commissioner or co-commissioner — a
- *  hidden door, not the gate: the console's page redirects anyone else. */
-export function leagueNav(leagueId: string, myTeamId: string | null, isCommish = false): LeagueNavItem[] {
-  const base = `/app/leagues/${leagueId}`
-  const items: LeagueNavItem[] = []
-  if (myTeamId) items.push({ key: 'team', label: 'My team', href: teamPageHref(leagueId, myTeamId) })
-  items.push(
-    { key: 'matchups', label: 'Matchups', href: `${base}/matchup` },
-    { key: 'standings', label: 'Standings', href: `${base}/standings` },
-    { key: 'schedule', label: 'Schedule', href: `${base}/schedule` },
-    { key: 'players', label: 'Players', href: `${base}/players` },
-    // L.E1.34 (F544): the whole feed, the commissioner log, the stat corrections.
-    { key: 'activity', label: ACTIVITY_NAV_LABEL, href: activityHref(leagueId) },
-  )
-  if (isCommish) items.push({ key: 'commish', label: CONSOLE_NAV_LABEL, href: commishConsoleHref(leagueId) })
-  return items
-}
 
 /** The two post-draft doors (F46 / R281): the draft recap and the practice
  *  launcher — post-draft the launcher is the resume/recap list surface

@@ -1,16 +1,18 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/hooks/use-auth'
 import { useCommishLog } from '@/hooks/use-commish-log'
 import { useCommishSummary } from '@/hooks/use-commish-summary'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
+import { useSchedule } from '@/hooks/use-schedule'
 import type { CommishSummary } from '@/lib/leagues/api/commish-summary-service'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
@@ -42,9 +44,11 @@ import {
   type NeedsItem,
   type ToolGroup,
 } from './commish-console-ops'
-import { teamPageHref } from './league-cells'
+import { teamPageHref, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { OverrideModeBar } from './override-mode-bar'
+import { ScheduleRemixModal } from './schedule-remix-modal'
+import { REMIX_NEEDS_OVERRIDE_COPY, remixSeasonStarted } from './schedule-view-ops'
 import { StaleDataBanner, StatusBanner } from './status-banners'
 import { InlineProblem } from './league-home-season'
 import { ProblemCard, problemCopy } from './team-page'
@@ -106,13 +110,8 @@ export function CommishConsole({ leagueId }: { leagueId: string }) {
   if (!isCommish) {
     return (
       <div className="flex flex-col gap-4" data-commish-console="not-commissioner">
-        <PageHeader title={CONSOLE_TITLE} />
+        <LeaguePageTitle title={CONSOLE_TITLE} />
         <StatusBanner tone="neutral">{NOT_COMMISSIONER_COPY}</StatusBanner>
-        <div>
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>Back to the league</Link>
-          </Button>
-        </div>
       </div>
     )
   }
@@ -140,17 +139,7 @@ function ConsoleContent({
 
   return (
     <div className="flex flex-col gap-4" data-commish-console={phase}>
-      <PageHeader
-        title={CONSOLE_TITLE}
-        actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {data.league.name}
-            </Link>
-          </Button>
-        }
-      />
+      <LeaguePageTitle title={CONSOLE_TITLE} />
 
       <OverrideModeBar on={overrideOn} onToggle={(next) => (next ? enter(leagueId) : exit())}>
         {overrideOn ? OVERRIDE_ON_COPY : OVERRIDE_OFF_COPY}
@@ -368,7 +357,7 @@ function ToolsCard({ leagueId, phase, data }: { leagueId: string; phase: Console
       </CardHeader>
       <CardContent className="flex flex-col divide-y divide-n-4 px-card-pad py-1">
         {groups.map((group) => (
-          <ToolGroupRow key={group.key} leagueId={leagueId} group={group} data={data} />
+          <ToolGroupRow key={group.key} leagueId={leagueId} group={group} data={data} phase={phase} />
         ))}
         {!afterDraft(phase) && phase !== 'other' && (
           <p className="py-2.5 text-[11px] font-medium text-n-3" data-tools-after-draft>
@@ -380,7 +369,17 @@ function ToolsCard({ leagueId, phase, data }: { leagueId: string; phase: Console
   )
 }
 
-function ToolGroupRow({ leagueId, group, data }: { leagueId: string; group: ToolGroup; data: LeagueDetail }) {
+function ToolGroupRow({
+  leagueId,
+  group,
+  data,
+  phase,
+}: {
+  leagueId: string
+  group: ToolGroup
+  data: LeagueDetail
+  phase: ConsolePhase
+}) {
   // F556: no team is ever retired since 176 (L.E1.42) — every team has a door.
   const teams = group.teamDoors ? data.teams : []
   return (
@@ -402,6 +401,7 @@ function ToolGroupRow({ leagueId, group, data }: { leagueId: string; group: Tool
           ))}
         </div>
       )}
+      {group.key === 'schedule' && phase === 'in_season' && <ConsoleRemixAction leagueId={leagueId} data={data} />}
       {group.note && (
         <p className="text-[11px] font-medium text-n-3" data-tool-note={group.key}>
           {group.note}
@@ -412,13 +412,59 @@ function ToolGroupRow({ leagueId, group, data }: { leagueId: string; group: Tool
 }
 
 // ---------------------------------------------------------------------------
+// Remix the schedule — the console is its only home (League UX batch 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Remix lives here and nowhere else (Chris 2026-10-03: "this should only be
+ * in the Commissioner settings"). The server accepts a remix only in season
+ * (111's `in_season` gate): free until Week 1 kicks off, a recorded
+ * commissioner override after it. The console mirrors that: before kickoff
+ * the button is offered as is; once the season has started it is offered
+ * only while override mode is on, and otherwise says how to get it — never
+ * a button that would be refused.
+ */
+function ConsoleRemixAction({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
+  const schedule = useSchedule(leagueId)
+  const overrideOn = useOverrideMode(leagueId)
+  const { profile } = useAuth()
+  const [open, setOpen] = useState(false)
+  if (!schedule.data) return null
+  const started = remixSeasonStarted(schedule.data.weeks)
+  const offered = !started || overrideOn
+  const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
+  return (
+    <div className="flex flex-col gap-1.5" data-console-remix={offered ? 'offered' : 'needs-override'}>
+      <div>
+        <Button variant="blue" size="sm" onClick={() => setOpen(true)} disabled={!offered} data-remix-open>
+          <Icon name="repeat" size={13} />
+          Remix schedule
+        </Button>
+      </div>
+      {!offered && <p className="text-[11px] font-medium text-n-3">{REMIX_NEEDS_OVERRIDE_COPY}</p>}
+      {offered && (
+        <ScheduleRemixModal
+          open={open}
+          onOpenChange={setOpen}
+          leagueId={leagueId}
+          current={schedule.data.matchups}
+          teamNames={teamNames}
+          leagueTimeZone={data.settings.draft.time_zone ?? null}
+          actorName={profile?.username ?? 'you'}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Shared states (§16.5.4)
 // ---------------------------------------------------------------------------
 
 function ConsoleSkeleton() {
   return (
     <div className="flex flex-col gap-4" data-commish-console="loading">
-      <PageHeader title={CONSOLE_TITLE} />
+      <LeaguePageTitle title={CONSOLE_TITLE} />
       <Skeleton className="h-12 rounded-sm" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Skeleton className="h-48 rounded-sm" />

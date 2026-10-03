@@ -382,9 +382,9 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
     expect((html.match(/data-commissioner/g) ?? []).length).toBe(1)
   })
 
-  it('the league nav carries the five in-season pages; both post-draft doors are present (F46 / R281)', () => {
+  it('League Home renders no nav of its own (the league header carries it); both post-draft doors are present (F46 / R281)', () => {
     const html = renderHome()
-    for (const key of ['team', 'matchups', 'standings', 'schedule', 'players']) expect(html).toContain(`data-nav="${key}"`)
+    expect(html).not.toContain('data-league-nav')
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/draft/recap"`)
     expect(html).toContain(`href="/app/leagues/${LEAGUE}/draft?practice=1"`)
     expect(html).toContain('data-door="recap"')

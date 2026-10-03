@@ -8,11 +8,9 @@ import { useCommishEditBracket } from '@/hooks/use-commish-bracket'
 import type { CommishEditBracketResult } from '@/lib/leagues/api/commish-bracket-service'
 import type { BracketGame, BracketRound } from '@/lib/leagues/api/playoffs-service'
 import { cn } from '@/lib/utils'
-import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode } from '@/stores/commish-override-store'
 
 import {
-  HAND_PICK_BAR_OFF_COPY,
-  HAND_PICK_BAR_ON_COPY,
   HAND_PICK_BYE_LABEL,
   HAND_PICK_PANEL_TITLE,
   draftFromGame,
@@ -23,7 +21,6 @@ import {
   roundWeeks,
   type HandPickDraft,
 } from './bracket-hand-pick-ops'
-import { OverrideModeBar } from './override-mode-bar'
 import { teamName } from './playoff-bracket-ops'
 
 /**
@@ -65,8 +62,6 @@ export function BracketHandPickTools({
   onClose: () => void
 }) {
   const overrideMode = useOverrideMode(leagueId)
-  const enter = useCommishOverrideStore((s) => s.enter)
-  const exit = useCommishOverrideStore((s) => s.exit)
   const pick = useCommishEditBracket(leagueId)
   // What he chose, keyed by the game it was chosen for — a new game opens
   // with its own pairing (never the previous game's draft).
@@ -80,9 +75,6 @@ export function BracketHandPickTools({
       data-bracket-hand-pick
       data-override-mode={overrideMode ? 'on' : 'off'}
     >
-      <OverrideModeBar on={overrideMode} busy={pick.isPending} onToggle={(next) => (next ? enter(leagueId) : exit())}>
-        {overrideMode ? HAND_PICK_BAR_ON_COPY : HAND_PICK_BAR_OFF_COPY}
-      </OverrideModeBar>
       {overrideMode && round && game && shown && (
         <BracketHandPickPanelView
           round={round}

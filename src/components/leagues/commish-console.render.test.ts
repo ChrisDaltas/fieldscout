@@ -21,6 +21,7 @@ import { commishLogKeys } from '@/hooks/use-commish-log'
 import { commishSummaryKeys } from '@/hooks/use-commish-summary'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguesKeys } from '@/hooks/use-leagues'
+import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import type { CommishLogItem, CommishLogPage } from '@/lib/leagues/api/commish-log-service'
 import type { CommishSummary, MatchupCorrectionItem } from '@/lib/leagues/api/commish-summary-service'
 import type { TradeView } from '@/lib/leagues/api/trades-service'
@@ -45,6 +46,8 @@ import {
   TOOLS_AFTER_DRAFT_NOTE,
 } from './commish-console-ops'
 import { LeagueHomeStates } from './league-home-states'
+import { REMIX_NEEDS_OVERRIDE_COPY } from './schedule-view-ops'
+import { SCHEDULE } from './standings-schedule.fixtures'
 
 vi.mock('@/components/layout/app-header', () => ({
   PageHeader: ({ title, actions }: { title: ReactNode; actions?: ReactNode }) =>
@@ -212,6 +215,7 @@ interface Seed {
   summary?: CommishSummary | 'error' | 'degraded' | 'missing'
   log?: CommishLogPage | 'error' | 'missing'
   override?: boolean
+  schedule?: LeagueSchedule
 }
 
 function renderConsole(seed: Seed = {}): string {
@@ -229,6 +233,8 @@ function renderConsole(seed: Seed = {}): string {
   const logKey = commishLogKeys.list(LEAGUE, { limit: 5 })
   if (log === 'error') failQuery(qc, logKey, new Error('commissioner_actions: boom'))
   else if (log !== 'missing') qc.setQueryData(logKey, { pages: [log], pageParams: [undefined] })
+
+  if (seed.schedule) qc.setQueryData(scheduleKeys.all(LEAGUE), seed.schedule)
 
   vi.mocked(useOverrideMode).mockReturnValue(seed.override ?? false)
   return unescapeHtml(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(CommishConsole, { leagueId: LEAGUE }))))
@@ -552,44 +558,54 @@ describe('a manager never sees the console', () => {
     expect(html).not.toContain('data-override-toggle')
   })
 
-  it('League Home: the Commissioner door in the league nav and the header — for a commissioner, and for nobody else', () => {
+  // League UX batch 1 (Chris 2026-10-03: "two buttons to enter the
+  // Commissioner settings"): League Home carries NO commissioner or members
+  // door and no nav of its own, in any state — the console is reached from
+  // League settings only (settings-panel's CommishConsoleRow, pinned below).
+  it('League Home: no Commissioner door, no Members door, no nav — for a commissioner in any state', () => {
     const render = (detail: LeagueDetail) => {
       const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
       qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
       return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(LeagueHomeStates, { leagueId: LEAGUE })))
     }
-    const commish = render(detailWith('in_season'))
-    expect(commish).toContain('data-nav="commish"')
-    expect(commish).toContain('data-door="commish"')
-    expect(commish).toContain(`href="${BASE}/commish"`)
-    const manager = render(detailWith('in_season', { my_role: 'manager' }))
-    expect(manager).toContain('data-league-nav')
-    expect(manager).not.toContain('data-nav="commish"')
-    expect(manager).not.toContain('data-door="commish"')
-    expect(manager).not.toContain(`${BASE}/commish`)
-    // Pre-draft League Home has no league nav — the header door is his way in.
-    const setup = render(detailWith('setup'))
-    expect(setup).toContain('data-door="commish"')
-    expect(render(detailWith('setup', { my_role: 'manager' }))).not.toContain(`${BASE}/commish`)
+    for (const status of ['setup', 'scheduled', 'drafting', 'in_season', 'playoffs', 'complete']) {
+      const commish = render(detailWith(status))
+      expect(commish, status).not.toContain('data-door="commish"')
+      expect(commish, status).not.toContain(`${BASE}/commish`)
+      expect(commish, status).not.toContain('data-door="members"')
+      expect(commish, status).not.toContain('data-league-nav')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Remix — the console is its only home (League UX batch 1)
+// ---------------------------------------------------------------------------
+
+describe('Remix schedule lives in the console, mirroring the server’s window', () => {
+  const preKickoff: LeagueSchedule = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => ({ ...w, status: 'upcoming', finalized_at: null })) }
+
+  it('in season, before Week 1 kicks off: offered in the Schedule group', () => {
+    const html = renderConsole({ schedule: preKickoff })
+    const group = html.slice(html.indexOf('data-tool-group="schedule"'))
+    expect(group).toContain('data-console-remix="offered"')
+    expect(group).toMatch(/<button[^>]*data-remix-open/)
+    expect(group).not.toMatch(/<button[^>]*disabled=""[^>]*data-remix-open/)
   })
 
-  // L.E1.39 (F539): after the draft the seat list lives on the members page;
-  // before it, it is on League Home itself (#invites) and during it in the
-  // draft room — so the header door is offered after the draft only.
-  it('League Home: the Members door in the header — after the draft, for a commissioner, and for nobody else', () => {
-    const render = (detail: LeagueDetail) => {
-      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
-      qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
-      return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(LeagueHomeStates, { leagueId: LEAGUE })))
-    }
-    for (const status of ['in_season', 'playoffs', 'complete']) {
-      const commish = render(detailWith(status))
-      const door = commish.match(/<a [^>]*data-door="members"[^>]*>/)?.[0] ?? ''
-      expect(door, status).toContain(`href="${BASE}/members"`)
-      expect(render(detailWith(status, { my_role: 'manager' })), status).not.toContain(`${BASE}/members`)
-    }
-    for (const status of ['setup', 'scheduled', 'drafting']) {
-      expect(render(detailWith(status)), status).not.toContain('data-door="members"')
+  it('once the season has started: disabled with the reason while override is OFF, offered while it is ON', () => {
+    const off = renderConsole({ schedule: SCHEDULE })
+    expect(off).toContain('data-console-remix="needs-override"')
+    expect(off).toMatch(/<button[^>]*disabled=""[^>]*data-remix-open/)
+    expect(off).toContain(REMIX_NEEDS_OVERRIDE_COPY)
+    const on = renderConsole({ schedule: SCHEDULE, override: true })
+    expect(on).toContain('data-console-remix="offered"')
+    expect(on).not.toContain(REMIX_NEEDS_OVERRIDE_COPY)
+  })
+
+  it('outside the regular season (playoffs, complete, pre-draft) there is no Remix at all — the server refuses it there', () => {
+    for (const status of ['playoffs', 'complete', 'setup', 'scheduled', 'drafting']) {
+      expect(renderConsole({ detail: detailWith(status), schedule: preKickoff }), status).not.toContain('data-remix-open')
     }
   })
 })

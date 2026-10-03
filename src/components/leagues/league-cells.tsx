@@ -229,3 +229,18 @@ export function OprkChip({ value }: { value: number }) {
     </span>
   )
 }
+
+/**
+ * A league page's own title, in the page body. The app header on league
+ * pages belongs to the league layout (`league-shell.tsx`) — identity row +
+ * sub-nav — so pages title themselves here instead of claiming the header
+ * (one header bar; League UX batch 1). `actions` sit on the right.
+ */
+export function LeaguePageTitle({ title, actions }: { title: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3" data-page-title>
+      <h2 className="mr-auto min-w-0 truncate text-h5">{title}</h2>
+      {actions}
+    </div>
+  )
+}

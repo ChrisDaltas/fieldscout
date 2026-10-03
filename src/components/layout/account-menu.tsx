@@ -14,7 +14,6 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
-import { useToast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
@@ -34,7 +33,6 @@ interface AccountMenuProps {
  */
 export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountMenuProps) {
   const { user, profile, signOut } = useAuth()
-  const { toast } = useToast()
   const isTopbar = variant === 'topbar'
   const isCompact = isTopbar || collapsed
 
@@ -142,19 +140,12 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
             My stats
           </Link>
         </DropdownMenuItem>
-        {/* TODO(live-draft): route to the league workspace once batch D ships it. */}
         {featureFlags.leagues && (
-          <DropdownMenuItem
-            onSelect={() =>
-              toast({
-                title: 'Leagues are on the way',
-                description:
-                  'League workspaces arrive with the live draft update.',
-              })
-            }
-          >
-            <Icon name="cup" size={14} />
-            My leagues
+          <DropdownMenuItem asChild>
+            <Link href="/app/leagues">
+              <Icon name="cup" size={14} />
+              My leagues
+            </Link>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem asChild>

@@ -36,7 +36,6 @@ import {
   lineupSaveRequest,
   lockBadgeFor,
   lockedPlayerIds,
-  overrideExitCopy,
   placementFromStored,
   placementsEqual,
   planMove,
@@ -49,11 +48,9 @@ import {
   type HintTone,
   type MoveTarget,
   type Placement,
-
   type SlotRow,
   type WeekEditability,
 } from './lineup-editor-ops'
-import { OverrideModeBar } from './override-mode-bar'
 
 /**
  * LineupEditor (§16.2 `lineup-editor`; §11.2; §16.5.2 Weekly loop; §16.5.4
@@ -288,17 +285,6 @@ export function LineupEditor({
     mutation.reset()
     override.reset()
   }
-  /**
-   * Leave the mode. **The draft is never touched** — his placements are his,
-   * and silently discarding them is the exact bug class this feature exists to
-   * end. What DOES change is what they are allowed to be, so that is said out
-   * loud instead of waiting to surface as a refusal.
-   */
-  function exitOverrideMode() {
-    setSelected(null)
-    setNotice({ tone: dirty ? 'caution' : 'positive', text: overrideExitCopy(dirty) })
-    onOverrideMode(false)
-  }
 
   // After a SUCCESSFUL save, render the server's canonical map immediately
   // (the refetch then lands the same row and the baseline follows).
@@ -356,35 +342,10 @@ export function LineupEditor({
             not behind `state === 'closed'`. One control, commissioner only; the
             manager's editor is byte-identical to before (`isCommish` is false
             for him, so this whole subtree is absent). */}
-        {isCommish && canEdit && (
-          // R985: the toggle is LOCKED while a save is in flight. Without
-          // this, exiting mid-save flips `active` to the other hook, so the
-          // pending write loses its "Saving…" line and its success notice is
-          // swallowed by the exit message — the screen then says the
-          // placements are unsaved while the save actually succeeded. On an
-          // open week it also re-enables Save as the MANAGER verb, inviting
-          // a second concurrent write against the same draft.
-          // R986: entering clears any stale exit notice, which otherwise
-          // sits on screen contradicting the ON state.
-          // The control itself is `OverrideModeBar` — ONE switch, shared with
-          // the matchup page since M6A L.E1.12.
-          <OverrideModeBar
-            on={overrideMode}
-            busy={active.isPending}
-            onToggle={(next) => {
-              if (next) {
-                setNotice(null)
-                onOverrideMode(true)
-              } else {
-                exitOverrideMode()
-              }
-            }}
-          >
-            {overrideMode
-              ? 'You are acting as this team’s GM. Locked players move, closed weeks open, and every save is recorded — who changed what, when. Exit when you’re done.'
-              : 'Commissioner — override mode lets you act as any team’s GM: edit after kickoff, or for a week that has closed. It stays on until you turn it off, and every save is recorded.'}
-          </OverrideModeBar>
-        )}
+        {/* League UX batch 1 (Chris 2026-10-03): override mode is switched
+            on from League settings / the Commissioner console only, and the
+            league header shows it while it is on — no switch here. While it
+            is on, the editor acts as this team's GM (below). */}
         {editability.state === 'closed' && !overrideMode && (
           <div role="status" className="flex flex-col gap-2 rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
             <span>{editability.reason}</span>

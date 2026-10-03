@@ -10,15 +10,13 @@ import { useCommishEditScore } from '@/hooks/use-commish-score'
 import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
-import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode } from '@/stores/commish-override-store'
 
 import {
   BOTH_SCORES_COPY,
   BYE_ROW_COPY,
   DECLARE_WINNER_COPY,
   LOCK_CHECKING_COPY,
-  OVERRIDE_BAR_OFF_COPY,
-  OVERRIDE_BAR_ON_COPY,
   OVERRIDE_PANEL_TITLE,
   bypassedCopy,
   declareWinnerConfirm,
@@ -29,7 +27,6 @@ import {
   type OverrideLockState,
   type ScoreGate,
 } from './matchup-override-ops'
-import { OverrideModeBar } from './override-mode-bar'
 
 /**
  * The commissioner's matchup override — M6A task L.E1.12 (spec §15.4:1692 →
@@ -82,8 +79,6 @@ export function MatchupOverrideTools({
   awayName: string | null
 }) {
   const overrideMode = useOverrideMode(leagueId)
-  const enter = useCommishOverrideStore((s) => s.enter)
-  const exit = useCommishOverrideStore((s) => s.exit)
   const score = useCommishEditScore(leagueId)
   const result = useCommishSetResult(leagueId)
   const lockRead = useCommishMatchupEditLock(leagueId, row.week, row.id, overrideMode)
@@ -116,9 +111,6 @@ export function MatchupOverrideTools({
       data-matchup-override={row.id}
       data-override-mode={overrideMode ? 'on' : 'off'}
     >
-      <OverrideModeBar on={overrideMode} busy={pending !== null} onToggle={(next) => (next ? enter(leagueId) : exit())}>
-        {overrideMode ? OVERRIDE_BAR_ON_COPY : OVERRIDE_BAR_OFF_COPY}
-      </OverrideModeBar>
       {overrideMode && (
         <MatchupOverridePanelView
           homeName={homeName}

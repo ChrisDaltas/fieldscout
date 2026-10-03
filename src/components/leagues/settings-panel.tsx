@@ -1,9 +1,8 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useMemo, useRef, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardTitle } from '@/components/ui/card'
@@ -37,8 +36,9 @@ import {
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 
+import { commishConsoleHref } from './commish-console-ops'
 import { STAT_FIX_RULE_COPY } from './corrections-view-ops'
-import { Crest } from './league-cells'
+import { Crest, LeaguePageTitle } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
 import { OverrideModeBar } from './override-mode-bar'
 import { RosterSlotBuilder } from './roster-slot-builder'
@@ -208,6 +208,7 @@ function SettingsPanelBody({ leagueId, data }: { leagueId: string; data: LeagueD
 
   return (
     <PanelShell>
+      {isCommish && <CommishConsoleRow leagueId={leagueId} />}
       {!isCommish && (
         <InlineIssue
           tone="warning"
@@ -503,20 +504,41 @@ export function InSeasonOverrideBlock({
 }
 
 function PanelShell({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <PageHeader title="League settings" />
-      <div>
-        <Button variant="stroke" size="sm" onClick={() => router.back()}>
-          <Icon name="arrow-prev" size={13} />
-          Back
-        </Button>
-      </div>
+      <LeaguePageTitle title="League settings" />
       {children}
     </div>
   )
 }
+
+/**
+ * THE way into the Commissioner console (League UX batch 1, Chris
+ * 2026-10-03: "two buttons to enter the Commissioner settings" — now one).
+ * Commissioners only; the console's own server gate still redirects anyone
+ * else. The prototype's settings row ("Commish tools"). Interactive, so it
+ * lifts on hover only.
+ */
+export function CommishConsoleRow({ leagueId }: { leagueId: string }) {
+  return (
+    <Link
+      href={commishConsoleHref(leagueId)}
+      data-door="commish"
+      className="flex items-center gap-3 rounded-sm border border-ink bg-white px-card-pad py-3 transition-shadow hover:shadow-hard-4 focus-visible:shadow-hard-4"
+    >
+      <span className="mr-auto min-w-0">
+        <span className="block text-[14px] font-extrabold leading-tight">{COMMISH_ROW_TITLE}</span>
+        <span className="mt-1 block text-[11px] font-semibold text-n-3">{COMMISH_ROW_NOTE}</span>
+      </span>
+      <Badge variant="yellow">Only commissioners see this</Badge>
+      <Icon name="arrow-next" size={16} className="shrink-0 text-n-3" />
+    </Link>
+  )
+}
+
+export const COMMISH_ROW_TITLE = 'Commissioner tools'
+export const COMMISH_ROW_NOTE =
+  'Override mode, lineups and rosters, scores, trades, the schedule (including a remix) and members.'
 
 function SettingsPanelSkeleton() {
   return (

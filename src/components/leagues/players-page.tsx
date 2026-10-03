@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -29,7 +28,7 @@ import { cn } from '@/lib/utils'
 
 import { ClaimDialog } from './claim-dialog'
 
-import { TeamNameLink } from './league-cells'
+import { TeamNameLink, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
 import {
   FREE_AGENT_LABEL,
@@ -174,17 +173,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const loading = (rosters.isPending && !rosters.data) || (pool.isPending && !pool.data) || (players.isPending && !players.data)
 
   const header = (
-    <PageHeader
-      title="Players"
-      actions={
-        <Button variant="stroke" size="sm" asChild>
-          <Link href={`/app/leagues/${leagueId}`}>
-            <Icon name="cup" size={13} />
-            {detail.league.name}
-          </Link>
-        </Button>
-      }
-    />
+    <LeaguePageTitle title="Players" />
   )
 
   const submit = () => {
@@ -746,7 +735,7 @@ function rosterPlayerOf(row: PoolPlayerRow): RosterPlayer {
 function PlayersSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Players" />
+      <LeaguePageTitle title="Players" />
       <Skeleton className="h-24 rounded-sm" />
       <Skeleton className="h-7 w-80 rounded-sm" />
       <TableSkeleton />
