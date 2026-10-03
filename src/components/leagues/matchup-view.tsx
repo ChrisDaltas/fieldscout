@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useBoxScore } from '@/hooks/use-box-score'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useMatchupsLive } from '@/hooks/use-matchups'
+import { useRosters } from '@/hooks/use-rosters'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
@@ -28,6 +29,12 @@ import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { scoringLive } from './league-home-season-ops'
 import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
 import {
+  BENCH_LABEL,
+  BENCH_NOT_COUNTED_COPY,
+  EMPTY_BENCH_COPY,
+  benchNote,
+  benchRows,
+  type BenchRow,
   BOX_SUM_LABEL,
   LEADERBOARD_TITLE,
   MEDIAN_PENDING_TITLE,
@@ -702,6 +709,8 @@ function TeamBox({
   leagueTimeZone: string | null
 }) {
   const box = useBoxScore(leagueId, week, teamId)
+  // The bench lines carry ids only; the rosters read names them.
+  const rosters = useRosters(leagueId)
   const problem = box.isError ? (box.error instanceof Error ? box.error : new Error(String(box.error))) : null
   const data = box.data
   // No lineup ⇒ no sum to speak of (the empty state says why), not `pending`.
@@ -768,8 +777,58 @@ function TeamBox({
             ))
           )
         ) : null}
+        {data?.bench && (
+          <BenchSection
+            leagueId={leagueId}
+            rows={benchRows(data.bench, rosters.data?.teams.find((t) => t.team_id === teamId)?.roster)}
+            note={benchNote(weekStatus)}
+          />
+        )}
       </CardContent>
     </Card>
+  )
+}
+
+/** The bench under the starters (League UX batch 5): each player's points
+ *  for the week, read like a starter's — and never added to the total. */
+function BenchSection({ leagueId, rows, note }: { leagueId: string; rows: BenchRow[]; note: string | null }) {
+  return (
+    <section className="flex flex-col gap-1 border-t border-n-4 pt-2" data-bench>
+      <h4 className="flex items-baseline gap-2 text-[10px] font-bold uppercase tracking-wide text-n-3">
+        {BENCH_LABEL}
+        <span className="text-[10px] font-medium normal-case tracking-normal">{BENCH_NOT_COUNTED_COPY}</span>
+      </h4>
+      {note && (
+        <p className="text-[10px] font-medium text-n-3" data-bench-note>
+          {note}
+        </p>
+      )}
+      {rows.length === 0 ? (
+        <p className="text-[11px] font-medium text-n-3" data-empty="no-bench">
+          {EMPTY_BENCH_COPY}
+        </p>
+      ) : (
+        rows.map((row) => (
+          <div key={row.player_id} className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-0.5" data-bench-row={row.player_id}>
+            <span className="w-9 shrink-0 text-[10px] font-bold text-n-3">{row.ir ? 'IR' : 'BN'}</span>
+            {row.player ? (
+              <>
+                <PositionBadge position={row.player.position} size="sm" />
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="text-[12px] font-medium text-ink" />
+                  <span className="shrink-0 text-[10px] font-medium text-n-3">{row.player.nfl_team ?? '—'}</span>
+                </span>
+              </>
+            ) : (
+              <span className="min-w-0 flex-1 text-[11px] font-medium text-n-3">Player no longer on this roster</span>
+            )}
+            <span className={cn('fs-num shrink-0 text-[12px] font-medium', row.cell.tone === 'scored' ? 'text-ink' : 'text-n-3')} title={row.cell.title ?? undefined} data-bench-cell={row.cell.tone}>
+              {row.cell.text}
+            </span>
+          </div>
+        ))
+      )}
+    </section>
   )
 }
 
