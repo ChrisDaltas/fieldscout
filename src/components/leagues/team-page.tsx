@@ -80,7 +80,7 @@ import { waiverSeatCopy } from './waiver-claims-ops'
  * mode, the COMMISSIONER's audited arm for any team INSIDE it
  * (`renameArm`). The roster tools (move / drop / add — `TeamCommishTools`)
  * mount under the editor ONLY while override mode is on: they are a face of
- * the ONE switch the editor's `OverrideModeBar` already is (rule (h)), never
+ * the ONE switch (rule (h)) — turned on from League settings / the console, never
  * a second toggle, and there is no reason input anywhere (Q66).
  */
 export function TeamPage({ leagueId, teamId }: { leagueId: string; teamId: string }) {

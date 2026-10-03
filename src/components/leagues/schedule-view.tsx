@@ -14,7 +14,6 @@ import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useEditMatchup, useScheduleLive, type EditMatchupResult } from '@/hooks/use-schedule'
 import { cn } from '@/lib/utils'
-import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { commishMatchupHref } from './activity-page-ops'
 import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
@@ -96,11 +95,13 @@ export function ScheduleView({ leagueId }: { leagueId: string }) {
 function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: LeagueDetail }) {
   const { user } = useAuth()
   const schedule = useScheduleLive(leagueId)
-  // League UX batch 1: a commissioner's schedule edits are an override-mode
-  // action — offered here only while he has the mode on (switched on from
-  // League settings / the console). Remix lives in the console alone.
-  const overrideOn = useOverrideMode(leagueId)
-  const isCommish = (detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner') && overrideOn
+  // R1459: the per-week Edit is the NORMAL commissioner verb (the
+  // `/schedule/matchup` route, the open-window edit) — offered to a
+  // commissioner whenever that window is open, override mode or not. A week
+  // whose window has closed offers no Edit here at all; changing it is an
+  // override action, reached through the console's `/commish/schedule`.
+  // Remix lives in the console alone.
+  const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const teamNames = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
   const teams = useMemo(() => editableTeams(detail.teams), [detail.teams])

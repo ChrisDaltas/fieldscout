@@ -411,28 +411,26 @@ describe('schedule — the grid and the commissioner’s doors', () => {
     expect(html).not.toMatch(/L\.D\d|Q39|Q30/)
   })
 
-  it('the COMMISSIONER, override OFF: no Remix, no Edit, no hint — the schedule reads like a manager’s (League UX batch 1)', () => {
-    const html = renderSchedule()
-    expect(html).toContain('data-schedule-grid')
-    expect(html).not.toContain('data-remix-open')
-    expect(html).not.toContain('data-edit-matchup')
-    expect(html).not.toContain(REASON_HINT_COPY)
-  })
-
-  it('the COMMISSIONER, override ON: an Edit on every editable row of the upcoming week and the ladder’s reason hint — and still NO Remix (it lives in the console)', () => {
-    vi.mocked(useOverrideMode).mockReturnValue(true)
-    let html: string
-    try {
-      html = renderSchedule()
-    } finally {
-      vi.mocked(useOverrideMode).mockReturnValue(false)
-    }
-    expect(html).not.toContain('data-remix-open')
-    expect(between(html, 'data-week="1"', 'data-week="2"')).not.toContain('data-edit-matchup')
-    expect(between(html, 'data-week="2"', 'data-week="3"')).not.toContain('data-edit-matchup')
-    expect(between(html, 'data-week="3"', 'data-week="4"').match(/data-edit-matchup/g)).toHaveLength(4)
-    expect(html).toContain(REASON_HINT_COPY)
-  })
+  // R1459: the per-week Edit is the NORMAL commissioner verb, so override
+  // mode does not gate it — it follows the open window alone (week 3 is the
+  // only upcoming regular week). Remix stays in the console in both states.
+  for (const on of [false, true]) {
+    it(`the COMMISSIONER, override ${on ? 'ON' : 'OFF'}: an Edit on every editable row of the open (upcoming) week only, the ladder’s reason hint, and NO Remix`, () => {
+      vi.mocked(useOverrideMode).mockReturnValue(on)
+      let html: string
+      try {
+        html = renderSchedule()
+      } finally {
+        vi.mocked(useOverrideMode).mockReturnValue(false)
+      }
+      expect(html).toContain('data-schedule-grid')
+      expect(html).not.toContain('data-remix-open')
+      expect(between(html, 'data-week="1"', 'data-week="2"')).not.toContain('data-edit-matchup')
+      expect(between(html, 'data-week="2"', 'data-week="3"')).not.toContain('data-edit-matchup')
+      expect(between(html, 'data-week="3"', 'data-week="4"').match(/data-edit-matchup/g)).toHaveLength(4)
+      expect(html).toContain(REASON_HINT_COPY)
+    })
+  }
 
   it('a MANAGER sees neither door and no hint — the affordances are commissioner-only', () => {
     const html = renderSchedule({ detail: managerDetail })

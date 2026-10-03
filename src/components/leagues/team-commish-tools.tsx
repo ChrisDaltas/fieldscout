@@ -46,8 +46,8 @@ import {
  * migration 127; §10.3; PROGRESS §3 STANDING RULE (h); D346, D351; Q66).
  *
  * **A face of OVERRIDE MODE, not a control of its own** (rule (h)): the page
- * mounts this only while the ONE switch (`OverrideModeBar`, which the lineup
- * editor above it already mounts over `commish-override-store.ts`) is on and
+ * mounts this only while the ONE switch (`commish-override-store.ts`, turned
+ * on from League settings / the Commissioner console; League UX batch 1) is on and
  * the viewer is a commissioner. There is no second toggle here, no per-move
  * "override" button and **no reason input — the request carries none** (Q66 /
  * F343): 127 stores NULL and still writes the receipt and the §10.3 post.

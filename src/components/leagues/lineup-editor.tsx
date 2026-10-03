@@ -24,6 +24,7 @@ import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
+import { useReportOverrideSaving } from '@/stores/commish-override-store'
 import { cn } from '@/lib/utils'
 
 import {
@@ -203,6 +204,7 @@ export function LineupEditor({
   const mutation = useSetLineup(leagueId, teamId)
   const override = useCommishEditLineup(leagueId)
   const active = overrideMode ? override : mutation
+  useReportOverrideSaving(overrideMode && active.isPending) // R1460: locks the header's Turn off
   const model = useMemo(() => buildEditorModel(draft, roster, settings), [draft, roster, settings])
   // Dirty against the BASELINE, not the stored prop: after a successful save
   // the baseline is the server's canonical map while `storedPlacement` is

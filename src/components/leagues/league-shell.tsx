@@ -22,7 +22,7 @@ import { useStandings } from '@/hooks/use-standings'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 import { useHeaderStore } from '@/stores/header-store'
-import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { useCommishOverrideStore, useOverrideMode, useOverrideSaving } from '@/stores/commish-override-store'
 
 import { Crest } from './league-cells'
 import {
@@ -90,12 +90,21 @@ function useHeaderParts(leagueId: string, data: LeagueDetail) {
 function LeagueHeaderClaim({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
   const setLeagueHeader = useHeaderStore((s) => s.setLeagueHeader)
   const clearLeagueHeader = useHeaderStore((s) => s.clearLeagueHeader)
-  const { myTeamId, isCommish, tabs, more, active } = useHeaderParts(leagueId, data)
+  const { myTeamId, status, isCommish, tabs, more, active } = useHeaderParts(leagueId, data)
   const identity = useIdentity(leagueId, data, myTeamId)
   const overrideOn = useOverrideMode(leagueId) && isCommish
 
-  const above = useMemo(() => <LeagueIdentity {...identity} />, [identity])
-  const nav = useMemo(() => <LeagueSubnav tabs={tabs} more={more} active={active} />, [tabs, more, active])
+  // R1462: memo on SCALARS. `identity` / `tabs` / `more` are fresh objects
+  // every render, so a memo over them never hit; every one of them is a pure
+  // function of the scalars below (`leagueTabs` / `leagueMoreItems` read only
+  // leagueId + status + myTeamId), so those are the honest dependencies.
+  const { teamName, leagueName, leagueAvatar, line, status: idStatus, record, rank } = identity
+  const above = useMemo(
+    () => <LeagueIdentity {...{ teamName, leagueName, leagueAvatar, line, status: idStatus, record, rank }} />,
+    [teamName, leagueName, leagueAvatar, line, idStatus, record, rank],
+  )
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tabs/more derive from leagueId+status+myTeamId (above)
+  const nav = useMemo(() => <LeagueSubnav tabs={tabs} more={more} active={active} />, [leagueId, status, myTeamId, active])
   const actions = useMemo(() => (overrideOn ? <OverrideIndicator /> : null), [overrideOn])
 
   useEffect(() => {
@@ -279,10 +288,24 @@ function MoreItem({ item, active }: { item: LeagueMoreItem; active: boolean }) {
  *  turned ON only from League settings / the Commissioner console. */
 function OverrideIndicator() {
   const exit = useCommishOverrideStore((s) => s.exit)
+  // R1460: the same in-flight lock OverrideModeBar gave its switch — the
+  // mode cannot be turned off under a save that is still on the wire.
+  const busy = useOverrideSaving()
   return (
     <div className="flex shrink-0 items-center gap-2" role="status" data-override-indicator>
       <Badge variant="black">{OVERRIDE_ON_INDICATOR}</Badge>
-      <Button variant="stroke" size="sm" onClick={() => exit()} data-override-off>
+      <Button
+        variant="stroke"
+        size="sm"
+        disabled={busy}
+        title={busy ? 'Wait for the save to finish.' : undefined}
+        onClick={() => {
+          if (busy) return
+          exit()
+        }}
+        data-override-off
+        data-override-toggle-blocked={busy ? 'saving' : undefined}
+      >
         Turn off
       </Button>
     </div>

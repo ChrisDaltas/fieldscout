@@ -23,7 +23,7 @@ import { useTradesLive } from '@/hooks/use-trades'
 import type { CommishTradeOp, CommishTradeResult, TradeDeadlineView, TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
 import type { LeagueRosters, RosterTeam } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
-import { useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode, useReportOverrideSaving } from '@/stores/commish-override-store'
 
 import { TeamNameLink, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
@@ -155,6 +155,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const propose = useProposeTrade(leagueId)
   const act = useTradeAction(leagueId)
   const commish = useCommishTrade(leagueId)
+  useReportOverrideSaving(commish.isPending) // R1460: locks the header's Turn off
   const overrideMode = useOverrideMode(leagueId)
 
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null

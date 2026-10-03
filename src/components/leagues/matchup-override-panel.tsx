@@ -10,7 +10,7 @@ import { useCommishEditScore } from '@/hooks/use-commish-score'
 import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
-import { useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode, useReportOverrideSaving } from '@/stores/commish-override-store'
 
 import {
   BOTH_SCORES_COPY,
@@ -34,11 +34,10 @@ import {
  * STANDING RULE (h); D342; Q61; Q66).
  *
  * **The controls belong to OVERRIDE MODE, not to a save** (rule (h)). The
- * switch is `OverrideModeBar` — the lineup editor's own, over the SAME store
- * (`commish-override-store.ts`, keyed by league), so a commissioner who turned
- * the mode on at a team page arrives here with it on, and vice versa. It is
- * present in EVERY week state for a commissioner and never appears as the
- * answer to a refusal. While it is on, the whole block is framed in the lime
+ * switch lives in League settings / the Commissioner console, over the SAME
+ * store (`commish-override-store.ts`, keyed by league), so a commissioner who
+ * turned the mode on there arrives here with it on; the league header's
+ * "Turn off" ends it. While it is on, the whole block is framed in the lime
  * "look here" tokens (fill + border; never a shadow — CLAUDE.md).
  *
  * **Both scores together** (D342 — `is_overridden` is one flag on the row),
@@ -103,6 +102,7 @@ export function MatchupOverrideTools({
   const awayDraft = shownScoreDraft(awayTyped, row.away_score)
 
   const pending = score.isPending ? 'score' : result.isPending ? 'result' : null
+  useReportOverrideSaving(pending !== null) // R1460: locks the header's Turn off
   const spoke = last === 'score' ? score : last === 'result' ? result : null
 
   return (
