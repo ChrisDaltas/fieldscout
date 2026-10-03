@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { PageHeader } from '@/components/layout/app-header'
 import {
   MOCK_LAUNCHER_READY,
   mockLauncherHref,
@@ -32,10 +31,7 @@ import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 import { AddDraftListCta } from './attach-list-modal'
-import { CONSOLE_NAV_LABEL, commishConsoleHref } from './commish-console-ops'
 import { InvitePanel } from './invite-panel'
-import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
-import { Crest } from './league-cells'
 import { SeasonHero } from './league-home-season'
 import {
   autoStartPollMs,
@@ -44,7 +40,6 @@ import {
   draftCountdown,
   homeStateForStatus,
   laterStatusLabel,
-  seatCounts,
   type ChecklistItem,
 } from './league-home-states-ops'
 
@@ -87,7 +82,6 @@ export function LeagueHomeStates({ leagueId }: { leagueId: string }) {
   if (isError || !data) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="League" />
         <Card className="border-negative bg-negative-soft">
           <CardContent className="flex flex-col items-start gap-2 p-4">
             <p className="text-[13px] font-bold" role="alert">
@@ -122,43 +116,8 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title={league.name}
-        actions={
-          isCommish ? (
-            <>
-              {/* M6 L.E1.33: the Commissioner Console's door, for commissioners
-                  alone (the page's server gate redirects anyone else). */}
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={commishConsoleHref(leagueId)} data-door="commish">
-                  <Icon name="gear" size={13} />
-                  {CONSOLE_NAV_LABEL}
-                </Link>
-              </Button>
-              {/* L.E1.39 (F539): after the draft the seat list moves off this
-                  page (before it, it is right here under #invites; during it,
-                  in the draft room) — so the header carries its door. */}
-              {(state === 'in_season' || state === 'playoffs' || state === 'complete') && (
-                <Button variant="stroke" size="sm" asChild>
-                  <Link href={membersPageHref(leagueId)} data-door="members">
-                    <Icon name="team" size={13} />
-                    {MEMBERS_NAV_LABEL}
-                  </Link>
-                </Button>
-              )}
-              <Button variant="stroke" size="sm" asChild>
-                <Link href={settingsHref}>
-                  <Icon name="setup" size={13} />
-                  League settings
-                </Link>
-              </Button>
-            </>
-          ) : undefined
-        }
-      />
-
-      <LeagueMetaRow data={data} />
-
+      {/* The league's name, crest, team count and status live in the league
+          header (league-shell.tsx) — this page renders no header of its own. */}
       {state === 'setup' && (
         <SetupHero
           leagueId={leagueId}
@@ -238,49 +197,6 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
         {active.length > 0 && (
           <p className="text-[10px] font-medium text-n-3">{MOCK_EXPIRY_NOTE}</p>
         )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Header / meta row
-// ---------------------------------------------------------------------------
-
-const STATUS_BADGE: Record<string, { label: string; variant: 'yellow' | 'lime' | 'stroke' | 'green' }> = {
-  setup: { label: 'Setup', variant: 'yellow' },
-  scheduled: { label: 'Draft scheduled', variant: 'lime' },
-  drafting: { label: 'Draft live', variant: 'lime' },
-  in_season: { label: 'In season', variant: 'green' },
-  playoffs: { label: 'Playoffs', variant: 'green' },
-  complete: { label: 'Complete', variant: 'stroke' },
-}
-
-function LeagueMetaRow({ data }: { data: LeagueDetail }) {
-  const { league } = data
-  const seats = seatCounts(data)
-  const badge = STATUS_BADGE[league.status] ?? { label: league.status, variant: 'stroke' as const }
-
-  return (
-    <Card>
-      <CardContent className="flex flex-wrap items-center gap-3 px-card-pad py-3">
-        <Crest
-          name={league.name}
-          src={league.avatar_url}
-          className="h-10 w-10"
-          fallbackClassName="text-[12px]"
-        />
-        <div className="mr-auto min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate text-[17px] font-extrabold leading-tight">{league.name}</h1>
-            <Badge variant={badge.variant}>{badge.label}</Badge>
-          </div>
-          <div className="mt-1 truncate text-[10px] font-semibold text-n-3">
-            <span className="fs-num">{league.season}</span> season ·{' '}
-            <span className="fs-num">{seats.filled}</span>/
-            <span className="fs-num">{seats.total}</span> managers
-          </div>
-        </div>
       </CardContent>
     </Card>
   )
@@ -775,7 +691,6 @@ function LaterPlaceholder({ status }: { status: string }) {
 function LeagueHomeSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="League" />
       <Skeleton className="h-16 rounded-sm" />
       <div className="grid grid-cols-1 gap-[19px] lg:grid-cols-[1.3fr_1fr]">
         <Skeleton className="h-64 rounded-sm" />

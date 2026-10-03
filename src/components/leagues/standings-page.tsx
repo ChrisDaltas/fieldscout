@@ -1,12 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Segment, SegmentItem, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/hooks/use-auth'
@@ -22,6 +18,7 @@ import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status
 import { ProblemCard, problemCopy } from './team-page'
 import { waiverOrderListView } from './waiver-claims-ops'
 import { WaiverOrderList } from './waiver-order-list'
+import { LeaguePageTitle } from './league-cells'
 
 export type StandingsTab = 'standings' | 'playoffs'
 export type StandingsView = 'final' | 'projected'
@@ -108,17 +105,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Standings"
-        actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {detail.league.name}
-            </Link>
-          </Button>
-        }
-      />
+      <LeaguePageTitle title="Standings" />
 
       {reconnecting && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
 
@@ -226,7 +213,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
 function StandingsSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Standings" />
+      <LeaguePageTitle title="Standings" />
       <Skeleton className="h-7 w-48 rounded-sm" />
       <TableSkeleton />
     </div>

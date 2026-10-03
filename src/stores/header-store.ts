@@ -15,6 +15,16 @@ interface HeaderStore {
     subnav?: React.ReactNode,
   ) => void
   clearHeader: () => void
+  /**
+   * The league workspace's header (league layout — `LeagueShell`): an
+   * identity row ABOVE the main row, the league sub-nav as the main row, and
+   * the commissioner's override indicator on the right. While it is set it
+   * OWNS the bar: a page's own `PageHeader` title/actions are not shown, so
+   * a league page can never stack a second header under it.
+   */
+  league: { above: React.ReactNode; nav: React.ReactNode; actions: React.ReactNode } | null
+  setLeagueHeader: (league: { above: React.ReactNode; nav: React.ReactNode; actions: React.ReactNode }) => void
+  clearLeagueHeader: () => void
 }
 
 export const useHeaderStore = create<HeaderStore>()((set) => ({
@@ -24,4 +34,7 @@ export const useHeaderStore = create<HeaderStore>()((set) => ({
   setHeader: (title, actions, subnav) =>
     set({ title, actions: actions ?? null, subnav: subnav ?? null }),
   clearHeader: () => set({ title: null, actions: null, subnav: null }),
+  league: null,
+  setLeagueHeader: (league) => set({ league }),
+  clearLeagueHeader: () => set({ league: null }),
 }))

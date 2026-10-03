@@ -10,15 +10,13 @@ import { useCommishEditScore } from '@/hooks/use-commish-score'
 import type { CommishMatchupOverrideResult } from '@/lib/leagues/api/commish-matchup-service'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
-import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode, useReportOverrideSaving } from '@/stores/commish-override-store'
 
 import {
   BOTH_SCORES_COPY,
   BYE_ROW_COPY,
   DECLARE_WINNER_COPY,
   LOCK_CHECKING_COPY,
-  OVERRIDE_BAR_OFF_COPY,
-  OVERRIDE_BAR_ON_COPY,
   OVERRIDE_PANEL_TITLE,
   bypassedCopy,
   declareWinnerConfirm,
@@ -29,7 +27,6 @@ import {
   type OverrideLockState,
   type ScoreGate,
 } from './matchup-override-ops'
-import { OverrideModeBar } from './override-mode-bar'
 
 /**
  * The commissioner's matchup override — M6A task L.E1.12 (spec §15.4:1692 →
@@ -37,11 +34,10 @@ import { OverrideModeBar } from './override-mode-bar'
  * STANDING RULE (h); D342; Q61; Q66).
  *
  * **The controls belong to OVERRIDE MODE, not to a save** (rule (h)). The
- * switch is `OverrideModeBar` — the lineup editor's own, over the SAME store
- * (`commish-override-store.ts`, keyed by league), so a commissioner who turned
- * the mode on at a team page arrives here with it on, and vice versa. It is
- * present in EVERY week state for a commissioner and never appears as the
- * answer to a refusal. While it is on, the whole block is framed in the lime
+ * switch lives in League settings / the Commissioner console, over the SAME
+ * store (`commish-override-store.ts`, keyed by league), so a commissioner who
+ * turned the mode on there arrives here with it on; the league header's
+ * "Turn off" ends it. While it is on, the whole block is framed in the lime
  * "look here" tokens (fill + border; never a shadow — CLAUDE.md).
  *
  * **Both scores together** (D342 — `is_overridden` is one flag on the row),
@@ -82,8 +78,6 @@ export function MatchupOverrideTools({
   awayName: string | null
 }) {
   const overrideMode = useOverrideMode(leagueId)
-  const enter = useCommishOverrideStore((s) => s.enter)
-  const exit = useCommishOverrideStore((s) => s.exit)
   const score = useCommishEditScore(leagueId)
   const result = useCommishSetResult(leagueId)
   const lockRead = useCommishMatchupEditLock(leagueId, row.week, row.id, overrideMode)
@@ -108,6 +102,7 @@ export function MatchupOverrideTools({
   const awayDraft = shownScoreDraft(awayTyped, row.away_score)
 
   const pending = score.isPending ? 'score' : result.isPending ? 'result' : null
+  useReportOverrideSaving(pending !== null) // R1460: locks the header's Turn off
   const spoke = last === 'score' ? score : last === 'result' ? result : null
 
   return (
@@ -116,9 +111,6 @@ export function MatchupOverrideTools({
       data-matchup-override={row.id}
       data-override-mode={overrideMode ? 'on' : 'off'}
     >
-      <OverrideModeBar on={overrideMode} busy={pending !== null} onToggle={(next) => (next ? enter(leagueId) : exit())}>
-        {overrideMode ? OVERRIDE_BAR_ON_COPY : OVERRIDE_BAR_OFF_COPY}
-      </OverrideModeBar>
       {overrideMode && (
         <MatchupOverridePanelView
           homeName={homeName}

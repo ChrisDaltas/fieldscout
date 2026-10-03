@@ -158,20 +158,20 @@ async function assertOk(what: string, result: { status: number; body: unknown })
   expect(result.status, `${what} answered ${result.status}: ${JSON.stringify(result.body).slice(0, 400)}`).toBe(200)
 }
 
-/** Turn override mode on from a screen's own switch (the store lives in
- *  memory, so a full navigation starts with it off — as for a real user). */
-async function overrideOn(page: Page): Promise<void> {
-  const toggle = page.locator('[data-override-toggle]').first()
-  await expect(toggle).toBeVisible({ timeout: 60_000 })
-  if ((await toggle.getAttribute('data-override-toggle')) !== 'on') await toggle.click()
-  await expect(toggle).toHaveAttribute('data-override-toggle', 'on', { timeout: 15_000 })
-}
-
-/** The trade center, with override mode switched on there. */
+/** The trade center, with override mode on. League UX batch 1: the mode is
+ *  switched on from the console (or League settings) only — the console's
+ *  "Trade center" door turns it on as it is followed (a client-side
+ *  navigation, so the in-memory mode survives), and the league header then
+ *  shows the indicator. */
 async function openTradesInOverride(page: Page, leagueId: string): Promise<void> {
-  await page.goto(`/app/leagues/${leagueId}/trades`)
+  await page.goto(`/app/leagues/${leagueId}/commish`)
+  const door = page.locator(`[data-tool-door="trades"][href="/app/leagues/${leagueId}/trades"]`)
+  await expect(door).toBeVisible({ timeout: 60_000 })
+  await expect(door).toHaveAttribute('data-override-door', 'on')
+  await door.click()
+  await page.waitForURL(`**/app/leagues/${leagueId}/trades`, { timeout: 60_000 })
   await expect(page.locator('[data-trade-center]')).toBeVisible({ timeout: 60_000 })
-  await overrideOn(page)
+  await expect(page.locator('[data-league-header] [data-override-indicator]')).toBeVisible({ timeout: 15_000 })
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -247,7 +247,7 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
 
       // ---- (2) THE TEAM PAGE — override mode is on (the door turned it on) ---
       await cPage.waitForURL(`**/app/leagues/${league.leagueId}/team/${target}`, { timeout: 60_000 })
-      await expect(cPage.locator('[data-override-mode-badge]')).toBeVisible({ timeout: 60_000 })
+      await expect(cPage.locator('[data-league-header] [data-override-indicator]')).toBeVisible({ timeout: 60_000 })
       const editor = cPage.locator(`[data-lineup-editor="${target}"]`)
       await expect(editor).toBeVisible({ timeout: 60_000 })
       await expect(editor).toHaveAttribute('data-override-mode', 'on')
@@ -410,7 +410,7 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
       await cPage.locator('[data-tab="history"]').click()
       const historyCard = cPage.locator(`[data-trades="history"] [data-trade="${forced.id}"]`)
       await expect(historyCard).toBeVisible({ timeout: 60_000 })
-      await expect(cPage.locator('[data-override-toggle]').first()).toHaveAttribute('data-override-toggle', 'on')
+      await expect(cPage.locator('[data-league-header] [data-override-indicator]')).toBeVisible()
       await expect(historyCard.locator('[data-trade-status-label]')).toHaveText('Completed')
       await expect(historyCard.locator('[data-trade-op]')).toHaveCount(0)
       await expect(historyCard.locator('[data-trade-override]')).toHaveCount(0)

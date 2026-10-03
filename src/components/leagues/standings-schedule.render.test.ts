@@ -46,6 +46,7 @@ import {
   type RemixPreview,
 } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
+import { useOverrideMode } from '@/stores/commish-override-store'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
@@ -64,6 +65,10 @@ import { StandingsPage } from './standings-page'
 import { NO_FINAL_WEEKS_COPY, STANDINGS_OVERRIDES_UNKNOWN_COPY } from './standings-table-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 
+vi.mock('@/stores/commish-override-store', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
+  return { ...orig, useOverrideMode: vi.fn(() => false) }
+})
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-commish' }, profile: { username: 'chris' } }),
 }))
@@ -406,14 +411,26 @@ describe('schedule — the grid and the commissioner’s doors', () => {
     expect(html).not.toMatch(/L\.D\d|Q39|Q30/)
   })
 
-  it('the COMMISSIONER sees Remix and an Edit on every editable row of the upcoming week — and the ladder’s reason hint', () => {
-    const html = renderSchedule()
-    expect(html).toContain('data-remix-open')
-    expect(between(html, 'data-week="1"', 'data-week="2"')).not.toContain('data-edit-matchup')
-    expect(between(html, 'data-week="2"', 'data-week="3"')).not.toContain('data-edit-matchup')
-    expect(between(html, 'data-week="3"', 'data-week="4"').match(/data-edit-matchup/g)).toHaveLength(4)
-    expect(html).toContain(REASON_HINT_COPY)
-  })
+  // R1459: the per-week Edit is the NORMAL commissioner verb, so override
+  // mode does not gate it — it follows the open window alone (week 3 is the
+  // only upcoming regular week). Remix stays in the console in both states.
+  for (const on of [false, true]) {
+    it(`the COMMISSIONER, override ${on ? 'ON' : 'OFF'}: an Edit on every editable row of the open (upcoming) week only, the ladder’s reason hint, and NO Remix`, () => {
+      vi.mocked(useOverrideMode).mockReturnValue(on)
+      let html: string
+      try {
+        html = renderSchedule()
+      } finally {
+        vi.mocked(useOverrideMode).mockReturnValue(false)
+      }
+      expect(html).toContain('data-schedule-grid')
+      expect(html).not.toContain('data-remix-open')
+      expect(between(html, 'data-week="1"', 'data-week="2"')).not.toContain('data-edit-matchup')
+      expect(between(html, 'data-week="2"', 'data-week="3"')).not.toContain('data-edit-matchup')
+      expect(between(html, 'data-week="3"', 'data-week="4"').match(/data-edit-matchup/g)).toHaveLength(4)
+      expect(html).toContain(REASON_HINT_COPY)
+    })
+  }
 
   it('a MANAGER sees neither door and no hint — the affordances are commissioner-only', () => {
     const html = renderSchedule({ detail: managerDetail })

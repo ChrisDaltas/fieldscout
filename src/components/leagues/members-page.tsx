@@ -1,17 +1,14 @@
 'use client'
 
-import Link from 'next/link'
 
-import { PageHeader } from '@/components/layout/app-header'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLeague } from '@/hooks/use-league'
 
 import { InvitePanel } from './invite-panel'
 import { MEMBERS_INTRO_COMMISH, MEMBERS_INTRO_MEMBER, MEMBERS_TITLE } from './invite-panel-ops'
 import { ProblemCard, problemCopy } from './team-page'
+import { LeaguePageTitle } from './league-cells'
 
 /**
  * The league's members — `/app/leagues/[id]/members` (M6 task L.E1.39;
@@ -39,7 +36,7 @@ export function MembersPage({ leagueId }: { leagueId: string }) {
   if (league.isPending) {
     return (
       <div className="flex flex-col gap-4" data-members-loading>
-        <PageHeader title={MEMBERS_TITLE} />
+        <LeaguePageTitle title={MEMBERS_TITLE} />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -60,17 +57,7 @@ export function MembersPage({ leagueId }: { leagueId: string }) {
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   return (
     <div className="flex flex-col gap-4" data-members-page>
-      <PageHeader
-        title={MEMBERS_TITLE}
-        actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {detail.league.name}
-            </Link>
-          </Button>
-        }
-      />
+      <LeaguePageTitle title={MEMBERS_TITLE} />
       <Card>
         <CardContent className="px-card-pad py-3">
           <p className="text-[12px] font-semibold text-n-3" data-members-intro>

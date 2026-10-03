@@ -405,43 +405,23 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     )
   }
 
-  it('THE SWITCH: a commissioner has a persistent toggle on the CURRENT, LIVE, OPEN week — the state the shipped version could not reach — and a manager has none, in any state', () => {
-    // The week the ruling is about: current, live, therefore `open`. A control
-    // hung off the CLOSED banner never renders here (that was the blocker —
-    // he'd have had to wait until every game ended), and neither does one hung
-    // off a refusal, since the editor's own lock wall makes a refusal
-    // unconstructable: the locked RB is not draggable, has no onClick and no
-    // bench ×, so no lock-violating map can be built.
+  it('NO SWITCH ON THE TEAM PAGE (League UX batch 1, Chris 2026-10-03): override mode is turned on in League settings / the console, so the editor carries no toggle in any week state — for a commissioner or a manager', () => {
+    // The lock wall still holds with the mode off: the locked RB is not
+    // draggable, has no onClick and no bench ×.
     const open = renderEditor()
-    expect(open).toContain('data-commish-tools')
-    expect(open).toContain('data-override-toggle="off"')
-    expect(open).toContain('Turn on override mode')
+    expect(open).not.toContain('data-commish-tools')
+    expect(open).not.toContain('data-override-toggle')
+    expect(open).not.toContain('Turn on override mode')
     expect(open).not.toContain('role="alert"')
     const at = open.indexOf('data-player="rb-locked"')
     const lockedRow = open.slice(Math.max(0, at - 300), at + 300)
     expect(lockedRow).toContain('aria-disabled="true"')
     expect(open).not.toContain('Bench Render RB Locked')
 
-    // Every other week state carries the same switch — closed, and no ladder.
-    expect(renderEditor({ editability: { state: 'closed', reason: PAST_WEEK_COPY } })).toContain('data-override-toggle="off"')
-    expect(renderEditor({ editability: { state: 'unknown' } })).toContain('data-override-toggle="off"')
-
-    // R985: THE TOGGLE IS LOCKED WHILE A SAVE IS IN FLIGHT. Exiting mid-save
-    // flips `active` to the other hook, so the pending write loses its
-    // "Saving…" line and its success notice is swallowed by the exit message —
-    // the screen then claims the placements are unsaved while the save
-    // actually succeeded. On an open week it also re-enables Save as the
-    // MANAGER verb, inviting a second concurrent write against one draft.
-    vi.mocked(useSetLineup).mockReturnValueOnce({
-      data: undefined,
-      error: null,
-      isPending: true,
-      reset: () => {},
-      submit: () => {},
-    } as unknown as ReturnType<typeof useSetLineup>)
-    const saving = renderEditor()
-    expect(saving).toContain('data-override-toggle-blocked="saving"')
-    expect(saving).toContain('Wait for the save to finish.')
+    for (const editability of [{ state: 'closed', reason: PAST_WEEK_COPY } as const, { state: 'unknown' } as const]) {
+      expect(renderEditor({ editability })).not.toContain('data-override-toggle')
+      expect(renderEditor({ editability, overrideMode: true })).not.toContain('data-override-toggle')
+    }
 
     // THE MANAGER'S EDITOR IS UNCHANGED. No switch, no commissioner tools.
     for (const editability of [{ state: 'open' } as const, { state: 'closed', reason: PAST_WEEK_COPY } as const]) {
@@ -468,14 +448,12 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(source).not.toMatch(/<Input\b/)
   })
 
-  it('THE VISIBLE STATE: present while ON, absent while OFF — a frame, a badge and an exit, none of it an error and none of it a resting shadow', () => {
+  it('THE VISIBLE STATE: present while ON, absent while OFF — a frame (the header carries the badge and the off switch), none of it an error and none of it a resting shadow', () => {
     const on = renderEditor({ overrideMode: true })
     expect(on).toContain('data-override-mode="on"')
-    expect(on).toContain('✸ Override mode ON')
     expect(on).toContain('border-brand-strong')
     expect(on).toContain('bg-brand-soft')
-    expect(on).toContain('data-override-toggle="on"')
-    expect(on).toContain('Exit override mode')
+    expect(on).not.toContain('data-override-toggle')
     // Not an error, and not elevated at rest — the frame and the bar carry
     // fill + border only (the `hover:shadow-hard-*` on the Save button is a
     // hover affordance and is exactly what the rule permits).
@@ -483,8 +461,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     const frameClass = on.slice(on.indexOf('class="') + 7, on.indexOf('"', on.indexOf('class="') + 7))
     expect(frameClass).toContain('border-brand-strong')
     expect(frameClass).not.toContain('shadow')
-    const bar = on.slice(on.indexOf('data-commish-tools'), on.indexOf('</div>', on.indexOf('data-commish-tools')))
-    expect(bar).not.toContain('shadow')
 
     const off = renderEditor()
     expect(off).toContain('data-override-mode="off"')
@@ -554,7 +530,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(manager).not.toContain('data-offer-override')
   })
 
-  it('THE PAGE says it too, above the fold: the mode is a badge in the team card and the editor’s frame, for a commissioner only', () => {
+  it('the mode is said ONCE, in the league header (League UX batch 1) — no badge in the team card; the editor’s frame marks it, for a commissioner only', () => {
     vi.mocked(useOverrideMode).mockReturnValue(false)
     const off = renderTeamPage({ detail: { ...detail, my_role: 'commissioner' } })
     expect(off).not.toContain('data-override-mode-badge')
@@ -563,25 +539,8 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     vi.mocked(useOverrideMode).mockReturnValue(true)
     try {
       const asCommish = renderTeamPage({ detail: { ...detail, my_role: 'commissioner' } })
-      // The badge sits in the identity card ABOVE the week picker and the
-      // editor, so "it's on" is legible on a phone with nothing scrolled.
-      //
-      // R984: assert PRESENCE before ordering. The first cut compared
-      // `indexOf(...)` directly and passed with the badge DELETED — `indexOf`
-      // returns -1 and -1 < any real index, so the whole above-the-fold
-      // requirement (the thing Chris asked for by name) could regress in
-      // silence. Proven: deleting the badge left 21/21 green. The two sibling
-      // assertions do not save it either — the editor's own bar satisfies both,
-      // and it renders BELOW the week picker.
-      const badgeAt = asCommish.indexOf('data-override-mode-badge')
-      const weekPickerAt = asCommish.indexOf('aria-label="Week"')
-      const editorAt = asCommish.indexOf('data-lineup-editor')
-      expect(badgeAt).toBeGreaterThan(-1)
-      expect(weekPickerAt).toBeGreaterThan(-1)
-      expect(editorAt).toBeGreaterThan(-1)
-      expect(badgeAt).toBeLessThan(weekPickerAt)
-      expect(weekPickerAt).toBeLessThan(editorAt)
-      expect(asCommish).toContain('✸ Override mode ON')
+      expect(asCommish).not.toContain('data-override-mode-badge')
+      expect(asCommish).not.toContain('✸ Override mode ON')
       expect(asCommish).toContain('data-override-mode="on"')
 
       // The seeded viewer's role is `manager` — the mode must not reach him
@@ -755,7 +714,7 @@ describe('the team page’s commissioner tools and rename arms (L.E1.13) — fre
     }
   })
 
-  it('MODE ON, commissioner: the roster tools mount under the editor with one row per rostered player, the rename is the AUDITED arm, and there is still exactly ONE override switch on the page', () => {
+  it('MODE ON, commissioner: the roster tools mount under the editor with one row per rostered player, the rename is the AUDITED arm, and there is no override switch on the page', () => {
     vi.mocked(useOverrideMode).mockReturnValue(true)
     try {
       const html = renderTeamPage({ detail: asCommish })
@@ -764,7 +723,7 @@ describe('the team page’s commissioner tools and rename arms (L.E1.13) — fre
       expect(html.indexOf('data-team-commish-tools')).toBeGreaterThan(html.indexOf('data-lineup-editor'))
       expect(html).toContain('data-rename-open="commissioner"')
       expect(html).not.toContain('data-rename-hint')
-      expect(html.match(/data-override-toggle/g)).toHaveLength(1)
+      expect(html).not.toContain('data-override-toggle') // the switch lives in settings / the console
       // The move targets are the OTHER franchises — never the team itself.
       expect(html).toContain('aria-label="Move Render QB to"')
     } finally {
@@ -822,8 +781,8 @@ describe('the team page’s autopilot switch (L.E1.22) — free vs gated', () =>
       const on = renderTeamPage({ detail: unmanagedDetail, rosters: unmanagedRosters(true) })
       expect(on).toContain('data-autopilot-switch="on"')
       expect(on).toMatch(/role="switch"[^>]*aria-checked="true"/)
-      // Still exactly ONE override switch on the page (rule (h)).
-      expect(on.match(/data-override-toggle/g)).toHaveLength(1)
+      // No override switch on the page — it lives in settings / the console.
+      expect(on).not.toContain('data-override-toggle')
     } finally {
       vi.mocked(useOverrideMode).mockReset()
     }

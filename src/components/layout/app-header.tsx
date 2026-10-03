@@ -40,6 +40,22 @@ export function AppHeader() {
   const title = useHeaderStore((s) => s.title)
   const actions = useHeaderStore((s) => s.actions)
   const subnav = useHeaderStore((s) => s.subnav)
+  const league = useHeaderStore((s) => s.league)
+
+  // League pages: ONE bar — the identity row above, the league sub-nav as
+  // the main row (the prototype's AppShell `above` slot). A page's own
+  // PageHeader title is ignored here, so there is never a second header.
+  if (league) {
+    return (
+      <header className="sticky top-0 z-20 shrink-0 border-b border-ink bg-white px-7" data-league-header>
+        <div className="flex min-w-0 items-center gap-3 pt-3">{league.above}</div>
+        <div className="flex h-11 items-center gap-3">
+          <div className="mr-auto flex min-w-0 items-center">{league.nav}</div>
+          {league.actions}
+        </div>
+      </header>
+    )
+  }
 
   return (
     <header className="sticky top-0 z-20 shrink-0 border-b border-ink bg-white px-7">

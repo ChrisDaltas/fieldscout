@@ -18,11 +18,6 @@ import type { CommishMatchupEditLock, CommishMatchupOverrideResult } from '@/lib
 
 import { formatPoints } from './standings-table-ops'
 
-export const OVERRIDE_BAR_OFF_COPY =
-  'Commissioner — override mode lets you correct this matchup: set both scores, or declare a winner. It stays on until you turn it off, and every change is recorded.'
-export const OVERRIDE_BAR_ON_COPY =
-  'You can correct this matchup below. Every change is recorded — who changed what, when — and posted to the league. Exit when you’re done.'
-
 export const OVERRIDE_PANEL_TITLE = 'Correct this matchup'
 /** D342: `is_overridden` is ONE flag on the whole row, so a score correction
  *  always restates BOTH sides — said on the panel, not discovered. */

@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useMemo, useState, type ReactNode } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,7 +22,7 @@ import { cn } from '@/lib/utils'
 import { commishMatchupHref } from './activity-page-ops'
 import { MatchupCorrectionNote } from './corrections-view'
 import { boxPointsNote, weekMayHaveCorrections } from './corrections-view-ops'
-import { Crest, TeamNameLink } from './league-cells'
+import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { scoringLive } from './league-home-season-ops'
 import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
 import {
@@ -175,17 +174,7 @@ function MatchupContent({
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
 
   const header = (
-    <PageHeader
-      title="Matchups"
-      actions={
-        <Button variant="stroke" size="sm" asChild>
-          <Link href={`/app/leagues/${leagueId}`}>
-            <Icon name="cup" size={13} />
-            {detail.league.name}
-          </Link>
-        </Button>
-      }
-    />
+    <LeaguePageTitle title="Matchups" />
   )
 
   if (week === null) {
@@ -840,7 +829,7 @@ function EmptyCard({ copy, ...rest }: { copy: string } & Record<string, unknown>
 function MatchupSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Matchups" />
+      <LeaguePageTitle title="Matchups" />
       <Skeleton className="h-7 w-48 rounded-sm" />
       <BodySkeleton />
     </div>

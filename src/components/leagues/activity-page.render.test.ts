@@ -199,8 +199,9 @@ describe('the page — its tabs, and the league it needs first', () => {
     const labels = [...html.matchAll(/data-tab="([a-z]+)"[^>]*>([^<]+)</g)].map((m) => m[2])
     expect(labels).toStrictEqual(['All', 'Adds & drops', 'Trades', 'Commissioner', 'Stat corrections'])
     expect(html).toContain('data-activity-page="all"')
-    expect(html).toContain('<h1>League activity</h1>')
-    expect(html).toContain(`href="/app/leagues/${LEAGUE}"`)
+    expect(html).toContain('>League activity</h2>')
+    // League UX batch 1: the league header carries the way back — no page back button.
+    expect(html).not.toContain(`href="/app/leagues/${LEAGUE}"`)
   })
 
   it('loading: the page skeleton, no tab claimed', () => {

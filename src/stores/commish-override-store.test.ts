@@ -35,3 +35,17 @@ describe('commish-override-store', () => {
     expect(useCommishOverrideStore.getState().leagueId).toBe('league-b')
   })
 })
+
+describe('R1460 — the shared in-flight flag behind the header’s Turn off', () => {
+  it('counts overlapping saves and never goes negative', () => {
+    const s = useCommishOverrideStore.getState()
+    useCommishOverrideStore.setState({ inFlight: 0 })
+    s.beginSave()
+    s.beginSave()
+    s.endSave()
+    expect(useCommishOverrideStore.getState().inFlight).toBe(1)
+    s.endSave()
+    s.endSave()
+    expect(useCommishOverrideStore.getState().inFlight).toBe(0)
+  })
+})

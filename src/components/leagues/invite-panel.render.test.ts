@@ -427,11 +427,11 @@ function renderPage(seed: { detail?: LeagueDetail | 'missing' | 'error' }, viewe
 }
 
 describe('MembersPage — the same panel, after the draft', () => {
-  it('a commissioner: the intro, the panel with its post-draft controls, and the door back to the league', () => {
+  it('a commissioner: the intro and the panel with its post-draft controls — no back button (the league header is the way back)', () => {
     const html = renderPage({})
     expect(html).toContain('data-members-page')
     expect(html).toContain(MEMBERS_INTRO_COMMISH)
-    expect(html).toContain(`href="/app/leagues/${LEAGUE}"`)
+    expect(html).not.toContain(`href="/app/leagues/${LEAGUE}"`)
     expect(controlsIn(html)).toEqual(AFTER_LINK_CLOSED)
   })
 

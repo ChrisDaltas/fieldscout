@@ -389,3 +389,14 @@ export function confirmGate(
   if (plan.no_changes) return { ok: false, why: NO_CHANGES_COPY }
   return { ok: true }
 }
+
+/** Has the season started for a remix — the league's first week has left
+ *  `upcoming` (the same ladder read as `reasonHint`)? After that a remix is
+ *  a recorded commissioner override, so the console offers it only while
+ *  override mode is on (League UX batch 1). The server decides at call time. */
+export function remixSeasonStarted(weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]): boolean {
+  return reasonHint(weeks) !== null
+}
+
+export const REMIX_NEEDS_OVERRIDE_COPY =
+  'The season has started — turn on override mode above to remix the rest of the schedule. It is recorded and posted to the league.'

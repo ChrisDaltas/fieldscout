@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 
 /**
@@ -29,13 +30,38 @@ interface CommishOverrideStore {
   leagueId: string | null
   enter: (leagueId: string) => void
   exit: () => void
+  /** How many override-mode saves are in flight right now (R1460). The
+   *  header's "Turn off" is locked while this is > 0 — the same lock the
+   *  per-page `OverrideModeBar` gave its own switch (`busy`). */
+  inFlight: number
+  beginSave: () => void
+  endSave: () => void
 }
 
 export const useCommishOverrideStore = create<CommishOverrideStore>((set) => ({
   leagueId: null,
   enter: (leagueId: string) => set({ leagueId }),
   exit: () => set({ leagueId: null }),
+  inFlight: 0,
+  beginSave: () => set((s) => ({ inFlight: s.inFlight + 1 })),
+  endSave: () => set((s) => ({ inFlight: Math.max(0, s.inFlight - 1) })),
 }))
+
+/** Is an override-mode save in flight anywhere? */
+export function useOverrideSaving(): boolean {
+  return useCommishOverrideStore((s) => s.inFlight > 0)
+}
+
+/** Report a surface's own pending save into the shared flag while it lasts. */
+export function useReportOverrideSaving(pending: boolean): void {
+  const beginSave = useCommishOverrideStore((s) => s.beginSave)
+  const endSave = useCommishOverrideStore((s) => s.endSave)
+  useEffect(() => {
+    if (!pending) return
+    beginSave()
+    return () => endSave()
+  }, [pending, beginSave, endSave])
+}
 
 /** Is override mode on for THIS league? */
 export function useOverrideMode(leagueId: string): boolean {

@@ -8,11 +8,9 @@ import { useCommishEditBracket } from '@/hooks/use-commish-bracket'
 import type { CommishEditBracketResult } from '@/lib/leagues/api/commish-bracket-service'
 import type { BracketGame, BracketRound } from '@/lib/leagues/api/playoffs-service'
 import { cn } from '@/lib/utils'
-import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode, useReportOverrideSaving } from '@/stores/commish-override-store'
 
 import {
-  HAND_PICK_BAR_OFF_COPY,
-  HAND_PICK_BAR_ON_COPY,
   HAND_PICK_BYE_LABEL,
   HAND_PICK_PANEL_TITLE,
   draftFromGame,
@@ -23,7 +21,6 @@ import {
   roundWeeks,
   type HandPickDraft,
 } from './bracket-hand-pick-ops'
-import { OverrideModeBar } from './override-mode-bar'
 import { teamName } from './playoff-bracket-ops'
 
 /**
@@ -32,8 +29,8 @@ import { teamName } from './playoff-bracket-ops'
  * 134, §10.3; PROGRESS F360; STANDING RULE (h); Q66).
  *
  * **The controls belong to OVERRIDE MODE, not to a save** (rule (h)). The
- * switch is `OverrideModeBar` over the SAME store as the lineup editor and
- * the matchup page (`commish-override-store.ts`, keyed by league), so a
+ * switch lives in League settings / the Commissioner console, over the SAME
+ * store as the lineup editor and the matchup page (`commish-override-store.ts`, keyed by league), so a
  * commissioner who turned the mode on elsewhere arrives here with it on.
  * While it is on, the block is framed in the "look here" tokens (fill +
  * border; never a shadow — CLAUDE.md), each hand-pickable game carries a
@@ -65,9 +62,8 @@ export function BracketHandPickTools({
   onClose: () => void
 }) {
   const overrideMode = useOverrideMode(leagueId)
-  const enter = useCommishOverrideStore((s) => s.enter)
-  const exit = useCommishOverrideStore((s) => s.exit)
   const pick = useCommishEditBracket(leagueId)
+  useReportOverrideSaving(pick.isPending) // R1460: locks the header's Turn off
   // What he chose, keyed by the game it was chosen for — a new game opens
   // with its own pairing (never the previous game's draft).
   const [draft, setDraft] = useState<{ key: string; value: HandPickDraft } | null>(null)
@@ -80,9 +76,6 @@ export function BracketHandPickTools({
       data-bracket-hand-pick
       data-override-mode={overrideMode ? 'on' : 'off'}
     >
-      <OverrideModeBar on={overrideMode} busy={pick.isPending} onToggle={(next) => (next ? enter(leagueId) : exit())}>
-        {overrideMode ? HAND_PICK_BAR_ON_COPY : HAND_PICK_BAR_OFF_COPY}
-      </OverrideModeBar>
       {overrideMode && round && game && shown && (
         <BracketHandPickPanelView
           round={round}

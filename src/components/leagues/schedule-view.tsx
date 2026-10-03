@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,9 +16,8 @@ import { useEditMatchup, useScheduleLive, type EditMatchupResult } from '@/hooks
 import { cn } from '@/lib/utils'
 
 import { commishMatchupHref } from './activity-page-ops'
-import { Crest, TeamNameLink } from './league-cells'
+import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
-import { ScheduleRemixModal } from './schedule-remix-modal'
 import {
   NO_SCHEDULE_COPY,
   editFormProblem,
@@ -95,9 +93,14 @@ export function ScheduleView({ leagueId }: { leagueId: string }) {
 }
 
 function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: LeagueDetail }) {
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
   const schedule = useScheduleLive(leagueId)
-  const [remixOpen, setRemixOpen] = useState(false)
+  // R1459: the per-week Edit is the NORMAL commissioner verb (the
+  // `/schedule/matchup` route, the open-window edit) — offered to a
+  // commissioner whenever that window is open, override mode or not. A week
+  // whose window has closed offers no Edit here at all; changing it is an
+  // override action, reached through the console's `/commish/schedule`.
+  // Remix lives in the console alone.
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const teamNames = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
@@ -117,21 +120,10 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
   const currentWeek = useMemo(() => currentWeekOf(schedule.data?.weeks ?? []), [schedule.data])
   const hint = isCommish ? reasonHint(schedule.data?.weeks ?? []) : null
   const problem = schedule.isError ? (schedule.error instanceof Error ? schedule.error : new Error(String(schedule.error))) : null
-  const leagueTimeZone = detail.settings.draft.time_zone ?? null
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Schedule"
-        actions={
-          <Button variant="stroke" size="sm" asChild>
-            <Link href={`/app/leagues/${leagueId}`}>
-              <Icon name="cup" size={13} />
-              {detail.league.name}
-            </Link>
-          </Button>
-        }
-      />
+      <LeaguePageTitle title="Schedule" />
 
       {schedule.connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {problem && schedule.data && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
@@ -149,12 +141,6 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
             'Season'
           )}
         </span>
-        {isCommish && (
-          <Button variant="blue" size="sm" onClick={() => setRemixOpen(true)} data-remix-open>
-            <Icon name="repeat" size={13} />
-            Remix schedule
-          </Button>
-        )}
       </div>
 
       {schedule.isPending ? (
@@ -184,18 +170,6 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
             />
           ))}
         </div>
-      )}
-
-      {isCommish && schedule.data && (
-        <ScheduleRemixModal
-          open={remixOpen}
-          onOpenChange={setRemixOpen}
-          leagueId={leagueId}
-          current={schedule.data.matchups}
-          teamNames={teamNames}
-          leagueTimeZone={leagueTimeZone}
-          actorName={profile?.username ?? 'you'}
-        />
       )}
     </div>
   )
@@ -447,7 +421,7 @@ export function EditMatchupForm({
 function ScheduleSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Schedule" />
+      <LeaguePageTitle title="Schedule" />
       <GridSkeleton />
     </div>
   )

@@ -65,11 +65,6 @@ export const TRADES_ERROR_TITLE = 'Couldn’t load this league’s trades.'
 export const TRADES_UNAVAILABLE_TITLE = 'Trades aren’t switched on for this league yet'
 export const NO_TEAM_TRADE_COPY = 'You don’t manage a team in this league, so you can’t offer trades — but you can follow every trade here.'
 export const NOT_IN_SEASON_TRADE_COPY = 'Trades open once the season starts — offers can be made while the league is in season or in the playoffs.'
-/** Chris 2026-09-30 (L.D3.16, D463): the commissioner acts on a trade only
- *  once it has been accepted — veto it, or push it through now. Offers and
- *  answers are the two teams’ own; a completed trade stands. */
-export const COMMISH_TRADE_MODE_COPY =
-  'Once a trade has been accepted you can veto it or push it through now — each is logged for the whole league. Offers and answers stay with the two teams.'
 export const NEVER_WHO_VOTED_COPY = 'Votes are secret — the league sees the count, never who voted.'
 
 /** The deadline as its WEEK — the words when the instant is not readable yet

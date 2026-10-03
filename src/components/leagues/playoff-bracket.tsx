@@ -218,7 +218,7 @@ export function PlayoffBracket({
                           teamNames={teamNames}
                           myTeamId={myTeamId}
                           onPick={handPick && overrideMode && gameHandPickable(game) ? () => setPickingId(game.weeks[0]?.matchup_id ?? null) : null}
-                          resultLinks={compact ? [] : commishResultLinks(myRole, doc.league_id, game)}
+                          resultLinks={compact || !overrideMode ? [] : commishResultLinks(myRole, doc.league_id, game)}
                           picking={picking?.game === game}
                         />
                       ))

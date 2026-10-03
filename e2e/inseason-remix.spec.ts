@@ -98,10 +98,11 @@ test.describe('remix preview and confirm, free window (real browser)', () => {
     const commishContext = await browser.newContext({ storageState: STORAGE_STATE.dev })
     try {
       const page = await commishContext.newPage()
-      await page.goto(`/app/leagues/${league.leagueId}/schedule`)
+      // League UX batch 1: Remix lives in the Commissioner console only
+      // (its Schedule group) — the schedule page offers none.
+      await page.goto(`/app/leagues/${league.leagueId}/commish`)
 
-      // The commissioner-only door (`schedule-view.tsx:151`).
-      const open = page.locator('[data-remix-open]')
+      const open = page.locator('[data-console-remix="offered"] [data-remix-open]')
       await expect(open).toBeVisible({ timeout: 60_000 })
 
       // The modal PREVIEWS ON MOUNT (`useEffect(() => preview.preview(), [])`,

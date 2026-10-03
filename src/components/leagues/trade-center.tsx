@@ -1,10 +1,8 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { PageHeader } from '@/components/layout/app-header'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,18 +23,16 @@ import { useTradesLive } from '@/hooks/use-trades'
 import type { CommishTradeOp, CommishTradeResult, TradeDeadlineView, TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
 import type { LeagueRosters, RosterTeam } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
-import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { useOverrideMode, useReportOverrideSaving } from '@/stores/commish-override-store'
 
-import { TeamNameLink } from './league-cells'
+import { TeamNameLink, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
-import { OverrideModeBar } from './override-mode-bar'
 import { ReconnectingBanner, StatusBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
 import { DropPicker, TradeBuilderView, type TradeBuilderSend } from './trade-builder'
 import {
   BUILDER_ROSTERS_ERROR_TITLE,
   COMMISH_OP_LABELS,
-  COMMISH_TRADE_MODE_COPY,
   DEADLINE_PASSED_TITLE,
   NEVER_WHO_VOTED_COPY,
   NOT_IN_SEASON_TRADE_COPY,
@@ -159,9 +155,8 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const propose = useProposeTrade(leagueId)
   const act = useTradeAction(leagueId)
   const commish = useCommishTrade(leagueId)
+  useReportOverrideSaving(commish.isPending) // R1460: locks the header's Turn off
   const overrideMode = useOverrideMode(leagueId)
-  const enterOverride = useCommishOverrideStore((s) => s.enter)
-  const exitOverride = useCommishOverrideStore((s) => s.exit)
 
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
@@ -246,17 +241,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   }
 
   const header = (
-    <PageHeader
-      title={TRADES_TITLE}
-      actions={
-        <Button variant="stroke" size="sm" asChild>
-          <Link href={`/app/leagues/${leagueId}`}>
-            <Icon name="cup" size={13} />
-            {detail.league.name}
-          </Link>
-        </Button>
-      }
-    />
+    <LeaguePageTitle title={TRADES_TITLE} />
   )
 
   const cardRefusal = (tradeId: string, kind: 'respond' | 'commish') => {
@@ -270,11 +255,9 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
       {header}
       {trades.connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
 
-      {isCommish && (
-        <OverrideModeBar on={inOverride} busy={commish.isPending} onToggle={(next) => (next ? enterOverride(leagueId) : exitOverride())}>
-          {COMMISH_TRADE_MODE_COPY}
-        </OverrideModeBar>
-      )}
+      {/* Override mode is switched on from League settings / the console
+          only (League UX batch 1); while it is on, the header says so and
+          this page offers the veto / push-through actions. */}
 
       <TradeCenterView
         doc={trades.data ?? null}
@@ -960,7 +943,7 @@ export function BuilderRostersWait({ state, error, onRetry }: { state: 'loading'
 function TradesSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={TRADES_TITLE} />
+      <LeaguePageTitle title={TRADES_TITLE} />
       <Skeleton className="h-9 rounded-sm" />
       <Skeleton className="h-7 w-48 rounded-sm" />
       <Skeleton className="h-24 rounded-sm" />

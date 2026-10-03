@@ -21,10 +21,6 @@ import type { BracketGame, BracketRound } from '@/lib/leagues/api/playoffs-servi
  * will no longer do is the consequence). (4) No ledger code in copy.
  */
 
-export const HAND_PICK_BAR_OFF_COPY =
-  'Commissioner — override mode lets you hand-pick a playoff matchup. It stays on until you turn it off, and every change is recorded.'
-export const HAND_PICK_BAR_ON_COPY =
-  'Choose a game below and set who plays whom. The teams you move swap places; a bye is a slot. Every change is recorded and posted to the league. Exit when you’re done.'
 export const HAND_PICK_PANEL_TITLE = 'Hand-pick this matchup'
 export const HAND_PICK_BYE_LABEL = 'Bye'
 export const HAND_PICK_OPEN_LABEL = 'Change pairing'

@@ -50,8 +50,6 @@ import {
   LIVE_SCORING_STOPPED_COPY,
   LOCK_CHECKING_COPY,
   NO_CHANGES_COPY,
-  OVERRIDE_BAR_OFF_COPY,
-  OVERRIDE_BAR_ON_COPY,
   STANDINGS_AT_FINALIZATION_COPY,
   STANDINGS_REBUILT_COPY,
 } from './matchup-override-ops'
@@ -178,7 +176,11 @@ function renderPage(
 // The mode
 // ---------------------------------------------------------------------------
 
-describe('override MODE on the matchup page — one switch, every week state, commissioner only (rule (h))', () => {
+// League UX batch 1 (Chris 2026-10-03): the override switch lives in League
+// settings / the Commissioner console ONLY, and the league header shows it
+// while it is on. The matchup page carries NO switch in any state; with the
+// mode on, the commissioner's correction panel opens here as before.
+describe('override MODE on the matchup page — no switch here, every week state, commissioner only (rule (h))', () => {
   it('PREMISE: the page renders the viewer’s matchup, and un-mocked the mode is OFF', () => {
     const html = renderPage()
     expect(html).toContain('data-matchup="m1"')
@@ -186,7 +188,7 @@ describe('override MODE on the matchup page — one switch, every week state, co
     expect(html).toContain('data-override-mode="off"')
   })
 
-  it('the switch is there in EVERY week state — upcoming, live, correction window, final — never behind a refusal or a status', () => {
+  it('NO switch in ANY week state — upcoming, live, correction window, final — and OFF mounts no panel', () => {
     for (const status of ['upcoming', 'live', 'correction_window', 'final']) {
       const html = renderPage({
         week: weekDoc({
@@ -195,9 +197,8 @@ describe('override MODE on the matchup page — one switch, every week state, co
         }),
       })
       expect(html, status).toContain(`data-week-badge="${status === 'correction_window' ? 'pending_corrections' : status}"`) // premise: the state is the one named
-      expect(html, status).toContain('data-override-toggle="off"')
-      expect(html, status).toContain('Turn on override mode')
-      expect(html, status).toContain(OVERRIDE_BAR_OFF_COPY)
+      expect(html, status).not.toContain('data-override-toggle')
+      expect(html, status).not.toContain('Turn on override mode')
       // OFF: no panel, no fields, nothing to submit.
       expect(html, status).not.toContain('data-override-panel')
       expect(html, status).not.toContain('<input')
@@ -205,7 +206,7 @@ describe('override MODE on the matchup page — one switch, every week state, co
   })
 
   it('a co-commissioner gets it too; a MANAGER sees none of it — not even with the store saying ON', () => {
-    expect(renderPage({ detail: detailAs('co_commissioner') })).toContain('data-override-toggle="off"')
+    expect(renderPage({ detail: detailAs('co_commissioner'), overrideMode: true })).toContain('data-override-panel')
     for (const overrideMode of [false, true]) {
       const html = renderPage({ detail: detailAs('manager'), overrideMode })
       expect(html).toContain('data-matchup="m1"') // premise: the page rendered
@@ -221,13 +222,10 @@ describe('override MODE on the matchup page — one switch, every week state, co
     expect(html).not.toContain('data-matchup-override')
   })
 
-  it('ON: the visible on-state (badge + frame + copy), the switch reads Exit, and the panel opens with BOTH scores and the winner arm', () => {
+  it('ON: the frame marks the panel, there is still no switch on the page, and the panel opens with BOTH scores and the winner arm', () => {
     const html = renderPage({ overrideMode: true })
     expect(html).toContain('data-override-mode="on"')
-    expect(html).toContain('✸ Override mode ON')
-    expect(html).toContain(OVERRIDE_BAR_ON_COPY)
-    expect(html).toContain('data-override-toggle="on"')
-    expect(html).toContain('Exit override mode')
+    expect(html).not.toContain('data-override-toggle')
     expect(html).toContain('border-brand-strong bg-brand-soft')
     expect(html).toContain('data-override-panel')
     // D342: both scores, together, seeded from the STORED numbers.
@@ -238,16 +236,11 @@ describe('override MODE on the matchup page — one switch, every week state, co
     expect(html).toContain('Declare Bravo the winner')
     // OFF carries none of the on-state.
     const off = renderPage()
-    expect(off).not.toContain('✸ Override mode ON')
     expect(off).not.toContain('border-brand-strong')
   })
 
-  it('A11Y: the switch is a button exposing its state (aria-pressed) inside a status region; each score field has a label bound to it', () => {
-    const off = renderPage()
+  it('A11Y: each score field has a label bound to it', () => {
     const on = renderPage({ overrideMode: true })
-    expect(between(off, 'data-commish-tools', '</button>')).toContain('aria-pressed="false"')
-    expect(between(on, 'data-commish-tools', '</button>')).toContain('aria-pressed="true"')
-    expect(off).toMatch(/role="status"[^>]*data-commish-tools/)
     const labels = [...on.matchAll(/<label for="([^"]+)"[^>]*>([^<]+)<\/label>/g)].map((m) => ({ id: m[1], text: m[2] }))
     expect(labels.map((l) => l.text)).toStrictEqual(['Alpha score', 'Bravo score'])
     for (const label of labels) expect(on).toContain(`id="${label.id}"`)
@@ -280,7 +273,6 @@ describe('override MODE on the matchup page — one switch, every week state, co
 
   it('a BYE row (F366, fixed): the mode switches, the panel offers the HOME score alone — no away field, no winner arm — and the bye line says why', () => {
     const on = renderPage({ overrideMode: true, week: weekDoc({ matchups: [{ ...M1, away_team_id: null, away_score: null }] }) })
-    expect(on).toContain('data-override-toggle="on"')
     expect(on).toContain('data-override-panel')
     expect(on).toContain('data-score-input="home"')
     expect(on).not.toContain('data-score-input="away"')
@@ -413,15 +405,13 @@ describe('Q61 — no score or winner control while a starter is still playing (t
 
   it('LOCKED: the mode is on, the panel says the server’s one line VERBATIM, and offers NO score field, NO Save and NO winner button', () => {
     const html = renderPage({ overrideMode: true, lock: lockDoc('m1', false, LINE) })
-    expect(html).toContain('data-override-toggle="on"') // premise: the mode is on
+    expect(html).toContain('data-override-mode="on"') // premise: the mode is on
     expect(html).toContain('data-override-panel') // premise: the panel mounted
     expect(between(html, 'data-override-lock="locked"', '</p>')).toContain(LINE)
     expect(html).not.toContain('data-override-arm="score"')
     expect(html).not.toContain('data-save-scores')
     expect(html).not.toContain('data-declare-winner')
     expect(html).not.toContain('<input')
-    // The mode switch itself is never behind the refusal (rule (h)).
-    expect(html).toContain('Exit override mode')
   })
 
   it('LOCKED, `lineup_not_set` (R1097): a side with NO lineup row — the server’s sentence VERBATIM, and NO score field, Save or winner button', () => {
@@ -433,7 +423,6 @@ describe('Q61 — no score or winner control while a starter is still playing (t
     expect(html).not.toContain('data-save-scores')
     expect(html).not.toContain('data-declare-winner')
     expect(html).not.toContain('<input')
-    expect(html).toContain('Exit override mode')
   })
 
   it('LOCKED, `no_starter_game` (Q67 / R1140, migration 142): a starting slot EMPTY or holding a player on bye while the week still has games — the server’s sentence VERBATIM, and NO score field, Save or winner button', () => {
@@ -445,7 +434,6 @@ describe('Q61 — no score or winner control while a starter is still playing (t
     expect(html).not.toContain('data-save-scores')
     expect(html).not.toContain('data-declare-winner')
     expect(html).not.toContain('<input')
-    expect(html).toContain('Exit override mode')
   })
 
   it('OPEN (the server says every starter has finished): the controls are there and no lock line is', () => {
