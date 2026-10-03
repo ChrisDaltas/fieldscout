@@ -283,6 +283,12 @@ export interface MoveOption {
 
 /** The seats a player can go to, each with its current occupant, then the
  *  bench. IR is offered only to a player holding an IR designation. */
+/** Two empty seats sharing a label read apart: "RB 1" / "RB 2". */
+function seatLabel(slot: SlotInstance, slots: readonly SlotInstance[]): string {
+  const same = slots.filter((s) => s.label === slot.label)
+  return same.length > 1 ? `${slot.label} ${same.indexOf(slot) + 1}` : slot.label
+}
+
 export function moveOptions(args: {
   player: RosterPlayer
   placement: Placement
@@ -304,7 +310,7 @@ export function moveOptions(args: {
     const occLocked = Boolean(occId && locked.has(occId) && !lockExempt)
     out.push({
       target: { kind: 'slot', key: slot.key },
-      label: `${slot.label} — ${occ ? occ.full_name : 'Empty'}`,
+      label: `${occ ? slot.label : seatLabel(slot, slots)} — ${occ ? occ.full_name : 'Empty'}`,
       disabledReason: occLocked ? `${occ?.full_name ?? 'That player'}’s game has started — that seat is locked.` : null,
     })
   }
@@ -366,6 +372,7 @@ export class LineupAutosaver<R> {
   private base: Placement
   private queue: QueuedMove[] = []
   private inFlight = false
+  private savedInRun = false
 
   constructor(
     base: Placement,
@@ -400,12 +407,17 @@ export class LineupAutosaver<R> {
       return
     }
     const move = this.queue.shift()
-    if (!move) return
+    if (!move) {
+      // R1466: the queue emptied with nothing in flight — always emit a
+      // terminal status, or a trailing no-op/refused move leaves 'saving'.
+      this.deps.onStatus(this.savedInRun ? 'saved' : 'idle', 0)
+      this.savedInRun = false
+      return
+    }
     const plan = this.deps.plan(this.base, move)
     if (!plan.ok) {
       if (plan.reason !== 'noop') this.deps.onPlanRefused(plan.message, move)
-      if (this.queue.length > 0) return this.pump()
-      return
+      return this.pump()
     }
     this.inFlight = true
     this.deps.onStatus('saving', this.queue.length)
@@ -413,14 +425,23 @@ export class LineupAutosaver<R> {
       const result = await this.deps.send(plan.next)
       this.base = this.deps.canonical(result)
       this.inFlight = false
+      this.savedInRun = true
       this.deps.onSaved(result, move, plan)
-      if (this.queue.length > 0) return this.pump()
-      this.deps.onStatus('saved', 0)
+      return this.pump()
     } catch (e) {
       this.inFlight = false
+      this.savedInRun = false
       this.queue = []
       this.deps.onStatus('error', 0)
       this.deps.onRefused(e instanceof Error ? e.message : String(e), move)
     }
   }
+}
+
+
+/** R1467: the week tabs wait while a save is in flight — a week switch
+ *  mid-save could otherwise send a map built from the wrong week. */
+export const WEEK_TABS_SAVING_REASON = 'Saving this week’s lineup — switch weeks once it’s saved.'
+export function weekTabsLockedReason(saving: boolean): string | null {
+  return saving ? WEEK_TABS_SAVING_REASON : null
 }

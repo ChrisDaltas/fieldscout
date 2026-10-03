@@ -401,6 +401,8 @@ function TeamPageContent({
             </p>
           )}
           <LineupEditor
+            // R1467: one saver per team-week — a week switch remounts it.
+            key={`${teamId}:${week}`}
             leagueId={leagueId}
             teamId={teamId}
             week={week}

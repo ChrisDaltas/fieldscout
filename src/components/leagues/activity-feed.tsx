@@ -24,6 +24,8 @@ import {
   FEED_TITLE,
   SYSTEM_LABEL,
   commishLogLines,
+  groupCommishLogLines,
+  groupFeedLines,
   feedLines,
 } from './activity-feed-ops'
 import { SEE_ALL_ACTIVITY_LABEL, SHOW_OLDER_LABEL, commishEntryHref } from './activity-page-ops'
@@ -112,6 +114,8 @@ export function ActivityFeed({
   memberNames?: ReadonlyMap<string, string>
 }) {
   const lines = items ? feedLines(items, teamNames, memberNames) : []
+  // R1468: a commissioner's lineup fix — one receipt per move — reads as ONE line.
+  const groups = items ? groupFeedLines(items, lines) : []
   return (
     // `id="activity"` — League Home's section anchor (the console linked
     // here before the Activity page existed — D457(7)).
@@ -166,10 +170,10 @@ export function ActivityFeed({
           </p>
         ) : (
           <ol className="flex flex-col divide-y divide-n-4" data-feed-items>
-            {lines.map((line) => {
+            {groups.map(({ line, entries }) => {
               const when = line.createdAt ? formatInstantWithDate(line.createdAt, leagueTimeZone) : null
               return (
-                <li key={line.id} className="flex flex-col gap-0.5 py-1.5" data-feed-item={line.kind}>
+                <li key={line.id} className="flex flex-col gap-0.5 py-1.5" data-feed-item={line.kind} data-feed-group={entries.length > 1 ? entries.length : undefined}>
                   <div className="flex min-w-0 items-center gap-2">
                     {line.commissioner &&
                       (line.commishActionId ? (
@@ -227,6 +231,12 @@ export function ActivityFeed({
                       </span>
                     )}
                   </div>
+                  {entries.length > 1 && (
+                    <RunEntries
+                      entries={entries.map((e) => ({ id: e.id, text: e.text, createdAt: e.createdAt, href: e.commishActionId ? commishEntryHref(leagueId, e.commishActionId) : null }))}
+                      leagueTimeZone={leagueTimeZone}
+                    />
+                  )}
                 </li>
               )
             })}
@@ -236,6 +246,54 @@ export function ActivityFeed({
         {commishLog && <CommishLogSection {...commishLog} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />}
       </CardContent>
     </Card>
+  )
+}
+
+/** R1468: the receipts one grouped line stands for, newest first — every one
+ *  kept and shown (the grouping is display only). */
+function RunEntries({
+  entries,
+  leagueTimeZone,
+  open = false,
+  highlightId = null,
+}: {
+  entries: ReadonlyArray<{ id: string; text: string; createdAt: string | null; href: string | null }>
+  leagueTimeZone: string | null
+  open?: boolean
+  highlightId?: string | null
+}) {
+  return (
+    <details className="pl-1 text-[11px] font-medium text-n-3" open={open || undefined} data-run-entries>
+      <summary className="cursor-pointer font-bold text-accent-strong focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent">
+        Show each change (<span className="fs-num">{entries.length}</span>)
+      </summary>
+      <ol className="mt-1 flex flex-col gap-0.5 border-l border-n-4 pl-2">
+        {entries.map((e) => {
+          const when = e.createdAt ? formatInstantWithDate(e.createdAt, leagueTimeZone) : null
+          const body = (
+            <>
+              <span className="text-ink">{e.text}</span>
+              {when && (
+                <span className="fs-num ml-2" title={when.title ?? undefined}>
+                  {when.local}
+                </span>
+              )}
+            </>
+          )
+          return (
+            <li key={e.id} className={cn(e.id === highlightId && 'rounded-sm bg-accent-soft px-1')} data-run-entry={e.id}>
+              {e.href ? (
+                <Link href={e.href} className="underline decoration-transparent hover:decoration-current focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent">
+                  {body}
+                </Link>
+              ) : (
+                body
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </details>
   )
 }
 
@@ -304,6 +362,8 @@ export function CommishLogSection({
   className?: string
 }) {
   const lines = items ? commishLogLines(items, teamNames, memberNames) : []
+  // R1468: a lineup fix (one receipt per move) reads as ONE line that opens to each receipt.
+  const groups = items ? groupCommishLogLines(items, lines) : []
   const highlighted = useRef<HTMLLIElement | null>(null)
   const highlightShown = highlightId !== null && lines.some((line) => line.id === highlightId)
   useEffect(() => {
@@ -334,9 +394,9 @@ export function CommishLogSection({
         </p>
       ) : (
         <ol className="flex flex-col divide-y divide-n-4" data-commish-log-items>
-          {lines.map((line) => {
+          {groups.map(({ line, entries }) => {
             const when = formatInstantWithDate(line.createdAt, leagueTimeZone)
-            const isHighlighted = line.id === highlightId
+            const isHighlighted = entries.some((e) => e.id === highlightId)
             return (
               <li
                 key={line.id}
@@ -344,6 +404,7 @@ export function CommishLogSection({
                 // The opened entry is a RESTING state — a fill, never a shadow (CLAUDE.md).
                 className={cn('flex flex-col gap-0.5 py-1.5', isHighlighted && 'rounded-sm bg-accent-soft px-1.5')}
                 data-commish-log-item={line.id}
+                data-commish-log-group={entries.length > 1 ? entries.length : undefined}
                 data-highlighted={isHighlighted ? '' : undefined}
                 aria-current={isHighlighted ? 'true' : undefined}
               >
@@ -366,6 +427,14 @@ export function CommishLogSection({
                 <span className="fs-num text-[10px] font-medium text-n-3" title={when.title ?? undefined}>
                   {when.local}
                 </span>
+                {entries.length > 1 && (
+                  <RunEntries
+                    entries={entries.map((e) => ({ id: e.id, text: e.reason ? `${e.text} — reason: “${e.reason}”` : e.text, createdAt: e.createdAt, href: null }))}
+                    leagueTimeZone={leagueTimeZone}
+                    open={isHighlighted && line.id !== highlightId}
+                    highlightId={highlightId}
+                  />
+                )}
               </li>
             )
           })}

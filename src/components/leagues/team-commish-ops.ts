@@ -123,7 +123,7 @@ export function renameArm(args: { isCommish: boolean; isOwnTeam: boolean; overri
   return null
 }
 
-export const RENAME_VIA_OVERRIDE_HINT = 'To rename this team, turn on override mode below.'
+export const RENAME_VIA_OVERRIDE_HINT = 'To rename this team, turn on override mode from League settings (the commissioner console).'
 
 // ---------------------------------------------------------------------------
 // Autopilot — the commissioner's per-team switch (M6A L.E1.22; Q63, ruled

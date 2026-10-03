@@ -4,6 +4,9 @@
  * menu's entries, and the AUTOSAVE queue (success · refusal restores ·
  * serialized · a locked player is never sent).
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
@@ -13,6 +16,8 @@ import { lockedPlayerIds, planMove, slotInstances, type Placement, type SlotRow 
 import {
   DEFAULT_STAT_COLUMNS,
   LineupAutosaver,
+  WEEK_TABS_SAVING_REASON,
+  weekTabsLockedReason,
   lineupChecks,
   moveOptions,
   moveToastCopy,
@@ -197,7 +202,7 @@ describe('the Move menu’s entries', () => {
     const fromBench = moveOptions({ player: wr1, placement, slots, players, locked, lockExempt: false })
     const labels = fromBench.map((o) => o.label)
     expect(labels).toContain('WR — W Two')
-    expect(labels.some((l) => l.startsWith('WR — Empty'))).toBe(true)
+    expect(labels.some((l) => /^WR \d — Empty$/.test(l))).toBe(true)
     expect(labels.some((l) => l.startsWith('IR'))).toBe(false)
     expect(labels.some((l) => l.startsWith('QB'))).toBe(false)
     // The seat a LOCKED player holds is shown but closed, with the reason.
@@ -206,6 +211,14 @@ describe('the Move menu’s entries', () => {
     const seated = moveOptions({ player: qb, placement, slots, players, locked, lockExempt: false })
     expect(seated.at(-1)).toEqual({ target: { kind: 'bench' }, label: 'To bench — leave QB empty', disabledReason: null })
     expect(moveOptions({ player: wrOut, placement, slots, players, locked, lockExempt: false }).some((o) => o.label.startsWith('IR'))).toBe(true)
+  })
+
+  it('two empty seats sharing a label read apart — "RB 1 — Empty" / "RB 2 — Empty"', () => {
+    const rb = player({ player_id: 'rbx', position: 'RB', full_name: 'R X' })
+    const labels = moveOptions({ player: rb, placement: {}, slots, players: new Map([[rb.player_id, rb]]), locked: new Set(), lockExempt: false }).map((o) => o.label)
+    expect(labels).toContain('RB 1 — Empty')
+    expect(labels).toContain('RB 2 — Empty')
+    expect(new Set(labels).size).toBe(labels.length)
   })
 
   it('toasts in plain words', () => {
@@ -304,6 +317,30 @@ describe('AUTOSAVE — LineupAutosaver (Chris 2026-10-03: no Save button)', () =
     expect(saver.placement).toEqual({ 'rb:0': 'rb' })
   })
 
+  it('R1466: a trailing no-op after a save still ends in a terminal status (never stuck on "saving")', async () => {
+    let resolve!: (r: Result) => void
+    const { saver, log } = rig(() => new Promise((r) => (resolve = r)))
+    saver.enqueue({ playerId: 'rb', target: { kind: 'slot', key: 'rb:0' } })
+    // Queued behind the save — and a no-op once the save lands (rb is already there).
+    saver.enqueue({ playerId: 'rb', target: { kind: 'slot', key: 'rb:0' } })
+    resolve({ slot_map: { 'qb:0': 'qb', 'rb:0': 'rb' } })
+    await flush()
+    expect(log.sent).toHaveLength(1)
+    expect(log.statuses.at(-1)).toBe('saved')
+    expect(saver.saving).toBe(false)
+  })
+
+  it('R1466: a trailing client-refused move after a save ends in a terminal status', async () => {
+    let resolve!: (r: Result) => void
+    const { saver, log } = rig(() => new Promise((r) => (resolve = r)), { 'qb:0': 'qb', 'rb:0': 'rbL' })
+    saver.enqueue({ playerId: 'qb2', target: { kind: 'slot', key: 'qb:0' } })
+    saver.enqueue({ playerId: 'rbL', target: { kind: 'bench' } })
+    resolve({ slot_map: { 'qb:0': 'qb2', 'rb:0': 'rbL' } })
+    await flush()
+    expect(log.planRefused).toHaveLength(1)
+    expect(log.statuses.at(-1)).toBe('saved')
+  })
+
   it('a LOCKED player is never sent — the plan refuses him and nothing reaches the server', async () => {
     const { saver, log } = rig(async (m) => ({ slot_map: m }), { 'rb:0': 'rbL' })
     saver.enqueue({ playerId: 'rbL', target: { kind: 'bench' } })
@@ -312,5 +349,19 @@ describe('AUTOSAVE — LineupAutosaver (Chris 2026-10-03: no Save button)', () =
     expect(log.sent).toEqual([])
     expect(log.planRefused).toHaveLength(2)
     expect(log.planRefused[0]).toContain('R Locked is locked')
+  })
+})
+
+describe('R1467 — a week switch never sends another week’s lineup', () => {
+  it('the week tabs are held, with a reason, only while a save is in flight', () => {
+    expect(weekTabsLockedReason(true)).toBe(WEEK_TABS_SAVING_REASON)
+    expect(weekTabsLockedReason(false)).toBeNull()
+  })
+  it('the editor (and so its saver) remounts per team-week, and the tabs sit in a fieldset disabled by that reason', () => {
+    const page = readFileSync(path.join(__dirname, 'team-page.tsx'), 'utf8')
+    expect(page).toMatch(/<LineupEditor\s+(?:\/\/[^\n]*\n\s*)?key=\{`\$\{teamId\}:\$\{week\}`\}/)
+    const editor = readFileSync(path.join(__dirname, 'lineup-editor.tsx'), 'utf8')
+    expect(editor).toContain('disabled={weekLockedReason !== null}')
+    expect(editor).toContain('weekTabsLockedReason(saving)')
   })
 })

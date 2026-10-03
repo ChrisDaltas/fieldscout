@@ -435,8 +435,9 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
 
   if (!lineupRes.data && stored === null) {
     const bench = await readBench(supabase, leagueId, teamId, league.season, week, snapshot, games, new Set())
-    if ('status' in bench) return bench
-    return { status: 200, body: { ...empty, bench: bench.lines } as unknown as Json }
+    // R1469: a bench-only read failure leaves `bench` ABSENT (the column reads
+    // "—"); it never fails the box itself.
+    return { status: 200, body: ('status' in bench ? empty : { ...empty, bench: bench.lines }) as unknown as Json }
   }
 
   const slotMap = (lineupRes.data?.slot_map ?? {}) as Record<string, unknown>
@@ -511,8 +512,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       stored_note: pairing === 'overridden' ? OVERRIDDEN_NOTE : storedSource === 'backfill_unrecoverable' ? UNRECOVERABLE_NOTE : null,
     }
     const bench = await readBench(supabase, leagueId, teamId, league.season, week, snapshot, games, new Set(starterIds))
-    if ('status' in bench) return bench
-    payload.bench = bench.lines
+    if (!('status' in bench)) payload.bench = bench.lines // R1469: absent on a bench-only failure
     return { status: 200, body: payload as unknown as Json }
   }
 
@@ -581,8 +581,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     no_stat_row: team.no_stat_row,
   }
   const bench = await readBench(supabase, leagueId, teamId, league.season, week, snapshot, games, new Set(starterIds))
-  if ('status' in bench) return bench
-  payload.bench = bench.lines
+  if (!('status' in bench)) payload.bench = bench.lines // R1469: absent on a bench-only failure
   return { status: 200, body: payload as unknown as Json }
 }
 

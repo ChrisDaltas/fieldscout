@@ -507,3 +507,93 @@ export function memberNamesOf(members: ReadonlyArray<{ user_id: string | null; p
   }
   return map
 }
+
+// ---------------------------------------------------------------------------
+// ONE LINE PER LINEUP FIX (R1468 — Chris 2026-10-03, re-ruled: override moves
+// save instantly, one receipt each; "one entry per fix" is the DISPLAY's job)
+//
+// A RUN is back-to-back `edit_lineup` receipts by the same commissioner, for
+// the same team and the same week, with no other entry between them. A run
+// reads as ONE line ("… (3 changes)") that expands to every receipt, and its
+// ✸ goes to the latest. Pure read-side grouping: no receipt is dropped or
+// changed — every one is still in `entries`.
+// ---------------------------------------------------------------------------
+
+/** A run of one or more lines shown as ONE. `line` is the newest entry's,
+ *  with the run's count in its words; `entries` are all of them, newest first. */
+export interface Grouped<L> {
+  line: L
+  entries: L[]
+}
+
+/** Adjacent equal non-null keys form one run; a null key is always alone. */
+function runs(keys: ReadonlyArray<string | null>): Array<{ first: number; count: number }> {
+  const out: Array<{ first: number; count: number }> = []
+  keys.forEach((key, i) => {
+    const last = out.at(-1)
+    if (key !== null && last && keys[last.first] === key) last.count += 1
+    else out.push({ first: i, count: 1 })
+  })
+  return out
+}
+
+/** "(3 changes)" — nothing for a run of one. */
+export function changesClause(count: number): string {
+  return count > 1 ? ` (${count} changes)` : ''
+}
+
+/** The run key of a commissioner-log receipt: an `edit_lineup` keyed by its
+ *  actor, team and week; null for every other receipt (never grouped). */
+export function lineupRunKeyOfReceipt(item: Pick<CommishLogItem, 'action_type' | 'actor' | 'acting_as_team_id' | 'target_id' | 'metadata'>): string | null {
+  if (item.action_type !== 'edit_lineup') return null
+  const week = num(asDoc(item.metadata).week)
+  const team = item.acting_as_team_id ?? item.target_id
+  if (week === null || team === null) return null
+  return `${item.actor.id}|${team}|${week}`
+}
+
+/** The commissioner log, with each lineup fix as one line. `lines` must be
+ *  `commishLogLines(items, …)` — index for index. */
+export function groupCommishLogLines(items: readonly CommishLogItem[], lines: readonly CommishLogLine[]): Array<Grouped<CommishLogLine>> {
+  return runs(items.map(lineupRunKeyOfReceipt)).map(({ first, count }) => {
+    const entries = lines.slice(first, first + count)
+    const head = entries[0]
+    if (count === 1) return { line: head, entries }
+    const clause = changesClause(count)
+    return { line: { ...head, text: head.text + clause, marked: head.marked + clause }, entries }
+  })
+}
+
+/** 165 / 170's override post: `'Week ' || p_week || ' lineup for ' ||
+ *  v_team.name || ' edited by ' || draft_actor_name() || ' (commissioner
+ *  override' …` (`activity-feed-ops.test.ts` reads the migration). */
+const LINEUP_OVERRIDE_POST = /^Week (\d+) lineup for (.+) edited by (.+?) \(commissioner override/
+
+/** The run key of a feed item: a commissioner's lineup-override post keyed
+ *  by its actor, team and week; null for every other item. */
+export function lineupRunKeyOfFeedItem(item: ActivityItem): string | null {
+  if (item.kind !== 'system' || item.actor_id === null) return null
+  const match = LINEUP_OVERRIDE_POST.exec(item.message)
+  return match ? `${item.actor_id}|${match[2]}|${match[1]}` : null
+}
+
+/** The feed, with each lineup fix as one line. `items` are the feed items
+ *  `feedLines` read (the same order); a run is judged on the LINES shown, so
+ *  a folded post never splits or joins one. */
+export function groupFeedLines(items: readonly ActivityItem[], lines: readonly FeedLine[]): Array<Grouped<FeedLine>> {
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const keys = lines.map((line) => {
+    const item = byId.get(line.id)
+    return item ? lineupRunKeyOfFeedItem(item) : null
+  })
+  return runs(keys).map(({ first, count }) => {
+    const entries = lines.slice(first, first + count)
+    const head = entries[0]
+    if (count === 1) return { line: head, entries }
+    const match = LINEUP_OVERRIDE_POST.exec(head.text)
+    const text = match
+      ? `Week ${match[1]} lineup for ${match[2]} edited by ${match[3]} (commissioner override, ${count} changes)`
+      : head.text + changesClause(count)
+    return { line: { ...head, text }, entries }
+  })
+}

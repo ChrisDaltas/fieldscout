@@ -69,6 +69,7 @@ import {
   formatPoints,
   formatSnap,
   LineupAutosaver,
+  weekTabsLockedReason,
   lineupChecks,
   moveOptions,
   moveToastCopy,
@@ -281,6 +282,8 @@ export function LineupEditor({
 
   const saving = status === 'saving'
   useReportOverrideSaving(overrideMode && saving) // R1460: locks the header's Turn off
+  /** R1467: the week tabs wait for a save to land. */
+  const weekLockedReason = weekTabsLockedReason(saving)
 
   function move(playerId: string, target: MoveTarget) {
     if (readOnly) return
@@ -421,7 +424,15 @@ export function LineupEditor({
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.7fr_1fr]">
           <Card className="min-w-0">
             <CardHeader className="flex-wrap gap-2">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">{weekTabs ?? <CardTitle>Week {week}</CardTitle>}</div>
+              <fieldset
+                disabled={weekLockedReason !== null}
+                title={weekLockedReason ?? undefined}
+                className="flex min-w-0 flex-wrap items-center gap-2"
+                data-week-tabs-locked={weekLockedReason ? 'on' : 'off'}
+              >
+                {weekTabs ?? <CardTitle>Week {week}</CardTitle>}
+                {weekLockedReason && weekTabs && <span className="text-[10px] font-medium text-n-3" data-week-locked-reason>{weekLockedReason}</span>}
+              </fieldset>
               <div className="flex items-center gap-2">
                 {!readOnly && <SaveIndicator status={status} queued={queued} />}
                 <CustomizeMenu columns={columns} onToggle={onToggleColumn} />

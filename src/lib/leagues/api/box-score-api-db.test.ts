@@ -332,6 +332,9 @@ describe('the box — the worker’s function over the frozen snapshot, golden l
 
   it('D478 — the BENCH: the rostered non-starter scored live by the same worker (40 × 0.1 = 4.00, Done), never counted in the team’s points', () => {
     expect(doc.bench).toEqual([{ player_id: BENCH, phase: 'done', game: expect.objectContaining({ id: 'vitest-bx-game-final' }), points: 4, pending: [], reason: 'scored' }])
+    // R1470: "never counted" — the team total is the starters' 31.60, not 35.60.
+    expect(doc.points).toBe(31.6)
+    expect(doc.points).toBeCloseTo(doc.starters.reduce((sum, s) => sum + (s.points ?? 0), 0), 6)
   })
 
   it('the team: points 31.60 (17.20 + 14.40 + 0 + 0), nothing pending, the two no-line starters NAMED', () => {
