@@ -11,6 +11,9 @@
 
 ## Active: **NONE — no active build, awaiting Chris** *(M6 closed 2026-10-02 — D473. Push debt: **177**; post-push check: live `score_write_week_batch` md5 = `3ea8ee6417852e5d46dc79e8093a1daf`, pgTAP 125 A3.)*
 
+
+> **M7 (Hardening & GA) breakdown drafted 2026-10-03 — `docs/specs/tasks-M7-hardening-ga.md`, awaiting Chris's approval (Q88–Q94). Not takeable until approved.**
+
 ---
 
 ## M6: **Redraft Leagues M6 — Commissioner Console + Audit, and Stat Corrections** *(breakdown approved by Chris 2026-09-29 — "Approve and start"; PR #360)*
