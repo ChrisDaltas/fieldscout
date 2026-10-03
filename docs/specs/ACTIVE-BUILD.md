@@ -11,6 +11,8 @@
 
 ## Active: **NONE — no active build, awaiting Chris** *(M6 closed 2026-10-02 — D473. Production at **177** (pushed 2026-10-02 by the orchestrator; live `score_write_week_batch` md5 = `3ea8ee6417852e5d46dc79e8093a1daf`). Push debt: **178** (F525 + F524, D474); post-push check: live `draft_queue_replace` md5 = `69d64cbdfb4e9cbbab15f6a46fead4a7` and `draft_queue_for_team` md5 = `ceba0b5ec0d9e5bedaa0ab22f1a77099` (pgTAP 126 A2), and both `draft_queues` policies name `league_members`, no `owner_id` (126 A5).)*
 
+- **M8 breakdown drafted, awaiting Chris's approval** — `docs/specs/tasks-M8-admin-console.md` (branch `docs/M8-breakdown`; Q95–Q102). Not active until approved.
+
 ---
 
 ## M6: **Redraft Leagues M6 — Commissioner Console + Audit, and Stat Corrections** *(breakdown approved by Chris 2026-09-29 — "Approve and start"; PR #360)*
