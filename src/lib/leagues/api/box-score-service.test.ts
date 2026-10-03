@@ -83,3 +83,15 @@ describe('BOX_LINE_COLUMNS — a DISPLAY subset of the columns the worker scores
     for (const column of BOX_LINE_COLUMNS) expect(STAT_LINE_COLUMNS, column).toContain(column)
   })
 })
+
+describe('R1469 — a bench-only read failure never fails the box', () => {
+  it('every readBench call site leaves `bench` absent on a failure instead of returning it', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('./box-score-service.ts', import.meta.url), 'utf8')
+    const sites = src.split('await readBench(').length - 1
+    expect(sites).toBe(3)
+    expect(src).not.toMatch(/if \('status' in bench\) return bench/)
+    expect(src.match(/if \(!\('status' in bench\)\) payload\.bench = bench\.lines/g)).toHaveLength(2)
+    expect(src).toContain("('status' in bench ? empty : { ...empty, bench: bench.lines })")
+  })
+})

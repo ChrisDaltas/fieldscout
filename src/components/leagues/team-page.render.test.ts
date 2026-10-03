@@ -34,7 +34,7 @@ import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-serv
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
-import { LineupEditor } from './lineup-editor'
+import { LineupEditor, type LineupStats } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
@@ -286,22 +286,19 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     const open = html.slice(html.indexOf('data-slot="rb:0"'), html.indexOf('data-slot="rb:1"'))
     expect(open).toContain('Render RB Open')
     expect(open).not.toContain('🔒')
-    expect(open).not.toContain('aria-disabled="true"')
+    expect(open).toContain('data-player="rb-open"')
     // rb-locked: view locked (release unrecorded) → 🔒 + the state's copy.
     const lockedRow = html.slice(html.indexOf('data-slot="rb:1"'), html.indexOf('data-slot="wr:0"'))
     expect(lockedRow).toContain('🔒')
     expect(lockedRow).toContain(LOCK_RELEASE_UNRECORDED_COPY)
-    expect(lockedRow).toContain('aria-disabled="true"')
-    // locked_at rendered as the record ("locks from"), never as a lock, and
-    // the countdown is the named placeholder (Q40) — the attribute names the
-    // ledger, the copy on screen does not (R829).
+    // League UX batch 3: a locked player has NO drag handle (prevented).
+    expect(lockedRow).not.toContain('data-player="rb-locked"')
+    // locked_at rendered as the record ("locks from"), never as a lock. The
+    // "· countdown coming" placeholder copy is gone (Chris 2026-10-03).
     expect(html).toContain('Locks from')
-    expect(html).toContain('data-lock-countdown="placeholder-q40"')
-    expect(html).toContain('countdown coming')
-    // F252(d): the honest pin — strip the lowercase attribute, then no 'Q40'
-    // anywhere in the text (a mid-sentence mention would have passed the
-    // narrower `Q40</` check).
-    expect(html.replace(/data-lock-countdown="[^"]*"/g, '')).not.toMatch(/Q40/)
+    expect(html).toContain('data-lock-record')
+    expect(html).not.toContain('countdown coming')
+    expect(html).not.toMatch(/Q40/)
   })
 
   it('F259(a): the page passes NO poll — the room’s `league_player_pool` event (119) refetches the lock view', () => {
@@ -318,7 +315,8 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     // The ladder is unknown → the week argument is undefined (the query is
     // disabled), not the `defaultLineupWeek([]) === 1` fetch that was wasted
     // per open before.
-    expect(vi.mocked(useLineup).mock.calls.at(-1)).toEqual([TEAM, undefined])
+    // (The page also mounts the opponent's lineup read — disabled with no pairing.)
+    expect(vi.mocked(useLineup).mock.calls.filter((c) => c[0] === TEAM).at(-1)).toEqual([TEAM, undefined])
   })
 
   it('R825: a refusal renders the RPC’s sentence VERBATIM — the player and his kickoff named, nothing re-worded', () => {
@@ -413,10 +411,9 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(open).not.toContain('data-override-toggle')
     expect(open).not.toContain('Turn on override mode')
     expect(open).not.toContain('role="alert"')
-    const at = open.indexOf('data-player="rb-locked"')
-    const lockedRow = open.slice(Math.max(0, at - 300), at + 300)
-    expect(lockedRow).toContain('aria-disabled="true"')
-    expect(open).not.toContain('Bench Render RB Locked')
+    // No drag handle and no seat options for him — his menu says why.
+    expect(open).not.toContain('data-player="rb-locked"')
+    expect(open).toContain('data-move-menu="rb-locked"')
 
     for (const editability of [{ state: 'closed', reason: PAST_WEEK_COPY } as const, { state: 'unknown' } as const]) {
       expect(renderEditor({ editability })).not.toContain('data-override-toggle')
@@ -475,25 +472,26 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     const lockedRow = on.slice(Math.max(0, at - 400), at + 400)
     // The 🔒 badge STAYS (it is the record of what is being overridden)…
     expect(on).toContain('🔒')
-    // …but the wall is down: draggable, clickable, and it has its bench ×.
-    expect(lockedRow).toContain('aria-disabled="false"')
+    // …but the wall is down: he has his drag handle, and the move saves itself
+    // through the override (no Save button exists any more).
+    expect(at).toBeGreaterThan(-1)
     expect(lockedRow).toContain('cursor-grab')
-    expect(on).toContain('Bench Render RB Locked')
-    expect(on).toContain('Save override')
+    expect(on).not.toContain('data-save-lineup')
+    expect(on).toContain('data-save-state="idle"')
 
     // A CLOSED week is editable in the mode — the past-week banner steps aside
     // rather than contradicting the bar above it, and Save is still there.
     const closedOn = renderEditor({ overrideMode: true, editability: { state: 'closed', reason: PAST_WEEK_COPY } })
     expect(closedOn).not.toContain(PAST_WEEK_COPY)
-    expect(closedOn).toContain('Save override')
+    expect(closedOn).toContain('data-save-state="idle"')
   })
 
-  it('NO DISABLED CONTROL WITHOUT A STATED REASON — the clean editor says why Save is off, in both modes', () => {
-    for (const html of [renderEditor(), renderEditor({ overrideMode: true })] ) {
-      expect(html).toContain('data-save-hint')
-      expect(html).toContain('Nothing to save — this lineup already matches what’s stored. Move a player to enable Save.')
-      // The shipped shape: disabled, and the screen says nothing.
-      expect(html).not.toMatch(/disabled=""[\s\S]{0,400}<\/button>\s*<\/div>\s*<\/div>\s*$/)
+  it('AUTOSAVE (Chris 2026-10-03): NO Save or Discard button in either mode — the indicator says moves save themselves', () => {
+    for (const html of [renderEditor(), renderEditor({ overrideMode: true }), renderEditor({ isCommish: false })]) {
+      expect(html).not.toContain('data-save-lineup')
+      expect(html).not.toContain('data-discard-lineup')
+      expect(html).not.toContain('Save lineup')
+      expect(html).toContain('Moves save automatically')
     }
   })
 
@@ -515,7 +513,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(offered).toContain(refusal)
     expect(offered).toContain('data-offer-override')
     expect(offered).toContain('Turn on override mode')
-    expect(offered).toContain('Your placements are still here — nothing was lost.')
+    expect(offered).toContain('Nothing changed — the lineup shown is the one that’s saved.')
 
     // Already in the mode → the refusal still renders, the offer does not.
     vi.mocked(useSetLineup).mockReturnValueOnce(refused())
@@ -627,7 +625,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     )
     expect(html).toContain('Current week')
     expect(html).not.toContain(PAST_WEEK_COPY)
-    expect(html).toContain('Save lineup')
+    expect(html).toContain('Moves save automatically')
     // The closed state itself, rendered directly on the editor: the reason
     // by name, no Save, every row read-only.
     const closed = unescapeHtml(
@@ -655,8 +653,8 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
       ),
     )
     expect(closed).toContain(PAST_WEEK_COPY)
-    expect(closed).not.toContain('Save lineup')
-    expect(closed).not.toContain('aria-disabled="false"')
+    expect(closed).not.toContain('Moves save automatically')
+    expect(closed).not.toContain('data-player="')
   })
 })
 
@@ -1012,5 +1010,140 @@ describe('the team page names its manager — a door to his profile (L.E1.41)', 
     const html = renderTeamPage()
     expect(html).toContain('Your team')
     expect(html).not.toContain('data-team-manager')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// League UX batch 3 (D478) — My Team built to the prototype: stat columns +
+// Customize, the Lineup check, the projected total, the matchup strip, and
+// read-only for anyone who cannot edit.
+// ---------------------------------------------------------------------------
+
+describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', () => {
+  const stats: LineupStats = {
+    games: [{ home_team: 'XXX', away_team: 'BUF', kickoff_at: '2099-09-13T17:00:00.000Z' }],
+    splits: [
+      { defense: 'BUF', position: 'QB', rank: 32 },
+      { defense: 'MIA', position: 'QB', rank: 1 },
+    ],
+    proj: (id) => ({ qb1: 21.4, 'rb-open': 12.1, 'rb-locked': 9.5, wr1: 0 } as Record<string, number>)[id] ?? null,
+    points: (id) => (id === 'qb1' ? { phase: 'done', points: 18.25, pending: [] } : null),
+    snap: (id) => (id === 'qb1' ? 0.97 : null),
+  }
+  const render = (over: Partial<Parameters<typeof LineupEditor>[0]> = {}) => {
+    const client = new QueryClient()
+    return unescapeHtml(
+      renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(LineupEditor, {
+            leagueId: LEAGUE,
+            teamId: TEAM,
+            week: 1,
+            settings: settings.roster_settings,
+            allowIllegal: true,
+            roster,
+            stored: lineupRow,
+            currentWeek: 1,
+            editability: { state: 'open' } as WeekEditability,
+            canEdit: true,
+            isCommish: false,
+            leagueTimeZone: null,
+            overrideMode: false,
+            onOverrideMode: () => {},
+            stats,
+            ...over,
+          }),
+        ),
+      ),
+    )
+  }
+
+  it('the default columns are Opp, OPRK, Proj — each a real value, "—" where a read has none', () => {
+    const html = render()
+    const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'))
+    expect([...head.matchAll(/data-col="(\w+)"/g)].map((m) => m[1])).toEqual(['opp', 'oprk', 'proj'])
+    const qb = html.slice(html.indexOf('data-slot="qb:0"'), html.indexOf('data-slot="rb:0"'))
+    expect(qb).toContain('vs BUF')
+    // 033 rank 32 (the stingiest here) → OPRK 1, a tough (negative) chip.
+    expect(qb).toMatch(/data-oprk-tone="negative">1</)
+    expect(qb).toContain('21.4')
+    // Points / Snap / ADP are off by default.
+    expect(head).not.toContain('Points')
+  })
+
+  it('Customize is offered in the starters card header', () => {
+    const html = render()
+    expect(html).toContain('data-customize-columns')
+    expect(html).toContain('Customize')
+  })
+
+  it('the projected total row sums the starters and names any without a projection', () => {
+    const html = render()
+    const at = html.indexOf('data-projected-total')
+    const total = html.slice(at, html.indexOf('</tr>', at))
+    expect(total).toContain('Projected total')
+    expect(total).toContain('43.0')
+    expect(total).not.toContain('without a projection')
+    const partial = render({ stats: { ...stats, proj: (id) => (id === 'qb1' ? 20 : null) } })
+    expect(partial).toContain('3 without a projection')
+  })
+
+  it('the Lineup check shows chips collapsed, from the arrangement on screen; the strip links to the matchup', () => {
+    const html = render()
+    expect(html).toContain('Lineup check')
+    expect(html).toContain('data-check-chip="starters"')
+    expect(html).toContain('data-check-chip="injury"')
+    expect(html).toContain('data-check-chip="bye"')
+    // No opponent → no Proj-vs-opponent check (never a guess).
+    expect(html).not.toContain('data-check-chip="proj"')
+    const withOpp = render({
+      opponent: { kind: 'opponent', selfName: 'You', name: 'Rivals', href: '/m/1', myScore: 10, oppScore: 12.5, oppProjected: { total: 40, missing: 0 } },
+    })
+    expect(withOpp).toContain('data-check-chip="proj"')
+    expect(withOpp).toContain('+3.0')
+    expect(withOpp).toContain('data-matchup-strip')
+    expect(withOpp).toContain('12.5')
+    expect(withOpp).toContain('proj 43.0')
+    expect(withOpp).toContain('proj 40.0')
+    expect(withOpp).toContain('data-strip-matchup-link')
+    expect(withOpp).toContain('href="/m/1"')
+    expect(render({ opponent: { kind: 'bye' } })).toContain('this team has a bye')
+  })
+
+  it('the bench card holds the bench and a Reserve section with an empty IR seat', () => {
+    const html = render({ stored: { ...lineupRow, slot_map: { 'qb:0': 'qb1' } } })
+    const bench = html.slice(html.indexOf('data-bench'))
+    expect(bench).toContain('Render RB Open')
+    expect(bench).toContain('Reserve')
+    expect(bench).toContain('Empty — for players ruled out')
+  })
+
+  it('READ-ONLY for another team: no Move, no drag handle, no save indicator', () => {
+    const html = render({ canEdit: false })
+    expect(html).not.toContain('data-move-menu')
+    expect(html).not.toContain('data-player="')
+    expect(html).not.toContain('Moves save automatically')
+    expect(html).toContain('data-read-only')
+    expect(render({ canEdit: false, isCommish: true })).toContain('turn on override mode to change this team’s lineup')
+    // Editable: an unlocked row is draggable and has its Move menu.
+    const mine = render()
+    expect(mine).toContain('data-player="qb1"')
+    expect(mine).toContain('data-move-menu="qb1"')
+  })
+
+  it('the page makes another manager’s team read-only (no Move, no drag)', () => {
+    // The seeded viewer manages team-1; render team-2.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    client.setQueryData(leaguesKeys.detail(LEAGUE), detail)
+    client.setQueryData(leagueRosterKeys.all(LEAGUE), { ...rosters, teams: [rosters.teams[0], { ...rosters.teams[1], roster }] })
+    client.setQueryData(scheduleKeys.all(LEAGUE), schedule)
+    client.setQueryData(teamLineupKeys.week('team-2', 1), { ...lineupRow, team_id: 'team-2' })
+    const html = unescapeHtml(
+      renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(TeamPage, { leagueId: LEAGUE, teamId: 'team-2' }))),
+    )
+    expect(html).toContain('data-read-only')
+    expect(html).not.toContain('data-move-menu')
   })
 })

@@ -252,7 +252,7 @@ export type WeekEditability =
   | { state: 'unknown' }
 
 export const PAST_WEEK_COPY =
-  'This week is in the past — a past week’s lineup changes only through the audited commissioner override (§11.2, M6).'
+  'This week is in the past — a past week’s lineup changes only through the commissioner’s override mode.'
 export const WEEK_OVER_COPY = 'This week’s games are over — the lineup is final for scoring.'
 
 export function weekEditability(
@@ -386,7 +386,7 @@ export function planMove(
     return {
       ok: false,
       reason: 'locked',
-      message: `${name} is locked — his game has started, and a locked player never moves (§11.2).`,
+      message: `${name} is locked — his game has started, so he stays where he is until it’s over.`,
     }
   }
   if (target.kind === 'bench') {
@@ -407,7 +407,7 @@ export function planMove(
       return {
         ok: false,
         reason: 'ir_designation',
-        message: `${name} can’t go on ${slot.label} — an IR spot takes a player holding an eligible designation (§7.3.2), and he has none.`,
+        message: `${name} can’t go on ${slot.label} — an IR spot is for a player listed as out or on IR, and he isn’t.`,
       }
     }
   } else if (player && !positionMatches(player.position, slot.eligible)) {
@@ -435,7 +435,7 @@ export function planMove(
     return {
       ok: false,
       reason: 'locked',
-      message: `${slot.label} is locked — ${shortName(occ, occupant)} has kicked off and a locked slot’s player never moves (§11.2).`,
+      message: `${slot.label} is locked — ${shortName(occ, occupant)} has kicked off, so that seat stays as it is.`,
     }
   }
   const next = { ...placement }
@@ -460,7 +460,7 @@ function irStintRefusal(player: RosterPlayer | undefined, currentWeek: number | 
     return {
       ok: false,
       reason: 'ir_stint',
-      message: `${player.full_name} is on a Restricted IR stint until week ${player.ir_lock_until_week} (${left} ${left === 1 ? 'week' : 'weeks'} left) — §7.3.2.`,
+      message: `${player.full_name} is on a Restricted IR stint until week ${player.ir_lock_until_week} (${left} ${left === 1 ? 'week' : 'weeks'} left).`,
     }
   }
   return null

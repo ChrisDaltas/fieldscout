@@ -465,30 +465,24 @@ describe('R973 — the four `lockExempt` sites move together, or the door leads 
     expect(editor).toMatch(/const lockExempt = overrideMode/)
   })
 
+  // League UX batch 3 (D478) rebuilt the editor around ONE row context
+  // (`rowCtx`) instead of five prop hops, so the pins follow the new shape:
+  // the plan's memo, the row context, the Move menu's options and every
+  // `frozen` expression must all carry the exemption.
   it('feeds planMove through the memo (site 1 — both arms)', () => {
-    // The `ctx` the plan is computed against must carry it, AND it must be a
-    // dependency, or the plan goes stale the moment override mode flips.
-    expect(editor).toMatch(/\{ slots, players, locked, currentWeek, lockExempt \}/)
-    expect(editor).toMatch(/\[slots, players, locked, currentWeek, lockExempt\]/)
+    expect(editor).toMatch(/\{ slots, players, locked, currentWeek, lockExempt, kept \}/)
+    expect(editor).toMatch(/\[slots, players, locked, currentWeek, lockExempt, kept\]/)
   })
 
-  it('passes it down every one of the FIVE prop hops', () => {
-    // :364 slot seat · :387 starter row · :406 bench zone · :635 SlotSeat→
-    // PlayerRow · :780 BenchZone→PlayerRow. The last two are the pass-THROUGHS,
-    // and they matter as much as the first three: `frozen` is computed in
-    // PlayerRow, so a hop dropped there leaves the row inert with the door
-    // still open. Measured regression: deleting exactly ONE left every suite
-    // green (43 files / 943 tests).
-    const passes = editor.match(/lockExempt=\{lockExempt\}/g) ?? []
-    expect(passes.length).toBe(5)
+  it('passes it down to every row through the row context, and to the Move menu options', () => {
+    expect(editor).toMatch(/const rowCtx: RowContext = \{[\s\S]*?\n    lockExempt,\n/)
+    expect(editor).toMatch(/moveOptions\(\{ player, placement: shown, slots, players, locked, lockExempt \}\)/)
   })
 
-  it('is what unfreezes a locked row — in BOTH components that gate interaction', () => {
-    // `frozen` drives useDraggable({disabled}), onClick={undefined} and the
-    // droppable. If this expression loses `lockExempt`, a locked player stays
-    // inert in override mode.
-    const frozen = editor.match(/const frozen = locked && !lockExempt/g) ?? []
+  it('is what unfreezes a locked row — in the starter row, the bench row and the IR seat', () => {
+    const frozen = editor.match(/const frozen = isLocked && !ctx\.lockExempt/g) ?? []
     expect(frozen.length).toBe(2)
+    expect(editor).toMatch(/const frozen = Boolean\(row\.player && ctx\.locked\.has\(row\.player\.player_id\) && !ctx\.lockExempt\)/)
   })
 
   it('does not let override mode be read-only (the Save path stays reachable)', () => {

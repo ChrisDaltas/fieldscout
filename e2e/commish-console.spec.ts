@@ -259,14 +259,15 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
       const mover = roster.find((p) => !starting.has(p.player_id) && SEASON_SLOTS.some((s) => s.position === normalize(p.position)))
       if (!mover) throw new Error(`team ${target} has no benched player with a starting slot — roster ${JSON.stringify(roster)}`)
       const slotKey = `${normalize(mover.position).toLowerCase()}:0`
-      await editor.locator(`[data-player="${mover.player_id}"]`).click()
-      await editor.locator(`[data-slot="${slotKey}"]`).getByRole('button', { name: /Seat here|Swap into/ }).first().click()
       const saved = cPage.waitForResponse(
         (res) => new URL(res.url()).pathname === `/api/leagues/${league.leagueId}/commish/lineup` && res.request().method() !== 'GET',
         { timeout: 60_000 },
       )
-      await expect(editor.locator('[data-save-lineup]')).toHaveText('Save override')
-      await editor.locator('[data-save-lineup]').click()
+      // League UX batch 3 (D478): no Save button — the Move menu's seat
+      // saves itself, through the override route while the mode is on.
+      await expect(editor.locator('[data-save-lineup]')).toHaveCount(0)
+      await editor.locator(`[data-move-menu="${mover.player_id}"]`).click()
+      await cPage.locator(`[data-move-option="${slotKey}"]`).click()
       expect((await saved).status(), 'the override save answers 200').toBe(200)
 
       // The server's word: the lineup moved, and ONE receipt acting for the team.
@@ -274,7 +275,32 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
       expect(after?.slot_map?.[slotKey], 'the override seated the player').toBe(mover.player_id)
       const receipts = (await readCommishActions(service, league.leagueId)).filter((r) => !receiptsBefore.some((b) => b.id === r.id))
       expect(receipts.map((r) => [r.action_type, r.acting_as_team_id])).toEqual([['edit_lineup', target]])
-      const receiptId = receipts[0]!.id
+
+      // R1468 (Chris 2026-10-03, re-ruled): override moves save INSTANTLY —
+      // two more moves (to the bench, then back) are two more receipts, and
+      // the log and the feed show the whole fix as ONE line each.
+      const oneMove = async (option: string) => {
+        const res = cPage.waitForResponse(
+          (r) => new URL(r.url()).pathname === `/api/leagues/${league.leagueId}/commish/lineup` && r.request().method() !== 'GET',
+          { timeout: 60_000 },
+        )
+        await editor.locator(`[data-move-menu="${mover.player_id}"]`).click()
+        await cPage.locator(`[data-move-option="${option}"]`).click()
+        expect((await res).status()).toBe(200)
+        await expect(editor.locator('[data-save-state="saved"]')).toBeVisible({ timeout: 60_000 })
+      }
+      await oneMove('bench')
+      await oneMove(slotKey)
+      const fix = (await readCommishActions(service, league.leagueId)).filter((r) => !receiptsBefore.some((b) => b.id === r.id))
+      expect(fix.map((r) => [r.action_type, r.acting_as_team_id]), 'three instant moves → three receipts').toEqual([
+        ['edit_lineup', target],
+        ['edit_lineup', target],
+        ['edit_lineup', target],
+      ])
+      // eslint-disable-next-line no-console -- the DoD evidence line
+      console.log(`[commish-console] R1468: commissioner_actions rows for a 3-move override fix = ${fix.length}`)
+      // The grouped line is headed by (and its ✸ opens) the LATEST receipt.
+      const receiptId = fix.at(-1)!.id // readCommishActions orders by created_at
       fixture().lineupReceiptId = receiptId
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(`[commish-console] override lineup: ${mover.full_name} → ${slotKey} for team ${target}; receipt ${receiptId}`)
@@ -289,14 +315,17 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
       // TD12's words for the receipt: who, which team, which week.
       const targetName = (await readLeagueTeams(service, league.leagueId)).find((t) => t.id === target)!.name
       const homeText = (await homeEntry.locator('[data-commish-log-text]').innerText()).replace(/\s+/g, ' ').trim()
-      expect(homeText).toBe(`${DEV_USER.username} set ${targetName}’s Week ${WEEK} lineup`)
+      expect(homeText).toBe(`${DEV_USER.username} set ${targetName}’s Week ${WEEK} lineup (3 changes)`)
+      await expect(homeEntry).toHaveAttribute('data-commish-log-group', '3')
+      await expect(feed.locator('[data-commish-log] [data-commish-log-item]').filter({ hasText: `${targetName}’s Week ${WEEK} lineup` })).toHaveCount(1)
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(`[commish-console] League Home (dev-pro): "${homeText}"`)
       // The override's league post (§10.3 — it cannot be disabled) is a ✸ line
       // in the same card, linked to its receipt (F233(d)).
       const postLine = feed.locator('[data-feed-item]').filter({ has: mPage.locator('[data-commissioner]') }).filter({ hasText: `lineup for ${targetName}` })
       await expect(postLine).toHaveCount(1, { timeout: 60_000 })
-      await expect(postLine.locator('[data-feed-text]')).toHaveText(`Week ${WEEK} lineup for ${targetName} edited by ${DEV_USER.username} (commissioner override)`)
+      await expect(postLine.locator('[data-feed-text]')).toHaveText(`Week ${WEEK} lineup for ${targetName} edited by ${DEV_USER.username} (commissioner override, 3 changes)`)
+      await expect(postLine).toHaveAttribute('data-feed-group', '3')
       await expect(postLine.locator('[data-commissioner-entry]')).toHaveAttribute('data-commissioner-entry', receiptId)
 
       // ---- (4) …and the Activity page's Commissioner tab ------------------

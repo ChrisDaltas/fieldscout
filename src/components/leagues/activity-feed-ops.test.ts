@@ -438,3 +438,91 @@ describe('R1424 — the log read names people from EXACTLY the keys the words re
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// R1468 (Chris 2026-10-03, re-ruled): override moves save instantly, one
+// receipt each — the log and the feed show a lineup FIX as one line.
+// ---------------------------------------------------------------------------
+
+describe('R1468 — one line per lineup fix (display-only grouping; every receipt kept)', () => {
+  const teams = new Map([
+    ['t4', 'Team 4'],
+    ['t5', 'Team 5'],
+  ])
+  let n = 0
+  const edit = (over: { team?: string; week?: number; actor?: string } = {}): CommishLogItem => {
+    n += 1
+    const team = over.team ?? 't4'
+    return {
+      id: `r${n}`,
+      action_type: 'edit_lineup',
+      actor: { id: over.actor ?? 'c1', username: 'commish' },
+      target_type: 'team',
+      target_id: team,
+      reason: null,
+      before: { slot_map: {} },
+      after: { slot_map: { 'qb:0': `p${n}` } },
+      metadata: { week: over.week ?? 5 },
+      acting_as_team_id: team,
+      reverts_action_id: null,
+      created_at: `2099-10-0${Math.min(n, 9)}T12:00:00Z`,
+    }
+  }
+  const other = (): CommishLogItem => ({ ...edit(), action_type: 'edit_faab', before: { faab_balance: 1 }, after: { faab_balance: 2 }, metadata: {} })
+  const group = (items: CommishLogItem[]) => ops.groupCommishLogLines(items, commishLogLines(items, teams))
+
+  it('3 back-to-back edits of one team-week → ONE line "(3 changes)" holding all 3 receipts, headed by the latest', () => {
+    const items = [edit(), edit(), edit()]
+    const g = group(items)
+    expect(g).toHaveLength(1)
+    expect(g[0].line.text).toBe('set Team 4’s Week 5 lineup (3 changes)')
+    expect(g[0].line.id).toBe(items[0].id)
+    expect(g[0].entries.map((e) => e.id)).toEqual(items.map((i) => i.id))
+  })
+
+  it('an intervening different entry splits the run', () => {
+    const g = group([edit(), edit(), other(), edit()])
+    expect(g.map((x) => x.entries.length)).toEqual([2, 1, 1])
+    expect(g[2].line.text).toBe('set Team 4’s Week 5 lineup')
+  })
+
+  it('a different week, team or commissioner is its own line', () => {
+    expect(group([edit(), edit({ week: 6 })]).map((x) => x.entries.length)).toEqual([1, 1])
+    expect(group([edit(), edit({ team: 't5' })]).map((x) => x.entries.length)).toEqual([1, 1])
+    expect(group([edit(), edit({ actor: 'c2' })]).map((x) => x.entries.length)).toEqual([1, 1])
+  })
+
+  const post = (id: string, message: string, actor: string | null = 'c1'): ActivityItem => ({
+    kind: 'system',
+    id,
+    created_at: '2099-10-05T12:00:00Z',
+    context: 'league',
+    message,
+    actor_id: actor,
+    topic: null,
+    week: null,
+    commish_action_id: `rc-${id}`,
+  })
+  const lineupPost = (id: string, week = 5, team = 'Team 4') => post(id, `Week ${week} lineup for ${team} edited by commish (commissioner override)`)
+
+  it('the feed: 3 override posts → ONE ✸ line "(commissioner override, 3 changes)" linking the latest receipt; others split it', () => {
+    const items = [lineupPost('a'), lineupPost('b'), lineupPost('c')]
+    const g = ops.groupFeedLines(items, feedLines(items, teams))
+    expect(g).toHaveLength(1)
+    expect(g[0].line.text).toBe('Week 5 lineup for Team 4 edited by commish (commissioner override, 3 changes)')
+    expect(g[0].line.commishActionId).toBe('rc-a')
+    expect(g[0].entries).toHaveLength(3)
+
+    const split = [lineupPost('a'), post('x', 'Team 4’s FAAB set'), lineupPost('b'), lineupPost('c', 6), lineupPost('d', 6, 'Team 5')]
+    expect(ops.groupFeedLines(split, feedLines(split, teams)).map((x) => x.entries.length)).toEqual([1, 1, 1, 1, 1])
+    // A post nobody wrote is never grouped, whatever it says.
+    const anon = [post('m', 'Week 5 lineup for Team 4 edited by x (commissioner override)', null), post('n', 'Week 5 lineup for Team 4 edited by x (commissioner override)', null)]
+    expect(ops.groupFeedLines(anon, feedLines(anon, teams))).toHaveLength(2)
+  })
+
+  it('the feed’s pattern is the override post the migration chain actually writes (170)', () => {
+    const sql = readFileSync('supabase/migrations/170_commish_backstop.sql', 'utf8')
+    expect(sql).toContain("v_message := 'Week ' || p_week || ' lineup for ' || v_team.name || ' edited by '")
+    expect(sql).toContain("|| public.draft_actor_name() || ' (commissioner override'")
+  })
+})

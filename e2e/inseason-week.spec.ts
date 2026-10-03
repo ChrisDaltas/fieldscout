@@ -217,24 +217,26 @@ test.describe('a scored week end to end (real browser)', () => {
       const editor = page.locator(`[data-lineup-editor="${league.commishTeamId}"]`)
       await expect(editor).toBeVisible({ timeout: 60_000 })
 
-      // Q40 (OPEN, F251): the named placeholder and its copy — nothing about
-      // a referent, nothing that decrements, nothing against `locked_at`.
-      const countdown = page.locator('[data-lock-countdown="placeholder-q40"]')
-      await expect(countdown).toHaveCount(1)
-      await expect(countdown).toHaveText(NO_LOCK_RECORD_COPY)
+      // R779: the record ("locks from"), never a countdown — League UX
+      // batch 3 removed the "countdown coming" placeholder copy.
+      const record = page.locator('[data-lock-record]')
+      await expect(record).toHaveCount(1)
+      await expect(record).toHaveText(NO_LOCK_RECORD_COPY)
+      // League UX batch 3 (D478): NO Save button — every move saves itself.
+      await expect(page.locator('[data-save-lineup]')).toHaveCount(0)
 
       for (const slot of SEASON_SLOTS) {
         const playerId = commishPlan[slot.key]
         if (!playerId) continue
-        await page.locator(`[data-player="${playerId}"]`).click()
-        await page.locator(`[data-slot="${slot.key}"]`).getByRole('button', { name: 'Seat here' }).click()
+        const savedResponse = page.waitForResponse(
+          (res) => res.url().includes('/lineup') && res.request().method() === 'PATCH',
+          { timeout: 60_000 },
+        )
+        await editor.locator(`[data-move-menu="${playerId}"]`).click()
+        await page.locator(`[data-move-option="${slot.key}"]`).click()
+        expect((await savedResponse).status()).toBe(200)
+        await expect(editor.locator('[data-save-state="saved"]')).toBeVisible({ timeout: 30_000 })
       }
-      const savedResponse = page.waitForResponse(
-        (res) => res.url().includes('/lineup') && res.request().method() === 'PATCH',
-        { timeout: 60_000 },
-      )
-      await page.locator('[data-save-lineup]').click()
-      expect((await savedResponse).status()).toBe(200)
 
       // The SERVER's canonical map is the assertion, never the DOM's idea of
       // it (§11.2/D293: "what renders after a save is the server's map").
@@ -247,6 +249,12 @@ test.describe('a scored week end to end (real browser)', () => {
         { timeoutMs: 20_000 },
       )
       expect(stored!.slot_map).toEqual(commishPlan)
+      // …and the arrangement survives a reload (it was saved, not held).
+      await page.reload()
+      await expect(editor).toBeVisible({ timeout: 60_000 })
+      for (const [slotKey, playerId] of Object.entries(commishPlan)) {
+        await expect(editor.locator(`[data-slot="${slotKey}"] [data-player-link="${playerId}"]`)).toBeVisible({ timeout: 30_000 })
+      }
 
       // ---- (2) The other seven franchises' lineups, service-side ---------
       // A setup lineup takes the direct row (the dev driver's own move) —

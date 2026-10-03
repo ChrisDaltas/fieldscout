@@ -13,7 +13,13 @@ import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { useBoxScore } from '@/hooks/use-box-score'
+import { useDefenseSplits } from '@/hooks/use-defense-splits'
+import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
 import { useLineup } from '@/hooks/use-lineup'
+import { useMatchupsLive } from '@/hooks/use-matchups'
+import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
+import { usePlayerUsage } from '@/hooks/use-player-usage'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSchedule } from '@/hooks/use-schedule'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
@@ -25,8 +31,9 @@ import { commishTeamHref } from './activity-page-ops'
 import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
-import { LineupEditor } from './lineup-editor'
+import { LineupEditor, type LineupOpponent, type LineupStats } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
+import { projectedTotal } from './my-team-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import {
   COMMISH_CHANGED_BADGE,
@@ -173,7 +180,6 @@ function TeamPageContent({
   const hasSeatRow = detail.members.some((m) => m.team_id === teamId)
   // L.E1.41: the manager's name, a door to his profile (Chris 2026-09-30).
   const managerUsername = detail.members.find((m) => m.team_id === teamId && m.user_id)?.profiles?.username ?? null
-  const canEdit = isOwnTeam || isCommish
   const [dropping, setDropping] = useState<DropTarget | null>(null)
   const movesState = movesGate(detail.league.status)
   const movesClosed = movesState.open ? null : movesState.reason
@@ -187,6 +193,10 @@ function TeamPageContent({
   // Only a commissioner can be IN the mode — the store is keyed by league,
   // and a member who is not one must never inherit it.
   const inOverride = overrideMode && isCommish
+  // League UX batch 3: another team's lineup is READ-ONLY — for a manager
+  // and for a commissioner alike — until the commissioner turns on override
+  // mode, which is the one way he edits a team that is not his.
+  const canEdit = isOwnTeam || inOverride
   const otherTeams = useMemo(
     () => detail.teams.filter((t) => t.id !== teamId && t.status !== 'retired').map((t) => ({ id: t.id, name: t.name })),
     [detail.teams, teamId],
@@ -195,6 +205,58 @@ function TeamPageContent({
     () => new Set((rosters.data?.teams ?? []).flatMap((t) => t.roster.map((p) => p.player_id))),
     [rosters.data],
   )
+
+  // League UX batch 3 (D478): the stat columns, the matchup strip and the
+  // Lineup check — every number a server read, "—" when a read has none.
+  const season = detail.league.season
+  const lineupWeek = schedule.data ? week : undefined
+  const values = useLeaguePlayerValues(leagueId, season, lineupWeek)
+  const games = useNflWeekGames(season, lineupWeek)
+  const splits = useDefenseSplits(season)
+  const box = useBoxScore(leagueId, lineupWeek, teamId)
+  const rosterIds = useMemo(() => (rosterTeam?.roster ?? []).map((p) => p.player_id), [rosterTeam])
+  const usage = usePlayerUsage(season, rosterIds)
+  const matchups = useMatchupsLive(leagueId, lineupWeek)
+  const pairing = matchups.data?.matchups.find((m) => m.home_team_id === teamId || m.away_team_id === teamId) ?? null
+  const oppTeamId = pairing ? (pairing.home_team_id === teamId ? pairing.away_team_id : pairing.home_team_id) : null
+  const oppLineup = useLineup(oppTeamId ?? undefined, oppTeamId ? lineupWeek : undefined)
+
+  const stats = useMemo<LineupStats>(() => {
+    const pointsBy = new Map<string, { phase: string; points: number; pending: readonly string[] }>()
+    for (const s of box.data?.starters ?? []) if (s.player) pointsBy.set(s.player.id, s)
+    for (const b of box.data?.bench ?? []) pointsBy.set(b.player_id, b)
+    return {
+      games: games.data ?? [],
+      splits: splits.data ?? [],
+      proj: (id) => values.byPlayer.get(id)?.projected_points ?? null,
+      points: (id) => pointsBy.get(id) ?? null,
+      snap: (id) => usage.snapByPlayer.get(id) ?? null,
+    }
+  }, [box.data, games.data, splits.data, values.byPlayer, usage.snapByPlayer])
+
+  const opponent = useMemo<LineupOpponent | { kind: 'bye' } | null>(() => {
+    if (!pairing) return null
+    if (!oppTeamId) return { kind: 'bye' }
+    const home = pairing.home_team_id === teamId
+    const irKeys = new Set(detail.settings.roster_settings.ir_slots.map((s) => s.key))
+    const oppStarters = oppLineup.data
+      ? Object.entries(oppLineup.data.slot_map)
+          .filter(([key]) => !irKeys.has(key.split(':')[0]))
+          .map(([, pid]) => pid)
+      : null
+    return {
+      kind: 'opponent',
+      selfName: isOwnTeam ? 'You' : teamName,
+      name: detail.teams.find((t) => t.id === oppTeamId)?.name ?? 'Opponent',
+      href: `/app/leagues/${leagueId}/matchup/${pairing.id}`,
+      myScore: home ? pairing.home_score : pairing.away_score,
+      oppScore: home ? pairing.away_score : pairing.home_score,
+      oppProjected: oppStarters ? projectedTotal(oppStarters, (id) => values.byPlayer.get(id)?.projected_points ?? null) : null,
+    }
+  }, [pairing, oppTeamId, teamId, isOwnTeam, teamName, oppLineup.data, detail.settings.roster_settings.ir_slots, detail.teams, leagueId, values.byPlayer])
+
+  const nextWeek = currentWeek !== null && weeks.some((w) => w.week === currentWeek + 1) ? currentWeek + 1 : null
+  const tabWeeks = [...new Set([currentWeek, nextWeek, week].filter((w): w is number => w !== null))].sort((a, b) => a - b)
 
   return (
     <div className="flex flex-col gap-4">
@@ -303,25 +365,10 @@ function TeamPageContent({
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Segment aria-label="Week">
-          {(weeks.length > 0 ? weeks.map((w) => w.week) : [week]).map((w) => (
-            <SegmentItem key={w} active={w === week} onClick={() => setPickedWeek(w)}>
-              Wk {w}
-            </SegmentItem>
-          ))}
-        </Segment>
-        {/* R779: the record ("locks from"), never the lock. The countdown to
-            the next lock is a NAMED placeholder pending Q40 (F251). */}
-        <p
-          className="text-[11px] font-medium text-n-3"
-          data-lock-countdown="placeholder-q40"
-          title={lockedAtView?.title ?? undefined}
-        >
-          {lineup.isPending ? 'Reading the week…' : locksAtCopy(lockedAtView?.local ?? null)}
-          {lineup.data?.locked_at ? ' · countdown coming' : ''}
-        </p>
-      </div>
+      {/* R779: the record ("locks from"), never the lock. */}
+      <p className="text-[11px] font-medium text-n-3" data-lock-record title={lockedAtView?.title ?? undefined}>
+        {lineup.isPending ? 'Reading the week…' : locksAtCopy(lockedAtView?.local ?? null)}
+      </p>
 
       {rosters.isPending || schedule.isPending || lineup.isPending ? (
         <EditorSkeleton />
@@ -354,6 +401,8 @@ function TeamPageContent({
             </p>
           )}
           <LineupEditor
+            // R1467: one saver per team-week — a week switch remounts it.
+            key={`${teamId}:${week}`}
             leagueId={leagueId}
             teamId={teamId}
             week={week}
@@ -372,6 +421,17 @@ function TeamPageContent({
             leagueTimeZone={leagueTimeZone}
             overrideMode={inOverride}
             onOverrideMode={(next) => (next ? enterOverride(leagueId) : exitOverride())}
+            stats={stats}
+            opponent={opponent}
+            weekTabs={
+              <WeekTabs
+                weeks={tabWeeks.length > 0 ? tabWeeks : [week]}
+                allWeeks={weeks.map((w) => w.week)}
+                week={week}
+                currentWeek={currentWeek}
+                onPick={setPickedWeek}
+              />
+            }
             // League UX batch 2: Drop from the Move menu — the viewer's OWN team
             // only (acting for another team stays in the commissioner tools).
             onDrop={isOwnTeam ? (p) => setDropping({ player_id: p.player_id, full_name: p.full_name }) : undefined}
@@ -397,6 +457,51 @@ function TeamPageContent({
   )
 }
 
+/** The prototype's week tabs — the current and next week — plus a picker
+ *  for any other week of the season (past weeks stay reachable). */
+function WeekTabs({
+  weeks,
+  allWeeks,
+  week,
+  currentWeek,
+  onPick,
+}: {
+  weeks: readonly number[]
+  allWeeks: readonly number[]
+  week: number
+  currentWeek: number | null
+  onPick: (week: number) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Segment aria-label="Week">
+        {weeks.map((w) => (
+          <SegmentItem key={w} active={w === week} onClick={() => onPick(w)} data-week-tab={w}>
+            {w === currentWeek ? `This week · ${w}` : currentWeek !== null && w === currentWeek + 1 ? `Next week · ${w}` : `Week ${w}`}
+          </SegmentItem>
+        ))}
+      </Segment>
+      {allWeeks.length > weeks.length && (
+        <label className="flex items-center gap-1 text-[10px] font-bold text-n-3">
+          <span className="sr-only">Other week</span>
+          <select
+            value={week}
+            onChange={(e) => onPick(Number(e.target.value))}
+            className="h-btn-sm rounded-sm border border-ink bg-white px-1.5 text-[11px] font-bold text-ink"
+            data-week-picker
+          >
+            {allWeeks.map((w) => (
+              <option key={w} value={w}>
+                Week {w}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // States
 // ---------------------------------------------------------------------------
@@ -414,7 +519,7 @@ function TeamPageSkeleton() {
 
 function EditorSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]" data-skeleton="lineup-editor">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.7fr_1fr]" data-skeleton="lineup-editor">
       <Skeleton className="h-80 rounded-sm" />
       <Skeleton className="h-80 rounded-sm" />
     </div>
