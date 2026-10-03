@@ -157,8 +157,8 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
           <CardContent className="flex flex-col gap-3">
             <p className="text-[12px] font-medium text-n-3">
               A solo run of YOUR draft — real settings, real order, real countdown — against
-              CPU opponents. Nothing here touches the league (§8.8&apos;s promise, worded for
-              humans: it&apos;s practice, not the draft).
+              CPU opponents. Nothing here touches the league — it&apos;s practice, not the
+              draft.
             </p>
 
             <div className="flex flex-col gap-1.5">

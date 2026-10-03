@@ -76,7 +76,7 @@ export const NO_PROJECTION_NO_WEEKS_COPY =
   'No week has been played yet — the seeds follow the coin-flip order until results land.'
 export const SEEDED_BEFORE_CORRECTION_COPY = 'Seeded before a late correction — stands as played.'
 export const SEEDED_BEFORE_CORRECTION_TITLE =
-  'The seeds frozen on this round differ from the final standings: a stat correction moved a rank after the round had been played, and a played round is never rewritten (§23.4).'
+  'The seeds frozen on this round differ from the final standings: a stat correction moved a rank after the round had been played, and a played round is never rewritten.'
 export const EDIT_RESULT_LABEL = 'Edit a result'
 export const TBD_LABEL = 'TBD'
 export const ROLLOVER_EVENT_PREFIX = 'When Week'

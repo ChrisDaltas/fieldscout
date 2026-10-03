@@ -454,7 +454,7 @@ function AddCustomFlex({
       </div>
       {tooFew && (
         <p className="text-[12px] font-semibold text-negative-strong">
-          Pick at least 2 positions — a flex slot accepts multiple positions (§7.3.2). One
+          Pick at least 2 positions — a flex slot accepts multiple positions. One
           position is just that position&apos;s own slot.
         </p>
       )}
@@ -587,7 +587,7 @@ function IrSpotRow({
               key={d}
               pressed={on}
               disabled={lastOne}
-              title={lastOne ? 'An IR spot needs at least one eligible designation (§7.3.2).' : undefined}
+              title={lastOne ? 'An IR spot needs at least one eligible designation.' : undefined}
               onPressedChange={(next) =>
                 onChange(
                   updateIrSpot(value, spot.key, {

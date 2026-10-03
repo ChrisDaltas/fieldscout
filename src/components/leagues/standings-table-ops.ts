@@ -45,8 +45,8 @@ export interface RenderedChainEntry {
 }
 
 const CHAIN_NOTES: Record<string, string> = {
-  clean_two_team_ties_only: 'clean two-team ties only (E63)',
-  total_points: 'skipped — a total-points league has no head-to-head (E64)',
+  clean_two_team_ties_only: 'only when exactly two teams are tied',
+  total_points: 'skipped — a total-points league has no head-to-head games',
   divisions_pinned_at_1: 'inert — divisions are off in v1',
 }
 
@@ -151,7 +151,7 @@ export function skipNotes(skipped: unknown, teamNames: ReadonlyMap<string, strin
     if (reason === 'group_of_3_or_more') {
       notes.push(`Head-to-head skipped for a tie of three or more: ${names}.`)
     } else if (reason === 'total_points') {
-      notes.push(`Head-to-head does not apply in a total-points league (E64)${names ? `: ${names}` : ''}.`)
+      notes.push(`Head-to-head does not apply in a total-points league${names ? `: ${names}` : ''}.`)
     }
   }
   return notes

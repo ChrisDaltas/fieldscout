@@ -519,7 +519,7 @@ function ClockSection({
       title="Clock"
       hint={
         gate.reason ??
-        'Pause freezes every clock; resume restores the exact remaining time (§8.7).'
+        'Pause freezes every clock; resume restores the exact remaining time.'
       }
     >
       <Button
@@ -784,8 +784,8 @@ function UndoSection({
       hint={
         gate.reason ??
         (isAuction
-          ? 'Undone buys return to the pool and the winning manager is refunded; a live nomination is voided first (E29).'
-          : 'Undone picks return to the pool and the clock rewinds to that team (E4).')
+          ? 'Undone buys return to the pool and the winning manager is refunded; a live nomination is voided first.'
+          : 'Undone picks return to the pool and the clock rewinds to that team.')
       }
     >
       <div className="flex flex-wrap items-center gap-1.5">
@@ -917,7 +917,7 @@ function FixPickSection({
       title="Fix a pick"
       hint={
         gate.reason ??
-        'Correct the player a pick selected, or move a drafted player between teams — exclusivity is validated (§8.7).'
+        'Correct the player a pick selected, or move a drafted player between teams — a player can only be on one team.'
       }
     >
       <div className="flex flex-col gap-1.5">
@@ -1134,8 +1134,8 @@ function OrderSection({
       title={isAuction ? 'Nomination order' : 'Draft order'}
       hint={
         isAuction
-          ? 'Completed nominations stand; the rotation follows the new order from the next nomination (§8.3). A reason is required mid-draft.'
-          : 'Completed picks stand; remaining picks re-derive from the new order (E31). A reason is required mid-draft.'
+          ? 'Completed nominations stand; the rotation follows the new order from the next nomination. A reason is required mid-draft.'
+          : 'Completed picks stand; remaining picks follow the new order. A reason is required mid-draft.'
       }
     >
       <ol className="flex flex-col gap-1">
@@ -1225,7 +1225,7 @@ function AutopickSection({
   return (
     <PanelSection
       title="Autopick"
-      hint="Force a seat to (or from) auto mode — its badge shows in the room (§16.5.4)."
+      hint="Force a seat to (or from) auto mode — its badge shows in the room."
     >
       <ul className="flex flex-col gap-1">
         {seats.map((member) => {
@@ -1293,7 +1293,7 @@ function SeatControlsSection({
   return (
     <PanelSection
       title="Reassign a draft seat"
-      hint="Swap who controls a team with the league's seat tools — invites, assignment, takeover. A mid-draft claim takes over immediately (E48)."
+      hint="Swap who controls a team with the league's seat tools — invites, assignment, takeover. A mid-draft claim takes over immediately."
     >
       <Button variant="stroke" size="sm" onClick={() => setOpen((prev) => !prev)}>
         {open ? 'Hide seat controls' : 'Open seat controls'}
@@ -1470,7 +1470,7 @@ function ManualEditSection({
       title="Manual Edit Mode"
       hint={
         gate.reason ??
-        'Enter the mode, then click a drafted player: reset the pick (refund) or move the player to another team (the new owner is charged the cost you re-enter). §8.7'
+        'Enter the mode, then click a drafted player: reset the pick (refund) or move the player to another team (the new owner is charged the cost you re-enter).'
       }
     >
       <Button
@@ -1771,7 +1771,7 @@ function CancelNominationSection({
       title="Edit current nomination"
       hint={
         gate.reason ??
-        'There is no swap-in-place: the live nomination is cancelled (open bids void, no money moves, the sequence number is not consumed) and the same team nominates again on resume (D143).'
+        'There is no swap-in-place: the live nomination is cancelled (open bids void, no money moves, the sequence number is not consumed) and the same team nominates again on resume.'
       }
     >
       {nomination ? (
@@ -1884,7 +1884,7 @@ function BudgetSection({
   return (
     <PanelSection
       title="Team budgets"
-      hint="Add or remove dollars from a team's auction budget. Adjustments COMPOSE — each one is added to what came before. Runs live or paused (§8.7)."
+      hint="Add or remove dollars from a team's auction budget. Adjustments COMPOSE — each one is added to what came before. Works while the draft is live or paused."
     >
       <Select value={teamId} onValueChange={setTeamId}>
         <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="Team to adjust">
