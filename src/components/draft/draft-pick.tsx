@@ -1,3 +1,5 @@
+import type { PlayerCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { cn } from '@/lib/utils'
 
@@ -5,6 +7,10 @@ interface DraftPickProps {
   pick: number
   /** Abbreviated at the call site (board cells are narrow): "C. McCaffrey". */
   playerName?: string
+  /** With an id, the name opens the player's card (League UX batch 2). */
+  playerId?: string | null
+  /** The card's context; omitted in the room (its ambient context applies). */
+  cardContext?: PlayerCardContext
   position?: string
   team?: string | null
   byManager?: string | null
@@ -29,6 +35,8 @@ interface DraftPickProps {
 export function DraftPick({
   pick,
   playerName,
+  playerId,
+  cardContext,
   position,
   team,
   byManager,
@@ -70,7 +78,7 @@ export function DraftPick({
         {position && <PositionBadge position={position} size="sm" />}
       </div>
       <div className="truncate text-[11px] font-extrabold leading-tight">
-        {playerName}
+        {playerId ? <PlayerLink playerId={playerId} name={playerName} context={cardContext} className="max-w-full" /> : playerName}
       </div>
       <div className="truncate text-[9px] font-semibold tracking-[0.04em] text-n-3">
         {team}

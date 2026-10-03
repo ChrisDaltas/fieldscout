@@ -114,9 +114,9 @@ describe('feedLines — transactions carry their team + week; a system post carr
     // team page (§16.1). tx2's `t9` is NOT in `names`, so the line has no name
     // AND no id: a franchise we cannot name gets no link, never a dead one.
     expect(feedLines(items, names)).toEqual([
-      { id: 'tx1', kind: 'transaction', text: 'added Nine', team: 'Alpha', teamId: 't1', week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: false, commishActionId: null, actorUsername: null },
+      { id: 'tx1', kind: 'transaction', text: 'added Nine', team: 'Alpha', teamId: 't1', week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: false, commishActionId: null, actorUsername: null, players: [{ playerId: 'p9', name: 'Nine' }] },
       { id: 'c1', kind: 'system', text: 'Schedule remixed (seed 42).', team: null, teamId: null, week: null, createdAt: '2099-09-11T12:00:00Z', commissioner: true, commishActionId: null, actorUsername: null },
-      { id: 'tx2', kind: 'transaction', text: 'Commissioner move', team: null, teamId: null, week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: true, commishActionId: null, actorUsername: null },
+      { id: 'tx2', kind: 'transaction', text: 'Commissioner move', team: null, teamId: null, week: 3, createdAt: '2099-09-10T12:00:00Z', commissioner: true, commishActionId: null, actorUsername: null, players: [] },
       { id: 'c2', kind: 'system', text: 'Week 3 finalized with a postponed game.', team: null, teamId: null, week: null, createdAt: '2099-09-12T12:00:00Z', commissioner: false, commishActionId: null, actorUsername: null },
     ])
     expect(COMMISSIONER_LABEL).toBe('✸ commissioner')

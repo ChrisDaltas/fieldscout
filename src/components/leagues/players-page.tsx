@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -535,7 +537,7 @@ export function PoolTable({
                   <span className="flex items-center gap-2">
                     <PositionBadge position={row.player.position} size="sm" />
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate font-bold text-ink">{row.player.full_name}</span>
+                      <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="font-bold text-ink" />
                       <span className="text-[10px] font-medium text-n-3">
                         {row.player.team ?? '—'}
                         {row.player.status && row.player.status !== 'Active' ? ` · ${row.player.status}` : ''}

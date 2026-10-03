@@ -370,7 +370,8 @@ describe('in_season — the matchup of the week is the viewer’s row at the lad
   it('the activity feed renders L.D4.2’s items: a move with its team and week, an actor’s system post with the ✸ commissioner label, a NULL-actor notice with the plain system chip (R895)', () => {
     const html = renderHome()
     expect(html).toContain('data-feed-item="transaction"')
-    expect(html).toContain('added Nine (WR · AAA)')
+    // League UX batch 2: the player the line names is a door to his card.
+    expect(html).toMatch(/added <button type="button" data-player-link="p9"[^>]*>Nine<\/button> \(WR · AAA\)/)
     expect(html).toContain('data-feed-item="system"')
     const c1 = html.slice(html.indexOf('Schedule remixed by the commissioner.') - 600, html.indexOf('Schedule remixed by the commissioner.'))
     expect(c1).toContain('data-commissioner')

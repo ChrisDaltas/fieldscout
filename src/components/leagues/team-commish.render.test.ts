@@ -63,6 +63,7 @@ const noop = () => {}
 type ViewProps = Parameters<typeof TeamCommishToolsView>[0]
 function renderTools(over: Partial<ViewProps> = {}): string {
   const props: ViewProps = {
+    leagueId: 'lg-render',
     teamName: 'Render Team',
     roster: ROSTER,
     otherTeams: OTHERS,

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -390,7 +391,9 @@ function PlayerCells({
   const player = playerById.get(pick.player_id)
   return (
     <>
-      <TableCell className="font-bold">{player ? player.full_name : pick.player_id}</TableCell>
+      <TableCell className="font-bold">
+        <PlayerLink playerId={pick.player_id} name={player ? player.full_name : pick.player_id} />
+      </TableCell>
       <TableCell>
         {player ? (
           <PositionBadge position={player.position} size="sm" />

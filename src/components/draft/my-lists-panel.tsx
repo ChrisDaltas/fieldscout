@@ -37,6 +37,7 @@ import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { cn } from '@/lib/utils'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useQueueFromList } from '@/hooks/use-draft-queue'
+import { PlayerLink } from '@/components/players/player-link'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import {
@@ -329,7 +330,7 @@ export function MyListsPanel({
               <Icon name="star" size={12} className="shrink-0 text-accent" />
               <span className="mr-auto min-w-0 truncate text-[11px] font-semibold">
                 Best on your board:{' '}
-                <span className="font-extrabold">{bestPlayer.full_name}</span>{' '}
+                <PlayerLink playerId={bestPlayer.id} name={bestPlayer.full_name} className="font-extrabold" />{' '}
                 <span className="text-n-3">
                   {bestPlayer.position}
                   {bestPlayer.team ? ` · ${bestPlayer.team}` : ''}

@@ -1,8 +1,11 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
+import type { PoolPlayer } from '@/components/draft/available-players-ops'
+import { DraftCardActions, GlobalLeaguesExpander, LeagueCardActions } from '@/components/players/player-card-actions'
+import { GLOBAL_CARD_CONTEXT, type PlayerCardContext } from '@/components/players/player-card-context'
 import { PlayerDetailActions } from '@/components/players/player-detail-actions'
 import {
   BioPanel,
@@ -16,9 +19,7 @@ import {
 } from '@/components/shared/window-shell'
 import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useLeagues } from '@/hooks/use-leagues'
 import {
   usePlayerStats,
   type PlayerStatsPlayer,
@@ -49,7 +50,7 @@ export function PlayerWindow({
   zIndex,
   isTop,
 }: PlayerWindowProps) {
-  const { playerId, listContext, readOnly } = win
+  const { playerId, listContext, readOnly, context } = win
   const router = useRouter()
   const closeWindow = usePlayerWindowsStore((s) => s.close)
   const focusWindow = usePlayerWindowsStore((s) => s.focus)
@@ -114,6 +115,8 @@ export function PlayerWindow({
         <>
           <VitalsGrid player={data.player} />
           <LeaguesAndActionsRow
+            player={data.player}
+            context={context}
             actions={
               <PlayerDetailActions
                 player={data.player}
@@ -267,75 +270,63 @@ function formatAge(birthDate: string | null): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-league availability + the list actions. Wired to the viewer's REAL
- * memberships (`useLeagues`). M1 has leagues but no rosters or drafts yet, so
- * a player is a free agent in every league the viewer is in — the count is
- * the viewer's real league count and the expander lists them as free agents.
- * With no leagues, an honest prompt shows instead; when the leagues release
- * is gated off, only the actions render. Real on-a-team status arrives with
- * rosters in M2.
+ * The actions block (League UX batch 2 — the prototype's PlayerCard): what
+ * the card can DO depends on where it was opened.
+ *
+ * - From a league page: where he is in that league and the one move that
+ *   fits — Add / Claim / FAAB bid, Drop, or Propose trade
+ *   (`LeagueCardActions`, each closed door with its reason).
+ * - From the draft room: Queue (the seat's Targets).
+ * - Anywhere else: the viewer's leagues, each with where he is there and a
+ *   door into that league's card (`GlobalLeaguesExpander`).
+ *
+ * The list actions (Add to list, More) ride along in every context. With
+ * the leagues release gated off, only they render.
  */
-function LeaguesAndActionsRow({ actions }: { actions: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
+function LeaguesAndActionsRow({
+  player,
+  context,
+  actions,
+}: {
+  player: PlayerStatsPlayer
+  context: PlayerCardContext
+  actions: React.ReactNode
+}) {
   const leaguesEnabled = featureFlags.leagues
-  const { data: leagues, isPending } = useLeagues({ enabled: leaguesEnabled })
-  const count = leagues?.length ?? 0
-  const showExpander = leaguesEnabled && count > 0
+  const pool: PoolPlayer = {
+    id: player.id,
+    full_name: player.full_name,
+    position: player.position,
+    team: player.team,
+    adp: player.adp,
+    headshot_url: player.headshot_url,
+    status: player.status,
+  }
+  const setContext = usePlayerWindowsStore((s) => s.setContext)
 
   return (
-    <div className="border-b border-n-4 px-3 py-1.5">
+    <div className="flex flex-col gap-1.5 border-b border-n-4 px-3 py-2" data-card-actions={context.kind}>
+      {leaguesEnabled && context.kind === 'league' && (
+        <>
+          <LeagueCardActions player={pool} leagueId={context.leagueId} />
+          <button
+            type="button"
+            onClick={() => setContext(player.id, GLOBAL_CARD_CONTEXT)}
+            className="self-start text-[11px] font-bold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-ink hover:decoration-current"
+            data-card-all-leagues
+          >
+            See all my leagues
+          </button>
+        </>
+      )}
+      {leaguesEnabled && context.kind === 'global' && <GlobalLeaguesExpander player={pool} />}
       <div className="flex flex-wrap items-center gap-1.5">
-        {leaguesEnabled &&
-          (isPending ? (
-            <span className="mr-auto py-1 text-[12px] font-semibold text-n-3">
-              Checking your leagues…
-            </span>
-          ) : count > 0 ? (
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              aria-expanded={open}
-              className="mr-auto inline-flex items-center gap-1 py-1 text-[12px] font-extrabold text-accent-strong transition-colors hover:text-accent"
-            >
-              Available in {count} {count === 1 ? 'league' : 'leagues'}
-              <Icon
-                name="arrow-next"
-                size={13}
-                className={cn('transition-transform', open && 'rotate-90')}
-              />
-            </button>
-          ) : (
-            <span className="mr-auto py-1 text-[12px] font-medium text-n-3">
-              Join a league to track availability
-            </span>
-          ))}
+        {context.kind === 'draft' && <DraftCardActions playerId={player.id} context={context} />}
         {/* Downsize the (shared) action buttons to the mini-card scale. */}
-        <span className="flex flex-wrap items-center justify-end gap-1.5 [&>a]:h-btn-sm [&>a]:px-2.5 [&>a]:text-[11px] [&>button]:h-btn-sm [&>button]:px-2.5 [&>button]:text-[11px]">
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5 [&>a]:h-btn-sm [&>a]:px-2.5 [&>a]:text-[11px] [&>button]:h-btn-sm [&>button]:px-2.5 [&>button]:text-[11px]">
           {actions}
         </span>
       </div>
-      {open && showExpander && (
-        <div className="pb-1">
-          {leagues!.map((lg, i) => (
-            <div
-              key={lg.id}
-              className={cn(
-                'flex items-center gap-2 py-1.5',
-                i > 0 && 'border-t border-n-4',
-              )}
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-[12px] font-extrabold leading-tight">
-                  {lg.name}
-                </span>
-                <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-brand-strong">
-                  Free agent
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

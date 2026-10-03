@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -353,7 +354,7 @@ function RecapRosterCard({
             <>
               {' · biggest buy '}
               <span className="font-extrabold text-ink">
-                {biggestPlayer ? abbreviateName(biggestPlayer.full_name) : spend.biggest.player_id}
+                <PlayerLink playerId={spend.biggest.player_id} name={biggestPlayer ? abbreviateName(biggestPlayer.full_name) : spend.biggest.player_id} />
               </span>{' '}
               <span className="fs-num text-ink">${spend.biggest.price ?? 0}</span>
             </>
@@ -378,7 +379,7 @@ function RecapRosterCard({
                 </span>
                 {player && <PositionBadge position={player.position} size="sm" />}
                 <span className="min-w-0 truncate font-bold">
-                  {player ? abbreviateName(player.full_name) : pick.player_id}
+                  <PlayerLink playerId={pick.player_id} name={player ? abbreviateName(player.full_name) : pick.player_id} />
                 </span>
                 {isAuction && (
                   <span className="fs-num shrink-0 text-[10px] font-bold text-n-3">
@@ -453,7 +454,7 @@ function AuctionFinalBoard({
               </span>
               {player && <PositionBadge position={player.position} size="sm" />}
               <span className="min-w-0 flex-1 truncate font-bold">
-                {player ? player.full_name : pick.player_id}
+                <PlayerLink playerId={pick.player_id} name={player ? player.full_name : pick.player_id} />
               </span>
               <span className="min-w-0 max-w-[38%] truncate text-[11px] font-semibold text-n-3">
                 {teamNameById.get(pick.team_id) ?? 'Team'}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
@@ -32,6 +32,7 @@ import { useMockRoomContext } from '@/hooks/use-mock-room'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
+import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import type { Draft } from '@/types/database'
 
 import type { ActingAsControl } from './acting-as-picker'
@@ -815,6 +816,15 @@ function DraftRoomLive({
       : null
     : myMemberTeamId
 
+  // League UX batch 2: a player card opened anywhere in the room is the
+  // draft card — its Queue button acts for the viewer's OWN seat (acting for
+  // another team stays in the commissioner's controls). Cleared on leave.
+  const setAmbientCard = usePlayerWindowsStore((s) => s.setAmbient)
+  useEffect(() => {
+    setAmbientCard({ kind: 'draft', leagueId: scope.leagueId, draftId: draft.id, teamId: myTeamId })
+    return () => setAmbientCard(null)
+  }, [setAmbientCard, scope.leagueId, draft.id, myTeamId])
+
   // F524 — the commissioner's "acting as" choice: ONE room-level team that
   // the bid box, the Targets panel and the pool's add-to-Targets all act
   // for (null = his own seat). A commissioner on a real league draft only;
@@ -1371,6 +1381,7 @@ function DraftRoomLive({
                   <DraftPick
                     key={pick.pick_number}
                     pick={pick.pick_number}
+                    playerId={pick.player_id}
                     playerName={player ? abbreviateName(player.full_name) : pick.player_id}
                     position={player?.position}
                     team={player?.team ?? '—'}
@@ -1519,6 +1530,7 @@ function DraftRoomLive({
                   key={pick.pick_number}
                   pick={pick.pick_number}
                   label={pickLabel(pick.pick_number, teamCount)}
+                  playerId={pick.player_id}
                   playerName={player ? abbreviateName(player.full_name) : pick.player_id}
                   position={player?.position}
                   team={player?.team ?? '—'}

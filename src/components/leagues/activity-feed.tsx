@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { TextWithPlayers } from '@/components/players/player-link'
 import { TextWithActor, TextWithUsernames, UsernameLink } from '@/components/shared/username-link'
 import { cn } from '@/lib/utils'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
@@ -205,7 +207,12 @@ export function ActivityFeed({
                         regression that wraps or prefixes the message. */}
                     <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink" data-feed-text>
                       {/* L.E1.41: a post's actor — named in its text — is a door to his profile. */}
-                      <TextWithActor text={line.text} actor={line.actorUsername} />
+                      {line.players && line.players.length > 0 ? (
+                        // League UX batch 2: every player the line names opens his card.
+                        <TextWithPlayers text={line.text} players={line.players} context={leagueCardContext(leagueId)} />
+                      ) : (
+                        <TextWithActor text={line.text} actor={line.actorUsername} />
+                      )}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">

@@ -2,11 +2,15 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import type { PlayerListContext } from '@/components/players/player-detail-actions'
+import { GLOBAL_CARD_CONTEXT, type PlayerCardContext } from '@/components/players/player-card-context'
 
 export interface PlayerWindowState {
   playerId: string
   listContext: PlayerListContext | null
   readOnly: boolean
+  /** Where the card was opened from — decides its actions block (a league's
+   *  add / drop / trade, the draft's Queue, or every league at once). */
+  context: PlayerCardContext
 }
 
 export interface WindowPosition {
@@ -17,6 +21,7 @@ export interface WindowPosition {
 interface OpenOptions {
   listContext?: PlayerListContext | null
   readOnly?: boolean
+  context?: PlayerCardContext
 }
 
 interface PlayerWindowsStore {
@@ -28,6 +33,14 @@ interface PlayerWindowsStore {
   close: (playerId: string) => void
   focus: (playerId: string) => void
   setPosition: (playerId: string, pos: WindowPosition) => void
+  /** Re-point an open card at another context (the global card's "open him
+   *  in that league"). */
+  setContext: (playerId: string, context: PlayerCardContext) => void
+  /** The surface's own context for a card opened without one — the draft
+   *  room sets its seat here on mount, so every existing "open the card"
+   *  call inside the room opens the draft card (Queue). Not persisted. */
+  ambient: PlayerCardContext | null
+  setAmbient: (context: PlayerCardContext | null) => void
   closeAll: () => void
 }
 
@@ -45,12 +58,15 @@ export const usePlayerWindowsStore = create<PlayerWindowsStore>()(
     (set) => ({
       windows: [],
       positions: {},
+      ambient: null,
+      setAmbient: (ambient) => set({ ambient }),
       open: (playerId, opts) =>
         set((state) => {
           const entry: PlayerWindowState = {
             playerId,
             listContext: opts?.listContext ?? null,
             readOnly: opts?.readOnly ?? false,
+            context: opts?.context ?? state.ambient ?? GLOBAL_CARD_CONTEXT,
           }
           // Re-opening an already-open player refreshes its context and brings
           // it to the front rather than spawning a duplicate.
@@ -77,6 +93,10 @@ export const usePlayerWindowsStore = create<PlayerWindowsStore>()(
       setPosition: (playerId, pos) =>
         set((state) => ({
           positions: { ...state.positions, [playerId]: pos },
+        })),
+      setContext: (playerId, context) =>
+        set((state) => ({
+          windows: state.windows.map((w) => (w.playerId === playerId ? { ...w, context } : w)),
         })),
       closeAll: () => set({ windows: [] }),
     }),

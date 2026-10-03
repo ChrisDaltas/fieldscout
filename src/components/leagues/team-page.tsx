@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
+import { movesGate } from '@/components/players/player-card-league-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-overr
 import { commishTeamHref } from './activity-page-ops'
 import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
+import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
 import { LineupEditor } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
@@ -172,6 +174,9 @@ function TeamPageContent({
   // L.E1.41: the manager's name, a door to his profile (Chris 2026-09-30).
   const managerUsername = detail.members.find((m) => m.team_id === teamId && m.user_id)?.profiles?.username ?? null
   const canEdit = isOwnTeam || isCommish
+  const [dropping, setDropping] = useState<DropTarget | null>(null)
+  const movesState = movesGate(detail.league.status)
+  const movesClosed = movesState.open ? null : movesState.reason
   const editability = weekEditability(weeks, week, currentWeek)
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
 
@@ -367,7 +372,12 @@ function TeamPageContent({
             leagueTimeZone={leagueTimeZone}
             overrideMode={inOverride}
             onOverrideMode={(next) => (next ? enterOverride(leagueId) : exitOverride())}
+            // League UX batch 2: Drop from the Move menu — the viewer's OWN team
+            // only (acting for another team stays in the commissioner tools).
+            onDrop={isOwnTeam ? (p) => setDropping({ player_id: p.player_id, full_name: p.full_name }) : undefined}
+            dropClosedReason={movesClosed}
           />
+          {isOwnTeam && <DropPlayerDialog leagueId={leagueId} teamId={teamId} player={dropping} onClose={() => setDropping(null)} />}
           {inOverride && detail.settings.waiver_type === 'faab' && (
             <TeamFaabEdit key={teamId} leagueId={leagueId} teamId={teamId} teamName={teamName} balance={rosterTeam.faab_balance} />
           )}

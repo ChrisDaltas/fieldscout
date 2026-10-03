@@ -23,6 +23,8 @@ import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 
 import { markUsername, plainText, stripMarks } from '@/components/shared/username-link-ops'
 
+import type { NamedPlayer } from '@/components/players/player-link-ops'
+
 import { COMMISH_ACTION_WORDS, actionWords, receiptDetail, settingChange } from './commish-log-copy'
 
 export interface FeedLine {
@@ -55,6 +57,21 @@ export interface FeedLine {
    *  (L.E1.41, `splitActorName`). Null for a transaction, a NULL-actor post,
    *  or an actor no longer in the league. */
   actorUsername: string | null
+  /** The players the line's text names, with their ids — each name renders
+   *  as a door to his card (League UX batch 2). Absent = none. */
+  players?: NamedPlayer[]
+}
+
+/** The players a stored add / drop / claim payload names (113's `add` /
+ *  `drop` objects carry the id and the name). */
+export function payloadPlayers(payload: unknown): NamedPlayer[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return []
+  const p = payload as AddDropPayloadShape
+  const out: NamedPlayer[] = []
+  for (const side of [p.add, p.drop]) {
+    if (side && typeof side.player_id === 'string' && typeof side.name === 'string' && side.name !== '') out.push({ playerId: side.player_id, name: side.name })
+  }
+  return out
 }
 
 interface AddDropPayloadShape {
@@ -224,6 +241,7 @@ export function feedLines(
         commissioner: item.type === 'commissioner_move' || commishActionId !== null,
         commishActionId,
         actorUsername: null,
+        players: payloadPlayers(item.payload),
       },
     ]
   })

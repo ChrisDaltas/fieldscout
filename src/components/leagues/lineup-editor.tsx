@@ -14,10 +14,13 @@ import {
 } from '@dnd-kit/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { leagueCardContext, type PlayerCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { useCommishEditLineup } from '@/hooks/use-commish-lineup'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
@@ -52,6 +55,7 @@ import {
   type SlotRow,
   type WeekEditability,
 } from './lineup-editor-ops'
+import { LOCKED_DROP_TITLE } from './players-page-ops'
 
 /**
  * LineupEditor (§16.2 `lineup-editor`; §11.2; §16.5.2 Weekly loop; §16.5.4
@@ -149,6 +153,13 @@ export interface LineupEditorProps {
    *  both of its states be rendered in a pin. */
   overrideMode: boolean
   onOverrideMode: (next: boolean) => void
+  /** League UX batch 2: the Move menu's Drop — passed only for the viewer's
+   *  OWN team (a commissioner acting for another team stays in the
+   *  commissioner tools). Omitted = no Drop in the menu. */
+  onDrop?: (player: RosterPlayer) => void
+  /** Why no drop can be made right now (the league is not in season), or
+   *  null. A locked player's Drop is closed by his own lock. */
+  dropClosedReason?: string | null
 }
 
 type Notice = { tone: HintTone | 'positive'; text: string }
@@ -168,7 +179,10 @@ export function LineupEditor({
   leagueTimeZone,
   overrideMode,
   onOverrideMode,
+  onDrop,
+  dropClosedReason = null,
 }: LineupEditorProps) {
+  const rowMenu: RowMenu = { context: leagueCardContext(leagueId), onDrop, dropClosedReason }
   const slots = useMemo(() => slotInstances(settings), [settings])
   const players = useMemo(() => new Map(roster.map((p) => [p.player_id, p])), [roster])
   const weekIsCurrent = currentWeek !== null && week === currentWeek
@@ -399,6 +413,7 @@ export function LineupEditor({
                   onSeat={() => selected && move(selected, { kind: 'slot', key: row.slot.key })}
                   onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
                   onBench={(id) => move(id, { kind: 'bench' })}
+                  menu={rowMenu}
                 />
               ))}
               {model.ir.length > 0 && (
@@ -422,6 +437,7 @@ export function LineupEditor({
                       onSeat={() => selected && move(selected, { kind: 'slot', key: row.slot.key })}
                       onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
                       onBench={(id) => move(id, { kind: 'bench' })}
+                      menu={rowMenu}
                     />
                   ))}
                 </>
@@ -440,6 +456,7 @@ export function LineupEditor({
             onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
             onDropSelected={() => selected && move(selected, { kind: 'bench' })}
             empty={roster.length === 0}
+            menu={rowMenu}
           />
         </div>
 
@@ -584,6 +601,7 @@ interface SlotSeatProps {
   onSeat: () => void
   onSelect: (id: string) => void
   onBench: (id: string) => void
+  menu: RowMenu
 }
 
 function SlotSeat({
@@ -603,6 +621,7 @@ function SlotSeat({
   onSeat,
   onSelect,
   onBench,
+  menu,
 }: SlotSeatProps) {
   const { slot, player } = row
   // In override mode the 🔒 badge STAYS (it is the record of what is being
@@ -645,6 +664,8 @@ function SlotSeat({
           hints={[...(hint ? [hint] : []), ...storedFlags]}
           kickoff={kickoff}
           leagueTimeZone={leagueTimeZone}
+          menu={menu}
+          onBench={!readOnly && !frozen && slot.kind === 'start' ? () => onBench(player.player_id) : undefined}
           trailing={
             !readOnly && !frozen ? (
               <Button variant="ghost" size="icon-sm" aria-label={`Bench ${player.full_name}`} onClick={() => onBench(player.player_id)}>
@@ -695,9 +716,19 @@ interface PlayerRowProps {
   kickoff: string | null
   leagueTimeZone: string | null
   trailing?: React.ReactNode
+  menu: RowMenu
+  /** The menu's Bench — a seated starter only. */
+  onBench?: () => void
 }
 
-function PlayerRow({ player, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, hints, kickoff, leagueTimeZone, trailing }: PlayerRowProps) {
+/** What every row's name and Move menu need from the editor. */
+interface RowMenu {
+  context: PlayerCardContext
+  onDrop?: (player: RosterPlayer) => void
+  dropClosedReason: string | null
+}
+
+function PlayerRow({ player, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, hints, kickoff, leagueTimeZone, trailing, menu, onBench }: PlayerRowProps) {
   const frozen = locked && !lockExempt
   const draggable = useDraggable({ id: player.player_id, disabled: readOnly || frozen })
   const lock = lockBadgeFor(player.game_lock, weekIsCurrent)
@@ -706,31 +737,42 @@ function PlayerRow({ player, locked, lockExempt, weekIsCurrent, currentWeek, rea
 
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-      <button
-        ref={draggable.setNodeRef}
-        type="button"
-        {...draggable.attributes}
-        {...(readOnly || frozen ? {} : draggable.listeners)}
-        data-player={player.player_id}
-        aria-pressed={selected}
-        aria-disabled={readOnly || frozen}
-        onClick={readOnly || frozen ? undefined : onSelect}
+      {/* The row: the NAME opens his card (League UX batch 2); the rest of
+          the row is the select / drag handle for a lineup move — its
+          accessible name says so. */}
+      <div
         className={cn(
-          'flex min-w-[180px] flex-1 items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-left text-[11px] font-bold',
-          readOnly || frozen ? 'cursor-default border-transparent' : 'cursor-grab border-transparent hover:border-ink hover:bg-n-4 active:cursor-grabbing',
+          'flex min-w-[180px] flex-1 items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[11px] font-bold',
+          readOnly || frozen ? 'border-transparent' : 'border-transparent hover:border-ink hover:bg-n-4',
           selected && 'border-accent bg-accent-soft',
           draggable.isDragging && 'opacity-40',
         )}
       >
         <PositionBadge position={player.position} size="sm" />
-        <span className="truncate">{player.full_name}</span>
-        <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
-        {kickoffView && (
-          <span className="fs-num shrink-0 text-[10px] font-medium text-n-3" title={kickoffView.title ?? undefined}>
-            {kickoffView.local}
-          </span>
-        )}
-      </button>
+        <PlayerLink playerId={player.player_id} name={player.full_name} context={menu.context} className="min-w-0 shrink" />
+        <button
+          ref={draggable.setNodeRef}
+          type="button"
+          {...draggable.attributes}
+          {...(readOnly || frozen ? {} : draggable.listeners)}
+          data-player={player.player_id}
+          aria-label={`Move ${player.full_name}`}
+          aria-pressed={selected}
+          aria-disabled={readOnly || frozen}
+          onClick={readOnly || frozen ? undefined : onSelect}
+          className={cn(
+            'flex min-h-[22px] min-w-0 flex-1 items-center gap-1.5 self-stretch text-left',
+            readOnly || frozen ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
+          )}
+        >
+          <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
+          {kickoffView && (
+            <span className="fs-num shrink-0 text-[10px] font-medium text-n-3" title={kickoffView.title ?? undefined}>
+              {kickoffView.local}
+            </span>
+          )}
+        </button>
+      </div>
       <span className="flex shrink-0 flex-wrap items-center gap-1">
         {lock.locked && (
           <Badge variant="black" title={lock.until ? `Locked until ${formatKickoff(lock.until, leagueTimeZone).local}` : lock.copy}>
@@ -745,8 +787,61 @@ function PlayerRow({ player, locked, lockExempt, weekIsCurrent, currentWeek, rea
           </Badge>
         ))}
       </span>
+      <MoveMenu player={player} readOnly={readOnly} frozen={frozen} locked={lock.locked} menu={menu} onSelect={onSelect} onBench={onBench} />
       {trailing}
     </div>
+  )
+}
+
+/**
+ * The per-player Move menu (the prototype's MyTeam): move him to a seat (the
+ * same selection a tap on the row makes), bench a starter, or drop him. Drop
+ * appears only on the viewer's own team, and a closed Drop says why — a
+ * started game, or a league that is not in season — instead of being offered
+ * for the server to refuse.
+ */
+function MoveMenu({
+  player,
+  readOnly,
+  frozen,
+  locked,
+  menu,
+  onSelect,
+  onBench,
+}: {
+  player: RosterPlayer
+  readOnly: boolean
+  frozen: boolean
+  locked: boolean
+  menu: RowMenu
+  onSelect: () => void
+  onBench?: () => void
+}) {
+  const canMove = !readOnly && !frozen
+  if (!canMove && !menu.onDrop) return null
+  const dropReason = menu.dropClosedReason ?? (locked ? LOCKED_DROP_TITLE : null)
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="stroke" size="sm" aria-label={`Move menu for ${player.full_name}`} data-move-menu={player.player_id}>
+          Move
+        </Button>
+      </DropdownMenuTrigger>
+      {/* A menu is a true overlay — the primitive keeps its resting shadow. */}
+      <DropdownMenuContent align="end" className="max-w-[260px]">
+        {canMove && <DropdownMenuItem onSelect={onSelect}>Move to a seat</DropdownMenuItem>}
+        {canMove && onBench && <DropdownMenuItem onSelect={onBench}>Bench</DropdownMenuItem>}
+        {menu.onDrop && (
+          <>
+            {canMove && <DropdownMenuSeparator />}
+            <DropdownMenuItem disabled={dropReason !== null} onSelect={() => menu.onDrop?.(player)} data-menu-drop={player.player_id}>
+              Drop
+            </DropdownMenuItem>
+            {dropReason && <p className="px-2 pb-1 text-[10px] font-medium text-n-3">{dropReason}</p>}
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -761,9 +856,10 @@ interface BenchZoneProps {
   onSelect: (id: string) => void
   onDropSelected: () => void
   empty: boolean
+  menu: RowMenu
 }
 
-function BenchZone({ bench, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, onDropSelected, empty }: BenchZoneProps) {
+function BenchZone({ bench, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, onDropSelected, empty, menu }: BenchZoneProps) {
   const droppable = useDroppable({ id: 'bench', disabled: readOnly })
   const selectedIsStarter = Boolean(selected) && !bench.some((p) => p.player_id === selected)
   return (
@@ -796,6 +892,7 @@ function BenchZone({ bench, locked, lockExempt, weekIsCurrent, currentWeek, read
                 hints={[]}
                 kickoff={null}
                 leagueTimeZone={null}
+                menu={menu}
               />
             </div>
           ))

@@ -108,6 +108,7 @@ export interface CorrectionCard {
   id: string
   week: number
   recordedAt: string
+  playerId: string
   playerName: string
   position: string | null
   nflTeam: string | null
@@ -130,6 +131,7 @@ export function correctionCard(item: StatCorrectionItem): CorrectionCard {
     id: item.id,
     week: item.week,
     recordedAt: item.recorded_at,
+    playerId: item.player.id,
     playerName: item.player.name,
     position: item.player.position,
     nflTeam: item.player.nfl_team,
