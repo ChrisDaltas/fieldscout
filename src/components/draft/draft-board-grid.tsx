@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 
+import type { PlayerCardContext } from '@/components/players/player-card-context'
 import { cn } from '@/lib/utils'
 
 import { abbreviateName, buildBoardModel, pickLabel, type BoardModelInput } from './draft-board-ops'
@@ -22,6 +23,9 @@ interface DraftBoardGridProps {
   playerById: ReadonlyMap<string, BoardPlayer>
   /** My seat — its column gets the resting accent treatment. */
   myTeamId: string | null
+  /** The card a pick's name opens; omitted in the room (its ambient
+   *  context — the seat's draft card — applies). */
+  cardContext?: PlayerCardContext
   className?: string
 }
 
@@ -41,6 +45,7 @@ export function DraftBoardGrid({
   teamNameById,
   playerById,
   myTeamId,
+  cardContext,
   className,
 }: DraftBoardGridProps) {
   const model = useMemo(() => buildBoardModel(input), [input])
@@ -96,6 +101,8 @@ export function DraftBoardGrid({
                 pick={cell.pickNumber}
                 empty={!made}
                 onClock={cell.isOnClock}
+                playerId={cell.playerId}
+                cardContext={cardContext}
                 playerName={
                   made
                     ? player

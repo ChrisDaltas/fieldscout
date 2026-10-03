@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
@@ -96,9 +97,7 @@ export function MyRosterTracker({
                   className="flex items-center gap-1 rounded-sm border border-ink bg-white px-1.5 py-0.5 text-[10px] font-bold"
                 >
                   {player && <PositionBadge position={player.position} size="sm" />}
-                  <span className="max-w-[110px] truncate">
-                    {player ? abbreviateName(player.full_name) : playerId}
-                  </span>
+                  <PlayerLink playerId={playerId} name={player ? abbreviateName(player.full_name) : playerId} className="max-w-[110px]" />
                 </span>
               )
             })}
@@ -124,12 +123,15 @@ export function MyRosterTracker({
           {model.benchIds.length > 0 && (
             <>
               {' · '}
-              {model.benchIds
-                .map((id) => {
-                  const player = playerById.get(id)
-                  return player ? abbreviateName(player.full_name) : id
-                })
-                .join(', ')}
+              {model.benchIds.map((id, i) => {
+                const player = playerById.get(id)
+                return (
+                  <span key={id}>
+                    {i > 0 && ', '}
+                    <PlayerLink playerId={id} name={player ? abbreviateName(player.full_name) : id} />
+                  </span>
+                )
+              })}
             </>
           )}
         </p>

@@ -3,6 +3,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -632,7 +634,11 @@ export function TradeCard({
                   {side.gives.map((g) => (
                     <li key={g.playerId ?? `faab-${g.faab}`} className="flex min-w-0 items-center gap-1.5 text-[12px]">
                       {g.position && <PositionBadge position={g.position} size="sm" />}
-                      <span className="truncate font-bold text-ink">{g.name}</span>
+                      {g.playerId ? (
+                        <PlayerLink playerId={g.playerId} name={g.name} context={leagueCardContext(leagueId)} className="font-bold text-ink" />
+                      ) : (
+                        <span className="truncate font-bold text-ink">{g.name}</span>
+                      )}
                       {g.nflTeam && <span className="shrink-0 text-[10px] font-medium text-n-3">{g.nflTeam}</span>}
                       {trade.in_flight && g.playerId && lockedIds.has(g.playerId) && (
                         <Badge variant="black" title={lockedAssetTitle(lockBehavior)} data-lock>
@@ -645,7 +651,14 @@ export function TradeCard({
               )}
               {side.drops.length > 0 && (
                 <p className="text-[10px] font-medium text-n-3" data-trade-drops-of={side.teamId}>
-                  Drops {side.drops.map((d) => d.name).join(', ')} to make room
+                  Drops{' '}
+                  {side.drops.map((d, i) => (
+                    <span key={d.playerId}>
+                      {i > 0 && ', '}
+                      <PlayerLink playerId={d.playerId} name={d.name} context={leagueCardContext(leagueId)} />
+                    </span>
+                  ))}{' '}
+                  to make room
                 </p>
               )}
             </div>
@@ -711,6 +724,7 @@ export function TradeCard({
                   : 'Players to drop so your roster fits — dropped only if the trade goes through.'}
             </p>
             <DropPicker
+              leagueId={leagueId}
               roster={recipientRoster.roster.filter((p) => !giving.has(p.player_id))}
               picked={acceptDrops ?? []}
               lockBehavior={lockBehavior}

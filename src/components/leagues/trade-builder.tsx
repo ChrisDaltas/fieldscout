@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -291,6 +293,7 @@ export function TradeBuilderView({
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <SideColumn
+            leagueId={leagueId}
             title={`${from?.name ?? 'Your team'} gives`}
             side="give"
             roster={from?.roster ?? []}
@@ -301,6 +304,7 @@ export function TradeBuilderView({
             empty="No players on this roster."
           />
           <SideColumn
+            leagueId={leagueId}
             title={to ? `${to.name} gives` : 'They give'}
             side="get"
             roster={to?.roster ?? []}
@@ -319,6 +323,7 @@ export function TradeBuilderView({
                 {dropsPrompt}
               </p>
               <DropPicker
+                leagueId={leagueId}
                 roster={(from?.roster ?? []).filter((p) => !giveNow.includes(p.player_id))}
                 picked={dropsNow}
                 lockBehavior={lockBehavior}
@@ -365,6 +370,7 @@ function toggle(list: readonly string[], id: string): string[] {
 }
 
 function SideColumn({
+  leagueId,
   title,
   side,
   roster,
@@ -374,6 +380,7 @@ function SideColumn({
   faab,
   empty,
 }: {
+  leagueId: string
   title: string
   side: 'give' | 'get'
   roster: readonly RosterPlayer[]
@@ -391,7 +398,7 @@ function SideColumn({
       ) : (
         <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
           {roster.map((p) => (
-            <PlayerPickRow key={p.player_id} player={p} checked={picked.includes(p.player_id)} lockBehavior={lockBehavior} onToggle={onToggle} />
+            <PlayerPickRow key={p.player_id} leagueId={leagueId} player={p} checked={picked.includes(p.player_id)} lockBehavior={lockBehavior} onToggle={onToggle} />
           ))}
         </ul>
       )}
@@ -418,11 +425,13 @@ function SideColumn({
 /** One roster player as a pick — shared by the builder's columns, its drop
  *  picker and the accept-with-drops picker on a trade card. */
 export function PlayerPickRow({
+  leagueId,
   player,
   checked,
   lockBehavior,
   onToggle,
 }: {
+  leagueId: string
   player: RosterPlayer
   checked: boolean
   lockBehavior: string
@@ -442,7 +451,8 @@ export function PlayerPickRow({
       <Checkbox id={id} checked={checked} onCheckedChange={() => onToggle(player.player_id)} aria-label={`Pick ${player.full_name}`} />
       <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-1.5">
         <PositionBadge position={player.position} size="sm" />
-        <span className="truncate text-[12px] font-bold text-ink">{player.full_name}</span>
+        {/* The name opens his card; the rest of the row still picks him. */}
+        <PlayerLink playerId={player.player_id} name={player.full_name} context={leagueCardContext(leagueId)} className="text-[12px] font-bold text-ink" />
         <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
         {lock.locked && checked && (
           <span className="basis-full text-[10px] font-medium text-n-3" data-lock-note={lockBehavior}>
@@ -460,11 +470,13 @@ export function PlayerPickRow({
 }
 
 export function DropPicker({
+  leagueId,
   roster,
   picked,
   lockBehavior,
   onToggle,
 }: {
+  leagueId: string
   roster: readonly RosterPlayer[]
   picked: readonly string[]
   lockBehavior: string
@@ -475,7 +487,7 @@ export function DropPicker({
   return (
     <ul className="grid max-h-56 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2" data-drop-picker>
       {sorted.map((p) => (
-        <PlayerPickRow key={p.player_id} player={p} checked={picked.includes(p.player_id)} lockBehavior={lockBehavior} onToggle={onToggle} />
+        <PlayerPickRow key={p.player_id} leagueId={leagueId} player={p} checked={picked.includes(p.player_id)} lockBehavior={lockBehavior} onToggle={onToggle} />
       ))}
     </ul>
   )

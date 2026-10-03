@@ -110,6 +110,8 @@ const SOURCE_PATHS = [
   'src/components/leagues/activity-feed-ops.ts',
   'src/components/leagues/commish-log-copy.ts',
   'src/components/shared/username-link-ops.ts',
+  // League UX batch 2: the feed's lines carry the players they name (a type the builder imports).
+  'src/components/players/player-link-ops.ts',
   // L.E2.6: the replay proof's real-capture scan (and what it imports) and the captures it reads.
   'scripts/correction-replay-source.ts',
   'scripts/correction-snapshot-diff.ts',

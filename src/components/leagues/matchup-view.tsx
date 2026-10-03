@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useMemo, useState, type ReactNode } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -760,7 +762,7 @@ function TeamBox({
               <section key={group.phase} className="flex flex-col gap-1" data-phase={group.phase}>
                 <h4 className="text-[10px] font-bold uppercase tracking-wide text-n-3">{group.label}</h4>
                 {group.starters.map((starter) => (
-                  <StarterLine key={starter.slot} starter={starter} leagueTimeZone={leagueTimeZone} />
+                  <StarterLine key={starter.slot} leagueId={leagueId} starter={starter} leagueTimeZone={leagueTimeZone} />
                 ))}
               </section>
             ))
@@ -771,7 +773,7 @@ function TeamBox({
   )
 }
 
-function StarterLine({ starter, leagueTimeZone }: { starter: BoxStarter; leagueTimeZone: string | null }) {
+function StarterLine({ leagueId, starter, leagueTimeZone }: { leagueId: string; starter: BoxStarter; leagueTimeZone: string | null }) {
   const cell = starterCell(starter)
   const kickoff = starter.game && starter.phase === 'up_next' ? formatKickoff(starter.game.kickoff_at, leagueTimeZone) : null
   const state = starter.phase === 'up_next' ? null : gameStateLine(starter.game)
@@ -784,7 +786,7 @@ function StarterLine({ starter, leagueTimeZone }: { starter: BoxStarter; leagueT
           <PositionBadge position={starter.player.position} size="sm" />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-[12px] font-bold text-ink">{starter.player.full_name}</span>
+              <PlayerLink playerId={starter.player.id} name={starter.player.full_name} context={leagueCardContext(leagueId)} className="text-[12px] font-bold text-ink" />
               <span className="shrink-0 text-[10px] font-medium text-n-3">{starter.player.nfl_team ?? '—'}</span>
               {kickoff && (
                 <span className="fs-num shrink-0 text-[10px] font-medium text-n-3" title={kickoff.title ?? undefined}>

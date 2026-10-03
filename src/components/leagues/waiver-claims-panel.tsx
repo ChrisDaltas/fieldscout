@@ -5,6 +5,8 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import { useMemo, useState } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -180,6 +182,7 @@ export function WaiverClaimsPanelView({
                       {ordered.map((claim, i) => (
                         <PendingClaimRow
                           key={claim.id}
+                          leagueId={doc!.league_id}
                           claim={claim}
                           rank={i + 1}
                           faab={faab}
@@ -199,7 +202,7 @@ export function WaiverClaimsPanelView({
                 <p className="fs-overline text-[9px] text-n-3">Recent results</p>
                 <ul className="flex flex-col gap-1">
                   {settled.map((claim) => (
-                    <SettledClaimRow key={claim.id} claim={claim} outcome={claimOutcome(claim, waiverType)} />
+                    <SettledClaimRow key={claim.id} leagueId={doc!.league_id} claim={claim} outcome={claimOutcome(claim, waiverType)} />
                   ))}
                 </ul>
               </div>
@@ -211,21 +214,29 @@ export function WaiverClaimsPanelView({
   )
 }
 
-function ClaimPlayers({ claim }: { claim: WaiverClaimView }) {
+function ClaimPlayers({ leagueId, claim }: { leagueId: string; claim: WaiverClaimView }) {
+  const context = leagueCardContext(leagueId)
   return (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
         {claim.add.position && <PositionBadge position={claim.add.position} size="sm" />}
-        <span className="truncate text-[12px] font-bold text-ink">{claim.add.full_name ?? claim.add.player_id}</span>
+        <PlayerLink playerId={claim.add.player_id} name={claim.add.full_name ?? claim.add.player_id} context={context} className="text-[12px] font-bold text-ink" />
       </span>
       <span className="truncate text-[10px] font-medium text-n-3">
-        {claim.drop ? `Drop ${claim.drop.full_name ?? claim.drop.player_id}` : 'No drop'}
+        {claim.drop ? (
+          <>
+            Drop <PlayerLink playerId={claim.drop.player_id} name={claim.drop.full_name ?? claim.drop.player_id} context={context} />
+          </>
+        ) : (
+          'No drop'
+        )}
       </span>
     </span>
   )
 }
 
 function PendingClaimRow({
+  leagueId,
   claim,
   rank,
   faab,
@@ -234,6 +245,7 @@ function PendingClaimRow({
   onEditBid,
   onCancel,
 }: {
+  leagueId: string
   claim: WaiverClaimView
   rank: number
   faab: boolean
@@ -266,7 +278,7 @@ function PendingClaimRow({
         <span className="w-[13px]" aria-hidden="true" />
       )}
       <span className="fs-num w-4 text-right text-[11px] font-bold text-n-3">{rank}</span>
-      <ClaimPlayers claim={claim} />
+      <ClaimPlayers leagueId={leagueId} claim={claim} />
       {faab &&
         (editing ? (
           <span className="flex items-center gap-1">
@@ -315,7 +327,7 @@ function PendingClaimRow({
   )
 }
 
-function SettledClaimRow({ claim, outcome }: { claim: WaiverClaimView; outcome: ClaimOutcome }) {
+function SettledClaimRow({ leagueId, claim, outcome }: { leagueId: string; claim: WaiverClaimView; outcome: ClaimOutcome }) {
   return (
     <li className="flex items-start gap-2 px-1 py-1" data-claim-result={claim.status}>
       <Badge
@@ -325,7 +337,7 @@ function SettledClaimRow({ claim, outcome }: { claim: WaiverClaimView; outcome: 
         {outcome.label}
       </Badge>
       <span className="flex min-w-0 flex-1 flex-col">
-        <ClaimPlayers claim={claim} />
+        <ClaimPlayers leagueId={leagueId} claim={claim} />
         {outcome.detail && <span className="text-[11px] font-medium text-n-3">{outcome.detail}</span>}
       </span>
     </li>

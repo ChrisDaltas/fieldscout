@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -166,7 +168,7 @@ function CorrectionRow({
     <li className="flex flex-col gap-1 py-2" data-correction={card.id} data-result-tone={card.result.tone}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {card.position && <PositionBadge position={card.position} size="sm" />}
-        <span className="min-w-0 truncate text-[13px] font-bold text-ink">{card.playerName}</span>
+        <PlayerLink playerId={card.playerId} name={card.playerName} context={leagueCardContext(leagueId)} className="min-w-0 text-[13px] font-bold text-ink" />
         {card.nflTeam && <span className="text-[10px] font-medium text-n-3">{card.nflTeam}</span>}
         <span className="ml-auto flex items-center gap-2 text-[10px] font-medium text-n-3">
           <span>

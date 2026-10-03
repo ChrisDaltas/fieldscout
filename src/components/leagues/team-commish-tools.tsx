@@ -2,6 +2,8 @@
 
 import { useId, useMemo, useState } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerLink } from '@/components/players/player-link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -91,6 +93,7 @@ export function TeamCommishTools({
 
   return (
     <TeamCommishToolsView
+      leagueId={leagueId}
       teamName={teamName}
       roster={roster}
       otherTeams={otherTeams}
@@ -132,6 +135,7 @@ export type AddCandidatesState =
  *  document is a real render in `team-commish.render.test.ts` without a
  *  browser (a static render runs no mutation). */
 export function TeamCommishToolsView({
+  leagueId,
   teamName,
   roster,
   otherTeams,
@@ -145,6 +149,7 @@ export function TeamCommishToolsView({
   onDrop,
   onAdd,
 }: {
+  leagueId: string
   teamName: string
   roster: readonly RosterPlayer[]
   otherTeams: readonly { id: string; name: string }[]
@@ -192,7 +197,7 @@ export function TeamCommishToolsView({
         ) : (
           <ul className="flex flex-col divide-y divide-n-4" data-tools-roster>
             {roster.map((player) => (
-              <RosterToolRow key={player.player_id} player={player} otherTeams={otherTeams} pending={pending} onMove={onMove} onDrop={onDrop} />
+              <RosterToolRow key={player.player_id} leagueId={leagueId} player={player} otherTeams={otherTeams} pending={pending} onMove={onMove} onDrop={onDrop} />
             ))}
           </ul>
         )}
@@ -236,7 +241,7 @@ export function TeamCommishToolsView({
               {candidates.players.map((candidate) => (
                 <li key={candidate.id} className="flex items-center justify-between gap-2 py-1.5">
                   <span className="min-w-0 truncate text-[12px] font-semibold text-ink">
-                    {candidate.full_name}{' '}
+                    <PlayerLink playerId={candidate.id} name={candidate.full_name} context={leagueCardContext(leagueId)} />{' '}
                     <span className="font-medium text-n-3">{[candidate.position, candidate.team].filter(Boolean).join(' · ')}</span>
                   </span>
                   <Button variant="stroke" size="sm" disabled={pending} onClick={() => onAdd(candidate)} data-add-player={candidate.id}>
@@ -253,12 +258,14 @@ export function TeamCommishToolsView({
 }
 
 function RosterToolRow({
+  leagueId,
   player,
   otherTeams,
   pending,
   onMove,
   onDrop,
 }: {
+  leagueId: string
   player: RosterPlayer
   otherTeams: readonly { id: string; name: string }[]
   pending: boolean
@@ -269,7 +276,7 @@ function RosterToolRow({
   return (
     <li className="flex flex-wrap items-center gap-2 py-1.5" data-tools-player={player.player_id}>
       <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">
-        {player.full_name}{' '}
+        <PlayerLink playerId={player.player_id} name={player.full_name} context={leagueCardContext(leagueId)} />{' '}
         <span className="font-medium text-n-3">{[player.position, player.nfl_team].filter(Boolean).join(' · ')}</span>
       </span>
       {otherTeams.length > 0 && (

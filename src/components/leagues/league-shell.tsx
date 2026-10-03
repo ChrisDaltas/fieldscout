@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, type ReactNode } from 'react'
 
+import { leagueCardContext } from '@/components/players/player-card-context'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,6 +23,7 @@ import { useStandings } from '@/hooks/use-standings'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
 import { cn } from '@/lib/utils'
 import { useHeaderStore } from '@/stores/header-store'
+import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { useCommishOverrideStore, useOverrideMode, useOverrideSaving } from '@/stores/commish-override-store'
 
 import { Crest } from './league-cells'
@@ -60,6 +62,13 @@ import { formatRecord } from './standings-table-ops'
  */
 export function LeagueShell({ leagueId, children }: { leagueId: string; children: ReactNode }) {
   const league = useLeague(leagueId)
+  // League UX batch 2: a player card opened on a league page without its own
+  // context (the draft recap's names) is that league's card.
+  const setAmbientCard = usePlayerWindowsStore((s) => s.setAmbient)
+  useEffect(() => {
+    setAmbientCard(leagueCardContext(leagueId))
+    return () => setAmbientCard(null)
+  }, [setAmbientCard, leagueId])
   const data = league.data
   return (
     <>

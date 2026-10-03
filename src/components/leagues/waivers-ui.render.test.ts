@@ -150,7 +150,8 @@ describe('waiver-claims-panel — every state (§16.5.4)', () => {
     })
     expect(html).toContain('data-claims-results')
     expect(html).toContain('Won for $12.')
-    expect(html).toContain('Drop Dropped Guy')
+    // League UX batch 2: both players are doors to their cards.
+    expect(html).toMatch(/Drop <button type="button" data-player-link="d"[^>]*>Dropped Guy<\/button>/)
     expect(html).toContain('Another team bid more.')
     expect(html).toContain('Didn’t go through — the player you’d drop had already played this week.')
     expect(html).not.toMatch(/drop_locked|outbid</)

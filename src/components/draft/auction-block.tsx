@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -414,7 +415,7 @@ function Nomination({
           <div className="flex flex-wrap items-center gap-2.5">
             {player?.position && <PositionBadge position={player.position} />}
             <span className="text-[18px] font-extrabold leading-none">
-              {player ? player.full_name : 'Loading player…'}
+              {player ? <PlayerLink playerId={player.id} name={player.full_name} /> : 'Loading player…'}
             </span>
             {player?.team && (
               <span className="fs-overline text-[9px] text-n-3">{player.team}</span>
@@ -835,7 +836,7 @@ function TeamColumnCard({
                 className="flex items-baseline justify-between gap-1 text-[11px]"
               >
                 <span className="min-w-0 truncate font-bold">
-                  {player ? abbreviateName(player.full_name) : '…'}
+                  {player ? <PlayerLink playerId={pick.playerId} name={abbreviateName(player.full_name)} /> : '…'}
                 </span>
                 <span className="fs-num shrink-0 font-semibold text-n-3">
                   ${pick.price ?? reserve}
