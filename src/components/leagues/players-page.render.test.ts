@@ -27,6 +27,8 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguePoolKeys, type PoolRow } from '@/hooks/use-league-pool'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
+import { poolValueKeys } from '@/hooks/use-pool-values'
+import { scheduleKeys } from '@/hooks/use-schedule'
 import type { AddDropResult } from '@/hooks/use-transactions'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -420,5 +422,85 @@ describe('L.D2.13 — the page reads the server’s waiver window', () => {
     const html = renderPage({ detail: noWaivers })
     expect(html).not.toContain('data-waiver-claims-panel')
     expect(html).not.toContain('data-action="claim"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// League UX batch 5 — the value columns (Opp / Proj / Pts / Avg), sorted
+// ---------------------------------------------------------------------------
+
+describe('the value columns: league-scored numbers from the server, sorted by projection, “—” when there is none', () => {
+  const WEEK = 3
+  const schedule = {
+    weeks: [
+      { id: 'w2', season: 2099, week: 2, status: 'final', finalized_at: null, median_score: null },
+      { id: 'w3', season: 2099, week: WEEK, status: 'upcoming', finalized_at: null, median_score: null },
+    ],
+    matchups: [],
+  }
+  const values = {
+    league_id: LEAGUE,
+    season: 2099,
+    week: WEEK,
+    unknown_players: [],
+    values: [
+      { player_id: 'fa-open', projected_points: 8.25, projected_missing: null, season_points: 30, season_games: 2 },
+      { player_id: 'fa-locked', projected_points: 17.5, projected_missing: null, season_points: 41.1, season_games: 2 },
+      { player_id: 'fa-waivers', projected_points: null, projected_missing: 'no_line', season_points: null, season_games: 0 },
+      { player_id: 'fa-norow', projected_points: 12, projected_missing: null, season_points: 0, season_games: 1 },
+    ],
+  }
+  const games = [{ id: 'g1', home_team: 'BBB', away_team: 'AAA', kickoff_at: '2099-09-20T17:00:00Z', status: 'scheduled' }]
+
+  function renderWithValues(withSchedule = true): string {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
+    qc.setQueryData(leagueRosterKeys.all(LEAGUE), rosters)
+    qc.setQueryData(leaguePoolKeys.all(LEAGUE), pool)
+    qc.setQueryData(draftPoolKeys.pool('', ''), players)
+    if (withSchedule) {
+      qc.setQueryData(scheduleKeys.all(LEAGUE), schedule)
+      qc.setQueryData(poolValueKeys.window(LEAGUE, WEEK, [...players.map((p) => p.id)].sort().join(',')), values)
+      qc.setQueryData(['nfl-week-games', 2099, WEEK], games)
+    }
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    return render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
+  }
+
+  it('Opp / Proj / Pts / Avg headers; Proj is the sorted column (accent, descending)', () => {
+    const html = renderWithValues()
+    expect(html).toMatch(/<th[^>]*>Opp<\/th>/)
+    expect(html).toMatch(/aria-sort="descending" data-sort-col="proj"/)
+    expect(html).toMatch(/class="[^"]*bg-accent-soft[^"]*" aria-sort="descending" data-sort-col="proj"/)
+    expect(html).toContain('data-sort-col="season"')
+    expect(html).toContain('data-sort-col="avg"')
+  })
+
+  it('rows follow the projection, high to low, and a player with none sinks to the bottom', () => {
+    const html = renderWithValues()
+    const order = [...html.matchAll(/data-pool-row="([^"]+)"/g)].map((m) => m[1])
+    expect(order).toEqual(['fa-locked', 'fa-norow', 'fa-open', 'fa-waivers', 'fa-waivers-lapsed'])
+  })
+
+  it('each cell is the server’s number — the average its season points over its games — and “—” where there is none', () => {
+    const html = renderWithValues()
+    const row = (id: string) => html.slice(html.indexOf(`data-pool-row="${id}"`), html.indexOf('</tr>', html.indexOf(`data-pool-row="${id}"`)))
+    expect(row('fa-locked')).toMatch(/data-cell="proj"[^>]*><span[^>]*>17.5</)
+    expect(row('fa-locked')).toMatch(/data-cell="season"[^>]*><span[^>]*>41.1</)
+    expect(row('fa-locked')).toMatch(/data-cell="avg"[^>]*><span[^>]*>20.6</)
+    // A real zero over one game stays 0.0, never a dash.
+    expect(row('fa-norow')).toMatch(/data-cell="season"[^>]*><span[^>]*>0.0</)
+    // No line, no games: dashes, never 0.
+    expect(row('fa-waivers')).toMatch(/data-cell="proj"[^>]*><span[^>]*>—</)
+    expect(row('fa-waivers')).toMatch(/data-cell="season"[^>]*><span[^>]*>—</)
+    expect(row('fa-waivers')).toMatch(/data-cell="avg"[^>]*><span[^>]*>—</)
+    // AAA is away at BBB this week.
+    expect(row('fa-open')).toMatch(/data-cell="opp">@ BBB</)
+  })
+
+  it('before the league has a schedule the value columns are not shown at all', () => {
+    const html = renderWithValues(false)
+    expect(html).not.toContain('data-sort-col')
+    expect(html).not.toContain('data-cell="proj"')
   })
 })

@@ -123,7 +123,7 @@ interface LeagueRow {
   scoring_rules_snapshot: unknown
 }
 
-interface PlayerRow {
+export interface PlayerRow {
   id: string
   position: string
   projected_stats: unknown
@@ -185,7 +185,7 @@ async function readLeagueWeeks(db: Db, season: number, weeks: readonly number[],
  * season-to-date value scores each past week under the rules the league
  * played it with (`weekScoringRules` — an opened week with none is LOUD).
  */
-async function readOpenedWeekRules(db: Db, season: number, leagueIds: readonly string[]): Promise<Map<string, Array<WeekRulesRow>>> {
+export async function readOpenedWeekRules(db: Db, season: number, leagueIds: readonly string[]): Promise<Map<string, Array<WeekRulesRow>>> {
   const out = new Map<string, Array<WeekRulesRow>>()
   for (const ids of chunk(leagueIds, IN_CHUNK)) {
     const rows = await pageAll<WeekRulesRow & { league_id: string }>(
@@ -231,7 +231,7 @@ async function readRosters(db: Db, leagueIds: readonly string[]): Promise<Map<st
   return out
 }
 
-async function readPlayers(db: Db, playerIds: readonly string[]): Promise<Map<string, PlayerRow>> {
+export async function readPlayers(db: Db, playerIds: readonly string[]): Promise<Map<string, PlayerRow>> {
   const out = new Map<string, PlayerRow>()
   for (const ids of chunk(playerIds, IN_CHUNK)) {
     const rows = await pageAll<PlayerRow>(
@@ -248,7 +248,7 @@ async function readPlayers(db: Db, playerIds: readonly string[]): Promise<Map<st
   return out
 }
 
-async function readWeeklyLines(
+export async function readWeeklyLines(
   db: Db,
   season: number,
   weeks: readonly number[],
@@ -276,7 +276,7 @@ async function readWeeklyLines(
 
 /** Every `player_stats` line of the season in weeks [1, maxWeekExclusive),
  *  grouped by player — the worker's own column surface (STAT_LINE_COLUMNS). */
-async function readSeasonLines(
+export async function readSeasonLines(
   db: Db,
   season: number,
   maxWeekExclusive: number,

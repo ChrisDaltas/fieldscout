@@ -227,3 +227,57 @@ describe('no ledger code in any end-user copy (F277(a))', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// League UX batch 5 — the value columns
+// ---------------------------------------------------------------------------
+
+describe('the value columns: the server’s numbers, sorted, never invented', () => {
+  const v = (projected_points: number | null, season_points: number | null, season_games: number) => ({ projected_points, season_points, season_games })
+
+  it('valueCells: the average is season points over the games counted; no games is “—”, never 0', () => {
+    expect(ops.valueCells(v(14.2, 61.5, 4))).toEqual({ proj: 14.2, season: 61.5, avg: 15.38, games: 4 })
+    expect(ops.valueCells(v(null, null, 0))).toEqual({ proj: null, season: null, avg: null, games: 0 })
+    // A real zero over games played stays a zero.
+    expect(ops.valueCells(v(0, 0, 2))).toEqual({ proj: 0, season: 0, avg: 0, games: 2 })
+    expect(ops.valueCells(undefined)).toBe(ops.NO_VALUE)
+    expect(ops.pointsText(null)).toBe('—')
+    expect(ops.pointsText(15.375)).toBe('15.4')
+  })
+
+  it('sortPoolRows: by the chosen value, missing values always last (both directions), ties keep the ADP order', () => {
+    const rows = ['a', 'b', 'c', 'd'].map((id) => ({ player: { id } }) as unknown as ops.PoolPlayerRow)
+    const values: Record<string, ops.PoolValueCells> = {
+      a: ops.valueCells(v(10, null, 0)),
+      b: ops.valueCells(undefined),
+      c: ops.valueCells(v(22.5, 40, 2)),
+      d: ops.valueCells(v(10, 80, 4)),
+    }
+    const ids = (sort: ops.PoolSort) => ops.sortPoolRows(rows, (id) => values[id], sort).map((r) => r.player.id)
+    expect(ids({ key: 'proj', dir: 'desc' })).toEqual(['c', 'a', 'd', 'b'])
+    expect(ids({ key: 'proj', dir: 'asc' })).toEqual(['a', 'd', 'c', 'b'])
+    expect(ids({ key: 'season', dir: 'desc' })).toEqual(['d', 'c', 'a', 'b'])
+    expect(ids({ key: 'avg', dir: 'desc' })).toEqual(['c', 'd', 'a', 'b'])
+    expect(ids({ key: 'adp', dir: 'asc' })).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('nextSort: a new column starts high-to-low; the same column flips', () => {
+    expect(ops.nextSort(ops.DEFAULT_POOL_SORT, 'season')).toEqual({ key: 'season', dir: 'desc' })
+    expect(ops.nextSort({ key: 'season', dir: 'desc' }, 'season')).toEqual({ key: 'season', dir: 'asc' })
+    expect(ops.DEFAULT_POOL_SORT).toEqual({ key: 'proj', dir: 'desc' })
+  })
+
+  it('valueWeekOf: the week being played, else the next to be played, else the last; none before a schedule', () => {
+    expect(ops.valueWeekOf([])).toBeUndefined()
+    expect(ops.valueWeekOf([{ week: 1, status: 'final' }, { week: 2, status: 'live' }, { week: 3, status: 'upcoming' }])).toBe(2)
+    // Monday / Tuesday: last week is in its correction window, the next is upcoming.
+    expect(ops.valueWeekOf([{ week: 1, status: 'final' }, { week: 2, status: 'correction_window' }, { week: 3, status: 'upcoming' }])).toBe(3)
+    expect(ops.valueWeekOf([{ week: 1, status: 'final' }, { week: 2, status: 'final' }])).toBe(2)
+  })
+
+  it('opponentText: home “vs”, away “@”, a bye, or “—” when the week’s games are not on record', () => {
+    expect(ops.opponentText({ kind: 'game', label: '@ DAL' })).toBe('@ DAL')
+    expect(ops.opponentText({ kind: 'bye' })).toBe('BYE')
+    expect(ops.opponentText({ kind: 'unknown' })).toBe('—')
+  })
+})

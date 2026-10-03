@@ -123,6 +123,97 @@ export function poolRows(
 }
 
 // ---------------------------------------------------------------------------
+// The value columns — League UX batch 5 (Chris 2026-10-03)
+// ---------------------------------------------------------------------------
+
+/** The sortable columns. `adp` is the window's own order (the default
+ *  whenever no value has loaded). */
+export type PoolSortKey = 'proj' | 'season' | 'avg' | 'adp'
+export type SortDir = 'asc' | 'desc'
+export interface PoolSort {
+  key: PoolSortKey
+  dir: SortDir
+}
+/** ESPN / Yahoo open a free-agent list on this week's projection. */
+export const DEFAULT_POOL_SORT: PoolSort = { key: 'proj', dir: 'desc' }
+
+export interface PoolValueCells {
+  /** This week's projection, league scoring (null = no usable line). */
+  proj: number | null
+  /** Points this season before this week, league scoring (null = no games). */
+  season: number | null
+  /** Per game played (null = no games). */
+  avg: number | null
+  games: number
+}
+
+export const NO_VALUE: PoolValueCells = { proj: null, season: null, avg: null, games: 0 }
+
+/** One player's cells from the server's values — the average is the only
+ *  arithmetic here (season points over the games the server counted). */
+export function valueCells(
+  v: { projected_points: number | null; season_points: number | null; season_games: number } | undefined,
+): PoolValueCells {
+  if (!v) return NO_VALUE
+  const avg = v.season_points !== null && v.season_games > 0 ? Math.round((v.season_points / v.season_games) * 100) / 100 : null
+  return { proj: v.projected_points, season: v.season_points, avg, games: v.season_games }
+}
+
+/** Sorted by the chosen value; a missing value always sinks to the bottom
+ *  (never read as 0); ties and `adp` keep the window's ADP order. */
+export function sortPoolRows(rows: readonly PoolPlayerRow[], cells: (playerId: string) => PoolValueCells, sort: PoolSort): PoolPlayerRow[] {
+  const indexed = rows.map((row, i) => ({ row, i }))
+  if (sort.key === 'adp') {
+    if (sort.dir === 'desc') indexed.reverse()
+    return indexed.map((x) => x.row)
+  }
+  const key = sort.key
+  const sign = sort.dir === 'desc' ? -1 : 1
+  return indexed
+    .sort((a, b) => {
+      const av = cells(a.row.player.id)[key]
+      const bv = cells(b.row.player.id)[key]
+      if (av === null && bv === null) return a.i - b.i
+      if (av === null) return 1
+      if (bv === null) return -1
+      return av === bv ? a.i - b.i : sign * (av - bv)
+    })
+    .map((x) => x.row)
+}
+
+/** A header click: the same column flips; a new column starts high-to-low. */
+export function nextSort(current: PoolSort, key: PoolSortKey): PoolSort {
+  if (current.key === key) return { key, dir: current.dir === 'desc' ? 'asc' : 'desc' }
+  return { key, dir: key === 'adp' ? 'asc' : 'desc' }
+}
+
+export function pointsText(n: number | null): string {
+  return n === null ? '—' : n.toFixed(1)
+}
+
+/** "vs DAL" / "@ DAL" / "BYE", or "—" when the week's games are not on record. */
+export function opponentText(o: { kind: 'game'; label: string } | { kind: 'bye' } | { kind: 'unknown' }): string {
+  if (o.kind === 'game') return o.label
+  if (o.kind === 'bye') return 'BYE'
+  return '—'
+}
+
+/** The week a free-agent list is about: the week being played, else the
+ *  next one to be played, else (season over) the last. Undefined before the
+ *  league has a schedule. */
+export function valueWeekOf(weeks: readonly { week: number; status: string }[]): number | undefined {
+  if (weeks.length === 0) return undefined
+  const live = weeks.filter((w) => w.status === 'live').map((w) => w.week)
+  if (live.length > 0) return Math.max(...live)
+  const upcoming = weeks.filter((w) => w.status === 'upcoming').map((w) => w.week)
+  if (upcoming.length > 0) return Math.min(...upcoming)
+  return Math.max(...weeks.map((w) => w.week))
+}
+
+export const PROJ_MISSING_TITLE = 'No projection for this week yet.'
+export const VALUES_PROBLEM_COPY = 'Couldn’t load the points and projections — the columns show “—” until they load.'
+
+// ---------------------------------------------------------------------------
 // Copy
 // ---------------------------------------------------------------------------
 
