@@ -29,6 +29,11 @@
  *                 said in the plan; the reconciliation names it
  *                 (`game_not_final_late` — an ALERT once the week is past
  *                 its correction window and can no longer finalize).
+ *                 On the sweep minute a HOT plan also CARRIES the sweep
+ *                 (`sweepWeeks`, F509): the weeks below that are not
+ *                 already hot are polled once in the invocation, so a
+ *                 stuck game never starves the hourly refresh or the
+ *                 re-polls.
  *        * SWEEP — nothing due, but this is the top-of-hour invocation
  *                 (minute 0 of the injected instant) OR the season has NO
  *                 game rows at all (F228's shape — the calendar is empty
@@ -123,6 +128,10 @@ export interface PollPlan {
   mode: PollMode
   /** Weeks to poll, ascending; empty when idle. */
   weeks: number[]
+  /** HOT on the sweep minute only (F509): the weeks the sweep would poll that
+   *  are not already hot — polled once per invocation, after the hot weeks.
+   *  Empty for every other plan. */
+  sweepWeeks: number[]
   /** In-week games at or past (now + lead) not yet observed final. */
   dueGames: number
   /** Games past their kickoff and still not final — the window held open by observation (R711). */
@@ -191,6 +200,23 @@ export function finalWeeksForRepoll(
     .sort((a, b) => a - b)
 }
 
+/** The sweep's weeks at `now` (a sweep minute): the current week first
+ *  (R1265), then F270's open-window weeks, then — at TD5's hour only — the
+ *  weeks locked within FINAL_WEEK_REPOLL_DAYS. Shared by the sweep and the
+ *  hot plan that carries it (F509). */
+function sweepTargets(weeks: readonly CalendarWeek[], currentWeek: number, now: Date, opts: PlanOptions) {
+  const inWindow = weeksInCorrectionWindow(weeks, currentWeek, now)
+  // TD5 (M6 L.E2.1): once a day, each week locked within the last
+  // FINAL_WEEK_REPOLL_DAYS days too — its late corrections are RECORDED
+  // (stat_correction_events) and player_stats stays right for research;
+  // no score moves (the worker's week_final, 158's lock).
+  const finalRepoll =
+    now.getUTCHours() === (opts.finalRepollHourUtc ?? FINAL_WEEK_REPOLL_UTC_HOUR)
+      ? finalWeeksForRepoll(weeks, currentWeek, now).filter((w) => !inWindow.includes(w))
+      : []
+  return { inWindow, finalRepoll, all: [currentWeek, ...inWindow, ...finalRepoll] }
+}
+
 export function planLivePoll(games: readonly CalendarGame[], weeks: readonly CalendarWeek[], now: Date, opts: PlanOptions = {}): PollPlan {
   const leadMs = opts.leadMs ?? POLL_LEAD_MS
   const sweepMinute = opts.sweepMinute ?? SWEEP_MINUTE
@@ -205,12 +231,28 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
     reasons.push(
       `hot: ${due.length} in-week game(s) at or within ${leadMs / 60_000} min of kickoff and not yet observed final (${openPastKickoff} past kickoff) — weeks ${dueWeeks.join(', ')}`,
     )
-    return { mode: 'hot', weeks: dueWeeks, dueGames: due.length, openPastKickoff, currentWeek, reasons }
+    // F509: a game the provider never flips to final (Q37's cancelled game)
+    // keeps the poll HOT for as long as it is open — and HOT used to return
+    // before the sweep, so the hourly refresh, F270's re-poll of weeks still
+    // inside their correction window and TD5's daily re-poll of final weeks
+    // all waited for that game. On the sweep minute the hot plan now CARRIES
+    // the sweep: every week the sweep would poll that is not already hot
+    // (`sweepWeeks`); the loop polls them once per invocation. Nothing here
+    // decides what a stuck game IS (Q37 / E43 rule that) — it only stops one
+    // from starving the other weeks.
+    const sweepWeeks =
+      now.getUTCMinutes() === sweepMinute ? sweepTargets(weeks, currentWeek, now, opts).all.filter((w) => !dueWeeks.includes(w)) : []
+    if (sweepWeeks.length > 0) {
+      reasons.push(
+        `sweep carried on the hot minute (F509): week(s) ${sweepWeeks.join(', ')} — the hourly refresh and the re-polls never wait for a game not yet observed final`,
+      )
+    }
+    return { mode: 'hot', weeks: dueWeeks, sweepWeeks, dueGames: due.length, openPastKickoff, currentWeek, reasons }
   }
 
   if (games.length === 0) {
     reasons.push(`sweep: the season has NO nfl_games rows — polling week ${currentWeek} so the provider's calendar can land (F228)`)
-    return { mode: 'sweep', weeks: [currentWeek], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    return { mode: 'sweep', weeks: [currentWeek], sweepWeeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
   // F270 CLOSED (M5 L.D3.11, R1260): the sweep re-polls the CURRENT week AND
   // every earlier week still inside its stat-correction window — so a
@@ -222,15 +264,7 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
   // The sweep keys on the injected instant's minute: an invocation delayed
   // past :00:59 skips that hour's refresh — a flex move then lands in ≤ 2 h.
   if (now.getUTCMinutes() === sweepMinute) {
-    const inWindow = weeksInCorrectionWindow(weeks, currentWeek, now)
-    // TD5 (M6 L.E2.1): once a day, each week locked within the last
-    // FINAL_WEEK_REPOLL_DAYS days too — its late corrections are RECORDED
-    // (stat_correction_events) and player_stats stays right for research;
-    // no score moves (the worker's week_final, 158's lock).
-    const finalRepoll =
-      now.getUTCHours() === (opts.finalRepollHourUtc ?? FINAL_WEEK_REPOLL_UTC_HOUR)
-        ? finalWeeksForRepoll(weeks, currentWeek, now).filter((w) => !inWindow.includes(w))
-        : []
+    const { inWindow, finalRepoll, all } = sweepTargets(weeks, currentWeek, now, opts)
     reasons.push(
       `sweep: nothing due; top-of-hour schedule refresh of week ${currentWeek} (flex moves reach nfl_games within the hour, E42)` +
         (inWindow.length > 0 ? `; and week(s) ${inWindow.join(', ')} still inside their stat-correction window (F270 — a late correction is re-scored before the week locks)` : '') +
@@ -239,10 +273,10 @@ export function planLivePoll(games: readonly CalendarGame[], weeks: readonly Cal
           : ''),
     )
     // R1265: the current week first — a throw on an earlier week never skips its refresh.
-    return { mode: 'sweep', weeks: [currentWeek, ...inWindow, ...finalRepoll], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+    return { mode: 'sweep', weeks: all, sweepWeeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
   }
   reasons.push(`idle: no in-week game within ${leadMs / 60_000} min of kickoff or still open; next sweep at minute ${sweepMinute} — no provider call`)
-  return { mode: 'idle', weeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
+  return { mode: 'idle', weeks: [], sweepWeeks: [], dueGames: 0, openPastKickoff: 0, currentWeek, reasons }
 }
 
 // ── Calendar reads (paged; the plan's inputs) ──────────────────────────────
@@ -336,6 +370,7 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
     reason: null,
   }
 
+  let sweepCarried = false
   for (;;) {
     const now = deps.time.now()
     const calendar = await readCalendar(deps.db, deps.season)
@@ -348,6 +383,15 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
       break
     }
 
+    // F509: once a hot round has carried the sweep, this invocation's sweep is
+    // done — a later round that plans a sweep (the stuck game observed final
+    // mid-invocation) would only repeat it.
+    if (plan.mode === 'sweep' && sweepCarried) break
+    const carried = plan.mode === 'hot' && !sweepCarried ? plan.sweepWeeks : []
+    if (carried.length > 0) sweepCarried = true
+    // A round that reads several weeks at one instant for the sweep counts its failures once (R1314).
+    const oneInstant = plan.mode === 'sweep' || carried.length > 0
+
     provider.resetScheduleMemo()
     const round: PollRound = { plan, polls: [] }
     // R1314 (M6 L.E2.1): a SWEEP round reads the provider for up to three
@@ -357,12 +401,12 @@ export async function runLivePollInvocation(deps: LivePollDeps): Promise<LivePol
     // failures count ONCE toward it: after the round's first failed poll,
     // a further failure is not persisted (a success still is — it clears).
     let sweepFailureCounted = false
-    for (const week of plan.weeks) {
+    for (const week of [...plan.weeks, ...carried]) {
       const tracker = await loadTracker(deps.db)
       const poll = await ingest(provider, deps.time, { db: deps.db, degradation: tracker, season: deps.season, week })
-      const alreadyCounted = plan.mode === 'sweep' && !poll.ok && sweepFailureCounted
+      const alreadyCounted = oneInstant && !poll.ok && sweepFailureCounted
       const flag = alreadyCounted && report.flag !== null ? report.flag : await persist(deps.db, tracker, poll)
-      if (plan.mode === 'sweep' && !poll.ok) sweepFailureCounted = true
+      if (oneInstant && !poll.ok) sweepFailureCounted = true
       round.polls.push({ week, report: poll, flag })
       report.flag = flag
       if (alreadyCounted) {
