@@ -48,6 +48,7 @@ import {
 import { LeagueHomeStates } from './league-home-states'
 import { REMIX_NEEDS_OVERRIDE_COPY } from './schedule-view-ops'
 import { SCHEDULE } from './standings-schedule.fixtures'
+import { REPAIR_NEEDS_OVERRIDE_COPY, REPAIR_NOTHING_COPY } from './commish-repair-ops'
 
 vi.mock('@/components/layout/app-header', () => ({
   PageHeader: ({ title, actions }: { title: ReactNode; actions?: ReactNode }) =>
@@ -606,6 +607,40 @@ describe('Remix schedule lives in the console, mirroring the server’s window',
   it('outside the regular season (playoffs, complete, pre-draft) there is no Remix at all — the server refuses it there', () => {
     for (const status of ['playoffs', 'complete', 'setup', 'scheduled', 'drafting']) {
       expect(renderConsole({ detail: detailWith(status), schedule: preKickoff }), status).not.toContain('data-remix-open')
+    }
+  })
+})
+
+describe('Re-pair a matchup — in the console only, only with override mode on (League UX batch 5)', () => {
+  it('in season with override OFF: no form — the group says how to get it', () => {
+    const off = renderConsole({ schedule: SCHEDULE })
+    expect(off).toContain('data-console-repair="needs-override"')
+    expect(off).toContain(REPAIR_NEEDS_OVERRIDE_COPY)
+    expect(off).not.toContain('data-commish-repair')
+  })
+
+  it('in season with override ON: the form, starting at the week picker; Save is not offered until a matchup is picked', () => {
+    const on = renderConsole({ schedule: SCHEDULE, override: true })
+    const group = on.slice(on.indexOf('data-tool-group="schedule"'))
+    expect(group).toContain('data-commish-repair')
+    expect(group).toContain('data-repair-week')
+    expect(group).not.toContain('data-repair-save')
+    expect(on).not.toContain(REPAIR_NEEDS_OVERRIDE_COPY)
+  })
+
+  it('nothing re-pairable (every game scored): says so instead of offering a picker', () => {
+    const scored: LeagueSchedule = { ...SCHEDULE, matchups: SCHEDULE.matchups.map((m) => ({ ...m, result: m.result ?? 'home' })) }
+    const html = renderConsole({ schedule: scored, override: true })
+    expect(html).toContain('data-repair-empty')
+    expect(html).toContain(REPAIR_NOTHING_COPY)
+    expect(html).not.toContain('data-repair-week')
+  })
+
+  it('outside the regular season there is no re-pair at all, override or not', () => {
+    for (const status of ['playoffs', 'complete', 'setup', 'scheduled', 'drafting']) {
+      const html = renderConsole({ detail: detailWith(status), schedule: SCHEDULE, override: true })
+      expect(html, status).not.toContain('data-commish-repair')
+      expect(html, status).not.toContain('data-console-repair')
     }
   })
 })
