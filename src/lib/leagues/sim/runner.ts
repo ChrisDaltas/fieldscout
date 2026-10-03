@@ -1131,7 +1131,7 @@ async function driveAuctionLeague(args: DriveLeagueArgs): Promise<LeagueResult> 
   let manualOrderPin: string[] | null = null
   if (auctionPlan.nominationOrderMode === 'manual') {
     const { data: teamRows, error: teamsError } = await limit(() =>
-      commish.client.from('teams').select('id').eq('league_id', leagueId).neq('status', 'retired'),
+      commish.client.from('teams').select('id').eq('league_id', leagueId),
     )
     throwIfError(teamsError, `${label}: team-set read for manual order`)
     manualOrderPin = shuffledIds(
@@ -1191,7 +1191,7 @@ async function driveAuctionLeague(args: DriveLeagueArgs): Promise<LeagueResult> 
     const personaByBot = new Map<number, AuctionPersonaKind>()
     for (const seat of plan.humanSeats) personaByBot.set(seat.botIndex, seat.auctionPersona ?? 'afk')
     const { data: teamRows, error: teamsError } = await limit(() =>
-      commish.client.from('teams').select('id').eq('league_id', leagueId).neq('status', 'retired'),
+      commish.client.from('teams').select('id').eq('league_id', leagueId),
     )
     throwIfError(teamsError, `${label}: seat-map team read`)
     for (const t of teamRows ?? []) {
@@ -1864,7 +1864,7 @@ async function collectAuctionAudit(
   )
   throwIfError(leagueError, `${label}: audit league read`)
   const { data: teams, error: teamsError } = await limit(() =>
-    service.from('teams').select('id').eq('league_id', leagueId).neq('status', 'retired'),
+    service.from('teams').select('id').eq('league_id', leagueId),
   )
   throwIfError(teamsError, `${label}: audit team read`)
 

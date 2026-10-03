@@ -115,10 +115,10 @@
  * re-score of the last regular-season week or a playoff round runs the
  * bracket sync at once (`score_bracket_resync`, F476); (8a′) BEFORE the ack
  * the events of every CONSUMED row are stamped `applied_at` at this drain's
- * instant (R1342 — an event is sent once). Deploy before push: a 158 door ignores `corrections` and answers
- * without a `corrections` report — named (`not_recorded_pre_172`), and the
- * scores are written exactly as before; the two new doors absent (PGRST202)
- * ⇒ named and skipped. A final week is still `week_final` (nothing records).
+ * instant (R1342 — an event is sent once). Since F529 (production on 172+)
+ * a door report without `corrections` when corrections were sent, or either
+ * new door missing, is a plain failure — the pre-172 absence arms are
+ * retired. A final week is still `week_final` (nothing records).
  *
  * TWO DRAINS AT ONCE (§22.3 "concurrent invocations are safe by
  * construction" — R866, the reviewer's interleaving, a permanent stack
@@ -182,8 +182,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database, Json } from '@/types/database'
 
+import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
-import { isDoorNotPushed, isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 
 import { NULL_IS_PENDING_KEYS, STAT_KEYS } from '../stats/stat-keys'
 import type { TimeProvider } from '../time/time-provider'
@@ -650,8 +650,8 @@ export interface DoorReport {
   /** 158 (F405): the per-player arm's count. ABSENT on a pre-158 door (119),
    *  which ignores `players` — that absence is how the worker knows. */
   player_points?: { teams_sent: number; teams_written: number; rows_written: number; rows_removed: number }
-  /** 172 (L.E2.2): the corrections arm's report. ABSENT on a pre-172 door
-   *  (158), which ignores the `corrections` element — named, never silent. */
+  /** 172 (L.E2.2): the corrections arm's report — required whenever
+   *  corrections were sent (F529: its absence is a plain failure). */
   corrections?: DoorCorrectionsReport
   /** 172 (F476): a re-score of the last regular-season week or a playoff
    *  round owes the bracket its sync now — the worker runs it. */
@@ -690,22 +690,22 @@ export interface DoorCorrectionsReport {
 }
 
 /** 172: what became of the corrections sent with a league-week's scores. */
-export type CorrectionsStorage = 'none_sent' | 'recorded' | 'nothing_recorded' | 'not_recorded_pre_172'
+export type CorrectionsStorage = 'none_sent' | 'recorded' | 'nothing_recorded'
 
 /**
  * What the door did with the `corrections` element (pure): nothing sent ⇒
- * `none_sent`; a 172 door's report carries `corrections`; a 158 door's
- * never does (it ignores the key and scores exactly as before).
+ * `none_sent`; the door's report carries `corrections` — a report without
+ * it throws (F529: the pre-172 door is retired, never a quiet "not recorded").
  */
 export function correctionsStorageOf(sent: number, door: DoorReport): CorrectionsStorage {
   if (sent === 0) return 'none_sent'
-  if (door.corrections === undefined || door.corrections === null) return 'not_recorded_pre_172'
+  if (door.corrections === undefined || door.corrections === null) throw new Error(MISSING_CORRECTIONS_REPORT)
   return door.corrections.recorded > 0 ? 'recorded' : 'nothing_recorded'
 }
 
-/** The sentence a pre-172 door earns — named on the drain, never silent. */
-export const PRE_172_DOOR_SENTENCE =
-  'stat corrections NOT recorded: score_write_week_batch answered without a corrections report — the database predates migration 172 (it ignores `corrections`); the team scores are written exactly as before, and no league record, post or notification is made until 172 is pushed'
+/** The failure a door report without `corrections` earns (F529). */
+export const MISSING_CORRECTIONS_REPORT =
+  'score_write_week_batch answered without a corrections report though corrections were sent — refusing to call that success'
 
 /** 158 (F405): what became of the per-player rows sent with a league-week's scores. */
 export type PlayerPointsStorage = 'stored' | 'not_stored_pre_158'
@@ -773,8 +773,8 @@ export interface LeagueWeekReport {
    *  player) is ordinary and says why here. */
   corrections_note?: string
   /** 172 (F476): the immediate bracket sync's answer when the door said it
-   *  was due (`skipped_pre_172` when the database lacks the door). */
-  bracket_resync?: Json | 'skipped_pre_172'
+   *  was due (a failure is a named problem; the hourly beat retries). */
+  bracket_resync?: Json
   problems: string[]
 }
 
@@ -1387,7 +1387,6 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
   const sentCount = Object.values(sent).reduce((n, ids) => n + ids.length, 0)
   report.corrections_sent = sent
   report.corrections = correctionsStorageOf(sentCount, door)
-  if (report.corrections === 'not_recorded_pre_172') report.problems.push(PRE_172_DOOR_SENTENCE)
   if (door.corrections !== undefined && door.corrections !== null && sentCount > 0) {
     // Loud emptiness (rule 6): what the correction did to this league, and why
     // nothing where nothing — information on the report, never a problem.
@@ -1406,12 +1405,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
     const at = time.now().toISOString()
     const resync = await db.rpc('score_bracket_resync', { p_league_id: league.id, p_now: at })
     if (resync.error) {
-      if (isDoorNotPushed(resync.error, { score_bracket_resync: ['p_league_id', 'p_now'] })) {
-        report.bracket_resync = 'skipped_pre_172'
-        report.problems.push('bracket re-sync skipped: score_bracket_resync is absent — the database predates migration 172; the hourly beat syncs the bracket as before')
-      } else {
-        report.problems.push(`bracket re-sync FAILED for league ${league.id} week ${week}: ${resync.error.message} — the hourly beat retries`)
-      }
+      report.problems.push(`bracket re-sync FAILED for league ${league.id} week ${week}: ${resync.error.message} — the hourly beat retries`)
     } else {
       report.bracket_resync = resync.data as Json
     }
@@ -1661,7 +1655,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     //      is ever sent again. A failed stamp throws before the ack: the rows
     //      stay queued, the next drain re-delivers the same events against
     //      the same lines, and nothing moves or is recorded twice (the door's
-    //      `no_points_moved` / `already_recorded`). Absent door ⇒ named.
+    //      `no_points_moved` / `already_recorded`). An absent door throws (F529).
     const consumedIds = [...new Set(toDelete.flatMap((row) => [...(eventsByRow.get(`${row.season}:${row.week}:${row.player_id}`) ?? [])]))].sort()
     report.corrections_applied.sent = consumedIds.length
     if (eventsMissing) {
@@ -1672,9 +1666,7 @@ export async function runScoreWeekBatch(deps: ScoreWorkerDeps, opts: ScoreWorker
     } else {
       const stamp = await db.rpc('stat_correction_mark_applied', { p_event_ids: consumedIds, p_now: deps.time.now().toISOString() })
       if (stamp.error) {
-        if (!isDoorNotPushed(stamp.error, { stat_correction_mark_applied: ['p_event_ids', 'p_now'] })) throw new Error(`stat_correction_mark_applied: ${stamp.error.message}`)
-        report.corrections_applied.reason = `${consumedIds.length} event(s) NOT stamped applied: stat_correction_mark_applied is absent — the database predates migration 172`
-        report.problems.push(`correction events: ${report.corrections_applied.reason}`)
+        throw new Error(`stat_correction_mark_applied: ${stamp.error.message}`)
       } else {
         const r = stamp.data as unknown as { stamped: number; already_applied: number }
         report.corrections_applied.stamped = r.stamped

@@ -420,22 +420,6 @@ describe('TD5 (L.E2.1) — a final week is re-polled once a day for 7 days after
   })
 })
 
-describe('TD15 (L.E2.1) — the pre-167 two-call path is NAMED in the invocation’s problems, every poll', () => {
-  it('a poll that wrote through the fallback is a problem line (with the correction keys it could not record); a door poll is not', async () => {
-    const world = makeWorld([game(1, TNF, 'final')])
-    const fallback = await run(world, new VirtualClock(new Date('2026-09-11T15:00:30Z')), {
-      mutate: (r) => ({ ...r, write: { path: 'two_call_fallback', door: 'ingest_write_batch' }, corrections: { ...r.corrections, detected: 2 } }),
-    })
-    expect(fallback.problems).toEqual([
-      'week 1: wrote through the pre-167 two-call path — ingest_write_batch is absent (PGRST202; push migration 167); 2 stat correction key(s) NOT recorded',
-    ])
-    const door = await run(makeWorld([game(1, TNF, 'final')]), new VirtualClock(new Date('2026-09-11T15:00:30Z')), {
-      mutate: (r) => ({ ...r, write: { path: 'door', door: 'ingest_write_batch' } }),
-    })
-    expect(door.problems).toEqual([])
-  })
-})
-
 describe('R1314 (L.E2.1) — one sweep’s failures count ONCE toward stats_degraded (§23.2’s three polls are three polls in time)', () => {
   const weeks: CalendarWeek[] = [
     { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00.000Z' },
@@ -459,5 +443,61 @@ describe('R1314 (L.E2.1) — one sweep’s failures count ONCE toward stats_degr
     expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([2, false])
     await run(world, new VirtualClock(new Date('2026-09-24T13:00:30Z')), { failPolls: true })
     expect([world.flag.consecutive_failures, world.flag.degraded]).toEqual([3, true])
+  })
+})
+
+describe('F509 — a game that never flips to final no longer stops the sweep and the re-polls', () => {
+  // Week 2's SNF kicked off 2026-09-21T00:20Z and the provider never flips it (Q37's cancelled-game
+  // shape): it keeps week 2 HOT. Week 3 is current; week 2 is inside its window; week 1 is final.
+  const weeks: CalendarWeek[] = [
+    { season: 2026, week: 1, starts_at: '2026-09-09T04:00:00Z', correction_window_ends_at: '2026-09-18T00:15:00.000Z' },
+    { season: 2026, week: 2, starts_at: '2026-09-16T04:00:00Z', correction_window_ends_at: '2026-09-25T00:15:00Z' },
+    { season: 2026, week: 3, starts_at: '2026-09-23T04:00:00Z', correction_window_ends_at: '2026-10-02T00:15:00Z' },
+  ]
+  const stuck = game(2, '2026-09-21T00:20:00.000Z', 'scheduled')
+  const games = [game(1, TNF, 'final'), stuck]
+
+  it('P1 the plan: HOT on the stuck week; on the sweep minute it carries the current week (and open-window weeks); at 11:00Z the final weeks too; off the minute nothing extra', () => {
+    const hourly = planLivePoll(games, weeks, new Date('2026-09-24T15:00:30Z'))
+    expect([hourly.mode, hourly.weeks, hourly.sweepWeeks]).toEqual(['hot', [2], [3]]) // week 2 is hot AND in-window — never twice
+    expect(hourly.reasons[1]).toMatch(/^sweep carried on the hot minute \(F509\): week\(s\) 3 /)
+    const daily = planLivePoll(games, weeks, new Date('2026-09-24T11:00:30Z'))
+    expect([daily.mode, daily.weeks, daily.sweepWeeks]).toEqual(['hot', [2], [3, 1]]) // TD5's final week 1 too
+    const off = planLivePoll(games, weeks, new Date('2026-09-24T11:01:00Z'))
+    expect([off.mode, off.weeks, off.sweepWeeks]).toEqual(['hot', [2], []])
+    // a stuck game in a week whose window has CLOSED: the current week and F270's open-window week still run
+    const p = planLivePoll([game(1, TNF, 'live'), game(2, SNF, 'final')], weeks, new Date('2026-09-24T15:00:30Z'))
+    expect([p.mode, p.weeks, p.sweepWeeks]).toEqual(['hot', [1], [3, 2]])
+  })
+
+  it('P2 the loop: the 11:00Z invocation polls the stuck week every round and the sweep weeks ONCE (the first round only)', async () => {
+    const world = { ...makeWorld(games), weeks }
+    const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:00Z')))
+    expect(report.rounds.map((r) => r.plan.mode)).toEqual(['hot', 'hot', 'hot'])
+    expect(world.polls.map((p) => [p.week, p.at])).toEqual([
+      [2, '2026-09-24T11:00:00.000Z'],
+      [3, '2026-09-24T11:00:00.000Z'],
+      [1, '2026-09-24T11:00:00.000Z'],
+      [2, '2026-09-24T11:00:20.000Z'],
+      [2, '2026-09-24T11:00:40.000Z'],
+    ])
+  })
+
+  it('P3 the stuck game is observed final mid-invocation: the sweep it already carried is not run again', async () => {
+    const world = { ...makeWorld(games), weeks }
+    await run(world, new VirtualClock(new Date('2026-09-24T15:00:00Z')), {
+      onPoll: (w) => {
+        if (w === 2) world.games = [game(1, TNF, 'final'), { ...stuck, status: 'final' }]
+      },
+    })
+    expect(world.polls.map((p) => p.week)).toEqual([2, 3]) // round 2 plans a sweep — already done, so the loop ends
+  })
+
+  it('P4 one instant, one failure (R1314): the round that carries the sweep counts a provider blip once', async () => {
+    const world = { ...makeWorld(games), weeks }
+    const report = await run(world, new VirtualClock(new Date('2026-09-24T11:00:00Z')), { failPolls: true, budgetMs: 1 })
+    expect(world.polls.map((p) => p.week)).toEqual([2, 3, 1])
+    expect(world.flag.consecutive_failures).toBe(1)
+    expect(report.problems).toHaveLength(3)
   })
 })

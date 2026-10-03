@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { ADVANCED_KEYS as INGEST_ADVANCED_KEYS, STAT_KEY_BY_COLUMN } from '@/lib/sync/ingest-week'
 
 import { classifyLockedCell, correctionEventsWords, postLockEvents } from './reconcile'
-import { correctionsStorageOf, type DoorReport, PRE_172_DOOR_SENTENCE } from './score-week-worker'
+import { correctionsStorageOf, type DoorReport, MISSING_CORRECTIONS_REPORT } from './score-week-worker'
 import { CORRECTION_LABELS, correctionLabel, sentenceLabel } from './stat-correction-labels'
 
 const MIGRATION = readFileSync(path.join(process.cwd(), 'supabase/migrations/172_league_stat_corrections.sql'), 'utf8')
@@ -44,7 +44,7 @@ describe('the plain words of a stat key (the league post, the notification, the 
   })
 })
 
-describe('deploy before push — the worker recognises a pre-172 door BY NAME', () => {
+describe('F529 — a door report without corrections is a plain failure (the pre-172 arm retired)', () => {
   const door158: DoorReport = {
     league_id: 'L', season: 2026, week: 3, mode: 'h2h', received: 1, writable: 1, written: 1, unchanged: 0, skipped: [], reason: null,
     player_points: { teams_sent: 1, teams_written: 1, rows_written: 1, rows_removed: 0 },
@@ -56,10 +56,8 @@ describe('deploy before push — the worker recognises a pre-172 door BY NAME', 
     expect(correctionsStorageOf(0, door158)).toBe('none_sent')
     expect(correctionsStorageOf(0, { ...door158, corrections: corrections(0) })).toBe('none_sent')
   })
-  it('sent to a 158 door (no corrections report — it ignores the element) ⇒ not_recorded_pre_172, and the sentence says so', () => {
-    expect(correctionsStorageOf(2, door158)).toBe('not_recorded_pre_172')
-    expect(PRE_172_DOOR_SENTENCE).toContain('predates migration 172')
-    expect(PRE_172_DOOR_SENTENCE).toContain('the team scores are written exactly as before')
+  it('sent, and the report carries no corrections ⇒ throws by name (never a quiet "not recorded")', () => {
+    expect(() => correctionsStorageOf(2, door158)).toThrow(MISSING_CORRECTIONS_REPORT)
   })
   it('sent to a 172 door ⇒ recorded, or nothing_recorded (the door says why)', () => {
     expect(correctionsStorageOf(1, { ...door158, corrections: corrections(1) })).toBe('recorded')
