@@ -348,15 +348,44 @@ export function DraftCardActions({ playerId, context }: { playerId: string; cont
   const queue = useDraftQueue(context.draftId, context.teamId ?? undefined)
   const update = useUpdateDraftQueue(context.leagueId, context.draftId, context.teamId ?? '')
   if (!context.teamId) return null
-  const ids = (queue.data ?? []).map((r) => r.player_id)
-  const queued = ids.includes(playerId)
+  // R1463 — the queue route REPLACES the whole list, so an unread queue must
+  // never be treated as an empty one (that would wipe every Target). Until
+  // the read succeeds, Queue stays off; a failed read shows why + a retry.
+  if (queue.isError || !queue.data) {
+    return (
+      <span className="flex items-center gap-2" data-card-queue-state={queue.isError ? 'error' : 'loading'}>
+        <Button variant="blue" size="sm" disabled data-card-action="queue">
+          Queue
+        </Button>
+        {queue.isError ? (
+          <>
+            <span className="text-[11px] font-medium text-ink">Couldn’t load your Targets.</span>
+            <Button variant="stroke" size="sm" onClick={() => void queue.refetch()} data-card-action="queue-retry">
+              Retry
+            </Button>
+          </>
+        ) : (
+          <span className="text-[11px] font-medium text-n-3">Loading your Targets…</span>
+        )}
+      </span>
+    )
+  }
+  const queued = queue.data.some((r) => r.player_id === playerId)
+  // R1464 — build the replacement from a FRESH read, not the card's cache,
+  // so a Targets-panel edit made while the card was open is not overwritten.
+  const onQueue = async () => {
+    const fresh = await queue.refetch()
+    if (fresh.isError || !fresh.data) return
+    const ids = fresh.data.map((r) => r.player_id).filter((id) => id !== playerId)
+    update.mutate([...ids, playerId])
+  }
   return (
     <span className="flex items-center gap-2">
       <Button
         variant={queued ? 'stroke' : 'blue'}
         size="sm"
-        disabled={queued || update.isPending || queue.isPending}
-        onClick={() => update.mutate([...ids, playerId])}
+        disabled={queued || update.isPending || queue.isFetching}
+        onClick={() => void onQueue()}
         data-card-action="queue"
       >
         {queued ? 'In your Targets' : 'Queue'}

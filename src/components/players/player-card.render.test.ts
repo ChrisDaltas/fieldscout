@@ -24,7 +24,7 @@ import type { LeagueRosters, RosterPlayer, RosterTeam } from '@/lib/leagues/api/
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
-import { LeagueActionsBody } from './player-card-actions'
+import { DraftCardActions, LeagueActionsBody } from './player-card-actions'
 import { GLOBAL_CARD_CONTEXT, leagueCardContext } from './player-card-context'
 import {
   bidAllowed,
@@ -322,5 +322,39 @@ describe('LeagueActionsBody — a render per state', () => {
   })
   it('the drop confirmation reads in plain words', () => {
     expect(dropConfirmCopy('Bijan Robinson')).toBe('Bijan Robinson leaves your roster, and other teams can pick him up.')
+  })
+})
+
+// R1463 — Queue REPLACES the seat's whole Targets list, so an unread queue
+// must never pass for an empty one.
+// Settled reads: no refetch-on-mount (an SSR render would otherwise show
+// the optimistic "fetching" state, not the state under test).
+const newQc = () => new QueryClient({ defaultOptions: { queries: { retryOnMount: false, staleTime: Infinity } } })
+describe('draft card Queue (R1463)', () => {
+  const ctx = { kind: 'draft' as const, leagueId: 'lg1', draftId: 'd1', teamId: 't1' }
+  const withClient = (qc: QueryClient) =>
+    renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(DraftCardActions, { playerId: 'p9', context: ctx })))
+  it('a failed queue read keeps Queue off and shows the error with a retry', () => {
+    const qc = newQc()
+    qc.getQueryCache()
+      .build(qc, { queryKey: ['draft-queue', 'd1', 't1'] })
+      .setState({ status: 'error', error: new Error('boom'), fetchStatus: 'idle', data: undefined })
+    const out = withClient(qc)
+    expect(out).toContain('data-card-queue-state="error"')
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-action="queue"/)
+    expect(out).toContain('Couldn’t load your Targets.')
+    expect(out).toContain('data-card-action="queue-retry"')
+  })
+  it('a queue still loading keeps Queue off', () => {
+    const out = withClient(newQc())
+    expect(out).toContain('data-card-queue-state="loading"')
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-action="queue"/)
+  })
+  it('a read queue (even empty) enables Queue', () => {
+    const qc = newQc()
+    qc.setQueryData(['draft-queue', 'd1', 't1'], [])
+    const out = withClient(qc)
+    expect(out).not.toContain('data-card-queue-state')
+    expect(out).not.toMatch(/<button[^>]*disabled=""[^>]*data-card-action="queue"/)
   })
 })
