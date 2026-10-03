@@ -46,8 +46,9 @@ export function leagueBase(leagueId: string): string {
 }
 
 /**
- * The six tabs (prototype `TABS`). Stats has no page of its own yet — it
- * lands on Standings, the nearest existing page.
+ * The six tabs (prototype `TABS`). Stats is the head-to-head page
+ * (League UX batch 5); Standings, linked from it and from League Home,
+ * belongs to the same tab.
  */
 export function leagueTabs(leagueId: string, status: string, myTeamId: string | null): LeagueTab[] {
   const base = leagueBase(leagueId)
@@ -62,7 +63,7 @@ export function leagueTabs(leagueId: string, status: string, myTeamId: string | 
     seasonTab('matchup', 'Matchup', `${base}/matchup`),
     { key: 'players', label: 'Players', href: `${base}/players`, disabledReason: null },
     seasonTab('schedule', 'Schedule', `${base}/schedule`),
-    seasonTab('stats', 'Stats', `${base}/standings`),
+    seasonTab('stats', 'Stats', `${base}/stats`),
   ]
 }
 
@@ -107,6 +108,7 @@ export function activeLeagueSection(
       return 'players'
     case 'schedule':
       return 'schedule'
+    case 'stats':
     case 'standings':
       return 'stats'
     case 'settings':

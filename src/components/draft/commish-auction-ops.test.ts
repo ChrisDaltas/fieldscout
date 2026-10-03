@@ -513,7 +513,7 @@ describe('budgetEditPreview projects 084 and names the arm a refusal would hit',
     })
     expect(under.refusal).toBe('below-floor')
     expect(under.note).toBe(
-      'That leaves $13 for 14 open roster spots at a $1 per-slot reserve — §8.6.8 needs at least $14.',
+      'That leaves $13 for 14 open roster spots at a $1 per-slot reserve — a team needs at least $14.',
     )
   })
 
@@ -526,7 +526,7 @@ describe('budgetEditPreview projects 084 and names the arm a refusal would hit',
     })
     expect(preview.refusal).toBe('below-committed')
     expect(preview.note).toBe(
-      'That is $1 below the $50 this team has already spent — reverse a won bid instead, or make the adjustment smaller (E28).',
+      'That is $1 below the $50 this team has already spent — reverse a won bid instead, or make the adjustment smaller.',
     )
   })
 

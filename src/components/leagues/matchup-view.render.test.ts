@@ -29,15 +29,19 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueChannel } from '@/hooks/use-league-channel'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
+import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { statsDegradedKeys } from '@/hooks/use-stats-degraded'
 import type { BoxStarter, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
+import type { LeagueRosters } from '@/lib/leagues/api/rosters-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import type { LiveScoringFlags, ScoringStalledFlag } from '@/lib/sync/ingest-flags'
 
 import { MatchupPage } from './matchup-view'
 import {
+  BENCH_NOT_COUNTED_COPY,
+  BENCH_TODAY_COPY,
   NO_LINEUP_COPY,
   NO_WEEK_COPY,
   PENDING_SCORE_COPY,
@@ -223,6 +227,7 @@ interface Seed {
   matchupId?: string | null
   weekParam?: number | null
   connection?: 'live' | 'reconnecting' | 'connecting'
+  rosters?: LeagueRosters
 }
 
 function renderMatchups(seed: Seed = {}): string {
@@ -247,6 +252,7 @@ function renderMatchups(seed: Seed = {}): string {
     else if (box !== 'missing') qc.setQueryData(leagueBoxKeys.team(LEAGUE, weekNumber, teamId), box)
   }
   qc.setQueryData(statsDegradedKeys.flag(), seed.flag ?? FLAG_OK)
+  if (seed.rosters) qc.setQueryData(leagueRosterKeys.all(LEAGUE), seed.rosters)
 
   vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
   return render(qc, createElement(MatchupPage, { leagueId: LEAGUE, matchupId: seed.matchupId ?? null, weekParam: seed.weekParam ?? null }))
@@ -713,5 +719,74 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.2 fi
   it('the selected side is a resting FILL, never a shadow (state by fill, elevation by hover)', () => {
     const src = read('src/components/leagues', 'matchup-view.tsx')
     expect(src).toContain("mine && 'bg-accent-soft'")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The bench (League UX batch 5) — shown under the starters, never summed
+// ---------------------------------------------------------------------------
+
+describe('the bench: both teams, under the starters, with points — never in the total', () => {
+  const rosterPlayer = (player_id: string, full_name: string, position: string, slot_key: string | null) => ({
+    player_id, full_name, position, nfl_team: 'GGG', status: null, bye_week: null, slot_key,
+    acquisition_type: null, acquisition_cost: null, ir_placed_week: null, ir_lock_until_week: null, acquired_at: null,
+    pool_state: null, game_lock: { state: 'unlocked' as const, until: null },
+  })
+  const ROSTERS = {
+    league_id: LEAGUE,
+    season: 2099,
+    teams: [
+      { team_id: T1, name: 'Alpha', roster: [rosterPlayer('bn-rb', 'Bench Back', 'RB', 'bn'), rosterPlayer('bn-qb', 'Bench Passer', 'QB', 'bn'), rosterPlayer('ir-wr', 'Hurt Receiver', 'WR', 'ir')] },
+      { team_id: T2, name: 'Bravo', roster: [rosterPlayer('bn-te', 'Bench End', 'TE', 'bn')] },
+    ],
+  } as unknown as LeagueRosters
+  const BENCH_T1 = [
+    { player_id: 'bn-rb', phase: 'done' as const, game: GAME_FINAL, points: 30.25, pending: [], reason: 'scored' as const },
+    { player_id: 'ir-wr', phase: 'bye' as const, game: null, points: 0, pending: [], reason: 'no_stat_row' as const },
+    { player_id: 'bn-qb', phase: 'done' as const, game: GAME_FINAL, points: 12.5, pending: [], reason: 'scored' as const },
+  ]
+  const BENCH_T2 = [{ player_id: 'bn-te', phase: 'done' as const, game: GAME_FINAL, points: 7, pending: [], reason: 'scored' as const }]
+  const html = renderMatchups({
+    rosters: ROSTERS,
+    boxes: { [T1]: { ...SCORED_BOX(T1), bench: BENCH_T1 }, [T2]: { ...SCORED_BOX(T2), bench: BENCH_T2 } },
+  })
+
+  it('each team’s box has a Bench section after its starters, labelled, saying bench points do not count', () => {
+    for (const team of [T1, T2]) {
+      const box = html.slice(html.indexOf(`data-box="${team}"`))
+      const firstStarter = box.indexOf('data-starter=')
+      expect(box.indexOf('data-bench="')).toBeGreaterThan(firstStarter)
+      expect(box).toContain('>Bench<')
+    }
+    expect(html.split(BENCH_NOT_COUNTED_COPY).length - 1).toBe(2)
+  })
+
+  it('bench rows are named player-card doors in position order, IR last, each with his points', () => {
+    const box = html.slice(html.indexOf(`data-box="${T1}"`), html.indexOf(`data-box="${T2}"`))
+    const qb = box.indexOf('data-bench-row="bn-qb"')
+    const rb = box.indexOf('data-bench-row="bn-rb"')
+    const ir = box.indexOf('data-bench-row="ir-wr"')
+    expect(qb).toBeGreaterThan(-1)
+    expect(rb).toBeGreaterThan(qb)
+    expect(ir).toBeGreaterThan(rb)
+    expect(box).toContain('Bench Back')
+    expect(box).toContain('>30.25<')
+    expect(box).toContain('>12.50<')
+    expect(box).toMatch(/data-bench-row="ir-wr"[\s\S]*?>IR</)
+  })
+
+  it('the box total is the starters’ alone — 30.25 + 12.50 on the bench never reach it', () => {
+    expect(html).toContain('data-box-sum="35.00"')
+    expect(html).not.toContain('data-box-sum="77.75"')
+  })
+
+  it('a live week shows the bench without the today’s-roster note; a finished week carries it', () => {
+    expect(html).not.toContain(BENCH_TODAY_COPY)
+    const done = renderMatchups({
+      rosters: ROSTERS,
+      week: weekDoc({ league_week: { status: 'final', median_score: null, finalized_at: '2099-09-16T00:00:00Z' } }),
+      boxes: { [T1]: { ...SCORED_BOX(T1), bench: BENCH_T1 }, [T2]: { ...SCORED_BOX(T2), bench: BENCH_T2 } },
+    })
+    expect(done).toContain(BENCH_TODAY_COPY)
   })
 })

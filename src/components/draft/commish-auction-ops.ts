@@ -187,7 +187,7 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
       before,
       after,
       refusal: 'below-committed',
-      note: `That is $${-remaining} below the $${before.committed} this team has already spent — reverse a won bid instead, or make the adjustment smaller (E28).`,
+      note: `That is $${-remaining} below the $${before.committed} this team has already spent — reverse a won bid instead, or make the adjustment smaller.`,
     }
   }
   // Arm 2 — below the §8.6.8 solvency floor.
@@ -197,7 +197,7 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
       before,
       after,
       refusal: 'below-floor',
-      note: `That leaves $${remaining} for ${openSlots} open roster ${openSlots === 1 ? 'spot' : 'spots'} at a $${input.reserve} per-slot reserve — §8.6.8 needs at least $${floor}.`,
+      note: `That leaves $${remaining} for ${openSlots} open roster ${openSlots === 1 ? 'spot' : 'spots'} at a $${input.reserve} per-slot reserve — a team needs at least $${floor}.`,
     }
   }
   // Arm 3 (D131(4)) — insolvent against the LIVE high bid this team holds.
@@ -206,7 +206,7 @@ export function budgetEditPreview(input: BudgetEditInput): BudgetEditPreview {
       before,
       after,
       refusal: 'below-high-bid',
-      note: `This team is holding a $${input.highBidHeld} high bid and could no longer afford it (max bid would be $${maxBid}) — void the nomination or reverse a won bid first (E28).`,
+      note: `This team is holding a $${input.highBidHeld} high bid and could no longer afford it (max bid would be $${maxBid}) — void the nomination or reverse a won bid first.`,
     }
   }
   return { before, after, refusal: null, note: null }

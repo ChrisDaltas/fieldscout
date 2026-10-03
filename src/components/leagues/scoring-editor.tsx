@@ -239,7 +239,7 @@ const STALE_NOTICE: EditorNotice = {
 /** The §7.3.3 locked line — ONE string for the out-of-window notice and the
  *  out-of-window empty state (F194), so the two renderings cannot drift. */
 const SCORING_LOCKED_MESSAGE =
-  'Scoring locks when the draft starts — the season scores from the copy frozen at that moment (§7.3.3).'
+  'Scoring locks when the draft starts — the season scores from the copy frozen at that moment.'
 
 function accessNotices(access: ScoringEditorAccess): EditorNotice[] {
   const notices: EditorNotice[] = []

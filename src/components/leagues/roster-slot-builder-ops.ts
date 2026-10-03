@@ -250,7 +250,7 @@ export function addCustomFlex(
 ): RosterSettings {
   const eligible = canonicalizeEligible(input.eligible)
   if (eligible.length < 2) {
-    throw new Error('A flex slot accepts at least 2 positions (§7.3.2) — pick 2 or more.')
+    throw new Error('A flex slot accepts at least 2 positions — pick 2 or more.')
   }
   const label = input.label?.trim() || suggestFlexLabel(eligible)
   return emit({
@@ -288,7 +288,7 @@ const MAX_IR_SPOTS = 6
  */
 export function addIrSpot(roster: RosterSettings): RosterSettings {
   if (roster.ir_slots.length >= MAX_IR_SPOTS) {
-    throw new Error('A league can have at most 6 IR spots (§7.3.2).')
+    throw new Error('A league can have at most 6 IR spots.')
   }
   const spot: IrSlot = {
     key: smallestFreeKey(new Set(roster.ir_slots.map((s) => s.key)), 'ir'),
@@ -305,7 +305,7 @@ export function addIrSpot(roster: RosterSettings): RosterSettings {
  */
 export function addDlSpot(roster: RosterSettings): RosterSettings {
   if (roster.ir_slots.length >= MAX_IR_SPOTS) {
-    throw new Error('A league can have at most 6 IR spots (§7.3.2).')
+    throw new Error('A league can have at most 6 IR spots.')
   }
   const spot = {
     key: smallestFreeKey(new Set(roster.ir_slots.map((s) => s.key)), 'dl'),

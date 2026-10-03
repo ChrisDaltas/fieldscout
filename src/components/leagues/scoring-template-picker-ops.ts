@@ -214,7 +214,7 @@ export function resolveDefaultTemplateId(
       `[scoring-templates] The "${name}" template row is missing from the ` +
         'fetched templates (has this environment run migration 108, the ' +
         'Scout pair?). No template will be preselected — the user must ' +
-        'pick one explicitly (§7.3.3 system-default bullet, SC.3/SC.4).',
+        'pick one explicitly.',
     )
     return null
   }

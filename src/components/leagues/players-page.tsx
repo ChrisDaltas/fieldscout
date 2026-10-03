@@ -19,6 +19,9 @@ import { useAuth } from '@/hooks/use-auth'
 import { useDraftPool } from '@/hooks/use-draft-pool'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeaguePoolLive } from '@/hooks/use-league-pool'
+import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
+import { usePoolValues } from '@/hooks/use-pool-values'
+import { useSchedule } from '@/hooks/use-schedule'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSubmitClaim } from '@/hooks/use-submit-claim'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
@@ -32,6 +35,7 @@ import { ClaimDialog } from './claim-dialog'
 
 import { TeamNameLink, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
+import { opponentOf } from './my-team-ops'
 import {
   FREE_AGENT_LABEL,
   LOCKED_ADD_TITLE,
@@ -39,7 +43,19 @@ import {
   MOVE_NOTHING_COPY,
   NO_SEAT_COPY,
   ON_WAIVERS_LABEL,
+  DEFAULT_POOL_SORT,
   POSITIONS,
+  PROJ_MISSING_TITLE,
+  VALUES_PROBLEM_COPY,
+  nextSort,
+  opponentText,
+  pointsText,
+  sortPoolRows,
+  valueCells,
+  valueWeekOf,
+  type PoolSort,
+  type PoolSortKey,
+  type PoolValueCells,
   ROSTERED_ELSEWHERE_TITLE,
   SCOPE_LABELS,
   waiversAddTitle,
@@ -160,10 +176,31 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
   const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
 
-  const rows = useMemo(
-    () => poolRows(players.data ?? [], rosters.data, pool.data ?? [], myTeamId, scope),
-    [players.data, rosters.data, pool.data, myTeamId, scope],
-  )
+  // League UX batch 5: the value columns — this week's projection and the
+  // season's points under the league's own scoring (the server computes
+  // them; this page only sorts and shows them), and this week's opponent.
+  const schedule = useSchedule(leagueId)
+  const scheduleWeeks = schedule.data?.weeks ?? []
+  const valueWeek = valueWeekOf(scheduleWeeks)
+  const windowIds = useMemo(() => (players.data ?? []).map((p) => p.id), [players.data])
+  const values = usePoolValues(leagueId, valueWeek, windowIds)
+  const games = useNflWeekGames(detail.league.season, valueWeek)
+  const [sort, setSort] = useState<PoolSort>(DEFAULT_POOL_SORT)
+
+  const rows = useMemo(() => {
+    const base = poolRows(players.data ?? [], rosters.data, pool.data ?? [], myTeamId, scope)
+    return sortPoolRows(base, (id) => valueCells(values.byPlayer.get(id)), sort)
+  }, [players.data, rosters.data, pool.data, myTeamId, scope, values.byPlayer, sort])
+  const valueColumns: ValueColumns | null =
+    valueWeek === undefined
+      ? null
+      : {
+          week: valueWeek,
+          cells: (id) => valueCells(values.byPlayer.get(id)),
+          opponent: (team) => opponentText(opponentOf(team, games.data ?? [])),
+          sort,
+          onSort: (key) => setSort((s) => nextSort(s, key)),
+        }
   const myRosterTeam = rosters.data?.teams.find((t) => t.team_id === myTeamId)
   const myRoster = myRosterTeam?.roster
   const fill = rosterFill(myRoster, deriveRosterSize(detail.settings.roster_settings))
@@ -193,6 +230,11 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
 
       {reconnecting && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {stale && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
+      {values.isError && (
+        <StatusBanner tone="caution">
+          <span data-values-problem>{VALUES_PROBLEM_COPY}</span>
+        </StatusBanner>
+      )}
       {waiverWindow?.paused && waiverWindow.waivers && (
         <StatusBanner tone="caution">
           <span data-waivers-paused>{WAIVERS_PAUSED_COPY}</span>
@@ -305,6 +347,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           claimsLive={claimsLive}
           tradesClosed={tradesClosed}
           faHoldHours={detail.settings.fa_hold_hours}
+          values={valueColumns}
           onClaim={(row) => {
             claim.reset()
             setClaimRow(row)
@@ -475,6 +518,7 @@ export function PoolTable({
   claimsLive = true,
   tradesClosed = false,
   faHoldHours = 0,
+  values = null,
   onAdd,
   onDrop,
   onClaim = () => {},
@@ -495,6 +539,8 @@ export function PoolTable({
   /** L.D3.12: the trade deadline has passed (the server's word) — no Trade door. */
   tradesClosed?: boolean
   faHoldHours?: number
+  /** League UX batch 5: the value columns (null = no schedule yet — hidden). */
+  values?: ValueColumns | null
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
   onClaim?: (row: PoolPlayerRow) => void
@@ -517,6 +563,14 @@ export function PoolTable({
         <TableHeader>
           <TableRow>
             <TableHead>Player</TableHead>
+            {values && (
+              <>
+                <TableHead title={`Week ${values.week} opponent`}>Opp</TableHead>
+                <SortHead label="Proj" title={`Projected points, week ${values.week} — your league’s scoring`} sortKey="proj" values={values} />
+                <SortHead label="Pts" title="Points this season before this week — your league’s scoring" sortKey="season" values={values} />
+                <SortHead label="Avg" title="Points per game played this season" sortKey="avg" values={values} />
+              </>
+            )}
             <TableHead>Status</TableHead>
             <TableHead>Availability</TableHead>
             {canAct && <TableHead className="text-right">Move</TableHead>}
@@ -545,6 +599,7 @@ export function PoolTable({
                     </span>
                   </span>
                 </TableCell>
+                {values && <ValueCellsRow row={row} values={values} />}
                 <TableCell>
                   {row.lock.locked ? (
                     <Badge variant="black" title={row.lock.until ? `Locked until ${formatInstantWithDate(row.lock.until, leagueTimeZone).local}` : row.lock.copy} data-lock>
@@ -586,6 +641,59 @@ export function PoolTable({
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+/** What the table needs to show the value columns — the page builds it. */
+export interface ValueColumns {
+  week: number
+  cells: (playerId: string) => PoolValueCells
+  opponent: (nflTeam: string | null) => string
+  sort: PoolSort
+  onSort: (key: PoolSortKey) => void
+}
+
+/** A sortable header — the Research table's: the sorted column tinted
+ *  accent with its direction arrow. */
+function SortHead({ label, title, sortKey, values }: { label: string; title: string; sortKey: PoolSortKey; values: ValueColumns }) {
+  const active = values.sort.key === sortKey
+  return (
+    <TableHead
+      className={cn('whitespace-nowrap text-right', active && 'bg-accent-soft text-accent-strong')}
+      aria-sort={active ? (values.sort.dir === 'desc' ? 'descending' : 'ascending') : undefined}
+      data-sort-col={sortKey}
+    >
+      <button
+        type="button"
+        onClick={() => values.onSort(sortKey)}
+        title={title}
+        className={cn('inline-flex w-full items-center justify-end gap-1 transition-colors hover:text-ink', active && 'text-accent-strong hover:text-accent-strong')}
+      >
+        <span>{label}</span>
+        {active && <Icon name="arrow-bottom" size={12} className={cn(values.sort.dir === 'asc' && 'rotate-180')} />}
+      </button>
+    </TableHead>
+  )
+}
+
+function ValueCellsRow({ row, values }: { row: PoolPlayerRow; values: ValueColumns }) {
+  const c = values.cells(row.player.id)
+  const tint = (key: PoolSortKey) => cn('fs-num whitespace-nowrap text-right text-[12px]', values.sort.key === key && 'bg-accent-soft/30')
+  return (
+    <>
+      <TableCell className="fs-num whitespace-nowrap text-[11px] font-medium text-n-3" data-cell="opp">
+        {values.opponent(row.player.team)}
+      </TableCell>
+      <TableCell className={tint('proj')} data-cell="proj" title={c.proj === null ? PROJ_MISSING_TITLE : undefined}>
+        <span className={c.proj === null ? 'text-n-3' : 'font-bold text-ink'}>{pointsText(c.proj)}</span>
+      </TableCell>
+      <TableCell className={tint('season')} data-cell="season">
+        <span className={c.season === null ? 'text-n-3' : 'text-ink'}>{pointsText(c.season)}</span>
+      </TableCell>
+      <TableCell className={tint('avg')} data-cell="avg" title={c.games > 0 ? `${c.games} game${c.games === 1 ? '' : 's'}` : undefined}>
+        <span className={c.avg === null ? 'text-n-3' : 'text-ink'}>{pointsText(c.avg)}</span>
+      </TableCell>
+    </>
   )
 }
 

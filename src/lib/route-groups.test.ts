@@ -218,6 +218,11 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // seats, not a draft surface. Gated on `featureFlags.leagues` by
   // `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/members',
+  // League UX batch 5 — league STATS (the prototype's Stats tab: a team's
+  // head-to-head record against each opponent). In `(shell)` for Q12's
+  // reason: a reading page. Gated on `featureFlags.leagues` by
+  // `(shell)/leagues/layout.tsx`. Permanent.
+  '/app/leagues/[leagueId]/stats',
 ]
 
 describe('route groups are invisible to the URL space', () => {

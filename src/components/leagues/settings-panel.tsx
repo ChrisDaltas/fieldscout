@@ -1452,7 +1452,7 @@ function TiebreakersGroup({
     <GroupCard title="Tiebreakers">
       <p className="text-[12px] font-semibold text-n-3">
         Applied in order whenever teams tie on the primary sort — standings and playoff seeding
-        share this one chain (§7.3.7).
+        share this one chain.
       </p>
       <ol className="flex flex-col gap-1.5">
         {chain.map((entry, i) => (

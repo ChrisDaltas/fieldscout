@@ -159,6 +159,7 @@ describe('the sub-nav — tabs, the current one marked, and More', () => {
     [`${BASE}/matchup/mid-1`, 'matchup'],
     [`${BASE}/players`, 'players'],
     [`${BASE}/schedule`, 'schedule'],
+    [`${BASE}/stats`, 'stats'],
     [`${BASE}/standings`, 'stats'],
   ])('%s marks %s as the current tab (and only it)', (url, key) => {
     const html = render(detail('in_season'), url)

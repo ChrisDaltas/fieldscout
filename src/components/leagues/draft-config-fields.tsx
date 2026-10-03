@@ -249,7 +249,7 @@ export function AuctionConfigFields({
       <FieldRow
         label="Nomination order"
         htmlFor={`${idPrefix}-nomination-order-mode`}
-        hint="Who nominates next, circularly (§8.3)."
+        hint="Who nominates next, in turn."
       >
         <ChoiceSelect
           id={`${idPrefix}-nomination-order-mode`}

@@ -14,8 +14,9 @@
  * No clock is read (§23.3; the F226 posture extends to the UI: render the
  * server's instants, compute nothing).
  */
-import type { BoxStarter, StarterPhase, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
+import type { BoxBenchLine, BoxStarter, StarterPhase, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, TeamWeekResultRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
+import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { ScheduleWeek } from '@/hooks/use-schedule'
 
 import { currentWeekOf } from './lineup-editor-ops'
@@ -445,4 +446,61 @@ export function emptyWeekCopy(week: number, weeks: readonly Pick<ScheduleWeek, '
     if (weekKind(week, firstWeek, regularSeasonWeeks) === 'playoff') return PLAYOFF_ROUND_PENDING_COPY
   }
   return NO_MATCHUPS_COPY
+}
+
+// ---------------------------------------------------------------------------
+// The bench — League UX batch 5 (Chris 2026-10-03)
+// ---------------------------------------------------------------------------
+
+export const BENCH_LABEL = 'Bench'
+export const BENCH_NOT_COUNTED_COPY = 'Bench points don’t count toward the total.'
+/** The box's bench is the team's CURRENT roster minus the week's starters
+ *  (the box read computes it live; no per-week bench is stored), so a past
+ *  week says which roster it shows. */
+export const BENCH_TODAY_COPY = 'This is the team’s bench today — a player moved since this week isn’t listed.'
+export const EMPTY_BENCH_COPY = 'Nobody on the bench.'
+
+export interface BenchRow {
+  player_id: string
+  player: { id: string; full_name: string; position: string; nfl_team: string | null } | null
+  /** On an IR spot rather than the bench proper. */
+  ir: boolean
+  cell: StarterCell
+}
+
+const BENCH_POSITION_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DST']
+
+/** The box's bench lines joined to the rosters read for names (IR last,
+ *  then position order, then name — the way ESPN / Yahoo list a bench).
+ *  Each cell reads exactly like a starter's (`starterCell`); none is ever
+ *  summed into anything. */
+export function benchRows(
+  bench: readonly BoxBenchLine[] | undefined,
+  roster: readonly Pick<RosterPlayer, 'player_id' | 'full_name' | 'position' | 'nfl_team' | 'slot_key'>[] | undefined,
+): BenchRow[] {
+  const byId = new Map((roster ?? []).map((p) => [p.player_id, p]))
+  const rows = (bench ?? []).map((line): BenchRow => {
+    const p = byId.get(line.player_id)
+    return {
+      player_id: line.player_id,
+      player: p ? { id: p.player_id, full_name: p.full_name, position: p.position, nfl_team: p.nfl_team } : null,
+      ir: Boolean(p?.slot_key?.startsWith('ir')),
+      cell: starterCell(line),
+    }
+  })
+  const rank = (pos: string | undefined) => {
+    const i = BENCH_POSITION_ORDER.indexOf(pos ?? '')
+    return i === -1 ? BENCH_POSITION_ORDER.length : i
+  }
+  return rows.sort(
+    (a, b) =>
+      Number(a.ir) - Number(b.ir) ||
+      rank(a.player?.position) - rank(b.player?.position) ||
+      (a.player?.full_name ?? a.player_id).localeCompare(b.player?.full_name ?? b.player_id),
+  )
+}
+
+/** A week that is no longer upcoming or being played shows today's bench. */
+export function benchNote(weekStatus: string): string | null {
+  return weekStatus === 'upcoming' || weekStatus === 'live' ? null : BENCH_TODAY_COPY
 }

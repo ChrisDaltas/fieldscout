@@ -46,6 +46,8 @@ import {
 } from './commish-console-ops'
 import { teamPageHref, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
+import { CommishRepairPanel } from './commish-repair-panel'
+import { REPAIR_NEEDS_OVERRIDE_COPY } from './commish-repair-ops'
 import { OverrideModeBar } from './override-mode-bar'
 import { ScheduleRemixModal } from './schedule-remix-modal'
 import { REMIX_NEEDS_OVERRIDE_COPY, remixSeasonStarted } from './schedule-view-ops'
@@ -402,6 +404,7 @@ function ToolGroupRow({
         </div>
       )}
       {group.key === 'schedule' && phase === 'in_season' && <ConsoleRemixAction leagueId={leagueId} data={data} />}
+      {group.key === 'schedule' && phase === 'in_season' && <ConsoleRepairAction leagueId={leagueId} data={data} />}
       {group.note && (
         <p className="text-[11px] font-medium text-n-3" data-tool-note={group.key}>
           {group.note}
@@ -455,6 +458,24 @@ function ConsoleRemixAction({ leagueId, data }: { leagueId: string; data: League
       )}
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Re-pair a matchup after the season starts (League UX batch 5)
+// ---------------------------------------------------------------------------
+
+/** The override re-pairing (130) lives here and only here, and only while
+ *  override mode is on — off, the group says how to get it. */
+function ConsoleRepairAction({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
+  const overrideOn = useOverrideMode(leagueId)
+  if (!overrideOn) {
+    return (
+      <p className="text-[11px] font-medium text-n-3" data-console-repair="needs-override">
+        {REPAIR_NEEDS_OVERRIDE_COPY}
+      </p>
+    )
+  }
+  return <CommishRepairPanel leagueId={leagueId} data={data} />
 }
 
 // ---------------------------------------------------------------------------

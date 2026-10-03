@@ -119,7 +119,7 @@ describe('the chain renders in the RPC’s STORED order — the DoD pin', () => 
     const totalPoints = renderedChain([
       { entry: 'head_to_head', status: 'skipped', reason: 'total_points' },
     ])
-    expect(totalPoints[0].note).toBe('skipped — a total-points league has no head-to-head (E64)')
+    expect(totalPoints[0].note).toBe('skipped — a total-points league has no head-to-head games')
   })
 
   it('anything that is not 117’s chain array renders as an empty strip, never a guessed order', () => {
@@ -213,7 +213,7 @@ describe('empty is BY REASON, and the E63/E64 notes read the skips', () => {
     ).toEqual(['Head-to-head skipped for a tie of three or more: Alpha, Bravo, Charlie.'])
     expect(
       skipNotes([{ entry: 'head_to_head', reason: 'total_points', teams: ['t1', 't2'] }], names),
-    ).toEqual(['Head-to-head does not apply in a total-points league (E64): Alpha, Bravo.'])
+    ).toEqual(['Head-to-head does not apply in a total-points league: Alpha, Bravo.'])
     expect(skipNotes(null, names)).toEqual([])
   })
 })
