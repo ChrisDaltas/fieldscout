@@ -29,12 +29,7 @@
  *   LC4  a benched player's correction (WRB) writes no record.
  *   LC5  a stat the league does not score (WR3's receptions — standard
  *        scoring pays none) writes nothing and SAYS WHY.
- *   LC5b DEPLOY BEFORE PUSH at the WORKER (R1346): a client wrapped to answer
- *        as a 171 database does — the door's report without `corrections`
- *        (the real door, called without the element: exactly a 158 door's
- *        scoring) and PostgREST's PGRST202 (measured here) for the two new
- *        doors — scores the correction, throws nothing, and names every
- *        absence.
+ *   (LC5b, the pre-172 deploy-before-push arm, retired with it — F529.)
  *   LC6  the real finalize_matchups at week 2's first kickoff: final, the
  *        stored results are the ones the record derived, and the REAL
  *        rebuild finds no result_drift (F245 / TD8).
@@ -60,7 +55,7 @@ import { ingestWeek, type IngestReport } from '@/lib/sync/ingest-week'
 import type { SyncClient } from '@/lib/sync/types'
 import type { Database, Json } from '@/types/database'
 
-import { PRE_172_DOOR_SENTENCE, runScoreWeekBatch, type ScoreWorkerClient } from './score-week-worker'
+import { runScoreWeekBatch } from './score-week-worker'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -103,7 +98,6 @@ const T_ADVANCE = '2088-09-14T08:00:00.000Z'
 const T_IN_WINDOW = '2088-09-15T15:00:00.000Z'
 const T_BENCH = '2088-09-15T16:00:00.000Z'
 const T_UNSCORED = '2088-09-15T17:00:00.000Z'
-const T_PRE172 = '2088-09-15T18:00:00.000Z'
 const T_LATE = '2088-09-18T12:00:00.000Z'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
@@ -370,52 +364,6 @@ describe('L.E2.2 — each league’s record of a stat correction, through the RE
     // Information, never a problem: an ordinary correction that moves no score raises no alarm.
     expect(batch.problems.filter((p) => p.includes('stat corrections'))).toEqual([])
     expect([await records(), await posts()].map((x) => x.length)).toEqual([1, 1])
-  })
-
-  it('LC5b DEPLOY BEFORE PUSH at the WORKER (R1346): a 171-shaped database — the door answers without a corrections report, the two new doors PGRST202 — scores exactly, throws nothing, names each absence', async () => {
-    // PREMISE — the wire's answer for an absent door with these arguments, MEASURED (the D426 shape).
-    const probe = await service.rpc('lsc_door_not_in_this_database' as never, { p_event_ids: [], p_now: T_PRE172 } as never)
-    expect([probe.error?.code, probe.error?.message, probe.error?.hint ?? null]).toEqual([
-      'PGRST202',
-      'Could not find the function public.lsc_door_not_in_this_database(p_event_ids, p_now) in the schema cache',
-      null,
-    ])
-    const absent = (fn: string) => ({ ...probe.error!, message: probe.error!.message.replace('lsc_door_not_in_this_database(p_event_ids, p_now)', `${fn}(${fn === 'score_bracket_resync' ? 'p_league_id, p_now' : 'p_event_ids, p_now'})`) })
-    const calls: string[] = []
-    // The 171 database: the scoring door WITHOUT the element (158's scoring, byte for byte — pgTAP 120 §Z),
-    // its report stripped of 172's keys except a due bracket sync (so the absent re-sync door is reached too).
-    const pre172 = new Proxy(service, {
-      get(target, prop, receiver) {
-        if (prop !== 'rpc') return Reflect.get(target, prop, receiver)
-        return async (fn: string, args: Record<string, unknown>) => {
-          calls.push(fn)
-          if (fn === 'stat_correction_mark_applied' || fn === 'score_bracket_resync') return { data: null, error: absent(fn), count: null, status: 404, statusText: 'Not Found' }
-          if (fn === 'score_write_week_batch') {
-            const scores = (args.p_scores as Array<Record<string, unknown>>).map((e) => Object.fromEntries(Object.entries(e).filter(([k]) => k !== 'corrections')))
-            const r = await target.rpc('score_write_week_batch', { ...args, p_scores: scores } as never)
-            if (r.data === null) return r
-            const report158 = Object.fromEntries(Object.entries(r.data as unknown as Record<string, unknown>).filter(([k]) => k !== 'corrections' && k !== 'bracket_resync_due'))
-            return { ...r, data: { ...report158, bracket_resync_due: true } }
-          }
-          return target.rpc(fn as never, args as never)
-        }
-      },
-    }) as unknown as ScoreWorkerClient
-    const recordsBefore = await records()
-    feed.lines = { ...feed.lines, [WR4]: { receiving_yards: 90 } }
-    await poll(T_PRE172)
-    const batch = await runScoreWeekBatch({ time: clock, db: pre172 }, { batchSize: 1000, leagueIds: [leagueId] })
-    const entry = batch.leagues[0]
-    expect([entry.outcome, entry.corrections, entry.bracket_resync]).toEqual(['written', 'not_recorded_pre_172', 'skipped_pre_172'])
-    expect(await scores()).toBe('regular 9.50-9.00 live - | regular 9.40-9.80 live - | secondary 9.40-9.50 live -')
-    expect(batch.problems).toContain(`[${leagueId} wk 1] ${PRE_172_DOOR_SENTENCE}`)
-    expect(batch.problems).toContain(`[${leagueId} wk 1] bracket re-sync skipped: score_bracket_resync is absent — the database predates migration 172; the hourly beat syncs the bracket as before`)
-    expect(batch.problems).toContain('correction events: 1 event(s) NOT stamped applied: stat_correction_mark_applied is absent — the database predates migration 172')
-    expect(calls).toEqual(expect.arrayContaining(['score_write_week_batch', 'score_bracket_resync', 'stat_correction_mark_applied']))
-    expect(await records()).toEqual(recordsBefore)
-    expect(await eventsFor(WR4)).toEqual(['receiving_yards 80→90 open applied=null'])
-    // …and the row was still consumed (the pre-172 drain is complete) — the push's one-time backfill (172 §5b) stamps it.
-    expect(batch.drained).toBe(1)
   })
 
   it('LC6 the REAL finalize_matchups at week 2’s first kickoff: the stored results are the record’s, and the REAL rebuild finds no result_drift (F245 / TD8)', async () => {

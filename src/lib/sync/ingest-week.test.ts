@@ -718,11 +718,6 @@ function lastSent(world: World): Record<string, { enqueue: boolean; corrections:
   return Object.fromEntries(call.p_rows.map((e) => [String(e.stat.player_id), { enqueue: e.enqueue, corrections: e.corrections }]))
 }
 
-function storedGame(id: string): Row {
-  const g = toGameRow(wk2Game(id, 'final'))!
-  return { ...g }
-}
-
 describe('L.E2.1 — TD2: what a correction is, poll after poll through the real ingestWeek (the classification table)', () => {
   it('C1–C8 — a line WITH its game id: live → final → corrected → corrected again; metaOnly; a gap filled late; an identical re-poll', async () => {
     const world = new World(['p-wr', 'p-te', 'p-k'])
