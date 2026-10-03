@@ -24,6 +24,8 @@ import { usePlayersByIds, type PlayerIdentity } from '@/hooks/use-players-by-ids
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { cn } from '@/lib/utils'
 
+import { ActingAsPicker, type ActingAsControl } from './acting-as-picker'
+import { targetsTitle } from './acting-as-ops'
 import {
   deriveQueueView,
   orderedIdsForSave,
@@ -41,6 +43,12 @@ interface MyQueueProps {
   teamId: string
   /** Live picked ids (E17: drafted rows grey; the next save drops them). */
   draftedIds: ReadonlySet<string>
+  /** F524: the commissioner's "acting as" control (null for everyone else). */
+  actingAs?: ActingAsControl | null
+  /** F524: the name of the team the commissioner acts for when `teamId` is
+   *  not his own seat — the panel reads and writes THAT team's Targets
+   *  (through the commissioner's doors) and says so. */
+  actingForName?: string | null
   className?: string
 }
 
@@ -54,9 +62,22 @@ interface MyQueueProps {
  * greyed with a Drafted chip until then (E17's "greyed" arm — the picks
  * broadcast drives it through the room's cached rows, no refetch).
  */
-export function MyQueue({ leagueId, draftId, teamId, draftedIds, className }: MyQueueProps) {
-  const queue = useDraftQueue(draftId, teamId)
-  const update = useUpdateDraftQueue(leagueId, draftId, teamId)
+export function MyQueue({
+  leagueId,
+  draftId,
+  teamId,
+  draftedIds,
+  actingAs = null,
+  actingForName = null,
+  className,
+}: MyQueueProps) {
+  const forAnother = actingForName !== null && leagueId !== null
+  const queue = useDraftQueue(
+    draftId,
+    teamId,
+    forAnother && leagueId ? { asCommish: { leagueId } } : {},
+  )
+  const update = useUpdateDraftQueue(leagueId, draftId, teamId, forAnother)
   const { playerById, isPending: identityPending } = usePlayersByIds(
     useMemo(() => (queue.data ?? []).map((row) => row.player_id), [queue.data]),
   )
@@ -85,9 +106,14 @@ export function MyQueue({ leagueId, draftId, teamId, draftedIds, className }: My
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle>My Targets</CardTitle>
+        <CardTitle>{targetsTitle(forAnother ? actingForName : null)}</CardTitle>
         <span className="fs-num text-[10px] font-semibold text-n-3">{saveIds.length}</span>
       </CardHeader>
+      {actingAs && (
+        <div className="px-card-pad pt-card-pad">
+          <ActingAsPicker label="Targets for" control={actingAs} />
+        </div>
+      )}
 
       {queue.isPending ? (
         <div className="flex flex-col gap-2 p-card-pad">
@@ -97,14 +123,17 @@ export function MyQueue({ leagueId, draftId, teamId, draftedIds, className }: My
         </div>
       ) : queue.isError ? (
         <p className="p-card-pad text-[12px] font-medium text-n-3" role="alert">
-          Your Targets didn&rsquo;t load. They refresh automatically.
+          {forAnother
+            ? `${actingForName}’s Targets didn’t load. ${queue.error instanceof Error ? queue.error.message : ''}`
+            : 'Your Targets didn’t load. They refresh automatically.'}
         </p>
       ) : view.length === 0 ? (
         // Timeouts-draft-from-the-queue is §8.4's rule — cited here, not in
         // user-facing copy (R268, M2 batch 13).
         <p className="p-card-pad text-[12px] font-medium text-n-3">
-          Add players from the pool so a plan is ready when the clock hits
-          you. Timeouts draft from the top of your Targets first.
+          {forAnother
+            ? `${actingForName} has no Targets yet. Add players from the pool — timeouts draft from the top of a team’s Targets first.`
+            : 'Add players from the pool so a plan is ready when the clock hits you. Timeouts draft from the top of your Targets first.'}
         </p>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>

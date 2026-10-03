@@ -46,6 +46,12 @@ describe('auction request wiring (§15.2 → the L.C2.1 routes)', () => {
       'player_id',
     ])
   })
+
+  it('F524: a bid FOR another team names it as team_id; with no team the body keeps the five keys above', () => {
+    expect(
+      bidRequest(LG, D, { nominationSeq: 4, playerId: 'p9', amount: 17, forTeamId: 't4' }, A2).body,
+    ).toEqual({ draft_id: D, nomination_seq: 4, player_id: 'p9', amount: 17, action_id: A2, team_id: 't4' })
+  })
 })
 
 describe('F65 at the mint site — per-verb action ids (source pins on use-draft-auction.ts)', () => {

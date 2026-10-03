@@ -331,15 +331,37 @@ select is(
   || 'draft_queue_replace={postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}',
   'A4 the ACLs are exactly as they stood on 170 — authenticated and service_role execute, PUBLIC and anon do not');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un171(p.prosrc)), ' ' order by p.proname)
+  -- 178 re-cut (F525): draft_queue_replace was replaced again by 178 (the
+  -- manager arm keyed on the seat); pgTAP 126 A2 / A3 pin its live body and
+  -- that 178 reversed is 171's derived body (5b54fe07…). Here: the one 171
+  -- left untouched by 178, plus the queue body with 178 reversed first.
+  (select string_agg(p.proname || '=' || md5(pg_temp.un171(replace(replace(p.prosrc,
+     $r1$  -- 178 (F525): the manager arm is the SEAT (league_members.user_id on the
+  -- team), never teams.owner_id: a placeholder or vacated team's owner_id is
+  -- the commissioner who made or vacated it (169 / 150), so the owner arm
+  -- admitted him (and, once demoted, kept admitting him) with no receipt.
+  -- Another team's queue is reached only through v_commish above, which
+  -- writes the receipt.
+$r1$, ''),
+     $r2$      FROM public.league_members m   -- 178 (F525): the seat, never teams.owner_id
+      JOIN public.drafts d ON d.id = p_draft_id
+      WHERE m.team_id = p_team_id
+        AND m.league_id = d.league_id
+        AND m.user_id = v_uid
+$r2$, $o2$      FROM public.teams t
+      JOIN public.drafts d ON d.id = p_draft_id
+      WHERE t.id = p_team_id
+        AND t.league_id = d.league_id
+        AND t.owner_id = v_uid
+$o2$))), ' ' order by p.proname)
    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('draft_place_bid', 'draft_queue_replace')),
   'draft_place_bid=2190079221e849405383fa1acec22cf7 draft_queue_replace=c844590b468080cda8858600fcc6f19a',
-  'A5 D137 in the database: each live body with 171 reversed is its newest definer file text (095:2892, 082:64) byte for byte');
+  'A5 D137 in the database: each live body with 178 then 171 reversed is its newest definer file text (095:2892, 082:64) byte for byte');
 select is(
   (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('draft_place_bid', 'draft_queue_replace')),
-  'draft_place_bid=7e95f5ec6e0f9301b0c89577684909fe draft_queue_replace=5b54fe07ad99a494d3052e376c1e47a7',
-  'A6 the live bodies are the derived ones (golden md5)');
+  'draft_place_bid=7e95f5ec6e0f9301b0c89577684909fe draft_queue_replace=69d64cbdfb4e9cbbab15f6a46fead4a7',
+  'A6 the live bodies are the derived ones (golden md5; draft_queue_replace re-cut by 178 — was 5b54fe07…, see 126 A3)');
 select is(
   (select md5(p.prosrc) from pg_proc p where p.oid = 'public.draft_place_bid_internal(uuid, uuid, integer, uuid, text)'::regprocedure),
   '7ec9b09b73c71d01cb4680aa40e98f7b',

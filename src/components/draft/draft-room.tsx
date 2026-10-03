@@ -34,6 +34,9 @@ import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import type { Draft } from '@/types/database'
 
+import type { ActingAsControl } from './acting-as-picker'
+import { ActingAsPicker } from './acting-as-picker'
+import { actingTeamId, canActForTeams, isActingForAnother } from './acting-as-ops'
 import { AuctionBlock } from './auction-block'
 import type { UncontestedBeat } from './auction-block-ops'
 import { auctionKnobsOf, readLiveNomination, teamBudget } from './auction-budget'
@@ -812,6 +815,24 @@ function DraftRoomLive({
       : null
     : myMemberTeamId
 
+  // F524 — the commissioner's "acting as" choice: ONE room-level team that
+  // the bid box, the Targets panel and the pool's add-to-Targets all act
+  // for (null = his own seat). A commissioner on a real league draft only;
+  // every act it drives is re-checked by the route and the RPC and writes a
+  // receipt (171), so the choice is a convenience, never a permission.
+  const actForTeams = canActForTeams({
+    isMock: draft.is_mock,
+    leagueId: scope.leagueId,
+    myRole: scope.myRole,
+  })
+  const [pickedTeamId, setPickedTeamId] = useState<string | null>(null)
+  const picked = actForTeams ? pickedTeamId : null
+  const forAnotherTeam = isActingForAnother(picked, myTeamId)
+  const actingForName = forAnotherTeam && picked ? (teamNameById.get(picked) ?? 'that team') : null
+  const actingAs: ActingAsControl | null = actForTeams
+    ? { teams: scope.teams, myTeamId, picked, onPick: setPickedTeamId }
+    : null
+
   const livePicks = useMemo(() => picks.filter((p) => !p.is_undone), [picks])
   const draftedIds = useMemo(() => draftedIdSet(picks), [picks])
 
@@ -1065,14 +1086,26 @@ function DraftRoomLive({
         nominationSeq: draft.current_pick_number,
         playerId: liveNomination.player_id,
         amount,
+        // F524: the commissioner's bid FOR the team he acts as (never his
+        // own seat — that is his manager bid, sent as it always was).
+        ...(forAnotherTeam && picked ? { forTeamId: picked } : {}),
       })
       .catch(auctionFailureToast('Bid not placed'))
   }
 
   // ----- queue (own rows; a mock's launcher drives the human seat — D103(3))
-  const queueTeamId = myTeamId
-  const queue = useDraftQueue(draft.id, queueTeamId ?? undefined)
-  const updateQueue = useUpdateDraftQueue(scope.leagueId, draft.id, queueTeamId ?? '')
+  const queueTeamId = actingTeamId(picked, myTeamId)
+  const queue = useDraftQueue(
+    draft.id,
+    queueTeamId ?? undefined,
+    forAnotherTeam && scope.leagueId ? { asCommish: { leagueId: scope.leagueId } } : {},
+  )
+  const updateQueue = useUpdateDraftQueue(
+    scope.leagueId,
+    draft.id,
+    queueTeamId ?? '',
+    forAnotherTeam,
+  )
   const queueView = useMemo(
     () => deriveQueueView(queue.data ?? [], draftedIds),
     [queue.data, draftedIds],
@@ -1188,7 +1221,18 @@ function DraftRoomLive({
       draftId={draft.id}
       teamId={queueTeamId}
       draftedIds={draftedIds}
+      actingAs={actingAs}
+      actingForName={actingForName}
     />
+  ) : actingAs ? (
+    // A commissioner with no seat of his own (a co-commissioner): nothing to
+    // show until he picks the team whose Targets he is setting.
+    <div className="flex flex-col gap-2">
+      <ActingAsPicker label="Targets for" control={actingAs} />
+      <p className="text-[12px] font-medium text-n-3">
+        Pick a team to see and set its Targets.
+      </p>
+    </div>
   ) : (
     <p className="text-[12px] font-medium text-n-3">
       {draft.is_mock
@@ -1234,6 +1278,7 @@ function DraftRoomLive({
       members={scope.members}
       userId={userId}
       queueTeamId={queueTeamId}
+      queueForAnotherTeam={forAnotherTeam}
       draftedIds={draftedIds}
       canDraft={canDraft || canNominate}
       primaryActionLabel={isAuction ? 'Nominate' : undefined}
@@ -1284,6 +1329,8 @@ function DraftRoomLive({
       onNominate={handleNominate}
       onBid={handleBid}
       submitting={auctionSubmitting}
+      actingAs={actingAs}
+      actingForTeamId={forAnotherTeam ? picked : null}
     />
   ) : null
 

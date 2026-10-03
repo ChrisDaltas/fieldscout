@@ -53,7 +53,9 @@ import { SYNTHETIC_SEASON, seedSyntheticSeason } from '../sim/synthetic-season'
 import {
   leagueScope,
   makePick,
+  NOT_COMMISH_FOR_TEAM_MESSAGE,
   queueFromList,
+  readTeamQueue,
   setAutodraft,
   upsertQueue,
 } from './draft-service'
@@ -73,6 +75,7 @@ const LOCAL_SERVICE_ROLE_KEY =
 const LEAGUE_NAME = 'vitest-draft-queue-league'
 const DRAFT_INSTANT = '2027-09-03T17:00:00+00:00'
 const LIST_SLUG = 'dq-wire-list'
+const COMMISH_LIST_SLUG = 'dq-wire-commish-list'
 
 const COMMISH = {
   email: 'draft-queue-commish@fieldscout.test',
@@ -138,6 +141,7 @@ let mockDraftId: string
 let mgr2TeamId: string
 let mgr2MemberId: string
 let listId: string
+let placeholderTeamId: string
 
 async function deleteUserByUsername(username: string): Promise<void> {
   const { data } = await service.from('profiles').select('id').eq('username', username)
@@ -163,7 +167,7 @@ async function cleanup(): Promise<void> {
     await service.from('leagues').delete().in('id', ids)
     await service.from('teams').delete().in('id', teamIds)
   }
-  await service.from('lists').delete().eq('slug', LIST_SLUG)
+  await service.from('lists').delete().in('slug', [LIST_SLUG, COMMISH_LIST_SLUG])
   await service
     .from('players')
     .delete()
@@ -282,6 +286,7 @@ beforeAll(async () => {
     if (fill.status !== 201) throw new Error(`placeholder fill failed: ${JSON.stringify(fill.body)}`)
     placeholderIds.push((fill.body as { team_id: string }).team_id)
   }
+  placeholderTeamId = placeholderIds[0]
 
   const { data: commishMember, error: memberError } = await service
     .from('league_members')
@@ -717,6 +722,123 @@ describe('autodraft — BOTH toggle paths over 072 set_team_autodraft (F33)', ()
     expect(fellow.status).toBe(200) // own seat — allowed (control)
     const restore = await setAutodraft(mgr2Client, leagueId, mgr2Id, { on: false })
     expect(restore.status).toBe(200)
+  })
+})
+
+describe('F524 / F525 — the commissioner sets and reads a team’s Targets (178)', () => {
+  async function queueReceipts(teamId: string): Promise<number> {
+    const { count, error } = await service
+      .from('commissioner_actions')
+      .select('id', { count: 'exact', head: true })
+      .eq('league_id', leagueId)
+      .eq('action_type', 'draft_set_queue')
+      .eq('acting_as_team_id', teamId)
+    if (error) throw new Error(`receipt count failed: ${error.message}`)
+    return count ?? 0
+  }
+
+  it('F525 at the wire: the commissioner who is teams.owner_id of a placeholder cannot write its queue straight through the table', async () => {
+    const { data: owner } = await service.from('teams').select('owner_id').eq('id', placeholderTeamId).single()
+    expect(owner?.owner_id, 'PREMISE: 169 stamps the commissioner as the placeholder owner').toBe(commishId)
+    const { data, error } = await commishClient
+      .from('draft_queues')
+      .insert({ draft_id: draftId, team_id: placeholderTeamId, player_id: P1, rank: 1 })
+      .select()
+    expect(error?.code).toBe('42501')
+    expect(data).toBeNull()
+    expect(await storedQueue(draftId, placeholderTeamId)).toEqual([])
+  })
+
+  it('the commissioner sets a placeholder’s Targets through the route: 200 for THAT team, one receipt; the same queue again writes none', async () => {
+    const set = await upsertQueue(commishClient, leagueScope(leagueId), commishId, {
+      draft_id: draftId,
+      team_id: placeholderTeamId,
+      players: [P5, P6],
+    })
+    expect(set.status).toBe(200)
+    expect((set.body as unknown as QueueResponse).team_id).toBe(placeholderTeamId)
+    expect(await storedQueue(draftId, placeholderTeamId)).toEqual([
+      [P5, 1],
+      [P6, 2],
+    ])
+    expect(await queueReceipts(placeholderTeamId)).toBe(1)
+    const again = await upsertQueue(commishClient, leagueScope(leagueId), commishId, {
+      draft_id: draftId,
+      team_id: placeholderTeamId,
+      players: [P5, P6],
+    })
+    expect(again.status).toBe(200)
+    expect(await queueReceipts(placeholderTeamId)).toBe(1)
+  })
+
+  it('the commissioner READS that team’s Targets through the door (GET), and a seated manager’s (mgr2’s) too', async () => {
+    const read = await readTeamQueue(commishClient, leagueScope(leagueId), commishId, {
+      draft_id: draftId,
+      team_id: placeholderTeamId,
+    })
+    expect(read.status).toBe(200)
+    expect((read.body as unknown as QueueResponse).queue).toEqual([
+      { player_id: P5, rank: 1 },
+      { player_id: P6, rank: 2 },
+    ])
+    const mine = await readTeamQueue(commishClient, leagueScope(leagueId), commishId, {
+      draft_id: draftId,
+      team_id: mgr2TeamId,
+    })
+    expect(mine.status).toBe(200)
+    expect((mine.body as unknown as QueueResponse).team_id).toBe(mgr2TeamId)
+  })
+
+  it('"Add remaining" for that team composes from the DOOR’s read (never an empty table read that would wipe it), one more receipt', async () => {
+    // The commissioner's own prep list, attached by him (mgr2's list is a
+    // private attachment the commissioner cannot see — 067's scope).
+    const { data: list, error: listError } = await commishClient
+      .from('lists')
+      .insert({ owner_id: commishId, title: 'DQ commish list', slug: COMMISH_LIST_SLUG, is_private: true })
+      .select('id')
+      .single()
+    if (listError) throw new Error(`list insert failed: ${listError.message}`)
+    const { error: lpError } = await commishClient.from('list_players').insert([
+      { list_id: list.id, player_id: P3, position: 1, overall_rank: 1 },
+      { list_id: list.id, player_id: P4, position: 2, overall_rank: 2 },
+    ])
+    if (lpError) throw new Error(`list_players insert failed: ${lpError.message}`)
+    const attached = await attachLeagueList(commishClient, leagueId, commishId, { list_id: list.id })
+    expect(attached.status).toBe(201)
+    const appended = await queueFromList(commishClient, leagueScope(leagueId), commishId, list.id, {
+      draft_id: draftId,
+      team_id: placeholderTeamId,
+      mode: 'append',
+    })
+    expect(appended.status).toBe(200)
+    const stored = (await storedQueue(draftId, placeholderTeamId)).map(([id]) => id)
+    expect(stored.slice(0, 2)).toEqual([P5, P6])
+    expect(stored.length).toBeGreaterThan(2)
+    expect(await queueReceipts(placeholderTeamId)).toBe(2)
+  })
+
+  it('a manager naming another team is a 403 by name on write AND read, nothing written; his own team named reads his own queue', async () => {
+    const before = await storedQueue(draftId, placeholderTeamId)
+    const write = await upsertQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
+      draft_id: draftId,
+      team_id: placeholderTeamId,
+      players: [P1],
+    })
+    expect(write.status).toBe(403)
+    expect(JSON.stringify(write.body)).toContain(NOT_COMMISH_FOR_TEAM_MESSAGE)
+    const read = await readTeamQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
+      draft_id: draftId,
+      team_id: placeholderTeamId,
+    })
+    expect(read.status).toBe(403)
+    expect(JSON.stringify(read.body)).not.toContain(P5)
+    expect(await storedQueue(draftId, placeholderTeamId)).toEqual(before)
+    const own = await readTeamQueue(mgr2Client, leagueScope(leagueId), mgr2Id, {
+      draft_id: draftId,
+      team_id: mgr2TeamId,
+    })
+    expect(own.status).toBe(200)
+    expect((own.body as unknown as QueueResponse).team_id).toBe(mgr2TeamId)
   })
 })
 

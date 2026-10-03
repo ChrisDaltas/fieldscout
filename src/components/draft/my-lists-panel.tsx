@@ -65,6 +65,9 @@ interface MyListsPanelProps {
   /** My seat (a mock's launcher passes the human seat — D103(3)); null =
    *  no queue to load into (spectator / mock non-launcher). */
   queueTeamId: string | null
+  /** F524: true when `queueTeamId` is a team the commissioner acts for (not
+   *  his own seat) — the load names that team (receipted, 171). */
+  queueForAnotherTeam?: boolean
   /** Live (non-undone) picked ids — E17's prop-flow input. */
   draftedIds: ReadonlySet<string>
   /** I'm on the clock of a live draft (the best-from-board Draft action). */
@@ -110,6 +113,7 @@ export function MyListsPanel({
   members,
   userId,
   queueTeamId,
+  queueForAnotherTeam = false,
   draftedIds,
   canDraft,
   primaryActionLabel = 'Draft',
@@ -146,7 +150,7 @@ export function MyListsPanel({
   const updateList = useUpdateLeagueList(leagueId ?? '')
   const detach = useDetachList(leagueId ?? '')
   const attach = useAttachList(leagueId ?? '')
-  const fromList = useQueueFromList(leagueId, draftId, queueTeamId ?? '')
+  const fromList = useQueueFromList(leagueId, draftId, queueTeamId ?? '', queueForAnotherTeam)
   const [cheatSheet, setCheatSheet] = useState<{ listId: string; title: string } | null>(null)
 
   const usernameByUserId = useMemo(

@@ -34,6 +34,8 @@ import {
   teamBudgets,
   type LiveNomination,
 } from './auction-budget'
+import { ActingAsPicker, type ActingAsControl } from './acting-as-picker'
+import { bidButtonLabel } from './acting-as-ops'
 import { abbreviateName } from './draft-board-ops'
 
 /** The drafts-row slice the block reads. Deliberately narrow: everything
@@ -85,6 +87,12 @@ interface AuctionBlockProps {
   onBid: (amount: number) => void
   submitting: boolean
   className?: string
+  /** F524: the commissioner's "acting as" control — rendered in the bid row
+   *  while a player is up for bid (null for everyone else). */
+  actingAs?: ActingAsControl | null
+  /** F524: the team the commissioner bids FOR, when it is not his own seat:
+   *  the bid box reads THAT team's budget and max bid, and says its name. */
+  actingForTeamId?: string | null
 }
 
 /**
@@ -138,6 +146,8 @@ export function AuctionBlock({
   onNominate,
   onBid,
   submitting,
+  actingAs = null,
+  actingForTeamId = null,
   className,
 }: AuctionBlockProps) {
   const nomination = useMemo(
@@ -200,11 +210,16 @@ export function AuctionBlock({
     ],
   )
 
-  const myBudget = myTeamId ? (budgets.get(myTeamId) ?? null) : null
+  // F524: while a player is up for bid, the box is the team the bid is FOR
+  // (the commissioner's pick, else his own seat). Nominating stays his own
+  // seat's turn — the commissioner nominates for a team through the
+  // console's force-nominate, not this box.
+  const boxTeamId = phase === 'bidding' && actingForTeamId ? actingForTeamId : myTeamId
+  const myBudget = boxTeamId ? (budgets.get(boxTeamId) ?? null) : null
   const box = buildBidBox({
     phase,
     status: draft.status,
-    myTeamId,
+    myTeamId: boxTeamId,
     myBudget,
     nomination,
     nominatingTeamId: draft.on_clock_team_id,
@@ -226,6 +241,8 @@ export function AuctionBlock({
 
   const teamNameById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams])
   const beat = useUncontestedBeat(uncontestedBeat, playerById, teamNameById)
+  const actingForName =
+    phase === 'bidding' && actingForTeamId ? (teamNameById.get(actingForTeamId) ?? 'that team') : null
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-4', className)}>
@@ -251,6 +268,8 @@ export function AuctionBlock({
         onBid={onBid}
         submitting={submitting}
         isMock={false}
+        actingAs={phase === 'bidding' ? actingAs : null}
+        actingForName={actingForName}
       />
       <TeamColumns columns={columns} playerById={playerById} reserve={knobs.reserve} />
     </div>
@@ -276,6 +295,8 @@ function Nomination({
   onNominate,
   onBid,
   submitting,
+  actingAs,
+  actingForName,
 }: {
   phase: 'nominating' | 'bidding'
   nomination: LiveNomination | null
@@ -299,6 +320,8 @@ function Nomination({
   onBid: (amount: number) => void
   submitting: boolean
   isMock: boolean
+  actingAs: ActingAsControl | null
+  actingForName: string | null
 }) {
   const subject = phase === 'bidding' ? (nomination?.player_id ?? null) : nomineeId
   const player = subject ? playerById.get(subject) : undefined
@@ -418,9 +441,10 @@ function Nomination({
         {/* The bid / opening-bid input, with the max-bid cap SURFACED (§8.6.1;
             L.C3.1 item 1 — "E5's message prevented at the UI"). */}
         <div className="flex flex-wrap items-end gap-2.5">
+          {actingAs && <ActingAsPicker label="Bid for" control={actingAs} />}
           <label className="flex flex-col gap-1">
             <span className="fs-overline text-[9px] text-n-3">
-              {phase === 'bidding' ? 'Your bid' : 'Opening bid'}
+              {phase === 'bidding' ? (actingForName ? `${actingForName}’s bid` : 'Your bid') : 'Opening bid'}
               {box.maxAmount !== null && (
                 <>
                   {' · '}
@@ -454,7 +478,7 @@ function Nomination({
             {submitting
               ? 'Submitting…'
               : phase === 'bidding'
-                ? `Bid $${Number.isInteger(parsed) ? parsed : box.minAmount}`
+                ? bidButtonLabel(Number.isInteger(parsed) ? parsed : box.minAmount, actingForName)
                 : `Nominate at $${Number.isInteger(parsed) ? parsed : box.minAmount}`}
           </Button>
           <p className="text-[11px] font-semibold text-n-3">
