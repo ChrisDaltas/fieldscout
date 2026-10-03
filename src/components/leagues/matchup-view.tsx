@@ -352,7 +352,7 @@ function HeadToHeadWeek({
         />
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div id="box-scores" className="grid scroll-mt-4 gap-4 md:grid-cols-2">
         <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selected.home_team_id} name={teamName(doc, selected.home_team_id)} leagueTimeZone={leagueTimeZone} />
         {selected.away_team_id ? (
           <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selected.away_team_id} name={teamName(doc, selected.away_team_id)} leagueTimeZone={leagueTimeZone} />

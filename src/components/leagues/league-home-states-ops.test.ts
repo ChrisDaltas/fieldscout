@@ -14,7 +14,6 @@ import {
   formatInstantAtOffset,
   formatInstantInZone,
   homeStateForStatus,
-  laterStatusLabel,
   offsetLabel,
   parseIsoOffsetMinutes,
   seatCounts,
@@ -95,16 +94,6 @@ describe('homeStateForStatus', () => {
   it('falls through unknown statuses to "later" (never crashes the home)', () => {
     expect(homeStateForStatus('banana')).toBe('later')
     expect(homeStateForStatus('')).toBe('later')
-  })
-})
-
-describe('laterStatusLabel', () => {
-  it('labels each later status', () => {
-    expect(laterStatusLabel('drafting')).toBe('Draft in progress')
-    expect(laterStatusLabel('in_season')).toBe('In season')
-    expect(laterStatusLabel('playoffs')).toBe('Playoffs')
-    expect(laterStatusLabel('complete')).toBe('Season complete')
-    expect(laterStatusLabel('mystery')).toBe('Coming soon')
   })
 })
 

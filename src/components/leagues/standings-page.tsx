@@ -12,6 +12,7 @@ import { useScheduleLive } from '@/hooks/use-schedule'
 import { useProjectedStandingsLive, useStandingsLive } from '@/hooks/use-standings'
 
 import { PlayoffBracket } from './playoff-bracket'
+import { managersByTeam } from './league-home-season-ops'
 import { PROJECTED_COPY, overriddenWeeksByTeam } from './standings-table-ops'
 import { StandingsTable } from './standings-table'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
@@ -170,6 +171,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
               highlightTeamId={myTeamId}
               overridden={overridden}
               overridesUnknown={schedule.isError && !schedule.data}
+              managers={managersByTeam(detail.members)}
             />
           ) : null}
 

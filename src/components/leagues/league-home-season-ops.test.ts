@@ -23,11 +23,9 @@ import {
   heroWeek,
   scoringLive,
   setLineupCopy,
-  standingsPeek,
   tradeChip,
   waiverChip,
 } from './league-home-season-ops'
-import { GOLDEN_STANDINGS } from './standings-schedule.fixtures'
 
 const T1 = 't1'
 const T2 = 't2'
@@ -105,48 +103,6 @@ describe('setLineupCopy — "Locks from <stored instant>", no countdown while Q4
     for (const copy of [LINEUP_READING_COPY, LINEUP_NOT_SET_COPY, LINEUP_NO_RECORD_COPY, setLineupCopy({ locked_at: 'x' }, 'Sun 1:00 PM')]) {
       expect(copy).not.toMatch(/countdown|\d+:\d+:\d+|\b[QEF]\d+\b/)
     }
-  })
-})
-
-// ---------------------------------------------------------------------------
-// The standings peek — a slice of 117's order
-// ---------------------------------------------------------------------------
-
-describe('standingsPeek — a SLICE of 117’s ranked rows, the reason carried through, nothing re-sorted', () => {
-  it('top 4 in stored order; the viewer inside the top adds no row', () => {
-    const peek = standingsPeek(GOLDEN_STANDINGS, 't2')
-    expect(peek.rows.map((r) => r.team_id)).toEqual(['t1', 't2', 't3', 't4'])
-    expect(peek.elided).toBe(false)
-    expect(peek.weeksFinal).toBe(3)
-    expect(peek.reason).toBe(GOLDEN_STANDINGS.reason)
-  })
-  it('the viewer below the slice is appended; a gap of more than one row is marked elided', () => {
-    const doc = {
-      ...GOLDEN_STANDINGS,
-      standings: [
-        ...GOLDEN_STANDINGS.standings,
-        { ...GOLDEN_STANDINGS.standings[3], rank: 5, team_id: 't5', name: 'Echo' },
-        { ...GOLDEN_STANDINGS.standings[3], rank: 6, team_id: 't6', name: 'Foxtrot' },
-      ],
-    }
-    const five = standingsPeek(doc, 't5', 4)
-    expect(five.rows.map((r) => r.team_id)).toEqual(['t1', 't2', 't3', 't4', 't5'])
-    expect(five.elided).toBe(false)
-    const six = standingsPeek(doc, 't6', 4)
-    expect(six.rows.map((r) => r.team_id)).toEqual(['t1', 't2', 't3', 't4', 't6'])
-    expect(six.elided).toBe(true)
-  })
-  it('a stored 0 is a stored 0 — the peek papers over nothing; 117’s reason is what says "nothing final"', () => {
-    const zeros = {
-      ...GOLDEN_STANDINGS,
-      weeks_final: 0,
-      reason: 'no_final_weeks',
-      standings: GOLDEN_STANDINGS.standings.map((r) => ({ ...r, wins: 0, losses: 0, points_for: 0, points_against: 0, win_pct: 0 })),
-    }
-    const peek = standingsPeek(zeros, null)
-    expect(peek.rows.every((r) => r.points_for === 0)).toBe(true)
-    expect(peek.reason).toBe('no_final_weeks')
-    expect(peek.weeksFinal).toBe(0)
   })
 })
 

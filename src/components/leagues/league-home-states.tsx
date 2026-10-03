@@ -39,7 +39,6 @@ import {
   describeDraftTime,
   draftCountdown,
   homeStateForStatus,
-  laterStatusLabel,
   type ChecklistItem,
 } from './league-home-states-ops'
 
@@ -665,18 +664,16 @@ function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail
 // An UNKNOWN status — clearly-marked "not yet", never mock data (§16.5.1)
 // ---------------------------------------------------------------------------
 
-/** Since L.D5.4 every member of §7.1's six-state enum has a real hero; this
- *  card is reached only by a status outside it (a future enum member, a
- *  corrupt row) and says so honestly rather than rendering a wrong hero. */
+/** Unreachable by the data: `leagues.status` is CHECK-constrained to the six
+ *  statuses above (059), each with its own view. Kept as a defensive card so
+ *  a row that somehow escapes the constraint shows a plain message rather than
+ *  the wrong view (League UX batch 4 removed its "not built yet" copy). */
 function LaterPlaceholder({ status }: { status: string }) {
   return (
-    <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+    <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center" data-unknown-status={status}>
       <Icon name="rocket" size={18} className="text-n-3" />
-      <p className="text-h5 text-ink">{laterStatusLabel(status)}</p>
-      <p className="max-w-md text-[13px] font-medium text-n-3">
-        This league is in a state this screen doesn’t know yet. Your league is safe — this
-        screen fills in as those features ship.
-      </p>
+      <p className="text-h5 text-ink">This league page didn’t load</p>
+      <p className="max-w-md text-[13px] font-medium text-n-3">Your league is safe. Head back to your leagues and open it again.</p>
       <Button variant="stroke" size="sm" asChild>
         <Link href="/app/leagues">Back to leagues</Link>
       </Button>

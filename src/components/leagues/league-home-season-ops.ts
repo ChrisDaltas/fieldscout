@@ -20,7 +20,6 @@
 import type { LeagueDetail } from '@/hooks/use-league'
 import type { ScheduleWeek } from '@/hooks/use-schedule'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
-import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { describeWaiverSchedule, type WAIVER_SCHEDULE_KEYS } from '@/lib/leagues/time/waiver-schedule'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
@@ -112,33 +111,39 @@ export function setLineupCopy(
 }
 
 // ---------------------------------------------------------------------------
-// The standings peek — 117's rows, in 117's order, a slice of them
+// The full standings card + the scoreboard's week tabs (League UX batch 4)
 // ---------------------------------------------------------------------------
 
-export interface StandingsPeek {
-  rows: StandingsRow[]
-  /** True when rows between the top slice and the viewer's row were left out. */
-  elided: boolean
-  /** 117's own empty reason (`no_final_weeks`) — rendered as designed copy
-   *  over the rows, never inferred from the length or from a 0. */
-  reason: string | null
-  weeksFinal: number
+/** `team_id -> username` for every seated franchise: the manager line under
+ *  each team on League Home's standings card, the scoreboard cards and the
+ *  standings table. A franchise with no seated member is absent. */
+export function managersByTeam(members: LeagueDetail['members']): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const m of members) if (m.team_id && m.profiles?.username) map.set(m.team_id, m.profiles.username)
+  return map
 }
 
+export type ScoreboardTab = { kind: 'week'; week: number; label: string } | { kind: 'playoffs'; label: string }
+
 /**
- * The top `limit` rows plus the viewer's own row when it sits below them —
- * a SLICE of 117's ranked document, never a re-sort (D297: one ranking rule
- * in the product). A stored 0 is rendered as 0: this peek papers over
- * nothing (a never-scored team's stored 0 is indistinguishable from a scored
- * 0 by design of the results table — F273 is the schema's, not this view's);
- * what makes an all-zero table honest is 117's `reason`, carried through.
+ * The scoreboard's tabs (the prototype's "current, next, Playoffs"): the
+ * ladder's current week, the next week ON the ladder (absent past the last
+ * one), and "Playoffs" while the league is in its playoffs. Pure over the
+ * stored ladder: no clock.
  */
-export function standingsPeek(doc: LeagueStandings, myTeamId: string | null, limit = 4): StandingsPeek {
-  const top = doc.standings.slice(0, limit)
-  const mine = myTeamId ? doc.standings.find((r) => r.team_id === myTeamId) : undefined
-  const rows = mine && !top.some((r) => r.team_id === mine.team_id) ? [...top, mine] : top
-  const elided = rows.length > top.length && mine !== undefined && mine.rank > limit + 1
-  return { rows, elided, reason: doc.reason, weeksFinal: doc.weeks_final }
+export function scoreboardTabs(
+  weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[] | undefined,
+  current: number | null,
+  playoffs: boolean,
+): ScoreboardTab[] {
+  const tabs: ScoreboardTab[] = []
+  if (current !== null) {
+    tabs.push({ kind: 'week', week: current, label: `Week ${current}` })
+    const next = (weeks ?? []).map((w) => w.week).filter((w) => w > current).sort((x, y) => x - y)[0]
+    if (next !== undefined) tabs.push({ kind: 'week', week: next, label: `Week ${next}` })
+  }
+  if (playoffs) tabs.push({ kind: 'playoffs', label: 'Playoffs' })
+  return tabs
 }
 
 // ---------------------------------------------------------------------------
