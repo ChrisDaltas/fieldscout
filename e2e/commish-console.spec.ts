@@ -259,14 +259,15 @@ test.describe('M6 — the console, its audit, and a correction in the view (real
       const mover = roster.find((p) => !starting.has(p.player_id) && SEASON_SLOTS.some((s) => s.position === normalize(p.position)))
       if (!mover) throw new Error(`team ${target} has no benched player with a starting slot — roster ${JSON.stringify(roster)}`)
       const slotKey = `${normalize(mover.position).toLowerCase()}:0`
-      await editor.locator(`[data-player="${mover.player_id}"]`).click()
-      await editor.locator(`[data-slot="${slotKey}"]`).getByRole('button', { name: /Seat here|Swap into/ }).first().click()
       const saved = cPage.waitForResponse(
         (res) => new URL(res.url()).pathname === `/api/leagues/${league.leagueId}/commish/lineup` && res.request().method() !== 'GET',
         { timeout: 60_000 },
       )
-      await expect(editor.locator('[data-save-lineup]')).toHaveText('Save override')
-      await editor.locator('[data-save-lineup]').click()
+      // League UX batch 3 (D478): no Save button — the Move menu's seat
+      // saves itself, through the override route while the mode is on.
+      await expect(editor.locator('[data-save-lineup]')).toHaveCount(0)
+      await editor.locator(`[data-move-menu="${mover.player_id}"]`).click()
+      await cPage.locator(`[data-move-option="${slotKey}"]`).click()
       expect((await saved).status(), 'the override save answers 200').toBe(200)
 
       // The server's word: the lineup moved, and ONE receipt acting for the team.

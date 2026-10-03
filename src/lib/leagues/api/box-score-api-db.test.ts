@@ -66,11 +66,14 @@ const QB = 'vitest-bx-qb'
 const WR = 'vitest-bx-wr'
 const TE = 'vitest-bx-te'
 const WR2 = 'vitest-bx-wr2'
+/** D478: a rostered player who is NOT in the lineup — a bench line. */
+const BENCH = 'vitest-bx-bench'
 const PLAYERS = [
   { id: QB, full_name: 'Vitest BX QB', position: 'QB', team: 'BXA', status: 'Active' },
   { id: WR, full_name: 'Vitest BX WR', position: 'WR', team: 'BXB', status: 'Active' },
   { id: TE, full_name: 'Vitest BX TE', position: 'TE', team: 'BXC', status: 'Active' },
   { id: WR2, full_name: 'Vitest BX WR Two', position: 'WR', team: 'BXD', status: 'Active' },
+  { id: BENCH, full_name: 'Vitest BX Bench WR', position: 'WR', team: 'BXB', status: 'Active' },
 ] as const
 const GAMES = [
   { id: 'vitest-bx-game-live', home_team: 'BXA', away_team: 'BXZ', status: 'live', quarter: 3, game_clock: '7:12', home_score: 14, away_score: 10, kickoff_at: KICKOFF_PAST },
@@ -223,6 +226,7 @@ beforeAll(async () => {
   const { error: statsError } = await service.from('player_stats').insert([
     { player_id: QB, season: SYNTHETIC_SEASON, week: 1, stat_type: 'weekly', updated_at: STAMP, advanced: {}, pass_yards: 250, pass_tds: 2, interceptions: 1, rush_yards: 12 },
     { player_id: WR, season: SYNTHETIC_SEASON, week: 1, stat_type: 'weekly', updated_at: STAMP, advanced: {}, receptions: 6, receiving_yards: 84, receiving_tds: 1 },
+    { player_id: BENCH, season: SYNTHETIC_SEASON, week: 1, stat_type: 'weekly', updated_at: STAMP, advanced: {}, receptions: 3, receiving_yards: 40 },
   ])
   if (statsError) throw new Error(`player_stats insert: ${statsError.message}`)
 
@@ -326,6 +330,10 @@ describe('the box — the worker’s function over the frozen snapshot, golden l
     for (const s of doc.starters.filter((x) => x.reason === 'empty')) expect(s.player).toBeNull()
   })
 
+  it('D478 — the BENCH: the rostered non-starter scored live by the same worker (40 × 0.1 = 4.00, Done), never counted in the team’s points', () => {
+    expect(doc.bench).toEqual([{ player_id: BENCH, phase: 'done', game: expect.objectContaining({ id: 'vitest-bx-game-final' }), points: 4, pending: [], reason: 'scored' }])
+  })
+
   it('the team: points 31.60 (17.20 + 14.40 + 0 + 0), nothing pending, the two no-line starters NAMED', () => {
     expect(doc.points).toBe(31.6)
     expect(doc.pending).toEqual([])
@@ -338,6 +346,10 @@ describe('the box — real states, not zeros', () => {
     const result = await readBoxScore(commishClient, leagueId, { week: '2', team: commishTeamId })
     expect(result.status).toBe(200)
     expect(box(result)).toMatchObject({ week: 2, lineup: null, starters: [], points: null, pending: [], no_stat_row: [], no_game_rows: true })
+    // D478: with no lineup the whole roster is the bench — no line, no game on record.
+    const bench = box(result).bench ?? []
+    expect(bench.map((b) => b.player_id).sort()).toEqual(PLAYERS.map((p) => p.id).sort())
+    for (const b of bench) expect(b).toMatchObject({ reason: 'no_stat_row', points: 0, phase: 'up_next', game: null })
   })
 
   it('a SOFT-DELETED league answers a MEMBER a 404 by name after the membership check (R812), and a non-member the same 403', async () => {

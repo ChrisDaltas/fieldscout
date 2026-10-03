@@ -12,19 +12,29 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { leagueCardContext, type PlayerCardContext } from '@/components/players/player-card-context'
-import { PlayerLink } from '@/components/players/player-link'
+import { PlayerFace, PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
 import { useCommishEditLineup } from '@/hooks/use-commish-lineup'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
+import { toast } from '@/hooks/use-toast'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import { useReportOverrideSaving } from '@/stores/commish-override-store'
@@ -43,7 +53,6 @@ import {
   placementFromStored,
   placementsEqual,
   planMove,
-  positionMatches,
   saveOutcomeCopy,
   slotInstances,
   starterFlagChips,
@@ -55,74 +64,83 @@ import {
   type SlotRow,
   type WeekEditability,
 } from './lineup-editor-ops'
+import {
+  formatAdp,
+  formatPoints,
+  formatSnap,
+  LineupAutosaver,
+  lineupChecks,
+  moveOptions,
+  moveToastCopy,
+  opponentOf,
+  oprkOf,
+  oprkTone,
+  pointsCell,
+  projectedTotal,
+  readColumns,
+  STAT_COLUMNS,
+  statusTag,
+  toggleColumn,
+  writeColumns,
+  type AutosaveStatus,
+  type LineupCheck,
+  type ProjectedTotal,
+  type StatColumnId,
+  type WeekGame,
+} from './my-team-ops'
 import { LOCKED_DROP_TITLE } from './players-page-ops'
 
 /**
- * LineupEditor (§16.2 `lineup-editor`; §11.2; §16.5.2 Weekly loop; §16.5.4
- * locked 🔒 · DL stint · bye/OUT flags — M4 task L.D5.1; PROGRESS D293,
- * D315, D316).
+ * LineupEditor — the team page's lineup (§16.2 `lineup-editor`; §11.2;
+ * §16.5.2 Weekly loop), rebuilt to the prototype's `MyTeam.jsx` in League UX
+ * batch 3 (Chris 2026-10-03; PROGRESS D478): the Lineup check, the starters
+ * table with Customize-able stat columns and a projected total, the sticky
+ * bench + Reserve card, and Move menus.
  *
- * Slot-based starters / bench / IR over the league's `roster_settings`,
- * edited as a `slot_map` placement (§12.13) and submitted WHOLE — IR keys
- * included — through `useSetLineup` (F224(e)). The decisions live in
- * `lineup-editor-ops.ts`; this file is the interaction and the paint.
+ * **Every move saves itself — no Save button** (Chris: "When I set my
+ * lineup, I still have to hit a Save button"). The decisions live in
+ * `my-team-ops.ts` (`LineupAutosaver`): a completed drag or menu move is
+ * sent WHOLE (IR keys included — F224(e)) through `set_lineup`, or through
+ * `commish_edit_lineup` in override mode. It is NEVER optimistic: the rows
+ * on screen are the server's arrangement; the indicator says "Saving…"
+ * until the server answers, then the canonical map renders (E16 may
+ * re-seat). A refusal shows the RPC's own words, drops any queued moves and
+ * leaves the server's arrangement on screen — both mutation hooks re-read
+ * the roster and the row on error (R822(i)). One save at a time; a move
+ * made meanwhile waits its turn and is planned against the newer answer.
  *
- * **Never optimistic (§11.2 / D293 / D315(8)).** The placement the manager
- * arranges is a DRAFT until `set_lineup` answers; what renders after a save
- * is the server's canonical map (`rearranged` + `moved[]` named), a
- * refusal renders the RPC's own words (the lock refusal names the player
- * and his kickoff — verbatim, never re-worded), and `no_changes` is its
- * own state (R779). A refusal also RE-READS the roster and the row
- * (`useSetLineup`'s `onError`, R822(i)): the view this client evaluated was
- * the stale one, so the 🔒 the server just enforced reaches the screen
- * without a reload — the draft is kept (it is the manager's), the seat it
- * put him in now reads locked, and Discard is the way back.
+ * **The 🔒 is the fetched evaluation** (`game_lock`, D315(5)). A locked row
+ * is not draggable, its Move menu offers nothing but the reason, and a seat
+ * held by a locked player refuses drops — prevented, not refused; the
+ * server is still the decider when the two disagree. Override mode lifts
+ * the client's wall the same way the audited verb lifts the server's.
  *
- * **The 🔒 is the fetched evaluation.** `game_lock` (the pool VIEW the tick
- * refreshes from `nfl_games` — D315(5)) decides which rows are read-only;
- * `locked_at` and `starters[].kickoff_at` are shown as records ("locks
- * from", "kickoff") and decide nothing (R779; the ops header). A locked
- * row is not draggable and every client-side move plan refuses it by name
- * — and the server is still the decider when the two disagree.
+ * **Read-only** for anyone who cannot edit this team: no Move, no drag.
  *
- * **Drag (§16: "must work on touch — reuse @dnd-kit").** `@dnd-kit/core`'s
- * draggable/droppable pair, not `@dnd-kit/sortable`: this is a SLOT model
- * (a player drops INTO a keyed seat, displacing its occupant) — neither the
- * list-reorder `useSortable` of `my-queue.tsx` nor the drop-gap list model
- * of `lists/v2/use-list-drag.tsx` fits, and forking either would carry
- * their list semantics into a grid that has none. Sensors are the
- * `use-list-drag` pair (mouse after 6px, touch after a 220ms press so a
- * finger scroll stays a scroll). Every drag has a tap twin: select a
- * player, tap a seat — the keyboard/assistive path costs no second
- * mechanism.
- *
- * **COMMISSIONER OVERRIDE MODE IS A MODE (M6A; PROGRESS §3(h), ruled by
- * Chris 2026-09-11 after using the shipped flow on four teams).** *"the
- * commissioner going into 'override mode' which lets them act like any GM in
- * the league, and then when they're done they exit override mode. when
- * override mode is active there is some visual indications that it's on."*
- *
- * So: ONE deliberate switch, offered to a commissioner in every week state
- * (never behind a refusal, never behind `state === 'closed'`); it stays on
- * across saves and across team pages until he turns it off (the state lives in
- * `commish-override-store.ts`, keyed by league); while it is on the editor is
- * framed and banner-marked so the mode is unmistakable; and **he is never
- * asked for a reason** — *"yeah i think no reason at all is fine … if anyone
- * cares they can ask"*, which supersedes §(h)'s "captured once" clause. The
- * client sends NO reason at all (since migration 131 the verbs store NULL —
- * Q66; the fixed labels this file used to send were removed by L.E1.13,
- * F363(d)); the receipt is the audit row, not the sentence.
- *
- * What the shipped version did instead — offer the override only AFTER a
- * refusal, then disable Save behind an unmentioned Reason field — cost Chris
- * two of the four teams he tried to fix: `set_lineup` refusals at 15:10:47 and
- * 15:12:01 with ZERO `commissioner_actions` rows behind them. A disabled
- * control with no stated precondition is CLAUDE.md's "never let 'nothing
- * happened' mean 'it worked'" wearing a button.
- *
- * Elevation: nothing here rests elevated (CLAUDE.md). The one shadow is the
- * `DragOverlay` ghost — a true overlay floating over the page.
+ * Elevation: nothing rests elevated (CLAUDE.md). The drag ghost and the
+ * menus are true overlays.
  */
+
+/** What the stat columns read — every value a server read, "—" when absent. */
+export interface LineupStats {
+  games: readonly WeekGame[]
+  splits: ReadonlyArray<{ defense: string; position: string; rank: number }>
+  proj: (playerId: string) => number | null
+  points: (playerId: string) => { phase: string; points: number; pending: readonly string[] } | null
+  snap: (playerId: string) => number | null
+}
+
+/** The week's opponent, for the strip and the Proj check. */
+export interface LineupOpponent {
+  kind: 'opponent'
+  /** "You" on your own team; the team's name when viewing another. */
+  selfName: string
+  name: string
+  href: string
+  myScore: number | null
+  oppScore: number | null
+  oppProjected: ProjectedTotal | null
+}
 
 export interface LineupEditorProps {
   leagueId: string
@@ -135,34 +153,30 @@ export interface LineupEditorProps {
   stored: TeamLineupRow | null
   currentWeek: number | null
   editability: WeekEditability
-  /** The viewer may submit for this team (its manager, or the commissioner
-   *  — whose save carries NO reason and is never prompted for one; Q66). */
+  /** The viewer may change this lineup: its own manager, or a commissioner
+   *  IN override mode. Everyone else reads it. */
   canEdit: boolean
-  /** The viewer holds the commissioner role in THIS league — the ROLE, not
-   *  "acting for a team that is not mine": a commissioner fixing HIS OWN
-   *  team after kickoff needs the audited override too (PROGRESS §3(a) —
-   *  any action, on any team). */
+  /** The viewer holds the commissioner role — the refusal's way into
+   *  override mode (PROGRESS §3(a)). */
   isCommish: boolean
-  /** The league's named zone (`settings.draft.time_zone`) for the §16.4
-   *  hover; null renders viewer-local only. */
   leagueTimeZone: string | null
-  /** COMMISSIONER OVERRIDE MODE, owned by the page (and under it by
-   *  `commish-override-store`, so the mode survives navigating from team 5 to
-   *  team 6). Lifted out of this component deliberately: it is a mode of the
-   *  commissioner's session, not of one mount, and being a prop is what lets
-   *  both of its states be rendered in a pin. */
   overrideMode: boolean
   onOverrideMode: (next: boolean) => void
-  /** League UX batch 2: the Move menu's Drop — passed only for the viewer's
-   *  OWN team (a commissioner acting for another team stays in the
-   *  commissioner tools). Omitted = no Drop in the menu. */
+  /** The Move menu's Drop — the viewer's OWN team only. */
   onDrop?: (player: RosterPlayer) => void
-  /** Why no drop can be made right now (the league is not in season), or
-   *  null. A locked player's Drop is closed by his own lock. */
   dropClosedReason?: string | null
+  /** Omitted = every stat cell reads "—" (nothing fetched). */
+  stats?: LineupStats
+  /** The week tabs, rendered in the starters card's header. */
+  weekTabs?: ReactNode
+  /** The week's opponent, `bye`, or null (no pairing on record). */
+  opponent?: LineupOpponent | { kind: 'bye' } | null
 }
 
+export const EMPTY_STATS: LineupStats = { games: [], splits: [], proj: () => null, points: () => null, snap: () => null }
+
 type Notice = { tone: HintTone | 'positive'; text: string }
+type Saved = { slot_map: Record<string, string>; action_id: string } & Parameters<typeof saveOutcomeCopy>[0]
 
 export function LineupEditor({
   leagueId,
@@ -181,87 +195,121 @@ export function LineupEditor({
   onOverrideMode,
   onDrop,
   dropClosedReason = null,
+  stats = EMPTY_STATS,
+  weekTabs,
+  opponent = null,
 }: LineupEditorProps) {
-  const rowMenu: RowMenu = { context: leagueCardContext(leagueId), onDrop, dropClosedReason }
+  const context = leagueCardContext(leagueId)
   const slots = useMemo(() => slotInstances(settings), [settings])
   const players = useMemo(() => new Map(roster.map((p) => [p.player_id, p])), [roster])
   const weekIsCurrent = currentWeek !== null && week === currentWeek
   const locked = useMemo(() => lockedPlayerIds(roster, weekIsCurrent), [roster, weekIsCurrent])
   const storedPlacement = useMemo(() => placementFromStored(stored?.slot_map, roster), [stored, roster])
   const storedStarters = useMemo(() => startersByKey(stored?.starters), [stored])
-  // F443 (L.D2.13): a starter dropped after he played stays in his seat
-  // (152 / 154) — shown locked by name, never offered to anyone else.
   const kept = useMemo(() => keptStarters(stored?.slot_map, roster), [stored, roster])
   const keptIds = useMemo(() => [...kept.values()], [kept])
   const keptIdentity = usePlayersByIds(keptIds)
-
-  // The DRAFT placement — reset to the stored row whenever the stored row
-  // changes underneath an UNEDITED draft (a refetch after a save, the
-  // tick's re-stamp, another tab's set); an edited draft is kept.
-  const [draft, setDraft] = useState<Placement>(storedPlacement)
-  const baseline = useRef<Placement>(storedPlacement)
-  useEffect(() => {
-    if (placementsEqual(baseline.current, storedPlacement)) return
-    const wasClean = placementsEqual(draft, baseline.current)
-    baseline.current = storedPlacement
-    if (wasClean) setDraft(storedPlacement)
-  }, [storedPlacement, draft])
-
-  const [selected, setSelected] = useState<string | null>(null)
-  const [dragging, setDragging] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
-  // NO REASON STATE, AND NO REASON INPUT — anywhere. Chris, 2026-09-11:
-  // *"yeah i think no reason at all is fine"* … *"if anyone cares they can
-  // ask"*. Both verbs that RAISE on a blank reason are fed a fixed label from
-  // `lineupSaveRequest`. Re-adding a text field here re-adds the defect.
+  const rosterIds = useMemo(() => roster.map((p) => p.player_id), [roster])
+  const identity = usePlayersByIds(rosterIds)
 
   const mutation = useSetLineup(leagueId, teamId)
   const override = useCommishEditLineup(leagueId)
-  const active = overrideMode ? override : mutation
-  useReportOverrideSaving(overrideMode && active.isPending) // R1460: locks the header's Turn off
-  const model = useMemo(() => buildEditorModel(draft, roster, settings), [draft, roster, settings])
-  // Dirty against the BASELINE, not the stored prop: after a successful save
-  // the baseline is the server's canonical map while `storedPlacement` is
-  // still the pre-save row until the refetch lands (R826).
-  const dirty = !placementsEqual(draft, baseline.current)
-  // In override mode the week gates do not apply — the audited verb lifts the
-  // past-week and closed-week refusals, so a commissioner who has entered
-  // override mode may still edit a week the manager's editor calls closed.
-  const readOnly = !canEdit || (editability.state !== 'open' && !overrideMode)
 
-  // `lockExempt` relaxes planMove's two lock arms. The FOUR sites move
-  // together — planMove (both arms), useDraggable, useDroppable and the
-  // bench control — or a player becomes draggable but undroppable.
+  // THE SERVER'S ARRANGEMENT — what renders. Only a server answer (a save's
+  // canonical map, or a refetch of the row) changes it.
+  const [shown, setShown] = useState<Placement>(storedPlacement)
+  const [status, setStatus] = useState<AutosaveStatus>('idle')
+  const [queued, setQueued] = useState(0)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [columns, setColumns] = useState<StatColumnId[]>(() => readColumns(typeof window === 'undefined' ? null : safeStorage()))
+
+  const readOnly = !canEdit || (editability.state !== 'open' && !overrideMode)
   const lockExempt = overrideMode
-  const ctx = useMemo(
-    () => ({ slots, players, locked, currentWeek, lockExempt }),
-    [slots, players, locked, currentWeek, lockExempt],
-  )
-  const moveCtx = useMemo(() => ({ ...ctx, kept }), [ctx, kept])
+  const moveCtx = useMemo(() => ({ slots, players, locked, currentWeek, lockExempt, kept }), [slots, players, locked, currentWeek, lockExempt, kept])
+
+  // Live values the queue reads at send time (the mode can change between moves).
+  const live = useRef({ overrideMode, week, moveCtx, players, slots, mutation, override })
+  live.current = { overrideMode, week, moveCtx, players, slots, mutation, override }
+
+  const saver = useRef<LineupAutosaver<Saved> | null>(null)
+  if (saver.current === null) {
+    saver.current = new LineupAutosaver<Saved>(storedPlacement, {
+      plan: (base, move) => planMove(base, move.playerId, move.target, live.current.moveCtx),
+      send: async (slotMap) => {
+        const request = lineupSaveRequest({ overrideMode: live.current.overrideMode, slotMap })
+        if (request.verb === 'commish_edit_lineup') {
+          return (await live.current.override.submitAsync({ teamId, week: live.current.week, slotMap: request.slotMap })) as unknown as Saved
+        }
+        return (await live.current.mutation.submitAsync({ week: live.current.week, slotMap: request.slotMap })) as unknown as Saved
+      },
+      canonical: (result) => placementFromStored(result.slot_map, [...live.current.players.values()]),
+      onStatus: (s, q) => {
+        setStatus(s)
+        setQueued(q)
+      },
+      onSaved: (result, move, plan) => {
+        setShown(placementFromStored(result.slot_map, [...live.current.players.values()]))
+        const name = (id: string) => live.current.players.get(id)?.full_name ?? id
+        const label = (key: string) => live.current.slots.find((s) => s.key === key)?.label ?? key
+        const title = moveToastCopy({
+          player: name(move.playerId),
+          target: move.target,
+          targetLabel: move.target.kind === 'slot' ? label(move.target.key) : null,
+          displaced: plan.displaced ? name(plan.displaced) : null,
+        })
+        const outcome = saveOutcomeCopy(result, name, label)
+        toast({ title, description: outcome === 'Lineup saved.' ? undefined : outcome })
+      },
+      // The refusal itself is the mutation's own `error` (rendered below,
+      // verbatim — F224(e)); the toast says it too.
+      onRefused: (message) => {
+        toast({ title: 'That move wasn’t saved', description: message, variant: 'destructive' })
+      },
+      onPlanRefused: (message) => setNotice({ tone: 'negative', text: message }),
+    })
+  }
+
+  // A refetch of the stored row (after a save, the tick's re-stamp, another
+  // tab) is the server's word — taken whenever no save is in flight.
+  useEffect(() => {
+    const s = saver.current!
+    if (s.saving) return
+    s.setBase(storedPlacement)
+    setShown((cur) => (placementsEqual(cur, s.placement) ? cur : s.placement))
+  }, [storedPlacement])
+
+  const saving = status === 'saving'
+  useReportOverrideSaving(overrideMode && saving) // R1460: locks the header's Turn off
 
   function move(playerId: string, target: MoveTarget) {
     if (readOnly) return
-    const plan = planMove(draft, playerId, target, moveCtx)
-    if (!plan.ok) {
-      if (plan.reason !== 'noop') setNotice({ tone: 'negative', text: plan.message })
-      setSelected(null)
-      return
-    }
     setNotice(null)
-    setDraft(plan.next)
-    setSelected(null)
     mutation.reset()
     override.reset()
+    saver.current!.enqueue({ playerId, target })
   }
+
+  const model = useMemo(() => buildEditorModel(shown, roster, settings), [shown, roster, settings])
+  const mine = useMemo(() => projectedTotal(model.starters.map((r) => r.player?.player_id ?? null), stats.proj), [model.starters, stats.proj])
+  const checks = useMemo(
+    () =>
+      lineupChecks({
+        starters: model.starters,
+        week,
+        games: stats.games,
+        mine,
+        opponent: opponent?.kind === 'opponent' && opponent.oppProjected ? { name: opponent.name, projected: opponent.oppProjected } : null,
+      }),
+    [model.starters, week, stats.games, mine, opponent],
+  )
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
   )
-
   function onDragStart(e: DragStartEvent) {
     setDragging(String(e.active.id))
-    setSelected(null)
   }
   function onDragEnd(e: DragEndEvent) {
     const playerId = String(e.active.id)
@@ -272,211 +320,89 @@ export function LineupEditor({
     else if (over.startsWith('slot:')) move(playerId, { kind: 'slot', key: over.slice(5) })
   }
 
-  // ONE action. No second field, no second press, and the SECOND save of a
-  // session is byte-identical to the first — `lineupSaveRequest` is pure and
-  // reads nothing the commissioner has to type.
-  function save() {
-    if (readOnly || !dirty) return
-    setNotice(null)
-    const request = lineupSaveRequest({ overrideMode, slotMap: draft })
-    if (request.verb === 'commish_edit_lineup') {
-      // Clear the OTHER mutation first: `settled` and `refusal` read both
-      // hooks, and a stale success from the manager's verb would otherwise
-      // shadow this one's outcome for the whole session (the mode now outlives
-      // a save, so both hooks really can hold results at once).
-      mutation.reset()
-      override.submit({ teamId, week, slotMap: request.slotMap })
-      return
-    }
-    override.reset()
-    mutation.submit({ week, slotMap: request.slotMap })
+  function onToggleColumn(id: StatColumnId) {
+    setColumns((cur) => {
+      const next = toggleColumn(cur, id)
+      writeColumns(safeStorage(), next)
+      return next
+    })
   }
-  /** Discard the PLACEMENTS. It does not leave override mode — the mode has
-   *  its own exit, and conflating the two is how the shipped version dropped
-   *  him out of it without saying so. */
-  function discard() {
-    setDraft(baseline.current)
-    setSelected(null)
-    setNotice(null)
+
+  const labelOf = (key: string) => slots.find((s) => s.key === key)?.label ?? key
+  const draggingPlayer = dragging ? players.get(dragging) ?? null : null
+  const rowCtx: RowContext = {
+    context,
+    readOnly,
+    lockExempt,
+    locked,
+    weekIsCurrent,
+    currentWeek,
+    leagueTimeZone,
+    week,
+    allowIllegal,
+    columns,
+    stats,
+    headshot: (id) => identity.playerById.get(id)?.headshot_url ?? null,
+    adp: (id) => identity.playerById.get(id)?.adp ?? null,
+    options: (player) => moveOptions({ player, placement: shown, slots, players, locked, lockExempt }),
+    onMove: move,
+    onDrop,
+    dropClosedReason,
+  }
+  const canOfferOverride = isCommish && !overrideMode
+  // The server's refusal, VERBATIM (F224(e)) — the mutation's own error.
+  const refusal = (mutation.error ?? override.error)?.message ?? null
+  const dismissRefusal = () => {
     mutation.reset()
     override.reset()
   }
 
-  // After a SUCCESSFUL save, render the server's canonical map immediately
-  // (the refetch then lands the same row and the baseline follows).
-  const lastResultId = useRef<string | null>(null)
-  const settled = mutation.data ?? override.data ?? null
-  useEffect(() => {
-    if (!settled || lastResultId.current === settled.action_id) return
-    lastResultId.current = settled.action_id
-    const canonical = placementFromStored(settled.slot_map, roster)
-    baseline.current = canonical
-    setDraft(canonical)
-    // THE MODE SURVIVES THE SAVE. It used to be spent by one — which made
-    // every subsequent fix a fresh trip through the door, i.e. the
-    // per-transaction shape Chris rejected. He turns it off when he is done.
-  }, [settled, roster])
-
-  const nameOf = (id: string) => players.get(id)?.full_name ?? id
-  const labelOf = (key: string) => slots.find((s) => s.key === key)?.label ?? key
-  const selectedPlayer = selected ? players.get(selected) ?? null : null
-
-  const outcome = settled ? saveOutcomeCopy(settled, nameOf, labelOf) : null
-  const refusal = (mutation.error ?? override.error)?.message ?? null
-  // THE SHORTCUT INTO THE MODE — kept, deliberately, even though the mode's
-  // own switch is now persistent and unconditional above. The ruling makes the
-  // switch the way IN; it does not make a refusal a dead end, and a dead end is
-  // worse than what shipped. A refusal is the one moment the intact draft and
-  // the server's own words are on screen together, so the way out is offered
-  // right there rather than sending him up the page to find it. It enters the
-  // SAME mode — same state, same banner, same exit — so there is no second
-  // path to maintain, and it is not filtered by the refusal's WORDS (the old
-  // matcher read three substrings of migration 114's prose that nothing pins,
-  // so a reworded refusal would have silently removed the button).
-  const canOfferOverride = isCommish && !overrideMode
-
-  const draggingPlayer = dragging ? players.get(dragging) ?? null : null
-
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      {/* THE FRAME. While the mode is on the WHOLE editor is wrapped in a lime
-          "look here" surround (the palette's live-signal role — never a
-          control, and pointedly not `negative`, because this is a power in use,
-          not an error). Two tokens, no arbitrary values, no shadow: elevation
-          is a hover state and this is a resting condition, so it is carried by
-          fill + border exactly as CLAUDE.md requires. */}
+      {/* Override mode frames the editor (fill + border — a resting
+          condition, never a shadow). */}
       <div
-        className={cn(
-          'flex flex-col gap-4',
-          overrideMode && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3',
-        )}
+        className={cn('flex flex-col gap-4', overrideMode && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
         data-lineup-editor={teamId}
         data-override-mode={overrideMode ? 'on' : 'off'}
       >
-        {/* THE SWITCH — first child, so it is on screen before anything has to
-            be scrolled, and present in EVERY week state: not behind a refusal,
-            not behind `state === 'closed'`. One control, commissioner only; the
-            manager's editor is byte-identical to before (`isCommish` is false
-            for him, so this whole subtree is absent). */}
-        {/* League UX batch 1 (Chris 2026-10-03): override mode is switched
-            on from League settings / the Commissioner console only, and the
-            league header shows it while it is on — no switch here. While it
-            is on, the editor acts as this team's GM (below). */}
+        {opponent && <MatchupStrip week={week} opponent={opponent} mine={mine} />}
+        <LineupCheckCard checks={checks} />
+
         {editability.state === 'closed' && !overrideMode && (
-          <div role="status" className="flex flex-col gap-2 rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
-            <span>{editability.reason}</span>
-          </div>
+          <p role="status" className="rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
+            {editability.reason}
+          </p>
         )}
         {editability.state === 'unknown' && (
           <p role="status" className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[12px] font-semibold text-ink">
-            This league has no schedule yet — the week ladder decides which week is current, so edits wait for it.
+            This league has no schedule yet — lineups can be set once the season’s weeks are on the calendar.
           </p>
         )}
         {!canEdit && editability.state === 'open' && (
-          <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3">
-            Viewing — only this team’s manager (or the commissioner) can set its lineup.
+          <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3" data-read-only>
+            {isCommish
+              ? 'Viewing — turn on override mode to change this team’s lineup.'
+              : 'Viewing — only this team’s manager can set its lineup.'}
           </p>
         )}
         {model.orphaned.length > 0 && (
           <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink">
             {model.orphaned.length} stored {model.orphaned.length === 1 ? 'placement names a player' : 'placements name players'} no longer on this roster
-            ({model.orphaned.map((o) => `${labelOf(o.key)}: ${o.player_id}`).join(', ')}) — the seat reads empty here; saving clears it.
+            ({model.orphaned.map((o) => `${labelOf(o.key)}: ${o.player_id}`).join(', ')}) — the seat reads empty here; the next move clears it.
           </p>
         )}
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Starters</CardTitle>
-              <span className="fs-overline text-[9px] text-n-3">
-                Week <span className="fs-num">{week}</span>
-                {selectedPlayer && !readOnly ? ` · tap a seat for ${selectedPlayer.full_name}` : ''}
-              </span>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1.5 p-3">
-              {model.starters.map((row) => (
-                <SlotSeat
-                  key={row.slot.key}
-                  row={row}
-                  week={week}
-                  allowIllegal={allowIllegal}
-                  currentWeek={currentWeek}
-                  weekIsCurrent={weekIsCurrent}
-                  storedStarter={storedStarters.get(row.slot.key) ?? null}
-                  leagueTimeZone={leagueTimeZone}
-                  readOnly={readOnly}
-                  kept={!row.player && kept.has(row.slot.key) ? keptIdentity.playerById.get(kept.get(row.slot.key)!)?.full_name ?? kept.get(row.slot.key)! : null}
-                  locked={row.player ? locked.has(row.player.player_id) : kept.has(row.slot.key)}
-                  lockExempt={lockExempt}
-                  selected={selected}
-                  acceptsSelected={Boolean(selectedPlayer && positionMatches(selectedPlayer.position, row.slot.eligible))}
-                  onSeat={() => selected && move(selected, { kind: 'slot', key: row.slot.key })}
-                  onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
-                  onBench={(id) => move(id, { kind: 'bench' })}
-                  menu={rowMenu}
-                />
-              ))}
-              {model.ir.length > 0 && (
-                <>
-                  <p className="fs-overline mt-2 text-[9px] text-n-3">Injured reserve</p>
-                  {model.ir.map((row) => (
-                    <SlotSeat
-                      key={row.slot.key}
-                      row={row}
-                      week={week}
-                      allowIllegal={allowIllegal}
-                      currentWeek={currentWeek}
-                      weekIsCurrent={weekIsCurrent}
-                      storedStarter={null}
-                      leagueTimeZone={leagueTimeZone}
-                      readOnly={readOnly}
-                      locked={row.player ? locked.has(row.player.player_id) : false}
-                      lockExempt={lockExempt}
-                      selected={selected}
-                      acceptsSelected={Boolean(selectedPlayer)}
-                      onSeat={() => selected && move(selected, { kind: 'slot', key: row.slot.key })}
-                      onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
-                      onBench={(id) => move(id, { kind: 'bench' })}
-                      menu={rowMenu}
-                    />
-                  ))}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <BenchZone
-            bench={model.bench}
-            locked={locked}
-            weekIsCurrent={weekIsCurrent}
-            currentWeek={currentWeek}
-            readOnly={readOnly}
-            lockExempt={lockExempt}
-            selected={selected}
-            onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
-            onDropSelected={() => selected && move(selected, { kind: 'bench' })}
-            empty={roster.length === 0}
-            menu={rowMenu}
-          />
-        </div>
-
-        {/* Notices — one at a time, the newest wins. The server's refusal is
-            rendered VERBATIM (F224(e)); a client-side plan refusal is the
-            editor's own copy, before any submit. */}
-        {/* The refusal is the ONE moment the intact draft and the server's
-            reason are on screen together, so the way into the mode is repeated
-            HERE — it turns on the same mode the switch above does, keeping the
-            SAME placements rather than asking him to rebuild them. */}
         {refusal && (
-          <div role="alert" className="flex flex-col gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink">
+          <div role="alert" className="flex flex-col gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-lineup-refusal>
             <span>{refusal}</span>
+            <span className="text-[11px] font-medium">Nothing changed — the lineup shown is the one that’s saved.</span>
             <div className="flex flex-wrap gap-2">
               {canOfferOverride && (
                 <Button
                   variant="blue"
                   size="sm"
                   onClick={() => {
-                    mutation.reset()
+                    dismissRefusal()
                     onOverrideMode(true)
                   }}
                   data-offer-override
@@ -484,68 +410,66 @@ export function LineupEditor({
                   Turn on override mode
                 </Button>
               )}
-              <Button
-                variant="stroke"
-                size="sm"
-                onClick={() => {
-                  mutation.reset()
-                  override.reset()
-                }}
-              >
+              <Button variant="stroke" size="sm" onClick={dismissRefusal}>
                 Dismiss
               </Button>
             </div>
-            {canOfferOverride && (
-              <span className="text-[11px] font-medium text-ink">
-                Your placements are still here — nothing was lost. Override mode keeps them, lifts this refusal, and stays on until you exit it.
-              </span>
-            )}
           </div>
         )}
         {!refusal && notice && <NoticeLine tone={notice.tone} text={notice.text} />}
-        {/* A save whose SCORE did not follow is not a positive outcome — the
-            copy says so and the tone matches it (R971). */}
-        {!refusal && !notice && outcome && (
-          <NoticeLine tone={settled && 'score_stale' in settled && settled.score_stale === true ? 'caution' : 'positive'} text={outcome} />
-        )}
 
-        {!readOnly && (
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* L.D6.2: the two commit controls carry stable hooks. Their only
-                other handle is their own label, and the label changes while
-                submitting ("Saving…"), so a browser spec would have to select
-                on prose that moves — the R399 vacuity lesson.
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.7fr_1fr]">
+          <Card className="min-w-0">
+            <CardHeader className="flex-wrap gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">{weekTabs ?? <CardTitle>Week {week}</CardTitle>}</div>
+              <div className="flex items-center gap-2">
+                {!readOnly && <SaveIndicator status={status} queued={queued} />}
+                <CustomizeMenu columns={columns} onToggle={onToggleColumn} />
+              </div>
+            </CardHeader>
+            <CardContent className="overflow-x-auto p-0">
+              <table className="w-full min-w-[520px] border-collapse text-[11px]" data-starters-table>
+                <thead>
+                  <tr className="border-b border-ink text-left">
+                    <th className="fs-overline px-3 py-2 text-[9px] font-bold text-n-3">Slot</th>
+                    <th className="fs-overline px-2 py-2 text-[9px] font-bold text-n-3">Player</th>
+                    {columns.map((c) => (
+                      <th key={c} className="fs-overline px-2 py-2 text-right text-[9px] font-bold text-n-3" data-col={c}>
+                        {STAT_COLUMNS.find((x) => x.id === c)?.label}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2" aria-label="Move" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {model.starters.map((row) => (
+                    <StarterRow
+                      key={row.slot.key}
+                      row={row}
+                      ctx={rowCtx}
+                      storedStarter={storedStarters.get(row.slot.key) ?? null}
+                      kept={!row.player && kept.has(row.slot.key) ? keptIdentity.playerById.get(kept.get(row.slot.key)!)?.full_name ?? kept.get(row.slot.key)! : null}
+                    />
+                  ))}
+                  <tr className="bg-n-4" data-projected-total>
+                    <td className="px-3 py-2 text-[11px] font-bold text-ink" colSpan={2 + columns.length - 1}>
+                      Projected total
+                      {mine.missing > 0 && (
+                        <span className="ml-1 font-medium text-n-3">
+                          · {mine.missing} without a projection
+                        </span>
+                      )}
+                    </td>
+                    <td className="fs-num px-2 py-2 text-right text-[12px] font-extrabold text-ink">{mine.total.toFixed(1)}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
 
-                NO REASON FIELD, in either path. The button is disabled for
-                exactly two reasons and BOTH are named on screen below it —
-                nothing to save, or a save in flight. That is the whole of the
-                fix: the shipped version sat disabled behind an unmentioned
-                Reason field and said nothing at all. */}
-            <Button
-              variant="blue"
-              size="md"
-              disabled={!dirty || active.isPending}
-              onClick={save}
-              data-save-lineup
-            >
-              <Icon name="save" size={13} />
-              {active.isPending ? 'Saving…' : overrideMode ? 'Save override' : 'Save lineup'}
-            </Button>
-            <Button variant="stroke" size="md" disabled={!dirty || active.isPending} onClick={discard} data-discard-lineup>
-              Discard changes
-            </Button>
-            {/* Every disabled state of those two says WHY, right here. */}
-            <span className="text-[11px] font-medium text-n-3" data-save-hint>
-              {active.isPending
-                ? 'Saving — the server confirms every placement.'
-                : dirty
-                  ? overrideMode
-                    ? 'Unsaved — saving records a commissioner override: who changed what, and when.'
-                    : 'Unsaved — the server confirms every placement.'
-                  : 'Nothing to save — this lineup already matches what’s stored. Move a player to enable Save.'}
-            </span>
-          </div>
-        )}
+          <BenchCard bench={model.bench} ir={model.ir} ctx={rowCtx} empty={roster.length === 0} />
+        </div>
       </div>
 
       {/* The drag ghost — a TRUE overlay floating above the page, so it
@@ -562,9 +486,144 @@ export function LineupEditor({
   )
 }
 
+function safeStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Seats and rows
+// Header pieces
 // ---------------------------------------------------------------------------
+
+function SaveIndicator({ status, queued }: { status: AutosaveStatus; queued: number }) {
+  const text =
+    status === 'saving' ? (queued > 0 ? `Saving… (${queued} more queued)` : 'Saving…') : status === 'saved' ? 'Saved' : status === 'error' ? 'Not saved' : 'Moves save automatically'
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      data-save-state={status}
+      className={cn('text-[10px] font-bold', status === 'error' ? 'text-negative-strong' : status === 'saved' ? 'text-positive-strong' : 'text-n-3')}
+    >
+      {text}
+    </span>
+  )
+}
+
+function CustomizeMenu({ columns, onToggle }: { columns: readonly StatColumnId[]; onToggle: (id: StatColumnId) => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="stroke" size="sm" data-customize-columns>
+          <Icon name="filters" size={13} />
+          Customize
+        </Button>
+      </DropdownMenuTrigger>
+      {/* A menu is a true overlay — the primitive keeps its resting shadow. */}
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Stat columns</DropdownMenuLabel>
+        {STAT_COLUMNS.map((c) => (
+          <DropdownMenuCheckboxItem
+            key={c.id}
+            checked={columns.includes(c.id)}
+            disabled={c.locked}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={() => onToggle(c.id)}
+            data-column-option={c.id}
+          >
+            {c.label}
+            {c.locked ? ' (always on)' : ''}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function MatchupStrip({ week, opponent, mine }: { week: number; opponent: LineupOpponent | { kind: 'bye' }; mine: ProjectedTotal }) {
+  if (opponent.kind === 'bye') {
+    return (
+      <Card data-matchup-strip="bye">
+        <CardContent className="px-card-pad py-3 text-[12px] font-bold text-ink">Week {week}: no matchup — this team has a bye.</CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card data-matchup-strip>
+      <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2 px-card-pad py-3">
+        <span className="fs-overline text-[9px] text-n-3">Week {week} matchup</span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-[11px] font-bold text-ink">{opponent.selfName}</span>
+          <span className="fs-num text-[16px] font-extrabold text-ink" data-strip-my-score>
+            {formatPoints(opponent.myScore)}
+          </span>
+          <span className="fs-num text-[10px] font-medium text-n-3">proj {mine.missing > 0 ? '—' : mine.total.toFixed(1)}</span>
+        </span>
+        <span className="text-[11px] font-bold text-n-3">vs</span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-[11px] font-bold text-ink">{opponent.name}</span>
+          <span className="fs-num text-[16px] font-extrabold text-ink" data-strip-opp-score>
+            {formatPoints(opponent.oppScore)}
+          </span>
+          <span className="fs-num text-[10px] font-medium text-n-3">
+            proj {opponent.oppProjected && opponent.oppProjected.missing === 0 ? opponent.oppProjected.total.toFixed(1) : '—'}
+          </span>
+        </span>
+        <Button variant="stroke" size="sm" asChild className="ml-auto">
+          <Link href={opponent.href} data-strip-matchup-link>
+            Open matchup
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function CheckDot({ tone }: { tone: LineupCheck['tone'] }) {
+  return <span aria-hidden className={cn('inline-block h-2 w-2 shrink-0 rounded-full border border-ink', tone === 'positive' ? 'bg-positive' : 'bg-caution')} />
+}
+
+function LineupCheckCard({ checks }: { checks: readonly LineupCheck[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Card data-lineup-check>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 px-card-pad py-3 text-left hover:bg-n-4 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+      >
+        <span className="text-[13px] font-bold text-ink">Lineup check</span>
+        {!open &&
+          checks.map((c) => (
+            <span key={c.id} className="flex items-center gap-1.5 text-[11px] font-bold text-ink" data-check-chip={c.id}>
+              <CheckDot tone={c.tone} />
+              {c.label}
+              <span className="fs-num font-medium text-n-3">{c.value}</span>
+            </span>
+          ))}
+        <Icon name={open ? 'collapse' : 'expand'} size={13} className="ml-auto" />
+      </button>
+      {open && (
+        <CardContent className="grid grid-cols-1 gap-2 px-card-pad pb-3 pt-0 sm:grid-cols-2">
+          {checks.map((c) => (
+            <div key={c.id} className="flex flex-col gap-0.5 rounded-sm border border-ink bg-white px-3 py-2" data-check-card={c.id}>
+              <span className="flex items-center gap-1.5 text-[12px] font-bold text-ink">
+                <CheckDot tone={c.tone} />
+                {c.label}
+                <span className="fs-num ml-auto text-[12px] font-extrabold">{c.value}</span>
+              </span>
+              <span className="text-[11px] font-medium text-n-3">{c.note}</span>
+            </div>
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  )
+}
 
 function NoticeLine({ tone, text }: { tone: HintTone | 'positive'; text: string }) {
   return (
@@ -582,244 +641,283 @@ function NoticeLine({ tone, text }: { tone: HintTone | 'positive'; text: string 
   )
 }
 
-interface SlotSeatProps {
-  row: SlotRow
+// ---------------------------------------------------------------------------
+// Rows
+// ---------------------------------------------------------------------------
+
+interface RowContext {
+  context: PlayerCardContext
+  readOnly: boolean
+  lockExempt: boolean
+  locked: ReadonlySet<string>
+  weekIsCurrent: boolean
+  currentWeek: number | null
+  leagueTimeZone: string | null
   week: number
   allowIllegal: boolean
-  currentWeek: number | null
-  weekIsCurrent: boolean
-  storedStarter: { kickoff_at: string | null; flags: string[]; player_id: string | null } | null
-  leagueTimeZone: string | null
-  readOnly: boolean
-  locked: boolean
-  /** F443: the name of the off-roster starter the week keeps in this seat. */
-  kept?: string | null
-  /** Commissioner override mode: the 🔒 badge stays, the wall comes down. */
-  lockExempt?: boolean
-  selected: string | null
-  acceptsSelected: boolean
-  onSeat: () => void
-  onSelect: (id: string) => void
-  onBench: (id: string) => void
-  menu: RowMenu
-}
-
-function SlotSeat({
-  row,
-  week,
-  allowIllegal,
-  currentWeek,
-  weekIsCurrent,
-  storedStarter,
-  leagueTimeZone,
-  readOnly,
-  locked,
-  kept = null,
-  lockExempt,
-  selected,
-  acceptsSelected,
-  onSeat,
-  onSelect,
-  onBench,
-  menu,
-}: SlotSeatProps) {
-  const { slot, player } = row
-  // In override mode the 🔒 badge STAYS (it is the record of what is being
-  // overridden) but stops being a wall — this and the three other lock sites
-  // relax together, or a player becomes draggable but undroppable.
-  const frozen = locked && !lockExempt
-  const droppable = useDroppable({ id: `slot:${slot.key}`, disabled: readOnly || frozen })
-  const target = Boolean(selected) && !readOnly && !frozen && acceptsSelected && selected !== player?.player_id
-  const hint = player && slot.kind === 'start' ? starterHint(player, week, allowIllegal) : null
-  // The server's OWN flags for the stored occupant (only meaningful while
-  // the seat still holds him).
-  const storedFlags =
-    storedStarter && player && storedStarter.player_id === player.player_id
-      ? starterFlagChips(storedStarter.flags, allowIllegal)
-      : []
-  const kickoff = storedStarter && player && storedStarter.player_id === player.player_id ? storedStarter.kickoff_at : null
-
-  return (
-    <div
-      ref={droppable.setNodeRef}
-      data-slot={slot.key}
-      className={cn(
-        'flex min-h-[38px] items-center gap-2 rounded-sm border px-2 py-1',
-        locked ? 'border-ink bg-n-4' : 'border-ink bg-white',
-        droppable.isOver && !frozen && 'border-accent bg-accent-soft',
-        target && 'border-accent',
-      )}
-    >
-      <span className="fs-overline w-12 shrink-0 text-[9px] text-n-3">{slot.label}</span>
-      {player ? (
-        <PlayerRow
-          player={player}
-          locked={locked}
-          lockExempt={lockExempt}
-          weekIsCurrent={weekIsCurrent}
-          currentWeek={currentWeek}
-          readOnly={readOnly}
-          selected={selected === player.player_id}
-          onSelect={() => onSelect(player.player_id)}
-          hints={[...(hint ? [hint] : []), ...storedFlags]}
-          kickoff={kickoff}
-          leagueTimeZone={leagueTimeZone}
-          menu={menu}
-          onBench={!readOnly && !frozen && slot.kind === 'start' ? () => onBench(player.player_id) : undefined}
-          trailing={
-            !readOnly && !frozen ? (
-              <Button variant="ghost" size="icon-sm" aria-label={`Bench ${player.full_name}`} onClick={() => onBench(player.player_id)}>
-                <Icon name="close" size={12} />
-              </Button>
-            ) : null
-          }
-        />
-      ) : kept && !target ? (
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5" data-kept-starter>
-          <Badge variant="black">🔒</Badge>
-          <span className="truncate text-[12px] font-bold text-ink">{kept}</span>
-          <span className="text-[10px] font-medium text-n-3">{weekIsCurrent ? KEPT_STARTER_COPY : KEPT_STARTER_OTHER_WEEK_COPY}</span>
-        </span>
-      ) : (
-        <button
-          type="button"
-          disabled={!target}
-          onClick={onSeat}
-          className={cn(
-            'flex h-[26px] min-w-0 flex-1 items-center rounded-sm border border-dashed px-2 text-left text-[11px] font-medium',
-            target ? 'border-accent text-ink hover:bg-accent-soft' : 'border-n-3 text-n-3',
-          )}
-        >
-          {target ? `Seat here` : 'Empty'}
-        </button>
-      )}
-      {target && player && (
-        <Button variant="stroke" size="sm" onClick={onSeat} aria-label={`Swap into ${slot.label}`}>
-          Swap in
-        </Button>
-      )}
-    </div>
-  )
-}
-
-interface PlayerRowProps {
-  player: RosterPlayer
-  locked: boolean
-  /** Commissioner override mode: the 🔒 badge stays, the wall comes down. */
-  lockExempt?: boolean
-  weekIsCurrent: boolean
-  currentWeek: number | null
-  readOnly: boolean
-  selected: boolean
-  onSelect: () => void
-  hints: Array<{ tone: HintTone; text: string }>
-  kickoff: string | null
-  leagueTimeZone: string | null
-  trailing?: React.ReactNode
-  menu: RowMenu
-  /** The menu's Bench — a seated starter only. */
-  onBench?: () => void
-}
-
-/** What every row's name and Move menu need from the editor. */
-interface RowMenu {
-  context: PlayerCardContext
+  columns: readonly StatColumnId[]
+  stats: LineupStats
+  headshot: (id: string) => string | null
+  adp: (id: string) => number | null
+  options: (player: RosterPlayer) => ReturnType<typeof moveOptions>
+  onMove: (playerId: string, target: MoveTarget) => void
   onDrop?: (player: RosterPlayer) => void
   dropClosedReason: string | null
 }
 
-function PlayerRow({ player, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, hints, kickoff, leagueTimeZone, trailing, menu, onBench }: PlayerRowProps) {
-  const frozen = locked && !lockExempt
-  const draggable = useDraggable({ id: player.player_id, disabled: readOnly || frozen })
-  const lock = lockBadgeFor(player.game_lock, weekIsCurrent)
-  const stint = irStintChip(player, currentWeek)
-  const kickoffView = kickoff ? formatKickoff(kickoff, leagueTimeZone) : null
+const OPRK_TONE: Record<string, string> = {
+  negative: 'border-negative bg-negative-soft',
+  caution: 'border-ink bg-caution-soft',
+  positive: 'border-positive bg-positive-soft',
+}
 
+function StatCell({ column, player, ctx }: { column: StatColumnId; player: RosterPlayer | null; ctx: RowContext }) {
+  const base = 'px-2 py-1.5 text-right align-middle'
+  if (!player) return <td className={cn(base, 'text-n-3')}>—</td>
+  const opp = opponentOf(player.nfl_team, ctx.stats.games)
+  switch (column) {
+    case 'opp': {
+      if (opp.kind === 'bye') return <td className={cn(base, 'font-bold text-ink')}>BYE</td>
+      if (opp.kind !== 'game') return <td className={cn(base, 'text-n-3')}>—</td>
+      const k = formatKickoff(opp.kickoff_at, ctx.leagueTimeZone)
+      return (
+        <td className={base} data-cell="opp">
+          <span className="block font-bold text-ink">{opp.label}</span>
+          <span className="fs-num block text-[10px] font-medium text-n-3" title={k.title ?? undefined}>
+            {k.local}
+          </span>
+        </td>
+      )
+    }
+    case 'oprk': {
+      const r = oprkOf(ctx.stats.splits, opp.kind === 'game' ? opp.opp : null, player.position)
+      if (r === null) return <td className={cn(base, 'text-n-3')}>—</td>
+      return (
+        <td className={base} data-cell="oprk">
+          <span className={cn('fs-num inline-flex h-chip items-center rounded-sm border px-1.5 text-[10px] font-bold text-ink', OPRK_TONE[oprkTone(r)])} data-oprk-tone={oprkTone(r)}>
+            {r}
+          </span>
+        </td>
+      )
+    }
+    case 'points': {
+      const cell = pointsCell(ctx.stats.points(player.player_id))
+      return (
+        <td className={cn(base, 'fs-num font-bold', cell.text === '—' ? 'text-n-3' : 'text-ink')} title={cell.pending ? 'Some of his stats are not in yet' : undefined} data-cell="points">
+          {cell.text}
+          {cell.pending ? '*' : ''}
+        </td>
+      )
+    }
+    case 'snap':
+      return <td className={cn(base, 'fs-num text-ink')}>{formatSnap(ctx.stats.snap(player.player_id))}</td>
+    case 'rostered':
+      return (
+        <td className={cn(base, 'text-n-3')} title="Not tracked yet">
+          —
+        </td>
+      )
+    case 'adp':
+      return <td className={cn(base, 'fs-num text-ink')}>{formatAdp(ctx.adp(player.player_id))}</td>
+    case 'proj':
+      return (
+        <td className={cn(base, 'fs-num text-[12px] font-extrabold text-ink')} data-cell="proj">
+          {formatPoints(ctx.stats.proj(player.player_id))}
+        </td>
+      )
+  }
+}
+
+function StatusTag({ status }: { status: string | null }) {
+  const tag = statusTag(status)
+  if (!tag) return null
   return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-      {/* The row: the NAME opens his card (League UX batch 2); the rest of
-          the row is the select / drag handle for a lineup move — its
-          accessible name says so. */}
-      <div
-        className={cn(
-          'flex min-w-[180px] flex-1 items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[11px] font-bold',
-          readOnly || frozen ? 'border-transparent' : 'border-transparent hover:border-ink hover:bg-n-4',
-          selected && 'border-accent bg-accent-soft',
-          draggable.isDragging && 'opacity-40',
-        )}
-      >
-        <PositionBadge position={player.position} size="sm" />
-        <PlayerLink playerId={player.player_id} name={player.full_name} context={menu.context} className="min-w-0 shrink" />
+    <Badge variant={tag === 'Q' ? 'yellow' : 'pink'} className="h-4 px-1 text-[9px]" title={status ?? undefined}>
+      {tag}
+    </Badge>
+  )
+}
+
+/** The player cell's identity: headshot, name (opens the card), status, position, team. */
+function PlayerIdentity({ player, ctx, frozen }: { player: RosterPlayer; ctx: RowContext; frozen: boolean }) {
+  const draggable = useDraggable({ id: player.player_id, disabled: ctx.readOnly || frozen })
+  const lock = lockBadgeFor(player.game_lock, ctx.weekIsCurrent)
+  const stint = irStintChip(player, ctx.currentWeek)
+  return (
+    <div className={cn('flex min-w-0 items-center gap-2', draggable.isDragging && 'opacity-40')}>
+      {!ctx.readOnly && !frozen && (
         <button
           ref={draggable.setNodeRef}
           type="button"
           {...draggable.attributes}
-          {...(readOnly || frozen ? {} : draggable.listeners)}
+          {...draggable.listeners}
           data-player={player.player_id}
-          aria-label={`Move ${player.full_name}`}
-          aria-pressed={selected}
-          aria-disabled={readOnly || frozen}
-          onClick={readOnly || frozen ? undefined : onSelect}
-          className={cn(
-            'flex min-h-[22px] min-w-0 flex-1 items-center gap-1.5 self-stretch text-left',
-            readOnly || frozen ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
-          )}
+          aria-label={`Drag ${player.full_name}`}
+          className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center rounded-sm text-n-3 hover:bg-n-4 active:cursor-grabbing"
         >
-          <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
-          {kickoffView && (
-            <span className="fs-num shrink-0 text-[10px] font-medium text-n-3" title={kickoffView.title ?? undefined}>
-              {kickoffView.local}
-            </span>
-          )}
+          <Icon name="dots-vertical" size={12} />
         </button>
+      )}
+      <PlayerFace playerId={player.player_id} name={player.full_name} position={player.position} team={player.nfl_team} headshotUrl={ctx.headshot(player.player_id)} context={ctx.context} size={24} />
+      <div className="flex min-w-0 flex-col">
+        <span className="flex min-w-0 items-center gap-1">
+          <PlayerLink playerId={player.player_id} name={player.full_name} context={ctx.context} className="min-w-0 text-[12px] font-bold" />
+          <StatusTag status={player.status} />
+          {lock.locked && (
+            <Badge variant="black" className="h-4 px-1 text-[9px]" title={lock.until ? `Locked until ${formatKickoff(lock.until, ctx.leagueTimeZone).local}` : lock.copy} data-locked>
+              🔒
+            </Badge>
+          )}
+          {stint && <Badge variant="stroke-purple" className="h-4 px-1 text-[9px]">{stint}</Badge>}
+        </span>
+        <span className="flex items-center gap-1 text-[10px] font-medium text-n-3">
+          <PositionBadge position={player.position} size="sm" />
+          {player.nfl_team ?? 'FA'}
+        </span>
       </div>
-      <span className="flex shrink-0 flex-wrap items-center gap-1">
-        {lock.locked && (
-          <Badge variant="black" title={lock.until ? `Locked until ${formatKickoff(lock.until, leagueTimeZone).local}` : lock.copy}>
-            🔒 Locked
-          </Badge>
-        )}
-        {lock.locked && !lock.until && <span className="text-[10px] font-medium text-n-3">{lock.copy}</span>}
-        {stint && <Badge variant="stroke-purple">{stint}</Badge>}
-        {hints.map((h) => (
-          <Badge key={h.text} variant={h.tone === 'negative' ? 'stroke-pink' : 'yellow'}>
-            {h.text}
-          </Badge>
-        ))}
-      </span>
-      <MoveMenu player={player} readOnly={readOnly} frozen={frozen} locked={lock.locked} menu={menu} onSelect={onSelect} onBench={onBench} />
-      {trailing}
     </div>
   )
 }
 
-/**
- * The per-player Move menu (the prototype's MyTeam): move him to a seat (the
- * same selection a tap on the row makes), bench a starter, or drop him. Drop
- * appears only on the viewer's own team, and a closed Drop says why — a
- * started game, or a league that is not in season — instead of being offered
- * for the server to refuse.
- */
-function MoveMenu({
-  player,
-  readOnly,
-  frozen,
-  locked,
-  menu,
-  onSelect,
-  onBench,
+function StarterRow({
+  row,
+  ctx,
+  storedStarter,
+  kept,
 }: {
-  player: RosterPlayer
-  readOnly: boolean
-  frozen: boolean
-  locked: boolean
-  menu: RowMenu
-  onSelect: () => void
-  onBench?: () => void
+  row: SlotRow
+  ctx: RowContext
+  storedStarter: { flags: string[]; player_id: string | null } | null
+  kept: string | null
 }) {
-  const canMove = !readOnly && !frozen
-  if (!canMove && !menu.onDrop) return null
-  const dropReason = menu.dropClosedReason ?? (locked ? LOCKED_DROP_TITLE : null)
+  const { slot, player } = row
+  const isLocked = player ? ctx.locked.has(player.player_id) : kept !== null
+  const frozen = isLocked && !ctx.lockExempt
+  const droppable = useDroppable({ id: `slot:${slot.key}`, disabled: ctx.readOnly || frozen })
+  const hint = player ? starterHint(player, ctx.week, ctx.allowIllegal) : null
+  const flags = storedStarter && player && storedStarter.player_id === player.player_id ? starterFlagChips(storedStarter.flags, ctx.allowIllegal) : []
+  const hints = [...(hint ? [hint] : []), ...flags]
+  return (
+    <tr
+      ref={droppable.setNodeRef}
+      data-slot={slot.key}
+      className={cn('border-b border-n-4', isLocked && 'bg-n-4', droppable.isOver && !frozen && 'bg-accent-soft')}
+    >
+      <td className="fs-overline w-12 px-3 py-1.5 align-middle text-[9px] font-bold text-n-3">{slot.label}</td>
+      <td className="px-2 py-1.5 align-middle">
+        {player ? (
+          <div className="flex flex-col gap-0.5">
+            <PlayerIdentity player={player} ctx={ctx} frozen={frozen} />
+            {hints.length > 0 && (
+              <span className="flex flex-wrap gap-1 pl-6">
+                {hints.map((h) => (
+                  <Badge key={h.text} variant={h.tone === 'negative' ? 'stroke-pink' : 'yellow'} className="h-4 px-1 text-[9px]">
+                    {h.text}
+                  </Badge>
+                ))}
+              </span>
+            )}
+          </div>
+        ) : kept ? (
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2" data-kept-starter>
+            <Badge variant="black">🔒</Badge>
+            <span className="truncate text-[12px] font-bold text-ink">{kept}</span>
+            <span className="text-[10px] font-medium text-n-3">{ctx.weekIsCurrent ? KEPT_STARTER_COPY : KEPT_STARTER_OTHER_WEEK_COPY}</span>
+          </span>
+        ) : (
+          <span className="inline-flex h-6 items-center rounded-sm border border-dashed border-n-3 px-2 text-[11px] font-medium text-n-3">Empty</span>
+        )}
+      </td>
+      {ctx.columns.map((c) => (
+        <StatCell key={c} column={c} player={player} ctx={ctx} />
+      ))}
+      <td className="px-3 py-1.5 text-right align-middle">{player && <MoveMenu player={player} ctx={ctx} frozen={frozen} isLocked={isLocked} />}</td>
+    </tr>
+  )
+}
+
+function BenchRow({ player, ctx, ir }: { player: RosterPlayer; ctx: RowContext; ir?: boolean }) {
+  const isLocked = ctx.locked.has(player.player_id)
+  const frozen = isLocked && !ctx.lockExempt
+  const opp = opponentOf(player.nfl_team, ctx.stats.games)
+  return (
+    <div className={cn('flex items-center gap-2 border-b border-n-4 px-3 py-1.5 last:border-b-0', isLocked && 'bg-n-4')} data-bench-row={player.player_id}>
+      {ir && <Badge variant="black" className="h-4 px-1 text-[9px]">IR</Badge>}
+      <div className="min-w-0 flex-1">
+        <PlayerIdentity player={player} ctx={ctx} frozen={frozen} />
+        <span className="block pl-[52px] text-[10px] font-medium text-n-3">
+          {opp.kind === 'game' ? opp.label : opp.kind === 'bye' ? 'BYE' : ''}
+        </span>
+      </div>
+      <span className="fs-num text-[12px] font-extrabold text-ink" data-cell="proj">
+        {formatPoints(ctx.stats.proj(player.player_id))}
+      </span>
+      <MoveMenu player={player} ctx={ctx} frozen={frozen} isLocked={isLocked} />
+    </div>
+  )
+}
+
+function IrSeat({ row, ctx }: { row: SlotRow; ctx: RowContext }) {
+  const frozen = Boolean(row.player && ctx.locked.has(row.player.player_id) && !ctx.lockExempt)
+  const droppable = useDroppable({ id: `slot:${row.slot.key}`, disabled: ctx.readOnly || frozen })
+  return (
+    <div ref={droppable.setNodeRef} data-slot={row.slot.key} className={cn(droppable.isOver && !frozen && 'bg-accent-soft')}>
+      {row.player ? (
+        <BenchRow player={row.player} ctx={ctx} ir />
+      ) : (
+        <div className="flex items-center gap-2 px-3 py-2">
+          <Badge variant="black" className="h-4 px-1 text-[9px]">
+            {row.slot.label}
+          </Badge>
+          <span className="text-[11px] font-medium text-n-3">Empty — for players ruled out</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BenchCard({ bench, ir, ctx, empty }: { bench: RosterPlayer[]; ir: SlotRow[]; ctx: RowContext; empty: boolean }) {
+  const droppable = useDroppable({ id: 'bench', disabled: ctx.readOnly })
+  return (
+    <Card ref={droppable.setNodeRef} className={cn('min-w-0 lg:sticky lg:top-4', droppable.isOver && 'border-accent')} data-bench>
+      <CardHeader>
+        <CardTitle>Bench</CardTitle>
+        <span className="fs-overline text-[9px] text-n-3">
+          <span className="fs-num">{bench.length}</span> {bench.length === 1 ? 'player' : 'players'}
+        </span>
+      </CardHeader>
+      <CardContent className="flex flex-col p-0">
+        {empty ? (
+          <p className="px-3 py-2 text-[12px] font-medium text-n-3">No players on this roster yet — the draft (or a free-agent add) fills it.</p>
+        ) : bench.length === 0 ? (
+          <p className="px-3 py-2 text-[12px] font-medium text-n-3">Every rostered player is in the lineup.</p>
+        ) : (
+          bench.map((player) => <BenchRow key={player.player_id} player={player} ctx={ctx} />)
+        )}
+        {ir.length > 0 && (
+          <>
+            <p className="fs-overline border-y border-ink bg-n-4 px-3 py-1.5 text-[9px] font-bold text-n-3">Reserve</p>
+            {ir.map((row) => (
+              <IrSeat key={row.slot.key} row={row} ctx={ctx} />
+            ))}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * The Move menu: every seat he can go to with its occupant ("WR — Name" /
+ * "WR — Empty"), "To bench", IR when he is eligible, and Drop (own team).
+ * A locked player's menu says why and offers nothing that would move him.
+ */
+function MoveMenu({ player, ctx, frozen, isLocked }: { player: RosterPlayer; ctx: RowContext; frozen: boolean; isLocked: boolean }) {
+  const canMove = !ctx.readOnly && !frozen
+  const showLockReason = !ctx.readOnly && frozen
+  if (!canMove && !showLockReason && !ctx.onDrop) return null
+  const options = canMove ? ctx.options(player) : []
+  const dropReason = ctx.dropClosedReason ?? (isLocked ? LOCKED_DROP_TITLE : null)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -828,13 +926,28 @@ function MoveMenu({
         </Button>
       </DropdownMenuTrigger>
       {/* A menu is a true overlay — the primitive keeps its resting shadow. */}
-      <DropdownMenuContent align="end" className="max-w-[260px]">
-        {canMove && <DropdownMenuItem onSelect={onSelect}>Move to a seat</DropdownMenuItem>}
-        {canMove && onBench && <DropdownMenuItem onSelect={onBench}>Bench</DropdownMenuItem>}
-        {menu.onDrop && (
+      <DropdownMenuContent align="end" className="max-w-[280px]">
+        {showLockReason && (
+          <p className="px-2 py-1.5 text-[11px] font-medium text-n-3" data-move-locked>
+            Locked — his game has started, so he stays where he is until it’s over.
+          </p>
+        )}
+        {options.map((o) => (
+          <DropdownMenuItem
+            key={o.target.kind === 'slot' ? o.target.key : 'bench'}
+            disabled={o.disabledReason !== null}
+            title={o.disabledReason ?? undefined}
+            onSelect={() => ctx.onMove(player.player_id, o.target)}
+            data-move-option={o.target.kind === 'slot' ? o.target.key : 'bench'}
+          >
+            {o.label}
+          </DropdownMenuItem>
+        ))}
+        {canMove && options.length === 0 && <p className="px-2 py-1.5 text-[11px] font-medium text-n-3">No open seat takes a {player.position}.</p>}
+        {ctx.onDrop && (
           <>
-            {canMove && <DropdownMenuSeparator />}
-            <DropdownMenuItem disabled={dropReason !== null} onSelect={() => menu.onDrop?.(player)} data-menu-drop={player.player_id}>
+            {(options.length > 0 || showLockReason) && <DropdownMenuSeparator />}
+            <DropdownMenuItem disabled={dropReason !== null} onSelect={() => ctx.onDrop?.(player)} data-menu-drop={player.player_id}>
               Drop
             </DropdownMenuItem>
             {dropReason && <p className="px-2 pb-1 text-[10px] font-medium text-n-3">{dropReason}</p>}
@@ -845,69 +958,6 @@ function MoveMenu({
   )
 }
 
-interface BenchZoneProps {
-  bench: RosterPlayer[]
-  locked: ReadonlySet<string>
-  lockExempt?: boolean
-  weekIsCurrent: boolean
-  currentWeek: number | null
-  readOnly: boolean
-  selected: string | null
-  onSelect: (id: string) => void
-  onDropSelected: () => void
-  empty: boolean
-  menu: RowMenu
-}
-
-function BenchZone({ bench, locked, lockExempt, weekIsCurrent, currentWeek, readOnly, selected, onSelect, onDropSelected, empty, menu }: BenchZoneProps) {
-  const droppable = useDroppable({ id: 'bench', disabled: readOnly })
-  const selectedIsStarter = Boolean(selected) && !bench.some((p) => p.player_id === selected)
-  return (
-    <Card ref={droppable.setNodeRef} className={cn(droppable.isOver && 'border-accent')} data-bench>
-      <CardHeader>
-        <CardTitle>Bench</CardTitle>
-        <span className="fs-overline text-[9px] text-n-3">
-          <span className="fs-num">{bench.length}</span> {bench.length === 1 ? 'player' : 'players'}
-        </span>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1.5 p-3">
-        {empty ? (
-          <p className="text-[12px] font-medium text-n-3">
-            No players on this roster yet — the draft (or a free-agent add) fills it.
-          </p>
-        ) : bench.length === 0 ? (
-          <p className="text-[12px] font-medium text-n-3">Every rostered player is seated.</p>
-        ) : (
-          bench.map((player) => (
-            <div key={player.player_id} className={cn('flex min-h-[34px] items-center rounded-sm border px-2 py-1', locked.has(player.player_id) ? 'border-ink bg-n-4' : 'border-ink bg-white')}>
-              <PlayerRow
-                player={player}
-                locked={locked.has(player.player_id)}
-                lockExempt={lockExempt}
-                weekIsCurrent={weekIsCurrent}
-                currentWeek={currentWeek}
-                readOnly={readOnly}
-                selected={selected === player.player_id}
-                onSelect={() => onSelect(player.player_id)}
-                hints={[]}
-                kickoff={null}
-                leagueTimeZone={null}
-                menu={menu}
-              />
-            </div>
-          ))
-        )}
-        {selectedIsStarter && !readOnly && (
-          <Button variant="stroke" size="sm" onClick={onDropSelected}>
-            Move the selected starter to the bench
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
 /** `formatKickoff` lives in `lineup-editor-ops.ts` since L.D5.4 (F275(d)) —
- *  re-exported so an existing import path keeps working; new callers import
- *  the ops module and leave the drag stack out of their bundle. */
+ *  re-exported so an existing import path keeps working. */
 export { formatKickoff }

@@ -216,6 +216,22 @@ export interface TeamBoxScore {
   /** One plain sentence when a scored week's lines are not the stored,
    *  adding-up ones — null otherwise. */
   stored_note: string | null
+  /** League UX batch 3 (D478): every rostered player who is NOT a starter of
+   *  this box (the bench and IR), computed LIVE through the same worker
+   *  pipeline (`computeTeamWeek`) — never stored, never summed into
+   *  `points`. The team page's Points column reads it for bench rows. */
+  bench?: BoxBenchLine[]
+}
+
+/** One non-starter's week (D478): the worker's points / pending / reason
+ *  and the Live Mode phase, by player. */
+export interface BoxBenchLine {
+  player_id: string
+  phase: StarterPhase
+  game: BoxGame | null
+  points: number
+  pending: string[]
+  reason: 'scored' | 'no_stat_row' | 'unknown_player'
 }
 
 interface SlotDef {
@@ -371,6 +387,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     points_source: 'live',
     stored_source: null,
     stored_note: null,
+    bench: [],
   }
 
   // 158 (F405): a SCORED week (correction window / final) reads the rows
@@ -416,7 +433,11 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     else if (pairing === 'none' && stored === null && empty.stored_note === NONE_STORED_NOTE) empty.stored_note = NO_GAME_NOTE
   }
 
-  if (!lineupRes.data && stored === null) return { status: 200, body: empty as unknown as Json }
+  if (!lineupRes.data && stored === null) {
+    const bench = await readBench(supabase, leagueId, teamId, league.season, week, snapshot, games, new Set())
+    if ('status' in bench) return bench
+    return { status: 200, body: { ...empty, bench: bench.lines } as unknown as Json }
+  }
 
   const slotMap = (lineupRes.data?.slot_map ?? {}) as Record<string, unknown>
   const irKeys = irKeysOf(league.roster_settings)
@@ -489,6 +510,9 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       stored_source: storedSource,
       stored_note: pairing === 'overridden' ? OVERRIDDEN_NOTE : storedSource === 'backfill_unrecoverable' ? UNRECOVERABLE_NOTE : null,
     }
+    const bench = await readBench(supabase, leagueId, teamId, league.season, week, snapshot, games, new Set(starterIds))
+    if ('status' in bench) return bench
+    payload.bench = bench.lines
     return { status: 200, body: payload as unknown as Json }
   }
 
@@ -556,5 +580,66 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     pending: team.pending,
     no_stat_row: team.no_stat_row,
   }
+  const bench = await readBench(supabase, leagueId, teamId, league.season, week, snapshot, games, new Set(starterIds))
+  if ('status' in bench) return bench
+  payload.bench = bench.lines
   return { status: 200, body: payload as unknown as Json }
+}
+
+/**
+ * D478: the team's NON-starters for the week, scored live through the
+ * worker's own `computeTeamWeek` (one implementation — its team sum is
+ * discarded; a bench line never counts). The roster is the team's current
+ * `league_rosters` rows (member-readable), minus the box's starters.
+ */
+async function readBench(
+  supabase: Supabase,
+  leagueId: string,
+  teamId: string,
+  season: number,
+  week: number,
+  snapshot: Parameters<typeof computeTeamWeek>[0],
+  games: readonly BoxGame[],
+  starterIds: ReadonlySet<string>,
+): Promise<{ lines: BoxBenchLine[] } | ServiceResult> {
+  const rosterRes = await supabase.from('league_rosters').select('player_id').eq('league_id', leagueId).eq('team_id', teamId)
+  if (rosterRes.error) return { status: 500, body: { error: `league_rosters: ${rosterRes.error.message}` } }
+  const ids = [...new Set((rosterRes.data ?? []).map((r) => r.player_id))].filter((id) => !starterIds.has(id))
+  if (ids.length === 0) return { lines: [] }
+  const [playersRes, statsRes] = await Promise.all([
+    supabase.from('players').select('id, position, team').in('id', ids),
+    supabase
+      .from('player_stats')
+      .select(['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', '))
+      .eq('season', season)
+      .eq('week', week)
+      .in('player_id', ids),
+  ])
+  if (playersRes.error) return { status: 500, body: { error: `players: ${playersRes.error.message}` } }
+  if (statsRes.error) return { status: 500, body: { error: `player_stats: ${statsRes.error.message}` } }
+  const statRows = (statsRes.data ?? []) as unknown as StatLineRow[]
+  const capped = assertBelowPostgrestCap(statRows, 'player_stats')
+  if (capped) return capped
+  const statsByPlayer = new Map(statRows.map((r) => [r.player_id, r]))
+  const players = new Map((playersRes.data ?? []).map((p) => [p.id, p]))
+  const refs: StarterRef[] = []
+  for (const id of ids) {
+    const p = players.get(id)
+    if (p) refs.push({ player_id: id, position: normalizePosition(p.position) })
+  }
+  let scored: ReturnType<typeof computeTeamWeek>
+  try {
+    scored = computeTeamWeek(snapshot, teamId, refs, statsByPlayer)
+  } catch (e) {
+    return { status: 500, body: { error: `scoring: ${e instanceof Error ? e.message : String(e)}` } }
+  }
+  const byId = new Map(scored.starters.map((s) => [s.player_id, s]))
+  const lines: BoxBenchLine[] = ids.map((id) => {
+    const p = players.get(id)
+    const s = byId.get(id)
+    if (!p || !s) return { player_id: id, phase: 'up_next', game: null, points: 0, pending: [], reason: 'unknown_player' }
+    const { phase, game } = starterPhase(p.team, games)
+    return { player_id: id, phase, game, points: s.points, pending: s.pending, reason: s.reason }
+  })
+  return { lines }
 }

@@ -587,21 +587,20 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await expect(editor).toBeVisible({ timeout: 60_000 })
       const target = editor.locator(`[data-player="${f296.player_id}"]`)
       await expect(target).toBeVisible({ timeout: 30_000 })
-      await expect(target).not.toHaveAttribute('aria-disabled', 'true')
-      if (storedSlot) {
-        // A stored starter: bench him.
-        await editor.getByRole('button', { name: `Bench ${f296.full_name}` }).click()
-      } else {
-        // On the bench: seat him in his position's slot.
-        const slotKey = `${(f296.position === 'DEF' ? 'DST' : f296.position).toLowerCase()}:0`
-        await target.click()
-        await editor.locator(`[data-slot="${slotKey}"]`).getByRole('button', { name: /Seat here|Swap into/ }).first().click()
-      }
       const refused = mPage.waitForResponse(
         (res) => new URL(res.url()).pathname.endsWith('/lineup') && res.request().method() === 'PATCH',
         { timeout: 60_000 },
       )
-      await editor.locator('[data-save-lineup]').click()
+      // League UX batch 3 (D478): the Move menu, and the move saves itself.
+      await editor.locator(`[data-move-menu="${f296.player_id}"]`).click()
+      if (storedSlot) {
+        // A stored starter: bench him.
+        await mPage.locator('[data-move-option="bench"]').click()
+      } else {
+        // On the bench: seat him in his position's slot.
+        const slotKey = `${(f296.position === 'DEF' ? 'DST' : f296.position).toLowerCase()}:0`
+        await mPage.locator(`[data-move-option="${slotKey}"]`).click()
+      }
       expect((await refused).status(), 'a lineup lock refusal maps to 409').toBe(409)
       const alert = editor.getByRole('alert').filter({ hasText: f296.full_name })
       await expect(alert).toBeVisible({ timeout: 30_000 })
