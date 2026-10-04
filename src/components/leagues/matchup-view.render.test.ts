@@ -27,6 +27,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { leagueBoxKeys } from '@/hooks/use-box-score'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueChannel } from '@/hooks/use-league-channel'
+import { leaguePlayerValueKeys, type LeaguePlayerValue } from '@/hooks/use-league-player-values'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
@@ -228,6 +229,7 @@ interface Seed {
   weekParam?: number | null
   connection?: 'live' | 'reconnecting' | 'connecting'
   rosters?: LeagueRosters
+  values?: LeaguePlayerValue[]
 }
 
 function renderMatchups(seed: Seed = {}): string {
@@ -253,6 +255,7 @@ function renderMatchups(seed: Seed = {}): string {
   }
   qc.setQueryData(statsDegradedKeys.flag(), seed.flag ?? FLAG_OK)
   if (seed.rosters) qc.setQueryData(leagueRosterKeys.all(LEAGUE), seed.rosters)
+  if (seed.values) qc.setQueryData(leaguePlayerValueKeys.week(LEAGUE, 2099, weekNumber), seed.values)
 
   vi.mocked(useLeagueChannel).mockReturnValue({ connection: seed.connection ?? 'live' })
   return render(qc, createElement(MatchupPage, { leagueId: LEAGUE, matchupId: seed.matchupId ?? null, weekParam: seed.weekParam ?? null }))
@@ -284,17 +287,12 @@ describe('the h2h week — the viewer’s matchup, the door’s scores, the box 
     expect(html.match(/data-matchup-row="m2"[\s\S]*?<\/a>/)?.[0]).not.toContain('>0.00<')
   })
 
-  it('the box renders Now playing / Done / Up next as groups, in that order', () => {
-    const box = html.slice(html.indexOf(`data-box="${T1}"`))
-    const now = box.indexOf('data-phase="now_playing"')
-    const done = box.indexOf('data-phase="done"')
-    const next = box.indexOf('data-phase="up_next"')
-    expect(now).toBeGreaterThan(-1)
-    expect(done).toBeGreaterThan(now)
-    expect(next).toBeGreaterThan(done)
-    expect(box).toContain('>Now playing<')
-    expect(box).toContain('>Done<')
-    expect(box).toContain('>Up next<')
+  it('the lineups are slot-aligned: each slot row carries the home starter, the slot, then the away starter', () => {
+    const row = html.match(/data-slot-row="0:qb:0"[\s\S]*?data-slot-row="1:/)?.[0] ?? ''
+    expect(row).toContain(`data-side-of="${T1}"`)
+    expect(row).toContain(`data-side-of="${T2}"`)
+    expect(row.indexOf(`data-side-of="${T1}"`)).toBeLessThan(row.indexOf('>QB<'))
+    expect(row.indexOf('>QB<')).toBeLessThan(row.indexOf(`data-side-of="${T2}"`))
   })
 
   it('a Now playing row carries the provider’s game state and the stored line; an Up next row its kickoff as a stored instant', () => {
@@ -602,7 +600,8 @@ describe('§16.5.4 — the required states', () => {
     expect(html).toContain('data-empty="no-lineup"')
     expect(html).toContain(NO_LINEUP_COPY)
     // …and no sum is claimed for it — not even `pending`.
-    expect(html.slice(html.indexOf(`data-box="${T1}"`), html.indexOf(`data-box="${T2}"`))).not.toContain('data-box-sum')
+    expect(html).toContain(`data-box-total="${T1}"></span>`)
+    expect(html).toContain('data-box-sum="35.00"')
   })
   it('empty by reason: no schedule at all', () => {
     const html = renderMatchups({ schedule: { weeks: [], matchups: [] } })
@@ -751,18 +750,19 @@ describe('the bench: both teams, under the starters, with points — never in th
     boxes: { [T1]: { ...SCORED_BOX(T1), bench: BENCH_T1 }, [T2]: { ...SCORED_BOX(T2), bench: BENCH_T2 } },
   })
 
-  it('each team’s box has a Bench section after its starters, labelled, saying bench points do not count', () => {
-    for (const team of [T1, T2]) {
-      const box = html.slice(html.indexOf(`data-box="${team}"`))
-      const firstStarter = box.indexOf('data-starter=')
-      expect(box.indexOf('data-bench="')).toBeGreaterThan(firstStarter)
-      expect(box).toContain('>Bench<')
-    }
-    expect(html.split(BENCH_NOT_COUNTED_COPY).length - 1).toBe(2)
+  it('the Bench section sits below the starters and the totals, labelled once, saying bench points do not count', () => {
+    const bench = html.indexOf('data-bench="')
+    expect(bench).toBeGreaterThan(html.lastIndexOf('data-starter='))
+    expect(bench).toBeGreaterThan(html.indexOf('data-total-row'))
+    expect(html.slice(bench)).toContain('>Bench<')
+    expect(html.split(BENCH_NOT_COUNTED_COPY).length - 1).toBe(1)
+    // Both teams' benches are in it.
+    expect(html.slice(bench)).toContain(`data-bench-row="bn-rb" data-side-of="${T1}"`)
+    expect(html.slice(bench)).toContain(`data-bench-row="bn-te" data-side-of="${T2}"`)
   })
 
   it('bench rows are named player-card doors in position order, IR last, each with his points', () => {
-    const box = html.slice(html.indexOf(`data-box="${T1}"`), html.indexOf(`data-box="${T2}"`))
+    const box = html.slice(html.indexOf('data-bench="'))
     const qb = box.indexOf('data-bench-row="bn-qb"')
     const rb = box.indexOf('data-bench-row="bn-rb"')
     const ir = box.indexOf('data-bench-row="ir-wr"')
@@ -788,5 +788,102 @@ describe('the bench: both teams, under the starters, with points — never in th
       boxes: { [T1]: { ...SCORED_BOX(T1), bench: BENCH_T1 }, [T2]: { ...SCORED_BOX(T2), bench: BENCH_T2 } },
     })
     expect(done).toContain(BENCH_TODAY_COPY)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The Matchup page built to the prototype (D484) — layout, totals, result,
+// projections from stored values only, nothing invented, mobile
+// ---------------------------------------------------------------------------
+
+describe('the prototype layout: scoreboard header, slot-aligned board, totals, then the bench', () => {
+  const withManagers = (): LeagueDetail => {
+    const d = detailWith()
+    return {
+      ...d,
+      members: d.members.map((m) => ({ ...m, profiles: { username: m.team_id === T1 ? 'alphagm' : 'bravogm' } }) as LeagueDetail['members'][number]),
+    }
+  }
+  const values = (rows: Array<[string, number | null]>) =>
+    rows.map(([player_id, projected_points]) => ({ player_id, projected_points, projected_missing: null, season_points: null, season_games: 0 }))
+
+  it('each side: crest, team door, manager, big score; the week and "vs" between them', () => {
+    const html = renderMatchups({ detail: withManagers() })
+    const head = html.slice(html.indexOf('data-matchup="m1"'), html.indexOf('data-board'))
+    expect(head).toContain('data-username-link="alphagm"')
+    expect(head).toContain('data-username-link="bravogm"')
+    expect(head.indexOf(`data-side="${T1}"`)).toBeLessThan(head.indexOf('>vs<'))
+    expect(head.indexOf('>vs<')).toBeLessThan(head.indexOf(`data-side="${T2}"`))
+    expect(head).toMatch(/text-\[27px\][^"]*" data-score="71.50"/)
+  })
+
+  it('the totals row carries each side’s worker total (pending stays the word) under the starters', () => {
+    const html = renderMatchups()
+    const totals = html.slice(html.indexOf('data-total-row'))
+    expect(totals).toContain('data-box-sum="pending"')
+    expect(totals).toContain('data-box-sum="35.00"')
+    expect(html.indexOf('data-total-row')).toBeGreaterThan(html.lastIndexOf('data-slot-row='))
+  })
+
+  it('final week: the stored result is shown and the LOSER’s score is muted — the winner’s stays ink', () => {
+    const html = renderMatchups({
+      week: weekDoc({
+        league_week: { status: 'final', median_score: null, finalized_at: '2099-09-18T10:05:00Z' },
+        matchups: weekDoc().matchups.map((m) => ({ ...m, status: 'final', result: 'home' })),
+        results: [
+          { team_id: T1, points: 71.5, opponent_team_id: T2, h2h_result: 'win', median_result: null, second_opponent_team_id: null, second_result: null, is_final: true },
+          { team_id: T2, points: 35, opponent_team_id: T1, h2h_result: 'loss', median_result: null, second_opponent_team_id: null, second_result: null, is_final: true },
+        ],
+      }),
+    })
+    expect(html).toMatch(/text-ink" data-score="71.50"/)
+    expect(html).toMatch(/text-n-3" data-score="35.00"/)
+    expect(html).toContain('data-result="W"')
+    expect(html).toContain('data-result="L"')
+    // A final week has nobody "yet to play".
+    expect(html).not.toContain('data-yet-to-play')
+  })
+
+  it('projections come only from league_player_values: shown where stored, the side total only when complete', () => {
+    const partial = renderMatchups({ values: values([['qb', 14.24], ['p-qb:0', 20], ['p-rb:0', 11.5]]) })
+    expect(partial).toContain('data-proj="true">Proj 14.2<')
+    // T1 has starters with no stored projection → no total claimed for T1; T2 is complete.
+    const totals = partial.slice(partial.indexOf('data-total-row'))
+    expect([...totals.matchAll(/data-proj-total="true">([^<]*)</g)].map((m) => m[1])).toEqual(['Proj 31.5'])
+    const none = renderMatchups()
+    expect(none).not.toContain('data-proj')
+    expect(none).not.toContain('Proj ')
+    // A side whose every seat is empty has nothing to project — never "Proj 0.0".
+    const empty = renderMatchups({
+      values: values([['p-qb:0', 20], ['p-rb:0', 11.5]]),
+      boxes: { [T1]: boxFor(T1, { starters: [starter({ slot: 'qb:0', reason: 'empty', player: null })] }), [T2]: SCORED_BOX(T2) },
+    })
+    expect(empty).not.toContain('Proj 0.0')
+    expect([...empty.matchAll(/data-proj-total="true">([^<]*)</g)].map((m) => m[1])).toEqual(['Proj 31.5'])
+  })
+
+  it('"yet to play" counts only starters whose game has not kicked off (the box’s stored phase)', () => {
+    const html = renderMatchups()
+    // T1: one filled starter is up_next (wr:1); the empty TE seat is not counted.
+    expect(html).toContain('data-yet-to-play="1"')
+    expect(html).toContain('>1 yet to play<')
+  })
+
+  it('nothing is invented: no win probability, no percentages, no projected score in the header', () => {
+    const html = renderMatchups()
+    expect(html).not.toMatch(/[Ww]in prob/)
+    expect(html).not.toMatch(/\d%/)
+    expect(html.slice(html.indexOf('data-matchup="m1"'), html.indexOf('data-board'))).not.toContain('Proj')
+  })
+
+  it('mobile: the two lineups stay a compact two-column table — narrow slot column, headshots hidden below sm, every column shrinkable', () => {
+    const html = renderMatchups()
+    expect(html).toContain('grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]')
+    expect(html).toContain('sm:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)]')
+    const faces = [...html.matchAll(/class="([^"]*h-7 w-7[^"]*)"/g)]
+    expect(faces.length).toBeGreaterThan(0)
+    for (const m of faces) expect(m[1]).toMatch(/(^| )hidden( |$)/)
+    const src = readFileSync(path.resolve(process.cwd(), 'src/components/leagues/matchup-view.tsx'), 'utf8')
+    expect(src).not.toMatch(/min-w-\[\d{3,}px\]|w-\[\d{3,}px\]|overflow-x-(auto|scroll)/)
   })
 })
