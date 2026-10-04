@@ -1,27 +1,37 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { PageHeader } from '@/components/layout/app-header'
+import { LeagueAvailabilityRow, LeagueCardActions } from '@/components/players/player-card-actions'
 import { PlayerDetailActions } from '@/components/players/player-detail-actions'
 import { PlayerDetailHeader } from '@/components/players/player-detail-header'
 import {
-  BioPanel,
   GameLogPanel,
-  OverviewPanel,
   StatsPanel,
+  WeeklyPointsList,
 } from '@/components/players/player-detail-panels'
+import {
+  nextScheduled,
+  playerPageHref,
+  scheduleRows,
+  scoutMatchupRead,
+  type ScheduleRow,
+} from '@/components/players/player-page-ops'
 import { AIInsight } from '@/components/ui/ai-insight'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useDefenseSplits } from '@/hooks/use-defense-splits'
+import { useLeague } from '@/hooks/use-league'
 import { useLeagues } from '@/hooks/use-leagues'
+import { useNflTeamSchedule } from '@/hooks/use-nfl-team-schedule'
 import {
   usePlayerStats,
+  type PlayerStatsPlayer,
   type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
@@ -29,45 +39,34 @@ import { cn } from '@/lib/utils'
 
 interface PlayerDetailPageViewProps {
   playerId: string
+  /** Opened from a league (`?league=`): the league-scoped variant. */
+  leagueId?: string | null
 }
 
 /**
- * Full player page — Field Scout reskin of the kit's PlayerPage: breadcrumb
- * header, hero identity card with the "Your leagues" column, Scout AI band,
- * then the boxed tab set.
+ * Full player page — built to the Claude Design prototype's PlayerPage
+ * (Chris 2026-10-04): a ghost Back, the hero card (identity + vitals left,
+ * the actions column right), the Scout AI matchup read when real data
+ * supports one, then the tab set. Reuses the card's pieces — its league
+ * actions, its per-league rows, its weekly / stats lists.
  */
-export function PlayerDetailPageView({ playerId }: PlayerDetailPageViewProps) {
+export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetailPageViewProps) {
   const { data, isLoading, error } = usePlayerStats(playerId)
   const router = useRouter()
+  const inLeague = featureFlags.leagues && !!leagueId
+
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
+    else router.push('/app/research')
+  }
 
   const pageHeader = (
     <PageHeader
       title={
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Back"
-            onClick={() => router.back()}
-          >
-            <Icon name="arrow-prev" size={14} />
-          </Button>
-          <nav
-            aria-label="Breadcrumb"
-            className="flex min-w-0 items-center gap-1.5 text-[12px] font-bold"
-          >
-            <Link
-              href="/app/research"
-              className="shrink-0 text-n-3 transition-colors hover:text-ink"
-            >
-              Players
-            </Link>
-            <span className="text-n-3">/</span>
-            <span className="truncate text-ink">
-              {data?.player.full_name ?? '…'}
-            </span>
-          </nav>
-        </div>
+        <Button variant="ghost" size="sm" onClick={goBack} data-player-back>
+          <Icon name="arrow-prev" size={13} />
+          Back
+        </Button>
       }
     />
   )
@@ -77,7 +76,6 @@ export function PlayerDetailPageView({ playerId }: PlayerDetailPageViewProps) {
       <div className="max-w-[944px] space-y-4">
         {pageHeader}
         <Skeleton className="h-44 w-full" />
-        <Skeleton className="h-24 w-full" />
         <Skeleton className="h-72 w-full" />
       </div>
     )
@@ -98,168 +96,213 @@ export function PlayerDetailPageView({ playerId }: PlayerDetailPageViewProps) {
   }
 
   return (
-    <div className="max-w-[944px] space-y-4">
+    <div className="max-w-[944px] space-y-4" data-player-page={inLeague ? 'league' : 'global'}>
       {pageHeader}
 
-      {/* Hero — identity left, leagues + actions right */}
+      {/* Hero — not interactive, so no resting shadow (CLAUDE.md elevation rule). */}
       <Card>
         <div className="flex flex-col gap-6 p-card-pad sm:p-5 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <PlayerDetailHeader player={data.player} size="expanded" />
           </div>
-          <YourLeaguesColumn data={data} />
+          <ActionsColumn player={data.player} leagueId={inLeague ? leagueId : null} />
         </div>
       </Card>
 
-      <ScoutInsight data={data} />
-
-      {/* Tab set — boxed triggers on the card's head row */}
-      <Card>
-        <Tabs defaultValue="overview">
-          <div className="border-b border-ink px-card-pad py-3">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="stats">Stats</TabsTrigger>
-              <TabsTrigger value="log">Game log</TabsTrigger>
-              <TabsTrigger value="bio">Bio</TabsTrigger>
-            </TabsList>
-          </div>
-          <div className="p-card-pad sm:p-5">
-            <TabsContent value="overview" className="mt-0">
-              <OverviewPanel data={data} />
-            </TabsContent>
-            <TabsContent value="stats" className="mt-0">
-              <StatsPanel data={data} />
-            </TabsContent>
-            <TabsContent value="log" className="mt-0">
-              <GameLogPanel data={data} />
-            </TabsContent>
-            <TabsContent value="bio" className="mt-0">
-              <BioPanel player={data.player} />
-            </TabsContent>
-          </div>
-        </Tabs>
-      </Card>
+      <ScheduleSections data={data} />
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Scout AI band
+// Actions column (prototype 330px ×0.8)
 // ---------------------------------------------------------------------------
 
-/**
- * Scout AI read. The kit's matchup call needs opponent/OPRK/SOS data we don't
- * sync yet, so this derives an honest line from the existing stats payload.
- * TODO(live-draft): swap in the matchup call (opponent, OPRK vs position,
- * SOS rest-of-season) once schedule data is available.
- */
-function ScoutInsight({ data }: { data: PlayerStatsResponse }) {
-  const { current, projection } = data.seasons
-  const firstName = data.player.full_name.split(' ')[0]
-  const ppg =
-    current.gamesPlayed > 0 ? current.fantasy.ppr / current.gamesPlayed : 0
-
-  const heading =
-    current.gamesPlayed > 0
-      ? `${firstName} is averaging ${ppg.toFixed(1)} PPR points per game`
-      : `${firstName} has no games logged yet this season`
-
-  return (
-    <AIInsight heading={heading} confidence="medium">
-      Projection sits at {projection.fantasy.ppr.toFixed(0)} PPR points for the
-      season
-      {data.player.bye_week != null
-        ? `, with the week ${data.player.bye_week} bye to plan around`
-        : ''}
-      . Matchup reads arrive once schedule data is live.
-    </AIInsight>
-  )
+function poolOf(player: PlayerStatsPlayer): PoolPlayer {
+  return {
+    id: player.id,
+    full_name: player.full_name,
+    position: player.position,
+    team: player.team,
+    adp: player.adp,
+    headshot_url: player.headshot_url,
+    status: player.status,
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Your leagues column
-// ---------------------------------------------------------------------------
-
 /**
- * Per-league availability for this player, wired to the viewer's REAL
- * memberships (`useLeagues` — the same query home / sidebar / rail use). M1
- * has leagues but no rosters or drafts yet, so a player is a free agent in
- * every league the viewer is in; each row links to that league's home. When
- * the leagues release is gated off the block is hidden entirely (matching the
- * rest of the app) and only the list actions render. Real ownership /
- * on-a-team status arrives with rosters in M2.
+ * In a league: "Viewing in <League>" and that league's actions — the card's
+ * own `LeagueCardActions` (+ / Drop / Propose trade, each closed door with
+ * its reason). Outside one: "Your leagues" — the card's per-league rows,
+ * each opening this page's league variant. Add to list rides along in both.
+ * With the leagues release gated off only the list actions render.
  */
-function YourLeaguesColumn({ data }: { data: PlayerStatsResponse }) {
-  const { data: leagues, isPending, isError } = useLeagues({
-    enabled: featureFlags.leagues,
-  })
-
+export function ActionsColumn({ player, leagueId }: { player: PlayerStatsPlayer; leagueId: string | null }) {
+  const pool = poolOf(player)
   return (
-    <div className="w-full shrink-0 lg:w-[264px]">
-      {featureFlags.leagues && (
-        <div className="mb-3">
-          <p className="fs-overline mb-1 text-n-3">Your leagues</p>
-          {isPending ? (
-            <div className="space-y-1.5">
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          ) : isError ? (
-            <p className="py-2 text-[12px] font-semibold text-n-3">
-              Couldn&apos;t load your leagues.
-            </p>
-          ) : leagues && leagues.length > 0 ? (
-            <div>
-              {leagues.map((league, i) => (
-                <Link
-                  key={league.id}
-                  href={`/app/leagues/${league.id}`}
-                  aria-label={`${data.player.full_name} in ${league.name}`}
-                  className={cn(
-                    'flex items-center gap-2.5 py-2 transition-colors hover:bg-n-4',
-                    i > 0 && 'border-t border-n-4',
-                  )}
-                >
-                  <Avatar className="h-6 w-6">
-                    <AvatarFallback className="text-[8px]">
-                      {crestInitials(league.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px] font-extrabold leading-tight">
-                      {league.name}
-                    </span>
-                    <span className="mt-0.5 block truncate text-[11px] font-semibold leading-tight text-brand-strong">
-                      Free agent
-                    </span>
-                  </span>
-                  <Icon name="arrow-next" size={13} className="shrink-0 text-n-3" />
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="py-2 text-[12px] font-medium text-n-3">
-              Join or create a league to track availability.
-            </p>
-          )}
-        </div>
-      )}
-
+    <div className="flex w-full shrink-0 flex-col gap-3 lg:w-[264px]" data-card-actions={leagueId ? 'league' : 'global'}>
+      {featureFlags.leagues && (leagueId ? <InLeagueBlock pool={pool} leagueId={leagueId} /> : <YourLeaguesBlock pool={pool} />)}
       <div className="flex flex-wrap items-center gap-1.5">
-        <PlayerDetailActions player={data.player} onFullPage />
+        <PlayerDetailActions player={player} onFullPage />
       </div>
     </div>
   )
 }
 
-/** Two-letter crest fallback from a league name (e.g. two words → first two initials). */
-function crestInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .filter(Boolean)
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
+function InLeagueBlock({ pool, leagueId }: { pool: PoolPlayer; leagueId: string }) {
+  const league = useLeague(leagueId)
+  const router = useRouter()
+  return (
+    <div>
+      <p className="fs-overline mb-1.5 text-n-3" data-viewing-in>
+        Viewing in {league.data?.league.name ?? '…'}
+      </p>
+      <LeagueCardActions player={pool} leagueId={leagueId} />
+      <button
+        type="button"
+        onClick={() => router.push(playerPageHref(pool.id))}
+        className="mt-1.5 text-[11px] font-bold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-ink hover:decoration-current"
+        data-card-all-leagues
+      >
+        See all my leagues
+      </button>
+    </div>
+  )
+}
+
+function YourLeaguesBlock({ pool }: { pool: PoolPlayer }) {
+  const { data: leagues, isPending, isError } = useLeagues()
+  const router = useRouter()
+  return (
+    <div>
+      <p className="fs-overline mb-1 text-n-3">Your leagues</p>
+      {isPending ? (
+        <div className="space-y-1.5">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      ) : isError ? (
+        <p className="py-2 text-[12px] font-semibold text-n-3">Couldn&apos;t load your leagues.</p>
+      ) : leagues && leagues.length > 0 ? (
+        <div>
+          {leagues.map((lg, i) => (
+            <LeagueAvailabilityRow
+              key={lg.id}
+              player={pool}
+              league={lg}
+              first={i === 0}
+              onOpen={(id) => router.push(playerPageHref(pool.id, id))}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="py-2 text-[12px] font-medium text-n-3">Join a league to track availability.</p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Scout AI read + tabs (they share the schedule reads)
+// ---------------------------------------------------------------------------
+
+function ScheduleSections({ data }: { data: PlayerStatsResponse }) {
+  const { player } = data
+  const season = data.seasons.current.season
+  const games = useNflTeamSchedule(season, player.team)
+  const splits = useDefenseSplits(season)
+  const rows = scheduleRows(player.team, player.position, games.data ?? [], splits.data ?? [], player.bye_week)
+  const read = splits.data ? scoutMatchupRead(nextScheduled(rows, games.data ?? []), player.position) : null
+
+  return (
+    <>
+      {/* Only when real data supports it — omitted otherwise, never invented. */}
+      {read && (
+        <div data-scout-read>
+          <AIInsight heading={read} />
+        </div>
+      )}
+      <PlayerTabs data={data} schedule={{ rows, loading: games.isPending && !!player.team, error: games.isError }} />
+    </>
+  )
+}
+
+export function PlayerTabs({
+  data,
+  schedule,
+}: {
+  data: PlayerStatsResponse
+  schedule: { rows: ScheduleRow[]; loading: boolean; error: boolean }
+}) {
+  // News: no player-news source yet (F-row filed) — the tab is omitted.
+  return (
+    <Card>
+      <Tabs defaultValue="overview">
+        <div className="border-b border-ink px-card-pad py-3">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="stats">Stats</TabsTrigger>
+            <TabsTrigger value="schedule">Schedule</TabsTrigger>
+          </TabsList>
+        </div>
+        <div className="p-card-pad sm:p-5">
+          <TabsContent value="overview" className="mt-0">
+            <WeeklyPointsList data={data} />
+          </TabsContent>
+          <TabsContent value="stats" className="mt-0 space-y-5">
+            <StatsPanel data={data} />
+            <GameLogPanel data={data} />
+          </TabsContent>
+          <TabsContent value="schedule" className="mt-0">
+            <ScheduleList {...schedule} />
+          </TabsContent>
+        </div>
+      </Tabs>
+    </Card>
+  )
+}
+
+const TONE_CHIP: Record<string, string> = {
+  negative: 'bg-negative',
+  caution: 'bg-caution',
+  positive: 'bg-brand',
+}
+
+export function ScheduleList({ rows, loading, error }: { rows: ScheduleRow[]; loading: boolean; error: boolean }) {
+  if (loading) return <Skeleton className="h-40 w-full" />
+  if (error) return <p className="text-[12px] font-semibold text-n-3">Couldn&apos;t load the schedule.</p>
+  if (rows.length === 0) {
+    return (
+      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
+        No schedule on file for this season yet.
+      </p>
+    )
+  }
+  return (
+    <div data-schedule>
+      <div className="flex items-center gap-3 border-b border-n-4 pb-1.5 text-[11px] font-semibold text-n-3">
+        <span className="w-10 shrink-0">Week</span>
+        <span className="flex-1">Opponent</span>
+        <span className="w-12 shrink-0 text-right">OPRK</span>
+      </div>
+      {rows.map((r) => (
+        <div key={r.week} className="flex items-center gap-3 border-b border-n-4 py-2" data-schedule-week={r.week}>
+          <span className="fs-num w-10 shrink-0 text-[12px] font-bold text-n-3">Wk {r.week}</span>
+          <span className={cn('flex-1 text-[13px] font-extrabold', r.final && 'text-n-3')}>
+            {r.opponent.kind === 'game' ? r.opponent.label : 'BYE'}
+          </span>
+          <span className="w-12 shrink-0 text-right">
+            {r.oprk !== null && r.tone && (
+              <span
+                className={cn('fs-num inline-flex rounded-sm px-1.5 py-px text-[11px] font-extrabold', TONE_CHIP[r.tone])}
+                data-oprk={r.oprk}
+              >
+                {r.oprk}
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }

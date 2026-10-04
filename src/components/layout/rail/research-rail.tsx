@@ -124,7 +124,7 @@ export function ResearchRail() {
                   >
                     <Icon name={tool.icon} size={16} />
                     {count > 0 && (
-                      <span className="fs-num absolute -right-1 -top-1 inline-flex h-count-chip min-w-count-chip items-center justify-center rounded-pill bg-brand px-1 text-[9px] font-bold leading-none text-ink">
+                      <span data-rail-badge={tool.id} className="fs-num absolute -right-1 -top-1 inline-flex h-count-chip min-w-count-chip items-center justify-center rounded-pill bg-brand px-1 text-[9px] font-bold leading-none text-ink">
                         {count > 9 ? '9+' : count}
                       </span>
                     )}

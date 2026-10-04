@@ -55,6 +55,9 @@ const FILTER_CHIP_CALLERS: Record<string, Reason> = {
   'components/leagues/roster-slot-builder.tsx': 'multi-select',
   // Tapping the pressed position clears it back to null = all positions.
   'components/layout/rail/players-panel.tsx': 'zero-selected-is-valid',
+  // The prototype's NotificationsTool: "All" beside league-avatar chips;
+  // tapping the pressed league clears it back to null = all notifications.
+  'components/layout/rail/notifications-panel.tsx': 'zero-selected-is-valid',
   // Documents the surviving component beside the segment it was split from.
   'app/app/(shell)/styleguide/page.tsx': 'styleguide-demo',
 }

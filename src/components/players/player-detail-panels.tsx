@@ -670,3 +670,66 @@ function positionColumns(position: string): LogColumn[] {
     { label: 'TD', render: (s) => num(s.def_tds) },
   ]
 }
+
+// ---------------------------------------------------------------------------
+// Overview — weekly points bar list from the existing game log data
+// ---------------------------------------------------------------------------
+
+/** Shared by the card and the full page's Overview tab. */
+export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
+  const rows = data.gameLog
+  if (rows.length === 0) {
+    return (
+      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
+        No games logged yet for the current season.
+      </p>
+    )
+  }
+
+  const total = rows.reduce((sum, row) => sum + row.fantasy.ppr, 0)
+  const avg = total / rows.length
+  const max = Math.max(...rows.map((row) => row.fantasy.ppr))
+
+  return (
+    <div data-weekly-points>
+      <p className="mb-2.5 text-[11px] font-semibold text-n-3">
+        <span className="fs-num text-[15px] font-extrabold text-ink">
+          {avg.toFixed(1)}
+        </span>{' '}
+        avg per week ·{' '}
+        <span className="fs-num text-[15px] font-extrabold text-ink">
+          {Math.round(total)}
+        </span>{' '}
+        total
+      </p>
+      <div className="flex flex-col gap-1">
+        {rows.map((row) => {
+          const pts = row.fantasy.ppr
+          const width = max > 0 ? (pts / max) * 100 : 0
+          return (
+            <div key={row.week} className="flex items-center gap-2">
+              <span className="fs-num w-9 shrink-0 text-[11px] font-bold text-n-3">
+                Wk {row.week}
+              </span>
+              <span className="h-3.5 min-w-0 flex-1 bg-n-4">
+                {width > 0 && (
+                  <span
+                    className={cn(
+                      'block h-full border border-ink',
+                      pts >= avg ? 'bg-brand' : 'bg-n-3/40',
+                    )}
+                    style={{ width: `${width}%` }}
+                  />
+                )}
+              </span>
+              <span className="fs-num w-10 shrink-0 text-right text-[12px] font-extrabold">
+                {pts.toFixed(1)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+

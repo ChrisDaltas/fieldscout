@@ -2,11 +2,16 @@ import { PlayerDetailPageView } from '@/components/players/player-detail-page-vi
 
 interface PlayerDetailPageProps {
   params: Promise<{ playerId: string }>
+  searchParams: Promise<{ league?: string | string[] }>
 }
 
 export default async function PlayerDetailPage({
   params,
+  searchParams,
 }: PlayerDetailPageProps) {
   const { playerId } = await params
-  return <PlayerDetailPageView playerId={playerId} />
+  const { league } = await searchParams
+  // `?league=` — opened from a league's card: the league-scoped variant.
+  const leagueId = typeof league === 'string' && league !== '' ? league : null
+  return <PlayerDetailPageView playerId={playerId} leagueId={leagueId} />
 }
