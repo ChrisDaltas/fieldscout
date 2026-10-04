@@ -129,6 +129,7 @@
  * No Date/random read anywhere in this file (the `src/lib/leagues/**`
  * ESLint fences): the cursor is the caller's, the ordering is the database's.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -191,7 +192,7 @@ const typeFilterSchema = z
     message: `Name between 1 and ${COMMISH_LOG_MAX_TYPES} action types.`,
   })
   .refine((types) => types.every((t) => ACTION_TYPE_SLUG.test(t)), {
-    message: 'Each action type is a lower-case word like edit_score.',
+    message: 'Unknown action type.',
   })
 
 /** Query-string shape. Values arrive as strings, so each is coerced
@@ -389,7 +390,7 @@ export async function readCommishLog(
       .eq('id', teamId)
       .eq('league_id', leagueId)
       .maybeSingle()
-    if (teamError) return { status: 500, body: { error: `teams: ${teamError.message}` } }
+    if (teamError) return dbFailure('teams', teamError)
     if (!team) return { status: 404, body: { error: COMMISH_LOG_UNKNOWN_TEAM_MESSAGE } }
   }
 
@@ -404,7 +405,7 @@ export async function readCommishLog(
       .eq('id', entryId)
       .eq('league_id', leagueId)
       .maybeSingle()
-    if (entryError) return { status: 500, body: { error: `commissioner_actions: ${entryError.message}` } }
+    if (entryError) return dbFailure('commissioner_actions', entryError)
     if (!row) return { status: 404, body: { error: COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE } }
     entryBoundary = { createdAt: row.created_at, id: row.id }
   }

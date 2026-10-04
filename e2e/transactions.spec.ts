@@ -607,11 +607,12 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const alert = editor.getByRole('alert').filter({ hasText: f296.full_name })
       await expect(alert).toBeVisible({ timeout: 30_000 })
       const refusalText = (await alert.innerText()).replace(/\s+/g, ' ').trim()
-      // The STABLE SPINE of the set_lineup lock sentence (step (7), `154`),
-      // either arm: a stored starter's slot is locked / a played player
-      // cannot enter a slot. Both name him and his kickoff.
+      // D482: either arm of the set_lineup lock refusal reads through the
+      // phrase map ('lineup-slot-locked' / 'lineup-kicked-off'): both name
+      // him and say his game has started — no code, no citation.
       expect(refusalText).toContain(f296.full_name)
-      expect(refusalText).toMatch(/kicked off/)
+      expect(refusalText).toMatch(/game has started/)
+      expect(refusalText).not.toContain('§')
       expect(refusalText).not.toContain('set_lineup:')
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(`[transactions] F296 server refusal (${storedSlot ? 'stored starter' : 'bench → slot'}): ${refusalText}`)

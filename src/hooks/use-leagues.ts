@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { userFacingMessage } from '@/lib/leagues/api/client-fetch'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
 export const leaguesKeys = {
@@ -41,9 +42,16 @@ export interface CreateLeagueResult {
 async function parseJsonOrThrow<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null
   if (!response.ok) {
-    const message =
-      typeof body?.error === 'string' ? body.error : JSON.stringify(body?.error ?? 'Request failed')
-    throw new Error(message)
+    // D482: create-league (and every caller here) reads through the one
+    // cleaner; a per-field 400 shows its first message, never raw JSON.
+    const error = body?.error
+    const fieldErrors =
+      error && typeof error === 'object' && 'fieldErrors' in error
+        ? (error as { fieldErrors: Record<string, string[] | undefined> }).fieldErrors
+        : undefined
+    const first = fieldErrors ? Object.values(fieldErrors).find((m) => m && m.length > 0)?.[0] : undefined
+    const message = typeof error === 'string' ? error : (first ?? 'Something went wrong — try again.')
+    throw new Error(userFacingMessage(message))
   }
   return body as T
 }

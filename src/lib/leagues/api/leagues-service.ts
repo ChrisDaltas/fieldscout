@@ -200,7 +200,7 @@ export const patchLeagueInputSchema = z
     status: z.enum(['setup', 'scheduled']).optional(),
   })
   .refine((body) => Object.values(body).some((v) => v !== undefined), {
-    message: 'Nothing to update — send settings, scoring_system_id, or status.',
+    message: 'Nothing to save.',
   })
   .refine(
     (body) => body.status === undefined || (body.settings === undefined && body.scoring_system_id === undefined),

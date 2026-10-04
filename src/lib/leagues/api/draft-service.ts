@@ -1365,7 +1365,7 @@ export const reassignPickInputSchema = z
   .refine(
     (body) =>
       body.team_id !== undefined || body.player_id !== undefined || body.price !== undefined,
-    { message: 'Send a new team_id, a new player_id, a price, or a combination.' },
+    { message: 'Change the team, player or price first.' },
   )
 
 /** `action_id` REQUIRED wire-side (rule 6/E2 — the same stamping contract as

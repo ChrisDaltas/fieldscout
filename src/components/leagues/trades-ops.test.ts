@@ -28,8 +28,6 @@ import {
   isDeadlineRefusal,
   isTradesUnavailable,
   parseFaab,
-  plainServerSentence,
-  plainRefusal,
   reviewModeCopy,
   rostersGate,
   splitTrades,
@@ -81,7 +79,8 @@ describe('F452 — the deadline is its WEEK (Q76: offers until week N+1 begins);
 describe('the legality “preview” is the server’s answer: dropsNeeded reads the E36 sentence', () => {
   it('the offering team’s overflow → its name and the number of drops still needed', () => {
     expect(dropsNeeded(OVERFLOW_PROPOSE)).toEqual({ teamName: 'Alpha', more: 1 })
-    expect(dropsNeeded(userFacingMessage(OVERFLOW_PROPOSE))).toEqual({ teamName: 'Alpha', more: 1 })
+    // D482: parsers read the RAW text (LeagueActionError.raw) — the member's copy is rewritten.
+    expect(userFacingMessage(OVERFLOW_PROPOSE)).toBe('Alpha would be 1 over the roster limit — pick 1 more player to drop.')
     expect(dropsNeeded(OVERFLOW_ACCEPT_TWO)).toEqual({ teamName: 'Bravo', more: 2 })
   })
   it('the proposer outgrew the offer (only HE can fix it) → no picker; any other sentence → none', () => {
@@ -152,17 +151,14 @@ describe('F438 — every state a trade can be in, in words', () => {
     expect(closed('reversed', null).label).toBe('Reversed')
     expect(tradeStatusView(trade({ status: 'complete', in_flight: false, resolved_at: '2099-09-15T00:00:00.000Z' }), fmt).detail).toBe('Went through <2099-09-15T00:00:00.000Z>.')
   })
-  it('plainRefusal takes out builder citations, keeps the server words (R1244)', () => {
-    expect(plainRefusal("Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"))
-      .toBe("Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots: name 1 more drop(s) as part of the trade")
-    expect(plainRefusal('the trade deadline has passed (Wed, Nov 25 12:00 AM ET; trade_deadline_week 11, §13.3 / Q76)'))
+  it('a refusal reads through the one cleaner (D482; absorbed R1244 plainRefusal / plainServerSentence)', () => {
+    expect(userFacingMessage("Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"))
+      .toBe('Bravo would be 1 over the roster limit — pick 1 more player to drop.')
+    expect(userFacingMessage('the trade deadline has passed (Wed, Nov 25 12:00 AM ET; trade_deadline_week 11, §13.3 / Q76)'))
       .toBe('the trade deadline has passed (Wed, Nov 25 12:00 AM ET)')
-    expect(plainRefusal('x (2 of 3)')).toBe('x (2 of 3)')
-  })
-  it('plainServerSentence strips only a trailing citation', () => {
-    expect(plainServerSentence('x (§13.3 / Q77)')).toBe('x')
-    expect(plainServerSentence('x (E36)')).toBe('x')
-    expect(plainServerSentence('x (2 of 3)')).toBe('x (2 of 3)')
+    expect(userFacingMessage('x (2 of 3)')).toBe('x (2 of 3)')
+    expect(userFacingMessage('x (§13.3 / Q77)')).toBe('x')
+    expect(userFacingMessage('x (E36)')).toBe('x')
   })
 })
 

@@ -51,6 +51,7 @@
  * random read anywhere in this file. Every `action_id` is minted per gesture
  * by the HOOK.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -606,10 +607,10 @@ export async function readTrades(
     supabase.rpc('is_league_commish', { p_league_id: leagueId }),
     supabase.from('teams').select('id, name').eq('league_id', leagueId),
   ])
-  if (leagueRes.error) return { status: 500, body: { error: `leagues: ${leagueRes.error.message}` } }
-  if (seatRes.error) return { status: 500, body: { error: `league_members: ${seatRes.error.message}` } }
-  if (commishRes.error) return { status: 500, body: { error: `is_league_commish: ${commishRes.error.message}` } }
-  if (teamsRes.error) return { status: 500, body: { error: `teams: ${teamsRes.error.message}` } }
+  if (leagueRes.error) return dbFailure('leagues', leagueRes.error)
+  if (seatRes.error) return dbFailure('league_members', seatRes.error)
+  if (commishRes.error) return dbFailure('is_league_commish', commishRes.error)
+  if (teamsRes.error) return dbFailure('teams', teamsRes.error)
   if (!leagueRes.data) {
     return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
   }
@@ -630,7 +631,7 @@ export async function readTrades(
   const { data: tradeData, error: tradesError } = await tradesQuery
   if (tradesError) {
     if (isMissingSchemaObject(tradesError, TRADE_SCHEMA_OBJECTS)) return unavailable()
-    return { status: 500, body: { error: `trades: ${tradesError.message}` } }
+    return dbFailure('trades', tradesError)
   }
   const rows = (tradeData ?? []) as unknown as TradeRow[]
   const capped = assertBelowPostgrestCap(rows, 'trades')
@@ -642,7 +643,7 @@ export async function readTrades(
   const playersById = new Map<string, { full_name: string; position: string; team: string | null }>()
   if (playerIds.length > 0) {
     const { data: players, error } = await supabase.from('players').select('id, full_name, position, team').in('id', playerIds)
-    if (error) return { status: 500, body: { error: `players: ${error.message}` } }
+    if (error) return dbFailure('players', error)
     for (const p of players ?? []) playersById.set(p.id, p)
   }
   const player = (id: string): TradePlayer => {
@@ -659,7 +660,7 @@ export async function readTrades(
   for (const [i, res] of tallyResults.entries()) {
     if (res.error) {
       if (isMissingSchemaObject(res.error, TRADE_SCHEMA_OBJECTS)) return unavailable()
-      return { status: 500, body: { error: `trade_vote_tally: ${res.error.message}` } }
+      return dbFailure('trade_vote_tally', res.error)
     }
     tallies.set(voting[i].id, res.data as unknown as TradeVoteTally)
   }

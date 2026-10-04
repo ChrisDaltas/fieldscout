@@ -24,6 +24,7 @@
  * on the league's schedule (§23.3 — the calendar decides, nothing is
  * inferred). A broken snapshot is a loud 500, never a quiet empty list.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -82,11 +83,11 @@ export async function readPoolValues(supabase: Supabase, leagueId: string, rawQu
     .eq('id', leagueId)
     .is('deleted_at', null)
     .maybeSingle()
-  if (leagueError) return { status: 500, body: { error: `leagues: ${leagueError.message}` } }
+  if (leagueError) return dbFailure('leagues', leagueError)
   if (!league) return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
 
   const weekRes = await supabase.from('league_weeks').select('week').eq('league_id', leagueId).eq('season', league.season).eq('week', week).maybeSingle()
-  if (weekRes.error) return { status: 500, body: { error: `league_weeks: ${weekRes.error.message}` } }
+  if (weekRes.error) return dbFailure('league_weeks', weekRes.error)
   if (!weekRes.data) return { status: 404, body: { error: `Week ${week} is not on this league’s schedule.` } }
 
   let snapshot: ScoringRulesDoc

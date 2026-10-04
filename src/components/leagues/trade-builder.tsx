@@ -1,5 +1,6 @@
 'use client'
 
+import { userFacingMessage } from '@/lib/leagues/api/client-fetch'
 import { useMemo, useState } from 'react'
 
 import { leagueCardContext } from '@/components/players/player-card-context'
@@ -35,7 +36,6 @@ import {
   rosterWords,
   type BuilderLeg,
   type BuilderSides,
-  plainRefusal,
 } from './trades-ops'
 
 /**
@@ -102,7 +102,7 @@ export interface TradeBuilderViewProps {
   allowFaab: boolean
   lockBehavior: string
   pending: boolean
-  /** The server's refusal, verbatim (already `userFacingMessage`d). */
+  /** The server's refusal, RAW (parsed here; shown through `userFacingMessage`, D482). */
   refusal: string | null
   /** A deadline refusal seen on this page (any verb) — the builder locks. */
   deadlineRefusal: string | null
@@ -249,7 +249,7 @@ export function TradeBuilderView({
           <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2" role="status" data-trade-deadline-locked>
             <p className="text-[12px] font-bold">🔒 Trades are closed for the season.</p>
             {/* VERBATIM — the server names the week and the instant (F452). */}
-            <p className="text-[11px] font-medium text-ink">{locked}</p>
+            <p className="text-[11px] font-medium text-ink">{userFacingMessage(locked)}</p>
           </div>
         )}
 
@@ -348,7 +348,7 @@ export function TradeBuilderView({
           <div className="flex flex-col gap-1 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-trade-refusal>
             <p className="text-[12px] font-bold">The offer wasn’t sent.</p>
             {/* The server's sentence, its builder citations removed (R1244). */}
-            <p className="text-[11px] font-medium text-ink">{plainRefusal(refusal)}</p>
+            <p className="text-[11px] font-medium text-ink">{userFacingMessage(refusal)}</p>
           </div>
         )}
 

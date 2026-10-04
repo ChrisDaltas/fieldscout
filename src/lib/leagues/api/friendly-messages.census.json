@@ -1,0 +1,1577 @@
+[
+ {
+  "loc": "025_ai_write_guards.sql:55",
+  "fn": "guard_lists_ai_persona",
+  "text": "guard_lists_ai_persona: ai_persona_id is managed by the system."
+ },
+ {
+  "loc": "059_scoring_snapshot.sql:204",
+  "fn": "snapshot_league_scoring_internal",
+  "text": "snapshot_league_scoring: league % is in % — scoring is frozen once the draft starts; in-season changes land with the audited path (M6)"
+ },
+ {
+  "loc": "059_scoring_snapshot.sql:213",
+  "fn": "snapshot_league_scoring_internal",
+  "text": "snapshot_league_scoring: league % has no scoring_system_id — nothing to snapshot (§7.3.8: exactly one scoring system referenced)"
+ },
+ {
+  "loc": "087_auction_commish_controls.sql:475",
+  "fn": "draft_auction_high_bid_gate_internal",
+  "text": "draft_auction_high_bid_gate: %: % is the high bidder on % at $%, and that edit fills their last roster spot — a complete roster cannot win the standing bid. % (E27/§8.6.7(c))"
+ },
+ {
+  "loc": "087_auction_commish_controls.sql:484",
+  "fn": "draft_auction_high_bid_gate_internal",
+  "text": "draft_auction_high_bid_gate: %: % is the high bidder on % at $%, and that leaves a max bid of $% — the close would be unaffordable. % (E28/D131(4))"
+ },
+ {
+  "loc": "091_mock_cpu_reactive_bidding.sql:465",
+  "fn": "draft_mock_cpu_respond_internal",
+  "text": "draft_mock_cpu_respond: mock auction % has a malformed current_nomination (%) — refusing to bid"
+ },
+ {
+  "loc": "092_auction_reserve_toggle.sql:2010",
+  "fn": "draft_place_bid_internal",
+  "text": "draft_place_bid: %: draft_place_bid_internal called outside the bidding phase on draft %"
+ },
+ {
+  "loc": "092_auction_reserve_toggle.sql:2040",
+  "fn": "draft_place_bid_internal",
+  "text": "draft_place_bid: %: your roster is complete — a complete roster cannot bid (§8.6.7(c)/E27)"
+ },
+ {
+  "loc": "092_auction_reserve_toggle.sql:2065",
+  "fn": "draft_place_bid_internal",
+  "text": "draft_place_bid: %: $% is over your max bid of $% — you have $% for % open roster spots at a $% per-slot reserve (§8.6.1/E5)"
+ },
+ {
+  "loc": "093_uncontestable_instant_award.sql:376",
+  "fn": "draft_award_nomination_internal",
+  "text": "draft_award_nomination: auction % has a malformed current_nomination (%) — refusing to award"
+ },
+ {
+  "loc": "093_uncontestable_instant_award.sql:429",
+  "fn": "draft_award_nomination_internal",
+  "text": "draft_award_nomination: no draft_bids row backs the live high bid on auction % (nomination %, team %, $%) — refusing to award (F62)"
+ },
+ {
+  "loc": "093_uncontestable_instant_award.sql:455",
+  "fn": "draft_award_nomination_internal",
+  "text": "draft_award_nomination: the winning team % on auction % has a complete roster — E27 says a complete roster cannot bid; refusing to award"
+ },
+ {
+  "loc": "093_uncontestable_instant_award.sql:460",
+  "fn": "draft_award_nomination_internal",
+  "text": "draft_award_nomination: awarding % at $% to team % on auction % would break §8.6.8 solvency (max bid $%; $% for % open spots at a $% per-slot reserve) — refusing the award"
+ },
+ {
+  "loc": "093_uncontestable_instant_award.sql:497",
+  "fn": "draft_award_nomination_internal",
+  "text": "draft_award_nomination: auction % has no nomination_order — cannot advance the rotation"
+ },
+ {
+  "loc": "093_uncontestable_instant_award.sql:508",
+  "fn": "draft_award_nomination_internal",
+  "text": "draft_award_nomination: the nominating team % is not in auction %'s nomination_order — cannot advance the rotation"
+ },
+ {
+  "loc": "094_mock_roster_snapshot.sql:808",
+  "fn": "draft_mock_cpu_need",
+  "text": "draft_mock_cpu_need: mock draft % carries no roster snapshot (config->'roster') — refusing to price every position identically and call it a need model (MP.2/094, R491)"
+ },
+ {
+  "loc": "095_standalone_mock.sql:1270",
+  "fn": "delete_mock_draft",
+  "text": "delete_mock_draft: only the member who launched this mock can delete it (§8.8/D103)"
+ },
+ {
+  "loc": "095_standalone_mock.sql:2483",
+  "fn": "draft_make_pick",
+  "text": "draft_make_pick: this mock draft is another member's solo practice (§8.8/D103)"
+ },
+ {
+  "loc": "095_standalone_mock.sql:2668",
+  "fn": "draft_nominate",
+  "text": "draft_nominate: this mock draft is another member's solo practice (§8.8/D103)"
+ },
+ {
+  "loc": "095_standalone_mock.sql:2767",
+  "fn": "draft_nominate",
+  "text": "draft_nominate: your roster is complete — complete rosters are skipped in the nomination rotation and cannot bid (§8.6.7(c)/E27)"
+ },
+ {
+  "loc": "095_standalone_mock.sql:2793",
+  "fn": "draft_nominate",
+  "text": "draft_nominate: an opening bid of $% is over your max bid of $% — you have $% for % open roster spots at a $% per-slot reserve (§8.6.7(a))"
+ },
+ {
+  "loc": "095_standalone_mock.sql:3572",
+  "fn": "draft_team_budget",
+  "text": "draft_team_budget: draft % has no roster capacity (total_rounds is %) — budgets are underivable"
+ },
+ {
+  "loc": "100_mock_launcher_commish_gate.sql:113",
+  "fn": "draft_mock_launcher_gate_internal",
+  "text": "draft_mock_launcher_gate: %: only the member practicing this mock can use its commissioner controls (§8.8/D103)"
+ },
+ {
+  "loc": "101_mock_clock_carveout.sql:129",
+  "fn": "draft_auction_pause_gate_internal",
+  "text": "draft_auction_pause_gate: %: pause the draft first — auction commissioner controls run on a paused board (§8.7 v2.10)"
+ },
+ {
+  "loc": "101_mock_clock_carveout.sql:134",
+  "fn": "draft_auction_pause_gate_internal",
+  "text": "draft_auction_pause_gate: %: pause the draft first — commissioner controls run on a paused board (§8.7 v2.12.5)"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:238",
+  "fn": "draft_nomination_order_internal",
+  "text": "draft_nomination_order: %: league % has nomination_order_mode=manual but the stored nomination order does not cover every active franchise exactly once — set the nomination order in the commissioner panel, or switch nomination_order_mode to same_as_draft_order"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:247",
+  "fn": "draft_nomination_order_internal",
+  "text": "draft_nomination_order: %: a stored order already covers this league — a practice draft inherits it (§8.8/D223); launch without a slot to practice from the stored order"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:563",
+  "fn": "create_mock_draft",
+  "text": "create_mock_draft: league % has % of % franchises seated — a mock drafts the full board, so every seat must exist; add placeholder seats for the empty slots (League home → Invite) (§8.8/D103)"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:605",
+  "fn": "create_mock_draft",
+  "text": "create_mock_draft: these roster settings produce no draftable rounds (rounds = starters + bench, D91) — add starting slots or bench spots"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:609",
+  "fn": "create_mock_draft",
+  "text": "create_mock_draft: league % roster settings produce no draftable rounds (rounds = starters + bench, D91) — fix the roster in League settings"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:855",
+  "fn": "create_mock_draft",
+  "text": "create_mock_draft: this setup cannot practice an auction — a $% budget cannot fill % draftable roster spots at a $% per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations"
+ },
+ {
+  "loc": "102_mock_slot_choice.sql:860",
+  "fn": "create_mock_draft",
+  "text": "create_mock_draft: league % cannot practice an auction — a $% budget cannot fill % draftable roster spots at a $% per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup"
+ },
+ {
+  "loc": "105_scoring_editor_rpcs.sql:207",
+  "fn": "scoring_detect_tier_cuts",
+  "text": "scoring_detect_tier_cuts: cannot fork a scoring document with no def_pa_* keys: its points-allowed cut list is undetectable, and guessing one would re-cut the defense's tiers (§7.3.3.1(b))"
+ },
+ {
+  "loc": "105_scoring_editor_rpcs.sql:219",
+  "fn": "scoring_detect_tier_cuts",
+  "text": "scoring_detect_tier_cuts: def_pa_* keys [%] match % published families — a fork must inherit exactly one cut list (§7.3.3.1(b); F21 guardrail 2)"
+ },
+ {
+  "loc": "105_scoring_editor_rpcs.sql:233",
+  "fn": "scoring_detect_tier_cuts",
+  "text": "scoring_detect_tier_cuts: def_ya_* keys [%] are not generated by the published yards-allowed cut list — forking would re-cut them (§7.3.3.1(b))"
+ },
+ {
+  "loc": "110_schedule_engine.sql:290",
+  "fn": "league_weeks_transition_guard",
+  "text": "league_weeks_transition_guard: league_weeks %: reopening a final week (season % week %) requires a NEW reopened_by_action_id on the same UPDATE — a reopen is an audited commissioner action (§12.17/F4)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:298",
+  "fn": "league_weeks_transition_guard",
+  "text": "league_weeks_transition_guard: league_weeks %: illegal status transition % → % (season % week %) — legal steps are upcoming → live → correction_window → final, plus the audited reopen final → correction_window (§12.17/F4)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:663",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % is % — the schedule is generated once, at in_season entry (draft completion, §11.4/§11.7); regeneration is Remix's (L.D1.3)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:670",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % already has league_weeks rows for season % — generation runs once; regeneration is Remix's (L.D1.3)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:683",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % has % of % franchises seated — every seat must exist before a schedule can be generated (§7.2/D96)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:689",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % has % franchises — v1 schedules even counts only (8/10/12/14/16 — §7.3.1; byes are v1.1)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:700",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % has schedule_mode % — expected h2h or total_points"
+ },
+ {
+  "loc": "110_schedule_engine.sql:718",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % — no NFL week of season % has a first kickoff still ahead of % (the season is over, or nfl_weeks carries no rows for it); the season cannot be scheduled (§11.7 Mid-season entry, Q29)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:729",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: league % would enter the season at NFL week % — even the 4-week floor with no playoffs ends at week % (> 18). The draft started while the season still fit and completed after NFL week 16's kickoff, so the season cannot be scheduled (§11.7 Mid-season entry, Q31"
+ },
+ {
+  "loc": "110_schedule_engine.sql:765",
+  "fn": "league_generate_schedule",
+  "text": "league_generate_schedule: wrote % league_weeks rows for league %, expected % (weeks %..%)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:1287",
+  "fn": "draft_resolve_order_internal",
+  "text": "draft_resolve_order: %: a stored order already covers this league — a practice draft inherits it (§8.8/D223); launch without a slot to practice from the stored order"
+ },
+ {
+  "loc": "110_schedule_engine.sql:1296",
+  "fn": "draft_resolve_order_internal",
+  "text": "draft_resolve_order: %: league % has draft_order_mode=% but the stored draft order does not cover every active franchise exactly once — re-save the order in Draft setup"
+ },
+ {
+  "loc": "110_schedule_engine.sql:1359",
+  "fn": "leagues_snapshot_guard",
+  "text": "leagues_snapshot_guard: league %: cannot be in status % without scoring_rules_snapshot — call snapshot_league_scoring first (spec §7.3.8/D43)"
+ },
+ {
+  "loc": "110_schedule_engine.sql:1371",
+  "fn": "leagues_snapshot_guard",
+  "text": "leagues_snapshot_guard: league %: cannot be in status % without a scoring system reference (scoring_system_id is NULL) — a drafting+ league always references exactly one scoring system (spec §7.3.8/F143)"
+ },
+ {
+  "loc": "111_schedule_remix.sql:255",
+  "fn": "schedule_window_internal",
+  "text": "schedule_window: nfl_weeks has no row for season % week % — the league's first week is not on the NFL calendar (§12.17/D288)"
+ },
+ {
+  "loc": "111_schedule_remix.sql:557",
+  "fn": "schedule_preview",
+  "text": "schedule_preview: league % is % — the regular-season schedule can be remixed only while in_season"
+ },
+ {
+  "loc": "118_playoffs.sql:485",
+  "fn": "week_results_write_internal",
+  "text": "week_results_write: league % week % has a team in more than one primary matchup — the schedule invariant (§11.7) is broken; refusing to write results"
+ },
+ {
+  "loc": "118_playoffs.sql:501",
+  "fn": "week_results_write_internal",
+  "text": "week_results_write: league % week % has % team(s) in a secondary matchup with no primary matchup — the derangement (§11.7/E40) is broken; refusing to write results"
+ },
+ {
+  "loc": "118_playoffs.sql:535",
+  "fn": "week_results_write_internal",
+  "text": "week_results_write: league % week % wrote % team_week_results rows for % teams"
+ },
+ {
+  "loc": "118_playoffs.sql:547",
+  "fn": "week_results_write_internal",
+  "text": "week_results_write: league % week % (total_points) finalized % rows for % seated teams"
+ },
+ {
+  "loc": "118_playoffs.sql:989",
+  "fn": "playoff_round_pairs_internal",
+  "text": "playoff_round_pairs: bracket % with % entrants gives % byes and % game slots — not a bracket (§7.3.1 playoff_byes: byes = bracket − playoff_teams to the top seeds)"
+ },
+ {
+  "loc": "118_playoffs.sql:2278",
+  "fn": "create_league",
+  "text": "create_league: this action_id was already used by another account"
+ },
+ {
+  "loc": "118_playoffs.sql:2309",
+  "fn": "create_league",
+  "text": "create_league: scoring_system_id must reference one of the v1 scoring templates — personal scoring systems cannot be attached to a league in v1"
+ },
+ {
+  "loc": "118_playoffs.sql:2322",
+  "fn": "create_league",
+  "text": "create_league: playoff_start_week must be between 13 and 16 (currently week %) (§7.3.1, Q10/v2.8.6)"
+ },
+ {
+  "loc": "118_playoffs.sql:2327",
+  "fn": "create_league",
+  "text": "create_league: playoff_start_week must be the week after the regular season ends — week % for a %-week regular season (currently week %) (§7.3.8, Q10/v2.8.6)"
+ },
+ {
+  "loc": "118_playoffs.sql:2340",
+  "fn": "create_league",
+  "text": "create_league: playoff_teams must be 0 for a total-points league — the season-long points race is its playoff and there is no bracket; set playoff teams to 0 or switch to head-to-head (§11.7, Q39 (C))"
+ },
+ {
+  "loc": "118_playoffs.sql:2383",
+  "fn": "create_league",
+  "text": "create_league: this action_id was already used by another account"
+ },
+ {
+  "loc": "120_retire_succeed.sql:761",
+  "fn": "league_standings_internal",
+  "text": "league_standings: league % has schedule_mode % — expected h2h or total_points"
+ },
+ {
+  "loc": "120_retire_succeed.sql:775",
+  "fn": "league_standings_internal",
+  "text": "league_standings: league % stores an unknown tiebreaker % (§7.3.7: win_pct, points_for, head_to_head, points_against, division_record, coin_flip)"
+ },
+ {
+  "loc": "120_retire_succeed.sql:779",
+  "fn": "league_standings_internal",
+  "text": "league_standings: league % stores the tiebreaker % twice (§7.3.7: entries are unique)"
+ },
+ {
+  "loc": "123_commissioner_actions_and_lineup_override.sql:369",
+  "fn": "commish_actions_immutable_internal",
+  "text": "commish_actions_immutable: commissioner_actions is append-only: a % on the audit log is refused (§12.12/§10.3 — \"undoing\" an override is a NEW row referencing the original, never an edit to it)"
+ },
+ {
+  "loc": "123_commissioner_actions_and_lineup_override.sql:400",
+  "fn": "commish_actions_no_truncate_internal",
+  "text": "commish_actions_no_truncate: commissioner_actions is append-only: a TRUNCATE on the audit log is refused (§12.12 — a row trigger never sees TRUNCATE and RLS does not apply to it, so this statement trigger is what makes \"even a commissioner cannot remove an entry\" true)"
+ },
+ {
+  "loc": "126_commish_matchup_override.sql:422",
+  "fn": "rebuild_team_week_results",
+  "text": "rebuild_team_week_results: week_not_final — league % week % is % (results are derived from FINAL weeks only; an open week belongs to the write door — §11.5/§23.2/D295)"
+ },
+ {
+  "loc": "126_commish_matchup_override.sql:430",
+  "fn": "rebuild_team_week_results",
+  "text": "rebuild_team_week_results: % — league % week % is final but carries a pending shape (%): absence is not a score; nothing is rebuilt (E61/§23.2/R788)"
+ },
+ {
+  "loc": "126_commish_matchup_override.sql:441",
+  "fn": "rebuild_team_week_results",
+  "text": "rebuild_team_week_results: matchup_not_final — league % week % is final but % matchup(s) are not; the source of truth disagrees with the week and is not repaired here"
+ },
+ {
+  "loc": "126_commish_matchup_override.sql:455",
+  "fn": "rebuild_team_week_results",
+  "text": "rebuild_team_week_results: result_drift — league % week %: % non-overridden matchup(s) store a result that is not the E38 result of their own scores (%); a score correction must write the row's result with it (F245) — nothing is rebuilt"
+ },
+ {
+  "loc": "127_commish_roster_moves.sql:540",
+  "fn": "commish_roster_lineup_sync_internal",
+  "text": "commish_roster_lineup_sync: after the week-% sync % is not exactly once on the bench and off every slot of team % (F350 — a duplicate here would double-count in the scoring worker) — refusing"
+ },
+ {
+  "loc": "128_team_rename.sql:742",
+  "fn": "rename_own_team_internal",
+  "text": "rename_own_team: team % is a STANDALONE team, not a league franchise — rename it with a direct UPDATE, which its own RLS policy already allows (095:636-639, USING (auth.uid() = owner_id AND league_id IS NULL)). This verb exists because a LEAGUE franchise matches no UPDATE poli"
+ },
+ {
+  "loc": "128_team_rename.sql:806",
+  "fn": "rename_own_team_internal",
+  "text": "rename_own_team: franchise % is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b)). This is a legality gate and it binds everyone, commissioner and manager alike. NO VERB UN-RETIRES A FRANCHISE"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:383",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: league % is % — regular-season matchups exist to be edited only while in_season (§11.7; standing rule (a): a state where the action is meaningful)"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:406",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: matchup % is a % row — only regular-season pairings (regular / secondary) are re-paired here. Playoff matchups are set automatically today: the playoffs engine seeds them from the standings and re-seeds them at each sync (§11.5, 118:1573-1594), and this verb's"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:423",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: matchup % (week %) carries a result or score (overridden: %) — a scored or overridden cell is never rewritten (§22.2/rule 9); this is a LEGALITY boundary, not a timing one: correct the score or result with commish_edit_score / commish_set_result (migration 126"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:435",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: week % of league % has no league_weeks row — the schedule row exists but its week does not (§12.17); refusing rather than re-pairing a week the engine never opened"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:465",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: team % is not a seated franchise of league % — a matchup may only pair this league's own teams (§11.7/F222)"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:523",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: matchup % (week %, %'s current game) carries a result or score — a scored or overridden cell is never rewritten (§22.2/rule 9), and the edit would have to re-seat a team into it"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:562",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: week % of league % holds third_place rows — the edit's parking step cannot use that game type; refusing (§11.7/§11.5)"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:614",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: after the edit, week % (%) of league % does not seat every team exactly once (% of % teams appear exactly once) — refusing (§11.7 uniqueness)"
+ },
+ {
+  "loc": "130_commish_edit_schedule.sql:629",
+  "fn": "commish_edit_schedule_internal",
+  "text": "commish_edit_schedule: after the edit, week % of league % would pair the same two teams in both game types — a second game is never the primary opponent (E40)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3099",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: league % is % — regular-season matchups can be edited only while in_season"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3119",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: matchup % (week %) is % — only scheduled matchups may change; live/final never regenerate (§11.7/E41)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3127",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: matchup % (week %) carries a result or score (overridden: %) — a scored or overridden cell is never rewritten (§22.2/rule 9)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3136",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: week % of league % is % — only an upcoming week's matchups may change (§11.7/§12.17)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3145",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: week % of league % kicked off at % (%) — only future weeks may change (§11.7/E41/E42)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3160",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: team % is not a seated franchise of league % — a matchup may only pair this league's own teams (§11.7/F222)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3224",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: matchup % (week %, %'s current game) is % — the edit would have to re-seat a team into it; only scheduled matchups may change (§11.7/E41)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3231",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: matchup % (week %, %'s current game) carries a result or score — a scored or overridden cell is never rewritten (§22.2/rule 9)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3267",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: week % of league % holds third_place rows — the edit's parking step cannot use that game type; refusing (§11.7/§11.5)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3317",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: after the edit, week % (%) of league % does not seat every team exactly once (% of % teams appear exactly once) — refusing (§11.7 uniqueness)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3333",
+  "fn": "schedule_edit_matchup",
+  "text": "schedule_edit_matchup: after the edit, week % of league % would pair the same two teams in both game types — a second game is never the primary opponent (E40)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3501",
+  "fn": "schedule_remix_confirm",
+  "text": "schedule_remix_confirm: league % is % — the regular-season schedule can be remixed only while in_season"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3513",
+  "fn": "schedule_remix_confirm",
+  "text": "schedule_remix_confirm: league % has no regenerable week — every regular-season week is live, final or holds a non-scheduled matchup (weeks frozen: %); nothing to remix (§11.7: live/final weeks never regenerate)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3524",
+  "fn": "schedule_remix_confirm",
+  "text": "schedule_remix_confirm: seed % reproduces league %'s current schedule exactly — no changes to confirm (§11.7 \"regenerates with a fresh seed\"; preview said no_changes)"
+ },
+ {
+  "loc": "131_reason_optional_sweep.sql:3593",
+  "fn": "schedule_remix_confirm",
+  "text": "schedule_remix_confirm: the schedule_seed write-back touched % rows for league % (expected exactly 1)"
+ },
+ {
+  "loc": "132_remix_preview_reason_optional.sql:95",
+  "fn": "schedule_remix_plan_internal",
+  "text": "schedule_remix_plan: league % is a % league — it has no matchups to remix (§11.7 \"Total-points leagues generate no matchups\")"
+ },
+ {
+  "loc": "132_remix_preview_reason_optional.sql:108",
+  "fn": "schedule_remix_plan_internal",
+  "text": "schedule_remix_plan: league % has no league_weeks rows for season % — no schedule was generated (§11.4 generation is draft completion's); nothing to remix"
+ },
+ {
+  "loc": "132_remix_preview_reason_optional.sql:122",
+  "fn": "schedule_remix_plan_internal",
+  "text": "schedule_remix_plan: league % has % of % franchises seated — a schedule needs every seat (§7.2/D96)"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:300",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: league % is % — playoff matchups can be hand-picked only while the league is in playoffs (§11.5: before the rollover the bracket is a projected view and no round is written; after the champion the rounds are all decided)"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:315",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: matchup % is a % row — only playoff bracket rows are hand-picked here; a regular-season pairing is commish_edit_schedule's (130)"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:321",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: matchup % is a playoff row with NO seed — not the engine's (a foreign row, §11.5 / D318(5)); the sync names it and this verb does not adopt it. Remove it or let the engine write the round"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:331",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: league % has no bracket (kind %) — nothing to hand-pick (§11.5 (C)/(D))"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:343",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: matchup % sits in week %, which is no playoff round of league % (playoff_start_week %, % rounds × % weeks) — the plan is defective"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:402",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: the round-% pairing on matchup % carries a result or score on % of its % row(s) — a played pairing is never re-paired (§22.2/rule 9): the numbers belong to the teams that played it. Correct them with commish_edit_score / commish_set_result (126); hand-pick a p"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:423",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: team % is not in round % of league % — the round's entrants are the % teams seeded on its rows (%), and who qualifies is decided by the standings and the prior round's results, not here. Re-pair among those teams; to change who is in, correct the games that de"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:456",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: round % of league % spans weeks %..% but league_weeks holds % of % rows (§12.17) — refusing rather than re-pairing a week the engine never opened"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:479",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: the request would drop % from round % — every entrant plays (or holds a bye) exactly once, and no slot opens for it (§11.5 bracket arithmetic). To give a team a bye, hand-pick the BYE row and name that team; the team it displaces then takes the vacated slot"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:508",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: %'s current round-% pairing carries a result or score — a played pairing is never re-paired (§22.2/rule 9), and the edit would have to move % out of it"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:546",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: the request would leave a round-% pairing with NOBODY in it (both of its teams were named into matchup %) — a round keeps its % pairings (§11.5: bracket = 2^⌈log₂ playoff_teams⌉, the byes are slots). Pair a bye team with a team that has an opponent, not with a"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:589",
+  "fn": "commish_edit_bracket_internal",
+  "text": "commish_edit_bracket: weeks %..% of league % hold third_place rows — the edit's parking step cannot use that game type; refusing"
+ },
+ {
+  "loc": "134_commish_edit_bracket.sql:1359",
+  "fn": "playoff_bracket_state_internal",
+  "text": "playoff_bracket_state: league % round % spans NFL weeks %..% but league_weeks holds % of % rows — the plan (110) is defective"
+ },
+ {
+  "loc": "135_no_live_score_edits.sql:572",
+  "fn": "commish_matchup_override_internal",
+  "text": "commish_matchup_override: %: matchup % is a BYE (no away team) — a bye has no winner and `result` is not read for it (§11.7; matchup_result_internal returns NULL for a NULL away side). Correct the team's points with the score arm instead"
+ },
+ {
+  "loc": "135_no_live_score_edits.sql:595",
+  "fn": "commish_matchup_override_internal",
+  "text": "commish_matchup_override: %: team % is not a side of matchup % (home %, away %). To record a TIE, use the score arm (commish_edit_score) with equal scores — a winner id cannot express one (§15.4:1693; F351)"
+ },
+ {
+  "loc": "139_autopilot_switch.sql:377",
+  "fn": "commish_set_autopilot_internal",
+  "text": "commish_set_autopilot: franchise % is RETIRED — a sealed franchise plays no more weeks (spec:183, §7.2.1(b)) and autopilot never runs for it; put its successor (%) on autopilot instead"
+ },
+ {
+  "loc": "139_autopilot_switch.sql:383",
+  "fn": "commish_set_autopilot_internal",
+  "text": "commish_set_autopilot: team % has a manager — autopilot is for a seat with NO manager (§7.2.1(c)); to set this team's lineup, use the lineup override"
+ },
+ {
+  "loc": "139_autopilot_switch.sql:389",
+  "fn": "commish_set_autopilot_internal",
+  "text": "commish_set_autopilot: team % has no league_members row — it is not proven unmanaged, and autopilot declines such a seat rather than risk seizing a human's team (D339); seat it first"
+ },
+ {
+  "loc": "144_per_week_scoring_rules.sql:299",
+  "fn": "league_weeks_rules_guard",
+  "text": "league_weeks_rules_guard: league_weeks %: week % (season %) is upcoming and holds no scoring rules — it takes the league's rules when it opens (F397)"
+ },
+ {
+  "loc": "144_per_week_scoring_rules.sql:309",
+  "fn": "league_weeks_rules_guard",
+  "text": "league_weeks_rules_guard: league_weeks %: week % (season %) cannot lose its scoring rules — a week is scored, box-scored and reconciled under the rules it was played with, for ever (F397)"
+ },
+ {
+  "loc": "144_per_week_scoring_rules.sql:315",
+  "fn": "league_weeks_rules_guard",
+  "text": "league_weeks_rules_guard: league_weeks %: week % (season %) is % — its scoring rules are the rules it was played with and never change (F397; a finished week keeps its scores, Q64 / Q69). Only the week being played now takes new rules, through a scoring change with re-score on"
+ },
+ {
+  "loc": "145_waiver_claims.sql:650",
+  "fn": "waiver_claim_cancel_internal",
+  "text": "waiver_claim_cancel: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "146_faab_carries_with_seat.sql:856",
+  "fn": "seat_league_member_internal",
+  "text": "seat_league_member: franchise % has no seat row in league % — its FAAB balance cannot be carried, and a fresh budget is never minted once the draft has started (§12.2 / C72); repair the seat before seating a manager"
+ },
+ {
+  "loc": "147_commish_edit_faab.sql:234",
+  "fn": "commish_edit_faab_internal",
+  "text": "commish_edit_faab: franchise % is RETIRED — its seat, and the FAAB balance with it, carried to its successor (%) (§7.2.1(b)); edit that team's balance instead"
+ },
+ {
+  "loc": "147_commish_edit_faab.sql:239",
+  "fn": "commish_edit_faab_internal",
+  "text": "commish_edit_faab: team % has no seat in league % — a FAAB balance lives on the team's seat (league_members), and this team has none, so there is no balance to edit"
+ },
+ {
+  "loc": "149_waiver_schedule.sql:2407",
+  "fn": "commish_change_setting_internal",
+  "text": "commish_change_setting: scoring_system_id % must reference one of the scoring templates, or the league's own current custom scoring system — personal scoring systems and other leagues' systems cannot be attached (§7.3.8 v2.11, §7.3.3.1; 118 step 5's scope)"
+ },
+ {
+  "loc": "149_waiver_schedule.sql:2770",
+  "fn": "commish_change_setting_internal",
+  "text": "commish_change_setting: re-writing the live week(s) % rules touched % row(s), expected % — refusing to re-score a week that would go on being scored under its old rules (F397)"
+ },
+ {
+  "loc": "150_waiver_processor.sql:1786",
+  "fn": "waiver_claim_reorder_internal",
+  "text": "waiver_claim_reorder: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "150_waiver_processor.sql:2858",
+  "fn": "waiver_claim_edit_internal",
+  "text": "waiver_claim_edit: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "150_waiver_processor.sql:2895",
+  "fn": "waiver_claim_edit_internal",
+  "text": "waiver_claim_edit: this league has no waivers (waiver type \"none_fcfs\") — every unowned player is first come, first served: add him directly"
+ },
+ {
+  "loc": "150_waiver_processor.sql:2928",
+  "fn": "waiver_claim_edit_internal",
+  "text": "waiver_claim_edit: a bid of $% is below this league's minimum bid of $% (faab_min_bid, §7.3.4)"
+ },
+ {
+  "loc": "150_waiver_processor.sql:2932",
+  "fn": "waiver_claim_edit_internal",
+  "text": "waiver_claim_edit: % has no FAAB balance on record (its league_members seat %) — refusing to accept a bid against money that is not recorded"
+ },
+ {
+  "loc": "151_trade_execution.sql:455",
+  "fn": "trade_deadline_internal",
+  "text": "trade_deadline: trade deadline: week % of season % is not on the NFL calendar (nfl_weeks) — the deadline (trade_deadline_week %) cannot be placed; refusing rather than reading it as \"no deadline\""
+ },
+ {
+  "loc": "154_one_start_per_week.sql:344",
+  "fn": "team_lineups_one_start_per_week",
+  "text": "team_lineups_one_start_per_week: % (%) is already in %'s starting lineup for week % (slot \"%\") — a player starts for at most one team per league-week, so % cannot start him at \"%\" (§7.3.3 / §11.2; PROGRESS F441 / F445): that start stays, and so do its points"
+ },
+ {
+  "loc": "155_trade_league_vote.sql:336",
+  "fn": "trade_vote_internal",
+  "text": "trade_vote: %"
+ },
+ {
+  "loc": "155_trade_league_vote.sql:353",
+  "fn": "trade_vote_internal",
+  "text": "trade_vote: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "155_trade_league_vote.sql:363",
+  "fn": "trade_vote_internal",
+  "text": "trade_vote: your team is in this trade — the two teams in a trade do not vote on it; every other manager may (§13.3 / Q77)"
+ },
+ {
+  "loc": "155_trade_league_vote.sql:376",
+  "fn": "trade_vote_internal",
+  "text": "trade_vote: this league's trades are %, not by a league vote (trade_review %, §7.3.5)"
+ },
+ {
+  "loc": "155_trade_league_vote.sql:400",
+  "fn": "trade_vote_internal",
+  "text": "trade_vote: voting on this trade closed at % — the review period is over (§13.3 / Q77)"
+ },
+ {
+  "loc": "156_commish_force_or_reverse_trade.sql:300",
+  "fn": "trade_execute_internal",
+  "text": "trade_execute: the league is % — a trade goes through only while the league is in season or in the playoffs (§7.1 / §13.3)"
+ },
+ {
+  "loc": "156_commish_force_or_reverse_trade.sql:592",
+  "fn": "trade_execute_internal",
+  "text": "trade_execute: the pool mirror for % is not rostered after the trade (D294) — refusing"
+ },
+ {
+  "loc": "156_commish_force_or_reverse_trade.sql:609",
+  "fn": "trade_execute_internal",
+  "text": "trade_execute: team % holds % players after the trade, expected % (roster_size %) — refusing"
+ },
+ {
+  "loc": "156_commish_force_or_reverse_trade.sql:762",
+  "fn": "commish_trade_rescore_internal",
+  "text": "commish_trade_rescore: league % has no league_weeks row for season % week % — a starter left that week's lineup and its score cannot be placed"
+ },
+ {
+  "loc": "156_commish_force_or_reverse_trade.sql:778",
+  "fn": "commish_trade_rescore_internal",
+  "text": "commish_trade_rescore: a starter left week % but no lineup row of teams % could be flagged for the re-score — refusing (D346)"
+ },
+ {
+  "loc": "157_played_lock.sql:1836",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: action_id % already names a % transaction in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "157_played_lock.sql:1842",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: action_id % belongs to another team's move in this league — an action_id identifies ONE submit (R732)"
+ },
+ {
+  "loc": "157_played_lock.sql:1852",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: league % is % — rosters change through add/drop only while in_season or in playoffs"
+ },
+ {
+  "loc": "157_played_lock.sql:1868",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: league % has no league_weeks rows — no season calendar to evaluate locks and caps against"
+ },
+ {
+  "loc": "157_played_lock.sql:1938",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % (%) is locked for drops — kicked off at % (%); week % clears at % (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no dropping a player mid-game"
+ },
+ {
+  "loc": "157_played_lock.sql:1973",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % (%) is already on %'s roster in this league — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)"
+ },
+ {
+  "loc": "157_played_lock.sql:1992",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: league_player_pool says % (%) is rostered in league % but league_rosters has no row — the pool mirror is broken; refusing until reconciliation (L.D2.3) repairs it (D294)"
+ },
+ {
+  "loc": "157_played_lock.sql:2005",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % (%) is locked for adds — kicked off at % (%); week % clears at % (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no in-game pickups"
+ },
+ {
+  "loc": "157_played_lock.sql:2026",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % (%) is on waivers until the waiver run at % (%) — put in a waiver claim; he is not an instant pickup until that run has been processed (§7.3.4/§13.1)"
+ },
+ {
+  "loc": "157_played_lock.sql:2033",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % (%) is claim-only right now — %; put in a waiver claim instead: claims settle at the next waiver run, % (%) (§7.3.4/§13.1)"
+ },
+ {
+  "loc": "157_played_lock.sql:2053",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: %'s roster is full (% of % — §7.3.2 roster_size) — include a drop in the same move"
+ },
+ {
+  "loc": "157_played_lock.sql:2061",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % has used % of % acquisitions in week % (acquisitions_per_week, §7.3.4) — no more adds this week"
+ },
+ {
+  "loc": "157_played_lock.sql:2067",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % has used % of % acquisitions this season (acquisitions_per_season, §7.3.4) — no more adds this season"
+ },
+ {
+  "loc": "157_played_lock.sql:2101",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: % (%) was rostered by another team in this league a moment ago — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)"
+ },
+ {
+  "loc": "157_played_lock.sql:2195",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: the pool mirror for % is not rostered after the add (D294) — refusing"
+ },
+ {
+  "loc": "157_played_lock.sql:2205",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: the pool mirror for % is not % after the drop (D294) — refusing"
+ },
+ {
+  "loc": "157_played_lock.sql:2212",
+  "fn": "roster_add_drop_internal",
+  "text": "roster_add_drop: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
+ },
+ {
+  "loc": "157_played_lock.sql:2376",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "157_played_lock.sql:2411",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: this league has no waivers (waiver type \"none_fcfs\") — every unowned player is first come, first served: add him directly"
+ },
+ {
+  "loc": "157_played_lock.sql:2416",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: league % has waiver type \"%\", which is not one of faab / rolling_priority / reverse_standings / none_fcfs (§7.3.4) — refusing rather than guessing how its claims are decided"
+ },
+ {
+  "loc": "157_played_lock.sql:2432",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: % (%) is already on % — a player is on ONE roster per league (player exclusivity, §13.2); only an unowned player can be claimed"
+ },
+ {
+  "loc": "157_played_lock.sql:2449",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: league % has no league_weeks rows — no season calendar to evaluate the game-day lock against"
+ },
+ {
+  "loc": "157_played_lock.sql:2456",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: % (%) is locked for adds — kicked off at % (%); week % clears at % (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no in-game pickups"
+ },
+ {
+  "loc": "157_played_lock.sql:2488",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: a bid of $% is below this league's minimum bid of $% (faab_min_bid, §7.3.4)"
+ },
+ {
+  "loc": "157_played_lock.sql:2492",
+  "fn": "waiver_claim_submit_internal",
+  "text": "waiver_claim_submit: % has no FAAB balance on record (its league_members seat %) — refusing to accept a bid against money that is not recorded"
+ },
+ {
+  "loc": "157_played_lock.sql:3190",
+  "fn": "trade_lock_internal",
+  "text": "trade_lock: league % has no league_weeks rows — no season calendar to evaluate the game-day lock against"
+ },
+ {
+  "loc": "161_rescore_final_weeks.sql:213",
+  "fn": "league_week_player_points_lock",
+  "text": "league_week_player_points_lock: league % has no league_weeks row for season % week %"
+ },
+ {
+  "loc": "161_rescore_final_weeks.sql:218",
+  "fn": "league_week_player_points_lock",
+  "text": "league_week_player_points_lock: week_not_open — league % week % is upcoming; nothing has been scored"
+ },
+ {
+  "loc": "161_rescore_final_weeks.sql:253",
+  "fn": "league_week_player_points_lock",
+  "text": "league_week_player_points_lock: week_locked — league % week % is final; its stored per-player points never change (F405: a later stat correction updates player_stats, never a locked week — the commissioner's audited score override is the one change to a final week, §11.4)"
+ },
+ {
+  "loc": "162_trade_preview.sql:165",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: % (%) is on %'s roster, not %'s — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)"
+ },
+ {
+  "loc": "162_trade_preview.sql:182",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: % gives nothing in this trade — this league does not allow future considerations (allow_future_considerations is off, §7.3.5), so each team gives at least one player or FAAB"
+ },
+ {
+  "loc": "162_trade_preview.sql:197",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: FAAB cannot be traded in this league (allow_faab_in_trades is off, §7.3.5)"
+ },
+ {
+  "loc": "162_trade_preview.sql:212",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: % has no FAAB balance on record (its league_members seat %) — refusing to trade money that is not recorded"
+ },
+ {
+  "loc": "162_trade_preview.sql:251",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: % (%) is not on %'s roster — a team can only drop its own players to make room (E36)"
+ },
+ {
+  "loc": "162_trade_preview.sql:281",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: %'s roster would hold % players after this trade — % more than its % spots (§7.3.2 roster_size): it has added players since the trade was agreed, so the trade cannot go through as agreed (E36)"
+ },
+ {
+  "loc": "162_trade_preview.sql:286",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: %'s roster no longer fits this offer — it would hold % players after the trade, % more than its % spots (§7.3.2 roster_size), because it has added players since proposing; only % can fix that, so ask them to cancel and re-propose with drops (E36)"
+ },
+ {
+  "loc": "162_trade_preview.sql:291",
+  "fn": "trade_check_internal",
+  "text": "trade_check: %: %'s roster would hold % players after this trade — % more than its % spots (§7.3.2 roster_size): name % more drop(s) as part of the trade (E36)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:260",
+  "fn": "draft_pause",
+  "text": "draft_pause: only the member practicing this mock can pause it (§8.8/D103)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:328",
+  "fn": "draft_resume",
+  "text": "draft_resume: only the member practicing this mock can resume it (§8.8/D103)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:457",
+  "fn": "draft_set_clock",
+  "text": "draft_set_clock: the draft is % — the pick clock can only be edited mid-draft (E15); pre-draft, edit it in League settings"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:496",
+  "fn": "draft_set_clock",
+  "text": "draft_set_clock: an auction clock cannot be extended in place — the current clock is never rewritten, and the new timer applies to upcoming nominations (E15 / §8.7 v2.15)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:500",
+  "fn": "draft_set_clock",
+  "text": "draft_set_clock: an auction clock cannot be extended in place — the draft is paused, and the new timer applies when it resumes (§8.7 v2.10)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:583",
+  "fn": "draft_set_clock",
+  "text": "draft_set_clock: the pick clock cannot be extended in place — the current clock is never rewritten, and the new timer applies to upcoming picks (E15 / §8.7 v2.15)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:587",
+  "fn": "draft_set_clock",
+  "text": "draft_set_clock: the pick clock cannot be extended in place — the current pick keeps its stored remaining time across the pause, and the new timer applies to upcoming picks (§8.7 v2.12.5 / F57)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:690",
+  "fn": "draft_undo",
+  "text": "draft_undo: undo is not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:696",
+  "fn": "draft_undo",
+  "text": "draft_undo: the draft is complete — post-completion corrections arrive with the commissioner console (M6)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:795",
+  "fn": "draft_undo",
+  "text": "draft_undo: auction % is % but has no started_at — this run's bid history cannot be told from a previous run's; refusing to guess whose nomination to rewind to (R379)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:807",
+  "fn": "draft_undo",
+  "text": "draft_undo: auction % has no bid history for nomination % — cannot tell whose nomination to rewind to (F62)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:961",
+  "fn": "draft_reassign_pick",
+  "text": "draft_reassign_pick: pick edits are not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:967",
+  "fn": "draft_reassign_pick",
+  "text": "draft_reassign_pick: the draft is complete — post-completion corrections arrive with the commissioner console (M6)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1045",
+  "fn": "draft_reassign_pick",
+  "text": "draft_reassign_pick: % is on the block right now — cancel the nomination first (Edit current nomination), then assign him (§8.7/D143)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1113",
+  "fn": "draft_reassign_pick",
+  "text": "draft_reassign_pick: $% is over that team's max bid of $% — they have $% for % open roster spots at a $% per-slot reserve; reverse a won bid or adjust their budget first (E28/§8.6.8)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1160",
+  "fn": "draft_reassign_pick",
+  "text": "draft_reassign_pick: that edit left auction % insolvent (§8.6.8) — refusing"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1278",
+  "fn": "draft_move_player",
+  "text": "draft_move_player: moving a drafted player is not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1284",
+  "fn": "draft_move_player",
+  "text": "draft_move_player: the draft is complete — post-completion corrections arrive with the commissioner console (M6)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1413",
+  "fn": "draft_move_player",
+  "text": "draft_move_player: $% is over that team's max bid of $% — they have $% for % open roster spots at a $% per-slot reserve; reverse a won bid or adjust their budget first (E28/§8.6.8)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1458",
+  "fn": "draft_move_player",
+  "text": "draft_move_player: that edit left auction % insolvent (§8.6.8) — refusing"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1555",
+  "fn": "draft_force_pick",
+  "text": "draft_force_pick: picking for another seat is not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1600",
+  "fn": "draft_force_pick",
+  "text": "draft_force_pick: bidding is already open on % at $% — a commissioner cannot bid for a manager (§8.6.5); the clock awards the high bidder when it expires"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1636",
+  "fn": "draft_force_pick",
+  "text": "draft_force_pick: %'s roster is complete — complete rosters are skipped in the nomination rotation (§8.6.7(c)/E27)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1654",
+  "fn": "draft_force_pick",
+  "text": "draft_force_pick: % cannot afford the $% nomination floor — max bid is $% ($% for % open spots) (§8.6.7(a))"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1890",
+  "fn": "draft_set_order",
+  "text": "draft_set_order: a standalone practice cannot edit its order yet — delete it and launch a new one for a fresh order (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:1944",
+  "fn": "draft_set_order",
+  "text": "draft_set_order: this auction has not started — set nomination_order_mode and drag the nomination order in League settings (Draft configuration); draft_start hydrates it"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2106",
+  "fn": "draft_reverse_won_bid",
+  "text": "draft_reverse_won_bid: reversing a won bid is not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2121",
+  "fn": "draft_reverse_won_bid",
+  "text": "draft_reverse_won_bid: the draft is complete — post-completion corrections arrive with the commissioner console (M6)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2181",
+  "fn": "draft_reverse_won_bid",
+  "text": "draft_reverse_won_bid: reversing pick % left auction % insolvent (§8.6.8) — refusing"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2315",
+  "fn": "draft_adjust_budget",
+  "text": "draft_adjust_budget: budget adjustments are not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2328",
+  "fn": "draft_adjust_budget",
+  "text": "draft_adjust_budget: the draft is complete — post-completion corrections arrive with the commissioner console (M6)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2378",
+  "fn": "draft_adjust_budget",
+  "text": "draft_adjust_budget: that leaves % $% short of the $% already spent — reverse a won bid instead, or make the adjustment smaller (E28)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2387",
+  "fn": "draft_adjust_budget",
+  "text": "draft_adjust_budget: that leaves % with $% for % open roster spots at a $% per-slot reserve — §8.6.8 needs at least $%; reverse a won bid to free a spot, or make the adjustment smaller (E28)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2413",
+  "fn": "draft_adjust_budget",
+  "text": "draft_adjust_budget: that adjustment left auction % insolvent (§8.6.8) — refusing"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2518",
+  "fn": "draft_cancel_nomination",
+  "text": "draft_cancel_nomination: cancelling a nomination is not open in a practice yet (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2662",
+  "fn": "draft_end",
+  "text": "draft_end: a practice cannot be ended early — delete the practice instead (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2671",
+  "fn": "draft_end",
+  "text": "draft_end: this is a % draft — ending early as-is is an auction control (§8.7, ruled v2.10.1); use Reset to wipe a snake draft"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2728",
+  "fn": "draft_end",
+  "text": "draft_end: auction % was already insolvent (§8.6.8) — refusing to freeze a broken board into rosters"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2819",
+  "fn": "draft_reset",
+  "text": "draft_reset: a practice cannot be reset — delete it and start a new one (§8.8/E75)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:2825",
+  "fn": "draft_reset",
+  "text": "draft_reset: the draft is complete — a post-completion reset is an audited override that arrives with the commissioner console (M6)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:3091",
+  "fn": "draft_start_internal",
+  "text": "draft_start: league % has % of % franchises seated — every seat must exist before the draft starts; add placeholder seats for the empty slots (League home → Invite) or invite managers (§7.2/D96)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:3106",
+  "fn": "draft_start_internal",
+  "text": "draft_start: league % cannot start — no NFL week of season % has a first kickoff still ahead (the season is over, or the NFL calendar has no rows for it); create the league for next season (§11.7 Mid-season entry)"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:3116",
+  "fn": "draft_start_internal",
+  "text": "draft_start: league % cannot start — the season would begin at NFL week %, and even a 4-week regular season with no playoffs would end at week % (> 18); the NFL season is too far along for this league (§11.7 Mid-season entry, Q31) — create the league for next season"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:3160",
+  "fn": "draft_start_internal",
+  "text": "draft_start: league % roster settings produce no draftable rounds (rounds = starters + bench, D91) — fix the roster in League settings"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:3231",
+  "fn": "draft_start_internal",
+  "text": "draft_start: league % cannot start an auction — a $% budget cannot fill % draftable roster spots at a $% per-slot reserve (§8.6.8 solvency); raise the auction budget, or allow $0 nominations in League settings → Draft setup"
+ },
+ {
+  "loc": "168_draft_room_receipts.sql:3248",
+  "fn": "draft_start_internal",
+  "text": "draft_start: league % cannot start an auction — % has $% for % draftable roster spots at a $% per-slot reserve (§8.6.8 solvency). The league's $% auction budget clears that floor, so the shortfall is this franchise's own: clear its commissioner budget adjustment (§8.7), or"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:303",
+  "fn": "add_placeholder_seat",
+  "text": "add_placeholder_seat: this league already has all % seats — raise team_count first"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:600",
+  "fn": "assign_manager",
+  "text": "assign_manager: that franchise already has a manager — remove them first (§7.2.1 takeover/vacate)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1231",
+  "fn": "create_league_invite",
+  "text": "create_league_invite: identity-restricted invites are single-use — max_uses must be 1"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1235",
+  "fn": "create_league_invite",
+  "text": "create_league_invite: invited_email must be a valid email address"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1246",
+  "fn": "create_league_invite",
+  "text": "create_league_invite: no FieldScout account with the username \"%\" — username invites require an existing account (§7.2); use an email invite instead"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1258",
+  "fn": "create_league_invite",
+  "text": "create_league_invite: target_team_id is not a franchise of this league"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1515",
+  "fn": "set_league_invite_slug",
+  "text": "set_league_invite_slug: invite_slug must be 3-40 characters of letters, numbers, and hyphens, starting and ending with a letter or number"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1522",
+  "fn": "set_league_invite_slug",
+  "text": "set_league_invite_slug: that invite_slug has the shape of a share code — use a different length or include a letter beyond a-f"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1532",
+  "fn": "set_league_invite_slug",
+  "text": "set_league_invite_slug: that invite_slug is already taken by another league"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1609",
+  "fn": "update_league_settings",
+  "text": "update_league_settings: league % is in % — settings are locked once the draft starts; post-draft changes are audited commissioner overrides (M6)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1623",
+  "fn": "update_league_settings",
+  "text": "update_league_settings: team_count % is below the % franchises already seated in this league — remove a team first (§7.2 capacity; F28)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1630",
+  "fn": "update_league_settings",
+  "text": "update_league_settings: playoff_start_week must be between 13 and 16 (currently week %) (§7.3.1, Q10/v2.8.6)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1635",
+  "fn": "update_league_settings",
+  "text": "update_league_settings: playoff_start_week must be the week after the regular season ends — week % for a %-week regular season (currently week %) (§7.3.8, Q10/v2.8.6)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1648",
+  "fn": "update_league_settings",
+  "text": "update_league_settings: playoff_teams must be 0 for a total-points league — the season-long points race is its playoff and there is no bracket; set playoff teams to 0 or switch to head-to-head (§11.7, Q39 (C))"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1665",
+  "fn": "update_league_settings",
+  "text": "update_league_settings: scoring_system_id must reference one of the scoring templates, or the league's own forked custom scoring system — personal scoring systems and other leagues' systems cannot be attached (§7.3.8 v2.11, §7.3.3.1)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1877",
+  "fn": "set_league_status",
+  "text": "set_league_status: cannot move league % to % — the draft engine lands in M2; only setup ↔ scheduled are available"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1887",
+  "fn": "set_league_status",
+  "text": "set_league_status: league % is in % — transitions from draft/season states are managed by the draft engine (M2+)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:1902",
+  "fn": "set_league_status",
+  "text": "set_league_status: cannot schedule league % — settings.draft.draft_scheduled_at is not set (§7.1: scheduled means the draft has a date/time)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2023",
+  "fn": "scoring_fork_template",
+  "text": "scoring_fork_template: league % is in % — scoring can only be customized while the league is in setup or scheduled; once the draft starts the rules are frozen into the league's snapshot (§7.3 header, §7.3.3.1 lifecycle)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2039",
+  "fn": "scoring_fork_template",
+  "text": "scoring_fork_template: p_template_id must reference one of the scoring templates — a custom scoring system is always forked FROM a template, and personal scoring systems cannot be attached to a league (§7.3.3.1 entry point, §7.3.3)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2176",
+  "fn": "scoring_update_rules",
+  "text": "scoring_update_rules: league % is in % — scoring can only be edited while the league is in setup or scheduled; once the draft starts the rules are frozen into the league's snapshot (§7.3 header, §7.3.3.1 lifecycle)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2183",
+  "fn": "scoring_update_rules",
+  "text": "scoring_update_rules: league % references no scoring system — fork a template first (§7.3.3.1 entry point)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2212",
+  "fn": "scoring_update_rules",
+  "text": "scoring_update_rules: league % references scoring system %, which is not this league's own forked custom row — only a system forked by this league's commissioner can be edited here (§7.3.3.1, §12.25)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2368",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: league % is % — lineups are set only while in_season or in playoffs"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2386",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: league % has no league_weeks rows — no season calendar to set a lineup against"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2395",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: week % is not on league %'s calendar (season %; league_weeks holds weeks %–%)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2403",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: week % is in the past (the current week is %) — a past week's lineup changes only through the audited commissioner override (§11.2, M6)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2409",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: week % of league % is % — a closed week's lineup changes only through the audited commissioner override (§11.2, M6)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2541",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % already played this week — his start stays (slot \"%\": his game kicked off at % (%); he has left %'s roster since, and a played starter is stuck in the lineup for the week — §11.2, Q32; the week is scored from this lineup, §7.3.3)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2546",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % is held in this week's lineup — his start stays (slot \"%\": %; he has left %'s roster since, and no move changes the start he holds this week — §11.2, Q32, D412(5); the week is scored from this lineup, §7.3.3)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2579",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % (%) appears at both \"%\" and \"%\" — each player fills exactly one slot (E16)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2633",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: slot % is locked — % kicked off at % (%) and a locked slot's player never moves (§11.2, lineup_lock = per_player_kickoff); every other unlocked slot stays editable"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2647",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: %'s game kicked off at % (%) — a player whose game has started cannot enter or move slots (§11.2, lineup_lock = per_player_kickoff); wanted \"%\""
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2676",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % (%) cannot be placed — no legal arrangement of the started players fills the slots (E16): \"%\" accepts % and every slot % could take is held by a player with nowhere else to go (unplaced: %)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2700",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % entered restricted IR spot % in week % and may not leave it before week % (min_weeks stint, §11.2/§7.3.2) — the current week is %; commissioner override is M6's"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2706",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % holds designation % — IR spot % accepts only % (§7.3.2 IR slot rules)"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2742",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % entered restricted IR spot % in week % and may not leave it before week % (min_weeks stint, §11.2/§7.3.2) — the current week is %; commissioner override is M6's"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2788",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: % is % for week % and allow_illegal_lineups is off — slot \"%\" is blocked at submit (§7.3.6); bench him or start someone who plays"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2890",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: wrote slot_key for % starters, expected %"
+ },
+ {
+  "loc": "169_membership_setup_receipts.sql:2899",
+  "fn": "set_lineup_internal",
+  "text": "set_lineup: wrote slot_key = bn for % players, expected %"
+ },
+ {
+  "loc": "170_commish_backstop.sql:249",
+  "fn": "commish_action_pointer_guard_internal",
+  "text": "commish_action_pointer_guard: %.% on row % may only name a receipt of its own league — % belongs to league %, the row to league % (TD10 (iii); §12.12)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:275",
+  "fn": "commish_action_pointer_guard_internal",
+  "text": "commish_action_pointer_guard: %.% on row % was written % → % with app.commish_action_id %: a pointer at the commissioner log is set only by the audited verb that wrote that receipt in this transaction (log_commissioner_action_internal holds its id in app.commish_action_id) — a write outsid"
+ },
+ {
+  "loc": "170_commish_backstop.sql:476",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: league % has no league_weeks rows — no season calendar to set a lineup against"
+ },
+ {
+  "loc": "170_commish_backstop.sql:485",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: week % is not on league %'s calendar (season %; league_weeks holds weeks %–%)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:625",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: % has left %'s roster — an IR spot holds only a rostered player (§11.2); his week-% start at \"%\" can stay, move or be removed, never go to IR"
+ },
+ {
+  "loc": "170_commish_backstop.sql:663",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: % (%) appears at both \"%\" and \"%\" — each player fills exactly one slot (E16)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:793",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: % (%) cannot be placed — no legal arrangement fills the slots (E16): \"%\" accepts % and every slot % could take is held by a player with nowhere else to go (unplaced: %)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:821",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: % holds designation % — IR spot % accepts only % (§7.3.2 IR slot rules)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:921",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: % is % for week % and allow_illegal_lineups is off — slot \"%\" is blocked at submit (§7.3.6); bench him, start someone who plays, or turn the setting on"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1136",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: wrote slot_key for % starters, expected %"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1145",
+  "fn": "commish_edit_lineup_internal",
+  "text": "commish_edit_lineup: wrote slot_key = bn for % players, expected %"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1383",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: action_id % already names a \"%\" transaction in this league — an action_id identifies ONE submit of ONE verb (R732/R1017). Mint a new action_id for this override, or retry the verb that owns that one"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1408",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: league % is % — rosters change only while in_season or in playoffs"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1449",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: a retired franchise is sealed — its roster and record are frozen (§7.2.1, spec:183). This is a legality gate and it binds the commissioner too (PROGRESS standing rule (i), F352). The franchise would have to be un-retired first, and NO VERB DOES THAT TODAY —"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1456",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: league % has no league_weeks rows — no season calendar to place the move on"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1467",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: league % has no league_weeks row for season % week % — the calendar moved under this transaction"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1531",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: % (%) is on no roster in league % — a move needs a source roster; to bring a free agent in, use commish_force_add_drop (§15.4:1695)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1564",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: % (%) is on %'s roster, not %'s — name the roster he is actually on, or move him with commish_move_player (§15.4:1694)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1588",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: % (%) is already on %'s roster in this league — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7), and that binds a commissioner too: it is the shape of the game, not its timing (PROGRESS standing rule (i)). To take him off"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1672",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: league_player_pool says % (%) is rostered in league % but league_rosters has no row — the pool mirror is broken; refusing until reconciliation (L.D2.3) repairs it (D294)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1714",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: %'s roster is full (% of % — §7.3.2 roster_size) — free a spot with commish_force_add_drop first. A roster over its own league's size is a shape the rules do not have, so this gate binds the commissioner too (PROGRESS standing rule (i))"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1721",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: %'s roster is full (% of % — §7.3.2 roster_size) — include a drop in the same move (§13.1). A roster over its own league's size is a shape the rules do not have, so this gate binds the commissioner too (PROGRESS standing rule (i))"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1810",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: % (%) was rostered by another team in this league a moment ago — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1870",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: the pool mirror for % is not rostered after the write (D294) — refusing"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1881",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: the pool mirror for % is not % after the drop (D294) — refusing"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1888",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
+ },
+ {
+  "loc": "170_commish_backstop.sql:1896",
+  "fn": "commish_roster_override_internal",
+  "text": "commish_roster_override: %: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
+ },
+ {
+  "loc": "170_commish_backstop.sql:2332",
+  "fn": "commish_rename_team_internal",
+  "text": "commish_rename_team: franchise % is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b)). This is a legality gate and it binds the commissioner too (PROGRESS standing rule (i)). NO VERB UN-RETIRES A"
+ },
+ {
+  "loc": "171_commish_draft_doors.sql:234",
+  "fn": "draft_place_bid",
+  "text": "draft_place_bid: this mock draft is another member's solo practice (§8.8/D103)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:235",
+  "fn": "trade_propose_internal",
+  "text": "trade_propose: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:264",
+  "fn": "trade_propose_internal",
+  "text": "trade_propose: league % is % — trades are made only while the league is in season or in the playoffs (§7.1 / §13.3)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:273",
+  "fn": "trade_propose_internal",
+  "text": "trade_propose: the trade deadline has passed — trades could be proposed until week % began (%; trade_deadline_week %, §13.3 / Q76)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:452",
+  "fn": "trade_respond_internal",
+  "text": "trade_respond: %"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:467",
+  "fn": "trade_respond_internal",
+  "text": "trade_respond: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:485",
+  "fn": "trade_respond_internal",
+  "text": "trade_respond: %"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:516",
+  "fn": "trade_respond_internal",
+  "text": "trade_respond: league % is % — a trade is accepted or countered only while the league is in season or in the playoffs (§7.1 / §13.3)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:526",
+  "fn": "trade_respond_internal",
+  "text": "trade_respond: the trade deadline has passed — trades could be accepted until week % began (%; trade_deadline_week %, §13.3 / Q76); this offer can no longer be %"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:833",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: action_id % already names a % of another trade or another op in this league — an action_id identifies ONE submit (R732)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:873",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: % already kicked off this week, and this league fails a locked trade instead of waiting (trade_lock_behavior = reject) — nothing was changed; force puts it through now (op force)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:878",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: the trade cannot go through as agreed — % — nothing was changed; a trade must leave both rosters legal, which binds the commissioner too (standing rule (i)): make room with commish_force_add_drop or move players with commish_move_player"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:908",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: this trade cannot be approved — it was %; to move these players use commish_move_player"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:921",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: the league is % — a trade is vetoed only while the league is in season or in the playoffs (§7.1 / §13.3)"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:949",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: this trade already went through, so it cannot be vetoed — a completed trade stands; to move a player use commish_move_player"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:988",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: the trade cannot go through as it stands — % — nothing was changed; a trade must leave both rosters legal, which binds the commissioner too (standing rule (i)): make room with commish_force_add_drop or move players with commish_move_player"
+ },
+ {
+  "loc": "174_commish_trade_powers.sql:1005",
+  "fn": "commish_force_or_reverse_trade_internal",
+  "text": "commish_force_or_reverse_trade: this trade cannot be forced — it was %; to move these players use commish_move_player"
+ },
+ {
+  "loc": "179_reverts_action_id_guard.sql:53",
+  "fn": "commish_action_reverts_guard_internal",
+  "text": "commish_action_reverts_guard: commissioner_actions.reverts_action_id on receipt % names the receipt itself: a revert points back at an EARLIER receipt of its own league (F520; §10.4, §12.12)"
+ },
+ {
+  "loc": "179_reverts_action_id_guard.sql:62",
+  "fn": "commish_action_reverts_guard_internal",
+  "text": "commish_action_reverts_guard: commissioner_actions.reverts_action_id on receipt % names % (league %), not a receipt of league %: a revert points back only at a receipt of its own league (F520; §10.4, §12.12)"
+ }
+]
