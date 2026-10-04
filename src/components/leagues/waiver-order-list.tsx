@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 import { Crest, TeamNameLink } from './league-cells'
@@ -22,23 +23,22 @@ import type { WaiverOrderListView } from './waiver-claims-ops'
 export function WaiverOrderList({ view, leagueId }: { view: WaiverOrderListView; leagueId: string }) {
   if (view.kind === 'hidden') return null
   return (
-    <section className="flex flex-col gap-1.5" aria-labelledby="waiver-order-title" data-waiver-order={view.kind}>
-      <h2 id="waiver-order-title" className="fs-overline text-[10px] text-n-3">
-        {view.title}
-      </h2>
+    <Card role="region" aria-labelledby="waiver-order-title" data-waiver-order={view.kind}>
+      <CardHeader className="min-h-0 py-2">
+        <CardTitle id="waiver-order-title" className="text-[12px]">
+          {view.title}
+        </CardTitle>
+      </CardHeader>
       {view.kind === 'order' ? (
-        <>
-          <p className="text-[11px] font-medium text-n-3" data-waiver-order-caption>
+        <CardContent className="flex flex-col px-0 py-0">
+          <p className="px-card-pad pt-2 text-[11px] font-medium text-n-3" data-waiver-order-caption>
             {view.caption}
           </p>
-          <ol className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3" aria-label={view.title}>
+          <ol className="flex flex-col divide-y divide-n-4" aria-label={view.title}>
             {view.rows.map((row) => (
               <li
                 key={row.team_id}
-                className={cn(
-                  'flex min-w-0 items-center gap-2 rounded-sm border px-2 py-1',
-                  row.mine ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white',
-                )}
+                className={cn('flex min-w-0 items-center gap-2 px-card-pad py-1.5', row.mine && 'bg-accent-soft')}
                 data-waiver-order-team={row.team_id}
                 data-waiver-priority={row.priority ?? ''}
                 data-mine={row.mine || undefined}
@@ -56,12 +56,14 @@ export function WaiverOrderList({ view, leagueId }: { view: WaiverOrderListView;
               </li>
             ))}
           </ol>
-        </>
+        </CardContent>
       ) : (
-        <p className="text-[11px] font-medium text-ink" data-waiver-order-copy>
-          {view.copy}
-        </p>
+        <CardContent className="px-card-pad py-3">
+          <p className="text-[11px] font-medium text-ink" data-waiver-order-copy>
+            {view.copy}
+          </p>
+        </CardContent>
       )}
-    </section>
+    </Card>
   )
 }

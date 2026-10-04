@@ -1,7 +1,5 @@
 'use client'
 
-
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLeague } from '@/hooks/use-league'
 
@@ -58,13 +56,9 @@ export function MembersPage({ leagueId }: { leagueId: string }) {
   return (
     <div className="flex flex-col gap-4" data-members-page>
       <LeaguePageTitle title={MEMBERS_TITLE} />
-      <Card>
-        <CardContent className="px-card-pad py-3">
-          <p className="text-[12px] font-semibold text-n-3" data-members-intro>
-            {isCommish ? MEMBERS_INTRO_COMMISH : MEMBERS_INTRO_MEMBER}
-          </p>
-        </CardContent>
-      </Card>
+      <p className="-mt-2 text-[11px] font-medium text-n-3" data-members-intro>
+        {isCommish ? MEMBERS_INTRO_COMMISH : MEMBERS_INTRO_MEMBER}
+      </p>
       <InvitePanel leagueId={leagueId} detail={detail} />
     </div>
   )

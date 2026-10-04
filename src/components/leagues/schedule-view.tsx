@@ -154,9 +154,14 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
           leagueId={leagueId}
         />
       ) : grid.length === 0 ? (
-        <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3">
-          {NO_SCHEDULE_COPY}
-        </p>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 px-6 py-8 text-center">
+            <Icon name="calendar" size={18} className="text-n-3" />
+            <p role="status" className="max-w-md text-[13px] font-medium text-n-3" data-empty="schedule">
+              {NO_SCHEDULE_COPY}
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-schedule-grid>
           {grid.map((week) => (
@@ -191,8 +196,8 @@ function WeekCard({
   const badge = weekStatusBadge(week.status)
   return (
     <Card data-week={week.week} data-week-kind={week.kind} className={cn(isCurrent && 'border-accent')}>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-card-pad py-2">
-        <CardTitle className="flex items-center gap-2 text-[13px]">
+      <CardHeader className="min-h-0 flex-wrap py-2">
+        <CardTitle className="flex items-center gap-2 text-[12px]">
           Week <span className="fs-num">{week.week}</span>
           {week.kind === 'playoff' && <Badge variant="stroke-purple">Playoffs</Badge>}
           {isCurrent && <Badge variant="green">Current</Badge>}
@@ -206,9 +211,9 @@ function WeekCard({
           <Badge variant={badge.variant}>{badge.label}</Badge>
         </span>
       </CardHeader>
-      <CardContent className="flex flex-col gap-1 px-card-pad pb-3 pt-0">
+      <CardContent className="flex flex-col divide-y divide-n-4 px-0 py-0">
         {week.note ? (
-          <p className="text-[12px] font-medium text-n-3" data-week-note>
+          <p className="px-card-pad py-3 text-[12px] font-medium text-n-3" data-week-note>
             {week.note}
           </p>
         ) : (
@@ -236,18 +241,18 @@ function MatchupRowView({
   const mine = row.home.id === myTeamId || row.away?.id === myTeamId
   return (
     <div
-      className={cn('flex flex-col gap-1 rounded-sm border border-n-4 px-2 py-1.5', mine && 'border-accent bg-accent-soft')}
+      className={cn('flex flex-col gap-1 px-card-pad py-2', mine && 'bg-accent-soft')}
       data-matchup={row.id}
       data-round-type={row.round_type}
     >
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
         <TeamLabel leagueId={leagueId} team={row.home} winner={row.result === 'home'} />
-        <span className="fs-num text-[11px] text-n-3">{formatScore(row.home_score, row.status)}</span>
+        <span className="fs-num text-[12px] font-bold text-ink">{formatScore(row.home_score, row.status)}</span>
         <span className="text-[10px] font-bold text-n-3">vs</span>
         {row.away ? (
           <>
             <TeamLabel leagueId={leagueId} team={row.away} winner={row.result === 'away'} />
-            <span className="fs-num text-[11px] text-n-3">{formatScore(row.away_score, row.status)}</span>
+            <span className="fs-num text-[12px] font-bold text-ink">{formatScore(row.away_score, row.status)}</span>
           </>
         ) : (
           <Badge variant="stroke">bye</Badge>

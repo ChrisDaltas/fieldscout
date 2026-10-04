@@ -185,8 +185,8 @@ function ShareLinkCard({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Invite link</CardTitle>
+      <CardHeader className="min-h-0 py-2">
+        <CardTitle className="text-[12px]">Invite link</CardTitle>
         <RotateLinkButton leagueId={leagueId} />
       </CardHeader>
       <CardContent className="flex flex-col gap-3.5">
@@ -382,8 +382,8 @@ function SeatsCard({
 }) {
   return (
     <Card className="overflow-hidden">
-      <CardHeader>
-        <CardTitle>Seats</CardTitle>
+      <CardHeader className="min-h-0 py-2">
+        <CardTitle className="text-[12px]">Seats</CardTitle>
         <Badge variant="stroke">
           <span className="fs-num">{claimedCount}</span> / {total} claimed
         </Badge>

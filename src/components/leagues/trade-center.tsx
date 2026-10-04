@@ -9,7 +9,7 @@ import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -610,22 +610,23 @@ export function TradeCard({
 
   return (
     <Card data-trade={trade.id} data-trade-status={trade.status}>
-      <CardContent className="flex flex-col gap-2.5 px-card-pad py-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <CardHeader className="min-h-0 flex-wrap justify-start py-2">
+        <CardTitle className="flex min-w-0 flex-wrap items-center gap-1 text-[12px]">
+          <TeamNameLink name={trade.proposer.name ?? 'A team'} leagueId={leagueId} teamId={trade.proposer.team_id} />
+          <span className="text-n-3">⇄</span>
+          <TeamNameLink name={trade.recipient.name ?? 'A team'} leagueId={leagueId} teamId={trade.recipient.team_id} />
+        </CardTitle>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] font-medium text-n-3">Offered {fmt(trade.created_at)}</span>
           <Badge variant={TONE_BADGE[status.tone]} data-trade-status-label>
             {status.label}
           </Badge>
-          <span className="text-[12px] font-bold text-ink">
-            <TeamNameLink name={trade.proposer.name ?? 'A team'} leagueId={leagueId} teamId={trade.proposer.team_id} />
-            <span className="px-1 text-n-3">⇄</span>
-            <TeamNameLink name={trade.recipient.name ?? 'A team'} leagueId={leagueId} teamId={trade.recipient.team_id} />
-          </span>
-          <span className="ml-auto text-[10px] font-medium text-n-3">Offered {fmt(trade.created_at)}</span>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        </span>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2.5 px-card-pad py-3">
+        <div className="grid grid-cols-1 divide-y divide-n-4 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           {sides.map((side) => (
-            <div key={side.teamId} className="flex min-w-0 flex-col gap-1 rounded-sm border border-n-4 px-2 py-1.5" data-trade-gives={side.teamId}>
+            <div key={side.teamId} className="flex min-w-0 flex-col gap-1 py-1.5 first:pt-0 last:pb-0 sm:px-3 sm:py-0 sm:first:pl-0 sm:last:pr-0" data-trade-gives={side.teamId}>
               <p className="fs-overline text-[9px] text-n-3">{side.teamName} gives</p>
               {side.gives.length === 0 ? (
                 <p className="text-[11px] font-medium text-n-3">Nothing</p>
@@ -682,7 +683,7 @@ export function TradeCard({
         )}
 
         {tally && trade.tally && (
-          <div className="flex flex-col gap-0.5 rounded-sm border border-n-4 px-2 py-1.5" data-trade-tally={`${trade.tally.veto_votes}/${trade.tally.veto_number}`}>
+          <div className="flex flex-col gap-0.5 border-t border-n-4 pt-2" data-trade-tally={`${trade.tally.veto_votes}/${trade.tally.veto_number}`}>
             <p className="text-[12px] font-bold text-ink">{tally.count}</p>
             <p className="text-[11px] font-medium text-n-3" data-trade-tally-rule={trade.tally.capped ? 'capped' : 'setting'}>
               {tally.rule}
@@ -871,10 +872,7 @@ function TradeButtons({
         </div>
       )}
       {override && (
-        <div className="flex flex-wrap items-center gap-2 rounded-sm border border-ink bg-brand px-2 py-1.5" data-trade-override>
-          <Badge variant="black" className="shrink-0">
-            ✸ Override
-          </Badge>
+        <div className="flex flex-wrap items-center gap-2" data-trade-override>
           {actions.overrideApprove && (
             <Button variant="stroke" size="sm" disabled={pending} onClick={() => onCommish('approve')} data-trade-op="approve">
               {COMMISH_OP_LABELS.approve}

@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { invalidateCommishLog, useCommishLog } from '@/hooks/use-commish-log'
@@ -237,8 +237,8 @@ function CommishTab({
 
   return (
     <Card data-commish-tab>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
-        <p className="text-[11px] font-medium text-n-3">{TAB_INTRO_COPY.commissioner}</p>
+      <CardHeader className="min-h-0 flex-wrap py-2">
+        <CardTitle className="mr-auto text-[12px]">{ACTIVITY_TAB_LABELS.commissioner}</CardTitle>
         <div className="flex flex-wrap items-center gap-2" data-commish-filters>
           <ChoiceSelect
             id="commish-log-team"
@@ -257,6 +257,9 @@ function CommishTab({
             onValueChange={(v) => onRoute({ ...route, week: v === 'all' ? null : Number(v), entry: null })}
           />
         </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
+        <p className="text-[11px] font-medium text-n-3">{TAB_INTRO_COPY.commissioner}</p>
         {route.week !== null && (
           <p className="text-[11px] font-medium text-n-3" data-commish-week-note>
             {COMMISH_WEEK_NOTE}
@@ -273,6 +276,7 @@ function CommishTab({
         <CommishLogSection
           title={ACTIVITY_TAB_LABELS.commissioner}
           className="border-t-0 pt-0"
+          titleInCardHeader
           items={items}
           pending={log.isPending}
           problem={log.isError && !nextFailed ? log.error : null}
