@@ -386,19 +386,19 @@ select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'regular_season_weeks', '12'::jsonb, false, 'a longer season, please',
        '0e000000-0000-4000-8000-000000000030'::uuid) $$,
-  '%regular_season_weeks cannot be changed through this verb%SEASON WINDOW%league_weeks and matchups were generated for the stored plan%Q10%',
+  '%regular_season_weeks cannot be changed through this verb%WHY: The season''s weeks and matchups are already set, so the length of the regular season and when the playoffs start can only change before the draft.',  -- 180: plain words (F573)
   'E1 THE SEASON WINDOW IS REFUSED BY NAME: regular_season_weeks defines rows that already exist (league_weeks + matchups, 111:346/:422) and is Q10-coupled to playoff_start_week — the message names the key, the reason and the coupling');
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'team_count', '10'::jsonb, false, 'two more teams',
        '0e000000-0000-4000-8000-000000000031'::uuid) $$,
-  '%team_count cannot be changed through this verb%team_count is PRE-DRAFT ONLY (§7.3, erratum v2.16.40%post-draft there is NO route%no verb raises this number in-season%',
+  '%team_count cannot be changed through this verb%WHY: The number of teams can only change before the draft — every team already has its place and its schedule.',  -- 180: plain words (F573); still never points at add_placeholder_seat (R1039)
   'E2 …team_count is refused as PRE-DRAFT ONLY by spec (§7.3 erratum v2.16.40, Q65 (b)) and the message says there is NO post-draft route — this pattern is RED on the first cut''s wording, which pointed at add_placeholder_seat (R1039)');
 select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000001',
        'schedule_mode', '"total_points"'::jsonb, false, 'no more matchups',
        '0e000000-0000-4000-8000-000000000032'::uuid) $$,
-  '%schedule_mode cannot be changed through this verb%SCHEDULE SHAPE%',
+  '%schedule_mode cannot be changed through this verb%WHY: The schedule has already been made from this, so it can only change before the draft.',  -- 180
   'E3 …and the schedule SHAPE keys: rows were generated from them');
 select is((select regular_season_weeks || '|' || team_count || '|' || (settings ->> 'schedule_mode') from leagues
            where id = 'be000000-0000-4000-8000-000000000001'),
@@ -426,7 +426,7 @@ select throws_like(
   $$ select public.commish_change_setting('be000000-0000-4000-8000-000000000002',
        'playoff_teams', '2'::jsonb, false, 'shrink the bracket mid-bracket',
        '0e000000-0000-4000-8000-000000000034'::uuid) $$,
-  '%playoff_teams is REFUSED in-season once the bracket exists%is playoffs%SEEDED from this key (118:1075-1077%',
+  '%playoff_teams is REFUSED in-season once the bracket exists%is playoffs%WHY: The playoff bracket has already been set from this, so it can''t change once the playoffs start.',  -- 180
   'E8 …and in `playoffs` the SAME key is refused BY NAME: the bracket has been seeded from it (118:1075-1077, :1338-1340) and no verb re-seeds a bracket under played rounds');
 -- An UNKNOWN key is refused by name too — this verb writes nothing the
 -- catalog does not define.

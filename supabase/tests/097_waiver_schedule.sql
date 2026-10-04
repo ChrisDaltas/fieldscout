@@ -519,11 +519,11 @@ select throws_like(
 select throws_like(
   $$ select public.commish_change_setting_internal('b9700000-0000-4000-8000-000000000002', 'waiver_period_hours', '72', false,
        'a9700000-0000-4000-8000-000000000026', '2026-11-02 12:00:00+00', null) $$,
-  '%waiver_period_hours cannot be changed through this verb%RETIRED by the waiver schedule%', 'H13 the retired period is refused by name, naming its replacement');
+  '%waiver_period_hours cannot be changed through this verb%WHY: This setting has been replaced: pick the days and time waivers run, and when free agency opens, instead.%', 'H13 the retired period is refused by name, naming its replacement');
 select throws_like(
   $$ select public.commish_change_setting_internal('b9700000-0000-4000-8000-000000000002', 'bench_lock', 'false', false,
        'a9700000-0000-4000-8000-000000000027', '2026-11-02 12:00:00+00', null) $$,
-  '%bench_lock cannot be changed through this verb%RETIRED (Q73%', 'H14 bench_lock is refused by name');
+  '%bench_lock cannot be changed through this verb%WHY: This setting has been retired: a waiver claim always fails if the player you''d drop has already played this week%', 'H14 bench_lock is refused by name');
 select is(
   (select jsonb_build_array(r ->> 'no_changes', r ->> 'commissioner_action_id')
    from public.commish_change_setting_internal('b9700000-0000-4000-8000-000000000002', 'waiver_time_zone', '"America/Los_Angeles"', false,

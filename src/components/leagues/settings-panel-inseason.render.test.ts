@@ -68,25 +68,26 @@ const detail: LeagueDetail = {
   active_draft: null,
 } as unknown as LeagueDetail
 
-// 129's table AS IT ANSWERS (129:300-352) — the refusal copy is the
-// migration's own text, carried here so "verbatim" is an equality.
+// 129's table AS IT ANSWERS since 180 (F573: plain words; pgTAP 128 §B pins
+// every sentence) — the refusal copy is the migration's own text, carried
+// here so "verbatim" is an equality.
 const TEAM_COUNT_WHY =
-  'team_count is PRE-DRAFT ONLY (§7.3, erratum v2.16.40 — Q65 ruled (b) by Chris 2026-09-15): seats (teams / league_members) and a schedule already exist for the stored count'
-const BRACKET_WHY = 'once the league is in playoffs (or complete) the bracket has been SEEDED from this key (118:1075-1077, :1338-1340); no verb re-seeds a bracket under played rounds'
-const DRAFT_WHY = 'the §7.3.8 draft block: pre-draft it belongs to the wizard / update_league_settings; post-draft the draft has happened and the block has no subject'
+  'The number of teams can only change before the draft — every team already has its place and its schedule.'
+const BRACKET_WHY = "The playoff bracket has already been set from this, so it can't change once the playoffs start."
+const DRAFT_WHY = "The draft is over, so its settings can't change now."
 
 const REFUSED: Record<string, string> = {
   team_count: TEAM_COUNT_WHY,
-  regular_season_weeks: 'this key defines the SEASON WINDOW',
-  playoff_start_week: 'this key defines the SEASON WINDOW',
-  schedule_mode: 'this key defines the SCHEDULE SHAPE',
-  median_game: 'this key defines the SCHEDULE SHAPE',
-  second_opponent: 'this key defines the SCHEDULE SHAPE',
-  format: 'pinned to redraft in v1',
-  lineup_lock: 'pinned to per_player_kickoff',
-  divisions: 'pinned to 1',
-  playoff_byes: 'derived from the bracket size',
-  schedule_seed: 'minted by the schedule engine',
+  regular_season_weeks: "The season's weeks and matchups are already set",
+  playoff_start_week: "The season's weeks and matchups are already set",
+  schedule_mode: 'The schedule has already been made from this',
+  median_game: 'The schedule has already been made from this',
+  second_opponent: 'The schedule has already been made from this',
+  format: 'Leagues are redraft only for now',
+  lineup_lock: 'always locks when his own game kicks off',
+  divisions: "Divisions aren't available yet",
+  playoff_byes: 'Playoff byes come from the number of playoff teams',
+  schedule_seed: 'This is set automatically',
   draft: DRAFT_WHY,
 }
 const BRACKET = ['playoff_teams', 'playoff_weeks_per_round', 'consolation_bracket', 'third_place_game']

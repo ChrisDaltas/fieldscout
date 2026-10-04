@@ -962,10 +962,10 @@ select throws_ok($$ select pg_temp.try_cx(1, 1, 'CT', 'veto', '2026-10-27 15:00:
   'P0001', 'commish_force_or_reverse_trade: the league is complete — a trade is vetoed only while the league is in season or in the playoffs (§7.1 / §13.3)',
   'X11 R1411: a VETO in a complete league is refused BY NAME (the new gate)');
 select throws_like($$ select pg_temp.try_cx(1, 1, 'CT', 'force', '2026-10-27 15:00:00+00', 92) $$,
-  '%the league is complete — a trade goes through only while the league is in season or in the playoffs%',
+  '%the league is over for the season — trades only go through during the season and the playoffs%',  -- 180
   'X12 …a FORCE is refused by the executor, in the same sentence family (unchanged)');
 select throws_like($$ select pg_temp.try_cx(1, 1, 'CT', 'approve', '2026-10-27 15:00:00+00', 93) $$,
-  '%the league is complete — a trade goes through only while the league is in season or in the playoffs%',
+  '%the league is over for the season — trades only go through during the season and the playoffs%',  -- 180
   'X13 …and so is an APPROVE (unchanged)');
 select is(
   pg_temp.st('CT') || ' / ' || pg_temp.roster('K Alpha') || ' ' || pg_temp.roster('K Bravo')
@@ -1021,7 +1021,7 @@ select is(pg_temp.st('TH'), 'rejected', 'Y6 R1414: …his TURN DOWN goes in (so 
 create temp table y122_tick as select public.trade_tick('2026-10-27 16:32:00+00', pg_temp.lg(1)) as r;
 select is(
   (select t.status || ' / ' || t.status_reason from trades t where t.id = pg_temp.tid('CT')),
-  'invalid / the trade can no longer go through: the league is complete — a trade goes through only while the league is in season or in the playoffs (§7.1 / §13.3)',
+  'invalid / the trade can no longer go through: the league is over for the season — trades only go through during the season and the playoffs',  -- 180
   'Y7 R1414: a trade still in review when the league completes is called off by the next trade tick, in its sentence');
 select is(
   (select count(*)::int from trades where league_id = pg_temp.lg(1) and status in ('proposed', 'accepted', 'in_review')),
