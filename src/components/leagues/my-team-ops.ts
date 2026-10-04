@@ -134,10 +134,26 @@ export function oprkOf(
 
 export type Tone = 'positive' | 'caution' | 'negative'
 
-/** The prototype's chip: ≤ 8 a tough matchup, ≥ 24 a soft one. */
-export function oprkTone(oprk: number): Tone {
-  if (oprk <= 8) return 'negative'
-  if (oprk >= 24) return 'positive'
+/** How many defenses carry a rank for the position (the OPRK scale's size). */
+export function oprkRankedCount(
+  splits: ReadonlyArray<{ position: string; rank: number }>,
+  position: string,
+): number {
+  const pos = position === 'DST' ? 'DEF' : position
+  return splits.filter((s) => s.position === pos && s.rank > 0).length
+}
+
+/** THE one OPRK band rule — every OPRK chip / badge uses it (D486(16)).
+ *  Chris 2026-10-04: "ideally green top 10, orange 11-22, red bottom 10."
+ *  With 1 = toughest out of 32: 1–10 red (negative), 11–22 orange (caution),
+ *  23–32 green (positive). A position with fewer ranked teams scales: each
+ *  end band is min(10, floor(ranked / 3)) teams by count (10 for 30+ ranked),
+ *  everything between is caution. `ranked` defaults to 32. */
+export function oprkTone(oprk: number, ranked = 32): Tone {
+  const total = Math.max(ranked, oprk)
+  const band = Math.min(10, Math.floor(total / 3))
+  if (oprk <= band) return 'negative'
+  if (oprk > total - band) return 'positive'
   return 'caution'
 }
 
@@ -145,8 +161,9 @@ export function formatPoints(n: number | null | undefined): string {
   return n === null || n === undefined || !Number.isFinite(n) ? '—' : n.toFixed(1)
 }
 
-export function formatSnap(fraction: number | null | undefined): string {
-  return fraction === null || fraction === undefined || !Number.isFinite(fraction) ? '—' : `${Math.round(fraction * 100)}%`
+/** `snap_pct` is already a 0–100 percentage (F579/R1509) — never scale it. */
+export function formatSnap(pct: number | null | undefined): string {
+  return pct === null || pct === undefined || !Number.isFinite(pct) ? '—' : `${Math.round(pct)}%`
 }
 
 export function formatAdp(adp: number | null | undefined): string {

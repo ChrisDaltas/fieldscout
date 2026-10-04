@@ -401,10 +401,23 @@ export function AcquireStep({
  *  where he is there, and the door into that league's card (where the move
  *  itself lives, with its checks). Reads the league's rosters + pool over
  *  the existing routes — no new read. */
-export function LeagueAvailabilityRow({ player, league, first }: { player: PoolPlayer; league: MyLeagueRow; first: boolean }) {
+export function LeagueAvailabilityRow({
+  player,
+  league,
+  first,
+  onOpen,
+}: {
+  player: PoolPlayer
+  league: MyLeagueRow
+  first: boolean
+  /** Where the row's door goes. The card re-opens itself in that league;
+   *  the full player page navigates to its league variant. */
+  onOpen?: (leagueId: string) => void
+}) {
   const rosters = useRosters(league.id)
   const pool = useLeaguePool(league.id)
   const setContext = usePlayerWindowsStore((s) => s.setContext)
+  const openInLeague = () => (onOpen ? onOpen(league.id) : setContext(player.id, leagueCardContext(league.id)))
   const status = useMemo(() => {
     if (!rosters.data || !pool.data) return null
     const [row] = poolRows([player], rosters.data, pool.data, league.my_team_id, 'all')
@@ -432,7 +445,7 @@ export function LeagueAvailabilityRow({ player, league, first }: { player: PoolP
         <Button
           variant="green"
           size="icon-sm"
-          onClick={() => setContext(player.id, leagueCardContext(league.id))}
+          onClick={openInLeague}
           data-card-league-open={league.id}
           aria-label={`Pick up ${player.full_name} in ${league.name}`}
           title={`Pick up ${player.full_name} in ${league.name}`}
@@ -443,7 +456,7 @@ export function LeagueAvailabilityRow({ player, league, first }: { player: PoolP
         <Button
           variant="stroke"
           size="sm"
-          onClick={() => setContext(player.id, leagueCardContext(league.id))}
+          onClick={openInLeague}
           data-card-league-open={league.id}
           title={`Open him in ${league.name}`}
         >

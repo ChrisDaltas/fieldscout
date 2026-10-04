@@ -1,5 +1,6 @@
 'use client'
 
+import { PlayerViewModal } from '@/components/players/player-view-modal'
 import { PlayerWindow } from '@/components/players/player-window'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
@@ -25,6 +26,8 @@ export function PlayerWindowsLayer() {
           isTop={i === windows.length - 1}
         />
       ))}
+      {/* The decision view (D486(13)) — one modal, opened from the cards. */}
+      <PlayerViewModal />
     </>
   )
 }

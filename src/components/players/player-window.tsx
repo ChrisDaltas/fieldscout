@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { DraftCardActions, GlobalLeaguesExpander, LeagueCardActions } from '@/components/players/player-card-actions'
@@ -11,7 +10,9 @@ import {
   BioPanel,
   GameLogPanel,
   StatsPanel,
+  WeeklyPointsList,
 } from '@/components/players/player-detail-panels'
+import { vitalCells } from '@/components/players/player-page-ops'
 import { PositionBadge } from '@/components/players/position-badge'
 import {
   WindowShell,
@@ -23,7 +24,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   usePlayerStats,
   type PlayerStatsPlayer,
-  type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
@@ -31,6 +31,7 @@ import {
   usePlayerWindowsStore,
   type PlayerWindowState,
 } from '@/stores/player-windows-store'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 interface PlayerWindowProps {
   window: PlayerWindowState
@@ -51,8 +52,8 @@ export function PlayerWindow({
   isTop,
 }: PlayerWindowProps) {
   const { playerId, listContext, readOnly, context } = win
-  const router = useRouter()
   const closeWindow = usePlayerWindowsStore((s) => s.close)
+  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const focusWindow = usePlayerWindowsStore((s) => s.focus)
   const setPosition = usePlayerWindowsStore((s) => s.setPosition)
   const savedPosition = usePlayerWindowsStore((s) => s.positions[playerId])
@@ -70,12 +71,14 @@ export function PlayerWindow({
     (pos: { x: number; y: number }) => setPosition(playerId, pos),
     [setPosition, playerId],
   )
-  // The expand arrow goes to the same full page the old "Open full page"
-  // action navigated to, closing the mini card first (kit behavior).
+  // The expand arrow opens the player view MODAL (D486(13)) over the page,
+  // closing the mini card first (kit behavior). Opened from a league, the
+  // modal keeps that league. The page underneath is never navigated.
+  const expandLeagueId = context.kind === 'league' ? context.leagueId : null
   const handleExpand = useCallback(() => {
     closeWindow(playerId)
-    router.push(`/app/players/${playerId}`)
-  }, [closeWindow, playerId, router])
+    openPlayerView(playerId, expandLeagueId)
+  }, [closeWindow, playerId, openPlayerView, expandLeagueId])
 
   const tabs: DetailWindowTab[] = data
     ? [
@@ -100,6 +103,7 @@ export function PlayerWindow({
       onClose={handleClose}
       onFocus={handleFocus}
       onExpand={handleExpand}
+      expandLabel="Open player view"
       zIndex={zIndex}
       stackIndex={stackIndex}
       initialPosition={savedPosition}
@@ -123,6 +127,7 @@ export function PlayerWindow({
                 listContext={listContext}
                 readOnly={readOnly}
                 onRemoved={handleClose}
+                onOpenPlayerView={handleExpand}
               />
             }
           />
@@ -204,23 +209,13 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
 // ---------------------------------------------------------------------------
 
 function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
-  // Auction $ / Pos rank aren't in the stats payload yet — render "—"
-  // rather than fabricating values client-side.
-  const cells: Array<[string, string]> = [
-    ['ADP', formatAdp(player.adp)],
-    ['Auction $', player.auction_value != null ? `$${player.auction_value}` : '—'],
-    // Objective rank only exists once real points are scored — returns in-season.
-    ['Pos rank', '—'],
-    ['SOS', player.sos != null ? `${player.sos} of 32` : '—'],
-    ['Height', formatHeight(player.height)],
-    ['Weight', player.weight != null ? `${player.weight} lb` : '—'],
-    ['Age', formatAge(player.birth_date)],
-    ['Seasons', String(player.experience_years)],
-  ]
+  // The card keeps every cell (a "—" where there is no source); the full
+  // page omits them. One cell builder for both (player-page-ops).
+  const cells = vitalCells(player, new Date())
 
   return (
     <div className="grid shrink-0 grid-cols-4">
-      {cells.map(([label, value]) => (
+      {cells.map(({ label, value }) => (
         <div
           key={label}
           className="border-b border-r border-n-4 px-2 py-1.5 [&:nth-child(4n)]:border-r-0"
@@ -229,40 +224,12 @@ function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
             {label}
           </p>
           <p className="fs-num mt-0.5 truncate text-[13px] font-extrabold leading-tight">
-            {value}
+            {value ?? '—'}
           </p>
         </div>
       ))}
     </div>
   )
-}
-
-function formatAdp(adp: number | null): string {
-  if (adp == null) return '—'
-  const n = Number(adp)
-  if (!Number.isFinite(n)) return '—'
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
-
-/** The sync stores height as total inches in a string (e.g. "74" → 6'2"). */
-function formatHeight(height: string | null): string {
-  if (!height) return '—'
-  const inches = Number(height)
-  if (!Number.isFinite(inches) || inches <= 0) return height
-  return `${Math.floor(inches / 12)}'${inches % 12}"`
-}
-
-function formatAge(birthDate: string | null): string {
-  if (!birthDate) return '—'
-  const born = new Date(birthDate)
-  if (Number.isNaN(born.getTime())) return '—'
-  const now = new Date()
-  let age = now.getFullYear() - born.getFullYear()
-  const beforeBirthday =
-    now.getMonth() < born.getMonth() ||
-    (now.getMonth() === born.getMonth() && now.getDate() < born.getDate())
-  if (beforeBirthday) age -= 1
-  return age > 0 ? String(age) : '—'
 }
 
 // ---------------------------------------------------------------------------
@@ -326,67 +293,6 @@ function LeaguesAndActionsRow({
         <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5 [&>a]:h-btn-sm [&>a]:px-2.5 [&>a]:text-[11px] [&>button]:h-btn-sm [&>button]:px-2.5 [&>button]:text-[11px]">
           {actions}
         </span>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Overview — weekly points bar list from the existing game log data
-// ---------------------------------------------------------------------------
-
-function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
-  const rows = data.gameLog
-  if (rows.length === 0) {
-    return (
-      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
-        No games logged yet for the current season.
-      </p>
-    )
-  }
-
-  const total = rows.reduce((sum, row) => sum + row.fantasy.ppr, 0)
-  const avg = total / rows.length
-  const max = Math.max(...rows.map((row) => row.fantasy.ppr))
-
-  return (
-    <div>
-      <p className="mb-2.5 text-[11px] font-semibold text-n-3">
-        <span className="fs-num text-[15px] font-extrabold text-ink">
-          {avg.toFixed(1)}
-        </span>{' '}
-        avg per week ·{' '}
-        <span className="fs-num text-[15px] font-extrabold text-ink">
-          {Math.round(total)}
-        </span>{' '}
-        total
-      </p>
-      <div className="flex flex-col gap-1">
-        {rows.map((row) => {
-          const pts = row.fantasy.ppr
-          const width = max > 0 ? (pts / max) * 100 : 0
-          return (
-            <div key={row.week} className="flex items-center gap-2">
-              <span className="fs-num w-9 shrink-0 text-[11px] font-bold text-n-3">
-                Wk {row.week}
-              </span>
-              <span className="h-3.5 min-w-0 flex-1 bg-n-4">
-                {width > 0 && (
-                  <span
-                    className={cn(
-                      'block h-full border border-ink',
-                      pts >= avg ? 'bg-brand' : 'bg-n-3/40',
-                    )}
-                    style={{ width: `${width}%` }}
-                  />
-                )}
-              </span>
-              <span className="fs-num w-10 shrink-0 text-right text-[12px] font-extrabold">
-                {pts.toFixed(1)}
-              </span>
-            </div>
-          )
-        })}
       </div>
     </div>
   )

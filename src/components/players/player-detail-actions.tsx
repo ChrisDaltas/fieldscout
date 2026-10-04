@@ -17,6 +17,7 @@ import { useRemovePlayer } from '@/hooks/use-lists'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import { useToast } from '@/hooks/use-toast'
 import { getNflTeam } from '@/lib/nfl-teams'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 export interface PlayerListContext {
   listId: string
@@ -29,10 +30,16 @@ interface PlayerDetailActionsProps {
   listContext?: PlayerListContext | null
   /** Signed-out contexts (guest big board): swap list actions for a signup CTA. */
   readOnly?: boolean
-  /** Hide "Open full page" when we're already on the full page. */
+  /** Hide "Open player view" when we're already in it (modal or deep link). */
   onFullPage?: boolean
   /** Called after a successful remove (e.g. to close the modal). */
   onRemoved?: () => void
+  /**
+   * Overrides More → "Open player view". The mini card passes its own expand
+   * handler so this item closes the card first and keeps its league context,
+   * exactly like the expand icon (R1507/R1508).
+   */
+  onOpenPlayerView?: () => void
 }
 
 /**
@@ -46,8 +53,10 @@ export function PlayerDetailActions({
   readOnly = false,
   onFullPage = false,
   onRemoved,
+  onOpenPlayerView,
 }: PlayerDetailActionsProps) {
   const router = useRouter()
+  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const { toast } = useToast()
   const removePlayer = useRemovePlayer(listContext?.listId ?? '')
 
@@ -111,9 +120,11 @@ export function PlayerDetailActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {!onFullPage && (
-            <DropdownMenuItem onSelect={() => router.push(`/app/players/${player.id}`)}>
+            <DropdownMenuItem
+              onSelect={() => (onOpenPlayerView ? onOpenPlayerView() : openPlayerView(player.id))}
+            >
               <Icon name="external-link" size={14} />
-              Open full page
+              Open player view
             </DropdownMenuItem>
           )}
           {player.team && (

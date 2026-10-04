@@ -35,6 +35,7 @@ import {
 } from '@/hooks/use-favorites'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 interface PlayerRow {
@@ -1039,6 +1040,7 @@ function SearchAutocomplete({
     return () => window.removeEventListener('mousedown', handleClick)
   }, [open])
 
+  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const persistRecent = (value: string) => {
     const trimmed = value.trim()
     if (!trimmed) return
@@ -1141,9 +1143,14 @@ function SearchAutocomplete({
                 <li key={p.id}>
                   <Link
                     href={`/app/players/${p.id}`}
-                    onClick={() => {
+                    onClick={(e) => {
                       persistRecent(query.trim() || p.full_name)
                       setOpen(false)
+                      // D486(13): a plain click opens the player view modal;
+                      // a modified click (new tab) keeps the deep link.
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+                      e.preventDefault()
+                      openPlayerView(p.id)
                     }}
                     className="flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-accent-soft"
                   >

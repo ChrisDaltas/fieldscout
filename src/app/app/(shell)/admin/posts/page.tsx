@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { PersonaBadge } from '@/components/personas/persona-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -99,13 +100,12 @@ export default function AdminPostsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-[19px]">
-      <header>
-        <h1 className="text-h3">Persona posts</h1>
-        <p className="mt-1 text-[13px] font-medium text-n-3">
-          Review queue for the content engine. Publishing makes a post public
-          and SEO-indexable; takedown removes it everywhere immediately.
-        </p>
-      </header>
+      {/* The app's standard header (D486(12) audit) — not a page-level h1. */}
+      <PageHeader title="Persona posts" />
+      <p className="text-[13px] font-medium text-n-3">
+        Review queue for the content engine. Publishing makes a post public
+        and SEO-indexable; takedown removes it everywhere immediately.
+      </p>
 
       {/* Single-select, so it is the shared segment control, not a chip row
           (LV.11). The count is the component's own `count` prop. */}

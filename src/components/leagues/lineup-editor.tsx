@@ -75,6 +75,7 @@ import {
   moveToastCopy,
   opponentOf,
   oprkOf,
+  oprkRankedCount,
   oprkTone,
   pointsCell,
   projectedTotal,
@@ -703,9 +704,10 @@ function StatCell({ column, player, ctx }: { column: StatColumnId; player: Roste
     case 'oprk': {
       const r = oprkOf(ctx.stats.splits, opp.kind === 'game' ? opp.opp : null, player.position)
       if (r === null) return <td className={cn(base, 'text-n-3')}>—</td>
+      const tone = oprkTone(r, oprkRankedCount(ctx.stats.splits, player.position))
       return (
         <td className={base} data-cell="oprk">
-          <span className={cn('fs-num inline-flex h-chip items-center rounded-sm border px-1.5 text-[10px] font-bold text-ink', OPRK_TONE[oprkTone(r)])} data-oprk-tone={oprkTone(r)}>
+          <span className={cn('fs-num inline-flex h-chip items-center rounded-sm border px-1.5 text-[10px] font-bold text-ink', OPRK_TONE[tone])} data-oprk-tone={tone}>
             {r}
           </span>
         </td>

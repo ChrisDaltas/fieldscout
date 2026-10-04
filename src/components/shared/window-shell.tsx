@@ -19,6 +19,8 @@ interface WindowShellProps {
   onFocus: () => void
   /** Open the entity's full page (top-right arrow icon). Hidden when omitted. */
   onExpand?: () => void
+  /** The expand button's accessible name (default "Open full page"). */
+  expandLabel?: string
   /** Stacking order — higher renders above. */
   zIndex: number
   /** Cascade offset so stacked windows don't open exactly on top of each other. */
@@ -86,6 +88,7 @@ export function WindowShell({
   onClose,
   onFocus,
   onExpand,
+  expandLabel = 'Open full page',
   zIndex,
   stackIndex,
   initialPosition,
@@ -188,8 +191,8 @@ export function WindowShell({
           <button
             type="button"
             onClick={onExpand}
-            aria-label="Open full page"
-            title="Open full page"
+            aria-label={expandLabel}
+            title={expandLabel}
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-n-4 hover:text-accent"
           >
             <Icon name="arrow-up-right" size={13} />

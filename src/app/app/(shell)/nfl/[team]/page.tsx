@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { TeamRoster, type RosterPlayer } from '@/components/teams/team-roster'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { getTeamColors } from '@/lib/nfl-team-colors'
@@ -46,13 +48,19 @@ export default async function NflTeamPage({ params }: NflTeamPageProps) {
 
   return (
     <div className="space-y-[19px]">
-      <Link
-        href="/app/nfl"
-        className="inline-flex items-center gap-1 text-[12px] font-bold text-n-3 transition-colors duration-200 ease-linear hover:text-ink"
-      >
-        <Icon name="arrow-prev" size={13} />
-        All teams
-      </Link>
+      {/* The app's standard header (D486(12) audit): title + a ghost back
+          action, the player page's pattern — not an in-page back link. */}
+      <PageHeader
+        title="NFL teams"
+        actions={
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/app/nfl">
+              <Icon name="arrow-prev" size={13} />
+              All teams
+            </Link>
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="flex flex-wrap items-center gap-4">
