@@ -116,13 +116,18 @@ describe('cells', () => {
     expect(oprkOf(splits, 'BUF', 'TE')).toBeNull()
     expect(oprkOf(splits, null, 'WR')).toBeNull()
   })
-  it('OPRK chip tone — the boundaries are exact: 8 tough, 9 neutral, 23 neutral, 24 soft', () => {
+  it('OPRK band rule (D486(16)) — 1–10 red, 11–22 orange, 23–32 green; fewer ranked scales', () => {
     expect(oprkTone(1)).toBe('negative')
-    expect(oprkTone(8)).toBe('negative')
-    expect(oprkTone(9)).toBe('caution')
-    expect(oprkTone(23)).toBe('caution')
-    expect(oprkTone(24)).toBe('positive')
+    expect(oprkTone(10)).toBe('negative')
+    expect(oprkTone(11)).toBe('caution')
+    expect(oprkTone(22)).toBe('caution')
+    expect(oprkTone(23)).toBe('positive')
     expect(oprkTone(32)).toBe('positive')
+    // 24 ranked → bands of floor(24/3) = 8: 1–8 red, 9–16 caution, 17–24 green
+    expect(oprkTone(8, 24)).toBe('negative')
+    expect(oprkTone(9, 24)).toBe('caution')
+    expect(oprkTone(16, 24)).toBe('caution')
+    expect(oprkTone(17, 24)).toBe('positive')
   })
   it('status tags and the Points cell ("—" before kickoff and on bye; pending is marked)', () => {
     expect(statusTag('Questionable')).toBe('Q')

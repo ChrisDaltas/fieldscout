@@ -1025,6 +1025,8 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
     splits: [
       { defense: 'BUF', position: 'QB', rank: 32 },
       { defense: 'MIA', position: 'QB', rank: 1 },
+      // a full 32-team QB scale so the D486(16) bands apply unscaled
+      ...Array.from({ length: 30 }, (_, i) => ({ defense: `T${i + 2}`, position: 'QB', rank: i + 2 })),
     ],
     proj: (id) => ({ qb1: 21.4, 'rb-open': 12.1, 'rb-locked': 9.5, wr1: 0 } as Record<string, number>)[id] ?? null,
     points: (id) => (id === 'qb1' ? { phase: 'done', points: 18.25, pending: [] } : null),

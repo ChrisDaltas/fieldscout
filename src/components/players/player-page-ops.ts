@@ -4,7 +4,7 @@
  * a real source and OMITTED otherwise — the page never shows a placeholder
  * for data we do not have, and never writes advice of its own.
  */
-import { oprkOf, oprkTone, opponentOf, type Opponent, type Tone } from '@/components/leagues/my-team-ops'
+import { oprkOf, oprkRankedCount, oprkTone, opponentOf, type Opponent, type Tone } from '@/components/leagues/my-team-ops'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 
 // ---------------------------------------------------------------------------
@@ -129,7 +129,7 @@ export function scheduleRows(
     const opponent = opponentOf(team, [g])
     const opp = opponent.kind === 'game' ? opponent.opp : null
     const oprk = oprkOf(splits, opp, position)
-    return { week: g.week, opponent, oprk, tone: oprk === null ? null : oprkTone(oprk), final: g.status === 'final' }
+    return { week: g.week, opponent, oprk, tone: oprk === null ? null : oprkTone(oprk, oprkRankedCount(splits, position)), final: g.status === 'final' }
   })
   if (byeWeek != null && games.length > 0 && !rows.some((r) => r.week === byeWeek)) {
     rows.push({ week: byeWeek, opponent: { kind: 'bye' }, oprk: null, tone: null, final: false })
@@ -186,14 +186,13 @@ export function thisWeek(
   if (!next) return null
   const home = next.home_team === team
   const opp = home ? next.away_team : next.home_team
-  const pos = position === 'DST' ? 'DEF' : position
-  const ranked = splits.filter((s) => s.position === pos && s.rank > 0).length
+  const ranked = oprkRankedCount(splits, position)
   return { kind: 'game', week: next.week, home, opp, kickoff_at: next.kickoff_at, oprk: oprkOf(splits, opp, position), ranked }
 }
 
 /** The matchup badge — the shorter side of the order: the top half reads
  *  "Nth toughest vs POS", the bottom half "Nth easiest vs POS" counted from
- *  the bottom. Tone is My Team's OPRK chip tone (`oprkTone`). */
+ *  the bottom. Tone is the shared OPRK band rule (`oprkTone`, D486(16)). */
 export function matchupBadge(oprk: number, ranked: number, position: string): { text: string; tone: Tone } {
   const total = Math.max(ranked, oprk)
   const pos = position === 'DST' ? 'DEF' : position
@@ -201,7 +200,7 @@ export function matchupBadge(oprk: number, ranked: number, position: string): { 
     oprk <= Math.ceil(total / 2)
       ? `${ordinal(oprk)} toughest vs ${pos}`
       : `${ordinal(total + 1 - oprk)} easiest vs ${pos}`
-  return { text, tone: oprkTone(oprk) }
+  return { text, tone: oprkTone(oprk, total) }
 }
 
 /** One row of the season table (D486(12), Yahoo's single table):
