@@ -69,7 +69,7 @@ const WR2 = 'vitest-bx-wr2'
 /** D478: a rostered player who is NOT in the lineup — a bench line. */
 const BENCH = 'vitest-bx-bench'
 const PLAYERS = [
-  { id: QB, full_name: 'Vitest BX QB', position: 'QB', team: 'BXA', status: 'Active' },
+  { id: QB, full_name: 'Vitest BX QB', position: 'QB', team: 'BXA', status: 'Active', headshot_url: 'https://example.test/bx-qb.png' },
   { id: WR, full_name: 'Vitest BX WR', position: 'WR', team: 'BXB', status: 'Active' },
   { id: TE, full_name: 'Vitest BX TE', position: 'TE', team: 'BXC', status: 'Active' },
   { id: WR2, full_name: 'Vitest BX WR Two', position: 'WR', team: 'BXD', status: 'Active' },
@@ -301,7 +301,9 @@ describe('the box — the worker’s function over the frozen snapshot, golden l
   it('QB: 250 × 0.04 + 2 × 4 − 1 × 2 + 12 × 0.1 = 17.20 — scored, Now playing (his game is `live`), the provider’s game state on the row', () => {
     const qb = doc.starters.find((s) => s.slot === 'qb:0')!
     expect(qb).toMatchObject({ reason: 'scored', points: 17.2, pending: [], phase: 'now_playing' })
-    expect(qb.player).toEqual({ id: QB, full_name: 'Vitest BX QB', position: 'QB', nfl_team: 'BXA' })
+    expect(qb.player).toEqual({ id: QB, full_name: 'Vitest BX QB', position: 'QB', nfl_team: 'BXA', headshot_url: 'https://example.test/bx-qb.png' })
+    // F572: a player with no headshot carries null (the board falls back to initials).
+    expect(doc.starters.find((s) => s.player?.id === WR)?.player?.headshot_url).toBeNull()
     expect(qb.game).toMatchObject({ id: 'vitest-bx-game-live', status: 'live', quarter: 3, game_clock: '7:12', home_score: 14, away_score: 10 })
     expect(qb.line).toMatchObject({ pass_yards: 250, pass_tds: 2, interceptions: 1, rush_yards: 12 })
   })

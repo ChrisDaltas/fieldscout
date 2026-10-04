@@ -174,7 +174,7 @@ export interface BoxStarter {
   slot: string
   slot_key: string
   label: string
-  player: { id: string; full_name: string; position: string; nfl_team: string | null } | null
+  player: { id: string; full_name: string; position: string; nfl_team: string | null; headshot_url: string | null } | null
   phase: StarterPhase
   game: BoxGame | null
   /** The worker's per-starter rounded points (0 for `no_stat_row`). */
@@ -446,7 +446,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
   const playerIds = [...new Set(starterIds)]
   const [playersRes, statsRes] = await Promise.all([
     playerIds.length > 0
-      ? supabase.from('players').select('id, full_name, position, team').in('id', playerIds)
+      ? supabase.from('players').select('id, full_name, position, team, headshot_url').in('id', playerIds)
       : Promise.resolve({ data: [], error: null }),
     playerIds.length > 0
       ? supabase
@@ -486,8 +486,8 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       return {
         ...seat,
         player: player
-          ? { id: row.player_id, full_name: player.full_name, position: player.position, nfl_team: player.team }
-          : { id: row.player_id, full_name: row.player_id, position: '?', nfl_team: null },
+          ? { id: row.player_id, full_name: player.full_name, position: player.position, nfl_team: player.team, headshot_url: player.headshot_url ?? null }
+          : { id: row.player_id, full_name: row.player_id, position: '?', nfl_team: null, headshot_url: null },
         phase: player ? phase : ('up_next' as const),
         game: player ? game : null,
         points: row.points,
@@ -548,7 +548,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       // silently (CLAUDE.md's loud emptiness).
       starters.push({
         ...seat,
-        player: { id: playerId, full_name: playerId, position: '?', nfl_team: null },
+        player: { id: playerId, full_name: playerId, position: '?', nfl_team: null, headshot_url: null },
         phase: 'up_next',
         game: null,
         points: 0,
@@ -561,7 +561,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     const { phase, game } = starterPhase(player.team, games)
     starters.push({
       ...seat,
-      player: { id: playerId, full_name: player.full_name, position: player.position, nfl_team: player.team },
+      player: { id: playerId, full_name: player.full_name, position: player.position, nfl_team: player.team, headshot_url: player.headshot_url ?? null },
       phase,
       game,
       points: scored.points,

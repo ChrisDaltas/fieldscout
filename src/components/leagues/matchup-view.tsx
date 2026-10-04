@@ -1,11 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 
 import { leagueCardContext } from '@/components/players/player-card-context'
+import { PlayerAvatarImage } from '@/components/players/player-image'
 import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
+import { UsernameLink } from '@/components/shared/username-link'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,11 +17,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { useBoxScore } from '@/hooks/use-box-score'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { useRosters } from '@/hooks/use-rosters'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
-import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
+import type { BoxStarter, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
 
@@ -26,7 +30,7 @@ import { commishMatchupHref } from './activity-page-ops'
 import { MatchupCorrectionNote } from './corrections-view'
 import { boxPointsNote, weekMayHaveCorrections } from './corrections-view-ops'
 import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
-import { scoringLive } from './league-home-season-ops'
+import { managersByTeam, scoringLive } from './league-home-season-ops'
 import { formatInstantWithDate, formatKickoff } from './lineup-editor-ops'
 import {
   BENCH_LABEL,
@@ -34,6 +38,7 @@ import {
   EMPTY_BENCH_COPY,
   benchNote,
   benchRows,
+  benchSlotLabel,
   type BenchRow,
   BOX_SUM_LABEL,
   LEADERBOARD_TITLE,
@@ -50,10 +55,14 @@ import {
   emptyWeekCopy,
   formatPoints,
   gameStateLine,
-  groupByPhase,
   leaderboardRows,
   lineSummary,
   medianRow,
+  opponentLabel,
+  pairBench,
+  pairSlots,
+  projectedTotalText,
+  projectionText,
   resolveWeek,
   resultChip,
   scoreCell,
@@ -65,7 +74,10 @@ import {
   teamName,
   weekBadge,
   weekNav,
+  yetToPlayCopy,
+  yetToPlayCount,
 } from './matchup-view-ops'
+import { projectedTotal } from './my-team-ops'
 import { MatchupOverrideTools } from './matchup-override-panel'
 import { LiveStatsDelayedBanner, ReconnectingBanner, STALE_SCORES_COPY, StaleDataBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
@@ -309,6 +321,10 @@ function WeekStrip({
 // h2h — the scoreboard, the two boxes, the rest of the week
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// h2h — the scoreboard, the slot-aligned board, the rest of the week
+// ---------------------------------------------------------------------------
+
 function HeadToHeadWeek({
   leagueId,
   doc,
@@ -330,6 +346,7 @@ function HeadToHeadWeek({
   const selected = selectedMatchup(primary, matchupId, myTeamId)
   const settings = { median_game: detail.settings.median_game, second_opponent: detail.settings.second_opponent }
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
+  const managers = useMemo(() => managersByTeam(detail.members), [detail.members])
 
   if (!selected) {
     return <EmptyCard copy={emptyWeekCopy(doc.week, weeks, detail.settings.regular_season_weeks)} data-empty="no-matchups" />
@@ -337,7 +354,7 @@ function HeadToHeadWeek({
 
   return (
     <div className="flex flex-col gap-4" data-variant="h2h">
-      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} badge={false} />
+      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} managers={managers} />
 
       {weekMayHaveCorrections(doc.league_week.status) && (
         // The selected row is always a PRIMARY row (`selectedMatchup` over `splitRows`' primary list) — its game is `matchup` (R1365).
@@ -359,19 +376,15 @@ function HeadToHeadWeek({
         />
       )}
 
-      <div id="box-scores" className="grid scroll-mt-4 gap-4 md:grid-cols-2">
-        <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selected.home_team_id} name={teamName(doc, selected.home_team_id)} leagueTimeZone={leagueTimeZone} />
-        {selected.away_team_id ? (
-          <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selected.away_team_id} name={teamName(doc, selected.away_team_id)} leagueTimeZone={leagueTimeZone} />
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-[13px]">Bye</CardTitle>
-            </CardHeader>
-            <CardContent className="px-card-pad py-3 text-[12px] font-medium text-n-3">No opponent this week.</CardContent>
-          </Card>
-        )}
-      </div>
+      <LineupBoard
+        leagueId={leagueId}
+        season={doc.season}
+        week={doc.week}
+        weekStatus={doc.league_week.status}
+        home={{ teamId: selected.home_team_id, name: teamName(doc, selected.home_team_id) }}
+        away={selected.away_team_id ? { teamId: selected.away_team_id, name: teamName(doc, selected.away_team_id) } : 'bye'}
+        leagueTimeZone={leagueTimeZone}
+      />
 
       {primary.length > 1 && (
         <MatchupList
@@ -391,67 +404,69 @@ function HeadToHeadWeek({
 }
 
 /**
- * The head-to-head scoreboard card — ONE component, two mounts: the matchup
- * page (where the week strip already carries the week badge, so `badge` is
- * off — F277(c)) and the league home's matchup-of-the-week hero (L.D5.4 /
- * F46, where the card is the only badge site and `title` names the week).
- * Exported for that second mount; never forked.
+ * The head-to-head scoreboard — the prototype's MatchupTab header: each side
+ * a crest, the team (a door to its page), its manager, and a big mono score;
+ * the week and "vs" between them. A score is muted only while it is pending
+ * or once the STORED result says that side lost (the client never compares
+ * scores). No win-probability meter: there is no source for one (F566).
  */
 export function Scoreboard({
   doc,
   row,
   settings,
   myTeamId,
-  badge: showBadge = true,
-  title,
-  children,
+  managers,
 }: {
   doc: WeekMatchups
   row: MatchupRow
   settings: { median_game: boolean; second_opponent: boolean }
   myTeamId: string | null
-  /** Render the §16.5.4 week badge in the card header (off where a week
-   *  strip already shows it — F277(c)). */
-  badge?: boolean
-  /** The card's title — defaults to "Matchup" / "Playoff matchup". */
-  title?: string
-  /** Trailing header content (the hero's "Open matchup" link). */
-  children?: ReactNode
+  /** team id → manager username (`managersByTeam`). */
+  managers?: ReadonlyMap<string, string>
 }) {
-  const badge = weekBadge(doc.league_week.status)
+  const homeMedian = medianRow(doc, row.home_team_id, settings.median_game)
+  const homeSecond = secondChip(doc, row.home_team_id, settings.second_opponent)
+  const awayMedian = row.away_team_id ? medianRow(doc, row.away_team_id, settings.median_game) : null
+  const awaySecond = row.away_team_id ? secondChip(doc, row.away_team_id, settings.second_opponent) : null
+  const extras = homeMedian || homeSecond || awayMedian || awaySecond
   return (
     <Card className="min-w-0 overflow-hidden" data-matchup={row.id} data-matchup-status={row.status}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
-          <span>{title ?? (row.round_type === 'playoff' ? 'Playoff matchup' : 'Matchup')}</span>
-          {showBadge && (
-            <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
-              {badge.label}
-            </Badge>
+      <CardContent className="flex flex-col gap-3 px-card-pad py-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
+          <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers?.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
+          <div className="flex flex-col items-center gap-1 text-center">
+            <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-n-3">
+              Week <span className="fs-num">{doc.week}</span>
+              {row.round_type === 'playoff' && ' · Playoffs'}
+            </span>
+            <span className="text-[11px] font-extrabold text-n-3">vs</span>
+            {row.is_overridden && (
+              // §10.3 / F233(d): the ✸ badge lands on the commissioner's log — this
+              // week, this matchup's teams (a score / result receipt records both).
+              <Link
+                href={commishMatchupHref(doc.league_id, doc.week, row.home_team_id)}
+                className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                data-overridden-link
+              >
+                <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} className="hover:bg-accent-soft" data-overridden>
+                  {OVERRIDDEN_LABEL}
+                </Badge>
+              </Link>
+            )}
+          </div>
+          {row.away_team_id ? (
+            <Side doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers?.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} mirror />
+          ) : (
+            <div className="flex min-w-0 flex-col items-end gap-1 text-right" data-side="bye">
+              <span className="text-[13px] font-bold text-n-3">Bye</span>
+              <span className="text-[11px] font-medium text-n-3">No opponent this week.</span>
+            </div>
           )}
-          {row.is_overridden && (
-            // §10.3 / F233(d): the ✸ badge lands on the commissioner's log — this
-            // week, this matchup's teams (a score / result receipt records both).
-            <Link
-              href={commishMatchupHref(doc.league_id, doc.week, row.home_team_id)}
-              className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-              data-overridden-link
-            >
-              <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} className="hover:bg-accent-soft" data-overridden>
-                {OVERRIDDEN_LABEL}
-              </Badge>
-            </Link>
-          )}
-          {children && <span className="ml-auto">{children}</span>}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3 px-card-pad py-3 sm:grid-cols-2">
-        <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} settings={settings} mine={row.home_team_id === myTeamId} />
-        {row.away_team_id ? (
-          <Side doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} settings={settings} mine={row.away_team_id === myTeamId} />
-        ) : (
-          <div className="flex items-center gap-2 rounded-sm border border-dashed border-n-3 px-3 py-2 text-[12px] font-medium text-n-3" data-side="bye">
-            Bye — no opponent this week.
+        </div>
+        {extras && (
+          <div className="grid grid-cols-2 gap-3 border-t border-n-4 pt-2">
+            <SideExtras doc={doc} median={homeMedian} second={homeSecond} />
+            <SideExtras doc={doc} median={awayMedian} second={awaySecond} />
           </div>
         )}
       </CardContent>
@@ -464,46 +479,79 @@ function Side({
   row,
   teamId,
   score,
-  settings,
+  manager,
   mine,
+  mirror = false,
 }: {
   doc: WeekMatchups
   row: MatchupRow
   teamId: string
   score: number | null
-  settings: { median_game: boolean; second_opponent: boolean }
+  manager: string | null
   mine: boolean
+  mirror?: boolean
 }) {
   const name = teamName(doc, teamId)
   const cell = scoreCell(score, row.status)
   const h2h = resultChip(sideResult(row, teamId, doc.results))
-  const median = medianRow(doc, teamId, settings.median_game)
-  const second = secondChip(doc, teamId, settings.second_opponent)
+  const lost = h2h.text === 'L'
   return (
     // The viewer's own side is a resting FILL, never a shadow (CLAUDE.md).
-    <div className={cn('flex min-w-0 flex-col gap-2 rounded-sm border border-ink px-3 py-2', mine && 'bg-accent-soft')} data-side={teamId} data-mine={mine || undefined}>
-      <div className="flex items-center gap-2">
+    <div
+      className={cn(
+        'flex min-w-0 flex-col gap-2 rounded-sm px-2 py-2 sm:flex-row sm:items-center sm:gap-3',
+        mirror && 'items-end text-right sm:flex-row-reverse',
+        mine && 'bg-accent-soft',
+      )}
+      data-side={teamId}
+      data-mine={mine || undefined}
+    >
+      <div className={cn('flex min-w-0 max-w-full items-center gap-2 sm:flex-1', mirror && 'flex-row-reverse')}>
         <Crest name={name} src={null} />
         {/* The name is the door to that franchise's page (§16.1) — the CREST
-            stays outside the anchor so the link's accessible name is the team
-            and not its initials twice over. `doc.league_id` is the document's
-            own league; nothing is threaded. */}
-        <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="min-w-0 flex-1 truncate text-[13px] font-bold text-ink" />
-        {h2h.decided && (
-          <Badge variant={h2h.variant} title={h2h.title} data-result={h2h.text}>
-            {h2h.text}
-          </Badge>
-        )}
+            stays outside the anchor so the link's accessible name is the team. */}
+        <div className="min-w-0">
+          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="block truncate text-[13px] font-extrabold text-ink" />
+          <span className={cn('flex min-w-0 items-center gap-1.5', mirror && 'flex-row-reverse')}>
+            {manager && (
+              <span className="truncate text-[11px] font-semibold text-n-3">
+                <UsernameLink username={manager} />
+              </span>
+            )}
+            {h2h.decided && (
+              <Badge variant={h2h.variant} title={h2h.title} data-result={h2h.text}>
+                {h2h.text}
+              </Badge>
+            )}
+          </span>
+        </div>
       </div>
       <p
-        className={cn('fs-num text-h3', cell.pending ? 'text-n-3' : 'text-ink')}
+        className={cn('fs-num shrink-0 text-[27px] font-extrabold leading-none', cell.pending || lost ? 'text-n-3' : 'text-ink')}
         title={cell.title ?? undefined}
         data-score={cell.pending ? 'pending' : cell.text}
       >
         {cell.text}
       </p>
+    </div>
+  )
+}
+
+/** The second game(s) under a side: the *vs League Median* row and/or the
+ *  second opponent, each with its own stored W/L (§16.5.3). */
+function SideExtras({
+  doc,
+  median,
+  second,
+}: {
+  doc: WeekMatchups
+  median: ReturnType<typeof medianRow>
+  second: ReturnType<typeof secondChip>
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
       {median && (
-        <div className="flex items-center justify-between gap-2 border-t border-n-4 pt-1.5 text-[11px] font-medium" data-median-row>
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] font-medium" data-median-row>
           <span className="text-n-3">{MEDIAN_ROW_LABEL}</span>
           <span className="flex items-center gap-1.5">
             <span className="fs-num text-ink" title={median.median === null ? MEDIAN_PENDING_TITLE : undefined}>
@@ -514,8 +562,8 @@ function Side({
         </div>
       )}
       {second && (
-        <div className="flex items-center justify-between gap-2 border-t border-n-4 pt-1.5 text-[11px] font-medium" data-second-chip>
-          <span className="text-n-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] font-medium" data-second-chip>
+          <span className="min-w-0 truncate text-n-3">
             {SECOND_CHIP_LABEL} · {teamName(doc, second.opponent_team_id)}
           </span>
           <span className="flex items-center gap-1.5">
@@ -682,195 +730,382 @@ function TotalPointsWeek({
         <MatchupCorrectionNote leagueId={leagueId} week={doc.week} teamIds={[selectedId]} scope="team" />
       )}
       {selectedId && (
-        <TeamBox leagueId={leagueId} week={doc.week} weekStatus={doc.league_week.status} teamId={selectedId} name={teamName(doc, selectedId)} leagueTimeZone={leagueTimeZone} />
+        <LineupBoard
+          key={selectedId}
+          leagueId={leagueId}
+          season={doc.season}
+          week={doc.week}
+          weekStatus={doc.league_week.status}
+          home={{ teamId: selectedId, name: teamName(doc, selectedId) }}
+          away={null}
+          leagueTimeZone={leagueTimeZone}
+        />
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// The box — one team's starters in Live Mode's three groups
+// The board — both lineups slot by slot, the totals, then the benches
 // ---------------------------------------------------------------------------
 
-function TeamBox({
+interface BoardSide {
+  teamId: string
+  name: string
+}
+
+/**
+ * The prototype's slot-aligned lineups: one row per lineup slot, the home
+ * starter on the left, the slot in the middle, the away starter mirrored on
+ * the right; then the two totals; then both benches (never counted). Each
+ * side is ONE `useBoxScore` read — every point and pending state is the
+ * server's (`box-score-service.ts`); projections are `league_player_values`
+ * only, shown where one is stored. `away = null` is the total-points
+ * variant's single box; `'bye'` is an h2h side with no opponent.
+ *
+ * Mobile keeps the two columns as a compact table (the headshots drop, the
+ * slot column narrows) — no horizontal page scroll.
+ */
+function LineupBoard({
   leagueId,
+  season,
   week,
   weekStatus,
-  teamId,
-  name,
+  home,
+  away,
   leagueTimeZone,
 }: {
   leagueId: string
+  season: number
   week: number
-  /** `league_weeks.status` — the box's points note depends on it (F477). */
+  /** `league_weeks.status` — the points note and bench note depend on it. */
   weekStatus: string
-  teamId: string
-  name: string
+  home: BoardSide
+  away: BoardSide | 'bye' | null
   leagueTimeZone: string | null
 }) {
-  const box = useBoxScore(leagueId, week, teamId)
+  const awaySide = away && away !== 'bye' ? away : null
+  const homeBox = useBoxScore(leagueId, week, home.teamId)
+  const awayBox = useBoxScore(leagueId, week, awaySide?.teamId ?? null)
   // The bench lines carry ids only; the rosters read names them.
   const rosters = useRosters(leagueId)
-  const problem = box.isError ? (box.error instanceof Error ? box.error : new Error(String(box.error))) : null
-  const data = box.data
-  // No lineup ⇒ no sum to speak of (the empty state says why), not `pending`.
-  const sum = data && data.lineup ? boxSumCell(data) : null
-  // F477: where the points come from, in words (null = nothing to say).
-  const pointsNote = data ? boxPointsNote(data, weekStatus) : null
+  const values = useLeaguePlayerValues(leagueId, season, week)
+  const two = away !== null
+  const grid = two ? 'grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)] sm:gap-3' : 'grid grid-cols-[28px_minmax(0,1fr)] items-center gap-1.5 sm:grid-cols-[48px_minmax(0,1fr)] sm:gap-3'
+  const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
+
+  const homeData = homeBox.data
+  const awayData = awayBox.data
+  const slots = pairSlots(homeData?.lineup ? homeData.starters : null, awayData?.lineup ? awayData.starters : null)
+  const rosterOf = (teamId: string) => rosters.data?.teams.find((t) => t.team_id === teamId)?.roster
+  const homeBench = homeData?.bench ? benchRows(homeData.bench, rosterOf(home.teamId)) : null
+  const awayBench = awaySide && awayData?.bench ? benchRows(awayData.bench, rosterOf(awaySide.teamId)) : null
+  const showBench = homeBench !== null || awayBench !== null
+  const benchPairs = pairBench(homeBench ?? [], awayBench ?? [])
+  const note = benchNote(weekStatus)
+  const live = weekStatus === 'live'
+  const loading = homeBox.isPending || (awaySide !== null && awayBox.isPending)
+
+  const centre = (text: string) => (
+    <span className="text-center text-[9px] font-bold uppercase tracking-wide text-n-3 sm:text-[10px]">{text}</span>
+  )
 
   return (
-    <Card className="min-w-0 overflow-hidden" data-box={teamId}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex items-center gap-2 text-[12px]">
-          <Crest name={name} src={null} className="h-5 w-5" />
-          {/* A box score is where an empty lineup is actually noticed, so the
-              name above the starters is the door to the lineup editor. */}
-          <TeamNameLink name={name} leagueId={leagueId} teamId={teamId} className="min-w-0 flex-1 truncate" />
-          {sum && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-n-3" title={sum.title ?? undefined}>
-              {BOX_SUM_LABEL}
-              <span className={cn('fs-num font-bold', sum.pending ? 'text-n-3' : 'text-ink')} data-box-sum={sum.pending ? 'pending' : sum.text}>
-                {sum.text}
-              </span>
-            </span>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2 px-card-pad py-2">
-        {problem && data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
-        {pointsNote && (
-          <p className="text-[11px] font-medium text-n-3" data-box-note>
-            {pointsNote}
-          </p>
-        )}
-        {box.isPending ? (
+    <Card id="box-scores" className="min-w-0 scroll-mt-4 overflow-hidden" data-board>
+      <CardContent className="flex flex-col px-card-pad py-3">
+        {/* Each side's own state: where its points come from, or why it has none. */}
+        <div className={cn(grid, 'items-start pb-2')}>
+          {!two && <span />}
+          <BoxStatus box={homeBox} side={home} leagueId={leagueId} weekStatus={weekStatus} />
+          {two && <span />}
+          {two &&
+            (awaySide ? (
+              <BoxStatus box={awayBox} side={awaySide} leagueId={leagueId} weekStatus={weekStatus} mirror />
+            ) : (
+              <div className="flex flex-col items-end text-right" data-side="bye-box">
+                <span className="text-[12px] font-bold text-n-3">Bye</span>
+                <span className="text-[11px] font-medium text-n-3">No opponent this week.</span>
+              </div>
+            ))}
+        </div>
+
+        {loading ? (
           <div className="flex flex-col gap-1.5" data-skeleton="box">
-            {Array.from({ length: 5 }, (_, i) => (
-              <Skeleton key={i} className="h-6 rounded-sm" />
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-9 rounded-sm" />
             ))}
           </div>
-        ) : problem && !data ? (
-          <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-box-error>
-            <p className="text-[12px] font-bold">Couldn’t load this box score.</p>
-            <p className="text-[11px] font-medium text-n-3">{problemCopy(problem)}</p>
-            <Button variant="stroke" size="sm" onClick={() => box.refetch()}>
-              <Icon name="reset" size={13} /> Retry
-            </Button>
-          </div>
-        ) : data ? (
-          data.lineup === null ? (
-            <p className="text-[12px] font-medium text-n-3" data-empty="no-lineup">
-              {NO_LINEUP_COPY}
-            </p>
-          ) : data.starters.every((s) => s.reason === 'empty') ? (
-            <p className="text-[12px] font-medium text-n-3" data-empty="no-starters">
-              {NO_STARTERS_COPY}
-            </p>
-          ) : (
-            groupByPhase(data.starters).map((group) => (
-              <section key={group.phase} className="flex flex-col gap-1" data-phase={group.phase}>
-                <h4 className="text-[10px] font-bold uppercase tracking-wide text-n-3">{group.label}</h4>
-                {group.starters.map((starter) => (
-                  <StarterLine key={starter.slot} leagueId={leagueId} starter={starter} leagueTimeZone={leagueTimeZone} />
+        ) : (
+          <>
+            {slots.length > 0 && (
+              <section className="flex flex-col" data-starters>
+                <h4 className="border-b border-n-4 pb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-n-3">Starters</h4>
+                {slots.map((pair) => (
+                  <div key={pair.key} className={cn(grid, 'border-b border-n-4 py-1.5')} data-slot-row={pair.key}>
+                    {!two && centre(pair.label)}
+                    {pair.home ? <StarterCellView leagueId={leagueId} starter={pair.home} teamId={home.teamId} proj={pair.home.player ? projOf(pair.home.player.id) : null} leagueTimeZone={leagueTimeZone} /> : <span />}
+                    {two && centre(pair.label)}
+                    {two &&
+                      (pair.away && awaySide ? (
+                        <StarterCellView leagueId={leagueId} starter={pair.away} teamId={awaySide.teamId} proj={pair.away.player ? projOf(pair.away.player.id) : null} leagueTimeZone={leagueTimeZone} mirror />
+                      ) : (
+                        <span />
+                      ))}
+                  </div>
                 ))}
+                <div className={cn(grid, 'py-2')} data-total-row>
+                  {!two && centre(BOX_SUM_LABEL)}
+                  <TotalCell data={homeData} teamId={home.teamId} projOf={projOf} live={live} />
+                  {two && centre(BOX_SUM_LABEL)}
+                  {two && (awaySide ? <TotalCell data={awayData} teamId={awaySide.teamId} projOf={projOf} live={live} mirror /> : <span />)}
+                </div>
               </section>
-            ))
-          )
-        ) : null}
-        {data?.bench && (
-          <BenchSection
-            leagueId={leagueId}
-            rows={benchRows(data.bench, rosters.data?.teams.find((t) => t.team_id === teamId)?.roster)}
-            note={benchNote(weekStatus)}
-          />
+            )}
+
+            {showBench && (
+              <section className="flex flex-col border-t border-n-4 pt-2" data-bench>
+                <h4 className="text-center text-[10px] font-bold uppercase tracking-wide text-n-3">{BENCH_LABEL}</h4>
+                <p className="pb-1.5 text-center text-[10px] font-medium text-n-3">{BENCH_NOT_COUNTED_COPY}</p>
+                {note && (
+                  <p className="pb-1.5 text-center text-[10px] font-medium text-n-3" data-bench-note>
+                    {note}
+                  </p>
+                )}
+                {benchPairs.length === 0 ? (
+                  <p className="text-center text-[11px] font-medium text-n-3" data-empty="no-bench">
+                    {EMPTY_BENCH_COPY}
+                  </p>
+                ) : (
+                  benchPairs.map((pair, i) => (
+                    <div key={i} className={cn(grid, 'border-b border-n-4 py-1')}>
+                      {!two && centre(benchSlotLabel(pair))}
+                      {pair.home ? <BenchCellView leagueId={leagueId} row={pair.home} teamId={home.teamId} /> : <span />}
+                      {two && centre(benchSlotLabel(pair))}
+                      {two && (pair.away && awaySide ? <BenchCellView leagueId={leagueId} row={pair.away} teamId={awaySide.teamId} mirror /> : <span />)}
+                    </div>
+                  ))
+                )}
+              </section>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
   )
 }
 
-/** The bench under the starters (League UX batch 5): each player's points
- *  for the week, read like a starter's — and never added to the total. */
-function BenchSection({ leagueId, rows, note }: { leagueId: string; rows: BenchRow[]; note: string | null }) {
+/** One side's header cell on the board: the team (a door to its page — a box
+ *  score is where an empty lineup is noticed), where its points come from,
+ *  and the honest empty / error states. */
+function BoxStatus({
+  box,
+  side,
+  leagueId,
+  weekStatus,
+  mirror = false,
+}: {
+  box: ReturnType<typeof useBoxScore>
+  side: BoardSide
+  leagueId: string
+  weekStatus: string
+  mirror?: boolean
+}) {
+  const problem = box.isError ? (box.error instanceof Error ? box.error : new Error(String(box.error))) : null
+  const data = box.data
+  // F477: where the points come from, in words (null = nothing to say).
+  const pointsNote = data ? boxPointsNote(data, weekStatus) : null
   return (
-    <section className="flex flex-col gap-1 border-t border-n-4 pt-2" data-bench>
-      <h4 className="flex items-baseline gap-2 text-[10px] font-bold uppercase tracking-wide text-n-3">
-        {BENCH_LABEL}
-        <span className="text-[10px] font-medium normal-case tracking-normal">{BENCH_NOT_COUNTED_COPY}</span>
-      </h4>
-      {note && (
-        <p className="text-[10px] font-medium text-n-3" data-bench-note>
-          {note}
+    <div className={cn('flex min-w-0 flex-col gap-1', mirror && 'items-end text-right')} data-box={side.teamId}>
+      <TeamNameLink name={side.name} leagueId={leagueId} teamId={side.teamId} className="max-w-full truncate text-[12px] font-bold text-ink" />
+      {problem && data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
+      {pointsNote && (
+        <p className="text-[10px] font-medium text-n-3" data-box-note>
+          {pointsNote}
         </p>
       )}
-      {rows.length === 0 ? (
-        <p className="text-[11px] font-medium text-n-3" data-empty="no-bench">
-          {EMPTY_BENCH_COPY}
-        </p>
-      ) : (
-        rows.map((row) => (
-          <div key={row.player_id} className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-0.5" data-bench-row={row.player_id}>
-            <span className="w-9 shrink-0 text-[10px] font-bold text-n-3">{row.ir ? 'IR' : 'BN'}</span>
-            {row.player ? (
-              <>
-                <PositionBadge position={row.player.position} size="sm" />
-                <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                  <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="text-[12px] font-medium text-ink" />
-                  <span className="shrink-0 text-[10px] font-medium text-n-3">{row.player.nfl_team ?? '—'}</span>
-                </span>
-              </>
-            ) : (
-              <span className="min-w-0 flex-1 text-[11px] font-medium text-n-3">Player no longer on this roster</span>
-            )}
-            <span className={cn('fs-num shrink-0 text-[12px] font-medium', row.cell.tone === 'scored' ? 'text-ink' : 'text-n-3')} title={row.cell.title ?? undefined} data-bench-cell={row.cell.tone}>
-              {row.cell.text}
-            </span>
-          </div>
-        ))
+      {problem && !data && (
+        <div className={cn('flex flex-col gap-1.5 rounded-sm border border-negative bg-negative-soft px-2 py-1.5', mirror ? 'items-end' : 'items-start')} role="alert" data-box-error>
+          <p className="text-[11px] font-bold">Couldn’t load this box score.</p>
+          <p className="text-[10px] font-medium text-n-3">{problemCopy(problem)}</p>
+          <Button variant="stroke" size="sm" onClick={() => box.refetch()}>
+            <Icon name="reset" size={13} /> Retry
+          </Button>
+        </div>
       )}
-    </section>
+      {data && data.lineup === null && (
+        <p className="text-[11px] font-medium text-n-3" data-empty="no-lineup">
+          {NO_LINEUP_COPY}
+        </p>
+      )}
+      {data && data.lineup !== null && data.starters.every((s) => s.reason === 'empty') && (
+        <p className="text-[11px] font-medium text-n-3" data-empty="no-starters">
+          {NO_STARTERS_COPY}
+        </p>
+      )}
+    </div>
   )
 }
 
-function StarterLine({ leagueId, starter, leagueTimeZone }: { leagueId: string; starter: BoxStarter; leagueTimeZone: string | null }) {
+/** The worker's total for one side (pending stays the word — E61), the
+ *  projected total when every starter has a stored projection, and how many
+ *  starters' games have not kicked off (from each game's stored status). */
+function TotalCell({
+  data,
+  teamId,
+  projOf,
+  live,
+  mirror = false,
+}: {
+  data: TeamBoxScore | undefined
+  teamId: string
+  projOf: (id: string) => number | null
+  live: boolean
+  mirror?: boolean
+}) {
+  // No lineup ⇒ no sum to speak of (the side's state says why), not `pending`.
+  if (!data || !data.lineup) return <span data-box-total={teamId} />
+  const sum = boxSumCell(data)
+  const ids = data.starters.map((s) => s.player?.id ?? null)
+  const proj = projectedTotalText(projectedTotal(ids, projOf), ids.filter(Boolean).length)
+  const yet = live ? yetToPlayCount(data.starters) : 0
+  return (
+    <div className={cn('flex min-w-0 flex-col', mirror ? 'items-start text-left' : 'items-end text-right')} data-box-total={teamId}>
+      <span
+        className={cn('fs-num text-[17px] font-extrabold leading-tight', sum.pending ? 'text-n-3' : 'text-ink')}
+        title={sum.title ?? undefined}
+        data-box-sum={sum.pending ? 'pending' : sum.text}
+      >
+        {sum.text}
+      </span>
+      {proj && (
+        <span className="fs-num text-[10px] font-semibold text-n-3" data-proj-total>
+          {proj}
+        </span>
+      )}
+      {yet > 0 && (
+        <span className="text-[10px] font-semibold text-n-3" data-yet-to-play={yet}>
+          {yetToPlayCopy(yet)}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function PlayerFace({ player }: { player: { id: string; full_name: string; position: string; nfl_team: string | null; headshot_url?: string | null } }) {
+  // The headshot from the box read (F572); initials when it is null or fails to load
+  // (the name itself renders as the card door beside the face).
+  const initials = initialsOf(player.full_name)
+  return (
+    <Avatar className="hidden h-7 w-7 shrink-0 sm:flex">
+      <PlayerAvatarImage player={{ id: player.id, position: player.position, team: player.nfl_team, headshot_url: player.headshot_url ?? null }} />
+      <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
+    </Avatar>
+  )
+}
+
+function StarterCellView({
+  leagueId,
+  starter,
+  teamId,
+  proj,
+  leagueTimeZone,
+  mirror = false,
+}: {
+  leagueId: string
+  starter: BoxStarter
+  teamId: string
+  proj: number | null
+  leagueTimeZone: string | null
+  mirror?: boolean
+}) {
   const cell = starterCell(starter)
   const kickoff = starter.game && starter.phase === 'up_next' ? formatKickoff(starter.game.kickoff_at, leagueTimeZone) : null
   const state = starter.phase === 'up_next' ? null : gameStateLine(starter.game)
   const line = lineSummary(starter.line)
+  const opp = starter.player ? opponentLabel(starter.player.nfl_team, starter.game) : null
+  const projText = projectionText(proj)
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-0.5" data-starter={starter.slot} data-starter-reason={starter.reason}>
-      <span className="w-9 shrink-0 text-[10px] font-bold text-n-3">{starter.label}</span>
+    <div
+      className={cn('flex min-w-0 items-center gap-2', mirror && 'flex-row-reverse')}
+      data-starter={starter.slot}
+      data-starter-reason={starter.reason}
+      data-side-of={teamId}
+    >
       {starter.player ? (
         <>
-          <PositionBadge position={starter.player.position} size="sm" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <PlayerLink playerId={starter.player.id} name={starter.player.full_name} context={leagueCardContext(leagueId)} className="text-[12px] font-bold text-ink" />
-              <span className="shrink-0 text-[10px] font-medium text-n-3">{starter.player.nfl_team ?? '—'}</span>
-              {kickoff && (
-                <span className="fs-num shrink-0 text-[10px] font-medium text-n-3" title={kickoff.title ?? undefined}>
-                  {kickoff.local}
-                </span>
-              )}
-            </span>
-            {(state || line) && (
-              <span className="truncate text-[10px] font-medium text-n-3">{[state, line].filter(Boolean).join(' · ')}</span>
+          <PlayerFace player={starter.player} />
+          <div className={cn('min-w-0 flex-1', mirror && 'text-right')}>
+            <div className="truncate leading-tight">
+              <PlayerLink playerId={starter.player.id} name={starter.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-extrabold text-ink sm:text-[12px]" />
+            </div>
+            <div className={cn('mt-0.5 flex min-w-0 items-center gap-1', mirror && 'flex-row-reverse')}>
+              <PositionBadge position={starter.player.position} size="sm" className="shrink-0" />
+              <span className="truncate text-[10px] font-semibold text-n-3">{[starter.player.nfl_team ?? '—', opp].filter(Boolean).join(' · ')}</span>
+            </div>
+            {(kickoff || state || line) && (
+              <div className="truncate text-[10px] font-medium text-n-3" title={kickoff?.title ?? undefined}>
+                {[kickoff?.local, state, line].filter(Boolean).join(' · ')}
+              </div>
             )}
-          </span>
+          </div>
         </>
       ) : (
-        <span className="min-w-0 flex-1 text-[11px] font-medium text-n-3">Empty</span>
+        <span className={cn('min-w-0 flex-1 text-[11px] font-medium text-n-3', mirror && 'text-right')}>Empty</span>
       )}
-      <span
-        className={cn('fs-num shrink-0 text-[12px] font-bold', cell.tone === 'scored' ? 'text-ink' : 'text-n-3')}
-        title={cell.title ?? undefined}
-        data-starter-cell={cell.tone}
-      >
-        {cell.text}
+      <div className={cn('flex shrink-0 flex-col', mirror ? 'items-start' : 'items-end')}>
+        <span
+          className={cn('fs-num text-[12px] font-extrabold', cell.tone === 'scored' ? 'text-ink' : 'text-n-3')}
+          title={cell.title ?? undefined}
+          data-starter-cell={cell.tone}
+        >
+          {cell.text}
+        </span>
+        {projText && (
+          <span className="fs-num text-[9px] font-semibold text-n-3" data-proj>
+            {projText}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BenchCellView({ leagueId, row, teamId, mirror = false }: { leagueId: string; row: BenchRow; teamId: string; mirror?: boolean }) {
+  return (
+    <div className={cn('flex min-w-0 items-center gap-2', mirror && 'flex-row-reverse')} data-bench-row={row.player_id} data-side-of={teamId}>
+      {row.player ? (
+        <>
+          <PlayerFace player={row.player} />
+          <div className={cn('min-w-0 flex-1', mirror && 'text-right')}>
+            <div className="truncate leading-tight">
+              <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-semibold text-ink sm:text-[12px]" />
+            </div>
+            <div className={cn('mt-0.5 flex min-w-0 items-center gap-1', mirror && 'flex-row-reverse')}>
+              <PositionBadge position={row.player.position} size="sm" className="shrink-0" />
+              <span className="truncate text-[10px] font-semibold text-n-3">{row.player.nfl_team ?? '—'}</span>
+              {row.ir && <span className="shrink-0 text-[10px] font-bold text-n-3">IR</span>}
+            </div>
+          </div>
+        </>
+      ) : (
+        <span className={cn('min-w-0 flex-1 text-[11px] font-medium text-n-3', mirror && 'text-right')}>Player no longer on this roster</span>
+      )}
+      <span className={cn('fs-num shrink-0 text-[12px] font-medium', row.cell.tone === 'scored' ? 'text-ink' : 'text-n-3')} title={row.cell.title ?? undefined} data-bench-cell={row.cell.tone}>
+        {row.cell.text}
       </span>
     </div>
   )
 }
+
+function initialsOf(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('')
+}
+
 
 // ---------------------------------------------------------------------------
 // Empty / skeleton (§16.5.4)

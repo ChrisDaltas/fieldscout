@@ -41,7 +41,7 @@ export const PENDING_SCORE_COPY = 'pending'
 export const WEEK_NOT_STARTED_TITLE = 'No score yet — the week has not started.'
 export const PENDING_SCORE_TITLE =
   'Pending — a starter has an undelivered stat, or no scoring batch has reached this team yet; never shown as 0.00.'
-export const BOX_SUM_LABEL = 'Box total'
+export const BOX_SUM_LABEL = 'Total'
 export const LEADERBOARD_TITLE = 'Week leaderboard'
 export const MEDIAN_ROW_LABEL = 'vs League Median'
 export const MEDIAN_PENDING_TITLE = 'The median line renders once every score of the week is in.'
@@ -462,7 +462,7 @@ export const EMPTY_BENCH_COPY = 'Nobody on the bench.'
 
 export interface BenchRow {
   player_id: string
-  player: { id: string; full_name: string; position: string; nfl_team: string | null } | null
+  player: { id: string; full_name: string; position: string; nfl_team: string | null; headshot_url?: string | null } | null
   /** On an IR spot rather than the bench proper. */
   ir: boolean
   cell: StarterCell
@@ -503,4 +503,84 @@ export function benchRows(
 /** A week that is no longer upcoming or being played shows today's bench. */
 export function benchNote(weekStatus: string): string | null {
   return weekStatus === 'upcoming' || weekStatus === 'live' ? null : BENCH_TODAY_COPY
+}
+
+// ---------------------------------------------------------------------------
+// The head-to-head board (the Matchup page built to the prototype — D484)
+// ---------------------------------------------------------------------------
+
+/** One row of the slot-aligned board: the slot's label in the middle, each
+ *  side's starter in that slot (null = no such seat on that side, or no
+ *  lineup on record). */
+export interface SlotPair {
+  key: string
+  label: string
+  home: BoxStarter | null
+  away: BoxStarter | null
+}
+
+/** Pairs the two boxes' starters by SLOT KEY (`qb:0`, `flex:1` — the
+ *  §12.13 instance key), never by lineup index (R1493): a scored week's box
+ *  lists the league's slot order and then any stored slot the settings no
+ *  longer name, and the two sides' stale extras can differ. Rows follow the
+ *  union of both lists in order — the settings slots first (each box lists
+ *  them in the same order), then each side's stale keys as first seen — so
+ *  a slot only one side has leaves the other side's cell blank rather than
+ *  borrowing a neighbour's label. A side with no lineup leaves its cells
+ *  blank rather than inventing seats. */
+export function pairSlots(home: readonly BoxStarter[] | null | undefined, away: readonly BoxStarter[] | null | undefined): SlotPair[] {
+  const h = new Map((home ?? []).map((s) => [s.slot, s]))
+  const a = new Map((away ?? []).map((s) => [s.slot, s]))
+  const order: string[] = []
+  for (const k of [...h.keys(), ...a.keys()]) if (!order.includes(k)) order.push(k)
+  return order.map((key) => {
+    const hs = h.get(key) ?? null
+    const as = a.get(key) ?? null
+    return { key, label: (hs ?? (as as BoxStarter)).label, home: hs, away: as }
+  })
+}
+
+/** The two benches side by side, row i of each (each already in bench order). */
+export function pairBench<T>(home: readonly T[], away: readonly T[]): Array<{ home: T | null; away: T | null }> {
+  return Array.from({ length: Math.max(home.length, away.length) }, (_, i) => ({ home: home[i] ?? null, away: away[i] ?? null }))
+}
+
+/** "vs MIA" / "@ MIA" from the stored game row — null without a game. */
+export function opponentLabel(nflTeam: string | null, game: BoxStarter['game']): string | null {
+  if (!game || !nflTeam) return null
+  if (game.home_team === nflTeam) return `vs ${game.away_team}`
+  if (game.away_team === nflTeam) return `@ ${game.home_team}`
+  return null
+}
+
+/** A starter's projection from `league_player_values` — null (render
+ *  nothing) when none is stored. Never a zero by default. */
+export function projectionText(value: number | null | undefined): string | null {
+  return value === null || value === undefined ? null : `Proj ${value.toFixed(1)}`
+}
+
+/** Filled starters whose game has not kicked off — the box pipeline's
+ *  `up_next` phase, which is read from each game's stored status. A bye is
+ *  not "yet to play". */
+export function yetToPlayCount(starters: readonly Pick<BoxStarter, 'player' | 'phase'>[]): number {
+  return starters.filter((s) => s.player !== null && s.phase === 'up_next').length
+}
+
+export function yetToPlayCopy(n: number): string {
+  return `${n} yet to play`
+}
+
+/** A side's projected total — only when it has filled starters and EVERY one
+ *  has a stored projection (a partial sum would understate the side; an
+ *  empty lineup has nothing to project, never "Proj 0.0"). */
+export function projectedTotalText(total: { total: number; missing: number } | null, filled: number): string | null {
+  if (!total || filled === 0 || total.missing > 0) return null
+  return `Proj ${total.total.toFixed(1)}`
+}
+
+/** The bench row's middle label: IR only when every player on the row is on
+ *  an IR spot, else BN. */
+export function benchSlotLabel(pair: { home: { ir: boolean } | null; away: { ir: boolean } | null }): string {
+  const rows = [pair.home, pair.away].filter((r): r is { ir: boolean } => r !== null)
+  return rows.length > 0 && rows.every((r) => r.ir) ? 'IR' : 'BN'
 }

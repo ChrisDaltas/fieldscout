@@ -293,7 +293,7 @@ function box(teamId: string, over: Partial<TeamBoxScore> = {}): TeamBoxScore {
         slot: 'wr:0',
         slot_key: 'wr',
         label: 'WR',
-        player: { id: 'p1', full_name: 'Lou Receiver', position: 'WR', nfl_team: 'AAA' },
+        player: { id: 'p1', full_name: 'Lou Receiver', position: 'WR', nfl_team: 'AAA', headshot_url: null },
         phase: 'done',
         game: null,
         points: 12,

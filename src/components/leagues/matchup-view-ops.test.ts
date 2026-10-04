@@ -15,6 +15,7 @@ import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, TeamWeekResultRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 
 import {
+  pairSlots,
   BYE_TITLE,
   NO_MATCHUPS_COPY,
   PENDING_SCORE_COPY,
@@ -110,7 +111,7 @@ function starter(over: Partial<BoxStarter> = {}): BoxStarter {
     slot: 'qb:0',
     slot_key: 'qb',
     label: 'QB',
-    player: { id: 'p1', full_name: 'P One', position: 'QB', nfl_team: 'AAA' },
+    player: { id: 'p1', full_name: 'P One', position: 'QB', nfl_team: 'AAA', headshot_url: null },
     phase: 'up_next',
     game: null,
     points: 0,
@@ -411,5 +412,25 @@ describe('leaderboardRows — the total_points week (§16.5.3): stored points, r
       results: [result({ team_id: T1, points: 50 }), result({ team_id: T2, points: 50 }), result({ team_id: T3, points: 40 }), result({ team_id: T4, points: 30 })],
     })
     expect(leaderboardRows(d).map((r) => r.rank)).toEqual([1, 1, 3, 4])
+  })
+})
+
+describe('pairSlots — pairs by slot key, never by lineup index (R1493)', () => {
+  const seat = (slot: string): BoxStarter => starter({ slot, slot_key: slot.split(':')[0], label: slot.split(':')[0].toUpperCase() })
+  it('two sides with DIFFERENT stale extras: each extra gets its own row, the other cell blank', () => {
+    const home = [seat('qb:0'), seat('wr:0'), seat('flex:1')]
+    const away = [seat('qb:0'), seat('wr:0'), seat('superflex:0')]
+    const rows = pairSlots(home, away)
+    expect(rows.map((r) => [r.key, r.label, r.home?.slot ?? null, r.away?.slot ?? null])).toEqual([
+      ['qb:0', 'QB', 'qb:0', 'qb:0'],
+      ['wr:0', 'WR', 'wr:0', 'wr:0'],
+      ['flex:1', 'FLEX', 'flex:1', null],
+      ['superflex:0', 'SUPERFLEX', null, 'superflex:0'],
+    ])
+  })
+  it('a side with no lineup leaves its cells blank', () => {
+    const rows = pairSlots([seat('qb:0')], null)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].away).toBeNull()
   })
 })
