@@ -213,8 +213,10 @@ export function CommandPalette() {
                 value={`${player.full_name} ${player.id}`}
                 onSelect={() => {
                   // D486(13): the player view opens as a modal over this page.
+                  // Open after the palette's own Dialog has closed so focus
+                  // lands in the player modal, not on a dead element (R1510).
                   setOpen(false)
-                  openPlayerView(player.id)
+                  requestAnimationFrame(() => openPlayerView(player.id))
                 }}
                 className="gap-2.5"
               >

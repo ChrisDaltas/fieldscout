@@ -1028,7 +1028,7 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
     ],
     proj: (id) => ({ qb1: 21.4, 'rb-open': 12.1, 'rb-locked': 9.5, wr1: 0 } as Record<string, number>)[id] ?? null,
     points: (id) => (id === 'qb1' ? { phase: 'done', points: 18.25, pending: [] } : null),
-    snap: (id) => (id === 'qb1' ? 0.97 : null),
+    snap: (id) => (id === 'qb1' ? 97 : null),
   }
   const render = (over: Partial<Parameters<typeof LineupEditor>[0]> = {}) => {
     const client = new QueryClient()

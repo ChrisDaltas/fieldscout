@@ -145,8 +145,9 @@ export function formatPoints(n: number | null | undefined): string {
   return n === null || n === undefined || !Number.isFinite(n) ? '—' : n.toFixed(1)
 }
 
-export function formatSnap(fraction: number | null | undefined): string {
-  return fraction === null || fraction === undefined || !Number.isFinite(fraction) ? '—' : `${Math.round(fraction * 100)}%`
+/** `snap_pct` is already a 0–100 percentage (F579/R1509) — never scale it. */
+export function formatSnap(pct: number | null | undefined): string {
+  return pct === null || pct === undefined || !Number.isFinite(pct) ? '—' : `${Math.round(pct)}%`
 }
 
 export function formatAdp(adp: number | null | undefined): string {

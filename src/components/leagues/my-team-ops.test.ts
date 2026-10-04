@@ -34,6 +34,7 @@ import {
   writeColumns,
   type AutosaveStatus,
   type QueuedMove,
+  formatSnap,
 } from './my-team-ops'
 
 function player(over: Partial<RosterPlayer> & Pick<RosterPlayer, 'player_id' | 'position' | 'full_name'>): RosterPlayer {
@@ -363,5 +364,13 @@ describe('R1467 — a week switch never sends another week’s lineup', () => {
     const editor = readFileSync(path.join(__dirname, 'lineup-editor.tsx'), 'utf8')
     expect(editor).toContain('disabled={weekLockedReason !== null}')
     expect(editor).toContain('weekTabsLockedReason(saving)')
+  })
+})
+
+describe('formatSnap — snap_pct is already 0–100 (F579/R1509)', () => {
+  it('72.4 → "72%", never ×100', () => {
+    expect(formatSnap(72.4)).toBe('72%')
+    expect(formatSnap(100)).toBe('100%')
+    expect(formatSnap(null)).toBe('—')
   })
 })

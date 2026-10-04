@@ -459,4 +459,19 @@ describe('player view — the calm default view + progressive disclosure (D486(1
     const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
     expect(win).toMatch(/openPlayerView\(playerId, expandLeagueId\)/)
   })
+
+  it("More → 'Open player view' on the mini card closes the card first (R1507)", () => {
+    const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
+    // The card hands its expand handler (closeWindow → openPlayerView) to the More item.
+    expect(win).toMatch(/onOpenPlayerView=\{handleExpand\}/)
+    expect(win).toMatch(/closeWindow\(playerId\)\s*\n\s*openPlayerView\(playerId, expandLeagueId\)/)
+    const actions = readFileSync(join(__dirname, 'player-detail-actions.tsx'), 'utf8')
+    expect(actions).toMatch(/onOpenPlayerView \? onOpenPlayerView\(\) : openPlayerView\(player\.id\)/)
+  })
+
+  it("More → 'Open player view' keeps the card's league context, like Expand (R1508)", () => {
+    const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
+    expect(win).toMatch(/expandLeagueId = context\.kind === 'league' \? context\.leagueId : null/)
+    expect(win).toMatch(/onOpenPlayerView=\{handleExpand\}/)
+  })
 })

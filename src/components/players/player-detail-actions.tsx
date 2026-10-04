@@ -34,6 +34,12 @@ interface PlayerDetailActionsProps {
   onFullPage?: boolean
   /** Called after a successful remove (e.g. to close the modal). */
   onRemoved?: () => void
+  /**
+   * Overrides More → "Open player view". The mini card passes its own expand
+   * handler so this item closes the card first and keeps its league context,
+   * exactly like the expand icon (R1507/R1508).
+   */
+  onOpenPlayerView?: () => void
 }
 
 /**
@@ -47,6 +53,7 @@ export function PlayerDetailActions({
   readOnly = false,
   onFullPage = false,
   onRemoved,
+  onOpenPlayerView,
 }: PlayerDetailActionsProps) {
   const router = useRouter()
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
@@ -113,7 +120,9 @@ export function PlayerDetailActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {!onFullPage && (
-            <DropdownMenuItem onSelect={() => openPlayerView(player.id)}>
+            <DropdownMenuItem
+              onSelect={() => (onOpenPlayerView ? onOpenPlayerView() : openPlayerView(player.id))}
+            >
               <Icon name="external-link" size={14} />
               Open player view
             </DropdownMenuItem>

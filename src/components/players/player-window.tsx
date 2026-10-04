@@ -127,6 +127,7 @@ export function PlayerWindow({
                 listContext={listContext}
                 readOnly={readOnly}
                 onRemoved={handleClose}
+                onOpenPlayerView={handleExpand}
               />
             }
           />
