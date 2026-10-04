@@ -18,7 +18,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/research',
@@ -34,6 +34,51 @@ vi.mock('@/lib/supabase/client', () => ({
 }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: { leagues: true, messages: false } }))
 
+/**
+ * R1490 / R1492 — a click / re-render harness without a DOM library. When
+ * `harness.on`, `useState` cells inside src components persist across
+ * static renders (keyed by call order, which is stable up to and including
+ * the component under test), and every element's `onClick` is captured by
+ * its `data-rail-team` id — so a test can render, fire the REAL handler,
+ * and render again. Off, both are pass-throughs.
+ */
+const harness = vi.hoisted(() => ({
+  on: false,
+  idx: 0,
+  cells: new Map<number, unknown>(),
+  clicks: new Map<string, () => void>(),
+  reset() {
+    this.idx = 0
+    this.cells.clear()
+    this.clicks.clear()
+  },
+}))
+vi.mock('react', async (importOriginal) => {
+  const r = await importOriginal<typeof import('react')>()
+  function useState<T>(init: T | (() => T)) {
+    const real = r.useState(init)
+    if (!harness.on) return real
+    const i = harness.idx++
+    if (!harness.cells.has(i)) harness.cells.set(i, real[0])
+    const set = (v: T | ((prev: T) => T)) =>
+      harness.cells.set(i, typeof v === 'function' ? (v as (prev: T) => T)(harness.cells.get(i) as T) : v)
+    return [harness.cells.get(i) as T, set] as const
+  }
+  return { ...r, default: { ...r, useState }, useState }
+})
+const captureClicks = vi.hoisted(() => async (mod: string) => {
+  const rt = await vi.importActual<Record<string, unknown>>(mod)
+  const wrap = (fn: unknown) => (type: unknown, props: Record<string, unknown> | null, ...rest: unknown[]) => {
+    if (harness.on && props && typeof props['data-rail-team'] === 'string' && typeof props.onClick === 'function') {
+      harness.clicks.set(props['data-rail-team'], props.onClick as () => void)
+    }
+    return (fn as (...a: unknown[]) => unknown)(type, props, ...rest)
+  }
+  return { ...rt, jsx: wrap(rt.jsx), jsxs: wrap(rt.jsxs), jsxDEV: wrap(rt.jsxDEV) }
+})
+vi.mock('react/jsx-runtime', () => captureClicks('react/jsx-runtime'))
+vi.mock('react/jsx-dev-runtime', () => captureClicks('react/jsx-dev-runtime'))
+
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { AUTH_SESSION_KEY } from '@/hooks/use-auth'
 import { draftPoolKeys } from '@/hooks/use-draft-pool'
@@ -42,6 +87,7 @@ import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
+import { addDropKeys, type AddDropResult } from '@/hooks/use-transactions'
 import { tradeDeadlineKeys } from '@/hooks/use-trade-deadline'
 import type { RosterPlayer, RosterTeam } from '@/lib/leagues/api/rosters-service'
 
@@ -56,7 +102,7 @@ import {
   rosterGroupOf,
 } from './players-panel-ops'
 import { ResearchRail } from './research-rail'
-import { TeamsPanel } from './teams-panel'
+import { LeagueTeamsList, TeamsPanel } from './teams-panel'
 
 const LG = 'lg-1'
 const ME = 'user-me'
@@ -275,6 +321,85 @@ describe('TeamsPanel — on a league page', () => {
     expect(out).toContain('rival_mgr')
     expect(out).toContain('3–1')
     expect(out).toContain('456.7 PF')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R1490 — the readout shows only adds made since the panel opened
+// ---------------------------------------------------------------------------
+
+describe('PlayersPanel — the add readout guard (R1490)', () => {
+  afterEach(() => {
+    harness.on = false
+    harness.reset()
+  })
+  const added = (name: string): AddDropResult =>
+    ({
+      type: 'add_drop',
+      add: { player_id: `id-${name}`, name, slot_key: 'bn' },
+      drop: null,
+      roster: { count_after: 2, roster_size: 4 },
+      caps: { acquisitions_per_week: 'unlimited', acquisitions_per_season: 'unlimited', used_week_after: 1, used_season_after: 1 },
+    }) as unknown as AddDropResult
+  const succeed = (qc: QueryClient, result: AddDropResult) =>
+    qc.getMutationCache().build(qc, { mutationKey: addDropKeys.all(LG), mutationFn: async () => result }).execute(undefined)
+
+  it('an add from before the panel opened is not shown; one made after it is', async () => {
+    const qc = seeded()
+    await succeed(qc, added('Old Oscar'))
+    harness.on = true
+    const render = () => {
+      harness.idx = 0
+      return html(createElement(LeaguePlayersList, { leagueId: LG, query: '', position: null, onRosters: false }), qc)
+    }
+    const before = render()
+    expect(before).toContain('data-rail-row="p-free"')
+    expect(before).not.toContain('data-card-result')
+    expect(before).not.toContain('Old Oscar')
+
+    await succeed(qc, added('New Ned'))
+    const after = render()
+    expect(after).toContain('data-card-result')
+    expect(after).toContain('New Ned')
+    expect(after).not.toContain('Old Oscar')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// R1492 — Teams: a click opens the roster
+// ---------------------------------------------------------------------------
+
+describe('TeamsPanel — clicking a team (R1492)', () => {
+  afterEach(() => {
+    harness.on = false
+    harness.reset()
+  })
+  it('shows Starters / Bench / Injured, each name a card door, and an "All teams" back button', () => {
+    const qc = seeded()
+    harness.on = true
+    const render = () => {
+      harness.idx = 0
+      return html(createElement(LeagueTeamsList, { leagueId: LG }), qc)
+    }
+    expect(render()).not.toContain('data-rail-roster=')
+    const click = harness.clicks.get('them')
+    expect(click, 'the Rivals row has a click handler').toBeTypeOf('function')
+    click!()
+    const out = render()
+    expect(out).toContain('data-rail-roster="them"')
+    expect(out).toContain('All teams')
+    const s = out.indexOf('>Starters<')
+    const b = out.indexOf('>Bench<')
+    const i = out.indexOf('>Injured<')
+    expect(s).toBeGreaterThan(-1)
+    expect(b).toBeGreaterThan(s)
+    expect(i).toBeGreaterThan(b)
+    expect(out.indexOf('data-player-link="p-held"')).toBeGreaterThan(s)
+    expect(out.indexOf('data-player-link="p-held"')).toBeLessThan(b)
+    expect(out.indexOf('data-player-link="p-bn"')).toBeGreaterThan(b)
+    expect(out.indexOf('data-player-link="p-bn"')).toBeLessThan(i)
+    expect(out.indexOf('data-player-link="p-ir"')).toBeGreaterThan(i)
+    expect(out).not.toContain('data-rail-team=')
   })
 })
 
