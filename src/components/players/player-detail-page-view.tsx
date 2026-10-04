@@ -8,25 +8,26 @@ import { PageHeader } from '@/components/layout/app-header'
 import { LeagueAvailabilityRow, LeagueCardActions } from '@/components/players/player-card-actions'
 import { PlayerDetailActions } from '@/components/players/player-detail-actions'
 import { PlayerDetailHeader } from '@/components/players/player-detail-header'
+import { GameLogPanel, StatsPanel } from '@/components/players/player-detail-panels'
 import {
-  GameLogPanel,
-  StatsPanel,
-  WeeklyPointsList,
-} from '@/components/players/player-detail-panels'
-import {
-  nextScheduled,
+  draftValueCells,
+  formatKickoff,
+  matchupBadge,
+  oppCell,
+  ordinal as ordinalShort,
   playerPageHref,
   scheduleRows,
-  scoutMatchupRead,
-  type ScheduleRow,
+  seasonTable,
+  shortKickoff,
+  thisWeek,
+  type SeasonTableRow,
+  type ThisWeek,
 } from '@/components/players/player-page-ops'
-import { AIInsight } from '@/components/ui/ai-insight'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDefenseSplits } from '@/hooks/use-defense-splits'
 import { useLeague } from '@/hooks/use-league'
 import { useLeagues } from '@/hooks/use-leagues'
@@ -38,6 +39,7 @@ import {
   type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
+import { getNflTeam } from '@/lib/nfl-teams'
 import {
   basisLabel,
   choiceValue,
@@ -56,11 +58,10 @@ interface PlayerDetailPageViewProps {
 }
 
 /**
- * Full player page — built to the Claude Design prototype's PlayerPage
- * (Chris 2026-10-04): a ghost Back, the hero card (identity + vitals left,
- * the actions column right), the Scout AI matchup read when real data
- * supports one, then the tab set. Reuses the card's pieces — its league
- * actions, its per-league rows, its weekly / stats lists.
+ * Full player page — the waiver read (D486(12), Chris 2026-10-04: the
+ * platform modals are "too busy"). The standard shell header, then one hero
+ * (identity + the context's action, the key numbers, this week), ONE season
+ * table (Wk · Opp · Proj · Pts) and the detailed stats behind "Full stats".
  */
 export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetailPageViewProps) {
   const { data, isLoading, error } = usePlayerStats(playerId)
@@ -72,9 +73,13 @@ export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetail
     else router.push('/app/research')
   }
 
+  // The app's standard header (D486(12)): a plain title in the shell's
+  // 58px bar, Back as a ghost action — the draft recap's pattern. The name
+  // itself shows once, in the hero.
   const pageHeader = (
     <PageHeader
-      title={
+      title="Player"
+      actions={
         <Button variant="ghost" size="sm" onClick={goBack} data-player-back>
           <Icon name="arrow-prev" size={13} />
           Back
@@ -110,34 +115,11 @@ export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetail
   return (
     <div className="max-w-[944px] space-y-4" data-player-page={inLeague ? 'league' : 'global'}>
       {pageHeader}
-
-      {/* Hero — not interactive, so no resting shadow (CLAUDE.md elevation rule). */}
-      <Card>
-        <div className="flex flex-col gap-6 p-card-pad sm:p-5 lg:flex-row lg:items-start">
-          <div className="min-w-0 flex-1">
-            <PlayerDetailHeader player={data.player} size="expanded" />
-          </div>
-          <ActionsColumn player={data.player} leagueId={inLeague ? leagueId : null} />
-        </div>
-        <CoreStatsRow player={data.player} leagueId={inLeague ? leagueId : null} />
-      </Card>
-
-      <ScheduleSections data={data} />
+      <PlayerHero data={data} leagueId={inLeague ? leagueId : null} />
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Core stats row (D486(10)) — Chris's seven tiles, in his order
-// ---------------------------------------------------------------------------
-
-/**
- * Season points, avg / week, this week's projection and the two ranks come
- * from the server (`/api/players/[id]/core-stats`) under the league's scoring
- * in a league, the default template outside one; SOS and bye from the player
- * record. A value with no source is "—", never 0. Not interactive → no
- * shadow (CLAUDE.md elevation rule).
- */
 function readStoredChoice(): string | null {
   try {
     return window.localStorage.getItem(SCORING_CHOICE_STORAGE_KEY)
@@ -154,7 +136,9 @@ function writeStoredChoice(v: string) {
   }
 }
 
-export function CoreStatsRow({ player, leagueId }: { player: PlayerStatsPlayer; leagueId: string | null }) {
+/** The scoring choice (D486(11)) and the core-stats read under it — one
+ *  read feeds the key numbers AND the season table, so they always agree. */
+function useScoredStats(player: PlayerStatsPlayer, leagueId: string | null) {
   // R1501's fallback: a `?league=` the viewer can't read scores by default.
   const league = useLeague(featureFlags.leagues && leagueId ? leagueId : undefined)
   const leagueParam = leagueId && !league.isError ? leagueId : null
@@ -170,7 +154,6 @@ export function CoreStatsRow({ player, leagueId }: { player: PlayerStatsPlayer; 
     options.push({ value: `league:${leagueParam}`, label: league.data?.league.name ?? 'This league' })
   }
   const stats = usePlayerCoreStats(player.id, choice)
-  const tiles = coreTiles(stats.data ?? null, player)
   const label = stats.data
     ? basisLabel(stats.data.basis)
     : stats.isError
@@ -182,15 +165,75 @@ export function CoreStatsRow({ player, leagueId }: { player: PlayerStatsPlayer; 
     setPicked(v)
     writeStoredChoice(v)
   }
+  return { value: choiceValue(choice), options, onPick, stats, label }
+}
+
+/**
+ * Hero → season table → full stats. Mobile stacks: identity, the action
+ * (under the name), key numbers, this week, the table, full stats. Not
+ * interactive → no resting shadow (CLAUDE.md elevation rule).
+ */
+function PlayerHero({ data, leagueId }: { data: PlayerStatsResponse; leagueId: string | null }) {
+  const { player } = data
+  const season = data.seasons.current.season
+  const games = useNflTeamSchedule(season, player.team)
+  const splits = useDefenseSplits(season)
+  const scored = useScoredStats(player, leagueId)
+  const schedule = scheduleRows(player.team, player.position, games.data ?? [], splits.data ?? [], player.bye_week)
+  const tw = games.data ? thisWeek(player.team, player.position, games.data, splits.data ?? [], player.bye_week) : null
+  const table = seasonTable(schedule, games.data ?? [], scored.stats.data?.weekly ?? [], tw?.week ?? scored.stats.data?.week ?? null)
+  const draftValue = draftValueCells(player)
+  return (
+    <>
+      <Card>
+        <div className="grid gap-4 p-card-pad sm:p-5 lg:grid-cols-[minmax(0,1fr)_264px] lg:items-start">
+          <PlayerDetailHeader player={player} size="expanded" />
+          <ActionsColumn player={player} leagueId={leagueId} />
+        </div>
+        <KeyNumbers player={player} scored={scored} />
+        {tw && (
+          <div className="border-t border-n-4 px-card-pad py-3 sm:px-5">
+            <ThisWeekBlock tw={tw} position={player.position} />
+          </div>
+        )}
+        {draftValue.length > 0 && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-n-4 px-card-pad py-2 sm:px-5" data-draft-value>
+            {draftValue.map((c) => (
+              <p key={c.key} className="text-[11px] font-semibold text-n-3" data-draft-cell={c.key}>
+                {c.label} <span className="fs-num font-extrabold text-ink">{c.value}</span>
+              </p>
+            ))}
+          </div>
+        )}
+      </Card>
+      <SeasonTableCard
+        data={data}
+        rows={table}
+        loading={games.isPending && !!player.team}
+        error={games.isError}
+      />
+    </>
+  )
+}
+
+const TONE_CHIP: Record<string, string> = {
+  negative: 'bg-negative',
+  caution: 'bg-caution',
+  positive: 'bg-brand',
+}
+
+/** The key numbers (D486(12)) with the scoring dropdown + basis beside. */
+function KeyNumbers({ player, scored }: { player: PlayerStatsPlayer; scored: ReturnType<typeof useScoredStats> }) {
+  const tiles = coreTiles(scored.stats.data ?? null, player)
   return (
     <div className="border-t border-n-4 px-card-pad py-3 sm:px-5" data-core-stats>
-      <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Select value={choiceValue(choice)} onValueChange={onPick}>
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Select value={scored.value} onValueChange={scored.onPick}>
           <SelectTrigger className="h-btn-md w-auto min-w-[150px] px-3 text-[12px] font-bold" aria-label="Scoring" data-core-scoring>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {options.map((o) => (
+            {scored.options.map((o) => (
               <SelectItem key={o.value} value={o.value} data-core-scoring-option={o.value}>
                 {o.label}
               </SelectItem>
@@ -198,29 +241,186 @@ export function CoreStatsRow({ player, leagueId }: { player: PlayerStatsPlayer; 
           </SelectContent>
         </Select>
         <p className="text-[11px] font-semibold text-n-3" data-core-basis>
-          {label}
+          {scored.label}
         </p>
         <p className="text-[11px] font-medium text-n-3" data-core-avg-note>
           Avg of completed weeks
         </p>
       </div>
-      <div className="grid grid-cols-4 gap-y-3 sm:grid-cols-7">
-        {tiles.map((t) => (
-          <div key={t.key} className="min-w-0 pr-2" data-core-tile={t.key}>
-            <p
-              className={cn(
-                'fs-num truncate text-[19px] font-extrabold leading-tight',
-                t.value === '—' && 'text-n-3',
-                stats.isPending && 'animate-pulse',
-              )}
-            >
-              {t.value}
-            </p>
-            <p className="fs-overline mt-0.5 truncate text-n-3">{t.label}</p>
-          </div>
-        ))}
+      <StatsStrip tiles={tiles} pending={scored.stats.isPending} />
+    </div>
+  )
+}
+
+/** One bordered strip of the five key numbers — mono numerals, small
+ *  labels, hairline dividers. 3 + 2 on a phone (no h-scroll). */
+export function StatsStrip({ tiles, pending = false }: { tiles: ReturnType<typeof coreTiles>; pending?: boolean }) {
+  return (
+    <div className="grid grid-cols-3 border-l border-t border-n-4 sm:grid-cols-5" data-stats-strip>
+      {tiles.map((t) => (
+        <div key={t.key} className="min-w-0 border-b border-r border-n-4 px-2.5 py-2" data-core-tile={t.key}>
+          <p
+            className={cn(
+              'fs-num truncate text-[19px] font-extrabold leading-tight',
+              t.value === '—' && 'text-n-3',
+              pending && 'animate-pulse',
+            )}
+          >
+            {t.value}
+          </p>
+          <p className="fs-overline mt-0.5 truncate text-n-3">{t.label}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * "This week" — the factual matchup (D486(12)): "@ SEA · Sun 1:05 PM ET"
+ * and the matchup badge from `defense_position_splits` (OPRK, 1 = toughest;
+ * My Team's chip tones). A bye says so. No rank → no badge, never invented.
+ */
+export function ThisWeekBlock({ tw, position }: { tw: ThisWeek; position: string }) {
+  if (tw.kind === 'bye') {
+    return (
+      <div data-this-week="bye">
+        <p className="fs-overline text-n-3">This week · Wk {tw.week}</p>
+        <p className="mt-0.5 text-h6" data-this-week-bye>
+          Bye week
+        </p>
+      </div>
+    )
+  }
+  const team = getNflTeam(tw.opp)
+  const kickoff = formatKickoff(tw.kickoff_at)
+  const badge = tw.oprk !== null ? matchupBadge(tw.oprk, tw.ranked, position) : null
+  const vs = tw.home ? 'vs' : '@'
+  return (
+    <div data-this-week="game">
+      <p className="fs-overline text-n-3">This week · Wk {tw.week}</p>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-h6" title={team ? `${vs} ${team.city} ${team.name}` : undefined} data-this-week-opp>
+          {`${vs} ${tw.opp}`}
+        </span>
+        {kickoff && (
+          <span className="fs-num text-[12px] font-semibold text-n-3" data-this-week-kickoff>
+            {`· ${kickoff}`}
+          </span>
+        )}
+        {badge && (
+          <span
+            className={cn('inline-flex rounded-sm px-1.5 py-px text-[11px] font-extrabold', TONE_CHIP[badge.tone])}
+            data-matchup-badge={badge.tone}
+          >
+            {badge.text}
+          </span>
+        )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The season table (D486(12), Yahoo's one table): Wk · Opp (rank vs his
+ * position) · Proj · Pts, the current week marked. Replaces the old weekly
+ * list and Schedule tab. "Full stats" (collapsed) holds the season cards
+ * and the game log.
+ */
+export function SeasonTableCard({
+  data,
+  rows,
+  loading,
+  error,
+}: {
+  data: PlayerStatsResponse
+  rows: SeasonTableRow[]
+  loading: boolean
+  error: boolean
+}) {
+  const [full, setFull] = useState(false)
+  return (
+    <Card>
+      <div className="p-card-pad sm:p-5">
+        <p className="fs-overline mb-1.5 text-n-3">{data.seasons.current.season} season</p>
+        <SeasonTable rows={rows} loading={loading} error={error} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-3"
+          onClick={() => setFull((v) => !v)}
+          aria-expanded={full}
+          data-full-stats-toggle
+        >
+          <Icon name={full ? 'arrow-up' : 'arrow-bottom'} size={13} />
+          Full stats
+        </Button>
+        {full && (
+          <div className="mt-3 space-y-5" data-full-stats>
+            <StatsPanel data={data} />
+            <GameLogPanel data={data} />
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function pts(n: number | null): string {
+  return n === null ? '—' : n.toFixed(1)
+}
+
+export function SeasonTable({ rows, loading, error }: { rows: SeasonTableRow[]; loading: boolean; error: boolean }) {
+  if (loading) return <Skeleton className="h-40 w-full" />
+  if (error) return <p className="text-[12px] font-semibold text-n-3">Couldn&apos;t load the schedule.</p>
+  if (rows.length === 0) {
+    return (
+      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
+        No schedule on file for this season yet.
+      </p>
+    )
+  }
+  return (
+    <table className="w-full table-fixed text-[12px]" data-season-table>
+      <thead>
+        <tr className="border-b border-ink text-left text-[11px] font-semibold text-n-3">
+          <th className="w-10 py-1.5 font-semibold">Wk</th>
+          <th className="py-1.5 font-semibold">Opp</th>
+          <th className="w-14 py-1.5 text-right font-semibold">Proj</th>
+          <th className="w-[84px] py-1.5 text-right font-semibold">Pts</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => {
+          const bye = r.opponent?.kind === 'bye'
+          const kickoff = r.points === null && r.kickoff_at ? shortKickoff(r.kickoff_at) : null
+          return (
+            <tr
+              key={r.week}
+              className={cn('border-b border-n-4', r.current && 'bg-accent-soft')}
+              data-season-week={r.week}
+              data-current={r.current || undefined}
+            >
+              <td className="fs-num py-2 font-bold text-n-3">{r.week}</td>
+              <td className="truncate py-2 font-extrabold">
+                {oppCell(r)}
+                {!bye && r.oprk !== null && r.tone && r.oprk > 0 && (
+                  <span
+                    className={cn('fs-num ml-1.5 inline-flex rounded-sm px-1 py-px text-[10px] font-extrabold', TONE_CHIP[r.tone])}
+                    data-oprk={r.oprk}
+                  >
+                    {ordinalShort(r.oprk)}
+                  </span>
+                )}
+              </td>
+              <td className="fs-num py-2 text-right font-semibold text-n-3">{bye ? '' : pts(r.proj)}</td>
+              <td className="fs-num truncate py-2 text-right font-extrabold">
+                {bye ? '' : kickoff ? <span className="text-[11px] font-semibold text-n-3">{kickoff}</span> : pts(r.points)}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
@@ -316,107 +516,3 @@ function YourLeaguesBlock({ pool }: { pool: PoolPlayer }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Scout AI read + tabs (they share the schedule reads)
-// ---------------------------------------------------------------------------
-
-function ScheduleSections({ data }: { data: PlayerStatsResponse }) {
-  const { player } = data
-  const season = data.seasons.current.season
-  const games = useNflTeamSchedule(season, player.team)
-  const splits = useDefenseSplits(season)
-  const rows = scheduleRows(player.team, player.position, games.data ?? [], splits.data ?? [], player.bye_week)
-  const read = splits.data ? scoutMatchupRead(nextScheduled(rows, games.data ?? []), player.position) : null
-
-  return (
-    <>
-      {/* Only when real data supports it — omitted otherwise, never invented. */}
-      {read && (
-        <div data-scout-read>
-          <AIInsight heading={read} />
-        </div>
-      )}
-      <PlayerTabs data={data} schedule={{ rows, loading: games.isPending && !!player.team, error: games.isError }} />
-    </>
-  )
-}
-
-export function PlayerTabs({
-  data,
-  schedule,
-}: {
-  data: PlayerStatsResponse
-  schedule: { rows: ScheduleRow[]; loading: boolean; error: boolean }
-}) {
-  // News: no player-news source yet (F-row filed) — the tab is omitted.
-  return (
-    <Card>
-      <Tabs defaultValue="overview">
-        <div className="border-b border-ink px-card-pad py-3">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="stats">Stats</TabsTrigger>
-            <TabsTrigger value="schedule">Schedule</TabsTrigger>
-          </TabsList>
-        </div>
-        <div className="p-card-pad sm:p-5">
-          <TabsContent value="overview" className="mt-0">
-            <WeeklyPointsList data={data} />
-          </TabsContent>
-          <TabsContent value="stats" className="mt-0 space-y-5">
-            <StatsPanel data={data} />
-            <GameLogPanel data={data} />
-          </TabsContent>
-          <TabsContent value="schedule" className="mt-0">
-            <ScheduleList {...schedule} />
-          </TabsContent>
-        </div>
-      </Tabs>
-    </Card>
-  )
-}
-
-const TONE_CHIP: Record<string, string> = {
-  negative: 'bg-negative',
-  caution: 'bg-caution',
-  positive: 'bg-brand',
-}
-
-export function ScheduleList({ rows, loading, error }: { rows: ScheduleRow[]; loading: boolean; error: boolean }) {
-  if (loading) return <Skeleton className="h-40 w-full" />
-  if (error) return <p className="text-[12px] font-semibold text-n-3">Couldn&apos;t load the schedule.</p>
-  if (rows.length === 0) {
-    return (
-      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
-        No schedule on file for this season yet.
-      </p>
-    )
-  }
-  return (
-    <div data-schedule>
-      <div className="flex items-center gap-3 border-b border-n-4 pb-1.5 text-[11px] font-semibold text-n-3">
-        <span className="w-10 shrink-0">Week</span>
-        <span className="flex-1">Opponent</span>
-        <span className="w-12 shrink-0 text-right">OPRK</span>
-      </div>
-      {rows.map((r) => (
-        <div key={r.week} className="flex items-center gap-3 border-b border-n-4 py-2" data-schedule-week={r.week}>
-          <span className="fs-num w-10 shrink-0 text-[12px] font-bold text-n-3">Wk {r.week}</span>
-          <span className={cn('flex-1 text-[13px] font-extrabold', r.final && 'text-n-3')}>
-            {r.opponent.kind === 'game' ? r.opponent.label : 'BYE'}
-          </span>
-          <span className="w-12 shrink-0 text-right">
-            {r.oprk !== null && r.tone && (
-              <span
-                className={cn('fs-num inline-flex rounded-sm px-1.5 py-px text-[11px] font-extrabold', TONE_CHIP[r.tone])}
-                data-oprk={r.oprk}
-              >
-                {r.oprk}
-              </span>
-            )}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}

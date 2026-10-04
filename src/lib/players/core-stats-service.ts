@@ -30,7 +30,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { dbFailure } from '@/lib/leagues/api/db-failure'
 import { assertLeagueMember } from '@/lib/leagues/api/inseason-reads'
 import type { ServiceResult } from '@/lib/leagues/api/leagues-service'
-import { computePlayerValue, seasonToDate } from '@/lib/leagues/scoring/player-values'
+import { computePlayerValue, scoreWeeklyProjection, seasonToDate } from '@/lib/leagues/scoring/player-values'
 import { readOpenedWeekRules, readWeeklyLines } from '@/lib/leagues/scoring/player-values-job'
 import type { ScoringRulesDoc } from '@/lib/leagues/scoring/rules-doc'
 import {
@@ -53,6 +53,8 @@ import {
   competitionRanks,
   type CoreStatsPayload,
   type GameWeek,
+  pointsWeeks,
+  weeklyCells,
   type ScoringBasis,
   type ScoringChoice,
   type ScoringSystemKey,
@@ -63,6 +65,8 @@ type Supabase = SupabaseClient<Database>
 /** The page's season (the player stats route's CURRENT_SEASON). */
 export const CORE_STATS_DEFAULT_SEASON = 2026
 const IN_CHUNK = 200
+/** Regular-season weeks the table can show. */
+const SEASON_WEEKS = Array.from({ length: 18 }, (_, i) => i + 1)
 
 type Line = StatLineRow & { week: number; is_live?: boolean | null }
 
@@ -87,6 +91,19 @@ async function readSeasonPool(supabase: Supabase, season: number): Promise<Map<s
     out.set(r.player_id, list)
   }
   return out
+}
+
+async function readOwnSeason(supabase: Supabase, season: number, playerId: string): Promise<Line[]> {
+  const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  const { data, error } = await supabase
+    .from('player_stats')
+    .select(select)
+    .eq('season', season)
+    .eq('player_id', playerId)
+    .gte('week', 1)
+    .order('week')
+  if (error) throw new Error(`player_stats: ${error.message}`)
+  return (data ?? []) as unknown as Line[]
 }
 
 async function readPositions(supabase: Supabase, ids: readonly string[]): Promise<Map<string, string>> {
@@ -200,7 +217,7 @@ export async function readPlayerCoreStats(
   opts: { defaultSeason?: number; poolCache?: PoolCache } = {},
 ): Promise<ServiceResult> {
   const leagueId = choice.kind === 'league' ? choice.leagueId : null
-  const { data: player, error: playerError } = await supabase.from('players').select('id, position').eq('id', playerId).maybeSingle()
+  const { data: player, error: playerError } = await supabase.from('players').select('id, position, bye_week').eq('id', playerId).maybeSingle()
   if (playerError) return dbFailure('players', playerError)
   if (!player) return { status: 404, body: { error: 'Player not found' } }
 
@@ -248,12 +265,16 @@ export async function readPlayerCoreStats(
 
   let standings: PoolStandings
   let lines: Awaited<ReturnType<typeof readWeeklyLines>>
+  let ownRows: Line[]
+  let ownProjections: Awaited<ReturnType<typeof readWeeklyLines>>
   try {
-    ;[standings, lines] = await Promise.all([
+    ;[standings, lines, ownRows, ownProjections] = await Promise.all([
       choice.kind === 'system' && opts.poolCache
         ? opts.poolCache(choice.system, season, week)
         : computePoolStandings(supabase, snapshot, pastWeekRules, season, week),
       week === null ? Promise.resolve(new Map()) : readWeeklyLines(supabase, season, [week], [playerId]),
+      readOwnSeason(supabase, season, playerId),
+      readWeeklyLines(supabase, season, SEASON_WEEKS, [playerId]),
     ])
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
@@ -273,6 +294,30 @@ export async function readPlayerCoreStats(
     pastWeekRules,
   )
 
+  // D486(12) season table: each completed game scored alone by the same
+  // engine and rules as the total (an opened week under its own), and each
+  // stored weekly projection scored under that week's rules. This week's
+  // projection is the strip's own (freshness-gated) number, so they agree.
+  const pos = normalizePosition(player.position)
+  const ownGames: GameWeek[] = ownRows.map((r) => ({
+    week: r.week,
+    appeared: appeared(r),
+    live: r.is_live === true || (week !== null && r.week >= week),
+  }))
+  const points = new Map<number, number>()
+  for (const w of pointsWeeks(ownGames, player.bye_week)) {
+    const p = seasonToDate(snapshot, playerId, pos, ownRows.filter((r) => r.week === w), pastWeekRules).points
+    if (p !== null) points.set(w, p)
+  }
+  const projections = new Map<number, number>()
+  for (const [key, line] of ownProjections) {
+    const w = Number(key.split(':')[0])
+    if (w === week) continue
+    const p = scoreWeeklyProjection(pastWeekRules.get(w) ?? snapshot, pos, line.stats).points
+    if (p !== null) projections.set(w, p)
+  }
+  if (week !== null && value.projected_points !== null) projections.set(week, value.projected_points)
+
   const body: CoreStatsPayload = {
     basis,
     season,
@@ -283,6 +328,7 @@ export async function readPlayerCoreStats(
     projected_points: week === null ? null : value.projected_points,
     pos_rank: own?.pos_rank ?? null,
     overall_rank: own?.overall_rank ?? null,
+    weekly: weeklyCells(points, projections),
   }
   return { status: 200, body: body as unknown as Json }
 }

@@ -155,6 +155,34 @@ export interface CoreStatsPayload {
   projected_points: number | null
   pos_rank: number | null
   overall_rank: number | null
+  /** D486(12) season table: per week, his points under the same scoring
+   *  (completed games only) and the stored weekly projection scored under
+   *  it (only where `player_weekly_projections` has a line). Weeks with
+   *  neither are absent. */
+  weekly: WeeklyCell[]
+}
+
+export interface WeeklyCell {
+  week: number
+  points: number | null
+  proj: number | null
+}
+
+/** The weeks whose points the table shows: completed games (appeared, not
+ *  live, not his bye), ascending. */
+export function pointsWeeks(weeks: readonly GameWeek[], byeWeek: number | null): number[] {
+  return completedGames(weeks, byeWeek)
+    .map((w) => w.week)
+    .sort((a, b) => a - b)
+}
+
+/** Merge points and projections into one ascending list. */
+export function weeklyCells(
+  points: ReadonlyMap<number, number>,
+  projections: ReadonlyMap<number, number>,
+): WeeklyCell[] {
+  const weeks = [...new Set([...points.keys(), ...projections.keys()])].sort((a, b) => a - b)
+  return weeks.map((week) => ({ week, points: points.get(week) ?? null, proj: projections.get(week) ?? null }))
 }
 
 export interface CoreTile {
@@ -167,19 +195,15 @@ function pts(n: number | null): string {
   return n === null ? MISSING : n.toFixed(1)
 }
 
-/** The seven tiles, in Chris's order. `stats` is null while loading/failed
- *  (the point tiles read "—"); SOS and bye come from the player record. */
-export function coreTiles(
-  stats: CoreStatsPayload | null,
-  player: { position: string; sos: number | null; bye_week: number | null },
-): CoreTile[] {
+/** The key-numbers strip (D486(12), the waiver read): Pos rank · Overall ·
+ *  Avg / week · Total pts · Proj this wk. SOS moved to "Draft & value" and the bye to the identity line —
+ *  each fact once. `stats` is null while loading/failed (every tile "—"). */
+export function coreTiles(stats: CoreStatsPayload | null, player: { position: string }): CoreTile[] {
   return [
-    { key: 'total', label: 'Total pts', value: pts(stats?.total_points ?? null) },
-    { key: 'avg', label: 'Avg / week', value: pts(stats?.avg_points ?? null) },
-    { key: 'proj', label: 'Proj this wk', value: pts(stats?.projected_points ?? null) },
     { key: 'pos-rank', label: 'Pos rank', value: stats?.pos_rank != null ? `${player.position} ${stats.pos_rank}` : MISSING },
     { key: 'overall-rank', label: 'Overall', value: stats?.overall_rank != null ? `#${stats.overall_rank}` : MISSING },
-    { key: 'sos', label: 'SOS', value: player.sos != null ? `${player.sos} of 32` : MISSING },
-    { key: 'bye', label: 'Bye', value: player.bye_week != null ? `Wk ${player.bye_week}` : MISSING },
+    { key: 'avg', label: 'Avg / week', value: pts(stats?.avg_points ?? null) },
+    { key: 'total', label: 'Total pts', value: pts(stats?.total_points ?? null) },
+    { key: 'proj', label: 'Proj this wk', value: pts(stats?.projected_points ?? null) },
   ]
 }

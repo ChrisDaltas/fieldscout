@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 import { PositionBadge } from '@/components/players/position-badge'
 import { PlayerAvatarImage } from '@/components/players/player-image'
-import { heroMetaParts, vitalCells } from '@/components/players/player-page-ops'
+import { identityParts } from '@/components/players/player-page-ops'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import { getNflTeam } from '@/lib/nfl-teams'
@@ -28,11 +28,10 @@ const STATUS_CHIPS: Record<string, { label: string; tone: 'caution' | 'negative'
 }
 
 /**
- * Identity block for the full player page (Field Scout reskin of the kit's
- * PlayerPage hero): large square ink-stroked headshot tile, h2 name with a
- * status chip, meta line (position badge, team, height · weight · bye), then
- * the vitals grid. A field with no real source (Pos rank today) is omitted
- * from both.
+ * Identity block for the full player page (D486(12)): headshot, name with
+ * its status tag, then position badge · team · Bye Wk N, and age · height ·
+ * weight on a smaller muted line. Every fact appears once on the page; a
+ * part with no source is omitted.
  */
 export function PlayerDetailHeader({
   player,
@@ -50,8 +49,8 @@ export function PlayerDetailHeader({
   const expanded = size === 'expanded'
   const status = player.status ? STATUS_CHIPS[player.status] : undefined
 
-  // Meta line — only fields that exist in the payload.
-  const metaParts = heroMetaParts(player)
+  // Identity line — only fields that exist in the payload.
+  const parts = identityParts(player, new Date())
 
   // Injury context (Sleeper roster feed): "Hamstring · limited practice".
   const injuryParts: string[] = []
@@ -100,7 +99,7 @@ export function PlayerDetailHeader({
             )}
           </h2>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" data-player-identity>
             <PositionBadge position={player.position} size="md" />
             {player.team && (
               <Link
@@ -111,44 +110,25 @@ export function PlayerDetailHeader({
                 {player.team}
               </Link>
             )}
-            {metaParts.length > 0 && (
-              <span className="fs-num text-[12px] font-semibold text-n-3" data-player-meta>
-                {metaParts.join(' · ')}
+            {parts.primary.map((p) => (
+              <span key={p.key} className="flex items-center gap-2 text-[13px] font-bold text-ink" data-identity={p.key}>
+                <span aria-hidden className="text-n-3">·</span>
+                <span className="fs-num">{p.text}</span>
               </span>
-            )}
+            ))}
           </div>
+          {parts.secondary.length > 0 && (
+            <p className="fs-num mt-1 text-[11px] font-semibold text-n-3" data-player-vitals-line>
+              {parts.secondary.map((p, i) => (
+                <span key={p.key} data-identity={p.key}>
+                  {i > 0 && ' · '}
+                  {p.text}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
       </div>
-
-      {expanded && (
-        <div className="mt-4 max-w-[448px]">
-          <VitalsGrid player={player} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Hairline-celled vitals grid (kit VitalsGrid). Only the cells with a real
- * source render — a missing value is omitted, never shown as a placeholder.
- */
-function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
-  // SOS lives in the core-stats row under the hero (D486(10)) — not twice.
-  const cells = vitalCells(player, new Date()).filter(
-    (c): c is { label: string; value: string } => c.value !== null && c.label !== 'SOS',
-  )
-  if (cells.length === 0) return null
-  return (
-    <div className="grid grid-cols-2 border-l border-t border-n-4 sm:grid-cols-4" data-player-vitals>
-      {cells.map(({ label, value }) => (
-        <div key={label} className="border-b border-r border-n-4 px-2.5 py-1.5" data-vital={label}>
-          <p className="fs-overline truncate leading-tight text-n-3">{label}</p>
-          <p className="fs-num mt-0.5 truncate text-[13px] font-extrabold leading-tight">
-            {value}
-          </p>
-        </div>
-      ))}
     </div>
   )
 }

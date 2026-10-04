@@ -31,14 +31,35 @@ export function vitalCells(player: PlayerStatsPlayer, today: Date): VitalCell[] 
   ]
 }
 
-/** The hero's muted meta line: height · weight · Bye N — present parts only. */
-export function heroMetaParts(player: PlayerStatsPlayer): string[] {
-  const parts: string[] = []
+/** The header's two identity lines (D486(12)): the badge line carries
+ *  team · Bye Wk N; age, height and weight sit on a smaller muted line
+ *  under it. Present parts only — each fact once on the page. */
+export interface IdentityPart {
+  key: 'age' | 'height' | 'weight' | 'bye'
+  text: string
+}
+
+export function identityParts(player: PlayerStatsPlayer, today: Date): { primary: IdentityPart[]; secondary: IdentityPart[] } {
+  const primary: IdentityPart[] = []
+  if (player.bye_week != null) primary.push({ key: 'bye', text: `Bye Wk ${player.bye_week}` })
+  const secondary: IdentityPart[] = []
+  const age = formatAge(player.birth_date, today)
+  if (age) secondary.push({ key: 'age', text: `Age ${age}` })
   const height = formatHeight(player.height)
-  if (height) parts.push(height)
-  if (player.weight != null) parts.push(`${player.weight} lb`)
-  if (player.bye_week != null) parts.push(`Bye ${player.bye_week}`)
-  return parts
+  if (height) secondary.push({ key: 'height', text: height })
+  if (player.weight != null) secondary.push({ key: 'weight', text: `${player.weight} lb` })
+  return { primary, secondary }
+}
+
+/** The secondary "Draft & value" group: ADP · Auction $ · SOS — a value we
+ *  do not have is omitted (empty array → the group is omitted). */
+export function draftValueCells(player: PlayerStatsPlayer): Array<{ key: string; label: string; value: string }> {
+  const cells: Array<{ key: string; label: string; value: string }> = []
+  const adp = formatAdp(player.adp)
+  if (adp) cells.push({ key: 'adp', label: 'ADP', value: adp })
+  if (player.auction_value != null) cells.push({ key: 'auction', label: 'Auction $', value: `$${player.auction_value}` })
+  if (player.sos != null) cells.push({ key: 'sos', label: 'SOS', value: `${player.sos} of 32` })
+  return cells
 }
 
 export function formatAdp(adp: number | null): string | null {
@@ -126,15 +147,135 @@ export function nextScheduled(rows: readonly ScheduleRow[], games: readonly Team
   return null
 }
 
-const POS_PLURAL: Record<string, string> = { QB: 'QBs', RB: 'RBs', WR: 'WRs', TE: 'TEs', K: 'kickers', DEF: 'defenses', DST: 'defenses' }
+export type ThisWeek =
+  | {
+      kind: 'game'
+      week: number
+      home: boolean
+      opp: string
+      kickoff_at: string
+      /** OPRK (1 = toughest) and the size of the ranked set, or null. */
+      oprk: number | null
+      ranked: number
+    }
+  | { kind: 'bye'; week: number }
 
-/** The Scout AI one-liner — ONLY when there is a next opponent AND a
- *  defense-vs-position rank for him. A plain fact, never advice. Null →
- *  the page omits the band. */
-export function scoutMatchupRead(next: ScheduleRow | null, position: string): string | null {
-  if (!next || next.opponent.kind !== 'game' || next.oprk === null) return null
-  const vs = POS_PLURAL[position] ?? `${position}s`
-  return `Week ${next.week} ${next.opponent.label}: that defense ranks ${ordinal(next.oprk)} toughest against ${vs}.`
+/**
+ * "This week" for the hero's matchup block (D486(12)), read from STORED game
+ * status — never a clock. The week is his next `scheduled` game, unless his
+ * bye week falls after every game already played and before that next game
+ * (then it is his bye). No game data → null, and the block is omitted.
+ */
+export function thisWeek(
+  team: string | null,
+  position: string,
+  games: readonly TeamGame[],
+  splits: readonly DefenseSplitRow[],
+  byeWeek: number | null,
+): ThisWeek | null {
+  if (!team || games.length === 0) return null
+  const sorted = [...games].sort((a, b) => a.week - b.week)
+  const next = sorted.find((g) => g.status === 'scheduled') ?? null
+  const lastPlayed = Math.max(0, ...sorted.filter((g) => g.status !== 'scheduled').map((g) => g.week))
+  if (byeWeek != null && byeWeek > lastPlayed && (next === null || byeWeek < next.week)) {
+    return next === null && lastPlayed === 0 ? null : { kind: 'bye', week: byeWeek }
+  }
+  if (!next) return null
+  const home = next.home_team === team
+  const opp = home ? next.away_team : next.home_team
+  const pos = position === 'DST' ? 'DEF' : position
+  const ranked = splits.filter((s) => s.position === pos && s.rank > 0).length
+  return { kind: 'game', week: next.week, home, opp, kickoff_at: next.kickoff_at, oprk: oprkOf(splits, opp, position), ranked }
+}
+
+/** The matchup badge — the shorter side of the order: the top half reads
+ *  "Nth toughest vs POS", the bottom half "Nth easiest vs POS" counted from
+ *  the bottom. Tone is My Team's OPRK chip tone (`oprkTone`). */
+export function matchupBadge(oprk: number, ranked: number, position: string): { text: string; tone: Tone } {
+  const total = Math.max(ranked, oprk)
+  const pos = position === 'DST' ? 'DEF' : position
+  const text =
+    oprk <= Math.ceil(total / 2)
+      ? `${ordinal(oprk)} toughest vs ${pos}`
+      : `${ordinal(total + 1 - oprk)} easiest vs ${pos}`
+  return { text, tone: oprkTone(oprk) }
+}
+
+/** One row of the season table (D486(12), Yahoo's single table):
+ *  Wk · Opp (with the defense rank vs his position) · Proj · Pts. */
+export interface SeasonTableRow {
+  week: number
+  /** Null when the week has numbers but no game on file. */
+  opponent: Opponent | null
+  oprk: number | null
+  tone: Tone | null
+  /** Unplayed game: its kickoff (shown where the points will go). */
+  kickoff_at: string | null
+  proj: number | null
+  points: number | null
+  current: boolean
+}
+
+/**
+ * Every week of his season in one list: the schedule (games + the bye) and
+ * any week with points or a projection. Points only for completed games
+ * (the server's rule); an unplayed game carries its kickoff instead.
+ * `currentWeek` marks the row.
+ */
+export function seasonTable(
+  schedule: readonly ScheduleRow[],
+  games: readonly TeamGame[],
+  weekly: ReadonlyArray<{ week: number; points: number | null; proj: number | null }>,
+  currentWeek: number | null,
+): SeasonTableRow[] {
+  const byWeek = new Map<number, SeasonTableRow>()
+  for (const r of schedule) {
+    const g = r.opponent.kind === 'game' ? games.find((x) => x.week === r.week) : undefined
+    byWeek.set(r.week, {
+      week: r.week,
+      opponent: r.opponent,
+      oprk: r.oprk,
+      tone: r.tone,
+      kickoff_at: g && g.status === 'scheduled' ? g.kickoff_at : null,
+      proj: null,
+      points: null,
+      current: r.week === currentWeek,
+    })
+  }
+  for (const w of weekly) {
+    const row = byWeek.get(w.week) ?? {
+      week: w.week, opponent: null, oprk: null, tone: null, kickoff_at: null, proj: null, points: null, current: w.week === currentWeek,
+    }
+    if (row.opponent?.kind === 'bye') continue
+    byWeek.set(w.week, { ...row, proj: w.proj, points: w.points })
+  }
+  return [...byWeek.values()].sort((a, b) => a.week - b.week)
+}
+
+/** The Opp cell: "@ HOU (8th)" — the rank only when we have it. */
+export function oppCell(row: SeasonTableRow): string {
+  if (!row.opponent || row.opponent.kind === 'unknown') return '—'
+  if (row.opponent.kind === 'bye') return 'BYE'
+  return row.opponent.label
+}
+
+/** Kickoff for an unplayed week: "Sun 1:00 PM" (Eastern). */
+export function shortKickoff(iso: string): string | null {
+  const full = formatKickoff(iso)
+  return full ? full.replace(/ ET$/, '') : null
+}
+
+/** Kickoff in Eastern time, the NFL's own convention: "Sun 1:00 PM ET". */
+export function formatKickoff(iso: string): string | null {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const s = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d)
+  return `${s} ET`
 }
 
 export function ordinal(n: number): string {

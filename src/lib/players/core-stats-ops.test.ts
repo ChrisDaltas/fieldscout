@@ -10,11 +10,13 @@ import {
   coreTiles,
   type CoreStatsPayload,
   MISSING,
+  pointsWeeks,
+  weeklyCells,
   resolveChoice,
   scoringOptions,
 } from './core-stats-ops'
 
-const player = { position: 'WR', sos: 7, bye_week: 9 }
+const player = { position: 'WR' }
 
 function payload(over: Partial<CoreStatsPayload> = {}): CoreStatsPayload {
   return {
@@ -27,6 +29,7 @@ function payload(over: Partial<CoreStatsPayload> = {}): CoreStatsPayload {
     projected_points: 17.3,
     pos_rank: 12,
     overall_rank: 31,
+    weekly: [],
     ...over,
   }
 }
@@ -134,34 +137,45 @@ describe('core stats — scoring dropdown (Chris 2026-10-04)', () => {
   })
 })
 
-describe('core stats — tiles', () => {
-  it("Chris's seven, in his order", () => {
+describe('core stats — the strip (D486(12))', () => {
+  it('five tiles, in the waiver order — SOS and bye live elsewhere (each fact once)', () => {
     expect(coreTiles(payload(), player).map((t) => [t.key, t.value])).toEqual([
-      ['total', '84.6'],
-      ['avg', '21.1'],
-      ['proj', '17.3'],
       ['pos-rank', 'WR 12'],
       ['overall-rank', '#31'],
-      ['sos', '7 of 32'],
-      ['bye', 'Wk 9'],
+      ['avg', '21.1'],
+      ['total', '84.6'],
+      ['proj', '17.3'],
     ])
   })
 
   it('missing data is — everywhere, never 0', () => {
     const tiles = coreTiles(
       payload({ total_points: null, games: 0, avg_points: null, projected_points: null, pos_rank: null, overall_rank: null }),
-      { position: 'WR', sos: null, bye_week: null },
+      player,
     )
     expect(tiles.every((t) => t.value === MISSING)).toBe(true)
   })
 
   it('a real zero projection is 0.0, not —', () => {
-    expect(coreTiles(payload({ projected_points: 0 }), player)[2].value).toBe('0.0')
+    expect(coreTiles(payload({ projected_points: 0 }), player)[4].value).toBe('0.0')
   })
 
-  it('still loading → the point tiles are —, SOS and bye still show', () => {
-    const tiles = coreTiles(null, player)
-    expect(tiles.slice(0, 5).every((t) => t.value === MISSING)).toBe(true)
-    expect(tiles[5].value).toBe('7 of 32')
+  it('still loading → every tile is —', () => {
+    expect(coreTiles(null, player).every((t) => t.value === MISSING)).toBe(true)
+  })
+})
+
+describe('core stats — the season table weeks (D486(12))', () => {
+  const w = (week: number, appeared = true, live = false) => ({ week, appeared, live })
+  it('points only for completed games — bye, zero lines and the live week skipped', () => {
+    expect(pointsWeeks([w(1), w(2), w(3, false), w(4), w(5), w(6, true, true)], 5)).toEqual([1, 2, 4])
+    expect(pointsWeeks([], null)).toEqual([])
+  })
+  it('points and projections merge by week, ascending; a missing side is null', () => {
+    expect(weeklyCells(new Map([[2, 10], [1, 4.5]]), new Map([[2, 9.1], [3, 12]]))).toEqual([
+      { week: 1, points: 4.5, proj: null },
+      { week: 2, points: 10, proj: 9.1 },
+      { week: 3, points: null, proj: 12 },
+    ])
   })
 })
