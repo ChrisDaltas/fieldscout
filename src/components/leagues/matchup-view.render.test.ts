@@ -139,7 +139,7 @@ function starter(over: Partial<BoxStarter> & Pick<BoxStarter, 'slot'>): BoxStart
   return {
     slot_key: over.slot.split(':')[0],
     label: over.slot.split(':')[0].toUpperCase(),
-    player: { id: `p-${over.slot}`, full_name: `Player ${over.slot}`, position: 'WR', nfl_team: 'AAA' },
+    player: { id: `p-${over.slot}`, full_name: `Player ${over.slot}`, position: 'WR', nfl_team: 'AAA', headshot_url: null },
     phase: 'up_next',
     game: null,
     points: 0,
@@ -163,14 +163,14 @@ function boxFor(teamId: string, over: Partial<TeamBoxScore> = {}): TeamBoxScore 
     team_id: teamId,
     lineup: { locked_at: '2099-09-13T17:00:00Z', set_at: '2099-09-12T10:00:00Z', edited_by_commish: false },
     starters: [
-      starter({ slot: 'qb:0', phase: 'now_playing', game: GAME_LIVE, points: 18.34, line: { pass_yards: 212, pass_tds: 2 }, player: { id: 'qb', full_name: 'Now Playing QB', position: 'QB', nfl_team: 'AAA' } }),
-      starter({ slot: 'rb:0', phase: 'done', game: GAME_FINAL, points: 9.1, line: { rush_yards: 61 }, player: { id: 'rb', full_name: 'Done RB', position: 'RB', nfl_team: 'CCC' } }),
+      starter({ slot: 'qb:0', phase: 'now_playing', game: GAME_LIVE, points: 18.34, line: { pass_yards: 212, pass_tds: 2 }, player: { id: 'qb', full_name: 'Now Playing QB', position: 'QB', nfl_team: 'AAA', headshot_url: null } }),
+      starter({ slot: 'rb:0', phase: 'done', game: GAME_FINAL, points: 9.1, line: { rush_yards: 61 }, player: { id: 'rb', full_name: 'Done RB', position: 'RB', nfl_team: 'CCC', headshot_url: null } }),
       // E61: a line with an undelivered applicable key — PENDING, never 0.
-      starter({ slot: 'rb:1', phase: 'done', game: GAME_FINAL, points: 0, pending: ['charted_placeholder'], player: { id: 'rbp', full_name: 'Pending RB', position: 'RB', nfl_team: 'DDD' } }),
+      starter({ slot: 'rb:1', phase: 'done', game: GAME_FINAL, points: 0, pending: ['charted_placeholder'], player: { id: 'rbp', full_name: 'Pending RB', position: 'RB', nfl_team: 'DDD', headshot_url: null } }),
       // Q42: no line in a FINAL game — the worker's 0 by name.
-      starter({ slot: 'wr:0', phase: 'done', game: GAME_FINAL, points: 0, reason: 'no_stat_row', player: { id: 'wr0', full_name: 'No Line WR', position: 'WR', nfl_team: 'CCC' } }),
+      starter({ slot: 'wr:0', phase: 'done', game: GAME_FINAL, points: 0, reason: 'no_stat_row', player: { id: 'wr0', full_name: 'No Line WR', position: 'WR', nfl_team: 'CCC', headshot_url: null } }),
       // Q42: no line BEFORE his game — yet to play.
-      starter({ slot: 'wr:1', phase: 'up_next', game: GAME_NEXT, points: 0, reason: 'no_stat_row', player: { id: 'wr1', full_name: 'Up Next WR', position: 'WR', nfl_team: 'EEE' } }),
+      starter({ slot: 'wr:1', phase: 'up_next', game: GAME_NEXT, points: 0, reason: 'no_stat_row', player: { id: 'wr1', full_name: 'Up Next WR', position: 'WR', nfl_team: 'EEE', headshot_url: null } }),
       starter({ slot: 'te:0', reason: 'empty', player: null }),
     ],
     points: null,
@@ -288,7 +288,7 @@ describe('the h2h week — the viewer’s matchup, the door’s scores, the box 
   })
 
   it('the lineups are slot-aligned: each slot row carries the home starter, the slot, then the away starter', () => {
-    const row = html.match(/data-slot-row="0:qb:0"[\s\S]*?data-slot-row="1:/)?.[0] ?? ''
+    const row = html.match(/data-slot-row="qb:0"[\s\S]*?data-slot-row="rb:0"/)?.[0] ?? '' // R1493: the row key is the slot key
     expect(row).toContain(`data-side-of="${T1}"`)
     expect(row).toContain(`data-side-of="${T2}"`)
     expect(row.indexOf(`data-side-of="${T1}"`)).toBeLessThan(row.indexOf('>QB<'))

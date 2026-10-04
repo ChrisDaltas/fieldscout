@@ -991,12 +991,13 @@ function TotalCell({
   )
 }
 
-function PlayerFace({ player }: { player: { id: string; full_name: string; position: string; nfl_team: string | null } }) {
-  // Initials only (the name itself renders as the card door beside the face).
+function PlayerFace({ player }: { player: { id: string; full_name: string; position: string; nfl_team: string | null; headshot_url?: string | null } }) {
+  // The headshot from the box read (F572); initials when it is null or fails to load
+  // (the name itself renders as the card door beside the face).
   const initials = initialsOf(player.full_name)
   return (
     <Avatar className="hidden h-7 w-7 shrink-0 sm:flex">
-      <PlayerAvatarImage player={{ id: player.id, position: player.position, team: player.nfl_team }} />
+      <PlayerAvatarImage player={{ id: player.id, position: player.position, team: player.nfl_team, headshot_url: player.headshot_url ?? null }} />
       <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
     </Avatar>
   )

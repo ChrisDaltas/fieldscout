@@ -462,7 +462,7 @@ export const EMPTY_BENCH_COPY = 'Nobody on the bench.'
 
 export interface BenchRow {
   player_id: string
-  player: { id: string; full_name: string; position: string; nfl_team: string | null } | null
+  player: { id: string; full_name: string; position: string; nfl_team: string | null; headshot_url?: string | null } | null
   /** On an IR spot rather than the bench proper. */
   ir: boolean
   cell: StarterCell
@@ -519,21 +519,25 @@ export interface SlotPair {
   away: BoxStarter | null
 }
 
-/** Pairs the two boxes' starters by position in the lineup (both boxes list
- *  the league's own slot order, so index i is the same slot on each side).
- *  The longer list decides the row count — a side with no lineup leaves its
- *  cells blank rather than inventing seats. */
+/** Pairs the two boxes' starters by SLOT KEY (`qb:0`, `flex:1` — the
+ *  §12.13 instance key), never by lineup index (R1493): a scored week's box
+ *  lists the league's slot order and then any stored slot the settings no
+ *  longer name, and the two sides' stale extras can differ. Rows follow the
+ *  union of both lists in order — the settings slots first (each box lists
+ *  them in the same order), then each side's stale keys as first seen — so
+ *  a slot only one side has leaves the other side's cell blank rather than
+ *  borrowing a neighbour's label. A side with no lineup leaves its cells
+ *  blank rather than inventing seats. */
 export function pairSlots(home: readonly BoxStarter[] | null | undefined, away: readonly BoxStarter[] | null | undefined): SlotPair[] {
-  const h = home ?? []
-  const a = away ?? []
-  const rows: SlotPair[] = []
-  for (let i = 0; i < Math.max(h.length, a.length); i += 1) {
-    const hs = h[i] ?? null
-    const as = a[i] ?? null
-    const ref = (hs ?? as) as BoxStarter
-    rows.push({ key: `${i}:${ref.slot}`, label: ref.label, home: hs, away: as })
-  }
-  return rows
+  const h = new Map((home ?? []).map((s) => [s.slot, s]))
+  const a = new Map((away ?? []).map((s) => [s.slot, s]))
+  const order: string[] = []
+  for (const k of [...h.keys(), ...a.keys()]) if (!order.includes(k)) order.push(k)
+  return order.map((key) => {
+    const hs = h.get(key) ?? null
+    const as = a.get(key) ?? null
+    return { key, label: (hs ?? (as as BoxStarter)).label, home: hs, away: as }
+  })
 }
 
 /** The two benches side by side, row i of each (each already in bench order). */
