@@ -304,7 +304,7 @@ describe('readCommishLog — the L.E1.32 filters on the ordered read', () => {
     expect(await readCommishLog(client, LEAGUE, { team_id: TEAM })).toStrictEqual({ status: 404, body: { error: COMMISH_LOG_UNKNOWN_TEAM_MESSAGE } })
     expect(calls).toStrictEqual([])
     const failing = filterDouble({ team: 'error' })
-    expect(await readCommishLog(failing.client, LEAGUE, { team_id: TEAM })).toStrictEqual({ status: 500, body: { error: 'teams: teams exploded' } })
+    expect(await readCommishLog(failing.client, LEAGUE, { team_id: TEAM })).toStrictEqual({ status: 500, body: { error: 'Something went wrong — try again.' } })
   })
 
   it('no filter ⇒ none applied, and the page says so', async () => {
@@ -396,7 +396,7 @@ describe('readCommishLog — `entry` (L.E1.34): the page starts AT the entry and
     expect(await readCommishLog(unknown.client, LEAGUE, { entry: ENTRY })).toStrictEqual({ status: 404, body: { error: COMMISH_LOG_UNKNOWN_ENTRY_MESSAGE } })
     expect(unknown.read).toStrictEqual([])
     const failing = entryDouble({ entry: 'error' })
-    expect(await readCommishLog(failing.client, LEAGUE, { entry: ENTRY })).toStrictEqual({ status: 500, body: { error: 'commissioner_actions: lookup exploded' } })
+    expect(await readCommishLog(failing.client, LEAGUE, { entry: ENTRY })).toStrictEqual({ status: 500, body: { error: 'Something went wrong — try again.' } })
   })
 })
 

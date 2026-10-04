@@ -97,7 +97,7 @@ describe('the pickers — Q75 and FAAB', () => {
   it('the refusal as a member reads it: the raiser’s prefix and every citation out, the words kept', () => {
     expect(previewRefusalCopy(FAAB_OVER)).toBe('P Alpha cannot give $60 of FAAB — its balance is $50')
     expect(previewRefusalCopy(ONE_SIDED)).toBe(
-      'Q Echo gives nothing in this trade — this league does not allow future considerations, so each team gives at least one player or FAAB',
+      'Q Echo has to give at least one player or FAAB in this trade.', // D481: the phrase map
     )
     expect(previewRefusalCopy(ALREADY_LEAVING)).toBe('P B One (pv-b1) is already leaving P Bravo in this trade — he cannot also be one of its drops')
   })
@@ -171,7 +171,7 @@ describe('acceptGate — the drop picker is part of accepting', () => {
   it('the league’s answer: out of season / a refusal / F414 → blocked; the receiving team over → needs_drops (K); else ready', () => {
     expect(acceptGate({ ...base, preview: accept({ ok: false, in_season: false }) }).reason).toBe(NOT_IN_SEASON_TRADE_COPY)
     expect(acceptGate({ ...base, preview: accept({ ok: false, refusal: ANSWERED, rosters: null }) }).reason).toBe(
-      'this trade is already in_review — only an offer still waiting for an answer can be accepted',
+      'this trade is already in review — only an offer still waiting for an answer can be accepted',
     )
     expect(acceptGate({ ...base, preview: accept({ ok: false }, { proposer: { must_drop: 1 } }) }).reason).toBe(
       'This offer no longer fits Alpha’s roster — they’ve added players since sending it. Ask them to call it off and send a new one.',

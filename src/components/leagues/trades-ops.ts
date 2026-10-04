@@ -27,6 +27,7 @@
  * Plain fantasy-football words throughout (Chris's rule): "offer", "turned
  * down", "called off", "goes through" — never a status enum on screen.
  */
+import { userFacingMessage } from '@/lib/leagues/api/client-fetch'
 import type { TradePreviewState } from '@/hooks/use-trade-preview'
 import type { RosterTeam } from '@/lib/leagues/api/rosters-service'
 import type {
@@ -150,10 +151,10 @@ export function faabOverCopy(teamName: string, balance: number): string {
   return `${teamName} has $${balance} of FAAB — offer $${balance} or less.`
 }
 
-/** The server's refusal as a league member reads it: the raiser's `fn: `
- *  prefix off (F116), then every builder citation (R1244). */
+/** The server's refusal as a league member reads it — the one cleaner
+ *  (`userFacingMessage`, D481; it absorbed R1244's `plainRefusal`). */
 export function previewRefusalCopy(refusal: string): string {
-  return plainRefusal(refusal.replace(/^[a-z0-9_]+: /, ''))
+  return userFacingMessage(refusal)
 }
 
 export const SEND_AND_SEE_COPY = 'The league checks both rosters, the deadline and any FAAB when you send — its answer is what you see.'
@@ -299,32 +300,6 @@ export function acceptGate(input: {
   return { state: 'ready', mustDrop: 0, reason: null, pastDeadline: false }
 }
 
-/** A server sentence with its trailing builder citation removed — "(§13.3 /
- *  Q77)", "(E36)" — the same rule `userFacingMessage` applies to a refusal
- *  (a section number is a builder's pointer, not a user's, F116). The words
- *  themselves are the server's, untouched. */
-export function plainServerSentence(text: string): string {
-  return text.replace(/\s*\((?:[^()]*§[^()]*|[EQRFCD]\d+(?:\s*\/\s*[EQRFCD]?\d+)*)\)\s*$/, '').trim()
-}
-
-/** A refusal as a league member reads it (R1244): every builder citation is
- *  taken out of its parentheses — a `§` pointer, a rule code ("E36", "Q76"),
- *  a setting's column name ("trade_deadline_week 11") — and a group left
- *  empty goes entirely; the rest of the server's words stay as sent (the
- *  deadline's date and time survive). Display only: `dropsNeeded` and
- *  `isDeadlineRefusal` still read the raw sentence. */
-export function plainRefusal(text: string): string {
-  const citation = (part: string) =>
-    /§/.test(part) || /\b[EQRFCD]\d+\b/.test(part) || /\b[a-z]+(?:_[a-z]+)+\b/.test(part)
-  return text
-    .replace(/(\s*)\(([^()]*)\)/g, (_whole, lead: string, inner: string) => {
-      const kept = inner.split(';').map((p) => p.trim()).filter((p) => p && !citation(p))
-      return kept.length ? `${lead}(${kept.join('; ')})` : ''
-    })
-    .replace(/\s+([:.,])/g, '$1')
-    .trim()
-}
-
 // ---------------------------------------------------------------------------
 // Time words — from the read's own numbers, never a clock
 // ---------------------------------------------------------------------------
@@ -360,7 +335,7 @@ export interface TradeStatusView {
  * leaves flight without saying why).
  */
 export function tradeStatusView(trade: TradeView, fmt: (iso: string) => string): TradeStatusView {
-  const reason = trade.status_reason ? plainServerSentence(trade.status_reason) : null
+  const reason = trade.status_reason ? userFacingMessage(trade.status_reason) : null
   switch (trade.status) {
     case 'proposed':
       return { label: 'Offer', tone: 'accent', detail: `Waiting for ${trade.recipient.name ?? 'the other team'} to answer.` }
@@ -389,7 +364,7 @@ export function tradeStatusView(trade: TradeView, fmt: (iso: string) => string):
     case 'complete':
       return { label: 'Completed', tone: 'positive', detail: trade.resolved_at ? `Went through ${fmt(trade.resolved_at)}.` : 'Went through.' }
     case 'rejected':
-      return { label: reason?.startsWith('countered') ? 'Countered' : 'Turned down', tone: 'neutral', detail: reason ? capitalize(reason) + '.' : null }
+      return { label: trade.status_reason?.startsWith('countered') ? 'Countered' : 'Turned down', tone: 'neutral', detail: reason ? capitalize(reason) + '.' : null }
     case 'cancelled':
       return { label: 'Called off', tone: 'neutral', detail: reason ? capitalize(reason) + '.' : null }
     case 'vetoed':
@@ -827,7 +802,7 @@ export function commishOutcomeCopy(result: Pick<CommishTradeResult, 'outcome' | 
       return `Forced through${past.length > 0 ? ` — past ${joinWords(past)}` : ''}.${result.score_stale ? ' The week’s scores are being updated.' : ''}`
     }
     case 'no_change':
-      return result.no_changes_why ? `Nothing changed — ${plainServerSentence(result.no_changes_why)}` : 'Nothing changed — it was already that way.'
+      return result.no_changes_why ? `Nothing changed — ${userFacingMessage(result.no_changes_why)}` : 'Nothing changed — it was already that way.'
   }
 }
 

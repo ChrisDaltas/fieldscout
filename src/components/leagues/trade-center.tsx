@@ -1,5 +1,6 @@
 'use client'
 
+import { rawErrorText, userFacingMessage } from '@/lib/leagues/api/client-fetch'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -70,7 +71,6 @@ import {
   tradeStatusView,
   type TradeTone,
   type TradeViewer,
-  plainRefusal,
 } from './trades-ops'
 
 /**
@@ -224,7 +224,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   // builder's only while no card has spoken since (`lastCard` null).
   const builderSpoke = builder?.mode !== 'counter' || lastCard === null
   const builderRefusal =
-    builderSpoke && builderMutation.isError ? (builderMutation.error instanceof Error ? builderMutation.error.message : 'The offer was refused.') : null
+    builderSpoke && builderMutation.isError ? (rawErrorText(builderMutation.error) ?? 'The offer was refused.') : null
   const sentTo = (() => {
     if (!builder) return null
     if (builder.mode === 'propose' && propose.data) return teams.find((t) => t.team_id === propose.data.trade.recipient_team_id)?.name ?? 'the other team'
@@ -234,7 +234,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
 
   const sendFromBuilder = (send: TradeBuilderSend) => {
     if (!builder) return
-    const onError = (error: Error) => noteRefusal(error.message)
+    const onError = (error: Error) => noteRefusal(rawErrorText(error) ?? error.message)
     if (builder.mode === 'counter' && builder.counterOf) {
       act.submitAsync({ tradeId: builder.counterOf.id, op: 'counter', legs: send.legs, drops: send.drops, note: send.note }).catch(onError)
       return
@@ -249,7 +249,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
   const cardRefusal = (tradeId: string, kind: 'respond' | 'commish') => {
     if (lastCard?.tradeId !== tradeId || lastCard.kind !== kind) return null
     const m = kind === 'respond' ? act : commish
-    return m.isError ? (m.error instanceof Error ? m.error.message : 'That was refused.') : null
+    return m.isError ? (rawErrorText(m.error) ?? 'That was refused.') : null
   }
 
   return (
@@ -341,7 +341,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
         onRespond={(trade, op, drops) => {
           setLastCard({ tradeId: trade.id, kind: 'respond' })
           commish.reset()
-          const onError = (error: Error) => noteRefusal(error.message)
+          const onError = (error: Error) => noteRefusal(rawErrorText(error) ?? error.message)
           if (op === 'accept') act.submitAsync({ tradeId: trade.id, op: 'accept', drops }).catch(onError)
           else act.submitAsync({ tradeId: trade.id, op }).catch(onError)
         }}
@@ -450,7 +450,7 @@ export function TradeCenterView(props: TradeCenterViewProps) {
       <div className="flex flex-col gap-1.5">
         <StatusBanner tone={deadlineRefusal || deadlineView?.passed ? 'caution' : 'neutral'}>
           <span data-trade-deadline={deadlineWeek ?? 'none'} data-trade-deadline-at={deadlineView?.deadline_at ?? undefined} data-trade-deadline-passed={deadlineView?.passed || undefined}>
-            {deadlineRefusal ? `🔒 ${deadlineRefusal}` : tradeDeadlineLine(deadlineWeek, deadlineView, props.fmt)}
+            {deadlineRefusal ? `🔒 ${userFacingMessage(deadlineRefusal)}` : tradeDeadlineLine(deadlineWeek, deadlineView, props.fmt)}
           </span>
         </StatusBanner>
         {doc && <p className="text-[11px] font-medium text-n-3" data-trade-review-mode={doc.settings.trade_review}>{reviewModeCopy(doc.settings)}</p>}
@@ -695,7 +695,7 @@ export function TradeCard({
         {refusal && !(recipientOverflows && pickingDrops) && (
           <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-trade-card-refusal>
             {/* The server's sentence, its builder citations removed (R1244). */}
-            {plainRefusal(refusal)}
+            {userFacingMessage(refusal)}
           </p>
         )}
 
@@ -713,7 +713,7 @@ export function TradeCard({
 
         {pickingDrops && recipientRoster && (
           <div className="flex flex-col gap-1.5 rounded-sm border border-ink px-2 py-2" data-accept-drops data-accept-must-drop={checked ? gate.mustDrop : undefined}>
-            {!checked && recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{plainRefusal(refusal)}</p>}
+            {!checked && recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{userFacingMessage(refusal)}</p>}
             <p className="text-[11px] font-bold text-ink">
               {checked
                 ? gate.mustDrop > 0

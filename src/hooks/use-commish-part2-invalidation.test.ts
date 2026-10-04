@@ -205,7 +205,7 @@ describe('useCommishChangeSetting — /commish/setting', () => {
     const calls = stubFetch({ ok: false, status: 409, body: { error: 'commish_change_setting: team_count is PRE-DRAFT ONLY (§7.3)' } })
     const failure = await new MutationObserver(client, commishChangeSettingMutationOptions(client, LEAGUE)).mutate({ ...variables, key: 'team_count', value: 12 }).catch((e: unknown) => e)
     expect((failure as { status: number }).status).toBe(409)
-    expect((failure as Error).message).toBe('team_count is PRE-DRAFT ONLY')
+    expect((failure as Error).message).toBe('number of teams is PRE-DRAFT ONLY') // D481: setting names as words
     expect(calls).toHaveLength(1)
     expectCacheUntouched(client)
     expectKeys(client, ON, OFF)

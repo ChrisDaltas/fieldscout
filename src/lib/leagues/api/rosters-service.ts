@@ -58,6 +58,7 @@
  * (D310(7)): a pure parse of a value the database wrote, not a wall-clock
  * read.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database, Json } from '@/types/database'
@@ -183,7 +184,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
     ['league_player_pool', poolRes],
     ['team_autopilot', autopilotRes],
   ] as const) {
-    if (res.error) return { status: 500, body: { error: `${what}: ${res.error.message}` } }
+    if (res.error) return dbFailure(what, res.error)
   }
   // Membership passed AND the gate saw a live league row (a soft-deleted
   // league is the gate's 404 by name — R812), so a row that reads empty
@@ -222,7 +223,7 @@ export async function readRosters(supabase: Supabase, leagueId: string): Promise
       .from('players')
       .select('id, full_name, position, team, status, bye_week')
       .in('id', playerIds)
-    if (error) return { status: 500, body: { error: `players: ${error.message}` } }
+    if (error) return dbFailure('players', error)
     const capped = assertBelowPostgrestCap(players ?? [], 'players')
     if (capped) return capped
     for (const p of players ?? []) playersById.set(p.id, p)

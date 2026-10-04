@@ -45,9 +45,8 @@ describe('userFacingMessage (F116 — the RAISE context never reaches a user)', 
     // A sentence that merely CONTAINS a colon or a mid-string citation does
     // not match the anchored patterns.
     expect(userFacingMessage('Heads up: the draft is paused')).toBe('Heads up: the draft is paused')
-    expect(userFacingMessage('the (§22.5) cap applies to active mocks')).toBe(
-      'the (§22.5) cap applies to active mocks',
-    )
+    // D481: a mid-sentence citation group now goes too (any bracketed § group).
+    expect(userFacingMessage('the (§22.5) cap applies to active mocks')).toBe('the cap applies to active mocks')
   })
 
   it('a prefix is a lowercase identifier — capitalised copy before a colon survives', () => {

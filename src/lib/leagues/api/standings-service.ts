@@ -52,6 +52,7 @@
  *
  * No Date/random read here (the `src/lib/leagues/**` ESLint fences).
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -206,7 +207,7 @@ export async function readStandings(
     () => supabase.from('league_members').select('team_id, faab_balance').eq('league_id', leagueId),
   )
   if (seatsError) {
-    return { status: 500, body: { error: `league_members: ${seatsError.message}` } }
+    return dbFailure('league_members', seatsError)
   }
   const seatByTeam = new Map((seats ?? []).filter((s) => s.team_id).map((s) => [s.team_id as string, s]))
   rows = rows.map((row) => ({

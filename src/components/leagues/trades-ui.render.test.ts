@@ -18,7 +18,7 @@ import type { CommishTradeResult, TradePreview } from '@/lib/leagues/api/trades-
 
 import { BuilderRostersWait, CommishConfirm, TradeCard, TradeCenterView, type TradeCardProps, type TradeCenterViewProps } from './trade-center'
 import { TradeBuilderView, type TradeBuilderViewProps } from './trade-builder'
-import { BUILDER_ROSTERS_ERROR_TITLE, NO_TRADE_PARTNER_COPY, noManagerCopy, plainRefusal } from './trades-ops'
+import { BUILDER_ROSTERS_ERROR_TITLE, NO_TRADE_PARTNER_COPY, noManagerCopy } from './trades-ops'
 import {
   NEVER_WHO_VOTED_COPY,
   TRADES_ERROR_TITLE,
@@ -156,7 +156,7 @@ describe('trade-center — every page state (§16.5.4)', () => {
     expect(html).toContain('Trade deadline: Week 11 — offers can be made and accepted until Week 12 begins.')
     expect(html).toContain('An accepted trade goes through after 24 hours unless the commissioner vetoes it first.')
     const refused = 'the trade deadline has passed — trades could be proposed until week 12 began (Wed, Nov 25 12:00 AM ET; trade_deadline_week 11, §13.3 / Q76)'
-    expect(center({ deadlineRefusal: refused })).toContain(`🔒 ${refused}`)
+    expect(center({ deadlineRefusal: refused })).toContain('🔒 The trade deadline has passed — trades closed when week 12 began (Wed, Nov 25 12:00 AM ET).') // D481: the member's copy
     expect(center({ deadlineWeek: null })).toContain('No trade deadline — trades are allowed all season.')
   })
   it('pending vs history tabs split the one read; the pending count rides the tab', () => {
@@ -198,14 +198,14 @@ describe('trade card — an offer', () => {
   })
   it('the server’s refusal renders VERBATIM on the card', () => {
     const refusal = 'only the team that received a trade can accept it — you proposed this one, so cancel it instead'
-    expect(card({ refusal })).toContain(`data-trade-card-refusal="true">${refusal}`)
+    expect(card({ refusal })).toContain('data-trade-card-refusal="true">Only the team that got this offer can accept or reject it — you can cancel it instead.') // D481
   })
   it('E36: the server says the receiving roster overflows → the drop picker opens with the count, the sentence verbatim', () => {
     const refusal = "Bravo's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"
     const html = card({ refusal })
     expect(html).toContain('data-accept-drops')
-    // R1244: the sentence shows without its builder citations.
-    expect(html).toContain("more than its 16 spots: name 1 more drop(s) as part of the trade")
+    // D481: the phrase map's sentence, no builder citations.
+    expect(html).toContain('Bravo would be 1 over the roster limit — pick 1 more player to drop.')
     expect(html).not.toContain('(E36)')
     expect(html).not.toContain('roster_size')
     expect(html).toContain('Pick 1 player to drop so your roster fits — he is dropped only if the trade goes through.')
@@ -371,7 +371,7 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     const refusal = "Alpha's roster would hold 17 players after this trade — 1 more than its 16 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)"
     const html = builder({ refusal })
     expect(html).toContain(`data-trade-refusal="true"`)
-    expect(html).toContain(plainRefusal(refusal)) // R1244: citations removed
+    expect(html).toContain('Alpha would be 1 over the roster limit — pick 1 more player to drop.') // D481: the phrase map
     expect(html).not.toContain("(E36)")
     expect(html).toContain('data-trade-drops="open"')
     expect(html).toContain('data-trade-drops-prompt="1"')
@@ -381,7 +381,7 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     const refusal = 'the trade deadline has passed — trades could be proposed until week 12 began (Wed, Nov 25 12:00 AM ET; trade_deadline_week 11, §13.3 / Q76)'
     const html = builder({ refusal })
     expect(html).toContain('data-trade-deadline-locked')
-    expect(html).toContain(refusal)
+    expect(html).toContain('The trade deadline has passed — trades closed when week 12 began (Wed, Nov 25 12:00 AM ET).') // D481
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-trade-send/)
     expect(html).not.toContain('data-trade-refusal')
   })
@@ -537,7 +537,7 @@ describe('L.D3.12 — the builder: Send only when the league would take it', () 
     const refusal = 'trade_preview: Alpha gives nothing in this trade — this league does not allow future considerations (allow_future_considerations is off, §7.3.5), so each team gives at least one player or FAAB'
     const html = builder({ usePreview: answer(preview({ ok: false, refusal, rosters: null })) })
     expect(sendOff(html)).toBe(true)
-    expect(html).toContain('Alpha gives nothing in this trade — this league does not allow future considerations, so each team gives at least one player or FAAB')
+    expect(html).toContain('Alpha has to give at least one player or FAAB in this trade.') // D481
     expect(html).not.toContain('trade_preview:')
     expect(html).not.toContain('§7.3.5')
   })

@@ -333,7 +333,7 @@ describe('activityQuerySchema — `topic` (L.E1.34)', () => {
     for (const extra of [{ type: 'trade' }, { week: '3' }, { team_id: 'aa000000-0000-4000-8000-000000000001' }]) {
       const parsed = activityQuerySchema.safeParse({ topic: 'trades', ...extra })
       expect(parsed.success, JSON.stringify(extra)).toBe(false)
-      expect(JSON.stringify(parsed.error)).toContain('topic is its own filter')
+      expect(JSON.stringify(parsed.error)).toContain('a topic can’t be combined')
     }
   })
 })
@@ -491,6 +491,6 @@ describe('readActivity — what each read asks for (L.E1.34)', () => {
       league_chat: [{ data: [{ id: 'p1', created_at: AT, context: 'league', message: 'x', user_id: 'u1' }], error: null }],
       commissioner_actions: [{ data: null, error: { message: 'boom' } }],
     })
-    expect(await readActivity(client, 'L', {})).toStrictEqual({ status: 500, body: { error: 'commissioner_actions: boom' } })
+    expect(await readActivity(client, 'L', {})).toStrictEqual({ status: 500, body: { error: 'Something went wrong — try again.' } })
   })
 })

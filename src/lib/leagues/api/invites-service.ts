@@ -61,7 +61,7 @@ export const createInviteInputSchema = z
   })
   .refine(
     (body) => (body.max_uses ?? 1) === 1 || (!body.invited_email && !body.invited_username),
-    { message: 'Identity-restricted invites are single-use — max_uses must be 1.' },
+    { message: 'Invites for a specific person can only be used once.' },
   )
 export type CreateInviteInput = z.infer<typeof createInviteInputSchema>
 

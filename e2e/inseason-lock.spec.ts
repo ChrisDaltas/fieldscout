@@ -188,16 +188,14 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       const refusal = page.locator('[data-move-refusal]')
       await expect(refusal).toBeVisible({ timeout: 60_000 })
       const refusalText = await refusal.innerText()
-      // The STABLE SPINE of 115's sentence (`115:604-610`), rendered verbatim
-      // minus the `roster_add_drop: ` prefix `userFacingMessage` strips
-      // (`client-fetch.ts:40-45`; E32's tail is `: no in-game pickups`, so no
-      // trailing §-citation is stripped). The "clears at" slot is NOT
-      // asserted — with `last_game_ends_at` NULL it renders the
-      // not-yet-recorded arm, which is fixture state, not the rule.
+      // D481: the member reads the phrase map's sentence for 157's E32
+      // refusal (`friendly-messages.ts` 'add-locked'), the player named from
+      // the server's own text — no prefix, no id, no citation.
       expect(refusalText).toContain('That move was refused.')
-      expect(refusalText).toContain(`${addTarget.full_name} (${addTarget.player_id}) is locked for adds`)
-      expect(refusalText).toContain('no in-game pickups')
+      expect(refusalText).toContain(`${addTarget.full_name}’s game has started — you can pick him up after the week’s games end.`)
+      expect(refusalText).not.toContain(addTarget.player_id)
       expect(refusalText).not.toContain('roster_add_drop:')
+      expect(refusalText).not.toContain('§')
       // eslint-disable-next-line no-console -- the DoD evidence line
       console.log(`[inseason-lock] server refusal: ${refusalText.replace(/\s+/g, ' ').trim()}`)
 
