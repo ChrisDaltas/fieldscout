@@ -1,26 +1,29 @@
 /**
- * GET /api/players/[id]/core-stats[?league=] — the player page's core-stats
- * row (D486(10)): season points, avg per game, this week's projection, and
- * his positional + overall rank by season points.
+ * GET /api/players/[id]/core-stats?scoring=|?league= — the player page's
+ * core-stats row (D486(10), the scoring dropdown D486(11)): season points,
+ * avg per game, this week's projection, and his positional + overall rank
+ * by season points.
  *
- * ONE engine for both bases (D33): the league-player-values job's own code —
- * `computePlayerValue` for him (season to date + this week's projection) and
- * `seasonToDate` for every player in the pool (the ranks) — fed by the job's
- * readers (`readOpenedWeekRules` / `readWeeklyLines`).
+ * ONE engine for every basis (D33): the league-player-values job's own code —
+ * `computePlayerValue` for his projection and `seasonToDate` for every
+ * player in the pool (totals, the completed-weeks average, the ranks) — fed
+ * by the job's readers (`readOpenedWeekRules` / `readWeeklyLines`).
  *
- *  - In a league: the league's frozen snapshot, each opened week under its
- *    own stored rules (144 / F397) — exactly the pool-values read (batch 5).
- *    The week is `valueWeekOf` over the league's schedule. Member-gated.
- *  - Outside one: "Scout Standard", FieldScout's own default template
- *    (templates.ts), and the NFL calendar's current week
- *    (`planProjectionWeeks` at the TimeProvider's now — the projection sync's
- *    own rule).
+ *  - A league: the league's frozen snapshot, each opened week under its own
+ *    stored rules (144 / F397). The week is `valueWeekOf` over the league's
+ *    schedule. Member-gated.
+ *  - A preset (Chris 2026-10-04 — ESPN Standard default, Half PPR, Full PPR):
+ *    the shipped ESPN templates (templates.ts; Half = ESPN Standard with
+ *    receptions 0.5), and the NFL calendar's current week
+ *    (`planProjectionWeeks` at the TimeProvider's now). The pool standings
+ *    are viewer-independent, so the route caches them per
+ *    (system, season, week) — `poolCache` (R1503).
  *
- * Season points sum EVERY stored week of the season (a live week counts as
- * it stands — the platform convention). Ranks: every player with a stored
- * week this season, standard competition ranking (ties share). The pool is
- * read whole, paged past the 1000-row cap (pageAll, exact count). Nothing is
- * written. A failed read is a 500, never an empty success.
+ * Season points sum EVERY stored week (a live week counts as it stands).
+ * The average divides completed weeks only (R1506 — see core-stats-ops).
+ * Ranks: every player with a stored week this season, standard competition
+ * ranking (ties share). The pool is read whole, paged past the 1000-row cap
+ * (pageAll, exact count). Nothing is written. A failed read is a 500.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -44,19 +47,27 @@ import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
 import { planProjectionWeeks, readProjectionCalendar } from '@/lib/sync/weekly-projections'
 import type { Database, Json } from '@/types/database'
 
-import { avgPerGame, competitionRanks, type CoreStatsPayload, gamesPlayed, type ScoringBasis } from './core-stats-ops'
+import {
+  avgPerGame,
+  completedGames,
+  competitionRanks,
+  type CoreStatsPayload,
+  type GameWeek,
+  type ScoringBasis,
+  type ScoringChoice,
+  type ScoringSystemKey,
+} from './core-stats-ops'
 
 type Supabase = SupabaseClient<Database>
 
 /** The page's season (the player stats route's CURRENT_SEASON). */
 export const CORE_STATS_DEFAULT_SEASON = 2026
-export const DEFAULT_TEMPLATE_NAME = 'Scout Standard'
 const IN_CHUNK = 200
 
-type Line = StatLineRow & { week: number }
+type Line = StatLineRow & { week: number; is_live?: boolean | null }
 
 async function readSeasonPool(supabase: Supabase, season: number): Promise<Map<string, Line[]>> {
-  const select = ['id', 'player_id', 'week', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
   const rows = await pageAll<Line>(
     (from, to) =>
       supabase
@@ -90,15 +101,106 @@ async function readPositions(supabase: Supabase, ids: readonly string[]): Promis
   return out
 }
 
+/** The preset systems' rules — the shipped ESPN templates (no new rows). */
+export function systemRules(system: ScoringSystemKey): ScoringRulesDoc {
+  const std = SCORING_TEMPLATES.find((t) => t.name === 'ESPN Standard')
+  const ppr = SCORING_TEMPLATES.find((t) => t.name === 'ESPN Full PPR')
+  if (!std || !ppr) throw new Error('scoring: the ESPN templates are missing')
+  const rules = system === 'espn_standard' ? std.rules : system === 'ppr' ? ppr.rules : { ...std.rules, receptions: 0.5 }
+  return rules as unknown as ScoringRulesDoc
+}
+
+/** Any nonzero scoring stat on the line (R1506's appearance proxy). */
+function appeared(row: Line): boolean {
+  for (const col of STAT_LINE_COLUMNS) {
+    const v = (row as unknown as Record<string, unknown>)[col]
+    if (typeof v === 'number' && v !== 0) return true
+  }
+  for (const v of Object.values((row.advanced ?? {}) as Record<string, unknown>)) if (typeof v === 'number' && v !== 0) return true
+  return false
+}
+
+export interface PoolEntry {
+  total: number | null
+  games: number
+  avg: number | null
+  pos_rank: number | null
+  overall_rank: number | null
+}
+/** Player id → his standing. Plain object so it serializes into a cache. */
+export type PoolStandings = Record<string, PoolEntry>
+
+/**
+ * Every player's total, completed-weeks average and both ranks, scored once.
+ * `week` is the current (incomplete) week: weeks at or after it, and rows
+ * still flagged live, are left out of the average.
+ */
+export async function computePoolStandings(
+  supabase: Supabase,
+  snapshot: ScoringRulesDoc,
+  pastWeekRules: ReadonlyMap<number, ScoringRulesDoc>,
+  season: number,
+  week: number | null,
+): Promise<PoolStandings> {
+  const pool = await readSeasonPool(supabase, season)
+  const positions = await readPositions(supabase, [...pool.keys()])
+  const byes = await readByes(supabase, [...pool.keys()])
+  const overall = new Map<string, number | null>()
+  const byPos = new Map<string, Map<string, number | null>>()
+  const partial = new Map<string, { total: number | null; games: number; avg: number | null }>()
+  for (const [id, rows] of pool) {
+    const raw = positions.get(id)
+    if (!raw) continue
+    const pos = normalizePosition(raw)
+    const total = seasonToDate(snapshot, id, pos, rows, pastWeekRules).points
+    const gw: GameWeek[] = rows.map((r) => ({
+      week: r.week,
+      appeared: appeared(r),
+      live: r.is_live === true || (week !== null && r.week >= week),
+    }))
+    const done = new Set(completedGames(gw, byes.get(id) ?? null).map((g) => g.week))
+    const doneRows = rows.filter((r) => done.has(r.week))
+    const donePts = seasonToDate(snapshot, id, pos, doneRows, pastWeekRules).points
+    partial.set(id, { total, games: doneRows.length, avg: avgPerGame(donePts, doneRows.length) })
+    overall.set(id, total)
+    const m = byPos.get(pos) ?? new Map<string, number | null>()
+    m.set(id, total)
+    byPos.set(pos, m)
+  }
+  const overallRanks = competitionRanks(overall)
+  const posRanks = new Map<string, number>()
+  for (const m of byPos.values()) for (const [id, r] of competitionRanks(m)) posRanks.set(id, r)
+  const out: PoolStandings = {}
+  for (const [id, p] of partial) {
+    out[id] = { ...p, pos_rank: posRanks.get(id) ?? null, overall_rank: overallRanks.get(id) ?? null }
+  }
+  return out
+}
+
+async function readByes(supabase: Supabase, ids: readonly string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK)
+    const { data, error } = await supabase.from('players').select('id, bye_week').in('id', chunk)
+    if (error) throw new Error(`players: ${error.message}`)
+    for (const r of data ?? []) if (r.bye_week != null) out.set(r.id, r.bye_week)
+  }
+  return out
+}
+
+/** The route's cache seam: (system, season, week) → the pool standings. */
+export type PoolCache = (system: ScoringSystemKey, season: number, week: number | null) => Promise<PoolStandings>
+
 export async function readPlayerCoreStats(
   supabase: Supabase,
   playerId: string,
-  leagueId: string | null,
+  choice: ScoringChoice,
   time: TimeProvider,
-  /** Outside a league: the season read (tests use a synthetic one). */
-  opts: { defaultSeason?: number } = {},
+  /** Preset mode: the season read (tests use a synthetic one) and the cache. */
+  opts: { defaultSeason?: number; poolCache?: PoolCache } = {},
 ): Promise<ServiceResult> {
-  const { data: player, error: playerError } = await supabase.from('players').select('id, position, bye_week').eq('id', playerId).maybeSingle()
+  const leagueId = choice.kind === 'league' ? choice.leagueId : null
+  const { data: player, error: playerError } = await supabase.from('players').select('id, position').eq('id', playerId).maybeSingle()
   if (playerError) return dbFailure('players', playerError)
   if (!player) return { status: 404, body: { error: 'Player not found' } }
 
@@ -133,72 +235,54 @@ export async function readPlayerCoreStats(
       return { status: 500, body: { error: `scoring rules: ${err instanceof Error ? err.message : String(err)}` } }
     }
   } else {
-    const template = SCORING_TEMPLATES.find((t) => t.name === DEFAULT_TEMPLATE_NAME)
-    if (!template) return { status: 500, body: { error: `scoring: the ${DEFAULT_TEMPLATE_NAME} template is missing` } }
-    basis = { kind: 'default' }
+    const system = (choice as { kind: 'system'; system: ScoringSystemKey }).system
+    basis = { kind: 'system', system }
     season = opts.defaultSeason ?? CORE_STATS_DEFAULT_SEASON
-    snapshot = template.rules as unknown as ScoringRulesDoc
     try {
+      snapshot = systemRules(system)
       week = planProjectionWeeks(await readProjectionCalendar(supabase, season), time.now()).currentWeek
     } catch (err) {
       return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
     }
   }
 
-  let pool: Map<string, Line[]>
-  let positions: Map<string, string>
+  let standings: PoolStandings
   let lines: Awaited<ReturnType<typeof readWeeklyLines>>
   try {
-    pool = await readSeasonPool(supabase, season)
-    ;[positions, lines] = await Promise.all([
-      readPositions(supabase, [...pool.keys()]),
+    ;[standings, lines] = await Promise.all([
+      choice.kind === 'system' && opts.poolCache
+        ? opts.poolCache(choice.system, season, week)
+        : computePoolStandings(supabase, snapshot, pastWeekRules, season, week),
       week === null ? Promise.resolve(new Map()) : readWeeklyLines(supabase, season, [week], [playerId]),
     ])
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
   }
 
-  const ownPosition = normalizePosition(player.position)
-  const own = pool.get(playerId) ?? []
+  const own = standings[playerId]
   const value = computePlayerValue(
     snapshot,
     { league_id: leagueId ?? 'default', season, week: week ?? 0, now: time.now() },
     {
       player_id: playerId,
-      position: ownPosition,
+      position: normalizePosition(player.position),
       weekly: week === null ? null : (lines.get(`${week}:${playerId}`) ?? null),
-      seasonRows: own,
+      seasonRows: [],
       preseason: null,
     },
     pastWeekRules,
   )
 
-  // Ranks — the same scorer over the whole pool.
-  const overall = new Map<string, number | null>()
-  const atPosition = new Map<string, number | null>()
-  for (const [id, rows] of pool) {
-    const raw = positions.get(id)
-    if (!raw) continue
-    const pos = normalizePosition(raw)
-    const pts = seasonToDate(snapshot, id, pos, rows, pastWeekRules).points
-    overall.set(id, pts)
-    if (pos === ownPosition) atPosition.set(id, pts)
-  }
-
-  const games = gamesPlayed(
-    own.map((r) => r.week),
-    player.bye_week,
-  )
   const body: CoreStatsPayload = {
     basis,
     season,
     week,
-    total_points: value.season_points,
-    games,
-    avg_points: avgPerGame(value.season_points, games),
+    total_points: own?.total ?? null,
+    games: own?.games ?? 0,
+    avg_points: own?.avg ?? null,
     projected_points: week === null ? null : value.projected_points,
-    pos_rank: competitionRanks(atPosition).get(playerId) ?? null,
-    overall_rank: competitionRanks(overall).get(playerId) ?? null,
+    pos_rank: own?.pos_rank ?? null,
+    overall_rank: own?.overall_rank ?? null,
   }
   return { status: 200, body: body as unknown as Json }
 }

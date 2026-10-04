@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { PageHeader } from '@/components/layout/app-header'
@@ -23,6 +24,7 @@ import { AIInsight } from '@/components/ui/ai-insight'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDefenseSplits } from '@/hooks/use-defense-splits'
@@ -36,7 +38,15 @@ import {
   type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
-import { basisLabel, coreTiles } from '@/lib/players/core-stats-ops'
+import {
+  basisLabel,
+  choiceValue,
+  coreTiles,
+  resolveChoice,
+  SCORING_CHOICE_STORAGE_KEY,
+  scoringOptions,
+  systemLabel,
+} from '@/lib/players/core-stats-ops'
 import { cn } from '@/lib/utils'
 
 interface PlayerDetailPageViewProps {
@@ -128,24 +138,72 @@ export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetail
  * record. A value with no source is "—", never 0. Not interactive → no
  * shadow (CLAUDE.md elevation rule).
  */
+function readStoredChoice(): string | null {
+  try {
+    return window.localStorage.getItem(SCORING_CHOICE_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeStoredChoice(v: string) {
+  try {
+    window.localStorage.setItem(SCORING_CHOICE_STORAGE_KEY, v)
+  } catch {
+    // Private window / blocked storage — the choice just isn't remembered.
+  }
+}
+
 export function CoreStatsRow({ player, leagueId }: { player: PlayerStatsPlayer; leagueId: string | null }) {
   // R1501's fallback: a `?league=` the viewer can't read scores by default.
   const league = useLeague(featureFlags.leagues && leagueId ? leagueId : undefined)
-  const scoredIn = leagueId && !league.isError ? leagueId : null
-  const stats = usePlayerCoreStats(player.id, scoredIn)
+  const leagueParam = leagueId && !league.isError ? leagueId : null
+  const leagues = useLeagues({ enabled: featureFlags.leagues })
+  const myLeagues = featureFlags.leagues ? (leagues.isError ? [] : (leagues.data ?? null)) : []
+  const [picked, setPicked] = useState<string | null>(null)
+  const [stored, setStored] = useState<string | null>(null)
+  useEffect(() => setStored(readStoredChoice()), [])
+  const choice = resolveChoice({ picked, leagueParam, stored, leagues: myLeagues })
+  const options = scoringOptions(myLeagues ?? [])
+  // The ?league= league shows as an option even before the list loads.
+  if (leagueParam && !options.some((o) => o.value === `league:${leagueParam}`)) {
+    options.push({ value: `league:${leagueParam}`, label: league.data?.league.name ?? 'This league' })
+  }
+  const stats = usePlayerCoreStats(player.id, choice)
   const tiles = coreTiles(stats.data ?? null, player)
   const label = stats.data
     ? basisLabel(stats.data.basis)
     : stats.isError
       ? 'Couldn’t load points'
-      : scoredIn
-        ? `${league.data?.league.name ?? 'League'} scoring`
-        : 'Standard scoring'
+      : choice.kind === 'league'
+        ? `${options.find((o) => o.value === choiceValue(choice))?.label ?? 'League'} scoring`
+        : `${systemLabel(choice.system)} scoring`
+  const onPick = (v: string) => {
+    setPicked(v)
+    writeStoredChoice(v)
+  }
   return (
     <div className="border-t border-n-4 px-card-pad py-3 sm:px-5" data-core-stats>
-      <p className="mb-1.5 text-[11px] font-semibold text-n-3" data-core-basis>
-        {label}
-      </p>
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Select value={choiceValue(choice)} onValueChange={onPick}>
+          <SelectTrigger className="h-btn-md w-auto min-w-[150px] px-3 text-[12px] font-bold" aria-label="Scoring" data-core-scoring>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value} data-core-scoring-option={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[11px] font-semibold text-n-3" data-core-basis>
+          {label}
+        </p>
+        <p className="text-[11px] font-medium text-n-3" data-core-avg-note>
+          Avg of completed weeks
+        </p>
+      </div>
       <div className="grid grid-cols-4 gap-y-3 sm:grid-cols-7">
         {tiles.map((t) => (
           <div key={t.key} className="min-w-0 pr-2" data-core-tile={t.key}>

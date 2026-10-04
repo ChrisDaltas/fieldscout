@@ -84,7 +84,9 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     // D486(10): the core-stats row — seven tiles, scored by THIS league.
     const leagueRow = full.locator('[data-core-stats]')
     await expect(leagueRow.locator('[data-core-tile]')).toHaveCount(7)
-    await expect(leagueRow.locator('[data-core-basis]')).toHaveText(/^(?!Standard scoring$)(?!Couldn).+ scoring$/, { timeout: 30_000 })
+    await expect(leagueRow.locator('[data-core-basis]')).toHaveText(/^(?!ESPN Standard scoring$)(?!Couldn).+ scoring$/, { timeout: 30_000 })
+    // D486(11): ?league= preselects that league in the scoring dropdown.
+    await expect(leagueRow.locator('[data-core-scoring]')).not.toHaveText(/ESPN Standard/)
     await leagueRow.locator('xpath=..').screenshot({ path: test.info().outputPath('player-hero-league.png') })
     await page.screenshot({ path: test.info().outputPath('player-page-league.png'), fullPage: true })
 
@@ -99,7 +101,15 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     await expect(global.locator(`[data-card-league-row="${leagueId}"]`)).toBeVisible({ timeout: 30_000 })
     const globalRow = global.locator('[data-core-stats]')
     await expect(globalRow.locator('[data-core-tile]')).toHaveCount(7)
-    await expect(globalRow.locator('[data-core-basis]')).toHaveText('Standard scoring', { timeout: 30_000 })
+    await expect(globalRow.locator('[data-core-basis]')).toHaveText('ESPN Standard scoring', { timeout: 30_000 })
+    await expect(globalRow.locator('[data-core-avg-note]')).toHaveText('Avg of completed weeks')
+    // D486(11): switch scoring — the label (and the numbers) follow the pick.
+    await globalRow.locator('[data-core-scoring]').click()
+    await expect(page.locator(`[data-core-scoring-option="league:${leagueId}"]`)).toBeVisible()
+    await page.waitForTimeout(400) // the menu's open animation — screenshot evidence only
+    await page.screenshot({ path: process.env.CORE_SCORING_SHOT ?? test.info().outputPath('player-core-scoring-open.png') })
+    await page.locator('[data-core-scoring-option="ppr"]').click()
+    await expect(globalRow.locator('[data-core-basis]')).toHaveText('Full PPR scoring', { timeout: 30_000 })
     await globalRow.locator('xpath=..').screenshot({ path: test.info().outputPath('player-hero-global.png') })
     await page.screenshot({ path: test.info().outputPath('player-page-global.png'), fullPage: true })
     await context.close()

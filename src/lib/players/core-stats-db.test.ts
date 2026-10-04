@@ -1,16 +1,21 @@
 /**
- * core-stats-db.test.ts — the player page's core-stats read (D486(10)) over
- * the REAL local stack, outside a league (the default template, Scout
- * Standard), read as anon through RLS.
+ * core-stats-db.test.ts — the player page's core-stats read (D486(10)/(11))
+ * over the REAL local stack, outside a league (the preset systems — ESPN
+ * Standard default, Half PPR, Full PPR), read as anon through RLS.
  *
- * Pinned (stored literals): season points under Scout Standard (0.1/rec yd,
+ * Pinned (stored literals): season points under ESPN Standard (0.1/rec yd,
  * 6/rec TD, 0.1/rush yd); a bye-week row is not a game (avg 32 / 2 = 16);
  * standard competition ranking (two WRs tied at 32 share WR 1 and #2; the
  * next WR is WR 3 / #4); a player with no stored week is unranked with a
  * NULL total and NULL avg (never 0); no calendar ⇒ no week ⇒ NULL projection;
  * an unknown player is a 404.
  *
- * Season 2079 (unused elsewhere). Requires the local stack — D59(5). Fixture
+ * R1504 presets: a WR line of 5 catches / 80 yds / 1 TD scores ESPN 14,
+ * Half 16.5, Full PPR 19 (season 2078). R1506: a stored all-zero line (did
+ * not play) is not a game, and a still-live row counts in the total but not
+ * the average.
+ *
+ * Seasons 2079 / 2078 (unused elsewhere). Requires the local stack — D59(5). Fixture
  * hygiene (F199): every `pcs-` player and stat row is deleted before and after.
  */
 import { createClient } from '@supabase/supabase-js'
@@ -19,7 +24,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Database } from '@/types/database'
 
 import type { TimeProvider } from '../leagues/time/time-provider'
-import type { CoreStatsPayload } from './core-stats-ops'
+import type { CoreStatsPayload, ScoringSystemKey } from './core-stats-ops'
 import { readPlayerCoreStats } from './core-stats-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
@@ -50,6 +55,7 @@ beforeAll(async () => {
     { id: 'pcs-wr3', full_name: 'PCS Wr Three', position: 'WR' },
     { id: 'pcs-wr4', full_name: 'PCS Wr Rookie', position: 'WR' },
     { id: 'pcs-rb1', full_name: 'PCS Rb One', position: 'RB' },
+    { id: 'pcs-wr5', full_name: 'PCS Wr Five', position: 'WR' },
   ])
   if (players.error) throw new Error(players.error.message)
   const stats = await service.from('player_stats').insert([
@@ -59,14 +65,19 @@ beforeAll(async () => {
     { player_id: 'pcs-wr2', season: SEASON, week: 1, receiving_yards: 320 },
     { player_id: 'pcs-wr3', season: SEASON, week: 1, receiving_yards: 50 },
     { player_id: 'pcs-rb1', season: SEASON, week: 1, rush_yards: 400 },
+    // 2078 — the preset fixture line (wk1), a stored zero line (wk2 — did
+    // not play), and a still-live row (wk3).
+    { player_id: 'pcs-wr5', season: 2078, week: 1, receptions: 5, receiving_yards: 80, receiving_tds: 1 },
+    { player_id: 'pcs-wr5', season: 2078, week: 2, receptions: 0, receiving_yards: 0 },
+    { player_id: 'pcs-wr5', season: 2078, week: 3, receiving_yards: 30, is_live: true },
   ])
   if (stats.error) throw new Error(stats.error.message)
 })
 
 afterAll(cleanup)
 
-async function read(id: string) {
-  const r = await readPlayerCoreStats(anon, id, null, clock, { defaultSeason: SEASON })
+async function read(id: string, system: ScoringSystemKey = 'espn_standard', season = SEASON) {
+  const r = await readPlayerCoreStats(anon, id, { kind: 'system', system }, clock, { defaultSeason: season })
   return { status: r.status, body: r.body as unknown as CoreStatsPayload }
 }
 
@@ -75,7 +86,7 @@ describe('core stats read — default scoring over the whole pool', () => {
     const r = await read('pcs-wr1')
     expect(r.status).toBe(200)
     expect(r.body).toEqual({
-      basis: { kind: 'default' },
+      basis: { kind: 'system', system: 'espn_standard' },
       season: SEASON,
       week: null,
       total_points: 32,
@@ -97,6 +108,20 @@ describe('core stats read — default scoring over the whole pool', () => {
     const r = await read('pcs-wr4')
     expect(r.status).toBe(200)
     expect([r.body.total_points, r.body.games, r.body.avg_points, r.body.pos_rank, r.body.overall_rank]).toEqual([null, 0, null, null, null])
+  })
+
+  it('R1504: each preset scores the fixture line — ESPN 14, Half 16.5, Full PPR 19 (the completed-weeks avg); totals add the live wk3', async () => {
+    const got: Record<string, [number | null, number | null, number, string]> = {}
+    for (const sys of ['espn_standard', 'half_ppr', 'ppr'] as const) {
+      const r = await read('pcs-wr5', sys, 2078)
+      expect(r.status).toBe(200)
+      got[sys] = [r.body.avg_points, r.body.total_points, r.body.games, JSON.stringify(r.body.basis)]
+    }
+    expect(got).toEqual({
+      espn_standard: [14, 17, 1, '{"kind":"system","system":"espn_standard"}'],
+      half_ppr: [16.5, 19.5, 1, '{"kind":"system","system":"half_ppr"}'],
+      ppr: [19, 22, 1, '{"kind":"system","system":"ppr"}'],
+    })
   })
 
   it('an unknown player is a 404', async () => {

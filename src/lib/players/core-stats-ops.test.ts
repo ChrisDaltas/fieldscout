@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import { avgPerGame, basisLabel, competitionRanks, coreTiles, type CoreStatsPayload, gamesPlayed, MISSING } from './core-stats-ops'
+import {
+  avgPerGame,
+  basisLabel,
+  choiceValue,
+  completedGames,
+  competitionRanks,
+  coreStatsQuery,
+  coreTiles,
+  type CoreStatsPayload,
+  MISSING,
+  resolveChoice,
+  scoringOptions,
+} from './core-stats-ops'
 
 const player = { position: 'WR', sos: 7, bye_week: 9 }
 
 function payload(over: Partial<CoreStatsPayload> = {}): CoreStatsPayload {
   return {
-    basis: { kind: 'default' },
+    basis: { kind: 'system', system: 'espn_standard' },
     season: 2026,
     week: 5,
     total_points: 84.6,
@@ -43,8 +55,21 @@ describe('core stats — ranks (standard competition ranking)', () => {
 
 describe('core stats — avg per game', () => {
   it('a bye week is not a game', () => {
-    expect(gamesPlayed([1, 2, 3, 9, 10], 9)).toBe(4)
-    expect(avgPerGame(80, gamesPlayed([1, 2, 3, 9, 10], 9))).toBe(20)
+    const wk = (week: number) => ({ week, appeared: true, live: false })
+    expect(completedGames([1, 2, 3, 9, 10].map(wk), 9)).toHaveLength(4)
+  })
+
+  it('R1506: a zero line (did not play) and the live week are not games', () => {
+    const games = completedGames(
+      [
+        { week: 1, appeared: true, live: false },
+        { week: 2, appeared: false, live: false }, // stored zeros — missed the game
+        { week: 3, appeared: true, live: false },
+        { week: 4, appeared: true, live: true }, // still live — total yes, divisor no
+      ],
+      null,
+    )
+    expect(games.map((g) => g.week)).toEqual([1, 3])
   })
 
   it('no games → null (the tile shows —), never 0', () => {
@@ -58,9 +83,54 @@ describe('core stats — avg per game', () => {
 })
 
 describe('core stats — basis label', () => {
-  it('names the league, or the default', () => {
+  it('names the league, or the chosen preset (R1505)', () => {
     expect(basisLabel({ kind: 'league', league_name: 'Hadouken Bowl' })).toBe('Hadouken Bowl scoring')
-    expect(basisLabel({ kind: 'default' })).toBe('Standard scoring')
+    expect(basisLabel({ kind: 'system', system: 'espn_standard' })).toBe('ESPN Standard scoring')
+    expect(basisLabel({ kind: 'system', system: 'half_ppr' })).toBe('Half PPR scoring')
+    expect(basisLabel({ kind: 'system', system: 'ppr' })).toBe('Full PPR scoring')
+  })
+})
+
+describe('core stats — scoring dropdown (Chris 2026-10-04)', () => {
+  const leagues = [
+    { id: 'L1', name: 'Hadouken Bowl' },
+    { id: 'L2', name: 'Work League' },
+  ]
+
+  it('options: the three presets, then one per league the viewer is in', () => {
+    expect(scoringOptions(leagues)).toEqual([
+      { value: 'espn_standard', label: 'ESPN Standard' },
+      { value: 'half_ppr', label: 'Half PPR' },
+      { value: 'ppr', label: 'Full PPR' },
+      { value: 'league:L1', label: 'Hadouken Bowl' },
+      { value: 'league:L2', label: 'Work League' },
+    ])
+    expect(scoringOptions([]).map((o) => o.value)).toEqual(['espn_standard', 'half_ppr', 'ppr'])
+  })
+
+  it('defaults to ESPN Standard outside a league', () => {
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: null, leagues })).toEqual({ kind: 'system', system: 'espn_standard' })
+  })
+
+  it('?league= preselects that league, over a stored choice', () => {
+    expect(resolveChoice({ picked: null, leagueParam: 'L2', stored: 'ppr', leagues })).toEqual({ kind: 'league', leagueId: 'L2' })
+  })
+
+  it('a stored choice is remembered; a stored league they left falls back to the default', () => {
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'half_ppr', leagues })).toEqual({ kind: 'system', system: 'half_ppr' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L1', leagues })).toEqual({ kind: 'league', leagueId: 'L1' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:GONE', leagues })).toEqual({ kind: 'system', system: 'espn_standard' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'garbage', leagues })).toEqual({ kind: 'system', system: 'espn_standard' })
+  })
+
+  it('a pick changes the choice, and the request (query key + URL) moves with it — recompute on change', () => {
+    const before = resolveChoice({ picked: null, leagueParam: 'L1', stored: null, leagues })
+    const after = resolveChoice({ picked: 'ppr', leagueParam: 'L1', stored: null, leagues })
+    expect(choiceValue(before)).toBe('league:L1')
+    expect(choiceValue(after)).toBe('ppr')
+    expect(coreStatsQuery(before)).toBe('?league=L1')
+    expect(coreStatsQuery(after)).toBe('?scoring=ppr')
+    expect(coreStatsQuery(resolveChoice({ picked: 'half_ppr', leagueParam: null, stored: null, leagues }))).toBe('?scoring=half_ppr')
   })
 })
 
