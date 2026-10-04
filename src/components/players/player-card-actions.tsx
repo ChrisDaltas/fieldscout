@@ -54,22 +54,20 @@ import {
 // League context
 // ---------------------------------------------------------------------------
 
-export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; leagueId: string }) {
+/** The league's card view for one player — the reads + the pure derivation
+ *  the card's actions run on, shared by the card and the rail's Players tool
+ *  (one flow, D483). React Query dedupes the reads across many rows. */
+export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
   const { user } = useAuth()
   const league = useLeague(leagueId)
   const rosters = useRosters(leagueId)
   const pool = useLeaguePool(leagueId)
   const deadline = useTradeDeadline(leagueId)
-  // D481: held here so "Added X" survives the card re-deriving him as yours.
-  const move = useAddDrop(leagueId)
   const detail = league.data
-
   if (league.isPending || (rosters.isPending && !rosters.data) || (pool.isPending && !pool.data)) {
-    return <Skeleton className="h-12 w-full" />
+    return { state: 'loading' as const }
   }
-  if (!detail || rosters.isError || pool.isError) {
-    return <p className="text-[11px] font-medium text-n-3">Couldn’t read this league right now.</p>
-  }
+  if (!detail || rosters.isError || pool.isError) return { state: 'error' as const }
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const tz = detail.settings.draft.time_zone ?? null
   const nextRun = detail.waiver_window?.next_run_at ?? null
@@ -89,7 +87,30 @@ export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; le
     nextRunLocal: nextRun ? formatInstantWithDate(nextRun, tz).local : null,
     formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
   })
-  return <LeagueActionsBody view={view} leagueId={leagueId} myTeamId={myTeamId} move={move} />
+  return { state: 'ready' as const, view, myTeamId }
+}
+
+export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; leagueId: string }) {
+  const card = useCardLeagueView(player, leagueId)
+  // D481: held here so "Added X" survives the card re-deriving him as yours.
+  const move = useAddDrop(leagueId)
+  if (card.state === 'loading') return <Skeleton className="h-12 w-full" />
+  if (card.state === 'error') {
+    return <p className="text-[11px] font-medium text-n-3">Couldn’t read this league right now.</p>
+  }
+  return <LeagueActionsBody view={card.view} leagueId={leagueId} myTeamId={card.myTeamId} move={move} />
+}
+
+/** The rail's "+" (D483): the card's own pickup flow — the same confirm, the
+ *  same FAAB bid step, the same drop picker on a full roster — laid out
+ *  inline in a row (the + in the row, the step wrapping below it). Renders
+ *  nothing while loading or when he is not available to the viewer's team.
+ *  An add's readout is the host's to keep (`addDropKeys`): the row leaves
+ *  the free-agent list as soon as the rosters re-read. */
+export function RailPickup({ player, leagueId }: { player: PoolPlayer; leagueId: string }) {
+  const card = useCardLeagueView(player, leagueId)
+  if (card.state !== 'ready' || card.view.kind !== 'available' || !card.myTeamId) return null
+  return <PickupActions view={card.view} leagueId={leagueId} teamId={card.myTeamId} inline />
 }
 
 /** The block for one computed view — exported for the render tests. */
@@ -176,18 +197,22 @@ function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView,
   )
 }
 
-function PickupActions({
+export function PickupActions({
   view,
   leagueId,
   teamId,
   move: held,
   confirmOpen = false,
+  inline = false,
 }: {
   view: Extract<CardLeagueView, { kind: 'available' }>
   leagueId: string
   teamId: string
   move?: MoveHandle
   confirmOpen?: boolean
+  /** The rail's row layout (D483): the block dissolves into the row (CSS
+   *  `contents`) so the + sits in the row and the step wraps below it. */
+  inline?: boolean
 }) {
   const own = useAddDrop(leagueId)
   const move = held ?? own
@@ -214,7 +239,7 @@ function PickupActions({
   }
   if (claim.data) {
     return (
-      <p className="text-[12px] font-semibold text-ink" role="status" data-card-result>
+      <p className={cn('text-[12px] font-semibold text-ink', inline && 'basis-full text-[11px]')} role="status" data-card-result>
         {claimPlacedCopy(name, view.nextRunLocal)}
       </p>
     )
@@ -229,7 +254,7 @@ function PickupActions({
   const label = acquireLabel(acq.kind, name, acq.disabled ? acq.title : undefined)
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={inline ? 'contents' : 'flex flex-col gap-1.5'}>
       <span className="flex flex-wrap items-center gap-2">
         <Button
           variant="green"
@@ -247,9 +272,10 @@ function PickupActions({
         >
           <Icon name="plus" size={13} />
         </Button>
-        {acq.disabled && acq.title && <ClosedReason>{acq.title}</ClosedReason>}
+        {acq.disabled && acq.title && !inline && <ClosedReason>{acq.title}</ClosedReason>}
       </span>
       {choosing && !acq.disabled && (
+        <div className={inline ? 'basis-full pt-1.5' : 'contents'}>
         <AcquireStep
           kind={acq.kind}
           name={name}
@@ -269,9 +295,10 @@ function PickupActions({
             setBid(view.faab?.min ?? 0)
           }}
         />
+        </div>
       )}
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-card-refusal>
+        <p role="alert" className="basis-full rounded-sm border border-negative bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-card-refusal>
           {refusal instanceof Error ? refusal.message : 'The move was refused.'}
         </p>
       )}

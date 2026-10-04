@@ -8,7 +8,7 @@ import { AppHeader } from '@/components/layout/app-header'
 import { BottomTabs } from '@/components/layout/bottom-tabs'
 import { DraftBar } from '@/components/layout/draft-bar'
 import { MoreSheet } from '@/components/layout/more-sheet'
-import { ResearchRail } from '@/components/layout/rail/research-rail'
+import { ResearchRail, useActiveRailTool } from '@/components/layout/rail/research-rail'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopNav } from '@/components/layout/top-nav'
 import { ListFormDialog } from '@/components/lists/list-form-dialog'
@@ -45,6 +45,8 @@ export function AppShell({ children }: AppShellProps) {
     setMoreOpen(false)
   }, [pathname])
 
+  const railTool = useActiveRailTool()
+
   const fullBleed =
     FULL_BLEED_ROUTES.has(pathname) ||
     FULL_BLEED_PREFIXES.some((prefix) => pathname.startsWith(prefix))
@@ -57,8 +59,9 @@ export function AppShell({ children }: AppShellProps) {
           <TopNav variant="app" />
         </div>
 
-        {/* The rail strip is fixed-right (45px); clear it on desktop. */}
-        <div className="flex min-h-0 flex-1 lg:pr-rail-strip">
+        {/* The rail strip is fixed-right; clear it on desktop — and the
+            open panel too, so it never covers the page (D483). */}
+        <div className={cn('flex min-h-0 flex-1', railTool ? 'lg:pr-rail-open' : 'lg:pr-rail-strip')}>
           <Sidebar />
 
           <div className="flex min-w-0 flex-1 flex-col">

@@ -67,7 +67,9 @@ const FILTER_CHIP_CALLERS: Record<string, Reason> = {
 const CONVERTED: string[] = [
   'app/app/(shell)/admin/posts/page.tsx',
   'components/explore/explore-feed.tsx',
-  'components/layout/rail/players-panel.tsx',
+  // `components/layout/rail/players-panel.tsx`'s availability segment became
+  // the prototype's "On rosters" Switch at D483 (2026-10-03) — a two-state
+  // toggle, not a filter row; recorded rather than dropped silently.
   'components/lists/generate-ai-modal.tsx',
   'components/lists/list-form-dialog.tsx',
   // `components/lists/lists-browse.tsx`'s position row was converted at LV.11
