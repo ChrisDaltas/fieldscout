@@ -290,6 +290,13 @@ describe('trade card — under review', () => {
     expect(ops(card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: false, inSeason: true } }))).toEqual([])
     expect(ops(card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } }))).toEqual(['approve', 'veto', 'force'])
   })
+  it('override mode is said only by the league header indicator — no badge on the card (D489)', () => {
+    const t = trade({ status: 'in_review', review: { mode: 'league_vote', ends_at: null, ms_remaining: null }, tally: tally({ can_vote: false, cannot_vote_because: 'no_team' }) })
+    const html = card({ trade: t, viewer: { teamId: null, isCommissioner: true, overrideMode: true, inSeason: true } })
+    expect(html).toContain('data-trade-override')
+    expect(html).not.toContain('Override')
+    expect(html).not.toContain('bg-brand')
+  })
 })
 
 describe('trade card — waiting, closed, and the commissioner’s answer', () => {

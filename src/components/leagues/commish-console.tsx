@@ -153,9 +153,13 @@ function ConsoleContent({
       </div>
 
       <Card data-commish-recent>
+        <CardHeader className="min-h-0 py-2">
+          <CardTitle className="text-[12px]">{RECENT_TITLE}</CardTitle>
+        </CardHeader>
         <CardContent className="flex flex-col gap-2 px-card-pad py-3">
           <CommishLogSection
             title={RECENT_TITLE}
+            titleInCardHeader
             className="border-t-0 pt-0"
             items={newest?.items}
             pending={log.isPending}

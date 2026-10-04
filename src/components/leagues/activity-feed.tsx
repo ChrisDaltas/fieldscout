@@ -351,6 +351,7 @@ export function CommishLogSection({
   highlightId = null,
   older,
   className,
+  titleInCardHeader = false,
 }: CommishLogSectionProps & {
   teamNames: ReadonlyMap<string, string>
   leagueTimeZone: string | null
@@ -360,6 +361,9 @@ export function CommishLogSection({
   highlightId?: string | null
   older?: ShowOlderProps
   className?: string
+  /** The host card's header already shows the title — keep it for screen
+   *  readers only, so it never reads twice. */
+  titleInCardHeader?: boolean
 }) {
   const lines = items ? commishLogLines(items, teamNames, memberNames) : []
   // R1468: a lineup fix (one receipt per move) reads as ONE line that opens to each receipt.
@@ -371,7 +375,7 @@ export function CommishLogSection({
   }, [highlightShown])
   return (
     <section className={cn('flex flex-col gap-2 border-t border-ink pt-2', className)} aria-label={title} data-commish-log>
-      <h3 className="text-[12px] font-bold text-ink">{title}</h3>
+      <h3 className={cn('text-[12px] font-bold text-ink', titleInCardHeader && 'sr-only')}>{title}</h3>
       {problem != null && items && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
       {pending && !items ? (
         <div className="flex flex-col gap-1.5" data-skeleton="commish-log">
