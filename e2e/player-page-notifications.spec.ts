@@ -208,14 +208,15 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     await page.keyboard.press('Escape')
     await page.setViewportSize({ width: 1280, height: 900 })
 
-    // The deep link renders the same view under the standard header.
+    // The old deep link lands on Home with the modal open (Chris 2026-10-04,
+    // "Player links open the modal"); closing it clears the param.
     await page.goto(`/app/players/${playerId}`)
-    const deep = page.locator('[data-player-view="page"]')
+    await expect(page).toHaveURL(new RegExp(`/app\\?player=${playerId}$`))
+    const deep = page.locator('[data-player-view="modal"]')
     await expect(deep).toBeVisible({ timeout: 60_000 })
-    const shellHeader = page.locator('header:has(h3)')
-    await expect(shellHeader.locator('h3')).toHaveText('Player')
-    expect((await shellHeader.boundingBox())?.height).toBeLessThanOrEqual(60)
     await expect(deep.locator('[data-season-table]')).toBeVisible({ timeout: 30_000 })
+    await page.keyboard.press('Escape')
+    await expect(page).toHaveURL(/\/app$/)
     await context.close()
   })
 
@@ -237,7 +238,7 @@ test.describe('the full player page + rail notifications (real browser)', () => 
       if (ins.error) throw ins.error
       seededKeyStatPlayers.push(p.id)
       await page.goto(`/app/players/${p.id}`)
-      const view = page.locator('[data-player-view="page"]')
+      const view = page.locator('[data-player-view="modal"]')
       await expect(view.locator('[data-key-stats="primary"]')).toBeVisible({ timeout: 60_000 })
       if (pos === 'QB') await expect(view.locator('[data-key-stat="comp_pct"] p').first()).toHaveText('66.7%')
       if (pos === 'WR') await expect(view.locator('[data-key-stat="ypt"] p').first()).toHaveText(/^\d+\.\d$/)

@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { useOpenPlayer } from '@/hooks/use-open-player'
 
 export interface RosterPlayer {
   id: string
@@ -46,7 +46,7 @@ interface TeamRosterProps {
  * page query.
  */
 export function TeamRoster({ players }: TeamRosterProps) {
-  const openPlayer = usePlayerWindowsStore((s) => s.open)
+  const openPlayer = useOpenPlayer()
 
   if (players.length === 0) {
     return (
