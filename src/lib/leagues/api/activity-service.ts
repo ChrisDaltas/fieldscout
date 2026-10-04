@@ -67,6 +67,7 @@
  * No Date/random read anywhere in this file (the `src/lib/leagues/**` ESLint
  * fences): the cursor is the caller's, the ordering is the database's.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -159,11 +160,11 @@ export const activityQuerySchema = z.strictObject({
     // A `before_id` with no `before` is not a narrower cursor, it is a
     // MEANINGLESS one — and silently ignoring it would page as if the caller
     // had asked for the whole feed. Refuse it by name.
-    message: 'before_id needs the before instant it belongs to.',
+    message: 'That filter combination isn’t supported.',
     path: ['before_id'],
   })
   .refine((query) => query.topic === undefined || (query.type === undefined && query.week === undefined && query.team_id === undefined), {
-    message: 'topic is its own filter — it can’t be combined with type, week or team_id.',
+    message: 'That filter combination isn’t supported — a topic can’t be combined with a type, week or team.',
     path: ['topic'],
   })
 export type ActivityQuery = z.input<typeof activityQuerySchema>
@@ -562,7 +563,7 @@ export async function readActivity(
     }
     const { data, error } = await query
     if (error) {
-      return { status: 500, body: { error: `commissioner_actions: ${error.message}` } }
+      return dbFailure('commissioner_actions', error)
     }
     vetoPosts = (data ?? []).map((row) => vetoReceiptPost({ ...row, actor: row.actor ?? null }))
   }
@@ -587,7 +588,7 @@ export async function readActivity(
       .eq('league_id', leagueId)
       .in('created_at', instants)
     if (error) {
-      return { status: 500, body: { error: `commissioner_actions: ${error.message}` } }
+      return dbFailure('commissioner_actions', error)
     }
     receipts = data ?? []
   }

@@ -129,7 +129,7 @@ export async function patchMember(
   if (parsed.data.is_autodraft !== undefined && parsed.data.role !== undefined) {
     return {
       status: 400,
-      body: { error: 'Send either `role` or `is_autodraft`, not both.' },
+      body: { error: 'Something went wrong — try again.' },
     }
   }
   if (parsed.data.is_autodraft !== undefined) {
@@ -201,7 +201,7 @@ export const removeMemberInputSchema = z
     path: ['successor_user_id'],
   })
   .refine((body) => body.mode === 'takeover' || !body.successor_user_id, {
-    message: 'successor_user_id only applies to a takeover.',
+    message: 'Something went wrong — try again.',
     path: ['successor_user_id'],
   })
 

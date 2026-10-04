@@ -409,7 +409,7 @@ describe('GET …/matchups?week=', () => {
     const result = await readMatchups(managerClient, leagueId, { week: '9' })
     expect(result.status).toBe(404)
     expect(errorText(result)).toBe(
-      `Week 9 is not on this league’s calendar (season ${SYNTHETIC_SEASON}; league_weeks holds weeks 1–3)`,
+      `Week 9 isn’t on this league’s schedule.`,
     )
   })
 

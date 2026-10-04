@@ -55,6 +55,7 @@
  * caller's `now` (the route passes the TimeProvider's); no Date or random
  * read in this file.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database, Json } from '@/types/database'
@@ -357,7 +358,7 @@ export async function readCommishSummary(
   const refused = await assertLeagueMember(supabase, leagueId)
   if (refused) return refused
   const { data: isCommish, error: commishError } = await supabase.rpc('is_league_commish', { p_league_id: leagueId })
-  if (commishError) return { status: 500, body: { error: `is_league_commish: ${commishError.message}` } }
+  if (commishError) return dbFailure('is_league_commish', commishError)
   if (isCommish !== true) return { status: 403, body: { error: COMMISH_SUMMARY_FORBIDDEN_MESSAGE } }
 
   const { data: league, error: leagueError } = await supabase
@@ -366,7 +367,7 @@ export async function readCommishSummary(
     .eq('id', leagueId)
     .is('deleted_at', null)
     .maybeSingle()
-  if (leagueError) return { status: 500, body: { error: `leagues: ${leagueError.message}` } }
+  if (leagueError) return dbFailure('leagues', leagueError)
   if (!league) return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
 
   const [teams, trades, matchups] = await Promise.all([

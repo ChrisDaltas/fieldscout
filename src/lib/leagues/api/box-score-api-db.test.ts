@@ -259,7 +259,7 @@ describe('GET …/matchups/box?week=&team= — the gate and the query', () => {
   it('a week off the calendar is a 404 BY NAME with the ladder’s bounds', async () => {
     const result = await readBoxScore(managerClient, leagueId, { week: '9', team: commishTeamId })
     expect(result.status).toBe(404)
-    expect(errorText(result)).toBe(`Week 9 is not on this league’s calendar (season ${SYNTHETIC_SEASON}; league_weeks holds weeks 1–2)`)
+    expect(errorText(result)).toBe(`Week 9 isn’t on this league’s schedule.`)
   })
 
   it('a team that is not a franchise of THIS league is a 404 by name — another league’s team included', async () => {

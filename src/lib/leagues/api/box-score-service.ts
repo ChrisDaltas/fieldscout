@@ -90,6 +90,7 @@
  * to the live computation with `stored_note` saying why — never a 500,
  * never silent. Any other error is a 500 as before.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -315,7 +316,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     .eq('id', leagueId)
     .is('deleted_at', null)
     .maybeSingle()
-  if (leagueError) return { status: 500, body: { error: `leagues: ${leagueError.message}` } }
+  if (leagueError) return dbFailure('leagues', leagueError)
   if (!league) {
     return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
   }
@@ -325,15 +326,13 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     supabase.from('league_weeks').select('week').eq('league_id', leagueId).eq('season', league.season),
     supabase.from('teams').select('id').eq('id', teamId).eq('league_id', leagueId).maybeSingle(),
   ])
-  if (weekRes.error) return { status: 500, body: { error: `league_weeks: ${weekRes.error.message}` } }
-  if (ladderRes.error) return { status: 500, body: { error: `league_weeks: ${ladderRes.error.message}` } }
-  if (teamRes.error) return { status: 500, body: { error: `teams: ${teamRes.error.message}` } }
+  if (weekRes.error) return dbFailure('league_weeks', weekRes.error)
+  if (ladderRes.error) return dbFailure('league_weeks', ladderRes.error)
+  if (teamRes.error) return dbFailure('teams', teamRes.error)
   if (!weekRes.data) {
-    const weeks = (ladderRes.data ?? []).map((r) => r.week)
-    const bounds = weeks.length > 0 ? `weeks ${Math.min(...weeks)}–${Math.max(...weeks)}` : 'no weeks (no season calendar yet)'
     return {
       status: 404,
-      body: { error: `Week ${week} is not on this league’s calendar (season ${league.season}; league_weeks holds ${bounds})` },
+      body: { error: `Week ${week} isn’t on this league’s schedule.` },
     }
   }
   if (!teamRes.data) {
@@ -366,8 +365,8 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       .order('kickoff_at', { ascending: true })
       .order('id', { ascending: true }),
   ])
-  if (lineupRes.error) return { status: 500, body: { error: `team_lineups: ${lineupRes.error.message}` } }
-  if (gamesRes.error) return { status: 500, body: { error: `nfl_games: ${gamesRes.error.message}` } }
+  if (lineupRes.error) return dbFailure('team_lineups', lineupRes.error)
+  if (gamesRes.error) return dbFailure('nfl_games', gamesRes.error)
   const games = (gamesRes.data ?? []) as BoxGame[]
   const gamesCapped = assertBelowPostgrestCap(games, 'nfl_games')
   if (gamesCapped) return gamesCapped
@@ -406,7 +405,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
       .order('slot', { ascending: true })
     if (storedRes.error) {
       if (!isMissingPlayerPointsStore(storedRes.error)) {
-        return { status: 500, body: { error: `league_week_player_points: ${storedRes.error.message}` } }
+        return dbFailure('league_week_player_points', storedRes.error)
       }
       empty.stored_note = PRE_158_SENTENCE
     } else if ((storedRes.data ?? []).length === 0) {
@@ -424,7 +423,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
         .eq('season', league.season)
         .eq('week', week)
         .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
-      if (pairRes.error) return { status: 500, body: { error: `matchups: ${pairRes.error.message}` } }
+      if (pairRes.error) return dbFailure('matchups', pairRes.error)
       const pairs = pairRes.data ?? []
       if (pairs.length > 0 && pairs.every((m) => m.is_overridden)) pairing = 'overridden'
       else if (pairs.length === 0) pairing = 'none'
@@ -458,8 +457,8 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
           .in('player_id', playerIds)
       : Promise.resolve({ data: [], error: null }),
   ])
-  if (playersRes.error) return { status: 500, body: { error: `players: ${playersRes.error.message}` } }
-  if (statsRes.error) return { status: 500, body: { error: `player_stats: ${statsRes.error.message}` } }
+  if (playersRes.error) return dbFailure('players', playersRes.error)
+  if (statsRes.error) return dbFailure('player_stats', statsRes.error)
   const players = new Map((playersRes.data ?? []).map((p) => [p.id, p]))
   const statRows = (statsRes.data ?? []) as unknown as StatLineRow[]
   const statsCapped = assertBelowPostgrestCap(statRows, 'player_stats')
@@ -530,7 +529,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
   try {
     team = computeTeamWeek(snapshot, teamId, refs, statsByPlayer)
   } catch (e) {
-    return { status: 500, body: { error: `scoring: ${e instanceof Error ? e.message : String(e)}` } }
+    return dbFailure('scoring', { message: e instanceof Error ? e.message : String(e) })
   }
   const scoredByPlayer = new Map(team.starters.map((s) => [s.player_id, s]))
 
@@ -602,7 +601,7 @@ async function readBench(
   starterIds: ReadonlySet<string>,
 ): Promise<{ lines: BoxBenchLine[] } | ServiceResult> {
   const rosterRes = await supabase.from('league_rosters').select('player_id').eq('league_id', leagueId).eq('team_id', teamId)
-  if (rosterRes.error) return { status: 500, body: { error: `league_rosters: ${rosterRes.error.message}` } }
+  if (rosterRes.error) return dbFailure('league_rosters', rosterRes.error)
   const ids = [...new Set((rosterRes.data ?? []).map((r) => r.player_id))].filter((id) => !starterIds.has(id))
   if (ids.length === 0) return { lines: [] }
   const [playersRes, statsRes] = await Promise.all([
@@ -614,8 +613,8 @@ async function readBench(
       .eq('week', week)
       .in('player_id', ids),
   ])
-  if (playersRes.error) return { status: 500, body: { error: `players: ${playersRes.error.message}` } }
-  if (statsRes.error) return { status: 500, body: { error: `player_stats: ${statsRes.error.message}` } }
+  if (playersRes.error) return dbFailure('players', playersRes.error)
+  if (statsRes.error) return dbFailure('player_stats', statsRes.error)
   const statRows = (statsRes.data ?? []) as unknown as StatLineRow[]
   const capped = assertBelowPostgrestCap(statRows, 'player_stats')
   if (capped) return capped
@@ -630,7 +629,7 @@ async function readBench(
   try {
     scored = computeTeamWeek(snapshot, teamId, refs, statsByPlayer)
   } catch (e) {
-    return { status: 500, body: { error: `scoring: ${e instanceof Error ? e.message : String(e)}` } }
+    return dbFailure('scoring', { message: e instanceof Error ? e.message : String(e) })
   }
   const byId = new Map(scored.starters.map((s) => [s.player_id, s]))
   const lines: BoxBenchLine[] = ids.map((id) => {

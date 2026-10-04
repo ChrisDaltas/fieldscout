@@ -120,7 +120,9 @@ describe('a set re-reads the week’s row and the league’s rosters — on BOTH
 
     expect((failure as { name: string }).name).toBe('LeagueActionError')
     expect((failure as { status: number }).status).toBe(409)
-    expect((failure as Error).message).toBe(LOCK_REFUSAL)
+    // D482: the member reads the phrase map's sentence; the raw text rides `raw` for parsers.
+    expect((failure as Error).message).toBe('Dev RB Locked’s game has started — he’s locked and can’t be moved into or out of your lineup.')
+    expect((failure as { raw: string }).raw).toBe(LOCK_REFUSAL)
 
     // THE R822(i) PIN. The page held a pool view that let a kicked-off player
     // be seated; the server refused from `nfl_games` at now(). Nothing was

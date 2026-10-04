@@ -12,36 +12,45 @@
  * No Date/time reads here despite living under `src/lib/leagues/**` (the
  * TimeProvider ESLint guard's scope) — it's pure request plumbing.
  */
+import { friendlyMessage } from './friendly-messages'
 
 export class LeagueActionError extends Error {
   status: number
   fieldErrors?: Record<string, string[]>
-  constructor(status: number, message: string, fieldErrors?: Record<string, string[]>) {
+  /** The server's text as sent — for code that PARSES a refusal
+   *  (`dropsNeeded`, `isDeadlineRefusal`); `message` is the member's copy. */
+  raw: string
+  constructor(status: number, message: string, fieldErrors?: Record<string, string[]>, raw?: string) {
     super(message)
     this.name = 'LeagueActionError'
     this.status = status
     this.fieldErrors = fieldErrors
+    this.raw = raw ?? message
   }
 }
 
+/** The server's raw text behind an error (parsers read this, never the copy). */
+export function rawErrorText(error: unknown): string | null {
+  if (error instanceof LeagueActionError) return error.raw
+  return error instanceof Error ? error.message : null
+}
+
 /**
- * F116 (MP.11): a `RAISE EXCEPTION` message arrives on the wire as
- * `create_mock_draft: you already have 3 active mock drafts — finish or
- * delete one first (§22.5)`. The BODY is deliberate product copy and is
- * surfaced verbatim (§16.5.2); the `<function_name>: ` prefix and the
- * trailing `(§x.y)` spec citation are the raiser's context, not copy, and
- * they reached launch-facing users through both mock launchers (observed in
- * MP.4's error-state drive). Stripped HERE, once, at the one surfacing
- * layer every launcher throws through — never per call site — so the route
- * bodies (and every stack-backed assertion on them) keep the raw string.
- * The tail decision: the spec citation goes too — a section number is a
- * builder's pointer, not a user's.
+ * F116 (MP.11) → friendly server messages (D482): a `RAISE EXCEPTION`
+ * message arrives on the wire as `set_lineup: Josh Allen's game kicked off at
+ * … (§11.2, lineup_lock = per_player_kickoff); wanted "QB:0"`. The member
+ * reads it through THIS one function, at the one surfacing layer every
+ * league hook throws through — never per call site — so route bodies (and
+ * every stack-backed assertion on them) keep the raw string. The rules live
+ * in `friendly-messages.ts` (phrase map, then the generic cleanup).
  */
 export function userFacingMessage(raw: string): string {
-  return raw
-    .replace(/^[a-z0-9_]+: /, '')
-    .replace(/\s*\(§\d+(?:\.\d+)*\)\s*$/, '')
-    .trim()
+  return friendlyMessage(raw)
+}
+
+/** A per-field error map, each message made friendly. */
+export function friendlyFieldErrors(fieldErrors: Record<string, string[]>): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(fieldErrors).map(([k, v]) => [k, (v ?? []).map(userFacingMessage)]))
 }
 
 function firstFieldMessage(fieldErrors: Record<string, string[]>): string | undefined {
@@ -69,7 +78,12 @@ export async function sendLeagueAction<T = unknown>(
       typeof error === 'string'
         ? error
         : (fieldErrors && firstFieldMessage(fieldErrors)) ?? 'Something went wrong. Please try again.'
-    throw new LeagueActionError(response.status, userFacingMessage(message), fieldErrors)
+    throw new LeagueActionError(
+      response.status,
+      userFacingMessage(message),
+      fieldErrors && friendlyFieldErrors(fieldErrors),
+      message,
+    )
   }
 
   return body as T

@@ -151,7 +151,7 @@ describe('useCommishEditScore — /commish/score', () => {
 
     expect((failure as { name: string }).name).toBe('LeagueActionError')
     expect((failure as { status: number }).status).toBe(400)
-    expect((failure as Error).message).toBe('a reason is required — this verb writes an audited commissioner_actions row the whole league can read (§15.4, §10.3)')
+    expect((failure as Error).message).toBe('a reason is required — this verb writes an audited commissioner actions row the whole league can read') // D482: the one cleaner
     // NOT retried — one action_id, one wire call.
     expect(calls).toHaveLength(1)
     expectCacheUntouched(client)

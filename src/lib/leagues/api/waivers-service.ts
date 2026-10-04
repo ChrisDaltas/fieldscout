@@ -47,6 +47,7 @@
  * No Date/random read anywhere in this file (the `src/lib/leagues/**` ESLint
  * fences): every `action_id` is minted per gesture by the HOOK.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -266,9 +267,9 @@ export async function readClaims(
     supabase.rpc('is_league_commish', { p_league_id: leagueId }),
     supabase.from('leagues').select('waiver_type, faab_budget, settings').eq('id', leagueId).is('deleted_at', null).maybeSingle(),
   ])
-  if (seatRes.error) return { status: 500, body: { error: `league_members: ${seatRes.error.message}` } }
-  if (commishRes.error) return { status: 500, body: { error: `is_league_commish: ${commishRes.error.message}` } }
-  if (leagueRes.error) return { status: 500, body: { error: `leagues: ${leagueRes.error.message}` } }
+  if (seatRes.error) return dbFailure('league_members', seatRes.error)
+  if (commishRes.error) return dbFailure('is_league_commish', commishRes.error)
+  if (leagueRes.error) return dbFailure('leagues', leagueRes.error)
   if (!leagueRes.data) {
     return { status: 500, body: { error: 'leagues: the league row read empty after membership passed' } }
   }
@@ -288,8 +289,8 @@ export async function readClaims(
     supabase.from('teams').select('id').eq('id', teamId).eq('league_id', leagueId).maybeSingle(),
     supabase.from('league_members').select('faab_balance, waiver_priority').eq('league_id', leagueId).eq('team_id', teamId).maybeSingle(),
   ])
-  if (teamRes.error) return { status: 500, body: { error: `teams: ${teamRes.error.message}` } }
-  if (teamSeatRes.error) return { status: 500, body: { error: `league_members: ${teamSeatRes.error.message}` } }
+  if (teamRes.error) return dbFailure('teams', teamRes.error)
+  if (teamSeatRes.error) return dbFailure('league_members', teamSeatRes.error)
   if (!teamRes.data) {
     return { status: 404, body: { error: 'That team isn’t part of this league.' } }
   }
@@ -305,7 +306,7 @@ export async function readClaims(
     .order('id', { ascending: false })
   if (status === 'pending') claimsQuery = claimsQuery.eq('status', 'pending')
   const { data: claimRows, error: claimsError } = await claimsQuery
-  if (claimsError) return { status: 500, body: { error: `waiver_claims: ${claimsError.message}` } }
+  if (claimsError) return dbFailure('waiver_claims', claimsError)
   const rows = claimRows ?? []
   const capped = assertBelowPostgrestCap(rows, 'waiver_claims')
   if (capped) return capped
@@ -314,7 +315,7 @@ export async function readClaims(
   const playersById = new Map<string, { full_name: string; position: string; team: string | null }>()
   if (playerIds.length > 0) {
     const { data: players, error } = await supabase.from('players').select('id, full_name, position, team').in('id', playerIds)
-    if (error) return { status: 500, body: { error: `players: ${error.message}` } }
+    if (error) return dbFailure('players', error)
     for (const p of players ?? []) playersById.set(p.id, p)
   }
   const player = (id: string): WaiverClaimPlayer => {
@@ -430,7 +431,7 @@ export async function reorderClaim(
     .eq('id', cid)
     .eq('league_id', leagueId)
     .maybeSingle()
-  if (claimError) return { status: 500, body: { error: `waiver_claims: ${claimError.message}` } }
+  if (claimError) return dbFailure('waiver_claims', claimError)
   if (!claim) return { status: 403, body: { error: WAIVER_CLAIM_FORBIDDEN_MESSAGE } }
   if (claim.status !== 'pending') {
     return {
@@ -446,7 +447,7 @@ export async function reorderClaim(
     .eq('status', 'pending')
     .order('claim_order', { ascending: true })
     .order('id', { ascending: true })
-  if (pendingError) return { status: 500, body: { error: `waiver_claims: ${pendingError.message}` } }
+  if (pendingError) return dbFailure('waiver_claims', pendingError)
   const ids = (pending ?? []).map((row) => row.id)
   if (!ids.includes(cid)) {
     // It was pending a moment ago and is visible to us — a settle/cancel in

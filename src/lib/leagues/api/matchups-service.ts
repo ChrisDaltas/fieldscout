@@ -50,6 +50,7 @@
  * No Date/random read anywhere in this file (the `src/lib/leagues/**`
  * ESLint fences) — the week's live/final state is the database's.
  */
+import { dbFailure } from './db-failure'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -137,7 +138,7 @@ export async function readMatchups(
     .eq('id', leagueId)
     .is('deleted_at', null)
     .maybeSingle()
-  if (leagueError) return { status: 500, body: { error: `leagues: ${leagueError.message}` } }
+  if (leagueError) return dbFailure('leagues', leagueError)
   // The gate saw a live row (a soft-deleted league is its 404 by name —
   // R812); empty here means deleted between the two reads: a fault.
   if (!league) {
@@ -188,18 +189,15 @@ export async function readMatchups(
     ['team_week_results', resultsRes],
     ['teams', teamsRes],
   ] as const) {
-    if (res.error) return { status: 500, body: { error: `${what}: ${res.error.message}` } }
+    if (res.error) return dbFailure(what, res.error)
   }
 
   // The week must be ON the league's calendar — an absent row is a 404 by
   // name with the ladder's bounds, never an empty week (rule 10).
   if (!weekRes.data) {
-    const weeks = (ladderRes.data ?? []).map((r) => r.week)
-    const bounds =
-      weeks.length > 0 ? `weeks ${Math.min(...weeks)}–${Math.max(...weeks)}` : 'no weeks (no season calendar yet)'
     return {
       status: 404,
-      body: { error: `Week ${week} is not on this league’s calendar (season ${league.season}; league_weeks holds ${bounds})` },
+      body: { error: `Week ${week} isn’t on this league’s schedule.` },
     }
   }
 
