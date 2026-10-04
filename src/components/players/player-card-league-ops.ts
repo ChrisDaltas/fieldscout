@@ -197,9 +197,35 @@ export function acquireAction(
   return { kind: 'none', disabled: true, title }
 }
 
-/** The +'s accessible name: what a press does, with his name. */
-export function acquireLabel(kind: Acquire['kind'], name: string): string {
+/** The +'s accessible name: what a press does, with his name. A closed +
+ *  (`none`) says it can't, and why (R1481) — never "Add X" on a dead button. */
+export function acquireLabel(kind: Acquire['kind'], name: string, reason?: string): string {
+  if (kind === 'none') {
+    const why = reason?.trim().replace(/\.$/, '')
+    return why ? `Can’t pick up ${name} — ${why.charAt(0).toLowerCase()}${why.slice(1)}` : `Can’t pick up ${name} right now`
+  }
   return kind === 'claim' ? `Claim ${name}` : `Add ${name}`
+}
+
+/**
+ * The one step every + opens first (Chris 2026-10-03, "Always confirm first",
+ * clarified: confirm an instant add or a waiver claim; a FAAB claim's step IS
+ * the bid — no confirm on top — D481(n)): one plain line saying what will
+ * happen. An add lands on your bench; a priority claim names when it
+ * processes and that it uses your priority; a FAAB claim heads its bid.
+ */
+export function acquireConfirmCopy(
+  input: { kind: 'add' } | { kind: 'claim'; nextRunLocal: string | null; bid: number | null },
+  name: string,
+): string {
+  if (input.kind === 'add') return `Add ${name} to your bench?`
+  if (input.bid !== null) return `Your bid for ${name}: $${input.bid}`
+  return `Claim ${name} — processes ${input.nextRunLocal ?? 'at the next waiver run'}. Uses your waiver priority.`
+}
+
+/** The confirm button's word. */
+export function acquireConfirmVerb(kind: 'add' | 'claim'): string {
+  return kind === 'claim' ? 'Place claim' : 'Add'
 }
 
 /** What a placed claim says, in plain words. */

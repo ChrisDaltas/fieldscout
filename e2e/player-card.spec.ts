@@ -119,4 +119,53 @@ test.describe('the player card — open from My Team, drop with confirmation (re
     await expect(actions.locator('[data-card-action="acquire"]')).toHaveCount(0)
     await context.close()
   })
+  // D481(n) (Chris 2026-10-03, "Always confirm first"; clarified: an instant
+  // add or a waiver claim gets a confirm, a FAAB claim's step IS its bid).
+  // The + on a free agent opens ONE step on both surfaces — nothing is sent
+  // until its button is pressed, and Cancel returns to where it started.
+  test('manager: the + opens one step first — on the Players page and on the card; Cancel sends nothing', async ({ browser }) => {
+    const { leagueId } = fixture()
+    const context = await browser.newContext({ storageState: STORAGE_STATE.devPro })
+    const page = await context.newPage()
+    const posts: string[] = []
+    page.on('request', (req) => {
+      if (req.method() === 'POST' && /\/api\/leagues\/[^/]+\/(transactions|waivers)$/.test(new URL(req.url()).pathname)) posts.push(req.url())
+    })
+    await page.goto(`/app/leagues/${leagueId}/players`)
+    const row = page.locator('[data-pool-row][data-availability]').filter({ has: page.locator('[data-action="acquire"]:not([disabled])') }).first()
+    await expect(row).toBeVisible({ timeout: 60_000 })
+    const plus = row.locator('[data-action="acquire"]')
+    const kind = await plus.getAttribute('data-acquire')
+    expect(kind === 'add' || kind === 'claim', `the + runs an add or a claim (got ${kind})`).toBe(true)
+
+    // Surface 1 — the Players page row: the dialog's one step.
+    await plus.click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.locator('[data-acquire-copy]')).toBeVisible()
+    await expect(dialog.locator(`[data-acquire-confirm="${kind}"]`)).toHaveText(kind === 'add' ? 'Add' : 'Place claim')
+    await page.screenshot({ path: test.info().outputPath('confirm-players-page.png') })
+    await dialog.locator('[data-acquire-cancel]').click()
+    await expect(dialog).toHaveCount(0)
+    await expect(plus).toBeEnabled()
+
+    // Surface 2 — the same player's card: the step inline, then Cancel.
+    await row.locator('[data-player-link]').first().click()
+    const actions = page.locator('[data-card-actions="league"]')
+    await expect(actions).toBeVisible({ timeout: 30_000 })
+    const cardPlus = actions.locator('[data-card-action="acquire"]')
+    await expect(cardPlus).toHaveAttribute('data-acquire', kind!)
+    await expect(actions.locator('[data-card-acquire-choice]')).toHaveCount(0)
+    await cardPlus.click()
+    await expect(actions.locator('[data-card-acquire-choice]')).toBeVisible()
+    await expect(actions.locator('[data-card-acquire-copy]')).toBeVisible()
+    await expect(actions.locator('[data-card-acquire-confirm]')).toHaveText(kind === 'add' ? 'Add' : 'Place claim')
+    await expect(cardPlus).toBeDisabled()
+    await page.screenshot({ path: test.info().outputPath('confirm-player-card.png') })
+    await actions.locator('[data-card-acquire-cancel]').click()
+    await expect(actions.locator('[data-card-acquire-choice]')).toHaveCount(0)
+    await expect(cardPlus).toBeEnabled()
+
+    expect(posts, 'a + and a Cancel send nothing').toEqual([])
+    await context.close()
+  })
 })

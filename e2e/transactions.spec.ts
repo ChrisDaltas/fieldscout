@@ -308,6 +308,8 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await claim.click()
       const dialog = page.getByRole('dialog')
       await expect(dialog.locator('[data-claim-form="faab"]')).toBeVisible()
+      // D481(n): a FAAB claim's one step IS the bid — no confirm on top.
+      await expect(dialog.locator('[data-acquire-confirm="claim"]')).toHaveText('Place claim')
       await dialog.locator('[data-claim-bid-input]').fill(String(bid))
       await dialog.locator('[data-claim-drop]').click()
       await page.getByRole('option', { name: new RegExp(escapeRe(drop.full_name)) }).click()

@@ -27,6 +27,7 @@ import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { DraftCardActions, LeagueActionsBody } from './player-card-actions'
 import { GLOBAL_CARD_CONTEXT, leagueCardContext } from './player-card-context'
 import {
+  acquireConfirmCopy,
   acquireLabel,
   bidAllowed,
   cardLeagueView,
@@ -274,6 +275,21 @@ describe('acquireAction — the one + per state', () => {
     expect(claimPlacedCopy('Josh Allen', 'Wed 3:00 AM')).toBe('Claim placed for Josh Allen — processes Wed 3:00 AM.')
     expect(claimPlacedCopy('Josh Allen', null)).toBe('Claim placed for Josh Allen — processes at the next waiver run.')
   })
+  it('R1481: a closed + is named for WHY, never "Add X"', () => {
+    expect(acquireLabel('none', 'Josh Allen', 'Roster moves open once the draft is done.')).toBe('Can’t pick up Josh Allen — roster moves open once the draft is done')
+    expect(acquireLabel('none', 'Josh Allen')).toBe('Can’t pick up Josh Allen right now')
+    expect(acquireLabel('none', 'Josh Allen', LOCKED_ADD_TITLE)).toMatch(/^Can’t pick up Josh Allen — locked — this player’s game has started/)
+  })
+  it('D481(n): the confirm’s plain words — add, priority claim, FAAB bid step', () => {
+    expect(acquireConfirmCopy({ kind: 'add' }, 'Josh Allen')).toBe('Add Josh Allen to your bench?')
+    expect(acquireConfirmCopy({ kind: 'claim', nextRunLocal: 'Wed 12:00 AM', bid: null }, 'Josh Allen')).toBe(
+      'Claim Josh Allen — processes Wed 12:00 AM. Uses your waiver priority.',
+    )
+    expect(acquireConfirmCopy({ kind: 'claim', nextRunLocal: null, bid: null }, 'Josh Allen')).toBe(
+      'Claim Josh Allen — processes at the next waiver run. Uses your waiver priority.',
+    )
+    expect(acquireConfirmCopy({ kind: 'claim', nextRunLocal: 'Wed 12:00 AM', bid: 12 }, 'Josh Allen')).toBe('Your bid for Josh Allen: $12')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -376,6 +392,66 @@ describe('LeagueActionsBody — a render per state', () => {
     const out = body({ leagueStatus: 'drafting' })
     expect(out).toMatch(/disabled=""[^>]*data-acquire="none"/)
     expect(out).toContain(MOVES_BEFORE_SEASON_COPY)
+  })
+  // D481(n) (Chris 2026-10-03, "Always confirm first"): a press opens the
+  // one step; ONLY its button sends. Closed (as rendered unpressed above),
+  // there is no send control on the card at all.
+  const WAIVERS_ROW = { player_id: 'p-free', state: 'on_waivers', waivers_until: '2099-09-16T07:00:00Z', game_lock: UNLOCKED } as PoolRow
+  const pressed = (over: Partial<CardLeagueInput> = {}, move?: unknown) =>
+    html(
+      createElement(LeagueActionsBody, {
+        view: cardLeagueView(input(over)),
+        leagueId: 'lg',
+        myTeamId: 'mine',
+        confirmOpen: true,
+        ...(move ? { move: move as never } : {}),
+      }),
+    )
+  it('unpressed: no confirm and no send control on any acquire state', () => {
+    for (const out of [body(), body({ pool: [WAIVERS_ROW] }), body({ waiverType: 'rolling_priority', pool: [WAIVERS_ROW] })]) {
+      expect(out).not.toContain('data-card-acquire-choice')
+      expect(out).not.toContain('data-card-acquire-confirm')
+    }
+  })
+  it('pressed, instant add: "Add X to your bench?" → Add, with Cancel; the + is off while open', () => {
+    const out = pressed()
+    expect(out).toContain('data-card-acquire-choice="add"')
+    expect(out).toContain('Add Player p-free to your bench?')
+    expect(out).toMatch(/data-card-acquire-confirm="true">Add<\/button>/)
+    expect(out).toContain('data-card-acquire-cancel')
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-action="acquire"/)
+    expect(out).not.toContain('data-card-bid')
+  })
+  it('pressed, priority claim: names the run and the priority → Place claim', () => {
+    const out = pressed({ waiverType: 'rolling_priority', pool: [WAIVERS_ROW] })
+    expect(out).toContain('data-card-acquire-choice="claim"')
+    expect(out).toContain('Claim Player p-free — processes Wed 3:00 AM. Uses your waiver priority.')
+    expect(out).toMatch(/data-card-acquire-confirm="true">Place claim<\/button>/)
+    expect(out).not.toContain('data-card-bid')
+  })
+  it('pressed, FAAB claim: the step IS the bid (stepper + Place claim), no second confirm', () => {
+    const out = pressed({ pool: [WAIVERS_ROW] })
+    expect(out).toContain('data-card-acquire-choice="bid"')
+    expect(out).toContain('data-card-bid')
+    expect(out).toMatch(/data-card-acquire-confirm="true">Place claim<\/button>/)
+    expect(out.match(/data-card-acquire-confirm/g)).toHaveLength(1)
+  })
+  it('pressed on a full roster: the drop picker is IN the step, and the button waits for it', () => {
+    for (const out of [pressed({ rosterSize: 2 }), pressed({ rosterSize: 2, pool: [WAIVERS_ROW] })]) {
+      expect(out).toContain(ROSTER_FULL_COPY)
+      expect(out).toContain('data-card-drop-pick')
+      expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-acquire-confirm/)
+    }
+  })
+  it('R1480: while a move is in flight the + and the confirm are both off', () => {
+    const inFlight = { isPending: true, isError: false, data: undefined, error: null, reset: () => {}, submit: () => {} }
+    const out = pressed({}, inFlight)
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-action="acquire"/)
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-acquire-confirm="true">Sending…/)
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-acquire-cancel/)
+  })
+  it('R1481: the closed + is named for why', () => {
+    expect(body({ leagueStatus: 'drafting' })).toContain('aria-label="Can’t pick up Player p-free — roster moves open once the draft is done"')
   })
   it('yours: Drop; locked: Drop closed with the reason shown', () => {
     expect(body({ player: player('p-mine') })).toMatch(/data-card-action="drop">Drop<\/button>/)

@@ -26,6 +26,7 @@ import type { SubmitClaimResult, WaiverClaimView, WaiverClaimsDocument } from '@
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
+import { ROSTER_FULL_COPY } from '@/components/players/player-card-league-ops'
 import { ClaimForm } from './claim-dialog'
 import { PoolTable } from './players-page'
 import type { PoolPlayerRow } from './players-page-ops'
@@ -206,13 +207,15 @@ function form(over: Partial<Parameters<typeof ClaimForm>[0]> = {}): string {
 }
 
 describe('the claim form — FAAB bid or priority claim, optional drop', () => {
-  it('FAAB: a bid box opening at the minimum, the balance beside it, blind-bid copy, Put in claim', () => {
+  it('FAAB: a bid box opening at the minimum, the balance beside it, blind-bid copy, Place claim (D481(n): the bid step IS the confirm)', () => {
     const html = form()
     expect(html).toContain('data-claim-form="faab"')
     expect(html).toMatch(/data-claim-bid-input[^>]*value="1"|value="1"[^>]*data-claim-bid-input/)
     expect(html).toContain('$73 of $100 FAAB left')
     expect(html).toContain('Bids are blind')
-    expect(html).toContain('Put in claim')
+    expect(html).toMatch(/data-acquire-confirm="claim"[^>]*>Place claim</)
+    expect(html).toContain('Your bid for ')
+    expect(html.match(/data-acquire-confirm/g)).toHaveLength(1)
     // Radix Select paints its value client-side; the trigger carries the state.
     expect(html).toContain('data-claim-drop=""')
     expect(html).toContain('Only dropped if the claim goes through.')
@@ -222,6 +225,36 @@ describe('the claim form — FAAB bid or priority claim, optional drop', () => {
     expect(html).toContain('data-claim-form="priority"')
     expect(html).not.toContain('data-claim-bid-input')
     expect(html).toContain('waiver priority')
+  })
+  // D481(n) (Chris 2026-10-03, "Always confirm first") — the Players page's
+  // + opens THIS one step for an add too, so Add and Claim behave the same.
+  it('D481(n) priority claim: the plain-words confirm → Place claim, with Cancel', () => {
+    const html = form({ waiverType: 'rolling_priority', row: { ...ROW, player: { ...ROW.player, full_name: 'Josh Allen' } } })
+    expect(html).toContain('Claim Josh Allen — processes Wed, Sep 16, 3:00 AM. Uses your waiver priority.')
+    expect(html).toMatch(/data-acquire-confirm="claim"[^>]*>Place claim</)
+    expect(html).toContain('data-acquire-cancel')
+  })
+  it('D481(n) instant add: "Add X to your bench?" → Add, no bid, no claim wording', () => {
+    const html = form({ kind: 'add', row: { ...ROW, player: { ...ROW.player, full_name: 'Josh Allen' } } })
+    expect(html).toContain('data-claim-form="add"')
+    expect(html).toContain('Add Josh Allen to your bench?')
+    expect(html).toMatch(/data-acquire-confirm="add"[^>]*>Add</)
+    expect(html).not.toContain('data-claim-bid-input')
+    expect(html).not.toContain('Only dropped if the claim goes through.')
+    expect(html).toContain('data-acquire-cancel')
+  })
+  it('D481(n) full roster: the drop picker is in the same step and the button waits for a pick (add and claim)', () => {
+    for (const over of [{ kind: 'add' as const }, { kind: 'claim' as const, waiverType: 'rolling_priority' }, {}]) {
+      const html = form({ ...over, needsDrop: true })
+      expect(html).toContain(ROSTER_FULL_COPY)
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-acquire-confirm/)
+    }
+    expect(form({ kind: 'add' })).not.toMatch(/<button[^>]*disabled=""[^>]*data-acquire-confirm/)
+  })
+  it('R1480: pending — the confirm and Cancel are both off', () => {
+    const html = form({ kind: 'add', pending: true })
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-acquire-confirm="add"[^>]*>Sending…/)
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-acquire-cancel/)
   })
   it('a refusal renders VERBATIM', () => {
     const refusal = 'waiver_claim_submit: a bid of $90 is more than My Team’s FAAB balance of $73 (§13.2)'
@@ -282,6 +315,15 @@ describe('the players table per window', () => {
     expect(html).toContain('data-action="acquire" data-acquire="claim"')
     expect(html.match(/data-action=/g)).toHaveLength(1)
     expect(html).not.toMatch(/disabled=""/)
+  })
+  it('R1480: an acquire in flight — every + is off', () => {
+    expect(table(WINDOW, [ROW], { pending: true })).toMatch(/<button[^>]*disabled=""[^>]*data-action="acquire" data-acquire="claim"/)
+    expect(table(null, [ROW], { pending: true })).toMatch(/<button[^>]*disabled=""[^>]*data-action="acquire" data-acquire="add"/)
+  })
+  it('R1481: a closed + is named for why, not "Add X"', () => {
+    const html = table(WINDOW, [{ ...ROW, lock: { locked: true, copy: 'locked — game started', until: '2099-09-16T03:00:00.000Z' } }])
+    expect(html).toMatch(/aria-label="Can’t pick up [^"]+ — locked — this player’s game has started/)
+    expect(html).not.toMatch(/aria-label="Add /)
   })
   it('R1219: no claims on this database (pre-149) — the + adds', () => {
     const html = table(null, [ROW], { claimsLive: false })

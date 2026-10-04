@@ -72,7 +72,7 @@ import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } 
 import { ProblemCard, problemCopy } from './team-page'
 import { tradesHref } from './trades-ops'
 import { FA_HOLD_TITLE, WAIVERS_PAUSED_COPY, faHoldUntil, pickupActions, windowLine } from './waiver-claims-ops'
-import { acquireAction, acquireLabel, claimPlacedCopy } from '@/components/players/player-card-league-ops'
+import { acquireAction, acquireLabel } from '@/components/players/player-card-league-ops'
 import { WaiverClaimsPanel } from './waiver-claims-panel'
 
 /**
@@ -164,8 +164,10 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const players = useDraftPool(search, position)
   const move = useAddDrop(leagueId)
   const claim = useSubmitClaim(leagueId)
-  const [claimRow, setClaimRow] = useState<PoolPlayerRow | null>(null)
-  const [placedName, setPlacedName] = useState<string | null>(null)
+  // D481(n) (Chris 2026-10-03, "Always confirm first"): every + opens ONE
+  // step — the add's confirm or the claim's (a FAAB claim's step is its bid)
+  // — in the same dialog, so Add and Claim behave the same.
+  const [acquire, setAcquire] = useState<{ row: PoolPlayerRow; kind: 'add' | 'claim' } | null>(null)
   const waiverWindow = detail.waiver_window ?? null
   const waiverType = detail.settings.waiver_type
   // R1219: a database without the claims (pre-149) — no Claim, no panel.
@@ -223,8 +225,11 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   }
   const clear = () => {
     setIntent({ add: null, drop: null })
+    setAcquire(null)
     move.reset()
   }
+  // An add sent from the dialog answers in the move panel (its readout).
+  const addSent = acquire?.kind === 'add' && move.data !== undefined
 
   return (
     <div className="flex flex-col gap-4">
@@ -255,7 +260,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           fill={fill}
           pending={move.isPending}
           result={move.data ?? null}
-          refusal={move.isError ? (move.error instanceof Error ? move.error.message : 'The move was refused.') : null}
+          refusal={move.isError && acquire === null ? (move.error instanceof Error ? move.error.message : 'The move was refused.') : null}
           leagueTimeZone={leagueTimeZone}
           onDrop={(player) => setIntent((i) => ({ ...i, drop: player }))}
           onClearAdd={() => setIntent((i) => ({ ...i, add: null }))}
@@ -271,37 +276,43 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
       {myTeamId && claimsLive && waiverType !== 'none_fcfs' && waiverWindow?.waivers !== false && (
         <WaiverClaimsPanel leagueId={leagueId} nextRunLocal={nextRunLocal} />
       )}
-      {placedName && claimRow === null && claim.data && (
-        <StatusBanner tone="accent">
-          <span role="status" data-claim-placed>
-            {claimPlacedCopy(placedName, nextRunLocal)}
-          </span>
-        </StatusBanner>
-      )}
-      {placedName && claimRow === null && claim.isError && (
-        // VERBATIM — the server's own sentence (a race the + could not see).
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[11px] font-medium text-ink" data-claim-refusal>
-          {claim.error instanceof Error ? claim.error.message : 'The claim was refused.'}
-        </p>
-      )}
       <ClaimDialog
-        row={claimRow}
+        row={acquire && !addSent ? acquire.row : null}
+        kind={acquire?.kind ?? 'claim'}
+        needsDrop={fill.count >= fill.size}
         waiverType={waiverType}
         minBid={detail.settings.faab_min_bid}
         balance={myRosterTeam?.faab_balance ?? null}
         budget={detail.settings.faab_budget}
         roster={myRoster ?? []}
         nextRunLocal={nextRunLocal}
-        pending={claim.isPending}
-        refusal={claim.isError ? (claim.error instanceof Error ? claim.error.message : 'The claim was refused.') : null}
-        result={claim.data ?? null}
+        pending={claim.isPending || move.isPending}
+        refusal={
+          acquire?.kind === 'add'
+            ? move.isError
+              ? move.error instanceof Error
+                ? move.error.message
+                : 'The move was refused.'
+              : null
+            : claim.isError
+              ? claim.error instanceof Error
+                ? claim.error.message
+                : 'The claim was refused.'
+              : null
+        }
+        result={acquire?.kind === 'claim' ? (claim.data ?? null) : null}
         onSubmit={({ bid, dropPlayerId }) => {
-          if (!myTeamId || !claimRow) return
-          claim.submit({ teamId: myTeamId, addPlayerId: claimRow.player.id, dropPlayerId, ...(bid === undefined ? {} : { faabBid: bid }) })
+          if (!myTeamId || !acquire) return
+          if (acquire.kind === 'add') {
+            move.submit({ teamId: myTeamId, addPlayerId: acquire.row.player.id, dropPlayerId })
+            return
+          }
+          claim.submit({ teamId: myTeamId, addPlayerId: acquire.row.player.id, dropPlayerId, ...(bid === undefined ? {} : { faabBid: bid }) })
         }}
         onClose={() => {
-          setClaimRow(null)
+          setAcquire(null)
           claim.reset()
+          move.reset()
         }}
       />
 
@@ -363,21 +374,17 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           tradesClosed={tradesClosed}
           faHoldHours={detail.settings.fa_hold_hours}
           values={valueColumns}
+          pending={claim.isPending || move.isPending}
           onClaim={(row) => {
             claim.reset()
-            // D481: a priority claim with room on the roster needs no
-            // choice — the + places it; a bid or a drop opens the dialog.
-            if (waiverType !== 'faab' && fill.count < fill.size && myTeamId) {
-              setPlacedName(row.player.full_name)
-              claim.submit({ teamId: myTeamId, addPlayerId: row.player.id, dropPlayerId: null })
-              return
-            }
-            setPlacedName(null)
-            setClaimRow(row)
+            move.reset()
+            setAcquire({ row, kind: 'claim' })
           }}
           onAdd={(row) => {
+            claim.reset()
             move.reset()
-            setIntent((i) => ({ ...i, add: row }))
+            setIntent({ add: null, drop: null })
+            setAcquire({ row, kind: 'add' })
           }}
           onDrop={(player) => {
             move.reset()
@@ -542,6 +549,7 @@ export function PoolTable({
   tradesClosed = false,
   faHoldHours = 0,
   values = null,
+  pending = false,
   onAdd,
   onDrop,
   onClaim = () => {},
@@ -564,6 +572,8 @@ export function PoolTable({
   faHoldHours?: number
   /** League UX batch 5: the value columns (null = no schedule yet — hidden). */
   values?: ValueColumns | null
+  /** R1480: an add or claim is in flight — every + is off until it answers. */
+  pending?: boolean
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
   onClaim?: (row: PoolPlayerRow) => void
@@ -652,6 +662,7 @@ export function PoolTable({
                       nextRunLocal={nextRunLocal}
                       claimsLive={claimsLive}
                       tradesClosed={tradesClosed}
+                      pending={pending}
                       onAdd={onAdd}
                       onDrop={onDrop}
                       onClaim={onClaim}
@@ -783,6 +794,7 @@ function MoveButton({
   nextRunLocal,
   claimsLive,
   tradesClosed,
+  pending,
   onAdd,
   onDrop,
   onClaim,
@@ -795,6 +807,7 @@ function MoveButton({
   nextRunLocal: string | null
   claimsLive: boolean
   tradesClosed: boolean
+  pending: boolean
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
   onClaim: (row: PoolPlayerRow) => void
@@ -827,12 +840,13 @@ function MoveButton({
   // league's rules allow right now; closed, it says why (supersedes R1220's
   // live-Add-with-a-title here).
   const acq = acquireAction(row, actions.add, actions.claim, waiverWindow)
-  const label = acquireLabel(acq.kind, row.player.full_name)
+  // R1481: a closed + is named for why it is closed, not "Add X".
+  const label = acquireLabel(acq.kind, row.player.full_name, acq.disabled ? acq.title : undefined)
   return (
     <Button
       variant="green"
       size="icon-sm"
-      disabled={acq.disabled}
+      disabled={acq.disabled || pending}
       aria-label={label}
       title={acq.disabled ? acq.title : label}
       onClick={() => (acq.kind === 'claim' ? onClaim(row) : onAdd(row))}

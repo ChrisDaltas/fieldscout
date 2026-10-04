@@ -27,6 +27,8 @@ import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import { leagueCardContext, type PlayerCardContext } from './player-card-context'
 import {
+  acquireConfirmCopy,
+  acquireConfirmVerb,
   acquireLabel,
   bidAllowed,
   cardLeagueView,
@@ -93,7 +95,20 @@ export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; le
 /** The block for one computed view — exported for the render tests. */
 type MoveHandle = ReturnType<typeof useAddDrop>
 
-export function LeagueActionsBody({ view, leagueId, myTeamId, move }: { view: CardLeagueView; leagueId: string; myTeamId: string | null; move?: MoveHandle }) {
+export function LeagueActionsBody({
+  view,
+  leagueId,
+  myTeamId,
+  move,
+  confirmOpen,
+}: {
+  view: CardLeagueView
+  leagueId: string
+  myTeamId: string | null
+  move?: MoveHandle
+  /** Render with the + already pressed (the step open) — render tests. */
+  confirmOpen?: boolean
+}) {
   return (
     <div className="flex flex-col gap-1.5" data-card-league={view.kind}>
       <p className="text-[12px] font-extrabold text-ink" data-card-where>
@@ -117,7 +132,7 @@ export function LeagueActionsBody({ view, leagueId, myTeamId, move }: { view: Ca
           {moveReadout(move.data, (iso) => iso).headline}.
         </p>
       )}
-      {view.kind === 'available' && myTeamId && <PickupActions view={view} leagueId={leagueId} teamId={myTeamId} move={move} />}
+      {view.kind === 'available' && myTeamId && <PickupActions view={view} leagueId={leagueId} teamId={myTeamId} move={move} confirmOpen={confirmOpen} />}
     </div>
   )
 }
@@ -161,20 +176,33 @@ function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView,
   )
 }
 
-function PickupActions({ view, leagueId, teamId, move: held }: { view: Extract<CardLeagueView, { kind: 'available' }>; leagueId: string; teamId: string; move?: MoveHandle }) {
+function PickupActions({
+  view,
+  leagueId,
+  teamId,
+  move: held,
+  confirmOpen = false,
+}: {
+  view: Extract<CardLeagueView, { kind: 'available' }>
+  leagueId: string
+  teamId: string
+  move?: MoveHandle
+  confirmOpen?: boolean
+}) {
   const own = useAddDrop(leagueId)
   const move = held ?? own
   const claim = useSubmitClaim(leagueId)
   const [dropId, setDropId] = useState<string>('')
   const [bid, setBid] = useState<number>(view.faab?.min ?? 0)
-  // D481: a press that needs a choice (a drop, a bid) opens it first.
-  const [choosing, setChoosing] = useState(false)
+  // D481(n) (Chris 2026-10-03, "Always confirm first"): EVERY press opens the
+  // one step first — the confirm, or for a FAAB claim the bid — and only its
+  // button sends. There is no one-press path.
+  const [choosing, setChoosing] = useState(confirmOpen)
   const choices = useMemo(() => droppable(view.myRoster, (p) => lockBadgeFor(p.game_lock, true).locked), [view.myRoster])
   const playerId = view.row.player.id
   const name = view.row.player.full_name
   const acq = view.acquire
   const faab = acq.kind === 'claim' && view.faab ? view.faab : null
-  const needsChoice = view.needsDrop || faab !== null
   const pending = move.isPending || claim.isPending
 
   if (move.data) {
@@ -198,8 +226,7 @@ function PickupActions({ view, leagueId, teamId, move: held }: { view: Extract<C
     if (acq.kind === 'add') move.submit({ teamId, addPlayerId: playerId, dropPlayerId: drop })
     else if (acq.kind === 'claim') claim.submit({ teamId, addPlayerId: playerId, dropPlayerId: drop, ...(faab ? { faabBid: bid } : {}) })
   }
-  const label = acquireLabel(acq.kind, name)
-  const ready = !(view.needsDrop && dropId === '') && (faab === null || bidAllowed(bid, faab))
+  const label = acquireLabel(acq.kind, name, acq.disabled ? acq.title : undefined)
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -210,7 +237,11 @@ function PickupActions({ view, leagueId, teamId, move: held }: { view: Extract<C
           aria-label={label}
           title={acq.disabled ? acq.title : label}
           disabled={acq.disabled || pending || choosing}
-          onClick={() => (needsChoice ? setChoosing(true) : send())}
+          onClick={() => {
+            move.reset()
+            claim.reset()
+            setChoosing(true)
+          }}
           data-card-action="acquire"
           data-acquire={acq.kind}
         >
@@ -219,58 +250,118 @@ function PickupActions({ view, leagueId, teamId, move: held }: { view: Extract<C
         {acq.disabled && acq.title && <ClosedReason>{acq.title}</ClosedReason>}
       </span>
       {choosing && !acq.disabled && (
-        <div className="flex flex-col gap-1.5" data-card-acquire-choice>
-          {view.needsDrop && (
-            <label className="flex flex-col gap-1 text-[11px] font-semibold text-n-3">
-              {ROSTER_FULL_COPY}
-              <select
-                value={dropId}
-                onChange={(e) => setDropId(e.target.value)}
-                className="h-btn-md rounded-sm border border-ink bg-white px-2 text-[12px] font-medium text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                data-card-drop-pick
-              >
-                <option value="">Choose who to drop</option>
-                {choices.map((p) => (
-                  <option key={p.player_id} value={p.player_id}>
-                    {p.position} · {p.full_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {faab && (
-            <span className="inline-flex items-center gap-1" data-card-bid>
-              <Button variant="stroke" size="icon-sm" aria-label="Lower the bid" onClick={() => setBid((b) => stepBid(b, -1, faab))}>
-                −
-              </Button>
-              <span className="fs-num min-w-[32px] text-center text-[12px] font-extrabold" data-card-bid-amount>
-                ${bid}
-              </span>
-              <Button variant="stroke" size="icon-sm" aria-label="Raise the bid" onClick={() => setBid((b) => stepBid(b, 1, faab))}>
-                +
-              </Button>
-            </span>
-          )}
-          {faab && faab.max !== null && (
-            <p className="text-[10px] font-medium text-n-3">
-              Bids from ${faab.min} to ${faab.max} (your FAAB left).
-            </p>
-          )}
-          <span className="flex flex-wrap items-center gap-1.5">
-            <Button variant="green" size="sm" disabled={!ready || pending} onClick={send} data-card-acquire-confirm>
-              {pending ? 'Sending…' : acq.kind === 'claim' ? 'Place claim' : 'Add'}
-            </Button>
-            <Button variant="stroke" size="sm" disabled={pending} onClick={() => setChoosing(false)}>
-              Cancel
-            </Button>
-          </span>
-        </div>
+        <AcquireStep
+          kind={acq.kind}
+          name={name}
+          nextRunLocal={view.nextRunLocal}
+          needsDrop={view.needsDrop}
+          choices={choices}
+          faab={faab}
+          dropId={dropId}
+          bid={bid}
+          pending={pending}
+          onDrop={setDropId}
+          onBid={setBid}
+          onConfirm={send}
+          onCancel={() => {
+            setChoosing(false)
+            setDropId('')
+            setBid(view.faab?.min ?? 0)
+          }}
+        />
       )}
       {refusal && (
         <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-card-refusal>
           {refusal instanceof Error ? refusal.message : 'The move was refused.'}
         </p>
       )}
+    </div>
+  )
+}
+
+/** The card's one step (D481(n)): the plain-words line, the drop picker on a
+ *  full roster, the bid stepper on a FAAB claim, then Add / Place claim and
+ *  Cancel. Exported for the render tests. */
+export function AcquireStep({
+  kind,
+  name,
+  nextRunLocal,
+  needsDrop,
+  choices,
+  faab,
+  dropId,
+  bid,
+  pending,
+  onDrop,
+  onBid,
+  onConfirm,
+  onCancel,
+}: {
+  kind: 'add' | 'claim'
+  name: string
+  nextRunLocal: string | null
+  needsDrop: boolean
+  choices: readonly { player_id: string; position: string; full_name: string }[]
+  faab: { min: number; max: number | null } | null
+  dropId: string
+  bid: number
+  pending: boolean
+  onDrop: (id: string) => void
+  onBid: (fn: (b: number) => number) => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const ready = !(needsDrop && dropId === '') && (faab === null || bidAllowed(bid, faab))
+  const copy = acquireConfirmCopy(kind === 'add' ? { kind } : { kind, nextRunLocal, bid: faab ? bid : null }, name)
+  return (
+    <div className="flex flex-col gap-1.5" data-card-acquire-choice={kind === 'claim' && faab ? 'bid' : kind}>
+      <p className="text-[12px] font-semibold text-ink" data-card-acquire-copy>
+        {copy}
+      </p>
+      {needsDrop && (
+        <label className="flex flex-col gap-1 text-[11px] font-semibold text-n-3">
+          {ROSTER_FULL_COPY}
+          <select
+            value={dropId}
+            onChange={(e) => onDrop(e.target.value)}
+            className="h-btn-md rounded-sm border border-ink bg-white px-2 text-[12px] font-medium text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            data-card-drop-pick
+          >
+            <option value="">Choose who to drop</option>
+            {choices.map((p) => (
+              <option key={p.player_id} value={p.player_id}>
+                {p.position} · {p.full_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {faab && (
+        <span className="inline-flex items-center gap-1" data-card-bid>
+          <Button variant="stroke" size="icon-sm" aria-label="Lower the bid" onClick={() => onBid((b) => stepBid(b, -1, faab))}>
+            −
+          </Button>
+          <span className="fs-num min-w-[32px] text-center text-[12px] font-extrabold" data-card-bid-amount>
+            ${bid}
+          </span>
+          <Button variant="stroke" size="icon-sm" aria-label="Raise the bid" onClick={() => onBid((b) => stepBid(b, 1, faab))}>
+            +
+          </Button>
+        </span>
+      )}
+      {faab && faab.max !== null && (
+        <p className="text-[10px] font-medium text-n-3">
+          Bids from ${faab.min} to ${faab.max} (your FAAB left).
+        </p>
+      )}
+      <span className="flex flex-wrap items-center gap-1.5">
+        <Button variant="green" size="sm" disabled={!ready || pending} onClick={onConfirm} data-card-acquire-confirm>
+          {pending ? 'Sending…' : acquireConfirmVerb(kind)}
+        </Button>
+        <Button variant="stroke" size="sm" disabled={pending} onClick={onCancel} data-card-acquire-cancel>
+          Cancel
+        </Button>
+      </span>
     </div>
   )
 }
