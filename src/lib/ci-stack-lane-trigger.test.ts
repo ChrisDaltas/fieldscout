@@ -99,6 +99,8 @@ const SOURCE_PATHS = [
   'src/lib/lists/**',
   'src/lib/sports-data/**',
   'src/lib/email/**',
+  // D486(10): the player page's core-stats read.
+  'src/lib/players/**',
   'src/lib/nfl-teams.ts',
   'src/lib/scoring/personal-scoring-system.ts',
   'src/utils/**',

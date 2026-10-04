@@ -134,7 +134,10 @@ export function PlayerDetailHeader({
  * source render — a missing value is omitted, never shown as a placeholder.
  */
 function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
-  const cells = vitalCells(player, new Date()).filter((c): c is { label: string; value: string } => c.value !== null)
+  // SOS lives in the core-stats row under the hero (D486(10)) — not twice.
+  const cells = vitalCells(player, new Date()).filter(
+    (c): c is { label: string; value: string } => c.value !== null && c.label !== 'SOS',
+  )
   if (cells.length === 0) return null
   return (
     <div className="grid grid-cols-2 border-l border-t border-n-4 sm:grid-cols-4" data-player-vitals>

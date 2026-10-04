@@ -96,11 +96,12 @@ describe('player page — hero fields present or omitted', () => {
     expect(out).toContain('Test Runner')
     expect(out).toMatch(/>Q<span[^>]*>— Hamstring/)
     expect(out).toContain(`data-player-meta="true">5'11" · 215 lb · Bye 7</span>`)
-    for (const label of ['ADP', 'Auction $', 'SOS', 'Height', 'Weight', 'Age', 'Seasons']) {
+    for (const label of ['ADP', 'Auction $', 'Height', 'Weight', 'Age', 'Seasons']) {
       expect(out).toContain(`data-vital="${label}"`)
     }
     expect(out).toContain('$41')
-    expect(out).toContain('9 of 32')
+    // D486(10): SOS moved to the core-stats row — not twice in the hero.
+    expect(out).not.toContain('data-vital="SOS"')
     // Pos rank has no source — omitted, never a "—".
     expect(out).not.toContain('data-vital="Pos rank"')
     expect(out).not.toContain('—</p>')
@@ -109,7 +110,7 @@ describe('player page — hero fields present or omitted', () => {
   it('a sparse record: the missing fields are omitted, not placeholdered', () => {
     const sparse = player({ adp: null, auction_value: null, sos: null, height: null, weight: null, birth_date: null, bye_week: null, status: null })
     const out = html(createElement(PlayerDetailHeader, { player: sparse, size: 'expanded' }))
-    for (const label of ['ADP', 'Auction $', 'SOS', 'Height', 'Weight', 'Age', 'Pos rank']) {
+    for (const label of ['ADP', 'Auction $', 'Height', 'Weight', 'Age', 'Pos rank']) {
       expect(out).not.toContain(`data-vital="${label}"`)
     }
     expect(out).toContain('data-vital="Seasons"')

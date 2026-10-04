@@ -198,17 +198,8 @@ export function opponentText(o: { kind: 'game'; label: string } | { kind: 'bye' 
   return '—'
 }
 
-/** The week a free-agent list is about: the week being played, else the
- *  next one to be played, else (season over) the last. Undefined before the
- *  league has a schedule. */
-export function valueWeekOf(weeks: readonly { week: number; status: string }[]): number | undefined {
-  if (weeks.length === 0) return undefined
-  const live = weeks.filter((w) => w.status === 'live').map((w) => w.week)
-  if (live.length > 0) return Math.max(...live)
-  const upcoming = weeks.filter((w) => w.status === 'upcoming').map((w) => w.week)
-  if (upcoming.length > 0) return Math.min(...upcoming)
-  return Math.max(...weeks.map((w) => w.week))
-}
+// D486(10): moved to lib so the player page's server read shares it.
+export { valueWeekOf } from '@/lib/leagues/value-week'
 
 export const PROJ_MISSING_TITLE = 'No projection for this week yet.'
 export const VALUES_PROBLEM_COPY = 'Couldn’t load the points and projections — the columns show “—” until they load.'

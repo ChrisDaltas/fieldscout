@@ -29,12 +29,14 @@ import { useDefenseSplits } from '@/hooks/use-defense-splits'
 import { useLeague } from '@/hooks/use-league'
 import { useLeagues } from '@/hooks/use-leagues'
 import { useNflTeamSchedule } from '@/hooks/use-nfl-team-schedule'
+import { usePlayerCoreStats } from '@/hooks/use-player-core-stats'
 import {
   usePlayerStats,
   type PlayerStatsPlayer,
   type PlayerStatsResponse,
 } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
+import { basisLabel, coreTiles } from '@/lib/players/core-stats-ops'
 import { cn } from '@/lib/utils'
 
 interface PlayerDetailPageViewProps {
@@ -107,9 +109,59 @@ export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetail
           </div>
           <ActionsColumn player={data.player} leagueId={inLeague ? leagueId : null} />
         </div>
+        <CoreStatsRow player={data.player} leagueId={inLeague ? leagueId : null} />
       </Card>
 
       <ScheduleSections data={data} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Core stats row (D486(10)) — Chris's seven tiles, in his order
+// ---------------------------------------------------------------------------
+
+/**
+ * Season points, avg / week, this week's projection and the two ranks come
+ * from the server (`/api/players/[id]/core-stats`) under the league's scoring
+ * in a league, the default template outside one; SOS and bye from the player
+ * record. A value with no source is "—", never 0. Not interactive → no
+ * shadow (CLAUDE.md elevation rule).
+ */
+export function CoreStatsRow({ player, leagueId }: { player: PlayerStatsPlayer; leagueId: string | null }) {
+  // R1501's fallback: a `?league=` the viewer can't read scores by default.
+  const league = useLeague(featureFlags.leagues && leagueId ? leagueId : undefined)
+  const scoredIn = leagueId && !league.isError ? leagueId : null
+  const stats = usePlayerCoreStats(player.id, scoredIn)
+  const tiles = coreTiles(stats.data ?? null, player)
+  const label = stats.data
+    ? basisLabel(stats.data.basis)
+    : stats.isError
+      ? 'Couldn’t load points'
+      : scoredIn
+        ? `${league.data?.league.name ?? 'League'} scoring`
+        : 'Standard scoring'
+  return (
+    <div className="border-t border-n-4 px-card-pad py-3 sm:px-5" data-core-stats>
+      <p className="mb-1.5 text-[11px] font-semibold text-n-3" data-core-basis>
+        {label}
+      </p>
+      <div className="grid grid-cols-4 gap-y-3 sm:grid-cols-7">
+        {tiles.map((t) => (
+          <div key={t.key} className="min-w-0 pr-2" data-core-tile={t.key}>
+            <p
+              className={cn(
+                'fs-num truncate text-[19px] font-extrabold leading-tight',
+                t.value === '—' && 'text-n-3',
+                stats.isPending && 'animate-pulse',
+              )}
+            >
+              {t.value}
+            </p>
+            <p className="fs-overline mt-0.5 truncate text-n-3">{t.label}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

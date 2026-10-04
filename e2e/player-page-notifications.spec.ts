@@ -81,6 +81,11 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     await expect(full.locator('[data-viewing-in]')).toHaveText(/^Viewing in .+/, { timeout: 30_000 })
     await expect(full.locator('[data-card-where]')).toHaveText(/^On your team in /, { timeout: 30_000 })
     await expect(full.locator('[data-card-action="drop"]')).toBeVisible()
+    // D486(10): the core-stats row — seven tiles, scored by THIS league.
+    const leagueRow = full.locator('[data-core-stats]')
+    await expect(leagueRow.locator('[data-core-tile]')).toHaveCount(7)
+    await expect(leagueRow.locator('[data-core-basis]')).toHaveText(/^(?!Standard scoring$)(?!Couldn).+ scoring$/, { timeout: 30_000 })
+    await leagueRow.locator('xpath=..').screenshot({ path: test.info().outputPath('player-hero-league.png') })
     await page.screenshot({ path: test.info().outputPath('player-page-league.png'), fullPage: true })
 
     await page.locator('[data-player-back]').click()
@@ -92,6 +97,10 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     const global = page.locator('[data-player-page="global"]')
     await expect(global).toBeVisible({ timeout: 60_000 })
     await expect(global.locator(`[data-card-league-row="${leagueId}"]`)).toBeVisible({ timeout: 30_000 })
+    const globalRow = global.locator('[data-core-stats]')
+    await expect(globalRow.locator('[data-core-tile]')).toHaveCount(7)
+    await expect(globalRow.locator('[data-core-basis]')).toHaveText('Standard scoring', { timeout: 30_000 })
+    await globalRow.locator('xpath=..').screenshot({ path: test.info().outputPath('player-hero-global.png') })
     await page.screenshot({ path: test.info().outputPath('player-page-global.png'), fullPage: true })
     await context.close()
   })
