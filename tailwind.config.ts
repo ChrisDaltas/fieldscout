@@ -249,6 +249,9 @@ const config: Config = {
         // as the same icon rail.
         'rail-strip': '67px',
         'rail-panel': '256px',
+        // Strip + open panel: the page pads by both while a tool is open
+        // (prototype ResearchRail — the panel never covers content; D483).
+        'rail-open': '323px',
         'card-pad': '16px',
         // Shell-chrome constants shared across sidebar / rail / top bar.
         // A token is shared between components only when they're the same

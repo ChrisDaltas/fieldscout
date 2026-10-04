@@ -114,9 +114,17 @@ export interface AddDropResult {
   evaluated_at: string
 }
 
+/** D483: a key so a surface can read a move's result after the row that
+ *  sent it has unmounted (the rail's free-agent row leaves the list on the
+ *  re-read) — `useMutationState`. */
+export const addDropKeys = {
+  all: (leagueId: string) => ['add-drop', leagueId] as const,
+}
+
 export function useAddDrop(leagueId: string) {
   const queryClient = useQueryClient()
   const mutation = useMutation({
+    mutationKey: addDropKeys.all(leagueId),
     mutationFn: (variables: AddDropVariables) =>
       sendLeagueAction<AddDropResult>(
         `/api/leagues/${leagueId}/transactions`,
