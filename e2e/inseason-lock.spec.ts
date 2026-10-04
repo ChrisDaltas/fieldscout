@@ -39,7 +39,7 @@ import { STORAGE_STATE } from './helpers/local-env'
  *     no 🔒 at all — `lineup_lock_tick` refreshes EXISTING rows only
  *     (`119:775-780`) — so his Add button is LIVE and the refusal on screen
  *     is 113's own kickoff evaluation at transaction time, rendered
- *     VERBATIM in `[data-move-refusal]`. E32's spec row is explicit that
+ *     VERBATIM in the add dialog’s `[data-claim-refusal]` (D481(n)). E32's spec row is explicit that
  *     `locked_until` is the job's VIEW and never the decider, so THIS is the
  *     assertion the task means.
  *   ARM B (the view): a player who DOES hold a pool row the tick has locked
@@ -86,6 +86,9 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
     const managerAuth = await signInDevPro()
     const league = await provisionLeague({
       nameSuffix: 'inseason lock',
+      // D481: the "+" claims in a claims-only window, so the E32 add arm
+      // runs where adds are live — a league with no waivers.
+      waiverType: 'none_fcfs',
       teamCount: 8,
       rounds: 2,
       clockSeconds: 30,
@@ -174,18 +177,22 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       // the client decided nothing (players-page.tsx:71-78).
       await expect(addRow).toHaveAttribute('data-availability', 'free_agent')
       await expect(addRow).not.toHaveAttribute('data-locked', /.*/)
-      const addButton = addRow.locator('[data-action="add"]')
+      const addButton = addRow.locator('[data-action="acquire"][data-acquire="add"]')
       await expect(addButton).toBeEnabled()
       await addButton.click()
+      // D481(n) (Chris 2026-10-03, "Always confirm first"): the + opens the
+      // one step; its Add sends.
+      const addDialog = page.getByRole('dialog')
+      await expect(addDialog.locator('[data-acquire-copy]')).toHaveText(`Add ${addTarget.full_name} to your bench?`)
 
       const refusalResponse = page.waitForResponse(
         (res) => res.url().includes('/transactions') && res.request().method() === 'POST',
         { timeout: 60_000 },
       )
-      await page.locator('[data-move-submit]').click()
+      await addDialog.locator('[data-acquire-confirm="add"]').click()
       expect((await refusalResponse).status(), 'E32 maps to 409 (inseason-errors.ts:50-73)').toBe(409)
 
-      const refusal = page.locator('[data-move-refusal]')
+      const refusal = addDialog.locator('[data-claim-refusal]')
       await expect(refusal).toBeVisible({ timeout: 60_000 })
       const refusalText = await refusal.innerText()
       // The STABLE SPINE of 115's sentence (`115:604-610`), rendered verbatim
@@ -194,7 +201,6 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       // trailing §-citation is stripped). The "clears at" slot is NOT
       // asserted — with `last_game_ends_at` NULL it renders the
       // not-yet-recorded arm, which is fixture state, not the rule.
-      expect(refusalText).toContain('That move was refused.')
       expect(refusalText).toContain(`${addTarget.full_name} (${addTarget.player_id}) is locked for adds`)
       expect(refusalText).toContain('no in-game pickups')
       expect(refusalText).not.toContain('roster_add_drop:')
@@ -205,12 +211,13 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       expect(await readPoolRow(service, league.leagueId, addTarget.player_id)).toBeNull()
 
       // ---- ARM B: the VIEW's disabled button ------------------------------
-      await page.getByRole('button', { name: 'Dismiss' }).click()
+      await addDialog.locator('[data-acquire-cancel]').click()
+      await expect(addDialog).toHaveCount(0)
       await page.getByLabel('Search players').fill(dropTarget.full_name)
       const lockedPoolRow = page.locator(`[data-pool-row="${dropTarget.player_id}"]`)
       await expect(lockedPoolRow).toBeVisible({ timeout: 60_000 })
       await expect(lockedPoolRow).toHaveAttribute('data-locked', 'true')
-      const lockedAdd = lockedPoolRow.locator('[data-action="add"]')
+      const lockedAdd = lockedPoolRow.locator('[data-action="acquire"]')
       await expect(lockedAdd).toBeDisabled()
       await expect(lockedAdd).toHaveAttribute('title', LOCKED_ADD_TITLE)
 

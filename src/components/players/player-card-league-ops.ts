@@ -71,6 +71,9 @@ export type CardLeagueView =
       row: PoolPlayerRow
       add: ActionState
       claim: ActionState
+      /** The one "+" a press runs (D481). */
+      acquire: Acquire
+      nextRunLocal: string | null
       /** The roster is at roster_size: an add (or a claim) must name a drop. */
       needsDrop: boolean
       /** The bid's bounds when the claim is a FAAB bid; null otherwise. */
@@ -131,6 +134,8 @@ export function cardLeagueView(input: CardLeagueInput): CardLeagueView {
     row,
     add,
     claim,
+    acquire: acquireAction(row, add, claim, input.waiverWindow),
+    nextRunLocal: input.nextRunLocal,
     needsDrop: myRoster.length >= input.rosterSize,
     faab,
     myRoster,
@@ -160,6 +165,72 @@ export function droppable(roster: readonly RosterPlayer[], isLocked: (p: RosterP
  *  free agency) is the server's to say — the result line names it. */
 export function dropConfirmCopy(name: string): string {
   return `${name} leaves your roster, and other teams can pick him up.`
+}
+
+/**
+ * The ONE "+" (Chris 2026-10-03: "just make it a plus button instead of claim
+ * vs add" — D481). From the Add / Claim pair `pickupActions` already derives
+ * from the server's rules, pick the single verb a press runs:
+ *   - a live Claim while he is on waivers, or while the window is claims-only,
+ *     wins — an Add there is the one the server refuses;
+ *   - otherwise a live Add (free agency is open, or there are no waivers);
+ *   - with the window unknown, a free agent is an Add (the server decides);
+ *   - nothing live: the + is disabled with the closed door's reason.
+ */
+export type Acquire =
+  | { kind: 'add' | 'claim'; disabled: false }
+  | { kind: 'none'; disabled: true; title: string | undefined }
+
+export function acquireAction(
+  row: Pick<PoolPlayerRow, 'availability'>,
+  add: ActionState,
+  claim: ActionState,
+  window: Pick<WaiverWindowView, 'free_agency_open'> | null | undefined,
+): Acquire {
+  const addLive = add.show && !add.disabled
+  const claimLive = claim.show && !claim.disabled
+  if (claimLive && (row.availability.kind === 'on_waivers' || (window && !window.free_agency_open) || !addLive)) {
+    return { kind: 'claim', disabled: false }
+  }
+  if (addLive) return { kind: 'add', disabled: false }
+  const title = (add.show && add.disabled ? add.title : undefined) ?? (claim.show && claim.disabled ? claim.title : undefined)
+  return { kind: 'none', disabled: true, title }
+}
+
+/** The +'s accessible name: what a press does, with his name. A closed +
+ *  (`none`) says it can't, and why (R1481) — never "Add X" on a dead button. */
+export function acquireLabel(kind: Acquire['kind'], name: string, reason?: string): string {
+  if (kind === 'none') {
+    const why = reason?.trim().replace(/\.$/, '')
+    return why ? `Can’t pick up ${name} — ${why.charAt(0).toLowerCase()}${why.slice(1)}` : `Can’t pick up ${name} right now`
+  }
+  return kind === 'claim' ? `Claim ${name}` : `Add ${name}`
+}
+
+/**
+ * The one step every + opens first (Chris 2026-10-03, "Always confirm first",
+ * clarified: confirm an instant add or a waiver claim; a FAAB claim's step IS
+ * the bid — no confirm on top — D481(n)): one plain line saying what will
+ * happen. An add lands on your bench; a priority claim names when it
+ * processes and that it uses your priority; a FAAB claim heads its bid.
+ */
+export function acquireConfirmCopy(
+  input: { kind: 'add' } | { kind: 'claim'; nextRunLocal: string | null; bid: number | null },
+  name: string,
+): string {
+  if (input.kind === 'add') return `Add ${name} to your bench?`
+  if (input.bid !== null) return `Your bid for ${name}: $${input.bid}`
+  return `Claim ${name} — processes ${input.nextRunLocal ?? 'at the next waiver run'}. Uses your waiver priority.`
+}
+
+/** The confirm button's word. */
+export function acquireConfirmVerb(kind: 'add' | 'claim'): string {
+  return kind === 'claim' ? 'Place claim' : 'Add'
+}
+
+/** What a placed claim says, in plain words. */
+export function claimPlacedCopy(name: string, nextRunLocal: string | null): string {
+  return nextRunLocal ? `Claim placed for ${name} — processes ${nextRunLocal}.` : `Claim placed for ${name} — processes at the next waiver run.`
 }
 
 /** A league's status line in the global card's expander. */
