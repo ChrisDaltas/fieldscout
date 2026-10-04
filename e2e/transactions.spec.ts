@@ -303,7 +303,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       await expect(row).toBeVisible({ timeout: 60_000 })
       // Claims-only until the run (the draft just reset the window, no run has
       // counted since — `153:325`): Claim is offered and live.
-      const claim = row.locator('[data-action="claim"]')
+      const claim = row.locator('[data-action="acquire"][data-acquire="claim"]')
       await expect(claim).toBeEnabled()
       await claim.click()
       const dialog = page.getByRole('dialog')

@@ -71,7 +71,8 @@ import {
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
 import { tradesHref } from './trades-ops'
-import { FA_HOLD_TITLE, WAIVERS_PAUSED_COPY, faHoldUntil, pickupActions, windowLine, type ActionState } from './waiver-claims-ops'
+import { FA_HOLD_TITLE, WAIVERS_PAUSED_COPY, faHoldUntil, pickupActions, windowLine } from './waiver-claims-ops'
+import { acquireAction, acquireLabel, claimPlacedCopy } from '@/components/players/player-card-league-ops'
 import { WaiverClaimsPanel } from './waiver-claims-panel'
 
 /**
@@ -164,6 +165,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const move = useAddDrop(leagueId)
   const claim = useSubmitClaim(leagueId)
   const [claimRow, setClaimRow] = useState<PoolPlayerRow | null>(null)
+  const [placedName, setPlacedName] = useState<string | null>(null)
   const waiverWindow = detail.waiver_window ?? null
   const waiverType = detail.settings.waiver_type
   // R1219: a database without the claims (pre-149) — no Claim, no panel.
@@ -269,6 +271,19 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
       {myTeamId && claimsLive && waiverType !== 'none_fcfs' && waiverWindow?.waivers !== false && (
         <WaiverClaimsPanel leagueId={leagueId} nextRunLocal={nextRunLocal} />
       )}
+      {placedName && claimRow === null && claim.data && (
+        <StatusBanner tone="accent">
+          <span role="status" data-claim-placed>
+            {claimPlacedCopy(placedName, nextRunLocal)}
+          </span>
+        </StatusBanner>
+      )}
+      {placedName && claimRow === null && claim.isError && (
+        // VERBATIM — the server's own sentence (a race the + could not see).
+        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[11px] font-medium text-ink" data-claim-refusal>
+          {claim.error instanceof Error ? claim.error.message : 'The claim was refused.'}
+        </p>
+      )}
       <ClaimDialog
         row={claimRow}
         waiverType={waiverType}
@@ -350,6 +365,14 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           values={valueColumns}
           onClaim={(row) => {
             claim.reset()
+            // D481: a priority claim with room on the roster needs no
+            // choice — the + places it; a bid or a drop opens the dialog.
+            if (waiverType !== 'faab' && fill.count < fill.size && myTeamId) {
+              setPlacedName(row.player.full_name)
+              claim.submit({ teamId: myTeamId, addPlayerId: row.player.id, dropPlayerId: null })
+              return
+            }
+            setPlacedName(null)
             setClaimRow(row)
           }}
           onAdd={(row) => {
@@ -800,19 +823,23 @@ function MoveButton({
   }
   const waiversTitle = a.kind === 'on_waivers' ? waiversAddTitle(formatInstantWithDate(a.until, leagueTimeZone).local) : undefined
   const actions = pickupActions(row, { waiverType, window: waiverWindow, addTitle: waiversTitle, lockedAddTitle: LOCKED_ADD_TITLE, nextRunLocal, claimsLive })
+  // D481 (Chris 2026-10-03): ONE "+" — it runs the add or the claim the
+  // league's rules allow right now; closed, it says why (supersedes R1220's
+  // live-Add-with-a-title here).
+  const acq = acquireAction(row, actions.add, actions.claim, waiverWindow)
+  const label = acquireLabel(acq.kind, row.player.full_name)
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <RowAction state={actions.claim} label="Claim" action="claim" onClick={() => onClaim(row)} />
-      <RowAction state={actions.add} label="Add" action="add" onClick={() => onAdd(row)} />
-    </span>
-  )
-}
-
-function RowAction({ state, label, action, onClick }: { state: ActionState; label: string; action: string; onClick: () => void }) {
-  if (!state.show) return null
-  return (
-    <Button variant="stroke" size="sm" disabled={state.disabled} title={state.title} onClick={onClick} data-action={action}>
-      {label}
+    <Button
+      variant="green"
+      size="icon-sm"
+      disabled={acq.disabled}
+      aria-label={label}
+      title={acq.disabled ? acq.title : label}
+      onClick={() => (acq.kind === 'claim' ? onClaim(row) : onAdd(row))}
+      data-action="acquire"
+      data-acquire={acq.kind}
+    >
+      <Icon name="plus" size={13} />
     </Button>
   )
 }

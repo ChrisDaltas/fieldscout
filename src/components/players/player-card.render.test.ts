@@ -27,8 +27,10 @@ import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { DraftCardActions, LeagueActionsBody } from './player-card-actions'
 import { GLOBAL_CARD_CONTEXT, leagueCardContext } from './player-card-context'
 import {
+  acquireLabel,
   bidAllowed,
   cardLeagueView,
+  claimPlacedCopy,
   dropConfirmCopy,
   MOVES_AFTER_SEASON_COPY,
   MOVES_BEFORE_SEASON_COPY,
@@ -223,6 +225,57 @@ describe('cardLeagueView — where he is, and the one move that fits', () => {
   })
 })
 
+// D481 (Chris 2026-10-03, "just make it a plus button instead of claim vs
+// add"): one state → one verb for the "+".
+describe('acquireAction — the one + per state', () => {
+  const WAIVERS = { player_id: 'p-free', state: 'on_waivers', waivers_until: '2099-09-16T07:00:00Z', game_lock: UNLOCKED } as PoolRow
+  const CLAIMS_ONLY: WaiverWindowView = { ...OPEN_FA, free_agency_open: false, why: 'awaiting_run' as WaiverWindowView['why'] }
+  const acq = (over: Partial<CardLeagueInput>) => {
+    const v = cardLeagueView(input(over))
+    if (v.kind !== 'available') throw new Error('kind')
+    return v.acquire
+  }
+  it('free agency open → add', () => {
+    expect(acq({})).toEqual({ kind: 'add', disabled: false })
+  })
+  it('on waivers (FAAB or rolling) → claim', () => {
+    expect(acq({ pool: [WAIVERS] })).toEqual({ kind: 'claim', disabled: false })
+    expect(acq({ pool: [WAIVERS], waiverType: 'rolling_priority' })).toEqual({ kind: 'claim', disabled: false })
+  })
+  it('the claims-only window → claim, even for a free agent', () => {
+    expect(acq({ waiverWindow: CLAIMS_ONLY })).toEqual({ kind: 'claim', disabled: false })
+  })
+  it('no waivers in the league → add, even in what would be a claims window', () => {
+    expect(acq({ waiverType: 'none_fcfs', waiverWindow: CLAIMS_ONLY })).toEqual({ kind: 'add', disabled: false })
+    expect(acq({ claimsLive: false, pool: [WAIVERS] })).toEqual({ kind: 'add', disabled: false })
+  })
+  it('the window unknown: a free agent → add (the server decides); on waivers → claim', () => {
+    expect(acq({ waiverWindow: null })).toEqual({ kind: 'add', disabled: false })
+    expect(acq({ waiverWindow: null, pool: [WAIVERS] })).toEqual({ kind: 'claim', disabled: false })
+  })
+  it('a full roster keeps the verb (the press asks for the drop)', () => {
+    expect(acq({ rosterSize: 2 })).toEqual({ kind: 'add', disabled: false })
+    expect(acq({ rosterSize: 2, pool: [WAIVERS] })).toEqual({ kind: 'claim', disabled: false })
+  })
+  it('locked → none, with the lock’s reason', () => {
+    expect(acq({ pool: [{ player_id: 'p-free', state: 'locked_in_game', waivers_until: null, game_lock: LOCKED } as PoolRow] })).toEqual({
+      kind: 'none',
+      disabled: true,
+      title: LOCKED_ADD_TITLE,
+    })
+  })
+  it('outside the season → none, with the league’s reason (before and after)', () => {
+    expect(acq({ leagueStatus: 'drafting' })).toEqual({ kind: 'none', disabled: true, title: MOVES_BEFORE_SEASON_COPY })
+    expect(acq({ leagueStatus: 'complete', pool: [WAIVERS] })).toEqual({ kind: 'none', disabled: true, title: MOVES_AFTER_SEASON_COPY })
+  })
+  it('the label says what a press does; the placed claim says when it processes', () => {
+    expect(acquireLabel('add', 'Josh Allen')).toBe('Add Josh Allen')
+    expect(acquireLabel('claim', 'Josh Allen')).toBe('Claim Josh Allen')
+    expect(claimPlacedCopy('Josh Allen', 'Wed 3:00 AM')).toBe('Claim placed for Josh Allen — processes Wed 3:00 AM.')
+    expect(claimPlacedCopy('Josh Allen', null)).toBe('Claim placed for Josh Allen — processes at the next waiver run.')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // 3. Bounds and parts
 // ---------------------------------------------------------------------------
@@ -278,33 +331,51 @@ describe('LeagueActionsBody — a render per state', () => {
   const body = (over: Partial<CardLeagueInput> = {}, myTeamId: string | null = 'mine') =>
     html(createElement(LeagueActionsBody, { view: cardLeagueView(input(over)), leagueId: 'lg', myTeamId }))
 
-  it('free agent: Add (green) and the line', () => {
+  // D481 (Chris 2026-10-03): ONE "+" — never a separate Add / Claim / Bid.
+  const ONE_PLUS = (out: string) => {
+    expect(out.match(/data-card-action="/g)).toHaveLength(1)
+    expect(out).not.toMatch(/data-card-action="(add|claim|bid)"/)
+    expect(out).not.toMatch(/>(Add|Claim|Bid)<\/button>/)
+  }
+  it('free agent: one green + that adds, named for him, and the line', () => {
     const out = body()
     expect(out).toContain('data-card-league="available"')
     expect(out).toContain('Free agent in Sunday League')
-    expect(out).toMatch(/<button[^>]*bg-positive[^>]*data-card-action="add"[^>]*>Add<\/button>/)
-    expect(out).not.toContain('data-card-action="bid"')
+    expect(out).toMatch(/<button[^>]*bg-positive[^>]*aria-label="Add Player p-free"[^>]*data-card-action="acquire" data-acquire="add"/)
+    expect(out).toContain('<svg')
+    ONE_PLUS(out)
     expect(out).not.toContain(ROSTER_FULL_COPY)
   })
-  it('on waivers in a FAAB league: the − $N + stepper and Bid, starting at the minimum, with the bounds named', () => {
+  it('on waivers in a FAAB league: one + that claims; the bid opens only on a press', () => {
     const out = body({ pool: [{ player_id: 'p-free', state: 'on_waivers', waivers_until: '2099-09-16T07:00:00Z', game_lock: UNLOCKED } as PoolRow] })
-    expect(out).toContain('data-card-bid')
-    expect(out).toContain('aria-label="Lower the bid"')
-    expect(out).toContain('data-card-bid-amount="true">$1</span>')
-    expect(out).toContain('data-card-action="bid"')
-    expect(out).toContain('Bids from $1 to $40 (your FAAB left).')
-  })
-  it('a priority league: Claim, not a bid', () => {
-    const out = body({ waiverType: 'rolling_priority', pool: [{ player_id: 'p-free', state: 'on_waivers', waivers_until: '2099-09-16T07:00:00Z', game_lock: UNLOCKED } as PoolRow] })
-    expect(out).toContain('data-card-action="claim"')
+    expect(out).toMatch(/aria-label="Claim Player p-free"[^>]*data-card-action="acquire" data-acquire="claim"/)
     expect(out).not.toContain('data-card-bid')
+    ONE_PLUS(out)
   })
-  it('a full roster: the drop picker (never a locked player) and Add closed until one is picked', () => {
+  it('a priority league: one + that claims, no bid', () => {
+    const out = body({ waiverType: 'rolling_priority', pool: [{ player_id: 'p-free', state: 'on_waivers', waivers_until: '2099-09-16T07:00:00Z', game_lock: UNLOCKED } as PoolRow] })
+    expect(out).toContain('data-acquire="claim"')
+    expect(out).not.toContain('data-card-bid')
+    ONE_PLUS(out)
+  })
+  it('a full roster: the + stays live (a press asks for the drop first)', () => {
     const out = body({ rosterSize: 2 })
-    expect(out).toContain(ROSTER_FULL_COPY)
-    expect(out).toContain('<option value="p-mine">WR · Player p-mine</option>')
-    expect(out).not.toContain('value="p-locked"')
-    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-card-action="add"/)
+    expect(out).toContain('data-acquire="add"')
+    expect(out).not.toMatch(/disabled=""[^>]*data-card-action="acquire"/)
+    expect(out).not.toContain(ROSTER_FULL_COPY)
+    ONE_PLUS(out)
+  })
+  it('a locked free agent: the + disabled, the lock’s reason as its title and shown', () => {
+    const out = body({ player: player('p-free'), pool: [{ player_id: 'p-free', state: 'locked_in_game', waivers_until: null, game_lock: LOCKED } as PoolRow] })
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-acquire="none"/)
+    expect(out).toMatch(/<button[^>]*title="[^"]*game has started[^"]*"[^>]*data-acquire="none"/)
+    expect(out).toContain(LOCKED_ADD_TITLE)
+    ONE_PLUS(out)
+  })
+  it('outside the season: the + disabled with the league’s reason', () => {
+    const out = body({ leagueStatus: 'drafting' })
+    expect(out).toMatch(/disabled=""[^>]*data-acquire="none"/)
+    expect(out).toContain(MOVES_BEFORE_SEASON_COPY)
   })
   it('yours: Drop; locked: Drop closed with the reason shown', () => {
     expect(body({ player: player('p-mine') })).toMatch(/data-card-action="drop">Drop<\/button>/)

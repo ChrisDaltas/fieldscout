@@ -277,36 +277,35 @@ function table(window: WaiverWindowView | null, rows: PoolPlayerRow[] = [ROW], o
 }
 
 describe('the players table per window', () => {
-  it('claims only: a live Claim first, and a LIVE Add whose title names the run (R1220 — the server’s refusal is the rule)', () => {
+  it('claims only: ONE live + that claims — no separate Add (D481 supersedes R1220 here)', () => {
     const html = table(WINDOW)
-    expect(html).toMatch(/data-action="claim">Claim<\/button><button[^>]*title="Claims only right now[^"]*Wed 3:00 AM[^"]*"[^>]*data-action="add"/)
+    expect(html).toContain('data-action="acquire" data-acquire="claim"')
+    expect(html.match(/data-action=/g)).toHaveLength(1)
     expect(html).not.toMatch(/disabled=""/)
   })
-  it('R1219: no claims on this database (pre-149) — no Claim, Add live', () => {
+  it('R1219: no claims on this database (pre-149) — the + adds', () => {
     const html = table(null, [ROW], { claimsLive: false })
-    expect(html).not.toContain('data-action="claim"')
-    expect(html).toContain('data-action="add"')
+    expect(html).toContain('data-action="acquire" data-acquire="add"')
     expect(html).not.toMatch(/disabled=""/)
   })
-  it('free agency open: Add alone', () => {
+  it('free agency open: the + adds', () => {
     const html = table({ ...WINDOW, free_agency_open: true, why: 'open' })
-    expect(html).toContain('data-action="add"')
-    expect(html).not.toContain('data-action="claim"')
+    expect(html).toContain('data-action="acquire" data-acquire="add"')
     expect(html).not.toMatch(/disabled=""/)
   })
-  it('no window: both live (the server answers)', () => {
+  it('no window: a free agent’s + adds (the server answers)', () => {
     const html = table(null)
-    expect(html).toContain('data-action="claim"')
-    expect(html).toContain('data-action="add"')
+    expect(html).toContain('data-action="acquire" data-acquire="add"')
     expect(html).not.toMatch(/disabled=""/)
   })
   it('no waivers: no Claim anywhere', () => {
-    expect(table(null, [ROW], { waiverType: 'none_fcfs' })).not.toContain('data-action="claim"')
+    expect(table(null, [ROW], { waiverType: 'none_fcfs' })).toContain('data-action="acquire" data-acquire="add"')
   })
-  it('locked 🔒 row: Claim disabled with the lock’s reason', () => {
+  it('locked 🔒 row: the + disabled with the lock’s reason', () => {
     const html = table(WINDOW, [{ ...ROW, lock: { locked: true, copy: 'locked — game started', until: '2099-09-16T03:00:00.000Z' } }])
     expect(html).toContain('🔒 locked')
-    expect(html).toMatch(new RegExp(`disabled=""[^>]*title="${LOCKED_CLAIM_TITLE}"[^>]*data-action="claim"`))
+    expect(html).toMatch(/disabled=""[^>]*title="[^"]*game has started[^"]*"[^>]*data-action="acquire" data-acquire="none"/)
+    expect(LOCKED_CLAIM_TITLE).toBeTruthy()
   })
   it('the fa_hold chip on my fresh pickup — the stored pickup + hold against the server instant', () => {
     const mine: PoolPlayerRow = {

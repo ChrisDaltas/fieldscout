@@ -86,6 +86,9 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
     const managerAuth = await signInDevPro()
     const league = await provisionLeague({
       nameSuffix: 'inseason lock',
+      // D481: the "+" claims in a claims-only window, so the E32 add arm
+      // runs where adds are live — a league with no waivers.
+      waiverType: 'none_fcfs',
       teamCount: 8,
       rounds: 2,
       clockSeconds: 30,
@@ -174,7 +177,7 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       // the client decided nothing (players-page.tsx:71-78).
       await expect(addRow).toHaveAttribute('data-availability', 'free_agent')
       await expect(addRow).not.toHaveAttribute('data-locked', /.*/)
-      const addButton = addRow.locator('[data-action="add"]')
+      const addButton = addRow.locator('[data-action="acquire"][data-acquire="add"]')
       await expect(addButton).toBeEnabled()
       await addButton.click()
 
@@ -210,7 +213,7 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       const lockedPoolRow = page.locator(`[data-pool-row="${dropTarget.player_id}"]`)
       await expect(lockedPoolRow).toBeVisible({ timeout: 60_000 })
       await expect(lockedPoolRow).toHaveAttribute('data-locked', 'true')
-      const lockedAdd = lockedPoolRow.locator('[data-action="add"]')
+      const lockedAdd = lockedPoolRow.locator('[data-action="acquire"]')
       await expect(lockedAdd).toBeDisabled()
       await expect(lockedAdd).toHaveAttribute('title', LOCKED_ADD_TITLE)
 

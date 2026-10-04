@@ -115,6 +115,8 @@ test.describe('the player card — open from My Team, drop with confirmation (re
     await expect(actions.locator('[data-card-where]')).toHaveText(/^On .+ · /, { timeout: 30_000 })
     await expect(actions.locator('[data-card-action="trade"]')).toBeVisible()
     await expect(actions.locator('[data-card-action="drop"]')).toHaveCount(0)
+    // D481: another team's player has no "+".
+    await expect(actions.locator('[data-card-action="acquire"]')).toHaveCount(0)
     await context.close()
   })
 })

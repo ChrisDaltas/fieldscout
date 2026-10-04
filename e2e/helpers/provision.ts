@@ -127,6 +127,9 @@ export interface ProvisionInput {
    * Default unchanged — the M2/M3 specs' provisioning is byte-identical.
    */
   season?: true
+  /** D481: a league with no waivers, where adds are live from the draft's
+   *  end (the one "+" adds rather than claims). Default unchanged (FAAB). */
+  waiverType?: 'none_fcfs'
   /** Create + order the draft row (league `scheduled`). */
   createDraftRow?: boolean
   /** Also start it (skips the lobby — the reconnect spec's shape). */
@@ -169,6 +172,7 @@ export async function provisionLeague(input: ProvisionInput): Promise<Provisione
   }
   const configured = {
     ...settings,
+    ...(input.waiverType ? { waiver_type: input.waiverType } : {}),
     roster_settings: input.season ? SEASON_ROSTER : rosterForRounds(input.rounds),
     draft: {
       ...settings.draft,

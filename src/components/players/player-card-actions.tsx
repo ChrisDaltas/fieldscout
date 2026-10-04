@@ -27,8 +27,10 @@ import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import { leagueCardContext, type PlayerCardContext } from './player-card-context'
 import {
+  acquireLabel,
   bidAllowed,
   cardLeagueView,
+  claimPlacedCopy,
   droppable,
   leagueRowStatus,
   ROSTER_FULL_COPY,
@@ -56,6 +58,8 @@ export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; le
   const rosters = useRosters(leagueId)
   const pool = useLeaguePool(leagueId)
   const deadline = useTradeDeadline(leagueId)
+  // D481: held here so "Added X" survives the card re-deriving him as yours.
+  const move = useAddDrop(leagueId)
   const detail = league.data
 
   if (league.isPending || (rosters.isPending && !rosters.data) || (pool.isPending && !pool.data)) {
@@ -83,11 +87,13 @@ export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; le
     nextRunLocal: nextRun ? formatInstantWithDate(nextRun, tz).local : null,
     formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
   })
-  return <LeagueActionsBody view={view} leagueId={leagueId} myTeamId={myTeamId} />
+  return <LeagueActionsBody view={view} leagueId={leagueId} myTeamId={myTeamId} move={move} />
 }
 
 /** The block for one computed view — exported for the render tests. */
-export function LeagueActionsBody({ view, leagueId, myTeamId }: { view: CardLeagueView; leagueId: string; myTeamId: string | null }) {
+type MoveHandle = ReturnType<typeof useAddDrop>
+
+export function LeagueActionsBody({ view, leagueId, myTeamId, move }: { view: CardLeagueView; leagueId: string; myTeamId: string | null; move?: MoveHandle }) {
   return (
     <div className="flex flex-col gap-1.5" data-card-league={view.kind}>
       <p className="text-[12px] font-extrabold text-ink" data-card-where>
@@ -106,7 +112,12 @@ export function LeagueActionsBody({ view, leagueId, myTeamId }: { view: CardLeag
         ) : (
           <ClosedReason>{view.trade.reason}</ClosedReason>
         ))}
-      {view.kind === 'available' && myTeamId && <PickupActions view={view} leagueId={leagueId} teamId={myTeamId} />}
+      {view.kind !== 'available' && move?.data && (
+        <p className="text-[12px] font-semibold text-positive-strong" role="status" data-card-result>
+          {moveReadout(move.data, (iso) => iso).headline}.
+        </p>
+      )}
+      {view.kind === 'available' && myTeamId && <PickupActions view={view} leagueId={leagueId} teamId={myTeamId} move={move} />}
     </div>
   )
 }
@@ -150,14 +161,21 @@ function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView,
   )
 }
 
-function PickupActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView, { kind: 'available' }>; leagueId: string; teamId: string }) {
-  const move = useAddDrop(leagueId)
+function PickupActions({ view, leagueId, teamId, move: held }: { view: Extract<CardLeagueView, { kind: 'available' }>; leagueId: string; teamId: string; move?: MoveHandle }) {
+  const own = useAddDrop(leagueId)
+  const move = held ?? own
   const claim = useSubmitClaim(leagueId)
   const [dropId, setDropId] = useState<string>('')
   const [bid, setBid] = useState<number>(view.faab?.min ?? 0)
+  // D481: a press that needs a choice (a drop, a bid) opens it first.
+  const [choosing, setChoosing] = useState(false)
   const choices = useMemo(() => droppable(view.myRoster, (p) => lockBadgeFor(p.game_lock, true).locked), [view.myRoster])
-  const needsPick = view.needsDrop && dropId === ''
   const playerId = view.row.player.id
+  const name = view.row.player.full_name
+  const acq = view.acquire
+  const faab = acq.kind === 'claim' && view.faab ? view.faab : null
+  const needsChoice = view.needsDrop || faab !== null
+  const pending = move.isPending || claim.isPending
 
   if (move.data) {
     return (
@@ -169,91 +187,85 @@ function PickupActions({ view, leagueId, teamId }: { view: Extract<CardLeagueVie
   if (claim.data) {
     return (
       <p className="text-[12px] font-semibold text-ink" role="status" data-card-result>
-        Claim in — it’s settled at the next waiver run.
+        {claimPlacedCopy(name, view.nextRunLocal)}
       </p>
     )
   }
+  // A race: the server's own sentence, verbatim.
   const refusal = move.isError ? move.error : claim.isError ? claim.error : null
-  const anyOpen = (view.add.show && !view.add.disabled) || (view.claim.show && !view.claim.disabled)
-  const closedTitle = view.add.show && view.add.disabled ? view.add.title : view.claim.show && view.claim.disabled ? view.claim.title : undefined
-  const faab = view.claim.show && view.faab ? view.faab : null
+  const send = () => {
+    const drop = dropId || null
+    if (acq.kind === 'add') move.submit({ teamId, addPlayerId: playerId, dropPlayerId: drop })
+    else if (acq.kind === 'claim') claim.submit({ teamId, addPlayerId: playerId, dropPlayerId: drop, ...(faab ? { faabBid: bid } : {}) })
+  }
+  const label = acquireLabel(acq.kind, name)
+  const ready = !(view.needsDrop && dropId === '') && (faab === null || bidAllowed(bid, faab))
 
   return (
     <div className="flex flex-col gap-1.5">
-      {view.needsDrop && anyOpen && (
-        <label className="flex flex-col gap-1 text-[11px] font-semibold text-n-3">
-          {ROSTER_FULL_COPY}
-          <select
-            value={dropId}
-            onChange={(e) => setDropId(e.target.value)}
-            className="h-btn-md rounded-sm border border-ink bg-white px-2 text-[12px] font-medium text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-            data-card-drop-pick
-          >
-            <option value="">Choose who to drop</option>
-            {choices.map((p) => (
-              <option key={p.player_id} value={p.player_id}>
-                {p.position} · {p.full_name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <div className="flex flex-wrap items-center gap-1.5">
-        {view.add.show && (
-          <Button
-            variant="green"
-            size="sm"
-            disabled={view.add.disabled || needsPick || move.isPending}
-            title={view.add.title}
-            onClick={() => move.submit({ teamId, addPlayerId: playerId, dropPlayerId: dropId || null })}
-            data-card-action="add"
-          >
-            {move.isPending ? 'Adding…' : 'Add'}
-          </Button>
-        )}
-        {faab ? (
-          <span className="inline-flex items-center gap-1" data-card-bid>
-            <Button variant="stroke" size="icon-sm" aria-label="Lower the bid" disabled={view.claim.show && view.claim.disabled} onClick={() => setBid((b) => stepBid(b, -1, faab))}>
-              −
-            </Button>
-            <span className="fs-num min-w-[32px] text-center text-[12px] font-extrabold" data-card-bid-amount>
-              ${bid}
+      <span className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="green"
+          size="icon-sm"
+          aria-label={label}
+          title={acq.disabled ? acq.title : label}
+          disabled={acq.disabled || pending || choosing}
+          onClick={() => (needsChoice ? setChoosing(true) : send())}
+          data-card-action="acquire"
+          data-acquire={acq.kind}
+        >
+          <Icon name="plus" size={13} />
+        </Button>
+        {acq.disabled && acq.title && <ClosedReason>{acq.title}</ClosedReason>}
+      </span>
+      {choosing && !acq.disabled && (
+        <div className="flex flex-col gap-1.5" data-card-acquire-choice>
+          {view.needsDrop && (
+            <label className="flex flex-col gap-1 text-[11px] font-semibold text-n-3">
+              {ROSTER_FULL_COPY}
+              <select
+                value={dropId}
+                onChange={(e) => setDropId(e.target.value)}
+                className="h-btn-md rounded-sm border border-ink bg-white px-2 text-[12px] font-medium text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                data-card-drop-pick
+              >
+                <option value="">Choose who to drop</option>
+                {choices.map((p) => (
+                  <option key={p.player_id} value={p.player_id}>
+                    {p.position} · {p.full_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {faab && (
+            <span className="inline-flex items-center gap-1" data-card-bid>
+              <Button variant="stroke" size="icon-sm" aria-label="Lower the bid" onClick={() => setBid((b) => stepBid(b, -1, faab))}>
+                −
+              </Button>
+              <span className="fs-num min-w-[32px] text-center text-[12px] font-extrabold" data-card-bid-amount>
+                ${bid}
+              </span>
+              <Button variant="stroke" size="icon-sm" aria-label="Raise the bid" onClick={() => setBid((b) => stepBid(b, 1, faab))}>
+                +
+              </Button>
             </span>
-            <Button variant="stroke" size="icon-sm" aria-label="Raise the bid" disabled={view.claim.show && view.claim.disabled} onClick={() => setBid((b) => stepBid(b, 1, faab))}>
-              +
+          )}
+          {faab && faab.max !== null && (
+            <p className="text-[10px] font-medium text-n-3">
+              Bids from ${faab.min} to ${faab.max} (your FAAB left).
+            </p>
+          )}
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Button variant="green" size="sm" disabled={!ready || pending} onClick={send} data-card-acquire-confirm>
+              {pending ? 'Sending…' : acq.kind === 'claim' ? 'Place claim' : 'Add'}
             </Button>
-            <Button
-              variant="blue"
-              size="sm"
-              disabled={(view.claim.show && view.claim.disabled) || needsPick || !bidAllowed(bid, faab) || claim.isPending}
-              title={view.claim.show ? view.claim.title : undefined}
-              onClick={() => claim.submit({ teamId, addPlayerId: playerId, dropPlayerId: dropId || null, faabBid: bid })}
-              data-card-action="bid"
-            >
-              {claim.isPending ? 'Bidding…' : 'Bid'}
+            <Button variant="stroke" size="sm" disabled={pending} onClick={() => setChoosing(false)}>
+              Cancel
             </Button>
           </span>
-        ) : (
-          view.claim.show && (
-            <Button
-              variant="blue"
-              size="sm"
-              disabled={view.claim.disabled || needsPick || claim.isPending}
-              title={view.claim.title}
-              onClick={() => claim.submit({ teamId, addPlayerId: playerId, dropPlayerId: dropId || null })}
-              data-card-action="claim"
-            >
-              {claim.isPending ? 'Claiming…' : 'Claim'}
-            </Button>
-          )
-        )}
-      </div>
-      {faab && faab.max !== null && (
-        <p className="text-[10px] font-medium text-n-3">
-          Bids from ${faab.min} to ${faab.max} (your FAAB left).
-        </p>
+        </div>
       )}
-      {!anyOpen && closedTitle && <ClosedReason>{closedTitle}</ClosedReason>}
       {refusal && (
         <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-card-refusal>
           {refusal instanceof Error ? refusal.message : 'The move was refused.'}
@@ -296,9 +308,22 @@ export function LeagueAvailabilityRow({ player, league, first }: { player: PoolP
           {rosters.isError || pool.isError ? 'Couldn’t read this league.' : (status?.text ?? 'Checking…')}
         </span>
       </span>
-      {label && (
+      {label === 'Add' ? (
+        // D481: the one "+" — it opens him in that league, where the + runs
+        // the add or the claim the league's rules allow.
         <Button
-          variant={label === 'Add' ? 'green' : 'stroke'}
+          variant="green"
+          size="icon-sm"
+          onClick={() => setContext(player.id, leagueCardContext(league.id))}
+          data-card-league-open={league.id}
+          aria-label={`Pick up ${player.full_name} in ${league.name}`}
+          title={`Pick up ${player.full_name} in ${league.name}`}
+        >
+          <Icon name="plus" size={13} />
+        </Button>
+      ) : label && (
+        <Button
+          variant="stroke"
           size="sm"
           onClick={() => setContext(player.id, leagueCardContext(league.id))}
           data-card-league-open={league.id}
