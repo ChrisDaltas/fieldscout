@@ -49,11 +49,13 @@ import type { Database, Json } from '@/types/database'
 
 import {
   avgPerGame,
+  BOX_KEYS,
   completedGames,
   competitionRanks,
   type CoreStatsPayload,
   type GameWeek,
   pointsWeeks,
+  sumBox,
   weeklyCells,
   type ScoringBasis,
   type ScoringChoice,
@@ -94,7 +96,9 @@ async function readSeasonPool(supabase: Supabase, season: number): Promise<Map<s
 }
 
 async function readOwnSeason(supabase: Supabase, season: number, playerId: string): Promise<Line[]> {
-  const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  // The scoring columns plus the Key stats box columns (D486(14)).
+  const cols = new Set([...STAT_LINE_COLUMNS, ...BOX_KEYS])
+  const select = ['id', 'player_id', 'week', 'is_live', 'updated_at', 'advanced', ...cols].join(', ')
   const { data, error } = await supabase
     .from('player_stats')
     .select(select)
@@ -104,6 +108,19 @@ async function readOwnSeason(supabase: Supabase, season: number, playerId: strin
     .order('week')
   if (error) throw new Error(`player_stats: ${error.message}`)
   return (data ?? []) as unknown as Line[]
+}
+
+async function readUsage(supabase: Supabase, season: number, playerId: string): Promise<CoreStatsPayload['usage']> {
+  const { data, error } = await supabase
+    .from('player_usage')
+    .select('snap_pct, target_share')
+    .eq('season', season)
+    .eq('player_id', playerId)
+    .maybeSingle()
+  if (error) throw new Error(`player_usage: ${error.message}`)
+  if (!data) return null
+  const n = (v: unknown) => (v === null || v === undefined ? null : Number(v))
+  return { snap_pct: n(data.snap_pct), target_share: n(data.target_share) }
 }
 
 async function readPositions(supabase: Supabase, ids: readonly string[]): Promise<Map<string, string>> {
@@ -267,14 +284,16 @@ export async function readPlayerCoreStats(
   let lines: Awaited<ReturnType<typeof readWeeklyLines>>
   let ownRows: Line[]
   let ownProjections: Awaited<ReturnType<typeof readWeeklyLines>>
+  let usage: CoreStatsPayload['usage']
   try {
-    ;[standings, lines, ownRows, ownProjections] = await Promise.all([
+    ;[standings, lines, ownRows, ownProjections, usage] = await Promise.all([
       choice.kind === 'system' && opts.poolCache
         ? opts.poolCache(choice.system, season, week)
         : computePoolStandings(supabase, snapshot, pastWeekRules, season, week),
       week === null ? Promise.resolve(new Map()) : readWeeklyLines(supabase, season, [week], [playerId]),
       readOwnSeason(supabase, season, playerId),
       readWeeklyLines(supabase, season, SEASON_WEEKS, [playerId]),
+      readUsage(supabase, season, playerId),
     ])
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
@@ -305,7 +324,9 @@ export async function readPlayerCoreStats(
     live: r.is_live === true || (week !== null && r.week >= week),
   }))
   const points = new Map<number, number>()
-  for (const w of pointsWeeks(ownGames, player.bye_week)) {
+  const completed = pointsWeeks(ownGames, player.bye_week)
+  const completedRows = ownRows.filter((r) => completed.includes(r.week))
+  for (const w of completed) {
     const p = seasonToDate(snapshot, playerId, pos, ownRows.filter((r) => r.week === w), pastWeekRules).points
     if (p !== null) points.set(w, p)
   }
@@ -329,6 +350,8 @@ export async function readPlayerCoreStats(
     pos_rank: own?.pos_rank ?? null,
     overall_rank: own?.overall_rank ?? null,
     weekly: weeklyCells(points, projections),
+    box: { games: completed.length, totals: sumBox(completedRows as unknown as Array<Record<string, unknown>>) },
+    usage,
   }
   return { status: 200, body: body as unknown as Json }
 }

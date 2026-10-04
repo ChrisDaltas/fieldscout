@@ -160,6 +160,53 @@ export interface CoreStatsPayload {
    *  it (only where `player_weekly_projections` has a line). Weeks with
    *  neither are absent. */
   weekly: WeeklyCell[]
+  /** D486(14) Key stats: box totals over his COMPLETED games (the same
+   *  games the average divides by) and the season usage row, if any. */
+  box: { games: number; totals: BoxTotals }
+  usage: { snap_pct: number | null; target_share: number | null } | null
+}
+
+/** The stored `player_stats` box columns the Key stats panel reads. */
+export const BOX_KEYS = [
+  'pass_attempts',
+  'pass_completions',
+  'pass_yards',
+  'pass_tds',
+  'interceptions',
+  'rush_attempts',
+  'rush_yards',
+  'rush_tds',
+  'targets',
+  'receptions',
+  'receiving_yards',
+  'receiving_tds',
+  'fg_made',
+  'fg_attempted',
+  'fg_made_40_plus',
+  'fg_made_50_plus',
+  'xp_made',
+  'xp_attempted',
+  'def_sacks',
+  'def_interceptions',
+  'def_fumble_recoveries',
+  'def_tds',
+  'def_points_allowed',
+  'def_yards_allowed',
+] as const
+export type BoxKey = (typeof BOX_KEYS)[number]
+export type BoxTotals = Partial<Record<BoxKey, number>>
+
+/** Sum the box columns over the given lines. A column no line carries is
+ *  absent (never 0); a stored 0 is a real 0. */
+export function sumBox(lines: ReadonlyArray<Partial<Record<BoxKey, unknown>>>): BoxTotals {
+  const out: BoxTotals = {}
+  for (const line of lines) {
+    for (const k of BOX_KEYS) {
+      const v = line[k]
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = (out[k] ?? 0) + v
+    }
+  }
+  return out
 }
 
 export interface WeeklyCell {
@@ -206,4 +253,16 @@ export function coreTiles(stats: CoreStatsPayload | null, player: { position: st
     { key: 'total', label: 'Total pts', value: pts(stats?.total_points ?? null) },
     { key: 'proj', label: 'Proj this wk', value: pts(stats?.projected_points ?? null) },
   ]
+}
+
+/** The decision line (D486(13)): Pos rank · Avg / week · Proj this wk. */
+export function decisionTiles(stats: CoreStatsPayload | null, player: { position: string }): CoreTile[] {
+  const all = coreTiles(stats, player)
+  return ['pos-rank', 'avg', 'proj'].map((k) => all.find((t) => t.key === k)!)
+}
+
+/** Total pts + Overall — one tap away, in Draft & value (D486(13)). */
+export function valueTiles(stats: CoreStatsPayload | null): CoreTile[] {
+  const all = coreTiles(stats, { position: '' })
+  return ['total', 'overall-rank'].map((k) => all.find((t) => t.key === k)!)
 }

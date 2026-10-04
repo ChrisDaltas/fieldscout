@@ -95,6 +95,14 @@ describe('core stats read — default scoring over the whole pool', () => {
       projected_points: null,
       pos_rank: 1,
       overall_rank: 2,
+      // D486(12) table weeks + D486(14) key stats (wk 9 is his bye — not a game).
+      weekly: [
+        { week: 1, points: 16, proj: null },
+        { week: 2, points: 16, proj: null },
+      ],
+      // Box columns default to 0 in the schema, so a stored 0 comes back as 0.
+      box: { games: 2, totals: expect.objectContaining({ receiving_yards: 200, receiving_tds: 2, targets: 0 }) },
+      usage: null,
     })
     const two = await read('pcs-wr2')
     expect([two.body.total_points, two.body.pos_rank, two.body.overall_rank]).toEqual([32, 1, 2])

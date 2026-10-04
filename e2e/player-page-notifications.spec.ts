@@ -11,10 +11,11 @@ import { STORAGE_STATE } from './helpers/local-env'
  * Spec — the full player page and the rail's Notifications tool (built to
  * the Claude Design prototype's PlayerPage / ResearchRail, Chris 2026-10-04).
  *
- *   1. As the manager: a bench player's name opens his card in the league;
- *      the card's expand icon goes to the full page's LEAGUE variant
- *      (`?league=`, "Viewing in …" + the league's actions); Back returns to
- *      the team page. The global variant lists "Your leagues".
+ *   1. As the manager: a bench player's name opens his MINI CARD in the
+ *      league; the card's expand icon opens the player view MODAL (D486(13))
+ *      over the team page with the league's actions; Esc closes it and the
+ *      page is still there; the global variant lists "Your leagues"; Full
+ *      stats expands in place; the deep link renders the same view.
  *   2. Notifications: a league item and a platform item; the league chip
  *      shows ONLY the league's item (with the hidden note); clicking the row
  *      marks it read on the server and follows its link.
@@ -31,6 +32,7 @@ const SEED_SEASON = 2026
 const seededGameIds: string[] = []
 let seededSplits: { position: string } | null = null
 let seededStatsPlayer: string | null = null
+const seededKeyStatPlayers: string[] = []
 
 async function seedMatchup(playerId: string): Promise<{ team: string; position: string; opp: string }> {
   const service = serviceClient()
@@ -62,7 +64,7 @@ async function seedMatchup(playerId: string): Promise<{ team: string; position: 
   if (sp.error) throw sp.error
   seededSplits = { position }
   // Recent: three completed weeks under the strip's scoring.
-  const st = await service.from('player_stats').insert([1, 2, 3].map((week) => ({ player_id: playerId, season: SEED_SEASON, week, rush_yards: 40 + week * 10, receiving_yards: 20 })))
+  const st = await service.from('player_stats').insert([1, 2, 3].map((week) => ({ player_id: playerId, season: SEED_SEASON, week, rush_attempts: 14 + week, rush_yards: 40 + week * 10, rush_tds: week === 2 ? 1 : 0, targets: 4, receptions: 3, receiving_yards: 20 })))
   if (st.error) throw st.error
   seededStatsPlayer = playerId
   return { team, position, opp }
@@ -103,91 +105,144 @@ test.describe('the full player page + rail notifications (real browser)', () => 
     if (insertedIds.length > 0) await service.from('notifications').delete().in('id', insertedIds)
     if (seededGameIds.length > 0) await service.from('nfl_games').delete().in('id', seededGameIds)
     if (seededSplits) await service.from('defense_position_splits').delete().eq('season', SEED_SEASON).eq('position', seededSplits.position)
+    if (seededKeyStatPlayers.length > 0) {
+      await service.from('player_stats').delete().eq('season', SEED_SEASON).in('player_id', seededKeyStatPlayers).in('week', [1, 2, 3])
+    }
     if (seededStatsPlayer) await service.from('player_stats').delete().eq('season', SEED_SEASON).eq('player_id', seededStatsPlayer).in('week', [1, 2, 3])
     await cleanupSweep(service)
   })
 
-  test('card → expand → league full page → Back returns', async ({ browser }) => {
+  test('name → mini card → expand → player view MODAL; Esc keeps the page; deep link renders it', async ({ browser }) => {
     const { leagueId, managerTeamId } = fixture()
-    const context = await browser.newContext({ storageState: STORAGE_STATE.devPro })
+    const context = await browser.newContext({ storageState: STORAGE_STATE.devPro, viewport: { width: 1280, height: 900 } })
     const page = await context.newPage()
     const teamUrl = `/app/leagues/${leagueId}/team/${managerTeamId}`
     await page.goto(teamUrl)
     await expect(page.locator('[data-bench]')).toBeVisible({ timeout: 60_000 })
 
+    // A plain name click opens the MINI CARD (the quick peek), not the modal.
     const link = page.locator('[data-bench] [data-player-link]').first()
     const playerId = await link.getAttribute('data-player-link')
     const seeded = await seedMatchup(playerId!)
     await link.click()
     await expect(page.locator('[data-card-actions="league"]')).toBeVisible({ timeout: 30_000 })
-    await page.getByRole('button', { name: 'Open full page' }).click()
+    await expect(page.locator('[data-player-modal]')).toHaveCount(0)
 
-    await page.waitForURL(`**/app/players/${playerId}?league=${leagueId}`, { timeout: 60_000 })
-    const full = page.locator('[data-player-page="league"]')
-    await expect(full).toBeVisible({ timeout: 60_000 })
+    // The card's expand icon opens the decision view as a modal over the page.
+    await page.getByRole('button', { name: 'Open player view' }).click()
+    const modal = page.locator(`[data-player-modal="${playerId}"]`)
+    await expect(modal).toBeVisible({ timeout: 30_000 })
+    expect(new URL(page.url()).pathname).toBe(teamUrl) // never navigated
+    const full = modal.locator('[data-player-page="league"]')
     await expect(full.locator('[data-viewing-in]')).toHaveText(/^Viewing in .+/, { timeout: 30_000 })
     await expect(full.locator('[data-card-where]')).toHaveText(/^On your team in /, { timeout: 30_000 })
     await expect(full.locator('[data-card-action="drop"]')).toBeVisible()
-    // D486(12): the standard shell header — "Player" + Back, nothing taller.
-    const shellHeader = page.locator('header:has(h3)')
-    await expect(shellHeader.locator('h3')).toHaveText('Player')
-    const headerBox = await shellHeader.boundingBox()
-    expect(headerBox?.height).toBeLessThanOrEqual(60)
-    // D486(12): the identity line — each fact once.
-    const identity = full.locator('[data-player-identity]')
-    await expect(identity).toBeVisible()
+    // The calm default view: identity, three numbers, this week, the table.
     await expect(full.getByText(/^Bye Wk \d+$/)).toHaveCount(1)
-    await expect(full.locator('[data-player-vitals]')).toHaveCount(0)
-    // This week: the seeded game @ the opponent, 4th toughest (red).
+    await expect(full.locator('[data-core-tile]')).toHaveCount(3)
+    await expect(full.locator('[data-core-basis]')).toHaveText(/^(?!ESPN Standard scoring$)(?!Couldn).+ scoring$/, { timeout: 30_000 })
     const tw = full.locator('[data-this-week="game"]')
-    await expect(tw).toBeVisible({ timeout: 30_000 })
-    await expect(tw.locator('[data-this-week-opp]')).toHaveText(`@ ${seeded.opp}`)
+    await expect(tw.locator('[data-this-week-opp]')).toHaveText(`@ ${seeded.opp}`, { timeout: 30_000 })
     await expect(tw.locator('[data-matchup-badge="negative"]')).toHaveText(`4th toughest vs ${seeded.position}`)
-    // The season table: one row per week, the current week marked, the
-    // bye as BYE; the old Overview / Schedule tabs are gone.
     await expect.poll(() => full.locator('[data-season-week]').count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(6)
     await expect(full.locator('[data-season-week="4"]')).toHaveAttribute('data-current', 'true')
-    await expect(full.locator('[data-full-stats-toggle]')).toHaveAttribute('aria-expanded', 'false')
-    await expect(full.getByRole('tab')).toHaveCount(0)
-    // D486(12): the stats strip — five tiles, scored by THIS league.
-    const leagueRow = full.locator('[data-core-stats]')
-    await expect(leagueRow.locator('[data-core-tile]')).toHaveCount(5)
-    await expect(leagueRow.locator('[data-core-basis]')).toHaveText(/^(?!ESPN Standard scoring$)(?!Couldn).+ scoring$/, { timeout: 30_000 })
-    // D486(11): ?league= preselects that league in the scoring dropdown.
-    await expect(leagueRow.locator('[data-core-scoring]')).not.toHaveText(/ESPN Standard/)
-    await leagueRow.locator('xpath=..').screenshot({ path: test.info().outputPath('player-hero-league.png') })
-    await page.screenshot({ path: process.env.PP_LEAGUE_SHOT ?? test.info().outputPath('player-page-league.png'), fullPage: true })
+    // Every section collapsed by default.
+    for (const k of ['stats', 'log', 'scoring', 'value']) {
+      await expect(full.locator(`[data-section-toggle="${k}"]`)).toHaveAttribute('aria-expanded', 'false')
+    }
+    await expect(full.locator('[data-section]')).toHaveCount(0)
+    await page.waitForTimeout(300) // the dialog's fade — screenshot evidence only
+    await page.screenshot({ path: process.env.PP_LEAGUE_SHOT ?? test.info().outputPath('player-modal-league.png') })
 
-    await page.locator('[data-player-back]').click()
-    await page.waitForURL(`**${teamUrl}`, { timeout: 30_000 })
-    await expect(page.locator('[data-bench]')).toBeVisible({ timeout: 60_000 })
+    // Esc closes it; the team page underneath is still there.
+    await page.keyboard.press('Escape')
+    await expect(modal).toHaveCount(0)
+    await expect(page.locator('[data-bench]')).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe(teamUrl)
 
-    // The global variant: "Your leagues" with this league's row.
-    await page.goto(`/app/players/${playerId}`)
-    const global = page.locator('[data-player-page="global"]')
-    await expect(global).toBeVisible({ timeout: 60_000 })
+    // Reopen, then step out of the league: the same modal re-targets to the
+    // global variant ("Your leagues") — still over the team page.
+    await link.click()
+    await page.getByRole('button', { name: 'Open player view' }).click()
+    await expect(modal).toBeVisible({ timeout: 30_000 })
+    await modal.locator('[data-card-all-leagues]').click()
+    const global = modal.locator('[data-player-page="global"]')
     await expect(global.locator(`[data-card-league-row="${leagueId}"]`)).toBeVisible({ timeout: 30_000 })
-    const globalRow = global.locator('[data-core-stats]')
-    await expect(globalRow.locator('[data-core-tile]')).toHaveCount(5)
-    // The season table's completed weeks carry points under ESPN Standard.
+    await expect(global.locator('[data-core-basis]')).toHaveText('ESPN Standard scoring', { timeout: 30_000 })
     await expect(global.locator('[data-season-week="1"] td').last()).toHaveText(/^\d+\.\d$/, { timeout: 30_000 })
-    await expect(globalRow.locator('[data-core-basis]')).toHaveText('ESPN Standard scoring', { timeout: 30_000 })
-    await expect(globalRow.locator('[data-core-avg-note]')).toHaveText('Avg of completed weeks')
-    // D486(11): switch scoring — the label (and the numbers) follow the pick.
-    await globalRow.locator('[data-core-scoring]').click()
-    await expect(page.locator(`[data-core-scoring-option="league:${leagueId}"]`)).toBeVisible()
-    await page.waitForTimeout(400) // the menu's open animation — screenshot evidence only
-    await page.screenshot({ path: process.env.CORE_SCORING_SHOT ?? test.info().outputPath('player-core-scoring-open.png') })
+    // D486(14) Key stats from the seeded box lines (3 completed games).
+    if (seeded.position === 'RB') {
+      await expect(global.locator('[data-key-stat="carries_pg"] p').first()).toHaveText('16.0')
+      await expect(global.locator('[data-key-stat="rush_yds"] p').first()).toHaveText('180')
+    } else {
+      await expect(global.locator('[data-key-stats="primary"]')).toBeVisible()
+    }
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: process.env.PP_GLOBAL_SHOT ?? test.info().outputPath('player-modal-global.png') })
+
+    // Tapping the basis opens Scoring; switching re-scores the view.
+    await global.locator('[data-core-basis]').click()
+    await expect(global.locator('[data-section="scoring"]')).toBeVisible()
+    await global.locator('[data-core-scoring]').click()
     await page.locator('[data-core-scoring-option="ppr"]').click()
-    await expect(globalRow.locator('[data-core-basis]')).toHaveText('Full PPR scoring', { timeout: 30_000 })
-    await expect(globalRow.locator('[data-core-tile="total"] p').first()).toHaveText(/^\d+\.\d$/, { timeout: 30_000 })
-    await globalRow.locator('xpath=..').screenshot({ path: test.info().outputPath('player-hero-global.png') })
-    await page.screenshot({ path: process.env.PP_GLOBAL_SHOT ?? test.info().outputPath('player-page-global.png'), fullPage: true })
-    // Mobile: identity → this week → actions → strip, no horizontal scroll.
+    await expect(global.locator('[data-core-basis]')).toHaveText('Full PPR scoring', { timeout: 30_000 })
+    // Full stats expands in place.
+    await global.locator('[data-section-toggle="stats"]').click()
+    await expect(global.locator('[data-section-toggle="stats"]')).toHaveAttribute('aria-expanded', 'true')
+    await expect(global.locator('[data-section="stats"]')).toBeVisible()
+    await global.locator('[data-section="stats"]').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: process.env.PP_SECTION_SHOT ?? test.info().outputPath('player-modal-section.png') })
+    await page.keyboard.press('Escape')
+    await expect(modal).toHaveCount(0)
+
+    // Mobile: the modal is a full-screen sheet, no horizontal scroll.
     await page.setViewportSize({ width: 390, height: 844 })
-    await expect(global.locator('[data-this-week="game"]')).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.screenshot({ path: process.env.PP_MOBILE_SHOT ?? test.info().outputPath('player-page-mobile.png'), fullPage: true })
+    await link.click()
+    await page.getByRole('button', { name: 'Open player view' }).click()
+    await expect(modal).toBeVisible({ timeout: 30_000 })
+    const box = await modal.boundingBox()
+    expect(box?.width).toBe(390)
+    expect(await modal.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: process.env.PP_MOBILE_SHOT ?? test.info().outputPath('player-modal-mobile.png') })
+    await page.keyboard.press('Escape')
+    await page.setViewportSize({ width: 1280, height: 900 })
+
+    // The deep link renders the same view under the standard header.
+    await page.goto(`/app/players/${playerId}`)
+    const deep = page.locator('[data-player-view="page"]')
+    await expect(deep).toBeVisible({ timeout: 60_000 })
+    const shellHeader = page.locator('header:has(h3)')
+    await expect(shellHeader.locator('h3')).toHaveText('Player')
+    expect((await shellHeader.boundingBox())?.height).toBeLessThanOrEqual(60)
+    await expect(deep.locator('[data-season-table]')).toBeVisible({ timeout: 30_000 })
+    await context.close()
+  })
+
+  test('key stats per position on the deep link (RB / WR / QB)', async ({ browser }) => {
+    const service = serviceClient()
+    const context = await browser.newContext({ storageState: STORAGE_STATE.devPro, viewport: { width: 1280, height: 900 } })
+    const page = await context.newPage()
+    const lines: Record<string, (w: number) => Record<string, number>> = {
+      RB: (w) => ({ rush_attempts: 15 + w, rush_yards: 60 + w * 5, rush_tds: w === 1 ? 1 : 0, targets: 3, receptions: 2, receiving_yards: 15 }),
+      WR: (w) => ({ targets: 8, receptions: 5 + (w % 2), receiving_yards: 70 + w * 4, receiving_tds: w === 3 ? 1 : 0 }),
+      QB: (w) => ({ pass_attempts: 33, pass_completions: 22, pass_yards: 250 + w * 10, pass_tds: 2, interceptions: w === 2 ? 1 : 0, rush_attempts: 4, rush_yards: 18, rush_tds: 0 }),
+    }
+    for (const pos of ['RB', 'WR', 'QB'] as const) {
+      const { data: p, error } = await service.from('players').select('id').eq('position', pos).not('team', 'is', null).not('id', 'in', `(${seededStatsPlayer ?? 'none'})`).order('adp', { ascending: true, nullsFirst: false }).limit(1).single()
+      if (error) throw error
+      const clear = await service.from('player_stats').select('id').eq('season', SEED_SEASON).eq('player_id', p.id).in('week', [1, 2, 3])
+      if ((clear.data ?? []).length > 0) throw new Error(`${p.id} already has 2026 wk1–3 lines locally — refusing to seed over them`)
+      const ins = await service.from('player_stats').insert([1, 2, 3].map((week) => ({ player_id: p.id, season: SEED_SEASON, week, ...lines[pos](week) })))
+      if (ins.error) throw ins.error
+      seededKeyStatPlayers.push(p.id)
+      await page.goto(`/app/players/${p.id}`)
+      const view = page.locator('[data-player-view="page"]')
+      await expect(view.locator('[data-key-stats="primary"]')).toBeVisible({ timeout: 60_000 })
+      if (pos === 'QB') await expect(view.locator('[data-key-stat="comp_pct"] p').first()).toHaveText('66.7%')
+      if (pos === 'WR') await expect(view.locator('[data-key-stat="ypt"] p').first()).toHaveText(/^\d+\.\d$/)
+      await page.screenshot({ path: process.env[`PP_KEY_${pos}_SHOT`] ?? test.info().outputPath(`player-key-stats-${pos}.png`) })
+    }
     await context.close()
   })
 

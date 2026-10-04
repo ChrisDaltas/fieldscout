@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { DraftCardActions, GlobalLeaguesExpander, LeagueCardActions } from '@/components/players/player-card-actions'
@@ -13,7 +12,7 @@ import {
   StatsPanel,
   WeeklyPointsList,
 } from '@/components/players/player-detail-panels'
-import { playerPageHref, vitalCells } from '@/components/players/player-page-ops'
+import { vitalCells } from '@/components/players/player-page-ops'
 import { PositionBadge } from '@/components/players/position-badge'
 import {
   WindowShell,
@@ -32,6 +31,7 @@ import {
   usePlayerWindowsStore,
   type PlayerWindowState,
 } from '@/stores/player-windows-store'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 interface PlayerWindowProps {
   window: PlayerWindowState
@@ -52,8 +52,8 @@ export function PlayerWindow({
   isTop,
 }: PlayerWindowProps) {
   const { playerId, listContext, readOnly, context } = win
-  const router = useRouter()
   const closeWindow = usePlayerWindowsStore((s) => s.close)
+  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const focusWindow = usePlayerWindowsStore((s) => s.focus)
   const setPosition = usePlayerWindowsStore((s) => s.setPosition)
   const savedPosition = usePlayerWindowsStore((s) => s.positions[playerId])
@@ -71,14 +71,14 @@ export function PlayerWindow({
     (pos: { x: number; y: number }) => setPosition(playerId, pos),
     [setPosition, playerId],
   )
-  // The expand arrow goes to the same full page the old "Open full page"
-  // action navigated to, closing the mini card first (kit behavior).
-  // Opened from a league, the full page keeps that league (`?league=`).
+  // The expand arrow opens the player view MODAL (D486(13)) over the page,
+  // closing the mini card first (kit behavior). Opened from a league, the
+  // modal keeps that league. The page underneath is never navigated.
   const expandLeagueId = context.kind === 'league' ? context.leagueId : null
   const handleExpand = useCallback(() => {
     closeWindow(playerId)
-    router.push(playerPageHref(playerId, expandLeagueId))
-  }, [closeWindow, playerId, router, expandLeagueId])
+    openPlayerView(playerId, expandLeagueId)
+  }, [closeWindow, playerId, openPlayerView, expandLeagueId])
 
   const tabs: DetailWindowTab[] = data
     ? [
@@ -103,6 +103,7 @@ export function PlayerWindow({
       onClose={handleClose}
       onFocus={handleFocus}
       onExpand={handleExpand}
+      expandLabel="Open player view"
       zIndex={zIndex}
       stackIndex={stackIndex}
       initialPosition={savedPosition}

@@ -18,6 +18,7 @@ import {
 import { Icon, type IconName } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { featureFlags } from '@/lib/feature-flags'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { useUIStore } from '@/stores/ui-store'
 import { userProfileHref } from './username-link-ops'
 
@@ -112,6 +113,7 @@ export function CommandPalette() {
   const router = useRouter()
   const isOpen = useUIStore((s) => s.isCommandPaletteOpen)
   const setOpen = useUIStore((s) => s.setCommandPaletteOpen)
+  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const toggle = useUIStore((s) => s.toggleCommandPalette)
 
   const [query, setQuery] = useState('')
@@ -209,7 +211,11 @@ export function CommandPalette() {
               <CommandItem
                 key={player.id}
                 value={`${player.full_name} ${player.id}`}
-                onSelect={() => navigate(`/app/players/${player.id}`)}
+                onSelect={() => {
+                  // D486(13): the player view opens as a modal over this page.
+                  setOpen(false)
+                  openPlayerView(player.id)
+                }}
                 className="gap-2.5"
               >
                 <Avatar className="h-6 w-6">

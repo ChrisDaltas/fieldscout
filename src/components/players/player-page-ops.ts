@@ -164,7 +164,8 @@ export type ThisWeek =
  * "This week" for the hero's matchup block (D486(12)), read from STORED game
  * status — never a clock. The week is his next `scheduled` game, unless his
  * bye week falls after every game already played and before that next game
- * (then it is his bye). No game data → null, and the block is omitted.
+ * (then it is his bye). No scheduled game on file → null, and the block is
+ * omitted.
  */
 export function thisWeek(
   team: string | null,
@@ -177,8 +178,10 @@ export function thisWeek(
   const sorted = [...games].sort((a, b) => a.week - b.week)
   const next = sorted.find((g) => g.status === 'scheduled') ?? null
   const lastPlayed = Math.max(0, ...sorted.filter((g) => g.status !== 'scheduled').map((g) => g.week))
-  if (byeWeek != null && byeWeek > lastPlayed && (next === null || byeWeek < next.week)) {
-    return next === null && lastPlayed === 0 ? null : { kind: 'bye', week: byeWeek }
+  // A bye is "this week" only between a played game and a KNOWN next one —
+  // with no scheduled game on file we cannot say which week it is.
+  if (byeWeek != null && next !== null && byeWeek > lastPlayed && byeWeek < next.week) {
+    return { kind: 'bye', week: byeWeek }
   }
   if (!next) return null
   const home = next.home_team === team

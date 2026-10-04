@@ -42,11 +42,17 @@ import type { PlayerStatsPlayer, PlayerStatsResponse } from '@/hooks/use-player-
 import { leaguesKeys } from '@/hooks/use-leagues'
 
 import { PlayerDetailHeader } from './player-detail-header'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import {
   ActionsColumn,
+  DraftValue,
+  PlayerBody,
   PlayerDetailPageView,
   SeasonTable,
-  SeasonTableCard,
+  SECTIONS,
+  SectionToggles,
   StatsStrip,
   ThisWeekBlock,
 } from './player-detail-page-view'
@@ -62,7 +68,7 @@ import {
   vitalCells,
   type TeamGame,
 } from './player-page-ops'
-import { coreTiles, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
+import { decisionTiles, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
 
 const html = (el: ReactElement, qc = new QueryClient()) =>
   renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, el))
@@ -326,6 +332,8 @@ describe('player page — this week (D486(12))', () => {
     expect(thisWeek(null, 'RB', SEA_WEEK, [], 7)).toBeNull()
     const allFinal = SEA_WEEK.map((g) => ({ ...g, status: 'final' }))
     expect(thisWeek('LAC', 'RB', allFinal, [], 7)).toBeNull()
+    // A later bye with nothing scheduled is NOT "this week" — we can't know.
+    expect(thisWeek('LAC', 'RB', allFinal.filter((g) => g.week === 4), [], 7)).toBeNull()
   })
 })
 
@@ -343,25 +351,34 @@ const PAYLOAD: CoreStatsPayload = {
   projected_points: 17.3,
   pos_rank: 12,
   overall_rank: 31,
+  box: { games: 0, totals: {} },
+  usage: null,
   weekly: [
     { week: 4, points: 22.1, proj: 15.2 },
     { week: 5, points: null, proj: 17.3 },
   ],
 }
 
-describe('player page — key numbers', () => {
-  it('ONE bordered strip of five, in the waiver order; no SOS or bye in it', () => {
-    const out = html(createElement(StatsStrip, { tiles: coreTiles(PAYLOAD, { position: 'RB' }) }))
+describe('player view — the decision line', () => {
+  it('three large numbers: Pos rank · Avg / week · Proj this wk — no boxes, nothing else', () => {
+    const out = html(createElement(StatsStrip, { tiles: decisionTiles(PAYLOAD, { position: 'RB' }) }))
     expect(count(out, 'data-stats-strip')).toBe(1)
-    expect(count(out, 'data-core-tile=')).toBe(5)
-    expect([...out.matchAll(/data-core-tile="([^"]+)"/g)].map((m) => m[1])).toEqual(['pos-rank', 'overall-rank', 'avg', 'total', 'proj'])
-    for (const v of ['RB 12', '#31', '21.1', '84.6', '17.3']) expect(out).toContain(`>${v}</p>`)
-    expect(out).not.toContain('SOS')
-    expect(out).not.toContain('Bye')
+    expect([...out.matchAll(/data-core-tile="([^"]+)"/g)].map((m) => m[1])).toEqual(['pos-rank', 'avg', 'proj'])
+    for (const v of ['RB 12', '21.1', '17.3']) expect(out).toContain(`>${v}</p>`)
+    expect(out).not.toMatch(/SOS|Bye|Total|Overall/)
+    expect(out).not.toMatch(/(^|\s)shadow-hard/)
+  })
+
+  it('Draft & value: ADP · Auction $ · SOS + Total pts + Overall, missing ones omitted', () => {
+    const out = html(createElement(DraftValue, { player: player(), stats: PAYLOAD }))
+    expect([...out.matchAll(/data-draft-cell="([^"]+)"/g)].map((m) => m[1])).toEqual(['adp', 'auction', 'sos', 'total', 'overall-rank'])
+    const sparse = html(createElement(DraftValue, { player: player({ adp: null, auction_value: null, sos: null }), stats: { ...PAYLOAD, overall_rank: null } }))
+    expect([...sparse.matchAll(/data-draft-cell="([^"]+)"/g)].map((m) => m[1])).toEqual(['total'])
+    expect(sparse).not.toContain('—')
   })
 })
 
-describe('player page — the season table', () => {
+describe('player view — the season table', () => {
   const splits = splitsWith('SEA', 8)
   const sched = scheduleRows('LAC', 'RB', SEA_WEEK, splits, 7)
   const rows = seasonTable(sched, SEA_WEEK, PAYLOAD.weekly, 5)
@@ -370,33 +387,76 @@ describe('player page — the season table', () => {
     expect(rows.map((r) => r.week)).toEqual([4, 5, 6, 7, 8])
     const out = html(createElement(SeasonTable, { rows, loading: false, error: false }))
     expect(out).toMatch(/<th[^>]*>Wk<\/th><th[^>]*>Opp<\/th><th[^>]*>Proj<\/th><th[^>]*>Pts<\/th>/)
-    // Completed week 4: points under the scoring + its projection.
     expect(out).toMatch(/data-season-week="4"[^>]*>.*?>vs NYG<.*?>15\.2<.*?>22\.1</)
-    // Current week 5 @ SEA, 8th (red), the kickoff where the points go.
     expect(out).toMatch(/data-season-week="5" data-current="true">/)
     expect(out).toMatch(/data-season-week="5"[^>]*>.*?@ SEA<span[^>]*bg-negative[^>]*data-oprk="8">8th<.*?>17\.3<.*?>Sun 4:25 PM</)
     expect(count(out, 'data-current="true"')).toBe(1)
     expect(out).toMatch(/data-season-week="7"[^>]*>.*?>BYE</)
-    // A future game with no projection: "—" proj, kickoff for points.
     expect(out).toMatch(/data-season-week="6"[^>]*>.*?>vs KC<.*?>—<.*?>Sun 4:25 PM</)
   })
 
-  it('no rank on file → no chip; no projection → —', () => {
+  it('no rank on file → no chip', () => {
     const plain = seasonTable(scheduleRows('LAC', 'RB', SEA_WEEK, [], 7), SEA_WEEK, [], 5)
     const out = html(createElement(SeasonTable, { rows: plain, loading: false, error: false }))
     expect(out).not.toContain('data-oprk')
     expect(out).toContain('>@ SEA<')
   })
 
-  it('"Full stats" is collapsed by default; no Overview / Schedule tabs remain', () => {
-    const out = html(createElement(SeasonTableCard, { data: stats(player()), rows, loading: false, error: false }))
-    expect(out).toContain('aria-expanded="false"')
-    expect(out).toContain('Full stats')
-    expect(out).not.toContain('data-full-stats=')
+  it('an empty season says so', () => {
+    expect(html(createElement(SeasonTable, { rows: [], loading: false, error: false }))).toContain('No schedule on file')
+  })
+})
+
+describe('player view — the calm default view + progressive disclosure (D486(13))', () => {
+  function seeded() {
+    const qc = new QueryClient()
+    qc.setQueryData(['nfl-team-schedule', 2026, 'LAC'], SEA_WEEK)
+    qc.setQueryData(['defense-splits', 2026], splitsWith('SEA', 4))
+    qc.setQueryData(['player-core-stats', 'p1', 'espn_standard'], {
+      ...PAYLOAD,
+      box: { games: 4, totals: { rush_attempts: 62, rush_yards: 301, rush_tds: 3, targets: 14, receptions: 11 } },
+      usage: { snap_pct: 64.2, target_share: null },
+    })
+    qc.setQueryData(leaguesKeys.all, [])
+    return qc
+  }
+  const body = () =>
+    html(createElement(PlayerBody, { data: stats(player({ team: 'LAC' })), leagueId: null, goContext: () => {} }), seeded())
+
+  it('header → decision line + basis → this week → season table → four section toggles', () => {
+    const out = body()
+    const order = ['data-player-identity', 'data-card-actions=', 'data-stats-strip', 'data-core-basis', 'data-this-week="game"', 'data-key-stats="primary"', 'data-season-table', 'data-section-toggles']
+    const at = order.map((m) => out.indexOf(m))
+    expect(at.every((i) => i >= 0)).toBe(true)
+    expect([...at].sort((x, y) => x - y)).toEqual(at)
+    expect(out).toContain('>ESPN Standard scoring</button>')
+    expect(out).toContain('4th toughest vs RB')
+    // D486(14) Key stats: the RB's six, from stored / derived values only.
+    expect([...out.matchAll(/data-key-stat="([^"]+)"/g)].map((m) => m[1])).toEqual(['snap_pct', 'carries_pg', 'rush_yds', 'rush_td', 'targets', 'receptions'])
+    expect(out).toMatch(/data-key-stat="carries_pg"><p[^>]*>15\.5</)
+  })
+
+  it('every section is collapsed by default — no stats, game log, dropdown or value grid rendered', () => {
+    const out = body()
+    for (const sec of SECTIONS) expect(out).toContain(`aria-expanded="false" data-section-toggle="${sec.key}"`)
+    expect(out).not.toContain('data-section=')
+    expect(out).not.toContain('data-core-scoring')
+    expect(out).not.toContain('data-draft-value')
     expect(out).not.toMatch(/>(Overview|Schedule|News)</)
   })
 
-  it('an empty season says so', () => {
-    expect(html(createElement(SeasonTable, { rows: [], loading: false, error: false }))).toContain('No schedule on file')
+  it('a toggle reads open when its section is open', () => {
+    const out = html(createElement(SectionToggles, { open: ['log'], onToggle: () => {} }))
+    expect(out).toContain('aria-expanded="true" data-section-toggle="log"')
+    expect(out).toContain('aria-expanded="false" data-section-toggle="stats"')
+  })
+
+  it('a plain PlayerLink click still opens the MINI CARD — never the modal', () => {
+    const src = readFileSync(join(__dirname, 'player-link.tsx'), 'utf8')
+    expect(src).toContain('usePlayerWindowsStore')
+    expect(src).not.toContain('usePlayerModalStore')
+    // …and the card's expand icon is what opens the modal.
+    const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
+    expect(win).toMatch(/openPlayerView\(playerId, expandLeagueId\)/)
   })
 })

@@ -30,6 +30,8 @@ function payload(over: Partial<CoreStatsPayload> = {}): CoreStatsPayload {
     pos_rank: 12,
     overall_rank: 31,
     weekly: [],
+    box: { games: 0, totals: {} },
+    usage: null,
     ...over,
   }
 }
