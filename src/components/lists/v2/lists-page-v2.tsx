@@ -364,16 +364,22 @@ export function ListsPageV2() {
 
   return (
     <>
+      {/* The standard header (F577, D487). The shell hides it below `lg`
+          (`app-shell.tsx` — "mobile keeps the legacy top bar"), which would
+          leave a phone with no way to change page mode or tab, create with AI,
+          or start a list — so `inPageOnMobile` renders the same title, controls
+          and actions in the page on small screens. */}
       <PageHeader
-        title={
-          <div className="flex min-w-0 items-center gap-3">
-            <h3 className="shrink-0 text-h3">Lists</h3>
+        title="Lists"
+        inPageOnMobile
+        aside={
+          <>
             {modeSwitch}
             {tabSwitch}
-          </div>
+          </>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
             <GenerateAiButton size="sm" />
             {/* Folders survive the cutover (LV.7, Chris 2026-08-11), so their
                 one entry point does too — the retired Lists page carried this
@@ -388,30 +394,6 @@ export function ListsPageV2() {
           </div>
         }
       />
-
-      {/* The shell hides its header below `lg` (`app-shell.tsx` — "mobile keeps
-          the legacy top bar"), which would leave a phone with no way to change
-          page mode or tab at all. The same controls therefore render in-page on
-          small screens. The design package shows no mobile screens; this extends
-          it rather than dropping the controls. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 lg:hidden">
-        <h3 className="mr-auto text-h5">Lists</h3>
-        {/* Create with AI rides along here too — the shell's header is hidden
-            below `lg`, so leaving it out of this row would put AI list
-            generation out of reach on a phone entirely. */}
-        <GenerateAiButton size="sm" />
-        <Button variant="stroke" size="sm" onClick={() => setNewFolderOpen(true)}>
-          <Icon name="folder" size={13} /> New folder
-        </Button>
-        {changeListsButton}
-        <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
-          <Icon name="plus" size={13} /> New list
-        </Button>
-        <div className="flex w-full flex-wrap items-center gap-2">
-          {modeSwitch}
-          {tabSwitch}
-        </div>
-      </div>
 
       {/* Folders (LV.7). Above the content in both page modes, which is where
           the retired Lists page put them — the design package defines no

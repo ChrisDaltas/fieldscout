@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { NFL_DIVISIONS, teamsInDivision } from '@/lib/nfl-teams'
@@ -14,6 +15,8 @@ export const metadata = { title: 'NFL teams · FieldScout' }
 export default function NflTeamsPage() {
   return (
     <div className="grid grid-cols-1 gap-[19px] md:grid-cols-2">
+      {/* Explicit title on the standard header (F577, D487). */}
+      <PageHeader title="NFL teams" />
       {NFL_DIVISIONS.map(({ conference, division }) => (
         <Card key={`${conference}-${division}`}>
           <CardHeader className="min-h-0 py-2.5">
