@@ -295,7 +295,11 @@ export function ordinal(n: number): string {
   }
 }
 
-/** The full page's URL — the league variant carries `?league=`. */
+/** A player's shareable URL: Home with his player view open (Chris
+ *  2026-10-04, "Player links open the modal" — there is no separate player
+ *  page). The league variant carries `&league=`. */
 export function playerPageHref(playerId: string, leagueId?: string | null): string {
-  return leagueId ? `/app/players/${playerId}?league=${encodeURIComponent(leagueId)}` : `/app/players/${playerId}`
+  const q = new URLSearchParams({ player: playerId })
+  if (leagueId) q.set('league', leagueId)
+  return `/app?${q.toString()}`
 }

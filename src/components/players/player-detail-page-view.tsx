@@ -1,10 +1,8 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
-import { PageHeader } from '@/components/layout/app-header'
 import { LeagueAvailabilityRow, LeagueCardActions } from '@/components/players/player-card-actions'
 import { PlayerDetailActions } from '@/components/players/player-detail-actions'
 import { PlayerDetailHeader } from '@/components/players/player-detail-header'
@@ -15,7 +13,6 @@ import {
   matchupBadge,
   oppCell,
   ordinal as ordinalShort,
-  playerPageHref,
   scheduleRows,
   seasonTable,
   shortKickoff,
@@ -24,7 +21,6 @@ import {
   type ThisWeek,
 } from '@/components/players/player-page-ops'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -57,44 +53,6 @@ import { keyStats, type KeyStatTile } from '@/lib/players/key-stats-ops'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
-interface PlayerDetailPageViewProps {
-  playerId: string
-  /** Opened from a league (`?league=`): the league-scoped variant. */
-  leagueId?: string | null
-}
-
-/**
- * Deep link `/app/players/[id]` (D486(13)): the SAME `PlayerView` the modal
- * shows, inside a plain page wrapper under the standard shell header
- * ("Player" + Back). Shared links keep working; nothing to orchestrate.
- */
-export function PlayerDetailPageView({ playerId, leagueId = null }: PlayerDetailPageViewProps) {
-  const router = useRouter()
-  const goBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
-    else router.push('/app/research')
-  }
-  return (
-    <div className="max-w-[880px]">
-      {/* The app's standard header (D486(12)): a plain title in the shell's
-          58px bar, Back as a ghost action — the draft recap's pattern. */}
-      <PageHeader
-        title="Player"
-        actions={
-          <Button variant="ghost" size="sm" onClick={goBack} data-player-back>
-            <Icon name="arrow-prev" size={13} />
-            Back
-          </Button>
-        }
-      />
-      {/* Not interactive → no resting shadow (CLAUDE.md elevation rule). */}
-      <Card>
-        <PlayerView playerId={playerId} leagueId={featureFlags.leagues ? leagueId : null} variant="page" />
-      </Card>
-    </div>
-  )
-}
-
 /**
  * The player view (D486(13), Chris 2026-10-04: "Simple at first, but lets the
  * user quickly go advanced, has just what you need to make a quality
@@ -107,15 +65,14 @@ export function PlayerView({
 }: {
   playerId: string
   leagueId: string | null
-  variant: 'modal' | 'page'
+  /** Only the modal remains (Chris 2026-10-04, "Player links open the
+   *  modal") — `/app/players/[id]` now redirects into it. */
+  variant: 'modal'
 }) {
   const { data, isLoading, error } = usePlayerStats(playerId)
-  const router = useRouter()
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
-  // Re-point the view at another league context (or none): the modal swaps
-  // in place; the page navigates to its league variant.
-  const goContext = (id: string | null) =>
-    variant === 'modal' ? openPlayerView(playerId, id) : router.push(playerPageHref(playerId, id))
+  // Re-point the view at another league context (or none): the modal swaps in place.
+  const goContext = (id: string | null) => openPlayerView(playerId, id)
   if (isLoading) {
     return (
       <div className="space-y-4 p-6">

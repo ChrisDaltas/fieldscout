@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { AddToListPopover } from '@/components/players/add-to-list-popover'
+import { playerPageHref } from '@/components/players/player-page-ops'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -82,7 +83,7 @@ export function PlayerDetailActions({
   }
 
   const handleCopyLink = async () => {
-    const url = `${window.location.origin}/app/players/${player.id}`
+    const url = `${window.location.origin}${playerPageHref(player.id)}`
     try {
       await navigator.clipboard.writeText(url)
       toast({ title: 'Link copied', description: url })

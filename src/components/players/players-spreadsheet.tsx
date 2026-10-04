@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { playerPageHref } from '@/components/players/player-page-ops'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { TableCell, TableHead } from '@/components/ui/table'
@@ -33,10 +34,10 @@ import {
   useFavoritePlayerIds,
   useToggleFavorite,
 } from '@/hooks/use-favorites'
+import { useOpenPlayer } from '@/hooks/use-open-player'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 interface PlayerRow {
   id: string
@@ -256,7 +257,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const openPlayer = usePlayerWindowsStore((s) => s.open)
+  const openPlayer = useOpenPlayer()
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -1142,7 +1143,7 @@ function SearchAutocomplete({
               {suggestions.map((p) => (
                 <li key={p.id}>
                   <Link
-                    href={`/app/players/${p.id}`}
+                    href={playerPageHref(p.id)}
                     onClick={(e) => {
                       persistRecent(query.trim() || p.full_name)
                       setOpen(false)

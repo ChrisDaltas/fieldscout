@@ -49,7 +49,6 @@ import {
   ActionsColumn,
   DraftValue,
   PlayerBody,
-  PlayerDetailPageView,
   SeasonTable,
   SECTIONS,
   SectionToggles,
@@ -168,15 +167,6 @@ describe('player page — identity: each fact exactly once (D486(12))', () => {
   })
 })
 
-describe('player page — the standard header (D486(12))', () => {
-  it('claims the shell header with a plain title + a Back action — no custom header of its own', () => {
-    const out = html(createElement(PlayerDetailPageView, { playerId: 'p1' }))
-    expect(out).toContain('data-page-header="Player"')
-    expect(out).toMatch(/data-page-header="Player"><button[^>]*data-player-back/)
-    expect(out).not.toMatch(/<h1|<header/)
-  })
-})
-
 // ---------------------------------------------------------------------------
 // 2. Actions column per context
 // ---------------------------------------------------------------------------
@@ -222,9 +212,9 @@ describe('player page — actions reused per context', () => {
     expect(out).not.toContain('Viewing in')
   })
 
-  it('the league variant URL carries ?league=', () => {
-    expect(playerPageHref('p1')).toBe('/app/players/p1')
-    expect(playerPageHref('p1', 'L1')).toBe('/app/players/p1?league=L1')
+  it('the share URL is Home with the modal open; the league variant carries &league=', () => {
+    expect(playerPageHref('p1')).toBe('/app?player=p1')
+    expect(playerPageHref('p1', 'L1')).toBe('/app?player=p1&league=L1')
   })
 })
 
@@ -453,11 +443,12 @@ describe('player view — the calm default view + progressive disclosure (D486(1
     expect(out).toContain('aria-expanded="false" data-section-toggle="stats"')
   })
 
-  it('a plain PlayerLink click still opens the MINI CARD — never the modal', () => {
+  it('a plain PlayerLink click opens the MODAL (Chris 2026-10-04, "Player links open the modal")', () => {
     const src = readFileSync(join(__dirname, 'player-link.tsx'), 'utf8')
-    expect(src).toContain('usePlayerWindowsStore')
-    expect(src).not.toContain('usePlayerModalStore')
-    // …and the card's expand icon is what opens the modal.
+    // Routed through openPlayer (modal; the draft room keeps the card — use-open-player.test.ts).
+    expect(src).toContain('useOpenPlayer')
+    expect(src).not.toContain('usePlayerWindowsStore')
+    // …and the card's expand icon still opens the modal.
     const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
     expect(win).toMatch(/openPlayerView\(playerId, expandLeagueId\)/)
   })

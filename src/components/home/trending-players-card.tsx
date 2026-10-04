@@ -8,7 +8,7 @@ import type { BuilderPlayer } from '@/components/lists/builder/types'
 import { CollapsibleCard } from '@/components/layout/two-column-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { useOpenPlayer } from '@/hooks/use-open-player'
 
 /**
  * Trending players (package screen 01, right column) — Risers/Fallers tabs
@@ -109,7 +109,7 @@ function TrendRows({
 
 export function TrendingPlayersCard() {
   const { data, isLoading, isError } = useHomePlayers()
-  const openPlayer = usePlayerWindowsStore((s) => s.open)
+  const openPlayer = useOpenPlayer()
 
   const { risers, fallers } = useMemo(() => {
     const candidates: TrendEntry[] = (data?.players ?? [])

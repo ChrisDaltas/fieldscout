@@ -6,7 +6,7 @@ import type * as React from 'react'
 import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { useOpenPlayer } from '@/hooks/use-open-player'
 
 import type { PlayerCardContext } from './player-card-context'
 import { playerParts, type NamedPlayer } from './player-link-ops'
@@ -34,12 +34,13 @@ export const PLAYER_LINK_CLASS =
   'fs-entity-link cursor-pointer text-left underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent'
 
 function useOpenCard(playerId: string, context: PlayerCardContext | undefined) {
-  const open = usePlayerWindowsStore((s) => s.open)
+  const open = useOpenPlayer()
   return (event: React.MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-    // No context = the surface's ambient one (the draft room's seat), else global.
-    open(playerId, context ? { context } : undefined)
+    // No context = the surface's ambient one (the draft room's seat), else
+    // global. The modal everywhere except the draft room (Chris 2026-10-04).
+    open(playerId, context)
   }
 }
 
