@@ -120,7 +120,7 @@ export function scheduleRows(
  *  read from the stored status, never from a clock. */
 export function nextScheduled(rows: readonly ScheduleRow[], games: readonly TeamGame[]): ScheduleRow | null {
   for (const g of [...games].sort((a, b) => a.week - b.week)) {
-    if ((g.status ?? 'scheduled') !== 'scheduled') continue
+    if (g.status !== 'scheduled') continue // R1502: null is not scheduled
     return rows.find((r) => r.week === g.week && r.opponent.kind === 'game') ?? null
   }
   return null

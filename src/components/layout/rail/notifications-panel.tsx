@@ -13,6 +13,7 @@ import {
 import { RailPanelShell } from '@/components/layout/rail/rail-panel-shell'
 import { notificationHref } from '@/components/notifications/notification-href'
 import { FilterChip } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useLeagues } from '@/hooks/use-leagues'
@@ -53,7 +54,7 @@ interface NotificationsPanelProps {
  */
 export function NotificationsPanel({ onClose }: NotificationsPanelProps) {
   const router = useRouter()
-  const { data, isLoading } = useNotifications()
+  const { data, isLoading, isError, refetch } = useNotifications()
   const markRead = useMarkNotificationsRead()
   const leagues = useLeagues({ enabled: featureFlags.leagues })
   const [filter, setFilter] = useState<string | null>(null)
@@ -72,6 +73,8 @@ export function NotificationsPanel({ onClose }: NotificationsPanelProps) {
       <NotificationsBody
         notifications={data?.notifications ?? []}
         loading={isLoading}
+        error={isError}
+        onRetry={() => void refetch()}
         leagues={myLeagues}
         filter={leagueFilter}
         onFilter={setFilter}
@@ -91,6 +94,8 @@ interface LeagueChip {
 export function NotificationsBody({
   notifications,
   loading,
+  error = false,
+  onRetry,
   leagues,
   filter,
   onFilter,
@@ -98,6 +103,9 @@ export function NotificationsBody({
 }: {
   notifications: NotificationItem[]
   loading: boolean
+  /** The read failed — an error state with Retry, never the empty state (R1500). */
+  error?: boolean
+  onRetry?: () => void
   leagues: readonly LeagueChip[]
   filter: string | null
   onFilter: (leagueId: string | null) => void
@@ -157,11 +165,22 @@ export function NotificationsBody({
           </div>
         )}
 
-        {!loading && shown.length === 0 && (
+        {error && notifications.length === 0 && (
+          <div className="flex flex-col items-center gap-2 px-4 py-12 text-center" data-notif-error>
+            <p className="text-[12px] font-bold text-ink">Couldn&apos;t load notifications.</p>
+            <Button variant="stroke" size="sm" onClick={onRetry} data-notif-retry>
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {!loading && !(error && notifications.length === 0) && shown.length === 0 && (
           <div className="flex flex-col items-center gap-1.5 px-4 py-12 text-center" data-notif-empty>
             <Icon name="notification" size={16} className="text-n-3" />
             <p className="text-[12px] font-bold text-ink">
-              {filterName ? `Nothing from ${filterName} yet` : 'No notifications yet'}
+              {filterName
+                ? `Nothing from ${filterName} in your recent notifications`
+                : 'No notifications yet'}
             </p>
           </div>
         )}

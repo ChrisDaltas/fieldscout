@@ -139,9 +139,13 @@ function poolOf(player: PlayerStatsPlayer): PoolPlayer {
  */
 export function ActionsColumn({ player, leagueId }: { player: PlayerStatsPlayer; leagueId: string | null }) {
   const pool = poolOf(player)
+  // R1501: a `?league=` the viewer isn't in (or whose read fails) falls back
+  // to the page without a league — never a "Viewing in …" that never resolves.
+  const league = useLeague(featureFlags.leagues && leagueId ? leagueId : undefined)
+  const inLeagueId = leagueId && !league.isError ? leagueId : null
   return (
-    <div className="flex w-full shrink-0 flex-col gap-3 lg:w-[264px]" data-card-actions={leagueId ? 'league' : 'global'}>
-      {featureFlags.leagues && (leagueId ? <InLeagueBlock pool={pool} leagueId={leagueId} /> : <YourLeaguesBlock pool={pool} />)}
+    <div className="flex w-full shrink-0 flex-col gap-3 lg:w-[264px]" data-card-actions={inLeagueId ? 'league' : 'global'}>
+      {featureFlags.leagues && (inLeagueId ? <InLeagueBlock pool={pool} leagueId={inLeagueId} /> : <YourLeaguesBlock pool={pool} />)}
       <div className="flex flex-wrap items-center gap-1.5">
         <PlayerDetailActions player={player} onFullPage />
       </div>

@@ -162,6 +162,20 @@ describe('player page — actions reused per context', () => {
     expect(out).toContain('Add to list')
   })
 
+  it('R1501: a ?league= the viewer is not in (read fails) falls back to the page without a league', () => {
+    // The settled state after the read's retries have failed.
+    const qc = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } })
+    qc.getQueryCache()
+      .build(qc, { queryKey: leaguesKeys.detail('LX') })
+      .setState({ status: 'error', error: new Error('Not a member'), fetchStatus: 'idle' })
+    qc.setQueryData(leaguesKeys.all, [])
+    const out = html(createElement(ActionsColumn, { player: player(), leagueId: 'LX' }), qc)
+    expect(out).toContain('data-card-actions="global"')
+    expect(out).toContain('Your leagues')
+    expect(out).not.toContain('data-viewing-in')
+    expect(out).not.toContain('Viewing in')
+  })
+
   it('the league variant URL carries ?league=', () => {
     expect(playerPageHref('p1')).toBe('/app/players/p1')
     expect(playerPageHref('p1', 'L1')).toBe('/app/players/p1?league=L1')
@@ -216,6 +230,9 @@ describe('player page — tabs, schedule and the Scout AI read', () => {
     const allFinal = GAMES.map((g) => ({ ...g, status: 'final' }))
     expect(scoutMatchupRead(nextScheduled(scheduleRows('DAL', 'RB', allFinal, SPLITS, 7), allFinal), 'RB')).toBeNull()
     expect(scheduleRows(null, 'RB', GAMES, SPLITS, 7)).toEqual([])
+    // R1502: a null status is NOT scheduled.
+    const nullStatus = GAMES.map((g) => (g.week === 2 ? { ...g, status: null } : g))
+    expect(nextScheduled(scheduleRows('DAL', 'RB', nullStatus, SPLITS, 7), nullStatus)).toBeNull()
   })
 
   it('an empty schedule says so', () => {

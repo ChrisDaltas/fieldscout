@@ -131,3 +131,23 @@ describe('notifications — the strip badge', () => {
     expect(html(createElement(ResearchRail), qc)).not.toContain('data-rail-badge="notifications"')
   })
 })
+
+describe('notifications — failed read and filtered empty (R1500)', () => {
+  it('a failed read shows an error with Retry, never "No notifications yet"', () => {
+    const out = html(createElement(NotificationsBody, { notifications: [], loading: false, error: true, onRetry: () => {}, leagues: LEAGUES, filter: null, onFilter: () => {}, onOpen: () => {} }))
+    expect(out).toContain('data-notif-error')
+    expect(out).toContain("Couldn't load notifications.")
+    expect(out).toContain('data-notif-retry')
+    expect(out).toContain('>Retry</button>')
+    expect(out).not.toContain('data-notif-empty')
+    expect(out).not.toContain('No notifications yet')
+  })
+
+  it('a league filter with nothing says it searched the recent notifications only', () => {
+    const only = N.filter((n) => n.id !== 'n2')
+    const out = html(createElement(NotificationsBody, { notifications: only, loading: false, leagues: LEAGUES, filter: 'L2', onFilter: () => {}, onOpen: () => {} }))
+    expect(out).toContain('data-notif-empty')
+    expect(out).toContain('Nothing from Work League in your recent notifications')
+    expect(out).not.toContain('data-notif-error')
+  })
+})
