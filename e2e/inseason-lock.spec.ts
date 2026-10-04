@@ -188,7 +188,7 @@ test.describe('e32 game-day lock refused on the free-agent page (real browser)',
       const refusal = page.locator('[data-move-refusal]')
       await expect(refusal).toBeVisible({ timeout: 60_000 })
       const refusalText = await refusal.innerText()
-      // D481: the member reads the phrase map's sentence for 157's E32
+      // D482: the member reads the phrase map's sentence for 157's E32
       // refusal (`friendly-messages.ts` 'add-locked'), the player named from
       // the server's own text — no prefix, no id, no citation.
       expect(refusalText).toContain('That move was refused.')

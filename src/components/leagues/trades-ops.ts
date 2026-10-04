@@ -152,7 +152,7 @@ export function faabOverCopy(teamName: string, balance: number): string {
 }
 
 /** The server's refusal as a league member reads it — the one cleaner
- *  (`userFacingMessage`, D481; it absorbed R1244's `plainRefusal`). */
+ *  (`userFacingMessage`, D482; it absorbed R1244's `plainRefusal`). */
 export function previewRefusalCopy(refusal: string): string {
   return userFacingMessage(refusal)
 }

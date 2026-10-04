@@ -1,0 +1,240 @@
+{
+ "_note": "Hand-reviewed 2026-10-03 (R1484/R1486). clauseCuts: every trailing explaining clause the generic cleanup removes from a census row (none instructs the member). runningTextJargon: rows whose cleaned text still holds a ledger code or snake_case in running text — left alone because a bare code or snake_case word may be a team or player name (R1484); the SQL rewrite (F569 part 3) is their fix.",
+ "clauseCuts": [
+  {
+   "loc": "110_schedule_engine.sql:290",
+   "clause": "— a reopen is an audited commissioner action (§12.17/F4)"
+  },
+  {
+   "loc": "110_schedule_engine.sql:663",
+   "clause": "— the schedule is generated once, at in_season entry (draft completion, §11.4/§11.7); regeneration is Remix's (L.D1.3)"
+  },
+  {
+   "loc": "110_schedule_engine.sql:1371",
+   "clause": "— a drafting+ league always references exactly one scoring system (spec §7.3.8/F143)"
+  },
+  {
+   "loc": "118_playoffs.sql:485",
+   "clause": "— the schedule invariant (§11.7) is broken; refusing to write results"
+  },
+  {
+   "loc": "118_playoffs.sql:501",
+   "clause": "— the derangement (§11.7/E40) is broken; refusing to write results"
+  },
+  {
+   "loc": "130_commish_edit_schedule.sql:435",
+   "clause": "— the schedule row exists but its week does not (§12.17); refusing rather than re-pairing a week the engine never opened"
+  },
+  {
+   "loc": "130_commish_edit_schedule.sql:523",
+   "clause": "— a scored or overridden cell is never rewritten (§22.2/rule 9), and the edit would have to re-seat a team into it"
+  },
+  {
+   "loc": "130_commish_edit_schedule.sql:629",
+   "clause": "— a second game is never the primary opponent (E40)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3119",
+   "clause": "— only scheduled matchups may change; live/final never regenerate (§11.7/E41)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3127",
+   "clause": "— a scored or overridden cell is never rewritten (§22.2/rule 9)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3136",
+   "clause": "— only an upcoming week's matchups may change (§11.7/§12.17)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3145",
+   "clause": "— only future weeks may change (§11.7/E41/E42)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3224",
+   "clause": "— the edit would have to re-seat a team into it; only scheduled matchups may change (§11.7/E41)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3231",
+   "clause": "— a scored or overridden cell is never rewritten (§22.2/rule 9)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3333",
+   "clause": "— a second game is never the primary opponent (E40)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3513",
+   "clause": "— every regular-season week is live, final or holds a non-scheduled matchup (weeks frozen: %); nothing to remix (§11.7: live/final weeks never regenerate)"
+  },
+  {
+   "loc": "131_reason_optional_sweep.sql:3524",
+   "clause": "— no changes to confirm (§11.7 \"regenerates with a fresh seed\"; preview said no_changes)"
+  },
+  {
+   "loc": "132_remix_preview_reason_optional.sql:108",
+   "clause": "— no schedule was generated (§11.4 generation is draft completion's); nothing to remix"
+  },
+  {
+   "loc": "134_commish_edit_bracket.sql:508",
+   "clause": "— a played pairing is never re-paired (§22.2/rule 9), and the edit would have to move % out of it"
+  },
+  {
+   "loc": "135_no_live_score_edits.sql:595",
+   "clause": "— a winner id cannot express one (§15.4:1693; F351)"
+  },
+  {
+   "loc": "144_per_week_scoring_rules.sql:309",
+   "clause": "— a week is scored, box-scored and reconciled under the rules it was played with, for ever (F397)"
+  },
+  {
+   "loc": "156_commish_force_or_reverse_trade.sql:300",
+   "clause": "— a trade goes through only while the league is in season or in the playoffs (§7.1 / §13.3)"
+  },
+  {
+   "loc": "157_played_lock.sql:1842",
+   "clause": "— an action_id identifies ONE submit (R732)"
+  },
+  {
+   "loc": "157_played_lock.sql:1992",
+   "clause": "— the pool mirror is broken; refusing until reconciliation (L.D2.3) repairs it (D294)"
+  },
+  {
+   "loc": "168_draft_room_receipts.sql:496",
+   "clause": "— the current clock is never rewritten, and the new timer applies to upcoming nominations (E15 / §8.7 v2.15)"
+  },
+  {
+   "loc": "168_draft_room_receipts.sql:500",
+   "clause": "— the draft is paused, and the new timer applies when it resumes (§8.7 v2.10)"
+  },
+  {
+   "loc": "168_draft_room_receipts.sql:583",
+   "clause": "— the current clock is never rewritten, and the new timer applies to upcoming picks (E15 / §8.7 v2.15)"
+  },
+  {
+   "loc": "168_draft_room_receipts.sql:1600",
+   "clause": "— a commissioner cannot bid for a manager (§8.6.5); the clock awards the high bidder when it expires"
+  },
+  {
+   "loc": "169_membership_setup_receipts.sql:2039",
+   "clause": "— a custom scoring system is always forked FROM a template, and personal scoring systems cannot be attached to a league (§7.3.3.1 entry point, §7.3.3)"
+  },
+  {
+   "loc": "169_membership_setup_receipts.sql:2212",
+   "clause": "— only a system forked by this league's commissioner can be edited here (§7.3.3.1, §12.25)"
+  },
+  {
+   "loc": "170_commish_backstop.sql:1672",
+   "clause": "— the pool mirror is broken; refusing until reconciliation (L.D2.3) repairs it (D294)"
+  },
+  {
+   "loc": "174_commish_trade_powers.sql:516",
+   "clause": "— a trade is accepted or countered only while the league is in season or in the playoffs (§7.1 / §13.3)"
+  },
+  {
+   "loc": "174_commish_trade_powers.sql:833",
+   "clause": "— an action_id identifies ONE submit (R732)"
+  },
+  {
+   "loc": "174_commish_trade_powers.sql:921",
+   "clause": "— a trade is vetoed only while the league is in season or in the playoffs (§7.1 / §13.3)"
+  }
+ ],
+ "runningTextJargon": [
+  "025_ai_write_guards.sql:55",
+  "091_mock_cpu_reactive_bidding.sql:465",
+  "092_auction_reserve_toggle.sql:2010",
+  "093_uncontestable_instant_award.sql:376",
+  "093_uncontestable_instant_award.sql:429",
+  "093_uncontestable_instant_award.sql:455",
+  "093_uncontestable_instant_award.sql:497",
+  "093_uncontestable_instant_award.sql:508",
+  "095_standalone_mock.sql:3572",
+  "102_mock_slot_choice.sql:238",
+  "105_scoring_editor_rpcs.sql:219",
+  "110_schedule_engine.sql:290",
+  "110_schedule_engine.sql:298",
+  "110_schedule_engine.sql:670",
+  "110_schedule_engine.sql:700",
+  "110_schedule_engine.sql:718",
+  "110_schedule_engine.sql:729",
+  "110_schedule_engine.sql:765",
+  "110_schedule_engine.sql:1296",
+  "110_schedule_engine.sql:1359",
+  "111_schedule_remix.sql:255",
+  "118_playoffs.sql:535",
+  "118_playoffs.sql:2278",
+  "118_playoffs.sql:2383",
+  "120_retire_succeed.sql:761",
+  "126_commish_matchup_override.sql:422",
+  "126_commish_matchup_override.sql:441",
+  "126_commish_matchup_override.sql:455",
+  "127_commish_roster_moves.sql:540",
+  "128_team_rename.sql:742",
+  "130_commish_edit_schedule.sql:423",
+  "130_commish_edit_schedule.sql:435",
+  "130_commish_edit_schedule.sql:562",
+  "131_reason_optional_sweep.sql:3267",
+  "131_reason_optional_sweep.sql:3593",
+  "132_remix_preview_reason_optional.sql:108",
+  "134_commish_edit_bracket.sql:315",
+  "134_commish_edit_bracket.sql:402",
+  "134_commish_edit_bracket.sql:456",
+  "134_commish_edit_bracket.sql:589",
+  "134_commish_edit_bracket.sql:1359",
+  "135_no_live_score_edits.sql:572",
+  "139_autopilot_switch.sql:389",
+  "144_per_week_scoring_rules.sql:299",
+  "144_per_week_scoring_rules.sql:309",
+  "144_per_week_scoring_rules.sql:315",
+  "150_waiver_processor.sql:2932",
+  "154_one_start_per_week.sql:344",
+  "156_commish_force_or_reverse_trade.sql:762",
+  "157_played_lock.sql:1842",
+  "157_played_lock.sql:1868",
+  "157_played_lock.sql:1992",
+  "157_played_lock.sql:2449",
+  "157_played_lock.sql:2492",
+  "157_played_lock.sql:3190",
+  "161_rescore_final_weeks.sql:213",
+  "161_rescore_final_weeks.sql:218",
+  "161_rescore_final_weeks.sql:253",
+  "162_trade_preview.sql:212",
+  "168_draft_room_receipts.sql:795",
+  "168_draft_room_receipts.sql:1944",
+  "169_membership_setup_receipts.sql:1231",
+  "169_membership_setup_receipts.sql:1235",
+  "169_membership_setup_receipts.sql:1258",
+  "169_membership_setup_receipts.sql:1515",
+  "169_membership_setup_receipts.sql:1522",
+  "169_membership_setup_receipts.sql:1532",
+  "169_membership_setup_receipts.sql:1877",
+  "169_membership_setup_receipts.sql:1887",
+  "169_membership_setup_receipts.sql:1902",
+  "169_membership_setup_receipts.sql:2039",
+  "169_membership_setup_receipts.sql:2386",
+  "169_membership_setup_receipts.sql:2395",
+  "169_membership_setup_receipts.sql:2890",
+  "169_membership_setup_receipts.sql:2899",
+  "170_commish_backstop.sql:275",
+  "170_commish_backstop.sql:476",
+  "170_commish_backstop.sql:485",
+  "170_commish_backstop.sql:921",
+  "170_commish_backstop.sql:1136",
+  "170_commish_backstop.sql:1145",
+  "170_commish_backstop.sql:1449",
+  "170_commish_backstop.sql:1456",
+  "170_commish_backstop.sql:1467",
+  "170_commish_backstop.sql:1531",
+  "170_commish_backstop.sql:1564",
+  "170_commish_backstop.sql:1672",
+  "170_commish_backstop.sql:1714",
+  "174_commish_trade_powers.sql:833",
+  "174_commish_trade_powers.sql:873",
+  "174_commish_trade_powers.sql:878",
+  "174_commish_trade_powers.sql:908",
+  "174_commish_trade_powers.sql:949",
+  "174_commish_trade_powers.sql:988",
+  "174_commish_trade_powers.sql:1005",
+  "179_reverts_action_id_guard.sql:53",
+  "179_reverts_action_id_guard.sql:62"
+ ]
+}

@@ -42,7 +42,7 @@ export interface CreateLeagueResult {
 async function parseJsonOrThrow<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null
   if (!response.ok) {
-    // D481: create-league (and every caller here) reads through the one
+    // D482: create-league (and every caller here) reads through the one
     // cleaner; a per-field 400 shows its first message, never raw JSON.
     const error = body?.error
     const fieldErrors =

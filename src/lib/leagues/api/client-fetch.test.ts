@@ -45,7 +45,7 @@ describe('userFacingMessage (F116 — the RAISE context never reaches a user)', 
     // A sentence that merely CONTAINS a colon or a mid-string citation does
     // not match the anchored patterns.
     expect(userFacingMessage('Heads up: the draft is paused')).toBe('Heads up: the draft is paused')
-    // D481: a mid-sentence citation group now goes too (any bracketed § group).
+    // D482: a mid-sentence citation group now goes too (any bracketed § group).
     expect(userFacingMessage('the (§22.5) cap applies to active mocks')).toBe('the cap applies to active mocks')
   })
 

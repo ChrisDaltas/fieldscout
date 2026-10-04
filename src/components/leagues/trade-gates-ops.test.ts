@@ -97,7 +97,7 @@ describe('the pickers — Q75 and FAAB', () => {
   it('the refusal as a member reads it: the raiser’s prefix and every citation out, the words kept', () => {
     expect(previewRefusalCopy(FAAB_OVER)).toBe('P Alpha cannot give $60 of FAAB — its balance is $50')
     expect(previewRefusalCopy(ONE_SIDED)).toBe(
-      'Q Echo has to give at least one player or FAAB in this trade.', // D481: the phrase map
+      'Q Echo has to give at least one player or FAAB in this trade.', // D482: the phrase map
     )
     expect(previewRefusalCopy(ALREADY_LEAVING)).toBe('P B One (pv-b1) is already leaving P Bravo in this trade — he cannot also be one of its drops')
   })

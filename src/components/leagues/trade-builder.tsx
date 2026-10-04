@@ -102,7 +102,7 @@ export interface TradeBuilderViewProps {
   allowFaab: boolean
   lockBehavior: string
   pending: boolean
-  /** The server's refusal, RAW (parsed here; shown through `userFacingMessage`, D481). */
+  /** The server's refusal, RAW (parsed here; shown through `userFacingMessage`, D482). */
   refusal: string | null
   /** A deadline refusal seen on this page (any verb) — the builder locks. */
   deadlineRefusal: string | null

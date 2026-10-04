@@ -1,6 +1,6 @@
 /**
  * friendly-messages.ts — a server refusal as a league member reads it
- * (friendly server messages, part 1 — Chris 2026-10-03; PROGRESS D481).
+ * (friendly server messages, part 1 — Chris 2026-10-03; PROGRESS D482).
  *
  * The database's `RAISE EXCEPTION` text is written for builders: it names the
  * function (`set_lineup: …`), cites the spec (`§11.2`), ledger rows (`E32`,
@@ -17,8 +17,10 @@
  *      defining migration (`friendly-messages.test.ts`), so a SQL rewording
  *      fails a test instead of silently falling back;
  *   2. the GENERIC cleanup for everything else: `fn_name:` prefixes anywhere,
- *      a trailing "— … (§…)" clause, any bracketed group citing `§`, a ledger
- *      code or a snake_case name, setting names swapped for words.
+ *      a trailing "— … (§…)" clause that explains (never one that instructs),
+ *      any bracketed group that is only citations, a `§`-anchored citation run,
+ *      setting names swapped for words. Codes and snake_case in running text
+ *      are left alone — they may be a team or player name (R1484).
  *
  * Display only. Code that PARSES a refusal (`dropsNeeded`,
  * `isDeadlineRefusal`, the `leagues-service.ts` marker lists) reads the RAW
@@ -46,12 +48,33 @@ const WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bwaiver_type\b/g, 'waiver type'],
   [/\bpre_draft\b/g, 'pre-draft'],
   [/\bdraft_live\b/g, 'drafting'],
+  [/\bin_review\b/g, 'in review'],
+  [/\bcommissioner_actions\b/g, 'commissioner actions'],
   [/\bper_player_kickoff\b/g, 'each player’s kickoff'],
 ]
 
 const SNAKE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/
-const LEDGER = /\b(?:[EQRFD]\d+|M\d+)\b/
-const isCitation = (part: string) => /§/.test(part) || LEDGER.test(part) || SNAKE.test(part)
+const CODE = String.raw`\b(?:[EQRFD]\d+|M\d+)\b`
+const SECTION = String.raw`§\d+(?:\.\d+)*[a-z]?`
+/** A bracketed part is a citation when it cites `§`, or when nothing but
+ *  ledger codes, snake_case names, numbers and joiners is left in it — so a
+ *  team called "(Q1 Crushers)" or "(foo_bar)" mixed with words survives (R1484). */
+const isCitation = (part: string) =>
+  /§/.test(part) ||
+  part
+    .replace(new RegExp(CODE, 'g'), '')
+    .replace(new RegExp(SNAKE.source, 'g'), '')
+    .replace(/["'=/,.\-\d\s]+/g, '')
+    .trim() === ''
+
+/** A run of citations joined by "/", "," or spaces — "§13.1/E32", "E27/§8.6.7",
+ *  "§13.3 / Q76". Only a run that holds a `§` is a citation in running text:
+ *  a bare "E5" or "M6" beside words is someone's name ("E5 Squad"). */
+const CITE_RUN = new RegExp(`[,;]?\\s*(?:(?:${SECTION}|${CODE})\\s*[/,]\\s*)*${SECTION}(?:\\s*[/,]\\s*(?:${SECTION}|${CODE}))*`, 'g')
+
+/** Words that make a trailing "— …" clause an instruction to the member —
+ *  that clause is kept, only its citation goes (R1486). */
+const INSTRUCTION = /\b(?:must|need|needs|try|ask|wait|first|instead|use|pick|choose|name|remove|add|drop|bench|start|set|finish|delete|accept|cancel|contact|resend|lower|raise|launch|pair)\b/i
 
 /** Ledger codes and sub-clauses written glued: "Q34(B)", "D412(5)",
  *  "§8.6.7(c)", "Q39 (C)" — joined so one bracket pass sees them whole. */
@@ -59,6 +82,16 @@ function unglue(text: string): string {
   return text
     .replace(/(§[\d.]*\d)\(([a-z0-9]{1,2})\)/g, '$1$2')
     .replace(/\b([EQRFD]\d+)\s?\(([A-Za-z0-9]{1,2})\)/g, '$1')
+}
+
+/** The trailing "— … (§…/E…)" clause cleanServerText would cut, or null.
+ *  Exported so the census test can pin every cut by hand (R1486). */
+export function explainingClause(text: string): string | null {
+  const m = /\s+—\s+(?:a|an|the|every|each|no|only)\b[^—]*\([^()]*(?:§|\b[EQRFD]\d+\b)[^()]*\)[^—()]*$/i.exec(text)
+  if (!m || m.index === 0) return null
+  // Its prose without the bracketed citation: an instruction stays.
+  const prose = m[0].replace(/\([^()]*\)/g, '')
+  return INSTRUCTION.test(prose) ? null : m[0]
 }
 
 /** The generic cleanup (tier 1). Exported for the census test. */
@@ -69,13 +102,10 @@ export function cleanServerText(raw: string): string {
   t = t.replace(/^[a-z0-9_]+: /, '')
   t = t.replace(/(^|[\s(—;,])[a-z][a-z0-9]*(?:_[a-z0-9]+)+: /g, '$1')
   // A trailing "— … (§…/E…)" clause that EXPLAINS the rule ("— a player
-  // whose game has started cannot …", "— an action_id identifies …") is the
-  // builder's; one that TELLS the member what to do ("— finish or delete one
-  // first") stays, its citation dropped below.
-  t = t.replace(
-    /\s+—\s+(?:a|an|the|every|each|no|only)\b[^—]*\([^()]*(?:§|\b[EQRFD]\d+\b)[^()]*\)[^—()]*$/i,
-    (clause) => (t.length - clause.length > 0 ? '' : clause),
-  )
+  // whose game has started cannot …") is the builder's; one that TELLS the
+  // member what to do stays, its citation dropped below.
+  const clause = explainingClause(t)
+  if (clause) t = t.slice(0, t.length - clause.length)
   // Bracketed groups: keep the plain parts, drop the cited ones (R1244).
   for (let i = 0; i < 2; i++) {
     t = t.replace(/(\s*)\(([^()]*)\)/g, (_whole, lead: string, inner: string) => {
@@ -83,16 +113,16 @@ export function cleanServerText(raw: string): string {
         .split(';')
         .map((p) => p.trim())
         .filter((p) => p && !isCitation(p))
+        // …and inside a kept part, a comma item that is only a citation:
+        // "(rounds = starters + bench, D91)" keeps its words, "(Wed, Nov 25)" all.
+        .map((p) => p.split(',').map((c) => c.trim()).filter((c) => c && !isCitation(c)).join(', '))
+        .filter(Boolean)
       return kept.length ? `${lead}(${kept.join('; ')})` : ''
     })
   }
-  // Bare citations left in running text.
-  t = t
-    .replace(/[,;]?\s*§\d+(?:\.\d+)*[a-z]?/g, '')
-    .replace(/[,;/]?\s*\b(?:[EQRFD]\d+|M\d+)(?:'s)?\b/g, '')
+  // Citations left in running text: only a run anchored on a `§`.
+  t = t.replace(CITE_RUN, '')
   for (const [re, word] of WORDS) t = t.replace(re, word)
-  // Anything still snake_case is a name, not a word: spaced out.
-  t = t.replace(new RegExp(SNAKE.source, 'g'), (w) => w.replace(/_/g, ' '))
   t = t
     .replace(/\s+([:.,;])/g, '$1')
     .replace(/\s{2,}/g, ' ')
@@ -108,8 +138,10 @@ export function cleanServerText(raw: string): string {
 
 export interface Phrase {
   id: string
-  /** The newest migration that defines the raising function (the test reads it). */
-  migration: string
+  /** The newest migration(s) defining the raising function(s) — one per
+   *  function when the sentence is raised in more than one (the test checks
+   *  each is still the newest definition, R1487). */
+  migration: string | readonly string[]
   /** Every fragment must be in the message (and in the migration's text). */
   fragments: string[]
   /** The plain sentence — `null` when the values can't be pulled out, and
@@ -431,7 +463,7 @@ export const PHRASES: Phrase[] = [
   // Draft room (092 / 095 / 171)
   {
     id: 'auction-max-bid',
-    migration: '092_auction_reserve_toggle.sql',
+    migration: ['092_auction_reserve_toggle.sql', '095_standalone_mock.sql'],
     fragments: ['is over your max bid of $', 'open roster spots at a $'],
     render: (m) => pick(m, /is over your max bid of \$(\d+) — you have \$(\d+) for (\d+) open roster spot/, (x) => `Your max bid is $${x[1]} ($${x[2]} left for ${x[3]} open spot${s(x[3])}).`),
     generic: 'That bid is over your max bid.',
@@ -452,7 +484,7 @@ export const PHRASES: Phrase[] = [
   },
   {
     id: 'mock-not-yours',
-    migration: '095_standalone_mock.sql',
+    migration: ['095_standalone_mock.sql', '171_commish_draft_doors.sql'],
     fragments: ["this mock draft is another member's solo practice"],
     render: () => null,
     generic: 'This is another member’s practice mock.',
@@ -518,9 +550,12 @@ export function matchPhrase(raw: string): Phrase | null {
   return PHRASES.find((p) => p.fragments.every((f) => msg.includes(f))) ?? null
 }
 
-/** A server refusal as a league member reads it. */
+/** What a member sees when nothing readable is left (R1485). */
+export const FALLBACK_MESSAGE = 'That didn’t go through — try again.'
+
+/** A server refusal as a league member reads it. Never empty. */
 export function friendlyMessage(raw: string): string {
   const phrase = matchPhrase(raw)
   if (phrase) return phrase.render(stripPrefixes(raw).replace(/’/g, "'")) ?? phrase.generic
-  return cleanServerText(raw)
+  return cleanServerText(raw) || FALLBACK_MESSAGE
 }

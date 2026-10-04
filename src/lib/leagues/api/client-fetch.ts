@@ -36,7 +36,7 @@ export function rawErrorText(error: unknown): string | null {
 }
 
 /**
- * F116 (MP.11) → friendly server messages (D481): a `RAISE EXCEPTION`
+ * F116 (MP.11) → friendly server messages (D482): a `RAISE EXCEPTION`
  * message arrives on the wire as `set_lineup: Josh Allen's game kicked off at
  * … (§11.2, lineup_lock = per_player_kickoff); wanted "QB:0"`. The member
  * reads it through THIS one function, at the one surfacing layer every

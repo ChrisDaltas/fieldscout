@@ -605,7 +605,7 @@ test.describe('M5 transactions — a waiver morning and the trade lifecycle (rea
       const alert = editor.getByRole('alert').filter({ hasText: f296.full_name })
       await expect(alert).toBeVisible({ timeout: 30_000 })
       const refusalText = (await alert.innerText()).replace(/\s+/g, ' ').trim()
-      // D481: either arm of the set_lineup lock refusal reads through the
+      // D482: either arm of the set_lineup lock refusal reads through the
       // phrase map ('lineup-slot-locked' / 'lineup-kicked-off'): both name
       // him and say his game has started — no code, no citation.
       expect(refusalText).toContain(f296.full_name)

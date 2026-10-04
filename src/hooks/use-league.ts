@@ -23,11 +23,15 @@ import { leaguesKeys } from './use-leagues'
 export class LeaguePatchError extends Error {
   status: number
   fieldErrors?: Record<string, string[]>
-  constructor(status: number, message: string, fieldErrors?: Record<string, string[]>) {
+  /** The server's text as sent (as `LeagueActionError.raw`) — for code that
+   *  PARSES a refusal; `message` is the member's copy (R1488). */
+  raw: string
+  constructor(status: number, message: string, fieldErrors?: Record<string, string[]>, raw?: string) {
     super(message)
     this.name = 'LeaguePatchError'
     this.status = status
     this.fieldErrors = fieldErrors
+    this.raw = raw ?? message
   }
 }
 
@@ -156,8 +160,8 @@ export function useUpdateLeagueSettings(leagueId: string) {
             : fieldErrors
               ? 'Some settings need attention.'
               : 'Failed to save settings.'
-        // D481: the settings save no longer bypasses the one cleaner.
-        throw new LeaguePatchError(response.status, userFacingMessage(message), fieldErrors && friendlyFieldErrors(fieldErrors))
+        // D482: the settings save no longer bypasses the one cleaner.
+        throw new LeaguePatchError(response.status, userFacingMessage(message), fieldErrors && friendlyFieldErrors(fieldErrors), message)
       }
       return parsed as { ok: true }
     },

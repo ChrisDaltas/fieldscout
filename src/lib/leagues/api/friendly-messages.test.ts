@@ -1,6 +1,6 @@
 /**
  * friendly-messages.test.ts — the one cleaner between a server refusal and
- * the member's screen (friendly server messages, part 1; PROGRESS D481).
+ * the member's screen (friendly server messages, part 1; PROGRESS D482).
  *
  *   1. PHRASE PINS: every phrase-map fragment is asserted present in the
  *      newest defining migration's text, so a SQL rewording fails HERE
@@ -11,7 +11,8 @@
  *   3. GENERIC cells, one per cleanup rule.
  *   4. CENSUS: the 315 P0001 state refusals of the 2026-10-03 survey
  *      (`friendly-messages.census.json`, newest-definition text) come out
- *      with no `§`, no ledger code and no snake_case.
+ *      with no `§`; every clause cut and every code / snake_case word left in
+ *      running text is on the hand-reviewed list (`…census-reviewed.json`).
  *
  * Golden values are stored literals (§4.3). Pure — no stack required.
  */
@@ -20,19 +21,53 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { readdirSync } from 'node:fs'
+
 import census from './friendly-messages.census.json'
-import { PHRASES, cleanServerText, friendlyMessage, matchPhrase } from './friendly-messages'
+import reviewed from './friendly-messages.census-reviewed.json'
+import { FALLBACK_MESSAGE, PHRASES, type Phrase, cleanServerText, explainingClause, friendlyMessage, matchPhrase } from './friendly-messages'
 
 const MIGRATIONS = join(process.cwd(), 'supabase', 'migrations')
 /** SQL literal text: a doubled quote is one apostrophe. */
 const sqlText = (file: string) => readFileSync(join(MIGRATIONS, file), 'utf8').replace(/''/g, "'")
 
+const migrationsOf = (p: Phrase) => (Array.isArray(p.migration) ? p.migration : [p.migration])
+
 const JARGON = { section: /§/, ledger: /\b(?:[EQRFD]\d+|M\d+)\b/, snake: /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/ }
 
 describe('phrase map — every fragment is in the CURRENT SQL text (drift fails loudly)', () => {
   it.each(PHRASES.map((p) => [p.id, p] as const))('%s', (_id, phrase) => {
-    const text = sqlText(phrase.migration)
-    for (const fragment of phrase.fragments) expect(text, `${phrase.migration} lost "${fragment}"`).toContain(fragment)
+    for (const file of migrationsOf(phrase)) {
+      const text = sqlText(file)
+      for (const fragment of phrase.fragments) expect(text, `${file} lost "${fragment}"`).toContain(fragment)
+    }
+  })
+  it('each entry names the NEWEST migration defining its function (R1487)', () => {
+    const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()
+    const bodies = new Map(files.map((f) => [f, readFileSync(join(MIGRATIONS, f), 'utf8')]))
+    const bad: string[] = []
+    for (const phrase of PHRASES) {
+      // The raising function(s): the FUNCTION enclosing each line that holds
+      // every fragment, in each named file (SQL quoting undone).
+      const named = migrationsOf(phrase)
+      const fns = new Set<string>()
+      for (const file of named) {
+        const lines = sqlText(file).split('\n')
+        let current: string | null = null
+        for (const line of lines) {
+          const head = /FUNCTION\s+(?:public\.)?([a-z0-9_]+)\s*\(/.exec(line)
+          if (head) current = head[1]
+          if (current && phrase.fragments.every((f) => line.includes(f))) fns.add(current)
+        }
+      }
+      expect(fns.size, `${phrase.id}: no defining function found`).toBeGreaterThan(0)
+      for (const fn of fns) {
+        const re = new RegExp(`FUNCTION\\s+(?:public\\.)?${fn}\\s*\\(`)
+        const newest = files.filter((f) => re.test(bodies.get(f)!)).at(-1)
+        bad.push(...(newest && named.includes(newest) ? [] : [`${phrase.id}: ${fn} → ${newest}`]))
+      }
+    }
+    expect(bad).toEqual([])
   })
   it('ids are unique and the map covers the survey’s top 10 and more (≥ 40)', () => {
     expect(new Set(PHRASES.map((p) => p.id)).size).toBe(PHRASES.length)
@@ -114,13 +149,36 @@ describe('generic cleanup — one cell per rule', () => {
       'you already have 3 active mock drafts — finish or delete one first',
     )
   })
-  it('swaps known setting names for words; any other snake_case is spaced out', () => {
+  it('swaps known setting names for words; any other snake_case in running text is left (R1484)', () => {
     expect(cleanServerText('lineups are set only while in_season')).toBe('lineups are set only while in season')
     expect(cleanServerText('waiver type none_fcfs')).toBe('waiver type no waivers')
-    expect(cleanServerText('no league_weeks rows')).toBe('no league weeks rows')
+    expect(cleanServerText('no league_weeks rows')).toBe('no league_weeks rows')
   })
-  it('drops bare citations in running text', () => {
-    expect(cleanServerText('the audited path (M6), per §7.3 and E32')).toBe('the audited path, per and')
+  it('drops a §-anchored citation run in running text; a bare code beside words is left', () => {
+    expect(cleanServerText('the audited path (M6), per §7.3 and E32')).toBe('the audited path, per and E32')
+    expect(cleanServerText('when its last game ends §13.1/E32 or later')).toBe('when its last game ends or later')
+    expect(cleanServerText('x (rounds = starters + bench, D91)')).toBe('x (rounds = starters + bench)')
+  })
+  it('team and player names that look like codes or snake_case survive unchanged (R1484)', () => {
+    for (const name of ['E5 Squad', 'Q4 Comeback', 'D1 Ballers', 'foo_bar', 'M6 Mafia', 'Q1 Crushers']) {
+      const raw = `roster_add_drop: ${name} has no open spot`
+      expect(cleanServerText(raw)).toBe(`${name} has no open spot`)
+      expect(friendlyMessage(raw)).toBe(`${name} has no open spot`)
+      expect(cleanServerText(`${name} is ahead (${name} pending; §7.3)`)).toBe(`${name} is ahead (${name} pending)`)
+    }
+  })
+  it('an instructional trailing clause keeps its instruction; only the citation goes (R1486)', () => {
+    expect(cleanServerText('cannot trade — the other team must accept (Q12)')).toBe('cannot trade — the other team must accept')
+    expect(explainingClause('cannot trade — the other team must accept (Q12)')).toBeNull()
+  })
+})
+
+describe('never empty (R1485)', () => {
+  it.each(['x_y: (§1)', '', '   ', '(E36)', 'set_lineup: '])('%j falls back', (raw) => {
+    expect(friendlyMessage(raw)).toBe(FALLBACK_MESSAGE)
+  })
+  it('the fallback is a stored literal', () => {
+    expect(FALLBACK_MESSAGE).toBe('That didn’t go through — try again.')
   })
 })
 
@@ -129,11 +187,26 @@ describe('census — the 315 P0001 refusals of the survey come out code-free', (
   it('the fixture is the survey’s full P0001 list', () => {
     expect(rows).toHaveLength(315)
   })
-  it('no §, no ledger code, no snake_case remains in any of them', () => {
-    const left = rows
-      .map((r) => ({ loc: r.loc, out: friendlyMessage(r.text) }))
-      .filter((r) => Object.values(JARGON).some((re) => re.test(r.out)))
+  it('no § remains in any of them, and none comes out empty', () => {
+    const left = rows.map((r) => ({ loc: r.loc, out: friendlyMessage(r.text) })).filter((r) => JARGON.section.test(r.out) || !r.out)
     expect(left).toEqual([])
+  })
+  it('a ledger code / snake_case word left in running text only on the hand-reviewed rows (R1484)', () => {
+    const left = rows
+      .filter((r) => {
+        const out = friendlyMessage(r.text)
+        return JARGON.ledger.test(out) || JARGON.snake.test(out)
+      })
+      .map((r) => r.loc)
+    expect(left).toEqual(reviewed.runningTextJargon)
+  })
+  it('every clause the cleanup cuts is on the hand-reviewed list — a new cut fails loudly (R1486)', () => {
+    const cuts = rows
+      .filter((r) => !matchPhrase(r.text))
+      .map((r) => ({ loc: r.loc, clause: explainingClause(r.text.replace(/^[a-z0-9_]+: /, ''))?.trim() }))
+      .filter((r): r is { loc: string; clause: string } => !!r.clause)
+    expect(cuts).toEqual(reviewed.clauseCuts)
+    expect(cuts).toHaveLength(34)
   })
   it('the phrase map takes the survey’s hand-rewritten rows', () => {
     const mapped = rows.filter((r) => matchPhrase(r.text) !== null).length

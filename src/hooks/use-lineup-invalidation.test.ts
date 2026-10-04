@@ -120,7 +120,7 @@ describe('a set re-reads the week’s row and the league’s rosters — on BOTH
 
     expect((failure as { name: string }).name).toBe('LeagueActionError')
     expect((failure as { status: number }).status).toBe(409)
-    // D481: the member reads the phrase map's sentence; the raw text rides `raw` for parsers.
+    // D482: the member reads the phrase map's sentence; the raw text rides `raw` for parsers.
     expect((failure as Error).message).toBe('Dev RB Locked’s game has started — he’s locked and can’t be moved into or out of your lineup.')
     expect((failure as { raw: string }).raw).toBe(LOCK_REFUSAL)
 
