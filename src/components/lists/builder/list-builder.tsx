@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import {
@@ -33,7 +34,6 @@ import {
   SCORING_PRESETS,
   type ScoringPresetId,
 } from '@/lib/scoring/default'
-import { cn } from '@/lib/utils'
 
 import { BuilderListPanel } from './builder-list-panel'
 import { PlayerSidebar } from './player-sidebar'
@@ -58,7 +58,6 @@ export function ListBuilder() {
   const { toast } = useToast()
 
   const [title, setTitle] = useState('Untitled')
-  const [editingTitle, setEditingTitle] = useState(false)
   const [positionFilter, setPositionFilter] = useState<string>('')
   const [scoringPreset, setScoringPreset] = useState<ScoringPresetId>(
     DEFAULT_SCORING_PRESET,
@@ -196,8 +195,6 @@ export function ListBuilder() {
         <BuilderHeader
           title={title}
           onTitleChange={setTitle}
-          editing={editingTitle}
-          onEditingChange={setEditingTitle}
           saving={saving}
           onSave={handleSave}
           positionFilter={positionFilter}
@@ -235,8 +232,6 @@ export function ListBuilder() {
 interface BuilderHeaderProps {
   title: string
   onTitleChange: (next: string) => void
-  editing: boolean
-  onEditingChange: (next: boolean) => void
   saving: boolean
   onSave: () => void
   positionFilter: string
@@ -256,8 +251,6 @@ const ALL_POSITIONS = 'all'
 function BuilderHeader({
   title,
   onTitleChange,
-  editing,
-  onEditingChange,
   saving,
   onSave,
   positionFilter,
@@ -270,51 +263,21 @@ function BuilderHeader({
   onCommentsEnabledChange,
   playerCount,
 }: BuilderHeaderProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    }
-  }, [editing])
-
+  // The standard header (F577, D487): the list's name is the page title,
+  // edited in place through the header's `editableTitle` option; the player
+  // count is its subtitle. `inPageOnMobile` keeps the title, options and Save
+  // reachable below `lg`, where the shell hides its header.
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-ink pb-3">
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <input
-            ref={inputRef}
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            onBlur={() => onEditingChange(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                onEditingChange(false)
-              } else if (e.key === 'Escape') {
-                onEditingChange(false)
-              }
-            }}
-            maxLength={100}
-            className="w-full max-w-2xl rounded-sm border border-ink bg-white px-2 py-1 text-h4 text-ink outline-none transition-colors focus:border-accent"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => onEditingChange(true)}
-            className={cn(
-              'rounded-sm px-1 py-0.5 text-left text-h4 transition-colors hover:bg-n-4',
-              title === 'Untitled' ? 'text-n-3' : 'text-ink',
-            )}
-          >
-            {title || 'Untitled'}
-          </button>
-        )}
-        <p className="fs-num mt-0.5 px-1 text-[11px] font-semibold text-n-3">
+    <PageHeader
+      title={title}
+      editableTitle={{ onChange: onTitleChange, label: 'List name', maxLength: 100 }}
+      subtitle={
+        <span className="fs-num">
           {playerCount} player{playerCount === 1 ? '' : 's'} added
-        </p>
-      </div>
-
+        </span>
+      }
+      inPageOnMobile
+      actions={
       <div className="flex shrink-0 items-center gap-2">
         <Popover>
           <PopoverTrigger asChild>
@@ -407,7 +370,8 @@ function BuilderHeader({
           )}
         </Button>
       </div>
-    </header>
+      }
+    />
   )
 }
 

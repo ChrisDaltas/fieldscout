@@ -5,6 +5,7 @@
 // system is wrong. Not linked from nav; visit /app/styleguide.
 import { useState } from 'react'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -107,6 +108,8 @@ export default function StyleGuidePage() {
 
   return (
     <div className="mx-auto flex max-w-content flex-col gap-6 p-6">
+      {/* Explicit title on the standard header (F577, D487). */}
+      <PageHeader title="Style guide" />
       {/* Hero */}
       <div className="rounded-sm border border-ink bg-ink p-6 text-white">
         <p className="font-wordmark text-h4 text-brand">FIELDSCOUT</p>

@@ -377,10 +377,11 @@ describe('LV.13 — elevation, and the page seam LV.12 left', () => {
     )
     expect(source).toContain('Change lists')
     expect(source).toContain('onClick={() => setCompareIds([])}')
-    // Rendered twice — the shell hides its header below `lg`, so a phone would
-    // otherwise have no way back to the picker (the same reason `modeSwitch`
-    // and `tabSwitch` render twice).
-    expect(source.match(/\{changeListsButton\}/g) ?? []).toHaveLength(2)
+    // In the header's actions ONCE; since F577/D487 the standard header's
+    // `inPageOnMobile` renders those same actions in the page below `lg`, so a
+    // phone still has its way back to the picker.
+    expect(source.match(/\{changeListsButton\}/g) ?? []).toHaveLength(1)
+    expect(source).toMatch(/<PageHeader\b[^>]*\binPageOnMobile\b/)
   })
 
   it('removing a column narrows the comparison instead of clearing it', () => {

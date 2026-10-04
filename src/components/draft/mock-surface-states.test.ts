@@ -76,10 +76,11 @@ describe('MP.10 pin 2 — a practice surface names itself below `lg`', () => {
 
   for (const { file, title } of SURFACES) {
     it(`${file} prints "${title}" at mobile widths`, () => {
+      // Since F577/D487 the row is the standard header's own opt-in mobile
+      // row (`PageHeader … inPageOnMobile`), not a hand-rolled `lg:hidden` h3.
       const source = code(`${DRAFT_DIR}/${file}`)
-      expect(source).toContain('lg:hidden')
       expect(source).toMatch(
-        new RegExp(`<h3 className="[^"]*text-h5[^"]*">${title}</h3>`),
+        new RegExp(`<PageHeader title="${title}"[^>]*\\binPageOnMobile\\b`),
       )
     })
   }
@@ -88,7 +89,7 @@ describe('MP.10 pin 2 — a practice surface names itself below `lg`', () => {
     // All three render through `ReportShell`; the LOADING arm used to build
     // its own frame and so lost the title with the rest of it.
     const source = code(`${DRAFT_DIR}/mock-report.tsx`)
-    expect(source).toMatch(/function ReportShell\b[\s\S]*?lg:hidden/)
+    expect(source).toMatch(/function ReportShell\b[\s\S]*?inPageOnMobile/)
 
     // SLICED, not regexed across the file. The first cut asserted
     // `/if \(room\.isPending\) \{[\s\S]*?<ReportShell>/` and stayed GREEN with

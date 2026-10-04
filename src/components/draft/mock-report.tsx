@@ -165,8 +165,7 @@ export function MockDraftReport({ mockId }: { mockId: string }) {
 function ReportShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Mock draft report" />
-      <h3 className="text-h5 lg:hidden">Mock draft report</h3>
+      <PageHeader title="Mock draft report" inPageOnMobile />
       {children}
     </div>
   )
@@ -255,25 +254,11 @@ function MockReportBody({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Mock draft report" actions={actions} />
-
-      {/* The shell header is `hidden lg:block`, so the actions above reach
-          nobody below `lg` — and a page whose only way out and only delete
-          live in an invisible header is the R340 dead end on a phone.
-          Mobile-first: the same controls, in the page, at the widths the
-          header is not there. `MocksHome` does exactly this for its Start
-          control (MP.5).
-
-          **MP.10: with the title, for the same reason.** Below `lg` the page
-          opened on *Delete report* / *Back to practice drafts* and then a card
-          headed *Every pick* — nothing named the surface, and *Delete report*
-          is the more destructive of two unlabelled buttons. Same element and
-          tokens as `/app/lists`' mobile row (`lists-page-v2.tsx`) and as
-          `MocksHome`'s. */}
-      <div className="flex flex-wrap items-center gap-2.5 lg:hidden">
-        <h3 className="mr-auto text-h5">Mock draft report</h3>
-        {actions}
-      </div>
+      {/* The shell header is `hidden lg:block`, so without `inPageOnMobile`
+          the actions — the only way out and the only delete — and the title
+          would reach nobody below `lg` (R340, MP.10). The standard header
+          renders the same title + actions in the page there (F577, D487). */}
+      <PageHeader title="Mock draft report" actions={actions} inPageOnMobile />
 
       {seatsMissing > 0 && (
         // A short seat read is a BROKEN draft, not a small one — say so

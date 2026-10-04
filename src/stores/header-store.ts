@@ -1,19 +1,39 @@
 import { create } from 'zustand'
 
-// Page-scoped header content. Pages register a title/actions (and an optional
-// sub-nav row) via the <PageHeader> component; the shell's sticky header
-// renders it. Falls back to a route-derived title for screens that haven't
-// been reskinned yet.
+/**
+ * What a page puts in the shell's standard header (`PageHeader`). Every
+ * option renders inside the ONE 58px title row — none of them changes its
+ * height, padding or type (F577, D487).
+ */
+export interface PageHeaderContent {
+  /** The page name. A string renders as the standard `text-h5` heading. */
+  title: React.ReactNode
+  /** Right-aligned page actions. */
+  actions?: React.ReactNode
+  /** Optional second header row (e.g. a sub-nav) rendered under the title row. */
+  subnav?: React.ReactNode
+  /** One muted line under the title (a count, a handle, a status). */
+  subtitle?: React.ReactNode
+  /** Inline controls right after the title (a mode switch, tabs). */
+  aside?: React.ReactNode
+  /**
+   * Makes a string title editable in place: click it, type, Enter / Esc /
+   * blur to finish. `onChange` fires per keystroke (the page owns the value).
+   */
+  editableTitle?: {
+    onChange: (next: string) => void
+    label: string
+    maxLength?: number
+    placeholder?: string
+  }
+}
+
+// Page-scoped header content. Pages register it via the <PageHeader>
+// component; the shell's sticky header renders it. Falls back to a
+// route-derived title while nothing is registered.
 interface HeaderStore {
-  title: React.ReactNode | null
-  actions: React.ReactNode | null
-  /** Optional second header row (e.g. the league workspace sub-nav). */
-  subnav: React.ReactNode | null
-  setHeader: (
-    title: React.ReactNode,
-    actions?: React.ReactNode,
-    subnav?: React.ReactNode,
-  ) => void
+  page: PageHeaderContent | null
+  setHeader: (page: PageHeaderContent) => void
   clearHeader: () => void
   /**
    * The league workspace's header (league layout — `LeagueShell`): an
@@ -28,12 +48,9 @@ interface HeaderStore {
 }
 
 export const useHeaderStore = create<HeaderStore>()((set) => ({
-  title: null,
-  actions: null,
-  subnav: null,
-  setHeader: (title, actions, subnav) =>
-    set({ title, actions: actions ?? null, subnav: subnav ?? null }),
-  clearHeader: () => set({ title: null, actions: null, subnav: null }),
+  page: null,
+  setHeader: (page) => set({ page }),
+  clearHeader: () => set({ page: null }),
   league: null,
   setLeagueHeader: (league) => set({ league }),
   clearLeagueHeader: () => set({ league: null }),

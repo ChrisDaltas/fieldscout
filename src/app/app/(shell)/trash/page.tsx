@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
+import { PageHeader } from '@/components/layout/app-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -68,6 +69,8 @@ export default function TrashPage() {
 
   return (
     <div className="space-y-[19px]">
+      {/* Explicit title on the standard header (F577, D487). */}
+      <PageHeader title="Trash" />
       {loading && (
         <Card>
           <ul>
