@@ -353,11 +353,11 @@ export function toolGroups(args: { leagueId: string; phase: ConsolePhase; waiver
           phase === 'setup'
             ? [
                 { label: 'Setup checklist', href: base },
-                { label: 'Draft settings', href: `${base}/settings` },
+                { label: 'Draft settings', href: `${base}/settings?section=draft` },
               ]
             : [
                 draftRoomDoor(leagueId, 'Draft lobby'),
-                { label: 'Draft settings', href: `${base}/settings` },
+                { label: 'Draft settings', href: `${base}/settings?section=draft` },
               ],
         teamDoors: false,
         note: null,

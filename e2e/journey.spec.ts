@@ -132,10 +132,10 @@ test.describe('Phase A journey (create → configure → invite → claim → sc
       await bumpLeagueSeason(serviceClient(), leagueId, F49_SEASON)
 
       // ---- Configure: schedule the draft (settings → Month/Day/Time) -----
-      await commish.goto(`/app/leagues/${leagueId}/settings`)
-      // The group cards are native collapsed <details> — expand the
-      // schedule card before reaching for its pickers.
-      await commish.locator('summary').filter({ hasText: 'Schedule the draft' }).click()
+      // League settings is an index → detail page; the Draft section holds
+      // the schedule pickers (`?section=draft`, the same link the setup
+      // checklist uses).
+      await commish.goto(`/app/leagues/${leagueId}/settings?section=draft`)
       await commish.getByRole('combobox', { name: 'Draft month' }).click()
       await commish.getByRole('option', { name: 'December' }).click()
       await commish.getByRole('combobox', { name: 'Draft day' }).click()

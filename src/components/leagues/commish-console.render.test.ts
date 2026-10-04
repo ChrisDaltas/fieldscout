@@ -399,7 +399,7 @@ describe('pre-draft — the draft tools and members lead', () => {
     expect(html).toContain('data-commish-console="setup"')
     expect(toolGroupKeys(html)).toEqual(['draft', 'members', 'settings'])
     const tools = toolsOnly(html)
-    expect(hrefs(tools)).toEqual([BASE, `${BASE}/settings`, `${BASE}#invites`, `${BASE}/settings`])
+    expect(hrefs(tools)).toEqual([BASE, `${BASE}/settings?section=draft`, `${BASE}#invites`, `${BASE}/settings`])
     expect(tools).toContain(TOOLS_AFTER_DRAFT_NOTE)
     expect(tools).not.toContain('/matchup')
     expect(tools).not.toContain('/trades')

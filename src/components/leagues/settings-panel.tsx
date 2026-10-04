@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useMemo, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
@@ -40,12 +40,20 @@ import { commishConsoleHref } from './commish-console-ops'
 import { STAT_FIX_RULE_COPY } from './corrections-view-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DraftOrderEditor } from './draft-order-editor'
+import { InvitePanel } from './invite-panel'
+import { membersPageHref } from './invite-panel-ops'
 import { OverrideModeBar } from './override-mode-bar'
 import { RosterSlotBuilder } from './roster-slot-builder'
 import { ScoringEditor } from './scoring-editor'
 import { isCustomScoringReference } from './scoring-editor-ops'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import { WaiverScheduleFields } from './waiver-schedule-fields'
+import {
+  indexRows,
+  SECTION_TITLES,
+  settingsHref,
+  type SettingsSection,
+} from './settings-index-ops'
 import {
   AuctionConfigFields,
   PickClockField,
@@ -128,7 +136,7 @@ import {
  * (the contract's messages verbatim), save-pending, and the read-only / lock
  * banners above.
  */
-export function SettingsPanel({ leagueId }: { leagueId: string }) {
+export function SettingsPanel({ leagueId, section = null }: { leagueId: string; section?: SettingsSection | null }) {
   const { data, isPending, isError, refetch } = useLeague(leagueId)
 
   if (isPending) return <SettingsPanelSkeleton />
@@ -153,10 +161,10 @@ export function SettingsPanel({ leagueId }: { leagueId: string }) {
     )
   }
 
-  return <SettingsPanelBody leagueId={leagueId} data={data} />
+  return <SettingsPanelBody leagueId={leagueId} data={data} section={section} />
 }
 
-function SettingsPanelBody({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
+function SettingsPanelBody({ leagueId, data, section }: { leagueId: string; data: LeagueDetail; section: SettingsSection | null }) {
   const isCommish = data.my_role === 'commissioner' || data.my_role === 'co_commissioner'
   const status = data.league.status
   // §7.1: everything edits in setup/scheduled; past that the structural surface
@@ -207,8 +215,7 @@ function SettingsPanelBody({ leagueId, data }: { leagueId: string; data: LeagueD
   })
 
   return (
-    <PanelShell>
-      {isCommish && <CommishConsoleRow leagueId={leagueId} />}
+    <PanelShell leagueId={leagueId} section={section}>
       {!isCommish && (
         <InlineIssue
           tone="warning"
@@ -230,20 +237,38 @@ function SettingsPanelBody({ leagueId, data }: { leagueId: string; data: LeagueD
         />
       )}
       {/* League name + crest — cosmetic, commissioner-editable in EVERY
-          status (unlike the §7.1 structural lock below). */}
-      <LeagueProfileCard
-        key={data.league.name}
-        leagueId={leagueId}
-        detail={data}
-        canEdit={isCommish}
-      />
+          status (unlike the §7.1 structural lock below). Lives in the
+          "Season & playoffs" section. */}
+      {section === 'league' && (
+        <LeagueProfileCard
+          key={data.league.name}
+          leagueId={leagueId}
+          detail={data}
+          canEdit={isCommish}
+        />
+      )}
+      {/* The form stays MOUNTED on every view (index and every section) so
+          an edit in one section survives a trip back to the index — and the
+          index shows the save bar while anything is unsaved. Each section
+          renders only its own groups; Save is still ONE atomic PATCH of the
+          whole reconciled settings object. */}
       <SettingsForm
         key={baselineKey}
         leagueId={leagueId}
         detail={data}
         canEdit={canEdit}
+        section={section}
         inSeason={inSeasonOverride && policies.data !== undefined ? { policies: policies.data, saving, onSave: saveInSeason } : null}
       />
+      {section === null && <SettingsIndex leagueId={leagueId} detail={data} isCommish={isCommish} />}
+      {section === 'teams' && (
+        <>
+          <InvitePanel leagueId={leagueId} detail={data} />
+          <Link href={membersPageHref(leagueId)} className="self-start text-[11px] font-bold underline underline-offset-2" data-members-link>
+            Open the Members page
+          </Link>
+        </>
+      )}
       {/* §7.3.3.1 custom scoring editor (SE.7) + the member read-only view
           (SE.9 — the spec's access bullet routes member visibility through
           THIS settings surface, not a new feed). Self-governing: renders the
@@ -254,9 +279,11 @@ function SettingsPanelBody({ leagueId, data }: { leagueId: string; data: LeagueD
           atomic settings PATCH, and it must not ride the form's fieldset.
           The anchor id is where a successful Customize fork scrolls to (the
           "editor opens on the new doc" beat, SE.9(1)). */}
-      <div id={SCORING_EDITOR_ANCHOR_ID}>
-        <ScoringEditor leagueId={leagueId} />
-      </div>
+      {section === 'scoring' && (
+        <div id={SCORING_EDITOR_ANCHOR_ID}>
+          <ScoringEditor leagueId={leagueId} />
+        </div>
+      )}
     </PanelShell>
   )
 }
@@ -503,13 +530,102 @@ export function InSeasonOverrideBlock({
   )
 }
 
-function PanelShell({ children }: { children: React.ReactNode }) {
+function PanelShell({
+  children,
+  leagueId,
+  section = null,
+}: {
+  children: React.ReactNode
+  leagueId?: string
+  section?: SettingsSection | null
+}) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <LeaguePageTitle title="League settings" />
+      {section && leagueId ? <SubHead leagueId={leagueId} title={SECTION_TITLES[section]} /> : <LeaguePageTitle title="League settings" />}
       {children}
     </div>
   )
+}
+
+/** The prototype's SubHead: a way back to the index, then the section's
+ *  own title. A real link, so browser Back and a shared URL both work. */
+function SubHead({ leagueId, title }: { leagueId: string; title: string }) {
+  return (
+    <div className="flex flex-col gap-1.5" data-settings-subhead>
+      <Link
+        href={settingsHref(leagueId)}
+        className="flex items-center gap-1 self-start text-[11px] font-bold text-n-3 hover:text-ink"
+        data-settings-back
+      >
+        <Icon name="arrow-prev" size={13} /> League settings
+      </Link>
+      <LeaguePageTitle title={title} />
+    </div>
+  )
+}
+
+/**
+ * The index: one row per section with a live one-line summary of the
+ * league's real settings (`indexRows`), then the Commissioner tools row for
+ * commissioners. Every row is a link (lifts on hover only). A manager gets
+ * the same rows with "View" — every section is read-only for him.
+ */
+function SettingsIndex({ leagueId, detail, isCommish }: { leagueId: string; detail: LeagueDetail; isCommish: boolean }) {
+  const templates = useScoringTemplates()
+  const sid = detail.league.scoring_system_id
+  const templateIds = templates.data?.map((t) => t.id)
+  const customized = templateIds !== undefined && isCustomScoringReference(sid, templateIds)
+  const scoringName = templates.data?.find((t) => t.id === sid)?.name ?? null
+  const rows = indexRows({
+    settings: detail.settings,
+    filledSeats: detail.members.filter((m) => m.user_id !== null && m.team_id !== null).length,
+    scoringName,
+    scoringCustomized: customized,
+    formatDraftAt: formatDraftInstant,
+  })
+  return (
+    <div className="flex flex-col gap-2.5" data-settings-index>
+      {rows.map((row) => (
+        <Link
+          key={row.section}
+          href={settingsHref(leagueId, row.section)}
+          data-settings-row={row.section}
+          className="flex items-center gap-2.5 rounded-sm border border-ink bg-white px-card-pad py-3 transition-shadow hover:shadow-hard-4 focus-visible:shadow-hard-4"
+        >
+          <span className="mr-auto min-w-0">
+            <span className="block text-[14px] font-extrabold leading-tight">{row.title}</span>
+            <span className="mt-1 block text-[11px] font-semibold text-n-3" data-settings-row-note>
+              {row.note}
+            </span>
+          </span>
+          {row.chips.map((c) => (
+            <Badge key={c} variant="stroke" className="hidden sm:inline-flex">
+              {c}
+            </Badge>
+          ))}
+          <span className={cn(buttonVariants({ variant: 'stroke', size: 'sm' }), 'pointer-events-none hidden sm:inline-flex')} aria-hidden data-settings-row-action>
+            {isCommish ? (
+              <>
+                <Icon name="edit" size={13} /> Edit
+              </>
+            ) : (
+              'View'
+            )}
+          </span>
+          <Icon name="arrow-next" size={16} className="shrink-0 text-n-3" />
+        </Link>
+      ))}
+      {isCommish && <CommishConsoleRow leagueId={leagueId} />}
+    </div>
+  )
+}
+
+/** The draft instant as a short local date and time (display only — the
+ *  stored value is an ISO instant). */
+function formatDraftInstant(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'scheduled'
+  return d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 /**
@@ -566,11 +682,15 @@ function SettingsForm({
   leagueId,
   detail,
   canEdit,
+  section,
   inSeason,
 }: {
   leagueId: string
   detail: LeagueDetail
   canEdit: boolean
+  /** Which section's groups to render; null / 'teams' render no groups
+   *  (the form still holds any unsaved edits from another section). */
+  section: SettingsSection | null
   inSeason: InSeasonArm | null
 }) {
   const initialSettings = detail.settings
@@ -721,7 +841,7 @@ function SettingsForm({
           Elevation exception: this bar is pinned above content that scrolls
           underneath it, so the resting shadow is what makes the overlap
           legible. See CLAUDE.md → "Elevation". */}
-      {canEdit && (
+      {canEdit && (isFormSection(section) || (plan ? plan.send.length > 0 : dirty)) && (
         <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
           <span className="text-[12px] font-bold text-n-3" data-save-summary>
             {plan
@@ -775,12 +895,15 @@ function SettingsForm({
       {/* `disabled` on the fieldset makes every native control (inputs, the
           Radix Select/Switch triggers — all buttons) read-only in one place;
           the div-based scoring cards get an extra pointer-events guard. */}
+      {isFormSection(section) && (
       <fieldset
         disabled={!canEdit}
         className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
         data-settings-fieldset={canEdit ? 'open' : 'closed'}
+        data-settings-section={section}
       >
-        <PageSectionHeading>Draft setup</PageSectionHeading>
+        {section === 'draft' && (
+          <>
         {draftRefusal !== null && (
           <div data-refused-key="draft">
             <InlineIssue tone="warning" message={draftRefusal} />
@@ -806,19 +929,30 @@ function SettingsForm({
           canEdit={canEdit && draftRefusal === null}
         />
         </fieldset>
+          </>
+        )}
 
-        <PageSectionHeading>League settings</PageSectionHeading>
+        {section === 'league' && (
+          <>
+            <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} refusedFor={refusedFor} />
+            <TiebreakersGroup s={working} onSettings={updateSettings} />
+          </>
+        )}
 
-        <FormatGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} refusedFor={refusedFor} />
+        {section === 'roster' && (
+          <>
+            <GroupCard title="Roster & lineup slots">
+              <RosterSlotBuilder
+                value={working.roster_settings}
+                onChange={setRoster}
+                teamCount={working.team_count}
+              />
+            </GroupCard>
+            <LineupsGroup s={working} onSettings={updateSettings} />
+          </>
+        )}
 
-        <GroupCard title="Roster & lineup slots">
-          <RosterSlotBuilder
-            value={working.roster_settings}
-            onChange={setRoster}
-            teamCount={working.team_count}
-          />
-        </GroupCard>
-
+        {section === 'scoring' && (
         <GroupCard title="Scoring">
           {/* SE.9 designed copy (§16.5.4): a customized league's fork id
               matches no card, so without this line the picker would read as
@@ -882,19 +1016,18 @@ function SettingsForm({
             <InlineIssue key={e.message} tone="error" message={e.message} />
           ))}
         </GroupCard>
+        )}
 
-        <WaiversGroup s={working} onSettings={updateSettings} />
-        <TradesGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
-        <LineupsGroup s={working} onSettings={updateSettings} />
-        <TiebreakersGroup s={working} onSettings={updateSettings} />
+        {section === 'waivers' && (
+          <>
+            <WaiversGroup s={working} onSettings={updateSettings} />
+            <TradesGroup s={working} onSettings={updateSettings} errorsFor={errorsFor} />
+          </>
+        )}
       </fieldset>
+      )}
     </div>
   )
-}
-
-/** Page-level band between card groups ("Draft setup" / "League settings"). */
-function PageSectionHeading({ children }: { children: React.ReactNode }) {
-  return <h2 className="mt-1.5 text-h6 text-ink">{children}</h2>
 }
 
 // ---------------------------------------------------------------------------
@@ -902,28 +1035,19 @@ function PageSectionHeading({ children }: { children: React.ReactNode }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Collapsed by default so the panel first reads as a list of section names;
- * each section expands independently. Native <details>/<summary> deliberately:
- * a summary is not a form control, so the read-only `<fieldset disabled>`
- * around the form never blocks a non-commissioner from expanding a section
- * to view it. Content stays mounted while closed, so form state is unaffected.
+ * One titled card per group. Always open: the settings index (one row per
+ * section) is now what makes the page read as a short list of names, so a
+ * section's groups show in full once it is opened.
  */
 function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card>
-      <details className="group">
-        <summary className="flex min-h-header cursor-pointer list-none items-center justify-between gap-2 px-card-pad py-2.5 [&::-webkit-details-marker]:hidden">
-          <CardTitle>{title}</CardTitle>
-          <Icon
-            name="arrow-bottom"
-            size={14}
-            className="shrink-0 -rotate-90 transition-transform group-open:rotate-0"
-          />
-        </summary>
-        <CardContent className="flex flex-col gap-3.5 border-t border-ink">
-          {children}
-        </CardContent>
-      </details>
+      <div className="flex min-h-header items-center px-card-pad py-2.5">
+        <CardTitle>{title}</CardTitle>
+      </div>
+      <CardContent className="flex flex-col gap-3.5 border-t border-ink">
+        {children}
+      </CardContent>
     </Card>
   )
 }
@@ -1832,4 +1956,10 @@ function DraftGroup({
           arm. */}
     </GroupCard>
   )
+}
+
+/** Sections whose groups live in the settings form (Teams is the members
+ *  panel; the index has no groups). */
+function isFormSection(section: SettingsSection | null): section is Exclude<SettingsSection, 'teams'> {
+  return section !== null && section !== 'teams'
 }

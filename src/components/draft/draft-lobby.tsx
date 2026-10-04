@@ -235,7 +235,7 @@ export function DraftLobby({
                 {startDraft.isPending ? 'Starting…' : 'Start draft now'}
               </Button>
               <Button variant="stroke" size="sm" asChild>
-                <Link href={`/app/leagues/${leagueId}/settings`}>
+                <Link href={`/app/leagues/${leagueId}/settings?section=draft`}>
                   <Icon name="setup" size={13} />
                   Draft setup
                 </Link>

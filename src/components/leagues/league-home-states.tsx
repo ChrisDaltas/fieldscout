@@ -323,8 +323,9 @@ function SetupHero({
 function checklistHref(key: ChecklistItem['key'], settingsHref: string): string {
   // Seats are handled right here on the home page by the invite panel.
   if (key === 'seats') return '#invites'
-  // settings · scoring · schedule all live in the grouped settings panel; the
-  // full draft date/time surface (draft-setup-panel) is M2.
+  // Each lands on its own section of League settings (`?section=`).
+  if (key === 'scoring') return `${settingsHref}?section=scoring`
+  if (key === 'schedule') return `${settingsHref}?section=draft`
   return settingsHref
 }
 
