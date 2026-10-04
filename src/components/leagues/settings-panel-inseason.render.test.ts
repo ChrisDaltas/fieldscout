@@ -25,6 +25,7 @@ import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { STAT_FIX_RULE_COPY } from './corrections-view-ops'
+import type { SettingsSection } from './settings-index-ops'
 import { InSeasonOverrideBlock, SettingsPanel } from './settings-panel'
 import {
   SETTINGS_OVERRIDE_BAR_OFF_COPY,
@@ -35,7 +36,7 @@ import {
   type SettingSaveResult,
 } from './settings-panel-ops'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }) }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }), usePathname: () => '/app/leagues/league-1/settings' }))
 vi.mock('@/stores/commish-override-store', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
   return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }
@@ -107,6 +108,9 @@ interface Seed {
   detail?: LeagueDetail
   policies?: SettingPolicies | 'error' | 'missing'
   mode?: boolean
+  /** Which settings section is open (`?section=`) — the groups render per
+   *  section now (index → detail). Default: Season & playoffs. */
+  section?: SettingsSection | null
 }
 
 function renderPanel(seed: Seed = {}): string {
@@ -121,7 +125,7 @@ function renderPanel(seed: Seed = {}): string {
   } else if (policies !== 'missing') qc.setQueryData(key, policies)
   vi.mocked(useOverrideMode).mockReturnValue(seed.mode ?? false)
   try {
-    return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(SettingsPanel, { leagueId: LEAGUE })))
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(SettingsPanel, { leagueId: LEAGUE, section: seed.section === undefined ? 'league' : seed.section })))
       .replace(/&#x27;/g, "'")
       .replace(/&quot;/g, '"')
       .replace(/&amp;/g, '&')
@@ -226,7 +230,7 @@ describe('a key 129 marks refused-in-season is CLOSED and shows 129’s refusal 
   })
 
   it('the whole `draft` block closes as one, under 129’s own sentence', () => {
-    const html = renderPanel({ mode: true })
+    const html = renderPanel({ mode: true, section: 'draft' })
     expect(html).toContain('data-refused-key="draft"')
     expect(html).toContain(DRAFT_WHY)
     expect(html).toContain('data-draft-fieldset="closed"')
@@ -335,7 +339,7 @@ describe('InSeasonOverrideBlock — one line per key, never a bare "Saved."', ()
 describe('the stat-fix rule is stated, not chosen (Q86 / F475)', () => {
   for (const status of ['pre_draft', 'in_season']) {
     it(`${status}: the settings page states the rule and offers no window choice`, () => {
-      const html = renderPanel({ detail: withStatus(status) })
+      const html = renderPanel({ detail: withStatus(status), section: 'roster' })
       expect(html).toContain(STAT_FIX_RULE_COPY)
       expect(html).toContain('data-stat-fix-rule')
       expect(html).not.toContain('Thu 6:00 AM ET')
