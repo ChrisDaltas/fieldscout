@@ -36,7 +36,7 @@ import {
   type SettingSaveResult,
 } from './settings-panel-ops'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }) }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }), usePathname: () => '/app/leagues/league-1/settings' }))
 vi.mock('@/stores/commish-override-store', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
   return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }

@@ -1,11 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -50,7 +52,9 @@ import { ScoringTemplatePicker } from './scoring-template-picker'
 import { WaiverScheduleFields } from './waiver-schedule-fields'
 import {
   indexRows,
+  leavesSettings,
   SECTION_TITLES,
+  sectionErrors,
   settingsHref,
   type SettingsSection,
 } from './settings-index-ops'
@@ -259,8 +263,10 @@ function SettingsPanelBody({ leagueId, data, section }: { leagueId: string; data
         canEdit={canEdit}
         section={section}
         inSeason={inSeasonOverride && policies.data !== undefined ? { policies: policies.data, saving, onSave: saveInSeason } : null}
+        renderIndex={(errorSections) => (
+          <SettingsIndex leagueId={leagueId} detail={data} isCommish={isCommish} errorSections={errorSections} />
+        )}
       />
-      {section === null && <SettingsIndex leagueId={leagueId} detail={data} isCommish={isCommish} />}
       {section === 'teams' && (
         <>
           <InvitePanel leagueId={leagueId} detail={data} />
@@ -570,7 +576,18 @@ function SubHead({ leagueId, title }: { leagueId: string; title: string }) {
  * commissioners. Every row is a link (lifts on hover only). A manager gets
  * the same rows with "View" — every section is read-only for him.
  */
-function SettingsIndex({ leagueId, detail, isCommish }: { leagueId: string; detail: LeagueDetail; isCommish: boolean }) {
+function SettingsIndex({
+  leagueId,
+  detail,
+  isCommish,
+  errorSections,
+}: {
+  leagueId: string
+  detail: LeagueDetail
+  isCommish: boolean
+  /** R1495: sections holding a current validation error get a marker. */
+  errorSections: ReadonlySet<SettingsSection>
+}) {
   const templates = useScoringTemplates()
   const sid = detail.league.scoring_system_id
   const templateIds = templates.data?.map((t) => t.id)
@@ -595,9 +612,14 @@ function SettingsIndex({ leagueId, detail, isCommish }: { leagueId: string; deta
           <span className="mr-auto min-w-0">
             <span className="block text-[14px] font-extrabold leading-tight">{row.title}</span>
             <span className="mt-1 block text-[11px] font-semibold text-n-3" data-settings-row-note>
-              {row.note}
+              {row.section === 'scoring' && templates.isPending ? 'Loading scoring…' : row.note}
             </span>
           </span>
+          {errorSections.has(row.section) && (
+            <Badge variant="stroke" className="text-negative-strong" data-settings-row-error={row.section}>
+              Needs a fix
+            </Badge>
+          )}
           {row.chips.map((c) => (
             <Badge key={c} variant="stroke" className="hidden sm:inline-flex">
               {c}
@@ -684,10 +706,14 @@ function SettingsForm({
   canEdit,
   section,
   inSeason,
+  renderIndex,
 }: {
   leagueId: string
   detail: LeagueDetail
   canEdit: boolean
+  /** The index renders INSIDE the form so its rows can mark the sections
+   *  that hold a current error (R1495) — the working copy lives here. */
+  renderIndex: (errorSections: ReadonlySet<SettingsSection>) => React.ReactNode
   /** Which section's groups to render; null / 'teams' render no groups
    *  (the form still holds any unsaved edits from another section). */
   section: SettingsSection | null
@@ -746,6 +772,16 @@ function SettingsForm({
     : null
   const draftRefusal = refusedFor('draft')
   const scoringChanged = scoringId !== null && scoringId !== initialScoringId
+
+  // R1495: every current error, labelled by the section that holds its
+  // control — an edit in one section can break a value in another.
+  const errorList = sectionErrors(validation.errors)
+  const errorSections = new Set<SettingsSection>(errorList.map((e) => e.section))
+
+  // R1497: unsaved edits never vanish silently — reload/close asks (the
+  // browser's own prompt), and leaving the settings page in-app asks first.
+  const unsaved = canEdit && (plan ? plan.send.length > 0 : dirty)
+  const leave = useLeaveGuard(unsaved)
 
   const canSubmit = inSeason
     ? canEdit && validation.valid && plan !== null && plan.send.length > 0 && !inSeason.saving
@@ -841,7 +877,7 @@ function SettingsForm({
           Elevation exception: this bar is pinned above content that scrolls
           underneath it, so the resting shadow is what makes the overlap
           legible. See CLAUDE.md → "Elevation". */}
-      {canEdit && (isFormSection(section) || (plan ? plan.send.length > 0 : dirty)) && (
+      {canEdit && (isFormSection(section) || (plan ? plan.send.length > 0 : dirty) || errorList.length > 0) && (
         <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
           <span className="text-[12px] font-bold text-n-3" data-save-summary>
             {plan
@@ -880,6 +916,19 @@ function SettingsForm({
           </Button>
         </div>
       )}
+      {canEdit && errorList.length > 0 && (
+        <ul className="flex flex-col gap-1 rounded-sm border border-negative bg-negative-soft px-3 py-2.5" data-settings-errors role="alert">
+          {errorList.map((e) => (
+            <li key={`${e.section}:${e.message}`} className="text-[12px] font-semibold" data-settings-error={e.section}>
+              <Link href={settingsHref(leagueId, e.section)} className="font-bold underline underline-offset-2">
+                {e.title}
+              </Link>
+              : {e.message}
+            </li>
+          ))}
+        </ul>
+      )}
+      <LeaveSettingsDialog {...leave} />
 
       {serverError && (serverError.status === 403 || serverError.status === 409) && (
         <InlineIssue tone="error" message={serverError.message} />
@@ -1026,7 +1075,77 @@ function SettingsForm({
         )}
       </fieldset>
       )}
+      {section === null && renderIndex(errorSections)}
     </div>
+  )
+}
+
+/**
+ * R1497: while `active`, the browser's own prompt guards reload/close, and
+ * any in-page link that leaves the settings page (the Commissioner tools
+ * row, the Members link, the shell and league nav) is held for a confirm.
+ * One capture-phase listener covers every link without touching them;
+ * Next's Link skips navigation when the click is already default-prevented.
+ * Section links (?section=) stay on the page and never ask.
+ */
+function useLeaveGuard(active: boolean) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
+  useEffect(() => {
+    if (!active) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const a = (e.target as Element | null)?.closest?.('a[href]')
+      if (!(a instanceof HTMLAnchorElement) || (a.target && a.target !== '_self') || a.hasAttribute('download')) return
+      if (!leavesSettings(a.getAttribute('href') ?? '', pathname, window.location.origin)) return
+      e.preventDefault()
+      e.stopPropagation()
+      setPendingHref(a.href)
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    document.addEventListener('click', onClick, true)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      document.removeEventListener('click', onClick, true)
+    }
+  }, [active, pathname])
+  return {
+    href: pendingHref,
+    onStay: () => setPendingHref(null),
+    onLeave: () => {
+      const href = pendingHref
+      setPendingHref(null)
+      if (!href) return
+      const url = new URL(href)
+      if (url.origin === window.location.origin) router.push(url.pathname + url.search + url.hash)
+      else window.location.assign(href)
+    },
+  }
+}
+
+function LeaveSettingsDialog({ href, onStay, onLeave }: { href: string | null; onStay: () => void; onLeave: () => void }) {
+  return (
+    <Dialog open={href !== null} onOpenChange={(open) => !open && onStay()}>
+      <DialogContent className="max-w-sm" data-leave-settings-dialog>
+        <DialogHeader>
+          <DialogTitle>Leave without saving?</DialogTitle>
+          <DialogDescription>You have unsaved settings changes. If you leave now, they&apos;re lost.</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="stroke" size="sm" onClick={onStay}>
+            Keep editing
+          </Button>
+          <Button type="button" variant="blue" size="sm" onClick={onLeave} data-leave-settings-confirm>
+            Leave
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1041,7 +1160,7 @@ function SettingsForm({
  */
 function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card>
+    <Card data-settings-group={title}>
       <div className="flex min-h-header items-center px-card-pad py-2.5">
         <CardTitle>{title}</CardTitle>
       </div>

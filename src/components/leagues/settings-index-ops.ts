@@ -140,3 +140,49 @@ export function indexRows(input: IndexInput): IndexRow[] {
     },
   ]
 }
+
+/**
+ * R1495: which section a validation error's field lives in, so an error
+ * caused by an edit in one section is never invisible from another (team
+ * count in Season & playoffs can break veto votes in Waivers & trades).
+ * Unknown fields fall to Season & playoffs rather than vanishing.
+ */
+export function sectionForField(field: string): Exclude<SettingsSection, 'teams'> {
+  if (field.startsWith('roster_settings')) return 'roster'
+  if (field.startsWith('draft')) return 'draft'
+  if (field.startsWith('trade_') || field.startsWith('waiver') || field.startsWith('faab')) return 'waivers'
+  if (field === 'scoring_system_id') return 'scoring'
+  return 'league'
+}
+
+export interface SectionError {
+  section: Exclude<SettingsSection, 'teams'>
+  title: string
+  message: string
+}
+
+/** Every current error, labelled by the section that holds its control, in
+ *  index order. */
+export function sectionErrors(errors: readonly { field: string; message: string }[]): SectionError[] {
+  const out = errors.map((e) => {
+    const section = sectionForField(e.field)
+    return { section, title: SECTION_TITLES[section], message: e.message }
+  })
+  return out.sort((a, b) => SETTINGS_SECTIONS.indexOf(a.section) - SETTINGS_SECTIONS.indexOf(b.section))
+}
+
+/**
+ * R1497: does following `href` from `currentPath` leave the settings page
+ * (and so lose unsaved edits)? Moving between sections (?section=) stays on
+ * the page — the form is mounted on every view — so it never asks.
+ */
+export function leavesSettings(href: string, currentPath: string, origin: string): boolean {
+  let url: URL
+  try {
+    url = new URL(href, origin)
+  } catch {
+    return false
+  }
+  if (url.origin !== origin) return true
+  return url.pathname !== currentPath
+}
