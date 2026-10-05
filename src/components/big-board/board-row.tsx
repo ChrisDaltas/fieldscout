@@ -1,5 +1,7 @@
 'use client'
 
+import { PROJ_TEXT } from '@/components/players/projected-points'
+import { cn } from '@/lib/utils'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -57,7 +59,7 @@ export function SortableBoardRow({
         isDragging={isDragging}
         onOpen={onOpen}
         trailing={
-          <span className="fs-num w-12 shrink-0 text-right text-[13px] font-extrabold">
+          <span className={cn('fs-num w-12 shrink-0 text-right text-[13px] font-extrabold', PROJ_TEXT)}>
             {typeof projection === 'number' ? projection.toFixed(1) : '—'}
           </span>
         }

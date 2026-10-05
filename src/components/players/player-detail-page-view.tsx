@@ -20,6 +20,7 @@ import {
   type SeasonTableRow,
   type ThisWeek,
 } from '@/components/players/player-page-ops'
+import { oprkPillClass } from '@/components/leagues/my-team-ops'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -50,6 +51,7 @@ import {
   systemLabel,
 } from '@/lib/players/core-stats-ops'
 import { keyStats, type KeyStatTile } from '@/lib/players/key-stats-ops'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
@@ -390,12 +392,6 @@ export function DraftValue({ player, stats }: { player: PlayerStatsPlayer; stats
   )
 }
 
-const TONE_CHIP: Record<string, string> = {
-  negative: 'bg-negative',
-  caution: 'bg-caution',
-  positive: 'bg-brand',
-}
-
 /**
  * "This week" — the factual matchup (D486(12)): "@ SEA · Sun 1:05 PM ET"
  * and the matchup badge from `defense_position_splits` (OPRK, 1 = toughest;
@@ -430,7 +426,7 @@ export function ThisWeekBlock({ tw, position }: { tw: ThisWeek; position: string
         )}
         {badge && (
           <span
-            className={cn('inline-flex rounded-sm px-1.5 py-px text-[11px] font-extrabold', TONE_CHIP[badge.tone])}
+            className={cn('inline-flex rounded-sm px-1.5 py-px text-[11px] font-extrabold', oprkPillClass(badge.tone))}
             data-matchup-badge={badge.tone}
           >
             {badge.text}
@@ -497,14 +493,14 @@ export function SeasonTable({
                 {oppCell(r)}
                 {!bye && r.oprk !== null && r.tone && r.oprk > 0 && (
                   <span
-                    className={cn('fs-num ml-1.5 inline-flex rounded-sm px-1 py-px text-[10px] font-extrabold', TONE_CHIP[r.tone])}
+                    className={cn('fs-num ml-1.5 inline-flex rounded-sm px-1 py-px text-[10px] font-extrabold', oprkPillClass(r.tone))}
                     data-oprk={r.oprk}
                   >
                     {ordinalShort(r.oprk)}
                   </span>
                 )}
               </td>
-              <td className="fs-num py-2.5 text-right font-semibold text-n-3">{bye ? '' : pts(r.proj)}</td>
+              <td className={cn('fs-num py-2.5 text-right font-semibold', PROJ_TEXT)}>{bye ? '' : pts(r.proj)}</td>
               <td className="fs-num truncate py-2.5 text-right font-extrabold">
                 {bye ? '' : kickoff ? <span className="text-[11px] font-semibold text-n-3">{kickoff}</span> : pts(r.points)}
               </td>

@@ -29,11 +29,12 @@ import { useAddDrop, type AddDropResult } from '@/hooks/use-transactions'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 import { ClaimDialog } from './claim-dialog'
 
-import { TeamNameLink, LeaguePageTitle } from './league-cells'
+import { LockTag, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
 import { opponentOf } from './my-team-ops'
 import {
@@ -631,9 +632,7 @@ export function PoolTable({
                 {values && <ValueCellsRow row={row} values={values} />}
                 <TableCell>
                   {row.lock.locked ? (
-                    <Badge variant="black" title={row.lock.until ? `Locked until ${formatInstantWithDate(row.lock.until, leagueTimeZone).local}` : row.lock.copy} data-lock>
-                      🔒 locked
-                    </Badge>
+                    <LockTag label="locked" title={row.lock.until ? `Locked until ${formatInstantWithDate(row.lock.until, leagueTimeZone).local}` : row.lock.copy} data-lock />
                   ) : (
                     <span className="text-[11px] text-n-3">—</span>
                   )}
@@ -715,7 +714,7 @@ function ValueCellsRow({ row, values }: { row: PoolPlayerRow; values: ValueColum
         {values.opponent(row.player.team)}
       </TableCell>
       <TableCell className={tint('proj')} data-cell="proj" title={c.proj === null ? PROJ_MISSING_TITLE : undefined}>
-        <span className={c.proj === null ? 'text-n-3' : 'font-bold text-ink'}>{pointsText(c.proj)}</span>
+        <span className={c.proj === null ? 'text-n-3' : cn('font-bold', PROJ_TEXT)}>{pointsText(c.proj)}</span>
       </TableCell>
       <TableCell className={tint('season')} data-cell="season">
         <span className={c.season === null ? 'text-n-3' : 'text-ink'}>{pointsText(c.season)}</span>

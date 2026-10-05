@@ -24,6 +24,7 @@ import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { BoxStarter, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 import { commishMatchupHref } from './activity-page-ops'
@@ -978,7 +979,7 @@ function TotalCell({
         {sum.text}
       </span>
       {proj && (
-        <span className="fs-num text-[10px] font-semibold text-n-3" data-proj-total>
+        <span className={cn('fs-num text-[10px] font-semibold', PROJ_TEXT)} data-proj-total>
           {proj}
         </span>
       )}
@@ -1061,7 +1062,7 @@ function StarterCellView({
           {cell.text}
         </span>
         {projText && (
-          <span className="fs-num text-[9px] font-semibold text-n-3" data-proj>
+          <span className={cn('fs-num text-[9px] font-semibold', PROJ_TEXT)} data-proj>
             {projText}
           </span>
         )}

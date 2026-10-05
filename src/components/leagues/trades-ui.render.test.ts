@@ -364,7 +364,7 @@ describe('trade-builder — the two sides from the rosters; the server’s answe
     expect(html).toContain('Bravo gives')
     expect(html).toMatch(/data-trade-pick="p-b1" data-picked="true"/)
     const bo = html.slice(html.indexOf('data-trade-pick="p-b2"'), html.indexOf('</li>', html.indexOf('data-trade-pick="p-b2"')))
-    expect(bo).toContain('🔒')
+    expect(bo).toContain('data-lock-tag')
     expect(bo).toContain(lockedAssetTitle('defer'))
     expect(bo).not.toContain('disabled=""')
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*data-trade-send/)
@@ -585,7 +585,7 @@ describe('L.D3.12 — the builder: Send only when the league would take it', () 
     expect(bo).toContain('data-picked="true"')
     expect(bo).toContain('data-lock-note="defer"')
     const unpicked = rowOf(builder({ lockBehavior: 'defer' }), 'p-b2')
-    expect(unpicked).toContain('🔒')
+    expect(unpicked).toContain('data-lock-tag')
     expect(unpicked).not.toContain('data-lock-note')
   })
   it('R1286: the voluntary “Drop players…” opener stays even when the league says no drop is needed', () => {
@@ -640,7 +640,7 @@ describe('L.D3.12 — accepting: the drop picker is part of accepting', () => {
   it('R1283 — Q75 `reject`: a started player is pickable as a drop too (the 🔒 says what will happen)', () => {
     const html = card({ lockBehavior: 'reject', usePreview: acceptAnswer({ ok: false }, { recipient: { must_drop: 1 } }) })
     const bo = rowOf(html.slice(html.indexOf('data-drop-picker')), 'p-b2')
-    expect(bo).toContain('🔒')
+    expect(bo).toContain('data-lock-tag')
     expect(bo).not.toContain('disabled=""')
   })
   it('R1282: the accept check FAILED → the card says so, with the D419 buttons (the league checks on accept)', () => {

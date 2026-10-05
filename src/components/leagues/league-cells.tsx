@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Lock } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -6,6 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { PositionBadge } from '@/components/players/position-badge'
 import { cn } from '@/lib/utils'
 
+import { oprkPillClass, oprkTone } from './my-team-ops'
 import { initialsOf, type MockInjuryStatus, type MockLineupPlayer } from './league-mock-data'
 
 /**
@@ -213,20 +215,31 @@ export function WinProbMeter({ value, showTick, className }: WinProbMeterProps) 
   )
 }
 
-/** Opponent positional rank chip — low = tough (negative), high = soft
- *  (positive), middle = caution. Dark text on all three fills. */
-export function OprkChip({ value }: { value: number }) {
-  const tone =
-    value <= 8 ? 'bg-negative' : value >= 24 ? 'bg-positive' : 'bg-caution'
+/** Opponent positional rank chip — the shared OPRK band (`oprkTone`) and
+ *  the shared pill look (`oprkPillClass`, D497): soft tint, dark same-hue
+ *  text, no border. */
+export function OprkChip({ value, ranked }: { value: number; ranked?: number }) {
   return (
     <span
       className={cn(
         'fs-num inline-flex h-[18px] min-w-[21px] items-center justify-center rounded-sm px-1.5 text-[10px] font-bold',
-        tone,
+        oprkPillClass(oprkTone(value, ranked)),
       )}
     >
       {value}
     </span>
+  )
+}
+
+/** The locked-player indicator (D497, Chris 2026-10-05): a lock glyph on a
+ *  light yellow fill. LOOK only — whether a player is locked is decided by
+ *  the caller's lock read, never here. */
+export function LockTag({ className, label, ...props }: React.HTMLAttributes<HTMLDivElement> & { label?: string }) {
+  return (
+    <Badge variant="lock" data-lock-tag className={cn('h-4 gap-0.5 px-1 text-[9px]', className)} {...props}>
+      <Lock aria-hidden className="h-2.5 w-2.5" strokeWidth={2.5} />
+      {label ? <span>{label}</span> : <span className="sr-only">Locked</span>}
+    </Badge>
   )
 }
 

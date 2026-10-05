@@ -157,6 +157,20 @@ export function oprkTone(oprk: number, ranked = 32): Tone {
   return 'caution'
 }
 
+/** THE one OPRK pill look (D497, Chris 2026-10-05): a soft tint with very
+ *  dark text of the same hue and no border — red / orange / green by the
+ *  `oprkTone` band. Every OPRK chip (My Team, Matchup, Players, the player
+ *  modal and card) takes its colours from here so they change together. */
+export const OPRK_PILL: Record<Tone, string> = {
+  negative: 'bg-oprk-hard text-oprk-hard-fg',
+  caution: 'bg-oprk-mid text-oprk-mid-fg',
+  positive: 'bg-oprk-easy text-oprk-easy-fg',
+}
+
+export function oprkPillClass(tone: Tone): string {
+  return OPRK_PILL[tone]
+}
+
 export function formatPoints(n: number | null | undefined): string {
   return n === null || n === undefined || !Number.isFinite(n) ? '—' : n.toFixed(1)
 }

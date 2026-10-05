@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Icon } from '@/components/ui/icon'
+import { LockTag } from './league-cells'
 import { useCommishEditLineup } from '@/hooks/use-commish-lineup'
 import { useSetLineup, type TeamLineupRow } from '@/hooks/use-lineup'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
@@ -38,6 +39,7 @@ import { toast } from '@/hooks/use-toast'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import { useReportOverrideSaving } from '@/stores/commish-override-store'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 import {
@@ -76,6 +78,7 @@ import {
   opponentOf,
   oprkOf,
   oprkRankedCount,
+  oprkPillClass,
   oprkTone,
   pointsCell,
   projectedTotal,
@@ -472,7 +475,7 @@ export function LineupEditor({
                         </span>
                       )}
                     </td>
-                    <td className="fs-num px-2 py-2 text-right text-[12px] font-extrabold text-ink">{mine.total.toFixed(1)}</td>
+                    <td className={cn('fs-num px-2 py-2 text-right text-[12px] font-extrabold', PROJ_TEXT)}>{mine.total.toFixed(1)}</td>
                     <td />
                   </tr>
                 </tbody>
@@ -572,7 +575,7 @@ function MatchupStrip({ week, opponent, mine }: { week: number; opponent: Lineup
           <span className="fs-num text-[16px] font-extrabold text-ink" data-strip-my-score>
             {formatPoints(opponent.myScore)}
           </span>
-          <span className="fs-num text-[10px] font-medium text-n-3">proj {mine.missing > 0 ? '—' : mine.total.toFixed(1)}</span>
+          <span className={cn('fs-num text-[10px] font-medium', PROJ_TEXT)}>proj {mine.missing > 0 ? '—' : mine.total.toFixed(1)}</span>
         </span>
         <span className="text-[11px] font-bold text-n-3">vs</span>
         <span className="flex items-baseline gap-1.5">
@@ -580,7 +583,7 @@ function MatchupStrip({ week, opponent, mine }: { week: number; opponent: Lineup
           <span className="fs-num text-[16px] font-extrabold text-ink" data-strip-opp-score>
             {formatPoints(opponent.oppScore)}
           </span>
-          <span className="fs-num text-[10px] font-medium text-n-3">
+          <span className={cn('fs-num text-[10px] font-medium', PROJ_TEXT)}>
             proj {opponent.oppProjected && opponent.oppProjected.missing === 0 ? opponent.oppProjected.total.toFixed(1) : '—'}
           </span>
         </span>
@@ -677,12 +680,6 @@ interface RowContext {
   dropClosedReason: string | null
 }
 
-const OPRK_TONE: Record<string, string> = {
-  negative: 'border-negative bg-negative-soft',
-  caution: 'border-ink bg-caution-soft',
-  positive: 'border-positive bg-positive-soft',
-}
-
 function StatCell({ column, player, ctx }: { column: StatColumnId; player: RosterPlayer | null; ctx: RowContext }) {
   const base = 'px-2 py-1.5 text-right align-middle'
   if (!player) return <td className={cn(base, 'text-n-3')}>—</td>
@@ -707,7 +704,7 @@ function StatCell({ column, player, ctx }: { column: StatColumnId; player: Roste
       const tone = oprkTone(r, oprkRankedCount(ctx.stats.splits, player.position))
       return (
         <td className={base} data-cell="oprk">
-          <span className={cn('fs-num inline-flex h-chip items-center rounded-sm border px-1.5 text-[10px] font-bold text-ink', OPRK_TONE[tone])} data-oprk-tone={tone}>
+          <span className={cn('fs-num inline-flex h-chip items-center rounded-sm px-1.5 text-[10px] font-bold', oprkPillClass(tone))} data-oprk-tone={tone}>
             {r}
           </span>
         </td>
@@ -734,7 +731,7 @@ function StatCell({ column, player, ctx }: { column: StatColumnId; player: Roste
       return <td className={cn(base, 'fs-num text-ink')}>{formatAdp(ctx.adp(player.player_id))}</td>
     case 'proj':
       return (
-        <td className={cn(base, 'fs-num text-[12px] font-extrabold text-ink')} data-cell="proj">
+        <td className={cn(base, 'fs-num text-[12px] font-extrabold', PROJ_TEXT)} data-cell="proj">
           {formatPoints(ctx.stats.proj(player.player_id))}
         </td>
       )
@@ -777,9 +774,7 @@ function PlayerIdentity({ player, ctx, frozen }: { player: RosterPlayer; ctx: Ro
           <PlayerLink playerId={player.player_id} name={player.full_name} context={ctx.context} className="min-w-0 text-[12px] font-bold" />
           <StatusTag status={player.status} />
           {lock.locked && (
-            <Badge variant="black" className="h-4 px-1 text-[9px]" title={lock.until ? `Locked until ${formatKickoff(lock.until, ctx.leagueTimeZone).local}` : lock.copy} data-locked>
-              🔒
-            </Badge>
+            <LockTag title={lock.until ? `Locked until ${formatKickoff(lock.until, ctx.leagueTimeZone).local}` : lock.copy} data-locked />
           )}
           {stint && <Badge variant="stroke-purple" className="h-4 px-1 text-[9px]">{stint}</Badge>}
         </span>
@@ -833,7 +828,7 @@ function StarterRow({
           </div>
         ) : kept ? (
           <span className="flex min-w-0 flex-wrap items-center gap-x-2" data-kept-starter>
-            <Badge variant="black">🔒</Badge>
+            <LockTag />
             <span className="truncate text-[12px] font-bold text-ink">{kept}</span>
             <span className="text-[10px] font-medium text-n-3">{ctx.weekIsCurrent ? KEPT_STARTER_COPY : KEPT_STARTER_OTHER_WEEK_COPY}</span>
           </span>
@@ -862,7 +857,7 @@ function BenchRow({ player, ctx, ir }: { player: RosterPlayer; ctx: RowContext; 
           {opp.kind === 'game' ? opp.label : opp.kind === 'bye' ? 'BYE' : ''}
         </span>
       </div>
-      <span className="fs-num text-[12px] font-extrabold text-ink" data-cell="proj">
+      <span className={cn('fs-num text-[12px] font-extrabold', PROJ_TEXT)} data-cell="proj">
         {formatPoints(ctx.stats.proj(player.player_id))}
       </span>
       <MoveMenu player={player} ctx={ctx} frozen={frozen} isLocked={isLocked} />

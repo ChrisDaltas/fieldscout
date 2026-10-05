@@ -111,6 +111,7 @@ export function BestAvailableCard({
                 stats={[
                   {
                     label: 'Proj',
+                    projected: true,
                     value:
                       player.projected_pts != null
                         ? player.projected_pts.toFixed(1)

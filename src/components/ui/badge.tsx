@@ -26,6 +26,8 @@ const badgeVariants = cva(
         pink: "bg-negative text-ink",
         black: "bg-ink text-white",
         lime: "bg-brand text-ink",
+        // Locked player (D497): light yellow fill, dark same-hue text/glyph.
+        lock: "bg-lock text-lock-fg",
         "stroke-green": "border-positive bg-positive-soft text-ink",
         "stroke-pink": "border-negative bg-negative-soft text-ink",
         "stroke-purple": "border-accent bg-accent-soft text-ink",

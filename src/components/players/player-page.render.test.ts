@@ -381,7 +381,7 @@ describe('player view — the season table', () => {
     expect(out).toMatch(/<th[^>]*>Wk<\/th><th[^>]*>Opp<\/th><th[^>]*>Proj<\/th><th[^>]*>Pts<\/th>/)
     expect(out).toMatch(/data-season-week="4"[^>]*>.*?>vs NYG<.*?>15\.2<.*?>22\.1</)
     expect(out).toMatch(/data-season-week="5" data-current="true">/)
-    expect(out).toMatch(/data-season-week="5"[^>]*>.*?@ SEA<span[^>]*bg-negative[^>]*data-oprk="8">8th<.*?>17\.3<.*?>Sun 4:25 PM</)
+    expect(out).toMatch(/data-season-week="5"[^>]*>.*?@ SEA<span[^>]*bg-oprk-hard text-oprk-hard-fg[^>]*data-oprk="8">8th<.*?>17\.3<.*?>Sun 4:25 PM</)
     expect(count(out, 'data-current="true"')).toBe(1)
     expect(out).toMatch(/data-season-week="7"[^>]*>.*?>BYE</)
     expect(out).toMatch(/data-season-week="6"[^>]*>.*?>vs KC<.*?>—<.*?>Sun 4:25 PM</)

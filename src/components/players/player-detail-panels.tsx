@@ -18,6 +18,7 @@ import type {
   SeasonBlock,
   StatTotals,
 } from '@/hooks/use-player-stats'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 type View = 'fantasy' | 'nfl'
@@ -289,7 +290,7 @@ export function SeasonCard({
         )}
       </div>
       {view === 'fantasy' ? (
-        <FantasyBlock season={season} />
+        <FantasyBlock season={season} projected={muted} />
       ) : (
         <NflBlock totals={season.totals} position={position} />
       )}
@@ -301,12 +302,12 @@ export function SeasonCard({
   )
 }
 
-function FantasyBlock({ season }: { season: SeasonBlock }) {
+function FantasyBlock({ season, projected = false }: { season: SeasonBlock; projected?: boolean }) {
   const ppg = season.gamesPlayed > 0 ? season.fantasy.ppr / season.gamesPlayed : 0
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
-        <span className="fs-num text-[24px] font-extrabold leading-none text-ink">
+        <span className={cn('fs-num text-[24px] font-extrabold leading-none', projected ? PROJ_TEXT : 'text-ink')}>
           {season.fantasy.ppr.toFixed(1)}
         </span>
         <span className="text-[11px] font-semibold text-n-3">PPR</span>
