@@ -394,7 +394,7 @@ select set_config('request.jwt.claims', '', true);
 insert into r99 select 'D4', public.trade_tick('2026-10-23 13:00:00+00', pg_temp.lg(2));
 select is(
   (select format('%s|%s', r ->> 'failed_at_execution', pg_temp.st('T7')) from r99 where tag = 'D4'),
-  '1|invalid|the trade could not go through: TX P Two already kicked off this week and cannot change teams until the week''s last game ends — this league fails such a trade instead of waiting (trade_lock_behavior = reject, E35)',
+  '1|invalid|the trade could not go through: TX P Two already played this week, and this league cancels a trade like that instead of waiting for the week''s last game to end',  -- 180
   'D4 E35 REJECT: a locked trade fails BY NAME, naming the player and the setting');
 select is(
   format('%s / %s', pg_temp.roster('TX Papa'), pg_temp.roster('TX Quebec'))
@@ -522,7 +522,7 @@ select is(
 insert into r99 select 'G7', public.trade_tick('2026-10-28 04:00:00+00', pg_temp.lg(1));
 select is(
   (select format('%s|%s', r ->> 'expired', pg_temp.st('T4')) from r99 where tag = 'G7'),
-  '2|expired|the trade deadline passed — offers could be accepted until week 8 began (Wed 2026-10-28 00:00 America/New_York; trade_deadline_week 7, §13.3 / Q76)',
+  '2|expired|the trade deadline passed — offers could be accepted until week 8 began (Wed 2026-10-28 00:00 America/New_York)',  -- 180
   'G7 AT the deadline the tick EXPIRES every offer still pending, with the reason (F413 (f))');
 select is(
   (select format('%s|%s', t.status, t.resolved_at = '2026-10-28 04:00:00+00') from trades t where t.id = pg_temp.tid('T5'))
@@ -630,7 +630,7 @@ insert into r99 select 'F12', public.trade_execute_internal(pg_temp.tid('X9'), '
 update teams set status = 'active' where id = pg_temp.team('TX Sierra');
 select is(
   (select r ->> 'outcome' from r99 where tag = 'F12') || ' ' || pg_temp.st('X9'),
-  'invalid invalid|the trade could not go through: TX Sierra is retired — a sealed franchise makes no trades (§7.2.1)',
+  'invalid invalid|the trade could not go through: TX Sierra is retired and can''t make trades',  -- 180
   'F12 F413 (e): a party that retired before execution — the trade is invalid by name (its FAAB-only side has no player for E37 to see)');
 select is(
   (select r ->> 'outcome' from (select public.trade_execute_internal(pg_temp.tid('X9'), '2026-10-27 12:01:00+00', 'pgtap') as r) q),
@@ -701,13 +701,13 @@ update league_members set faab_balance = 50 where team_id = pg_temp.team('TX Zul
 insert into r99 select 'I4', public.trade_tick('2026-10-22 12:00:00+00', pg_temp.lg(5));
 select is(
   (select format('%s|%s', r ->> 'invalidated', pg_temp.st('Y4')) from r99 where tag = 'I4') || ' ' || pg_temp.st('Y3'),
-  '1|invalid|the trade can no longer go through: TX Zulu can no longer give $80 of FAAB — its balance is $50 (§13.3) proposed|-',
+  '1|invalid|the trade can no longer go through: TX Zulu can no longer give $80 of FAAB — its balance is $50 proposed|-',
   'I4 THE SWEEP (TD12): an offer whose FAAB leg its giver can no longer afford is invalidated by the tick, with the reason; an affordable one stays');
 update leagues set status = 'complete' where id = pg_temp.lg(5);
 insert into r99 select 'I5', public.trade_tick('2026-10-22 12:01:00+00', pg_temp.lg(5));
 select is(
   pg_temp.st('Y3'),
-  'invalid|the trade can no longer go through: the league is complete — a trade goes through only while the league is in season or in the playoffs (§7.1 / §13.3)',
+  'invalid|the trade can no longer go through: the league is over for the season — trades only go through during the season and the playoffs',  -- 180
   'I5 the sweep closes what the season''s end left in flight');
 insert into r99 select 'I6', public.trade_tick('2026-10-22 12:02:00+00', pg_temp.lg(5));
 select is(

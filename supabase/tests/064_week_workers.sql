@@ -710,7 +710,7 @@ select is((select count(*)::text || ':' || bool_and(is_system)::text || ':' || b
            from league_chat where league_id = 'b6000000-0000-4000-8000-000000000001'),
   '1:true:true:true', 'E11b …and posts ONE system note (is_system, user_id NULL — the 069 tick-actor shape, league context)');
 select alike((select message from league_chat where league_id = 'b6000000-0000-4000-8000-000000000001'),
-  'Week 4 was finalized without the postponed game MIA @ NYJ — players in a game postponed out of the week score 0 for the week (§23.3/E43)%',
+  'Week 4 is final without the postponed game MIA @ NYJ — players in a game moved out of the week score 0 for the week. The commissioner can change a result.',  -- 180: plain words (F569)
   'E11c …naming the game');
 select is((select median_score from league_weeks where league_id = 'b6000000-0000-4000-8000-000000000001' and week = 4), 95.02,
   'E12 the 0.01-apart median: (95.01 + 95.02) / 2 = 95.015 EXACT, STORED rounded half away from zero as 95.02 (D57(2))');

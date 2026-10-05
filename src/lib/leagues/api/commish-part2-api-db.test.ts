@@ -450,7 +450,7 @@ describe('POST …/commish/setting — commishChangeSetting over the real RPC', 
   it('a REFUSED-in-season key (team_count, Q65) comes back 409 with 129’s copy VERBATIM and writes NO receipt', async () => {
     const res = await commishChangeSetting(commishClient, leagueId, { key: 'team_count', value: 10, action_id: ACTION.settingRefused, reason: 'try' })
     expect(res.status).toBe(409)
-    expect(errorText(res)).toContain('team_count is PRE-DRAFT ONLY')
+    expect(errorText(res)).toContain('The number of teams can only change before the draft') // 180: plain words (F573)
     expect(await receiptsFor(ACTION.settingRefused)).toHaveLength(0)
   })
 
