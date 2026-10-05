@@ -214,7 +214,7 @@ export function WaiverClaimsPanelView({
   )
 }
 
-function ClaimPlayers({ leagueId, claim }: { leagueId: string; claim: WaiverClaimView }) {
+export function ClaimPlayers({ leagueId, claim }: { leagueId: string; claim: WaiverClaimView }) {
   const context = leagueCardContext(leagueId)
   return (
     <span className="flex min-w-0 flex-1 flex-col">
@@ -255,9 +255,6 @@ function PendingClaimRow({
   onCancel: (claim: WaiverClaimView) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: claim.id, disabled: !draggable })
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState(String(claim.faab_bid))
-  const bid = parseBid(text)
   return (
     <li
       ref={setNodeRef}
@@ -279,6 +276,31 @@ function PendingClaimRow({
       )}
       <span className="fs-num w-4 text-right text-[11px] font-bold text-n-3">{rank}</span>
       <ClaimPlayers leagueId={leagueId} claim={claim} />
+      <PendingClaimControls claim={claim} faab={faab} pending={pending} onEditBid={onEditBid} onCancel={onCancel} />
+    </li>
+  )
+}
+
+/** A pending claim's bid (tap to change, FAAB only) and Cancel — shared by
+ *  the claims list here and My Team's Transactions feed (Chris 2026-10-04). */
+export function PendingClaimControls({
+  claim,
+  faab,
+  pending,
+  onEditBid,
+  onCancel,
+}: {
+  claim: WaiverClaimView
+  faab: boolean
+  pending: boolean
+  onEditBid: (claim: WaiverClaimView, bid: number) => void
+  onCancel: (claim: WaiverClaimView) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(String(claim.faab_bid))
+  const bid = parseBid(text)
+  return (
+    <>
       {faab &&
         (editing ? (
           <span className="flex items-center gap-1">
@@ -323,7 +345,7 @@ function PendingClaimRow({
       <Button variant="ghost" size="sm" disabled={pending} onClick={() => onCancel(claim)} data-claim-cancel>
         Cancel
       </Button>
-    </li>
+    </>
   )
 }
 

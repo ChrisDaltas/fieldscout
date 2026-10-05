@@ -393,11 +393,11 @@ describe('L.D2.13 — the page reads the server’s waiver window', () => {
     paused: false,
     evaluated_at: '2099-09-15T12:00:00.000Z',
   }
-  it('claims only: the line names the next run, the claims panel mounts, a free agent’s one + claims (D481)', () => {
+  it('claims only: the line names the next run, the claims panel is NOT here (it lives on My Team — Chris 2026-10-04), a free agent’s one + claims (D481)', () => {
     const html = renderPage({ detail: { ...detail, waiver_window: window } })
     expect(html).toContain('data-waiver-window="awaiting_run"')
     expect(html).toMatch(/Claims only until the next waiver run, [^<]*Sep 16/)
-    expect(html).toContain('data-waiver-claims-panel')
+    expect(html).not.toContain('data-waiver-claims-panel')
     const row = html.slice(html.indexOf('data-pool-row="fa-open"'), html.indexOf('</tr>', html.indexOf('data-pool-row="fa-open"')))
     expect(row).toContain('data-action="acquire" data-acquire="claim"')
     expect(row).not.toContain('data-action="add"')

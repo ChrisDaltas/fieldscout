@@ -107,7 +107,7 @@ export function ClaimForm({
         </StatusBanner>
         <p className="text-[12px] font-medium text-n-3">
           {result.drop_player_name ? `If it goes through, ${result.drop_player_name} is dropped. ` : ''}
-          {claimSettlesCopy(nextRunLocal)} Nothing is spent until then, and you can change or cancel it in your claims.
+          {claimSettlesCopy(nextRunLocal)} Nothing is spent until then, and you can change or cancel it under Transactions on My Team.
         </p>
         <span>
           <Button variant="stroke" size="sm" onClick={onClose}>

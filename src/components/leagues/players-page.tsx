@@ -73,7 +73,6 @@ import { ProblemCard, problemCopy } from './team-page'
 import { tradesHref } from './trades-ops'
 import { FA_HOLD_TITLE, WAIVERS_PAUSED_COPY, faHoldUntil, pickupActions, windowLine } from './waiver-claims-ops'
 import { acquireAction, acquireLabel } from '@/components/players/player-card-league-ops'
-import { WaiverClaimsPanel } from './waiver-claims-panel'
 
 /**
  * Players / free agents — §16.1 `…/leagues/[id]/players`, §16.2
@@ -124,7 +123,8 @@ import { WaiverClaimsPanel } from './waiver-claims-panel'
  * the claims (pre-149, `waivers_live: false` — R1219) shows no Claim and no
  * panel. Claim opens `ClaimDialog` (a FAAB bid or a priority
  * claim, and an optional drop); the team's claims live in
- * `WaiverClaimsPanel` above the table. A player on another roster offers
+ * `WaiverClaimsPanel` on the My Team page (Chris 2026-10-04 — moved off
+ * this page). A player on another roster offers
  * Trade — a link to the trade center's builder (L.D3.7). No button posts
  * nowhere.
  *
@@ -273,9 +273,6 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
         </StatusBanner>
       )}
 
-      {myTeamId && claimsLive && waiverType !== 'none_fcfs' && waiverWindow?.waivers !== false && (
-        <WaiverClaimsPanel leagueId={leagueId} nextRunLocal={nextRunLocal} />
-      )}
       <ClaimDialog
         row={acquire && !addSent ? acquire.row : null}
         kind={acquire?.kind ?? 'claim'}

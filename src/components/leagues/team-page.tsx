@@ -32,7 +32,7 @@ import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
 import { LineupEditor, type LineupOpponent, type LineupStats } from './lineup-editor'
-import { currentWeekOf, defaultLineupWeek, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
+import { currentWeekOf, defaultLineupWeek, formatInstantWithDate, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { projectedTotal } from './my-team-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import {
@@ -46,6 +46,7 @@ import {
 import { TeamAutopilotSwitch, TeamCommishTools, TeamFaabEdit, TeamRename } from './team-commish-tools'
 import { tradesHref } from './trades-ops'
 import { waiverSeatCopy } from './waiver-claims-ops'
+import { TeamTransactionsPanel } from './team-transactions-panel'
 
 /**
  * Team page — §16.1 `…/leagues/[id]/team/[teamId]` ("Team/roster + weekly
@@ -185,6 +186,15 @@ function TeamPageContent({
   const movesClosed = movesState.open ? null : movesState.reason
   const editability = weekEditability(weeks, week, currentWeek)
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
+  // Chris 2026-10-04: the manager's Transactions (pending waiver claims, adds
+  // and drops in one feed) live HERE, on his own team — moved off Players.
+  // Claims join under the gate the Players page used: claims live (R1219), a
+  // waiver league, and the window says waivers apply. Own team only — bids
+  // are blind (E13), and the claims read is the viewer's own.
+  const waiverWindow = detail.waiver_window ?? null
+  const claimsLive =
+    detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && waiverWindow?.waivers !== false
+  const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
 
   const rosterProblem = rosters.isError ? (rosters.error instanceof Error ? rosters.error : new Error(String(rosters.error))) : null
 
@@ -437,6 +447,16 @@ function TeamPageContent({
             onDrop={isOwnTeam ? (p) => setDropping({ player_id: p.player_id, full_name: p.full_name }) : undefined}
             dropClosedReason={movesClosed}
           />
+          {isOwnTeam && (
+            <TeamTransactionsPanel
+              leagueId={leagueId}
+              teamId={teamId}
+              teamName={teamName}
+              claimsLive={claimsLive}
+              leagueTimeZone={leagueTimeZone}
+              nextRunLocal={nextRunLocal}
+            />
+          )}
           {isOwnTeam && <DropPlayerDialog leagueId={leagueId} teamId={teamId} player={dropping} onClose={() => setDropping(null)} />}
           {inOverride && detail.settings.waiver_type === 'faab' && (
             <TeamFaabEdit key={teamId} leagueId={leagueId} teamId={teamId} teamName={teamName} balance={rosterTeam.faab_balance} />

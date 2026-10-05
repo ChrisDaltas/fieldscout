@@ -489,6 +489,8 @@ describe('the waivers files: single theme, no clock, resting shadows only on tru
     'src/components/leagues/claim-dialog.tsx',
     'src/components/leagues/waiver-schedule-fields.tsx',
     'src/components/leagues/waiver-order-list.tsx',
+    'src/components/leagues/team-transactions-panel.tsx',
+    'src/components/leagues/team-transactions-ops.ts',
   ]
   const code = (f: string) =>
     readFileSync(path.resolve(process.cwd(), f), 'utf8')
