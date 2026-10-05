@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 
 import type { FeedLine } from './activity-feed-ops'
-import { mergeTransactions, pendingClaimCount } from './team-transactions-ops'
+import { lostClaimWinner, mergeTransactions, pendingClaimCount } from './team-transactions-ops'
 
 function claim(id: string, created_at: string, status: WaiverClaimView['status'] = 'pending'): WaiverClaimView {
   return {
@@ -56,6 +56,29 @@ describe('mergeTransactions — ONE feed, newest first (Chris 2026-10-04)', () =
   })
   it('pendingClaimCount counts only the waiting claims', () => {
     expect(pendingClaimCount([claim('a', 'x'), claim('b', 'x', 'lost'), claim('c', 'x')])).toBe(2)
+  })
+})
+
+describe('lostClaimWinner — who won and why yours failed (D495, Chris 2026-10-05)', () => {
+  const lost = { ...claim('l', 'x', 'lost'), faab_bid: 9, result_reason: 'lost_on_bid', winner_team_id: 'tx', winner_team_name: 'Team X', winning_bid: 14 }
+  it('FAAB: "Team X won <player> ($14). Your $9 claim was outbid."', () => {
+    expect(lostClaimWinner(lost, 'faab')).toStrictEqual({ winnerTeamId: 'tx', winnerTeamName: 'Team X', priceSuffix: ' ($14).', reason: 'Your $9 claim was outbid.' })
+  })
+  it('priority: "Team X won <player>. Your claim was out-prioritized."', () => {
+    expect(lostClaimWinner({ ...lost, result_reason: 'lost_on_priority', winning_bid: 0 }, 'rolling')).toStrictEqual({
+      winnerTeamId: 'tx',
+      winnerTeamName: 'Team X',
+      priceSuffix: '.',
+      reason: 'Your claim was out-prioritized.',
+    })
+  })
+  it('a FAAB tie broken by priority says out-prioritized', () => {
+    expect(lostClaimWinner({ ...lost, result_reason: 'lost_on_priority', winning_bid: 9 }, 'faab')?.reason).toBe('Your claim was out-prioritized.')
+  })
+  it('degrades to null (the old line) when an older server sent no winner, and never for a non-lost claim', () => {
+    expect(lostClaimWinner(claim('l', 'x', 'lost'), 'faab')).toBeNull()
+    expect(lostClaimWinner({ ...lost, winner_team_name: null }, 'faab')).toBeNull()
+    expect(lostClaimWinner({ ...lost, status: 'pending' }, 'faab')).toBeNull()
   })
 })
 

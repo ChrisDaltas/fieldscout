@@ -52,3 +52,33 @@ export function mergeTransactions(claims: readonly WaiverClaimView[], lines: rea
 export function pendingClaimCount(claims: readonly WaiverClaimView[]): number {
   return claims.filter((c) => c.status === 'pending').length
 }
+
+/** D495 (Chris 2026-10-05): a LOST claim names who won the player and why
+ *  yours failed — "Team X won Puka Nacua ($14). Your $9 claim was outbid." /
+ *  "Team X won Puka Nacua. Your claim was out-prioritized." The panel renders
+ *  the team as a TeamNameLink and the player as a PlayerLink around these
+ *  strings. Null when the read carried no winner (an older server, or the
+ *  winning move wasn't found) — the panel then keeps `claimOutcome`'s line. */
+export interface LostClaimWinner {
+  winnerTeamId: string
+  winnerTeamName: string
+  /** After the player's name: " ($14)." or ".". */
+  priceSuffix: string
+  /** "Your $9 claim was outbid." / "Your claim was out-prioritized." */
+  reason: string
+}
+
+export function lostClaimWinner(
+  claim: Pick<WaiverClaimView, 'status' | 'faab_bid' | 'result_reason' | 'winner_team_id' | 'winner_team_name' | 'winning_bid'>,
+  waiverType: string | null,
+): LostClaimWinner | null {
+  if (claim.status !== 'lost' || !claim.winner_team_id || !claim.winner_team_name) return null
+  const faab = waiverType === 'faab'
+  const bid = claim.winning_bid
+  return {
+    winnerTeamId: claim.winner_team_id,
+    winnerTeamName: claim.winner_team_name,
+    priceSuffix: faab && typeof bid === 'number' ? ` ($${bid}).` : '.',
+    reason: faab && claim.result_reason !== 'lost_on_priority' ? `Your $${claim.faab_bid} claim was outbid.` : 'Your claim was out-prioritized.',
+  }
+}
