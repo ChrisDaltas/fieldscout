@@ -406,7 +406,17 @@ describe('a full virtual week over the real stack — open → lock → close �
   it('LOCK: kickoff +1s locks the free agent until INFINITY (no recorded last game end — F238 loud), the record is already stamped; a flexed kickoff moves both (E42)', async () => {
     const tick = await job('lineup_lock_tick', KICKOFF_PLUS_1S)
     expect(tick.failures).toEqual([])
-    expect(tick.pool_updates).toBe(1)
+    // 181 (D496): the rostered QB (drafted, no pool row of his own) plays in
+    // the same game, so the tick judges him too — two pool rows move, not one.
+    expect(tick.pool_updates).toBe(2)
+    const { data: qbPool, error: qbPoolError } = await service
+      .from('league_player_pool')
+      .select('state, locked_until')
+      .eq('league_id', leagueId)
+      .eq('player_id', 'vitest-ww-qb')
+      .single()
+    if (qbPoolError) throw new Error(qbPoolError.message)
+    expect(qbPool).toEqual({ state: 'rostered', locked_until: 'infinity' })
     expect(tick.lineup_updates).toBe(0) // set_lineup already recorded the kickoff — agreement, not a rewrite
     expect(await poolRow()).toEqual({ state: 'locked_in_game', locked_until: 'infinity' })
 
@@ -417,7 +427,7 @@ describe('a full virtual week over the real stack — open → lock → close �
     const { error: flexError } = await service.from('nfl_games').update({ kickoff_at: KICKOFF_FLEXED }).eq('id', GAME_ID)
     if (flexError) throw new Error(flexError.message)
     const flexed = await job('lineup_lock_tick', KICKOFF_PLUS_1S)
-    expect(flexed.pool_updates).toBe(1)
+    expect(flexed.pool_updates).toBe(2)
     expect(flexed.lineup_updates).toBe(1)
     expect(await poolRow()).toEqual({ state: 'free_agent', locked_until: null })
     expect((await managerLineup()).locked_at).toBe('2099-09-10T01:15:00+00:00')
@@ -425,7 +435,7 @@ describe('a full virtual week over the real stack — open → lock → close �
     const { error: backError } = await service.from('nfl_games').update({ kickoff_at: KICKOFF }).eq('id', GAME_ID)
     if (backError) throw new Error(backError.message)
     const back = await job('lineup_lock_tick', KICKOFF_PLUS_1S)
-    expect(back.pool_updates).toBe(1)
+    expect(back.pool_updates).toBe(2)
     expect(back.lineup_updates).toBe(1)
     expect((await managerLineup()).locked_at).toBe('2099-09-10T00:15:00+00:00')
   })
@@ -448,7 +458,7 @@ describe('a full virtual week over the real stack — open → lock → close �
     expect(await weekStatus()).toBe('correction_window')
 
     const tick = await job('lineup_lock_tick', LAST_GAME_ENDS)
-    expect(tick.pool_updates).toBe(1)
+    expect(tick.pool_updates).toBe(2) // the free agent and the rostered QB release together (181)
     expect(await poolRow()).toEqual({ state: 'free_agent', locked_until: null })
   })
 

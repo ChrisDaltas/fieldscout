@@ -55,6 +55,24 @@ set local search_path = public, extensions;
 
 select plan(24);
 
+-- pg_temp.un181 — migration 181's one tick hunk removed (pgTAP 129 pins it);
+-- an identity on every other body. Applied INNERMOST.
+create function pg_temp.un181(p_src text) returns text language sql as $un181$
+  select replace(p_src, $h$        -- 181 (D496): every ROSTERED player has a pool row before the view
+        -- runs. A drafted player never passed through the pool (072's draft
+        -- writes league_rosters only; pool rows are lazy, D294), so the view
+        -- below never judged him and My Team showed him unlocked while
+        -- set_lineup refused him. The row is the D294 mirror's own shape
+        -- ('rostered'); an existing row of any state is left alone.
+        INSERT INTO public.league_player_pool (league_id, player_id, state, updated_at)
+        SELECT r.league_id, r.player_id, 'rostered', p_now
+        FROM public.league_rosters r
+        WHERE r.league_id = v_lg.id
+        ON CONFLICT (league_id, player_id) DO NOTHING;
+
+$h$, '')
+$un181$;
+
 -- L.E1.31 (migration 170 — additive, the R992 shape): pg_temp.un170 reverses
 -- 170's ONE hunk in each of commish_edit_lineup_internal,
 -- commish_roster_override_internal and commish_rename_team_internal (D451 —
@@ -180,7 +198,7 @@ select is(
   0,
   'A6 un165 is an identity on every other body in the schema — so the older suites that apply it innermost pin exactly what they pinned (additive, R992)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un166(pg_temp.un169(p.prosrc))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un166(pg_temp.un169(pg_temp.un181(p.prosrc)))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'lineup_autopilot_internal', 'lineup_lock_tick', 'lineup_player_kickoff_internal',
                                                  'lineup_played_internal', 'lineup_record_kicked_off_internal', 'lineup_kept_starter_internal',
