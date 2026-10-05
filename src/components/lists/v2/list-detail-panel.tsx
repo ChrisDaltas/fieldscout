@@ -29,7 +29,7 @@ import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListWindowsStore } from '@/stores/list-windows-store'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { openPlayer as openPlayerView } from '@/hooks/use-open-player'
 import {
   colsForView,
   resolveOrg,
@@ -125,7 +125,6 @@ export function ListDetailPanel({
   const moveToFolder = useMoveListToFolder()
   const folders = useFolders()
   const { drafted, toggleDrafted, clearDrafted } = useDraftMode(listId)
-  const openPlayerWindow = usePlayerWindowsStore((state) => state.open)
   const popOut = useListWindowsStore((state) => state.open)
   const pushHistory = useHistoryStore((state) => state.push)
   // Claims a queued job for THIS list and runs the generate → add → order
@@ -202,18 +201,13 @@ export function ListDetailPanel({
   }, [list?.id, list?.title, list?.player_count, list?.thumbnail_url, pushHistory])
 
   /**
-   * Click a player's name → the app's **existing** floating player card
-   * (`player-window.tsx`, via `player-windows-store`; `PlayerWindowsLayer` is
-   * mounted once in the root layout). An owned list passes its context, which is
-   * what puts *Remove from list* in the window's action row — exactly as the
-   * retired detail view did.
+   * Click a player's name → the player view modal (D491, Chris 2026-10-04),
+   * via `openPlayer` — the draft room alone keeps the floating card. Remove
+   * from list stays on the row itself.
    */
   const openPlayer = React.useCallback(
-    (entry: ListPlayerWithPlayer) =>
-      openPlayerWindow(entry.player_id, {
-        listContext: canEdit && list ? { listId: list.id, listTitle: list.title } : null,
-      }),
-    [openPlayerWindow, canEdit, list],
+    (entry: ListPlayerWithPlayer) => openPlayerView(entry.player_id),
+    [],
   )
 
   /**

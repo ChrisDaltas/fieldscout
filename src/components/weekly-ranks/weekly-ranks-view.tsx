@@ -30,7 +30,7 @@ import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { bigBoardKeys, useWeeklyBigBoard } from '@/hooks/use-big-board'
 import { useReorderPlayers } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { openPlayer } from '@/hooks/use-open-player'
 import { matchesPosition } from '@/utils/positions'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'FLEX'] as const
@@ -94,7 +94,6 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
   const reorder = useReorderPlayers(listId)
   const qc = useQueryClient()
   const { toast } = useToast()
-  const openPlayer = usePlayerWindowsStore((s) => s.open)
 
   const serverPlayers = useMemo<BoardEntry[]>(
     () => (data?.players ?? []) as BoardEntry[],
