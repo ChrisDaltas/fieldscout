@@ -16,14 +16,14 @@ const code = (file: string) =>
 
 const WINDOW = 'src/components/lists/v2/list-window.tsx'
 
-describe('list-window — a player name opens the player view modal (D491, D494)', () => {
+describe('list-window — a player name opens the mini card (D494)', () => {
   it('goes through the shared opener, never the floating card store', () => {
     const source = code(WINDOW)
     expect(source).toContain("import { openPlayer as openPlayerView } from '@/hooks/use-open-player'")
     expect(source).not.toContain('player-windows-store')
   })
 
-  it('an owned list hands the modal its context, so it offers Remove', () => {
+  it('an owned list hands the card its context, so it offers Remove', () => {
     const source = code(WINDOW)
     expect(source).toMatch(/openPlayerView\(\s*entry\.player_id,\s*undefined,/)
     expect(source).toContain('list?.is_owner ? { listId: list.id, listTitle: list.title } : null')

@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+import type { PlayerListContext } from '@/components/players/player-detail-actions'
 import { GLOBAL_CARD_CONTEXT, type PlayerCardContext } from '@/components/players/player-card-context'
 
 export interface PlayerWindowState {
   playerId: string
+  listContext: PlayerListContext | null
   readOnly: boolean
   /** Where the card was opened from — decides its actions block (a league's
    *  add / drop / trade, the draft's Queue, or every league at once). */
@@ -17,6 +19,7 @@ export interface WindowPosition {
 }
 
 interface OpenOptions {
+  listContext?: PlayerListContext | null
   readOnly?: boolean
   context?: PlayerCardContext
 }
@@ -61,6 +64,7 @@ export const usePlayerWindowsStore = create<PlayerWindowsStore>()(
         set((state) => {
           const entry: PlayerWindowState = {
             playerId,
+            listContext: opts?.listContext ?? null,
             readOnly: opts?.readOnly ?? false,
             context: opts?.context ?? state.ambient ?? GLOBAL_CARD_CONTEXT,
           }

@@ -175,7 +175,9 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
     // the design asked for the mini card; D491 (Chris 2026-10-04) moved
     // non-draft surfaces to the player view modal.
     expect(source).toMatch(/<PlayerName\b[\s\S]*?onOpen=\{onOpenPlayer\}/)
-    expect(source).toContain('openPlayerView(entry.player_id)')
+    // D494 (Chris 2026-10-05): every click opens the mini card first; an
+    // owned list hands it its context (Remove from list).
+    expect(source).toContain('openPlayerView(entry.player_id, undefined, canEdit && list ? { listId: list.id, listTitle: list.title } : null)')
   })
 
   it('defines no second bucketing, ramp or checkbox of its own', () => {
