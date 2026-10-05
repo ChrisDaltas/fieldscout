@@ -26,6 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 import {
@@ -476,7 +477,7 @@ const SidebarPlayerCard = memo(function SidebarPlayerCard({
         </span>
 
         {player.projected_pts != null && (
-          <span className="fs-num text-[10px] font-semibold text-n-3">
+          <span className={cn('fs-num text-[10px] font-semibold', PROJ_TEXT)}>
             Proj {player.projected_pts.toFixed(1)}
           </span>
         )}
@@ -491,7 +492,7 @@ function rowStats(player: BuilderPlayer, statCols: StatColumnPrefs): PlayerRowSt
   const fmt = (value: number | null, hideZero = false) =>
     value == null || (hideZero && value === 0) ? '—' : value.toFixed(0)
   const stats: PlayerRowStat[] = [
-    { label: 'Proj', value: fmt(player.projected_pts) },
+    { label: 'Proj', value: fmt(player.projected_pts), projected: true },
   ]
   if (statCols.current) stats.push({ label: '2026', value: fmt(player.current_pts, true) })
   if (statCols.last) stats.push({ label: '2025', value: fmt(player.last_pts, true) })

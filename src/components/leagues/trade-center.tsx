@@ -28,7 +28,7 @@ import type { LeagueRosters, RosterTeam } from '@/lib/leagues/api/rosters-servic
 import { cn } from '@/lib/utils'
 import { useOverrideMode, useReportOverrideSaving } from '@/stores/commish-override-store'
 
-import { TeamNameLink, LeaguePageTitle } from './league-cells'
+import { LockTag, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
 import { ReconnectingBanner, StatusBanner } from './status-banners'
 import { ProblemCard, problemCopy } from './team-page'
@@ -642,9 +642,7 @@ export function TradeCard({
                       )}
                       {g.nflTeam && <span className="shrink-0 text-[10px] font-medium text-n-3">{g.nflTeam}</span>}
                       {trade.in_flight && g.playerId && lockedIds.has(g.playerId) && (
-                        <Badge variant="black" title={lockedAssetTitle(lockBehavior)} data-lock>
-                          🔒
-                        </Badge>
+                        <LockTag title={lockedAssetTitle(lockBehavior)} data-lock />
                       )}
                     </li>
                   ))}

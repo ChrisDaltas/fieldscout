@@ -109,6 +109,7 @@ function SortableRow({
         stats={[
           {
             label: 'Proj',
+            projected: true,
             value:
               typeof player.projected_pts === 'number'
                 ? player.projected_pts.toFixed(0)

@@ -45,6 +45,16 @@ const config: Config = {
         positive: { DEFAULT: '#98e9ab', soft: '#eafbee', strong: '#2e9c56' },
         negative: { DEFAULT: '#e99898', soft: '#fbeaea', strong: '#c0392b' },
         caution: { DEFAULT: '#fae8a4', soft: '#fefaed', strong: '#b98900' },
+        // OPRK pills (D497, Chris 2026-10-05): soft tint + very dark text of the
+        // same hue, no border. hard = 1–10 (red), mid = 11–22 (orange),
+        // easy = 23–32 (green). Only `oprkPillClass` (my-team-ops.ts) uses them.
+        oprk: {
+          hard: { DEFAULT: '#fde2df', fg: '#7a1a12' },
+          mid: { DEFAULT: '#ffe4c7', fg: '#7a3500' },
+          easy: { DEFAULT: '#d9f4e1', fg: '#14532d' },
+        },
+        // Locked-player indicator (D497): light yellow fill, dark yellow-brown glyph.
+        lock: { DEFAULT: '#fff3b8', fg: '#5c4300' },
         // Position identity — saturated fills, always white text.
         pos: {
           qb: '#d9591b',

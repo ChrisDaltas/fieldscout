@@ -393,11 +393,11 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     // rb-open: record kicked off (2001), view unlocked → draggable, no 🔒.
     const open = html.slice(html.indexOf('data-slot="rb:0"'), html.indexOf('data-slot="rb:1"'))
     expect(open).toContain('Render RB Open')
-    expect(open).not.toContain('🔒')
+    expect(open).not.toContain('data-lock-tag')
     expect(open).toContain('data-player="rb-open"')
     // rb-locked: view locked (release unrecorded) → 🔒 + the state's copy.
     const lockedRow = html.slice(html.indexOf('data-slot="rb:1"'), html.indexOf('data-slot="wr:0"'))
-    expect(lockedRow).toContain('🔒')
+    expect(lockedRow).toContain('data-lock-tag')
     expect(lockedRow).toContain(LOCK_RELEASE_UNRECORDED_COPY)
     // League UX batch 3: a locked player has NO drag handle (prevented).
     expect(lockedRow).not.toContain('data-player="rb-locked"')
@@ -579,7 +579,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     const at = on.indexOf('data-player="rb-locked"')
     const lockedRow = on.slice(Math.max(0, at - 400), at + 400)
     // The 🔒 badge STAYS (it is the record of what is being overridden)…
-    expect(on).toContain('🔒')
+    expect(on).toContain('data-lock-tag')
     // …but the wall is down: he has his drag handle, and the move saves itself
     // through the override (no Save button exists any more).
     expect(at).toBeGreaterThan(-1)

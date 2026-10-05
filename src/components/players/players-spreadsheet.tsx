@@ -36,6 +36,7 @@ import {
 } from '@/hooks/use-favorites'
 import { useOpenPlayer } from '@/hooks/use-open-player'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 interface PlayerRow {
@@ -874,7 +875,7 @@ function StatCell({
 
   return (
     <TableCell className={cellClass}>
-      <span className="fs-num text-[13px] font-bold">{text}</span>
+      <span className={cn('fs-num text-[13px] font-bold', column.key === 'projected' && PROJ_TEXT)}>{text}</span>
       {posRank != null && (
         <div className="fs-num text-[9px] font-medium leading-tight text-n-3">
           {ord(posRank)} {position}

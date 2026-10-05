@@ -55,7 +55,7 @@ export function PositionBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center rounded-sm border border-ink font-sans font-extrabold',
+        'inline-flex items-center justify-center rounded-sm font-sans font-extrabold',
         size === 'sm' ? 'h-[15px] min-w-[26px] px-1 text-[9px]' : 'h-chip px-1.5 text-[11px]',
         style,
         className,

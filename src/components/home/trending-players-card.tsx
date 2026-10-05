@@ -1,5 +1,7 @@
 'use client'
 
+import { PROJ_TEXT } from '@/components/players/projected-points'
+import { cn } from '@/lib/utils'
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
@@ -80,7 +82,7 @@ function TrendRows({
             meta={
               <>
                 {player.team ? `${player.team} · ` : ''}proj{' '}
-                <span className="fs-num">
+                <span className={cn('fs-num', PROJ_TEXT)}>
                   {(player.projected_pts ?? 0).toFixed(1)}
                 </span>
               </>

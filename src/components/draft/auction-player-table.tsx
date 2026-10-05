@@ -25,6 +25,7 @@ import {
 import { useFavoritePlayerIds } from '@/hooks/use-favorites'
 import { useLeagueListPlayers } from '@/hooks/use-league-lists'
 import type { DraftPickSummary } from '@/hooks/use-draft'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 import { useAuctionColumnsStore } from '@/stores/auction-columns-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
@@ -684,6 +685,7 @@ function AuctionPlayerRows({
             className={cn(
               'fs-num px-1.5 text-right text-[12px] lg:px-2',
               column.essential ? null : 'hidden lg:table-cell',
+              (column.key === 'proj_points' || column.key === 'proj_points_week') && PROJ_TEXT,
             )}
           >
             {formatColumnValue(columnValue(row, column), column.key)}

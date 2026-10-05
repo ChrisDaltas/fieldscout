@@ -4,6 +4,7 @@ import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { PositionBadge } from '@/components/players/position-badge'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 export type PlayerRowDensity = 'comfortable' | 'compact'
@@ -20,6 +21,8 @@ interface PlayerSummary {
 export interface PlayerRowStat {
   label: string
   value: string
+  /** A projection — renders in the shared projected-points colour (D497). */
+  projected?: boolean
 }
 
 interface PlayerRowProps {
@@ -196,7 +199,7 @@ export function PlayerRow({
               key={s.label}
               className="flex w-14 flex-col items-end leading-tight"
             >
-              <span className="fs-num text-[13px] font-bold text-ink">
+              <span className={cn('fs-num text-[13px] font-bold', s.projected ? PROJ_TEXT : 'text-ink')}>
                 {s.value}
               </span>
               <span className="fs-overline text-[9px] text-n-3">{s.label}</span>

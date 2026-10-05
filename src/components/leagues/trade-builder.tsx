@@ -6,7 +6,6 @@ import { useMemo, useState } from 'react'
 import { leagueCardContext } from '@/components/players/player-card-context'
 import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -16,6 +15,7 @@ import { useTradePreview, type UseTradePreview } from '@/hooks/use-trade-preview
 import type { RosterPlayer, RosterTeam } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
 
+import { LockTag } from './league-cells'
 import { lockBadgeFor } from './lineup-editor-ops'
 import { StatusBanner } from './status-banners'
 import {
@@ -461,9 +461,7 @@ export function PlayerPickRow({
         )}
       </label>
       {lock.locked && (
-        <Badge variant="black" title={lockedAssetTitle(lockBehavior)} data-lock>
-          🔒
-        </Badge>
+        <LockTag title={lockedAssetTitle(lockBehavior)} data-lock />
       )}
     </li>
   )

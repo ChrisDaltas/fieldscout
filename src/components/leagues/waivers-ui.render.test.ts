@@ -345,7 +345,7 @@ describe('the players table per window', () => {
   })
   it('locked 🔒 row: the + disabled with the lock’s reason', () => {
     const html = table(WINDOW, [{ ...ROW, lock: { locked: true, copy: 'locked — game started', until: '2099-09-16T03:00:00.000Z' } }])
-    expect(html).toContain('🔒 locked')
+    expect(html).toMatch(/data-lock-tag[^]*locked/)
     expect(html).toMatch(/disabled=""[^>]*title="[^"]*game has started[^"]*"[^>]*data-action="acquire" data-acquire="none"/)
     expect(LOCKED_CLAIM_TITLE).toBeTruthy()
   })

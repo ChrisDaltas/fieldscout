@@ -6,6 +6,7 @@ import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
 import { PositionBadge } from '@/components/players/position-badge'
+import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
 export interface PlayerCardPlayer {
@@ -454,7 +455,7 @@ export function PlayerCard({
             {rank}
           </span>
         )}
-        <span className="fs-num text-[11px] font-semibold text-n-3">
+        <span className={cn('fs-num text-[11px] font-semibold', PROJ_TEXT)} data-proj>
           {projectionLabel}
         </span>
       </div>

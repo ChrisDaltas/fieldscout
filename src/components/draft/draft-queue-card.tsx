@@ -1,5 +1,7 @@
 'use client'
 
+import { PROJ_TEXT } from '@/components/players/projected-points'
+import { cn } from '@/lib/utils'
 import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { BuilderPlayer } from '@/components/lists/builder/types'
@@ -65,7 +67,7 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
                 >
                   {player.full_name}
                 </button>
-                <span className="fs-num shrink-0 text-[10px] font-semibold text-n-3">
+                <span className={cn('fs-num shrink-0 text-[10px] font-semibold', PROJ_TEXT)}>
                   Proj{' '}
                   {player.projected_pts != null
                     ? player.projected_pts.toFixed(1)
