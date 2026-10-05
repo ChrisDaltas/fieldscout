@@ -415,7 +415,7 @@ describe('schedule — the grid and the commissioner’s doors', () => {
   // mode does not gate it — it follows the open window alone (week 3 is the
   // only upcoming regular week). Remix stays in the console in both states.
   for (const on of [false, true]) {
-    it(`the COMMISSIONER, override ${on ? 'ON' : 'OFF'}: an Edit on every editable row of the open (upcoming) week only, the ladder’s reason hint, and NO Remix`, () => {
+    it(`the COMMISSIONER, override ${on ? 'ON' : 'OFF'}: NO Edit on any week (F580 — it is in the console), the ladder’s reason hint, and NO Remix`, () => {
       vi.mocked(useOverrideMode).mockReturnValue(on)
       let html: string
       try {
@@ -427,7 +427,8 @@ describe('schedule — the grid and the commissioner’s doors', () => {
       expect(html).not.toContain('data-remix-open')
       expect(between(html, 'data-week="1"', 'data-week="2"')).not.toContain('data-edit-matchup')
       expect(between(html, 'data-week="2"', 'data-week="3"')).not.toContain('data-edit-matchup')
-      expect(between(html, 'data-week="3"', 'data-week="4"').match(/data-edit-matchup/g)).toHaveLength(4)
+      // F580 / D493: the open week's Edit moved to the Commissioner console.
+      expect(html).not.toContain('data-edit-matchup')
       expect(html).toContain(REASON_HINT_COPY)
     })
   }

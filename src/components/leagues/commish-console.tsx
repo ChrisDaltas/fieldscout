@@ -50,7 +50,17 @@ import { CommishRepairPanel } from './commish-repair-panel'
 import { REPAIR_NEEDS_OVERRIDE_COPY } from './commish-repair-ops'
 import { OverrideModeBar } from './override-mode-bar'
 import { ScheduleRemixModal } from './schedule-remix-modal'
-import { REMIX_NEEDS_OVERRIDE_COPY, remixSeasonStarted } from './schedule-view-ops'
+import { EditMatchupForm } from './schedule-view'
+import {
+  REMIX_NEEDS_OVERRIDE_COPY,
+  SCHEDULE_EDIT_NONE_COPY,
+  SCHEDULE_EDIT_TITLE,
+  editableTeams,
+  remixSeasonStarted,
+  scheduleEditWeeks,
+  type MatchupCell,
+  type TeamRef,
+} from './schedule-view-ops'
 import { StaleDataBanner, StatusBanner } from './status-banners'
 import { InlineProblem } from './league-home-season'
 import { ProblemCard, problemCopy } from './team-page'
@@ -407,6 +417,7 @@ function ToolGroupRow({
           ))}
         </div>
       )}
+      {group.key === 'schedule' && phase === 'in_season' && <ConsoleScheduleEdit leagueId={leagueId} data={data} />}
       {group.key === 'schedule' && phase === 'in_season' && <ConsoleRemixAction leagueId={leagueId} data={data} />}
       {group.key === 'schedule' && phase === 'in_season' && <ConsoleRepairAction leagueId={leagueId} data={data} />}
       {group.note && (
@@ -415,6 +426,70 @@ function ToolGroupRow({
         </p>
       )}
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Edit a week's pairings before it starts (F580 / D493)
+// ---------------------------------------------------------------------------
+
+/**
+ * The open-window per-week edit (111's `schedule_edit_matchup`, R1459) moved
+ * here off the member Schedule page (Chris 2026-10-05, F580). It is the
+ * NORMAL verb — no override mode needed — so it is offered whenever a week
+ * has not started. Only weeks still `upcoming` are listed, and only their
+ * editable pairings (`matchupEditable`): a started week shows no Edit at
+ * all (prevent, don't refuse). The form is the Schedule page's own
+ * `EditMatchupForm` — reused, not forked.
+ */
+function ConsoleScheduleEdit({ leagueId, data }: { leagueId: string; data: LeagueDetail }) {
+  const schedule = useSchedule(leagueId)
+  if (!schedule.data) return null
+  const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
+  const weeks = scheduleEditWeeks(schedule.data, teamNames, {
+    regular_season_weeks: data.settings.regular_season_weeks,
+    schedule_mode: data.settings.schedule_mode,
+  })
+  const teams = editableTeams(data.teams)
+  return (
+    <div id="schedule-edit" className="flex flex-col gap-1.5" data-console-schedule-edit={weeks.length > 0 ? 'weeks' : 'none'}>
+      <h4 className="text-[11px] font-bold text-ink">{SCHEDULE_EDIT_TITLE}</h4>
+      {weeks.length === 0 ? (
+        <p className="text-[11px] font-medium text-n-3">{SCHEDULE_EDIT_NONE_COPY}</p>
+      ) : (
+        <ol className="flex flex-col divide-y divide-n-4 rounded-sm border border-n-4">
+          {weeks.map((week) => (
+            <li key={week.week} className="flex flex-col" data-console-edit-week={week.week}>
+              <span className="px-2 pt-1.5 text-[11px] font-bold text-n-3">
+                Week <span className="fs-num">{week.week}</span>
+              </span>
+              {week.rows.map((row) => (
+                <ConsoleEditRow key={row.id} leagueId={leagueId} row={row} teams={teams} />
+              ))}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+function ConsoleEditRow({ leagueId, row, teams }: { leagueId: string; row: MatchupCell; teams: TeamRef[] }) {
+  const [editing, setEditing] = useState(false)
+  return (
+    <div className="flex flex-col gap-1 px-2 py-1.5" data-console-edit-row={row.id}>
+      <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-ink">
+        <span>{row.home.name}</span>
+        <span className="text-[10px] font-bold text-n-3">vs</span>
+        <span>{row.away?.name}</span>
+        {!editing && (
+          <Button variant="stroke" size="sm" className="ml-auto" onClick={() => setEditing(true)} data-edit-matchup>
+            <Icon name="edit" size={13} /> Edit
+          </Button>
+        )}
+      </div>
+      {editing && <EditMatchupForm leagueId={leagueId} row={row} teams={teams} onClose={() => setEditing(false)} />}
+    </div>
   )
 }
 

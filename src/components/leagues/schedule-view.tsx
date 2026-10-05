@@ -20,10 +20,11 @@ import { Crest, TeamNameLink, LeaguePageTitle } from './league-cells'
 import { currentWeekOf } from './lineup-editor-ops'
 import {
   NO_SCHEDULE_COPY,
+  SCHEDULE_COMMISH_HINT_COPY,
   editFormProblem,
-  editableTeams,
   formatScore,
   reasonHint,
+  scheduleConsoleHref,
   scheduleGrid,
   weekStatusBadge,
   type MatchupCell,
@@ -50,6 +51,8 @@ import { ProblemCard, problemCopy } from './team-page'
  *
  * **The commissioner's two doors (§11.7), both audited per D290.** REMIX
  * opens `ScheduleRemixModal` (seed → preview → confirm; E41's two copies).
+ * (F580 / D493: both now live in the Commissioner console only — this page
+ * renders no Edit; the paragraph below describes the shared form.)
  * EDIT is per row: an `upcoming` week's `scheduled`, unscored, un-overridden
  * pairing shows "Edit" to a commissioner; the form re-pairs the row through
  * 111's `schedule_edit_matchup` (`useEditMatchup`, F233(e) — one
@@ -95,16 +98,12 @@ export function ScheduleView({ leagueId }: { leagueId: string }) {
 function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: LeagueDetail }) {
   const { user } = useAuth()
   const schedule = useScheduleLive(leagueId)
-  // R1459: the per-week Edit is the NORMAL commissioner verb (the
-  // `/schedule/matchup` route, the open-window edit) — offered to a
-  // commissioner whenever that window is open, override mode or not. A week
-  // whose window has closed offers no Edit here at all; changing it is an
-  // override action, reached through the console's `/commish/schedule`.
-  // Remix lives in the console alone.
+  // F580 / D493 (Chris 2026-10-05): this is a member page — no commissioner
+  // control renders here. The per-week Edit (R1459's open-window verb) and
+  // Remix live in the console; a commissioner gets one pointer to them.
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const teamNames = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
-  const teams = useMemo(() => editableTeams(detail.teams), [detail.teams])
   const grid = useMemo(
     () =>
       schedule.data
@@ -112,10 +111,10 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
             schedule.data,
             teamNames,
             { regular_season_weeks: detail.settings.regular_season_weeks, schedule_mode: detail.settings.schedule_mode },
-            isCommish,
+            false,
           )
         : [],
-    [schedule.data, teamNames, detail.settings.regular_season_weeks, detail.settings.schedule_mode, isCommish],
+    [schedule.data, teamNames, detail.settings.regular_season_weeks, detail.settings.schedule_mode],
   )
   const currentWeek = useMemo(() => currentWeekOf(schedule.data?.weeks ?? []), [schedule.data])
   const hint = isCommish ? reasonHint(schedule.data?.weeks ?? []) : null
@@ -128,6 +127,16 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
       {schedule.connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {problem && schedule.data && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
       {hint && <StatusBanner tone="caution">{hint}</StatusBanner>}
+      {isCommish && (
+        <p className="text-[11px] font-medium text-n-3" data-schedule-commish-hint>
+          <Link
+            href={scheduleConsoleHref(leagueId)}
+            className="text-accent underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          >
+            {SCHEDULE_COMMISH_HINT_COPY}
+          </Link>
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2" data-schedule-toolbar>
         <span className="text-[11px] font-medium text-n-3">
@@ -171,7 +180,6 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
               week={week}
               isCurrent={week.week === currentWeek}
               myTeamId={myTeamId}
-              teams={teams}
             />
           ))}
         </div>
@@ -185,13 +193,11 @@ function WeekCard({
   week,
   isCurrent,
   myTeamId,
-  teams,
 }: {
   leagueId: string
   week: WeekCell
   isCurrent: boolean
   myTeamId: string | null
-  teams: TeamRef[]
 }) {
   const badge = weekStatusBadge(week.status)
   return (
@@ -217,7 +223,7 @@ function WeekCard({
             {week.note}
           </p>
         ) : (
-          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} row={row} myTeamId={myTeamId} teams={teams} />)
+          week.rows.map((row) => <MatchupRowView key={row.id} leagueId={leagueId} week={week.week} row={row} myTeamId={myTeamId} />)
         )}
       </CardContent>
     </Card>
@@ -229,15 +235,12 @@ function MatchupRowView({
   week,
   row,
   myTeamId,
-  teams,
 }: {
   leagueId: string
   week: number
   row: MatchupCell
   myTeamId: string | null
-  teams: TeamRef[]
 }) {
-  const [editing, setEditing] = useState(false)
   const mine = row.home.id === myTeamId || row.away?.id === myTeamId
   return (
     <div
@@ -272,14 +275,8 @@ function MatchupRowView({
               </Badge>
             </Link>
           )}
-          {row.editable && !editing && (
-            <Button variant="stroke" size="sm" onClick={() => setEditing(true)} data-edit-matchup>
-              <Icon name="edit" size={13} /> Edit
-            </Button>
-          )}
         </span>
       </div>
-      {editing && <EditMatchupForm leagueId={leagueId} row={row} teams={teams} onClose={() => setEditing(false)} />}
     </div>
   )
 }

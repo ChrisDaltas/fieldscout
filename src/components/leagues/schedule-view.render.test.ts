@@ -1,5 +1,6 @@
 /**
- * schedule-view.render.test.ts — R1459 (PR #395 fix round): the per-week Edit
+ * schedule-view.render.test.ts — F580 / D493 supersedes the R1459 pins below:
+ * the Edit moved to the Commissioner console. Originally R1459 (PR #395 fix round): the per-week Edit
  * is the NORMAL commissioner verb (`/schedule/matchup`, the open-window edit),
  * so it is offered to a commissioner whenever that window is open — override
  * mode OFF included — and is absent once the window has closed (changing a
@@ -17,6 +18,7 @@ import type { LeagueSchedule } from '@/hooks/use-schedule'
 import { useCommishOverrideStore } from '@/stores/commish-override-store'
 
 import { ScheduleView } from './schedule-view'
+import { SCHEDULE_COMMISH_HINT_COPY, scheduleConsoleHref } from './schedule-view-ops'
 import { SCHEDULE } from './standings-schedule.fixtures'
 
 const state: { role: string; schedule: LeagueSchedule } = { role: 'commissioner', schedule: SCHEDULE }
@@ -54,27 +56,23 @@ function render(): string {
 }
 const editCount = (html: string) => html.split('data-edit-matchup').length - 1
 
-describe('R1459 — the schedule page’s Edit follows the normal window, not override mode', () => {
-  it('a commissioner with override mode OFF sees Edit on a week whose window is still open', () => {
+describe('F580 / D493 — the member Schedule page carries no commissioner Edit; it points to the console', () => {
+  it('a commissioner sees NO Edit even on a week whose window is open — and a link to the console door', () => {
     useCommishOverrideStore.setState({ leagueId: null })
     state.role = 'commissioner'
     state.schedule = SCHEDULE
-    expect(editCount(render())).toBeGreaterThan(0)
+    const html = render()
+    expect(editCount(html)).toBe(0)
+    expect(html).toContain('data-schedule-commish-hint')
+    expect(html).toContain(`href="${scheduleConsoleHref('L')}"`)
+    expect(html).toContain(SCHEDULE_COMMISH_HINT_COPY)
   })
 
-  it('the same commissioner (override OFF) sees no Edit once that week’s window has closed', () => {
-    useCommishOverrideStore.setState({ leagueId: null })
-    state.role = 'commissioner'
-    state.schedule = {
-      ...SCHEDULE,
-      weeks: SCHEDULE.weeks.map((w) => (w.status === 'upcoming' ? { ...w, status: 'live' } : w)),
-    }
-    expect(editCount(render())).toBe(0)
-  })
-
-  it('a manager never sees Edit', () => {
+  it('a manager sees no Edit and no console pointer', () => {
     state.role = 'manager'
     state.schedule = SCHEDULE
-    expect(editCount(render())).toBe(0)
+    const html = render()
+    expect(editCount(html)).toBe(0)
+    expect(html).not.toContain('data-schedule-commish-hint')
   })
 })
