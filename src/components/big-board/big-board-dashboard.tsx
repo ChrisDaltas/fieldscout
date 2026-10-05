@@ -46,7 +46,7 @@ import { usePersonaBoards } from '@/hooks/use-persona-boards'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { useBoardLabelsStore, type BoardLabel } from '@/stores/board-labels-store'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { openPlayer } from '@/hooks/use-open-player'
 
 // ---------------------------------------------------------------------------
 // Filter vocab
@@ -213,7 +213,6 @@ export function BigBoardDashboard() {
 
   const labels = useBoardLabelsStore((s) => s.labels)
   const toggleLabel = useBoardLabelsStore((s) => s.toggleLabel)
-  const openPlayer = usePlayerWindowsStore((s) => s.open)
   const { toast } = useToast()
   const qc = useQueryClient()
 

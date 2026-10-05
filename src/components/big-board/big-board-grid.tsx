@@ -52,7 +52,7 @@ import {
 import { useBigBoard, useReorderPlayers } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { rankByVorp, type VorpPosition } from '@/lib/scoring/vorp'
-import { usePlayerWindowsStore } from '@/stores/player-windows-store'
+import { openPlayer } from '@/hooks/use-open-player'
 
 interface BoardPlayer {
   player_id: string
@@ -135,7 +135,6 @@ export function BigBoardGrid({
   // player_id so we can render them even though they're not yet on the
   // server-side list.
   const [additions, setAdditions] = useState<Record<string, BoardPlayer>>({})
-  const openPlayer = usePlayerWindowsStore((s) => s.open)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [boardSize, setBoardSize] = useState<number>(SIZE_DEFAULT)
 

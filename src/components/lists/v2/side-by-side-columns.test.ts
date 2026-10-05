@@ -163,7 +163,7 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
     // The fan-out is composed too — LV.14 put it in its own module rather than
     // inline, so its decisions are executable (D11: compose, do not re-solve).
     expect(source).toMatch(/useDraftedFanOut,\s*useRegisterFanOutColumn,/)
-    expect(source).toContain("import { usePlayerWindowsStore } from '@/stores/player-windows-store'")
+    expect(source).toContain("import { openPlayer as openPlayerView } from '@/hooks/use-open-player'")
   })
 
   it('renders those parts rather than local lookalikes', () => {
@@ -171,10 +171,11 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
     expect(source).toContain('<DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} />')
     expect(source).toContain('<PlayerMeta entry={entry} />')
     expect(source).toContain('<ListCoverTile list={cover} players={summary?.first_players} size={21} />')
-    // The name is the shared part *with* its mini-card affordance wired up —
-    // the design LAW asks for it by name ("links to the mini card").
+    // The name is the shared part *with* its player affordance wired up —
+    // the design asked for the mini card; D491 (Chris 2026-10-04) moved
+    // non-draft surfaces to the player view modal.
     expect(source).toMatch(/<PlayerName\b[\s\S]*?onOpen=\{onOpenPlayer\}/)
-    expect(source).toContain('openPlayerWindow(entry.player_id, {')
+    expect(source).toContain('openPlayerView(entry.player_id)')
   })
 
   it('defines no second bucketing, ramp or checkbox of its own', () => {
