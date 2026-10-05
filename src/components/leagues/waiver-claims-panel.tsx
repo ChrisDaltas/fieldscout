@@ -50,7 +50,16 @@ import {
  * States (§16.5.4): skeleton · empty with the reason · error with retry ·
  * the verb's refusal verbatim.
  */
-export function WaiverClaimsPanel({ leagueId, nextRunLocal }: { leagueId: string; nextRunLocal: string | null }) {
+export function WaiverClaimsPanel({
+  leagueId,
+  nextRunLocal,
+  showResults = true,
+}: {
+  leagueId: string
+  nextRunLocal: string | null
+  /** Settled results under the list — off where a feed already shows them (My Team's Claim order, D492). */
+  showResults?: boolean
+}) {
   const claims = useWaiverClaims(leagueId, { status: 'all' })
   const reorder = useReorderClaims(leagueId)
   const edit = useEditClaim(leagueId)
@@ -64,6 +73,7 @@ export function WaiverClaimsPanel({ leagueId, nextRunLocal }: { leagueId: string
       error={claims.isError && !claims.data ? (claims.error instanceof Error ? claims.error.message : 'The claims read failed.') : null}
       onRetry={() => void claims.refetch()}
       nextRunLocal={nextRunLocal}
+      showResults={showResults}
       pending={reorder.isPending || edit.isPending || cancel.isPending}
       refusal={spoke?.error?.message ?? null}
       onMove={(claimId, place) => {
@@ -93,6 +103,7 @@ export function WaiverClaimsPanelView({
   error,
   onRetry,
   nextRunLocal,
+  showResults = true,
   pending,
   refusal,
   onMove,
@@ -104,6 +115,7 @@ export function WaiverClaimsPanelView({
   error: string | null
   onRetry: () => void
   nextRunLocal: string | null
+  showResults?: boolean
   pending: boolean
   refusal: string | null
   onMove: (claimId: string, place: number) => void
@@ -197,7 +209,7 @@ export function WaiverClaimsPanelView({
                 </DndContext>
               </>
             )}
-            {settled.length > 0 && (
+            {showResults && settled.length > 0 && (
               <div className="flex flex-col gap-1 border-t border-n-4 pt-2" data-claims-results>
                 <p className="fs-overline text-[9px] text-n-3">Recent results</p>
                 <ul className="flex flex-col gap-1">
@@ -214,7 +226,7 @@ export function WaiverClaimsPanelView({
   )
 }
 
-function ClaimPlayers({ leagueId, claim }: { leagueId: string; claim: WaiverClaimView }) {
+export function ClaimPlayers({ leagueId, claim }: { leagueId: string; claim: WaiverClaimView }) {
   const context = leagueCardContext(leagueId)
   return (
     <span className="flex min-w-0 flex-1 flex-col">
@@ -255,9 +267,6 @@ function PendingClaimRow({
   onCancel: (claim: WaiverClaimView) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: claim.id, disabled: !draggable })
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState(String(claim.faab_bid))
-  const bid = parseBid(text)
   return (
     <li
       ref={setNodeRef}
@@ -279,6 +288,31 @@ function PendingClaimRow({
       )}
       <span className="fs-num w-4 text-right text-[11px] font-bold text-n-3">{rank}</span>
       <ClaimPlayers leagueId={leagueId} claim={claim} />
+      <PendingClaimControls claim={claim} faab={faab} pending={pending} onEditBid={onEditBid} onCancel={onCancel} />
+    </li>
+  )
+}
+
+/** A pending claim's bid (tap to change, FAAB only) and Cancel — shared by
+ *  the claims list here and My Team's Transactions feed (Chris 2026-10-04). */
+export function PendingClaimControls({
+  claim,
+  faab,
+  pending,
+  onEditBid,
+  onCancel,
+}: {
+  claim: WaiverClaimView
+  faab: boolean
+  pending: boolean
+  onEditBid: (claim: WaiverClaimView, bid: number) => void
+  onCancel: (claim: WaiverClaimView) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(String(claim.faab_bid))
+  const bid = parseBid(text)
+  return (
+    <>
       {faab &&
         (editing ? (
           <span className="flex items-center gap-1">
@@ -323,7 +357,7 @@ function PendingClaimRow({
       <Button variant="ghost" size="sm" disabled={pending} onClick={() => onCancel(claim)} data-claim-cancel>
         Cancel
       </Button>
-    </li>
+    </>
   )
 }
 

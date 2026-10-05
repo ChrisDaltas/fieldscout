@@ -39,6 +39,10 @@ import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDE
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
 import { TeamPage } from './team-page'
+import { PENDING_CLAIM_LABEL, TRANSACTIONS_EMPTY_COPY, TRANSACTIONS_ERROR_TITLE, TRANSACTIONS_MOVES_LIMIT, TRANSACTIONS_TITLE } from './team-transactions-ops'
+import { ADD_DROP_TYPES } from './activity-page-ops'
+import { waiverClaimKeys } from '@/hooks/use-waiver-claims'
+import { leagueActivityKeys } from '@/hooks/use-league-activity'
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-manager' } }),
@@ -181,6 +185,28 @@ interface Seed {
   lineup?: TeamLineupRow | null | 'missing' | 'error'
   /** L.D3.12: the trade deadline read (162) — unseeded = still loading. */
   deadline?: TradeDeadlineState
+  /** The viewer's pending waiver claims read — unseeded = still loading. */
+  claims?: 'error' | 'empty' | 'one' | 'two' | 'lost'
+  /** This team's adds / drops (the activity read) — unseeded = still loading. */
+  moves?: 'error' | 'empty' | 'one'
+}
+
+function claimRow(id: string, status: 'pending' | 'lost' | 'cancelled', name: string, created_at: string) {
+  return {
+    id,
+    team_id: TEAM,
+    add: { player_id: `p-${id}`, full_name: name, position: 'WR', nfl_team: 'AAA' },
+    drop: null,
+    faab_bid: 12,
+    claim_order: 1,
+    status,
+    result_reason: null as string | null,
+    process_at: null,
+    processed_at: null as string | null,
+    created_at,
+    created_by: 'user-manager',
+    cancelled_at: null,
+  }
 }
 
 function failQuery(client: QueryClient, queryKey: readonly unknown[], error: Error, data?: unknown) {
@@ -209,6 +235,76 @@ function renderTeamPage(seed: Seed = {}): string {
   if (l === 'error') failQuery(client, teamLineupKeys.week(TEAM, 1), new Error('team_lineups: boom'))
   else if (l !== 'missing') client.setQueryData(teamLineupKeys.week(TEAM, 1), l)
   if (seed.deadline) client.setQueryData(tradeDeadlineKeys.all(LEAGUE), seed.deadline)
+  const claimsKey = waiverClaimKeys.team(LEAGUE, null, 'all')
+  if (seed.claims === 'error') failQuery(client, claimsKey, new Error('claims: boom'))
+  else if (seed.claims)
+    client.setQueryData(claimsKey, {
+      league_id: LEAGUE,
+      team_id: TEAM,
+      status: 'all',
+      waiver_type: 'faab',
+      faab_budget: 100,
+      faab_min_bid: 1,
+      faab_balance: 73,
+      waiver_priority: null,
+      claims:
+        seed.claims === 'two'
+          ? [
+              claimRow('claim-a', 'pending', 'Claimed Receiver', '2099-09-15T12:00:00.000Z'),
+              claimRow('claim-b', 'pending', 'Second Claim', '2099-09-15T13:00:00.000Z'),
+            ]
+          : seed.claims === 'lost'
+          ? [
+              { ...claimRow('claim-l', 'lost', 'Lost Runner', '2099-09-10T12:00:00.000Z'), result_reason: 'lost_on_bid', processed_at: '2099-09-16T07:00:00.000Z' },
+              { ...claimRow('claim-c', 'cancelled', 'Cancelled Guy', '2099-09-11T12:00:00.000Z'), result_reason: 'cancelled' },
+            ]
+          : seed.claims === 'one'
+          ? [
+              {
+                id: 'claim-1',
+                team_id: TEAM,
+                add: { player_id: 'p-new', full_name: 'Claimed Receiver', position: 'WR', nfl_team: 'AAA' },
+                drop: null,
+                faab_bid: 12,
+                claim_order: 1,
+                status: 'pending',
+                result_reason: null,
+                process_at: null,
+                processed_at: null,
+                created_at: '2099-09-15T12:00:00.000Z',
+                created_by: 'user-manager',
+                cancelled_at: null,
+              },
+            ]
+          : [],
+    })
+  const movesKey = leagueActivityKeys.feed(LEAGUE, { type: ADD_DROP_TYPES, teamId: TEAM, limit: TRANSACTIONS_MOVES_LIMIT })
+  if (seed.moves === 'error') failQuery(client, movesKey, new Error('activity: boom'))
+  else if (seed.moves)
+    client.setQueryData(movesKey, {
+      items:
+        seed.moves === 'one'
+          ? [
+              {
+                kind: 'transaction',
+                id: 'tx-1',
+                created_at: '2099-09-14T12:00:00.000Z',
+                type: 'add_drop',
+                status: 'complete',
+                week: 1,
+                team_id: TEAM,
+                actor_id: null,
+                action_id: null,
+                payload: { add: { player_id: 'p-add', name: 'Added Back' }, drop: null },
+                commish_action_id: null,
+              },
+            ]
+          : [],
+      limit: TRANSACTIONS_MOVES_LIMIT,
+      has_more: false,
+      next_before: null,
+      next_before_id: null,
+    })
   return unescapeHtml(
     renderToStaticMarkup(
       createElement(QueryClientProvider, { client }, createElement(TeamPage, { leagueId: LEAGUE, teamId: TEAM })),
@@ -1147,5 +1243,70 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
     )
     expect(html).toContain('data-read-only')
     expect(html).not.toContain('data-move-menu')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Transactions on My Team (Chris 2026-10-04: waivers move off Players to My
+// Team, called "Transactions" — ONE feed, claims, adds and drops, newest first)
+// ---------------------------------------------------------------------------
+
+describe('the Transactions panel on My Team (Chris 2026-10-04)', () => {
+  it('ONE feed, newest first: the pending claim (status, bid, Cancel) above the older add; the seat’s FAAB in the header', () => {
+    const html = renderTeamPage({ claims: 'one', moves: 'one' })
+    expect(html).toContain('data-team-transactions')
+    expect(html).toContain(`>${TRANSACTIONS_TITLE}`)
+    expect(html).toContain('$73 of $100 FAAB left')
+    const claimAt = html.indexOf('data-transaction="claim"')
+    const moveAt = html.indexOf('data-transaction="move"')
+    expect(claimAt).toBeGreaterThan(-1)
+    expect(moveAt).toBeGreaterThan(claimAt)
+    const claimRow = html.slice(claimAt, moveAt)
+    expect(claimRow).toContain(PENDING_CLAIM_LABEL)
+    expect(claimRow).toContain('Claimed Receiver')
+    expect(claimRow).toContain('data-claim-bid="12"')
+    expect(claimRow).toContain('data-claim-cancel')
+    expect(html.slice(moveAt)).toContain('Added Back')
+  })
+  it('nothing yet: one line with the way to Players', () => {
+    const html = renderTeamPage({ claims: 'empty', moves: 'empty' })
+    expect(html).toContain(TRANSACTIONS_EMPTY_COPY)
+    expect(html).toContain(`href="/app/leagues/${LEAGUE}/players"`)
+  })
+  it('fail loud: EITHER read failing is the error with Retry — never the empty line', () => {
+    for (const seed of [{ claims: 'error', moves: 'empty' }, { claims: 'empty', moves: 'error' }] as const) {
+      const html = renderTeamPage(seed)
+      expect(html).toContain('data-transactions-error')
+      expect(html).toContain(TRANSACTIONS_ERROR_TITLE)
+      expect(html).not.toContain(TRANSACTIONS_EMPTY_COPY)
+    }
+  })
+  it('another team’s page never shows the panel (bids are blind)', () => {
+    const elsewhere = { ...detail, members: detail.members.map((m) => (m.user_id === 'user-manager' ? { ...m, team_id: 'team-2' } : { ...m, team_id: TEAM })) }
+    expect(renderTeamPage({ detail: elsewhere, claims: 'one', moves: 'one' })).not.toContain('data-team-transactions')
+  })
+  it('a no-waivers league (or a pre-149 database, R1219) still lists adds and drops, with no claims read', () => {
+    const fcfs: LeagueDetail = { ...detail, settings: { ...settings, waiver_type: 'none_fcfs' } }
+    for (const d of [fcfs, { ...detail, waivers_live: false }]) {
+      const html = renderTeamPage({ detail: d, claims: 'one', moves: 'one' })
+      expect(html).toContain('data-transaction="move"')
+      expect(html).not.toContain('data-transaction="claim"')
+    }
+  })
+  it('Claim order (Chris 2026-10-05): the button shows at 2+ pending claims, never at 1; the order list stays closed until pressed', () => {
+    const two = renderTeamPage({ claims: 'two', moves: 'empty' })
+    expect(two).toContain('data-claim-order-door')
+    expect(two).toContain('>Claim order<')
+    expect(two).not.toContain('data-claim-order>')
+    expect(renderTeamPage({ claims: 'one', moves: 'empty' })).not.toContain('data-claim-order-door')
+  })
+  it('a LOST claim is a feed entry in plain words (at the run’s time, above the older add); a cancelled one is not', () => {
+    const html = renderTeamPage({ claims: 'lost', moves: 'one' })
+    const lostAt = html.indexOf('data-claim-result="lost"')
+    expect(lostAt).toBeGreaterThan(-1)
+    expect(html.indexOf('data-transaction="move"')).toBeGreaterThan(lostAt)
+    expect(html).toContain('Lost Runner')
+    expect(html).toContain('Another team bid more.')
+    expect(html).not.toContain('Cancelled Guy')
   })
 })
