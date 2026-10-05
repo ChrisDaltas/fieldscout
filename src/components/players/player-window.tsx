@@ -51,7 +51,7 @@ export function PlayerWindow({
   zIndex,
   isTop,
 }: PlayerWindowProps) {
-  const { playerId, listContext, readOnly, context } = win
+  const { playerId, readOnly, context } = win
   const closeWindow = usePlayerWindowsStore((s) => s.close)
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const focusWindow = usePlayerWindowsStore((s) => s.focus)
@@ -124,7 +124,6 @@ export function PlayerWindow({
             actions={
               <PlayerDetailActions
                 player={data.player}
-                listContext={listContext}
                 readOnly={readOnly}
                 onRemoved={handleClose}
                 onOpenPlayerView={handleExpand}

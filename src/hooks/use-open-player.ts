@@ -1,5 +1,6 @@
 'use client'
 
+import type { PlayerListContext } from '@/components/players/player-detail-actions'
 import { GLOBAL_CARD_CONTEXT, type PlayerCardContext } from '@/components/players/player-card-context'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
@@ -10,14 +11,22 @@ import { usePlayerWindowsStore } from '@/stores/player-windows-store'
  * context = the surface's ambient one (league shell → that league; draft
  * room → its seat), else global. The draft room keeps the floating card —
  * its Queue button is the seat's action and the modal has none.
+ *
+ * `listContext` (D494, Chris 2026-10-05): opened from a list the viewer owns,
+ * the modal offers "Remove from list". Callers pass it only for an owned
+ * list. The draft room ignores it — its card is unchanged.
  */
-export function openPlayer(playerId: string, context?: PlayerCardContext): void {
+export function openPlayer(
+  playerId: string,
+  context?: PlayerCardContext,
+  listContext?: PlayerListContext | null,
+): void {
   const ctx = context ?? usePlayerWindowsStore.getState().ambient ?? GLOBAL_CARD_CONTEXT
   if (ctx.kind === 'draft') {
     usePlayerWindowsStore.getState().open(playerId, context ? { context } : undefined)
     return
   }
-  usePlayerModalStore.getState().openPlayerView(playerId, ctx.kind === 'league' ? ctx.leagueId : null)
+  usePlayerModalStore.getState().openPlayerView(playerId, ctx.kind === 'league' ? ctx.leagueId : null, listContext ?? null)
 }
 
 export function useOpenPlayer(): typeof openPlayer {

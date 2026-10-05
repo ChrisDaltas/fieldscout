@@ -597,8 +597,14 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   }, [drag.dragId, buckets])
 
   const openPlayer = React.useCallback(
-    (entry: ListPlayerWithPlayer) => openPlayerView(entry.player_id),
-    [],
+    // D494: an owned list carries its context, so the modal offers Remove.
+    (entry: ListPlayerWithPlayer) =>
+      openPlayerView(
+        entry.player_id,
+        undefined,
+        list?.is_owner ? { listId: list.id, listTitle: list.title } : null,
+      ),
+    [list?.is_owner, list?.id, list?.title],
   )
 
   // ---- Share ---------------------------------------------------------------
