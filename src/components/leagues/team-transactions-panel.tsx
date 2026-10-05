@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 
 import { leagueCardContext } from '@/components/players/player-card-context'
 import { TextWithPlayers } from '@/components/players/player-link'
@@ -22,6 +22,8 @@ import { ADD_DROP_TYPES, activityHref } from './activity-page-ops'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import {
+  CLAIM_ORDER_CLOSE_LABEL,
+  CLAIM_ORDER_LABEL,
   PENDING_CLAIM_LABEL,
   SEE_ALL_ADDS_LABEL,
   TRANSACTIONS_EMPTY_COPY,
@@ -29,9 +31,10 @@ import {
   TRANSACTIONS_MOVES_LIMIT,
   TRANSACTIONS_TITLE,
   mergeTransactions,
+  pendingClaimCount,
 } from './team-transactions-ops'
-import { faabLeftCopy, waiverOrderCopy } from './waiver-claims-ops'
-import { ClaimPlayers, PendingClaimControls } from './waiver-claims-panel'
+import { claimOutcome, faabLeftCopy, waiverOrderCopy } from './waiver-claims-ops'
+import { ClaimPlayers, PendingClaimControls, WaiverClaimsPanel } from './waiver-claims-panel'
 
 /**
  * My Team's Transactions panel (Chris 2026-10-04 — moved off the Players
@@ -62,7 +65,7 @@ export function TeamTransactionsPanel({
   leagueTimeZone: string | null
   nextRunLocal: string | null
 }) {
-  const claims = useWaiverClaims(claimsLive ? leagueId : undefined, { status: 'pending' })
+  const claims = useWaiverClaims(claimsLive ? leagueId : undefined, { status: 'all' })
   const moves = useLeagueActivityFeed(leagueId, { type: ADD_DROP_TYPES, teamId, limit: TRANSACTIONS_MOVES_LIMIT })
   const edit = useEditClaim(leagueId)
   const cancel = useCancelClaim(leagueId)
@@ -96,6 +99,7 @@ export function TeamTransactionsPanel({
         setLast('cancel')
         cancel.cancel(claim.id)
       }}
+      claimOrder={<WaiverClaimsPanel leagueId={leagueId} nextRunLocal={nextRunLocal} showResults={false} />}
     />
   )
 }
@@ -116,6 +120,7 @@ export function TeamTransactionsPanelView({
   refusal,
   onEditBid,
   onCancel,
+  claimOrder = null,
 }: {
   leagueId: string
   teamId: string
@@ -133,7 +138,12 @@ export function TeamTransactionsPanelView({
   refusal: string | null
   onEditBid: (claim: WaiverClaimView, bid: number) => void
   onCancel: (claim: WaiverClaimView) => void
+  /** The pending claims in run order with drag reorder (the shared
+   *  `WaiverClaimsPanel`), opened by the Claim order button (Chris 2026-10-05). */
+  claimOrder?: ReactNode
 }) {
+  const [orderOpen, setOrderOpen] = useState(false)
+  const showOrderDoor = claimOrder !== null && pendingClaimCount(claimsDoc?.claims ?? []) >= 2
   const entries = useMemo(
     () => mergeTransactions(claimsDoc?.claims ?? [], feedLines(items ?? [], new Map([[teamId, teamName]]))),
     [claimsDoc, items, teamId, teamName],
@@ -155,6 +165,11 @@ export function TeamTransactionsPanelView({
               {seat}
             </span>
           )}
+          {showOrderDoor && (
+            <Button variant="stroke" size="sm" className={seat ? '' : 'ml-auto'} onClick={() => setOrderOpen((o) => !o)} aria-expanded={orderOpen} data-claim-order-door>
+              {orderOpen ? CLAIM_ORDER_CLOSE_LABEL : CLAIM_ORDER_LABEL}
+            </Button>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 px-card-pad py-3">
@@ -175,6 +190,7 @@ export function TeamTransactionsPanelView({
           </div>
         ) : (
           <>
+            {showOrderDoor && orderOpen && <div data-claim-order>{claimOrder}</div>}
             {problem !== null && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
             {refusal && (
               <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-claims-refusal>
@@ -192,6 +208,28 @@ export function TeamTransactionsPanelView({
               <ol className="flex flex-col divide-y divide-n-4" data-transactions-items>
                 {entries.map((entry) => {
                   const when = entry.at ? formatInstantWithDate(entry.at, leagueTimeZone) : null
+                  if (entry.kind === 'claim' && entry.claim.status !== 'pending') {
+                    // Chris 2026-10-05: a lost / invalid claim is a feed entry, said plainly.
+                    const outcome = claimOutcome(entry.claim, claimsDoc?.waiver_type ?? null)
+                    return (
+                      <li key={entry.id} className="flex flex-col gap-0.5 py-1.5" data-transaction="claim-result" data-claim-result={entry.claim.status}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Badge variant="stroke-pink" className="shrink-0">
+                            {outcome.label}
+                          </Badge>
+                          <ClaimPlayers leagueId={leagueId} claim={entry.claim} />
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
+                          {when && (
+                            <span className="fs-num" title={when.title ?? undefined}>
+                              {when.local}
+                            </span>
+                          )}
+                          {outcome.detail && <span data-claim-result-detail>{outcome.detail}</span>}
+                        </div>
+                      </li>
+                    )
+                  }
                   return entry.kind === 'claim' ? (
                     <li key={entry.id} className="flex flex-col gap-0.5 py-1.5" data-transaction="claim" data-claim={entry.claim.id}>
                       <div className="flex min-w-0 items-center gap-2">

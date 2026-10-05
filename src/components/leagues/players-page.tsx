@@ -120,11 +120,10 @@ import { acquireAction, acquireLabel } from '@/components/players/player-card-le
  * Claim first and Add still live with an advisory title (the window is not
  * refreshed while the page is open — R1220; a refused add names the next run
  * verbatim); with no window both, and the server answers. A database without
- * the claims (pre-149, `waivers_live: false` — R1219) shows no Claim and no
- * panel. Claim opens `ClaimDialog` (a FAAB bid or a priority
- * claim, and an optional drop); the team's claims live in
- * `WaiverClaimsPanel` on the My Team page (Chris 2026-10-04 — moved off
- * this page). A player on another roster offers
+ * the claims (pre-149, `waivers_live: false` — R1219) shows no Claim. Claim
+ * opens `ClaimDialog` (a FAAB bid or a priority claim, and an optional drop).
+ * The team's claims are not on this page: they live in the Transactions panel
+ * on My Team (`team-transactions-panel.tsx`, D492). A player on another roster offers
  * Trade — a link to the trade center's builder (L.D3.7). No button posts
  * nowhere.
  *

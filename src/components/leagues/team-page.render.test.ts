@@ -186,9 +186,27 @@ interface Seed {
   /** L.D3.12: the trade deadline read (162) — unseeded = still loading. */
   deadline?: TradeDeadlineState
   /** The viewer's pending waiver claims read — unseeded = still loading. */
-  claims?: 'error' | 'empty' | 'one'
+  claims?: 'error' | 'empty' | 'one' | 'two' | 'lost'
   /** This team's adds / drops (the activity read) — unseeded = still loading. */
   moves?: 'error' | 'empty' | 'one'
+}
+
+function claimRow(id: string, status: 'pending' | 'lost' | 'cancelled', name: string, created_at: string) {
+  return {
+    id,
+    team_id: TEAM,
+    add: { player_id: `p-${id}`, full_name: name, position: 'WR', nfl_team: 'AAA' },
+    drop: null,
+    faab_bid: 12,
+    claim_order: 1,
+    status,
+    result_reason: null as string | null,
+    process_at: null,
+    processed_at: null as string | null,
+    created_at,
+    created_by: 'user-manager',
+    cancelled_at: null,
+  }
 }
 
 function failQuery(client: QueryClient, queryKey: readonly unknown[], error: Error, data?: unknown) {
@@ -217,20 +235,30 @@ function renderTeamPage(seed: Seed = {}): string {
   if (l === 'error') failQuery(client, teamLineupKeys.week(TEAM, 1), new Error('team_lineups: boom'))
   else if (l !== 'missing') client.setQueryData(teamLineupKeys.week(TEAM, 1), l)
   if (seed.deadline) client.setQueryData(tradeDeadlineKeys.all(LEAGUE), seed.deadline)
-  const claimsKey = waiverClaimKeys.team(LEAGUE, null, 'pending')
+  const claimsKey = waiverClaimKeys.team(LEAGUE, null, 'all')
   if (seed.claims === 'error') failQuery(client, claimsKey, new Error('claims: boom'))
   else if (seed.claims)
     client.setQueryData(claimsKey, {
       league_id: LEAGUE,
       team_id: TEAM,
-      status: 'pending',
+      status: 'all',
       waiver_type: 'faab',
       faab_budget: 100,
       faab_min_bid: 1,
       faab_balance: 73,
       waiver_priority: null,
       claims:
-        seed.claims === 'one'
+        seed.claims === 'two'
+          ? [
+              claimRow('claim-a', 'pending', 'Claimed Receiver', '2099-09-15T12:00:00.000Z'),
+              claimRow('claim-b', 'pending', 'Second Claim', '2099-09-15T13:00:00.000Z'),
+            ]
+          : seed.claims === 'lost'
+          ? [
+              { ...claimRow('claim-l', 'lost', 'Lost Runner', '2099-09-10T12:00:00.000Z'), result_reason: 'lost_on_bid', processed_at: '2099-09-16T07:00:00.000Z' },
+              { ...claimRow('claim-c', 'cancelled', 'Cancelled Guy', '2099-09-11T12:00:00.000Z'), result_reason: 'cancelled' },
+            ]
+          : seed.claims === 'one'
           ? [
               {
                 id: 'claim-1',
@@ -1085,11 +1113,6 @@ describe('the team page names its manager — a door to his profile (L.E1.41)', 
 // League UX batch 3 (D478) — My Team built to the prototype: stat columns +
 // Customize, the Lineup check, the projected total, the matchup strip, and
 // read-only for anyone who cannot edit.
-
-// ---------------------------------------------------------------------------
-// League UX batch 3 (D478) — My Team built to the prototype: stat columns +
-// Customize, the Lineup check, the projected total, the matchup strip, and
-// read-only for anyone who cannot edit.
 // ---------------------------------------------------------------------------
 
 describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', () => {
@@ -1269,5 +1292,21 @@ describe('the Transactions panel on My Team (Chris 2026-10-04)', () => {
       expect(html).toContain('data-transaction="move"')
       expect(html).not.toContain('data-transaction="claim"')
     }
+  })
+  it('Claim order (Chris 2026-10-05): the button shows at 2+ pending claims, never at 1; the order list stays closed until pressed', () => {
+    const two = renderTeamPage({ claims: 'two', moves: 'empty' })
+    expect(two).toContain('data-claim-order-door')
+    expect(two).toContain('>Claim order<')
+    expect(two).not.toContain('data-claim-order>')
+    expect(renderTeamPage({ claims: 'one', moves: 'empty' })).not.toContain('data-claim-order-door')
+  })
+  it('a LOST claim is a feed entry in plain words (at the run’s time, above the older add); a cancelled one is not', () => {
+    const html = renderTeamPage({ claims: 'lost', moves: 'one' })
+    const lostAt = html.indexOf('data-claim-result="lost"')
+    expect(lostAt).toBeGreaterThan(-1)
+    expect(html.indexOf('data-transaction="move"')).toBeGreaterThan(lostAt)
+    expect(html).toContain('Lost Runner')
+    expect(html).toContain('Another team bid more.')
+    expect(html).not.toContain('Cancelled Guy')
   })
 })
