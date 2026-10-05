@@ -46,7 +46,7 @@ import {
   TOOLS_AFTER_DRAFT_NOTE,
 } from './commish-console-ops'
 import { LeagueHomeStates } from './league-home-states'
-import { REMIX_NEEDS_OVERRIDE_COPY } from './schedule-view-ops'
+import { REMIX_NEEDS_OVERRIDE_COPY, SCHEDULE_EDIT_NONE_COPY } from './schedule-view-ops'
 import { SCHEDULE } from './standings-schedule.fixtures'
 import { REPAIR_NEEDS_OVERRIDE_COPY, REPAIR_NOTHING_COPY } from './commish-repair-ops'
 
@@ -665,5 +665,41 @@ describe('design rules', () => {
       expect(text, code).not.toContain(code)
     }
     expect(text).not.toMatch(/\b[QEFDR]\d{2,}\b/)
+  })
+})
+
+describe('F580 / D493 — the per-week Edit lives in the console Schedule section', () => {
+  const preKickoff: LeagueSchedule = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => ({ ...w, status: 'upcoming', finalized_at: null })) }
+  const section = (html: string) => {
+    const at = html.indexOf('data-console-schedule-edit')
+    return at < 0 ? '' : html.slice(at, html.indexOf('data-console-remix', at))
+  }
+
+  it('lists only weeks that have not started, each with Edit — override mode OFF (the normal verb)', () => {
+    const html = section(renderConsole({ schedule: SCHEDULE }))
+    expect(html).toContain('data-console-schedule-edit="weeks"')
+    expect(html).toContain('data-console-edit-week="3"')
+    expect(html).not.toContain('data-console-edit-week="1"')
+    expect(html).not.toContain('data-console-edit-week="2"')
+    expect(html.split('data-edit-matchup').length - 1).toBeGreaterThan(0)
+  })
+
+  it('every upcoming week is listed before kickoff', () => {
+    const html = section(renderConsole({ schedule: preKickoff }))
+    expect(html).toContain('data-console-edit-week="3"')
+  })
+
+  it('no week left to change: says so, no Edit (prevent, don’t refuse)', () => {
+    const started: LeagueSchedule = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.status === 'upcoming' ? { ...w, status: 'live' } : w)) }
+    const html = section(renderConsole({ schedule: started }))
+    expect(html).toContain('data-console-schedule-edit="none"')
+    expect(html).toContain(SCHEDULE_EDIT_NONE_COPY)
+    expect(html).not.toContain('data-edit-matchup')
+  })
+
+  it('outside the regular season there is no Edit section', () => {
+    for (const status of ['playoffs', 'complete', 'setup', 'scheduled', 'drafting']) {
+      expect(renderConsole({ detail: detailWith(status), schedule: preKickoff }), status).not.toContain('data-console-schedule-edit')
+    }
   })
 })

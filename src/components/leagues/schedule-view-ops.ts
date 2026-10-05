@@ -189,6 +189,30 @@ export function reasonHint(weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>
   return first.status === 'upcoming' ? null : REASON_HINT_COPY
 }
 
+/** F580 / D493: the console's Schedule section — the weeks that have not
+ *  started (`upcoming`), each with only its editable pairings; a week with
+ *  none is left out. A started week never appears (prevent, don't refuse). */
+export const SCHEDULE_EDIT_TITLE = 'Change an upcoming week’s matchups'
+export const SCHEDULE_EDIT_NONE_COPY = 'No upcoming week has a matchup that can still be changed.'
+
+export function scheduleEditWeeks(
+  schedule: LeagueSchedule,
+  teamNames: ReadonlyMap<string, string>,
+  settings: { regular_season_weeks: number; schedule_mode: string },
+): WeekCell[] {
+  return scheduleGrid(schedule, teamNames, settings, true)
+    .filter((w) => w.status === 'upcoming')
+    .map((w) => ({ ...w, rows: w.rows.filter((r) => r.editable) }))
+    .filter((w) => w.rows.length > 0)
+}
+
+/** The commissioner's pointer on the member Schedule page (F580): the edit
+ *  and the remix live in the console. */
+export const SCHEDULE_COMMISH_HINT_COPY = 'Change matchups or remix the schedule in the Commissioner console.'
+export function scheduleConsoleHref(leagueId: string): string {
+  return `/app/leagues/${leagueId}/commish#schedule-edit`
+}
+
 /** The teams an edit may seat: every non-retired franchise (111 refuses a
  *  retired one by name — F222). */
 export function editableTeams(teams: readonly { id: string; name: string; status: string }[]): TeamRef[] {
