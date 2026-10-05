@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { LeagueAvailabilityRow, LeagueCardActions } from '@/components/players/player-card-actions'
-import { PlayerDetailActions } from '@/components/players/player-detail-actions'
+import { PlayerDetailActions, type PlayerListContext } from '@/components/players/player-detail-actions'
 import { PlayerDetailHeader } from '@/components/players/player-detail-header'
 import { GameLogPanel, StatsPanel } from '@/components/players/player-detail-panels'
 import {
@@ -62,9 +62,15 @@ export function PlayerView({
   playerId,
   leagueId,
   variant,
+  listContext = null,
+  onRemoved,
 }: {
   playerId: string
   leagueId: string | null
+  /** Opened from an owned list → "Remove from list" in the actions (D494). */
+  listContext?: PlayerListContext | null
+  /** After a successful remove — the modal closes (the player left the list). */
+  onRemoved?: () => void
   /** Only the modal remains (Chris 2026-10-04, "Player links open the
    *  modal") — `/app/players/[id]` now redirects into it. */
   variant: 'modal'
@@ -72,7 +78,7 @@ export function PlayerView({
   const { data, isLoading, error } = usePlayerStats(playerId)
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   // Re-point the view at another league context (or none): the modal swaps in place.
-  const goContext = (id: string | null) => openPlayerView(playerId, id)
+  const goContext = (id: string | null) => openPlayerView(playerId, id, listContext)
   if (isLoading) {
     return (
       <div className="space-y-4 p-6">
@@ -94,7 +100,7 @@ export function PlayerView({
   }
   return (
     <div data-player-page={leagueId ? 'league' : 'global'} data-player-view={variant}>
-      <PlayerBody data={data} leagueId={leagueId} goContext={goContext} />
+      <PlayerBody data={data} leagueId={leagueId} goContext={goContext} listContext={listContext} onRemoved={onRemoved} />
     </div>
   )
 }
@@ -185,10 +191,14 @@ export function PlayerBody({
   data,
   leagueId,
   goContext,
+  listContext = null,
+  onRemoved,
 }: {
   data: PlayerStatsResponse
   leagueId: string | null
   goContext: (leagueId: string | null) => void
+  listContext?: PlayerListContext | null
+  onRemoved?: () => void
 }) {
   const { player } = data
   const season = data.seasons.current.season
@@ -212,7 +222,7 @@ export function PlayerBody({
     <div className="space-y-6 p-5 sm:p-7">
       <div className="grid gap-4 pr-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <PlayerDetailHeader player={player} size="expanded" />
-        <ActionsColumn player={player} leagueId={leagueId} goContext={goContext} />
+        <ActionsColumn player={player} leagueId={leagueId} goContext={goContext} listContext={listContext} onRemoved={onRemoved} />
       </div>
 
       <DecisionLine player={player} scored={scored} onBasis={() => toggle('scoring', true)} />
@@ -534,10 +544,14 @@ export function ActionsColumn({
   player,
   leagueId,
   goContext = () => {},
+  listContext = null,
+  onRemoved,
 }: {
   player: PlayerStatsPlayer
   leagueId: string | null
   goContext?: (leagueId: string | null) => void
+  listContext?: PlayerListContext | null
+  onRemoved?: () => void
 }) {
   const pool = poolOf(player)
   // R1501: a `?league=` the viewer isn't in (or whose read fails) falls back
@@ -553,7 +567,7 @@ export function ActionsColumn({
           <YourLeaguesBlock pool={pool} goContext={goContext} />
         ))}
       <div className="flex flex-wrap items-center gap-1.5">
-        <PlayerDetailActions player={player} onFullPage />
+        <PlayerDetailActions player={player} onFullPage listContext={listContext} onRemoved={onRemoved} />
       </div>
     </div>
   )

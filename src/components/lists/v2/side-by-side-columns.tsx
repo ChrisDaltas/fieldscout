@@ -59,7 +59,7 @@ import {
  * | the cover | `cover-tile.tsx` (`ListCoverTile`) |
  * | checkbox, name, position + team, empty state | `list-row-parts.tsx` |
  * | drafted marks | `use-draft-mode.ts` — the account-persisted source LV.1.3 pointed it at |
- * | the player view modal | `openPlayer` (use-open-player), opened exactly as `list-detail-panel.tsx` opens it (D491) |
+ * | the player mini card | `openPlayer` (use-open-player), opened exactly as `list-detail-panel.tsx` opens it (D494; Expand → the modal) |
  * | which grouping this list is showing | `list-display-store.ts` (`useListDisplay` / `setOrg`), session-only (**D3**) |
  * | the failed / loading states | `list-row-parts.tsx` (`ListReadFailure`, `ListRowsSkeleton`) — shared with the pop-out window at LV.17, rather than a second spelling of the same three sentences. The column's **sub-line** is unchanged from LV.13 (`Could not load`): R248 restored it after LV.17 briefly re-worded a merged surface |
  * | `Pop out into a window` | `list-windows-store.ts` (LV.15), the same `open` the detail hero calls |
@@ -215,8 +215,10 @@ function ComparisonColumn({
   const cover = list ?? summary ?? null
 
   const openPlayer = React.useCallback(
-    (entry: ListPlayerWithPlayer) => openPlayerView(entry.player_id),
-    [],
+    // D494: every click opens the mini card; an owned list carries its context.
+    (entry: ListPlayerWithPlayer) =>
+      openPlayerView(entry.player_id, undefined, canEdit && list ? { listId: list.id, listTitle: list.title } : null),
+    [canEdit, list],
   )
 
   /**

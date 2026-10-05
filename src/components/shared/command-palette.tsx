@@ -18,7 +18,7 @@ import {
 import { Icon, type IconName } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { featureFlags } from '@/lib/feature-flags'
-import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { openPlayer } from '@/hooks/use-open-player'
 import { useUIStore } from '@/stores/ui-store'
 import { userProfileHref } from './username-link-ops'
 
@@ -113,7 +113,6 @@ export function CommandPalette() {
   const router = useRouter()
   const isOpen = useUIStore((s) => s.isCommandPaletteOpen)
   const setOpen = useUIStore((s) => s.setCommandPaletteOpen)
-  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const toggle = useUIStore((s) => s.toggleCommandPalette)
 
   const [query, setQuery] = useState('')
@@ -212,11 +211,11 @@ export function CommandPalette() {
                 key={player.id}
                 value={`${player.full_name} ${player.id}`}
                 onSelect={() => {
-                  // D486(13): the player view opens as a modal over this page.
-                  // Open after the palette's own Dialog has closed so focus
-                  // lands in the player modal, not on a dead element (R1510).
+                  // D494 (R1530): the pick opens the mini card first, like every
+                  // player click. Open after the palette's own Dialog has closed
+                  // so focus lands on the card, not on a dead element (R1510).
                   setOpen(false)
-                  requestAnimationFrame(() => openPlayerView(player.id))
+                  requestAnimationFrame(() => openPlayer(player.id))
                 }}
                 className="gap-2.5"
               >

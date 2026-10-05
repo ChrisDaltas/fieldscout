@@ -443,21 +443,21 @@ describe('player view — the calm default view + progressive disclosure (D486(1
     expect(out).toContain('aria-expanded="false" data-section-toggle="stats"')
   })
 
-  it('a plain PlayerLink click opens the MODAL (Chris 2026-10-04, "Player links open the modal")', () => {
+  it('a plain PlayerLink click opens the MINI CARD first (Chris 2026-10-05, D494)', () => {
     const src = readFileSync(join(__dirname, 'player-link.tsx'), 'utf8')
-    // Routed through openPlayer (modal; the draft room keeps the card — use-open-player.test.ts).
+    // Routed through openPlayer (always the card; behaviour pinned in use-open-player.test.ts).
     expect(src).toContain('useOpenPlayer')
     expect(src).not.toContain('usePlayerWindowsStore')
     // …and the card's expand icon still opens the modal.
     const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
-    expect(win).toMatch(/openPlayerView\(playerId, expandLeagueId\)/)
+    expect(win).toMatch(/openPlayerView\(playerId, expandLeagueId, listContext\)/)
   })
 
   it("More → 'Open player view' on the mini card closes the card first (R1507)", () => {
     const win = readFileSync(join(__dirname, 'player-window.tsx'), 'utf8')
     // The card hands its expand handler (closeWindow → openPlayerView) to the More item.
     expect(win).toMatch(/onOpenPlayerView=\{handleExpand\}/)
-    expect(win).toMatch(/closeWindow\(playerId\)\s*\n\s*openPlayerView\(playerId, expandLeagueId\)/)
+    expect(win).toMatch(/closeWindow\(playerId\)\s*\n\s*openPlayerView\(playerId, expandLeagueId, listContext\)/)
     const actions = readFileSync(join(__dirname, 'player-detail-actions.tsx'), 'utf8')
     expect(actions).toMatch(/onOpenPlayerView \? onOpenPlayerView\(\) : openPlayerView\(player\.id\)/)
   })

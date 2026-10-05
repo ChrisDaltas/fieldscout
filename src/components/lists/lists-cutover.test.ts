@@ -144,11 +144,13 @@ describe('the four ported capabilities are mounted (LV.7)', () => {
     expect(source).toContain('dropRef={playerDrop.setNodeRef}')
   })
 
-  it('a player name opens the app’s player view modal (D491)', () => {
+  it('a player name opens the mini card via the shared opener (D494)', () => {
     // The shared opener, not a second card component — and not the draft
     // room's floating card store.
     expect(read(PANEL)).toContain("from '@/hooks/use-open-player'")
-    expect(read(PANEL)).toContain('openPlayerView(entry.player_id)')
+    expect(read(PANEL)).toMatch(/openPlayerView\(\s*entry\.player_id,/)
+    // D494: an owned list hands the card its context (Remove from list).
+    expect(read(PANEL)).toContain('list?.is_owner ? { listId: list.id, listTitle: list.title } : null')
     expect(read(PANEL)).not.toContain('player-windows-store')
     // Wired in all three view styles.
     expect(read(BODY).match(/<PlayerName/g) ?? []).toHaveLength(3)

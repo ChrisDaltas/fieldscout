@@ -250,7 +250,7 @@ import { useListDropCommit } from './use-list-drop'
  * | drafted marks | `use-draft-mode.ts`, the account-persisted source LV.1.3 pointed it at |
  * | stat cells and the catalog behind `gear` | `list-stats.ts` + `list-toolbar.tsx`'s `StatsCatalog` |
  * | which grouping / which stats | `list-display-store.ts`, session-only (**D3**) |
- * | the player view modal | `openPlayer` (use-open-player), opened exactly as the panel opens it (D491) |
+ * | the player mini card | `openPlayer` (use-open-player), opened exactly as the panel opens it (D494; Expand → the modal) |
  *
  * **A tick here is one tick on one list.** D12's fan-out belongs to the Side by
  * side comparison set and stops there: a pop-out is a single list, so this uses
@@ -597,8 +597,14 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   }, [drag.dragId, buckets])
 
   const openPlayer = React.useCallback(
-    (entry: ListPlayerWithPlayer) => openPlayerView(entry.player_id),
-    [],
+    // D494: an owned list carries its context, so the card offers Remove.
+    (entry: ListPlayerWithPlayer) =>
+      openPlayerView(
+        entry.player_id,
+        undefined,
+        list?.is_owner ? { listId: list.id, listTitle: list.title } : null,
+      ),
+    [list?.is_owner, list?.id, list?.title],
   )
 
   // ---- Share ---------------------------------------------------------------

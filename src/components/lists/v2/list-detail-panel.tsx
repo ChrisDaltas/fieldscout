@@ -201,13 +201,19 @@ export function ListDetailPanel({
   }, [list?.id, list?.title, list?.player_count, list?.thumbnail_url, pushHistory])
 
   /**
-   * Click a player's name → the player view modal (D491, Chris 2026-10-04),
-   * via `openPlayer` — the draft room alone keeps the floating card. Remove
-   * from list stays on the row itself.
+   * Click a player's name → the floating mini card (D494, Chris 2026-10-05,
+   * superseding D491), via `openPlayer`; its Expand opens the modal. On an
+   * owned list both the card and the expanded modal offer Remove from list.
    */
   const openPlayer = React.useCallback(
-    (entry: ListPlayerWithPlayer) => openPlayerView(entry.player_id),
-    [],
+    // D494: an owned list carries its context, so the card offers Remove.
+    (entry: ListPlayerWithPlayer) =>
+      openPlayerView(
+        entry.player_id,
+        undefined,
+        list?.is_owner ? { listId: list.id, listTitle: list.title } : null,
+      ),
+    [list?.is_owner, list?.id, list?.title],
   )
 
   /**

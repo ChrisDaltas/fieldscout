@@ -27,7 +27,7 @@ export function PlayerViewModal() {
           <DialogTitle className="sr-only">Player</DialogTitle>
           <DialogDescription className="sr-only">Player details, this week&apos;s matchup and the season.</DialogDescription>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <PlayerView playerId={target.playerId} leagueId={featureFlags.leagues ? target.leagueId : null} variant="modal" />
+            <PlayerView playerId={target.playerId} leagueId={featureFlags.leagues ? target.leagueId : null} variant="modal" listContext={target.listContext} onRemoved={close} />
           </div>
         </DialogContent>
       )}

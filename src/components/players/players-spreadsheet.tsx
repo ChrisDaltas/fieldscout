@@ -37,7 +37,6 @@ import {
 import { useOpenPlayer } from '@/hooks/use-open-player'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
-import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 interface PlayerRow {
   id: string
@@ -1041,7 +1040,8 @@ function SearchAutocomplete({
     return () => window.removeEventListener('mousedown', handleClick)
   }, [open])
 
-  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
+  const openPlayer = useOpenPlayer()
+
   const persistRecent = (value: string) => {
     const trimmed = value.trim()
     if (!trimmed) return
@@ -1147,11 +1147,11 @@ function SearchAutocomplete({
                     onClick={(e) => {
                       persistRecent(query.trim() || p.full_name)
                       setOpen(false)
-                      // D486(13): a plain click opens the player view modal;
+                      // D494 (R1529): a plain click opens the mini card first;
                       // a modified click (new tab) keeps the deep link.
                       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
                       e.preventDefault()
-                      openPlayerView(p.id)
+                      openPlayer(p.id)
                     }}
                     className="flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-accent-soft"
                   >

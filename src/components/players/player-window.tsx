@@ -75,10 +75,11 @@ export function PlayerWindow({
   // closing the mini card first (kit behavior). Opened from a league, the
   // modal keeps that league. The page underneath is never navigated.
   const expandLeagueId = context.kind === 'league' ? context.leagueId : null
+  // D494: Expand carries the list context too, so the modal keeps Remove.
   const handleExpand = useCallback(() => {
     closeWindow(playerId)
-    openPlayerView(playerId, expandLeagueId)
-  }, [closeWindow, playerId, openPlayerView, expandLeagueId])
+    openPlayerView(playerId, expandLeagueId, listContext)
+  }, [closeWindow, playerId, openPlayerView, expandLeagueId, listContext])
 
   const tabs: DetailWindowTab[] = data
     ? [
