@@ -224,6 +224,14 @@ export interface WaiverClaimView {
   created_at: string
   created_by: string
   cancelled_at: string | null
+  /** D495 (Chris 2026-10-05): on a LOST claim only, the team that won the
+   *  same player in the same waiver run and what it paid — read from the
+   *  winner's member-visible `waiver_claim` transaction, never from another
+   *  team's claim row (E13: pending bids stay blind). Absent / null on every
+   *  other status, or when the winning move can't be found. */
+  winner_team_id?: string | null
+  winner_team_name?: string | null
+  winning_bid?: number | null
 }
 
 export interface WaiverClaimsDocument {
@@ -338,6 +346,9 @@ export async function readClaims(
     created_by: r.created_by,
     cancelled_at: r.cancelled_at,
   }))
+  const winnersRefused = await attachLostClaimWinners(supabase, leagueId, claims)
+  if (winnersRefused) return winnersRefused
+
   // Pending first in the team's own order; settled ones stay newest first
   // (the read's order — Array.prototype.sort is stable).
   claims.sort((a, b) => {
@@ -363,6 +374,53 @@ export async function readClaims(
     claims,
   }
   return { status: 200, body: doc as unknown as Json }
+}
+
+/** D495: for each LOST claim, the claim that WON the same player in the same
+ *  run. The waiver processor writes one `waiver_claim` transaction per win
+ *  (payload `add_player_id`, `run_at` = the run, `faab_bid` = what it paid —
+ *  157/160) and stamps every claim it settles with `process_at` = that run.
+ *  Transactions are readable by league members (109), so this needs no new
+ *  grant and never touches another team's claim row: a pending claim has no
+ *  winner and gets nothing. Mutates `claims` in place. */
+async function attachLostClaimWinners(supabase: Supabase, leagueId: string, claims: WaiverClaimView[]): Promise<ServiceResult | null> {
+  const lost = claims.filter((c) => c.status === 'lost' && c.process_at)
+  if (lost.length === 0) return null
+  const addIds = [...new Set(lost.map((c) => c.add.player_id))]
+  const { data: txns, error } = await supabase
+    .from('transactions')
+    .select('initiator_team_id, payload')
+    .eq('league_id', leagueId)
+    .eq('type', 'waiver_claim')
+    .in('payload->>add_player_id', addIds)
+  if (error) return dbFailure('transactions', error)
+  const rows = txns ?? []
+  const capped = assertBelowPostgrestCap(rows, 'transactions')
+  if (capped) return capped
+
+  const winners = new Map<string, { teamId: string; bid: number | null }>()
+  for (const t of rows) {
+    const p = (t.payload ?? {}) as Record<string, unknown>
+    const runAt = typeof p.run_at === 'string' ? Date.parse(p.run_at) : NaN
+    const player = typeof p.add_player_id === 'string' ? p.add_player_id : null
+    const teamId = typeof p.team_id === 'string' ? p.team_id : t.initiator_team_id
+    if (!player || !teamId || Number.isNaN(runAt)) continue
+    winners.set(`${player}|${runAt}`, { teamId, bid: typeof p.faab_bid === 'number' ? p.faab_bid : null })
+  }
+  const matched = lost.map((c) => ({ c, w: winners.get(`${c.add.player_id}|${Date.parse(c.process_at as string)}`) }))
+  const teamIds = [...new Set(matched.flatMap(({ w }) => (w ? [w.teamId] : [])))]
+  const names = new Map<string, string>()
+  if (teamIds.length > 0) {
+    const { data: teams, error: teamsError } = await supabase.from('teams').select('id, name').eq('league_id', leagueId).in('id', teamIds)
+    if (teamsError) return dbFailure('teams', teamsError)
+    for (const t of teams ?? []) names.set(t.id, t.name)
+  }
+  for (const { c, w } of matched) {
+    c.winner_team_id = w?.teamId ?? null
+    c.winner_team_name = w ? (names.get(w.teamId) ?? null) : null
+    c.winning_bid = w?.bid ?? null
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------

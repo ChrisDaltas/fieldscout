@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { type ReactNode, useMemo, useState } from 'react'
 
 import { leagueCardContext } from '@/components/players/player-card-context'
-import { TextWithPlayers } from '@/components/players/player-link'
+import { PlayerLink, TextWithPlayers } from '@/components/players/player-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +19,7 @@ import type { WaiverClaimView, WaiverClaimsDocument } from '@/lib/leagues/api/wa
 
 import { feedLines } from './activity-feed-ops'
 import { ADD_DROP_TYPES, activityHref } from './activity-page-ops'
+import { TeamNameLink } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import {
@@ -30,6 +31,7 @@ import {
   TRANSACTIONS_ERROR_TITLE,
   TRANSACTIONS_MOVES_LIMIT,
   TRANSACTIONS_TITLE,
+  lostClaimWinner,
   mergeTransactions,
   pendingClaimCount,
 } from './team-transactions-ops'
@@ -211,6 +213,8 @@ export function TeamTransactionsPanelView({
                   if (entry.kind === 'claim' && entry.claim.status !== 'pending') {
                     // Chris 2026-10-05: a lost / invalid claim is a feed entry, said plainly.
                     const outcome = claimOutcome(entry.claim, claimsDoc?.waiver_type ?? null)
+                    // D495: a lost claim names the winner when the read carries one.
+                    const winner = lostClaimWinner(entry.claim, claimsDoc?.waiver_type ?? null)
                     return (
                       <li key={entry.id} className="flex flex-col gap-0.5 py-1.5" data-transaction="claim-result" data-claim-result={entry.claim.status}>
                         <div className="flex min-w-0 items-center gap-2">
@@ -225,7 +229,19 @@ export function TeamTransactionsPanelView({
                               {when.local}
                             </span>
                           )}
-                          {outcome.detail && <span data-claim-result-detail>{outcome.detail}</span>}
+                          {winner ? (
+                            <span data-claim-result-detail data-claim-winner={winner.winnerTeamId}>
+                              <TeamNameLink name={winner.winnerTeamName} leagueId={leagueId} teamId={winner.winnerTeamId} className="font-bold text-ink" /> won{' '}
+                              <PlayerLink
+                                playerId={entry.claim.add.player_id}
+                                name={entry.claim.add.full_name ?? entry.claim.add.player_id}
+                                context={leagueCardContext(leagueId)}
+                              />
+                              {winner.priceSuffix} {winner.reason}
+                            </span>
+                          ) : (
+                            outcome.detail && <span data-claim-result-detail>{outcome.detail}</span>
+                          )}
                         </div>
                       </li>
                     )

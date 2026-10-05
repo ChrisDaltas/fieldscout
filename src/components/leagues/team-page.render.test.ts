@@ -186,7 +186,7 @@ interface Seed {
   /** L.D3.12: the trade deadline read (162) — unseeded = still loading. */
   deadline?: TradeDeadlineState
   /** The viewer's pending waiver claims read — unseeded = still loading. */
-  claims?: 'error' | 'empty' | 'one' | 'two' | 'lost'
+  claims?: 'error' | 'empty' | 'one' | 'two' | 'lost' | 'lost-winner'
   /** This team's adds / drops (the activity read) — unseeded = still loading. */
   moves?: 'error' | 'empty' | 'one'
 }
@@ -252,6 +252,18 @@ function renderTeamPage(seed: Seed = {}): string {
           ? [
               claimRow('claim-a', 'pending', 'Claimed Receiver', '2099-09-15T12:00:00.000Z'),
               claimRow('claim-b', 'pending', 'Second Claim', '2099-09-15T13:00:00.000Z'),
+            ]
+          : seed.claims === 'lost-winner'
+          ? [
+              {
+                ...claimRow('claim-w', 'lost', 'Puka Nacua', '2099-09-10T12:00:00.000Z'),
+                faab_bid: 9,
+                result_reason: 'lost_on_bid',
+                processed_at: '2099-09-16T07:00:00.000Z',
+                winner_team_id: 'team-x',
+                winner_team_name: 'Team X',
+                winning_bid: 14,
+              },
             ]
           : seed.claims === 'lost'
           ? [
@@ -1308,5 +1320,12 @@ describe('the Transactions panel on My Team (Chris 2026-10-04)', () => {
     expect(html).toContain('Lost Runner')
     expect(html).toContain('Another team bid more.')
     expect(html).not.toContain('Cancelled Guy')
+  })
+  it('D495: a LOST claim with a winner names the team (linked) and the player (linked), the price and why yours failed', () => {
+    const html = renderTeamPage({ claims: 'lost-winner', moves: 'empty' })
+    expect(html).toContain('data-claim-winner="team-x"')
+    expect(html).toContain('data-team-link="team-x"')
+    expect(html).toMatch(/>Team X<\/a> won <button[^>]*data-player-link="p-claim-w"[^>]*>Puka Nacua<\/button> \(\$14\)\. Your \$9 claim was outbid\./)
+    expect(html).not.toContain('Another team bid more.')
   })
 })

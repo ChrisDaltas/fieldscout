@@ -449,3 +449,98 @@ describe('the league detail carries the waiver window (L.D2.13, F425) — over t
     expect((plain.body as { waiver_window: unknown }).waiver_window).toBeNull()
   })
 })
+
+describe('D495 — a LOST claim names the team that won the player (status=all)', () => {
+  // One settled run, written as the processor writes it (157/160): team A's
+  // lost claim stamped process_at = the run; team B's win as a member-visible
+  // `waiver_claim` transaction carrying run_at / add_player_id / faab_bid.
+  const RUN = '2099-09-16T07:00:00+00:00'
+  const OTHER_RUN = '2099-09-09T07:00:00+00:00'
+  const SECRET_BID = 77
+
+  beforeAll(async () => {
+    const { data: aUser } = await managerAClient.auth.getUser()
+    const { data: bUser } = await managerBClient.auth.getUser()
+    const { error: claimsError } = await service.from('waiver_claims').insert([
+      {
+        league_id: leagueId,
+        team_id: teamAId,
+        add_player_id: PLAYERS[2].id,
+        faab_bid: 9,
+        status: 'lost',
+        result_reason: 'lost_on_bid',
+        process_at: RUN,
+        processed_at: RUN,
+        action_id: A(51),
+        created_by: aUser.user!.id,
+      },
+      // Team B's still-PENDING blind bid — never shown to team A.
+      {
+        league_id: leagueId,
+        team_id: teamBId,
+        add_player_id: PLAYERS[1].id,
+        faab_bid: SECRET_BID,
+        status: 'pending',
+        result_reason: null,
+        process_at: null,
+        processed_at: null,
+        action_id: A(52),
+        created_by: bUser.user!.id,
+      },
+    ])
+    if (claimsError) throw new Error(`waiver_claims insert: ${claimsError.message}`)
+    const txn = (id: string, runAt: string, bid: number, action: string) => ({
+      id,
+      league_id: leagueId,
+      type: 'waiver_claim',
+      status: 'complete',
+      initiator_team_id: teamBId,
+      initiated_by: bUser.user!.id,
+      action_id: action,
+      payload: { type: 'waiver_claim', team_id: teamBId, add_player_id: PLAYERS[2].id, run_at: runAt, faab_bid: bid },
+    })
+    const { error: txnError } = await service.from('transactions').insert([
+      txn(A(61), RUN, 14, A(62)),
+      // The same player won at a DIFFERENT run — must not be matched.
+      txn(A(63), OTHER_RUN, 99, A(64)),
+    ])
+    if (txnError) throw new Error(`transactions insert: ${txnError.message}`)
+  })
+
+  it('the manager’s lost claim carries the winner’s team, name and winning bid; pending ones carry nothing', async () => {
+    const res = await readClaims(managerAClient, leagueId, managerAId, { status: 'all' })
+    expect(res.status).toBe(200)
+    const claims = doc(res.body).claims
+    const lost = claims.find((c) => c.status === 'lost')!
+    expect(lost).toMatchObject({ faab_bid: 9, winner_team_id: teamBId, winner_team_name: 'WAPI Manager B Team', winning_bid: 14 })
+    const pending = claims.filter((c) => c.status === 'pending')
+    expect(pending.length).toBeGreaterThan(0)
+    for (const c of pending) {
+      expect(c.winner_team_id).toBeUndefined()
+      expect(c.winning_bid).toBeUndefined()
+    }
+    // Team B's pending blind bid never reaches team A's read, in any field.
+    const text = JSON.stringify(res.body)
+    expect(text).not.toContain(`:${SECRET_BID}`)
+    expect(text).not.toContain(A(52))
+  })
+
+  it('team B’s own read never shows team A’s lost $9 claim; peeking at team A is still a 403', async () => {
+    const { data: bUser } = await managerBClient.auth.getUser()
+    const own = doc((await readClaims(managerBClient, leagueId, bUser.user!.id, { status: 'all' })).body)
+    expect(own.claims.every((c) => c.team_id === teamBId)).toBe(true)
+    expect(own.claims.some((c) => c.status === 'lost')).toBe(false)
+    expect((await readClaims(managerBClient, leagueId, bUser.user!.id, { status: 'all', team_id: teamAId })).status).toBe(403)
+  })
+
+  it('a non-member gets the no-leak 403 for status=all — and RLS hands him no transaction either', async () => {
+    const { data: o } = await outsiderClient.auth.getUser()
+    expect(await readClaims(outsiderClient, leagueId, o.user!.id, { status: 'all' })).toStrictEqual({
+      status: 403,
+      body: { error: INSEASON_READ_FORBIDDEN_MESSAGE },
+    })
+    const { data, error } = await outsiderClient.from('transactions').select('id').eq('league_id', leagueId)
+    expect(error).toBeNull()
+    expect(data).toStrictEqual([])
+  })
+})
