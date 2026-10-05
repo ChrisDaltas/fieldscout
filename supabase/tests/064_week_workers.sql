@@ -530,7 +530,7 @@ select is((select state from league_player_pool where player_id = 'ww-fa-kc'), '
 select ok(pg_temp.ww_agrees('2026-09-29 03:59:59+00'), 'D4c AGREEMENT at release −1s');
 select set_config('pgtap.r', public.lineup_lock_tick('2026-09-29 04:00:00+00')::text, true);
 select is((select string_agg(state || ':' || coalesce(locked_until::text, 'null'), ',' order by player_id) from league_player_pool where league_id = 'b6000000-0000-4000-8000-000000000001'),
-  'free_agent:null,rostered:null,on_waivers:null', 'D5 release AT: every row unlocked; locked_in_game → free_agent; rostered/on_waivers unchanged');
+  'free_agent:null,rostered:null,rostered:null,rostered:null,rostered:null,rostered:null,on_waivers:null', 'D5 release AT: every row unlocked; locked_in_game → free_agent; rostered/on_waivers unchanged (181: the four drafted players now carry the tick''s rostered row too)');
 select ok(pg_temp.ww_agrees('2026-09-29 04:00:00+00'), 'D5b AGREEMENT at the release instant');
 
 -- The NULL-stamp arm (F238): the week''s last game end NOT recorded ⇒ 'infinity'.

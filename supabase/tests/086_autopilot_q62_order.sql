@@ -62,6 +62,24 @@ set local search_path = public, extensions;
 
 select plan(85);
 
+-- pg_temp.un181 — migration 181's one tick hunk removed (pgTAP 129 pins it);
+-- an identity on every other body. Applied INNERMOST.
+create function pg_temp.un181(p_src text) returns text language sql as $un181$
+  select replace(p_src, $h$        -- 181 (D496): every ROSTERED player has a pool row before the view
+        -- runs. A drafted player never passed through the pool (072's draft
+        -- writes league_rosters only; pool rows are lazy, D294), so the view
+        -- below never judged him and My Team showed him unlocked while
+        -- set_lineup refused him. The row is the D294 mirror's own shape
+        -- ('rostered'); an existing row of any state is left alone.
+        INSERT INTO public.league_player_pool (league_id, player_id, state, updated_at)
+        SELECT r.league_id, r.player_id, 'rostered', p_now
+        FROM public.league_rosters r
+        WHERE r.league_id = v_lg.id
+        ON CONFLICT (league_id, player_id) DO NOTHING;
+
+$h$, '')
+$un181$;
+
 -- L.D2.19 (migration 165 — additive, the R992 shape): pg_temp.un165 reverses
 -- 165 substitutions in the two bodies it replaced (commish_edit_lineup_
 -- internal, lineup_carry_internal) and is an identity on every other body
@@ -163,7 +181,7 @@ select ok(
 -- is REVERSED first, so A7 / A7b keep proving exactly what they proved: 138's
 -- text is intact beneath 139, and 125's beneath that.
 select is(
-  (select md5(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
+  (select md5(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(p.prosrc)),
   E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
   E''),
   E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
@@ -178,7 +196,7 @@ select is(
   '2040f93b901c6224e39a973fc958f1a0',
   'A7 lineup_lock_tick is 138''s FILE TEXT beneath 139''s five hunks (prosrc with 139''s hunks reversed — md5 a stored literal; re-pinned by #316''s fix round, R1122: 125''s text plus ONE hunk)');
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(pg_temp.un157(p.prosrc),
+  (select md5(replace(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(p.prosrc)),
   E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
   E''),
   E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
