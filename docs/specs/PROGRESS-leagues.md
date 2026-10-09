@@ -459,23 +459,23 @@ Task breakdown, interface sketches, and per-task Builder prompts: **`docs/specs/
 
 **Q87 — What should the commissioner's page be?** — ✅ **RECORDED AS A DESIGN CHOICE, NOT A RULING, 2026-09-29.** Chris: *"Okay i guess not sure why we're declaring this."* The console is a "needs you now" launchpad plus one button per kind of tool (each opening the right screen with override mode on) and the last few actions; the tools stay on their surfaces (TD11 → D443). Spec §10.1 (+ §16.2, §18, Appendix C).
 
-**Q95–Q102 — FILED 2026-10-03 FROM THE M8 BREAKDOWN'S §11 (`tasks-M8-admin-console.md`, PR docs/M8-breakdown). Q88–Q94 are the M7 breakdown's (PR #391, ruled by Chris 2026-10-03). OPEN — awaiting Chris. Full option text is in the breakdown's §11; one line each here.**
+**Q95–Q102 — FILED 2026-10-03 FROM THE M8 BREAKDOWN'S §11 (`tasks-M8-admin-console.md`, PR docs/M8-breakdown). Q88–Q94 are the M7 breakdown's (PR #391, ruled by Chris 2026-10-03). — ALL ANSWERED by Chris 2026-10-08 (breakdown APPROVED; M8 active, NEXT L.G1.0). Full option text is in the breakdown's §11; one line each here.**
 
-**Q95 — Who counts as a platform admin?** — OPEN. Recommend: reuse the existing "is admin" profile switch; roles later. Blocks L.G1.1.
+**Q95 — Who counts as a platform admin?** — ✅ **ANSWERED 2026-10-08.** Chris: the existing is_admin switch. Chris is the only admin. Unblocks L.G1.1. *(Was: Recommend: reuse the existing "is admin" profile switch; roles later. Blocks L.G1.1.)*
 
-**Q96 — Where does the admin console live?** — OPEN. Recommend: an Admin page inside the app, invisible to non-admins ("page not found" if guessed). Blocks L.G1.6.
+**Q96 — Where does the admin console live?** — ✅ **ANSWERED 2026-10-08.** Chris: an in-app Admin page at /app/admin, hidden for non-admins; the server returns 404 to them. Unblocks L.G1.6. *(Was: Recommend: an Admin page inside the app, invisible to non-admins ("page not found" if guessed). Blocks L.G1.6.)*
 
-**Q97 — Where does a hand-sent notice show up, and who gets a platform-wide one?** — OPEN. Recommend: in-app only for now; platform-wide goes to everyone in any league. Blocks L.G1.2.
+**Q97 — Where does a hand-sent notice show up, and who gets a platform-wide one?** — ✅ **ANSWERED 2026-10-08.** Chris: every manual notice lets the sender choose the audience — everyone in any league, every app user, or one league's members. Channel: the in-app bell now; designed so email and push can be added later as extra checkboxes; no email or push built. Unblocks L.G1.2. *(Was: Recommend: in-app only for now; platform-wide goes to everyone in any league. Blocks L.G1.2.)*
 
-**Q98 — Which automatic jobs get pause / resume / run-now?** — OPEN. Recommend: waivers, lineup locking, week advance, week finalize. Blocks L.G1.3.
+**Q98 — Which automatic jobs get pause / resume / run-now?** — ✅ **ANSWERED 2026-10-08.** Chris: pause, resume and run-now for waivers, week advance and week finalize. Lineup locking gets run-now only, NO pause (pausing would let people move players after kickoff). Drafts and stat syncing get no buttons. Unblocks L.G1.3. *(Was: Recommend: waivers, lineup locking, week advance, week finalize. Blocks L.G1.3.)*
 
-**Q99 — Can an admin finalize a week while a game is unplayed?** — OPEN. Recommend: no separate button — mark the game postponed/cancelled and the normal rule (E43, players score 0) finishes the week. Blocks L.G1.4.
+**Q99 — Can an admin finalize a week while a game is unplayed?** — ✅ **ANSWERED 2026-10-08.** Chris: (a). No "finalize anyway". The admin marks the game first and the normal E43 rule closes the week. TD6's forced-finalize exception and the finalized_by marker are dropped; the gate text has no exception. Unblocks L.G1.4. *(Was: Recommend: no separate button — mark the game postponed/cancelled and the normal rule (E43, players score 0) finishes the week. Blocks L.G1.4.)*
 
-**Q100 — Can an admin mark an NFL game moved-within-week / moved-out-of-week / cancelled? (answers Q37 / F243)** — OPEN. Recommend: yes; the stat sync may not undo it. Blocks L.G1.4.
+**Q100 — Can an admin mark an NFL game moved-within-week / moved-out-of-week / cancelled? (answers Q37 / F243)** — ✅ **ANSWERED 2026-10-08.** Chris: yes. Three choices — moved later this week (the week waits), moved out of the week, or cancelled (both: players score 0 and the week closes). The sync respects operator_hold; the admin can switch it back. Answers Q37 and F243 (discharged by L.G1.4). Unblocks L.G1.4. *(Was: Recommend: yes; the stat sync may not undo it. Blocks L.G1.4.)*
 
-**Q101 — Do league members see an admin action on their league?** — OPEN. Recommend: yes, one activity line signed "FieldScout". Blocks L.G1.2's league line.
+**Q101 — Do league members see an admin action on their league?** — ✅ **ANSWERED 2026-10-08.** Chris: (a). A line in that league's activity, signed "FieldScout". *(Was: Recommend: yes, one activity line signed "FieldScout". Blocks L.G1.2's league line.)*
 
-**Q102 — Q91 said no emergency switches until launch; is a manual "pause waivers" button okay now?** — OPEN. Recommend: yes — manual buttons in M8; M7 later adds only the automatic side on the same mechanism. Blocks L.G1.3.
+**Q102 — Q91 said no emergency switches until launch; is a manual "pause waivers" button okay now?** — ✅ **ANSWERED 2026-10-08.** Chris: yes. Build the manual buttons now; at launch M7 adds only the automatic and alert side on top of the same mechanism. *(Was: Recommend: yes — manual buttons in M8; M7 later adds only the automatic side on the same mechanism. Blocks L.G1.3.)*
 
 **Q60–Q64 — FILED 2026-09-11 BY M6A L.E1.2, FROM THE APPROVED BREAKDOWN'S §11 (`tasks-M6A-commissioner-fallback.md`). None of them blocks starting M6A; each names exactly what it blocks. — ALL FIVE ✅ RULED by Chris 2026-09-27 (in chat), with the F377 read; spec v2.16.42; each ruling is recorded under its question with the original text kept; the build tasks are tasks-M6A §6 L.E1.18–L.E1.24 (the 2026-09-27 amendment).**
 

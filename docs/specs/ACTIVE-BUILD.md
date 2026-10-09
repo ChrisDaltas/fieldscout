@@ -9,9 +9,13 @@
 
 ---
 
-## Active: **NONE — no active build, awaiting Chris** *(M6 closed 2026-10-02 — D473. Production at **177** (pushed 2026-10-02 by the orchestrator; live `score_write_week_batch` md5 = `3ea8ee6417852e5d46dc79e8093a1daf`). Push debt: **178** (F525 + F524, D474); post-push check: live `draft_queue_replace` md5 = `69d64cbdfb4e9cbbab15f6a46fead4a7` and `draft_queue_for_team` md5 = `ceba0b5ec0d9e5bedaa0ab22f1a77099` (pgTAP 126 A2), and both `draft_queues` policies name `league_members`, no `owner_id` (126 A5).)*
+## Active: **M8 — Platform Admin Console** *(breakdown APPROVED by Chris 2026-10-08 with rulings on Q95–Q102; PR #394)*
 
-- **M8 breakdown drafted, awaiting Chris's approval** — `docs/specs/tasks-M8-admin-console.md` (branch `docs/M8-breakdown`; Q95–Q102). Not active until approved.
+- **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M8-admin-console.md` §6 (+ its APPROVED note and §11 rulings — Q95 `is_admin`, Chris the only admin; Q96 `/app/admin`, 404 to non-admins; Q97 three audiences, in-app bell only, email/push as future checkboxes; Q98 pause/resume/run-now for waivers, week advance, week finalize — lineup lock run-now only, no pause; drafts and stat sync no buttons; Q99 (a) no forced finalize, no `finalized_by`; Q100 three game statuses + `operator_hold`, answers Q37 / F243; Q101 (a) activity line signed "FieldScout"; Q102 manual buttons now, M7 adds the automatic side). **Memory:** `docs/specs/PROGRESS-leagues.md`. **Task-id prefix:** `L.G*` (`L.G1.*` operator tools, `L.G2.*` drill + gate).
+- **NEXT TAKEABLE TASK: `L.G1.0`** — spec fold-back of the M8 rulings (docs only, ONE PASS). Then L.G1.1 → L.G1.3 → L.G1.4 → L.G1.2 → L.G1.5 → L.G1.6 → L.G2.1 → L.G2.2 (breakdown §7).
+- **Process:** unchanged — the lighter pre-launch rule (Chris 2026-09-27): FULL rigour for scoring / standings / permissions / production writes; ONE PASS for UI / API / docs / e2e; no second re-review after a small fix round unless it touched scoring or permissions.
+- *(Carried from the previous "no active build" header: M6 closed 2026-10-02 — D473. Production at **177** (pushed 2026-10-02 by the orchestrator; live `score_write_week_batch` md5 = `3ea8ee6417852e5d46dc79e8093a1daf`). Push debt: **178** (F525 + F524, D474); post-push check: live `draft_queue_replace` md5 = `69d64cbdfb4e9cbbab15f6a46fead4a7` and `draft_queue_for_team` md5 = `ceba0b5ec0d9e5bedaa0ab22f1a77099` (pgTAP 126 A2), and both `draft_queues` policies name `league_members`, no `owner_id` (126 A5).)*)*
+
 
 ---
 
