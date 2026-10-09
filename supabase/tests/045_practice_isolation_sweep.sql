@@ -233,7 +233,14 @@ select is(
         'matchups',  -- 109/L.D1.1 (§12.8)
         'nfl_games', 'nfl_weeks', 'notifications',
         'persona_content_items', 'persona_context', 'persona_context_versions',
-        'persona_posts', 'persona_source_rankings', 'persona_sources', 'player_stats',
+        'persona_posts', 'persona_source_rankings', 'persona_sources',
+        -- 182 / M8 L.G1.1: the operator audit. UNREACHABLE from a mock (no
+        -- write policy for any role; written only by log_operator_action_internal,
+        -- revoked from every client and called by no mock RPC), so §C's and §E's
+        -- mid-state allowlists are re-derived UNCHANGED — the delta cells are
+        -- the proof. Census 91 → 92.
+        'platform_operator_actions',
+        'player_stats',
         'player_usage',
         -- 136 / M6A L.E1.19: the weekly projections store. UNREACHABLE from a
         -- mock (zero write policies; written only by the weekly projections
@@ -297,7 +304,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 91 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 92 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -342,8 +349,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 91 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 91::bigint,
+  'BASELINE: all 92 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 92::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------

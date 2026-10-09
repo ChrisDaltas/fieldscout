@@ -3378,6 +3378,56 @@ export type Database = {
           },
         ]
       }
+      platform_operator_actions: {
+        Row: {
+          action_id: string
+          actor_id: string
+          after: Json | null
+          before: Json | null
+          created_at: string
+          id: string
+          league_id: string | null
+          metadata: Json | null
+          reason: string | null
+          scope: string
+          verb: string
+        }
+        Insert: {
+          action_id: string
+          actor_id: string
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          id?: string
+          league_id?: string | null
+          metadata?: Json | null
+          reason?: string | null
+          scope: string
+          verb: string
+        }
+        Update: {
+          action_id?: string
+          actor_id?: string
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          id?: string
+          league_id?: string | null
+          metadata?: Json | null
+          reason?: string | null
+          scope?: string
+          verb?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_operator_actions_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_stats: {
         Row: {
           advanced: Json
@@ -6103,6 +6153,7 @@ export type Database = {
       }
       is_league_commish: { Args: { p_league_id: string }; Returns: boolean }
       is_league_member: { Args: { p_league_id: string }; Returns: boolean }
+      is_platform_operator: { Args: never; Returns: boolean }
       is_standalone_mock_launcher: {
         Args: { p_draft_id: string }
         Returns: boolean
@@ -6296,6 +6347,20 @@ export type Database = {
           p_reason: string
           p_target_id: string
           p_target_type: string
+        }
+        Returns: string
+      }
+      log_operator_action_internal: {
+        Args: {
+          p_action_id: string
+          p_actor_id: string
+          p_after: Json
+          p_before: Json
+          p_league_id: string
+          p_metadata?: Json
+          p_reason: string
+          p_scope: string
+          p_verb: string
         }
         Returns: string
       }
