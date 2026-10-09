@@ -200,6 +200,13 @@ select is(
         'draft_budget_adjustments',  -- 099/AP.6: the E69 replay store — UNREACHABLE from a mock (draft_adjust_budget refuses every mock by name, D138/038:1402), so §C's and §E's mid-state allowlists are re-derived UNCHANGED in the same PR
         'draft_dnd_marks', 'draft_liveness', 'draft_picks', 'draft_queues', 'drafts',
         'expert_claim_requests', 'expert_follows', 'expert_profiles', 'follows',
+        -- 183 / M8 L.G1.3: operator job pauses. UNREACHABLE from a mock (no
+        -- write policy for any role; written only by op_pause_job /
+        -- op_resume_job's internals, revoked from every client, and the
+        -- pause-note helper only stamps an existing pause row), so §C's and
+        -- §E's mid-state allowlists are re-derived UNCHANGED — the delta cells
+        -- are the proof. Census 92 → 93.
+        'job_pauses',
         'league_chat', 'league_invites', 'league_lists', 'league_members',
         'league_player_pool',  -- 109/L.D1.1 (§12.19)
         -- 137 / M6A L.E1.20: autopilot's league-scored player values.
@@ -304,7 +311,7 @@ select is(
         -- mock engine never will — §8.8's zero-side-effect contract), so §C's
         -- and §E's mid-state allowlists are re-derived UNCHANGED in the same
         -- PR — the delta cells below are the proof, not this comment.
-  'THE CENSUS, as a stored literal: the 92 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
+  'THE CENSUS, as a stored literal: the 93 public tables BY NAME, sorted. A migration that adds, drops or renames one moves this list — re-derive §C''s and §E''s mid-state allowlists in the same PR, deliberately (the F84 enumerate-don''t-glob discipline applied to a schema)');
 
 -- The instrument: count + whole-row digest per table (R383/R499 — a count
 -- cannot see an in-place UPDATE; the digest is md5 over the table's rows as
@@ -349,8 +356,8 @@ select is(
   'PRECONDITION: no committed scheduled league is past its D94 auto-start instant — our tick would start it inside the snapshot (the F49 fixture-instant class, asserted rather than assumed)');
 
 select lives_ok($$ select pg_temp.mp11_take('before') $$,
-  'BASELINE: all 92 tables snapshotted (count + whole-row digest each)');
-select is((select count(*) from mp11_snap where phase = 'before'), 92::bigint,
+  'BASELINE: all 93 tables snapshotted (count + whole-row digest each)');
+select is((select count(*) from mp11_snap where phase = 'before'), 93::bigint,
   '…one row per table');
 
 -- ---------------------------------------------------------------------------

@@ -57,6 +57,14 @@ select plan(24);
 
 -- pg_temp.un181 — migration 181's one tick hunk removed (pgTAP 129 pins it);
 -- an identity on every other body. Applied INNERMOST.
+-- pg_temp.un183 — migration 183's two inserted lines per job body removed
+-- (each marked `183 / L.G1.3 (TD4)`); an identity on every other body.
+create function pg_temp.un183(p_src text) returns text language sql as $un183$
+  select regexp_replace(
+           regexp_replace(p_src,
+             E'\n\n  PERFORM public\\.job_pause_note_internal\\(''[a-z-]+'', p_league_id, p_now\\);   -- 183 / L\\.G1\\.3 \\(TD4\\)', '', 'g'),
+           E'        AND NOT public\\.job_paused_internal\\(''[a-z-]+'', l\\.id\\)   -- 183 / L\\.G1\\.3 \\(TD4\\)\n', '', 'g')
+$un183$;
 create function pg_temp.un181(p_src text) returns text language sql as $un181$
   select replace(p_src, $h$        -- 181 (D496): every ROSTERED player has a pool row before the view
         -- runs. A drafted player never passed through the pool (072's draft
@@ -198,13 +206,13 @@ select is(
   0,
   'A6 un165 is an identity on every other body in the schema — so the older suites that apply it innermost pin exactly what they pinned (additive, R992)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un166(pg_temp.un169(pg_temp.un181(p.prosrc)))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un166(pg_temp.un169(pg_temp.un181(pg_temp.un183(p.prosrc))))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'lineup_autopilot_internal', 'lineup_lock_tick', 'lineup_player_kickoff_internal',
                                                  'lineup_played_internal', 'lineup_record_kicked_off_internal', 'lineup_kept_starter_internal',
                                                  'lineup_kickoff_internal', 'commish_edit_lineup', 'league_week_advance', 'team_lineups_one_start_per_week')),
   'commish_edit_lineup=876d323ce50e0b305a29046a8fee0515 league_week_advance=1ea76a893bada31b54ebe1a82f004625 lineup_autopilot_internal=544d32c67abd3f3243ff1bfa568360ad lineup_kept_starter_internal=3f60bb975e57719c0be2de7f4ccdbb12 lineup_kickoff_internal=80b9c63efa3cb5bbef7b79863e9801a7 lineup_lock_tick=bcc10f9a40e99f7a1cf83e1c94f813f0 lineup_played_internal=aa79ff77ba714b19b6740c60202d8476 lineup_player_kickoff_internal=b14949f7f54de384bac2a49efdfd494d lineup_record_kicked_off_internal=9c54a4f3fb38bad956d6386d7748b777 set_lineup_internal=ca3307414057469da7ed5c0af0b29fe6 team_lineups_one_start_per_week=a1fb72fc17941cda5f7ddc0d15226b74',
-  'A7 UNTOUCHED (stored literals): set_lineup, autopilot and the tick (157), the played-lock helpers, the kept-start judgment (164), the team datum, the DEFINER door, the week advance and the one-start trigger (166 reversed innermost: 166 replaced the per-player datum, F501)');
+  'A7 UNTOUCHED (stored literals): set_lineup, autopilot and the tick (157), the played-lock helpers, the kept-start judgment (164), the team datum, the DEFINER door, the week advance and the one-start trigger (166 reversed innermost: 166 replaced the per-player datum, F501; 183''s two pause lines reversed first — L.G1.3)');
 select ok(
   obj_description('public.lineup_player_kickoff_internal(uuid, integer, integer, text, timestamptz)'::regprocedure, 'pg_proc')
     like '%since migration 165 (L.D2.19 — F497) by commish_edit_lineup_internal step (6) and lineup_carry_internal%',
