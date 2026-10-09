@@ -1571,6 +1571,70 @@ export type Database = {
           },
         ]
       }
+      job_pauses: {
+        Row: {
+          id: string
+          job: string
+          last_skipped_at: string | null
+          league_id: string | null
+          pause_action_id: string
+          paused_at: string
+          paused_by: string
+          resume_action_id: string | null
+          resumed_at: string | null
+          resumed_by: string | null
+          skipped_runs: number
+        }
+        Insert: {
+          id?: string
+          job: string
+          last_skipped_at?: string | null
+          league_id?: string | null
+          pause_action_id: string
+          paused_at: string
+          paused_by: string
+          resume_action_id?: string | null
+          resumed_at?: string | null
+          resumed_by?: string | null
+          skipped_runs?: number
+        }
+        Update: {
+          id?: string
+          job?: string
+          last_skipped_at?: string | null
+          league_id?: string | null
+          pause_action_id?: string
+          paused_at?: string
+          paused_by?: string
+          resume_action_id?: string | null
+          resumed_at?: string | null
+          resumed_by?: string | null
+          skipped_runs?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_pauses_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_pauses_paused_by_fkey"
+            columns: ["paused_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_pauses_resumed_by_fkey"
+            columns: ["resumed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       league_chat: {
         Row: {
           context: string | null
@@ -6158,6 +6222,14 @@ export type Database = {
         Args: { p_draft_id: string }
         Returns: boolean
       }
+      job_pause_note_internal: {
+        Args: { p_at: string; p_job: string; p_scope: string }
+        Returns: number
+      }
+      job_paused_internal: {
+        Args: { p_job: string; p_league_id: string }
+        Returns: boolean
+      }
       join_league_by_code: { Args: { p_code_or_slug: string }; Returns: Json }
       league_broadcast_payload: {
         Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
@@ -6396,6 +6468,81 @@ export type Database = {
       notify_list_followers: {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
+      }
+      op_job_check_internal: {
+        Args: { p_job: string; p_kind: string }
+        Returns: undefined
+      }
+      op_job_words_internal: { Args: { p_job: string }; Returns: string }
+      op_league_line_internal: {
+        Args: { p_league_id: string; p_text: string }
+        Returns: undefined
+      }
+      op_pause_job: {
+        Args: {
+          p_action_id?: string
+          p_job: string
+          p_league_id?: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      op_pause_job_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_job: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      op_resume_job: {
+        Args: {
+          p_action_id?: string
+          p_job: string
+          p_league_id?: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      op_resume_job_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_job: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      op_run_job_now: {
+        Args: {
+          p_action_id?: string
+          p_job: string
+          p_league_id?: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      op_run_job_now_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_job: string
+          p_league_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      op_verb_prelude_internal: {
+        Args: {
+          p_action_id: string
+          p_league_id: string
+          p_reason: string
+          p_verb: string
+        }
+        Returns: Json
       }
       player_points_rows_check_internal: {
         Args: {
