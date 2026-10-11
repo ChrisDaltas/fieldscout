@@ -3043,6 +3043,9 @@ export type Database = {
           home_team: string
           id: string
           kickoff_at: string
+          operator_hold: string | null
+          operator_hold_at: string | null
+          operator_hold_prior_status: string | null
           quarter: number | null
           season: number
           status: string | null
@@ -3058,6 +3061,9 @@ export type Database = {
           home_team: string
           id: string
           kickoff_at: string
+          operator_hold?: string | null
+          operator_hold_at?: string | null
+          operator_hold_prior_status?: string | null
           quarter?: number | null
           season: number
           status?: string | null
@@ -3073,6 +3079,9 @@ export type Database = {
           home_team?: string
           id?: string
           kickoff_at?: string
+          operator_hold?: string | null
+          operator_hold_at?: string | null
+          operator_hold_prior_status?: string | null
           quarter?: number | null
           season?: number
           status?: string | null
@@ -6535,6 +6544,25 @@ export type Database = {
         }
         Returns: Json
       }
+      op_set_game_status: {
+        Args: {
+          p_action_id?: string
+          p_game_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: Json
+      }
+      op_set_game_status_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_game_id: string
+          p_reason: string
+          p_status: string
+        }
+        Returns: Json
+      }
       op_verb_prelude_internal: {
         Args: {
           p_action_id: string
@@ -7466,6 +7494,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 

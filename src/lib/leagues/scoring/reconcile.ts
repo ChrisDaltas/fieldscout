@@ -477,16 +477,26 @@ export interface CalendarGameRow {
   status: string | null
   home_team: string
   away_team: string
+  /** Migration 184 (M8 TD7 / Q100): an operator's mark. ABSENT before 184 —
+   *  read through `select('*')` so the alert works on both sides of the push. */
+  operator_hold?: string | null
 }
 
 function gameStatus(g: CalendarGameRow): string {
   return g.status ?? 'scheduled'
 }
 
-/** 116's rule: a postponed game has LEFT the week only when its kickoff is at or past the next calendar week's start. */
+/** 116's rule (as 184 extends it): a postponed game has LEFT the week only when its kickoff is at or past the next calendar week's start —
+ *  or when an operator marked it moved out of the week / cancelled (M8 TD7 / Q100; NFL week 18 included). */
 export function inWeekGames(games: readonly CalendarGameRow[], week: number, nextStartsAt: string | null): CalendarGameRow[] {
   const nextMs = nextStartsAt === null ? null : new Date(nextStartsAt).getTime()
-  return games.filter((g) => g.week === week && !(gameStatus(g) === 'postponed' && nextMs !== null && new Date(g.kickoff_at).getTime() >= nextMs))
+  return games.filter(
+    (g) =>
+      g.week === week &&
+      g.operator_hold !== 'out_of_week' &&
+      g.operator_hold !== 'cancelled' &&
+      !(gameStatus(g) === 'postponed' && nextMs !== null && new Date(g.kickoff_at).getTime() >= nextMs),
+  )
 }
 
 /** The CALENDAR findings (pure over the two tables). */
@@ -629,7 +639,8 @@ async function readCalendarRows(db: ScoreWorkerClient, season: number): Promise<
     'nfl_weeks read',
   ) as CalendarWeekRow[]
   const games = await pageAll<CalendarGameRow>((from, to) =>
-    db.from('nfl_games').select('id, season, week, kickoff_at, status, home_team, away_team', { count: 'exact' }).eq('season', season).order('id').range(from, to),
+    // '*': `operator_hold` exists only from migration 184 (deploy before push, TD9).
+    db.from('nfl_games').select('*', { count: 'exact' }).eq('season', season).order('id').range(from, to),
   )
   return { weeks, games }
 }

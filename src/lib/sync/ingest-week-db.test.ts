@@ -248,7 +248,7 @@ describe('ingestWeek — the golden first poll and diff-awareness (§22.2/§23.2
     expect(report.ok).toBe(true)
     expect(report.degraded).toBe(false)
     expect(report.polledAt).toBe('2026-09-20T18:00:00.000Z')
-    expect(report.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 3, updated: 0, unchanged: 0 })
+    expect(report.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 3, updated: 0, unchanged: 0, held: 0 })
     expect(report.weeks).toEqual({ touched: 1, updated: 1, unchanged: 0, outsideCalendar: 0 })
     expect(report.stats).toEqual({
       seen: 6,
@@ -318,7 +318,7 @@ describe('ingestWeek — the golden first poll and diff-awareness (§22.2/§23.2
 
     const again = await poll(provider, clock, '2026-09-20T18:00:00Z', deps)
 
-    expect(again.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 3 })
+    expect(again.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 3, held: 0 })
     expect(again.weeks).toEqual({ touched: 1, updated: 0, unchanged: 1, outsideCalendar: 0 })
     expect(again.stats.inserted + again.stats.updated + again.stats.metaOnly).toBe(0)
     expect(again.stats.unchanged).toBe(6)
@@ -364,7 +364,7 @@ describe('ingestWeek — the golden first poll and diff-awareness (§22.2/§23.2
       advanced: { example_tracking_yards: 49 },
     })
     // A game status flip alone is a real nfl_games change; here nothing flipped.
-    expect(moved.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 3 })
+    expect(moved.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 3, held: 0 })
 
     // Drain (what the L.D2.2 worker will do), then +20 min: the K's line is the
     // one that did not move between 18:20 and 18:40 (measured) → 5 updates,
@@ -391,7 +391,7 @@ describe('E42 — flex_move moves nfl_games.kickoff_at at the announcement insta
     const deps = io()
 
     const first = await poll(provider, clock, '2026-09-17T12:00:00Z', deps)
-    expect(first.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 3, updated: 0, unchanged: 0 })
+    expect(first.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 3, updated: 0, unchanged: 0, held: 0 })
     expect(first.stats.seen).toBe(0) // Thursday — nothing has kicked off
     expect(first.reasons).toEqual([
       'provider returned zero stat rows for 2026 week 2',
@@ -400,11 +400,11 @@ describe('E42 — flex_move moves nfl_games.kickoff_at at the announcement insta
     expect((await storedGames()).get(G3)!.kickoff_at).toBe('2026-09-21T00:20:00.000Z')
 
     const before = await poll(provider, clock, '2026-09-17T19:59:59Z', deps)
-    expect(before.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 3 })
+    expect(before.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 3, held: 0 })
     expect((await storedGames()).get(G3)!.kickoff_at).toBe('2026-09-21T00:20:00.000Z')
 
     const at = await poll(provider, clock, '2026-09-17T20:00:00Z', deps)
-    expect(at.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 1, unchanged: 2 })
+    expect(at.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 1, unchanged: 2, held: 0 })
     const games = await storedGames()
     expect(games.get(G3)).toEqual({ kickoff_at: '2026-09-20T21:05:00.000Z', status: 'scheduled', updated_at: '2026-09-17T20:00:00.000Z' })
     expect(games.get(G1)!.updated_at).toBe('2026-09-17T12:00:00.000Z') // untouched rows keep their stamp
@@ -549,6 +549,59 @@ function renamed(inner: StatsProvider, name: string): StatsProvider {
   }
 }
 
+describe('M8 TD7 / Q100 — the sync respects operator_hold (migration 184)', () => {
+  const WEEK2_FLOOR = '2026-09-22T07:00:00.000Z'
+
+  async function storedHold(id: string): Promise<{ status: string; operator_hold: string | null }> {
+    const rows = await must(service.from('nfl_games').select('status, operator_hold').eq('id', id), 'read hold')
+    return (rows as Array<{ status: string; operator_hold: string | null }>)[0]
+  }
+
+  it('a held game is never written by the sync, its mark decides the week bounds, and clearing the mark lets the next poll write the feed again', async () => {
+    const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
+    const provider = synthetic('happy_path', clock)
+    const deps = io()
+    await poll(provider, clock, '2026-09-20T18:00:00Z', deps) // G1 live; G2 / G3 scheduled
+    // The operator cancels G3 (the row op_set_game_status writes: E43's
+    // 'postponed' + the hold + the status it replaced).
+    await must(
+      service
+        .from('nfl_games')
+        .update({ status: 'postponed', operator_hold: 'cancelled', operator_hold_at: '2026-09-20T19:00:00Z', operator_hold_prior_status: 'scheduled' })
+        .eq('id', G3)
+        .select('id'),
+      'mark G3',
+    )
+    const before = (await storedGames()).get(G3)!
+
+    // 01:00Z — the feed has G1 / G2 final and G3 LIVE.
+    const held = await poll(provider, clock, '2026-09-21T01:00:00Z', deps)
+    expect(held.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 2, unchanged: 0, held: 1 })
+    expect(held.reasons).toContain(
+      `nfl_games: 1 game(s) carry an operator mark (operator_hold) — the provider's row was not written: ${G3}`,
+    )
+    expect(await storedHold(G3)).toEqual({ status: 'postponed', operator_hold: 'cancelled' })
+    expect((await storedGames()).get(G3)).toEqual(before) // not one byte, updated_at included
+    // The cancelled game has left the week: G1 / G2 final ⇒ the week releases
+    // (held to Q50's floor). Without the hold G3 is live and this is NULL.
+    expect(await storedWeek()).toEqual({ first_kickoff_at: '2026-09-20T17:00:00.000Z', last_game_ends_at: WEEK2_FLOOR })
+
+    // Switched back: the hold clears (op_set_game_status 'normal' restores
+    // the prior status), and the next poll writes the feed's row again.
+    await must(
+      service
+        .from('nfl_games')
+        .update({ status: 'scheduled', operator_hold: null, operator_hold_at: null, operator_hold_prior_status: null })
+        .eq('id', G3)
+        .select('id'),
+      'clear G3',
+    )
+    const cleared = await poll(provider, clock, '2026-09-21T01:01:00Z', deps)
+    expect(cleared.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 1, unchanged: 2, held: 0 })
+    expect(await storedHold(G3)).toEqual({ status: 'live', operator_hold: null })
+  })
+})
+
 describe('F13 — provenance follows provider.name, per provider', () => {
   it('a second provider over identical lines flips ONLY source (metaOnly, not a scoring delta — nothing enqueued)', async () => {
     const clock = new VirtualClock(new Date('2026-09-20T18:00:00Z'))
@@ -593,7 +646,7 @@ describe('R707 — a schedule week outside the calendar is skipped and counted, 
     const report = await poll(provider, clock, '2026-09-20T18:00:00Z', io())
 
     expect(report.ok).toBe(true)
-    expect(report.games).toEqual({ seen: 5, withoutKickoff: 0, inserted: 5, updated: 0, unchanged: 0 })
+    expect(report.games).toEqual({ seen: 5, withoutKickoff: 0, inserted: 5, updated: 0, unchanged: 0, held: 0 })
     // touched = updated + unchanged + outsideCalendar: weeks 2 and 18 updated, 19 skipped.
     expect(report.weeks).toEqual({ touched: 3, updated: 2, unchanged: 0, outsideCalendar: 1 })
     expect(report.reasons).toEqual([
@@ -660,7 +713,7 @@ describe('loud emptiness (CLAUDE.md) — every skip is counted and named', () =>
       getWeekStats: async () => [],
     }
     const report = await poll(dayOnly, clock, '2026-09-20T18:00:00Z', io())
-    expect(report.games).toEqual({ seen: 3, withoutKickoff: 3, inserted: 0, updated: 0, unchanged: 0 })
+    expect(report.games).toEqual({ seen: 3, withoutKickoff: 3, inserted: 0, updated: 0, unchanged: 0, held: 0 })
     expect(report.weeks).toEqual({ touched: 0, updated: 0, unchanged: 0, outsideCalendar: 0 })
     expect(report.reasons[0]).toBe(
       'nfl_games untouched: none of the 3 games carry a kickoff timestamp (sleeper tier — F11 supplies them)',

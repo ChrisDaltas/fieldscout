@@ -26,6 +26,7 @@ import {
   toGameRow,
   toStatRow,
   weekBounds,
+  withoutHeldGames,
   type GameRow,
   type StatRow,
   type ToStatRowContext,
@@ -82,6 +83,14 @@ describe('toGameRow', () => {
 
   it('returns null for a tier without kickoff timestamps (the sleeper tier, Q1) — kickoff_at is NOT NULL', () => {
     expect(toGameRow({ ...G1, kickoffAt: null })).toBeNull()
+  })
+})
+
+describe('withoutHeldGames (M8 TD7 / Q100 — the sync respects operator_hold)', () => {
+  it('splits the provider rows: a held id is never writable; an unheld one always is', () => {
+    const other: GameRow = { ...G1_ROW, id: 'other' }
+    expect(withoutHeldGames([G1_ROW, other], new Set([G1_ROW.id]))).toEqual({ writable: [other], held: [G1_ROW] })
+    expect(withoutHeldGames([G1_ROW, other], new Set())).toEqual({ writable: [G1_ROW, other], held: [] })
   })
 })
 
