@@ -1,10 +1,12 @@
 import type { Config } from 'tailwindcss'
 import tailwindcssAnimate from 'tailwindcss-animate'
 
-// Field Scout neo-brutalist theme. Values from the redesign package tokens,
-// pre-scaled ×0.8 (the prototype renders at 0.8 zoom — we match the painted
-// result). Single theme: palette is literal hex here; the HSL-triplet vars in
-// globals.css exist only as the legacy shadcn compatibility layer.
+// FieldScout v7 theme (Claude Design "FieldScout Next v7", ruled 2026-10-12).
+// Values are v7's literal numbers — the old ×0.8 pre-scaling is retired.
+// Token NAMES are kept from the previous system and retargeted in place, so
+// every screen picks up the v7 look; screens are then re-laid-out one by one.
+// Single theme: palette is literal hex here; the HSL-triplet vars in
+// globals.css are the shadcn compatibility layer.
 const config: Config = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -23,28 +25,31 @@ const config: Config = {
         silkscreen: ['var(--font-silkscreen)', 'monospace'],
       },
       colors: {
-        /* ---- Field Scout palette (use these on reskinned surfaces) ---- */
-        page: '#e4e5e8', // flat light-grey page background
-        ink: { DEFAULT: '#0B0C10', 2: '#161616' },
-        n: { 1: '#000000', 2: '#161616', 3: '#5f646d', 4: '#e7e8e9' },
-        // Ultramarine — "do a thing": buttons, tabs, selection, links, AI.
+        /* ---- FieldScout palette — v7 values ---- */
+        page: '#FFFFFF', // v7 page is white; sunken fills use n-5 / muted
+        ink: { DEFAULT: '#1D1D1F', 2: '#3A3A3C' },
+        // Grey ramp: 1 ink, 2 strong secondary, 3 secondary text, 4 hairline,
+        // 5 sunken fill, 6 tertiary text (v7's most-used grey).
+        n: { 1: '#1D1D1F', 2: '#3A3A3C', 3: '#6E6E73', 4: '#EBEBEE', 5: '#F5F5F7', 6: '#8E8E93' },
+        // v7 blue — "do a thing": buttons, tabs, selection, links, AI.
         accent: {
-          DEFAULT: '#3d5cff',
-          strong: '#2a44e0',
-          soft: '#dce4ff',
+          DEFAULT: '#0088FF',
+          strong: '#0074DB',
+          soft: '#EAF4FF',
           foreground: '#ffffff',
         },
-        // Lime — "look here": live signals, alerts, callouts. Never controls.
+        // v7 green — "look here": live dots, the logo tile. Never controls.
         brand: {
-          DEFAULT: '#b4ff89',
-          strong: '#5da62f',
-          soft: '#e9ffd9',
-          foreground: '#000000',
+          DEFAULT: '#07D066',
+          strong: '#07A852',
+          soft: '#E6F9EE',
+          foreground: '#1D1D1F',
         },
         // Reserved football semantics: only up/down/caution — never identity.
-        positive: { DEFAULT: '#98e9ab', soft: '#eafbee', strong: '#2e9c56' },
-        negative: { DEFAULT: '#e99898', soft: '#fbeaea', strong: '#c0392b' },
-        caution: { DEFAULT: '#fae8a4', soft: '#fefaed', strong: '#b98900' },
+        // DEFAULT = tinted fill (ink text), soft = wash, strong = text/icon.
+        positive: { DEFAULT: '#C8F2D9', soft: '#EAF9F0', strong: '#07A852' },
+        negative: { DEFAULT: '#FFD3D9', soft: '#FFF0F2', strong: '#FF0028' },
+        caution: { DEFAULT: '#FFE58A', soft: '#FFF6D6', strong: '#E07B00' },
         // OPRK pills (D497, Chris 2026-10-05): soft tint + very dark text of the
         // same hue, no border. hard = 1–10 (red), mid = 11–22 (orange),
         // easy = 23–32 (green). Only `oprkPillClass` (my-team-ops.ts) uses them.
@@ -55,16 +60,19 @@ const config: Config = {
         },
         // Locked-player indicator (D497): light yellow fill, dark yellow-brown glyph.
         lock: { DEFAULT: '#fff3b8', fg: '#5c4300' },
-        // Position identity — saturated fills, always white text.
+        // Position identity (v7). White text, except K and DEF/DST which are
+        // light fills and take ink text (`pos-text-dark`). IDP keeps a grey.
         pos: {
-          qb: '#d9591b',
-          rb: '#2c6fd6',
-          wr: '#7b40d4',
-          te: '#0e9488',
-          flex: '#c42e86',
-          k: '#6e7686',
-          def: '#3e4656',
+          qb: '#F75252',
+          rb: '#5C7CE5',
+          wr: '#9D70E9',
+          te: '#ECAD48',
+          flex: '#00A3A0',
+          k: '#D2E8E8',
+          def: '#FFE75E',
+          idp: '#8E8E93',
           text: '#ffffff',
+          'text-dark': '#1D1D1F',
         },
         // Tier ramp, 1 = best. Tiers 3–4 take dark text, the rest white.
         tier: {
@@ -175,17 +183,25 @@ const config: Config = {
           ring: 'hsl(var(--sidebar-ring))',
         },
       },
-      // Near-square corners are the system: every rounded-* is 1px. The only
-      // round things are avatars/status dots (rounded-full stays built in).
+      // `border-ink` was the previous system's "1px ink edge that separates a
+      // surface from the page" (334 call sites). v7 makes the same decision
+      // with a light hairline, so the border-only colour is retargeted here;
+      // `text-ink` / `bg-ink` stay near-black. Screens drop `border-ink` for
+      // plain `border` as they're re-laid-out.
+      borderColor: {
+        ink: '#EBEBEE',
+      },
+      // v7 soft geometry: position tags 4, chips 6, controls 8, menus 10,
+      // cards 12, panels 14, big surfaces 18. Buttons are pills.
       borderRadius: {
         none: '0',
-        sm: '1px',
-        DEFAULT: '1px',
-        md: '1px',
-        lg: '1px',
-        xl: '1px',
-        '2xl': '1px',
-        '3xl': '1px',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '8px',
+        lg: '10px',
+        xl: '12px',
+        '2xl': '14px',
+        '3xl': '18px',
         pill: '999px',
         // v13 look — soft rounded geometry (see colors.fs).
         'fs-xs': '5px', // position tags
@@ -194,8 +210,9 @@ const config: Config = {
         'fs-lg': '18px', // inner cards
         'fs-xl': '25px', // feature cards, demo windows
       },
-      // Hard un-blurred offset shadows — the neo-brutalist signature.
-      // No soft shadows anywhere.
+      // v7 soft shadows. The `hard-*` NAMES are kept from the previous
+      // system (113 call sites) and now resolve to v7's soft lifts; rename
+      // when the last brutal screen is reskinned.
       //
       // ELEVATION IS A HOVER/PRESS AFFORDANCE, NEVER A RESTING STATE.
       // Reach for these only behind `hover:` (or a genuine active-interaction
@@ -205,15 +222,15 @@ const config: Config = {
       // rest. Everything in normal page flow rests flat.
       // See CLAUDE.md → "Elevation" and docs/design/lists/README.md §Geometry.
       boxShadow: {
-        'hard-4': '3.2px 3.2px 0 #000000',
-        'hard-6': '4.8px 4.8px 0 #000000',
-        'hard-8': '6.4px 6.4px 0 #000000',
-        'hard-up-4': '3.2px -3.2px 0 #000000',
-        'hard-up-6': '4.8px -4.8px 0 #000000',
-        'hard-up-8': '6.4px -6.4px 0 #000000',
-        // Ink fills take an accent shadow — an ink shadow disappears into them.
-        'hard-accent-4': '3.2px 3.2px 0 #3d5cff',
-        'hard-accent': '4.8px 4.8px 0 #3d5cff',
+        'hard-4': '0 0 0 1px rgba(0,0,0,.06), 0 4px 12px -4px rgba(0,0,0,.16)',
+        'hard-6': '0 0 0 1px rgba(0,0,0,.06), 0 9px 24px -12px rgba(0,0,0,.22)',
+        'hard-8': '0 0 0 1px rgba(0,0,0,.06), 0 15px 34px -9px rgba(0,0,0,.22)',
+        'hard-up-4': '0 0 0 1px rgba(0,0,0,.06), 0 -4px 12px -4px rgba(0,0,0,.16)',
+        'hard-up-6': '0 0 0 1px rgba(0,0,0,.06), 0 -9px 24px -12px rgba(0,0,0,.22)',
+        'hard-up-8': '0 0 0 1px rgba(0,0,0,.06), 0 -15px 34px -9px rgba(0,0,0,.22)',
+        // Ink fills take a blue-tinted lift.
+        'hard-accent-4': '0 0 0 1px rgba(0,136,255,.25), 0 4px 12px -4px rgba(0,136,255,.35)',
+        'hard-accent': '0 0 0 1px rgba(0,136,255,.25), 0 9px 24px -12px rgba(0,136,255,.45)',
         // v13 look — soft depth (supersedes the hard-shadow rule on v13
         // surfaces only; ruled 2026-10-02). `fs-ring` is the resting
         // hairline, `fs-float` the big demo windows, `fs-pop` menus.
@@ -223,24 +240,33 @@ const config: Config = {
         'fs-seg': '0 1px 3px rgba(0,0,0,.14)',
         'fs-inset': '0 0 0 1px #F0F0F2', // inner panels inside a demo window
       },
-      // Heading scale (pre-scaled ×0.8; weight applied by base styles).
+      // v7 type scale (literal px). h1 greeting/display, h2 player & team
+      // heroes, h3 page titles, h4 section titles, h5 card headlines, h6
+      // block labels ("Needs your attention"). body/meta/micro are the
+      // dense-UI sizes v7 uses everywhere else.
       fontSize: {
-        h1: ['48px', { lineHeight: '54px', letterSpacing: '-0.01em', fontWeight: '800' }],
-        h2: ['38px', { lineHeight: '45px', letterSpacing: '-0.01em', fontWeight: '800' }],
-        h3: ['29px', { lineHeight: '37px', letterSpacing: '-0.01em', fontWeight: '800' }],
-        h4: ['24px', { lineHeight: '30px', letterSpacing: '-0.01em', fontWeight: '800' }],
-        h5: ['19px', { lineHeight: '26px', letterSpacing: '-0.01em', fontWeight: '800' }],
-        h6: ['16px', { lineHeight: '22px', letterSpacing: '-0.01em', fontWeight: '800' }],
+        h1: ['31px', { lineHeight: '33px', letterSpacing: '-0.035em', fontWeight: '700' }],
+        h2: ['26px', { lineHeight: '29px', letterSpacing: '-0.035em', fontWeight: '700' }],
+        h3: ['24px', { lineHeight: '28px', letterSpacing: '-0.03em', fontWeight: '700' }],
+        h4: ['20px', { lineHeight: '24px', letterSpacing: '-0.03em', fontWeight: '700' }],
+        h5: ['17px', { lineHeight: '21px', letterSpacing: '-0.02em', fontWeight: '700' }],
+        h6: ['15px', { lineHeight: '19px', letterSpacing: '-0.02em', fontWeight: '700' }],
+        body: ['11px', { lineHeight: '16px' }],
+        meta: ['10px', { lineHeight: '14px' }],
+        micro: ['9px', { lineHeight: '12px' }],
       },
-      // Fixed control constants (pre-scaled ×0.8 of the kit's tokens).
+      // Fixed control constants (v7 literal sizes).
       // Use as h-btn, h-input, w-sidebar, max-w-content, etc.
+      // Shell geometry below (header, sidebar, rail, nav-tile, chrome-band,
+      // crest-row) still carries the previous system's values — it moves to
+      // v7's 48px header / 31px nav rows with the app-shell reskin.
       spacing: {
-        btn: '42px',
-        'btn-md': '29px',
-        'btn-sm': '26px',
-        input: '51px',
-        chip: '19px',
-        tab: '26px',
+        btn: '34px', // FSButton7 lg
+        'btn-md': '27px', // FSButton7 md
+        'btn-sm': '24px', // FSButton7 sm
+        input: '29px',
+        chip: '20px', // FSSegmented7 sm
+        tab: '22px', // FSSegmented7 md
         header: '58px',
         // Draft-room command bar (spec §16.4 zone 1; DR.2). 54px is LITERAL,
         // not a 1× handoff value to ×0.8 — Chris gave it against the running
@@ -282,9 +308,9 @@ const config: Config = {
       minWidth: {
         'count-chip': '14px',
       },
-      // Hairline strokes: 0.5px everywhere (buttons opt back to 1px).
+      // v7 hairlines: 1px in the light --border grey.
       borderWidth: {
-        DEFAULT: '0.5px',
+        DEFAULT: '1px',
         '0': '0',
         '1': '1px',
         '2': '2px',

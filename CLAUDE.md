@@ -15,9 +15,16 @@ FieldScout is an all-in-one fantasy football community app for the NFL. Users cr
 
 ## Redesign (In Progress — July 2026)
 
-> **New look ruled (Chris, 2026-10-02): "FieldScout Landing v13" is the new app look** (Claude Design project "FieldScout.gg landing", `d2b1967d-b9d5-4960-8aa9-2813bcdc80ff`) — Inter Display, pill buttons, soft rounded cards and shadows, `#0080FF` blue, green logo tile. First surface: the public landing page (`src/components/landing/`), built on the `fs-*` tokens in `tailwind.config.ts`. On v13 surfaces those tokens supersede the hard-corner / no-resting-shadow rules below; everywhere else the rules below still hold until the app-wide move is planned. Landing ships as designed, including features not yet open to visitors.
+> **App-wide redesign = "FieldScout Next v7" (Chris, 2026-10-12)** — Claude Design project `f7faded8-8d4c-47db-8195-8541fa71f98e` (local export: `FieldScout Design System Overhaul/`, git-ignored via `.git/info/exclude` — never commit it, the repo is public). v7 carries the v13 landing look (Inter Display, pill buttons, soft rounded cards, `#0088FF` blue, green logo tile) across the whole app. Rulings:
+> - **Sizes are v7's literal numbers.** The old ×0.8 pre-scaling is retired; v7 is drawn at app size (buttons 24/27/34px, body text 10–11px, 48px top bar). Never scale v7 numbers up or down.
+> - **Token names are retargeted in place** (`tailwind.config.ts`, `globals.css`): `accent`, `ink`, `n-*`, `pos-*`, `rounded-*`, `shadow-hard-*`, `border-ink`, `h1`–`h6`, `btn*` now resolve to v7 values. Re-lay-out screens on these; don't add a parallel token set.
+> - **Restyle everything, delete nothing.** Any surface v7 doesn't show (right-side context bar, current Start/Sit, list folders/tiers/comments, AI list generation, personas, home cards…) is redesigned in v7's language — never removed for being absent. v7 features with no backend (pivot table, ECR, win probability, threads…) are left out, not stubbed.
+> - **Web first, then mobile.** Every surface must also work at phone width.
+> - **v7's "Foundations" screen is not built into the app** — it belongs in the Paper "Field DS" file.
+> - **Work lands on the `redesign/v7` integration branch** (small PRs into it, reviewed on its Vercel preview); nothing reaches `main` until Chris says the shell + launch screens are ready.
+> - The landing page (`src/components/landing/`, `fs-*` tokens) keeps its v13 build.
 
-A whole-app visual overhaul is underway. The **Claude Design prototype ("Field Scout look") is the design source of truth** — the current UI (an early "make it look like Spotify" pass) carries no design value worth preserving. Rules for all redesign work:
+A whole-app visual overhaul is underway. The **Claude Design prototype "FieldScout Next v7" is the design source of truth** (it replaced the earlier "Field Scout look" package) — the current UI (an early "make it look like Spotify" pass) carries no design value worth preserving. Rules for all redesign work:
 
 - **Re-skin in place.** Restyle the existing shadcn/Radix/CVA components in `src/components/ui/` via tokens and variant styles. Do not generate a replacement component library or parallel component tree.
 - **Single theme.** One mode blending dark and light. There is no dark/light toggle. Remove/ignore `next-themes` and `dark:` variants as screens are reskinned; never generate dual-theme tokens.
@@ -46,7 +53,7 @@ A whole-app visual overhaul is underway. The **Claude Design prototype ("Field S
 
 #### Elevation is a hover state, never a resting one
 
-*(Ruled by Chris 2026-08-11. Not a new preference — the design system already said it and the app had drifted: `docs/design/lists/README.md` §Geometry, "**Elevation is a hover affordance only.** Nothing carries a resting shadow.")*
+*(v7 keeps this rule; the `shadow-hard-*` tokens now resolve to v7's soft lifts rather than offset black shadows. Originally ruled by Chris 2026-08-11. Not a new preference — the design system already said it and the app had drifted: `docs/design/lists/README.md` §Geometry, "**Elevation is a hover affordance only.** Nothing carries a resting shadow.")*
 
 - **Nothing in normal page flow is elevated at rest.** The 1px ink border is what separates a surface from the page. The hard shadow means "you are pointing at this" or "you are pressing this" — if it's always on, it means nothing.
 - Reach for `shadow-hard-4` / `-6` / `-8` (and `shadow-hard-accent*` on ink fills) **only behind an interaction prefix**: `hover:`, `active:`, `focus-visible:`, `group-hover:`. Pair it with `transition-shadow` (or `transition-all` if the element also translates).

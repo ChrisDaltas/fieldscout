@@ -2,10 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Field Scout — neo-brutalist design system, single blended theme.
-   Source of truth: redesign package _ds/tokens/*.css (values here are
-   pre-scaled ×0.8 per the prototype's ZOOM constant — match the rendered
-   result, not raw token numbers).
+/* FieldScout — v7 design system ("FieldScout Next v7", Claude Design;
+   ruled 2026-10-12), single blended theme. Values are v7's literal numbers;
+   the old ×0.8 pre-scaling is retired.
 
    Two layers:
    1. shadcn-compatible HSL triplets below — the legacy semantic layer
@@ -16,70 +15,72 @@
       Reskinned components use those classes. */
 @layer base {
   :root {
+    /* v7 look ("FieldScout Next v7", ruled 2026-10-12). White page, Apple
+       greys, #0088FF blue, light hairlines. Values are literal v7 numbers —
+       no ×0.8 pre-scaling (retired 2026-10-12). */
+
     /* Surfaces */
-    --background: 225 8% 90%; /* page grey #e4e5e8 */
-    --bg-elevated: 0 0% 100%; /* cards are white now */
-    --bg-elevated-2: 210 4% 91%; /* n-4 hairline/sunken */
-    --bg-elevated-3: 220 5% 85%;
+    --background: 0 0% 100%; /* page is white */
+    --bg-elevated: 0 0% 100%;
+    --bg-elevated-2: 240 11% 96%; /* #F5F5F7 sunken fills */
+    --bg-elevated-3: 240 8% 93%; /* #EBEBEE */
 
     /* Text */
-    --foreground: 228 18% 5%; /* ink */
-    --text-secondary: 219 7% 40%; /* n-3 muted */
-    --text-tertiary: 220 5% 55%;
+    --foreground: 240 3% 12%; /* ink #1D1D1F */
+    --text-secondary: 240 2% 44%; /* #6E6E73 */
+    --text-tertiary: 240 2% 57%; /* #8E8E93 */
 
     /* Surfaces (shadcn aliases) */
     --card: 0 0% 100%;
-    --card-foreground: 228 18% 5%;
+    --card-foreground: 240 3% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 228 18% 5%;
-    --muted: 210 4% 91%; /* n-4 */
-    --muted-foreground: 219 7% 40%; /* n-3 */
-    --accent: 226 100% 93%; /* accent-soft #dce4ff — hover surfaces */
-    --accent-foreground: 228 18% 5%;
+    --popover-foreground: 240 3% 12%;
+    --muted: 240 11% 96%; /* #F5F5F7 */
+    --muted-foreground: 240 2% 44%; /* #6E6E73 */
+    --accent: 240 8% 95%; /* #F2F2F4 — hover surfaces */
+    --accent-foreground: 240 3% 12%;
 
-    /* Primary = ultramarine accent ("do a thing") */
-    --primary: 230 100% 62%; /* #3d5cff */
+    /* Primary = v7 blue */
+    --primary: 208 100% 50%; /* #0088FF */
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 231 75% 52%; /* #2a44e0 */
+    --primary-hover: 208 100% 43%; /* #0074DB */
 
-    --secondary: 210 4% 91%;
-    --secondary-foreground: 228 18% 5%;
+    --secondary: 240 11% 96%;
+    --secondary-foreground: 240 3% 12%;
 
-    /* Destructive = reserved negative (pastel pink, ink text) */
-    --destructive: 0 65% 76%; /* #e99898 */
-    --destructive-foreground: 228 18% 5%;
+    /* Destructive = v7 alert red, white text */
+    --destructive: 351 100% 50%; /* #FF0028 */
+    --destructive-foreground: 0 0% 100%;
 
-    /* Borders — always 1px ink; muted hairlines use border-subtle */
-    --border: 228 18% 5%;
-    --border-subtle: 210 4% 91%; /* n-4 */
-    --input: 228 18% 5%;
-    --ring: 230 100% 62%;
+    /* Borders — 1px light hairlines */
+    --border: 240 8% 93%; /* #EBEBEE */
+    --border-subtle: 240 8% 95%; /* #F2F2F4 */
+    --input: 240 11% 91%; /* #E5E5EA control ring */
+    --ring: 208 100% 50%;
 
-    /* Sidebar (ink panel) */
-    --sidebar: 228 18% 5%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 98 100% 77%; /* brand lime #b4ff89 */
-    --sidebar-primary-foreground: 228 18% 5%;
-    --sidebar-accent: 230 100% 62%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 100%;
-    --sidebar-ring: 230 100% 62%;
+    /* Sidebar (unused by components today; kept for shadcn parity) */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 240 3% 12%;
+    --sidebar-primary: 208 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 8% 95%;
+    --sidebar-accent-foreground: 240 3% 12%;
+    --sidebar-border: 240 8% 93%;
+    --sidebar-ring: 208 100% 50%;
 
-    /* Near-square corners everywhere (tailwind.config hard-overrides the
-       rounded-* scale to 1px; this var covers any calc() stragglers) */
-    --radius: 1px;
+    /* Soft rounded geometry (tailwind.config carries the rounded-* scale) */
+    --radius: 8px;
 
-    /* Chart palette — legacy consumers; restyled screens use tier/pos hues */
-    --chart-1: 230 100% 62%;
-    --chart-2: 98 100% 77%;
-    --chart-3: 24 70% 48%;
-    --chart-4: 45 77% 52%;
-    --chart-5: 137 43% 44%;
+    /* Chart palette — v7 position hues */
+    --chart-1: 208 100% 50%;
+    --chart-2: 148 93% 42%;
+    --chart-3: 226 72% 63%;
+    --chart-4: 37 81% 60%;
+    --chart-5: 262 74% 71%;
 
-    /* AI accent — AI moments are ultramarine now (legacy glint vars kept
-       working until AI surfaces are reskinned in batch E) */
-    --ai-glint: 230 100% 62%;
-    --ai-glint-core: 226 100% 93%;
+    /* AI accent — Scout AI moments use the v7 blue */
+    --ai-glint: 208 100% 50%;
+    --ai-glint-core: 211 100% 96%;
   }
 }
 
@@ -94,21 +95,27 @@
   body {
     color-scheme: light;
     font-weight: 500; /* body weight per the design system */
+    /* One face for everything (v7): Inter, pinned to its Display optical
+       size at every text size. Numerals share it; .fs-num adds tabular digits. */
+    --font-sans: var(--font-inter);
+    --font-mono: var(--font-inter);
+    font-optical-sizing: none;
+    font-variation-settings: 'opsz' 32;
   }
-  /* Heavy, tight headings — the system's defining trait. Unitless 1.25
-     line-height so inline-sized headings keep their descenders. */
+  /* v7 headings: bold, tight tracking. Unitless 1.25 line-height so
+     inline-sized headings keep their descenders. */
   h1,
   h2,
   h3,
   h4,
   h5,
   h6 {
-    font-weight: 800;
-    letter-spacing: -0.01em;
+    font-weight: 700;
+    letter-spacing: -0.03em;
     line-height: 1.25;
   }
   ::selection {
-    background: #3d5cff;
+    background: #0088ff;
     color: #ffffff;
   }
 }
@@ -124,8 +131,7 @@
   .fs-num {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-feature-settings:
-      'tnum' 1;
+    font-feature-settings: 'tnum' 1;
   }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
