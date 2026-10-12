@@ -40,6 +40,7 @@ const config: Config = {
           hover: '#EDEDF0',
           pressed: '#E5E5EA',
           strong: '#D8D8DD',
+          selected: '#E8E8ED', // v7 active nav row
         },
         // v7 blue — "do a thing": buttons, tabs, selection, links, AI.
         accent: {
@@ -267,6 +268,8 @@ const config: Config = {
         'ring-negative': 'inset 0 0 0 1px #FF0028',
         'ring-control': 'inset 0 0 0 1px #C7C7CC',
         'ring-control-hover': 'inset 0 0 0 1px #AEAEB2',
+        'ring-chip': 'inset 0 0 0 1px #E5E5EA', // league switcher chip
+        'avatar-hover': '0 0 0 3px #E5E5EA', // top-bar avatar hover halo
       },
       // v7 type scale (literal px). h1 greeting/display, h2 player & team
       // heroes, h3 page titles, h4 section titles, h5 card headlines, h6
@@ -285,9 +288,6 @@ const config: Config = {
       },
       // Fixed control constants (v7 literal sizes).
       // Use as h-btn, h-input, w-sidebar, max-w-content, etc.
-      // Shell geometry below (header, sidebar, rail, nav-tile, chrome-band,
-      // crest-row) still carries the previous system's values — it moves to
-      // v7's 48px header / 31px nav rows with the app-shell reskin.
       spacing: {
         btn: '34px', // FSButton7 lg
         'btn-md': '27px', // FSButton7 md
@@ -295,11 +295,14 @@ const config: Config = {
         input: '29px',
         chip: '20px', // FSSegmented7 sm
         tab: '22px', // FSSegmented7 md
-        header: '58px',
+        header: '48px', // v7 top bar
         // Draft-room command bar (spec §16.4 zone 1; DR.2). 54px is LITERAL,
         // not a 1× handoff value to ×0.8 — Chris gave it against the running
         // app (tasks-DR C47), and it sits beside the 58px `header` token.
         'draft-topbar': '54px',
+        // Draft-room status strip under the command bar (D149) — kept at the
+        // pre-v7 header height until the draft room is redesigned.
+        'draft-status': '58px',
         // Draft-room dock open-panel heights (spec §16.4 dock; DR.5, D151:
         // the open panel occupies a FIXED viewport fraction and overlays the
         // board — the board never resizes). Mobile opens taller because the
@@ -307,23 +310,23 @@ const config: Config = {
         // the desktop cap keeps 60vh from becoming a wall on tall monitors.
         'dock-panel': 'min(60vh, 640px)',
         'dock-panel-mobile': '75vh',
-        sidebar: '243px',
-        'sidebar-collapsed': '67px',
+        sidebar: '156px', // v7 left rail, expanded
+        'sidebar-collapsed': '41px', // v7 left rail, minimised
         // Rail strip matches the collapsed sidebar width so both edges read
         // as the same icon rail.
-        'rail-strip': '67px',
+        'rail-strip': '41px',
         'rail-panel': '256px',
         // Strip + open panel: the page pads by both while a tool is open
         // (prototype ResearchRail — the panel never covers content; D483).
-        'rail-open': '323px',
+        'rail-open': '297px',
         'card-pad': '16px',
         // Shell-chrome constants shared across sidebar / rail / top bar.
         // A token is shared between components only when they're the same
         // design decision, not merely the same pixel number.
         'count-chip': '14px', // unseen-count pill height + min-width
-        'nav-tile': '34px', // sidebar nav rows, collapsed icons, sidebar search, rail tool buttons, More-sheet rows. NOT the top search field.
-        'chrome-band': '37px', // sidebar logo band, rail account zone, rail panel head, draft bar — one continuous line across the app
-        'crest-row': '45px', // sidebar league rows, Teams panel rows
+        'nav-tile': '31px', // v7 nav rows (FSNavItem7 item), More-sheet rows
+        'chrome-band': '37px', // rail panel head, draft bar
+        'crest-row': '36px', // v7 league rows (FSNavItem7 league), Teams panel rows
       },
       maxWidth: {
         content: '1152px',

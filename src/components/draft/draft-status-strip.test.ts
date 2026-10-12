@@ -60,8 +60,8 @@ function code(rel: string): string {
 describe('the strip’s physical contract (spec §16.4 zone 2; D149/D152)', () => {
   const source = code(STRIP)
 
-  it('is ONE band at the h-header token, with the ink rule as its separation', () => {
-    expect(source).toMatch(/h-header/)
+  it('is ONE band at the h-draft-status token, with the ink rule as its separation', () => {
+    expect(source).toMatch(/h-draft-status/)
     expect(source).not.toMatch(/h-\[58px\]/)
     expect(source).toMatch(/border-b border-ink/)
     expect(source).toMatch(/shrink-0/)

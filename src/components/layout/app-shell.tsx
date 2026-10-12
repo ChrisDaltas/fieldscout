@@ -27,9 +27,10 @@ interface AppShellProps {
 const FULL_BLEED_ROUTES: ReadonlySet<string> = new Set<string>()
 const FULL_BLEED_PREFIXES: readonly string[] = ['/app/lists/']
 
-/** Field Scout shell — ink sidebar · content column (draft bar + sticky
- *  header + scrolling main) · right rail. Desktop-first; mobile keeps the
- *  legacy top bar + bottom tabs until the mobile companion pass. */
+/** v7 shell — the 48px top bar across the whole app, then a row of: left
+ *  rail · content column (draft bar + page title band + scrolling main) ·
+ *  right-side bar. Phones get the same top bar plus the bottom tabs until
+ *  the mobile pass. */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -54,10 +55,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <AppDndContext>
       <div className="flex h-screen flex-col overflow-hidden bg-page">
-        {/* Mobile-only legacy top bar; desktop nav lives in the sidebar/rail */}
-        <div className="lg:hidden">
-          <TopNav variant="app" />
-        </div>
+        <TopNav variant="app" />
 
         {/* The rail strip is fixed-right; clear it on desktop — and the
             open panel too, so it never covers the page (D483). */}
