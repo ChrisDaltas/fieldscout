@@ -17,7 +17,7 @@ interface UserAvatarProps {
   initials?: string
   /**
    * Shape per the design system: `user` (default) renders a borderless round
-   * pill; `team` / `league` render the square crest with a 1px ink border.
+   * pill; `team` / `league` render v7's rounded-square crest (no border).
    */
   kind?: UserAvatarKind
   className?: string
@@ -63,7 +63,7 @@ export const UserAvatar = React.forwardRef<
       className={cn(
         kind === 'user'
           ? 'rounded-pill border-0'
-          : 'rounded-sm border border-ink',
+          : 'rounded-md border-0',
         className,
       )}
     >

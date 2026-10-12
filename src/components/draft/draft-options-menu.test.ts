@@ -305,7 +305,7 @@ describe('the menu renders the enumerated catalog, not a hard-coded ladder', () 
     // The comment naming the exception is the D152 requirement; the carried
     // shadow itself lives in (and is allowlisted for) the primitive.
     expect(read(MENU)).toMatch(/D152/)
-    expect(code('src/components/ui/dropdown-menu.tsx')).toMatch(/(?<!:)shadow-hard-4/)
+    expect(code('src/components/ui/dropdown-menu.tsx')).toMatch(/(?<!:)shadow-hard-8/)
   })
 })
 

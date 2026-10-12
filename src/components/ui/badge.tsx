@@ -4,40 +4,45 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * Field Scout badge — 19px status/stat chip. 1px radius, 11px bold, sentence
- * case expected from callers.
+ * FieldScout badge — v7 status pill: 18px tall, 10px semibold, no border.
+ * Sentence case expected from callers.
  *
- * Canonical variants: stroke (ink outline), accent (ultramarine fill),
- * green/yellow/pink (football semantics: positive/caution/negative), black,
- * lime (brand fill), and soft-stroke tints (stroke-green/pink/purple = soft
- * fill + colored border). Legacy aliases kept for pre-reskin call sites:
- * default/secondary/outline→stroke, destructive→stroke-pink, brand→lime,
- * purple→accent.
+ * Variants keep their old names; v7 colours them as soft tint + same-hue
+ * text, which is how v7 draws status (e.g. "Questionable", "Live").
+ * stroke (neutral grey), accent (blue fill, white — counts), green / yellow /
+ * pink (positive / caution / negative tints), black (ink fill), lime (live —
+ * green tint), lock (D497), and the stroke-* tints, which add an inset ring
+ * of the same hue. Legacy aliases: default/secondary/outline→stroke,
+ * destructive→stroke-pink, brand→lime, purple→accent.
  */
+const RING_GREEN = "shadow-ring-positive"
+const RING_PINK = "shadow-ring-negative"
+const RING_BLUE = "shadow-ring-accent"
+
 const badgeVariants = cva(
-  "inline-flex h-chip items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent px-2.5 text-[11px] font-bold leading-none text-ink transition-colors",
+  "inline-flex h-[18px] items-center justify-center gap-1 whitespace-nowrap rounded-pill px-[7px] text-[10px] font-semibold leading-none transition-colors",
   {
     variants: {
       variant: {
-        stroke: "border-ink bg-transparent text-ink",
+        stroke: "bg-surface-control text-n-2",
         accent: "bg-accent text-accent-foreground",
-        green: "bg-positive text-ink",
-        yellow: "bg-caution text-ink",
-        pink: "bg-negative text-ink",
+        green: "bg-positive-soft text-positive-strong",
+        yellow: "bg-caution-soft text-caution-strong",
+        pink: "bg-negative-soft text-negative-strong",
         black: "bg-ink text-white",
-        lime: "bg-brand text-ink",
+        lime: "bg-brand-soft text-brand-strong",
         // Locked player (D497): light yellow fill, dark same-hue text/glyph.
         lock: "bg-lock text-lock-fg",
-        "stroke-green": "border-positive bg-positive-soft text-ink",
-        "stroke-pink": "border-negative bg-negative-soft text-ink",
-        "stroke-purple": "border-accent bg-accent-soft text-ink",
+        "stroke-green": `bg-positive-soft text-positive-strong ${RING_GREEN}`,
+        "stroke-pink": `bg-negative-soft text-negative-strong ${RING_PINK}`,
+        "stroke-purple": `bg-accent-soft text-accent-deep ${RING_BLUE}`,
         // Legacy aliases (pre-reskin call sites)
         purple: "bg-accent text-accent-foreground",
-        default: "border-ink bg-transparent text-ink",
-        secondary: "border-ink bg-transparent text-ink",
-        outline: "border-ink bg-transparent text-ink",
-        destructive: "border-negative bg-negative-soft text-ink",
-        brand: "bg-brand text-ink",
+        default: "bg-surface-control text-n-2",
+        secondary: "bg-surface-control text-n-2",
+        outline: "bg-surface-control text-n-2",
+        destructive: `bg-negative-soft text-negative-strong ${RING_PINK}`,
+        brand: "bg-brand-soft text-brand-strong",
       },
     },
     defaultVariants: {
@@ -57,9 +62,10 @@ function Badge({ className, variant, ...props }: BadgeProps) {
 }
 
 /**
- * Toggleable filter chip — the interactive sibling of the badge. 26px tall,
- * ink outline; off = white with a sunken-grey hover, on = ink fill with white
- * text. Button semantics with `aria-pressed`.
+ * Toggleable filter chip — the interactive sibling of the badge. v7 pill,
+ * 24px: off = light grey fill (darker on hover); on = blue tint, deep-blue
+ * text and a 1px blue inset ring (v7's selected-source chip). Button
+ * semantics with `aria-pressed`.
  *
  * **What is left here after LV.11, and why.** Chris ruled the single-select
  * chip rows onto the shared tab/segment control (*"Use the tab component for
@@ -105,10 +111,10 @@ const FilterChip = React.forwardRef<HTMLButtonElement, FilterChipProps>(
         if (!event.defaultPrevented) onPressedChange?.(!pressed)
       }}
       className={cn(
-        "inline-flex h-btn-sm select-none items-center gap-1.5 whitespace-nowrap rounded-sm border border-ink px-3 text-[11px] font-bold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
+        "inline-flex h-btn-sm select-none items-center gap-1.5 whitespace-nowrap rounded-pill px-[9px] text-[11px] font-semibold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
         pressed
-          ? "bg-ink text-white hover:bg-ink-2"
-          : "bg-white text-ink hover:bg-n-4",
+          ? `bg-accent-soft text-accent-deep ${RING_BLUE}`
+          : "bg-surface-control text-n-2 hover:bg-surface-pressed",
         className,
       )}
       {...props}
