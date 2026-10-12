@@ -271,6 +271,12 @@ const config: Config = {
         'ring-chip': 'inset 0 0 0 1px #E5E5EA', // league switcher chip
         'avatar-hover': '0 0 0 3px #E5E5EA', // top-bar avatar hover halo
       },
+      // v7's heaviest weight is 700: the old extra-heavy weights resolve to
+      // bold, so pre-v7 `font-extrabold` / `font-black` read as v7 bold.
+      fontWeight: {
+        extrabold: '700',
+        black: '700',
+      },
       // v7 type scale (literal px). h1 greeting/display, h2 player & team
       // heroes, h3 page titles, h4 section titles, h5 card headlines, h6
       // block labels ("Needs your attention"). body/meta/micro are the
