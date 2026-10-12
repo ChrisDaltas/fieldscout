@@ -6,8 +6,8 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 import { cn } from '@/lib/utils'
 
 /**
- * Field Scout tooltip — solid ink bubble, white bold text, 1px ink border,
- * near-square corners. Plain 200ms fade; no zoom, no arrow flourishes.
+ * FieldScout tooltip — v7: ink bubble, 6px corners, 10px semibold white
+ * text. Plain 200ms fade; no zoom, no arrow.
  */
 const TooltipProvider = TooltipPrimitive.Provider
 const Tooltip = TooltipPrimitive.Root
@@ -22,7 +22,7 @@ const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'z-50 rounded-sm border border-ink bg-ink px-2.5 py-1.5 text-[11px] font-bold leading-none text-white animate-in fade-in-0 duration-200',
+        'z-50 rounded bg-ink px-2 py-1 text-[10px] font-semibold leading-none text-white animate-in fade-in-0 duration-200',
         className,
       )}
       {...props}

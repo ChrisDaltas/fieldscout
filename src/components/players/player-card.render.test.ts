@@ -357,7 +357,7 @@ describe('LeagueActionsBody — a render per state', () => {
     const out = body()
     expect(out).toContain('data-card-league="available"')
     expect(out).toContain('Free agent in Sunday League')
-    expect(out).toMatch(/<button[^>]*bg-positive[^>]*aria-label="Add Player p-free"[^>]*data-card-action="acquire" data-acquire="add"/)
+    expect(out).toMatch(/<button[^>]*bg-confirm[^>]*aria-label="Add Player p-free"[^>]*data-card-action="acquire" data-acquire="add"/)
     expect(out).toContain('<svg')
     ONE_PLUS(out)
     expect(out).not.toContain(ROSTER_FULL_COPY)

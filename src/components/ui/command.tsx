@@ -21,7 +21,7 @@ const Command = React.forwardRef<
   <CommandPrimitive
     ref={ref}
     className={cn(
-      "flex h-full w-full flex-col overflow-hidden rounded-sm border border-ink bg-white text-ink",
+      "flex h-full w-full flex-col overflow-hidden rounded-xl bg-white text-ink",
       className
     )}
     {...props}
@@ -38,7 +38,7 @@ const CommandDialog = ({ children, ...props }: DialogProps) => {
           modal genuinely floats. See CLAUDE.md → "Elevation". */}
       <DialogContent className="overflow-hidden border-none bg-transparent p-0 shadow-none">
         <DialogTitle className="sr-only">Search</DialogTitle>
-        <Command className="shadow-hard-6">{children}</Command>
+        <Command className="shadow-hard-8">{children}</Command>
       </DialogContent>
     </Dialog>
   )
@@ -56,7 +56,7 @@ const CommandInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        "flex h-full w-full bg-transparent text-[14px] font-semibold text-ink outline-none placeholder:font-semibold placeholder:text-n-3 disabled:cursor-not-allowed disabled:opacity-40",
+        "flex h-full w-full bg-transparent text-[13px] font-medium text-ink outline-none placeholder:font-medium placeholder:text-n-6 disabled:cursor-not-allowed disabled:opacity-40",
         className
       )}
       {...props}
@@ -85,7 +85,7 @@ const CommandEmpty = React.forwardRef<
 >((props, ref) => (
   <CommandPrimitive.Empty
     ref={ref}
-    className="py-6 text-center text-[13px] font-semibold text-n-3"
+    className="py-6 text-center text-[11px] font-medium text-n-6"
     {...props}
   />
 ))
@@ -99,7 +99,7 @@ const CommandGroup = React.forwardRef<
   <CommandPrimitive.Group
     ref={ref}
     className={cn(
-      "overflow-hidden p-1.5 text-ink [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-n-3",
+      "overflow-hidden p-1.5 text-ink [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[9px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-n-6",
       className
     )}
     {...props}
@@ -127,7 +127,7 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-[7px] text-[13px] font-medium text-ink outline-none transition-colors data-[selected=true]:bg-accent-soft data-[selected=true]:text-ink data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+      "relative flex min-h-[31px] cursor-default select-none items-center gap-2 rounded-md px-[7px] py-[5px] text-[11px] font-semibold text-ink outline-none transition-colors data-[selected=true]:bg-surface-sunken data-[selected=true]:text-ink data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
       className
     )}
     {...props}
@@ -143,7 +143,7 @@ const CommandShortcut = ({
   return (
     <span
       className={cn(
-        "ml-auto inline-flex items-center rounded-sm border border-ink px-1.5 py-0.5 font-mono text-[11px] font-medium leading-none text-n-3",
+        "ml-auto inline-flex h-[17px] items-center rounded-sm bg-surface-control px-[5px] text-[9px] font-semibold leading-none text-n-3",
         className
       )}
       {...props}

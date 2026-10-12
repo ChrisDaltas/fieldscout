@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils"
 import { Icon } from "@/components/ui/icon"
 
 /**
- * Field Scout menu — white panel on a 1px ink border with a hard offset
- * shadow. Items are 13px/500; hover and keyboard focus fill accent-soft with
- * ink text (destructive items fill negative-soft). Submenus share the same
- * surface and slide in from the left edge. Fade/opacity motion only.
+ * FieldScout menu — v7 (`FSMenu7`): white 12px-radius panel with a hairline
+ * ring and soft drop shadow, 5px padding. Items are 31px min, 11px/600, 8px
+ * radius; hover and keyboard focus fill the light grey (destructive items
+ * fill negative-soft). Checks are blue. Fade/opacity motion only.
  */
 const DropdownMenu = DropdownMenuPrimitive.Root
 
@@ -25,12 +25,12 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
 
 const menuItemClasses =
-  "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-[7px] text-[13px] font-medium text-ink outline-none transition-colors focus:bg-accent-soft focus:text-ink data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
+  "relative flex min-h-[31px] cursor-default select-none items-center gap-2 rounded-md px-[7px] py-[5px] text-[11px] font-semibold text-ink outline-none transition-colors focus:bg-surface-sunken focus:text-ink data-[disabled]:pointer-events-none data-[disabled]:opacity-40"
 
 // Elevation exception: a menu overlays the page, so it keeps its resting
 // shadow. See CLAUDE.md → "Elevation".
 const menuSurfaceClasses =
-  "z-50 min-w-[8rem] rounded-sm border border-ink bg-white p-1.5 text-ink shadow-hard-4"
+  "z-50 min-w-[8rem] rounded-xl bg-white p-[5px] text-ink shadow-hard-8"
 
 const DropdownMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
@@ -42,7 +42,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       menuItemClasses,
-      "data-[state=open]:bg-accent-soft data-[state=open]:text-ink [&_svg]:pointer-events-none [&_svg]:shrink-0",
+      "data-[state=open]:bg-surface-sunken data-[state=open]:text-ink [&_svg]:pointer-events-none [&_svg]:shrink-0",
       inset && "pl-8",
       className
     )}
@@ -163,7 +163,7 @@ const DropdownMenuLabel = React.forwardRef<
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2 py-1.5 text-[11px] font-medium text-n-3",
+      "px-[9px] pb-[3px] pt-[7px] text-[9px] font-semibold text-n-6",
       inset && "pl-8",
       className
     )}
@@ -178,7 +178,7 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1.5 h-px bg-n-4", className)}
+    className={cn("-mx-[5px] my-[5px] h-px bg-n-4", className)}
     {...props}
   />
 ))
@@ -191,7 +191,7 @@ const DropdownMenuShortcut = ({
   return (
     <span
       className={cn(
-        "ml-auto font-mono text-[11px] font-medium text-n-3",
+        "ml-auto text-[10px] font-medium text-n-6",
         className
       )}
       {...props}

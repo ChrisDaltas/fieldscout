@@ -5,71 +5,61 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * Field Scout button — 1px ink border, near-square corners, press physics.
+ * FieldScout button — v7 (`FSButton7`): a pill with no border, semibold
+ * label, colour change on hover and a gentle press (`scale .97`).
  *
- * Hover escalation by richness: ghost (text only) gains a background; stroke
- * (outline) inverts to solid ink; filled variants (blue/green/lime/dark) lift
- * up-left onto a hard shadow.
+ * v7 variants → names here (old names kept so call sites don't churn):
  *
- * **No variant is elevated at rest.** Elevation is a hover/press affordance,
- * never a resting state (CLAUDE.md → "Elevation"; docs/design/lists/README.md
- * §Geometry: "Buttons press flat on `:active`"). `shadow` is the *emphasis*
- * lift — a page's primary action rests flat like everything else and then
- * lifts further than a plain filled button on hover (`hard-6` vs `hard-4`).
+ * | v7 | here | look |
+ * | --- | --- | --- |
+ * | primary | `blue` (alias `primary`) | blue fill |
+ * | strong | `dark` | ink fill |
+ * | secondary | `stroke` (alias `default`) | light grey fill |
+ * | quiet | `ghost` (alias `invisible`) | no fill until hover |
+ * | confirm | `green` (aliases `brand`, `lime`) | green fill |
+ * | warning | `warning` | orange fill, ink text |
+ * | destructive | `destructive` | red text, pink wash on hover |
  *
- * Canonical variants: blue ("do a thing" primary), stroke, ghost, dark,
- * green (start/confirm), lime (brand-strong). Legacy aliases kept for
- * pre-reskin call sites: primary→blue, default→stroke, invisible→ghost,
- * brand→green.
+ * **No variant is elevated at rest** (CLAUDE.md → "Elevation"); v7 buttons
+ * don't lift at all. `shadow` is kept as a no-op so existing call sites
+ * compile — v7 marks a page's primary action by variant, not by a lift.
  */
+const PRESS = "active:scale-[0.97]"
+
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border-1 border-ink font-bold leading-none transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-pill font-semibold leading-none transition-[background-color,color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        blue: "bg-accent text-accent-foreground hover:bg-accent-strong hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
-        stroke: "bg-transparent text-ink hover:bg-ink hover:text-white",
-        ghost:
-          "border-transparent bg-transparent text-ink hover:bg-n-4 hover:text-accent",
-        dark: "bg-ink text-white hover:bg-ink-2 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-accent-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
-        green:
-          "bg-positive text-ink hover:brightness-[0.94] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
-        lime: "bg-brand-strong text-ink hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
-        destructive:
-          "bg-negative text-ink hover:brightness-[0.94] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
+        blue: `bg-accent text-accent-foreground hover:bg-accent-strong ${PRESS}`,
+        stroke: `bg-surface-control text-ink hover:bg-surface-pressed ${PRESS}`,
+        ghost: `bg-transparent text-ink hover:bg-surface-hover ${PRESS}`,
+        dark: `bg-ink text-white hover:bg-ink-2 ${PRESS}`,
+        green: `bg-confirm text-white hover:bg-confirm-hover ${PRESS}`,
+        lime: `bg-confirm text-white hover:bg-confirm-hover ${PRESS}`,
+        warning: `bg-warn text-ink hover:bg-warn-hover ${PRESS}`,
+        destructive: `bg-transparent text-negative-strong hover:bg-negative-soft ${PRESS}`,
         // Legacy aliases (pre-reskin call sites)
-        primary:
-          "bg-accent text-accent-foreground hover:bg-accent-strong hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
-        default: "bg-transparent text-ink hover:bg-ink hover:text-white",
-        brand:
-          "bg-positive text-ink hover:brightness-[0.94] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:translate-x-0 active:translate-y-0 active:shadow-none",
-        invisible:
-          "border-transparent bg-transparent text-ink hover:bg-n-4 hover:text-accent",
+        primary: `bg-accent text-accent-foreground hover:bg-accent-strong ${PRESS}`,
+        default: `bg-surface-control text-ink hover:bg-surface-pressed ${PRESS}`,
+        brand: `bg-confirm text-white hover:bg-confirm-hover ${PRESS}`,
+        invisible: `bg-transparent text-ink hover:bg-surface-hover ${PRESS}`,
       },
+      // v7 sizes: sm 24 / md 27 / lg 34 (text 10 / 11 / 13, icon 11 / 12 / 14).
       size: {
-        default: "h-btn px-4 text-[14px] [&_svg]:size-[14px]",
-        md: "h-btn-md px-3 text-[11px] [&_svg]:size-[13px]",
-        sm: "h-btn-sm px-3 text-[11px] [&_svg]:size-[13px]",
-        lg: "h-btn px-5 text-[14px] [&_svg]:size-[14px]",
-        icon: "h-btn w-btn px-0 [&_svg]:size-[14px]",
-        "icon-md": "h-btn-md w-btn-md px-0 [&_svg]:size-[13px]",
-        "icon-sm": "h-btn-sm w-btn-sm px-0 [&_svg]:size-[13px]",
+        default: "h-btn px-[17px] text-[13px] [&_svg]:size-[14px]",
+        md: "h-btn-md px-3 text-[11px] [&_svg]:size-[12px]",
+        sm: "h-btn-sm px-[9px] text-[10px] [&_svg]:size-[11px]",
+        lg: "h-btn px-[17px] text-[13px] [&_svg]:size-[14px]",
+        icon: "h-btn w-btn px-0 [&_svg]:size-[18px]",
+        "icon-md": "h-btn-md w-btn-md px-0 [&_svg]:size-[15px]",
+        "icon-sm": "h-btn-sm w-btn-sm px-0 [&_svg]:size-[14px]",
       },
-      /** Emphasis lift — the page's primary action. Rests flat like every
-       *  other control and lifts one step further than a plain filled
-       *  variant on hover (hard-6, not hard-4). Ink fills take the accent
-       *  shadow (an ink shadow disappears into the fill). */
+      /** Kept for call-site compatibility; v7 has no emphasis lift. */
       shadow: {
-        true: "hover:shadow-hard-6 hover:-translate-x-0.5 hover:-translate-y-0.5 active:translate-x-0 active:translate-y-0 active:shadow-none",
+        true: "",
       },
     },
-    compoundVariants: [
-      {
-        variant: "dark",
-        shadow: true,
-        className: "hover:shadow-hard-accent active:shadow-none",
-      },
-    ],
     defaultVariants: {
       variant: "stroke",
       size: "default",

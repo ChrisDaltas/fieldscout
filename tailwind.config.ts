@@ -30,17 +30,29 @@ const config: Config = {
         ink: { DEFAULT: '#1D1D1F', 2: '#3A3A3C' },
         // Grey ramp: 1 ink, 2 strong secondary, 3 secondary text, 4 hairline,
         // 5 sunken fill, 6 tertiary text (v7's most-used grey).
-        n: { 1: '#1D1D1F', 2: '#3A3A3C', 3: '#6E6E73', 4: '#EBEBEE', 5: '#F5F5F7', 6: '#8E8E93' },
+        n: { 1: '#1D1D1F', 2: '#3A3A3C', 3: '#6E6E73', 4: '#EBEBEE', 5: '#F5F5F7', 6: '#8E8E93', 7: '#C7C7CC', 8: '#AEAEB2' },
+        // v7 control fills, lightest to darkest: sunken panels, resting
+        // secondary/segment track, quiet hover, secondary hover / switch off,
+        // switch-off hover.
+        surface: {
+          sunken: '#F5F5F7',
+          control: '#F2F2F4',
+          hover: '#EDEDF0',
+          pressed: '#E5E5EA',
+          strong: '#D8D8DD',
+        },
         // v7 blue — "do a thing": buttons, tabs, selection, links, AI.
         accent: {
           DEFAULT: '#0088FF',
           strong: '#0074DB',
           soft: '#EAF4FF',
+          deep: '#0060B8', // text on accent-soft (selected chips)
           foreground: '#ffffff',
         },
         // v7 green — "look here": live dots, the logo tile. Never controls.
         brand: {
           DEFAULT: '#07D066',
+          hover: '#05BD5C',
           strong: '#07A852',
           soft: '#E6F9EE',
           foreground: '#1D1D1F',
@@ -50,6 +62,9 @@ const config: Config = {
         positive: { DEFAULT: '#C8F2D9', soft: '#EAF9F0', strong: '#07A852' },
         negative: { DEFAULT: '#FFD3D9', soft: '#FFF0F2', strong: '#FF0028' },
         caution: { DEFAULT: '#FFE58A', soft: '#FFF6D6', strong: '#E07B00' },
+        // v7 button fills: confirm (start / accept) and warning.
+        confirm: { DEFAULT: '#07B85A', hover: '#06A651' },
+        warn: { DEFAULT: '#FF8A00', hover: '#F27A00' },
         // OPRK pills (D497, Chris 2026-10-05): soft tint + very dark text of the
         // same hue, no border. hard = 1–10 (red), mid = 11–22 (orange),
         // easy = 23–32 (green). Only `oprkPillClass` (my-team-ops.ts) uses them.
@@ -239,6 +254,19 @@ const config: Config = {
         'fs-pop': '0 0 0 1px rgba(0,0,0,.08), 0 16px 40px -8px rgba(0,0,0,.25)',
         'fs-seg': '0 1px 3px rgba(0,0,0,.14)',
         'fs-inset': '0 0 0 1px #F0F0F2', // inner panels inside a demo window
+        // v7 control-form shadows — part of the control's shape, not
+        // elevation: the selected segment pill and the switch knob.
+        seg: '0 1px 3px rgba(0,0,0,.12)',
+        knob: '0 1px 3px rgba(0,0,0,.2)',
+        // v7 focus ring for fields (search, inputs).
+        field: '0 0 0 1px #0088FF, 0 0 0 3px rgba(0,136,255,.16)',
+        // v7 1px inset rings: selected chips (blue / green / pink) and the
+        // resting / hovered checkbox & radio outline.
+        'ring-accent': 'inset 0 0 0 1px #0088FF',
+        'ring-positive': 'inset 0 0 0 1px #07A852',
+        'ring-negative': 'inset 0 0 0 1px #FF0028',
+        'ring-control': 'inset 0 0 0 1px #C7C7CC',
+        'ring-control-hover': 'inset 0 0 0 1px #AEAEB2',
       },
       // v7 type scale (literal px). h1 greeting/display, h2 player & team
       // heroes, h3 page titles, h4 section titles, h5 card headlines, h6

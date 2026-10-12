@@ -45,12 +45,13 @@ import { cn } from "@/lib/utils"
  *   there is deliberately no roving tabindex, because that belongs to
  *   `tablist`/`radiogroup`, not to a group of toggle buttons.
  *
- * **Frame follows role, colour never changes.** `appearance="boxed"` is the
- * joined, ink-bordered segment (`screens/list-rail-list-view.png`: the
- * List / Cards / Side by side control and the view-style toggle);
- * `appearance="bare"` is the un-framed chip row (the same screenshot's
- * `My lists 7 / Saved 2` and `List / Details / Comments 0`). Active, inactive
- * and hover are identical in both. `Segment` defaults to boxed and `TabsList`
+ * **Frame follows role (v7).** `appearance="boxed"` is v7's segmented
+ * control (`FSSegmented7`): a light grey pill track whose selected item is a
+ * white pill with a small contact shadow — the List / Cards / Side by side
+ * control and the view-style toggle. `appearance="bare"` is v7's pill tab
+ * row (the league header's League · Roster · Players …): no track, the
+ * selected item is an ink pill with white text — `My lists 7 / Saved 2` and
+ * `List / Details / Comments 0`. `Segment` defaults to boxed and `TabsList`
  * to bare, because that is how the design uses them; either can opt into the
  * other.
  *
@@ -99,7 +100,7 @@ type SegmentAppearance = "boxed" | "bare"
 const segmentGroupVariants = cva("inline-flex w-fit shrink-0 items-stretch", {
   variants: {
     appearance: {
-      boxed: "border-1 border-ink bg-white",
+      boxed: "gap-[2px] rounded-pill bg-surface-control p-[3px]",
       bare: "gap-1",
     },
   },
@@ -107,22 +108,24 @@ const segmentGroupVariants = cva("inline-flex w-fit shrink-0 items-stretch", {
 })
 
 /**
- * The single source of the look. Active is an accent fill with white text —
- * accent is "do a thing", and the design's own screenshot fills every active
- * tab and segment with it. Inactive is **full-contrast ink, never grey**, and
- * hover is an `accent-soft` wash.
+ * The single source of the look (v7). Boxed: selected = white pill + contact
+ * shadow (`shadow-seg`, part of the control's form, not elevation), inactive
+ * = secondary ink, hover = a 5% dark wash. Bare: selected = ink pill with
+ * white text, inactive = ink, hover = a 6% dark wash. Position pickers still
+ * override the selected fill with the position colour (`POSITION_TAB_ACTIVE`).
  */
 const segmentItemVariants = cva(
-  "inline-flex h-tab select-none items-center justify-center gap-1.5 whitespace-nowrap text-[11px] font-bold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40 data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=inactive]:text-ink data-[state=inactive]:hover:bg-accent-soft",
+  "inline-flex select-none items-center justify-center gap-[5px] whitespace-nowrap rounded-pill text-[11px] font-semibold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       appearance: {
-        boxed: "border-r border-n-4 last:border-r-0 data-[state=inactive]:bg-white",
-        bare: "rounded-sm data-[state=inactive]:bg-transparent",
+        boxed:
+          "h-tab data-[state=active]:bg-white data-[state=active]:text-ink data-[state=active]:shadow-seg data-[state=inactive]:bg-transparent data-[state=inactive]:text-n-2 data-[state=inactive]:hover:bg-black/5 data-[state=inactive]:hover:text-ink",
+        bare: "h-btn-md data-[state=active]:bg-ink data-[state=active]:text-white data-[state=inactive]:bg-transparent data-[state=inactive]:text-ink data-[state=inactive]:hover:bg-black/[0.06]",
       },
       shape: {
-        label: "px-2.5",
-        icon: "w-[29px] px-0",
+        label: "px-[9px]",
+        icon: "min-w-8 px-0",
       },
     },
     defaultVariants: { appearance: "boxed", shape: "label" },
@@ -155,7 +158,7 @@ function SegmentContent({
 }: SegmentContentProps & { children?: React.ReactNode }) {
   return (
     <>
-      {icon ? <Icon name={icon} size={13} /> : null}
+      {icon ? <Icon name={icon} size={11} /> : null}
       {children}
       {count == null ? null : (
         <span className="fs-num text-[10px] font-medium opacity-70">{count}</span>
