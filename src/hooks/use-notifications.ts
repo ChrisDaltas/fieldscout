@@ -15,6 +15,10 @@ export interface NotificationItem {
     league_id?: string
     team_id?: string
     event?: string
+    // M8 L.G1.2 (185): a hand-written FieldScout notice (`operator_notice`)
+    // carries `from: 'fieldscout'` and an optional in-app `link`.
+    from?: string
+    link?: string
   } | null
   read: boolean
   created_at: string

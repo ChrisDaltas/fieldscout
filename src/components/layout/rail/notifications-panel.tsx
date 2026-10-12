@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { Crest } from '@/components/leagues/league-cells'
 import {
   filterNotifications,
+  isFieldScoutNotice,
   notificationIcon,
   notificationLeagueId,
   notificationSource,
@@ -208,6 +209,11 @@ export function NotificationsBody({
                 </span>
               )}
               <span className="min-w-0 flex-1">
+                {isFieldScoutNotice(n) && (
+                  <span className="block text-[10px] font-bold text-accent" data-notif-from-fieldscout>
+                    From FieldScout
+                  </span>
+                )}
                 <span
                   className={cn(
                     'block text-[12px] leading-snug text-ink',
