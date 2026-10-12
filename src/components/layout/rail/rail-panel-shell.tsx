@@ -11,15 +11,15 @@ interface RailPanelShellProps {
 
 /**
  * Shared chrome for every rail panel — the 37px head (title + close ghost on
- * a 1px ink rule) over a flex column body. Panels own their scroll areas:
+ * a hairline) over a flex column body. Panels own their scroll areas:
  * render fixed sections as `shrink-0` and the list as `min-h-0 flex-1
  * overflow-y-auto`.
  */
 export function RailPanelShell({ title, onClose, children }: RailPanelShellProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-chrome-band shrink-0 items-center gap-2 border-b border-ink px-3">
-        <span className="mr-auto truncate text-[11px] font-extrabold text-ink">
+      <div className="flex h-chrome-band shrink-0 items-center gap-2 border-b border-n-4 pl-3 pr-1.5">
+        <span className="mr-auto truncate text-[12px] font-bold text-ink">
           {title}
         </span>
         <Button

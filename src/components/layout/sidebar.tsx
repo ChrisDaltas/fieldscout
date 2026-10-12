@@ -125,22 +125,21 @@ function NavRow({
       href={item.href}
       title={collapsed ? item.label : undefined}
       className={cn(
-        'flex h-nav-tile items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
-        collapsed && 'w-nav-tile justify-center self-center px-0',
-        active
-          ? 'bg-accent text-white'
-          : 'text-on-ink hover:bg-on-ink-wash hover:text-white',
+        'flex h-nav-tile items-center gap-[9px] rounded-[9px] px-[9px] text-[11px] text-ink transition-colors',
+        collapsed && 'justify-center px-0',
+        active ? 'bg-surface-selected font-semibold' : 'font-medium hover:bg-surface-hover',
       )}
     >
-      <Icon name={item.icon} size={16} />
+      <Icon name={item.icon} size={14} />
       {!collapsed && <span className="truncate">{item.label}</span>}
     </Link>
   )
 }
 
-/** The ink sidebar — wordmark band, search, primary nav with a More
- *  expander, and the Leagues section (the viewer's real memberships).
- *  Drag-resizable, collapses to an icon rail. */
+/** v7 left rail (`FSNavItem7` rows) — white, hairline right edge, under the
+ *  top bar. A sidebar toggle, the primary nav with a More expander, then the
+ *  Leagues section (the viewer's real memberships). The logo and search
+ *  moved to the top bar. Drag-resizable; minimises to a 41px icon rail. */
 export function Sidebar() {
   const pathname = usePathname()
   const sidebarWidth = useUIStore((s) => s.sidebarWidth)
@@ -190,70 +189,27 @@ export function Sidebar() {
     <aside
       style={{ width }}
       className={cn(
-        'relative hidden shrink-0 flex-col overflow-visible bg-ink text-white lg:flex',
+        'relative hidden shrink-0 flex-col gap-0.5 overflow-visible border-r border-n-4 bg-white py-[7px] text-ink lg:flex',
+        isCollapsed ? 'px-[7px]' : 'px-2',
         animateWidth && 'transition-[width] duration-200',
       )}
       aria-label="Main navigation"
     >
-      {/* Logo band — h-chrome-band (37px), flush with the header line */}
-      <div
-        className={cn(
-          'flex h-chrome-band shrink-0 items-center border-b border-on-ink-rule',
-          isCollapsed ? 'justify-center' : 'px-3.5',
-        )}
-      >
-        <Link
-          href="/app"
-          className="whitespace-nowrap font-wordmark text-[16px] tracking-[-0.1em] text-brand"
-        >
-          {isCollapsed ? 'FS' : 'FIELDSCOUT'}
-        </Link>
-      </div>
-
-      {/* Toggle + search */}
-      <div
-        className={cn(
-          'flex shrink-0 items-center gap-1.5 pt-3',
-          isCollapsed ? 'flex-col px-0' : 'px-2.5',
-        )}
-      >
+      {/* Sidebar toggle — v7's rail control row */}
+      <div className={cn('flex h-nav-tile shrink-0 items-center', isCollapsed ? 'justify-center' : 'px-0.5')}>
         <button
           onClick={toggleCollapsed}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="flex h-nav-tile w-nav-tile shrink-0 items-center justify-center rounded-sm text-on-ink transition-colors hover:bg-on-ink-wash hover:text-white"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="flex size-btn-md shrink-0 items-center justify-center rounded-pill text-ink transition-colors hover:bg-surface-hover"
         >
           <Icon name="burger" size={15} />
         </button>
-        {isCollapsed ? (
-          <button
-            onClick={() => setPaletteOpen(true)}
-            title="Search"
-            className="flex h-nav-tile w-nav-tile items-center justify-center rounded-sm text-on-ink transition-colors hover:bg-on-ink-wash hover:text-white"
-          >
-            <Icon name="search" size={15} />
-          </button>
-        ) : (
-          <button
-            onClick={() => setPaletteOpen(true)}
-            className="flex h-nav-tile min-w-0 flex-1 cursor-text items-center gap-2 rounded-sm border border-white/20 px-2.5 text-left text-[11px] font-semibold text-white/60 transition-colors hover:border-white/40"
-          >
-            <Icon name="search" size={13} className="shrink-0 opacity-70" />
-            <span className="truncate">Search players, lists, users…</span>
-            <kbd className="ml-auto shrink-0 rounded-sm border border-on-ink-border px-1 font-mono text-[9px] text-on-ink-muted">
-              /
-            </kbd>
-          </button>
-        )}
       </div>
 
       {/* Scrollable middle: nav + teams */}
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto scrollbar-none">
-        <nav
-          className={cn(
-            'flex flex-col gap-0.5',
-            isCollapsed ? 'items-stretch px-0' : 'px-2.5',
-          )}
-        >
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none">
+        <nav className="flex flex-col gap-0.5">
           {PRIMARY.map((item) => (
             <NavRow
               key={item.href}
@@ -275,13 +231,13 @@ export function Sidebar() {
             onClick={() => setMoreOpen((o) => !o)}
             title={isCollapsed ? (moreOpen ? 'Less' : 'More') : undefined}
             className={cn(
-              'flex h-nav-tile items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold text-on-ink transition-colors hover:bg-on-ink-wash hover:text-white',
-              isCollapsed && 'w-nav-tile justify-center self-center px-0',
+              'flex h-nav-tile items-center gap-[9px] rounded-[9px] px-[9px] text-[11px] font-medium text-ink transition-colors hover:bg-surface-hover',
+              isCollapsed && 'justify-center px-0',
             )}
           >
             <Icon
               name={moreOpen ? 'arrow-up' : 'dots'}
-              size={16}
+              size={14}
             />
             {!isCollapsed && <span>{moreOpen ? 'Less' : 'More'}</span>}
           </button>
@@ -289,18 +245,17 @@ export function Sidebar() {
           {/* Leagues section — the viewer's real memberships, gated with the
               leagues release and hidden entirely when they're in none. */}
           {featureFlags.leagues && myLeagues.length > 0 && (
-          <div className={cn('mt-2.5', isCollapsed && 'mt-1.5')}>
-            {isCollapsed ? (
-              <div className="mx-1.5 my-2 h-px bg-on-ink-rule" />
-            ) : (
+          <div>
+            <div className="mx-1 my-[7px] h-px bg-n-4" />
+            {!isCollapsed && (
               <button
                 onClick={() => setTeamsOpen((o) => !o)}
-                className="flex w-full items-center justify-between rounded-sm px-2.5 py-1.5 text-[11px] font-bold text-on-ink-muted transition-colors hover:text-white/80"
+                className="flex w-full items-center justify-between rounded-md px-[9px] py-1 text-[9px] font-semibold text-n-6 transition-colors hover:text-n-3"
               >
                 <span>Leagues</span>
                 <Icon
                   name="arrow-bottom"
-                  size={13}
+                  size={11}
                   className={cn(
                     'transition-transform',
                     !teamsOpen && '-rotate-90',
@@ -318,36 +273,27 @@ export function Sidebar() {
                     href={`/app/leagues/${lg.id}`}
                     title={isCollapsed ? lg.name : undefined}
                     className={cn(
-                      'flex items-center gap-2.5 rounded-sm px-2.5 text-[13px] font-bold transition-colors',
-                      isCollapsed
-                        ? 'h-nav-tile w-nav-tile justify-center self-center px-0'
-                        : 'h-crest-row',
-                      leagueActive
-                        ? 'bg-accent text-white'
-                        : 'text-on-ink hover:bg-on-ink-wash hover:text-white',
+                      'flex h-crest-row items-center gap-[9px] rounded-[9px] px-[7px] text-ink transition-colors',
+                      isCollapsed && 'justify-center px-0',
+                      leagueActive ? 'bg-surface-selected' : 'hover:bg-surface-hover',
                     )}
                   >
                     {lg.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- 26px crest; next/image is overkill for the nav tile
+                      // eslint-disable-next-line @next/next/no-img-element -- 20px crest; next/image is overkill for the nav tile
                       <img
                         src={lg.avatar_url}
                         alt=""
-                        className="h-[26px] w-[26px] shrink-0 rounded-sm border border-on-ink-border object-cover"
+                        className="size-5 shrink-0 rounded-[6px] object-cover"
                       />
                     ) : (
-                      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-on-ink-border bg-on-ink-wash text-[10px] font-extrabold">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-ink text-[9px] font-bold text-white">
                         {leagueInitials(lg.name)}
                       </span>
                     )}
                     {!isCollapsed && (
-                      <span className="flex min-w-0 flex-col leading-tight">
-                        <span className="truncate">{lg.name}</span>
-                        <span
-                          className={cn(
-                            'truncate text-[10px] font-semibold',
-                            leagueActive ? 'text-white/80' : 'text-on-ink-muted',
-                          )}
-                        >
+                      <span className="flex min-w-0 flex-col gap-px leading-tight">
+                        <span className="truncate text-[11px] font-semibold">{lg.name}</span>
+                        <span className="truncate text-[9px] font-medium text-n-6">
                           {ROLE_LABEL[lg.my_role] ?? lg.my_role}
                         </span>
                       </span>

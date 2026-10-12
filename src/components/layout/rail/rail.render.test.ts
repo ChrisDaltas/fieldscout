@@ -185,12 +185,12 @@ function seeded(): QueryClient {
 // ---------------------------------------------------------------------------
 
 describe('ResearchRail — the strip', () => {
-  it('one button per tool, the account zone, and no panel before mount', () => {
+  it('one button per tool, no account zone (it moved to the v7 top bar), and no panel before mount', () => {
     const out = html(createElement(ResearchRail), seeded())
     for (const id of ['notifications', 'teams', 'players']) expect(out).toContain(`data-rail-tool="${id}"`)
     expect(out).not.toContain('data-rail-tool="messages"') // flagged off
     expect(out).toMatch(/aria-label="Players"/)
-    expect(out).toContain('data-rail-account="closed"')
+    expect(out).not.toContain('data-rail-account')
     expect(out).not.toContain('Players panel')
     // A pinned overlay: the strip's border is at rest, never a hard shadow.
     expect(out).not.toMatch(/shadow-hard/)

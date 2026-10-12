@@ -21,7 +21,7 @@ interface DraftStatusStripProps {
 /**
  * The status strip — spec §16.2 `draft-status-strip`, §16.4 zone 2 (v2.12;
  * Chris's requirements (3)/(4)); tasks-DR DR.4, D149. ONE band at
- * `h-header` (58px — the existing token), directly beneath the 54px command
+ * `h-draft-status` (58px — the pre-v7 header height), directly beneath the 54px command
  * bar: on-the-clock line (LEFT — the leading element), LIVE/PAUSED badge,
  * Round & Pick, the "Your next" hint, presence/draft-order chips, and the
  * pick clock at the RIGHT edge — the band's two ends read *whose turn* and
@@ -40,7 +40,7 @@ export function DraftStatusStrip({ strip, seats, clock, offsetMs }: DraftStatusS
   return (
     <section
       aria-label="Draft status"
-      className="flex h-header w-full shrink-0 items-center gap-2.5 border-b border-ink bg-white px-3"
+      className="flex h-draft-status w-full shrink-0 items-center gap-2.5 border-b border-ink bg-white px-3"
     >
       {/* Requirement (3): whose turn — the strip's LEADING element. */}
       <span
