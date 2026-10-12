@@ -6481,6 +6481,7 @@ export type Database = {
         Args: { p_actor: string; p_list_id: string }
         Returns: undefined
       }
+      op_cron_last_runs_internal: { Args: never; Returns: Json }
       op_job_check_internal: {
         Args: { p_job: string; p_kind: string }
         Returns: undefined
@@ -6489,6 +6490,11 @@ export type Database = {
       op_league_line_internal: {
         Args: { p_league_id: string; p_text: string }
         Returns: undefined
+      }
+      op_league_state: { Args: { p_league_id: string }; Returns: Json }
+      op_league_state_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: Json
       }
       op_notice_recipients_internal: {
         Args: { p_audience: string; p_league_id: string }
@@ -6513,6 +6519,12 @@ export type Database = {
         }
         Returns: Json
       }
+      op_pause_json_internal: {
+        Args: { p: Database["public"]["Tables"]["job_pauses"]["Row"] }
+        Returns: Json
+      }
+      op_platform_state: { Args: never; Returns: Json }
+      op_platform_state_internal: { Args: { p_at: string }; Returns: Json }
       op_resume_job: {
         Args: {
           p_action_id?: string
@@ -6604,6 +6616,10 @@ export type Database = {
           p_reason: string
           p_verb: string
         }
+        Returns: Json
+      }
+      op_week_games_internal: {
+        Args: { p_at: string; p_season: number; p_week: number }
         Returns: Json
       }
       player_points_rows_check_internal: {
@@ -7532,6 +7548,7 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
 
 
 
