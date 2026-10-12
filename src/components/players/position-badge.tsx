@@ -13,14 +13,14 @@ const STYLES: Record<string, string> = {
   RB: 'bg-pos-rb text-white',
   WR: 'bg-pos-wr text-white',
   TE: 'bg-pos-te text-white',
-  K: 'bg-pos-k text-white',
-  DEF: 'bg-pos-def text-white',
-  DST: 'bg-pos-def text-white',
+  K: 'bg-pos-k text-pos-text-dark',
+  DEF: 'bg-pos-def text-pos-text-dark',
+  DST: 'bg-pos-def text-pos-text-dark',
   FLEX: 'bg-pos-flex text-white',
-  // IDP codes (league roster builder, spec §7.3.2) share the defense grey.
-  DL: 'bg-pos-def text-white',
-  LB: 'bg-pos-def text-white',
-  DB: 'bg-pos-def text-white',
+  // IDP codes (league roster builder, spec §7.3.2) share one grey.
+  DL: 'bg-pos-idp text-white',
+  LB: 'bg-pos-idp text-white',
+  DB: 'bg-pos-idp text-white',
 }
 
 // Position pickers are the one exception to the accent-selected rule: the
@@ -41,9 +41,9 @@ export const POSITION_TAB_ACTIVE: Record<string, string> = {
   WR: 'data-[state=active]:bg-pos-wr data-[state=active]:text-white',
   TE: 'data-[state=active]:bg-pos-te data-[state=active]:text-white',
   FLEX: 'data-[state=active]:bg-pos-flex data-[state=active]:text-white',
-  K: 'data-[state=active]:bg-pos-k data-[state=active]:text-white',
-  DEF: 'data-[state=active]:bg-pos-def data-[state=active]:text-white',
-  DST: 'data-[state=active]:bg-pos-def data-[state=active]:text-white',
+  K: 'data-[state=active]:bg-pos-k data-[state=active]:text-pos-text-dark',
+  DEF: 'data-[state=active]:bg-pos-def data-[state=active]:text-pos-text-dark',
+  DST: 'data-[state=active]:bg-pos-def data-[state=active]:text-pos-text-dark',
 }
 
 export function PositionBadge({
