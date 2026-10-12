@@ -742,18 +742,31 @@ interface DbGameRow {
 }
 
 /**
- * M8 TD7 / Q100 — "the sync respects operator_hold": the provider's rows
- * minus every game an operator has marked. A held row is never written (its
- * mark is the operator's, not the feed's) and the stored row stays in the
- * week's bounds; clearing the mark lets the next poll write the feed's row.
+ * M8 TD7 / Q100 — "the sync respects operator_hold" (review R1547: it may
+ * not revert the MARK, and nothing more):
+ *   out_of_week / cancelled — the provider's row is never written (its mark
+ *     is the operator's, not the feed's); the stored row stays in the week's
+ *     bounds. Counted in `held`.
+ *   in_week (moved later this week) — the provider's row IS written: its new
+ *     kickoff, `live`, `final` all land, so the week finishes when the game
+ *     does. Only a `postponed` status — the one value that would take the
+ *     game back out of the week — is not: the stored status stays.
+ * Clearing the mark lets the next poll write the feed's row as usual.
  */
 export function withoutHeldGames(
   incoming: readonly GameRow[],
-  held: ReadonlySet<string>,
+  holds: ReadonlyMap<string, string>,
+  stored: ReadonlyMap<string, GameRow> = new Map(),
 ): { writable: GameRow[]; held: GameRow[] } {
   const writable: GameRow[] = []
   const skipped: GameRow[] = []
-  for (const row of incoming) (held.has(row.id) ? skipped : writable).push(row)
+  for (const row of incoming) {
+    const hold = holds.get(row.id)
+    if (hold === 'out_of_week' || hold === 'cancelled') skipped.push(row)
+    else if (hold === 'in_week' && row.status === 'postponed') {
+      writable.push({ ...row, status: stored.get(row.id)?.status ?? 'scheduled' })
+    } else writable.push(row)
+  }
   return { writable, held: skipped }
 }
 
@@ -764,7 +777,7 @@ async function readGames(
   db: SyncClient,
   season: number,
   observedAt?: Map<string, string | null>,
-  held?: Set<string>,
+  holds?: Map<string, string>,
 ): Promise<Map<string, GameRow>> {
   const rows = await pageAll<DbGameRow>((from, to) =>
     db
@@ -788,7 +801,7 @@ async function readGames(
       status: row.status as ProviderGame['status'],
     })
     observedAt?.set(row.id, row.updated_at === null || row.updated_at === undefined ? null : isoOf(row.updated_at))
-    if (row.operator_hold !== null && row.operator_hold !== undefined) held?.add(row.id)
+    if (row.operator_hold !== null && row.operator_hold !== undefined) holds?.set(row.id, row.operator_hold)
   }
   return out
 }
@@ -1082,7 +1095,7 @@ export async function ingestWeek(
   }
 
   const gamesObservedAt = new Map<string, string | null>()
-  const heldIds = new Set<string>()
+  const heldIds = new Map<string, string>()
   const [existingGames, existingWeeks, known, existingStats] = await Promise.all([
     readGames(db, season, gamesObservedAt, heldIds),
     readWeeks(db, season),
@@ -1090,7 +1103,7 @@ export async function ingestWeek(
     readStats(db, season, week),
   ])
   // M8 TD7 / Q100: an operator-marked game is never written by the sync.
-  const { writable: gameRows, held: heldRows } = withoutHeldGames(providerRows, heldIds)
+  const { writable: gameRows, held: heldRows } = withoutHeldGames(providerRows, heldIds, existingGames)
   report.games.held = heldRows.length
 
   const gameDiff = diffGames(gameRows, existingGames)
@@ -1220,7 +1233,7 @@ export async function ingestWeek(
   // ── Reasons: an empty section says why ──
   if (heldRows.length > 0) {
     report.reasons.push(
-      `nfl_games: ${heldRows.length} game(s) carry an operator mark (operator_hold) — the provider's row was not written: ${heldRows.map((g) => g.id).join(', ')}`,
+      `nfl_games: ${heldRows.length} game(s) are marked out of the week / cancelled (operator_hold) — the provider's row was not written: ${heldRows.map((g) => g.id).join(', ')}`,
     )
   }
   if (report.games.seen === 0) report.reasons.push(`provider returned zero games for ${season}`)

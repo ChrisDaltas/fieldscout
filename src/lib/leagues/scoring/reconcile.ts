@@ -160,6 +160,7 @@ import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 
 import type { TimeProvider } from '../time/time-provider'
 import { roundHalfUp } from './calculator'
+import { readHeldGames, withoutHeldLines } from './held-games'
 import { readStoredPlayerPointsForSeason, type StoredPlayerPoints, storedTeamPoints } from './player-points-store'
 import type { ScoringRulesDoc } from './rules-doc'
 import {
@@ -659,7 +660,7 @@ async function readLeagues(db: ScoreWorkerClient, season: number, scope: readonl
 }
 
 async function readStatLines(db: ScoreWorkerClient, season: number, week: number, playerIds: readonly string[]): Promise<Map<string, StatLineRow>> {
-  const select = ['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  const select = ['player_id', 'updated_at', 'advanced', 'game_id', ...STAT_LINE_COLUMNS].join(', ')
   const out = new Map<string, StatLineRow>()
   for (const ids of chunk(playerIds, IN_CHUNK)) {
     const rows = must(
@@ -931,7 +932,14 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
         startersByTeam.set(teamId, starters)
       }
       const starterIds = [...new Set([...startersByTeam.values()].flat())]
-      const [stats, players] = await Promise.all([readStatLines(db, season, week, starterIds), readPlayers(db, starterIds)])
+      const [allStats, players, held] = await Promise.all([
+        readStatLines(db, season, week, starterIds),
+        readPlayers(db, starterIds),
+        readHeldGames(db, season, week),
+      ])
+      // M8 TD7 / R1547: the worker's own held-game rule — a line on a game
+      // marked out of the week / cancelled scores 0, so the check expects 0.
+      const stats = withoutHeldLines(allStats, held, (pid) => players.get(pid)?.team).kept
       const updatedAt = new Map<string, string>()
       for (const [pid, row] of stats) updatedAt.set(pid, row.updated_at)
       const ctx: CellContext = {

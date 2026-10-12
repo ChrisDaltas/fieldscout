@@ -826,6 +826,35 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(await matchupScores(fx.l1, 1)).toContainEqual({ home: fx.t1, away: fx.t2, hs: 92.08, as: 0 })
   })
 
+  it('M8 TD7 / R1547 — a stat line on a game an operator marked CANCELLED does not score (its players score 0, as the FieldScout line says); clearing the mark restores the points', async () => {
+    // Production lines carry no game_id (F468(a)) — these don't either, so
+    // the match is by team: SWA's game of week 1 is cancelled.
+    const game = `${PREFIX}-g1`
+    await must(
+      service
+        .from('nfl_games')
+        .upsert({ id: game, season: SEASON, week: 1, home_team: 'SWA', away_team: 'SWZ', kickoff_at: '2099-09-13T17:00:00Z', status: 'postponed', operator_hold: 'cancelled', operator_hold_at: STAMP, operator_hold_prior_status: 'final' })
+        .select('id'),
+      'held game',
+    )
+    try {
+      await enqueue([P.qb1, P.rb1, P.wr1, P.k1, P.dst1], 1, STAMP)
+      const held = league(await drain(), fx.l1, 1)
+      expect(held.outcome).toBe('written')
+      expect(held.held_game_player_ids).toEqual([P.dst1, P.k1, P.qb1, P.rb1, P.wr1].sort())
+      const t1 = held.teams.find((t) => t.team_id === fx.t1)!
+      expect(t1.points).toBe(0) // every SWA starter: NO STAT LINE; the SWB TE never had one
+      expect(t1.no_stat_row.sort()).toEqual([P.dst1, P.k1, P.qb1, P.rb1, P.te1, P.wr1].sort())
+      expect(matchupHome(await matchupScores(fx.l1, 1), fx.t1)).toBe(0)
+    } finally {
+      await must(service.from('nfl_games').delete().eq('id', game), 'held game cleanup')
+    }
+    await enqueue([P.qb1, P.rb1, P.wr1, P.k1, P.dst1], 1, STAMP)
+    const restored = league(await drain(), fx.l1, 1)
+    expect(restored.held_game_player_ids).toBeUndefined()
+    expect(matchupHome(await matchupScores(fx.l1, 1), fx.t1)).toBe(92.08)
+  })
+
   it('F218 — a queued delta whose stats have NOT landed (stamp newer than the row) stays queued and is never scored stale; it scores once the stats land', async () => {
     // The RB's line is at STAMP; the queue says a LATER poll enqueued him.
     await enqueue([P.rb1], 1, STAMP_LATER)

@@ -7331,6 +7331,10 @@ export type Database = {
         Args: { p_starts_at: string }
         Returns: string
       }
+      week_release_floor_internal: {
+        Args: { p_starts_at: string }
+        Returns: string
+      }
       week_results_derive_internal: {
         Args: {
           p_league_id: string

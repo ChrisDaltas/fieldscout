@@ -196,6 +196,7 @@ import {
   type ScoringPosition,
   type ScoringRulesDoc,
 } from './rules-doc'
+import { readHeldGames, withoutHeldLines } from './held-games'
 import type { TierCuts } from './tier-cuts'
 import { POSITION_SCORABLE_KEYS } from './validate-rules-doc'
 
@@ -758,6 +759,9 @@ export interface LeagueWeekReport {
   /** `total_points` teams sent pending while a provisional row already
    *  exists — the door keeps the last value (F259(d); F263). */
   pending_kept_provisional: string[]
+  /** M8 TD7 / R1547 (migration 184): starters whose stat line is on a game an
+   *  operator marked out of the week / cancelled — scored as NO STAT LINE (0). */
+  held_game_player_ids?: string[]
   door?: DoorReport
   /** 158 (F405): set when the door was called — `stored` (the rows went with
    *  the scores) or `not_stored_pre_158` (a pre-158 door; named in problems). */
@@ -986,7 +990,8 @@ async function readStatLines(
   week: number,
   playerIds: readonly string[],
 ): Promise<Map<string, StatLineRow>> {
-  const select = ['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  // game_id: the held-game filter's match key (184 / R1547).
+  const select = ['player_id', 'updated_at', 'advanced', 'game_id', ...STAT_LINE_COLUMNS].join(', ')
   const out = new Map<string, StatLineRow>()
   for (const ids of chunk(playerIds, IN_CHUNK)) {
     const rows = must(
@@ -1125,6 +1130,15 @@ async function readPositions(db: ScoreWorkerClient, ids: readonly string[]): Pro
   for (const part of chunk(ids, IN_CHUNK)) {
     const rows = must(await db.from('players').select('id, position').in('id', part), 'players read')
     for (const row of rows) out.set(row.id, normalizePosition(row.position))
+  }
+  return out
+}
+
+async function readTeams(db: ScoreWorkerClient, ids: readonly string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>()
+  for (const part of chunk(ids, IN_CHUNK)) {
+    const rows = must(await db.from('players').select('id, team').in('id', part), 'players read (teams)')
+    for (const row of rows) out.set(row.id, row.team)
   }
   return out
 }
@@ -1313,8 +1327,18 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
   for (const teamId of toCompute) for (const pid of startersByTeam.get(teamId) ?? []) starterIds.add(pid)
   const missingStats = [...starterIds].filter((pid) => !input.statsByPlayer.has(pid))
   const extraStats = missingStats.length > 0 ? await readStatLines(db, season, week, missingStats) : new Map<string, StatLineRow>()
-  const statsByPlayer = new Map<string, StatLineRow>([...input.statsByPlayer, ...extraStats])
+  const allLines = new Map<string, StatLineRow>([...input.statsByPlayer, ...extraStats])
   const positions = await readPositions(db, [...starterIds])
+  // M8 TD7 / R1547: a line on a game marked out of the week / cancelled does
+  // not score — "its players score 0" (the FieldScout line's promise).
+  const held = await readHeldGames(db, season, week)
+  let statsByPlayer = allLines
+  if (held.gameIds.size > 0) {
+    const teams = await readTeams(db, [...starterIds])
+    const split = withoutHeldLines(allLines, held, (pid) => teams.get(pid))
+    statsByPlayer = split.kept
+    report.held_game_player_ids = split.dropped.filter((pid) => starterIds.has(pid))
+  }
 
   const scores: TeamWeekScore[] = []
   try {

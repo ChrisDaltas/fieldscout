@@ -86,11 +86,19 @@ describe('toGameRow', () => {
   })
 })
 
-describe('withoutHeldGames (M8 TD7 / Q100 — the sync respects operator_hold)', () => {
-  it('splits the provider rows: a held id is never writable; an unheld one always is', () => {
-    const other: GameRow = { ...G1_ROW, id: 'other' }
-    expect(withoutHeldGames([G1_ROW, other], new Set([G1_ROW.id]))).toEqual({ writable: [other], held: [G1_ROW] })
-    expect(withoutHeldGames([G1_ROW, other], new Set())).toEqual({ writable: [G1_ROW, other], held: [] })
+describe('withoutHeldGames (M8 TD7 / Q100 / R1547 — the sync never reverts the mark, nothing more)', () => {
+  const other: GameRow = { ...G1_ROW, id: 'other' }
+  it('out_of_week / cancelled: the provider row is never writable; an unheld row always is', () => {
+    expect(withoutHeldGames([G1_ROW, other], new Map([[G1_ROW.id, 'cancelled']]))).toEqual({ writable: [other], held: [G1_ROW] })
+    expect(withoutHeldGames([G1_ROW, other], new Map([[G1_ROW.id, 'out_of_week']]))).toEqual({ writable: [other], held: [G1_ROW] })
+    expect(withoutHeldGames([G1_ROW, other], new Map())).toEqual({ writable: [G1_ROW, other], held: [] })
+  })
+  it('in_week: the new kickoff and final land; only a postponed status (which would take the game out) keeps the stored status', () => {
+    const moved: GameRow = { ...G1_ROW, kickoff_at: '2026-09-22T00:15:00.000Z', status: 'final' }
+    expect(withoutHeldGames([moved], new Map([[G1_ROW.id, 'in_week']]))).toEqual({ writable: [moved], held: [] })
+    const back: GameRow = { ...G1_ROW, kickoff_at: '2026-10-04T17:00:00.000Z', status: 'postponed' }
+    const stored = new Map<string, GameRow>([[G1_ROW.id, { ...G1_ROW, status: 'scheduled' }]])
+    expect(withoutHeldGames([back], new Map([[G1_ROW.id, 'in_week']]), stored)).toEqual({ writable: [{ ...back, status: 'scheduled' }], held: [] })
   })
 })
 

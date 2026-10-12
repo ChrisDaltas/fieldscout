@@ -305,8 +305,14 @@ select is(
                                                  'waiver_claim_submit_internal', 'process_waivers_internal', 'trade_lock_internal', 'lineup_lock_tick')),
   'lineup_autopilot_internal=544d32c67abd3f3243ff1bfa568360ad lineup_lock_tick=bcc10f9a40e99f7a1cf83e1c94f813f0 process_waivers_internal=440a595061f1bdd26715ee381b5d6afa roster_add_drop_internal=d0e6afde7fdd872cb0d9576de91bcf7e set_lineup_internal=ca3307414057469da7ed5c0af0b29fe6 trade_lock_internal=cfdbf2451a0287cc6bf6bb1ee166b553 waiver_claim_submit_internal=5822e363acddfb8f781dc3ea6fb7e448',
   'A5 the seven live prosrc md5s — 157 as written (stored literals)');
+-- pg_temp.un184 — migration 184's inserted lines removed (each ends
+-- `-- 184 / L.G1.4 (TD7)`; pgTAP 132 pins them). RE-PINNED BY L.G1.4's fix
+-- round (R1546 — lineup_kickoff_internal gained one line; additive, R992).
+create function pg_temp.un184(p_src text) returns text language sql as $un184$
+  select regexp_replace(p_src, E'\n[^\n]*   -- 184 / L\\.G1\\.4 \\(TD7\\)', '', 'g')
+$un184$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un164(pg_temp.un165(pg_temp.un166(pg_temp.un170(pg_temp.un180(p.prosrc)))))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un164(pg_temp.un165(pg_temp.un166(pg_temp.un170(pg_temp.un180(pg_temp.un184(p.prosrc))))))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('trade_execute_internal', 'commish_roster_override_internal', 'commish_edit_lineup_internal',
                                                  'lineup_kept_starter_internal', 'lineup_kickoff_internal', 'pool_game_lock_any_internal')),

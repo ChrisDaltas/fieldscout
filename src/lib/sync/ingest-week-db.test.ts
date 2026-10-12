@@ -578,7 +578,7 @@ describe('M8 TD7 / Q100 — the sync respects operator_hold (migration 184)', ()
     const held = await poll(provider, clock, '2026-09-21T01:00:00Z', deps)
     expect(held.games).toEqual({ seen: 3, withoutKickoff: 0, inserted: 0, updated: 2, unchanged: 0, held: 1 })
     expect(held.reasons).toContain(
-      `nfl_games: 1 game(s) carry an operator mark (operator_hold) — the provider's row was not written: ${G3}`,
+      `nfl_games: 1 game(s) are marked out of the week / cancelled (operator_hold) — the provider's row was not written: ${G3}`,
     )
     expect(await storedHold(G3)).toEqual({ status: 'postponed', operator_hold: 'cancelled' })
     expect((await storedGames()).get(G3)).toEqual(before) // not one byte, updated_at included

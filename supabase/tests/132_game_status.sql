@@ -39,7 +39,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(47);
+select plan(60);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -71,31 +71,43 @@ select is(
                  has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('op_set_game_status', 'op_set_game_status_internal',
-     'week_games_state_internal', 'commish_matchup_edit_lock_internal')),
-  'commish_matchup_edit_lock_internal=f:search_path="":f:f op_set_game_status=t:search_path="":f:t op_set_game_status_internal=f:search_path="":f:f week_games_state_internal=f:search_path="":f:f',
-  'A4 the door DEFINER + search_path '''' + authenticated only; the internal and both predicates plain and closed');
+     'week_games_state_internal', 'commish_matchup_edit_lock_internal', 'lineup_kickoff_internal',
+     'op_verb_prelude_internal', 'week_release_floor_internal')),
+  'commish_matchup_edit_lock_internal=f:search_path="":f:f lineup_kickoff_internal=f:search_path="":f:f op_set_game_status=t:search_path="":f:t op_set_game_status_internal=f:search_path="":f:f op_verb_prelude_internal=f:search_path="":f:f week_games_state_internal=f:search_path="":f:f week_release_floor_internal=f:search_path="":f:f',
+  'A4 the door DEFINER + search_path '''' + authenticated only; every other 184 body plain and closed to anon / authenticated');
 create function pg_temp.un184(p_src text) returns text language sql as $un184$
   select regexp_replace(p_src, E'\n[^\n]*   -- 184 / L\\.G1\\.4 \\(TD7\\)', '', 'g')
 $un184$;
 select is(
   (select string_agg(p.proname || '=' || md5(p.prosrc), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('week_games_state_internal', 'commish_matchup_edit_lock_internal')),
-  'commish_matchup_edit_lock_internal=054c34712af523200f05d64da22b0ca4 week_games_state_internal=baba7674522c7a6150b67913b87051b0',
-  'A5 the two live prosrc md5s — 184 as written (stored literals)');
+   where n.nspname = 'public' and p.proname in ('week_games_state_internal', 'commish_matchup_edit_lock_internal',
+     'lineup_kickoff_internal', 'op_verb_prelude_internal')),
+  'commish_matchup_edit_lock_internal=054c34712af523200f05d64da22b0ca4 lineup_kickoff_internal=b30c5ba957cfc5f0f72009b18ac28c33 op_verb_prelude_internal=69e0a040fd961551a792fd486c107f58 week_games_state_internal=baba7674522c7a6150b67913b87051b0',
+  'A5 the four replaced bodies'' live prosrc md5s — 184 as written (stored literals)');
 select is(
   (select string_agg(p.proname || '=' || md5(pg_temp.un184(p.prosrc)), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('week_games_state_internal', 'commish_matchup_edit_lock_internal')),
-  'commish_matchup_edit_lock_internal=22e166d7b568e70ae6a24153d0f564fe week_games_state_internal=00910b5cb8e851d10cbaf1fd710d5d86',
-  'A6 D137: with 184''s lines removed each body is its newest definer''s FILE TEXT (142:156-450 = pgTAP 090 A1''s pin; 116:317-359 — md5 of the file text)');
+   where n.nspname = 'public' and p.proname in ('week_games_state_internal', 'commish_matchup_edit_lock_internal', 'lineup_kickoff_internal')),
+  'commish_matchup_edit_lock_internal=22e166d7b568e70ae6a24153d0f564fe lineup_kickoff_internal=80b9c63efa3cb5bbef7b79863e9801a7 week_games_state_internal=00910b5cb8e851d10cbaf1fd710d5d86',
+  'A6 D137: with 184''s lines removed each body is its newest definer''s FILE TEXT (142:156-450 = pgTAP 090 A1''s pin; 116:317-359; 112:380-428 — md5 of the file text)');
+select is(
+  (select md5(replace(p.prosrc, 'can use the operator tools (M8 TD1)', 'can use the job knobs (M8 TD1)'))
+   from pg_proc p where p.oid = 'public.op_verb_prelude_internal(text,uuid,uuid,text)'::regprocedure),
+  '57867ee5196cce4ed433866fe02f009c',
+  'A6b R1548: the prelude''s ONE change is its gate wording — reversed, it is 183:239-283''s FILE TEXT');
+select is(
+  (select string_agg(format('%s=%s', w.week, to_char(week_release_floor_internal(w.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI"Z"')), ' ' order by w.week)
+   from nfl_weeks w where w.season = 2026 and w.week in (2, 7, 8, 18)),
+  '2=2026-09-22T07:00Z 7=2026-10-27T07:00Z 8=2026-11-03T08:00Z 18=2027-01-12T08:00Z',
+  'A6c the SQL floor = release-floor.ts weekReleaseFloor (Tuesday 00:00 Pacific: PDT 07:00Z, PST 08:00Z across the Nov 1 fall-back)');
 select is(
   (select string_agg(p.proname || ':' || (length(p.prosrc) - length(pg_temp.un184(p.prosrc)) > 0)::text || ':' ||
       (select count(*) from regexp_matches(p.prosrc, '-- 184 / L\.G1\.4 \(TD7\)', 'g'))::text, ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.prosrc ~ '-- 184 / L\.G1\.4 \(TD7\)'),
-  'commish_matchup_edit_lock_internal:true:2 week_games_state_internal:true:1',
-  'A7 exactly two bodies carry 184 lines — the correction lock two, the finalize gate one (D137 hunk count)');
+  'commish_matchup_edit_lock_internal:true:2 lineup_kickoff_internal:true:1 week_games_state_internal:true:1',
+  'A7 exactly three bodies carry 184 lines — the correction lock two, the finalize gate one, the kickoff read one (D137 hunk count)');
 select ok(
   (select pg_get_functiondef(p.oid) !~* 'league_members' from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'op_set_game_status_internal'),
@@ -152,12 +164,18 @@ insert into league_members (league_id, user_id, team_id, role, is_placeholder) v
 -- they score 0 there: score-week-worker.ts "NO STAT LINE … scores 0").
 insert into league_weeks (league_id, season, week, status) values
  ('b1320000-0000-4000-8000-000000000007', 2026, 7, 'correction_window'),
- ('b1320000-0000-4000-8000-000000000018', 2026, 18, 'correction_window');
+ ('b1320000-0000-4000-8000-000000000018', 2026, 18, 'live');
 insert into matchups (id, league_id, season, week, home_team_id, away_team_id, home_score, away_score, status) values
  ('e1320000-0000-4000-8000-000000000007', 'b1320000-0000-4000-8000-000000000007', 2026, 7,
   'c1320000-0000-4000-8000-000000000071', 'c1320000-0000-4000-8000-000000000072', 101.50, 88.25, 'live'),
  ('e1320000-0000-4000-8000-000000000018', 'b1320000-0000-4000-8000-000000000018', 2026, 18,
   'c1320000-0000-4000-8000-000000000181', 'c1320000-0000-4000-8000-000000000182', 70.00, 92.10, 'live');
+
+-- A MIA player with a week-7 line and NO game_id (production's shape, F468(a)).
+insert into players (id, full_name, position, team, status) values ('x132-mia', 'X132 Mia', 'WR', 'MIA', 'Active');
+insert into player_stats (player_id, season, week, stat_type, updated_at, receiving_yards)
+values ('x132-mia', 2026, 7, 'weekly', '2026-10-25 23:00:00+00', 50);
+delete from score_fanout where season = 2026 and week = 7;
 
 create temp table r132 (tag text primary key, r jsonb);
 grant all on r132 to anon, authenticated, service_role;
@@ -175,6 +193,13 @@ create or replace function pg_temp.state(p_week int) returns text language sql a
   select format('in_week=%s left=%s open=%s all_final=%s left_list=%s', s.total_games - s.postponed_games, s.postponed_games,
                 s.open_games, s.all_final, coalesce(s.postponed_list, '-'))
   from week_games_state_internal(2026, p_week) s
+$$;
+create or replace function pg_temp.lock(p_team text, p_at timestamptz) returns text language sql as $$
+  select format('%s|%s', k.on_bye, (select l.locked from pool_game_lock_internal(2026, 7, p_team, p_at) l))
+  from lineup_kickoff_internal(2026, 7, p_team, p_at) k
+$$;
+create or replace function pg_temp.release(p_week int) returns text language sql as $$
+  select coalesce(to_char(w.last_game_ends_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI"Z"'), 'NULL') from nfl_weeks w where w.season = 2026 and w.week = p_week
 $$;
 create or replace function pg_temp.lw(p_league uuid) returns text language sql as $$
   select lw.status from league_weeks lw where lw.league_id = p_league
@@ -227,6 +252,10 @@ insert into r132 select 'M1', op_set_game_status_internal('x132-g7b', 'in_week',
 select is(format('%s|%s|%s', (select r ->> 'changed' from r132 where tag = 'M1'), (select r ->> 'leagues_told' from r132 where tag = 'M1'), pg_temp.game('x132-g7b')),
   'true|1|scheduled|in_week|postponed|t', 'M3 in_week: status scheduled, the hold, the provider status kept for switch-back; one league told');
 select is(pg_temp.state(7), 'in_week=2 left=0 open=1 all_final=f left_list=-', 'M4 the game is IN the week and open — the week waits (Q100)');
+select is(pg_temp.lock('MIA', '2026-10-25 20:01:00+00'), 'f|t',
+  'M4b R1546: an in_week game is still his game — its players lock at its kickoff (+1 min: locked)');
+select is(format('%s|%s', pg_temp.release(7), coalesce((select r ->> 'players_rescored' from r132 where tag = 'M1'), '?')), 'NULL|0',
+  'M4c an in_week mark records no release and re-scores nobody (the week waits; its players still score)');
 select set_config('request.jwt.claims', '', true);
 insert into r132 select 'M2', finalize_matchups('2026-10-29 11:10:00+00', null);
 select is((select r -> 'skipped' -> 0 ->> 'reason' from r132 where tag = 'M2') || '|' || pg_temp.lw('b1320000-0000-4000-8000-000000000007'),
@@ -241,8 +270,16 @@ select is(format('%s|%s|%s', (select r ->> 'replayed' from r132 where tag = 'M3'
 select is(format('%s|%s', pg_temp.receipts(), (select count(*) from league_chat where league_id = 'b1320000-0000-4000-8000-000000000007' and is_system)),
   '1|1', 'M7 …and neither wrote a receipt or a line (RETURNING-free count of both tables)');
 select is(pg_temp.err($$ select op_set_game_status_internal('x132-g18b', 'in_week', 'a1320000-0000-4000-8000-000000000001', null, now()) $$),
-  '22023: set_game_status: action id a1320000-0000-4000-8000-000000000001 was already used for a different game',
+  '22023: set_game_status: action id a1320000-0000-4000-8000-000000000001 was already used for a different game or status',
   'M8 an action id reused for another game is refused');
+select is(pg_temp.err($$ select op_set_game_status_internal('x132-g7b', 'cancelled', 'a1320000-0000-4000-8000-000000000001', null, now()) $$),
+  '22023: set_game_status: action id a1320000-0000-4000-8000-000000000001 was already used for a different game or status',
+  'M8b R1549: …and so is the same game with a DIFFERENT mark — a replay must be the same request');
+select set_config('request.jwt.claims', '{"sub": "99132000-0000-4000-8000-000000000005", "role": "authenticated"}', true);
+select is(pg_temp.err($$ select op_verb_prelude_internal('set_game_status', null, gen_random_uuid(), null) $$),
+  '42501: set_game_status: only a platform operator can use the operator tools (M8 TD1)',
+  'M8c R1548: the shared prelude''s refusal is verb-neutral (a plain user reaching it directly)');
+select pg_temp.as_op();
 
 -- ---------------------------------------------------------------------------
 -- N. Back to normal
@@ -260,6 +297,18 @@ select is(format('%s|%s|%s', (select r ->> 'changed' from r132 where tag = 'N2')
 -- ---------------------------------------------------------------------------
 insert into r132 select 'C1', op_set_game_status_internal('x132-g7b', 'cancelled', 'a1320000-0000-4000-8000-000000000005', 'Hurricane — NFL cancelled the game', '2026-10-27 15:00:00+00');
 select is(pg_temp.game('x132-g7b'), 'postponed|cancelled|postponed|t', 'C1 cancelled: status postponed (E43''s vocabulary) + the hold');
+select is(pg_temp.lock('MIA', '2026-10-25 20:01:00+00'), 't|f',
+  'C1b R1546: a cancelled game is not his game this week — at its old kickoff + 1 min his players are NOT locked (no game: the bye arm)');
+select is(pg_temp.lock('NYJ', '2026-10-25 20:01:00+00'), 't|f', 'C1c …the other side too');
+select is(
+  format('%s|%s', (select r ->> 'players_rescored' from r132 where tag = 'C1'),
+         (select string_agg(f.player_id || '@' || to_char(f.enqueued_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI"Z"'), ',')
+          from score_fanout f where f.season = 2026 and f.week = 7)),
+  '1|x132-mia@2026-10-25T23:00Z',
+  'C1d R1547: the player with a line on the cancelled game is re-queued (matched by team — a NULL game_id), stamped at his line (ready at once)');
+select is(format('%s|%s', pg_temp.release(7), (select r ->> 'release_recorded_at' from r132 where tag = 'C1')),
+  '2026-10-27T15:00Z|2026-10-27T15:00:00+00:00',
+  'C1e the stuck week: the mark left every in-week game final with no release recorded, so it records one — the LATER of now and the Tuesday floor (07:00Z)');
 select is(pg_temp.state(7), 'in_week=1 left=1 open=0 all_final=t left_list=NYJ @ MIA',
   'C2 the cancelled game has LEFT week 7 — though its kickoff never moved');
 select set_config('request.jwt.claims', '', true);
@@ -287,12 +336,18 @@ select is(pg_temp.state(18), 'in_week=2 left=0 open=1 all_final=f left_list=-',
   'E1 premise: in week 18 even a POSTPONED game can never leave by kickoff — it holds the week (the F243 trap)');
 select is((commish_matchup_edit_lock_internal('b1320000-0000-4000-8000-000000000018', 'e1320000-0000-4000-8000-000000000018') ->> 'week_games_over'),
   'false', 'E2 premise: the correction lock''s (A) agrees — week 18''s games are not over');
-insert into r132 select 'E1', op_set_game_status_internal('x132-g18b', 'out_of_week', 'a1320000-0000-4000-8000-000000000006', null, '2027-01-12 15:00:00+00');
+insert into r132 select 'E1', op_set_game_status_internal('x132-g18b', 'out_of_week', 'a1320000-0000-4000-8000-000000000006', null, '2027-01-12 03:00:00+00');
 select is(pg_temp.game('x132-g18b'), 'postponed|out_of_week|postponed|t', 'E3 out_of_week: the hold');
 select is(pg_temp.state(18), 'in_week=1 left=1 open=0 all_final=t left_list=SF @ SEA', 'E4 the marked game has LEFT week 18');
 select is((commish_matchup_edit_lock_internal('b1320000-0000-4000-8000-000000000018', 'e1320000-0000-4000-8000-000000000018') ->> 'week_games_over'),
   'true', 'E5 …and the correction lock''s (A) reads week 18''s games over');
+select is((select to_char(w.last_game_ends_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI"Z"') from nfl_weeks w where w.season = 2026 and w.week = 18),
+  '2027-01-12T08:00Z', 'E5b the stuck week, marked BEFORE the floor: the release recorded is the floor (Tue 00:00 PST), never earlier (Q50)');
 select set_config('request.jwt.claims', '', true);
+insert into r132 select 'E1a', league_week_advance('2027-01-12 07:59:59+00', 'b1320000-0000-4000-8000-000000000018');
+select is(pg_temp.lw('b1320000-0000-4000-8000-000000000018'), 'live', 'E5c one second before the release the NORMAL advance leaves week 18 live');
+insert into r132 select 'E1b', league_week_advance('2027-01-12 08:00:00+00', 'b1320000-0000-4000-8000-000000000018');
+select is(pg_temp.lw('b1320000-0000-4000-8000-000000000018'), 'correction_window', 'E5d …at the release it moves week 18 to its correction window — no operator verb');
 insert into r132 select 'E2', finalize_matchups('2027-01-14 12:00:00+00', null);
 select is(format('%s|%s', (select r ->> 'finalized' from r132 where tag = 'E2'), pg_temp.lw('b1320000-0000-4000-8000-000000000018')),
   '1|final', 'E6 the normal finalize closes week 18');

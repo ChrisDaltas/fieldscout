@@ -43,6 +43,9 @@
 --          (finalize_matchups' §23.2 gate — `left_week`)
 --        commish_matchup_edit_lock_internal 142:156-450  md5 0ce42ac9… → 2 hunks (+2 / -0)
 --          (the Q61 / Q67 correction lock — F243's "one arm in 135", R1099)
+--        lineup_kickoff_internal            112:380-428  md5 2a8c72af… → 1 hunk (+1 / -0)
+--          (every game-day lock's kickoff read — R1546)
+--        op_verb_prelude_internal           183:239-283  → 1 changed line (R1548)
 --      No other SQL decides "left the week" (measured: every `'postponed'`
 --      reader over supabase/migrations — 116 / 142 carry the kickoff-bound
 --      predicate; 157 / 166 read `status = 'postponed'` alone, which the
@@ -64,14 +67,36 @@
 --      (`now()`); the plain `_internal` takes the instant (the TimeProvider
 --      seam the tests use) — no identity swap (R1545).
 --
---   NOT HERE — `op_force_week_close` (PROGRESS Q103, filed by this task: what
---   "close a week, ignoring the Wednesday ceiling only" does to a game still
---   unplayed is not settled by §24.4 / §11.2 — HALTED, not improvised).
+--   NO FORCE CLOSE — Q103 RULED by Chris 2026-10-11, "drop it": there is no
+--   `op_force_week_close`, no "close week now" and no ceiling override.
+--   Marking the game + the normal close is the only path. So the mark itself
+--   records the week's release when ingestion has stopped polling it (5).
+--
+--   FIX ROUND (PR #420 review — R1546 / R1547 / R1548 / R1549):
+--   4. `lineup_kickoff_internal` (112) gains one arm: an out_of_week /
+--      cancelled game is not his game this week — his players never lock at
+--      its old kickoff (R1546).
+--   5. The mark re-queues the players with a stat line on the game (by
+--      game_id, or by team for a NULL-game line — F468(a)) whenever a
+--      zeroing mark is set or cleared, and the score worker / reconcile drop
+--      a line on a zeroing-held game (`src/lib/leagues/scoring/held-games.ts`)
+--      — "its players score 0" is true in the scorer (R1547). And when a
+--      zeroing mark leaves every in-week game final with no release recorded,
+--      it stamps `nfl_weeks.last_game_ends_at` = GREATEST(now, the Q50
+--      Tuesday floor) — `week_release_floor_internal`, the SQL twin of
+--      `weekReleaseFloor` — so the normal advance → finalize closes a week
+--      marked after its polling stopped (the stuck week).
+--   6. The in_week mark no longer freezes the row in the sync: the provider's
+--      kickoff / live / final land; only a `postponed` status (which would
+--      take the game back out of the week) is kept from it (R1547).
+--   7. The prelude's gate wording is verb-neutral (R1548); a replay must
+--      match the game AND the mark (R1549).
 --
 -- THE SYNC (TD7 / Q100 — "the sync respects operator_hold"):
--- `src/lib/sync/ingest-week.ts` reads the hold and never writes a held row
--- (counted `games.held`, named in `reasons`); the stored row stays in the
--- week's bounds, so the release stamp follows the mark. Switching back
+-- `src/lib/sync/ingest-week.ts` reads the hold and never writes an
+-- out_of_week / cancelled row (counted `games.held`, named in `reasons`); the
+-- stored row stays in the week's bounds, so the release stamp follows the
+-- mark. An in_week row is written except for a `postponed` status (6). Switching back
 -- clears the hold, and the next poll writes the provider's row again.
 -- `src/lib/leagues/scoring/reconcile.ts` (the calendar alert) reads the
 -- hold too, so a cancelled game is never named as holding its week.
@@ -471,6 +496,151 @@ REVOKE EXECUTE ON FUNCTION commish_matchup_edit_lock_internal(UUID, UUID)
   FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- 3b. lineup_kickoff_internal — CREATE OR REPLACE against 112:380-428's FILE
+--     TEXT (D137; 112 the only definer), 1 hunk (+1 / -0) marked
+--     `184 / L.G1.4 (TD7)` (review R1546): a game marked out of the week /
+--     cancelled is not his team's game this week, so his players never lock
+--     at its old kickoff (no game ⇒ the bye arm — unlocked, scores 0). An
+--     in_week mark is NOT excluded: its kickoff is the provider's (the sync
+--     writes a moved kickoff for an in_week game — R1547).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION lineup_kickoff_internal(
+  p_season   INTEGER,
+  p_week     INTEGER,
+  p_nfl_team TEXT,
+  p_at       TIMESTAMPTZ
+) RETURNS TABLE (
+  kickoff_at TIMESTAMPTZ,
+  datum_arm  TEXT,
+  on_bye     BOOLEAN
+)
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $$
+DECLARE
+  v_week_games INTEGER;
+  v_window     RECORD;
+BEGIN
+  SELECT count(*) INTO v_week_games
+  FROM public.nfl_games g
+  WHERE g.season = p_season AND g.week = p_week;
+
+  IF v_week_games = 0 THEN
+    -- No game rows for the week: the week datum chain decides for EVERY
+    -- player (nfl_weeks.first_kickoff_at → starts_at) — conservative.
+    SELECT * INTO v_window FROM public.schedule_window_internal(p_season, p_week, p_at);
+    kickoff_at := v_window.first_kickoff_at;
+    datum_arm  := v_window.datum_arm;
+    on_bye     := FALSE;
+    RETURN NEXT;
+    RETURN;
+  END IF;
+
+  SELECT min(g.kickoff_at) INTO kickoff_at
+  FROM public.nfl_games g
+  WHERE g.season = p_season AND g.week = p_week
+    AND g.operator_hold IS DISTINCT FROM 'out_of_week' AND g.operator_hold IS DISTINCT FROM 'cancelled'   -- 184 / L.G1.4 (TD7)
+    AND p_nfl_team IS NOT NULL
+    AND (g.home_team = p_nfl_team OR g.away_team = p_nfl_team);
+
+  IF kickoff_at IS NULL THEN
+    datum_arm := 'bye';
+    on_bye    := TRUE;
+  ELSE
+    datum_arm := 'nfl_games';
+    on_bye    := FALSE;
+  END IF;
+  RETURN NEXT;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION lineup_kickoff_internal(INTEGER, INTEGER, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3c. op_verb_prelude_internal — CREATE OR REPLACE against 183:239-283's
+--     FILE TEXT, 1 changed line (review R1548): the gate's refusal wording is
+--     verb-neutral ("the operator tools", not "the job knobs") now that a
+--     non-job verb uses the prelude. The doors' own messages are unchanged.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION op_verb_prelude_internal(
+  p_verb TEXT, p_league_id UUID, p_action_id UUID, p_reason TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_rec public.platform_operator_actions;
+BEGIN
+  IF NOT public.is_platform_operator() THEN
+    RAISE EXCEPTION '%: only a platform operator can use the operator tools (M8 TD1)', p_verb
+      USING ERRCODE = '42501';
+  END IF;
+  IF p_action_id IS NULL THEN
+    RAISE EXCEPTION '%: p_action_id is required — it makes a retry safe (M8 TD3)', p_verb
+      USING ERRCODE = '22023';
+  END IF;
+  IF p_reason IS NOT NULL AND (length(btrim(p_reason, E' \t\r\n')) = 0 OR length(p_reason) > 500) THEN
+    RAISE EXCEPTION '%: a reason is optional, but when given it is non-blank and at most 500 characters', p_verb
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_rec FROM public.platform_operator_actions a WHERE a.action_id = p_action_id;
+  IF FOUND THEN
+    IF v_rec.verb <> p_verb OR v_rec.actor_id <> auth.uid()
+       OR v_rec.league_id IS DISTINCT FROM p_league_id THEN
+      RAISE EXCEPTION '%: action id % was already used for a different operator action', p_verb, p_action_id
+        USING ERRCODE = '22023';
+    END IF;
+    RETURN COALESCE(v_rec.after, '{}'::jsonb) || jsonb_build_object('replayed', TRUE, 'receipt_id', v_rec.id);
+  END IF;
+
+  IF p_league_id IS NOT NULL THEN
+    -- The row lock: waits out an in-flight job run of this league (each job
+    -- claims the league FOR UPDATE SKIP LOCKED), and makes a concurrent
+    -- scheduled run SKIP the league while this verb commits.
+    PERFORM 1 FROM public.leagues l WHERE l.id = p_league_id AND l.deleted_at IS NULL FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION '%: league % does not exist', p_verb, p_league_id
+        USING ERRCODE = 'P0002';
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION op_verb_prelude_internal(TEXT, UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3d. week_release_floor_internal — Q50's FLOOR in SQL: the first Tuesday
+--     00:00 America/Los_Angeles strictly after the week's `starts_at` (the
+--     SQL twin of release-floor.ts `weekReleaseFloor`; pinned to the same
+--     literals in pgTAP 132). Used ONLY by the mark below (the stuck-week
+--     fix): ingestion's `weekBounds` stays the release stamp's other writer.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION week_release_floor_internal(p_starts_at TIMESTAMPTZ)
+RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql
+STABLE
+SET search_path = ''
+AS $$
+DECLARE
+  v_day  DATE := (p_starts_at AT TIME ZONE 'America/Los_Angeles')::date;
+  v_at   TIMESTAMPTZ;
+BEGIN
+  IF p_starts_at IS NULL THEN
+    RAISE EXCEPTION 'week_release_floor_internal: starts_at is required' USING ERRCODE = '22023';
+  END IF;
+  FOR i IN 0..8 LOOP
+    v_at := ((v_day + i)::timestamp) AT TIME ZONE 'America/Los_Angeles';
+    IF extract(isodow FROM (v_day + i)) = 2 AND v_at > p_starts_at THEN
+      RETURN v_at;
+    END IF;
+  END LOOP;
+  RAISE EXCEPTION 'week_release_floor_internal: no Tuesday midnight found after %', p_starts_at USING ERRCODE = 'P0001';
+END;
+$$;
+REVOKE ALL ON FUNCTION week_release_floor_internal(TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- 4. op_set_game_status (TD7 / Q100)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION op_set_game_status_internal(
@@ -493,11 +663,17 @@ DECLARE
   v_told    INTEGER := 0;
   v_before  JSONB;
   v_after   JSONB;
+  v_queued  INTEGER := 0;
+  v_release TIMESTAMPTZ;
+  v_wk      public.nfl_weeks;
+  v_state   RECORD;
 BEGIN
   v_replay := public.op_verb_prelude_internal('set_game_status', NULL, p_action_id, p_reason);
   IF v_replay IS NOT NULL THEN
-    IF v_replay ->> 'game_id' IS DISTINCT FROM p_game_id THEN
-      RAISE EXCEPTION 'set_game_status: action id % was already used for a different game', p_action_id
+    -- R1549: a replay is the SAME request — the same game AND the same mark.
+    IF v_replay ->> 'game_id' IS DISTINCT FROM p_game_id
+       OR v_replay ->> 'operator_hold' IS DISTINCT FROM NULLIF(p_status, 'normal') THEN
+      RAISE EXCEPTION 'set_game_status: action id % was already used for a different game or status', p_action_id
         USING ERRCODE = '22023';
     END IF;
     RETURN v_replay;
@@ -557,6 +733,40 @@ BEGIN
       updated_at = p_at
   WHERE id = p_game_id;
 
+  -- R1547: the players of a game whose mark ZEROES them (out_of_week /
+  -- cancelled — before or after this change) are re-scored, so a stat line
+  -- already counted leaves the score, and a switch-back restores it. The
+  -- 123 pattern: one queue row per player with a line, stamped at the
+  -- line's own updated_at (ready at once), never re-stamping a live row.
+  -- Matched by game_id, or — a NULL game_id line (F468(a)) — by his team.
+  IF v_g.operator_hold IN ('out_of_week', 'cancelled') OR v_hold IN ('out_of_week', 'cancelled') THEN
+    INSERT INTO public.score_fanout (season, week, player_id, enqueued_at)
+    SELECT v_g.season, v_g.week, ps.player_id, min(ps.updated_at)
+    FROM public.player_stats ps
+    LEFT JOIN public.players p ON p.id = ps.player_id
+    WHERE ps.season = v_g.season AND ps.week = v_g.week AND ps.updated_at IS NOT NULL
+      AND (ps.game_id = p_game_id
+           OR (ps.game_id IS NULL AND p.team IN (v_g.home_team, v_g.away_team)))
+    GROUP BY ps.player_id
+    ON CONFLICT (season, week, player_id) DO NOTHING;
+    GET DIAGNOSTICS v_queued = ROW_COUNT;
+  END IF;
+
+  -- The stuck week (review fix): a mark that leaves every in-week game final
+  -- records the week's release itself when ingestion has not — the sync
+  -- stops polling a week once the next one starts, so without this a game
+  -- marked late would hold the week live forever (F238). The stamp is
+  -- weekBounds' own rule (Q50): the LATER of now and the Tuesday floor.
+  SELECT * INTO v_wk FROM public.nfl_weeks w WHERE w.season = v_g.season AND w.week = v_g.week FOR UPDATE;
+  IF FOUND AND v_wk.last_game_ends_at IS NULL AND v_hold IN ('out_of_week', 'cancelled') THEN
+    SELECT * INTO v_state FROM public.week_games_state_internal(v_g.season, v_g.week);
+    IF v_state.all_final THEN
+      v_release := GREATEST(p_at, public.week_release_floor_internal(v_wk.starts_at));
+      UPDATE public.nfl_weeks SET last_game_ends_at = v_release
+      WHERE season = v_g.season AND week = v_g.week;
+    END IF;
+  END IF;
+
   v_text := 'FieldScout marked the ' || v_game || CASE p_status
     WHEN 'in_week'     THEN ' as moved later this week. The week waits for it before it finishes.'
     WHEN 'out_of_week' THEN ' as moved out of the week. Its players score 0 this week and the week finishes without it.'
@@ -578,7 +788,8 @@ BEGIN
 
   v_after := jsonb_build_object('changed', TRUE, 'game_id', p_game_id, 'status', v_status,
     'operator_hold', v_hold, 'kickoff_at', v_g.kickoff_at, 'season', v_g.season, 'week', v_g.week,
-    'leagues_told', v_told, 'marked_at', p_at);
+    'leagues_told', v_told, 'marked_at', p_at, 'players_rescored', v_queued,
+    'release_recorded_at', v_release);
   PERFORM public.log_operator_action_internal(p_action_id, v_actor, 'set_game_status',
     'platform', NULL, p_reason, v_before, v_after);
   RETURN v_after;
