@@ -6490,6 +6490,10 @@ export type Database = {
         Args: { p_league_id: string; p_text: string }
         Returns: undefined
       }
+      op_notice_recipients_internal: {
+        Args: { p_audience: string; p_league_id: string }
+        Returns: string[]
+      }
       op_pause_job: {
         Args: {
           p_action_id?: string
@@ -6544,6 +6548,33 @@ export type Database = {
           p_job: string
           p_league_id: string
           p_reason: string
+        }
+        Returns: Json
+      }
+      op_send_notification: {
+        Args: {
+          p_action_id?: string
+          p_audience: string
+          p_body?: string
+          p_channels?: string[]
+          p_league_id?: string
+          p_link?: string
+          p_reason?: string
+          p_title: string
+        }
+        Returns: Json
+      }
+      op_send_notification_internal: {
+        Args: {
+          p_action_id: string
+          p_at: string
+          p_audience: string
+          p_body: string
+          p_channels: string[]
+          p_league_id: string
+          p_link: string
+          p_reason: string
+          p_title: string
         }
         Returns: Json
       }

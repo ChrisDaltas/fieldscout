@@ -49,9 +49,24 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   if (n.type === 'stat_correction_result' && typeof data?.league_id === 'string' && data.league_id !== '') {
     return `/app/leagues/${data.league_id}`
   }
+  // M8 L.G1.2 (185, D516): a hand-written FieldScout notice
+  // (`operator_notice`) → its link, which is always a page INSIDE the app
+  // (the verb refuses anything else; re-checked here so a bad row can never
+  // send the user off-site); a league notice with no link → that league's home.
+  if (n.type === 'operator_notice') {
+    if (typeof data?.link === 'string' && isInAppPath(data.link)) return data.link
+    if (typeof data?.league_id === 'string' && data.league_id !== '') return `/app/leagues/${data.league_id}`
+    return null
+  }
   // List activity (the pre-existing arm).
   if (typeof data?.list_id === 'string' && data.list_id !== '') {
     return `/app/lists/${data.list_id}`
   }
   return null
+}
+
+/** A path inside the app: one leading "/", never "//" (another host), no
+ *  scheme, whitespace or backslash — the same rule as migration 185's check. */
+export function isInAppPath(link: string): boolean {
+  return link.length <= 500 && /^\/([^/\\\s][^\\\s]*)?$/.test(link)
 }

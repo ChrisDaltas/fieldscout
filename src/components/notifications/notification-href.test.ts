@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { notificationHref } from './notification-href'
+import { isInAppPath, notificationHref } from './notification-href'
 
 /**
  * F30 pin — the `league_invite` notification row renders as a LINK to the
@@ -146,5 +146,24 @@ describe('trade notifications land on the trade center (M5 L.D3.7, F438)', () =>
   it('M6 L.E2.2 (172): a stat correction that changed the manager’s result → the league home (the post + standings); no league id → inert', () => {
     expect(notificationHref({ type: 'stat_correction_result', data: { league_id: 'lg-1', team_id: 't1' } })).toBe('/app/leagues/lg-1')
     expect(notificationHref({ type: 'stat_correction_result', data: { team_id: 't1' } })).toBeNull()
+  })
+})
+
+describe('FieldScout notices open in-app (M8 L.G1.2, 185)', () => {
+  it('an in-app link opens that page', () => {
+    expect(notificationHref({ type: 'operator_notice', data: { from: 'fieldscout', link: '/app/leagues/lg-1/waivers' } })).toBe('/app/leagues/lg-1/waivers')
+    expect(notificationHref({ type: 'operator_notice', data: { from: 'fieldscout', link: '/' } })).toBe('/')
+  })
+  it('a link that would leave the app is never followed; a league notice falls back to its home, a platform one is inert', () => {
+    for (const link of ['https://evil.example', '//evil.example', 'app/x', '/a b', '/a\\b', 'javascript:alert(1)']) {
+      expect(isInAppPath(link), link).toBe(false)
+      expect(notificationHref({ type: 'operator_notice', data: { link } }), link).toBeNull()
+      expect(notificationHref({ type: 'operator_notice', data: { link, league_id: 'lg-1' } }), link).toBe('/app/leagues/lg-1')
+    }
+    expect(isInAppPath('/' + 'a'.repeat(500))).toBe(false)
+  })
+  it('no link → the league home for a league notice, inert for a platform notice', () => {
+    expect(notificationHref({ type: 'operator_notice', data: { league_id: 'lg-1' } })).toBe('/app/leagues/lg-1')
+    expect(notificationHref({ type: 'operator_notice', data: { from: 'fieldscout' } })).toBeNull()
   })
 })
