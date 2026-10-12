@@ -61,14 +61,20 @@
 --      league_id (league sends only), link (when given) }. The rail shows it
 --      with a "From FieldScout" label.
 --
--- CHECKLIST (tasks-M* §4.4): no new table; three new functions, all
+-- CHECKLIST (tasks-M* §4.4): no new table; one grant narrowed on
+-- `notifications` (R1558, §3 below); three new functions, all
 -- search_path ''; DEFINER only on the door, with the in-body gate; EXECUTE on
 -- the door for `authenticated` only, both internals REVOKEd from PUBLIC /
 -- anon / authenticated. No existing function is CREATE OR REPLACE'd (the
 -- prelude, the league-line writer and the audit seam are CALLED at their
 -- 184 / 183 / 182 heads). No R6 / D38 waiver needed. `notifications` keeps
--- its 001 RLS (own rows SELECT / UPDATE; no INSERT policy) — every write is
--- this DEFINER verb's.
+-- its 001 RLS (own rows SELECT / UPDATE; no INSERT policy), BUT its UPDATE
+-- privilege is narrowed (R1558): authenticated may update only the `read`
+-- column, anon nothing — so a user can mark their own rows read but can no
+-- longer rewrite a row's type / title / body / data (e.g. relabel it "From
+-- FieldScout"). The only client path (/api/notifications/read) sets `read`
+-- only; every other writer (this verb, the league notifiers,
+-- notify_list_followers) runs as the DEFINER owner and is unaffected.
 -- DEPLOY BEFORE PUSH (TD9): the route answers 503 "not available yet" on
 -- PGRST202 until this is pushed; nothing else calls it.
 -- pgTAP 133_operator_notices.sql.
@@ -154,7 +160,20 @@ BEGIN
   END IF;
 
   v_replay := public.op_verb_prelude_internal('send_notification', p_league_id, p_action_id, p_reason);
-  IF v_replay IS NOT NULL THEN RETURN v_replay; END IF;
+  IF v_replay IS NOT NULL THEN
+    -- R1557: a replay is the SAME notice. An action id reused for a
+    -- different audience / league / text / link is refused, never answered
+    -- with the earlier receipt as if the new notice had gone out.
+    IF (v_replay ->> 'audience')  IS DISTINCT FROM p_audience
+       OR (v_replay ->> 'league_id') IS DISTINCT FROM p_league_id::text
+       OR (v_replay ->> 'title')     IS DISTINCT FROM p_title
+       OR (v_replay ->> 'body')      IS DISTINCT FROM p_body
+       OR (v_replay ->> 'link')      IS DISTINCT FROM p_link THEN
+      RAISE EXCEPTION 'send_notification: action id % was already used for a different notice — nothing was sent', p_action_id
+        USING ERRCODE = '22023';
+    END IF;
+    RETURN v_replay;
+  END IF;
 
   IF p_at IS NULL THEN
     RAISE EXCEPTION 'send_notification: p_at is required (the TimeProvider seam)' USING ERRCODE = '22023';
@@ -264,3 +283,9 @@ REVOKE ALL ON FUNCTION op_send_notification(TEXT, TEXT, TEXT, TEXT, UUID, TEXT[]
 GRANT EXECUTE ON FUNCTION op_send_notification(TEXT, TEXT, TEXT, TEXT, UUID, TEXT[], UUID, TEXT) TO authenticated;
 COMMENT ON FUNCTION op_send_notification(TEXT, TEXT, TEXT, TEXT, UUID, TEXT[], UUID, TEXT) IS
   'M8 §24.4 (migration 185, TD10 / Q97 / Q101): send a hand-written notice to all_users, all_league_members or one league. Channel in_app only (email / push not built). Operators only (in-body gate); idempotent on p_action_id; zero recipients refuses (P0002); notifications written in pages of 1000; one platform_operator_actions receipt with the recipient count; a league send also posts a "FieldScout" league line.';
+
+-- ---------------------------------------------------------------------------
+-- 3. notifications: a user may only mark their own rows read (R1558)
+-- ---------------------------------------------------------------------------
+REVOKE UPDATE ON TABLE notifications FROM anon, authenticated;
+GRANT UPDATE (read) ON TABLE notifications TO authenticated;

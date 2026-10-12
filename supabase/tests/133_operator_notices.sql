@@ -33,7 +33,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(50);
+select plan(54);
 
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -266,6 +266,12 @@ select is(format('%s|%s', pg_temp.lines(),
   (select count(*) from notifications n where n.data ->> 'action_id' = 'a1330000-0000-4000-8000-000000000003' and n.data ? 'league_id')),
   '2|0', 'U6 a platform notice posts no league line and carries no league id');
 
+select alike(pg_temp.err($$ select op_send_notification_internal('all_users', null, 'FieldScout maintenance tonight',
+  'A different message.', null, array['in_app'], 'a1330000-0000-4000-8000-000000000003', null, now()) $$),
+  '22023: %already used for a different notice%', 'U7 R1557: the same action id for another platform notice (different body) is refused');
+select is(format('%s|%s', pg_temp.notices('a1330000-0000-4000-8000-000000000003') - (select (r ->> 'recipients')::int from r133 where tag = 'U1'),
+  pg_temp.receipts()), '0|3', 'U8 …and sent nothing: no extra rows, no extra receipt');
+
 -- ---------------------------------------------------------------------------
 -- L. Everyone in any league
 -- ---------------------------------------------------------------------------
@@ -312,9 +318,13 @@ select is((select count(*)::int from notifications n where n.type = 'operator_no
   'R1 u2 reads only their own notices (LB, all users, any league, L1)');
 select alike(pg_temp.err($$ insert into notifications (user_id, type, title) values ('99133000-0000-4000-8000-000000000003', 'operator_notice', 'fake') $$),
   '42501:%', 'R2 a user cannot write a notice for someone else (no INSERT policy)');
-with u as (update notifications set title = 'x' where user_id <> '99133000-0000-4000-8000-000000000002' returning 1)
-insert into r133 select 'R3', to_jsonb(count(*)) from u;
-select is((select r::int from r133 where tag = 'R3'), 0, 'R3 …nor edit another user''s (RETURNING count)');
+select alike(pg_temp.err($$ update notifications set type = 'operator_notice', data = '{"from": "fieldscout"}' where user_id = '99133000-0000-4000-8000-000000000002' $$),
+  '42501: permission denied%', 'R3 R1558: a user cannot relabel their OWN rows (type / data) as From FieldScout — UPDATE is read-only-column');
+select alike(pg_temp.err($$ update notifications set title = 'x' $$),
+  '42501: permission denied%', 'R3b …nor rewrite a title');
+with u as (update notifications set read = true where type = 'operator_notice' returning 1)
+insert into r133 select 'R3c', to_jsonb(count(*)) from u;
+select is((select r::int from r133 where tag = 'R3c'), 4, 'R3c …but marking their own notices read still works (RETURNING count)');
 select pg_temp.as_op();
 select is((select count(*)::int from notifications n where n.type = 'operator_notice'), 1,
   'R4 the operator reads only their own inbox (one: every app user) — the verb is not a read door');
