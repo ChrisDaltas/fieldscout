@@ -131,6 +131,19 @@ describe('inWeekGames — 116’s rule for a postponed game leaving the week', (
     expect(inWeekGames(games, 1, WEEKS[1].starts_at).map((x) => x.id)).toEqual(['b', 'c'])
     expect(inWeekGames(games, 1, null).map((x) => x.id)).toEqual(['a', 'b', 'c'])
   })
+
+  it('M8 TD7 (184): an operator mark out_of_week / cancelled leaves the week whatever the kickoff — week 18 (no later week) included; in_week and no mark do not', () => {
+    const mark = (row: CalendarGameRow, hold: string | null | undefined): CalendarGameRow => ({ ...row, operator_hold: hold })
+    const games = [
+      mark(g('x', 1, '2026-09-13T17:00:00.000Z', 'postponed'), 'cancelled'),
+      mark(g('y', 1, '2026-09-13T20:25:00.000Z', 'postponed'), 'out_of_week'),
+      mark(g('z', 1, '2026-09-14T00:20:00.000Z', 'scheduled'), 'in_week'),
+      mark(g('n', 1, '2026-09-14T00:20:00.000Z', 'final'), null),
+      g('u', 1, '2026-09-14T00:20:00.000Z', 'final'), // a pre-184 row: no column at all
+    ]
+    expect(inWeekGames(games, 1, WEEKS[1].starts_at).map((x) => x.id)).toEqual(['z', 'n', 'u'])
+    expect(inWeekGames(games, 1, null).map((x) => x.id)).toEqual(['z', 'n', 'u'])
+  })
 })
 
 describe('calendarFindings — F228 / F238 / Q37’s shape', () => {

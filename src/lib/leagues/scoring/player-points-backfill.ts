@@ -47,6 +47,7 @@ import { pageAll } from '@/lib/supabase/page-all'
 
 import type { TimeProvider } from '../time/time-provider'
 import { isMissingPlayerPointsStore, PRE_158_SENTENCE, readStoredPlayerPointsForSeason } from './player-points-store'
+import { readHeldGames, withoutHeldLines } from './held-games'
 import type { ScoringRulesDoc } from './rules-doc'
 import {
   computeTeamWeek,
@@ -301,13 +302,17 @@ export async function backfillPlayerPoints(deps: BackfillDeps, opts: BackfillOpt
 
       const ids = [...new Set(pending.flatMap((p) => p.slots.map((s) => s.player_id)))]
       const positions = new Map<string, string>()
+      const teams = new Map<string, string | null>()
       const stats = new Map<string, StatLineRow>()
       for (const part of chunk(ids, IN_CHUNK)) {
-        for (const p of must(await db.from('players').select('id, position').in('id', part), 'players read')) positions.set(p.id, normalizePosition(p.position))
+        for (const p of must(await db.from('players').select('id, position, team').in('id', part), 'players read')) {
+          positions.set(p.id, normalizePosition(p.position))
+          teams.set(p.id, p.team)
+        }
         const lines = must(
           (await db
             .from('player_stats')
-            .select(['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', '))
+            .select(['player_id', 'updated_at', 'advanced', 'game_id', ...STAT_LINE_COLUMNS].join(', '))
             .eq('season', opts.season)
             .eq('week', lw.week)
             .in('player_id', part)) as unknown as { data: StatLineRow[] | null; error: { message: string } | null },
@@ -315,6 +320,9 @@ export async function backfillPlayerPoints(deps: BackfillDeps, opts: BackfillOpt
         )
         for (const l of lines) stats.set(l.player_id, l)
       }
+      // M8 TD7 / R1551: a line on a game marked out of the week / cancelled scores 0 (184).
+      const held = await readHeldGames(db, opts.season, lw.week)
+      for (const pid of withoutHeldLines(stats, held, (id) => teams.get(id)).dropped) stats.delete(pid)
 
       const payload: Array<{ team_id: string; points: number | null; players: PlayerPointsRow[] }> = []
       const predicted = new Map<string, BackfillCell>()

@@ -346,6 +346,31 @@ describe('the box — the worker’s function over the frozen snapshot, golden l
   })
 })
 
+describe('M8 TD7 / R1551 — the box reads the operator mark (migration 184)', () => {
+  it('a starter and a bench player whose game is marked CANCELLED score 0 with no line; the team drops to the QB\'s 17.20', async () => {
+    const mark = (hold: string | null) =>
+      service
+        .from('nfl_games')
+        .update(hold === null
+          ? { status: 'final', operator_hold: null, operator_hold_at: null, operator_hold_prior_status: null }
+          : { status: 'postponed', operator_hold: hold, operator_hold_at: STAMP, operator_hold_prior_status: 'final' })
+        .eq('id', 'vitest-bx-game-final')
+        .select('id')
+    const { error } = await mark('cancelled')
+    if (error) throw new Error(`mark: ${error.message}`)
+    try {
+      const doc = box(await readBoxScore(commishClient, leagueId, { week: '1', team: commishTeamId }))
+      expect(doc.starters.find((s) => s.slot === 'wr:0')).toMatchObject({ reason: 'no_stat_row', points: 0, line: null })
+      expect(doc.bench).toEqual([expect.objectContaining({ player_id: BENCH, points: 0, reason: 'no_stat_row' })])
+      expect(doc.points).toBe(17.2)
+    } finally {
+      const { error: clear } = await mark(null)
+      if (clear) throw new Error(`clear: ${clear.message}`)
+    }
+    expect(box(await readBoxScore(commishClient, leagueId, { week: '1', team: commishTeamId })).points).toBe(31.6)
+  })
+})
+
 describe('the box — real states, not zeros', () => {
   it('a week with NO team_lineups row is `lineup: null` with no starters (nothing set, the week not opened)', async () => {
     const result = await readBoxScore(commishClient, leagueId, { week: '2', team: commishTeamId })

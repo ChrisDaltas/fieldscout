@@ -160,6 +160,7 @@ import { isMissingSchemaObject } from '@/lib/supabase/postgrest-errors'
 
 import type { TimeProvider } from '../time/time-provider'
 import { roundHalfUp } from './calculator'
+import { readHeldGames, withoutHeldLines } from './held-games'
 import { readStoredPlayerPointsForSeason, type StoredPlayerPoints, storedTeamPoints } from './player-points-store'
 import type { ScoringRulesDoc } from './rules-doc'
 import {
@@ -477,16 +478,26 @@ export interface CalendarGameRow {
   status: string | null
   home_team: string
   away_team: string
+  /** Migration 184 (M8 TD7 / Q100): an operator's mark. ABSENT before 184 —
+   *  read through `select('*')` so the alert works on both sides of the push. */
+  operator_hold?: string | null
 }
 
 function gameStatus(g: CalendarGameRow): string {
   return g.status ?? 'scheduled'
 }
 
-/** 116's rule: a postponed game has LEFT the week only when its kickoff is at or past the next calendar week's start. */
+/** 116's rule (as 184 extends it): a postponed game has LEFT the week only when its kickoff is at or past the next calendar week's start —
+ *  or when an operator marked it moved out of the week / cancelled (M8 TD7 / Q100; NFL week 18 included). */
 export function inWeekGames(games: readonly CalendarGameRow[], week: number, nextStartsAt: string | null): CalendarGameRow[] {
   const nextMs = nextStartsAt === null ? null : new Date(nextStartsAt).getTime()
-  return games.filter((g) => g.week === week && !(gameStatus(g) === 'postponed' && nextMs !== null && new Date(g.kickoff_at).getTime() >= nextMs))
+  return games.filter(
+    (g) =>
+      g.week === week &&
+      g.operator_hold !== 'out_of_week' &&
+      g.operator_hold !== 'cancelled' &&
+      !(gameStatus(g) === 'postponed' && nextMs !== null && new Date(g.kickoff_at).getTime() >= nextMs),
+  )
 }
 
 /** The CALENDAR findings (pure over the two tables). */
@@ -629,7 +640,8 @@ async function readCalendarRows(db: ScoreWorkerClient, season: number): Promise<
     'nfl_weeks read',
   ) as CalendarWeekRow[]
   const games = await pageAll<CalendarGameRow>((from, to) =>
-    db.from('nfl_games').select('id, season, week, kickoff_at, status, home_team, away_team', { count: 'exact' }).eq('season', season).order('id').range(from, to),
+    // '*': `operator_hold` exists only from migration 184 (deploy before push, TD9).
+    db.from('nfl_games').select('*', { count: 'exact' }).eq('season', season).order('id').range(from, to),
   )
   return { weeks, games }
 }
@@ -648,7 +660,7 @@ async function readLeagues(db: ScoreWorkerClient, season: number, scope: readonl
 }
 
 async function readStatLines(db: ScoreWorkerClient, season: number, week: number, playerIds: readonly string[]): Promise<Map<string, StatLineRow>> {
-  const select = ['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', ')
+  const select = ['player_id', 'updated_at', 'advanced', 'game_id', ...STAT_LINE_COLUMNS].join(', ')
   const out = new Map<string, StatLineRow>()
   for (const ids of chunk(playerIds, IN_CHUNK)) {
     const rows = must(
@@ -920,7 +932,14 @@ export async function reconcileSeason(deps: ReconcileDeps, opts: ReconcileOption
         startersByTeam.set(teamId, starters)
       }
       const starterIds = [...new Set([...startersByTeam.values()].flat())]
-      const [stats, players] = await Promise.all([readStatLines(db, season, week, starterIds), readPlayers(db, starterIds)])
+      const [allStats, players, held] = await Promise.all([
+        readStatLines(db, season, week, starterIds),
+        readPlayers(db, starterIds),
+        readHeldGames(db, season, week),
+      ])
+      // M8 TD7 / R1547: the worker's own held-game rule — a line on a game
+      // marked out of the week / cancelled scores 0, so the check expects 0.
+      const stats = withoutHeldLines(allStats, held, (pid) => players.get(pid)?.team).kept
       const updatedAt = new Map<string, string>()
       for (const [pid, row] of stats) updatedAt.set(pid, row.updated_at)
       const ctx: CellContext = {

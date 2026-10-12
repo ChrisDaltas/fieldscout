@@ -59,7 +59,9 @@ select is(
                  has_function_privilege('anon', p.oid, 'EXECUTE'),
                  has_function_privilege('authenticated', p.oid, 'EXECUTE')), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname like 'op\_%' and p.proname not like 'op\_actions%'),
+   where n.nspname = 'public' and p.proname like 'op\_%' and p.proname not like 'op\_actions%'
+     -- RE-PINNED BY L.G1.4 (additive, R992): 184's op_set_game_status pair is pinned by pgTAP 132 A4.
+     and p.proname not like 'op\_set\_game\_status%'),
   'op_job_check_internal=f:search_path="":f:f op_job_words_internal=f:search_path="":f:f op_league_line_internal=f:search_path="":f:f op_pause_job=t:search_path="":f:t op_pause_job_internal=f:search_path="":f:f op_resume_job=t:search_path="":f:t op_resume_job_internal=f:search_path="":f:f op_run_job_now=t:search_path="":f:t op_run_job_now_internal=f:search_path="":f:f op_verb_prelude_internal=f:search_path="":f:f',
   'A4 the three doors DEFINER + search_path '''' + authenticated only; every internal plain and closed to anon / authenticated');
 select is(

@@ -139,6 +139,11 @@ export interface IngestGamesReport {
   inserted: number
   updated: number
   unchanged: number
+  /** Games an operator has marked (`nfl_games.operator_hold`, migration 184 —
+   *  M8 TD7 / Q100): the provider's row for them was NOT written; the stored
+   *  row (the mark) stands and is what the week's bounds read. Named in
+   *  `reasons`. */
+  held: number
 }
 
 export interface IngestWeeksReport {
@@ -731,15 +736,55 @@ interface DbGameRow {
   kickoff_at: string
   status: string
   updated_at: string | null
+  /** Migration 184 (M8 TD7). ABSENT on a database before 184 — read through
+   *  `select('*')` so this reader works on both sides of the push (TD9). */
+  operator_hold?: string | null
+}
+
+/**
+ * M8 TD7 / Q100 — "the sync respects operator_hold" (review R1547: it may
+ * not revert the MARK, and nothing more):
+ *   out_of_week / cancelled — the provider's row is never written (its mark
+ *     is the operator's, not the feed's); the stored row stays in the week's
+ *     bounds. Counted in `held`.
+ *   in_week (moved later this week) — the provider's row IS written: its new
+ *     kickoff, `live`, `final` all land, so the week finishes when the game
+ *     does. Only a `postponed` status — the one value that would take the
+ *     game back out of the week — is not: the stored status stays.
+ * Clearing the mark lets the next poll write the feed's row as usual.
+ */
+export function withoutHeldGames(
+  incoming: readonly GameRow[],
+  holds: ReadonlyMap<string, string>,
+  stored: ReadonlyMap<string, GameRow> = new Map(),
+): { writable: GameRow[]; held: GameRow[] } {
+  const writable: GameRow[] = []
+  const skipped: GameRow[] = []
+  for (const row of incoming) {
+    const hold = holds.get(row.id)
+    if (hold === 'out_of_week' || hold === 'cancelled') skipped.push(row)
+    else if (hold === 'in_week' && row.status === 'postponed') {
+      writable.push({ ...row, status: stored.get(row.id)?.status ?? 'scheduled' })
+    } else writable.push(row)
+  }
+  return { writable, held: skipped }
 }
 
 /** The stored games (the diff's shape) — and, into `observedAt`, each row's
- *  `updated_at` (F511's settle grace: when a final game was first seen final). */
-async function readGames(db: SyncClient, season: number, observedAt?: Map<string, string | null>): Promise<Map<string, GameRow>> {
+ *  `updated_at` (F511's settle grace: when a final game was first seen final);
+ *  into `held`, the ids an operator has marked (migration 184). */
+async function readGames(
+  db: SyncClient,
+  season: number,
+  observedAt?: Map<string, string | null>,
+  holds?: Map<string, string>,
+): Promise<Map<string, GameRow>> {
   const rows = await pageAll<DbGameRow>((from, to) =>
     db
       .from('nfl_games')
-      .select('id, season, week, home_team, away_team, kickoff_at, status, updated_at', { count: 'exact' })
+      // '*' rather than a column list: `operator_hold` exists only from
+      // migration 184, and this reader must keep working before the push.
+      .select('*', { count: 'exact' })
       .eq('season', season)
       .order('id')
       .range(from, to),
@@ -756,6 +801,7 @@ async function readGames(db: SyncClient, season: number, observedAt?: Map<string
       status: row.status as ProviderGame['status'],
     })
     observedAt?.set(row.id, row.updated_at === null || row.updated_at === undefined ? null : isoOf(row.updated_at))
+    if (row.operator_hold !== null && row.operator_hold !== undefined) holds?.set(row.id, row.operator_hold)
   }
   return out
 }
@@ -885,7 +931,7 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
     polledAt: isoOf(polledAt),
     ok: true,
     degraded,
-    games: { seen: 0, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 0 },
+    games: { seen: 0, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 0, held: 0 },
     weeks: { touched: 0, updated: 0, unchanged: 0, outsideCalendar: 0 },
     stats: {
       seen: 0,
@@ -1041,29 +1087,34 @@ export async function ingestWeek(
   // ── Reads, then the whole diff, then writes ──
   const seasonGames = schedule.filter((g) => g.season === season)
   report.games.seen = seasonGames.length
-  const gameRows: GameRow[] = []
+  const providerRows: GameRow[] = []
   for (const game of seasonGames) {
     const row = toGameRow(game)
     if (row === null) report.games.withoutKickoff += 1
-    else gameRows.push(row)
+    else providerRows.push(row)
   }
 
   const gamesObservedAt = new Map<string, string | null>()
+  const heldIds = new Map<string, string>()
   const [existingGames, existingWeeks, known, existingStats] = await Promise.all([
-    readGames(db, season, gamesObservedAt),
+    readGames(db, season, gamesObservedAt, heldIds),
     readWeeks(db, season),
     fetchKnownPlayerIds(db),
     readStats(db, season, week),
   ])
+  // M8 TD7 / Q100: an operator-marked game is never written by the sync.
+  const { writable: gameRows, held: heldRows } = withoutHeldGames(providerRows, heldIds, existingGames)
+  report.games.held = heldRows.length
 
   const gameDiff = diffGames(gameRows, existingGames)
 
   // Week bounds from the union of what is stored and what this poll says
-  // (this poll's row wins for a game it carries).
+  // (this poll's row wins for a game it carries — except a HELD game, whose
+  // stored row, the operator's mark, stands; its week is still maintained).
   const merged = new Map<string, GameRow>(existingGames)
   for (const row of gameRows) merged.set(row.id, row)
   const byWeek = new Map<string, GameRow[]>()
-  for (const row of gameRows) {
+  for (const row of providerRows) {
     const key = weekKey(row.season, row.week)
     if (!byWeek.has(key)) byWeek.set(key, [])
   }
@@ -1180,8 +1231,13 @@ export async function ingestWeek(
   report.stats.unchanged = statDiff.unchanged
 
   // ── Reasons: an empty section says why ──
+  if (heldRows.length > 0) {
+    report.reasons.push(
+      `nfl_games: ${heldRows.length} game(s) are marked out of the week / cancelled (operator_hold) — the provider's row was not written: ${heldRows.map((g) => g.id).join(', ')}`,
+    )
+  }
   if (report.games.seen === 0) report.reasons.push(`provider returned zero games for ${season}`)
-  else if (gameRows.length === 0) {
+  else if (providerRows.length === 0) {
     report.reasons.push(
       `nfl_games untouched: none of the ${report.games.seen} games carry a kickoff timestamp (${provider.name} tier — F11 supplies them)`,
     )

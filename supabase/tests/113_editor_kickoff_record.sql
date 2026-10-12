@@ -205,8 +205,14 @@ select is(
      and pg_temp.un165(p.prosrc) <> p.prosrc),
   0,
   'A6 un165 is an identity on every other body in the schema — so the older suites that apply it innermost pin exactly what they pinned (additive, R992)');
+-- pg_temp.un184 — migration 184's inserted lines removed (each ends
+-- `-- 184 / L.G1.4 (TD7)`; pgTAP 132 pins them). RE-PINNED BY L.G1.4's fix
+-- round (R1546 — lineup_kickoff_internal gained one line; additive, R992).
+create function pg_temp.un184(p_src text) returns text language sql as $un184$
+  select regexp_replace(p_src, E'\n[^\n]*   -- 184 / L\\.G1\\.4 \\(TD7\\)', '', 'g')
+$un184$;
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un166(pg_temp.un169(pg_temp.un181(pg_temp.un183(p.prosrc))))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un166(pg_temp.un169(pg_temp.un181(pg_temp.un183(pg_temp.un184(p.prosrc)))))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('set_lineup_internal', 'lineup_autopilot_internal', 'lineup_lock_tick', 'lineup_player_kickoff_internal',
                                                  'lineup_played_internal', 'lineup_record_kicked_off_internal', 'lineup_kept_starter_internal',

@@ -179,7 +179,7 @@ describe('the real-2026 calendar back-fill (nflverse fixture → ingestWeek → 
     const report = await poll()
     expect(report.ok).toBe(true)
     expect(report.provider).toBe('nflverse')
-    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 77, updated: 0, unchanged: 0 })
+    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 77, updated: 0, unchanged: 0, held: 0 })
     expect(report.weeks).toEqual({ touched: 5, updated: 5, unchanged: 0, outsideCalendar: 0 })
     expect(report.stats).toMatchObject({ seen: 0, inserted: 0, updated: 0, deltas: 0, enqueued: 0 })
     expect(report.reasons).toEqual([
@@ -226,7 +226,7 @@ describe('the real-2026 calendar back-fill (nflverse fixture → ingestWeek → 
   it('idempotent re-sync: the same fixture again writes nothing (77 unchanged, 5 weeks unchanged)', async () => {
     instant = new Date('2026-09-03T12:00:00.000Z')
     const report = await poll()
-    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 77 })
+    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 0, updated: 0, unchanged: 77, held: 0 })
     expect(report.weeks).toEqual({ touched: 5, updated: 0, unchanged: 5, outsideCalendar: 0 })
     expect(report.reasons).toContain('nfl_games unchanged: 77 games identical to stored')
     expect((await readGame('2026_01_NE_SEA')).kickoff_at).toBe('2026-09-10T00:20:00.000Z')
@@ -237,7 +237,7 @@ describe('the real-2026 calendar back-fill (nflverse fixture → ingestWeek → 
       f[IDX.gametime] = '20:20'
     })
     const report = await poll(flexed)
-    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 0, updated: 1, unchanged: 76 })
+    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 0, updated: 1, unchanged: 76, held: 0 })
     expect(report.weeks).toEqual({ touched: 5, updated: 0, unchanged: 5, outsideCalendar: 0 })
     expect(await readGame('2026_01_CHI_CAR')).toMatchObject({ kickoff_at: '2026-09-14T00:20:00.000Z', status: 'scheduled' })
     expect((await readWeeks()).get(1)?.first).toBe('2026-09-10T00:20:00.000Z')
@@ -249,7 +249,7 @@ describe('the real-2026 calendar back-fill (nflverse fixture → ingestWeek → 
     })
     const report = await poll(moved)
     // CHI@CAR reverts to 13:00 in this fixture (the previous test's flex is undone) — two rows move.
-    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 0, updated: 2, unchanged: 75 })
+    expect(report.games).toEqual({ seen: 77, withoutKickoff: 0, inserted: 0, updated: 2, unchanged: 75, held: 0 })
     expect(report.weeks).toEqual({ touched: 5, updated: 1, unchanged: 4, outsideCalendar: 0 })
     expect((await readGame('2026_01_NE_SEA')).kickoff_at).toBe('2026-09-10T00:21:00.000Z')
     expect((await readWeeks()).get(1)?.first).toBe('2026-09-10T00:21:00.000Z')
