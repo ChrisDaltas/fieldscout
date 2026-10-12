@@ -3,6 +3,7 @@
 import { ScoutAiMark } from '@/components/ui/ai-insight'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
+import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import type { AiBuildJob } from '@/stores/ai-build-store'
 
@@ -17,26 +18,20 @@ interface AiBuildBannerProps {
  * adding (players landing one by one), ordering (the sort pass), and the error
  * state with retry/dismiss. Scout AI surfaces are accent-blue, never lime.
  *
- * **Restyled into the Lists v2 language at LV.5** — CLAUDE.md → Redesign:
- * *"AI list generation ... never leave them in the old style, never remove
- * them."* The design package has no reference screen for this surface, so it is
- * **derived from what LV.2/LV.3 built rather than invented**:
+ * **v7 restyle.** CLAUDE.md → Redesign: *"AI list generation ... never leave
+ * them in the old style, never remove them."* v7 has no AI-build screen, so this
+ * is built from v7's own Scout AI language rather than invented: an AI panel is
+ * a `rounded-2xl bg-surface-sunken` strip with no border and no shadow; the
+ * shared `ScoutAiMark` blue tile carries the phase (its glyph changes); the
+ * headline is 12px bold over an 11px grey phase line; the bar is the v7
+ * `Progress` primitive (grey pill track, accent fill). A real failure swaps the
+ * sunken fill for `bg-negative-soft`; a `blocked` job (today's allowance spent)
+ * is a normal state and keeps the neutral strip.
  *
- * - the square, ink-bordered card of `lists-page-v2.tsx`'s own state cards
- *   (`rounded-*` is 1px in this theme, so the old `rounded-sm` was never a
- *   visible corner — the frame is what carries the look);
- * - the explicit ×0.8 type scale those screens use — `text-[13px]` for the
- *   headline and `text-[11px]` for the detail, where this file used Tailwind's
- *   `text-sm` / `text-xs`;
- * - every count in `fs-num`, including the ones inside the headline sentence;
- * - the shared `ScoutAiMark`, which this file had drifted away from into a bare
- *   accent glyph;
- * - `Icon name="reset"` on Retry, matching the v2 error card's Try again.
- *
- * **The one inline style is a width, and it is data.** The handoff's critical
- * note is about resting/hover/active *colours* — an inline `background`
- * outranks `:hover` and silently kills it. There is no colour in an inline
- * style anywhere in this file, and `ai-surfaces.test.ts` pins that.
+ * **No inline style in this file.** The handoff's critical note is that an
+ * inline `background` outranks `:hover` and silently kills it; the progress
+ * width now lives inside `ui/progress`, and `ai-surfaces.test.ts` pins that no
+ * colour is ever written inline here.
  */
 export function AiBuildBanner({ job, onRetry, onDismiss }: AiBuildBannerProps) {
   if (job.phase === 'error') {
@@ -46,8 +41,8 @@ export function AiBuildBanner({ job, onRetry, onDismiss }: AiBuildBannerProps) {
     return (
       <div
         className={cn(
-          'border p-card-pad',
-          job.blocked ? 'border-ink bg-white' : 'border-negative-strong bg-negative-soft',
+          'rounded-2xl px-4 py-3',
+          job.blocked ? 'bg-surface-sunken' : 'bg-negative-soft',
         )}
       >
         <div className="flex items-center gap-2">
@@ -56,11 +51,11 @@ export function AiBuildBanner({ job, onRetry, onDismiss }: AiBuildBannerProps) {
             size={14}
             className={job.blocked ? 'text-n-3' : 'text-negative-strong'}
           />
-          <p className="text-[13px] font-bold text-ink">
+          <p className="text-[12px] font-bold text-ink">
             {job.blocked ? 'Out of AI generations for today' : 'AI build hit a snag'}
           </p>
         </div>
-        <p className="mt-1.5 text-[11px] font-medium text-n-3">{job.error}</p>
+        <p className="mt-1 text-[11px] font-medium text-n-3">{job.error}</p>
         {job.blocked && (
           <p className="mt-1 text-[11px] font-medium text-n-3">
             The list is still yours — add players by hand any time.
@@ -68,11 +63,13 @@ export function AiBuildBanner({ job, onRetry, onDismiss }: AiBuildBannerProps) {
         )}
         <div className="mt-2.5 flex gap-2">
           {!job.blocked && (
-            <Button size="sm" variant="blue" shadow onClick={onRetry}>
+            <Button size="sm" variant="blue" onClick={onRetry}>
               <Icon name="reset" size={13} /> Retry
             </Button>
           )}
-          <Button size="sm" variant="stroke" onClick={onDismiss}>
+          {/* Quiet, not secondary: the grey `stroke` fill would vanish into
+              the sunken strip it sits on. */}
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
             Dismiss
           </Button>
         </div>
@@ -114,24 +111,30 @@ export function AiBuildBanner({ job, onRetry, onDismiss }: AiBuildBannerProps) {
           }
 
   return (
-    <div className="border border-accent bg-accent-soft p-card-pad">
-      <div className="flex items-center gap-2">
+    <div className="rounded-2xl bg-surface-sunken px-4 py-3">
+      <div className="flex items-center gap-2.5">
         {/* The mark itself is the phase indicator — one accent square whose
             glyph changes, rather than a second icon beside a constant one. */}
-        <ScoutAiMark icon={icon} size="sm" className={job.phase === 'generating' ? 'animate-pulse' : undefined} />
-        <p className="min-w-0 text-[13px] font-bold text-ink">{headline}</p>
+        <ScoutAiMark
+          icon={icon}
+          size="sm"
+          className={job.phase === 'generating' ? 'animate-pulse' : undefined}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-bold leading-tight text-ink">{headline}</p>
+          <p className="mt-0.5 text-[11px] font-medium leading-snug text-n-3">{detail}</p>
+        </div>
         {showProgress && (
-          <span className="fs-num ml-auto shrink-0 text-[11px] font-bold text-n-3">{pct}%</span>
+          <span className="fs-num shrink-0 text-[10px] font-semibold text-n-6">{pct}%</span>
         )}
       </div>
-      <p className="mt-1.5 text-[11px] font-medium text-n-3">{detail}</p>
       {showProgress && (
-        <div className="mt-2.5 h-1.5 overflow-hidden border border-ink bg-white">
-          <div
-            className="h-full bg-accent transition-[width] duration-300"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <Progress
+          value={pct}
+          aria-label="Players added"
+          className="mt-2.5"
+          indicatorClassName="duration-300"
+        />
       )}
     </div>
   )

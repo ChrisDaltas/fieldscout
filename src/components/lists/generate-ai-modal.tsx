@@ -75,6 +75,13 @@ function usePersonaStyles(enabled: boolean) {
  * `ScoutAiMark` instead of a fourth hand-copy of it, the v2 state cards for the
  * quota and error notices, and the navigation fix above, which is the part that
  * actually mattered.
+ *
+ * **v7 restyle.** v7 has no AI-generation screen, so the dialog speaks v7's
+ * Scout AI language: the shared blue `ScoutAiMark` tile beside a bold title,
+ * notices as `rounded-2xl` strips (sunken grey for a normal state, the negative
+ * wash for a failure — no borders), 12px semibold labels over 11px grey hints,
+ * every option row on the shared `Segment` / `FilterChip` primitives untouched,
+ * and one blue primary pill to create.
  */
 export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
   const router = useRouter()
@@ -200,20 +207,20 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 font-bold tracking-[-0.02em]">
             <ScoutAiMark />
             Generate with AI
           </DialogTitle>
         </DialogHeader>
 
-        {/* Both notices follow the v2 state cards (LV.5): square ink frame, a
-            13px bold headline over an 11px detail, the red frame reserved for
-            an actual failure. "Out of generations" is a normal state, not an
-            error, so it keeps the neutral card — the same split the build
-            banner makes for a `blocked` job. */}
+        {/* Both notices are v7 info strips: `rounded-2xl`, no border, a 12px
+            bold headline over an 11px detail, the negative wash reserved for an
+            actual failure. "Out of generations" is a normal state, not an
+            error, so it keeps the neutral sunken strip — the same split the
+            build banner makes for a `blocked` job. */}
         {outOfGenerations && quota.data && (
-          <div className="border border-ink bg-white p-card-pad">
-            <p className="text-[13px] font-bold text-ink">
+          <div className="rounded-2xl bg-surface-sunken px-4 py-3">
+            <p className="text-[12px] font-bold text-ink">
               {generationsOff
                 ? 'AI generation is paused right now'
                 : `That's your ${quota.data.limit} AI ${quota.data.limit === 1 ? 'list' : 'lists'} for today`}
@@ -227,16 +234,16 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
         )}
 
         {error && (
-          <div className="border border-negative-strong bg-negative-soft p-card-pad">
+          <div className="rounded-2xl bg-negative-soft px-4 py-3">
             <div className="flex items-center gap-2">
               <Icon name="info-circle" size={14} className="text-negative-strong" />
-              <p className="text-[13px] font-bold text-ink">Could not create the list</p>
+              <p className="text-[12px] font-bold text-ink">Could not create the list</p>
             </div>
             <p className="mt-1 text-[11px] font-medium text-n-3">{error}</p>
           </div>
         )}
 
-        <div className="space-y-5">
+        <div className="space-y-4">
           <Field label="Position">
             <ChipGroup
               label="Position"
@@ -277,7 +284,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
                   >
                     <span className="truncate">{s.label}</span>
                     {active && (
-                      <span className="fs-num flex h-4 min-w-4 shrink-0 items-center justify-center rounded-sm bg-white/25 px-1 text-[10px]">
+                      <span className="fs-num flex h-[17px] min-w-[17px] shrink-0 items-center justify-center rounded-sm bg-accent px-1 text-[9px] font-bold text-accent-foreground">
                         {weight}
                       </span>
                     )}
@@ -294,7 +301,7 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
             {personas.isLoading ? (
               <div className="grid grid-cols-2 gap-1.5">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-btn-sm w-full" />
+                  <Skeleton key={i} className="h-btn-sm w-full rounded-pill bg-surface-control" />
                 ))}
               </div>
             ) : (
@@ -349,12 +356,12 @@ export function GenerateAiModal({ open, onOpenChange }: GenerateAiModalProps) {
               )}
             </Button>
             {quota.data && quota.data.limit > 0 && (
-              <p className="fs-num mt-2 text-center text-[11px] font-bold text-n-3">
+              <p className="fs-num mt-2 text-center text-[10px] font-semibold text-n-6">
                 {quota.data.remaining} of {quota.data.limit} left today
               </p>
             )}
           </div>
-          <p className="text-center text-[11px] font-medium text-n-3">
+          <p className="text-center text-[11px] font-medium text-n-6">
             You&apos;ll land on the list and watch the AI build it — a starting
             point, not an oracle. Fully editable.
           </p>
@@ -375,8 +382,8 @@ function Field({
 }) {
   return (
     <div>
-      <span className="block text-[12px] font-bold text-ink">{label}</span>
-      {hint && <p className="mt-0.5 text-[11px] font-medium text-n-3">{hint}</p>}
+      <span className="block text-[12px] font-semibold text-ink">{label}</span>
+      {hint && <p className="mt-0.5 text-[11px] font-medium text-n-6">{hint}</p>}
       <div className="mt-1.5">{children}</div>
     </div>
   )
@@ -413,7 +420,12 @@ function ChipGroup({
   columns: 3 | 4 | 5
 }) {
   return (
-    <Segment aria-label={label} className={cn('grid w-full', GRID_COLUMNS[columns])}>
+    // A group that wraps onto a second row swaps the pill track for a
+    // rounded rectangle — a stadium shape around two rows reads as broken.
+    <Segment
+      aria-label={label}
+      className={cn('grid w-full', GRID_COLUMNS[columns], options.length > columns && 'rounded-2xl')}
+    >
       {options.map((opt) => (
         <SegmentItem
           key={opt.value}

@@ -112,18 +112,22 @@ import {
  * | column 300px fixed | `w-[240px] shrink-0` |
  * | scroller `margin: 0 -36px; padding: 0 36px 8px` | the app's **own** gutter — `-mx-4 px-4` / `lg:-mx-7 lg:px-7`, `pb-1.5`. `px-7` is 28px, which is 36 × 0.8, and it has to be the shell's real padding (`app-shell.tsx`) or the bleed either falls short or pushes the page into a horizontal scroll |
  * | column gap 12 | `gap-2.5` (10px) |
- * | header 26px cover, name 13/700, count 10.5/500 mono | `size={21}`, 10.5/700, 8.5/500 mono |
- * | band header 26px tall, 11.5/700 | `h-[21px]`, 9/700 |
- * | row 38px tall, `#N` 26px wide at 11.5/500 | `h-[30px]`, `w-[21px]` at 9/500 |
+ * | header 26px cover, name 13/700, count 10.5/500 mono | `size={21}`; v7 type is literal px, so 13/700 over a 10/600 grey meta |
+ * | band header 26px tall, 11.5/700 | `h-[22px]` rounded band, 10/700 |
+ * | row 38px tall, `#N` 26px wide at 11.5/500 | v7 draft row: `h-[34px]`, 11/600 name, `#N` `w-[21px]` at 10/700 grey |
  * | 14px checkbox | `DraftedCheckbox`, unchanged — the design's 14px box already ships at 1:1 |
  *
  * ## Elevation and the phone
  *
- * The panels rest **flat** with the 1px ink border and lift only under the
- * cursor, like every other card on this screen (CLAUDE.md → Elevation; the
- * prototype's `fs-lift`). A drafted row's state is fill plus strike-through,
- * never a shadow. The `dots` menu is a true overlay and keeps its resting
- * shadow, which it gets from `ui/dropdown-menu`.
+ * **v7 restyle (draft mode, `FieldScout Next v7` :839–889).** Each column is a
+ * v7 card — `rounded-2xl`, the `border-n-4` hairline, white, **no shadow at
+ * all**: a column is not itself a control, so it neither rests elevated nor
+ * lifts under the cursor (CLAUDE.md → Elevation). The header is the list name
+ * at 13px bold over the grey 10px meta; rows are v7's compact draft rows — 11px,
+ * 34px tall, rounded, `bg-surface-sunken` on hover. A drafted row's state is a
+ * sunken fill plus the faded strike-through, never a shadow. The `dots` menu is
+ * a true overlay and keeps its resting shadow, which it gets from
+ * `ui/dropdown-menu`.
  *
  * **There is no phone-specific treatment, by ruling** (Chris, 2026-08-11 —
  * *"id say leave the phone version as is"*). A 240px column on a 375px screen
@@ -284,17 +288,19 @@ function ComparisonColumn({
       // nested span — leaving the column to be computed from its subtree is one
       // refactor away from a landmark that announces nothing (LV.12's finding).
       aria-label={title}
-      className="flex w-[240px] shrink-0 flex-col self-start border border-ink bg-white transition-shadow hover:shadow-hard-4"
+      className="flex w-[240px] shrink-0 flex-col self-start overflow-hidden rounded-2xl border border-n-4 bg-white"
     >
-      <div className="flex items-center gap-1.5 border-b border-ink py-[7px] pl-2 pr-1.5">
+      <div className="flex items-center gap-2 border-b border-n-4 py-2 pl-3 pr-2">
         {cover ? (
           <ListCoverTile list={cover} players={summary?.first_players} size={21} />
         ) : (
-          <span aria-hidden="true" className="h-[21px] w-[21px] shrink-0 rounded-sm bg-n-4" />
+          <span aria-hidden="true" className="h-[21px] w-[21px] shrink-0 rounded-md bg-surface-control" />
         )}
         <span className="mr-auto min-w-0">
-          <span className="block truncate text-[10.5px] font-bold leading-tight">{title}</span>
-          <span className="fs-num mt-px block text-[8.5px] font-medium leading-tight text-n-3">
+          <span className="block truncate text-[13px] font-bold leading-tight tracking-[-0.01em] text-ink">
+            {title}
+          </span>
+          <span className="fs-num mt-0.5 block text-[10px] font-semibold leading-tight text-n-6">
             {subline}
           </span>
         </span>
@@ -302,10 +308,11 @@ function ComparisonColumn({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              variant="stroke"
+              variant="ghost"
               size="icon-sm"
               title="Column options"
               aria-label={`Options for ${title}`}
+              className="text-n-6 hover:text-ink"
             >
               <Icon name="dots" size={13} />
             </Button>
@@ -354,41 +361,45 @@ function ComparisonColumn({
         // it. **Neither branch names a cause** — R248.
         <ListReadFailure error={detail.error} canEdit={canEdit} />
       ) : !entries ? (
-        <ListRowsSkeleton rowHeight={30} />
+        <ListRowsSkeleton rowHeight={34} />
       ) : entries.length === 0 ? (
         <div className="p-2">
           <EmptyListState canEdit={canEdit} />
         </div>
       ) : (
-        buckets.map((bucket) => {
-          const heading = bucketHeading(org, bucket)
-          return (
-            <div key={bucket.key}>
-              {heading !== null && (
-                <div
-                  className={cn(
-                    'flex h-[21px] items-center border-b border-ink px-2 text-[9px] font-bold',
-                    bucket.className,
-                  )}
-                >
-                  {heading}
-                </div>
-              )}
-              {bucket.entries.map((entry) => (
-                <ComparisonRow
-                  key={entry.id}
-                  entry={entry}
-                  rank={ranks.get(entry.id) ?? 0}
-                  drafted={drafted.has(entry.player_id)}
-                  onToggleDrafted={() =>
-                    fanOut.tick(listId, entry.player_id, entry.player.full_name)
-                  }
-                  onOpenPlayer={() => openPlayer(entry)}
-                />
-              ))}
-            </div>
-          )
-        })
+        // v7's column body: rows sit inset (3px / 5px) so their rounded hover
+        // fill never touches the card's hairline.
+        <div className="px-[5px] pb-3 pt-[3px]">
+          {buckets.map((bucket) => {
+            const heading = bucketHeading(org, bucket)
+            return (
+              <div key={bucket.key}>
+                {heading !== null && (
+                  <div
+                    className={cn(
+                      'mb-px mt-1 flex h-[22px] items-center rounded-md px-2 text-[10px] font-bold',
+                      bucket.className,
+                    )}
+                  >
+                    {heading}
+                  </div>
+                )}
+                {bucket.entries.map((entry) => (
+                  <ComparisonRow
+                    key={entry.id}
+                    entry={entry}
+                    rank={ranks.get(entry.id) ?? 0}
+                    drafted={drafted.has(entry.player_id)}
+                    onToggleDrafted={() =>
+                      fanOut.tick(listId, entry.player_id, entry.player.full_name)
+                    }
+                    onOpenPlayer={() => openPlayer(entry)}
+                  />
+                ))}
+              </div>
+            )
+          })}
+        </div>
       )}
     </section>
   )
@@ -410,10 +421,10 @@ function ComparisonRow({
   return (
     <div
       className={cn(
-        'flex h-[30px] items-center gap-1.5 border-b border-n-4 px-2 transition-colors',
+        'flex h-[34px] items-center gap-2 rounded-md pl-2 pr-1.5 transition-colors',
         // Drafted is a resting condition, so it is carried by fill and the
         // strike-through below — never by elevation (CLAUDE.md → Elevation).
-        drafted ? 'bg-n-4' : 'bg-white hover:bg-accent-soft',
+        drafted ? 'bg-surface-sunken' : 'hover:bg-surface-sunken',
       )}
     >
       {/* Permanent — there is no draft-mode gate (Chris, 2026-08-10; plan D2).
@@ -421,12 +432,15 @@ function ComparisonRow({
           D12): every column on screen that holds this player, none that does
           not, and no list you did not pick. See `drafted-fan-out.ts`. */}
       <DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} />
-      <span className="fs-num w-[21px] shrink-0 text-[9px] font-medium text-ink">#{rank}</span>
+      <span className="fs-num w-[21px] shrink-0 text-[10px] font-bold text-n-6">#{rank}</span>
       <PlayerName
         name={entry.player.full_name}
         drafted={drafted}
         onOpen={onOpenPlayer}
-        className={cn('min-w-0 flex-1 truncate text-[10.5px] font-bold', drafted && 'opacity-60')}
+        className={cn(
+          'min-w-0 flex-1 truncate text-[11px] font-semibold text-ink',
+          drafted && 'text-n-6 opacity-60',
+        )}
       />
       <PlayerMeta entry={entry} />
     </div>

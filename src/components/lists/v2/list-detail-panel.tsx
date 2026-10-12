@@ -304,10 +304,12 @@ export function ListDetailPanel({
   if (detail.isError) {
     return (
       <PanelShell banner={aiBanner} dropRef={playerDrop.setNodeRef} dropActive={railDragOver}>
-        <div className="flex flex-col items-center gap-2.5 py-12 text-center">
-          <Icon name="info-circle" size={22} className="text-negative-strong" />
-          <p className="text-[13px] font-bold">This list could not be loaded.</p>
-          <p className="max-w-[320px] text-[11px] font-medium text-n-3">
+        <div className="flex flex-col items-center gap-2 py-12 text-center">
+          <Icon name="info-circle" size={20} className="text-negative-strong" />
+          <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">
+            This list could not be loaded.
+          </p>
+          <p className="max-w-[320px] text-[11px] font-medium text-n-6">
             {detail.error.message}
           </p>
         </div>
@@ -440,7 +442,7 @@ export function ListDetailPanel({
         onValueChange={(next) => setTab(next as DetailTab)}
         className="flex flex-col gap-3"
       >
-        <div className="flex flex-wrap items-stretch gap-1 border-b border-ink">
+        <div className="flex flex-wrap items-stretch gap-1 border-b border-n-4">
           <TabsList aria-label="List sections" className="flex-wrap">
             <TabsTrigger value="list">List</TabsTrigger>
             <TabsTrigger value="details">Details</TabsTrigger>
@@ -448,7 +450,7 @@ export function ListDetailPanel({
               Comments
             </TabsTrigger>
           </TabsList>
-          <span className="ml-auto flex items-center gap-1.5 pb-1.5 text-[10px] font-medium text-n-3">
+          <span className="ml-auto flex items-center gap-1 pb-1.5 text-[10px] font-semibold text-n-6">
             <Icon name="eye" size={12} />
             <span className="fs-num">{formatCount(list.view_count)}</span>
           </span>
@@ -565,12 +567,13 @@ function PanelShell({
     <div
       ref={dropRef}
       className={cn(
-        'flex flex-col gap-3 border bg-white p-[18px]',
+        // v7 card: hairline, 14px radius, no resting shadow.
+        'flex flex-col gap-3 rounded-2xl border bg-white p-[17px]',
         // A drop target has to say it is one *while you are over it*, or the
         // gesture is a guess. This is an active drag state, not a resting
         // elevation, so it is a border/fill change — CLAUDE.md, "Elevation is a
         // hover state, never a resting one".
-        dropActive ? 'border-accent bg-accent-soft' : 'border-ink',
+        dropActive ? 'border-accent bg-accent-soft' : 'border-n-4',
       )}
     >
       {banner}
@@ -583,15 +586,15 @@ function DetailSkeleton() {
   return (
     <div className="flex animate-pulse flex-col gap-3" aria-busy="true" aria-label="Loading list">
       <div className="flex items-start gap-3">
-        <div className="h-[42px] w-[42px] rounded-sm bg-n-4" />
+        <div className="h-[51px] w-[51px] rounded-xl bg-surface-control" />
         <div className="flex flex-col gap-2">
-          <div className="h-4 w-40 rounded-sm bg-n-4" />
-          <div className="h-2.5 w-56 rounded-sm bg-n-4" />
+          <div className="h-6 w-48 rounded-md bg-surface-control" />
+          <div className="h-3 w-56 rounded-md bg-surface-control" />
         </div>
       </div>
-      <div className="h-7 w-full rounded-sm bg-n-4" />
+      <div className="h-7 w-full rounded-md bg-surface-control" />
       {[0, 1, 2, 3, 4].map((row) => (
-        <div key={row} className="h-12 w-full rounded-sm bg-n-4" />
+        <div key={row} className="h-[34px] w-full rounded-md bg-surface-control" />
       ))}
     </div>
   )

@@ -58,12 +58,18 @@ export function TagInput({
     <div ref={containerRef} className="relative">
       <div
         className={cn(
-          'flex flex-wrap items-center gap-2 rounded-sm border border-ink bg-white px-2 py-2 transition-colors focus-within:border-accent',
+          'flex min-h-input flex-wrap items-center gap-1.5 rounded-md bg-surface-control px-2 py-1 transition-[background-color,box-shadow] hover:bg-n-4 focus-within:bg-white focus-within:shadow-field',
           atLimit && 'opacity-90',
         )}
       >
         {value.map((tag) => (
-          <TagChip key={tag} name={tag} onRemove={() => onChange(value.filter((t) => t !== tag))} />
+          <TagChip
+            key={tag}
+            name={tag}
+            onRemove={() => onChange(value.filter((t) => t !== tag))}
+            // White on the grey field, so the chip reads against it.
+            className="bg-white"
+          />
         ))}
         <input
           type="text"
@@ -85,22 +91,24 @@ export function TagInput({
           placeholder={
             atLimit ? `Max ${max} tags` : value.length === 0 ? placeholder : ''
           }
-          className="min-w-[80px] flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-n-3 disabled:cursor-not-allowed"
+          className="min-w-[80px] flex-1 bg-transparent text-[11px] font-medium text-ink outline-none placeholder:text-n-6 disabled:cursor-not-allowed"
         />
       </div>
 
       {open && !atLimit && suggestions.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-sm border border-ink bg-white shadow-hard-4">
-          <ul className="max-h-60 overflow-y-auto py-1">
+        // A true overlay — the suggestion menu floats over the form, so it
+        // carries its shadow at rest (CLAUDE.md → "Elevation" exception).
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-n-4 bg-white shadow-hard-6">
+          <ul className="max-h-60 overflow-y-auto p-1">
             {suggestions.map((tag) => (
               <li key={tag.id}>
                 <button
                   type="button"
                   onClick={() => addTag(tag.name)}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm hover:bg-accent-soft"
+                  className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-[11px] font-medium text-ink hover:bg-surface-sunken"
                 >
                   <span>{tag.name}</span>
-                  <span className="text-[10px] tracking-wider text-n-3">
+                  <span className="text-[10px] font-medium text-n-6">
                     {tag.is_system_tag ? 'System' : `${tag.use_count} uses`}
                   </span>
                 </button>
@@ -111,7 +119,7 @@ export function TagInput({
                 <button
                   type="button"
                   onClick={() => addTag(draft)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-ink hover:bg-accent-soft"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[11px] font-semibold text-accent hover:bg-surface-sunken"
                 >
                   + Create &ldquo;{draft.trim()}&rdquo;
                 </button>
@@ -121,7 +129,7 @@ export function TagInput({
         </div>
       )}
 
-      <p className="mt-1.5 text-[10px] text-n-3">
+      <p className="mt-1.5 text-[10px] font-medium text-n-6">
         {value.length} / {max} tags
       </p>
     </div>

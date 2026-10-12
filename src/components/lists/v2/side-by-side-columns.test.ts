@@ -352,15 +352,18 @@ describe('LV.13 — elevation, and the page seam LV.12 left', () => {
   /** `shadow-hard-*` NOT preceded by an interaction-state prefix. */
   const RESTING_SHADOW = /(?<![\w-])(?<!:)shadow-hard-[\w-]+/g
 
-  it('the panels rest flat and lift only on hover', () => {
+  it('the panels rest flat on the v7 hairline and never lift', () => {
     const source = code(COLUMNS)
     expect([...source.matchAll(RESTING_SHADOW)].map((m) => m[0])).toEqual([])
-    expect(source).toContain('border border-ink bg-white transition-shadow hover:shadow-hard-4')
+    // v7 restyle: a column is not itself a control, so it carries no hover
+    // lift either (CLAUDE.md → Elevation: only elevate what is interactive).
+    expect(source).toContain('rounded-2xl border border-n-4 bg-white')
+    expect(source).not.toMatch(/hover:shadow-hard-/)
   })
 
   it('a drafted row is fill plus strike-through, never a shadow', () => {
     const source = code(COLUMNS)
-    expect(source).toContain("drafted ? 'bg-n-4' : 'bg-white hover:bg-accent-soft'")
+    expect(source).toContain("drafted ? 'bg-surface-sunken' : 'hover:bg-surface-sunken'")
     // The strike-through itself is `PlayerName`'s, driven by the same flag.
     expect(source).toMatch(/<PlayerName[\s\S]*?drafted=\{drafted\}/)
   })

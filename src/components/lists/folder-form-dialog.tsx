@@ -133,7 +133,7 @@ export function FolderFormDialog({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               aria-label="Change folder thumbnail"
-              className="group relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-ink bg-white transition-colors hover:bg-n-4"
+              className="group relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-sunken transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               {thumbnailSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -143,15 +143,15 @@ export function FolderFormDialog({
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <Icon name="folder" size={22} className="text-ink" />
+                <Icon name="folder" size={22} className="text-n-3" />
               )}
-              <span className="absolute inset-0 flex items-center justify-center bg-ink/85 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="absolute inset-0 flex items-center justify-center bg-ink/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
                 <Icon name="edit" size={14} />
               </span>
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-ink">Thumbnail</p>
-              <p className="text-xs font-medium text-n-3">
+              <p className="text-[13px] font-semibold text-ink">Thumbnail</p>
+              <p className="text-[11px] font-medium text-n-6">
                 Optional — defaults to the folder icon.
               </p>
             </div>
@@ -165,7 +165,7 @@ export function FolderFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-[12px] font-bold text-ink">
+            <label className="block text-[11px] font-semibold text-ink">
               Folder name
             </label>
             <Input
@@ -187,7 +187,7 @@ export function FolderFormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" variant="blue" shadow disabled={!canSubmit}>
+            <Button type="submit" variant="blue" disabled={!canSubmit}>
               {submitting
                 ? mode === 'create'
                   ? 'Creating…'
