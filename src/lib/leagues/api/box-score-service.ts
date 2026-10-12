@@ -121,6 +121,7 @@ import {
   BOX_OVERRIDDEN_NOTE as OVERRIDDEN_NOTE,
   BOX_UNRECOVERABLE_NOTE as UNRECOVERABLE_NOTE,
 } from './box-score-copy'
+import { readHeldGames, withoutHeldLines } from '../scoring/held-games'
 import { assertBelowPostgrestCap, assertLeagueMember } from './inseason-reads'
 import type { ServiceResult } from './leagues-service'
 
@@ -451,7 +452,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
     playerIds.length > 0
       ? supabase
           .from('player_stats')
-          .select(['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', '))
+          .select(['player_id', 'updated_at', 'advanced', 'game_id', ...STAT_LINE_COLUMNS].join(', '))
           .eq('season', league.season)
           .eq('week', week)
           .in('player_id', playerIds)
@@ -463,7 +464,9 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
   const statRows = (statsRes.data ?? []) as unknown as StatLineRow[]
   const statsCapped = assertBelowPostgrestCap(statRows, 'player_stats')
   if (statsCapped) return statsCapped
-  const statsByPlayer = new Map(statRows.map((r) => [r.player_id, r]))
+  const heldStarters = await heldFilter(supabase, league.season, week, new Map(statRows.map((r) => [r.player_id, r])), (id) => players.get(id)?.team)
+  if ('status' in heldStarters) return heldStarters
+  const statsByPlayer = heldStarters.kept
   const lineupMeta = lineupRes.data
     ? { locked_at: lineupRes.data.locked_at, set_at: lineupRes.data.set_at, edited_by_commish: lineupRes.data.edited_by_commish }
     : null
@@ -585,6 +588,26 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
 }
 
 /**
+ * M8 TD7 / R1551 (184): the box's live points read the worker's held-game
+ * rule — a line on a game marked out of the week / cancelled scores 0 (and
+ * shows no line). A failed read of the marks is a named 500, never a guess.
+ */
+async function heldFilter(
+  supabase: Supabase,
+  season: number,
+  week: number,
+  stats: Map<string, StatLineRow>,
+  teamOf: (playerId: string) => string | null | undefined,
+): Promise<{ kept: Map<string, StatLineRow> } | ServiceResult> {
+  try {
+    const held = await readHeldGames(supabase, season, week)
+    return { kept: withoutHeldLines(stats, held, teamOf).kept }
+  } catch (e) {
+    return dbFailure('nfl_games', { message: e instanceof Error ? e.message : String(e) })
+  }
+}
+
+/**
  * D478: the team's NON-starters for the week, scored live through the
  * worker's own `computeTeamWeek` (one implementation — its team sum is
  * discarded; a bench line never counts). The roster is the team's current
@@ -608,7 +631,7 @@ async function readBench(
     supabase.from('players').select('id, position, team').in('id', ids),
     supabase
       .from('player_stats')
-      .select(['player_id', 'updated_at', 'advanced', ...STAT_LINE_COLUMNS].join(', '))
+      .select(['player_id', 'updated_at', 'advanced', 'game_id', ...STAT_LINE_COLUMNS].join(', '))
       .eq('season', season)
       .eq('week', week)
       .in('player_id', ids),
@@ -618,8 +641,10 @@ async function readBench(
   const statRows = (statsRes.data ?? []) as unknown as StatLineRow[]
   const capped = assertBelowPostgrestCap(statRows, 'player_stats')
   if (capped) return capped
-  const statsByPlayer = new Map(statRows.map((r) => [r.player_id, r]))
   const players = new Map((playersRes.data ?? []).map((p) => [p.id, p]))
+  const heldBench = await heldFilter(supabase, season, week, new Map(statRows.map((r) => [r.player_id, r])), (id) => players.get(id)?.team)
+  if ('status' in heldBench) return heldBench
+  const statsByPlayer = heldBench.kept
   const refs: StarterRef[] = []
   for (const id of ids) {
     const p = players.get(id)

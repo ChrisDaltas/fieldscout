@@ -323,4 +323,55 @@ describe('L.D3.13 — the ruled re-score of a final week, end to end (Chris 2026
     expect(await ledger()).toBe(before)
     expect(await scores()).toBe('15.00/14.00 final home')
   })
+
+  // M8 TD7 / R1551 (184): a game an operator marked CANCELLED scores 0 for its
+  // week — no recompute may put its players' points back. RSA @ RSB is the
+  // only game, so both teams recompute to 0 under the mark.
+  async function withCancelled<T>(run: () => Promise<T>): Promise<T> {
+    await must(
+      service.from('nfl_games').update({ status: 'postponed', operator_hold: 'cancelled', operator_hold_at: LATE, operator_hold_prior_status: 'final' }).eq('id', `${PREFIX}-g1`).select('id'),
+      'mark g1 cancelled',
+    )
+    try {
+      return await run()
+    } finally {
+      await must(
+        service.from('nfl_games').update({ status: 'final', operator_hold: null, operator_hold_at: null, operator_hold_prior_status: null }).eq('id', `${PREFIX}-g1`).select('id'),
+        'clear g1',
+      )
+    }
+  }
+
+  it('RS10 R1551 — the re-score never puts a cancelled game\'s points back into a final week: the teams it would send the door recompute to 0 (premise: without the mark, nonzero)', async () => {
+    // The door is retired (164); a stand-in answers the probe and records the
+    // payload this module would send, then stops — nothing is written.
+    const sent = (into: Array<Array<{ team_id: string; points: number }>>) =>
+      new Proxy(service, {
+        get(target, prop, receiver) {
+          if (prop === 'rpc') {
+            return async (fn: string, args: Record<string, unknown>) => {
+              if (fn !== 'admin_rescore_final_week') return target.rpc(fn as never, args as never)
+              if (args.p_league_id === null) return { data: null, error: { code: '22023', message: 'p_league_id, p_week … are required' } }
+              into.push(args.p_teams as Array<{ team_id: string; points: number }>)
+              return { data: null, error: { code: 'P0001', message: 'stand-in door: stop here' } }
+            }
+          }
+          return Reflect.get(target, prop, receiver)
+        },
+      }) as SupabaseClient<Database>
+    const plain: Array<Array<{ team_id: string; points: number }>> = []
+    await rescore({}, sent(plain))
+    expect(plain).toHaveLength(1)
+    expect(plain[0].map((t) => t.points).some((pts) => pts !== 0)).toBe(true)
+    const held: Array<Array<{ team_id: string; points: number }>> = []
+    await withCancelled(() => rescore({}, sent(held)))
+    expect(held).toHaveLength(1)
+    expect(held[0].map((t) => [t.team_id === t1 ? 'One' : 'Two', t.points]).sort()).toEqual([['One', 0], ['Two', 0]])
+    expect(await scores()).toBe('15.00/14.00 final home')
+  })
+
+  it('RS11 R1551 — the per-player backfill\'s recompute reads the mark too: under the cancel both teams recompute to 0 (not 9 / 12)', async () => {
+    const report = await withCancelled(() => backfillPlayerPoints({ db: service, time: clock }, { season: SEASON, apply: false, leagueIds: [leagueId] }))
+    expect(report.notable.map((c) => [c.team_id === t1 ? 'One' : 'Two', c.recomputed]).sort()).toEqual([['One', 0], ['Two', 0]])
+  })
 })

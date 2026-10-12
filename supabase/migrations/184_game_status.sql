@@ -91,6 +91,11 @@
 --      take the game back out of the week) is kept from it (R1547).
 --   7. The prelude's gate wording is verb-neutral (R1548); a replay must
 --      match the game AND the mark (R1549).
+--   8. (PR #420 second fix round — R1552 / R1554) clearing a zeroing mark
+--      that leaves the week not all-final takes back the release stamp the
+--      mark itself recorded (`operator_release_at`); a re-queue moves a
+--      CLAIMED queue row 1µs earlier so the in-flight drain's ack misses and
+--      the next drain re-scores it.
 --
 -- THE SYNC (TD7 / Q100 — "the sync respects operator_hold"):
 -- `src/lib/sync/ingest-week.ts` reads the hold and never writes an
@@ -129,6 +134,9 @@ ALTER TABLE nfl_games
     CHECK (operator_hold IS NULL OR operator_hold IN ('in_week', 'out_of_week', 'cancelled')),
   ADD COLUMN operator_hold_at TIMESTAMPTZ,
   ADD COLUMN operator_hold_prior_status TEXT,
+  -- R1552: the release THIS mark recorded on nfl_weeks (NULL when it recorded
+  -- none) — so clearing the mark takes back exactly that stamp.
+  ADD COLUMN operator_release_at TIMESTAMPTZ,
   ADD CONSTRAINT nfl_games_operator_hold_whole
     CHECK ((operator_hold IS NULL) = (operator_hold_at IS NULL)
        AND (operator_hold IS NOT NULL OR operator_hold_prior_status IS NULL));
@@ -667,6 +675,7 @@ DECLARE
   v_release TIMESTAMPTZ;
   v_wk      public.nfl_weeks;
   v_state   RECORD;
+  v_unstamped BOOLEAN := FALSE;
 BEGIN
   v_replay := public.op_verb_prelude_internal('set_game_status', NULL, p_action_id, p_reason);
   IF v_replay IS NOT NULL THEN
@@ -730,6 +739,7 @@ BEGIN
       operator_hold = v_hold,
       operator_hold_at = CASE WHEN v_hold IS NULL THEN NULL ELSE p_at END,
       operator_hold_prior_status = CASE WHEN v_hold IS NULL THEN NULL ELSE v_prior END,
+      operator_release_at = CASE WHEN v_hold IN ('out_of_week', 'cancelled') THEN operator_release_at END,
       updated_at = p_at
   WHERE id = p_game_id;
 
@@ -748,7 +758,14 @@ BEGIN
       AND (ps.game_id = p_game_id
            OR (ps.game_id IS NULL AND p.team IN (v_g.home_team, v_g.away_team)))
     GROUP BY ps.player_id
-    ON CONFLICT (season, week, player_id) DO NOTHING;
+    -- R1554: a row a drain has CLAIMED (in flight, maybe scoring the old
+    -- answer) is moved 1µs EARLIER: the drain's (token, stamp) ack misses
+    -- and releases it, and the next drain re-scores it — still ready at
+    -- once (its line's updated_at stays ≥ the stamp). An unclaimed row is
+    -- left alone: it has not been scored yet.
+    ON CONFLICT (season, week, player_id) DO UPDATE
+      SET enqueued_at = public.score_fanout.enqueued_at - interval '1 microsecond'
+      WHERE public.score_fanout.claim_token IS NOT NULL;
     GET DIAGNOSTICS v_queued = ROW_COUNT;
   END IF;
 
@@ -758,12 +775,26 @@ BEGIN
   -- marked late would hold the week live forever (F238). The stamp is
   -- weekBounds' own rule (Q50): the LATER of now and the Tuesday floor.
   SELECT * INTO v_wk FROM public.nfl_weeks w WHERE w.season = v_g.season AND w.week = v_g.week FOR UPDATE;
-  IF FOUND AND v_wk.last_game_ends_at IS NULL AND v_hold IN ('out_of_week', 'cancelled') THEN
+  IF v_wk.season IS NOT NULL AND v_wk.last_game_ends_at IS NULL AND v_hold IN ('out_of_week', 'cancelled') THEN
     SELECT * INTO v_state FROM public.week_games_state_internal(v_g.season, v_g.week);
     IF v_state.all_final THEN
       v_release := GREATEST(p_at, public.week_release_floor_internal(v_wk.starts_at));
       UPDATE public.nfl_weeks SET last_game_ends_at = v_release
       WHERE season = v_g.season AND week = v_g.week;
+      UPDATE public.nfl_games SET operator_release_at = v_release WHERE id = p_game_id;
+    END IF;
+  END IF;
+  -- R1552: clearing (or softening to in_week) a zeroing mark that leaves the
+  -- week NOT all-final takes back the release THIS mark recorded — and only
+  -- that one (a stamp ingestion wrote, or another mark's, is never touched).
+  IF v_wk.season IS NOT NULL AND v_g.operator_hold IN ('out_of_week', 'cancelled')
+     AND v_hold IS DISTINCT FROM 'out_of_week' AND v_hold IS DISTINCT FROM 'cancelled' THEN
+    SELECT * INTO v_state FROM public.week_games_state_internal(v_g.season, v_g.week);
+    IF NOT v_state.all_final AND v_g.operator_release_at IS NOT NULL
+       AND v_wk.last_game_ends_at IS NOT DISTINCT FROM v_g.operator_release_at THEN
+      UPDATE public.nfl_weeks SET last_game_ends_at = NULL
+      WHERE season = v_g.season AND week = v_g.week;
+      v_unstamped := TRUE;
     END IF;
   END IF;
 
@@ -789,7 +820,7 @@ BEGIN
   v_after := jsonb_build_object('changed', TRUE, 'game_id', p_game_id, 'status', v_status,
     'operator_hold', v_hold, 'kickoff_at', v_g.kickoff_at, 'season', v_g.season, 'week', v_g.week,
     'leagues_told', v_told, 'marked_at', p_at, 'players_rescored', v_queued,
-    'release_recorded_at', v_release);
+    'release_recorded_at', v_release, 'release_taken_back', v_unstamped);
   PERFORM public.log_operator_action_internal(p_action_id, v_actor, 'set_game_status',
     'platform', NULL, p_reason, v_before, v_after);
   RETURN v_after;

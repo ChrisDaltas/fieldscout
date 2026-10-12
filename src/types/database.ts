@@ -3046,6 +3046,7 @@ export type Database = {
           operator_hold: string | null
           operator_hold_at: string | null
           operator_hold_prior_status: string | null
+          operator_release_at: string | null
           quarter: number | null
           season: number
           status: string | null
@@ -3064,6 +3065,7 @@ export type Database = {
           operator_hold?: string | null
           operator_hold_at?: string | null
           operator_hold_prior_status?: string | null
+          operator_release_at?: string | null
           quarter?: number | null
           season: number
           status?: string | null
@@ -3082,6 +3084,7 @@ export type Database = {
           operator_hold?: string | null
           operator_hold_at?: string | null
           operator_hold_prior_status?: string | null
+          operator_release_at?: string | null
           quarter?: number | null
           season?: number
           status?: string | null

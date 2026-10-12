@@ -39,7 +39,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(60);
+select plan(65);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -377,6 +377,40 @@ select is((select count(*)::int from league_chat where message like '%x132_user%
 select is(pg_temp.err($$ update platform_operator_actions set reason = 'x' where action_id = 'a1320000-0000-4000-8000-000000000005' $$)::text like 'P0001:%'
           or pg_temp.err($$ update platform_operator_actions set reason = 'x' where action_id = 'a1320000-0000-4000-8000-000000000005' $$)::text like '42501:%', true,
   'R6 the receipts are immutable (182''s trigger)');
+
+-- ---------------------------------------------------------------------------
+-- U. R1552 / R1554 — week 9 (no league plays it: no lines, no receipts above)
+-- ---------------------------------------------------------------------------
+insert into nfl_games (id, season, week, home_team, away_team, kickoff_at, status) values
+ ('x132-g9a', 2026, 9, 'GB',  'CHI', '2026-11-08 18:00:00+00', 'final'),
+ ('x132-g9b', 2026, 9, 'DEN', 'LV',  '2026-11-08 21:05:00+00', 'scheduled');
+insert into players (id, full_name, position, team, status) values ('x132-den', 'X132 Den', 'RB', 'DEN', 'Active');
+insert into player_stats (player_id, season, week, stat_type, updated_at, rush_yards)
+values ('x132-den', 2026, 9, 'weekly', '2026-11-08 23:00:00.000005+00', 40);
+-- A drain has CLAIMED his row (in flight, scoring the line before the mark).
+insert into score_fanout (season, week, player_id, enqueued_at, claim_token, claimed_at)
+values (2026, 9, 'x132-den', '2026-11-08 23:00:00.000005+00', gen_random_uuid(), '2026-11-09 01:00:00+00');
+select pg_temp.as_op();
+insert into r132 select 'U1', op_set_game_status_internal('x132-g9b', 'cancelled', 'a1320000-0000-4000-8000-000000000091', null, '2026-11-09 02:00:00+00');
+select is(
+  (select to_char(f.enqueued_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') from score_fanout f where f.season = 2026 and f.week = 9 and f.player_id = 'x132-den'),
+  '2026-11-08T23:00:00.000004',
+  'U1 R1554: the CLAIMED row moves 1µs earlier — the in-flight drain''s (token, stamp) ack misses and the next drain re-scores it (still ready: line ≥ stamp)');
+select is(format('%s|%s', pg_temp.release(9), (select r ->> 'release_recorded_at' from r132 where tag = 'U1')),
+  '2026-11-10T08:00Z|2026-11-10T08:00:00+00:00', 'U2 the mark recorded week 9''s release at its Tuesday floor (PST)');
+insert into r132 select 'U2', op_set_game_status_internal('x132-g9b', 'normal', 'a1320000-0000-4000-8000-000000000092', null, '2026-11-09 03:00:00+00');
+select is(format('%s|%s|%s', pg_temp.release(9), (select r ->> 'release_taken_back' from r132 where tag = 'U2'), pg_temp.game('x132-g9b')),
+  'NULL|true|scheduled|-|-|f',
+  'U3 R1552: switched back, the game is open again — the release THIS mark recorded is taken back (the week is not over)');
+-- A stamp the mark did NOT write (ingestion's) is never taken back.
+update nfl_weeks set last_game_ends_at = '2026-11-10 09:00:00+00' where season = 2026 and week = 9;
+insert into r132 select 'U3', op_set_game_status_internal('x132-g9b', 'cancelled', 'a1320000-0000-4000-8000-000000000093', null, '2026-11-09 04:00:00+00');
+insert into r132 select 'U4', op_set_game_status_internal('x132-g9b', 'normal', 'a1320000-0000-4000-8000-000000000094', null, '2026-11-09 05:00:00+00');
+select is(format('%s|%s|%s', pg_temp.release(9), coalesce((select r ->> 'release_recorded_at' from r132 where tag = 'U3'), 'none'), (select r ->> 'release_taken_back' from r132 where tag = 'U4')),
+  '2026-11-10T09:00Z|none|false',
+  'U4 …a release the mark did not record stays where it is (recorded none; took none back)');
+select is((select count(*)::int from platform_operator_actions where action_id::text like 'a1320000-0000-4000-8000-00000000009%'), 4,
+  'U5 four changes, four receipts');
 
 select * from finish();
 rollback;
