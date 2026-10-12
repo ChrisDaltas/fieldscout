@@ -143,8 +143,9 @@ export function AddToListPopover({
   const trigger =
     triggerVariant === 'icon' ? (
       <Button
-        variant="stroke"
+        variant="ghost"
         size="icon-sm"
+        className="text-n-3 hover:text-ink"
         aria-label={`Add ${playerName} to a list`}
         title="Add to a list"
       >
@@ -170,31 +171,31 @@ export function AddToListPopover({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent align={align} className="w-64 p-0">
-        <div className="border-b border-n-4 px-3 py-2">
-          <p className="fs-overline text-n-3">
+        <div className="px-3.5 pb-1.5 pt-3">
+          <p className="fs-overline text-n-6">
             {isMulti
               ? `Add ${playerIds.length} players to list`
               : 'Add to list'}
           </p>
-          <p className="mt-0.5 truncate text-[12px] font-bold">{playerName}</p>
+          <p className="mt-0.5 truncate text-[12px] font-semibold">{playerName}</p>
         </div>
 
-        <div className="border-b border-n-4 px-2 py-1.5">
-          <div className="flex h-7 items-center gap-2 rounded-sm border border-n-4 bg-white px-2 transition-colors focus-within:border-accent">
-            <Icon name="search" size={13} className="text-n-3" />
+        <div className="px-2.5 py-1.5">
+          <div className="flex h-btn-md items-center gap-[7px] rounded-pill bg-surface-control px-2.5 transition-[background-color,box-shadow] focus-within:bg-white focus-within:shadow-field">
+            <Icon name="search" size={12} className="text-n-6" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Find a list…"
-              className="h-full min-w-0 flex-1 bg-transparent text-[12px] font-medium text-ink outline-none placeholder:text-n-3"
+              className="h-full min-w-0 flex-1 bg-transparent text-[11px] font-medium text-ink outline-none placeholder:text-n-6"
             />
           </div>
         </div>
 
-        <ul className="max-h-60 overflow-y-auto p-1">
+        <ul className="max-h-60 overflow-y-auto p-[5px]">
           {lists.length === 0 && (
-            <li className="px-3 py-3 text-center text-[11px] font-medium text-n-3">
+            <li className="px-3 py-3 text-center text-[11px] font-medium text-n-6">
               {query ? 'No matching lists.' : 'No lists yet.'}
             </li>
           )}
@@ -204,10 +205,10 @@ export function AddToListPopover({
                 type="button"
                 disabled={working}
                 onClick={() => addToExisting(list.id, list.title)}
-                className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] font-medium text-ink transition-colors hover:bg-accent-soft disabled:opacity-40"
+                className="flex min-h-[31px] w-full items-center justify-between gap-2 rounded-md px-[7px] text-left text-[11px] font-semibold text-ink transition-colors hover:bg-surface-sunken disabled:opacity-40"
               >
                 <span className="min-w-0 flex-1 truncate">{list.title}</span>
-                <span className="fs-num shrink-0 text-[11px] text-n-3">
+                <span className="fs-num shrink-0 text-[10px] font-medium text-n-6">
                   {list.player_count}
                 </span>
               </button>
@@ -215,12 +216,12 @@ export function AddToListPopover({
           ))}
         </ul>
 
-        <div className="border-t border-n-4 p-1">
+        <div className="border-t border-n-4 p-[5px]">
           <button
             type="button"
             disabled={working}
             onClick={createAndAdd}
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-[12px] font-bold text-ink transition-colors hover:bg-accent-soft disabled:opacity-40"
+            className="flex min-h-[31px] w-full items-center gap-2 rounded-md px-[7px] text-[11px] font-semibold text-accent transition-colors hover:bg-surface-sunken disabled:opacity-40"
           >
             <Icon name="plus" size={13} />
             Create new list

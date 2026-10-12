@@ -177,14 +177,14 @@ export function WindowShell({
       aria-label={title}
       onPointerDownCapture={onFocus}
       style={{ zIndex, left: pos.x, top: pos.y, maxHeight: WINDOW_MAX_HEIGHT }}
-      className="fixed flex w-[304px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-sm border border-ink bg-white text-ink shadow-hard-6"
+      className="fixed flex w-[304px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-2xl bg-white text-ink shadow-hard-8"
     >
       {/* header — identity band, doubles as the drag handle */}
       <div
         onPointerDown={onHandlePointerDown}
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerUp}
-        className="flex shrink-0 cursor-grab touch-none items-start gap-1 border-b border-ink py-2.5 pl-3 pr-2 active:cursor-grabbing"
+        className="flex shrink-0 cursor-grab touch-none items-start gap-0.5 py-3 pl-3.5 pr-2 active:cursor-grabbing"
       >
         <div className="min-w-0 flex-1">{header}</div>
         {onExpand && (
@@ -193,7 +193,7 @@ export function WindowShell({
             onClick={onExpand}
             aria-label={expandLabel}
             title={expandLabel}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-n-4 hover:text-accent"
+            className="inline-flex size-btn-sm shrink-0 items-center justify-center rounded-pill text-n-3 transition-colors hover:bg-surface-hover hover:text-ink"
           >
             <Icon name="arrow-up-right" size={13} />
           </button>
@@ -203,9 +203,9 @@ export function WindowShell({
           onClick={onClose}
           aria-label="Close"
           title="Close"
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-n-4 hover:text-accent"
+          className="inline-flex size-btn-sm shrink-0 items-center justify-center rounded-pill text-n-3 transition-colors hover:bg-surface-hover hover:text-ink"
         >
-          <Icon name="close" size={14} />
+          <Icon name="close" size={13} />
         </button>
       </div>
 
@@ -214,7 +214,7 @@ export function WindowShell({
       )}
 
       {error && !loading && (
-        <p className="p-3 text-[12px] font-semibold text-negative-strong">
+        <p className="px-3.5 pb-3.5 text-[11px] font-medium text-negative-strong">
           {error}
         </p>
       )}
@@ -225,13 +225,14 @@ export function WindowShell({
           <Tabs
             value={tab}
             onValueChange={setTab}
-            className="px-3 pb-3 pt-2.5"
+            className="px-3.5 pb-3.5 pt-3"
           >
-            <TabsList className="flex w-full">
+            <TabsList appearance="boxed" className="flex w-full">
               {tabs.map((t) => (
                 <TabsTrigger
                   key={t.value}
                   value={t.value}
+                  appearance="boxed"
                   className="min-w-0 flex-1 px-1"
                 >
                   {t.label}

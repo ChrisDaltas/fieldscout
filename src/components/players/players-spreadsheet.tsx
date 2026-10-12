@@ -441,7 +441,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
   return (
     <div className="space-y-4">
       {error && (
-        <p className="rounded-sm border border-negative bg-negative-soft p-3 text-[13px] font-semibold text-negative-strong">
+        <p className="rounded-xl border border-negative bg-negative-soft p-3 text-body font-semibold text-negative-strong">
           {error}
         </p>
       )}
@@ -478,11 +478,11 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
           <div className="ml-auto flex flex-wrap items-center gap-4">
             <label className="flex cursor-pointer items-center gap-2">
               <Switch checked={advanced} onCheckedChange={toggleAdvanced} />
-              <span className="text-[12px] font-bold">Advanced stats</span>
+              <span className="text-body font-medium text-n-2">Advanced stats</span>
             </label>
             <label className="flex cursor-pointer items-center gap-2">
               <Switch checked={showRank} onCheckedChange={setShowRank} />
-              <span className="text-[12px] font-bold">Show rank</span>
+              <span className="text-body font-medium text-n-2">Show rank</span>
             </label>
             <CustomizePopover
               visible={visibleCols}
@@ -493,22 +493,22 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
         </div>
 
         {/* Row 2 — labeled filters + reset + result count */}
-        <div className="flex flex-wrap items-end gap-3 border-b border-ink px-4 py-2.5">
+        <div className="flex flex-wrap items-end gap-3 border-b border-n-4 px-4 py-2.5">
           <div className="w-[130px]">
-            <div className="mb-1 text-[10px] font-medium text-n-3">Pro team</div>
+            <div className="mb-1 text-meta font-semibold text-n-6">Pro team</div>
             <Select
               value={team || 'all'}
               onValueChange={(v) => setTeam(v === 'all' ? '' : v)}
             >
-              <SelectTrigger className="h-btn-md px-2.5 text-[12px] font-bold">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-[12px]">
+                <SelectItem value="all">
                   All teams
                 </SelectItem>
                 {TEAM_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t} className="text-[12px]">
+                  <SelectItem key={t} value={t}>
                     {t}
                   </SelectItem>
                 ))}
@@ -516,17 +516,17 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             </Select>
           </div>
           <div className="w-[124px]">
-            <div className="mb-1 text-[10px] font-medium text-n-3">Scoring</div>
+            <div className="mb-1 text-meta font-semibold text-n-6">Scoring</div>
             <Select
               value={scoring}
               onValueChange={(v) => setScoring(v as ScoringKey)}
             >
-              <SelectTrigger className="h-btn-md px-2.5 text-[12px] font-bold">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {SCORING_OPTIONS.map((s) => (
-                  <SelectItem key={s.id} value={s.id} className="text-[12px]">
+                  <SelectItem key={s.id} value={s.id}>
                     {s.label}
                   </SelectItem>
                 ))}
@@ -534,19 +534,19 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
             </Select>
           </div>
           <div className="w-[104px]">
-            <div className="mb-1 text-[10px] font-medium text-n-3">Season</div>
+            <div className="mb-1 text-meta font-semibold text-n-6">Season</div>
             <Select
               value={season}
               onValueChange={(v) => setSeason(v as SeasonKey)}
             >
-              <SelectTrigger className="h-btn-md px-2.5 text-[12px] font-bold">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="current" className="text-[12px]">
+                <SelectItem value="current">
                   {String(seasons.current)}
                 </SelectItem>
-                <SelectItem value="last" className="text-[12px]">
+                <SelectItem value="last">
                   {String(seasons.last)}
                 </SelectItem>
               </SelectContent>
@@ -555,7 +555,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
           <Button variant="ghost" size="md" onClick={resetFilters}>
             Reset
           </Button>
-          <span className="fs-num ml-auto pb-1.5 text-[12px] font-bold text-n-3">
+          <span className="fs-num ml-auto pb-1.5 text-body font-medium text-n-3">
             {sortedRows.length} players · {seasonLabel} season
           </span>
         </div>
@@ -566,7 +566,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
         <div className="overflow-x-auto">
           {/* border-separate (not the ui/table root's border-collapse) so the
               sticky lead columns keep their borders while scrolling. */}
-          <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
+          <table className="w-full min-w-max border-separate border-spacing-0 text-body">
             <thead className="bg-white">
               <tr>
                 {/* One empty band cell spans the 3 sticky lead columns. */}
@@ -579,7 +579,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                     key={`${b.group}:${i}`}
                     colSpan={b.count}
                     className={cn(
-                      'fs-overline whitespace-nowrap border-b border-n-4 bg-white px-3 pb-0.5 pt-1.5 text-center text-n-3',
+                      'whitespace-nowrap border-b border-n-4 bg-white px-[9px] pb-1 pt-2 text-center text-[10px] font-semibold text-n-6',
                       i > 0 && 'border-l border-n-4',
                     )}
                   >
@@ -614,7 +614,9 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                 })}
               </tr>
             </thead>
-            <tbody>
+            {/* The last row drops its hairline — the show-more / footer rule
+                below already separates it, so it would double up. */}
+            <tbody className="[&>tr:last-child>td]:border-b-0">
               {showSkeletons && (
                 <tr>
                   <td colSpan={visibleColumns.length + 3} className="p-3">
@@ -630,7 +632,7 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
                 <tr>
                   <td
                     colSpan={visibleColumns.length + 3}
-                    className="p-7 text-center text-[13px] font-semibold text-n-3"
+                    className="p-7 text-center text-body font-medium text-n-3"
                   >
                     {debounced
                       ? `No players match "${debounced}".`
@@ -675,11 +677,11 @@ export function PlayersSpreadsheet({ initialPosition = 'All' }: PlayersSpreadshe
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-ink px-4 py-2">
-          <span className="fs-num text-[11px] font-semibold text-n-3">
+        <div className="flex items-center justify-between gap-3 border-t border-n-4 px-4 py-2">
+          <span className="fs-num text-meta font-medium text-n-6">
             Showing {pagedRows.length} of {sortedRows.length} players
           </span>
-          <span className="text-[11px] font-medium text-n-3">
+          <span className="text-meta font-medium text-n-6">
             Scroll horizontally for more columns
           </span>
         </div>
@@ -741,9 +743,9 @@ function PlayerTableRow({
     .join('')
 
   return (
-    <tr className="group transition-colors hover:bg-accent-soft">
+    <tr className="group transition-colors hover:bg-surface-sunken">
       <StickyTd width="72px">
-        <span className="flex items-center justify-center gap-1">
+        <span className="flex items-center gap-1">
           {/* Pin/favorite quick-save + add-to-a-list. */}
           <button
             type="button"
@@ -756,10 +758,8 @@ function PlayerTableRow({
             }
             title={favorited ? 'In favorites' : 'Save to favorites'}
             className={cn(
-              'flex h-btn-sm w-btn-sm items-center justify-center rounded-sm border-1 border-ink transition-colors',
-              favorited
-                ? 'bg-brand text-ink'
-                : 'bg-white text-n-3 hover:bg-n-4 hover:text-ink',
+              'flex h-btn-sm w-btn-sm items-center justify-center rounded-pill transition-colors hover:bg-surface-hover',
+              favorited ? 'text-accent' : 'text-n-3 hover:text-ink',
             )}
           >
             <Icon name="star" size={13} />
@@ -773,11 +773,11 @@ function PlayerTableRow({
         </span>
       </StickyTd>
       <StickyTd leftOffset="72px" width="34px" align="right">
-        <span className="fs-num text-[11px] font-semibold text-n-3">{rank}</span>
+        <span className="fs-num text-body font-medium text-n-6">{rank}</span>
       </StickyTd>
       <StickyTd leftOffset="106px" width="230px">
         <div className="flex items-center gap-2.5">
-          <Avatar className="h-6 w-6">
+          <Avatar className="h-[26px] w-[26px]">
             <PlayerAvatarImage player={row} alt={row.full_name} />
             <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
           </Avatar>
@@ -785,21 +785,21 @@ function PlayerTableRow({
             <button
               type="button"
               onClick={onOpenPlayer}
-              className="block max-w-full truncate text-left text-[13px] font-extrabold leading-tight hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+              className="block max-w-full truncate text-left text-body font-semibold text-ink transition-colors hover:text-accent focus:outline-none focus-visible:underline"
             >
               {row.full_name}
             </button>
             <div className="mt-0.5 flex items-center gap-1.5">
               <PositionBadge position={row.position} />
               {row.team && (
-                <span className="text-[11px] font-semibold text-n-3">
+                <span className="text-meta font-medium text-n-6">
                   {row.team}
                 </span>
               )}
               {row.depth_chart_order != null && row.depth_chart_position && (
                 <span
                   title={`Depth chart: ${row.depth_chart_position} #${row.depth_chart_order}`}
-                  className="fs-num text-[10px] font-bold text-n-3"
+                  className="fs-num text-meta font-medium text-n-6"
                 >
                   · {row.depth_chart_position}
                   {row.depth_chart_order}
@@ -849,9 +849,8 @@ function StatCell({
   sorted?: boolean
 }) {
   const cellClass = cn(
-    'whitespace-nowrap border-b border-n-4 text-right',
+    'whitespace-nowrap border-b border-n-4 px-[9px] py-1.5 text-right',
     groupBoundary && 'border-l border-n-4',
-    sorted && 'bg-accent-soft/30',
   )
 
   // Missing projection / zero counting stat both read as an em dash — we
@@ -861,7 +860,7 @@ function StatCell({
   if (empty) {
     return (
       <TableCell className={cellClass}>
-        <span className="fs-num text-n-3">—</span>
+        <span className="fs-num text-n-6">—</span>
       </TableCell>
     )
   }
@@ -875,9 +874,22 @@ function StatCell({
 
   return (
     <TableCell className={cellClass}>
-      <span className={cn('fs-num text-[13px] font-bold', column.key === 'projected' && PROJ_TEXT)}>{text}</span>
+      {/* v7 numbers: medium n-2; the fantasy-point columns and the sorted
+          column read as the primary stat (semibold ink); Proj keeps its
+          site-wide blue (PROJ_TEXT, D497). */}
+      <span
+        className={cn(
+          'fs-num font-medium text-n-2',
+          (column.key === 'projected' || column.key === 'pts' || sorted)
+            ? 'font-semibold text-ink'
+            : null,
+          column.key === 'projected' && PROJ_TEXT,
+        )}
+      >
+        {text}
+      </span>
       {posRank != null && (
-        <div className="fs-num text-[9px] font-medium leading-tight text-n-3">
+        <div className="fs-num text-micro font-medium text-n-6">
           {ord(posRank)} {position}
         </div>
       )}
@@ -903,9 +915,9 @@ function SortableTh({
   return (
     <TableHead
       className={cn(
-        'whitespace-nowrap border-b border-ink bg-white text-right align-bottom',
+        'h-auto whitespace-nowrap border-b border-n-4 bg-white px-[9px] py-2 text-right align-bottom',
         groupBoundary && 'border-l border-n-4',
-        active && 'bg-accent-soft text-accent-strong',
+        active && 'text-accent',
       )}
       aria-sort={active ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
     >
@@ -913,16 +925,13 @@ function SortableTh({
         type="button"
         onClick={onSort}
         title={column.full}
-        className={cn(
-          'inline-flex w-full items-center justify-end gap-1 transition-colors hover:text-ink',
-          active && 'text-accent-strong hover:text-accent-strong',
-        )}
+        className="inline-flex w-full items-center justify-end gap-1 transition-colors hover:text-accent"
       >
         <span>{label}</span>
         {active && (
           <Icon
             name="arrow-bottom"
-            size={12}
+            size={10}
             className={cn(dir === 'asc' && 'rotate-180')}
           />
         )}
@@ -949,11 +958,11 @@ function CustomizePopover({
       </PopoverTrigger>
       <PopoverContent align="end" className="max-h-[480px] w-64 overflow-y-auto p-0">
         <div className="flex items-center justify-between gap-2 border-b border-n-4 px-3 py-2">
-          <span className="fs-overline text-n-3">Show columns</span>
+          <span className="text-meta font-semibold text-n-6">Show columns</span>
           <button
             type="button"
             onClick={onReset}
-            className="text-[11px] font-bold text-ink transition-colors hover:text-accent"
+            className="text-body font-semibold text-accent transition-colors hover:text-accent-strong"
           >
             Reset columns
           </button>
@@ -961,7 +970,7 @@ function CustomizePopover({
         <div className="py-1">
           {GROUP_ORDER.map((group) => (
             <div key={group}>
-              <div className="fs-overline px-3 pb-0.5 pt-2 text-accent-strong">
+              <div className="px-3 pb-0.5 pt-2 text-meta font-semibold text-n-6">
                 {GROUP_LABELS[group]}
               </div>
               {COLUMNS.filter((c) => c.group === group).map((c) => {
@@ -973,19 +982,19 @@ function CustomizePopover({
                     role="menuitemcheckbox"
                     aria-checked={checked}
                     onClick={() => onToggle(c.key)}
-                    className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px] font-medium transition-colors hover:bg-accent-soft"
+                    className="group flex w-full items-center gap-2 px-3 py-1 text-left text-body font-medium text-ink transition-colors hover:bg-surface-sunken"
                   >
                     {/* Static check tile (the ui/checkbox recipe) — a real
                         Checkbox here would nest a button inside a button. */}
                     <span
                       className={cn(
-                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
+                        'flex size-[14px] shrink-0 items-center justify-center rounded-sm transition-colors',
                         checked
-                          ? 'border-accent bg-accent text-accent-foreground'
-                          : 'border-ink bg-white',
+                          ? 'bg-accent text-accent-foreground'
+                          : 'bg-white shadow-ring-control group-hover:shadow-ring-control-hover',
                       )}
                     >
-                      {checked && <Icon name="check" size={12} />}
+                      {checked && <Icon name="check" size={10} />}
                     </span>
                     <span>{c.full}</span>
                   </button>
@@ -1078,8 +1087,8 @@ function SearchAutocomplete({
 
   return (
     <div ref={containerRef} className="relative max-w-[272px]">
-      <div className="flex h-btn-md items-center gap-2 rounded-sm border border-ink bg-white px-2.5 transition-colors focus-within:border-accent">
-        <Icon name="search" size={13} className="text-n-3" />
+      <div className="flex h-input items-center gap-2 rounded-md bg-surface-control px-2.5 transition-[background-color,box-shadow] hover:bg-surface-hover focus-within:bg-white focus-within:shadow-field">
+        <Icon name="search" size={13} className="text-n-6" />
         <input
           type="text"
           value={query}
@@ -1099,14 +1108,14 @@ function SearchAutocomplete({
             if (query.trim()) persistRecent(query.trim())
           }}
           placeholder="Search players…"
-          className="h-full flex-1 bg-transparent text-[12px] font-bold text-ink outline-none placeholder:text-n-3"
+          className="h-full flex-1 bg-transparent text-body font-medium text-ink outline-none placeholder:text-n-6"
         />
         {query && (
           <button
             type="button"
             onClick={() => onQueryChange('')}
             aria-label="Clear search"
-            className="text-n-3 transition-colors hover:text-ink"
+            className="text-n-6 transition-colors hover:text-ink"
           >
             <Icon name="close" size={12} />
           </button>
@@ -1114,10 +1123,12 @@ function SearchAutocomplete({
       </div>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-72 overflow-hidden rounded-sm border border-ink bg-white shadow-hard-4">
+        // A true overlay (absolutely-positioned suggestion menu) — it floats
+        // above the table, so it keeps its resting shadow (CLAUDE.md → Elevation).
+        <div className="absolute left-0 top-full z-30 mt-1 w-72 overflow-hidden rounded-xl bg-white shadow-hard-8">
           {showingRecents && (
             <div>
-              <p className="fs-overline border-b border-n-4 px-3 py-2 text-n-3">
+              <p className="border-b border-n-4 px-3 py-2 text-meta font-semibold text-n-6">
                 Recent searches
               </p>
               <ul className="py-1">
@@ -1129,9 +1140,9 @@ function SearchAutocomplete({
                         onQueryChange(r)
                         setOpen(false)
                       }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-medium transition-colors hover:bg-accent-soft"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-body font-medium text-ink transition-colors hover:bg-surface-sunken"
                     >
-                      <Icon name="search" size={12} className="text-n-3" />
+                      <Icon name="search" size={12} className="text-n-6" />
                       <span>{r}</span>
                     </button>
                   </li>
@@ -1154,10 +1165,10 @@ function SearchAutocomplete({
                       e.preventDefault()
                       openPlayer(p.id)
                     }}
-                    className="flex items-center gap-2 px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-accent-soft"
+                    className="flex items-center gap-2 px-3 py-1.5 text-body font-semibold text-ink transition-colors hover:bg-surface-sunken"
                   >
                     <span className="truncate">{p.full_name}</span>
-                    <span className="ml-auto text-[10px] font-semibold text-n-3">
+                    <span className="ml-auto text-meta font-medium text-n-6">
                       {p.position}
                       {p.team ? ` · ${p.team}` : ''}
                     </span>
@@ -1167,7 +1178,7 @@ function SearchAutocomplete({
             </ul>
           )}
           {!showingRecents && (!suggestions || suggestions.length === 0) && (
-            <p className="px-3 py-3 text-center text-[12px] font-medium text-n-3">
+            <p className="px-3 py-3 text-center text-body font-medium text-n-3">
               No matches.
             </p>
           )}
@@ -1193,7 +1204,9 @@ function StickyTh({
     <TableHead
       style={{ width, position: 'sticky', left: leftOffset ?? 0, zIndex: 11 }}
       className={cn(
-        'border-b border-ink bg-white align-bottom',
+        'h-auto border-b border-n-4 bg-white px-[9px] py-2 align-bottom',
+        // v7 lead inset: the first column starts ~21px in.
+        leftOffset == null && 'pl-5 pr-0',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     >
@@ -1221,8 +1234,9 @@ function StickyTd({
     <TableCell
       style={{ width, position: 'sticky', left: leftOffset ?? 0, zIndex: 5 }}
       className={cn(
-        'border-b border-n-4 transition-colors group-hover:bg-accent-soft',
-        highlight ? 'bg-accent-soft' : 'bg-white',
+        'border-b border-n-4 px-[9px] py-1.5 transition-colors',
+        leftOffset == null && 'pl-5 pr-0',
+        highlight ? 'bg-accent-soft' : 'bg-white group-hover:bg-surface-sunken',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     >
