@@ -313,14 +313,14 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2.5">
         <Input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search players"
           aria-label="Search players"
-          className="h-btn-md w-full max-w-xs px-2 text-[12px]"
+          className="w-full max-w-[272px]"
         />
         <Segment aria-label="Position">
           <SegmentItem active={position === ''} onClick={() => setPosition('')}>
@@ -452,18 +452,18 @@ export function MovePanel({
 
   return (
     <Card data-move-panel={idle ? 'idle' : 'armed'}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex items-center gap-2 text-[12px]">
+      <CardHeader className="min-h-0 py-2.5">
+        <CardTitle className="flex flex-1 items-center gap-2 text-[15px]">
           Roster move
-          <span className="ml-auto text-[11px] font-medium text-n-3">
+          <span className="ml-auto text-[10px] font-semibold text-n-6">
             Your roster: <span className="fs-num">{fill.count}</span> of <span className="fs-num">{fill.size}</span>
           </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 px-card-pad py-3">
         {refusal && (
-          <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-move-refusal>
-            <p className="text-[12px] font-bold">That move was refused.</p>
+          <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-move-refusal>
+            <p className="text-[11px] font-bold text-ink">That move was refused.</p>
             {/* VERBATIM — the server's own sentence names the player, the
                 kickoff, the waiver instant or the cap (F227(f)). */}
             <p className="text-[11px] font-medium text-ink">{refusal}</p>
@@ -473,26 +473,26 @@ export function MovePanel({
           </div>
         )}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+          <div className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
             Add
-            <div className="flex h-btn-md items-center gap-2 rounded-sm border border-n-4 px-2 text-[12px] font-medium text-ink" data-move-add={intent.add?.player.id ?? ''}>
+            <div className="flex h-input items-center gap-2 rounded-md bg-surface-control px-2.5 text-[11px] font-medium text-ink" data-move-add={intent.add?.player.id ?? ''}>
               {intent.add ? (
                 <>
                   <PositionBadge position={intent.add.player.position} size="sm" />
                   <span className="min-w-0 flex-1 truncate">{intent.add.player.full_name}</span>
-                  <button type="button" className="text-[10px] font-bold text-n-3 hover:text-ink" onClick={onClearAdd} aria-label="Clear the add">
+                  <button type="button" className="text-[10px] font-semibold text-accent transition-colors hover:text-accent-strong" onClick={onClearAdd} aria-label="Clear the add">
                     Clear
                   </button>
                 </>
               ) : (
-                <span className="text-n-3">Pick a free agent below</span>
+                <span className="text-n-6">Pick a free agent below</span>
               )}
             </div>
           </div>
-          <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+          <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
             Drop
             <Select value={intent.drop?.player_id ?? NO_DROP} onValueChange={(v) => onDrop(v === NO_DROP ? null : (myRoster.find((p) => p.player_id === v) ?? null))}>
-              <SelectTrigger className="h-btn-md px-2 text-[12px]" data-move-drop={intent.drop?.player_id ?? ''}>
+              <SelectTrigger data-move-drop={intent.drop?.player_id ?? ''}>
                 <SelectValue placeholder="No drop" />
               </SelectTrigger>
               <SelectContent>
@@ -511,7 +511,7 @@ export function MovePanel({
           </label>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="blue" size="sm" shadow disabled={pending || problem !== null} onClick={onSubmit} data-move-submit>
+          <Button variant="blue" size="md" shadow disabled={pending || problem !== null} onClick={onSubmit} data-move-submit>
             {pending ? 'Sending…' : 'Make move'}
           </Button>
           {!idle && (
@@ -519,7 +519,7 @@ export function MovePanel({
               Cancel
             </Button>
           )}
-          <span className="text-[10px] font-medium text-n-3">{problem ?? 'The server checks the lock, the roster and the caps — its answer is what you see.'}</span>
+          <span className="text-[10px] font-medium text-n-6">{problem ?? 'The server checks the lock, the roster and the caps — its answer is what you see.'}</span>
         </div>
         {idle && problem === MOVE_NOTHING_COPY && null}
       </CardContent>
@@ -579,8 +579,8 @@ export function PoolTable({
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-          <Icon name="search" size={18} className="text-n-3" />
-          <p className="max-w-md text-[13px] font-medium text-n-3" data-empty={scope}>
+          <Icon name="search" size={18} className="text-n-6" />
+          <p className="max-w-md text-[11px] font-medium text-n-6" data-empty={scope}>
             {emptyCopy(scope, hadSearch)}
           </p>
         </CardContent>
@@ -588,11 +588,12 @@ export function PoolTable({
     )
   }
   return (
-    <div className="overflow-x-auto rounded-sm border border-ink bg-white" data-pool-table>
+    <div className="overflow-x-auto rounded-2xl border border-n-4 bg-white" data-pool-table>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Player</TableHead>
+            {/* v7 players table: the Player column stays put while the stats scroll. */}
+            <TableHead className="sticky left-0 z-[2] bg-white pl-4">Player</TableHead>
             {values && (
               <>
                 <TableHead title={`Week ${values.week} opponent`}>Opp</TableHead>
@@ -615,14 +616,14 @@ export function PoolTable({
                 data-pool-row={row.player.id}
                 data-availability={row.availability.kind}
                 data-locked={row.lock.locked || undefined}
-                className={cn(selected && 'bg-accent-soft hover:bg-accent-soft')}
+                className={cn('group', selected && 'bg-accent-soft hover:bg-accent-soft')}
               >
-                <TableCell>
-                  <span className="flex items-center gap-2">
+                <TableCell className={cn('sticky left-0 z-[1] pl-4 transition-colors', selected ? 'bg-accent-soft' : 'bg-white group-hover:bg-surface-sunken')}>
+                  <span className="flex items-center gap-2.5">
                     <PositionBadge position={row.player.position} size="sm" />
                     <span className="flex min-w-0 flex-col">
-                      <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="font-bold text-ink" />
-                      <span className="text-[10px] font-medium text-n-3">
+                      <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-semibold text-ink" />
+                      <span className="text-[10px] font-medium text-n-6">
                         {row.player.team ?? '—'}
                         {row.player.status && row.player.status !== 'Active' ? ` · ${row.player.status}` : ''}
                       </span>
@@ -634,7 +635,7 @@ export function PoolTable({
                   {row.lock.locked ? (
                     <LockTag label="locked" title={row.lock.until ? `Locked until ${formatInstantWithDate(row.lock.until, leagueTimeZone).local}` : row.lock.copy} data-lock />
                   ) : (
-                    <span className="text-[11px] text-n-3">—</span>
+                    <span className="text-[11px] text-n-6">—</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -688,7 +689,7 @@ function SortHead({ label, title, sortKey, values }: { label: string; title: str
   const active = values.sort.key === sortKey
   return (
     <TableHead
-      className={cn('whitespace-nowrap text-right', active && 'bg-accent-soft text-accent-strong')}
+      className={cn('whitespace-nowrap text-right', active && 'text-accent')}
       aria-sort={active ? (values.sort.dir === 'desc' ? 'descending' : 'ascending') : undefined}
       data-sort-col={sortKey}
     >
@@ -696,10 +697,10 @@ function SortHead({ label, title, sortKey, values }: { label: string; title: str
         type="button"
         onClick={() => values.onSort(sortKey)}
         title={title}
-        className={cn('inline-flex w-full items-center justify-end gap-1 transition-colors hover:text-ink', active && 'text-accent-strong hover:text-accent-strong')}
+        className={cn('inline-flex w-full items-center justify-end gap-1 transition-colors hover:text-accent', active && 'text-accent')}
       >
         <span>{label}</span>
-        {active && <Icon name="arrow-bottom" size={12} className={cn(values.sort.dir === 'asc' && 'rotate-180')} />}
+        {active && <Icon name="arrow-bottom" size={10} className={cn(values.sort.dir === 'asc' && 'rotate-180')} />}
       </button>
     </TableHead>
   )
@@ -707,20 +708,21 @@ function SortHead({ label, title, sortKey, values }: { label: string; title: str
 
 function ValueCellsRow({ row, values }: { row: PoolPlayerRow; values: ValueColumns }) {
   const c = values.cells(row.player.id)
-  const tint = (key: PoolSortKey) => cn('fs-num whitespace-nowrap text-right text-[12px]', values.sort.key === key && 'bg-accent-soft/30')
+  // v7 (the Research table): the sorted column reads as the primary stat — semibold ink, no tint.
+  const tint = (key: PoolSortKey) => cn('fs-num whitespace-nowrap text-right text-[11px] font-medium', values.sort.key === key && 'font-semibold')
   return (
     <>
-      <TableCell className="fs-num whitespace-nowrap text-[11px] font-medium text-n-3" data-cell="opp">
+      <TableCell className="fs-num whitespace-nowrap text-[11px] font-medium text-n-2" data-cell="opp">
         {values.opponent(row.player.team)}
       </TableCell>
       <TableCell className={tint('proj')} data-cell="proj" title={c.proj === null ? PROJ_MISSING_TITLE : undefined}>
-        <span className={c.proj === null ? 'text-n-3' : cn('font-bold', PROJ_TEXT)}>{pointsText(c.proj)}</span>
+        <span className={c.proj === null ? 'text-n-6' : cn('font-semibold', PROJ_TEXT)}>{pointsText(c.proj)}</span>
       </TableCell>
       <TableCell className={tint('season')} data-cell="season">
-        <span className={c.season === null ? 'text-n-3' : 'text-ink'}>{pointsText(c.season)}</span>
+        <span className={c.season === null ? 'text-n-6' : 'text-n-2'}>{pointsText(c.season)}</span>
       </TableCell>
       <TableCell className={tint('avg')} data-cell="avg" title={c.games > 0 ? `${c.games} game${c.games === 1 ? '' : 's'}` : undefined}>
-        <span className={c.avg === null ? 'text-n-3' : 'text-ink'}>{pointsText(c.avg)}</span>
+        <span className={c.avg === null ? 'text-n-6' : 'text-n-2'}>{pointsText(c.avg)}</span>
       </TableCell>
     </>
   )
@@ -748,7 +750,7 @@ function AvailabilityCell({
         <Badge variant="yellow" title={waiversAddTitle(until.local)}>
           {ON_WAIVERS_LABEL}
         </Badge>
-        <span className="fs-num text-[10px] font-medium text-n-3" title={until.title ?? undefined}>
+        <span className="fs-num text-[10px] font-medium text-n-6" title={until.title ?? undefined}>
           until {until.local}
         </span>
       </span>
@@ -762,7 +764,7 @@ function AvailabilityCell({
   const holdUntil = a.mine && row.roster ? faHoldUntil(row.roster, faHoldHours, evaluatedAt) : null
   return (
     <span className="flex flex-wrap items-center gap-1.5">
-      <span className={cn('text-[12px] font-medium', a.mine ? 'font-bold text-accent-strong' : 'text-ink')} title={a.mine ? undefined : ROSTERED_ELSEWHERE_TITLE}>
+      <span className={cn('text-[11px] font-medium', a.mine ? 'font-semibold text-accent-deep' : 'text-ink')} title={a.mine ? undefined : ROSTERED_ELSEWHERE_TITLE}>
         <TeamNameLink name={a.mine ? 'Your team' : a.teamName} leagueId={leagueId} teamId={a.teamId} />
       </span>
       {holdUntil && (
@@ -882,8 +884,8 @@ function PlayersSkeleton() {
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title="Players" />
-      <Skeleton className="h-24 rounded-sm" />
-      <Skeleton className="h-7 w-80 rounded-sm" />
+      <Skeleton className="h-24 rounded-2xl" />
+      <Skeleton className="h-tab w-80 rounded-pill" />
       <TableSkeleton />
     </div>
   )
@@ -893,7 +895,7 @@ function TableSkeleton() {
   return (
     <div className="flex flex-col gap-2" data-skeleton="pool-table">
       {Array.from({ length: 8 }, (_, i) => (
-        <Skeleton key={i} className="h-9 rounded-sm" />
+        <Skeleton key={i} className="h-9 rounded-md bg-surface-control" />
       ))}
     </div>
   )

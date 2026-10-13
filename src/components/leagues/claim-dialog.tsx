@@ -105,7 +105,7 @@ export function ClaimForm({
             {faab ? ` — $${result.claim.faab_bid}` : ''}
           </strong>
         </StatusBanner>
-        <p className="text-[12px] font-medium text-n-3">
+        <p className="text-[11px] font-medium text-n-3">
           {result.drop_player_name ? `If it goes through, ${result.drop_player_name} is dropped. ` : ''}
           {claimSettlesCopy(nextRunLocal)} Nothing is spent until then, and you can change or cancel it under Transactions on My Team.
         </p>
@@ -120,45 +120,45 @@ export function ClaimForm({
 
   return (
     <div className="flex flex-col gap-3" data-claim-form={kind === 'add' ? 'add' : faab ? 'faab' : 'priority'}>
-      <div className="flex items-center gap-2 rounded-sm border border-n-4 px-2 py-2">
+      <div className="flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2.5">
         <PositionBadge position={row.player.position} size="sm" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-bold">{row.player.full_name}</span>
-        <span className="text-[11px] font-medium text-n-3">{row.player.team ?? '—'}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{row.player.full_name}</span>
+        <span className="text-[10px] font-medium text-n-6">{row.player.team ?? '—'}</span>
       </div>
 
-      <p className="text-[12px] font-semibold text-ink" data-acquire-copy>
+      <p className="text-[11px] font-medium text-n-2" data-acquire-copy>
         {copy}
       </p>
 
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-claim-refusal>
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-claim-refusal>
           {/* VERBATIM — the verb names the rule it applied. */}
           {refusal}
         </p>
       )}
 
       {faab ? (
-        <label className="flex flex-col gap-1 text-[11px] font-bold text-ink">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
           Your bid
           <span className="flex items-center gap-2">
-            <span className="text-[13px] font-bold">$</span>
-            <Input value={text} onChange={(e) => setText(e.target.value)} inputMode="numeric" aria-label="Bid in dollars" className="h-btn-md w-24 px-2 text-[12px]" data-claim-bid-input />
-            <span className="text-[11px] font-medium text-n-3">{faabLeftCopy(balance, budget)}</span>
+            <span className="text-[13px] font-bold text-n-3">$</span>
+            <Input value={text} onChange={(e) => setText(e.target.value)} inputMode="numeric" aria-label="Bid in dollars" className="w-24" data-claim-bid-input />
+            <span className="text-[11px] font-medium text-n-6">{faabLeftCopy(balance, budget)}</span>
           </span>
-          <span className="text-[10px] font-medium text-n-3">
+          <span className="text-[10px] font-medium text-n-6">
             {hint ?? 'Bids are blind — nobody sees yours. The biggest bid on a player wins him.'}
           </span>
         </label>
       ) : kind === 'add' ? null : (
-        <p className="text-[12px] font-medium text-n-3" data-claim-priority>
+        <p className="text-[11px] font-medium text-n-3" data-claim-priority>
           Claims go by waiver priority — the team highest in the order gets the player.
         </p>
       )}
 
-      <label className="flex flex-col gap-1 text-[11px] font-bold text-ink">
+      <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
         {needsDrop ? ROSTER_FULL_COPY : 'Drop (optional)'}
         <Select value={dropId ?? (needsDrop ? '' : NO_DROP)} onValueChange={(v) => setDropId(v === NO_DROP ? null : v)}>
-          <SelectTrigger className="h-btn-md px-2 text-[12px]" data-claim-drop={dropId ?? ''}>
+          <SelectTrigger data-claim-drop={dropId ?? ''}>
             <SelectValue placeholder={needsDrop ? 'Choose who to drop' : 'No drop'} />
           </SelectTrigger>
           <SelectContent>
@@ -174,10 +174,10 @@ export function ClaimForm({
             })}
           </SelectContent>
         </Select>
-        {kind === 'claim' && <span className="text-[10px] font-medium text-n-3">Only dropped if the claim goes through.</span>}
+        {kind === 'claim' && <span className="text-[10px] font-medium text-n-6">Only dropped if the claim goes through.</span>}
       </label>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-[5px] pt-1">
         <Button
           variant="blue"
           size="sm"

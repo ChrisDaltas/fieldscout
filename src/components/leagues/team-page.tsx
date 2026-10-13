@@ -294,17 +294,18 @@ function TeamPageContent({
       {lineup.isError && lineup.data !== undefined && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
 
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-3 px-card-pad py-3">
-          <Crest name={teamName} src={null} className="h-10 w-10" fallbackClassName="text-[12px]" />
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[13px] font-bold text-ink">{teamName}</span>
-            <span className="text-[11px] font-medium text-n-3">
+        <CardContent className="flex flex-wrap items-center gap-3.5 px-card-pad py-[15px]">
+          {/* v7 team tile: a 48px rounded square, initials on a grey fill. */}
+          <Crest name={teamName} src={null} className="h-12 w-12 rounded-2xl" fallbackClassName="rounded-2xl text-[15px] text-n-2" />
+          <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+            <span className="truncate text-[17px] font-bold tracking-[-0.02em] text-ink">{teamName}</span>
+            <span className="text-[11px] font-semibold text-n-3">
               {/* Your own team says so — your own name here would only point at yourself. */}
               {isOwnTeam ? (
                 'Your team'
               ) : managerUsername ? (
                 <span data-team-manager>
-                  Managed by <UsernameLink username={managerUsername} className="font-bold text-ink" />
+                  Managed by <UsernameLink username={managerUsername} className="font-semibold text-ink" />
                 </span>
               ) : rosterTeam?.manager_user_id ? (
                 'Managed by another member'
@@ -316,12 +317,12 @@ function TeamPageContent({
             {/* L.D2.13: the seat's FAAB balance / waiver priority (public to
                 members — only bids are blind, D385(4)). */}
             {rosterTeam && waiverSeatCopy(detail.settings, rosterTeam, isOwnTeam) && (
-              <span className="text-[11px] font-bold text-ink" data-team-waiver-seat>
+              <span className="text-[11px] font-semibold text-ink" data-team-waiver-seat>
                 {waiverSeatCopy(detail.settings, rosterTeam, isOwnTeam)}
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-[5px]">
             {/* League UX batch 1: "override is on" is said ONCE, in the league
                 header (desktop and the mobile copy at the top of the page) —
                 no second badge here. */}
@@ -331,7 +332,7 @@ function TeamPageContent({
             {lineup.data?.edited_by_commish && (
               <Link
                 href={commishTeamHref(leagueId, teamId)}
-                className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                className="rounded-pill focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 data-commish-changed-link
               >
                 <Badge variant="stroke-purple" title={COMMISH_CHANGED_TITLE} className="hover:bg-accent-soft" data-commish-changed>
@@ -345,9 +346,9 @@ function TeamPageContent({
                 174 fix round (R1410, D463): not toward a team with no
                 manager — nobody could answer the offer. */}
             {myTeamId && !isOwnTeam && rosterTeam?.status !== 'retired' && rosterTeam?.manager_user_id != null && !tradesClosed && (
-              <Button variant="stroke" size="sm" asChild>
+              <Button variant="blue" size="md" asChild>
                 <Link href={tradesHref(leagueId, { teamId })} data-propose-trade>
-                  <Icon name="transfer" size={13} />
+                  <Icon name="transfer" size={12} />
                   Propose trade
                 </Link>
               </Button>
@@ -368,7 +369,7 @@ function TeamPageContent({
           {/* L.E1.39 (F539(b)): a team with no seat row — 139 refuses its
               switch, so no switch; said in words (the console's F535(b)). */}
           {rosterTeam && noSeatRowAutopilotShown({ inOverride, hasSeatRow, status: rosterTeam.status }) && (
-            <p className="basis-full text-[11px] font-semibold text-n-3" data-no-seat-row>
+            <p className="basis-full text-[11px] font-medium text-n-3" data-no-seat-row>
               {NO_SEAT_ROW_AUTOPILOT_COPY}
             </p>
           )}
@@ -376,7 +377,7 @@ function TeamPageContent({
       </Card>
 
       {/* R779: the record ("locks from"), never the lock. */}
-      <p className="text-[11px] font-medium text-n-3" data-lock-record title={lockedAtView?.title ?? undefined}>
+      <p className="text-[10px] font-semibold text-n-6" data-lock-record title={lockedAtView?.title ?? undefined}>
         {lineup.isPending ? 'Reading the week…' : locksAtCopy(lockedAtView?.local ?? null)}
       </p>
 
@@ -406,7 +407,7 @@ function TeamPageContent({
       ) : (
         <>
           {lineup.data === null && (
-            <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3">
+            <p role="status" className="rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-medium text-n-3">
               Nothing set for week <span className="fs-num">{week}</span> yet — the week opens with last week’s legal lineup carried over; until then every seat is open here.
             </p>
           )}
@@ -502,12 +503,12 @@ function WeekTabs({
         ))}
       </Segment>
       {allWeeks.length > weeks.length && (
-        <label className="flex items-center gap-1 text-[10px] font-bold text-n-3">
+        <label className="flex items-center gap-1 text-[10px] font-semibold text-n-6">
           <span className="sr-only">Other week</span>
           <select
             value={week}
             onChange={(e) => onPick(Number(e.target.value))}
-            className="h-btn-sm rounded-sm border border-ink bg-white px-1.5 text-[11px] font-bold text-ink"
+            className="h-btn-sm rounded-pill bg-surface-control px-2.5 text-[11px] font-semibold text-ink transition-colors hover:bg-surface-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             data-week-picker
           >
             {allWeeks.map((w) => (
@@ -530,8 +531,8 @@ function TeamPageSkeleton() {
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title="Team" />
-      <Skeleton className="h-16 rounded-sm" />
-      <Skeleton className="h-7 w-64 rounded-sm" />
+      <Skeleton className="h-[78px] rounded-2xl" />
+      <Skeleton className="h-tab w-64 rounded-pill" />
       <EditorSkeleton />
     </div>
   )
@@ -540,8 +541,8 @@ function TeamPageSkeleton() {
 function EditorSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.7fr_1fr]" data-skeleton="lineup-editor">
-      <Skeleton className="h-80 rounded-sm" />
-      <Skeleton className="h-80 rounded-sm" />
+      <Skeleton className="h-80 rounded-2xl" />
+      <Skeleton className="h-80 rounded-2xl" />
     </div>
   )
 }
@@ -564,16 +565,16 @@ export function ProblemCard({
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title={heading} />
-      <Card className="border-negative bg-negative-soft">
+      <Card className="border-transparent bg-negative-soft">
         <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold" role="alert">
+          <p className="text-[15px] font-bold tracking-[-0.02em] text-ink" role="alert">
             {title}
           </p>
-          <p className="text-[12px] font-medium text-n-3">{detail}</p>
+          <p className="text-[11px] font-medium text-n-3">{detail}</p>
           <div className="flex items-center gap-2.5">
             {onRetry && (
               <Button variant="stroke" size="sm" onClick={onRetry}>
-                <Icon name="reset" size={13} /> Retry
+                <Icon name="reset" size={11} /> Retry
               </Button>
             )}
             <Button variant="stroke" size="sm" asChild>

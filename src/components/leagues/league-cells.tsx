@@ -26,13 +26,13 @@ interface CrestProps {
   fallbackClassName?: string
 }
 
-/** Square team/league crest — uploaded art when present, else initials on the
- *  sunken fill (base Avatar). */
+/** Rounded-square team/league crest (v7 team tile) — uploaded art when
+ *  present, else bold initials on the control fill. */
 export function Crest({ name, src, className, fallbackClassName }: CrestProps) {
   return (
-    <Avatar className={cn('h-6 w-6 shrink-0', className)}>
+    <Avatar className={cn('h-6 w-6 shrink-0 rounded-md bg-surface-control', className)}>
       {src && <AvatarImage src={src} alt={name} className="object-cover" />}
-      <AvatarFallback className={cn('text-[9px]', fallbackClassName)}>
+      <AvatarFallback className={cn('bg-surface-control text-[9px] text-n-2', fallbackClassName)}>
         {initialsOf(name)}
       </AvatarFallback>
     </Avatar>
@@ -119,11 +119,11 @@ export function TeamCell({ team, sub, crestClassName, className, leagueId, teamI
     <div className={cn('flex min-w-0 items-center gap-2', className)}>
       <Crest name={team} className={crestClassName} />
       <div className="min-w-0">
-        <div className="truncate text-[11px] font-extrabold leading-tight">
+        <div className="truncate text-[12px] font-bold leading-tight tracking-[-0.01em]">
           {leagueId ? <TeamNameLink name={team} leagueId={leagueId} teamId={teamId} /> : team}
         </div>
         {sub && (
-          <div className="truncate text-[10px] font-semibold leading-tight text-n-3">
+          <div className="truncate text-[10px] font-medium leading-tight text-n-6">
             {sub}
           </div>
         )}
@@ -140,7 +140,7 @@ export function StatusTag({ status }: { status: MockInjuryStatus }) {
   return (
     <Badge
       variant={variant}
-      className="ml-1.5 h-[15px] px-1.5 text-[9px] leading-none"
+      className="ml-1.5 h-[15px] px-1.5 text-[9px] font-bold leading-none"
     >
       {label}
     </Badge>
@@ -166,13 +166,13 @@ export function PlayerCell({ player, meta, mirror, className }: PlayerCellProps)
         className,
       )}
     >
-      <Avatar className="h-7 w-7 shrink-0">
-        <AvatarFallback className="text-[9px]">
+      <Avatar className="h-6 w-6 shrink-0 bg-surface-control">
+        <AvatarFallback className="bg-surface-control text-[9px] text-n-2">
           {initialsOf(player.name)}
         </AvatarFallback>
       </Avatar>
       <div className={cn('min-w-0', mirror && 'text-right')}>
-        <div className="truncate text-[11px] font-extrabold leading-tight">
+        <div className="truncate text-[11px] font-semibold leading-tight">
           {player.name}
           <StatusTag status={player.status} />
         </div>
@@ -183,7 +183,7 @@ export function PlayerCell({ player, meta, mirror, className }: PlayerCellProps)
           )}
         >
           <PositionBadge position={player.pos} size="sm" className="shrink-0" />
-          <span className="truncate text-[10px] font-semibold text-n-3">
+          <span className="truncate text-[10px] font-medium text-n-6">
             {meta ?? player.team}
           </span>
         </div>
@@ -204,11 +204,11 @@ interface WinProbMeterProps {
 export function WinProbMeter({ value, showTick, className }: WinProbMeterProps) {
   return (
     <div className={cn('relative', className)}>
-      <Progress value={value} className="h-2" />
+      <Progress value={value} className="h-[3px] rounded-pill" />
       {showTick && (
         <span
           aria-hidden
-          className="absolute inset-y-0 left-1/2 border-l border-dashed border-n-3"
+          className="absolute -inset-y-0.5 left-1/2 border-l border-dashed border-n-7"
         />
       )}
     </div>
@@ -222,7 +222,7 @@ export function OprkChip({ value, ranked }: { value: number; ranked?: number }) 
   return (
     <span
       className={cn(
-        'fs-num inline-flex h-[18px] min-w-[21px] items-center justify-center rounded-sm px-1.5 text-[10px] font-bold',
+        'fs-num inline-flex h-[17px] min-w-[21px] items-center justify-center rounded-sm px-1 text-[10px] font-semibold',
         oprkPillClass(oprkTone(value, ranked)),
       )}
     >
@@ -252,7 +252,7 @@ export function LockTag({ className, label, ...props }: React.HTMLAttributes<HTM
 export function LeaguePageTitle({ title, actions }: { title: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-3" data-page-title>
-      <h2 className="mr-auto min-w-0 truncate text-h5">{title}</h2>
+      <h2 className="mr-auto min-w-0 truncate text-[20px] font-bold leading-6 tracking-[-0.03em] text-ink">{title}</h2>
       {actions}
     </div>
   )

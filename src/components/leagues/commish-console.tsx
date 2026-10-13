@@ -121,7 +121,7 @@ export function CommishConsole({ leagueId }: { leagueId: string }) {
   }
   if (!isCommish) {
     return (
-      <div className="flex flex-col gap-4" data-commish-console="not-commissioner">
+      <div className="flex flex-col gap-5" data-commish-console="not-commissioner">
         <LeaguePageTitle title={CONSOLE_TITLE} />
         <StatusBanner tone="neutral">{NOT_COMMISSIONER_COPY}</StatusBanner>
       </div>
@@ -150,23 +150,23 @@ function ConsoleContent({
   const more = recentMoreHref(leagueId)
 
   return (
-    <div className="flex flex-col gap-4" data-commish-console={phase}>
+    <div className="flex flex-col gap-5" data-commish-console={phase}>
       <LeaguePageTitle title={CONSOLE_TITLE} />
 
       <OverrideModeBar on={overrideOn} onToggle={(next) => (next ? enter(leagueId) : exit())}>
         {overrideOn ? OVERRIDE_ON_COPY : OVERRIDE_OFF_COPY}
       </OverrideModeBar>
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <NeedsYouCard leagueId={leagueId} phase={phase} summary={summary} leagueTimeZone={leagueTimeZone} />
         <ToolsCard leagueId={leagueId} phase={phase} data={data} />
       </div>
 
       <Card data-commish-recent>
-        <CardHeader className="min-h-0 py-2">
-          <CardTitle className="text-[12px]">{RECENT_TITLE}</CardTitle>
+        <CardHeader className="min-h-0 border-b-0 px-4 pb-1 pt-3.5">
+          <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">{RECENT_TITLE}</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2 px-card-pad py-3">
+        <CardContent className="flex flex-col gap-2.5 px-4 pb-4 pt-1.5">
           <CommishLogSection
             title={RECENT_TITLE}
             titleInCardHeader
@@ -246,10 +246,10 @@ function NeedsYouCard({
   const doc: CommishSummary | undefined = summary.data
   return (
     <Card data-commish-needs>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">{NEEDS_TITLE}</CardTitle>
+      <CardHeader className="min-h-0 border-b-0 px-4 pb-1 pt-3.5">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">{NEEDS_TITLE}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
+      <CardContent className="flex flex-col gap-3 px-4 pb-3 pt-1.5">
         {summary.isError && doc && (
           // R1375: the stale list says so AND offers the re-read.
           <StaleDataBanner>
@@ -264,7 +264,7 @@ function NeedsYouCard({
         {summary.isPending && !doc ? (
           <div className="flex flex-col gap-1.5" data-skeleton="commish-needs">
             {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton key={i} className="h-10 rounded-sm" />
+              <Skeleton key={i} className="h-10 rounded-md" />
             ))}
           </div>
         ) : !doc ? (
@@ -299,7 +299,7 @@ function NeedsYouList({
         </div>
       ))}
       {view.nothing && (
-        <p className="text-[12px] font-medium text-n-3" data-empty="commish-needs">
+        <p className="py-3 text-center text-[11px] font-medium text-n-6" data-empty="commish-needs">
           {view.nothingCopy}
         </p>
       )}
@@ -312,24 +312,24 @@ function NeedsYouList({
       )}
 
       {corrections.kind !== 'hidden' && (
-        <section className="flex flex-col gap-2 border-t border-ink pt-3" aria-label={CORRECTIONS_TITLE} data-commish-corrections>
-          <h3 className="text-[12px] font-bold text-ink">{CORRECTIONS_TITLE}</h3>
+        <section className="flex flex-col gap-1.5 border-t border-n-4 pt-3" aria-label={CORRECTIONS_TITLE} data-commish-corrections>
+          <h3 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{CORRECTIONS_TITLE}</h3>
           {corrections.kind === 'unavailable' ? (
             <div data-needs-unavailable="matchup_corrections">
               <StatusBanner tone="caution">{corrections.message}</StatusBanner>
             </div>
           ) : (
             <>
-              <p className="text-[11px] font-medium text-n-3">{CORRECTIONS_HINT}</p>
+              <p className="text-[10px] font-medium text-n-6">{CORRECTIONS_HINT}</p>
               <ol className="flex flex-col divide-y divide-n-4">
                 {corrections.rows.map((row) => (
-                  <li key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" data-correction-row={row.door ? 'now' : 'not-yet'}>
+                  <li key={row.key} className="flex min-h-[43px] flex-wrap items-center gap-x-3 gap-y-1 py-2" data-correction-row={row.door ? 'now' : 'not-yet'}>
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="text-[12px] font-bold text-ink">
+                      <span className="text-[12px] font-semibold text-ink">
                         Week <span className="fs-num">{row.week}</span> · {row.label}
                       </span>
                       {row.message && (
-                        <span className="text-[11px] font-medium text-n-3" data-correction-why>
+                        <span className="text-[10px] font-medium text-n-6" data-correction-why>
                           {row.message}
                         </span>
                       )}
@@ -348,12 +348,12 @@ function NeedsYouList({
 
 function NeedsRow({ leagueId, item }: { leagueId: string; item: NeedsItem }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" data-needs-item={item.kind}>
+    <li className="flex min-h-[43px] flex-wrap items-center gap-x-3 gap-y-1 py-2" data-needs-item={item.kind}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[12px] font-bold text-ink" data-needs-text>
+        <span className="text-[12px] font-semibold text-ink" data-needs-text>
           {item.text}
         </span>
-        <span className="text-[11px] font-medium text-n-3">{item.hint}</span>
+        <span className="text-[10px] font-medium text-n-6">{item.hint}</span>
       </div>
       {item.door && <ConsoleDoorLink leagueId={leagueId} door={item.door} variant="blue" data-needs-door={item.kind} />}
     </li>
@@ -368,15 +368,15 @@ function ToolsCard({ leagueId, phase, data }: { leagueId: string; phase: Console
   const groups = toolGroups({ leagueId, phase, waiverType: data.settings.waiver_type })
   return (
     <Card data-commish-tools-groups>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">{TOOLS_TITLE}</CardTitle>
+      <CardHeader className="min-h-0 border-b-0 px-4 pb-1 pt-3.5">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">{TOOLS_TITLE}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col divide-y divide-n-4 px-card-pad py-1">
+      <CardContent className="flex flex-col divide-y divide-n-4 px-4 pb-1.5 pt-0">
         {groups.map((group) => (
           <ToolGroupRow key={group.key} leagueId={leagueId} group={group} data={data} phase={phase} />
         ))}
         {!afterDraft(phase) && phase !== 'other' && (
-          <p className="py-2.5 text-[11px] font-medium text-n-3" data-tools-after-draft>
+          <p className="py-2.5 text-[10px] font-medium text-n-6" data-tools-after-draft>
             {TOOLS_AFTER_DRAFT_NOTE}
           </p>
         )}
@@ -399,11 +399,11 @@ function ToolGroupRow({
   // F556: no team is ever retired since 176 (L.E1.42) — every team has a door.
   const teams = group.teamDoors ? data.teams : []
   return (
-    <section className="flex flex-col gap-1.5 py-2.5" aria-label={group.title} data-tool-group={group.key}>
-      <h3 className="text-[12px] font-bold text-ink">{group.title}</h3>
-      <p className="text-[11px] font-medium text-n-3">{group.blurb}</p>
+    <section className="flex flex-col gap-1.5 py-3" aria-label={group.title} data-tool-group={group.key}>
+      <h3 className="text-[12px] font-bold tracking-[-0.01em] text-ink">{group.title}</h3>
+      <p className="text-[10px] font-medium text-n-6">{group.blurb}</p>
       {(group.doors.length > 0 || teams.length > 0) && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5 pt-0.5">
           {group.doors.map((door) => (
             <ConsoleDoorLink key={door.href + door.label} leagueId={leagueId} door={door} data-tool-door={group.key} />
           ))}
@@ -421,7 +421,7 @@ function ToolGroupRow({
       {group.key === 'schedule' && phase === 'in_season' && <ConsoleRemixAction leagueId={leagueId} data={data} />}
       {group.key === 'schedule' && phase === 'in_season' && <ConsoleRepairAction leagueId={leagueId} data={data} />}
       {group.note && (
-        <p className="text-[11px] font-medium text-n-3" data-tool-note={group.key}>
+        <p className="text-[10px] font-medium text-n-6" data-tool-note={group.key}>
           {group.note}
         </p>
       )}
@@ -452,15 +452,15 @@ function ConsoleScheduleEdit({ leagueId, data }: { leagueId: string; data: Leagu
   })
   const teams = editableTeams(data.teams)
   return (
-    <div id="schedule-edit" className="flex flex-col gap-1.5" data-console-schedule-edit={weeks.length > 0 ? 'weeks' : 'none'}>
-      <h4 className="text-[11px] font-bold text-ink">{SCHEDULE_EDIT_TITLE}</h4>
+    <div id="schedule-edit" className="flex flex-col gap-1.5 pt-1.5" data-console-schedule-edit={weeks.length > 0 ? 'weeks' : 'none'}>
+      <h4 className="text-[11px] font-semibold text-ink">{SCHEDULE_EDIT_TITLE}</h4>
       {weeks.length === 0 ? (
-        <p className="text-[11px] font-medium text-n-3">{SCHEDULE_EDIT_NONE_COPY}</p>
+        <p className="text-[10px] font-medium text-n-6">{SCHEDULE_EDIT_NONE_COPY}</p>
       ) : (
-        <ol className="flex flex-col divide-y divide-n-4 rounded-sm border border-n-4">
+        <ol className="flex flex-col divide-y divide-n-4 overflow-hidden rounded-xl border border-n-4">
           {weeks.map((week) => (
             <li key={week.week} className="flex flex-col" data-console-edit-week={week.week}>
-              <span className="px-2 pt-1.5 text-[11px] font-bold text-n-3">
+              <span className="bg-surface-sunken px-3 py-1 text-[10px] font-semibold text-n-6">
                 Week <span className="fs-num">{week.week}</span>
               </span>
               {week.rows.map((row) => (
@@ -477,10 +477,10 @@ function ConsoleScheduleEdit({ leagueId, data }: { leagueId: string; data: Leagu
 function ConsoleEditRow({ leagueId, row, teams }: { leagueId: string; row: MatchupCell; teams: TeamRef[] }) {
   const [editing, setEditing] = useState(false)
   return (
-    <div className="flex flex-col gap-1 px-2 py-1.5" data-console-edit-row={row.id}>
-      <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-ink">
+    <div className="flex flex-col gap-1 px-3 py-1.5" data-console-edit-row={row.id}>
+      <div className="flex min-h-[27px] flex-wrap items-center gap-2 text-[11px] font-semibold text-ink">
         <span>{row.home.name}</span>
-        <span className="text-[10px] font-bold text-n-3">vs</span>
+        <span className="text-[10px] font-medium text-n-6">vs</span>
         <span>{row.away?.name}</span>
         {!editing && (
           <Button variant="stroke" size="sm" className="ml-auto" onClick={() => setEditing(true)} data-edit-matchup>
@@ -523,7 +523,7 @@ function ConsoleRemixAction({ leagueId, data }: { leagueId: string; data: League
           Remix schedule
         </Button>
       </div>
-      {!offered && <p className="text-[11px] font-medium text-n-3">{REMIX_NEEDS_OVERRIDE_COPY}</p>}
+      {!offered && <p className="text-[10px] font-medium text-n-6">{REMIX_NEEDS_OVERRIDE_COPY}</p>}
       {offered && (
         <ScheduleRemixModal
           open={open}
@@ -549,7 +549,7 @@ function ConsoleRepairAction({ leagueId, data }: { leagueId: string; data: Leagu
   const overrideOn = useOverrideMode(leagueId)
   if (!overrideOn) {
     return (
-      <p className="text-[11px] font-medium text-n-3" data-console-repair="needs-override">
+      <p className="text-[10px] font-medium text-n-6" data-console-repair="needs-override">
         {REPAIR_NEEDS_OVERRIDE_COPY}
       </p>
     )
@@ -563,14 +563,14 @@ function ConsoleRepairAction({ leagueId, data }: { leagueId: string; data: Leagu
 
 function ConsoleSkeleton() {
   return (
-    <div className="flex flex-col gap-4" data-commish-console="loading">
+    <div className="flex flex-col gap-5" data-commish-console="loading">
       <LeaguePageTitle title={CONSOLE_TITLE} />
-      <Skeleton className="h-12 rounded-sm" />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Skeleton className="h-48 rounded-sm" />
-        <Skeleton className="h-48 rounded-sm" />
+      <Skeleton className="h-[43px] rounded-xl" />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <Skeleton className="h-48 rounded-2xl" />
+        <Skeleton className="h-48 rounded-2xl" />
       </div>
-      <Skeleton className="h-32 rounded-sm" />
+      <Skeleton className="h-32 rounded-2xl" />
     </div>
   )
 }

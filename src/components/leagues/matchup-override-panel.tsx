@@ -107,7 +107,7 @@ export function MatchupOverrideTools({
 
   return (
     <div
-      className={cn('flex flex-col gap-3', overrideMode && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
+      className={cn('flex flex-col gap-3', overrideMode && 'rounded-2xl border border-brand-strong bg-brand-soft p-2.5 sm:p-[15px]')}
       data-matchup-override={row.id}
       data-override-mode={overrideMode ? 'on' : 'off'}
     >
@@ -207,24 +207,24 @@ export function MatchupOverridePanelView({
   const gateId = `${id}-gate`
 
   return (
-    <section className="flex flex-col gap-3 rounded-sm border border-ink bg-white px-3 py-3" aria-label={OVERRIDE_PANEL_TITLE} data-override-panel>
-      <h3 className="text-[12px] font-bold text-ink">{OVERRIDE_PANEL_TITLE}</h3>
+    <section className="flex flex-col gap-3 rounded-xl border border-n-4 bg-white p-[15px]" aria-label={OVERRIDE_PANEL_TITLE} data-override-panel>
+      <h3 className="text-[13px] font-bold tracking-[-0.02em] text-ink">{OVERRIDE_PANEL_TITLE}</h3>
 
       {/* Q61 (135): no controls while a starter is still playing or a side
           has no lineup set, none before the server has answered, and none
           when the read failed (R1098). The server's line, verbatim. */}
       {lock.kind === 'checking' && (
-        <p role="status" className="text-[11px] font-semibold text-n-3" data-override-lock="checking">
+        <p role="status" className="text-[11px] font-medium text-n-6" data-override-lock="checking">
           {LOCK_CHECKING_COPY}
         </p>
       )}
       {lock.kind === 'locked' && (
-        <p role="status" className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[12px] font-semibold text-ink" data-override-lock="locked">
+        <p role="status" className="rounded-xl bg-caution-soft px-3 py-2.5 text-[11px] font-semibold text-ink" data-override-lock="locked">
           {lock.message}
         </p>
       )}
       {lock.kind === 'unknown' && (
-        <p role="alert" className="text-[11px] font-semibold text-negative" data-override-lock="unknown">
+        <p role="alert" className="text-[11px] font-semibold text-negative-strong" data-override-lock="unknown">
           {lock.message}
         </p>
       )}
@@ -251,7 +251,7 @@ export function MatchupOverridePanelView({
               </Button>
               {/* WHY Save is disabled, said (rule (h)) — never a dead button. */}
               {!gate.ok && (
-                <span id={gateId} className="text-[11px] font-semibold text-n-3" data-save-gate>
+                <span id={gateId} className="text-[11px] font-medium text-n-6" data-save-gate>
                   {gate.why}
                 </span>
               )}
@@ -261,7 +261,7 @@ export function MatchupOverridePanelView({
           {awayName === null ? (
             // A BYE (F366): no winner arm — the result arm is refused by design
             // (131:1052-1057); the score arm above is the team's points alone.
-            <p role="status" className="border-t border-n-4 pt-3 text-[11px] font-medium text-n-3" data-override-bye>
+            <p role="status" className="border-t border-n-4 pt-3 text-[11px] font-medium text-n-6" data-override-bye>
               {BYE_ROW_COPY}
             </p>
           ) : (
@@ -275,7 +275,7 @@ export function MatchupOverridePanelView({
                   {`Declare ${awayName} the winner`}
                 </Button>
                 {pending === 'result' && (
-                  <span role="status" className="self-center text-[11px] font-semibold text-n-3">
+                  <span role="status" className="self-center text-[11px] font-medium text-n-6">
                     Saving…
                   </span>
                 )}
@@ -294,7 +294,7 @@ export function MatchupOverridePanelView({
 
       {/* The verb's refusal, VERBATIM — that text is the UX. */}
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-override-refusal>
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2.5 text-[11px] font-semibold text-ink" data-override-refusal>
           {refusal}
         </p>
       )}
@@ -302,16 +302,16 @@ export function MatchupOverridePanelView({
         <div
           role="status"
           className={cn(
-            'flex flex-col gap-1 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-            said.tone === 'positive' && 'border-positive bg-positive-soft',
-            said.tone === 'caution' && 'border-ink bg-caution-soft',
-            said.tone === 'neutral' && 'border-ink bg-n-4',
+            'flex flex-col gap-1 rounded-xl px-3 py-2.5 text-[11px] font-semibold text-ink',
+            said.tone === 'positive' && 'bg-positive-soft',
+            said.tone === 'caution' && 'bg-caution-soft',
+            said.tone === 'neutral' && 'bg-surface-sunken',
           )}
           data-override-outcome={said.branch}
         >
           <span>{said.text}</span>
           {bypassed && (
-            <span className="text-[11px] font-medium" data-override-bypassed>
+            <span className="text-[11px] font-medium text-n-2" data-override-bypassed>
               {bypassed}
             </span>
           )}
@@ -333,7 +333,7 @@ function WinnerConfirm({
   onCancel: () => void
 }) {
   return (
-    <div role="group" aria-label={confirm.title} className="flex flex-col gap-1.5 rounded-sm border border-ink bg-caution-soft px-3 py-2" data-declare-confirm>
+    <div role="group" aria-label={confirm.title} className="flex flex-col gap-1.5 rounded-xl bg-caution-soft px-3 py-2.5" data-declare-confirm>
       <p className="text-[12px] font-bold text-ink">{confirm.title}</p>
       <p className="text-[11px] font-semibold text-ink" data-confirm-before>
         {confirm.before}
@@ -372,7 +372,7 @@ function ScoreField({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="truncate text-[11px] font-bold text-ink">
+      <label htmlFor={id} className="truncate text-[10px] font-semibold text-n-6">
         {label}
       </label>
       <Input

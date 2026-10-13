@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import {
@@ -126,7 +125,7 @@ export function RosterSlotBuilder({
         <Badge variant="black">
           <span className="fs-num">{rosterSize}</span>&nbsp;roster spots
         </Badge>
-        <span className="fs-num text-[12px] font-semibold text-n-3">
+        <span className="fs-num text-[11px] font-medium text-n-3">
           {starterCount} starters · {value.bench} bench · {value.ir_slots.length} IR
         </span>
       </div>
@@ -135,19 +134,19 @@ export function RosterSlotBuilder({
       ))}
 
       {/* ---- Starting lineup (display order per §7.3.2) ---- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Starting lineup</CardTitle>
+      <BuilderSection
+        title="Starting lineup"
+        badge={
           <Badge variant="black">
             <span className="fs-num">{starterCount}</span>&nbsp;starters
           </Badge>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2.5">
+        }
+      >
           <SingleRows positions={OFFENSE_SINGLES} value={value} onChange={onChange} />
 
           <SectionLabel>Flex</SectionLabel>
           {flexSlots.length === 0 && (
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="text-[11px] font-medium text-n-6">
               No flex slots — add one below.
             </p>
           )}
@@ -167,20 +166,19 @@ export function RosterSlotBuilder({
           {errorsFor('roster_settings.starting_slots').map((e) => (
             <InlineIssue key={e.message} tone="error" message={e.message} />
           ))}
-        </CardContent>
-      </Card>
+      </BuilderSection>
 
       {/* ---- Bench + IR (IR renders after K/D-ST per the display order) ---- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Bench &amp; injured reserve</CardTitle>
+      <BuilderSection
+        title="Bench & injured reserve"
+        badge={
           <Badge variant="stroke">
             <span className="fs-num">{value.bench + value.ir_slots.length}</span>&nbsp;reserve
           </Badge>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2.5">
-          <div className="flex items-center gap-3">
-            <span className="flex-1 text-[13px] font-bold">Bench (BN)</span>
+        }
+      >
+          <div className="flex min-h-[43px] items-center gap-3 rounded-xl border border-n-4 bg-white py-1.5 pl-3 pr-2">
+            <span className="flex-1 text-[11px] font-semibold">Bench (BN)</span>
             <Stepper
               value={value.bench}
               min={0}
@@ -195,7 +193,7 @@ export function RosterSlotBuilder({
 
           <SectionLabel>Injured reserve · {value.ir_slots.length}/6 spots</SectionLabel>
           {value.ir_slots.length === 0 && (
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="text-[11px] font-medium text-n-6">
               No IR spots — injured players would hold a bench spot all season.
             </p>
           )}
@@ -221,15 +219,14 @@ export function RosterSlotBuilder({
             >
               <Icon name="plus" /> Add DL spot
             </Button>
-            <span className="text-[11px] font-semibold text-n-3">
+            <span className="text-[10px] font-medium text-n-6">
               {dlPresetHint()}
             </span>
           </div>
           {errorsFor('roster_settings.ir_slots').map((e) => (
             <InlineIssue key={e.message} tone="error" message={e.message} />
           ))}
-        </CardContent>
-      </Card>
+      </BuilderSection>
     </div>
   )
 }
@@ -238,10 +235,30 @@ export function RosterSlotBuilder({
 // Pieces (internal — not exported, no parallel component tree)
 // ---------------------------------------------------------------------------
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+/** A titled sub-section of the builder, split from the one above by a
+ *  hairline (v7 settings language — flat, no nested card). */
+function BuilderSection({
+  title,
+  badge,
+  children,
+}: {
+  title: string
+  badge: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <div className="fs-overline border-t border-n-4 pt-2.5 text-[11px] text-n-3">{children}</div>
+    <section className="flex flex-col gap-2.5 border-t border-n-4 pt-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h3>
+        {badge}
+      </div>
+      {children}
+    </section>
   )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <div className="px-[3px] pt-1.5 text-[10px] font-semibold text-n-6">{children}</div>
 }
 
 function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: string }) {
@@ -249,8 +266,8 @@ function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: st
     <p
       role={tone === 'error' ? 'alert' : 'status'}
       className={cn(
-        'rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-        tone === 'error' ? 'border-negative bg-negative-soft' : 'border-caution bg-caution-soft',
+        'rounded-lg px-3 py-2 text-[11px] font-semibold text-ink',
+        tone === 'error' ? 'bg-negative-soft' : 'bg-caution-soft',
       )}
     >
       {message}
@@ -258,41 +275,64 @@ function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: st
   )
 }
 
+/**
+ * v7 stepper: a value between round quiet − / + buttons. `pill` (the
+ * default) sits on the control-grey track of a settings row; `tile` is the
+ * slot-grid form — no track (the tile is already sunken) and a bigger count.
+ */
 function Stepper({
   value,
   min,
   max,
   onStep,
   ariaLabel,
+  appearance = 'pill',
 }: {
   value: number
   min: number
   max: number
   onStep: (next: number) => void
   ariaLabel: string
+  appearance?: 'pill' | 'tile'
 }) {
+  const tile = appearance === 'tile'
+  const step = cn('rounded-full text-n-2', tile ? 'hover:bg-surface-pressed' : 'hover:bg-white')
   return (
-    <div className="flex items-center gap-1">
+    <div
+      className={cn(
+        'flex items-center',
+        tile ? 'justify-between gap-0.5' : 'gap-[3px] rounded-pill bg-surface-control p-[3px]',
+      )}
+    >
       <Button
         type="button"
-        variant="stroke"
+        variant="ghost"
         size="icon-sm"
+        className={step}
         aria-label={`Fewer: ${ariaLabel}`}
         disabled={value <= min}
         onClick={() => onStep(value - 1)}
       >
-        <span aria-hidden className="text-[15px] font-extrabold leading-none">–</span>
+        <span aria-hidden className="text-[13px] font-bold leading-none">–</span>
       </Button>
-      <span className="fs-num min-w-7 text-center text-[14px] font-extrabold">{value}</span>
+      <span
+        className={cn(
+          'fs-num text-center font-bold',
+          tile ? 'min-w-5 text-[15px] tracking-[-0.02em]' : 'min-w-[37px] text-[11px]',
+        )}
+      >
+        {value}
+      </span>
       <Button
         type="button"
-        variant="stroke"
+        variant="ghost"
         size="icon-sm"
+        className={step}
         aria-label={`More: ${ariaLabel}`}
         disabled={value >= max}
         onClick={() => onStep(value + 1)}
       >
-        <span aria-hidden className="text-[15px] font-extrabold leading-none">+</span>
+        <span aria-hidden className="text-[13px] font-bold leading-none">+</span>
       </Button>
     </div>
   )
@@ -314,7 +354,8 @@ function SingleRows({
   onChange: (next: RosterSettings) => void
 }) {
   return (
-    <>
+    // v7 roster grid: small grey tiles, as many per row as fit.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(102px,1fr))] gap-[7px]">
       {positions.map((position) => {
         const slots = value.starting_slots.filter(
           (s) => !isFlexSlot(s) && s.eligible[0] === position,
@@ -329,6 +370,7 @@ function SingleRows({
                 max={10}
                 ariaLabel={`${preset.label} starters`}
                 onStep={(n) => onChange(addSingleSlot(value, position, n))}
+                appearance="tile"
               />
             </SlotRow>
           )
@@ -341,11 +383,12 @@ function SingleRows({
               max={10}
               ariaLabel={`${slot.label} starters`}
               onStep={(n) => onChange(setSlotCount(value, slot.key, n))}
+              appearance="tile"
             />
           </SlotRow>
         ))
       })}
-    </>
+    </div>
   )
 }
 
@@ -361,9 +404,11 @@ function SlotRow({
   children: React.ReactNode
 }) {
   return (
-    <div className={cn('flex items-center gap-3', ghost && 'opacity-60')}>
-      <PositionBadge position={position} className="min-w-[34px]" />
-      <span className="flex-1 text-[13px] font-bold">{label}</span>
+    <div className={cn('flex flex-col gap-1 rounded-xl bg-surface-sunken p-1.5 pl-2', ghost && 'opacity-60')}>
+      <div className="flex min-w-0 items-center gap-1.5 pt-0.5">
+        <PositionBadge position={position} />
+        <span className="truncate text-[10px] font-semibold text-n-3">{label}</span>
+      </div>
       {children}
     </div>
   )
@@ -379,11 +424,11 @@ function FlexRow({
   onChange: (next: RosterSettings) => void
 }) {
   return (
-    <div className={cn('flex items-center gap-3', slot.count === 0 && 'opacity-60')}>
-      <PositionBadge position="FLEX" className="min-w-[34px]" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-        <span className="truncate text-[13px] font-bold">{slot.label}</span>
-        <span className="text-[11px] font-semibold text-n-3">
+    <div className={cn('flex min-h-[43px] items-center gap-2.5 rounded-xl bg-surface-sunken py-1.5 pl-2.5 pr-1.5', slot.count === 0 && 'opacity-60')}>
+      <PositionBadge position="FLEX" />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5">
+        <span className="truncate text-[11px] font-semibold">{slot.label}</span>
+        <span className="text-[10px] font-medium text-n-6">
           {slot.eligible.join(' · ')}
         </span>
       </div>
@@ -393,11 +438,13 @@ function FlexRow({
         max={10}
         ariaLabel={`${slot.label} slots`}
         onStep={(n) => onChange(setSlotCount(value, slot.key, n))}
+        appearance="tile"
       />
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
+        className="rounded-full text-n-3 hover:bg-surface-pressed hover:text-ink"
         aria-label={`Remove ${slot.label} flex slot`}
         onClick={() => onChange(removeSlot(value, slot.key))}
       >
@@ -437,8 +484,8 @@ function AddCustomFlex({
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-sm border border-ink bg-page p-3">
-      <div className="text-[13px] font-bold">New flex slot</div>
+    <div className="flex flex-col gap-2.5 rounded-xl border border-n-4 bg-white p-3">
+      <div className="text-[13px] font-bold tracking-[-0.01em]">New flex slot</div>
       <div className="flex flex-wrap gap-1.5">
         {ROSTER_POSITIONS.map((p) => (
           <FilterChip
@@ -453,7 +500,7 @@ function AddCustomFlex({
         ))}
       </div>
       {tooFew && (
-        <p className="text-[12px] font-semibold text-negative-strong">
+        <p className="text-[10px] font-medium text-negative-strong">
           Pick at least 2 positions — a flex slot accepts multiple positions. One
           position is just that position&apos;s own slot.
         </p>
@@ -464,7 +511,7 @@ function AddCustomFlex({
           onChange={(e) => setLabel(e.target.value)}
           placeholder={suggestion || 'Label (e.g. W/R/T)'}
           aria-label="Flex slot label"
-          className="h-btn-md w-44 text-[12px]"
+          className="w-44"
           maxLength={60}
         />
         <Button
@@ -495,15 +542,15 @@ function HotSwapRow({
   onChange: (next: RosterSettings) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-sm border border-ink px-3 py-2.5">
-      <div>
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-sunken px-3 py-2.5">
+      <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">
-          <label htmlFor="hot-swap-toggle" className="text-[13px] font-extrabold">
+          <label htmlFor="hot-swap-toggle" className="text-[11px] font-semibold">
             Hot Swap
           </label>
           {value.swap_spots === 1 && <Badge variant="lime">on</Badge>}
         </div>
-        <p className="text-[11px] font-semibold text-n-3">
+        <p className="text-[10px] font-medium text-n-6">
           One armed bench player auto-starts if the starter they protect is ruled out — before
           or during the game. One Hot Swap per team.
         </p>
@@ -529,12 +576,12 @@ function IrSpotRow({
   const spot = value.ir_slots[index]
   const restricted = spot.type === 'restricted'
   return (
-    <div className="flex flex-col gap-2 rounded-sm border border-n-4 p-3">
+    <div className="flex flex-col gap-2 rounded-xl border border-n-4 bg-white p-3">
       <div className="flex items-center gap-2">
         <Badge variant={restricted ? 'stroke-pink' : 'stroke'}>
           {spot.label ?? `IR ${index + 1}`}
         </Badge>
-        <span className="flex-1 text-[11px] font-semibold text-n-3">
+        <span className="flex-1 text-[10px] font-medium text-n-3">
           {restricted
             ? `Restricted — eligible players stay at least ${spot.min_weeks} week${spot.min_weeks === 1 ? '' : 's'}`
             : 'Unrestricted — eligible players move in and out freely before lock'}
@@ -543,6 +590,7 @@ function IrSpotRow({
           type="button"
           variant="ghost"
           size="icon-sm"
+          className="rounded-full text-n-3 hover:text-ink"
           aria-label={`Remove IR spot ${spot.label ?? index + 1}`}
           onClick={() => onChange(removeIrSpot(value, spot.key))}
         >
@@ -556,7 +604,7 @@ function IrSpotRow({
             onChange(updateIrSpot(value, spot.key, { type: type as 'unrestricted' | 'restricted' }))
           }
         >
-          <SelectTrigger className="h-btn-md w-40 text-[12px] font-bold" aria-label="IR spot type">
+          <SelectTrigger className="w-40" aria-label="IR spot type">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -566,7 +614,7 @@ function IrSpotRow({
         </Select>
         {restricted && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-n-3">Min weeks</span>
+            <span className="text-[10px] font-semibold text-n-3">Min weeks</span>
             <Stepper
               value={spot.min_weeks}
               min={1}
@@ -578,7 +626,7 @@ function IrSpotRow({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] font-bold text-n-3">Eligible designations</span>
+        <span className="text-[10px] font-semibold text-n-3">Eligible designations</span>
         {IR_DESIGNATIONS.map((d) => {
           const on = spot.eligible_designations.includes(d)
           const lastOne = on && spot.eligible_designations.length === 1

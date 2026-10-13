@@ -979,7 +979,7 @@ describe('elevation is a hover affordance, never a resting one — the L.D5.1 fi
     expect(hits).toEqual(['shadow-hard-4'])
     const overlayStart = source.indexOf('<DragOverlay')
     const overlayEnd = source.indexOf('</DragOverlay>')
-    const idx = source.indexOf('shadow-hard-4', source.indexOf("'flex items-center gap-1.5 rounded-sm border border-ink bg-white px-2 py-1 text-[11px] font-bold"))
+    const idx = source.indexOf('shadow-hard-4', source.indexOf("'flex items-center gap-1.5 rounded-pill bg-white px-2.5 py-1 text-[11px] font-semibold"))
     expect(idx).toBeGreaterThan(overlayStart)
     expect(idx).toBeLessThan(overlayEnd)
   })

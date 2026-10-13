@@ -159,11 +159,11 @@ export function TeamTransactionsPanelView({
   const context = leagueCardContext(leagueId)
   return (
     <Card data-team-transactions>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <CardHeader className="min-h-0 py-2.5">
+        <CardTitle className="flex flex-1 flex-wrap items-center gap-2 text-[15px]">
           {TRANSACTIONS_TITLE}
           {seat && (
-            <span className="ml-auto text-[11px] font-medium text-n-3" data-claims-budget>
+            <span className="ml-auto text-[10px] font-semibold text-n-6" data-claims-budget>
               {seat}
             </span>
           )}
@@ -174,20 +174,20 @@ export function TeamTransactionsPanelView({
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2 px-card-pad py-3">
+      <CardContent className="flex flex-col gap-2.5 px-card-pad py-3">
         {loading ? (
           <div className="flex flex-col gap-1.5" data-skeleton="transactions">
             {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton key={i} className="h-8 rounded-sm" />
+              <Skeleton key={i} className="h-8 rounded-md bg-surface-control" />
             ))}
           </div>
         ) : problem !== null && !hasData ? (
           // Fail loud: a failed read is never an empty feed.
-          <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-transactions-error>
-            <p className="text-[12px] font-bold">{TRANSACTIONS_ERROR_TITLE}</p>
+          <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-transactions-error>
+            <p className="text-[11px] font-bold text-ink">{TRANSACTIONS_ERROR_TITLE}</p>
             <p className="text-[11px] font-medium text-n-3">{problem}</p>
             <Button variant="stroke" size="sm" onClick={onRetry}>
-              <Icon name="reset" size={13} /> Retry
+              <Icon name="reset" size={11} /> Retry
             </Button>
           </div>
         ) : (
@@ -195,19 +195,19 @@ export function TeamTransactionsPanelView({
             {showOrderDoor && orderOpen && <div data-claim-order>{claimOrder}</div>}
             {problem !== null && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
             {refusal && (
-              <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-claims-refusal>
+              <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-claims-refusal>
                 {refusal}
               </p>
             )}
             {entries.length === 0 ? (
-              <p className="text-[12px] font-medium text-n-3" data-empty="transactions">
+              <p className="py-2 text-[11px] font-medium text-n-6" data-empty="transactions">
                 {TRANSACTIONS_EMPTY_COPY}{' '}
-                <Link href={`/app/leagues/${leagueId}/players`} className="font-bold text-ink underline" data-transactions-players-link>
+                <Link href={`/app/leagues/${leagueId}/players`} className="font-semibold text-accent hover:text-accent-strong" data-transactions-players-link>
                   Go to Players
                 </Link>
               </p>
             ) : (
-              <ol className="flex flex-col divide-y divide-n-4" data-transactions-items>
+              <ol className="-mx-card-pad flex flex-col border-t border-n-4 [&>li]:border-b [&>li]:border-n-4" data-transactions-items>
                 {entries.map((entry) => {
                   const when = entry.at ? formatInstantWithDate(entry.at, leagueTimeZone) : null
                   if (entry.kind === 'claim' && entry.claim.status !== 'pending') {
@@ -216,14 +216,14 @@ export function TeamTransactionsPanelView({
                     // D495: a lost claim names the winner when the read carries one.
                     const winner = lostClaimWinner(entry.claim, claimsDoc?.waiver_type ?? null)
                     return (
-                      <li key={entry.id} className="flex flex-col gap-0.5 py-1.5" data-transaction="claim-result" data-claim-result={entry.claim.status}>
+                      <li key={entry.id} className="flex flex-col gap-0.5 px-card-pad py-2 transition-colors hover:bg-surface-sunken" data-transaction="claim-result" data-claim-result={entry.claim.status}>
                         <div className="flex min-w-0 items-center gap-2">
                           <Badge variant="stroke-pink" className="shrink-0">
                             {outcome.label}
                           </Badge>
                           <ClaimPlayers leagueId={leagueId} claim={entry.claim} />
                         </div>
-                        <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
+                        <div className="flex items-center gap-2 text-[10px] font-medium text-n-6">
                           {when && (
                             <span className="fs-num" title={when.title ?? undefined}>
                               {when.local}
@@ -231,7 +231,7 @@ export function TeamTransactionsPanelView({
                           )}
                           {winner ? (
                             <span data-claim-result-detail data-claim-winner={winner.winnerTeamId}>
-                              <TeamNameLink name={winner.winnerTeamName} leagueId={leagueId} teamId={winner.winnerTeamId} className="font-bold text-ink" /> won{' '}
+                              <TeamNameLink name={winner.winnerTeamName} leagueId={leagueId} teamId={winner.winnerTeamId} className="font-semibold text-ink" /> won{' '}
                               <PlayerLink
                                 playerId={entry.claim.add.player_id}
                                 name={entry.claim.add.full_name ?? entry.claim.add.player_id}
@@ -247,7 +247,7 @@ export function TeamTransactionsPanelView({
                     )
                   }
                   return entry.kind === 'claim' ? (
-                    <li key={entry.id} className="flex flex-col gap-0.5 py-1.5" data-transaction="claim" data-claim={entry.claim.id}>
+                    <li key={entry.id} className="flex flex-col gap-0.5 px-card-pad py-2 transition-colors hover:bg-surface-sunken" data-transaction="claim" data-claim={entry.claim.id}>
                       <div className="flex min-w-0 items-center gap-2">
                         <Badge variant="stroke" className="shrink-0" data-claim-status="pending">
                           {PENDING_CLAIM_LABEL}
@@ -255,7 +255,7 @@ export function TeamTransactionsPanelView({
                         <ClaimPlayers leagueId={leagueId} claim={entry.claim} />
                         <PendingClaimControls claim={entry.claim} faab={faab} pending={pending} onEditBid={onEditBid} onCancel={onCancel} />
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
+                      <div className="flex items-center gap-2 text-[10px] font-medium text-n-6">
                         {when && (
                           <span className="fs-num" title={when.title ?? undefined}>
                             {when.local}
@@ -265,15 +265,15 @@ export function TeamTransactionsPanelView({
                       </div>
                     </li>
                   ) : (
-                    <li key={entry.id} className="flex flex-col gap-0.5 py-1.5" data-transaction="move">
-                      <span className="min-w-0 truncate text-[12px] font-medium text-ink" data-feed-text>
+                    <li key={entry.id} className="flex flex-col gap-0.5 px-card-pad py-2 transition-colors hover:bg-surface-sunken" data-transaction="move">
+                      <span className="min-w-0 truncate text-[11px] font-medium text-ink" data-feed-text>
                         {entry.line.players && entry.line.players.length > 0 ? (
                           <TextWithPlayers text={entry.line.text} players={entry.line.players} context={context} />
                         ) : (
                           entry.line.text
                         )}
                       </span>
-                      <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
+                      <div className="flex items-center gap-2 text-[10px] font-medium text-n-6">
                         {entry.line.week !== null && (
                           <span>
                             Week <span className="fs-num">{entry.line.week}</span>
@@ -292,7 +292,7 @@ export function TeamTransactionsPanelView({
             )}
             <Link
               href={activityHref(leagueId, { tab: 'adds' })}
-              className="self-start text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className="self-start rounded text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               data-see-all-adds
             >
               {SEE_ALL_ADDS_LABEL}

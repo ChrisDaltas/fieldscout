@@ -81,15 +81,15 @@ export function LeagueHomeStates({ leagueId }: { leagueId: string }) {
   if (isError || !data) {
     return (
       <div className="flex flex-col gap-4">
-        <Card className="border-negative bg-negative-soft">
-          <CardContent className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold" role="alert">
+        <Card className="border-transparent bg-negative-soft">
+          <CardContent className="flex flex-col items-start gap-2 px-[17px] py-[15px]">
+            <p className="text-[13px] font-bold text-ink" role="alert">
               Couldn&apos;t load this league.
             </p>
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="text-[11px] font-medium text-n-3">
               It may have been removed, or you no longer have access.
             </p>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <Button variant="stroke" size="sm" onClick={() => refetch()}>
                 <Icon name="reset" size={13} /> Retry
               </Button>
@@ -168,7 +168,7 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
     <Card>
       <CardHeader>
         <CardTitle>
-          <Icon name="rocket" size={15} className="mr-1.5 inline align-[-2px]" />
+          <Icon name="rocket" size={15} className="mr-1.5 inline align-[-2px] text-n-3" />
           Your practice drafts
         </CardTitle>
       </CardHeader>
@@ -194,7 +194,7 @@ function MockPracticeCard({ leagueId, data }: { leagueId: string; data: LeagueDe
           />
         ))}
         {active.length > 0 && (
-          <p className="text-[10px] font-medium text-n-3">{MOCK_EXPIRY_NOTE}</p>
+          <p className="text-[10px] font-medium text-n-6">{MOCK_EXPIRY_NOTE}</p>
         )}
       </CardContent>
     </Card>
@@ -242,7 +242,7 @@ function SetupHero({
   }
 
   return (
-    <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1fr_1.3fr]">
+    <div className="grid grid-cols-1 items-start gap-[27px] lg:grid-cols-[1fr_1.3fr]">
       <Card>
         <CardHeader>
           <CardTitle>League setup</CardTitle>
@@ -263,7 +263,6 @@ function SetupHero({
                 type="button"
                 variant="blue"
                 size="sm"
-                shadow
                 className="w-fit"
                 disabled={setStatus.isPending}
                 onClick={handleSchedule}
@@ -271,7 +270,7 @@ function SetupHero({
                 <Icon name="calendar" size={13} />
                 {setStatus.isPending ? 'Scheduling…' : 'Schedule the draft'}
               </Button>
-              <p className="text-[10px] font-semibold text-n-3">
+              <p className="text-[10px] font-medium text-n-6">
                 Locks in draft night: the countdown appears for every manager and the
                 draft starts automatically at the scheduled time.
               </p>
@@ -291,7 +290,7 @@ function SetupHero({
               gate, which IS the right dependency for locking in draft night. */}
           <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
               <PracticeCta leagueId={leagueId} />
-              <p className="text-[10px] font-semibold text-n-3">
+              <p className="text-[10px] font-medium text-n-6">
                 Test these settings against CPU opponents before draft night.
               </p>
           </div>
@@ -304,7 +303,7 @@ function SetupHero({
               leagueName={data.league.name}
               scoringSystemId={data.league.scoring_system_id}
             />
-            <p className="text-[10px] font-semibold text-n-3">
+            <p className="text-[10px] font-medium text-n-6">
               Attach one of your ranking lists — it&rsquo;s one tap away in the
               draft room and can feed your autopick.
             </p>
@@ -348,23 +347,23 @@ function ChecklistRow({
   const body = (
     <div
       className={cn(
-        'flex items-center gap-2.5 rounded-sm border border-n-4 px-2.5 py-2 transition-colors',
-        actionable && 'hover:border-ink hover:bg-n-4',
+        'flex items-center gap-2.5 rounded-xl border border-n-4 px-3 py-2.5 transition-colors',
+        actionable && 'hover:bg-surface-sunken',
       )}
     >
       <Icon
         name={item.done ? 'check-circle' : CHECK_ICON[item.key]}
         size={16}
-        className={cn('shrink-0', item.done ? 'text-positive-strong' : 'text-n-3')}
+        className={cn('shrink-0', item.done ? 'text-positive-strong' : 'text-n-6')}
       />
       <div className="mr-auto min-w-0">
-        <div className="truncate text-[12px] font-extrabold leading-tight">{item.label}</div>
-        <div className="truncate text-[10px] font-semibold text-n-3">{item.detail}</div>
+        <div className="truncate text-[12px] font-semibold leading-tight text-ink">{item.label}</div>
+        <div className="truncate text-[10px] font-medium text-n-6">{item.detail}</div>
       </div>
       {item.done ? (
         <Badge variant="green">Done</Badge>
       ) : (
-        actionable && <Icon name="arrow-next" size={13} className="shrink-0 text-n-3" />
+        actionable && <Icon name="arrow-next" size={13} className="shrink-0 text-n-6" />
       )}
     </div>
   )
@@ -404,11 +403,11 @@ function ScheduledHero({
     templates?.find((t) => t.id === data.league.scoring_system_id)?.name ?? null
 
   return (
-    <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[1.3fr_1fr]">
+    <div className="grid grid-cols-1 items-start gap-[27px] lg:grid-cols-[1.3fr_1fr]">
       <Card>
         <CardHeader>
           <CardTitle>
-            <Icon name="clock" size={15} className="mr-1.5 inline align-[-2px]" />
+            <Icon name="clock" size={15} className="mr-1.5 inline align-[-2px] text-n-3" />
             Draft countdown
           </CardTitle>
         </CardHeader>
@@ -416,7 +415,7 @@ function ScheduledHero({
           {scheduledAt ? (
             <DraftCountdown leagueId={leagueId} scheduledAt={scheduledAt} timeZone={timeZone} />
           ) : (
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="text-[11px] font-medium text-n-6">
               A draft time hasn&apos;t been set yet. Add one in League settings.
             </p>
           )}
@@ -426,7 +425,7 @@ function ScheduledHero({
               L.B3.5 launcher entry behind its ready-flag (visible now,
               enabled the moment the launcher lands — lane order can't
               dead-end). */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="stroke" size="sm" asChild>
               <Link href={`/app/leagues/${leagueId}/draft`} {...roomEntry}>
                 <Icon name="fire" size={13} />
@@ -444,7 +443,7 @@ function ScheduledHero({
         </CardContent>
       </Card>
 
-      <div className="flex flex-col gap-[19px]">
+      <div className="flex flex-col gap-[27px]">
         <Card>
           <CardHeader>
             <CardTitle>Scoring</CardTitle>
@@ -460,11 +459,11 @@ function ScheduledHero({
               // R116: don't flash the false-negative "none set" copy while the
               // templates query is still resolving — a league WITH a template
               // would briefly read as having none.
-              <Skeleton className="h-5 w-24 rounded-sm" />
+              <Skeleton className="h-[18px] w-24 rounded-pill" />
             ) : templateName ? (
               <Badge variant="stroke">{templateName}</Badge>
             ) : (
-              <p className="text-[12px] font-semibold text-n-3">No scoring template set.</p>
+              <p className="text-[11px] font-medium text-n-6">No scoring template set.</p>
             )}
           </CardContent>
         </Card>
@@ -474,7 +473,7 @@ function ScheduledHero({
             <CardTitle>Draft order</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="text-[11px] font-medium text-n-3">
               {orderMode === 'random'
                 ? 'Order is randomized when the draft begins.'
                 : 'Order is revealed before the draft begins.'}
@@ -558,7 +557,7 @@ function DraftCountdown({
 
   if (!cd || !display) {
     return (
-      <p className="text-[12px] font-semibold text-n-3">Draft time unavailable.</p>
+      <p className="text-[11px] font-medium text-n-6">Draft time unavailable.</p>
     )
   }
 
@@ -569,7 +568,7 @@ function DraftCountdown({
           Draft window reached
         </Badge>
       ) : (
-        <div className="flex items-end gap-3">
+        <div className="flex items-end gap-4">
           <CountUnit value={cd.days} label="days" />
           <CountUnit value={cd.hours} label="hrs" />
           <CountUnit value={cd.minutes} label="min" />
@@ -577,10 +576,10 @@ function DraftCountdown({
         </div>
       )}
 
-      <div className="flex flex-col gap-0.5 text-[11px] font-semibold">
+      <div className="flex flex-col gap-0.5 text-[11px] font-medium text-ink">
         {/* Viewer-local (primary, §16.4) — the browser's zone via Intl. */}
         <span>
-          <span className="text-n-3">Your time · </span>
+          <span className="text-n-6">Your time · </span>
           <span className="fs-num">
             {new Date(cd.targetMs).toLocaleString(undefined, {
               weekday: 'short',
@@ -593,7 +592,7 @@ function DraftCountdown({
         </span>
         {/* League reference time (§16.4 — the offset it was scheduled with). */}
         <span
-          className="text-n-3"
+          className="text-n-6"
           title="League reference time"
         >
           League time ·{' '}
@@ -608,10 +607,10 @@ function DraftCountdown({
 function CountUnit({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-col items-center">
-      <span className="fs-num text-[28px] font-extrabold leading-none tabular-nums">
+      <span className="fs-num text-[26px] font-bold leading-none tracking-[-0.03em] tabular-nums">
         {String(value).padStart(2, '0')}
       </span>
-      <span className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em] text-n-3">
+      <span className="mt-1 text-[10px] font-semibold text-n-6">
         {label}
       </span>
     </div>
@@ -646,12 +645,12 @@ function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail
         LIVE
       </Badge>
       <p className="text-h5 text-ink">The draft is live</p>
-      <p className="max-w-md text-[13px] font-medium text-n-3">
+      <p className="max-w-md text-[12px] font-medium text-n-3">
         {startedAt
           ? `Picks are coming off the board — the room opened at ${new Date(startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`
           : 'Picks are coming off the board right now.'}
       </p>
-      <Button variant="blue" size="sm" shadow asChild>
+      <Button variant="blue" size="md" asChild>
         <Link href={`/app/leagues/${leagueId}/draft`} {...roomEntry}>
           <Icon name="fire" size={13} />
           Join draft
@@ -672,9 +671,9 @@ function DraftingHero({ leagueId, data }: { leagueId: string; data: LeagueDetail
 function LaterPlaceholder({ status }: { status: string }) {
   return (
     <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center" data-unknown-status={status}>
-      <Icon name="rocket" size={18} className="text-n-3" />
-      <p className="text-h5 text-ink">This league page didn’t load</p>
-      <p className="max-w-md text-[13px] font-medium text-n-3">Your league is safe. Head back to your leagues and open it again.</p>
+      <Icon name="rocket" size={18} className="text-n-6" />
+      <p className="text-h6 text-ink">This league page didn’t load</p>
+      <p className="max-w-md text-[11px] font-medium text-n-6">Your league is safe. Head back to your leagues and open it again.</p>
       <Button variant="stroke" size="sm" asChild>
         <Link href="/app/leagues">Back to leagues</Link>
       </Button>
@@ -689,10 +688,10 @@ function LaterPlaceholder({ status }: { status: string }) {
 function LeagueHomeSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <Skeleton className="h-16 rounded-sm" />
-      <div className="grid grid-cols-1 gap-[19px] lg:grid-cols-[1.3fr_1fr]">
-        <Skeleton className="h-64 rounded-sm" />
-        <Skeleton className="h-64 rounded-sm" />
+      <Skeleton className="h-16 rounded-2xl" />
+      <div className="grid grid-cols-1 gap-[27px] lg:grid-cols-[1.3fr_1fr]">
+        <Skeleton className="h-64 rounded-2xl" />
+        <Skeleton className="h-64 rounded-2xl" />
       </div>
     </div>
   )

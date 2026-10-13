@@ -71,7 +71,7 @@ function AttachToggles({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label className="flex items-start gap-2 text-[12px] font-semibold">
+      <label className="flex items-start gap-2 text-[11px] font-semibold">
         <Checkbox
           checked={primary}
           onCheckedChange={(next) => onPrimary(next === true)}
@@ -79,12 +79,12 @@ function AttachToggles({
         />
         <span>
           Set as my primary board
-          <span className="block text-[10px] font-medium text-n-3">
+          <span className="mt-0.5 block text-[10px] font-medium text-n-6">
             Feeds your draft Targets and autopick for this league (one per league).
           </span>
         </span>
       </label>
-      <label className="flex items-start gap-2 text-[12px] font-semibold">
+      <label className="flex items-start gap-2 text-[11px] font-semibold">
         <Checkbox
           checked={shared}
           onCheckedChange={(next) => onShared(next === true)}
@@ -92,7 +92,7 @@ function AttachToggles({
         />
         <span>
           Share with the league
-          <span className="block text-[10px] font-medium text-n-3">
+          <span className="mt-0.5 block text-[10px] font-medium text-n-6">
             Every member can open it. Off, it stays visible only to you.
           </span>
         </span>
@@ -181,7 +181,7 @@ export function AttachListInline({
     return (
       <div className="flex flex-col gap-2">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
+          <Skeleton key={i} className="h-[43px] w-full rounded-lg" />
         ))}
       </div>
     )
@@ -189,7 +189,7 @@ export function AttachListInline({
   if (myLists.isError) {
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-[12px] font-medium text-n-3" role="alert">
+        <p className="text-[11px] font-medium text-n-3" role="alert">
           Your lists didn&rsquo;t load.
         </p>
         <Button variant="stroke" size="sm" onClick={() => void myLists.refetch()}>
@@ -200,7 +200,7 @@ export function AttachListInline({
   }
   if (candidates.length === 0) {
     return (
-      <p className="text-[12px] font-medium text-n-3">
+      <p className="py-3 text-center text-[11px] font-medium text-n-6">
         You don&rsquo;t have any lists yet. Build one on the Lists page and it
         will show up here.
       </p>
@@ -214,8 +214,8 @@ export function AttachListInline({
       {suggestion && (
         // §7.4 smart suggestion: the one-tap attach (heuristic recorded in
         // attach-list-ops.ts). One button — the toggles above still apply.
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-n-4 bg-page px-2.5 py-2">
-          <span className="min-w-0 text-[12px] font-semibold">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-accent-soft py-1.5 pl-3 pr-1.5">
+          <span className="min-w-0 text-[11px] font-semibold text-accent-deep">
             <Icon name="star" size={12} className="mr-1 inline align-[-1px] text-accent" />
             {suggestion.is_big_board && !suggestion.scoring_system_id
               ? 'Your Big Board fits any draft.'
@@ -232,7 +232,7 @@ export function AttachListInline({
         </div>
       )}
 
-      <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+      <div className="flex max-h-56 flex-col gap-[3px] overflow-y-auto">
         {candidates.map((candidate) => (
           <button
             key={candidate.id}
@@ -241,18 +241,18 @@ export function AttachListInline({
             aria-pressed={selectedId === candidate.id}
             onClick={() => setSelectedId(candidate.id)}
             className={cn(
-              'flex items-center gap-2 rounded-sm border px-2.5 py-2 text-left transition-colors',
+              'flex min-h-[43px] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
               candidate.attached
-                ? 'cursor-default border-n-4 opacity-60'
+                ? 'cursor-default opacity-60'
                 : selectedId === candidate.id
-                  ? 'border-ink bg-accent-soft'
-                  : 'border-n-4 hover:border-ink',
+                  ? 'bg-accent-soft text-accent-deep'
+                  : 'hover:bg-surface-sunken',
             )}
           >
             <Icon name="list" size={14} className="shrink-0 text-n-3" />
             <span className="mr-auto min-w-0">
-              <span className="block truncate text-[12px] font-bold">{candidate.title}</span>
-              <span className="block text-[10px] font-medium text-n-3">
+              <span className="block truncate text-[12px] font-semibold">{candidate.title}</span>
+              <span className="block text-[10px] font-medium text-n-6">
                 {listMetaLine(candidate)}
               </span>
             </span>
@@ -271,8 +271,7 @@ export function AttachListInline({
 
       <Button
         variant="blue"
-        size="sm"
-        shadow
+        size="md"
         className="w-fit"
         disabled={!selected || attach.isPending}
         onClick={() => selected && submit(selected)}
@@ -397,12 +396,12 @@ export function AttachListToLeagueModal({
         {leagues.isPending ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
+              <Skeleton key={i} className="h-[43px] w-full rounded-lg" />
             ))}
           </div>
         ) : leagues.isError ? (
           <div className="flex flex-col items-start gap-2">
-            <p className="text-[12px] font-medium text-n-3" role="alert">
+            <p className="text-[11px] font-medium text-n-3" role="alert">
               Your leagues didn&rsquo;t load.
             </p>
             <Button variant="stroke" size="sm" onClick={() => void leagues.refetch()}>
@@ -410,12 +409,12 @@ export function AttachListToLeagueModal({
             </Button>
           </div>
         ) : options.length === 0 ? (
-          <p className="text-[12px] font-medium text-n-3">
+          <p className="py-3 text-center text-[11px] font-medium text-n-6">
             You&rsquo;re not in any leagues yet. Create or join one first.
           </p>
         ) : (
           <>
-            <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+            <div className="flex max-h-56 flex-col gap-[3px] overflow-y-auto">
               {options.map((option) => (
                 <button
                   key={option.id}
@@ -424,16 +423,16 @@ export function AttachListToLeagueModal({
                   aria-pressed={selectedId === option.id}
                   onClick={() => setSelectedId(option.id)}
                   className={cn(
-                    'flex items-center gap-2 rounded-sm border px-2.5 py-2 text-left transition-colors',
+                    'flex min-h-[43px] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
                     option.attached
-                      ? 'cursor-default border-n-4 opacity-60'
+                      ? 'cursor-default opacity-60'
                       : selectedId === option.id
-                        ? 'border-ink bg-accent-soft'
-                        : 'border-n-4 hover:border-ink',
+                        ? 'bg-accent-soft text-accent-deep'
+                        : 'hover:bg-surface-sunken',
                   )}
                 >
                   <Icon name="cup" size={14} className="shrink-0 text-n-3" />
-                  <span className="mr-auto min-w-0 truncate text-[12px] font-bold">
+                  <span className="mr-auto min-w-0 truncate text-[12px] font-semibold">
                     {option.name}
                   </span>
                   {option.status === 'drafting' && <Badge variant="lime">Draft live</Badge>}
@@ -452,8 +451,7 @@ export function AttachListToLeagueModal({
 
             <Button
               variant="blue"
-              size="sm"
-              shadow
+              size="md"
               className="w-fit"
               disabled={!selected || attach.isPending}
               onClick={submit}

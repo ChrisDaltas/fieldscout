@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { invalidateCommishLog, useCommishLog } from '@/hooks/use-commish-log'
@@ -95,7 +94,7 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
         <LeaguePageTitle title={ACTIVITY_PAGE_TITLE} />
         <div className="flex flex-col gap-1.5" data-skeleton="activity-page">
           {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-8 rounded-sm" />
+            <Skeleton key={i} className="h-8 rounded-md" />
           ))}
         </div>
       </div>
@@ -131,19 +130,19 @@ export function ActivityPage({ leagueId, initial }: { leagueId: string; initial:
           ))}
         </TabsList>
 
-        <TabsContent value="all" className="mt-3" data-tab-panel="all">
+        <TabsContent value="all" className="mt-4" data-tab-panel="all">
           <FeedTab leagueId={leagueId} tab="all" filters={{}} teamNames={teamNames} memberNames={memberNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
-        <TabsContent value="adds" className="mt-3" data-tab-panel="adds">
+        <TabsContent value="adds" className="mt-4" data-tab-panel="adds">
           <FeedTab leagueId={leagueId} tab="adds" filters={{ type: ADD_DROP_TYPES }} teamNames={teamNames} memberNames={memberNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
-        <TabsContent value="trades" className="mt-3" data-tab-panel="trades">
+        <TabsContent value="trades" className="mt-4" data-tab-panel="trades">
           <FeedTab leagueId={leagueId} tab="trades" filters={{ topic: 'trades' }} teamNames={teamNames} memberNames={memberNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
-        <TabsContent value="commissioner" className="mt-3" data-tab-panel="commissioner">
+        <TabsContent value="commissioner" className="mt-4" data-tab-panel="commissioner">
           <CommishTab leagueId={leagueId} data={data} route={route} onRoute={go} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />
         </TabsContent>
-        <TabsContent value="corrections" className="mt-3" data-tab-panel="corrections">
+        <TabsContent value="corrections" className="mt-4" data-tab-panel="corrections">
           {/* F536: L.E2.4's view, mounted — never a copy. Keyed on the week so a
               link to another week re-opens its filter there (R1369). */}
           <CorrectionsView
@@ -236,9 +235,11 @@ function CommishTab({
   ]
 
   return (
-    <Card data-commish-tab>
-      <CardHeader className="min-h-0 flex-wrap py-2">
-        <CardTitle className="mr-auto text-[12px]">{ACTIVITY_TAB_LABELS.commissioner}</CardTitle>
+    // A bare v7 section, like the feed tabs beside it: 15px title with the
+    // filters on the right, then the log's hairline rows.
+    <div className="flex min-w-0 flex-col gap-2.5" data-commish-tab>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-auto text-h6 text-ink">{ACTIVITY_TAB_LABELS.commissioner}</span>
         <div className="flex flex-wrap items-center gap-2" data-commish-filters>
           <ChoiceSelect
             id="commish-log-team"
@@ -257,17 +258,17 @@ function CommishTab({
             onValueChange={(v) => onRoute({ ...route, week: v === 'all' ? null : Number(v), entry: null })}
           />
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
-        <p className="text-[11px] font-medium text-n-3">{TAB_INTRO_COPY.commissioner}</p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <p className="text-[11px] font-medium text-n-6">{TAB_INTRO_COPY.commissioner}</p>
         {route.week !== null && (
-          <p className="text-[11px] font-medium text-n-3" data-commish-week-note>
+          <p className="text-[11px] font-medium text-n-6" data-commish-week-note>
             {COMMISH_WEEK_NOTE}
           </p>
         )}
         {route.entry && (
-          <div className="flex flex-wrap items-center gap-2" data-commish-entry-note>
-            <p className="text-[11px] font-bold text-ink">{COMMISH_ENTRY_NOTE}</p>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl bg-accent-soft px-3.5 py-2.5" data-commish-entry-note>
+            <p className="mr-auto text-[11px] font-semibold text-accent-deep">{COMMISH_ENTRY_NOTE}</p>
             <Button variant="stroke" size="sm" onClick={() => onRoute({ ...route, entry: null })}>
               {SHOW_NEWEST_LABEL}
             </Button>
@@ -294,7 +295,7 @@ function CommishTab({
             onShowOlder: () => void log.fetchNextPage(),
           }}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

@@ -264,14 +264,14 @@ function ScoringEditorSkeleton({ className }: { className?: string }) {
   return (
     <Card className={className} aria-busy="true" aria-label="Loading custom scoring">
       <CardContent className="flex flex-col gap-3 p-4">
-        <Skeleton className="h-6 w-44 rounded-sm" />
+        <Skeleton className="h-5 w-44 rounded-md" />
         <div className="flex gap-1.5">
           {STEPPER_POSITIONS.map((p) => (
-            <Skeleton key={p} className="h-btn-md w-14 rounded-sm" />
+            <Skeleton key={p} className="h-btn-sm w-12 rounded-pill" />
           ))}
         </div>
-        <Skeleton className="h-28 w-full rounded-sm" />
-        <Skeleton className="h-28 w-full rounded-sm" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
       </CardContent>
     </Card>
   )
@@ -285,12 +285,12 @@ function ScoringEditorLoadError({
   onRetry: () => void
 }) {
   return (
-    <Card className={cn('border-negative bg-negative-soft', className)}>
-      <CardContent className="flex flex-col items-start gap-2 p-4">
+    <Card className={cn('border-0 bg-negative-soft', className)}>
+      <CardContent className="flex flex-col items-start gap-1.5 p-4">
         <p className="text-[13px] font-bold" role="alert">
           Couldn&apos;t load this league&apos;s custom scoring.
         </p>
-        <p className="text-[12px] font-semibold text-n-3">
+        <p className="mb-1.5 text-[11px] font-medium text-n-3">
           Check your connection and try again — nothing was changed.
         </p>
         <Button type="button" variant="stroke" size="sm" onClick={onRetry}>
@@ -323,8 +323,8 @@ function ScoringEditorEmpty({
   return (
     <Card className={className}>
       <CardContent className="flex flex-col gap-1.5 p-4">
-        <CardTitle>Custom scoring</CardTitle>
-        <p className="text-[12px] font-semibold text-n-3">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">Custom scoring</CardTitle>
+        <p className="text-[11px] font-medium text-n-3">
           {templateName
             ? `This league scores with the ${templateName} template — one shared rulebook, unedited.`
             : 'This league scores with a shared template — one rulebook, unedited.'}{' '}
@@ -492,17 +492,16 @@ function ScoringEditorBody({
     <Card className={className}>
       <CardContent className="flex flex-col gap-3.5 p-4">
         <div className="flex flex-wrap items-center gap-2.5">
-          <CardTitle>Custom scoring</CardTitle>
+          <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">Custom scoring</CardTitle>
           {mode.kind === 'edit' && (
             <>
-              <span className="text-[12px] font-bold text-n-3">
+              <span className="text-[10px] font-medium text-n-6">
                 {dirty ? 'You have unsaved scoring changes.' : 'All changes saved.'}
               </span>
               <Button
                 type="button"
-                variant="blue"
-                size="sm"
-                shadow
+                variant="green"
+                size="md"
                 className="ml-auto"
                 disabled={!dirty || isSaving}
                 onClick={handleSave}
@@ -540,7 +539,7 @@ function ScoringEditorBody({
         <div
           role="tablist"
           aria-label="Scoring position"
-          className="flex gap-1.5 overflow-x-auto pb-0.5"
+          className="flex gap-0.5 self-start overflow-x-auto rounded-pill bg-surface-control p-[3px]"
           onKeyDown={handleStepperKeyDown}
         >
           {STEPPER_POSITIONS.map((p, index) => (
@@ -555,9 +554,14 @@ function ScoringEditorBody({
               aria-selected={index === stepIndex}
               aria-controls={panelId}
               tabIndex={index === stepIndex ? 0 : -1}
-              variant={index === stepIndex ? 'dark' : 'stroke'}
-              size="md"
-              className="shrink-0"
+              variant="ghost"
+              size="sm"
+              // v7 segment: the chosen position is the white pill on the
+              // grey track (`shadow-seg` is the pill's shape, not elevation).
+              className={cn(
+                'shrink-0',
+                index === stepIndex ? 'bg-white text-ink shadow-seg hover:bg-white' : 'text-n-3 hover:text-ink',
+              )}
               onClick={() => setStepIndex(index)}
             >
               {positionLabel(p)}
@@ -566,7 +570,7 @@ function ScoringEditorBody({
         </div>
 
         {adjustedNote && (
-          <p role="status" className="text-[11px] font-semibold text-n-3">
+          <p role="status" className="text-[10px] font-medium text-n-6">
             {adjustedNote}
           </p>
         )}
@@ -575,7 +579,7 @@ function ScoringEditorBody({
           role="tabpanel"
           id={panelId}
           aria-labelledby={`${idBase}-scoring-tab-${position}`}
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-2.5"
         >
           {sections.map((section) => {
             const derivedOn = allPositionsOn(view, section.id)
@@ -590,11 +594,11 @@ function ScoringEditorBody({
             const scope: 'all' | ScoringPosition = multiPosition && !switchOn ? position : 'all'
             return (
               <section key={section.id} aria-label={`${section.title} scoring`}>
-                <div className="flex flex-col gap-2 rounded-sm border border-ink p-3">
+                <div className="flex flex-col gap-2.5 rounded-xl bg-surface-sunken p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-[13px] font-extrabold">{section.title}</h3>
+                    <h3 className="text-[13px] font-bold tracking-[-0.01em]">{section.title}</h3>
                     {multiPosition && (
-                      <label className="flex items-center gap-2 text-[11px] font-bold text-n-3">
+                      <label className="flex items-center gap-2 text-[10px] font-semibold text-n-3">
                         All positions
                         <Switch
                           checked={switchOn}
@@ -606,7 +610,7 @@ function ScoringEditorBody({
                     )}
                   </div>
                   {multiPosition && !switchOn && (
-                    <p className="text-[11px] font-semibold text-n-3">
+                    <p className="text-[10px] font-medium text-n-6">
                       Setting {positionLabel(position)} values — other positions keep the
                       shared values. Set a value to 0 to switch a category off for{' '}
                       {positionLabel(position)} only.
@@ -651,7 +655,7 @@ function ScoringEditorBody({
           >
             <Icon name="arrow-prev" size={13} /> Back
           </Button>
-          <span className="fs-num text-[11px] font-bold text-n-3">
+          <span className="fs-num text-[10px] font-semibold text-n-6">
             {stepIndex + 1} / {STEPPER_POSITIONS.length}
           </span>
           <Button
@@ -684,18 +688,18 @@ function SampleLine({ position, doc }: { position: ScoringPosition; doc: Scoring
   const sample = SAMPLE_PLAYERS[position]
   const total = sampleLineTotal(doc, position)
   return (
-    <div className="flex flex-col gap-1 rounded-sm border border-ink p-3">
+    <div className="flex flex-col gap-1 rounded-xl border border-n-4 p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="text-[12px] font-extrabold">
+        <p className="text-[11px] font-bold">
           Sample week — {sample.name}{' '}
-          <span className="font-semibold text-n-3">({positionLabel(position)})</span>
+          <span className="font-medium text-n-6">({positionLabel(position)})</span>
         </p>
-        <p aria-live="polite" className="text-[13px] font-extrabold">
+        <p aria-live="polite" className="text-[15px] font-bold tracking-[-0.02em]">
           <span className="fs-num">{total.toFixed(2)}</span>{' '}
-          <span className="text-[11px] font-bold text-n-3">pts under these values</span>
+          <span className="text-[10px] font-medium tracking-normal text-n-6">pts under these values</span>
         </p>
       </div>
-      <p className="text-[11px] font-semibold text-n-3">{sample.line}</p>
+      <p className="text-[10px] font-medium text-n-3">{sample.line}</p>
     </div>
   )
 }
@@ -727,10 +731,10 @@ function DstTierTables({
     <>
       {tables.map((table) => (
         <section key={table.family} aria-label={`${table.title} tier scoring`}>
-          <div className="flex flex-col gap-2 rounded-sm border border-ink p-3">
+          <div className="flex flex-col gap-2.5 rounded-xl bg-surface-sunken p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <h3 className="text-[13px] font-extrabold">{table.title}</h3>
-              <p className="text-[11px] font-semibold text-n-3">
+              <h3 className="text-[13px] font-bold tracking-[-0.01em]">{table.title}</h3>
+              <p className="text-[10px] font-medium text-n-6">
                 Ranges come with the league&apos;s scoring — only the points are editable.
               </p>
             </div>
@@ -785,17 +789,17 @@ function SaveRefusalNotice({ refusal }: { refusal: SaveRefusal }) {
     return (
       <div
         role="alert"
-        className="flex flex-col gap-1 rounded-sm border border-negative bg-negative-soft px-3 py-2"
+        className="flex flex-col gap-1 rounded-xl bg-negative-soft px-3.5 py-2.5"
       >
-        <p className="text-[12px] font-bold">
+        <p className="text-[11px] font-bold">
           The server refused these values — nothing was changed.
         </p>
         {entries.length === 0 ? (
-          <p className="text-[11px] font-semibold text-n-3">{refusal.message}</p>
+          <p className="text-[11px] font-medium text-n-3">{refusal.message}</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {entries.map(([path, messages]) => (
-              <li key={path} className="text-[11px] font-semibold text-n-3">
+              <li key={path} className="text-[11px] font-medium text-n-3">
                 <span className="fs-num font-bold text-ink">{path}</span>: {messages.join(' · ')}
               </li>
             ))}
@@ -879,30 +883,30 @@ function CoefficientCell({
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-2 rounded-sm border px-2.5 py-1.5',
-        highlight ? 'border-ink bg-accent-soft' : 'border-n-4',
+        'flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5',
+        highlight ? 'bg-accent-soft' : 'bg-white',
       )}
     >
       <div className="min-w-0">
         <label
           htmlFor={`scoring-${field.key}`}
-          className="block truncate text-[12px] font-bold"
+          className="block truncate text-[11px] font-semibold"
           title={field.label}
         >
           {field.label}
         </label>
         {hint ? (
-          <p className="text-[10px] font-semibold text-n-3">{hint}</p>
+          <p className="text-[10px] font-medium text-n-6">{hint}</p>
         ) : null}
         {field.overridden ? (
-          <p className="text-[10px] font-semibold text-n-3">
+          <p className="text-[10px] font-medium text-n-6">
             All positions:{' '}
             <span className="fs-num">
               {field.baseValue === undefined ? 'not scored' : field.baseValue}
             </span>
           </p>
         ) : field.value === undefined ? (
-          <p className="text-[10px] font-semibold text-n-3">Not scored</p>
+          <p className="text-[10px] font-medium text-n-6">Not scored</p>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -923,7 +927,7 @@ function CoefficientCell({
           disabled={disabled}
           onChange={(e) => handleChange(e.target.value)}
           onBlur={handleBlur}
-          className="h-btn-md w-24 fs-num text-right text-[12px] font-bold"
+          className="w-24 fs-num text-right font-semibold"
         />
       </div>
     </div>

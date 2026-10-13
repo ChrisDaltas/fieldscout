@@ -79,15 +79,15 @@ function StatsContent({ leagueId, detail }: { leagueId: string; detail: LeagueDe
       ) : problem && !schedule.data ? (
         <ProblemCard heading={H2H_TITLE} title="Couldn’t load the results." detail={problemCopy(problem)} onRetry={() => schedule.refetch()} leagueId={leagueId} />
       ) : !schedule.data ? (
-        <Skeleton className="h-40 rounded-sm" />
+        <Skeleton className="h-40 rounded-2xl bg-surface-control" />
       ) : (
-        <Card data-h2h={teamId ?? ''}>
-          <CardHeader className="min-h-0 py-2">
-            <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+        <Card className="overflow-hidden" data-h2h={teamId ?? ''}>
+          <CardHeader className="min-h-0 border-b-0 px-[15px] pb-2.5 pt-3">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-[13px] font-bold tracking-[-0.02em]">
               {H2H_TITLE}
               <span className="ml-auto w-56 max-w-full">
                 <Select value={teamId ?? ''} onValueChange={setPicked}>
-                  <SelectTrigger className="h-btn-md px-2 text-[12px]" data-stats-team={teamId ?? ''} aria-label="Team">
+                  <SelectTrigger className="h-btn-md" data-stats-team={teamId ?? ''} aria-label="Team">
                     <SelectValue placeholder="Pick a team" />
                   </SelectTrigger>
                   <SelectContent>
@@ -101,53 +101,55 @@ function StatsContent({ leagueId, detail }: { leagueId: string; detail: LeagueDe
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2 px-card-pad py-3">
+          <CardContent className="flex flex-col p-0">
             {!teamId ? (
-              <p className="text-[12px] font-medium text-n-3" data-empty="no-team">
+              <p className="border-t border-n-4 px-[15px] py-6 text-center text-[11px] font-medium text-n-6" data-empty="no-team">
                 {NO_TEAM_COPY}
               </p>
             ) : rows.length === 0 ? (
-              <p className="text-[12px] font-medium text-n-3" data-empty="no-games">
+              <p className="border-t border-n-4 px-[15px] py-6 text-center text-[11px] font-medium text-n-6" data-empty="no-games">
                 {NO_GAMES_COPY}
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-sm border border-ink bg-white">
-                <Table>
+              // v7 stats table: 10px grey heads over a hairline, 11px rows on
+              // hairlines with a grey hover, bold tabular numbers.
+              <div className="border-t border-n-4 px-1.5">
+                <Table className="text-[11px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Opponent</TableHead>
-                      <TableHead className="text-right">W-L{total.ties > 0 ? '-T' : ''}</TableHead>
-                      <TableHead className="text-right">PF</TableHead>
-                      <TableHead className="text-right">PA</TableHead>
+                      <TableHead className="h-[31px] px-[9px]">Opponent</TableHead>
+                      <TableHead className="h-[31px] px-[9px] text-right">W-L{total.ties > 0 ? '-T' : ''}</TableHead>
+                      <TableHead className="h-[31px] px-[9px] text-right">PF</TableHead>
+                      <TableHead className="h-[31px] px-[9px] text-right">PA</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rows.map((r) => (
                       <TableRow key={r.opponentId} data-h2h-row={r.opponentId}>
-                        <TableCell>
+                        <TableCell className="px-[9px] py-[5px]">
                           <span className="flex items-center gap-2">
                             <Crest name={r.opponentName} src={null} />
-                            <TeamNameLink name={r.opponentName} leagueId={leagueId} teamId={r.opponentId} className="font-bold text-ink" />
+                            <TeamNameLink name={r.opponentName} leagueId={leagueId} teamId={r.opponentId} className="font-semibold text-ink" />
                           </span>
                         </TableCell>
-                        <TableCell className="fs-num text-right font-bold" data-h2h-record>
+                        <TableCell className="fs-num px-[9px] py-[5px] text-right font-bold text-ink" data-h2h-record>
                           {recordText(r)}
                         </TableCell>
-                        <TableCell className="fs-num text-right">{pointsText(r.pointsFor)}</TableCell>
-                        <TableCell className="fs-num text-right">{pointsText(r.pointsAgainst)}</TableCell>
+                        <TableCell className="fs-num px-[9px] py-[5px] text-right font-medium text-n-2">{pointsText(r.pointsFor)}</TableCell>
+                        <TableCell className="fs-num px-[9px] py-[5px] text-right font-medium text-n-2">{pointsText(r.pointsAgainst)}</TableCell>
                       </TableRow>
                     ))}
-                    <TableRow data-h2h-total>
-                      <TableCell className="font-bold text-ink">All opponents</TableCell>
-                      <TableCell className="fs-num text-right font-bold">{recordText(total)}</TableCell>
-                      <TableCell className="fs-num text-right font-bold">{pointsText(total.pointsFor)}</TableCell>
-                      <TableCell className="fs-num text-right font-bold">{pointsText(total.pointsAgainst)}</TableCell>
+                    <TableRow className="border-t border-n-4 hover:bg-transparent" data-h2h-total>
+                      <TableCell className="px-[9px] py-2.5 text-[10px] font-semibold text-n-3">All opponents</TableCell>
+                      <TableCell className="fs-num px-[9px] py-2.5 text-right text-[12px] font-bold text-ink">{recordText(total)}</TableCell>
+                      <TableCell className="fs-num px-[9px] py-2.5 text-right text-[12px] font-bold text-ink">{pointsText(total.pointsFor)}</TableCell>
+                      <TableCell className="fs-num px-[9px] py-2.5 text-right text-[12px] font-bold text-ink">{pointsText(total.pointsAgainst)}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               </div>
             )}
-            <p className="text-[10px] font-medium text-n-3">{SEASON_ONLY_COPY}</p>
+            <p className="border-t border-n-4 px-[15px] py-[9px] text-[10px] font-medium text-n-6">{SEASON_ONLY_COPY}</p>
           </CardContent>
         </Card>
       )}
@@ -158,7 +160,7 @@ function StatsContent({ leagueId, detail }: { leagueId: string; detail: LeagueDe
 function EmptyNote({ copy, ...rest }: { copy: string } & Record<string, unknown>) {
   return (
     <Card>
-      <CardContent className="px-card-pad py-6 text-center text-[13px] font-medium text-n-3" {...rest}>
+      <CardContent className="px-card-pad py-10 text-center text-[11px] font-medium text-n-6" {...rest}>
         {copy}
       </CardContent>
     </Card>
@@ -169,7 +171,7 @@ function StatsSkeleton() {
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title={STATS_TITLE} />
-      <Skeleton className="h-40 rounded-sm" />
+      <Skeleton className="h-40 rounded-2xl bg-surface-control" />
     </div>
   )
 }

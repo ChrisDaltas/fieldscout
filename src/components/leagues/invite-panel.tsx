@@ -185,13 +185,13 @@ function ShareLinkCard({
 
   return (
     <Card>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">Invite link</CardTitle>
+      <CardHeader className="min-h-0 border-b-0 px-4 pb-1.5 pt-3.5">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">Invite link</CardTitle>
         <RotateLinkButton leagueId={leagueId} />
       </CardHeader>
-      <CardContent className="flex flex-col gap-3.5">
+      <CardContent className="flex flex-col gap-3.5 px-4 pb-4 pt-1.5">
         <div className="space-y-1.5">
-          <Label htmlFor="share-link" className="text-[13px] font-bold">
+          <Label htmlFor="share-link" className="text-[11px] font-semibold">
             League share link
           </Label>
           <div className="flex items-center gap-2">
@@ -200,7 +200,6 @@ function ShareLinkCard({
               readOnly
               value={shareLink ?? 'No link yet'}
               onFocus={(e) => e.currentTarget.select()}
-              className="text-[12px]"
             />
             <CopyButton
               text={shareLink}
@@ -209,7 +208,7 @@ function ShareLinkCard({
               ariaLabel="Copy the league share link"
             />
           </div>
-          <p className="text-[11px] font-semibold text-n-3">
+          <p className="text-[10px] font-medium text-n-6">
             Anyone with this link can claim an open seat — paste it into any chat or email.
           </p>
         </div>
@@ -257,11 +256,11 @@ function SlugEditor({ leagueId, inviteSlug }: { leagueId: string; inviteSlug: st
 
   return (
     <div className="space-y-1.5 border-t border-n-4 pt-3">
-      <Label htmlFor="slug-input" className="text-[13px] font-bold">
+      <Label htmlFor="slug-input" className="text-[11px] font-semibold">
         Custom link
       </Label>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[12px] font-semibold text-n-3">/join/</span>
+        <span className="text-[11px] font-medium text-n-3">/join/</span>
         <Input
           id="slug-input"
           value={value}
@@ -270,7 +269,7 @@ function SlugEditor({ leagueId, inviteSlug }: { leagueId: string; inviteSlug: st
             setValue(e.target.value)
             setError(null)
           }}
-          className="h-btn-md w-44 text-[12px]"
+          className="w-44"
         />
         <Button
           type="button"
@@ -288,7 +287,7 @@ function SlugEditor({ leagueId, inviteSlug }: { leagueId: string; inviteSlug: st
         )}
       </div>
       {error && <InlineIssue tone="error" message={error} />}
-      <p className="text-[11px] font-semibold text-n-3">
+      <p className="text-[10px] font-medium text-n-6">
         Letters, numbers and hyphens. Survives a link rotation.
       </p>
     </div>
@@ -382,8 +381,8 @@ function SeatsCard({
 }) {
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">Seats</CardTitle>
+      <CardHeader className="min-h-0 border-b-0 px-4 pb-1.5 pt-3.5">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">Seats</CardTitle>
         <Badge variant="stroke">
           <span className="fs-num">{claimedCount}</span> / {total} claimed
         </Badge>
@@ -392,16 +391,16 @@ function SeatsCard({
       {/* The league link seats nobody once the draft has started (062) —
           said, in the link card's place, for the commissioner. */}
       {canManage && controls.linkClosedNote && (
-        <p className="px-card-pad pb-2 text-[11px] font-semibold text-n-3" data-link-closed>
+        <p className="px-4 pb-2 text-[10px] font-medium text-n-6" data-link-closed>
           {controls.linkClosedNote}
         </p>
       )}
 
       {invitesLoading && (
-        <p className="px-card-pad pb-2 text-[11px] font-semibold text-n-3">Loading invites…</p>
+        <p className="px-4 pb-2 text-[10px] font-medium text-n-6">Loading invites…</p>
       )}
 
-      <div>
+      <div className="border-t border-n-4">
         {seats.map((seat, i) => (
           <SeatRow
             key={seat.key}
@@ -419,7 +418,7 @@ function SeatsCard({
       </div>
 
       {canManage && controls.addSeats && openCount > 0 && (
-        <div className="border-t border-n-4 px-card-pad py-3">
+        <div className="border-t border-n-4 px-4 py-3">
           <AddSeatButton leagueId={leagueId} openCount={openCount} />
         </div>
       )}
@@ -505,7 +504,7 @@ function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: n
             : `Fill all ${openCount} seats`}
         </Button>
       )}
-      <span className="text-[11px] font-semibold text-n-3">
+      <span className="text-[10px] font-medium text-n-6">
         {openCount} seat{openCount === 1 ? '' : 's'} still open.
       </span>
     </div>
@@ -540,7 +539,7 @@ function SeatRow({
   return (
     <div
       className={cn(
-        'flex flex-col gap-2.5 px-card-pad py-3',
+        'flex flex-col gap-2 px-4 py-2.5',
         !last && 'border-b border-n-4',
         seat.isSelf && 'bg-accent-soft',
       )}
@@ -556,7 +555,7 @@ function SeatRow({
               text — no door where there is no team; and `linkTeams` is FALSE
               in the live draft room, where navigating away can cost a pick.
               After the draft this list lives on the members page (L.E1.39). */}
-          <div className="truncate text-[12px] font-extrabold leading-tight">
+          <div className="truncate text-[12px] font-semibold leading-tight">
             <TeamNameLink
               name={seat.status === 'open' ? 'Open seat' : seat.teamName}
               leagueId={leagueId}
@@ -598,7 +597,7 @@ function SeatRow({
 function SeatSubline({ seat, newTab }: { seat: Seat; newTab: boolean }) {
   if (seat.status === 'claimed') {
     return (
-      <div className="truncate text-[11px] font-semibold leading-tight text-n-3" data-seat-identity>
+      <div className="truncate text-[10px] font-medium leading-tight text-n-6" data-seat-identity>
         {seat.username ? <UsernameLink username={seat.username} newTab={newTab} /> : seat.identity}
       </div>
     )
@@ -608,7 +607,7 @@ function SeatSubline({ seat, newTab }: { seat: Seat; newTab: boolean }) {
     // pending invite — this branch never runs for a claimed seat. An invite
     // by username names a real account, so that name opens its profile too.
     return (
-      <div className="truncate text-[11px] font-semibold leading-tight text-n-3">
+      <div className="truncate text-[10px] font-medium leading-tight text-n-6">
         Invited{' '}
         {seat.emailTarget ??
           (seat.usernameTarget ? <UsernameLink username={seat.usernameTarget} newTab={newTab} /> : 'a shared link')}
@@ -616,9 +615,9 @@ function SeatSubline({ seat, newTab }: { seat: Seat; newTab: boolean }) {
     )
   }
   if (seat.status === 'placeholder') {
-    return <div className="text-[11px] font-semibold leading-tight text-n-3">No manager yet</div>
+    return <div className="text-[10px] font-medium leading-tight text-n-6">No manager yet</div>
   }
-  return <div className="text-[11px] font-semibold leading-tight text-n-3">Waiting to be filled</div>
+  return <div className="text-[10px] font-medium leading-tight text-n-6">Waiting to be filled</div>
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -657,14 +656,14 @@ function ClaimedSeatControls({
 }) {
   // The sitting commissioner can never be removed and needs no role buttons.
   if (seat.role === 'commissioner') {
-    return <p className="text-[11px] font-semibold text-n-3">The league commissioner runs the show.</p>
+    return <p className="text-[10px] font-medium text-n-6">The league commissioner runs the show.</p>
   }
   // §7.2 anti-coup (169:442 / :787): a co-commissioner is refused on the
   // league creator's seat — so nothing is offered there; it is said.
   const seatUserId = detail.members.find((m) => m.id === seat.memberId)?.user_id ?? null
   if (creatorSeatBlocked({ myRole, seatUserId, leagueOwnerId: detail.league.owner_id })) {
     return (
-      <p className="text-[11px] font-semibold text-n-3" data-creator-seat>
+      <p className="text-[10px] font-medium text-n-6" data-creator-seat>
         {CREATOR_SEAT_NOTE}
       </p>
     )
@@ -873,7 +872,7 @@ function RemoveManagerDialog({
           >
             {mode === 'takeover' && (
               <div className="mt-2 space-y-1.5">
-                <Label htmlFor="successor" className="text-[12px] font-bold">
+                <Label htmlFor="successor" className="text-[11px] font-semibold">
                   New manager&apos;s username
                 </Label>
                 <Input
@@ -884,7 +883,6 @@ function RemoveManagerDialog({
                     setSuccessorHandle(e.target.value)
                     setError(null)
                   }}
-                  className="h-btn-md text-[12px]"
                 />
               </div>
             )}
@@ -892,7 +890,7 @@ function RemoveManagerDialog({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="remove-reason" className="text-[12px] font-bold">
+          <Label htmlFor="remove-reason" className="text-[11px] font-semibold">
             Reason (optional)
           </Label>
           <Input
@@ -900,7 +898,6 @@ function RemoveManagerDialog({
             value={reason}
             placeholder="Noted for the record"
             onChange={(e) => setReason(e.target.value)}
-            className="h-btn-md text-[12px]"
           />
         </div>
 
@@ -952,16 +949,16 @@ function ModeOption({
       disabled={disabled}
       onClick={onSelect}
       className={cn(
-        'rounded-sm border px-3 py-2.5 text-left transition-colors',
-        active ? 'border-ink bg-accent-soft' : 'border-n-4',
-        disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-ink',
+        'rounded-xl border px-3 py-2.5 text-left transition-colors',
+        active ? 'border-accent bg-accent-soft' : 'border-n-4',
+        disabled ? 'cursor-not-allowed opacity-60' : !active && 'hover:bg-surface-sunken',
       )}
     >
-      <div className="flex items-center gap-2 text-[13px] font-bold">
+      <div className="flex items-center gap-2 text-[12px] font-semibold">
         {title}
         {disabled && <Badge variant="stroke">Not available</Badge>}
       </div>
-      <p className="mt-0.5 text-[11px] font-semibold text-n-3">{body}</p>
+      <p className="mt-0.5 text-[10px] font-medium text-n-6">{body}</p>
       {children}
     </button>
   )
@@ -1001,7 +998,7 @@ function InvitedSeatControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[11px] font-semibold text-n-3">
+      <span className="text-[10px] font-medium text-n-6">
         {state === 'active' ? `Expires ${expires}` : `Invite ${state}`}
       </span>
       {canManage && (
@@ -1086,7 +1083,7 @@ function SeatInviteForm({ leagueId, teamId }: { leagueId: string; teamId: string
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-sm border border-n-4 p-2.5">
+    <div className="flex flex-col gap-2 rounded-xl border border-n-4 p-2.5">
       <div className="flex flex-wrap items-center gap-1.5">
         <ModeChip active={mode === 'email'} onClick={() => setMode('email')} icon="email" label="Email" />
         <ModeChip active={mode === 'username'} onClick={() => setMode('username')} icon="profile" label="Username" />
@@ -1107,7 +1104,7 @@ function SeatInviteForm({ leagueId, teamId }: { leagueId: string; teamId: string
           onKeyDown={(e) => {
             if (e.key === 'Enter') void submit()
           }}
-          className="h-btn-md min-w-0 flex-1 text-[12px]"
+          className="min-w-0 flex-1"
         />
         <Button type="button" variant="blue" size="sm" disabled={busy} onClick={submit}>
           <Icon name="send" size={13} />
@@ -1118,7 +1115,7 @@ function SeatInviteForm({ leagueId, teamId }: { leagueId: string; teamId: string
         </Button>
       </div>
       {mode === 'email' && (
-        <p className="text-[11px] font-semibold text-n-3">
+        <p className="text-[10px] font-medium text-n-6">
           New to FieldScout? Their signup pre-fills this email — no account needed first.
         </p>
       )}
@@ -1143,8 +1140,8 @@ function ModeChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[11px] font-bold transition-colors',
-        active ? 'border-ink bg-ink text-page' : 'border-n-4 text-n-3 hover:border-ink',
+        'inline-flex h-btn-sm items-center gap-1 rounded-pill px-[9px] text-[10px] font-semibold transition-colors',
+        active ? 'bg-accent-soft text-accent-deep' : 'bg-surface-control text-n-2 hover:bg-surface-pressed',
       )}
     >
       <Icon name={icon} size={12} />
@@ -1205,7 +1202,7 @@ function SelfSeatControls({
         <Icon name="transfer" size={13} /> Leave league
       </Button>
       {mustTransferFirst && (
-        <span className="text-[11px] font-semibold text-n-3">
+        <span className="text-[10px] font-medium text-n-6">
           Transfer the commissioner role to another member before you can leave.
         </span>
       )}

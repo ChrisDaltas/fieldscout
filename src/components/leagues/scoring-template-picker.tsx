@@ -109,12 +109,12 @@ export function ScoringTemplatePicker({
 
   if (isPending) {
     return (
-      <div className={cn('grid gap-3 sm:grid-cols-2 xl:grid-cols-3', className)}>
+      <div className={cn('grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3', className)}>
         {/* F193: one placeholder per KNOWN template, derived from the §7.3.3
             order list so an eighth template never re-strands this count at
             a stale literal (it was a hard 6 after SC.1 made the grid 7). */}
         {Array.from({ length: TEMPLATE_DISPLAY_ORDER.length }, (_, i) => (
-          <Skeleton key={i} className="h-44 rounded-sm" />
+          <Skeleton key={i} className="h-44 rounded-2xl" />
         ))}
       </div>
     )
@@ -122,12 +122,12 @@ export function ScoringTemplatePicker({
 
   if (isError) {
     return (
-      <Card className={cn('border-negative bg-negative-soft', className)}>
-        <CardContent className="flex flex-col items-start gap-2 p-4">
+      <Card className={cn('border-0 bg-negative-soft', className)}>
+        <CardContent className="flex flex-col items-start gap-1.5 p-4">
           <p className="text-[13px] font-bold" role="alert">
             Couldn&apos;t load the scoring templates.
           </p>
-          <p className="text-[12px] font-semibold text-n-3">
+          <p className="mb-1.5 text-[11px] font-medium text-n-3">
             Check your connection and try again — nothing was changed.
           </p>
           <Button
@@ -155,9 +155,9 @@ export function ScoringTemplatePicker({
   if (cards.length === 0) {
     return (
       <Card className={className}>
-        <CardContent className="p-4">
+        <CardContent className="flex flex-col gap-1 p-4">
           <p className="text-[13px] font-bold">No scoring templates yet.</p>
-          <p className="text-[12px] font-semibold text-n-3">
+          <p className="text-[11px] font-medium text-n-6">
             {/* F193: count derived from the §7.3.3 order list, never a
                 literal that goes stale when a template joins. */}
             The {TEMPLATE_DISPLAY_ORDER.length} league scoring templates ship
@@ -177,7 +177,7 @@ export function ScoringTemplatePicker({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12px] font-semibold text-n-3">
+        <p className="min-w-0 flex-1 text-[11px] font-medium text-n-3">
           Pick one of the {cards.length} scoring templates — each matches that
           platform&apos;s published defaults, so a migrating league&apos;s
           scores feel identical.
@@ -195,12 +195,12 @@ export function ScoringTemplatePicker({
       </div>
 
       {customizeVisible && customize?.disabledReason && (
-        <p className="text-[12px] font-semibold text-n-3">
+        <p className="rounded-lg bg-caution-soft px-3 py-2 text-[11px] font-semibold text-ink">
           {customize.disabledReason}
         </p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <TemplateCardButton
             key={card.id}
@@ -252,17 +252,17 @@ function TemplateCardButton({
         }
       }}
       className={cn(
-        'cursor-pointer text-left transition-shadow hover:shadow-hard-4',
+        'cursor-pointer text-left transition-[box-shadow,border-color] hover:shadow-hard-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
         // Selection is carried by the accent border, not by elevation — a
         // resting shadow here would make the chosen card float permanently.
         selected && 'border-accent',
       )}
     >
-      <CardContent className="flex h-full flex-col gap-2 p-4">
+      <CardContent className="flex h-full flex-col gap-2 p-3.5">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="text-[14px] font-extrabold">{card.name}</div>
-            <div className="text-[12px] font-semibold text-n-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="text-[13px] font-bold tracking-[-0.01em]">{card.name}</div>
+            <div className="text-[10px] font-medium text-n-6">
               {card.oneLiner}
             </div>
           </div>
@@ -303,7 +303,7 @@ function TemplateCardButton({
         {/* Full description, untruncated — the ESPN rows' Q9 parity-
             exception line must stay readable (v2.8.5). */}
         {card.description && (
-          <p className="text-[11px] font-medium leading-relaxed text-n-3">
+          <p className="text-[10px] font-medium leading-relaxed text-n-3">
             {card.description}
           </p>
         )}
@@ -380,28 +380,28 @@ function CompareTable({
   return (
     <Card>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[12px]">
+        <table className="w-full border-collapse text-[11px]">
           <thead>
-            <tr className="border-b border-ink">
+            <tr className="border-b border-n-4">
               <th className="min-w-36 px-3 py-2.5 text-left align-bottom">
-                <span className="fs-overline text-[11px] text-n-3">Category</span>
+                <span className="text-[10px] font-semibold text-n-6">Category</span>
               </th>
               {cards.map((card) => (
                 <th
                   key={card.id}
                   className={cn(
-                    'min-w-32 px-3 py-2.5 text-left align-bottom font-extrabold',
+                    'min-w-32 px-3 py-2.5 text-left align-bottom text-[12px] font-bold tracking-[-0.01em]',
                     card.id === selectedId && 'bg-accent-soft',
                   )}
                 >
                   {card.name}
                   {card.defaultMarker && (
-                    <span className="block text-[10px] font-semibold text-n-3">
+                    <span className="block text-[10px] font-medium text-n-6">
                       {card.defaultMarker}
                     </span>
                   )}
                   {card.platformDefaultMarker && (
-                    <span className="block text-[10px] font-semibold text-n-3">
+                    <span className="block text-[10px] font-medium text-n-6">
                       {card.platformDefaultMarker}
                     </span>
                   )}
@@ -412,12 +412,12 @@ function CompareTable({
           <tbody>
             {COMPARE_ROWS.map((row) => (
               <tr key={row.label} className="border-b border-n-4">
-                <td className="px-3 py-2 font-bold">{row.label}</td>
+                <td className="px-3 py-2 font-semibold">{row.label}</td>
                 {cards.map((card) => (
                   <td
                     key={card.id}
                     className={cn(
-                      'fs-num px-3 py-2 font-semibold',
+                      'fs-num px-3 py-2 font-medium',
                       card.id === selectedId && 'bg-accent-soft',
                     )}
                   >
@@ -430,12 +430,12 @@ function CompareTable({
                 exception line (Q9/v2.8.5): the compare view never hides
                 them. */}
             <tr>
-              <td className="px-3 py-2 align-top font-bold">Notes</td>
+              <td className="px-3 py-2 align-top font-semibold">Notes</td>
               {cards.map((card) => (
                 <td
                   key={card.id}
                   className={cn(
-                    'min-w-56 max-w-72 px-3 py-2 align-top text-[11px] font-medium leading-relaxed text-n-3',
+                    'min-w-56 max-w-72 px-3 py-2 align-top text-[10px] font-medium leading-relaxed text-n-3',
                     card.id === selectedId && 'bg-accent-soft',
                   )}
                 >

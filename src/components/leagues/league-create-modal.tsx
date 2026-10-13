@@ -229,7 +229,7 @@ export function LeagueCreateModal({
         <DialogContent className="flex max-h-[85vh] max-w-md flex-col gap-4 overflow-hidden">
           <DialogHeader>
             <DialogTitle>
-              <Icon name="check-circle" size={15} className="mr-1.5 inline align-[-2px]" />
+              <Icon name="check-circle" size={15} className="mr-1.5 inline align-[-2px] text-positive-strong" />
               {created.name} is live
             </DialogTitle>
             <DialogDescription>
@@ -253,7 +253,6 @@ export function LeagueCreateModal({
               type="button"
               variant="blue"
               size="sm"
-              shadow
               onClick={() => handleOpenChange(false)}
             >
               Go to league
@@ -328,7 +327,7 @@ export function LeagueCreateModal({
                 styleFilter={scoringStyle}
                 onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
               />
-              <p className="text-[12px] font-semibold text-n-3">
+              <p className="text-[11px] font-medium text-n-6">
                 You can customize scoring once your league has been created.
               </p>
             </div>
@@ -348,7 +347,7 @@ export function LeagueCreateModal({
           <Stepper step={step} onStep={setStep} />
           <div className="ml-auto">
             {step < STEPS.length - 1 ? (
-              <Button type="button" variant="blue" size="sm" shadow onClick={() => setStep(step + 1)}>
+              <Button type="button" variant="blue" size="sm" onClick={() => setStep(step + 1)}>
                 Next
                 <Icon name="arrow-next" size={13} />
               </Button>
@@ -357,7 +356,6 @@ export function LeagueCreateModal({
                 type="button"
                 variant="blue"
                 size="sm"
-                shadow
                 disabled={!canCreate}
                 onClick={handleCreate}
               >
@@ -377,7 +375,7 @@ export function LeagueCreateModal({
           </div>
         </div>
         {step === STEPS.length - 1 && !canCreate && !submitting && (
-          <p className="text-[11px] font-semibold text-n-3">
+          <p className="text-[11px] font-medium text-n-6">
             {nameMissing
               ? 'Name your league on the Basics step, then pick a scoring template.'
               : 'Pick a scoring template to create your league.'}
@@ -390,8 +388,8 @@ export function LeagueCreateModal({
 
 function ChangeLaterNote() {
   return (
-    <p className="flex items-center gap-1.5 rounded-sm border border-n-4 bg-page px-3 py-2 text-[12px] font-semibold text-n-3">
-      <Icon name="info-circle" size={14} className="shrink-0" />
+    <p className="flex items-center gap-1.5 rounded-xl bg-surface-sunken px-3.5 py-2.5 text-[11px] font-medium text-n-3">
+      <Icon name="info-circle" size={13} className="shrink-0 text-n-6" />
       These settings can be changed later in League settings.
     </p>
   )
@@ -421,7 +419,7 @@ function BasicsStep({
   return (
     <div className="flex flex-col gap-3.5">
       <div className="space-y-1.5">
-        <Label htmlFor="create-league-name" className="text-[13px] font-bold">
+        <Label htmlFor="create-league-name" className="text-[12px] font-semibold text-ink">
           League name
         </Label>
         <Input
@@ -436,17 +434,17 @@ function BasicsStep({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[13px] font-bold">League avatar (optional)</Label>
+        <Label className="text-[12px] font-semibold text-ink">League avatar (optional)</Label>
         <div className="flex items-center gap-3">
           {avatarPreview ? (
             // eslint-disable-next-line @next/next/no-img-element -- local object-URL preview
             <img
               src={avatarPreview}
               alt="League avatar preview"
-              className="h-14 w-14 shrink-0 rounded-sm border border-ink object-cover"
+              className="h-14 w-14 shrink-0 rounded-[14px] border border-n-4 object-cover"
             />
           ) : (
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-sm border border-n-4 bg-n-5 text-n-3">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] bg-surface-control text-n-6">
               <Icon name="cup" size={18} />
             </span>
           )}
@@ -465,7 +463,7 @@ function BasicsStep({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="create-league-teams" className="text-[13px] font-bold">
+        <Label htmlFor="create-league-teams" className="text-[12px] font-semibold text-ink">
           Number of teams
         </Label>
         <ChoiceSelect
@@ -499,7 +497,7 @@ function StyleStep({
   return (
     <div className="flex flex-col gap-3.5">
       <div className="space-y-1.5">
-        <Label className="text-[13px] font-bold">Draft type</Label>
+        <Label className="text-[12px] font-semibold text-ink">Draft type</Label>
         <div className="grid grid-cols-2 gap-2.5">
           <OptionCard
             label="Snake"
@@ -517,7 +515,7 @@ function StyleStep({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-[13px] font-bold">Scoring type</Label>
+        <Label className="text-[12px] font-semibold text-ink">Scoring type</Label>
         <div className="grid grid-cols-2 gap-2.5">
           <OptionCard
             label="PPR"
@@ -532,7 +530,7 @@ function StyleStep({
             onSelect={() => onScoringStyle('no_ppr')}
           />
         </div>
-        <p className="text-[11px] font-semibold text-n-3">
+        <p className="text-[11px] font-medium text-n-6">
           This narrows the templates on the next step.
         </p>
       </div>
@@ -557,15 +555,16 @@ function OptionCard({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        'flex flex-col items-start gap-0.5 rounded-sm border px-3 py-2.5 text-left transition-colors',
-        selected ? 'border-ink bg-accent-soft' : 'border-n-4 bg-page hover:border-ink',
+        'flex flex-col items-start gap-0.5 rounded-xl px-3.5 py-3 text-left transition-[background-color,box-shadow] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        // Selected is a resting FILL + the v7 1px blue inset ring, never a lift.
+        selected ? 'bg-accent-soft shadow-ring-accent' : 'bg-white shadow-ring-chip hover:bg-surface-sunken',
       )}
     >
-      <span className="flex w-full items-center justify-between text-[13px] font-extrabold">
+      <span className={cn('flex w-full items-center justify-between text-[13px] font-bold tracking-[-0.01em]', selected ? 'text-accent-deep' : 'text-ink')}>
         {label}
-        {selected && <Icon name="check-circle" size={14} />}
+        {selected && <Icon name="check-circle" size={14} className="text-accent" />}
       </span>
-      <span className="text-[11px] font-semibold text-n-3">{hint}</span>
+      <span className="text-[11px] font-medium text-n-3">{hint}</span>
     </button>
   )
 }
@@ -585,10 +584,10 @@ function Stepper({ step, onStep }: { step: number; onStep: (i: number) => void }
               aria-current={i === step ? 'step' : undefined}
               onClick={() => onStep(i)}
               className={cn(
-                'flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[12px] font-bold transition-colors',
+                'flex h-btn-sm items-center gap-1.5 rounded-pill px-[9px] text-[10px] font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
                 i === step
-                  ? 'border-ink bg-ink text-white'
-                  : 'border-n-4 bg-page text-n-3 hover:border-ink hover:text-ink',
+                  ? 'bg-ink text-white'
+                  : 'bg-surface-control text-n-3 hover:bg-surface-pressed hover:text-ink',
               )}
             >
               <span className="fs-num">{i + 1}</span>

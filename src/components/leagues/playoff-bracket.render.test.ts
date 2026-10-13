@@ -318,8 +318,11 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(charlie).toContain('101.25')
     expect(charlie).toContain('98.10')
     expect(charlie).toContain('Advances on points')
-    // The winner is a FILL (state), never a shadow.
-    expect(teamLine(charlie, 'Charlie')).toContain('bg-accent-soft')
+    // v7: the winner reads in bold ink, the trailer in grey — state by weight
+    // and colour, never a shadow. (The viewer's own team carries the
+    // bg-accent-soft fill; Charlie is also the viewer's team here.)
+    expect(teamLine(charlie, 'Charlie')).toContain('font-bold text-ink')
+    expect(teamLine(charlie, 'Foxtrot')).toContain('font-medium text-n-3')
     expect(teamLine(charlie, 'Foxtrot')).not.toContain('bg-accent-soft')
     const tie = between(r1, 'data-game="higher_seed"', 'data-round="2"')
     expect(tie).toContain('90.00')
@@ -361,7 +364,8 @@ describe('once built: the stored rounds — seeds, byes, per-week rows, the two-
     expect(r2).not.toContain('data-verdict')
     expect(r2).not.toContain('0.00')
     expect(r2).not.toContain('data-winner')
-    expect(r2).not.toContain('bg-accent-soft')
+    expect(r2).not.toContain('truncate text-[12px] font-bold')
+    expect(r2).not.toContain('text-n-3')
     expect(r2.match(/>—</g)?.length).toBeGreaterThanOrEqual(4)
     // Round 1 (played, final) is untouched.
     expect(between(html, 'data-round="1"', 'data-round="2"')).toContain('data-verdict="points"')

@@ -100,7 +100,7 @@ export function ClaimInviteCard({
     <Card>
       {preview.found && <PreviewHeader preview={preview} />}
 
-      <CardContent className="space-y-4 py-5">
+      <CardContent className="space-y-4 px-[17px] py-[17px]">
         {phase === 'success' ? (
           <SuccessBody preview={preview} />
         ) : isActionable(effectiveKind) && preview.found ? (
@@ -128,26 +128,26 @@ export function ClaimInviteCard({
 function PreviewHeader({ preview }: { preview: JoinPreviewFound }) {
   const hasSeat = Boolean(preview.team_label)
   return (
-    <div className="border-b border-ink px-card-pad py-3.5">
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-n-3">
+    <div className="border-b border-n-4 px-[17px] py-[17px]">
+      <p className="text-[10px] font-semibold text-n-6">
         {hasSeat ? "You're invited to manage" : "You're invited to join"}
       </p>
       {hasSeat ? (
         <>
-          <p className="mt-1 text-h5 leading-tight text-ink">{preview.team_label}</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-n-3">in {preview.league_name}</p>
+          <p className="mt-1 text-h4 text-ink">{preview.team_label}</p>
+          <p className="mt-0.5 text-[12px] font-medium text-n-3">in {preview.league_name}</p>
         </>
       ) : (
-        <p className="mt-1 text-h5 leading-tight text-ink">{preview.league_name}</p>
+        <p className="mt-1 text-h4 text-ink">{preview.league_name}</p>
       )}
       {preview.inviter_name && (
-        <p className="mt-2 text-[11px] font-medium text-n-3">
-          Invited by <span className="font-bold text-ink">{preview.inviter_name}</span>
+        <p className="mt-2 text-[11px] font-medium text-n-6">
+          Invited by <span className="font-semibold text-ink">{preview.inviter_name}</span>
         </p>
       )}
       {!hasSeat && typeof preview.seats_open === 'number' && preview.seats_open > 0 && (
-        <p className="mt-2 text-[11px] font-medium text-n-3">
-          <span className="fs-num font-bold text-ink">{preview.seats_open}</span>{' '}
+        <p className="mt-2 text-[11px] font-medium text-n-6">
+          <span className="fs-num font-semibold text-ink">{preview.seats_open}</span>{' '}
           {preview.seats_open === 1 ? 'seat' : 'seats'} open
         </p>
       )}
@@ -167,12 +167,12 @@ function ActionableSignedIn({
   const seat = kind === 'claimable-seat'
   return (
     <div className="space-y-3">
-      <p className="text-[13px] font-medium leading-snug text-n-3">
+      <p className="text-[12px] font-medium leading-snug text-n-3">
         {seat
           ? 'Claim this seat to take over the team and start setting your lineup.'
           : 'Join this league to draft your team and play the season.'}
       </p>
-      <Button variant="blue" className="w-full" shadow disabled={submitting} onClick={onAction}>
+      <Button variant="blue" className="w-full" disabled={submitting} onClick={onAction}>
         {submitting ? (seat ? 'Claiming…' : 'Joining…') : seat ? 'Claim your seat' : 'Join league'}
       </Button>
     </div>
@@ -188,13 +188,13 @@ function ActionableSignedOut({ kind, token }: { kind: CardKind; token: string })
   const signInHref = `/login?redirect=${encodeURIComponent(`/join/${token}`)}`
   return (
     <div className="space-y-3">
-      <p className="text-[13px] font-medium leading-snug text-n-3">
+      <p className="text-[12px] font-medium leading-snug text-n-3">
         {seat
           ? 'Sign in or create an account to claim your seat.'
           : 'Sign in or create an account to join this league.'}
       </p>
       <div className="flex flex-col gap-2">
-        <Button variant="blue" className="w-full" shadow asChild>
+        <Button variant="blue" className="w-full" asChild>
           <Link href={signInHref}>Sign in</Link>
         </Button>
         <Button variant="stroke" className="w-full" asChild>
@@ -202,7 +202,7 @@ function ActionableSignedOut({ kind, token }: { kind: CardKind; token: string })
         </Button>
       </div>
       {seat && (
-        <p className="text-[11px] font-medium leading-snug text-n-3">
+        <p className="text-[11px] font-medium leading-snug text-n-6">
           Use the FieldScout account this invite was sent to. New here? Create your account with
           that email, then open this invite link again to claim your seat.
         </p>
@@ -216,7 +216,7 @@ function SuccessBody({ preview }: { preview: JoinPreview }) {
   return (
     <div className="flex flex-col items-center gap-2 py-6 text-center">
       <Icon name="check-circle" size={20} className="text-positive-strong" />
-      <p className="text-h5 text-ink">You&apos;re in</p>
+      <p className="text-h6 text-ink">You&apos;re in</p>
       <p className="text-[12px] font-medium text-n-3">
         Taking you to <span className="font-bold text-ink">{name}</span>…
       </p>
@@ -228,9 +228,9 @@ function TerminalBody({ kind, message }: { kind: CardKind; message?: string }) {
   const copy = cardCopy(kind, message)
   return (
     <div className="flex flex-col items-center gap-2 py-4 text-center" role="alert">
-      <Icon name={copy.icon} size={20} className="text-n-3" />
-      <p className="text-h5 text-ink">{copy.title}</p>
-      <p className="max-w-xs text-[12px] font-medium leading-snug text-n-3">{copy.message}</p>
+      <Icon name={copy.icon} size={20} className="text-n-6" />
+      <p className="text-h6 text-ink">{copy.title}</p>
+      <p className="max-w-xs text-[11px] font-medium leading-snug text-n-6">{copy.message}</p>
       <Button variant="stroke" size="sm" className="mt-2" asChild>
         <Link href="/app">Go to FieldScout</Link>
       </Button>
