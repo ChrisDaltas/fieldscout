@@ -135,7 +135,11 @@ select is_empty(
         -- explicit REVOKE): the audit log's INSERT, from the two client
         -- roles only. pgTAP 123 pins that exact grant matrix.
         and (t.tablename, r.rolname, p.priv) not in (('commissioner_actions', 'anon', 'INSERT'),
-                                                     ('commissioner_actions', 'authenticated', 'INSERT'))
+                                                     ('commissioner_actions', 'authenticated', 'INSERT'),
+        -- 185 (R1558, L.G1.2) — notifications UPDATE narrowed to the `read`
+        -- column for authenticated, removed for anon. pgTAP 133 R3–R3c pins it.
+                                                     ('notifications', 'anon', 'UPDATE'),
+                                                     ('notifications', 'authenticated', 'UPDATE'))
       order by 1, 2, 3 $$,
   'C3 every one of the SEVEN non-TRUNCATE privileges is still held by all three API roles on EVERY public table — the revoke removed nothing else (175 / F555: bar the audit log INSERT for anon / authenticated, named)'
 );

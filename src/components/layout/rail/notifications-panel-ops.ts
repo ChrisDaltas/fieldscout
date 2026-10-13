@@ -35,3 +35,9 @@ export function notificationSource(leagueId: string | null, leagueNames: Readonl
   if (leagueId === null) return 'Field Scout'
   return leagueNames.get(leagueId) ?? 'League'
 }
+
+/** A hand-written notice from the FieldScout team (M8 L.G1.2, migration 185):
+ *  the rail labels it "From FieldScout". */
+export function isFieldScoutNotice(n: Pick<NotificationItem, 'type' | 'data'>): boolean {
+  return n.type === 'operator_notice' && n.data?.from === 'fieldscout'
+}

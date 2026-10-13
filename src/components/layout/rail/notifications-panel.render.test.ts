@@ -30,7 +30,9 @@ vi.mock('@/lib/feature-flags', () => ({ featureFlags: { leagues: true, messages:
 import type { NotificationItem } from '@/hooks/use-notifications'
 
 import { NotificationsBody } from './notifications-panel'
-import { filterNotifications, notificationIcon, notificationLeagueId, notificationSource } from './notifications-panel-ops'
+import { notificationHref } from '@/components/notifications/notification-href'
+
+import { filterNotifications, isFieldScoutNotice, notificationIcon, notificationLeagueId, notificationSource } from './notifications-panel-ops'
 import { ResearchRail } from './research-rail'
 
 const html = (el: ReactElement, qc = new QueryClient()) =>
@@ -149,5 +151,33 @@ describe('notifications — failed read and filtered empty (R1500)', () => {
     expect(out).toContain('data-notif-empty')
     expect(out).toContain('Nothing from Work League in your recent notifications')
     expect(out).not.toContain('data-notif-error')
+  })
+})
+
+describe('notifications — FieldScout notices (M8 L.G1.2, migration 185)', () => {
+  const NOTICES: NotificationItem[] = [
+    { id: 'f1', type: 'operator_notice', title: 'Waivers are paused this week', body: 'A game was postponed.', data: { from: 'fieldscout', link: '/app/leagues/L1/waivers', league_id: 'L1' }, read: false, created_at: AT },
+    { id: 'f2', type: 'operator_notice', title: 'Maintenance tonight', body: null, data: { from: 'fieldscout' }, read: false, created_at: AT },
+  ]
+  const out = html(createElement(NotificationsBody, { notifications: [...NOTICES, ...N], loading: false, leagues: LEAGUES, filter: null, onFilter: () => {}, onOpen: () => {} }))
+  const row = (id: string) => out.slice(out.indexOf(`data-notif-row="${id}"`), out.indexOf('</button>', out.indexOf(`data-notif-row="${id}"`)))
+
+  it('a notice — league or platform — carries the "From FieldScout" label above its title', () => {
+    for (const id of ['f1', 'f2']) {
+      expect(row(id)).toMatch(/data-notif-from-fieldscout="true">From FieldScout<\/span>.*data-notif-title/)
+    }
+    expect(row('f1')).toMatch(/data-notif-source="true">Sunday League · /)
+    expect(row('f2')).toMatch(/data-notif-source="true">Field Scout · /)
+  })
+
+  it('no other notification gets the label', () => {
+    for (const id of ['n1', 'n2', 'n3']) expect(row(id)).not.toContain('data-notif-from-fieldscout')
+    expect(isFieldScoutNotice({ type: 'operator_notice', data: { from: 'someone' } })).toBe(false)
+    expect(isFieldScoutNotice({ type: 'league_trade_proposed', data: { from: 'fieldscout' } })).toBe(false)
+  })
+
+  it('a notice opens its in-app link (the row hands it to onOpen → notificationHref)', () => {
+    expect(notificationHref(NOTICES[0])).toBe('/app/leagues/L1/waivers')
+    expect(notificationHref(NOTICES[1])).toBeNull()
   })
 })
