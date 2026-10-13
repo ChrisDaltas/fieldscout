@@ -81,7 +81,7 @@ import { useListDropCommit } from './use-list-drop'
  *
  * | | |
  * | --- | --- |
- * | **LV.15** | the frame: outer stroke, near-black surface, the 44px→36px header with cover + name, drag anywhere on it, the 16px resize grip and its clamps, collapse, close, Escape, and the z-stack the host paints |
+ * | **LV.15** | the frame: near-black surface (v7: rounded, soft overlay lift, no stroke), the 44px→36px header with cover + name, drag anywhere on it, the 16px resize grip and its clamps, collapse, close, Escape, and the z-stack the host paints |
  * | **LV.16** | the **dark inversion wrapper**, the header's `gear` + `dots`, the 29px rows with their checkbox / `#N` / name / badge / stat cells, drag-reorder through the shared gap model, and the footer |
  * | **LV.17** | the states *inside* the window (loading / empty / failed / **unavailable**), the resize grip starting from the painted box, and the two controls that finally open one of these: `pop out` in `list-detail-hero.tsx` and in a Side by side column's `dots` menu |
  *
@@ -257,17 +257,17 @@ import { useListDropCommit } from './use-list-drop'
  * `use-draft-mode.ts` directly and never imports `drafted-fan-out.ts` — the same
  * boundary LV.14 pinned for the detail panel, now pinned for this file too.
  *
- * ## Elevation — the one surface in this build with a resting *stroke* instead
+ * ## Elevation — a true overlay, so a resting soft lift (v7)
  *
  * CLAUDE.md's elevation rule allows a true overlay a resting shadow, and a
- * floating window is the literal case it names — but the handoff overrides it
- * on its own terms: *"**No shadow** — a black offset shadow can't read on a
- * black window, so the stroke carries the lift."* So this window rests on a
- * **1px `n-3` stroke that shifts to `brand` on hover**, and carries no
- * `shadow-hard-*` at any state (pinned in `list-windows-host.test.ts`). The
- * LAW's 1.25px is its own 0.8× artefact — *"in a normal 1× app, use 1px
- * wherever this document says 1.25px"* (README §Fidelity) — and 1.25 × 0.8 is
- * 1 device pixel either way.
+ * floating window is the literal case it names. The LV.15 handoff had swapped
+ * that for a 1px `n-3` stroke shifting to `brand` on hover, because *"a black
+ * offset shadow can't read on a black window"*. The v7 restyle (2026-10-12)
+ * retires both halves of that: `shadow-hard-8` is now v7's soft, ring-edged
+ * lift, which does read on a dark panel, so the frame is `rounded-2xl`, has
+ * **no stroke**, and rests on `shadow-hard-8` — the only `shadow-hard-*`
+ * utility in this file (pinned in `list-windows-host.test.ts`). The host still
+ * paints no shadow.
  *
  * `src/components/ui/elevation-rule.test.ts` is **not touched**: it guards
  * `src/components/ui/**`, and a pop-out is not a `ui/` primitive (plan §6).
@@ -971,10 +971,11 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
             }
       }
       className={cn(
-        'fixed flex flex-col overflow-hidden rounded-sm border border-n-3 bg-n-2 text-white',
-        // Elevation: the stroke *is* the lift here — no shadow, ever. See the
-        // header of this file.
-        'transition-colors hover:border-brand',
+        // v7 frame: a 14px-radius dark panel with no stroke. Elevation: a
+        // floating window is a true overlay (CLAUDE.md → Elevation, overlay
+        // exception), so it carries the soft lift at rest — v7's soft shadow
+        // reads on a dark panel where the old black offset shadow could not.
+        'fixed flex flex-col overflow-hidden rounded-2xl bg-ink text-white shadow-hard-8',
         mobile
           ? // *"full width but only 60% of the screen height"*, resting on the
             // bottom tab bar — *"the bottom should be right at the top of the
@@ -995,7 +996,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
             // which would put ~10% of the sheet under the browser chrome.
             // Collapsed, the sheet is its header and nothing else, so the
             // height is dropped rather than animated.
-            cn('inset-x-0 bottom-16 w-full', !minimized && 'h-[60dvh]')
+            cn('inset-x-0 bottom-16 w-full rounded-b-none', !minimized && 'h-[60dvh]')
           : // A window wider or taller than the viewport can still be reached;
             // the stored size is untouched by this cap.
             'max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)]',
@@ -1013,7 +1014,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
           onPointerUp={onHeaderPointerUp}
           onPointerCancel={onHeaderPointerUp}
           className={cn(
-            'flex h-9 shrink-0 items-center gap-[7px] border-b border-ink pl-2 pr-1.5',
+            'flex h-9 shrink-0 items-center gap-[7px] border-b border-n-4 pl-2.5 pr-1.5',
             // Desktop only: the whole bar is the drag handle (design LAW). On a
             // phone the sheet is anchored, so a grab cursor would be a lie and
             // `touch-none` would take a gesture from the browser for nothing.
@@ -1023,9 +1024,9 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
           {cover ? (
             <ListCoverTile list={cover} players={coverPlayers} size={19} />
           ) : (
-            <span aria-hidden="true" className="h-[19px] w-[19px] shrink-0 rounded-sm bg-white/20" />
+            <span aria-hidden="true" className="h-[19px] w-[19px] shrink-0 rounded-md bg-white/20" />
           )}
-          <span className="mr-auto min-w-0 truncate text-[10px] font-semibold leading-tight">
+          <span className="mr-auto min-w-0 truncate text-[12px] font-semibold leading-tight tracking-[-0.01em]">
             {title}
           </span>
 
@@ -1098,16 +1099,16 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
             confidently does the wrong thing is the live-but-false affordance
             **R220** named; the honest version of this footer is no footer. */}
         {!minimized && !gone && (
-          <div className="flex h-8 shrink-0 items-center gap-2.5 border-t border-ink px-2">
+          <div className="flex h-9 shrink-0 items-center gap-2.5 border-t border-n-4 px-2.5">
             {/* views / comments (design LAW). Read-outs, not buttons: a pop-out
                 has no comments panel to open, and a control that does nothing is
                 the live-but-false affordance R220 found. */}
-            <span className="flex items-center gap-1 text-[9px] font-medium text-n-3" title="Views">
+            <span className="flex items-center gap-1 text-[10px] font-medium text-n-3" title="Views">
               <Icon name="eye" size={11} />
               <span className="fs-num">{formatCount(list?.view_count)}</span>
             </span>
             <span
-              className="flex items-center gap-1 text-[9px] font-medium text-n-3"
+              className="flex items-center gap-1 text-[10px] font-medium text-n-3"
               title="Comments"
             >
               <Icon name="comments" size={11} />
@@ -1131,7 +1132,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
               // `list-detail-hero.tsx` overrides it, and `text-[#000]` pins the
               // ink against the inversion rather than trusting a token to stay
               // black inside it.
-              className="ml-auto h-6 gap-1.5 bg-brand px-2.5 text-[9.5px] text-[#000] hover:bg-brand"
+              className="ml-auto bg-brand text-[#000] hover:bg-brand"
             >
               <Icon name="send" size={11} /> Share
             </Button>
@@ -1292,7 +1293,7 @@ const WindowChromeButton = React.forwardRef<
       title={label}
       aria-label={label}
       {...props}
-      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-white transition-colors hover:bg-white/[0.09]"
+      className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-pill text-white transition-colors hover:bg-white/[0.09]"
     >
       {children}
     </button>
@@ -1370,7 +1371,7 @@ function ListWindowRows({
   return (
     <div style={{ minWidth }}>
       {/* 28 × 0.8, sticky, over the 7% wash the prototype gives it. */}
-      <div className="sticky top-0 z-[3] flex h-[22px] items-center gap-1.5 border-b border-ink bg-white/[0.07] px-2 text-[8px] font-medium text-n-3">
+      <div className="sticky top-0 z-[3] flex h-[22px] items-center gap-1.5 border-b border-n-4 bg-white/[0.07] px-2 text-[9px] font-semibold text-n-3">
         <span className="w-[14px] shrink-0" />
         <span className="w-[21px] shrink-0">#</span>
         <span className="min-w-0 flex-1">Player</span>
@@ -1386,17 +1387,21 @@ function ListWindowRows({
         return (
           <div key={bucket.key} data-drop-bucket={bucket.key}>
             {heading !== null && (
-              <div
-                className={cn(
-                  'flex h-[21px] items-center gap-1.5 border-b border-ink px-2 text-[9px] font-bold',
-                  bucket.className,
-                )}
-              >
-                <span className="min-w-0 truncate">{heading}</span>
+              // v7 tier row: the band's colour rides a pill on a hairline row,
+              // the way the light surfaces' `BucketHeader` now carries it.
+              <div className="flex h-[26px] items-center gap-1.5 border-b border-n-4 px-2">
+                <span
+                  className={cn(
+                    'inline-flex h-[16px] min-w-0 items-center truncate rounded-pill px-1.5 text-[9px] font-bold',
+                    bucket.className,
+                  )}
+                >
+                  {heading}
+                </span>
                 {/* The prototype's band count, which is the number that helps in
                     a window this narrow — the running spend is the wide
                     surfaces' figure. */}
-                <span className="fs-num ml-auto text-[8px] font-medium opacity-85">
+                <span className="fs-num ml-auto text-[9px] font-semibold text-n-3">
                   {bucket.entries.length}
                 </span>
               </div>
@@ -1440,7 +1445,7 @@ function ListWindowRows({
               />
             )}
             {bucket.entries.length === 0 && (
-              <p className="border-b border-n-4 px-2 py-2.5 text-[9px] font-medium text-n-3">
+              <p className="border-b border-n-4 px-2 py-2.5 text-[10px] font-medium text-n-3">
                 Nothing in this section yet.
               </p>
             )}
@@ -1507,7 +1512,7 @@ function ListWindowRow({
           and stops there (D12). `border-white/75` is the LAW's stroke for this
           surface, and the only per-instance class the inversion needs. */}
       <DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} className="border-white/75" />
-      <span className="fs-num w-[21px] shrink-0 text-[9px] font-medium text-n-3">#{rank}</span>
+      <span className="fs-num w-[21px] shrink-0 text-[9px] font-semibold text-n-3">#{rank}</span>
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <PlayerName
           name={entry.player.full_name}
@@ -1521,7 +1526,7 @@ function ListWindowRow({
       {stats.map((stat) => (
         <span
           key={stat.id}
-          className="fs-num w-[48px] shrink-0 text-right text-[9px] font-medium"
+          className="fs-num w-[48px] shrink-0 text-right text-[10px] font-semibold"
         >
           {formatStat(stat, entry)}
         </span>

@@ -72,11 +72,11 @@ export function ListCommentsTab({
   return (
     <div className="flex max-w-[576px] flex-col gap-3">
       {!commentsEnabled ? (
-        <p className="border border-ink bg-white px-2.5 py-2 text-[11px] font-semibold text-n-3">
+        <p className="rounded-xl bg-surface-sunken px-3 py-2.5 text-[11px] font-medium text-n-3">
           Comments are turned off on this list.
         </p>
       ) : !signedIn ? (
-        <div className="flex flex-wrap items-center gap-2 border border-ink bg-white px-2.5 py-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2">
           <span className="mr-auto text-[11px] font-medium text-n-3">
             Sign in to join the discussion.
           </span>
@@ -85,11 +85,11 @@ export function ListCommentsTab({
           </Button>
         </div>
       ) : (
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <UserAvatar
             src={viewer.avatarUrl}
             name={viewer.username}
-            className="mt-0.5 h-[21px] w-[21px] shrink-0"
+            className="h-6 w-6 shrink-0"
             fallbackClassName="text-[9px]"
           />
           <Input
@@ -101,54 +101,54 @@ export function ListCommentsTab({
             }}
             placeholder="Add a comment…"
             aria-label="Add a comment"
-            className="h-btn-sm min-w-0 flex-1 text-[12px]"
+            className="h-input min-w-0 flex-1 rounded-pill px-3"
           />
           <Button
             variant="blue"
-            size="sm"
+            size="md"
             onClick={post}
             disabled={!text.trim() || addComment.isPending}
           >
-            <Icon name="send" size={13} /> Post
+            <Icon name="send" size={12} /> Post
           </Button>
         </div>
       )}
 
       {addComment.isError && (
-        <p className="text-[11px] font-semibold text-negative-strong">
+        <p className="text-[11px] font-medium text-negative-strong">
           Could not post that comment. {addComment.error.message}
         </p>
       )}
 
       {comments.isPending && (
-        <p className="text-[11px] font-semibold text-n-3">Loading comments…</p>
+        <p className="py-4 text-center text-[11px] font-medium text-n-6">Loading comments…</p>
       )}
 
       {comments.isError && (
-        <p className="text-[11px] font-semibold text-negative-strong">
+        <p className="text-[11px] font-medium text-negative-strong">
           Comments could not be loaded. {comments.error.message}
         </p>
       )}
 
       {comments.data?.comments.map((comment) => (
-        <div key={comment.id} className="flex gap-2">
+        <div key={comment.id} className="flex gap-2.5 border-t border-n-4 pt-3">
           <UserAvatar
             src={comment.author.avatar_url}
             name={comment.author.username}
-            className="mt-0.5 h-[21px] w-[21px] shrink-0"
+            className="mt-0.5 h-6 w-6 shrink-0"
             fallbackClassName="text-[9px]"
           />
           <div className="min-w-0">
             <div className="flex items-baseline gap-1.5">
-              <UsernameLink username={comment.author.username} className="text-[11px] font-bold text-ink" />
-              <span className="text-[10px] font-medium text-n-3">
+              <UsernameLink username={comment.author.username} className="text-[11px] font-semibold text-ink" />
+              <span className="text-[10px] font-medium text-n-6">
                 {formatRelative(comment.created_at)}
               </span>
             </div>
-            <p className="mt-0.5 text-[11.5px] font-medium leading-snug">{comment.body}</p>
+            <p className="mt-0.5 text-[12px] font-medium leading-snug text-n-2">{comment.body}</p>
             <span
               title="Comment likes are not stored yet"
-              className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-n-3"
+              className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-n-6"
             >
               <Icon name="like" size={11} />
               <span className="fs-num">0</span>
@@ -158,7 +158,7 @@ export function ListCommentsTab({
       ))}
 
       {comments.data && comments.data.comments.length === 0 && (
-        <p className="text-[11px] font-semibold text-n-3">No comments yet.</p>
+        <p className="py-4 text-center text-[11px] font-medium text-n-6">No comments yet.</p>
       )}
     </div>
   )

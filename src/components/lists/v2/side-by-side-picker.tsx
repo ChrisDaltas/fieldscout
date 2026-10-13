@@ -76,8 +76,8 @@ import { ListCoverTile } from './cover-tile'
  * | --- | --- |
  * | grid `minmax(232px, 1fr)`, gap 10 | `minmax(186px, 1fr)`, `gap-2` |
  * | 30px cover | `ListCoverTile size={24}` — the shared cover, never a second one |
- * | name 13/700, `N players` 11/500 mono | 10.5/700, 9/500 mono |
- * | heading 18/700, sub-line 13/500, max-width 520 | 14.5/700, 10.5/500, 416px |
+ * | name 13/700, `N players` 11/500 mono | v7 literal px: 12/700, 10/600 grey |
+ * | heading 18/700, sub-line 13/500, max-width 520 | v7 literal px: 15/700, 11/500, 416px |
  * | container max-width 720 | 576px |
  *
  * The **16px checkbox stays 16px**: `DraftedCheckbox` in `list-row-parts.tsx`
@@ -86,10 +86,11 @@ import { ListCoverTile } from './cover-tile'
  * smaller end of a comfortable hit target even though the whole card is the
  * control.
  *
- * Cards **rest flat with the 1px ink border and lift on hover only**
+ * Cards **rest flat on the v7 `border-n-4` hairline and lift on hover only**
  * (CLAUDE.md → Elevation; design LAW §Geometry). Selected is a *resting*
  * condition, so it is carried by fill and border — `bg-accent-soft` /
- * `border-accent` — and never by a shadow.
+ * `border-accent`, v7's selected-source-chip look (accent-soft fill, 1px accent
+ * edge, `text-accent-deep`) — and never by a shadow.
  */
 export function SideBySidePicker({
   lists,
@@ -134,14 +135,14 @@ export function SideBySidePicker({
   return (
     <div className="flex max-w-[576px] flex-col gap-3">
       <div>
-        <h4 className="text-[14.5px] font-bold leading-tight tracking-[-0.01em]">
+        <h4 className="text-[15px] font-bold leading-tight tracking-[-0.02em] text-ink">
           Pick the lists to compare
         </h4>
         {/* The design's own sub-line, verbatim. "Every column updates" is a
             promise about the comparison, not about your account: the fan-out
             reaches every column on screen that holds the player and no list
             outside the comparison (LV.14, D12 — `drafted-fan-out.ts`). */}
-        <p className="mt-1 max-w-[416px] text-[10.5px] font-medium leading-snug text-n-3">
+        <p className="mt-1 max-w-[416px] text-[11px] font-medium leading-snug text-n-3">
           They show up as columns across the page. Mark players off as they go in your draft and
           every column updates.
         </p>
@@ -154,17 +155,20 @@ export function SideBySidePicker({
           aria-label="Loading your lists"
         >
           {[0, 1, 2, 3, 4, 5].map((index) => (
-            <div key={index} className="flex animate-pulse items-center gap-2 border border-n-4 bg-white p-2">
-              <span className="h-4 w-4 shrink-0 rounded-sm bg-n-4" />
-              <span className="h-6 w-6 shrink-0 rounded-sm bg-n-4" />
-              <span className="h-2.5 flex-1 rounded-sm bg-n-4" />
+            <div
+              key={index}
+              className="flex animate-pulse items-center gap-2 rounded-xl border border-n-4 bg-white p-2"
+            >
+              <span className="h-4 w-4 shrink-0 rounded-sm bg-surface-control" />
+              <span className="h-6 w-6 shrink-0 rounded-md bg-surface-control" />
+              <span className="h-2.5 flex-1 rounded-md bg-surface-control" />
             </div>
           ))}
         </div>
       ) : lists.length === 0 ? (
         /* The design package shows no empty picker; this extends the language
            per CLAUDE.md rather than dropping the state. */
-        <p className="border border-dashed border-ink px-3 py-8 text-center text-[11px] font-semibold text-n-3">
+        <p className="rounded-2xl bg-surface-sunken px-3 py-8 text-center text-[11px] font-medium text-n-6">
           There is nothing to compare yet. Make a list, or save someone else&rsquo;s, and it shows
           up here.
         </p>
@@ -187,25 +191,32 @@ export function SideBySidePicker({
                   // Flat at rest, lifts under the cursor. The selected state is
                   // fill + border, never a shadow — a resting condition is not
                   // an interaction (CLAUDE.md → Elevation).
-                  'flex items-center gap-2 border p-2 text-left transition-shadow hover:shadow-hard-4',
-                  on ? 'border-accent bg-accent-soft' : 'border-ink bg-white',
+                  'flex items-center gap-2 rounded-xl border p-2 text-left transition-[background-color,border-color,box-shadow] hover:shadow-hard-4',
+                  on ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white',
                 )}
               >
                 <span
                   aria-hidden="true"
                   className={cn(
-                    'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border-1 border-ink transition-colors',
-                    on ? 'bg-accent' : 'bg-white',
+                    // The v7 checkbox look (`ui/checkbox`): a grey inset ring
+                    // at rest, a solid accent fill once ticked.
+                    'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors',
+                    on ? 'bg-accent' : 'bg-white shadow-ring-control',
                   )}
                 >
                   {on && <Icon name="check" size={10} className="text-white" />}
                 </span>
                 <ListCoverTile list={list} players={list.first_players} size={24} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[10.5px] font-bold leading-tight">
+                  <span
+                    className={cn(
+                      'block truncate text-[12px] font-bold leading-tight',
+                      on ? 'text-accent-deep' : 'text-ink',
+                    )}
+                  >
                     {list.title}
                   </span>
-                  <span className="mt-px block font-mono text-[9px] font-medium leading-tight text-n-3">
+                  <span className="fs-num mt-0.5 block text-[10px] font-semibold leading-tight text-n-6">
                     {list.player_count ?? 0} players
                   </span>
                 </span>
@@ -221,7 +232,6 @@ export function SideBySidePicker({
             next step is visible before you have taken it. */}
         <Button
           variant="blue"
-          shadow
           disabled={chosen.length === 0}
           onClick={() => onShow(chosen)}
         >

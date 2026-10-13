@@ -176,7 +176,7 @@ describe('LV.12 — elevation and composition', () => {
   })
 
   it('selected is carried by fill and border, never by a shadow', () => {
-    expect(read(PICKER)).toMatch(/on \? 'border-accent bg-accent-soft' : 'border-ink bg-white'/)
+    expect(read(PICKER)).toMatch(/on \? 'border-accent bg-accent-soft' : 'border-n-4 bg-white'/)
   })
 
   it('the cover is the shared CoverTile, not a second implementation (D11)', () => {

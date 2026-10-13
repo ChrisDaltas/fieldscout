@@ -87,10 +87,10 @@ export function ListToolbar({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="inline-flex h-btn-sm shrink-0 items-center gap-1 whitespace-nowrap pr-1 text-[16px] font-bold text-ink transition-colors hover:text-n-3"
+            className="inline-flex h-btn-sm shrink-0 items-center gap-1 whitespace-nowrap pr-1 text-[15px] font-bold tracking-[-0.02em] text-ink transition-colors hover:text-n-3"
           >
             {activeOrg.label}
-            <Icon name="arrow-bottom" size={16} />
+            <Icon name="arrow-bottom" size={14} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[136px]">
@@ -125,7 +125,7 @@ export function ListToolbar({
       <StatsPicker cols={cols} onToggleCol={onToggleCol} />
 
       {showBudget && (
-        <label className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-n-3">
+        <label className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold text-n-6">
           Budget
           <Input
             type="number"
@@ -134,7 +134,7 @@ export function ListToolbar({
             value={budget}
             onChange={(event) => onBudgetChange(event.target.valueAsNumber)}
             aria-label="Auction budget"
-            className="h-btn-sm w-[68px] px-1.5 text-[11px]"
+            className="h-btn-sm w-[68px] text-[11px]"
           />
         </label>
       )}
@@ -165,8 +165,10 @@ function StatsPicker({
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="stroke" size="sm" className="shrink-0">
-          <Icon name="gear" size={13} /> Stats
-          <span className="fs-num ml-0.5 opacity-70">{cols.length}</span>
+          <Icon name="gear" size={11} /> Stats
+          <span className="fs-num ml-0.5 inline-flex h-[15px] min-w-[17px] items-center justify-center rounded-sm bg-white px-1 text-[9px] font-bold text-n-2">
+            {cols.length}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[212px] p-0">
@@ -200,10 +202,10 @@ export function StatsCatalog({
 }) {
   return (
     <>
-      <div className="border-b border-n-4 px-2.5 py-1.5">
-        <span className="fs-overline text-n-3">Show stats</span>
+      <div className="border-b border-n-4 px-3 py-2">
+        <span className="text-[10px] font-semibold text-n-6">Show stats</span>
       </div>
-      <div className="py-1">
+      <div className="p-1">
         {STAT_CATALOG.map((stat) => {
           const checked = cols.includes(stat.id)
           return (
@@ -213,23 +215,23 @@ export function StatsCatalog({
               role="menuitemcheckbox"
               aria-checked={checked}
               onClick={() => onToggleCol(stat.id)}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] font-medium transition-colors hover:bg-accent-soft"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-ink transition-colors hover:bg-surface-sunken"
             >
               <span
                 className={cn(
-                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
-                  checked ? 'border-accent bg-accent text-accent-foreground' : 'border-ink bg-white',
+                  'flex size-[14px] shrink-0 items-center justify-center rounded-sm transition-colors',
+                  checked ? 'bg-accent text-accent-foreground' : 'bg-white shadow-ring-control',
                 )}
               >
-                {checked && <Icon name="check" size={12} />}
+                {checked && <Icon name="check" size={10} />}
               </span>
               <span className="flex-1">{stat.full}</span>
-              <span className="fs-num text-[10px] text-n-3">{stat.label}</span>
+              <span className="fs-num text-[10px] font-medium text-n-6">{stat.label}</span>
             </button>
           )
         })}
       </div>
-      <p className="border-t border-n-4 px-2.5 py-1.5 text-[10px] font-medium leading-snug text-n-3">
+      <p className="border-t border-n-4 px-3 py-2 text-[10px] font-medium leading-snug text-n-6">
         Cards view shows the first three.
       </p>
     </>
@@ -292,32 +294,32 @@ export function AddPlayersPopover({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button variant="blue" size="sm" shadow>
-          <Icon name="plus" size={13} /> Add players
+        <Button variant="blue" size="sm">
+          <Icon name="plus" size={11} /> Add players
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[268px] p-0">
-        <div className="border-b border-n-4 p-2">
+        <div className="border-b border-n-4 p-2.5">
           <Input
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search players…"
             aria-label="Search players"
-            className="h-btn-sm text-[12px]"
+            className="h-input text-[11px]"
           />
         </div>
-        <div className="max-h-[240px] overflow-y-auto py-1">
+        <div className="max-h-[240px] overflow-y-auto p-1">
           {failed && (
-            <p className="px-3 py-2 text-[11px] font-semibold text-negative-strong">
+            <p className="px-2 py-2 text-[11px] font-medium text-negative-strong">
               Could not load the player pool. Try again in a moment.
             </p>
           )}
           {!failed && pool === null && (
-            <p className="px-3 py-2 text-[11px] font-semibold text-n-3">Loading…</p>
+            <p className="px-2 py-2 text-[11px] font-medium text-n-6">Loading…</p>
           )}
           {!failed && pool !== null && matches.length === 0 && (
-            <p className="px-3 py-2 text-[11px] font-semibold text-n-3">No players found.</p>
+            <p className="px-2 py-2 text-[11px] font-medium text-n-6">No players found.</p>
           )}
           {matches.map((player) => {
             const added = addedIds.has(player.id)
@@ -327,10 +329,10 @@ export function AddPlayersPopover({
                 type="button"
                 disabled={added}
                 onClick={() => onAdd(player)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] font-medium transition-colors hover:bg-accent-soft disabled:opacity-45"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-semibold text-ink transition-colors hover:bg-surface-sunken disabled:opacity-45"
               >
                 <span className="min-w-0 flex-1 truncate">{player.full_name}</span>
-                <span className="fs-num shrink-0 text-[10px] text-n-3">
+                <span className="fs-num shrink-0 text-[10px] font-medium text-n-6">
                   {player.position ?? '—'} {player.team ?? ''}
                 </span>
                 {added ? <Icon name="check" size={12} className="text-accent" /> : null}

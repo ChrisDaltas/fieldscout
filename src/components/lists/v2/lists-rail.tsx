@@ -8,15 +8,19 @@ import { ListCoverTile } from './cover-tile'
 import { formatCreated } from './list-stats'
 
 /**
- * Lists v2 — the rail (`screens/list-rail-list-view.png`).
+ * Lists v2 — the rail, drawn as v7's context panel (`FieldScout Next v7`,
+ * the Lists panel).
  *
- * 160px wide (the design's 200px at this app's ×0.8 scale), sticky, and sharing
- * one edge with the detail panel — its right border is removed so the two read
- * as a single surface rather than two cards with a seam.
+ * A white column with a hairline right edge on desktop (a hairline card when
+ * it stacks above the open list on a phone). Rows are v7 nav rows: 31px, an
+ * 8px-rounded hit area, the cover tile in the glyph slot, an 11px title and a
+ * 10px grey player count on the right. The list's age moves to the row's
+ * tooltip — v7 rows carry one meta value, not a second line.
  *
- * A selected row takes the accent-soft wash **and** a 3px accent left border;
- * every other row keeps a transparent 3px border so selecting one never shifts
- * the text sideways. There is no per-row menu, by design.
+ * The selected row is a **fill** (`bg-surface-selected`), never a shadow or a
+ * coloured edge; other rows take the sunken fill on hover. The column itself
+ * does not lift — it is a container, not a control (CLAUDE.md, "Elevation").
+ * There is no per-row menu, by design.
  */
 export function ListsRail({
   lists,
@@ -45,67 +49,88 @@ export function ListsRail({
   return (
     <div
       className={cn(
-        // `.fs-lift` per docs/design/lists/README.md §Geometry: flat at rest,
-        // shadow on hover. The rail is a list of clickable rows, so the lift
-        // is an affordance for the thing you are about to click.
-        'flex flex-col overflow-y-auto border border-ink bg-white transition-shadow hover:shadow-hard-4 lg:sticky lg:top-3 lg:max-h-[calc(100vh-120px)] lg:border-r-0',
+        'flex flex-col gap-px overflow-y-auto rounded-2xl border border-n-4 bg-white p-[5px] [scrollbar-width:none]',
+        'lg:sticky lg:top-3 lg:max-h-[calc(100vh-120px)] lg:rounded-none lg:border-0 lg:border-r lg:py-0 lg:pl-0 lg:pr-2.5',
         className,
       )}
     >
       {!loaded && (
-        <div className="flex flex-col gap-2 p-2" aria-busy="true" aria-label="Loading your lists">
+        <div className="flex flex-col gap-px" aria-busy="true" aria-label="Loading your lists">
           {[0, 1, 2, 3].map((row) => (
-            <div key={row} className="flex animate-pulse items-center gap-2">
-              <span className="h-6 w-6 shrink-0 rounded-sm bg-n-4" />
-              <span className="h-2.5 flex-1 rounded-sm bg-n-4" />
+            <div key={row} className="flex h-[31px] animate-pulse items-center gap-2 px-2">
+              <span className="h-5 w-5 shrink-0 rounded bg-surface-control" />
+              <span className="h-2.5 flex-1 rounded-md bg-surface-control" />
             </div>
           ))}
         </div>
       )}
       {loaded && lists.length === 0 && (
-        <p className="px-3 py-5 text-center text-[11px] font-semibold text-n-3">{emptyMessage}</p>
+        <p className="px-3 py-5 text-center text-[11px] font-medium text-n-6">{emptyMessage}</p>
       )}
-      {lists.map((list) => {
-        const active = list.id === selectedId
-        return (
-          <button
-            key={list.id}
-            type="button"
-            onClick={() => onSelect(list)}
-            aria-current={active ? 'true' : undefined}
-            // The visible title is inside a nested span next to an aria-hidden
-            // cover tile; naming the control explicitly keeps it announceable.
-            aria-label={list.title}
-            className={cn(
-              'flex w-full items-center gap-2 border-b border-n-4 py-2 pl-2 pr-2.5 text-left transition-colors last:border-b-0',
-              active
-                ? 'border-l-[3px] border-l-accent bg-accent-soft'
-                : 'border-l-[3px] border-l-transparent hover:bg-accent-soft',
-            )}
-          >
-            <ListCoverTile list={list} players={list.first_players} size={24} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[10.5px] font-bold leading-tight">
-                {list.title}
-                {/* Pinned. The control lives in the hero's dots menu (LV.7);
-                    this is the state it produces, so a pin taken in Cards mode
-                    is legible here too. */}
-                {list.is_favorited && (
-                  <Icon
-                    name="marker"
-                    size={9}
-                    className="ml-1 inline-block text-accent"
-                    aria-label="Pinned"
-                  />
-                )}
-              </span>
-              <span className="mt-px block truncate text-[9px] font-medium leading-tight text-n-3">
-                {list.player_count ?? 0} players · {formatCreated(list.created_at)}
-              </span>
-            </span>
-          </button>
-        )
-      })}
+      {groupRows(lists).map((group) => (
+        <div key={group.label} className="flex flex-col gap-px">
+          <span className="flex h-[26px] shrink-0 items-center px-2 text-[10px] font-semibold text-n-3">
+            {group.label}
+          </span>
+          {group.lists.map((list) => renderRow(list))}
+        </div>
+      ))}
     </div>
   )
+
+  function renderRow(list: ListWithTags) {
+    const active = list.id === selectedId
+    return (
+      <button
+        key={list.id}
+        type="button"
+        onClick={() => onSelect(list)}
+        aria-current={active ? 'true' : undefined}
+        // The visible title is inside a nested span next to an aria-hidden
+        // cover tile; naming the control explicitly keeps it announceable.
+        aria-label={list.title}
+        title={`${list.player_count ?? 0} players · ${formatCreated(list.created_at)}`}
+        className={cn(
+          'flex h-[31px] w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-ink transition-colors',
+          active ? 'bg-surface-selected' : 'hover:bg-surface-sunken',
+        )}
+      >
+        <ListCoverTile list={list} players={list.first_players} size={20} />
+        <span className="min-w-0 flex-1 truncate text-[11px] leading-tight">
+          <span className={active ? 'font-semibold' : 'font-medium'}>
+            {list.title}
+            {/* Pinned. The control lives in the hero's dots menu (LV.7);
+                this is the state it produces, so a pin taken in Cards mode
+                is legible here too. */}
+            {list.is_favorited && (
+              <Icon
+                name="marker"
+                size={9}
+                className="ml-1 inline-block text-accent"
+                aria-label="Pinned"
+              />
+            )}
+          </span>
+        </span>
+        <span className="fs-num shrink-0 text-[10px] font-medium text-n-6">
+          {list.player_count ?? 0}
+        </span>
+      </button>
+    )
+  }
+}
+
+/**
+ * v7 groups the panel's rows under small grey headers. The rail is handed one
+ * tab's lists, so the grouping is read off the rows themselves: `owner` is set
+ * only on a list someone else owns (the Saved tab). Order within a group is the
+ * order the page passed in.
+ */
+function groupRows(lists: ListWithTags[]): { label: string; lists: ListWithTags[] }[] {
+  const own = lists.filter((list) => !list.owner)
+  const saved = lists.filter((list) => Boolean(list.owner))
+  return [
+    { label: 'My lists', lists: own },
+    { label: 'Saved', lists: saved },
+  ].filter((group) => group.lists.length > 0)
 }

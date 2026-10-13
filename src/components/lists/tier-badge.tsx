@@ -34,7 +34,7 @@ export function TierBadge({ tier, className }: TierBadgeProps) {
   return (
     <span
       className={cn(
-        'fs-num inline-flex h-7 w-7 items-center justify-center rounded-sm border border-ink text-sm font-extrabold',
+        'fs-num inline-flex h-7 w-7 items-center justify-center rounded text-[13px] font-bold',
         bucketBadgeClass(tier),
         className,
       )}

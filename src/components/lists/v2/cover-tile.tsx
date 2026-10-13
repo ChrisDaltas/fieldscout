@@ -104,21 +104,21 @@ export function ListCoverTile({ list, players, size = 24, className }: ListCover
 }
 
 /** Edge length of one stacked headshot, and how far each tucks under the last. */
-const STACK_CHIP = 24
+const STACK_CHIP = 26
 const STACK_OVERLAP = 8
 
 /**
  * The gallery card's cover: a full-bleed position-group band carrying the top
  * four headshots as an overlapping stack in the bottom-right.
  *
- * **The arrangement, and why.** Four 24px squares in a row overlapping by 8px
- * occupy 72px — a quarter of the 214px card, so the cluster reads as a motif in
- * the corner rather than a row of thumbnails filling the band. The stack is
+ * **The arrangement, and why.** Four 26px headshots in a row overlapping by
+ * 8px occupy 80px — well under half the card, so the cluster reads as a motif
+ * in the corner rather than a row of thumbnails filling the band. The stack is
  * **left-on-top** (`z-index` descending with list order): the list's #1 player
  * is whole and every player behind him is progressively occluded, which is the
- * same ordering the list itself asserts. Each chip carries the design's 1px
- * `border-ink` and `rounded-sm`, so the cluster stays in the hard-edged
- * language rather than turning into the round avatar stack of other apps.
+ * same ordering the list itself asserts. v7 draws people as circles: each chip
+ * is round with a 2px white ring, which is what separates one overlapping
+ * headshot from the next (v7's gallery headshot stack).
  *
  * Under four players it simply draws fewer chips — the corner stays anchored
  * because the stack is right-aligned, so one headshot sits exactly where the
@@ -139,8 +139,8 @@ export function ListCoverBand({
   return (
     <span
       className={cn(
-        'relative block h-[93px] overflow-hidden border-b border-ink',
-        list.thumbnail_url ? 'bg-n-4' : coverBg(list),
+        'relative block h-[93px] overflow-hidden',
+        list.thumbnail_url ? 'bg-surface-control' : coverBg(list),
         className,
       )}
       aria-hidden="true"
@@ -157,7 +157,7 @@ export function ListCoverBand({
           <span className="absolute bottom-[8px] right-[10px] flex items-end">
             {top4.length === 0 ? (
               <span
-                className="inline-flex items-center justify-center rounded-sm border border-dashed border-white/45 bg-white/10 text-white/60"
+                className="inline-flex items-center justify-center rounded-full border border-dashed border-white/45 bg-white/10 text-white/60"
                 style={{ width: STACK_CHIP, height: STACK_CHIP }}
               >
                 <Icon name="plus" size={12} />
@@ -199,11 +199,11 @@ function StackedHeadshot({
   // `Avatar` (a `<span>`, so it stays legal inside this band's span tree) is
   // used for the same reason the rail tile's quadrant uses it: it falls back to
   // initials when the image *fails*, not merely when the URL is absent. Its
-  // default chrome already matches this chip — `rounded-sm border border-ink` —
-  // so only the fill and the stacking geometry are supplied here.
+  // default chrome is already v7's round headshot; the white ring, the team
+  // fill and the stacking geometry are supplied here.
   return (
     <Avatar
-      className="shrink-0"
+      className="shrink-0 rounded-full ring-2 ring-white"
       style={{
         width: STACK_CHIP,
         height: STACK_CHIP,

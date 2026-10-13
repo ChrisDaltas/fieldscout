@@ -31,8 +31,9 @@ export function BuilderListPanel({ players, onRemove }: BuilderListPanelProps) {
     <div
       ref={setNodeRef}
       className={cn(
-        'flex h-full flex-col rounded-sm border border-ink bg-white transition-colors',
-        isOver && 'bg-accent-soft',
+        'flex h-full flex-col rounded-2xl border bg-white transition-colors',
+        // A live drop target says so with fill + border, never a lift.
+        isOver ? 'border-accent bg-accent-soft' : 'border-n-4',
       )}
     >
       {players.length === 0 ? (
@@ -40,7 +41,7 @@ export function BuilderListPanel({ players, onRemove }: BuilderListPanelProps) {
       ) : (
         <div className="flex-1 overflow-y-auto p-2">
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-            <ul className="space-y-0.5">
+            <ul className="flex flex-col">
               {players.map((player, i) => (
                 <SortableRow
                   key={player.id}
@@ -60,12 +61,12 @@ export function BuilderListPanel({ players, onRemove }: BuilderListPanelProps) {
 function EmptyDropZone() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-sm border border-ink bg-n-4 text-ink">
+      <span className="flex h-11 w-11 items-center justify-center rounded-pill bg-surface-control text-n-3">
         <Icon name="plus-circle" size={16} />
       </span>
       <div>
-        <p className="text-h6">Drop players here</p>
-        <p className="mt-1 text-[12px] font-medium text-n-3">
+        <p className="text-[14px] font-bold text-ink">Drop players here</p>
+        <p className="mt-1 text-[11px] font-medium text-n-3">
           Drag from the left, or click the + on a player row to add.
         </p>
       </div>
