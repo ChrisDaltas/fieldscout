@@ -24,11 +24,11 @@ export function TopScoutsCard() {
       {isLoading ? (
         <div className="space-y-2 p-[13px]">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
+            <Skeleton key={i} className="h-8 w-full rounded-md bg-surface-control" />
           ))}
         </div>
       ) : !scouts || scouts.length === 0 ? (
-        <p className="p-[19px] text-center text-[11px] font-medium text-n-3">
+        <p className="p-[19px] text-center text-[11px] font-medium text-n-6">
           No scouts on the board yet.
         </p>
       ) : (
@@ -38,9 +38,9 @@ export function TopScoutsCard() {
             return (
               <div
                 key={scout.id}
-                className="relative flex items-center gap-2.5 px-[13px] py-2 transition-colors hover:bg-n-4/50"
+                className="relative flex items-center gap-2.5 px-[13px] py-2 transition-colors hover:bg-surface-sunken"
               >
-                <span className="fs-num w-4 shrink-0 text-[11px] font-extrabold text-n-3">
+                <span className="fs-num w-4 shrink-0 text-[11px] font-bold text-n-6">
                   {i + 1}
                 </span>
                 <UserAvatar
@@ -51,9 +51,9 @@ export function TopScoutsCard() {
                 <div className="min-w-0 flex-1">
                   <UsernameLink
                     username={scout.username}
-                    className="block truncate text-[10px] font-extrabold text-ink after:absolute after:inset-0"
+                    className="block truncate text-[11px] font-bold text-ink after:absolute after:inset-0"
                   />
-                  <div className="fs-num text-[9px] font-semibold text-n-3">
+                  <div className="fs-num text-[10px] font-semibold text-n-6">
                     {scout.cred_score.toLocaleString()} cred
                   </div>
                 </div>

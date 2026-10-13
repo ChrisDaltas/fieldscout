@@ -38,15 +38,18 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
       </CardHeader>
       <CardContent>
         {queue.length === 0 ? (
-          <p className="text-[11px] font-medium text-n-3">
+          <p className="py-6 text-center text-[11px] font-medium text-n-6">
             Add players from best available so a plan is ready when the
             clock hits you.
           </p>
         ) : (
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col">
             {queue.map((player, i) => (
-              <div key={player.id} className="group flex items-center gap-2">
-                <span className="fs-num w-4 shrink-0 text-[11px] font-semibold text-n-3">
+              <div
+                key={player.id}
+                className="group flex h-[42px] items-center gap-2 rounded-lg px-1.5 transition-colors hover:bg-surface-sunken"
+              >
+                <span className="fs-num w-4 shrink-0 text-[11px] font-medium text-n-6">
                   {i + 1}
                 </span>
                 <Avatar className="h-6 w-6 shrink-0">
@@ -63,7 +66,7 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
                 <button
                   type="button"
                   onClick={() => openPlayer(player.id)}
-                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-[11px] font-extrabold leading-tight hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-[12px] font-semibold leading-tight hover:text-accent-strong hover:underline hover:underline-offset-2 focus:outline-none focus-visible:underline"
                 >
                   {player.full_name}
                 </button>
@@ -77,7 +80,7 @@ export function DraftQueueCard({ queue, onRemove }: DraftQueueCardProps) {
                   type="button"
                   onClick={() => onRemove(player.id)}
                   aria-label={`Remove ${player.full_name} from Targets`}
-                  className="shrink-0 rounded-sm p-0.5 text-n-3 opacity-0 transition-all hover:bg-negative-soft hover:text-negative-strong focus-visible:opacity-100 group-hover:opacity-100"
+                  className="shrink-0 rounded-pill p-1 text-n-6 opacity-0 transition-all hover:bg-negative-soft hover:text-negative-strong focus-visible:opacity-100 group-hover:opacity-100"
                 >
                   <Icon name="close" size={12} />
                 </button>

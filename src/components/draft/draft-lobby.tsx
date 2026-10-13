@@ -188,27 +188,27 @@ export function DraftLobby({
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {cd && display ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 rounded-2xl bg-surface-sunken p-4">
               {cd.isPast ? (
-                <p className="text-[13px] font-bold">{draftTimeReachedLine(capacity)}</p>
+                <p className="text-[15px] font-bold tracking-[-0.02em]">{draftTimeReachedLine(capacity)}</p>
               ) : (
-                <p className="text-[13px] font-bold">
+                <p className="flex flex-wrap items-baseline gap-x-2 text-[13px] font-semibold text-n-3">
                   Starts in{' '}
-                  <span className="fs-num">
+                  <span className="fs-num text-h2 text-ink">
                     {cd.days > 0 ? `${cd.days}d ` : ''}
                     {String(cd.hours).padStart(2, '0')}:{String(cd.minutes).padStart(2, '0')}:
                     {String(cd.seconds).padStart(2, '0')}
                   </span>
                 </p>
               )}
-              <p className="text-[11px] font-semibold text-n-3">
-                League time · <span className="fs-num text-ink">{display.leagueTime}</span>
+              <p className="text-[11px] font-medium text-n-3">
+                League time · <span className="fs-num font-semibold text-ink">{display.leagueTime}</span>
                 {display.leagueOffset && <span> ({display.leagueOffset})</span>} — starts
                 automatically at the scheduled time{isCommish ? ', or start it now' : ''}.
               </p>
             </div>
           ) : (
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="rounded-2xl bg-surface-sunken px-4 py-5 text-center text-[11px] font-medium text-n-3">
               No draft time is set{isCommish ? ' — schedule one in League settings, or start now' : ' yet'}.
             </p>
           )}
@@ -226,15 +226,14 @@ export function DraftLobby({
               <Button
                 type="button"
                 variant="blue"
-                size="sm"
-                shadow
+                size="md"
                 disabled={startDraft.isPending}
                 onClick={handleStart}
               >
                 <Icon name="fire" size={13} />
                 {startDraft.isPending ? 'Starting…' : 'Start draft now'}
               </Button>
-              <Button variant="stroke" size="sm" asChild>
+              <Button variant="stroke" size="md" asChild>
                 <Link href={`/app/leagues/${leagueId}/settings?section=draft`}>
                   <Icon name="setup" size={13} />
                   Draft setup
@@ -249,7 +248,7 @@ export function DraftLobby({
               from the home's own CTA, not forked (R279). */}
           <div className="mt-1 flex flex-col gap-1.5 border-t border-n-4 pt-3">
             <PracticeCta leagueId={leagueId} />
-            <p className="text-[10px] font-semibold text-n-3">
+            <p className="text-[10px] font-medium text-n-6">
               Rehearse against CPU opponents — your real draft isn&apos;t touched.
             </p>
           </div>
@@ -276,7 +275,7 @@ export function DraftLobby({
             {checklist.map((item) => (
               <div
                 key={item.key}
-                className="flex items-center gap-2.5 rounded-sm border border-n-4 px-2.5 py-2"
+                className="flex items-center gap-2.5 rounded-xl bg-surface-sunken px-3 py-2.5"
               >
                 <Icon
                   name={item.done ? 'check-circle' : 'setup'}
@@ -284,10 +283,10 @@ export function DraftLobby({
                   className={item.done ? 'shrink-0 text-positive-strong' : 'shrink-0 text-n-3'}
                 />
                 <div className="min-w-0">
-                  <div className="truncate text-[12px] font-extrabold leading-tight">
+                  <div className="truncate text-[12px] font-bold leading-tight">
                     {item.label}
                   </div>
-                  <div className="truncate text-[10px] font-semibold text-n-3">{item.detail}</div>
+                  <div className="truncate text-[10px] font-medium text-n-3">{item.detail}</div>
                 </div>
               </div>
             ))}
@@ -302,13 +301,13 @@ export function DraftLobby({
             {orderIds.length > 0 ? (
               // D101: the post-randomize list, plain and instant — the
               // reveal animation is deliberately Phase F (F43).
-              <ol className="flex flex-col gap-1">
+              <ol className="flex flex-col">
                 {orderIds.map((teamId, i) => (
                   <li
                     key={teamId}
-                    className="flex items-center gap-2 rounded-sm border border-n-4 px-2.5 py-1.5 text-[12px] font-bold"
+                    className="flex h-[34px] items-center gap-2 border-t border-n-4 px-1 text-[11px] font-semibold first:border-t-0"
                   >
-                    <span className="fs-num w-6 shrink-0 text-right text-n-3">{i + 1}.</span>
+                    <span className="fs-num w-6 shrink-0 text-right text-[10px] text-n-6">{i + 1}.</span>
                     <span className="truncate">
                       {teamsById.get(teamId) ?? 'Team'}
                       {teamId === myTeamId ? ' (You)' : ''}
@@ -317,7 +316,7 @@ export function DraftLobby({
                 ))}
               </ol>
             ) : (
-              <p className="text-[12px] font-semibold text-n-3">
+              <p className="py-3 text-center text-[11px] font-medium text-n-6">
                 {detail.settings.draft.draft_order_mode === 'random'
                   ? 'The order randomizes when the draft starts — or the commissioner can randomize it early in Draft setup.'
                   : 'No saved order yet. The commissioner sets it in Draft setup.'}
@@ -342,14 +341,14 @@ export function DraftLobby({
                   What a manager needs to know before the room opens is the
                   budget and whether $0 openings are legal — the increment is
                   a fixed $1 in every league (§8.6.3) and is not a setting. */}
-              <p className="text-[12px] font-bold">
+              <p className="text-[13px] font-bold tracking-[-0.01em]">
                 <span className="fs-num">${detail.settings.draft.auction_budget}</span> budget per
                 team ·{' '}
                 {detail.settings.draft.auction_zero_dollar_nominations
                   ? '$0 nominations allowed'
                   : 'nominations open at $1+'}
               </p>
-              <p className="text-[11px] font-semibold text-n-3">
+              <p className="text-[11px] font-medium text-n-3">
                 <span className="fs-num">{detail.settings.draft.auction_nomination_seconds}s</span>{' '}
                 to nominate ·{' '}
                 <span className="fs-num">{detail.settings.draft.auction_bid_seconds}s</span> bid
@@ -365,7 +364,7 @@ export function DraftLobby({
                   </>
                 )}
               </p>
-              <p className="text-[11px] font-semibold text-n-3">
+              <p className="text-[11px] font-medium text-n-3">
                 {nominationOrderLine(detail.settings.draft.nomination_order_mode)}
               </p>
             </CardContent>

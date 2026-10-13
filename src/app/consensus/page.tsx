@@ -90,9 +90,9 @@ export default async function ConsensusPage() {
     <GuestShell>
       <div className="mx-auto max-w-3xl space-y-[19px]">
         <header>
-          <p className="fs-overline text-n-3">Community</p>
-          <h1 className="mt-1 text-h4">Community consensus</h1>
-          <p className="mt-2 max-w-xl text-[13px] font-medium text-n-3">
+          <p className="fs-overline text-n-6">Community</p>
+          <h1 className="mt-[3px] text-h3">Community consensus</h1>
+          <p className="mt-1.5 max-w-xl text-[11px] font-medium text-n-3">
             Cred-weighted aggregate rankings from every public big board on
             FieldScout. The more accurate your rankings, the more your votes
             count.
@@ -100,23 +100,23 @@ export default async function ConsensusPage() {
         </header>
 
         {players.length === 0 ? (
-          <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-            <h2 className="text-h5">No consensus yet</h2>
-            <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+          <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+            <h2 className="text-h6">No consensus yet</h2>
+            <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
               Consensus rankings unlock once enough users have submitted their
               big boards for the season. Sign up and add yours to be part of
               the first run.
             </p>
           </div>
         ) : (
-          <div className="rounded-sm border border-ink bg-white">
-            <div className="flex min-h-header items-center justify-between gap-2 border-b border-ink px-card-pad py-2.5">
+          <div className="rounded-2xl border border-n-4 bg-white">
+            <div className="flex items-center justify-between gap-2 border-b border-n-4 px-card-pad py-3">
               <h2 className="text-h6">Season consensus</h2>
-              <span className="fs-num text-[11px] font-bold text-n-3">
+              <span className="fs-num text-[10px] font-medium text-n-6">
                 Top {players.length}
               </span>
             </div>
-            <ol className="py-1.5">
+            <ol className="space-y-px p-1.5">
               {players.map((p, i) => (
                 <li key={p.player_id}>
                   <PlayerRow
@@ -145,8 +145,8 @@ export default async function ConsensusPage() {
                 </li>
               ))}
             </ol>
-            <div className="border-t border-ink px-card-pad py-2.5">
-              <p className="text-[11px] font-medium text-n-3">
+            <div className="border-t border-n-4 px-card-pad py-2.5">
+              <p className="text-[10px] font-medium text-n-6">
                 Weighted rank counts accurate scouts more; new users still
                 contribute with a weight of 1.
               </p>

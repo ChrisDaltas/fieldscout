@@ -112,18 +112,18 @@ export default async function TagFeedPage(props: PageProps) {
     <GuestShell>
       <div className="mx-auto max-w-3xl space-y-5">
         <header>
-          <p className="text-[10px] font-bold tracking-wider text-n-3">
+          <p className="fs-overline text-n-6">
             Tag
           </p>
-          <h1 className="mt-1 text-h4">{tag.name}</h1>
-          <p className="mt-1 text-[11px] font-semibold text-n-3">
+          <h1 className="mt-[3px] text-h3">{tag.name}</h1>
+          <p className="mt-1 text-[11px] font-medium text-n-3">
             <span className="fs-num">{total}</span> public list
             {total === 1 ? '' : 's'} tagged{' '}
-            <span className="font-bold text-ink">{tag.name}</span>
+            <span className="font-semibold text-ink">{tag.name}</span>
           </p>
         </header>
 
-        <div className="flex gap-1.5">
+        <div className="inline-flex w-fit gap-[2px] rounded-pill bg-surface-control p-[3px]">
           <SortLink slug={slug} sort="recent" active={sort === 'recent'}>
             Recent
           </SortLink>
@@ -133,9 +133,9 @@ export default async function TagFeedPage(props: PageProps) {
         </div>
 
         {lists.length === 0 ? (
-          <div className="rounded-sm border border-ink bg-white p-[19px] text-center">
+          <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
             <p className="text-h6">No lists yet</p>
-            <p className="mt-1 text-[11px] font-medium text-n-3">
+            <p className="mt-1 text-[11px] font-medium text-n-6">
               No public lists tagged {tag.name} yet — be the first.
             </p>
           </div>
@@ -169,7 +169,7 @@ export default async function TagFeedPage(props: PageProps) {
             >
               <Icon name="arrow-prev" size={12} /> Newer
             </PaginationLink>
-            <span className="text-[10px] font-semibold text-n-3">
+            <span className="text-[10px] font-medium text-n-6">
               Page <span className="fs-num">{page}</span>
             </span>
             <PaginationLink
@@ -199,16 +199,18 @@ function SortLink({
   children: React.ReactNode
 }) {
   const href = sort === 'recent' ? `/tag/${slug}` : `/tag/${slug}?sort=popular`
-  // Boxed-tab treatment (ui/tabs recipe) as plain links so the page stays SSR.
+  // v7 segmented-control treatment (ui/tabs `Segment` recipe) as plain links
+  // so the page stays SSR. `shadow-seg` is the selected pill's form, not
+  // elevation.
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'inline-flex h-tab items-center justify-center whitespace-nowrap rounded-sm border border-ink px-4 text-[11px] font-bold leading-none transition-colors',
+        'inline-flex h-tab items-center justify-center whitespace-nowrap rounded-pill px-[9px] text-[11px] font-semibold leading-none transition-colors',
         active
-          ? 'bg-accent text-accent-foreground'
-          : 'bg-white text-ink hover:bg-n-4',
+          ? 'bg-white text-ink shadow-seg'
+          : 'text-n-2 hover:bg-black/5 hover:text-ink',
       )}
     >
       {children}
@@ -237,7 +239,7 @@ function PaginationLink({
 
   if (disabled) {
     return (
-      <span className="inline-flex cursor-not-allowed items-center gap-1 text-[11px] font-bold text-n-3 opacity-40">
+      <span className="inline-flex cursor-not-allowed items-center gap-1 text-[11px] font-semibold text-n-6 opacity-40">
         {children}
       </span>
     )
@@ -245,7 +247,7 @@ function PaginationLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1 text-[11px] font-bold text-n-3 transition-colors hover:text-ink"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong"
     >
       {children}
     </Link>

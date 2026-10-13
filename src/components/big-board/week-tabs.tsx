@@ -24,19 +24,24 @@ interface WeekTabsProps {
   className?: string
 }
 
+// v7 segmented control (FSSegmented7, matching `Segment` in ui/tabs): a grey
+// pill track; the selected week is a white pill with its contact shadow
+// (`shadow-seg` is part of the control's form, not elevation). Locked weeks
+// read lighter but stay reachable.
 function tabClass(active: boolean, locked: boolean) {
   return cn(
-    'inline-flex h-tab shrink-0 items-center justify-center whitespace-nowrap rounded-sm border border-ink px-3 text-[11px] font-bold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+    'inline-flex h-tab shrink-0 items-center justify-center whitespace-nowrap rounded-pill px-[9px] text-[11px] font-semibold leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
     active
-      ? 'bg-ink text-white'
-      : 'bg-white text-ink hover:bg-n-4',
-    locked && !active && 'opacity-50',
+      ? 'bg-white text-ink shadow-seg'
+      : locked
+        ? 'text-n-6 hover:bg-black/5 hover:text-n-2'
+        : 'text-n-2 hover:bg-black/5 hover:text-ink',
   )
 }
 
 /**
- * Rankings week selector — boxed tabs in the workspace language: "Pre draft"
- * first, then Week 1…18. Locked (future) weeks render dimmed but stay
+ * Rankings week selector — a v7 segmented pill track: "Pre draft" first,
+ * then Week 1…18. Locked (future) weeks render dimmed but stay
  * reachable so their locked state can explain itself. Used by both the big
  * board and weekly ranks surfaces so the two routes read as one feature.
  */
@@ -57,7 +62,7 @@ export function WeekTabs({
       role="tablist"
       aria-label="Rankings week"
       className={cn(
-        'flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none',
+        'flex w-fit max-w-full items-center gap-[2px] overflow-x-auto rounded-pill bg-surface-control p-[3px] scrollbar-none',
         className,
       )}
     >

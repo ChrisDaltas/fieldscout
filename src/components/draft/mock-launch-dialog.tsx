@@ -267,7 +267,7 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
                     Fast
                   </SegmentItem>
                 </Segment>
-                <p className="text-[11px] font-semibold text-n-3">
+                <p className="text-[10px] font-medium text-n-6">
                   Affects bot think-time only — your own clock always runs real.
                 </p>
               </div>
@@ -338,7 +338,7 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
           // reason the button is disabled. When `issues` is non-empty this
           // repeats the offending step's own inline message, which is the
           // point: it names why the button will not fire.
-          <p className="text-[11px] font-semibold text-n-3" role="status">
+          <p className="text-[11px] font-medium text-n-3" role="status">
             {blocked}
           </p>
         )}
@@ -347,7 +347,7 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
           <Stepper step={step} onStep={setStep} />
           <div className="ml-auto">
             {step < STEPS.length - 1 ? (
-              <Button type="button" variant="blue" size="sm" shadow onClick={() => setStep(step + 1)}>
+              <Button type="button" variant="blue" size="md" onClick={() => setStep(step + 1)}>
                 Next
                 <Icon name="arrow-next" size={13} />
               </Button>
@@ -355,8 +355,7 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
               <Button
                 type="button"
                 variant="blue"
-                size="sm"
-                shadow
+                size="md"
                 disabled={input === null || pending}
                 onClick={handleLaunch}
               >
@@ -400,15 +399,17 @@ function TypeCard({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        'flex flex-col items-start gap-0.5 rounded-sm border px-3 py-2.5 text-left transition-colors',
-        selected ? 'border-ink bg-accent-soft' : 'border-n-4 bg-page hover:border-ink',
+        'flex flex-col items-start gap-0.5 rounded-xl px-3.5 py-3 text-left transition-colors',
+        selected
+          ? 'bg-accent-soft text-accent-deep shadow-ring-accent'
+          : 'bg-surface-sunken hover:bg-surface-hover',
       )}
     >
-      <span className="flex w-full items-center justify-between text-[13px] font-extrabold">
+      <span className="flex w-full items-center justify-between text-[13px] font-bold tracking-[-0.01em]">
         {label}
         {selected && <Icon name="check-circle" size={14} />}
       </span>
-      <span className="text-[11px] font-semibold text-n-3">{hint}</span>
+      <span className="text-[10px] font-medium text-n-3">{hint}</span>
     </button>
   )
 }
@@ -416,7 +417,7 @@ function TypeCard({
 function Stepper({ step, onStep }: { step: number; onStep: (i: number) => void }) {
   return (
     <nav aria-label="Practice draft steps">
-      <ol className="flex items-center gap-1.5">
+      <ol className="flex items-center gap-1">
         {STEPS.map((label, i) => (
           <li key={label}>
             <button
@@ -424,10 +425,10 @@ function Stepper({ step, onStep }: { step: number; onStep: (i: number) => void }
               aria-current={i === step ? 'step' : undefined}
               onClick={() => onStep(i)}
               className={cn(
-                'flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[12px] font-bold transition-colors',
+                'flex h-btn-sm items-center gap-1.5 rounded-pill px-2.5 text-[11px] font-semibold transition-colors',
                 i === step
-                  ? 'border-ink bg-ink text-white'
-                  : 'border-n-4 bg-page text-n-3 hover:border-ink hover:text-ink',
+                  ? 'bg-ink text-white'
+                  : 'bg-surface-control text-n-3 hover:bg-surface-pressed hover:text-ink',
               )}
             >
               <span className="fs-num">{i + 1}</span>

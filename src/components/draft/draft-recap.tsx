@@ -89,8 +89,8 @@ export function DraftRecap({ leagueId, draftIdParam }: DraftRecapProps) {
     return (
       <div className="flex flex-col gap-4">
         <PageHeader title="Draft recap" />
-        <Skeleton className="h-9 rounded-sm" />
-        <Skeleton className="h-64 rounded-sm" />
+        <Skeleton className="h-9 rounded-md" />
+        <Skeleton className="h-64 rounded-2xl" />
       </div>
     )
   }
@@ -134,9 +134,9 @@ export function DraftRecap({ leagueId, draftIdParam }: DraftRecapProps) {
       <div className="flex flex-col gap-4">
         <PageHeader title="Draft recap" />
         <Card>
-          <CardContent className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold">No recap here yet</p>
-            <p className="text-[12px] font-medium text-n-3">
+          <CardContent className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <p className="text-[15px] font-bold tracking-[-0.02em]">No recap here yet</p>
+            <p className="max-w-sm text-[11px] font-medium text-n-3">
               A recap appears once a draft finishes. Head back to the league for the current
               state of things.
             </p>
@@ -244,24 +244,25 @@ function DraftRecapBody({
       <Card>
         <CardHeader>
           <CardTitle>Final board</CardTitle>
-          <span className="fs-overline text-[9px] text-n-3">
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3.5">
+          {/* v7 stat tiles — the board's totals, said once. */}
+          <dl className="grid grid-cols-2 gap-2 sm:w-fit sm:grid-cols-[repeat(2,minmax(120px,auto))]">
             {isAuction ? (
               <>
-                <span className="fs-num">{buys.length}</span> {buys.length === 1 ? 'buy' : 'buys'} ·{' '}
-                <span className="fs-num">
-                  ${buys.reduce((sum, pick) => sum + (pick.price ?? 0), 0)}
-                </span>{' '}
-                spent
+                <RecapStat label={buys.length === 1 ? 'Buy' : 'Buys'} value={String(buys.length)} />
+                <RecapStat
+                  label="Spent"
+                  value={`$${buys.reduce((sum, pick) => sum + (pick.price ?? 0), 0)}`}
+                />
               </>
             ) : (
               <>
-                <span className="fs-num">{livePicks.length}</span> picks ·{' '}
-                <span className="fs-num">{draft.total_rounds ?? 0}</span> rounds
+                <RecapStat label="Picks" value={String(livePicks.length)} />
+                <RecapStat label="Rounds" value={String(draft.total_rounds ?? 0)} />
               </>
             )}
-          </span>
-        </CardHeader>
-        <CardContent>
+          </dl>
           {isAuction ? (
             <AuctionFinalBoard
               buys={buys}
@@ -277,7 +278,7 @@ function DraftRecapBody({
               myTeamId={anchorTeamId}
             />
           ) : (
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="py-6 text-center text-[11px] font-medium text-n-6">
               This draft stored no order to lay the board out with.
             </p>
           )}
@@ -313,6 +314,16 @@ function DraftRecapBody({
   )
 }
 
+/** A v7 stat tile — sunken panel, small grey label, bold tabular value. */
+function RecapStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-2xl bg-surface-sunken px-3.5 py-2.5">
+      <dt className="text-[10px] font-semibold text-n-6">{label}</dt>
+      <dd className="fs-num text-[20px] font-bold leading-6 tracking-[-0.03em] text-ink">{value}</dd>
+    </div>
+  )
+}
+
 function RecapRosterCard({
   teamName,
   picks,
@@ -339,37 +350,37 @@ function RecapRosterCard({
     // a shadow (CLAUDE.md elevation rule).
     <div
       className={cn(
-        'flex flex-col gap-1.5 rounded-sm border p-2.5',
-        anchor ? 'border-accent bg-accent-soft' : 'border-ink bg-white',
+        'flex flex-col gap-2 rounded-xl border p-3',
+        anchor ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white',
       )}
     >
       <div className="flex items-center gap-2">
-        <span className="truncate text-[12px] font-extrabold">{teamName}</span>
+        <span className="truncate text-[13px] font-bold tracking-[-0.01em]">{teamName}</span>
         {anchor && <Badge variant="accent">{anchorLabel}</Badge>}
       </div>
       {spend && (
-        <p className="text-[10px] font-bold text-n-3">
-          <span className="fs-num text-ink">${spend.total}</span> spent
+        <p className="text-[10px] font-medium text-n-3">
+          <span className="fs-num font-bold text-ink">${spend.total}</span> spent
           {spend.biggest && (
             <>
               {' · biggest buy '}
-              <span className="font-extrabold text-ink">
+              <span className="font-semibold text-ink">
                 <PlayerLink playerId={spend.biggest.player_id} name={biggestPlayer ? abbreviateName(biggestPlayer.full_name) : spend.biggest.player_id} />
               </span>{' '}
-              <span className="fs-num text-ink">${spend.biggest.price ?? 0}</span>
+              <span className="fs-num font-bold text-ink">${spend.biggest.price ?? 0}</span>
             </>
           )}
         </p>
       )}
       {picks.length === 0 ? (
-        <p className="text-[10px] font-medium text-n-3">No picks on the final board.</p>
+        <p className="text-[10px] font-medium text-n-6">No picks on the final board.</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {picks.map((pick) => {
             const player = playerById.get(pick.player_id)
             return (
               <li key={pick.pick_number} className="flex items-center gap-1.5 text-[11px]">
-                <span className="fs-num w-9 shrink-0 text-[10px] font-bold text-n-3">
+                <span className="fs-num w-9 shrink-0 text-[10px] font-semibold text-n-6">
                   {/* An auction's pick_number is the NOMINATION sequence, not
                       a board coordinate — "1.03" would be a snake label on a
                       board that has no rounds (the R427 class). */}
@@ -378,16 +389,16 @@ function RecapRosterCard({
                     : pickLabel(pick.pick_number, teamCount)}
                 </span>
                 {player && <PositionBadge position={player.position} size="sm" />}
-                <span className="min-w-0 truncate font-bold">
+                <span className="min-w-0 truncate font-semibold">
                   <PlayerLink playerId={pick.player_id} name={player ? abbreviateName(player.full_name) : pick.player_id} />
                 </span>
                 {isAuction && (
-                  <span className="fs-num shrink-0 text-[10px] font-bold text-n-3">
+                  <span className="fs-num ml-auto shrink-0 text-[10px] font-semibold text-n-3">
                     ${pick.price ?? 0}
                   </span>
                 )}
                 {pick.is_auto && (
-                  <span className="fs-overline shrink-0 text-[8px] text-n-3">Auto</span>
+                  <span className="shrink-0 rounded-sm bg-surface-control px-1 text-[9px] font-bold leading-[15px] text-n-2">Auto</span>
                 )}
               </li>
             )
@@ -422,7 +433,7 @@ function AuctionFinalBoard({
 }) {
   if (buys.length === 0) {
     return (
-      <p className="text-[12px] font-medium text-n-3">
+      <p className="py-6 text-center text-[11px] font-medium text-n-6">
         No player was bought before this draft ended.
       </p>
     )
@@ -437,7 +448,7 @@ function AuctionFinalBoard({
       aria-label="Every buy in nomination order"
       tabIndex={0}
     >
-      <ul className="flex flex-col gap-1">
+      <ul className="flex flex-col">
         {buys.map((pick) => {
           const player = playerById.get(pick.player_id)
           const mine = anchorTeamId !== null && pick.team_id === anchorTeamId
@@ -445,21 +456,21 @@ function AuctionFinalBoard({
             <li
               key={pick.pick_number}
               className={cn(
-                'flex items-center gap-2 rounded-sm border px-2 py-1 text-[12px]',
-                mine ? 'border-accent bg-accent-soft' : 'border-ink bg-white',
+                'flex h-[34px] items-center gap-2 border-t border-n-4 px-2 text-[11px] first:border-t-0',
+                mine ? 'bg-accent-soft' : 'hover:bg-surface-sunken',
               )}
             >
-              <span className="fs-num w-8 shrink-0 text-[10px] font-bold text-n-3">
+              <span className="fs-num w-8 shrink-0 text-[10px] font-semibold text-n-6">
                 #{pick.pick_number}
               </span>
               {player && <PositionBadge position={player.position} size="sm" />}
-              <span className="min-w-0 flex-1 truncate font-bold">
+              <span className="min-w-0 flex-1 truncate font-semibold">
                 <PlayerLink playerId={pick.player_id} name={player ? player.full_name : pick.player_id} />
               </span>
-              <span className="min-w-0 max-w-[38%] truncate text-[11px] font-semibold text-n-3">
+              <span className="min-w-0 max-w-[38%] truncate text-[10px] font-medium text-n-3">
                 {teamNameById.get(pick.team_id) ?? 'Team'}
               </span>
-              <span className="fs-num shrink-0 font-extrabold">${pick.price ?? 0}</span>
+              <span className="fs-num w-10 shrink-0 text-right font-bold">${pick.price ?? 0}</span>
             </li>
           )
         })}
@@ -544,10 +555,10 @@ function RecapProblem({
       <PageHeader title="Draft recap" />
       <Card className="border-negative bg-negative-soft">
         <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold" role="alert">
+          <p className="text-[15px] font-bold tracking-[-0.02em]" role="alert">
             Couldn&apos;t load the recap.
           </p>
-          <p className="text-[12px] font-medium text-n-3">{body}</p>
+          <p className="text-[11px] font-medium text-n-3">{body}</p>
           <div className="flex items-center gap-2.5">
             <Button variant="stroke" size="sm" onClick={onRetry}>
               <Icon name="reset" size={13} /> Retry

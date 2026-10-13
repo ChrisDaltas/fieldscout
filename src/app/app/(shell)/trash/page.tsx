@@ -77,13 +77,13 @@ export default function TrashPage() {
             {Array.from({ length: 3 }).map((_, i) => (
               <li
                 key={i}
-                className="flex items-center gap-3 border-b border-n-4 px-card-pad py-3 last:border-0"
+                className="flex items-center gap-3 border-b border-n-4 px-card-pad py-2.5 last:border-0"
               >
                 <div className="flex-1 space-y-2">
-                  <Skeleton className="h-3.5 w-1/3" />
-                  <Skeleton className="h-2.5 w-24" />
+                  <Skeleton className="h-3 w-1/3 rounded-md bg-surface-control" />
+                  <Skeleton className="h-2.5 w-24 rounded-md bg-surface-control" />
                 </div>
-                <Skeleton className="h-btn-sm w-20" />
+                <Skeleton className="h-btn-sm w-20 rounded-pill bg-surface-control" />
               </li>
             ))}
           </ul>
@@ -91,17 +91,17 @@ export default function TrashPage() {
       )}
 
       {error && (
-        <Card className="border-negative bg-negative-soft">
-          <p className="p-card-pad text-[13px] font-bold text-negative-strong">
+        <Card className="border-negative-soft bg-negative-soft">
+          <p className="p-card-pad text-[11px] font-semibold text-negative-strong">
             {error}
           </p>
         </Card>
       )}
 
       {!loading && !error && lists.length === 0 && (
-        <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-          <p className="text-h5 text-ink">Trash is empty</p>
-          <p className="max-w-md text-[13px] font-medium text-n-3">
+        <Card className="flex flex-col items-center gap-1 px-6 py-16 text-center">
+          <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">Trash is empty</p>
+          <p className="max-w-md text-[11px] font-medium text-n-6">
             Deleted lists land here so you can restore them later.
           </p>
         </Card>
@@ -113,13 +113,13 @@ export default function TrashPage() {
             {lists.map((list) => (
               <li
                 key={list.id}
-                className="flex items-center gap-3 border-b border-n-4 px-card-pad py-3 last:border-0"
+                className="flex items-center gap-3 border-b border-n-4 px-card-pad py-2.5 transition-colors last:border-0 hover:bg-surface-sunken"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-extrabold text-ink">
+                  <p className="truncate text-[13px] font-bold text-ink">
                     {list.title}
                   </p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-n-3">
+                  <p className="mt-0.5 text-[10px] font-semibold text-n-6">
                     Deleted{' '}
                     <span className="fs-num">
                       {list.deleted_at ? formatRelative(list.deleted_at) : ''}
@@ -147,7 +147,7 @@ export default function TrashPage() {
       <p>
         <Link
           href="/app/lists"
-          className="inline-flex items-center gap-1 text-[12px] font-bold text-n-3 transition-colors duration-200 ease-linear hover:text-ink"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong"
         >
           <Icon name="arrow-prev" size={13} />
           Back to lists

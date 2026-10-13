@@ -60,10 +60,10 @@ function code(rel: string): string {
 describe('the strip’s physical contract (spec §16.4 zone 2; D149/D152)', () => {
   const source = code(STRIP)
 
-  it('is ONE band at the h-draft-status token, with the ink rule as its separation', () => {
+  it('is ONE band at the h-draft-status token, with the hairline as its separation', () => {
     expect(source).toMatch(/h-draft-status/)
     expect(source).not.toMatch(/h-\[58px\]/)
-    expect(source).toMatch(/border-b border-ink/)
+    expect(source).toMatch(/border-b border-n-4/)
     expect(source).toMatch(/shrink-0/)
   })
 
@@ -107,7 +107,7 @@ describe('requirement (3): on-clock LEFT, clock RIGHT (D149)', () => {
   })
 
   it('the "Your next" hint keeps its shipped hidden sm:inline responsiveness', () => {
-    expect(source).toMatch(/hidden shrink-0 text-\[9px\] text-n-3 sm:inline/)
+    expect(source).toMatch(/hidden shrink-0 text-\[11px\] font-medium text-n-6 sm:inline/)
   })
 })
 

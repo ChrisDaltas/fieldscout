@@ -82,8 +82,11 @@ export function DraftBoardGrid({
           <div
             key={teamId}
             className={cn(
-              'truncate rounded-sm border border-ink px-1.5 py-1 text-center text-[10px] font-extrabold leading-tight',
-              teamId === myTeamId ? 'bg-accent-soft' : 'bg-white',
+              'truncate rounded-lg px-1.5 py-1.5 text-center text-[11px] font-semibold leading-tight',
+              // My column: a resting accent fill (never a shadow).
+              teamId === myTeamId
+                ? 'border border-transparent bg-accent-soft text-accent-deep'
+                : 'border border-n-4 bg-white text-ink',
             )}
             title={teamNameById.get(teamId) ?? 'Team'}
           >

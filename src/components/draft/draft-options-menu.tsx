@@ -87,7 +87,7 @@ export function DraftOptionsMenu({
             paused · reconnecting, and the full label left the chip ~3
             characters); the accent fill keeps the control unmistakable at
             every width. */}
-        <Button variant="blue" size="sm" className="shrink-0">
+        <Button variant="blue" size="md" className="shrink-0">
           <span className="sm:hidden">Options</span>
           <span className="hidden sm:inline">Draft Options</span>
         </Button>

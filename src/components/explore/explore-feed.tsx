@@ -57,8 +57,8 @@ function LikeButton({ item }: { item: ExploreFeedItem }) {
           },
         })
       }}
-      className={`inline-flex items-center gap-1 text-[10px] font-bold transition-colors ${
-        liked ? 'text-accent' : 'text-n-3 hover:text-ink'
+      className={`inline-flex items-center gap-1 text-[10px] font-semibold transition-colors ${
+        liked ? 'text-accent' : 'text-n-6 hover:text-ink'
       }`}
     >
       <Icon name="like" size={12} />
@@ -69,7 +69,7 @@ function LikeButton({ item }: { item: ExploreFeedItem }) {
 
 function FeedRow({ item }: { item: ExploreFeedItem }) {
   return (
-    <div className="relative flex items-center gap-[11px] px-[13px] py-[11px] transition-colors hover:bg-n-4/50">
+    <div className="relative flex items-center gap-[11px] px-[15px] py-[11px] transition-colors hover:bg-surface-sunken">
       <UserAvatar
         src={item.author.avatar_url}
         name={item.author.name ?? item.author.handle}
@@ -81,7 +81,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           {/* Stretched link: the whole row opens the list. */}
           <Link
             href={item.href}
-            className="truncate text-[12px] font-bold text-ink after:absolute after:inset-0"
+            className="truncate text-[13px] font-bold tracking-[-0.01em] text-ink after:absolute after:inset-0"
           >
             {item.title}
           </Link>
@@ -97,7 +97,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
             </Badge>
           )}
         </div>
-        <div className="mt-0.5 truncate text-[10px] font-semibold text-n-3">
+        <div className="mt-0.5 truncate text-[10px] font-semibold text-n-6">
           {/* L.E1.41: a person's handle opens his profile, above the row's
               stretched link. An AI persona (it has a name) keeps its plain
               handle — its page is /personas/…, not a person's profile. */}
@@ -109,7 +109,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
           {item.tag && (
             <>
               {' · '}
-              <span className="font-bold text-accent-strong">
+              <span className="font-semibold text-accent">
                 {item.tag.name}
               </span>
             </>
@@ -123,7 +123,7 @@ function FeedRow({ item }: { item: ExploreFeedItem }) {
         <span className="pointer-events-auto">
           <LikeButton item={item} />
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-n-3">
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-n-6">
           <Icon name="comments" size={12} />
           <span className="fs-num">{formatCount(item.comment_count)}</span>
         </span>
@@ -142,13 +142,13 @@ function FeedSkeleton() {
   return (
     <div className="divide-y divide-n-4">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-[11px] px-[13px] py-[11px]">
-          <Skeleton className="h-8 w-8 rounded-pill" />
+        <div key={i} className="flex items-center gap-[11px] px-[15px] py-[11px]">
+          <Skeleton className="h-8 w-8 rounded-pill bg-surface-control" />
           <div className="flex-1 space-y-1.5">
-            <Skeleton className="h-3 w-1/2" />
-            <Skeleton className="h-2.5 w-1/3" />
+            <Skeleton className="h-3 w-1/2 rounded-md bg-surface-control" />
+            <Skeleton className="h-2.5 w-1/3 rounded-md bg-surface-control" />
           </div>
-          <Skeleton className="h-btn-sm w-16" />
+          <Skeleton className="h-btn-sm w-16 rounded-pill bg-surface-control" />
         </div>
       ))}
     </div>
@@ -218,17 +218,17 @@ export function ExploreFeed() {
         {isLoading ? (
           <FeedSkeleton />
         ) : isError ? (
-          <p className="p-[19px] text-center text-[11px] font-bold text-negative-strong">
+          <p className="px-[19px] py-10 text-center text-[11px] font-semibold text-negative-strong">
             Couldn&apos;t load the feed — try again in a moment.
           </p>
         ) : !items || items.length === 0 ? (
-          <div className="p-[19px] text-center">
-            <p className="text-h6">
+          <div className="px-[19px] py-10 text-center">
+            <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">
               {tab === 'following'
                 ? 'Nothing from your follows yet'
                 : `No ${activeTopic ? activeTopic.name.toLowerCase() : 'public'} lists yet`}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-n-3">
+            <p className="mt-1 text-[11px] font-medium text-n-6">
               {tab === 'following'
                 ? 'Lists and rankings from scouts you follow will show up here.'
                 : 'Be the first — make a list and set it to public.'}

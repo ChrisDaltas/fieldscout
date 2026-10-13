@@ -118,7 +118,7 @@ export function DraftDock({ panels }: DraftDockProps) {
           id={dockPanelId(openTab.id)}
           aria-label={openTab.label}
           tabIndex={-1}
-          className="absolute inset-x-0 bottom-full h-dock-panel-mobile overflow-y-auto border-t border-ink bg-page p-3 shadow-hard-up-6 outline-none lg:h-dock-panel"
+          className="absolute inset-x-0 bottom-full h-dock-panel-mobile overflow-y-auto rounded-t-2xl bg-white p-3 shadow-hard-up-6 outline-none lg:h-dock-panel"
         >
           {/* Scoped to the OPEN PANEL'S BODY deliberately: only something
               rendered inside the panel can dismiss it, so D119(6)'s
@@ -139,7 +139,7 @@ export function DraftDock({ panels }: DraftDockProps) {
       <div
         role="toolbar"
         aria-label="Draft panels"
-        className="flex h-11 w-full items-center gap-1 overflow-x-auto border-t border-ink bg-white px-2 shadow-hard-up-4"
+        className="flex h-11 w-full items-center gap-0.5 overflow-x-auto border-t border-n-4 bg-white px-2 shadow-hard-up-4"
       >
         {DOCK_TABS.map((tab) => {
           const isOpen = open === tab.id
@@ -154,12 +154,12 @@ export function DraftDock({ panels }: DraftDockProps) {
               aria-controls={isOpen ? dockPanelId(tab.id) : undefined}
               onClick={() => dispatch({ type: 'toggle', tab: tab.id })}
               className={cn(
-                'flex h-btn-md shrink-0 items-center rounded-sm border px-2.5 text-[12px] font-bold transition-colors',
-                // Open-state emphasis is fill + border, never a shadow
-                // (D152's ordinary rule for state).
+                'flex h-btn shrink-0 items-center rounded-pill px-3 text-[12px] font-semibold transition-colors',
+                // Open-state emphasis is fill + text colour, never a shadow
+                // (D152's ordinary rule for state; v7 dock pills).
                 isOpen
-                  ? 'border-accent bg-accent-soft'
-                  : 'border-transparent text-n-2 hover:border-ink hover:text-ink',
+                  ? 'bg-accent-soft text-accent-deep'
+                  : 'text-n-2 hover:bg-surface-control hover:text-ink',
               )}
             >
               {tab.label}

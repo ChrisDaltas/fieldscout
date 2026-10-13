@@ -331,18 +331,18 @@ export function DraftRoom({ leagueId, draftIdParam, practice }: DraftRoomProps) 
       // draft-night row ends at `/draft/recap`; the recap page resolves the
       // completed draft itself).
       return (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 p-4">
           <Card>
-            <CardContent className="flex flex-col items-start gap-2 p-4">
-              <p className="text-[13px] font-bold">This league’s draft is complete</p>
-              <p className="text-[12px] font-medium text-n-3">
+            <CardContent className="flex flex-col items-start gap-2 p-[17px]">
+              <p className="text-[15px] font-bold tracking-[-0.02em]">This league’s draft is complete</p>
+              <p className="text-[11px] font-medium text-n-3">
                 The final board and every roster live on the draft recap.
               </p>
               <div className="flex items-center gap-2.5">
-                <Button variant="blue" size="sm" shadow asChild>
+                <Button variant="blue" size="md" asChild>
                   <Link href={`/app/leagues/${leagueId}/draft/recap`}>View the recap</Link>
                 </Button>
-                <Button variant="stroke" size="sm" asChild>
+                <Button variant="stroke" size="md" asChild>
                   <Link href={leagueExit.exitHref}>{leagueExit.exitLabel}</Link>
                 </Button>
               </div>
@@ -665,24 +665,24 @@ function DraftRoomResolved({
     // league-shaped href is never built without one. There is no third case
     // and therefore no "no link" state to render.
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 p-4">
         <Card>
-          <CardContent className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold">
+          <CardContent className="flex flex-col items-start gap-2 p-[17px]">
+            <p className="text-[15px] font-bold tracking-[-0.02em]">
               {draft.is_mock ? 'Practice draft complete' : 'This draft is complete'}
             </p>
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="text-[11px] font-medium text-n-3">
               {draft.is_mock
                 ? 'Every seat is filled. See how your board came together against the CPUs.'
                 : 'Every seat is filled — the final board and rosters are on the recap.'}
             </p>
             <div className="flex items-center gap-2.5">
-              <Button variant="blue" size="sm" shadow asChild>
+              <Button variant="blue" size="md" asChild>
                 <Link href={finishHref}>
                   {draft.is_mock ? 'View the report' : 'View the recap'}
                 </Link>
               </Button>
-              <Button variant="stroke" size="sm" asChild>
+              <Button variant="stroke" size="md" asChild>
                 <Link href={scope.exitHref}>{scope.exitLabel}</Link>
               </Button>
             </div>
@@ -1239,12 +1239,12 @@ function DraftRoomLive({
     // show until he picks the team whose Targets he is setting.
     <div className="flex flex-col gap-2">
       <ActingAsPicker label="Targets for" control={actingAs} />
-      <p className="text-[12px] font-medium text-n-3">
+      <p className="text-[11px] font-medium text-n-3">
         Pick a team to see and set its Targets.
       </p>
     </div>
   ) : (
-    <p className="text-[12px] font-medium text-n-3">
+    <p className="text-[11px] font-medium text-n-3">
       {draft.is_mock
         ? 'Only the mock’s launcher drives practice Targets.'
         : 'You don’t hold a seat in this draft, so there are no Targets to build.'}
@@ -1262,7 +1262,7 @@ function DraftRoomLive({
       budget={isAuction ? (myBudget ?? null) : null}
     />
   ) : (
-    <p className="text-[12px] font-medium text-n-3">
+    <p className="text-[11px] font-medium text-n-3">
       {draft.is_mock
         ? 'Only the mock’s launcher holds a practice roster.'
         : 'You don’t hold a seat in this draft, so there’s no roster to track.'}
@@ -1354,13 +1354,13 @@ function DraftRoomLive({
       {paused && <DraftPauseOverlay />}
     <Card>
       <CardHeader>
-        <span className="text-[13px] font-extrabold">Draft board</span>
-        <span className="fs-overline text-[9px] text-n-3">
+        <span className="text-[13px] font-bold tracking-[-0.01em]">Draft board</span>
+        <span className="text-[10px] font-medium text-n-6">
           <span className="fs-num">{livePicks.length}</span> of{' '}
           <span className="fs-num">{(draft.total_rounds ?? 0) * teamCount}</span> picks made
         </span>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-3">
         {order.length > 0 ? (
           <DraftBoardGrid
             model={boardInput}
@@ -1471,7 +1471,7 @@ function DraftRoomLive({
           the bar's strip (§16.5.4 v2.12) — the zone now hosts draft
           surfaces and nothing else. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-3 p-3">
         {isAuction ? (
           // The auction stage is ONE composition at every width — it carries
           // its own §16.4 mobile density treatment inside (my column
@@ -1540,16 +1540,16 @@ function DraftRoomLive({
               )
             })}
             {ticker.length === 0 && draft.current_pick_number === null && (
-              <p className="text-[12px] font-medium text-n-3">No picks yet.</p>
+              <p className="text-[11px] font-medium text-n-6">No picks yet.</p>
             )}
           </div>
 
           {myTeamId && (
             <Card>
               <CardHeader>
-                <span className="text-[13px] font-extrabold">My picks</span>
+                <span className="text-[13px] font-bold tracking-[-0.01em]">My picks</span>
                 {myNextPick !== null && (
-                  <span className="fs-overline text-[9px] text-n-3">
+                  <span className="text-[10px] font-medium text-n-6">
                     Next: <span className="fs-num">{pickLabel(myNextPick, teamCount)}</span>
                   </span>
                 )}
@@ -1571,7 +1571,7 @@ function DraftRoomLive({
               20 columns at 20 teams is the density rule's whole reason. */}
           <Button
             variant="stroke"
-            size="sm"
+            size="md"
             className="w-fit"
             aria-expanded={mobileBoardOpen}
             onClick={() => setMobileBoardOpen((current) => !current)}
@@ -1669,19 +1669,19 @@ function DraftRoomLive({
  */
 function DraftRoomSkeleton({ exitHref, exitLabel }: RoomExit) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 p-4">
       {/* DR.2's deliberate call on DR.7(5)'s open question (R348; PROGRESS
           D176): the transient skeleton DOES get an exit. In the chrome-free
           frame a slow or hung fetch renders this state full-viewport with
           zero affordances — one link closes the last exit-less resolver
           state. Pinned in room-exits.test.ts. */}
       <div className="flex items-center justify-end">
-        <Button variant="stroke" size="sm" asChild>
+        <Button variant="stroke" size="md" asChild>
           <Link href={exitHref}>{exitLabel}</Link>
         </Button>
       </div>
-      <Skeleton className="h-9 rounded-sm" />
-      <Skeleton className="h-64 rounded-sm" />
+      <Skeleton className="h-9 rounded-md" />
+      <Skeleton className="h-64 rounded-2xl" />
     </div>
   )
 }
@@ -1698,18 +1698,18 @@ function DraftRoomProblem({
   onRetry: () => void
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 p-4">
       <Card className="border-negative bg-negative-soft">
-        <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold" role="alert">
+        <CardContent className="flex flex-col items-start gap-2 p-[17px]">
+          <p className="text-[15px] font-bold tracking-[-0.02em]" role="alert">
             {title}
           </p>
-          <p className="text-[12px] font-medium text-n-3">{body}</p>
+          <p className="text-[11px] font-medium text-n-3">{body}</p>
           <div className="flex items-center gap-2.5">
-            <Button variant="stroke" size="sm" onClick={onRetry}>
+            <Button variant="stroke" size="md" onClick={onRetry}>
               <Icon name="reset" size={13} /> Retry
             </Button>
-            <Button variant="stroke" size="sm" asChild>
+            <Button variant="stroke" size="md" asChild>
               <Link href={exitHref}>{exitLabel}</Link>
             </Button>
           </div>
@@ -1729,12 +1729,12 @@ function DraftRoomEmpty({
   body: string
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 p-4">
       <Card>
-        <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold">{title}</p>
-          <p className="text-[12px] font-medium text-n-3">{body}</p>
-          <Button variant="stroke" size="sm" asChild>
+        <CardContent className="flex flex-col items-start gap-2 p-[17px]">
+          <p className="text-[15px] font-bold tracking-[-0.02em]">{title}</p>
+          <p className="text-[11px] font-medium text-n-3">{body}</p>
+          <Button variant="stroke" size="md" asChild>
             <Link href={exitHref}>{exitLabel}</Link>
           </Button>
         </CardContent>
@@ -1762,20 +1762,20 @@ function DraftRoomTakenOver({
   onReclaim: () => void
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 p-4">
       <Card>
-        <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold">This draft is open in another tab</p>
-          <p className="text-[12px] font-medium text-n-3">
+        <CardContent className="flex flex-col items-start gap-2 p-[17px]">
+          <p className="text-[15px] font-bold tracking-[-0.02em]">This draft is open in another tab</p>
+          <p className="text-[11px] font-medium text-n-3">
             You opened the room somewhere newer, so this tab let go of the live
             connection — one tab per browser keeps draft night fast. Your seat,
             picks and clock all run on the server and are untouched.
           </p>
           <div className="flex items-center gap-2.5">
-            <Button variant="blue" size="sm" shadow onClick={onReclaim}>
+            <Button variant="blue" size="md" onClick={onReclaim}>
               Use this tab instead
             </Button>
-            <Button variant="stroke" size="sm" asChild>
+            <Button variant="stroke" size="md" asChild>
               <Link href={exitHref}>{exitLabel}</Link>
             </Button>
           </div>

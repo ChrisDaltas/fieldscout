@@ -59,7 +59,7 @@ export function MyRosterTracker({
 
   const body = (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[11px] font-bold">
+      <p className="text-[12px] font-semibold">
         {model.unfilled === 0 ? (
           'Every starting seat is covered.'
         ) : (
@@ -75,7 +75,7 @@ export function MyRosterTracker({
           those dollars must still cover). Absent on a snake draft, where
           there is no money to report. */}
       {budget && (
-        <p className="text-[11px] font-bold">
+        <p className="text-[11px] font-medium text-n-3">
           <span className="fs-num">${budget.remaining}</span> left · max bid{' '}
           <span className="fs-num">${budget.maxBid}</span> ·{' '}
           <span className="fs-num">{budget.openSlots}</span>{' '}
@@ -85,7 +85,7 @@ export function MyRosterTracker({
 
       {model.slots.map((slot) => (
         <div key={slot.key} className="flex items-start gap-2">
-          <span className="fs-overline w-14 shrink-0 pt-0.5 text-[9px] text-n-3">
+          <span className="flex h-5 w-14 shrink-0 items-center justify-center rounded bg-surface-hover text-[10px] font-semibold text-n-3">
             {slot.label}
           </span>
           <div className="flex min-w-0 flex-1 flex-wrap gap-1">
@@ -94,7 +94,7 @@ export function MyRosterTracker({
               return (
                 <span
                   key={playerId}
-                  className="flex items-center gap-1 rounded-sm border border-ink bg-white px-1.5 py-0.5 text-[10px] font-bold"
+                  className="flex h-5 items-center gap-1 rounded-md bg-surface-sunken px-1.5 text-[11px] font-semibold"
                 >
                   {player && <PositionBadge position={player.position} size="sm" />}
                   <PlayerLink playerId={playerId} name={player ? abbreviateName(player.full_name) : playerId} className="max-w-[110px]" />
@@ -105,7 +105,7 @@ export function MyRosterTracker({
               (_, i) => (
                 <span
                   key={`open-${i}`}
-                  className="rounded-sm border border-dashed border-n-3 px-1.5 py-0.5 text-[10px] font-medium text-n-3"
+                  className="flex h-5 items-center rounded-md bg-surface-control px-1.5 text-[10px] font-medium text-n-8"
                 >
                   Open
                 </span>
@@ -116,8 +116,8 @@ export function MyRosterTracker({
       ))}
 
       <div className="flex items-start gap-2">
-        <span className="fs-overline w-14 shrink-0 pt-0.5 text-[9px] text-n-3">Bench</span>
-        <p className="min-w-0 flex-1 text-[10px] font-medium text-n-3">
+        <span className="flex h-5 w-14 shrink-0 items-center justify-center rounded bg-surface-hover text-[10px] font-semibold text-n-3">Bench</span>
+        <p className="min-w-0 flex-1 pt-0.5 text-[11px] font-medium text-n-3">
           <span className="fs-num font-bold text-ink">{model.benchIds.length}</span> of{' '}
           <span className="fs-num">{model.benchCount}</span> filled
           {model.benchIds.length > 0 && (
@@ -138,7 +138,7 @@ export function MyRosterTracker({
       </div>
 
       {model.pendingIds.length > 0 && (
-        <p className="text-[10px] font-medium text-n-3">
+        <p className="text-[10px] font-medium text-n-6">
           <span className="fs-num">{model.pendingIds.length}</span> pick
           {model.pendingIds.length === 1 ? '' : 's'} loading…
         </p>
@@ -152,7 +152,7 @@ export function MyRosterTracker({
     <Card className={className}>
       <CardHeader>
         <CardTitle>My roster</CardTitle>
-        <span className={cn('fs-overline text-[9px]', model.unfilled > 0 ? 'text-n-3' : 'text-positive-strong')}>
+        <span className={cn('text-[10px] font-semibold', model.unfilled > 0 ? 'text-n-6' : 'text-positive-strong')}>
           {model.unfilled > 0 ? `${model.unfilled} open` : 'Set'}
         </span>
       </CardHeader>

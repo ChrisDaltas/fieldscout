@@ -36,10 +36,10 @@ export function PublicBigBoard({
 }: PublicBigBoardProps) {
   return (
     <section>
-      <header className="mb-4">
-        <h1 className="text-h4">{title}</h1>
+      <header className="mb-5">
+        <h1 className="text-h3">{title}</h1>
         {subtitle && (
-          <p className="mt-0.5 text-[11px] font-semibold text-n-3">
+          <p className="mt-[3px] text-[11px] font-medium text-n-3">
             {subtitle}
           </p>
         )}
@@ -48,14 +48,14 @@ export function PublicBigBoard({
       {weekNav}
 
       {players.length === 0 ? (
-        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-          <h2 className="text-h5">No rankings yet</h2>
-          <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+          <h2 className="text-h6">No rankings yet</h2>
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
             {emptyMessage}
           </p>
         </div>
       ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12">
+        <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12">
           {players.map((p, i) => (
             <PublicCard key={p.player_id} rank={i + 1} player={p} />
           ))}
@@ -100,7 +100,7 @@ export function PublicWeekStrip({
 }: PublicWeekStripProps) {
   const weeks = Array.from({ length: 18 }, (_, i) => i + 1)
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+    <div className="mb-4 flex flex-wrap items-center gap-1">
       {weeks.map((w) => {
         const active = w === currentSelected
         return (
@@ -109,10 +109,10 @@ export function PublicWeekStrip({
             href={`/u/${username}/big-board/week/${w}`}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'fs-num inline-flex h-btn-sm min-w-[26px] items-center justify-center rounded-sm border border-ink px-2 text-[11px] font-bold leading-none transition-colors',
+              'fs-num inline-flex h-btn-sm min-w-[26px] items-center justify-center rounded-pill px-2 text-[11px] font-semibold leading-none transition-colors',
               active
                 ? 'bg-accent text-accent-foreground'
-                : 'bg-white text-ink hover:bg-n-4',
+                : 'bg-surface-control text-n-2 hover:bg-surface-pressed hover:text-ink',
             )}
           >
             {w}

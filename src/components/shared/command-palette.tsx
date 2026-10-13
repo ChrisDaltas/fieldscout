@@ -105,8 +105,8 @@ const NAV_TARGETS: NavTarget[] = [
 
 /**
  * The search overlay — one surface for players, lists, users, and quick nav
- * on the reskinned Command primitives (white panel, ink border, accent-soft
- * active row). Opens via Cmd+K (here), "/" (sidebar), and the search
+ * on the v7 Command primitives (white menu panel, 31px rows, sunken active
+ * row, 9px grey group headings). Opens via Cmd+K (here), "/" (sidebar), and the search
  * triggers in the sidebar, top bar, and bottom tabs.
  */
 export function CommandPalette() {
@@ -217,7 +217,6 @@ export function CommandPalette() {
                   setOpen(false)
                   requestAnimationFrame(() => openPlayer(player.id))
                 }}
-                className="gap-2.5"
               >
                 <Avatar className="h-6 w-6">
                   <PlayerAvatarImage player={player} alt={player.full_name} />
@@ -225,12 +224,12 @@ export function CommandPalette() {
                     {initialsOf(player.full_name)}
                   </AvatarFallback>
                 </Avatar>
-                <span className="min-w-0 flex-1 truncate font-extrabold">
+                <span className="min-w-0 flex-1 truncate">
                   {player.full_name}
                 </span>
                 <PositionBadge position={player.position} size="sm" />
                 {player.team && (
-                  <span className="text-[11px] font-semibold text-n-3">
+                  <span className="text-[10px] font-medium text-n-6">
                     {player.team}
                   </span>
                 )}
@@ -246,14 +245,13 @@ export function CommandPalette() {
                 key={list.id}
                 value={`${list.title} ${list.id}`}
                 onSelect={() => navigate(`/app/lists/${list.id}`)}
-                className="gap-2.5"
               >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink bg-n-4 text-ink">
-                  <Icon name="list" size={13} />
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-surface-control text-ink">
+                  <Icon name="list" size={12} className="!size-3" />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-bold">{list.title}</span>
-                  <span className="block truncate text-[11px] font-medium text-n-3">
+                <span className="flex min-w-0 flex-1 flex-col gap-px">
+                  <span className="truncate">{list.title}</span>
+                  <span className="truncate text-[10px] font-medium text-n-6">
                     {list.owner_username ? `by @${list.owner_username}` : 'List'}
                     {list.player_count > 0 && (
                       <>
@@ -275,7 +273,6 @@ export function CommandPalette() {
                 key={u.id}
                 value={`${u.username} ${u.id}`}
                 onSelect={() => navigate(userProfileHref(u.username))}
-                className="gap-2.5"
               >
                 <UserAvatar
                   src={u.avatar_url}
@@ -283,7 +280,7 @@ export function CommandPalette() {
                   className="h-6 w-6 shrink-0"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-bold">@{u.username}</span>
+                  <span className="block truncate">@{u.username}</span>
                 </span>
               </CommandItem>
             ))}
@@ -298,9 +295,10 @@ export function CommandPalette() {
               key={target.href}
               value={`${target.label} ${target.keywords ?? ''} ${target.href}`}
               onSelect={() => navigate(target.href)}
-              className="gap-2.5"
             >
-              <Icon name={target.icon} size={14} className="text-n-3" />
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-surface-control text-ink">
+                <Icon name={target.icon} size={12} className="!size-3" />
+              </span>
               <span>{target.label}</span>
             </CommandItem>
           ))}

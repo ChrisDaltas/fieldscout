@@ -9,8 +9,8 @@ interface PlaceholderPageProps {
 
 /**
  * Honest empty-state scaffold for routes whose feature hasn't shipped yet —
- * the Field Scout empty-state recipe: bordered white card, heavy heading,
- * 13px muted line (decor spiral deliberately omitted).
+ * v7's empty state: a hairline card, a 15px bold heading and an 11px grey
+ * line, centred.
  *
  * The page title is the shell's standard header (F577, D487). The card keeps
  * the name as its empty-state heading (`h2`, the empty-state `text-h5`) so a
@@ -22,12 +22,12 @@ export function PlaceholderPage({ title, description, children }: PlaceholderPag
       <PageHeader title={title} />
       <Card>
         <CardContent className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-          <h2 className="text-h5">{title}</h2>
-          <p className="max-w-md text-[13px] font-medium text-n-3">
+          <h2 className="text-h6">{title}</h2>
+          <p className="max-w-md text-[11px] font-medium text-n-6">
             {description ?? 'Coming soon.'}
           </p>
           {children != null && (
-            <div className="mt-1 text-[13px] font-medium text-n-3">{children}</div>
+            <div className="mt-1 text-[11px] font-medium text-n-3">{children}</div>
           )}
         </CardContent>
       </Card>

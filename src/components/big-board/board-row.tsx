@@ -27,7 +27,7 @@ interface SortableBoardRowProps {
 }
 
 /**
- * One rankings board row — rank, headshot, name, position/team, mono
+ * One rankings board row — rank, headshot, name, position/team, tabular
  * projection — wrapped in a dnd-kit sortable. The row itself is the shared
  * PlayerRow; this file only adds the board-specific trailing projection and
  * the sortable plumbing shared by the big board and weekly ranks surfaces.
@@ -59,7 +59,7 @@ export function SortableBoardRow({
         isDragging={isDragging}
         onOpen={onOpen}
         trailing={
-          <span className={cn('fs-num w-12 shrink-0 text-right text-[13px] font-extrabold', PROJ_TEXT)}>
+          <span className={cn('fs-num w-12 shrink-0 text-right text-[12px] font-bold', PROJ_TEXT)}>
             {typeof projection === 'number' ? projection.toFixed(1) : '—'}
           </span>
         }

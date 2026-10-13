@@ -241,7 +241,7 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
           {/* actions → position chips → week tabs → board */}
           <div className="mb-3.5 flex flex-wrap items-center justify-end gap-2.5">
             <Button
-              variant="stroke"
+              variant="ghost"
               size="sm"
               onClick={handleResetToScoutAi}
               disabled={!canEdit}
@@ -249,7 +249,7 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
               <Icon name="repeat" size={13} /> Reset to Scout AI
             </Button>
             <Button
-              variant="green"
+              variant="blue"
               size="sm"
               onClick={handleSubmit}
               disabled={!canEdit || !dirty || reorder.isPending || !listId}
@@ -287,10 +287,10 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
           />
 
           {status === 'future' ? (
-            <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-              <Icon name="clock" size={20} className="mx-auto text-n-3" />
-              <h3 className="mt-3 text-h6">Week {week} is locked</h3>
-              <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
+            <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+              <Icon name="clock" size={20} className="mx-auto text-n-6" />
+              <h3 className="mt-2.5 text-h6">Week {week} is locked</h3>
+              <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
                 You can rank the current week only. This board unlocks once the
                 prior week kicks off.
               </p>
@@ -298,20 +298,20 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
           ) : isLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 8 }, (_, i) => (
-                <Skeleton key={i} className="h-11 w-full" />
+                <Skeleton key={i} className="h-11 w-full rounded-md bg-surface-control" />
               ))}
             </div>
           ) : isError || !data ? (
-            <div className="rounded-sm border border-ink bg-white px-6 py-10 text-center">
+            <div className="rounded-2xl border border-n-4 bg-white px-6 py-10 text-center">
               <h3 className="text-h6">Could not load this week</h3>
-              <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-negative-strong">
+              <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-negative-strong">
                 {(error as Error)?.message ?? 'Something went wrong loading this board.'}
               </p>
             </div>
           ) : (
             <Card>
-              <div className="flex flex-wrap items-center gap-2 border-b border-ink px-4 py-2.5">
-                <span className="text-[12px] font-extrabold">
+              <div className="flex flex-wrap items-center gap-2 border-b border-n-4 px-4 py-2.5">
+                <span className="text-[13px] font-bold tracking-[-0.01em]">
                   Week {week} · {pos} board
                 </span>
                 {submitted && (
@@ -320,14 +320,14 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
                   </Badge>
                 )}
                 {subsetDirty && <Badge variant="yellow">Unsubmitted edits</Badge>}
-                <span className="ml-auto whitespace-nowrap text-[11px] font-bold text-n-3">
+                <span className="ml-auto whitespace-nowrap text-[10px] font-medium text-n-6">
                   {canEdit ? 'Drag to reorder' : 'View only'}
                 </span>
               </div>
               {subsetPlayers.length === 0 ? (
                 <div className="px-6 py-12 text-center">
                   <h3 className="text-h6">No {pos} players on this board</h3>
-                  <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
+                  <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
                     This week&apos;s board seeds from your big board — add
                     players there and they&apos;ll show up here.
                   </p>
@@ -348,7 +348,7 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
                     items={subsetIds}
                     strategy={verticalListSortingStrategy}
                   >
-                    <ul className="space-y-0.5 p-1">
+                    <ul className="space-y-px p-1.5">
                       {subsetPlayers.map((entry, i) => (
                         <SortableBoardRow
                           key={entry.player_id}
@@ -364,7 +364,7 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
                   </SortableContext>
                 </DndContext>
               ) : (
-                <ul className="space-y-0.5 p-1">
+                <ul className="space-y-px p-1.5">
                   {subsetPlayers.map((entry, i) => (
                     <SortableBoardRow
                       key={entry.player_id}
@@ -400,7 +400,7 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
                 {riserName && (
                   <>
                     Biggest riser: {riserName}{' '}
-                    <span className="fs-num font-bold text-positive-strong">
+                    <span className="fs-num font-semibold text-positive-strong">
                       ▲{riser!.delta}
                     </span>
                     .{' '}
@@ -409,7 +409,7 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
                 {fallerName && (
                   <>
                     Biggest faller: {fallerName}{' '}
-                    <span className="fs-num font-bold text-negative-strong">
+                    <span className="fs-num font-semibold text-negative-strong">
                       ▼{Math.abs(faller!.delta)}
                     </span>
                     .{' '}
@@ -423,12 +423,12 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
           </AIInsight>
 
           <Card>
-            <div className="border-b border-ink px-4 py-2.5">
-              <span className="text-[12px] font-extrabold">
+            <div className="border-b border-n-4 px-4 py-2.5">
+              <span className="text-[13px] font-bold tracking-[-0.01em]">
                 Week {week} · {pos}
               </span>
             </div>
-            <div className="flex flex-col gap-3 p-card-pad">
+            <div className="flex flex-col gap-2.5 p-card-pad">
               {(
                 [
                   ['Players ranked', String(playersRanked)],
@@ -438,18 +438,18 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
               ).map(([label, value]) => (
                 <div
                   key={label}
-                  className="flex items-center justify-between gap-2.5 text-[13px] font-bold"
+                  className="flex items-center justify-between gap-2.5 text-[11px]"
                 >
-                  <span className="whitespace-nowrap text-n-3">{label}</span>
-                  <span className="fs-num whitespace-nowrap font-extrabold">
+                  <span className="whitespace-nowrap font-medium text-n-3">{label}</span>
+                  <span className="fs-num whitespace-nowrap font-semibold text-ink">
                     {value}
                   </span>
                 </div>
               ))}
-              <div className="border-t border-ink pt-3">
-                <div className="mb-1.5 flex items-center justify-between gap-2.5 text-[12px] font-bold">
-                  <span className="whitespace-nowrap text-n-3">Completeness</span>
-                  <span className="fs-num whitespace-nowrap font-extrabold">
+              <div className="border-t border-n-4 pt-2.5">
+                <div className="mb-1.5 flex items-center justify-between gap-2.5 text-[11px]">
+                  <span className="whitespace-nowrap font-medium text-n-3">Completeness</span>
+                  <span className="fs-num whitespace-nowrap font-semibold text-ink">
                     {playersRanked} / {playersRanked}
                   </span>
                 </div>

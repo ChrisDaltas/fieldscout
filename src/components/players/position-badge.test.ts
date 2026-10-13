@@ -20,6 +20,7 @@ const ALLOWED = new Map<string, string>([
   ['src/components/lists/list-thumbnail.tsx', 'list cover tiles (POS_TINTS) — a cover, not a tag'],
   ['src/app/app/(shell)/styleguide/page.tsx', 'colour swatches on the styleguide'],
   ['src/components/landing/landing-bits.tsx', 'v13 landing PosTag — landing ships as designed (2026-10-02), already strokeless'],
+  ['src/components/draft/draft-pick.tsx', 'draft board cells (CELL_FILL) — the whole made cell is position-filled (v7 Draft Room), not a tag'],
 ])
 
 function walk(dir: string, out: string[] = []): string[] {
