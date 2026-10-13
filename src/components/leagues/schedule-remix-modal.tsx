@@ -141,15 +141,15 @@ export function ScheduleRemixPanel({
         <AppliedPanel result={applied} />
       ) : preview.isPending || (!plan && !preview.isError) ? (
         <div className="flex flex-col gap-2" data-skeleton="remix-preview">
-          <Skeleton className="h-10 rounded-sm" />
-          <Skeleton className="h-40 rounded-sm" />
+          <Skeleton className="h-10 rounded-md bg-surface-control" />
+          <Skeleton className="h-40 rounded-xl bg-surface-control" />
         </div>
       ) : preview.isError || !plan ? (
-        <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2">
+        <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5">
           <p role="alert" className="text-[12px] font-bold text-ink">
             Couldn’t preview a remix.
           </p>
-          <p className="text-[12px] font-medium text-n-3">
+          <p className="text-[11px] font-medium text-n-3">
             {preview.error instanceof Error ? preview.error.message : 'The preview failed.'}
           </p>
           <Button variant="stroke" size="sm" onClick={() => preview.preview()}>
@@ -169,7 +169,7 @@ export function ScheduleRemixPanel({
       )}
 
       {confirm.isError && (
-        <StatusBanner tone="caution" className="border-negative bg-negative-soft">
+        <StatusBanner tone="caution" className="bg-negative-soft">
           <span role="alert">
             {confirm.error instanceof Error ? confirm.error.message : 'The remix was refused.'}
           </span>
@@ -238,7 +238,7 @@ function ConfirmButton({
         {pending ? 'Confirming…' : 'Confirm remix'}
       </Button>
       {!gate.ok && plan && (
-        <span className="text-[10px] font-medium text-n-3" data-confirm-gate>
+        <span className="text-[10px] font-medium text-n-6" data-confirm-gate>
           {gate.why}
         </span>
       )}
@@ -299,24 +299,24 @@ function PreviewPanel({
       {plan.no_changes && (
         <p
           role="status"
-          className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3"
+          className="rounded-xl bg-surface-sunken px-3 py-2.5 text-[11px] font-medium text-n-2"
         >
           This seed reproduces the current season exactly — nothing would change.
         </p>
       )}
 
       {plan.weeks_frozen.length > 0 && (
-        <ul className="flex flex-col gap-0.5 text-[11px] font-medium text-n-3" data-frozen-weeks>
+        <ul className="flex flex-col gap-0.5 text-[11px] font-medium text-n-6" data-frozen-weeks>
           {plan.weeks_frozen.map((f) => (
             <li key={f.week}>{frozenWeekCopy(f)}</li>
           ))}
         </ul>
       )}
 
-      <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-1 text-[12px]" data-side-by-side>
-        <span className="fs-overline text-[9px] text-n-3">Week</span>
-        <span className="fs-overline text-[9px] text-n-3">Current</span>
-        <span className="fs-overline text-[9px] text-n-3">Proposed</span>
+      <div className="grid grid-cols-[auto_1fr_1fr] gap-x-3 gap-y-1 text-[11px]" data-side-by-side>
+        <span className="fs-overline text-n-6">Week</span>
+        <span className="fs-overline text-n-6">Current</span>
+        <span className="fs-overline text-n-6">Proposed</span>
         {weeks.map((w) => (
           <div
             key={w.week}
@@ -324,9 +324,9 @@ function PreviewPanel({
             data-week={w.week}
             data-regenerated={w.regenerated}
           >
-            <span className="fs-num border-t border-n-4 pt-1 font-bold">
+            <span className="fs-num border-t border-n-4 pt-1 font-bold text-ink">
               {w.week}
-              {!w.regenerated && <span className="ml-1 text-[9px] font-medium text-n-3">kept</span>}
+              {!w.regenerated && <span className="ml-1 text-[9px] font-medium text-n-6">kept</span>}
             </span>
             <PairingList cells={w.current} />
             <PairingList cells={w.proposed} />
@@ -335,8 +335,8 @@ function PreviewPanel({
       </div>
 
       {groups.length > 0 && (
-        <details className="text-[12px]">
-          <summary className="cursor-pointer font-bold text-ink">
+        <details className="text-[11px]">
+          <summary className="cursor-pointer font-semibold text-ink">
             Every change, in words (<span className="fs-num">{plan.change_count}</span>)
           </summary>
           <ul className="mt-1 flex flex-col gap-0.5 font-medium text-n-3" data-diff-lines>
@@ -350,10 +350,9 @@ function PreviewPanel({
       )}
 
       {!plan.window.free && (
-        <label className="flex flex-col gap-1 text-[11px] font-bold text-ink">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
           Reason (optional — posted to league chat if you give one)
           <Input
-            className="h-btn-md px-2 text-[12px]"
             value={reason}
             onChange={(e) => onReason(e.target.value)}
             placeholder="Why the season is being re-drawn after kickoff"
@@ -364,9 +363,9 @@ function PreviewPanel({
       )}
 
       <div className="flex flex-col gap-1">
-        <span className="fs-overline text-[9px] text-n-3">Preview of the league chat post</span>
+        <span className="fs-overline text-n-6">Preview of the league chat post</span>
         <p
-          className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-medium text-ink"
+          className="rounded-xl bg-surface-sunken px-3 py-2.5 text-[11px] font-medium text-ink"
           data-system-post-preview
         >
           {systemPostPreview(plan, reason, actorName)}
@@ -385,17 +384,17 @@ function PairingList({ cells }: { cells: PairingCell[] }) {
           data-pairing={c.state}
           className={cn(
             'font-medium',
-            c.state === 'changed' && 'bg-accent-soft font-bold text-ink',
+            c.state === 'changed' && 'rounded-sm bg-accent-soft px-1 font-semibold text-accent-deep',
             c.state === 'flipped' && 'text-ink',
-            c.state === 'same' && 'text-n-3',
+            c.state === 'same' && 'text-n-6',
           )}
         >
           {c.round_type === 'secondary' && (
-            <span className="fs-overline mr-1 text-[9px] text-n-3">2nd</span>
+            <span className="fs-overline mr-1 text-n-6">2nd</span>
           )}
           {c.text}
           {c.state === 'flipped' && (
-            <span className="ml-1 text-[9px] font-medium text-n-3">home/away flipped</span>
+            <span className="ml-1 text-[9px] font-medium text-n-6">home/away flipped</span>
           )}
         </li>
       ))}
@@ -412,9 +411,9 @@ function AppliedPanel({ result }: { result: RemixConfirmResult }) {
         <span className="fs-num">{result.schedule_seed}</span>.
       </StatusBanner>
       <div className="flex flex-col gap-1">
-        <span className="fs-overline text-[9px] text-n-3">Posted to league chat</span>
+        <span className="fs-overline text-n-6">Posted to league chat</span>
         <p
-          className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-medium text-ink"
+          className="rounded-xl bg-surface-sunken px-3 py-2.5 text-[11px] font-medium text-ink"
           data-system-post
         >
           {result.system_post}

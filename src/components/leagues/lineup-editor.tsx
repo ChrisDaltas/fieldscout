@@ -369,7 +369,7 @@ export function LineupEditor({
       {/* Override mode frames the editor (fill + border — a resting
           condition, never a shadow). */}
       <div
-        className={cn('flex flex-col gap-4', overrideMode && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
+        className={cn('flex flex-col gap-4', overrideMode && 'rounded-2xl border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
         data-lineup-editor={teamId}
         data-override-mode={overrideMode ? 'on' : 'off'}
       >
@@ -377,32 +377,32 @@ export function LineupEditor({
         <LineupCheckCard checks={checks} />
 
         {editability.state === 'closed' && !overrideMode && (
-          <p role="status" className="rounded-sm border border-ink bg-n-4 px-3 py-2 text-[12px] font-semibold text-ink">
+          <p role="status" className="rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-semibold text-n-2">
             {editability.reason}
           </p>
         )}
         {editability.state === 'unknown' && (
-          <p role="status" className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[12px] font-semibold text-ink">
+          <p role="status" className="rounded-xl bg-caution-soft px-3 py-2 text-[11px] font-semibold text-ink">
             This league has no schedule yet — lineups can be set once the season’s weeks are on the calendar.
           </p>
         )}
         {!canEdit && editability.state === 'open' && (
-          <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3" data-read-only>
+          <p role="status" className="rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-medium text-n-3" data-read-only>
             {isCommish
               ? 'Viewing — turn on override mode to change this team’s lineup.'
               : 'Viewing — only this team’s manager can set its lineup.'}
           </p>
         )}
         {model.orphaned.length > 0 && (
-          <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink">
+          <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink">
             {model.orphaned.length} stored {model.orphaned.length === 1 ? 'placement names a player' : 'placements name players'} no longer on this roster
             ({model.orphaned.map((o) => `${labelOf(o.key)}: ${o.player_id}`).join(', ')}) — the seat reads empty here; the next move clears it.
           </p>
         )}
         {refusal && (
-          <div role="alert" className="flex flex-col gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-lineup-refusal>
+          <div role="alert" className="flex flex-col gap-2 rounded-xl bg-negative-soft px-3 py-2.5 text-[11px] font-semibold text-ink" data-lineup-refusal>
             <span>{refusal}</span>
-            <span className="text-[11px] font-medium">Nothing changed — the lineup shown is the one that’s saved.</span>
+            <span className="text-[11px] font-medium text-n-3">Nothing changed — the lineup shown is the one that’s saved.</span>
             <div className="flex flex-wrap gap-2">
               {canOfferOverride && (
                 <Button
@@ -445,11 +445,11 @@ export function LineupEditor({
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full min-w-[520px] border-collapse text-[11px]" data-starters-table>
                 <thead>
-                  <tr className="border-b border-ink text-left">
-                    <th className="fs-overline px-3 py-2 text-[9px] font-bold text-n-3">Slot</th>
-                    <th className="fs-overline px-2 py-2 text-[9px] font-bold text-n-3">Player</th>
+                  <tr className="border-b border-n-4 text-left">
+                    <th className="w-12 px-[9px] py-2 text-[10px] font-semibold text-n-6">Slot</th>
+                    <th className="px-[9px] py-2 text-[10px] font-semibold text-n-6">Player</th>
                     {columns.map((c) => (
-                      <th key={c} className="fs-overline px-2 py-2 text-right text-[9px] font-bold text-n-3" data-col={c}>
+                      <th key={c} className="whitespace-nowrap px-[9px] py-2 text-right text-[10px] font-semibold text-n-6" data-col={c}>
                         {STAT_COLUMNS.find((x) => x.id === c)?.label}
                       </th>
                     ))}
@@ -466,16 +466,16 @@ export function LineupEditor({
                       kept={!row.player && kept.has(row.slot.key) ? keptIdentity.playerById.get(kept.get(row.slot.key)!)?.full_name ?? kept.get(row.slot.key)! : null}
                     />
                   ))}
-                  <tr className="bg-n-4" data-projected-total>
-                    <td className="px-3 py-2 text-[11px] font-bold text-ink" colSpan={2 + columns.length - 1}>
+                  <tr className="border-t border-n-4" data-projected-total>
+                    <td className="px-[9px] py-2.5 text-[10px] font-semibold text-n-3" colSpan={2 + columns.length - 1}>
                       Projected total
                       {mine.missing > 0 && (
-                        <span className="ml-1 font-medium text-n-3">
+                        <span className="ml-1 font-medium text-n-6">
                           · {mine.missing} without a projection
                         </span>
                       )}
                     </td>
-                    <td className={cn('fs-num px-2 py-2 text-right text-[12px] font-extrabold', PROJ_TEXT)}>{mine.total.toFixed(1)}</td>
+                    <td className={cn('fs-num px-[9px] py-2.5 text-right text-[12px] font-bold', PROJ_TEXT)}>{mine.total.toFixed(1)}</td>
                     <td />
                   </tr>
                 </tbody>
@@ -491,7 +491,7 @@ export function LineupEditor({
           rests elevated by definition (CLAUDE.md's overlay exception). */}
       <DragOverlay dropAnimation={null}>
         {draggingPlayer ? (
-          <div className="flex items-center gap-1.5 rounded-sm border border-ink bg-white px-2 py-1 text-[11px] font-bold shadow-hard-4">
+          <div className="flex items-center gap-1.5 rounded-pill bg-white px-2.5 py-1 text-[11px] font-semibold text-ink shadow-hard-4">
             <PositionBadge position={draggingPlayer.position} size="sm" />
             <span>{draggingPlayer.full_name}</span>
           </div>
@@ -521,7 +521,7 @@ function SaveIndicator({ status, queued }: { status: AutosaveStatus; queued: num
       role="status"
       aria-live="polite"
       data-save-state={status}
-      className={cn('text-[10px] font-bold', status === 'error' ? 'text-negative-strong' : status === 'saved' ? 'text-positive-strong' : 'text-n-3')}
+      className={cn('text-[10px] font-semibold', status === 'error' ? 'text-negative-strong' : status === 'saved' ? 'text-positive-strong' : 'text-n-6')}
     >
       {text}
     </span>
@@ -562,25 +562,25 @@ function MatchupStrip({ week, opponent, mine }: { week: number; opponent: Lineup
   if (opponent.kind === 'bye') {
     return (
       <Card data-matchup-strip="bye">
-        <CardContent className="px-card-pad py-3 text-[12px] font-bold text-ink">Week {week}: no matchup — this team has a bye.</CardContent>
+        <CardContent className="px-card-pad py-3 text-[11px] font-semibold text-n-2">Week {week}: no matchup — this team has a bye.</CardContent>
       </Card>
     )
   }
   return (
     <Card data-matchup-strip>
       <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2 px-card-pad py-3">
-        <span className="fs-overline text-[9px] text-n-3">Week {week} matchup</span>
+        <span className="text-[10px] font-semibold text-n-6">Week {week} matchup</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-[11px] font-bold text-ink">{opponent.selfName}</span>
-          <span className="fs-num text-[16px] font-extrabold text-ink" data-strip-my-score>
+          <span className="text-[11px] font-semibold text-ink">{opponent.selfName}</span>
+          <span className="fs-num text-[17px] font-bold tracking-[-0.02em] text-ink" data-strip-my-score>
             {formatPoints(opponent.myScore)}
           </span>
           <span className={cn('fs-num text-[10px] font-medium', PROJ_TEXT)}>proj {mine.missing > 0 ? '—' : mine.total.toFixed(1)}</span>
         </span>
-        <span className="text-[11px] font-bold text-n-3">vs</span>
+        <span className="text-[11px] font-semibold text-n-6">vs</span>
         <span className="flex items-baseline gap-1.5">
-          <span className="text-[11px] font-bold text-ink">{opponent.name}</span>
-          <span className="fs-num text-[16px] font-extrabold text-ink" data-strip-opp-score>
+          <span className="text-[11px] font-semibold text-ink">{opponent.name}</span>
+          <span className="fs-num text-[17px] font-bold tracking-[-0.02em] text-ink" data-strip-opp-score>
             {formatPoints(opponent.oppScore)}
           </span>
           <span className={cn('fs-num text-[10px] font-medium', PROJ_TEXT)}>
@@ -598,45 +598,49 @@ function MatchupStrip({ week, opponent, mine }: { week: number; opponent: Lineup
 }
 
 function CheckDot({ tone }: { tone: LineupCheck['tone'] }) {
-  return <span aria-hidden className={cn('inline-block h-2 w-2 shrink-0 rounded-full border border-ink', tone === 'positive' ? 'bg-positive' : 'bg-caution')} />
+  return <span aria-hidden className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', tone === 'positive' ? 'bg-positive-strong' : 'bg-caution-strong')} />
 }
 
 function LineupCheckCard({ checks }: { checks: readonly LineupCheck[] }) {
   const [open, setOpen] = useState(false)
   return (
-    <Card data-lineup-check>
+    // v7's tip panel: a sunken panel led by the blue dot (not a card).
+    <div className="rounded-2xl bg-surface-sunken" data-lineup-check>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 px-card-pad py-3 text-left hover:bg-n-4 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+        className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl px-card-pad py-2.5 text-left transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <span className="text-[13px] font-bold text-ink">Lineup check</span>
+        <span className="flex items-center gap-2 text-[11px] font-bold text-ink">
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          Lineup check
+        </span>
         {!open &&
           checks.map((c) => (
-            <span key={c.id} className="flex items-center gap-1.5 text-[11px] font-bold text-ink" data-check-chip={c.id}>
+            <span key={c.id} className="flex items-center gap-1.5 text-[11px] font-semibold text-n-2" data-check-chip={c.id}>
               <CheckDot tone={c.tone} />
               {c.label}
-              <span className="fs-num font-medium text-n-3">{c.value}</span>
+              <span className="fs-num font-medium text-n-6">{c.value}</span>
             </span>
           ))}
-        <Icon name={open ? 'collapse' : 'expand'} size={13} className="ml-auto" />
+        <Icon name={open ? 'collapse' : 'expand'} size={13} className="ml-auto text-n-3" />
       </button>
       {open && (
-        <CardContent className="grid grid-cols-1 gap-2 px-card-pad pb-3 pt-0 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 px-card-pad pb-3 pt-0 sm:grid-cols-2">
           {checks.map((c) => (
-            <div key={c.id} className="flex flex-col gap-0.5 rounded-sm border border-ink bg-white px-3 py-2" data-check-card={c.id}>
-              <span className="flex items-center gap-1.5 text-[12px] font-bold text-ink">
+            <div key={c.id} className="flex flex-col gap-0.5 rounded-xl bg-white px-3 py-2" data-check-card={c.id}>
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-ink">
                 <CheckDot tone={c.tone} />
                 {c.label}
-                <span className="fs-num ml-auto text-[12px] font-extrabold">{c.value}</span>
+                <span className="fs-num ml-auto text-[12px] font-bold">{c.value}</span>
               </span>
               <span className="text-[11px] font-medium text-n-3">{c.note}</span>
             </div>
           ))}
-        </CardContent>
+        </div>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -645,10 +649,10 @@ function NoticeLine({ tone, text }: { tone: HintTone | 'positive'; text: string 
     <p
       role="status"
       className={cn(
-        'rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-        tone === 'positive' && 'border-positive bg-positive-soft',
-        tone === 'caution' && 'border-ink bg-caution-soft',
-        tone === 'negative' && 'border-negative bg-negative-soft',
+        'rounded-xl px-3 py-2 text-[11px] font-semibold text-ink',
+        tone === 'positive' && 'bg-positive-soft',
+        tone === 'caution' && 'bg-caution-soft',
+        tone === 'negative' && 'bg-negative-soft',
       )}
     >
       {text}
@@ -681,18 +685,18 @@ interface RowContext {
 }
 
 function StatCell({ column, player, ctx }: { column: StatColumnId; player: RosterPlayer | null; ctx: RowContext }) {
-  const base = 'px-2 py-1.5 text-right align-middle'
-  if (!player) return <td className={cn(base, 'text-n-3')}>—</td>
+  const base = 'px-[9px] py-1.5 text-right align-middle'
+  if (!player) return <td className={cn(base, 'text-n-6')}>—</td>
   const opp = opponentOf(player.nfl_team, ctx.stats.games)
   switch (column) {
     case 'opp': {
-      if (opp.kind === 'bye') return <td className={cn(base, 'font-bold text-ink')}>BYE</td>
-      if (opp.kind !== 'game') return <td className={cn(base, 'text-n-3')}>—</td>
+      if (opp.kind === 'bye') return <td className={cn(base, 'font-semibold text-n-2')}>BYE</td>
+      if (opp.kind !== 'game') return <td className={cn(base, 'text-n-6')}>—</td>
       const k = formatKickoff(opp.kickoff_at, ctx.leagueTimeZone)
       return (
         <td className={base} data-cell="opp">
-          <span className="block font-bold text-ink">{opp.label}</span>
-          <span className="fs-num block text-[10px] font-medium text-n-3" title={k.title ?? undefined}>
+          <span className="block font-medium text-n-2">{opp.label}</span>
+          <span className="fs-num block text-[10px] font-medium text-n-6" title={k.title ?? undefined}>
             {k.local}
           </span>
         </td>
@@ -700,11 +704,11 @@ function StatCell({ column, player, ctx }: { column: StatColumnId; player: Roste
     }
     case 'oprk': {
       const r = oprkOf(ctx.stats.splits, opp.kind === 'game' ? opp.opp : null, player.position)
-      if (r === null) return <td className={cn(base, 'text-n-3')}>—</td>
+      if (r === null) return <td className={cn(base, 'text-n-6')}>—</td>
       const tone = oprkTone(r, oprkRankedCount(ctx.stats.splits, player.position))
       return (
         <td className={base} data-cell="oprk">
-          <span className={cn('fs-num inline-flex h-chip items-center rounded-sm px-1.5 text-[10px] font-bold', oprkPillClass(tone))} data-oprk-tone={tone}>
+          <span className={cn('fs-num inline-flex h-[18px] items-center rounded-sm px-1.5 text-[10px] font-semibold', oprkPillClass(tone))} data-oprk-tone={tone}>
             {r}
           </span>
         </td>
@@ -713,25 +717,25 @@ function StatCell({ column, player, ctx }: { column: StatColumnId; player: Roste
     case 'points': {
       const cell = pointsCell(ctx.stats.points(player.player_id))
       return (
-        <td className={cn(base, 'fs-num font-bold', cell.text === '—' ? 'text-n-3' : 'text-ink')} title={cell.pending ? 'Some of his stats are not in yet' : undefined} data-cell="points">
+        <td className={cn(base, 'fs-num font-semibold', cell.text === '—' ? 'text-n-6' : 'text-ink')} title={cell.pending ? 'Some of his stats are not in yet' : undefined} data-cell="points">
           {cell.text}
           {cell.pending ? '*' : ''}
         </td>
       )
     }
     case 'snap':
-      return <td className={cn(base, 'fs-num text-ink')}>{formatSnap(ctx.stats.snap(player.player_id))}</td>
+      return <td className={cn(base, 'fs-num font-medium text-n-2')}>{formatSnap(ctx.stats.snap(player.player_id))}</td>
     case 'rostered':
       return (
-        <td className={cn(base, 'text-n-3')} title="Not tracked yet">
+        <td className={cn(base, 'text-n-6')} title="Not tracked yet">
           —
         </td>
       )
     case 'adp':
-      return <td className={cn(base, 'fs-num text-ink')}>{formatAdp(ctx.adp(player.player_id))}</td>
+      return <td className={cn(base, 'fs-num font-medium text-n-2')}>{formatAdp(ctx.adp(player.player_id))}</td>
     case 'proj':
       return (
-        <td className={cn(base, 'fs-num text-[12px] font-extrabold', PROJ_TEXT)} data-cell="proj">
+        <td className={cn(base, 'fs-num text-[11px] font-bold', PROJ_TEXT)} data-cell="proj">
           {formatPoints(ctx.stats.proj(player.player_id))}
         </td>
       )
@@ -763,7 +767,7 @@ function PlayerIdentity({ player, ctx, frozen }: { player: RosterPlayer; ctx: Ro
           {...draggable.listeners}
           data-player={player.player_id}
           aria-label={`Drag ${player.full_name}`}
-          className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center rounded-sm text-n-3 hover:bg-n-4 active:cursor-grabbing"
+          className="flex h-[22px] w-[19px] shrink-0 cursor-grab items-center justify-center rounded text-n-7 transition-colors hover:bg-surface-hover hover:text-ink active:cursor-grabbing"
         >
           <Icon name="dots-vertical" size={12} />
         </button>
@@ -771,14 +775,14 @@ function PlayerIdentity({ player, ctx, frozen }: { player: RosterPlayer; ctx: Ro
       <PlayerFace playerId={player.player_id} name={player.full_name} position={player.position} team={player.nfl_team} headshotUrl={ctx.headshot(player.player_id)} context={ctx.context} size={24} />
       <div className="flex min-w-0 flex-col">
         <span className="flex min-w-0 items-center gap-1">
-          <PlayerLink playerId={player.player_id} name={player.full_name} context={ctx.context} className="min-w-0 text-[12px] font-bold" />
+          <PlayerLink playerId={player.player_id} name={player.full_name} context={ctx.context} className="min-w-0 text-[11px] font-semibold" />
           <StatusTag status={player.status} />
           {lock.locked && (
             <LockTag title={lock.until ? `Locked until ${formatKickoff(lock.until, ctx.leagueTimeZone).local}` : lock.copy} data-locked />
           )}
           {stint && <Badge variant="stroke-purple" className="h-4 px-1 text-[9px]">{stint}</Badge>}
         </span>
-        <span className="flex items-center gap-1 text-[10px] font-medium text-n-3">
+        <span className="flex items-center gap-1 text-[10px] font-medium text-n-6">
           <PositionBadge position={player.position} size="sm" />
           {player.nfl_team ?? 'FA'}
         </span>
@@ -809,10 +813,10 @@ function StarterRow({
     <tr
       ref={droppable.setNodeRef}
       data-slot={slot.key}
-      className={cn('border-b border-n-4', isLocked && 'bg-n-4', droppable.isOver && !frozen && 'bg-accent-soft')}
+      className={cn('border-b border-n-4 transition-colors hover:bg-surface-sunken', isLocked && 'bg-surface-sunken', droppable.isOver && !frozen && 'bg-accent-soft hover:bg-accent-soft')}
     >
-      <td className="fs-overline w-12 px-3 py-1.5 align-middle text-[9px] font-bold text-n-3">{slot.label}</td>
-      <td className="px-2 py-1.5 align-middle">
+      <td className="w-12 px-[9px] py-1.5 align-middle text-[10px] font-bold text-n-6">{slot.label}</td>
+      <td className="px-[9px] py-1.5 align-middle">
         {player ? (
           <div className="flex flex-col gap-0.5">
             <PlayerIdentity player={player} ctx={ctx} frozen={frozen} />
@@ -829,17 +833,17 @@ function StarterRow({
         ) : kept ? (
           <span className="flex min-w-0 flex-wrap items-center gap-x-2" data-kept-starter>
             <LockTag />
-            <span className="truncate text-[12px] font-bold text-ink">{kept}</span>
-            <span className="text-[10px] font-medium text-n-3">{ctx.weekIsCurrent ? KEPT_STARTER_COPY : KEPT_STARTER_OTHER_WEEK_COPY}</span>
+            <span className="truncate text-[11px] font-semibold text-ink">{kept}</span>
+            <span className="text-[10px] font-medium text-n-6">{ctx.weekIsCurrent ? KEPT_STARTER_COPY : KEPT_STARTER_OTHER_WEEK_COPY}</span>
           </span>
         ) : (
-          <span className="inline-flex h-6 items-center rounded-sm border border-dashed border-n-3 px-2 text-[11px] font-medium text-n-3">Empty</span>
+          <span className="inline-flex h-6 items-center rounded-md border border-dashed border-n-7 px-2 text-[11px] font-medium text-n-6">Empty</span>
         )}
       </td>
       {ctx.columns.map((c) => (
         <StatCell key={c} column={c} player={player} ctx={ctx} />
       ))}
-      <td className="px-3 py-1.5 text-right align-middle">{player && <MoveMenu player={player} ctx={ctx} frozen={frozen} isLocked={isLocked} />}</td>
+      <td className="px-[9px] py-1.5 text-right align-middle">{player && <MoveMenu player={player} ctx={ctx} frozen={frozen} isLocked={isLocked} />}</td>
     </tr>
   )
 }
@@ -849,15 +853,15 @@ function BenchRow({ player, ctx, ir }: { player: RosterPlayer; ctx: RowContext; 
   const frozen = isLocked && !ctx.lockExempt
   const opp = opponentOf(player.nfl_team, ctx.stats.games)
   return (
-    <div className={cn('flex items-center gap-2 border-b border-n-4 px-3 py-1.5 last:border-b-0', isLocked && 'bg-n-4')} data-bench-row={player.player_id}>
-      {ir && <Badge variant="black" className="h-4 px-1 text-[9px]">IR</Badge>}
+    <div className={cn('flex items-center gap-2 border-b border-n-4 px-3 py-1.5 transition-colors last:border-b-0 hover:bg-surface-sunken', isLocked && 'bg-surface-sunken')} data-bench-row={player.player_id}>
+      {ir && <Badge variant="stroke" className="h-4 rounded-sm px-1 text-[9px] font-bold">IR</Badge>}
       <div className="min-w-0 flex-1">
         <PlayerIdentity player={player} ctx={ctx} frozen={frozen} />
-        <span className="block pl-[52px] text-[10px] font-medium text-n-3">
+        <span className="block pl-[52px] text-[10px] font-medium text-n-6">
           {opp.kind === 'game' ? opp.label : opp.kind === 'bye' ? 'BYE' : ''}
         </span>
       </div>
-      <span className={cn('fs-num text-[12px] font-extrabold', PROJ_TEXT)} data-cell="proj">
+      <span className={cn('fs-num text-[11px] font-bold', PROJ_TEXT)} data-cell="proj">
         {formatPoints(ctx.stats.proj(player.player_id))}
       </span>
       <MoveMenu player={player} ctx={ctx} frozen={frozen} isLocked={isLocked} />
@@ -874,10 +878,10 @@ function IrSeat({ row, ctx }: { row: SlotRow; ctx: RowContext }) {
         <BenchRow player={row.player} ctx={ctx} ir />
       ) : (
         <div className="flex items-center gap-2 px-3 py-2">
-          <Badge variant="black" className="h-4 px-1 text-[9px]">
+          <Badge variant="stroke" className="h-4 rounded-sm px-1 text-[9px] font-bold">
             {row.slot.label}
           </Badge>
-          <span className="text-[11px] font-medium text-n-3">Empty — for players ruled out</span>
+          <span className="text-[11px] font-medium text-n-6">Empty — for players ruled out</span>
         </div>
       )}
     </div>
@@ -887,24 +891,24 @@ function IrSeat({ row, ctx }: { row: SlotRow; ctx: RowContext }) {
 function BenchCard({ bench, ir, ctx, empty }: { bench: RosterPlayer[]; ir: SlotRow[]; ctx: RowContext; empty: boolean }) {
   const droppable = useDroppable({ id: 'bench', disabled: ctx.readOnly })
   return (
-    <Card ref={droppable.setNodeRef} className={cn('min-w-0 lg:sticky lg:top-4', droppable.isOver && 'border-accent')} data-bench>
+    <Card ref={droppable.setNodeRef} className={cn('min-w-0 lg:sticky lg:top-4', droppable.isOver && 'border-accent bg-accent-soft')} data-bench>
       <CardHeader>
         <CardTitle>Bench</CardTitle>
-        <span className="fs-overline text-[9px] text-n-3">
+        <span className="text-[10px] font-semibold text-n-6">
           <span className="fs-num">{bench.length}</span> {bench.length === 1 ? 'player' : 'players'}
         </span>
       </CardHeader>
       <CardContent className="flex flex-col p-0">
         {empty ? (
-          <p className="px-3 py-2 text-[12px] font-medium text-n-3">No players on this roster yet — the draft (or a free-agent add) fills it.</p>
+          <p className="px-3 py-3 text-[11px] font-medium text-n-6">No players on this roster yet — the draft (or a free-agent add) fills it.</p>
         ) : bench.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] font-medium text-n-3">Every rostered player is in the lineup.</p>
+          <p className="px-3 py-3 text-[11px] font-medium text-n-6">Every rostered player is in the lineup.</p>
         ) : (
           bench.map((player) => <BenchRow key={player.player_id} player={player} ctx={ctx} />)
         )}
         {ir.length > 0 && (
           <>
-            <p className="fs-overline border-y border-ink bg-n-4 px-3 py-1.5 text-[9px] font-bold text-n-3">Reserve</p>
+            <p className="border-y border-n-4 bg-surface-sunken px-3 py-1.5 text-[10px] font-bold text-ink">Reserve</p>
             {ir.map((row) => (
               <IrSeat key={row.slot.key} row={row} ctx={ctx} />
             ))}
@@ -936,7 +940,7 @@ function MoveMenu({ player, ctx, frozen, isLocked }: { player: RosterPlayer; ctx
       {/* A menu is a true overlay — the primitive keeps its resting shadow. */}
       <DropdownMenuContent align="end" className="max-w-[280px]">
         {showLockReason && (
-          <p className="px-2 py-1.5 text-[11px] font-medium text-n-3" data-move-locked>
+          <p className="px-2 py-1.5 text-[11px] font-medium text-n-6" data-move-locked>
             Locked — his game has started, so he stays where he is until it’s over.
           </p>
         )}
@@ -951,14 +955,14 @@ function MoveMenu({ player, ctx, frozen, isLocked }: { player: RosterPlayer; ctx
             {o.label}
           </DropdownMenuItem>
         ))}
-        {canMove && options.length === 0 && <p className="px-2 py-1.5 text-[11px] font-medium text-n-3">No open seat takes a {player.position}.</p>}
+        {canMove && options.length === 0 && <p className="px-2 py-1.5 text-[11px] font-medium text-n-6">No open seat takes a {player.position}.</p>}
         {ctx.onDrop && (
           <>
             {(options.length > 0 || showLockReason) && <DropdownMenuSeparator />}
             <DropdownMenuItem disabled={dropReason !== null} onSelect={() => ctx.onDrop?.(player)} data-menu-drop={player.player_id}>
               Drop
             </DropdownMenuItem>
-            {dropReason && <p className="px-2 pb-1 text-[10px] font-medium text-n-3">{dropReason}</p>}
+            {dropReason && <p className="px-2 pb-1 text-[10px] font-medium text-n-6">{dropReason}</p>}
           </>
         )}
       </DropdownMenuContent>

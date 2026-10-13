@@ -67,8 +67,8 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
   if (!schedule.data) return null
 
   return (
-    <div className="flex flex-col gap-2 rounded-sm border border-n-4 px-3 py-2" data-commish-repair>
-      <p className="text-[12px] font-bold text-ink">{REPAIR_TITLE}</p>
+    <div className="flex flex-col gap-2 rounded-xl border border-n-4 bg-white p-[15px]" data-commish-repair>
+      <p className="text-[13px] font-bold tracking-[-0.02em] text-ink">{REPAIR_TITLE}</p>
       <p className="text-[11px] font-medium text-n-3">{REPAIR_BLURB}</p>
 
       {edit.data ? (
@@ -84,7 +84,7 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
           </span>
         </div>
       ) : weeks.length === 0 ? (
-        <p className="text-[11px] font-medium text-n-3" data-repair-empty>
+        <p className="text-[11px] font-medium text-n-6" data-repair-empty>
           {REPAIR_NOTHING_COPY}
         </p>
       ) : (
@@ -97,7 +97,7 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
           }}
         >
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+            <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
               Week
               <Select
                 value={week === null ? '' : String(week)}
@@ -109,7 +109,7 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
                   edit.reset()
                 }}
               >
-                <SelectTrigger className="h-btn-md px-2 text-[12px]" data-repair-week>
+                <SelectTrigger data-repair-week>
                   <SelectValue placeholder="Pick a week" />
                 </SelectTrigger>
                 <SelectContent>
@@ -121,10 +121,10 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
                 </SelectContent>
               </Select>
             </label>
-            <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+            <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
               Matchup
               <Select value={matchupId} onValueChange={pickMatchup} disabled={week === null}>
-                <SelectTrigger className="h-btn-md px-2 text-[12px]" data-repair-matchup>
+                <SelectTrigger data-repair-matchup>
                   <SelectValue placeholder={week === null ? 'Pick a week first' : 'Pick a matchup'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -147,10 +147,10 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
                     ['Away', away, setAway, 'data-repair-away'],
                   ] as const
                 ).map(([label, value, set, attr]) => (
-                  <label key={label} className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+                  <label key={label} className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
                     {label}
                     <Select value={value} onValueChange={(v) => set(v)}>
-                      <SelectTrigger className="h-btn-md px-2 text-[12px]" {...{ [attr]: value }}>
+                      <SelectTrigger {...{ [attr]: value }}>
                         <SelectValue placeholder={`${label} team`} />
                       </SelectTrigger>
                       <SelectContent>
@@ -168,10 +168,9 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
                   </label>
                 ))}
               </div>
-              <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+              <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
                 Reason (optional — posted to the league if you give one)
                 <Input
-                  className="h-btn-md px-2 text-[12px]"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   maxLength={500}
@@ -180,12 +179,12 @@ export function CommishRepairPanel({ leagueId, data }: { leagueId: string; data:
                 />
               </label>
               {problem && (
-                <p className="text-[11px] font-medium text-n-3" data-repair-problem>
+                <p className="text-[11px] font-medium text-n-6" data-repair-problem>
                   {problem}
                 </p>
               )}
               {refusal && (
-                <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-2 py-1 text-[12px] font-semibold text-ink" data-repair-refusal>
+                <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2.5 text-[11px] font-semibold text-ink" data-repair-refusal>
                   {refusal}
                 </p>
               )}

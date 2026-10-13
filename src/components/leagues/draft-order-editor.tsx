@@ -129,15 +129,15 @@ function ManualOrderList({
 
   if (ids.length === 0) {
     return (
-      <p className="text-[12px] font-semibold text-n-3">
+      <p className="pb-2.5 text-[11px] font-medium text-n-6">
         No franchises yet — seats appear here as the league fills.
       </p>
     )
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className="text-[11px] font-semibold text-n-3">
+    <div className="flex flex-col gap-2 pb-3">
+      <p className="text-[10px] font-medium text-n-6">
         Drag to set pick 1 → {ids.length}. Saved with the settings above.
       </p>
       {canEdit && !stored && (
@@ -146,14 +146,14 @@ function ManualOrderList({
             <Icon name="check" size={13} />
             Use this order
           </Button>
-          <p className="text-[11px] font-semibold text-n-3">
+          <p className="text-[10px] font-medium text-n-6">
             This order isn&apos;t stored yet — adopt it (or drag), then save.
           </p>
         </div>
       )}
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          <ol className="flex flex-col gap-1">
+          <ol className="flex flex-col gap-[3px]">
             {ids.map((teamId, i) => (
               <OrderRow
                 key={teamId}
@@ -191,18 +191,18 @@ function OrderRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'flex items-center gap-2 rounded-sm border border-n-4 bg-white px-2.5 py-1.5 text-[12px] font-bold',
-        !disabled && 'cursor-grab touch-none',
+        'flex min-h-[34px] items-center gap-2 rounded-lg bg-surface-sunken px-2.5 py-1.5 text-[11px] font-semibold transition-colors',
+        !disabled && 'cursor-grab touch-none hover:bg-surface-hover',
         // Drag ghost = a true overlay while held — the one sanctioned
         // resting shadow (CLAUDE.md elevation rule, the my-queue precedent).
-        isDragging && 'z-10 shadow-hard-4',
+        isDragging && 'relative z-10 bg-white shadow-hard-6',
       )}
       {...attributes}
       {...listeners}
     >
-      <span className="fs-num w-6 shrink-0 text-right text-n-3">{ordinal}.</span>
+      <span className="fs-num w-6 shrink-0 text-right text-[10px] font-bold text-n-6">{ordinal}</span>
       <span className="truncate">{name}</span>
-      {!disabled && <Icon name="sort" size={13} className="ml-auto shrink-0 text-n-3" />}
+      {!disabled && <Icon name="sort" size={13} className="ml-auto shrink-0 text-n-7" />}
     </li>
   )
 }
@@ -257,38 +257,38 @@ function RandomizeRow({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 pb-3">
       {canEdit && !postStart && (
         <div className="flex flex-wrap items-center gap-2.5">
           <Button type="button" variant="stroke" size="sm" disabled={busy} onClick={() => void handleRandomize()}>
             <Icon name="repeat" size={13} className={busy ? 'animate-spin' : undefined} />
             {busy ? 'Randomizing…' : storedOrder.length > 0 ? 'Re-randomize' : 'Randomize now'}
           </Button>
-          <p className="text-[11px] font-semibold text-n-3">
+          <p className="text-[10px] font-medium text-n-6">
             Instant — the result is written immediately and shown to the league.
           </p>
         </div>
       )}
 
       {storedOrder.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <Badge variant="stroke" className="w-fit">
+        <div className="flex flex-col gap-2">
+          <Badge variant="green" className="w-fit">
             Order locked in
           </Badge>
-          <ol className="flex flex-col gap-1">
+          <ol className="flex flex-col gap-[3px]">
             {storedOrder.map((teamId, i) => (
               <li
                 key={teamId}
-                className="flex items-center gap-2 rounded-sm border border-n-4 px-2.5 py-1.5 text-[12px] font-bold"
+                className="flex min-h-[34px] items-center gap-2 rounded-lg bg-surface-sunken px-2.5 py-1.5 text-[11px] font-semibold"
               >
-                <span className="fs-num w-6 shrink-0 text-right text-n-3">{i + 1}.</span>
+                <span className="fs-num w-6 shrink-0 text-right text-[10px] font-bold text-n-6">{i + 1}</span>
                 <span className="truncate">{teamNameById.get(teamId) ?? 'Team'}</span>
               </li>
             ))}
           </ol>
         </div>
       ) : (
-        <p className="text-[12px] font-semibold text-n-3">
+        <p className="text-[11px] font-medium text-n-6">
           No order stored yet — it randomizes automatically when the draft starts
           {canEdit && !postStart ? ', or randomize it now' : ''}.
         </p>

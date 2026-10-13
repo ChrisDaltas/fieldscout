@@ -5,7 +5,6 @@ import { useEffect, useRef } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { leagueCardContext } from '@/components/players/player-card-context'
@@ -29,10 +28,14 @@ import {
   feedLines,
 } from './activity-feed-ops'
 import { SEE_ALL_ACTIVITY_LABEL, SHOW_OLDER_LABEL, commishEntryHref } from './activity-page-ops'
-import { TeamNameLink } from './league-cells'
+import { Crest, TeamNameLink } from './league-cells'
 import { formatInstantWithDate } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import { problemCopy } from './team-page'
+
+/** v7's 11px semibold blue door ("See all activity", "Stat corrections"). */
+const DOOR_LINK =
+  'text-[11px] font-semibold text-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 
 /** "Show older" under a paged list (the Activity page — F371). */
 export interface ShowOlderProps {
@@ -119,14 +122,15 @@ export function ActivityFeed({
   return (
     // `id="activity"` — League Home's section anchor (the console linked
     // here before the Activity page existed — D457(7)).
-    <Card id="activity" data-activity-feed>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
-          <span className="min-w-0 flex-1">{title}</span>
+    // v7 "Latest activity": a bare section — 15px title, 11px blue doors,
+    // hairline rows of tile + 11px line + 10px grey time.
+    <div id="activity" className="flex min-w-0 flex-col gap-2.5" data-activity-feed>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="min-w-0 flex-1 text-h6 text-ink">{title}</span>
           {correctionsHref && (
             <Link
               href={correctionsHref}
-              className="text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className={DOOR_LINK}
               data-corrections-link
             >
               Stat corrections
@@ -135,17 +139,16 @@ export function ActivityFeed({
           {seeAllHref && (
             <Link
               href={seeAllHref}
-              className="text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className={DOOR_LINK}
               data-see-all-activity
             >
               {SEE_ALL_ACTIVITY_LABEL}
             </Link>
           )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2 px-card-pad py-2">
+      </div>
+      <div className="flex flex-col gap-2">
         {intro && (
-          <p className="text-[11px] font-medium text-n-3" data-activity-intro>
+          <p className="text-[11px] font-medium text-n-6" data-activity-intro>
             {intro}
           </p>
         )}
@@ -153,90 +156,101 @@ export function ActivityFeed({
         {pending && !items ? (
           <div className="flex flex-col gap-1.5" data-skeleton="activity">
             {Array.from({ length: 4 }, (_, i) => (
-              <Skeleton key={i} className="h-6 rounded-sm" />
+              <Skeleton key={i} className="h-8 rounded-md" />
             ))}
           </div>
         ) : problem != null && !items ? (
-          <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-problem>
-            <p className="text-[12px] font-bold">Couldn’t load the activity feed.</p>
+          <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3.5 py-3" role="alert" data-problem>
+            <p className="text-[12px] font-bold text-ink">Couldn’t load the activity feed.</p>
             <p className="text-[11px] font-medium text-n-3">{problemCopy(problem)}</p>
             <Button variant="stroke" size="sm" onClick={onRetry}>
               <Icon name="reset" size={13} /> Retry
             </Button>
           </div>
         ) : lines.length === 0 && !older?.hasMore ? (
-          <p className="text-[12px] font-medium text-n-3" data-empty="activity">
+          <p className="rounded-xl bg-surface-sunken px-3.5 py-4 text-center text-[11px] font-medium text-n-6" data-empty="activity">
             {emptyCopy}
           </p>
         ) : (
-          <ol className="flex flex-col divide-y divide-n-4" data-feed-items>
+          <ol className="flex flex-col" data-feed-items>
             {groups.map(({ line, entries }) => {
               const when = line.createdAt ? formatInstantWithDate(line.createdAt, leagueTimeZone) : null
               return (
-                <li key={line.id} className="flex flex-col gap-0.5 py-1.5" data-feed-item={line.kind} data-feed-group={entries.length > 1 ? entries.length : undefined}>
-                  <div className="flex min-w-0 items-center gap-2">
-                    {line.commissioner &&
-                      (line.commishActionId ? (
-                        // F233(d): the ✸ line's door to its log entry.
-                        <Link
-                          href={commishEntryHref(leagueId, line.commishActionId)}
-                          className="shrink-0 rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                          title="See this in the commissioner’s log"
-                          data-commissioner-entry={line.commishActionId}
-                        >
-                          <Badge variant="stroke-purple" className="hover:bg-accent-soft" data-commissioner>
+                <li key={line.id} className="flex gap-[9px] border-t border-n-4 px-[3px] py-2.5" data-feed-item={line.kind} data-feed-group={entries.length > 1 ? entries.length : undefined}>
+                  {/* v7 row tile: the franchise's rounded-square crest, else a
+                      round glyph for a league-wide post. */}
+                  {line.team ? (
+                    <Crest name={line.team} src={null} className="mt-px h-5 w-5 rounded-[6px]" fallbackClassName="text-[8px]" />
+                  ) : (
+                    <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-control text-n-3">
+                      <Icon name={line.commissioner ? 'setup' : 'notification'} size={10} />
+                    </span>
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {line.commissioner &&
+                        (line.commishActionId ? (
+                          // F233(d): the ✸ line's door to its log entry.
+                          <Link
+                            href={commishEntryHref(leagueId, line.commishActionId)}
+                            className="shrink-0 rounded-pill focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                            title="See this in the commissioner’s log"
+                            data-commissioner-entry={line.commishActionId}
+                          >
+                            <Badge variant="stroke-purple" className="hover:bg-accent-soft" data-commissioner>
+                              {COMMISSIONER_LABEL}
+                            </Badge>
+                          </Link>
+                        ) : (
+                          <Badge variant="stroke-purple" className="shrink-0" data-commissioner>
                             {COMMISSIONER_LABEL}
                           </Badge>
-                        </Link>
-                      ) : (
-                        <Badge variant="stroke-purple" className="shrink-0" data-commissioner>
-                          {COMMISSIONER_LABEL}
+                        ))}
+                      {line.kind === 'system' && !line.commissioner && (
+                        <Badge variant="stroke" className="shrink-0" data-system>
+                          {SYSTEM_LABEL}
                         </Badge>
-                      ))}
-                    {line.kind === 'system' && !line.commissioner && (
-                      <Badge variant="stroke" className="shrink-0" data-system>
-                        {SYSTEM_LABEL}
-                      </Badge>
-                    )}
-                    {/* Text-only door: the name stays `shrink-0` beside the
-                        truncating message, so the link adds no width. */}
-                    {line.team && (
-                      <span className="shrink-0 text-[12px] font-bold text-ink">
-                        <TeamNameLink name={line.team} leagueId={leagueId} teamId={line.teamId} />
-                      </span>
-                    )}
-                    {/* `data-feed-text` (R940): the line's TEXT alone, so a spec can assert exact
-                        equality. The <li> also renders a badge and a timestamp, so an assertion on
-                        the item could only ever be containment — and containment passes against a
-                        regression that wraps or prefixes the message. */}
-                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink" data-feed-text>
-                      {/* L.E1.41: a post's actor — named in its text — is a door to his profile. */}
-                      {line.players && line.players.length > 0 ? (
-                        // League UX batch 2: every player the line names opens his card.
-                        <TextWithPlayers text={line.text} players={line.players} context={leagueCardContext(leagueId)} />
-                      ) : (
-                        <TextWithActor text={line.text} actor={line.actorUsername} />
                       )}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[10px] font-medium text-n-3">
-                    {line.week !== null && (
-                      <span>
-                        Week <span className="fs-num">{line.week}</span>
+                      {/* Text-only door: the name stays `shrink-0` beside the
+                          truncating message, so the link adds no width. */}
+                      {line.team && (
+                        <span className="shrink-0 text-[11px] font-semibold text-ink">
+                          <TeamNameLink name={line.team} leagueId={leagueId} teamId={line.teamId} />
+                        </span>
+                      )}
+                      {/* `data-feed-text` (R940): the line's TEXT alone, so a spec can assert exact
+                          equality. The <li> also renders a badge and a timestamp, so an assertion on
+                          the item could only ever be containment — and containment passes against a
+                          regression that wraps or prefixes the message. */}
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-n-2" data-feed-text>
+                        {/* L.E1.41: a post's actor — named in its text — is a door to his profile. */}
+                        {line.players && line.players.length > 0 ? (
+                          // League UX batch 2: every player the line names opens his card.
+                          <TextWithPlayers text={line.text} players={line.players} context={leagueCardContext(leagueId)} />
+                        ) : (
+                          <TextWithActor text={line.text} actor={line.actorUsername} />
+                        )}
                       </span>
-                    )}
-                    {when && (
-                      <span className="fs-num" title={when.title ?? undefined}>
-                        {when.local}
-                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-medium text-n-6">
+                      {line.week !== null && (
+                        <span>
+                          Week <span className="fs-num">{line.week}</span>
+                        </span>
+                      )}
+                      {when && (
+                        <span className="fs-num" title={when.title ?? undefined}>
+                          {when.local}
+                        </span>
+                      )}
+                    </div>
+                    {entries.length > 1 && (
+                      <RunEntries
+                        entries={entries.map((e) => ({ id: e.id, text: e.text, createdAt: e.createdAt, href: e.commishActionId ? commishEntryHref(leagueId, e.commishActionId) : null }))}
+                        leagueTimeZone={leagueTimeZone}
+                      />
                     )}
                   </div>
-                  {entries.length > 1 && (
-                    <RunEntries
-                      entries={entries.map((e) => ({ id: e.id, text: e.text, createdAt: e.createdAt, href: e.commishActionId ? commishEntryHref(leagueId, e.commishActionId) : null }))}
-                      leagueTimeZone={leagueTimeZone}
-                    />
-                  )}
                 </li>
               )
             })}
@@ -244,8 +258,8 @@ export function ActivityFeed({
         )}
         {older && items && <ShowOlder {...older} />}
         {commishLog && <CommishLogSection {...commishLog} teamNames={teamNames} leagueTimeZone={leagueTimeZone} />}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -263,8 +277,8 @@ function RunEntries({
   highlightId?: string | null
 }) {
   return (
-    <details className="pl-1 text-[11px] font-medium text-n-3" open={open || undefined} data-run-entries>
-      <summary className="cursor-pointer font-bold text-accent-strong focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent">
+    <details className="text-[11px] font-medium text-n-6" open={open || undefined} data-run-entries>
+      <summary className="cursor-pointer text-[10px] font-semibold text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
         Show each change (<span className="fs-num">{entries.length}</span>)
       </summary>
       <ol className="mt-1 flex flex-col gap-0.5 border-l border-n-4 pl-2">
@@ -272,7 +286,7 @@ function RunEntries({
           const when = e.createdAt ? formatInstantWithDate(e.createdAt, leagueTimeZone) : null
           const body = (
             <>
-              <span className="text-ink">{e.text}</span>
+              <span className="text-n-2">{e.text}</span>
               {when && (
                 <span className="fs-num ml-2" title={when.title ?? undefined}>
                   {when.local}
@@ -281,9 +295,9 @@ function RunEntries({
             </>
           )
           return (
-            <li key={e.id} className={cn(e.id === highlightId && 'rounded-sm bg-accent-soft px-1')} data-run-entry={e.id}>
+            <li key={e.id} className={cn(e.id === highlightId && 'rounded bg-accent-soft px-1')} data-run-entry={e.id}>
               {e.href ? (
-                <Link href={e.href} className="underline decoration-transparent hover:decoration-current focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent">
+                <Link href={e.href} className="underline decoration-transparent hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
                   {body}
                 </Link>
               ) : (
@@ -304,7 +318,7 @@ function ShowOlder({ hasMore, loading, failed, onShowOlder }: ShowOlderProps) {
   return (
     <div className="flex flex-col items-start gap-1" data-show-older>
       {failed && (
-        <p className="text-[11px] font-bold text-negative" role="alert" data-show-older-failed>
+        <p className="text-[11px] font-semibold text-negative-strong" role="alert" data-show-older-failed>
           Couldn’t load older items.
         </p>
       )}
@@ -374,26 +388,26 @@ export function CommishLogSection({
     if (highlightShown) highlighted.current?.scrollIntoView?.({ block: 'center' })
   }, [highlightShown])
   return (
-    <section className={cn('flex flex-col gap-2 border-t border-ink pt-2', className)} aria-label={title} data-commish-log>
-      <h3 className={cn('text-[12px] font-bold text-ink', titleInCardHeader && 'sr-only')}>{title}</h3>
+    <section className={cn('flex flex-col gap-2 border-t border-n-4 pt-3', className)} aria-label={title} data-commish-log>
+      <h3 className={cn('text-[13px] font-bold tracking-[-0.01em] text-ink', titleInCardHeader && 'sr-only')}>{title}</h3>
       {problem != null && items && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
       {pending && !items ? (
         <div className="flex flex-col gap-1.5" data-skeleton="commish-log">
           {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-6 rounded-sm" />
+            <Skeleton key={i} className="h-7 rounded-md" />
           ))}
         </div>
       ) : problem != null && !items ? (
         // A FAILED read is never the empty state (CLAUDE.md).
-        <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-problem="commish-log">
-          <p className="text-[12px] font-bold">{COMMISH_LOG_PROBLEM_COPY}</p>
+        <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3.5 py-3" role="alert" data-problem="commish-log">
+          <p className="text-[12px] font-bold text-ink">{COMMISH_LOG_PROBLEM_COPY}</p>
           <p className="text-[11px] font-medium text-n-3">{problemCopy(problem)}</p>
           <Button variant="stroke" size="sm" onClick={onRetry}>
             <Icon name="reset" size={13} /> Retry
           </Button>
         </div>
       ) : lines.length === 0 ? (
-        <p className="text-[12px] font-medium text-n-3" data-empty="commish-log">
+        <p className="text-[11px] font-medium text-n-6" data-empty="commish-log">
           {emptyCopy}
         </p>
       ) : (
@@ -406,7 +420,7 @@ export function CommishLogSection({
                 key={line.id}
                 ref={isHighlighted ? highlighted : undefined}
                 // The opened entry is a RESTING state — a fill, never a shadow (CLAUDE.md).
-                className={cn('flex flex-col gap-0.5 py-1.5', isHighlighted && 'rounded-sm bg-accent-soft px-1.5')}
+                className={cn('flex flex-col gap-1 py-2.5', isHighlighted && 'rounded-md bg-accent-soft px-2')}
                 data-commish-log-item={line.id}
                 data-commish-log-group={entries.length > 1 ? entries.length : undefined}
                 data-highlighted={isHighlighted ? '' : undefined}
@@ -416,19 +430,19 @@ export function CommishLogSection({
                   <Badge variant="stroke-purple" className="shrink-0">
                     {COMMISSIONER_LABEL}
                   </Badge>
-                  <span className="min-w-0 flex-1 text-[12px] font-medium text-ink" data-commish-log-text>
+                  <span className="min-w-0 flex-1 text-[11px] font-medium leading-[1.45] text-n-2" data-commish-log-text>
                     {/* L.E1.41: the commissioner, and every member the sentence names, is a door to his profile. */}
                     {line.actorUsername ? (
-                      <UsernameLink username={line.actorUsername} at={false} className="font-bold" />
+                      <UsernameLink username={line.actorUsername} at={false} className="font-bold text-ink" />
                     ) : (
-                      <span className="font-bold">{line.actor}</span>
+                      <span className="font-bold text-ink">{line.actor}</span>
                     )}{' '}
                     <TextWithUsernames marked={line.marked} />
                     {/* A NULL reason is ABSENT — no clause, no empty quote (§10.3). */}
                     {line.reason !== null && <span data-commish-log-reason>{` — reason: “${line.reason}”`}</span>}
                   </span>
                 </div>
-                <span className="fs-num text-[10px] font-medium text-n-3" title={when.title ?? undefined}>
+                <span className="fs-num text-[10px] font-medium text-n-6" title={when.title ?? undefined}>
                   {when.local}
                 </span>
                 {entries.length > 1 && (
@@ -452,13 +466,13 @@ export function CommishLogSection({
         (moreHref ? (
           <Link
             href={moreHref}
-            className="self-start text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className={cn('self-start', DOOR_LINK)}
             data-commish-log-more
           >
             Showing the latest <span className="fs-num">{lines.length}</span> — see all commissioner actions
           </Link>
         ) : (
-          <p className="text-[10px] font-medium text-n-3" data-commish-log-more>
+          <p className="text-[10px] font-medium text-n-6" data-commish-log-more>
             Showing the latest <span className="fs-num">{lines.length}</span> — older actions are kept in the log.
           </p>
         ))

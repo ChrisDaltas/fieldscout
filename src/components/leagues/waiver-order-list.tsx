@@ -24,32 +24,32 @@ export function WaiverOrderList({ view, leagueId }: { view: WaiverOrderListView;
   if (view.kind === 'hidden') return null
   return (
     <Card role="region" aria-labelledby="waiver-order-title" data-waiver-order={view.kind}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle id="waiver-order-title" className="text-[12px]">
+      <CardHeader className="min-h-0 py-2.5">
+        <CardTitle id="waiver-order-title" className="text-[15px]">
           {view.title}
         </CardTitle>
       </CardHeader>
       {view.kind === 'order' ? (
         <CardContent className="flex flex-col px-0 py-0">
-          <p className="px-card-pad pt-2 text-[11px] font-medium text-n-3" data-waiver-order-caption>
+          <p className="px-card-pad pb-1.5 pt-2.5 text-[10px] font-medium text-n-6" data-waiver-order-caption>
             {view.caption}
           </p>
-          <ol className="flex flex-col divide-y divide-n-4" aria-label={view.title}>
+          <ol className="flex flex-col [&>li]:border-t [&>li]:border-n-4" aria-label={view.title}>
             {view.rows.map((row) => (
               <li
                 key={row.team_id}
-                className={cn('flex min-w-0 items-center gap-2 px-card-pad py-1.5', row.mine && 'bg-accent-soft')}
+                className={cn('flex min-w-0 items-center gap-2 px-card-pad py-2 text-[11px]', row.mine && 'bg-accent-soft')}
                 data-waiver-order-team={row.team_id}
                 data-waiver-priority={row.priority ?? ''}
                 data-mine={row.mine || undefined}
               >
-                <span className="fs-num w-7 shrink-0 text-right text-[12px] font-bold text-ink">
+                <span className="fs-num w-7 shrink-0 text-right text-[10px] font-bold text-n-6">
                   {row.priority === null ? '—' : `#${row.priority}`}
                 </span>
                 <Crest name={row.name} src={null} />
-                <TeamNameLink name={row.name} leagueId={leagueId} teamId={row.team_id} className="truncate text-[12px] font-bold text-ink" />
+                <TeamNameLink name={row.name} leagueId={leagueId} teamId={row.team_id} className="truncate text-[11px] font-semibold text-ink" />
                 {row.mine && (
-                  <Badge variant="stroke" className="ml-auto shrink-0 text-[10px]">
+                  <Badge variant="stroke" className="ml-auto shrink-0">
                     You
                   </Badge>
                 )}
@@ -59,7 +59,7 @@ export function WaiverOrderList({ view, leagueId }: { view: WaiverOrderListView;
         </CardContent>
       ) : (
         <CardContent className="px-card-pad py-3">
-          <p className="text-[11px] font-medium text-ink" data-waiver-order-copy>
+          <p className="text-[11px] font-medium text-n-2" data-waiver-order-copy>
             {view.copy}
           </p>
         </CardContent>

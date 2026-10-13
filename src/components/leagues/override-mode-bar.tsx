@@ -27,8 +27,8 @@ import { cn } from '@/lib/utils'
  *
  * A11y: a `role="status"` region, so turning the mode on is ANNOUNCED; the
  * toggle is a real `<button>` with `aria-pressed`; the visible on-state is
- * the ink badge + the brand fill (a resting condition ⇒ fill and border,
- * never a shadow — CLAUDE.md). There is NO text field here or anywhere in the
+ * the badge + a calm caution wash (v7: a resting condition ⇒ fill, never
+ * a shadow — CLAUDE.md). There is NO text field here or anywhere in the
  * mode (F343 / Q66).
  */
 export function OverrideModeBar({
@@ -52,19 +52,19 @@ export function OverrideModeBar({
       role="status"
       data-commish-tools
       className={cn(
-        'flex flex-wrap items-center gap-2 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-        on ? 'border-ink bg-brand' : 'border-ink bg-white',
+        'flex min-h-[43px] flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-xl py-1.5 pl-3.5 pr-1.5 text-[11px] font-medium',
+        on ? 'bg-caution-soft text-ink' : 'border border-n-4 bg-white text-n-3',
       )}
     >
       {on && (
-        <Badge variant="black" className="shrink-0">
+        <Badge variant="yellow" className="shrink-0 bg-white">
           ✸ Override mode ON
         </Badge>
       )}
       <span className="min-w-[180px] flex-1">{children}</span>
       <Button
-        variant="stroke"
-        size="sm"
+        variant={on ? 'dark' : 'stroke'}
+        size="md"
         disabled={busy}
         title={busy ? busyTitle : undefined}
         aria-pressed={on}

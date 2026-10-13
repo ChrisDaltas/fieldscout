@@ -295,7 +295,7 @@ function WeekStrip({
           </span>
         )}
       </Button>
-      <span className="text-h5 text-ink" data-week={week}>
+      <span className="px-1 text-[17px] font-bold tracking-[-0.02em] text-ink" data-week={week}>
         Week <span className="fs-num">{week}</span>
       </span>
       <Button variant="stroke" size="sm" asChild={nav.next !== null} disabled={nav.next === null} aria-label="Next week">
@@ -432,21 +432,21 @@ export function Scoreboard({
   const extras = homeMedian || homeSecond || awayMedian || awaySecond
   return (
     <Card className="min-w-0 overflow-hidden" data-matchup={row.id} data-matchup-status={row.status}>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-4">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-4">
+      <CardContent className="flex flex-col gap-3 p-[15px]">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
           <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers?.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-n-3">
+            <span className="whitespace-nowrap text-[10px] font-semibold text-n-6">
               Week <span className="fs-num">{doc.week}</span>
               {row.round_type === 'playoff' && ' · Playoffs'}
             </span>
-            <span className="text-[11px] font-extrabold text-n-3">vs</span>
+            <span className="flex h-[29px] w-[29px] items-center justify-center rounded-full bg-surface-control text-[9px] font-bold text-n-6">vs</span>
             {row.is_overridden && (
               // §10.3 / F233(d): the ✸ badge lands on the commissioner's log — this
               // week, this matchup's teams (a score / result receipt records both).
               <Link
                 href={commishMatchupHref(doc.league_id, doc.week, row.home_team_id)}
-                className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                className="rounded-pill focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
                 data-overridden-link
               >
                 <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} className="hover:bg-accent-soft" data-overridden>
@@ -460,12 +460,12 @@ export function Scoreboard({
           ) : (
             <div className="flex min-w-0 flex-col items-end gap-1 text-right" data-side="bye">
               <span className="text-[13px] font-bold text-n-3">Bye</span>
-              <span className="text-[11px] font-medium text-n-3">No opponent this week.</span>
+              <span className="text-[11px] font-medium text-n-6">No opponent this week.</span>
             </div>
           )}
         </div>
         {extras && (
-          <div className="grid grid-cols-2 gap-3 border-t border-n-4 pt-2">
+          <div className="grid grid-cols-2 gap-3 border-t border-n-4 pt-2.5">
             <SideExtras doc={doc} median={homeMedian} second={homeSecond} />
             <SideExtras doc={doc} median={awayMedian} second={awaySecond} />
           </div>
@@ -500,7 +500,7 @@ function Side({
     // The viewer's own side is a resting FILL, never a shadow (CLAUDE.md).
     <div
       className={cn(
-        'flex min-w-0 flex-col gap-2 rounded-sm px-2 py-2 sm:flex-row sm:items-center sm:gap-3',
+        'flex min-w-0 flex-col gap-2 rounded-xl px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3',
         mirror && 'items-end text-right sm:flex-row-reverse',
         mine && 'bg-accent-soft',
       )}
@@ -508,14 +508,14 @@ function Side({
       data-mine={mine || undefined}
     >
       <div className={cn('flex min-w-0 max-w-full items-center gap-2 sm:flex-1', mirror && 'flex-row-reverse')}>
-        <Crest name={name} src={null} />
+        <Crest name={name} src={null} className="h-[31px] w-[31px]" fallbackClassName="text-[10px]" />
         {/* The name is the door to that franchise's page (§16.1) — the CREST
             stays outside the anchor so the link's accessible name is the team. */}
         <div className="min-w-0">
-          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="block truncate text-[13px] font-extrabold text-ink" />
+          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="block truncate text-[13px] font-bold tracking-[-0.01em] text-ink" />
           <span className={cn('flex min-w-0 items-center gap-1.5', mirror && 'flex-row-reverse')}>
             {manager && (
-              <span className="truncate text-[11px] font-semibold text-n-3">
+              <span className="truncate text-[10px] font-medium text-n-6">
                 <UsernameLink username={manager} />
               </span>
             )}
@@ -528,7 +528,7 @@ function Side({
         </div>
       </div>
       <p
-        className={cn('fs-num shrink-0 text-[27px] font-extrabold leading-none', cell.pending || lost ? 'text-n-3' : 'text-ink')}
+        className={cn('fs-num shrink-0 text-[27px] font-bold leading-none tracking-[-0.035em]', cell.pending || lost ? 'text-n-3' : 'text-ink')}
         title={cell.title ?? undefined}
         data-score={cell.pending ? 'pending' : cell.text}
       >
@@ -553,9 +553,9 @@ function SideExtras({
     <div className="flex min-w-0 flex-col gap-1.5">
       {median && (
         <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] font-medium" data-median-row>
-          <span className="text-n-3">{MEDIAN_ROW_LABEL}</span>
+          <span className="text-[10px] text-n-6">{MEDIAN_ROW_LABEL}</span>
           <span className="flex items-center gap-1.5">
-            <span className="fs-num text-ink" title={median.median === null ? MEDIAN_PENDING_TITLE : undefined}>
+            <span className="fs-num font-bold text-ink" title={median.median === null ? MEDIAN_PENDING_TITLE : undefined}>
               {median.median === null ? '—' : formatPoints(median.median)}
             </span>
             <ResultBadge result={median.result} data-median-result />
@@ -564,12 +564,12 @@ function SideExtras({
       )}
       {second && (
         <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] font-medium" data-second-chip>
-          <span className="min-w-0 truncate text-n-3">
+          <span className="min-w-0 truncate text-[10px] text-n-6">
             {SECOND_CHIP_LABEL} · {teamName(doc, second.opponent_team_id)}
           </span>
           <span className="flex items-center gap-1.5">
             {second.score !== null && second.opponent_score !== null && (
-              <span className="fs-num text-ink">
+              <span className="fs-num font-bold text-ink">
                 {formatPoints(second.score)} – {formatPoints(second.opponent_score)}
               </span>
             )}
@@ -606,11 +606,11 @@ function MatchupList({
   linkable: boolean
 }) {
   return (
-    <Card data-matchup-list={title}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">{title}</CardTitle>
+    <Card className="overflow-hidden" data-matchup-list={title}>
+      <CardHeader className="min-h-0 border-b-0 px-[15px] pb-1.5 pt-3">
+        <CardTitle className="text-[13px] font-bold tracking-[-0.02em]">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col divide-y divide-n-4 px-0 py-0">
+      <CardContent className="flex flex-col divide-y divide-n-4 border-t border-n-4 px-0 py-0">
         {rows.map((m) => {
           const home = scoreCell(m.home_score, m.status)
           const away = scoreCell(m.away_score, m.status)
@@ -627,13 +627,13 @@ function MatchupList({
                 name={teamName(doc, m.home_team_id)}
                 leagueId={doc.league_id}
                 teamId={doorId(m.home_team_id)}
-                className={cn('min-w-0 flex-1 truncate text-[12px] font-bold', mine && 'text-accent-strong')}
+                className={cn('min-w-0 flex-1 truncate text-[12px] font-semibold', mine && 'text-accent-strong')}
               />
-              <span className="fs-num shrink-0 text-[12px] font-medium" title={home.title ?? undefined}>
+              <span className="fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em]" title={home.title ?? undefined}>
                 {home.text}
               </span>
-              <span className="text-[10px] font-bold text-n-3">–</span>
-              <span className="fs-num shrink-0 text-[12px] font-medium" title={away.title ?? undefined}>
+              <span className="text-[10px] font-semibold text-n-6">–</span>
+              <span className="fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em]" title={away.title ?? undefined}>
                 {m.away_team_id ? away.text : '—'}
               </span>
               {/* A bye row has no away id — `teamName` renders the literal
@@ -642,7 +642,7 @@ function MatchupList({
                 name={teamName(doc, m.away_team_id)}
                 leagueId={doc.league_id}
                 teamId={doorId(m.away_team_id)}
-                className={cn('min-w-0 flex-1 truncate text-right text-[12px] font-bold', mine && 'text-accent-strong')}
+                className={cn('min-w-0 flex-1 truncate text-right text-[12px] font-semibold', mine && 'text-accent-strong')}
               />
               {m.is_overridden && (
                 <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} className="shrink-0">
@@ -651,7 +651,7 @@ function MatchupList({
               )}
             </>
           )
-          const className = cn('flex items-center gap-2 px-card-pad py-2', linkable && 'transition-colors hover:bg-accent-soft')
+          const className = cn('flex min-h-[34px] items-center gap-2 px-[15px] py-2', linkable && 'transition-colors hover:bg-surface-sunken')
           return linkable ? (
             <Link key={m.id} href={`/app/leagues/${leagueId}/matchup/${m.id}`} className={className} data-matchup-row={m.id}>
               {body}
@@ -688,15 +688,15 @@ function TotalPointsWeek({
   // F277(c): the week strip above carries the week badge — not a second one.
   return (
     <div className="flex flex-col gap-4" data-variant="total_points">
-      <Card data-leaderboard>
-        <CardHeader className="min-h-0 py-2">
-          <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <Card className="overflow-hidden" data-leaderboard>
+        <CardHeader className="min-h-0 border-b-0 px-[15px] pb-1.5 pt-3">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-[13px] font-bold tracking-[-0.02em]">
             {LEADERBOARD_TITLE}
             <Badge variant="stroke">Total points</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col divide-y divide-n-4 px-0 py-0">
-          {rows.length === 0 && <p className="px-card-pad py-3 text-[12px] font-medium text-n-3">{NO_LEADERBOARD_ROWS_COPY}</p>}
+        <CardContent className="flex flex-col divide-y divide-n-4 border-t border-n-4 px-0 py-0">
+          {rows.length === 0 && <p className="px-[15px] py-4 text-center text-[11px] font-medium text-n-6">{NO_LEADERBOARD_ROWS_COPY}</p>}
           {rows.map((row) => (
             <button
               key={row.team_id}
@@ -704,23 +704,23 @@ function TotalPointsWeek({
               onClick={() => setPicked(row.team_id)}
               aria-pressed={row.team_id === selectedId}
               className={cn(
-                'flex w-full items-center gap-2 px-card-pad py-2 text-left transition-colors hover:bg-accent-soft',
+                'flex min-h-[34px] w-full items-center gap-2 px-[15px] py-1.5 text-left transition-colors hover:bg-surface-sunken',
                 row.team_id === selectedId && 'bg-accent-soft',
               )}
               data-leaderboard-row={row.team_id}
               data-rank={row.rank ?? 'pending'}
             >
-              <span className="fs-num w-6 shrink-0 text-right text-[12px] font-bold">{row.rank ?? '—'}</span>
+              <span className="fs-num w-6 shrink-0 text-right text-[10px] font-bold text-n-6">{row.rank ?? '—'}</span>
               <Crest name={row.name} src={null} />
-              <span className={cn('min-w-0 flex-1 truncate text-[12px] font-bold', row.team_id === myTeamId && 'text-accent-strong')}>{row.name}</span>
+              <span className={cn('min-w-0 flex-1 truncate text-[12px] font-semibold', row.team_id === myTeamId && 'text-accent-strong')}>{row.name}</span>
               {row.points !== null ? (
-                <span className="fs-num shrink-0 text-[13px] font-bold text-ink">{formatPoints(row.points)}</span>
+                <span className="fs-num shrink-0 text-[13px] font-bold tracking-[-0.01em] text-ink">{formatPoints(row.points)}</span>
               ) : (
-                <span className="shrink-0 text-[12px] font-medium text-n-3" title="No scoring batch has reached this team yet — an absent row is not a score.">
+                <span className="shrink-0 text-[11px] font-medium text-n-6" title="No scoring batch has reached this team yet — an absent row is not a score.">
                   pending
                 </span>
               )}
-              <Badge variant={row.is_final ? 'black' : 'stroke'} className="shrink-0" title={row.is_final ? 'Final' : 'Provisional — the week has not finalized.'}>
+              <Badge variant={row.is_final ? 'stroke' : 'lime'} className="shrink-0" title={row.is_final ? 'Final' : 'Provisional — the week has not finalized.'}>
                 {row.is_final ? 'Final' : 'Live'}
               </Badge>
             </button>
@@ -792,7 +792,7 @@ function LineupBoard({
   const rosters = useRosters(leagueId)
   const values = useLeaguePlayerValues(leagueId, season, week)
   const two = away !== null
-  const grid = two ? 'grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)] sm:gap-3' : 'grid grid-cols-[28px_minmax(0,1fr)] items-center gap-1.5 sm:grid-cols-[48px_minmax(0,1fr)] sm:gap-3'
+  const grid = two ? 'grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_48px_minmax(0,1fr)] sm:gap-2.5' : 'grid grid-cols-[28px_minmax(0,1fr)] items-center gap-1.5 sm:grid-cols-[48px_minmax(0,1fr)] sm:gap-2.5'
   const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
 
   const homeData = homeBox.data
@@ -808,12 +808,12 @@ function LineupBoard({
   const loading = homeBox.isPending || (awaySide !== null && awayBox.isPending)
 
   const centre = (text: string) => (
-    <span className="text-center text-[9px] font-bold uppercase tracking-wide text-n-3 sm:text-[10px]">{text}</span>
+    <span className="text-center text-[9px] font-bold text-n-6 sm:text-[10px]">{text}</span>
   )
 
   return (
     <Card id="box-scores" className="min-w-0 scroll-mt-4 overflow-hidden" data-board>
-      <CardContent className="flex flex-col px-card-pad py-3">
+      <CardContent className="flex flex-col px-[15px] pb-2 pt-3">
         {/* Each side's own state: where its points come from, or why it has none. */}
         <div className={cn(grid, 'items-start pb-2')}>
           {!two && <span />}
@@ -825,7 +825,7 @@ function LineupBoard({
             ) : (
               <div className="flex flex-col items-end text-right" data-side="bye-box">
                 <span className="text-[12px] font-bold text-n-3">Bye</span>
-                <span className="text-[11px] font-medium text-n-3">No opponent this week.</span>
+                <span className="text-[11px] font-medium text-n-6">No opponent this week.</span>
               </div>
             ))}
         </div>
@@ -833,16 +833,16 @@ function LineupBoard({
         {loading ? (
           <div className="flex flex-col gap-1.5" data-skeleton="box">
             {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-9 rounded-sm" />
+              <Skeleton key={i} className="h-[34px] rounded-md bg-surface-control" />
             ))}
           </div>
         ) : (
           <>
             {slots.length > 0 && (
               <section className="flex flex-col" data-starters>
-                <h4 className="border-b border-n-4 pb-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-n-3">Starters</h4>
+                <h4 className="border-b border-n-4 pb-1.5 pt-1 text-center text-[10px] font-bold text-ink">Starters</h4>
                 {slots.map((pair) => (
-                  <div key={pair.key} className={cn(grid, 'border-b border-n-4 py-1.5')} data-slot-row={pair.key}>
+                  <div key={pair.key} className={cn(grid, 'min-h-[34px] border-b border-n-4 py-1.5 transition-colors hover:bg-surface-sunken')} data-slot-row={pair.key}>
                     {!two && centre(pair.label)}
                     {pair.home ? <StarterCellView leagueId={leagueId} starter={pair.home} teamId={home.teamId} proj={pair.home.player ? projOf(pair.home.player.id) : null} leagueTimeZone={leagueTimeZone} /> : <span />}
                     {two && centre(pair.label)}
@@ -864,21 +864,21 @@ function LineupBoard({
             )}
 
             {showBench && (
-              <section className="flex flex-col border-t border-n-4 pt-2" data-bench>
-                <h4 className="text-center text-[10px] font-bold uppercase tracking-wide text-n-3">{BENCH_LABEL}</h4>
-                <p className="pb-1.5 text-center text-[10px] font-medium text-n-3">{BENCH_NOT_COUNTED_COPY}</p>
+              <section className="flex flex-col border-t border-n-4 pt-[15px]" data-bench>
+                <h4 className="text-center text-[10px] font-bold text-ink">{BENCH_LABEL}</h4>
+                <p className="pb-1.5 text-center text-[10px] font-medium text-n-6">{BENCH_NOT_COUNTED_COPY}</p>
                 {note && (
-                  <p className="pb-1.5 text-center text-[10px] font-medium text-n-3" data-bench-note>
+                  <p className="pb-1.5 text-center text-[10px] font-medium text-n-6" data-bench-note>
                     {note}
                   </p>
                 )}
                 {benchPairs.length === 0 ? (
-                  <p className="text-center text-[11px] font-medium text-n-3" data-empty="no-bench">
+                  <p className="py-2 text-center text-[11px] font-medium text-n-6" data-empty="no-bench">
                     {EMPTY_BENCH_COPY}
                   </p>
                 ) : (
                   benchPairs.map((pair, i) => (
-                    <div key={i} className={cn(grid, 'border-b border-n-4 py-1')}>
+                    <div key={i} className={cn(grid, 'min-h-[34px] border-b border-n-4 py-1 transition-colors last:border-b-0 hover:bg-surface-sunken')}>
                       {!two && centre(benchSlotLabel(pair))}
                       {pair.home ? <BenchCellView leagueId={leagueId} row={pair.home} teamId={home.teamId} /> : <span />}
                       {two && centre(benchSlotLabel(pair))}
@@ -917,15 +917,15 @@ function BoxStatus({
   const pointsNote = data ? boxPointsNote(data, weekStatus) : null
   return (
     <div className={cn('flex min-w-0 flex-col gap-1', mirror && 'items-end text-right')} data-box={side.teamId}>
-      <TeamNameLink name={side.name} leagueId={leagueId} teamId={side.teamId} className="max-w-full truncate text-[12px] font-bold text-ink" />
+      <TeamNameLink name={side.name} leagueId={leagueId} teamId={side.teamId} className="max-w-full truncate text-[13px] font-bold tracking-[-0.01em] text-ink" />
       {problem && data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
       {pointsNote && (
-        <p className="text-[10px] font-medium text-n-3" data-box-note>
+        <p className="text-[10px] font-medium text-n-6" data-box-note>
           {pointsNote}
         </p>
       )}
       {problem && !data && (
-        <div className={cn('flex flex-col gap-1.5 rounded-sm border border-negative bg-negative-soft px-2 py-1.5', mirror ? 'items-end' : 'items-start')} role="alert" data-box-error>
+        <div className={cn('flex flex-col gap-1.5 rounded-xl bg-negative-soft px-3 py-2.5', mirror ? 'items-end' : 'items-start')} role="alert" data-box-error>
           <p className="text-[11px] font-bold">Couldn’t load this box score.</p>
           <p className="text-[10px] font-medium text-n-3">{problemCopy(problem)}</p>
           <Button variant="stroke" size="sm" onClick={() => box.refetch()}>
@@ -934,12 +934,12 @@ function BoxStatus({
         </div>
       )}
       {data && data.lineup === null && (
-        <p className="text-[11px] font-medium text-n-3" data-empty="no-lineup">
+        <p className="text-[11px] font-medium text-n-6" data-empty="no-lineup">
           {NO_LINEUP_COPY}
         </p>
       )}
       {data && data.lineup !== null && data.starters.every((s) => s.reason === 'empty') && (
-        <p className="text-[11px] font-medium text-n-3" data-empty="no-starters">
+        <p className="text-[11px] font-medium text-n-6" data-empty="no-starters">
           {NO_STARTERS_COPY}
         </p>
       )}
@@ -972,7 +972,7 @@ function TotalCell({
   return (
     <div className={cn('flex min-w-0 flex-col', mirror ? 'items-start text-left' : 'items-end text-right')} data-box-total={teamId}>
       <span
-        className={cn('fs-num text-[17px] font-extrabold leading-tight', sum.pending ? 'text-n-3' : 'text-ink')}
+        className={cn('fs-num text-[17px] font-bold leading-tight tracking-[-0.02em]', sum.pending ? 'text-n-3' : 'text-ink')}
         title={sum.title ?? undefined}
         data-box-sum={sum.pending ? 'pending' : sum.text}
       >
@@ -984,7 +984,7 @@ function TotalCell({
         </span>
       )}
       {yet > 0 && (
-        <span className="text-[10px] font-semibold text-n-3" data-yet-to-play={yet}>
+        <span className="text-[10px] font-medium text-n-6" data-yet-to-play={yet}>
           {yetToPlayCopy(yet)}
         </span>
       )}
@@ -997,7 +997,7 @@ function PlayerFace({ player }: { player: { id: string; full_name: string; posit
   // (the name itself renders as the card door beside the face).
   const initials = initialsOf(player.full_name)
   return (
-    <Avatar className="hidden h-7 w-7 shrink-0 sm:flex">
+    <Avatar className="hidden h-7 w-7 shrink-0 bg-surface-control sm:flex">
       <PlayerAvatarImage player={{ id: player.id, position: player.position, team: player.nfl_team, headshot_url: player.headshot_url ?? null }} />
       <AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
     </Avatar>
@@ -1037,25 +1037,25 @@ function StarterCellView({
           <PlayerFace player={starter.player} />
           <div className={cn('min-w-0 flex-1', mirror && 'text-right')}>
             <div className="truncate leading-tight">
-              <PlayerLink playerId={starter.player.id} name={starter.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-extrabold text-ink sm:text-[12px]" />
+              <PlayerLink playerId={starter.player.id} name={starter.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-semibold text-ink" />
             </div>
             <div className={cn('mt-0.5 flex min-w-0 items-center gap-1', mirror && 'flex-row-reverse')}>
               <PositionBadge position={starter.player.position} size="sm" className="shrink-0" />
-              <span className="truncate text-[10px] font-semibold text-n-3">{[starter.player.nfl_team ?? '—', opp].filter(Boolean).join(' · ')}</span>
+              <span className="truncate text-[10px] font-medium text-n-6">{[starter.player.nfl_team ?? '—', opp].filter(Boolean).join(' · ')}</span>
             </div>
             {(kickoff || state || line) && (
-              <div className="truncate text-[10px] font-medium text-n-3" title={kickoff?.title ?? undefined}>
+              <div className="truncate text-[10px] font-medium text-n-6" title={kickoff?.title ?? undefined}>
                 {[kickoff?.local, state, line].filter(Boolean).join(' · ')}
               </div>
             )}
           </div>
         </>
       ) : (
-        <span className={cn('min-w-0 flex-1 text-[11px] font-medium text-n-3', mirror && 'text-right')}>Empty</span>
+        <span className={cn('min-w-0 flex-1 text-[11px] font-medium text-n-6', mirror && 'text-right')}>Empty</span>
       )}
       <div className={cn('flex shrink-0 flex-col', mirror ? 'items-start' : 'items-end')}>
         <span
-          className={cn('fs-num text-[12px] font-extrabold', cell.tone === 'scored' ? 'text-ink' : 'text-n-3')}
+          className={cn('fs-num text-[12px] font-bold', cell.tone === 'scored' ? 'text-ink' : 'text-n-3')}
           title={cell.title ?? undefined}
           data-starter-cell={cell.tone}
         >
@@ -1079,19 +1079,19 @@ function BenchCellView({ leagueId, row, teamId, mirror = false }: { leagueId: st
           <PlayerFace player={row.player} />
           <div className={cn('min-w-0 flex-1', mirror && 'text-right')}>
             <div className="truncate leading-tight">
-              <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-semibold text-ink sm:text-[12px]" />
+              <PlayerLink playerId={row.player.id} name={row.player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-semibold text-ink" />
             </div>
             <div className={cn('mt-0.5 flex min-w-0 items-center gap-1', mirror && 'flex-row-reverse')}>
               <PositionBadge position={row.player.position} size="sm" className="shrink-0" />
-              <span className="truncate text-[10px] font-semibold text-n-3">{row.player.nfl_team ?? '—'}</span>
-              {row.ir && <span className="shrink-0 text-[10px] font-bold text-n-3">IR</span>}
+              <span className="truncate text-[10px] font-medium text-n-6">{row.player.nfl_team ?? '—'}</span>
+              {row.ir && <span className="shrink-0 text-[9px] font-bold text-negative-strong">IR</span>}
             </div>
           </div>
         </>
       ) : (
-        <span className={cn('min-w-0 flex-1 text-[11px] font-medium text-n-3', mirror && 'text-right')}>Player no longer on this roster</span>
+        <span className={cn('min-w-0 flex-1 text-[11px] font-medium text-n-6', mirror && 'text-right')}>Player no longer on this roster</span>
       )}
-      <span className={cn('fs-num shrink-0 text-[12px] font-medium', row.cell.tone === 'scored' ? 'text-ink' : 'text-n-3')} title={row.cell.title ?? undefined} data-bench-cell={row.cell.tone}>
+      <span className={cn('fs-num shrink-0 text-[11px] font-semibold', row.cell.tone === 'scored' ? 'text-n-2' : 'text-n-6')} title={row.cell.title ?? undefined} data-bench-cell={row.cell.tone}>
         {row.cell.text}
       </span>
     </div>
@@ -1116,8 +1116,8 @@ function EmptyCard({ copy, ...rest }: { copy: string } & Record<string, unknown>
   return (
     <Card {...rest}>
       <CardContent className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-        <Icon name="calendar" size={18} className="text-n-3" />
-        <p className="max-w-md text-[13px] font-medium text-n-3">{copy}</p>
+        <Icon name="calendar" size={18} className="text-n-6" />
+        <p className="max-w-md text-[11px] font-medium text-n-6">{copy}</p>
       </CardContent>
     </Card>
   )
@@ -1127,7 +1127,7 @@ function MatchupSkeleton() {
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title="Matchups" />
-      <Skeleton className="h-7 w-48 rounded-sm" />
+      <Skeleton className="h-btn-sm w-48 rounded-pill bg-surface-control" />
       <BodySkeleton />
     </div>
   )
@@ -1136,10 +1136,10 @@ function MatchupSkeleton() {
 function BodySkeleton() {
   return (
     <div className="flex flex-col gap-3" data-skeleton="matchup">
-      <Skeleton className="h-28 rounded-sm" />
+      <Skeleton className="h-28 rounded-2xl bg-surface-control" />
       <div className="grid gap-3 md:grid-cols-2">
-        <Skeleton className="h-48 rounded-sm" />
-        <Skeleton className="h-48 rounded-sm" />
+        <Skeleton className="h-48 rounded-2xl bg-surface-control" />
+        <Skeleton className="h-48 rounded-2xl bg-surface-control" />
       </div>
     </div>
   )

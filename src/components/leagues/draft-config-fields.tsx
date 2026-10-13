@@ -142,7 +142,7 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="h-btn-md w-24 text-[12px]"
+          className="w-24"
         />
       </FieldRow>
 
@@ -192,7 +192,7 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="h-btn-md w-24 text-[12px]"
+          className="w-24"
         />
       </FieldRow>
 
@@ -217,7 +217,7 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="h-btn-md w-24 text-[12px]"
+          className="w-24"
         />
       </FieldRow>
 
@@ -242,7 +242,7 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="h-btn-md w-24 text-[12px]"
+          className="w-24"
         />
       </FieldRow>
 

@@ -86,8 +86,8 @@ export function CorrectionsView({
 
   return (
     <Card data-corrections-view>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <CardHeader className="min-h-0 px-[15px] py-2.5">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-[13px] font-bold tracking-[-0.02em]">
           <span className="min-w-0 flex-1">{CORRECTIONS_TITLE}</span>
           <ChoiceSelect
             id="corrections-week"
@@ -103,7 +103,7 @@ export function CorrectionsView({
           />
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
+      <CardContent className="flex flex-col gap-3 px-[15px] py-3">
         <p className="text-[11px] font-medium text-n-3" data-corrections-intro>
           {CORRECTIONS_INTRO_COPY}
         </p>
@@ -113,7 +113,7 @@ export function CorrectionsView({
         {corrections.isPending ? (
           <ListSkeleton />
         ) : problem != null && !pages ? (
-          <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-corrections-state="error">
+          <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-corrections-state="error">
             <p className="text-[12px] font-bold">{CORRECTIONS_PROBLEM_COPY}</p>
             <p className="text-[11px] font-medium text-n-3">{problemCopy(problem)}</p>
             <Button variant="stroke" size="sm" onClick={() => corrections.refetch()}>
@@ -121,16 +121,16 @@ export function CorrectionsView({
             </Button>
           </div>
         ) : view?.kind === 'unavailable' ? (
-          <p className="rounded-sm border border-n-4 px-3 py-2 text-[12px] font-medium text-n-3" data-corrections-state="unavailable">
+          <p className="rounded-xl bg-surface-sunken px-3 py-2.5 text-[11px] font-medium text-n-3" data-corrections-state="unavailable">
             {view.reason}
           </p>
         ) : view?.kind === 'empty' ? (
-          <p className="text-[12px] font-medium text-n-3" data-corrections-state="empty">
+          <p className="py-4 text-center text-[11px] font-medium text-n-6" data-corrections-state="empty">
             {view.note}
           </p>
         ) : view?.kind === 'items' ? (
           <>
-            <ol className="flex flex-col divide-y divide-n-4" data-corrections-state="items">
+            <ol className="flex flex-col divide-y divide-n-4 border-t border-n-4" data-corrections-state="items">
               {view.items.map((item) => (
                 <CorrectionRow key={item.id} leagueId={leagueId} card={correctionCard(item)} leagueTimeZone={leagueTimeZone} />
               ))}
@@ -165,12 +165,12 @@ function CorrectionRow({
 }) {
   const when = formatInstantWithDate(card.recordedAt, leagueTimeZone)
   return (
-    <li className="flex flex-col gap-1 py-2" data-correction={card.id} data-result-tone={card.result.tone}>
+    <li className="flex flex-col gap-1 py-2.5" data-correction={card.id} data-result-tone={card.result.tone}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {card.position && <PositionBadge position={card.position} size="sm" />}
-        <PlayerLink playerId={card.playerId} name={card.playerName} context={leagueCardContext(leagueId)} className="min-w-0 text-[13px] font-bold text-ink" />
-        {card.nflTeam && <span className="text-[10px] font-medium text-n-3">{card.nflTeam}</span>}
-        <span className="ml-auto flex items-center gap-2 text-[10px] font-medium text-n-3">
+        <PlayerLink playerId={card.playerId} name={card.playerName} context={leagueCardContext(leagueId)} className="min-w-0 text-[12px] font-semibold text-ink" />
+        {card.nflTeam && <span className="text-[10px] font-medium text-n-6">{card.nflTeam}</span>}
+        <span className="ml-auto flex items-center gap-2 text-[10px] font-medium text-n-6">
           <span>
             Week <span className="fs-num">{card.week}</span>
           </span>
@@ -179,13 +179,13 @@ function CorrectionRow({
           </span>
         </span>
       </div>
-      <ul className="flex flex-col text-[12px] font-medium text-ink" data-correction-stats>
+      <ul className="flex flex-col text-[11px] font-medium text-n-2" data-correction-stats>
         {card.stats.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
       <p className="flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-n-3">
-        <TeamNameLink name={card.teamName} leagueId={leagueId} teamId={card.teamId} className="font-bold text-ink" />
+        <TeamNameLink name={card.teamName} leagueId={leagueId} teamId={card.teamId} className="font-semibold text-ink" />
         <span className="fs-num" data-correction-player-points>
           {card.playerPoints}
         </span>
@@ -215,7 +215,7 @@ function ListSkeleton() {
   return (
     <div className="flex flex-col gap-1.5" data-skeleton="corrections">
       {Array.from({ length: 3 }, (_, i) => (
-        <Skeleton key={i} className="h-14 rounded-sm" />
+        <Skeleton key={i} className="h-14 rounded-md bg-surface-control" />
       ))}
     </div>
   )
@@ -282,10 +282,10 @@ export function MatchupCorrectionNote({
   if (!note) return null
   return (
     <div
-      className="flex flex-col gap-1.5 rounded-sm border border-accent bg-accent-soft px-3 py-2"
+      className="flex flex-col gap-1.5 rounded-2xl bg-accent-soft px-[15px] py-3"
       data-correction-note={note.resultChanged ? 'result' : 'score'}
     >
-      <p className="flex items-center gap-1.5 text-[12px] font-bold text-ink">
+      <p className="flex items-center gap-1.5 text-[12px] font-bold text-accent-deep">
         <Icon name="repeat" size={13} />
         {note.title}
       </p>
@@ -313,7 +313,7 @@ export function MatchupCorrectionNote({
       )}
       <Link
         href={correctionsHref(leagueId, week)}
-        className="self-start text-[11px] font-bold text-accent-strong underline underline-offset-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+        className="self-start text-[11px] font-semibold text-accent underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
         data-corrections-link
       >
         {CORRECTIONS_LINK_LABEL}

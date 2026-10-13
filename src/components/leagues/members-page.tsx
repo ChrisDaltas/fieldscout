@@ -35,8 +35,8 @@ export function MembersPage({ leagueId }: { leagueId: string }) {
     return (
       <div className="flex flex-col gap-4" data-members-loading>
         <LeaguePageTitle title={MEMBERS_TITLE} />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
     )
   }
@@ -56,7 +56,7 @@ export function MembersPage({ leagueId }: { leagueId: string }) {
   return (
     <div className="flex flex-col gap-4" data-members-page>
       <LeaguePageTitle title={MEMBERS_TITLE} />
-      <p className="-mt-2 text-[11px] font-medium text-n-3" data-members-intro>
+      <p className="-mt-2 text-[11px] font-medium text-n-6" data-members-intro>
         {isCommish ? MEMBERS_INTRO_COMMISH : MEMBERS_INTRO_MEMBER}
       </p>
       <InvitePanel leagueId={leagueId} detail={detail} />

@@ -72,7 +72,7 @@ export function BracketHandPickTools({
 
   return (
     <div
-      className={cn('flex flex-col gap-3', overrideMode && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
+      className={cn('flex flex-col gap-3', overrideMode && 'rounded-2xl border border-brand-strong bg-brand-soft p-2.5 sm:p-[15px]')}
       data-bracket-hand-pick
       data-override-mode={overrideMode ? 'on' : 'off'}
     >
@@ -140,9 +140,9 @@ export function BracketHandPickPanelView({
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-sm border border-ink bg-white px-3 py-3" aria-label={HAND_PICK_PANEL_TITLE} data-hand-pick-panel={game.home_team_id}>
+    <section className="flex flex-col gap-3 rounded-xl border border-n-4 bg-white p-[15px]" aria-label={HAND_PICK_PANEL_TITLE} data-hand-pick-panel={game.home_team_id}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[12px] font-bold text-ink">
+        <h3 className="text-[13px] font-bold tracking-[-0.02em] text-ink">
           {HAND_PICK_PANEL_TITLE} · <span className="fs-num">{game.home_seed}</span> {teamName(teamNames, game.home_team_id)} vs{' '}
           {game.away_team_id ? (
             <>
@@ -166,10 +166,10 @@ export function BracketHandPickPanelView({
         data-hand-pick-form
       >
         <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex min-w-0 flex-col gap-1 text-[11px] font-bold text-ink" htmlFor={`${id}-home`}>
+          <label className="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-n-6" htmlFor={`${id}-home`}>
             Home
             <Select value={draft.homeTeamId} onValueChange={(v) => onDraft({ ...draft, homeTeamId: v })} disabled={pending}>
-              <SelectTrigger id={`${id}-home`} className="h-btn-md px-2 text-[12px]" data-hand-pick-side="home" aria-describedby={gate.ok ? undefined : gateId}>
+              <SelectTrigger id={`${id}-home`} data-hand-pick-side="home" aria-describedby={gate.ok ? undefined : gateId}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -181,10 +181,10 @@ export function BracketHandPickPanelView({
               </SelectContent>
             </Select>
           </label>
-          <label className="flex min-w-0 flex-col gap-1 text-[11px] font-bold text-ink" htmlFor={`${id}-away`}>
+          <label className="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-n-6" htmlFor={`${id}-away`}>
             Away
             <Select value={draft.awayTeamId ?? BYE} onValueChange={(v) => onDraft({ ...draft, awayTeamId: v === BYE ? null : v })} disabled={pending}>
-              <SelectTrigger id={`${id}-away`} className="h-btn-md px-2 text-[12px]" data-hand-pick-side="away" aria-describedby={gate.ok ? undefined : gateId}>
+              <SelectTrigger id={`${id}-away`} data-hand-pick-side="away" aria-describedby={gate.ok ? undefined : gateId}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -203,7 +203,7 @@ export function BracketHandPickPanelView({
             {pending ? 'Saving…' : 'Save pairing'}
           </Button>
           {!gate.ok && (
-            <span id={gateId} className="text-[11px] font-semibold text-n-3" data-hand-pick-gate>
+            <span id={gateId} className="text-[11px] font-medium text-n-6" data-hand-pick-gate>
               {gate.why}
             </span>
           )}
@@ -212,7 +212,7 @@ export function BracketHandPickPanelView({
 
       {/* The verb's refusal, VERBATIM — that text is the UX. */}
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-hand-pick-refusal>
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2.5 text-[11px] font-semibold text-ink" data-hand-pick-refusal>
           {refusal}
         </p>
       )}
@@ -220,15 +220,15 @@ export function BracketHandPickPanelView({
         <div
           role="status"
           className={cn(
-            'flex flex-col gap-1 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-            said.tone === 'positive' && 'border-positive bg-positive-soft',
-            said.tone === 'neutral' && 'border-ink bg-n-4',
+            'flex flex-col gap-1 rounded-xl px-3 py-2.5 text-[11px] font-semibold text-ink',
+            said.tone === 'positive' && 'bg-positive-soft',
+            said.tone === 'neutral' && 'bg-surface-sunken',
           )}
           data-hand-pick-outcome={said.branch}
         >
           <span>{said.text}</span>
           {bypassed && (
-            <span className="text-[11px] font-medium" data-hand-pick-bypassed>
+            <span className="text-[11px] font-medium text-n-2" data-hand-pick-bypassed>
               {bypassed}
             </span>
           )}

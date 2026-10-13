@@ -74,7 +74,7 @@ export function LeagueShell({ leagueId, children }: { leagueId: string; children
     <>
       {data ? <LeagueHeaderClaim leagueId={leagueId} data={data} /> : null}
       {data ? (
-        <div className="mb-4 flex flex-col gap-3 border-b border-ink pb-3 lg:hidden" data-league-header-mobile>
+        <div className="mb-4 flex flex-col gap-3 border-b border-n-4 pb-3 lg:hidden" data-league-header-mobile>
           <LeagueHeaderParts leagueId={leagueId} data={data} />
         </div>
       ) : null}
@@ -182,13 +182,13 @@ function LeagueIdentity({ teamName, leagueName, leagueAvatar, line, status, reco
     <div className="flex min-w-0 flex-1 items-center gap-3" data-league-identity>
       <Crest name={title} src={teamName ? null : leagueAvatar} className="h-10 w-10" fallbackClassName="text-[12px]" />
       <div className="mr-auto min-w-0">
-        <div className="truncate text-[17px] font-extrabold leading-tight" data-identity-team>
+        <div className="truncate text-[17px] font-bold leading-tight tracking-[-0.02em]" data-identity-team>
           {title}
         </div>
         <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           {teamName && <Crest name={leagueName} src={leagueAvatar} className="h-3.5 w-3.5" fallbackClassName="text-[6px]" />}
-          {teamName && <span className="whitespace-nowrap text-[10px] font-extrabold">{leagueName}</span>}
-          <span className="truncate text-[10px] font-semibold text-n-3" data-identity-line>
+          {teamName && <span className="whitespace-nowrap text-[10px] font-semibold text-n-2">{leagueName}</span>}
+          <span className="truncate text-[10px] font-medium text-n-6" data-identity-line>
             {line}
           </span>
         </div>
@@ -284,7 +284,7 @@ function MoreItem({ item, active }: { item: LeagueMoreItem; active: boolean }) {
         href={item.href}
         aria-current={active ? 'page' : undefined}
         data-more={item.key}
-        className={cn(active && 'bg-accent-soft')}
+        className={cn(active && 'bg-surface-selected')}
         {...(item.room ? roomEntry : {})}
       >
         {item.label}

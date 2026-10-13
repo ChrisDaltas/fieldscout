@@ -148,12 +148,12 @@ export function SettingsPanel({ leagueId, section = null }: { leagueId: string; 
   if (isError || !data) {
     return (
       <PanelShell>
-        <Card className="border-negative bg-negative-soft">
-          <CardContent className="flex flex-col items-start gap-2 p-4">
+        <Card className="border-0 bg-negative-soft">
+          <CardContent className="flex flex-col items-start gap-1.5">
             <p className="text-[13px] font-bold" role="alert">
               Couldn&apos;t load this league&apos;s settings.
             </p>
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="mb-1.5 text-[11px] font-medium text-n-3">
               Check your connection and try again — nothing was changed.
             </p>
             <Button type="button" variant="stroke" size="sm" onClick={() => refetch()}>
@@ -270,7 +270,7 @@ function SettingsPanelBody({ leagueId, data, section }: { leagueId: string; data
       {section === 'teams' && (
         <>
           <InvitePanel leagueId={leagueId} detail={data} />
-          <Link href={membersPageHref(leagueId)} className="self-start text-[11px] font-bold underline underline-offset-2" data-members-link>
+          <Link href={membersPageHref(leagueId)} className="self-start px-[3px] text-[11px] font-semibold text-accent hover:underline" data-members-link>
             Open the Members page
           </Link>
         </>
@@ -394,7 +394,7 @@ function LeagueProfileCard({
               </Button>
             </div>
           ) : (
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="text-[11px] font-medium text-n-6">
               Only the commissioner can change the league name and avatar.
             </p>
           )}
@@ -409,7 +409,7 @@ function LeagueProfileCard({
 
         {canEdit && (
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="league-name" className="text-[12px] font-bold">
+            <label htmlFor="league-name" className="text-[11px] font-semibold">
               League name
             </label>
             <div className="flex items-center gap-2">
@@ -421,13 +421,12 @@ function LeagueProfileCard({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void handleRename()
                 }}
-                className="h-btn-md max-w-sm text-[12px]"
+                className="max-w-sm"
               />
               <Button
                 type="button"
                 variant="blue"
-                size="sm"
-                shadow
+                size="md"
                 disabled={!nameDirty || !nameValid || rename.isPending}
                 onClick={handleRename}
               >
@@ -448,8 +447,8 @@ function LeagueProfileCard({
  * The in-season head of the panel: THE override switch (`OverrideModeBar` —
  * the same component, the same store, as the team and matchup pages; rule
  * (h)), the policy table's loading / FAILED states, and the per-key results
- * of the last save. While the mode is on the block is framed in the lime
- * "look here" tokens (fill + border; never a shadow — CLAUDE.md).
+ * of the last save. While the mode is on the block is framed by a calm
+ * caution hairline (a resting condition ⇒ border, never a shadow — CLAUDE.md).
  */
 export function InSeasonOverrideBlock({
   on,
@@ -468,7 +467,7 @@ export function InSeasonOverrideBlock({
 }) {
   return (
     <div
-      className={cn('flex flex-col gap-3', on && 'rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3')}
+      className={cn('flex flex-col gap-2.5', on && 'rounded-2xl border border-caution p-2 sm:p-2.5')}
       data-settings-override={on ? 'on' : 'off'}
     >
       <OverrideModeBar on={on} busy={saving} onToggle={onToggle}>
@@ -476,21 +475,21 @@ export function InSeasonOverrideBlock({
       </OverrideModeBar>
       {policyState === 'loading' && (
         <div className="flex flex-col gap-1.5" role="status" data-skeleton="setting-policies">
-          <p className="text-[12px] font-semibold text-ink">{SETTINGS_POLICY_LOADING_COPY}</p>
-          <Skeleton className="h-6 rounded-sm" />
+          <p className="text-[11px] font-medium text-n-6">{SETTINGS_POLICY_LOADING_COPY}</p>
+          <Skeleton className="h-6 rounded-md" />
         </div>
       )}
       {policyState === 'error' && (
         // A FAILED read is never "locked" and never "everything is open".
-        <div role="alert" className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" data-problem="setting-policies">
-          <p className="text-[12px] font-bold text-ink">{SETTINGS_POLICY_PROBLEM_COPY}</p>
+        <div role="alert" className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3.5 py-2.5" data-problem="setting-policies">
+          <p className="text-[11px] font-semibold text-ink">{SETTINGS_POLICY_PROBLEM_COPY}</p>
           <Button type="button" variant="stroke" size="sm" onClick={onRetryPolicies}>
             <Icon name="reset" size={13} /> Retry
           </Button>
         </div>
       )}
       {saving && (
-        <p role="status" className="text-[12px] font-semibold text-ink" data-settings-saving>
+        <p role="status" className="px-[3px] text-[11px] font-medium text-n-3" data-settings-saving>
           Saving — one recorded change per setting…
         </p>
       )}
@@ -502,17 +501,17 @@ export function InSeasonOverrideBlock({
                 key={r.key}
                 role="status"
                 className={cn(
-                  'flex flex-col gap-1 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-                  r.outcome.tone === 'positive' && 'border-positive bg-positive-soft',
-                  r.outcome.tone === 'caution' && 'border-ink bg-caution-soft',
-                  r.outcome.tone === 'neutral' && 'border-ink bg-n-4',
+                  'flex flex-col gap-1 rounded-lg px-3 py-2 text-[11px] font-semibold text-ink',
+                  r.outcome.tone === 'positive' && 'bg-positive-soft',
+                  r.outcome.tone === 'caution' && 'bg-caution-soft',
+                  r.outcome.tone === 'neutral' && 'bg-surface-sunken',
                 )}
                 data-setting-result={r.key}
                 data-setting-outcome={r.outcome.branch}
               >
                 <span>{r.outcome.text}</span>
                 {r.outcome.branch !== 'no_changes' && r.bypassed.length > 0 && (
-                  <span className="text-[11px] font-medium" data-setting-bypassed>
+                  <span className="text-[10px] font-medium text-n-3" data-setting-bypassed>
                     {`This change walked past: ${r.bypassed.join(', ')}.`}
                   </span>
                 )}
@@ -522,7 +521,7 @@ export function InSeasonOverrideBlock({
               <li
                 key={r.key}
                 role="alert"
-                className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink"
+                className="rounded-lg bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink"
                 data-setting-result={r.key}
                 data-setting-outcome="refused"
               >
@@ -546,7 +545,7 @@ function PanelShell({
   section?: SettingsSection | null
 }) {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <div className="mx-auto flex max-w-3xl flex-col gap-5">
       {section && leagueId ? <SubHead leagueId={leagueId} title={SECTION_TITLES[section]} /> : <LeaguePageTitle title="League settings" />}
       {children}
     </div>
@@ -560,7 +559,7 @@ function SubHead({ leagueId, title }: { leagueId: string; title: string }) {
     <div className="flex flex-col gap-1.5" data-settings-subhead>
       <Link
         href={settingsHref(leagueId)}
-        className="flex items-center gap-1 self-start text-[11px] font-bold text-n-3 hover:text-ink"
+        className="flex items-center gap-1 self-start text-[11px] font-semibold text-n-3 transition-colors hover:text-ink"
         data-settings-back
       >
         <Icon name="arrow-prev" size={13} /> League settings
@@ -601,22 +600,25 @@ function SettingsIndex({
     formatDraftAt: formatDraftInstant,
   })
   return (
-    <div className="flex flex-col gap-2.5" data-settings-index>
+    <div className="flex flex-col gap-5" data-settings-index>
+      {/* v7 commissioner section: one hairline card, rows split by hairlines;
+          a row answers the pointer with a fill, never a lift. */}
+      <div className="overflow-hidden rounded-2xl border border-n-4 bg-white">
       {rows.map((row) => (
         <Link
           key={row.section}
           href={settingsHref(leagueId, row.section)}
           data-settings-row={row.section}
-          className="flex items-center gap-2.5 rounded-sm border border-ink bg-white px-card-pad py-3 transition-shadow hover:shadow-hard-4 focus-visible:shadow-hard-4"
+          className={SETTINGS_ROW_LINK}
         >
-          <span className="mr-auto min-w-0">
-            <span className="block text-[14px] font-extrabold leading-tight">{row.title}</span>
-            <span className="mt-1 block text-[11px] font-semibold text-n-3" data-settings-row-note>
+          <span className="mr-auto flex min-w-0 flex-col gap-0.5">
+            <span className="block text-[13px] font-bold leading-tight tracking-[-0.01em]">{row.title}</span>
+            <span className="block text-[10px] font-medium text-n-6" data-settings-row-note>
               {row.section === 'scoring' && templates.isPending ? 'Loading scoring…' : row.note}
             </span>
           </span>
           {errorSections.has(row.section) && (
-            <Badge variant="stroke" className="text-negative-strong" data-settings-row-error={row.section}>
+            <Badge variant="pink" data-settings-row-error={row.section}>
               Needs a fix
             </Badge>
           )}
@@ -634,13 +636,18 @@ function SettingsIndex({
               'View'
             )}
           </span>
-          <Icon name="arrow-next" size={16} className="shrink-0 text-n-3" />
+          <Icon name="arrow-next" size={14} className="shrink-0 text-n-7" />
         </Link>
       ))}
+      </div>
       {isCommish && <CommishConsoleRow leagueId={leagueId} />}
     </div>
   )
 }
+
+/** One index row: 11–13px type on a hairline, a sunken fill on hover. */
+const SETTINGS_ROW_LINK =
+  'flex min-h-[52px] items-center gap-2.5 border-t border-n-4 px-4 py-2.5 transition-colors first:border-t-0 hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none'
 
 /** The draft instant as a short local date and time (display only — the
  *  stored value is an ISO instant). */
@@ -662,14 +669,14 @@ export function CommishConsoleRow({ leagueId }: { leagueId: string }) {
     <Link
       href={commishConsoleHref(leagueId)}
       data-door="commish"
-      className="flex items-center gap-3 rounded-sm border border-ink bg-white px-card-pad py-3 transition-shadow hover:shadow-hard-4 focus-visible:shadow-hard-4"
+      className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-n-4 bg-white px-4 py-2.5 transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none"
     >
-      <span className="mr-auto min-w-0">
-        <span className="block text-[14px] font-extrabold leading-tight">{COMMISH_ROW_TITLE}</span>
-        <span className="mt-1 block text-[11px] font-semibold text-n-3">{COMMISH_ROW_NOTE}</span>
+      <span className="mr-auto flex min-w-0 flex-col gap-0.5">
+        <span className="block text-[13px] font-bold leading-tight tracking-[-0.01em]">{COMMISH_ROW_TITLE}</span>
+        <span className="block text-[10px] font-medium text-n-6">{COMMISH_ROW_NOTE}</span>
       </span>
-      <Badge variant="yellow">Only commissioners see this</Badge>
-      <Icon name="arrow-next" size={16} className="shrink-0 text-n-3" />
+      <Badge variant="yellow" className="hidden sm:inline-flex">Only commissioners see this</Badge>
+      <Icon name="arrow-next" size={14} className="shrink-0 text-n-7" />
     </Link>
   )
 }
@@ -682,7 +689,7 @@ function SettingsPanelSkeleton() {
   return (
     <PanelShell>
       {Array.from({ length: 4 }, (_, i) => (
-        <Skeleton key={i} className="h-48 rounded-sm" />
+        <Skeleton key={i} className="h-48 rounded-2xl" />
       ))}
     </PanelShell>
   )
@@ -871,15 +878,16 @@ function SettingsForm({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {/* Save lives at the TOP of the page (sticky) — one atomic PATCH still
           covers everything below it, Draft setup included.
           Elevation exception: this bar is pinned above content that scrolls
           underneath it, so the resting shadow is what makes the overlap
-          legible. See CLAUDE.md → "Elevation". */}
+          legible (a true overlay — v7's white save pill). See CLAUDE.md →
+          "Elevation". */}
       {canEdit && (isFormSection(section) || (plan ? plan.send.length > 0 : dirty) || errorList.length > 0) && (
-        <div className="sticky top-3 z-10 flex items-center gap-2.5 rounded-sm border border-ink bg-page px-3 py-2.5 shadow-hard-4">
-          <span className="text-[12px] font-bold text-n-3" data-save-summary>
+        <div className="sticky top-3 z-10 flex min-h-[41px] items-center gap-2.5 rounded-pill bg-white py-1.5 pl-4 pr-1.5 shadow-hard-8">
+          <span className="min-w-0 text-[11px] font-semibold text-ink" data-save-summary>
             {plan
               ? plan.send.length > 0
                 ? `${plan.send.length} setting${plan.send.length === 1 ? '' : 's'} to save — each is recorded and posted to the league.`
@@ -889,16 +897,15 @@ function SettingsForm({
                 : 'All changes saved.'}
           </span>
           {!validation.valid && dirty && (
-            <Badge variant="stroke" className="text-negative-strong">
+            <Badge variant="pink" className="shrink-0">
               {validation.errors.length} to fix
             </Badge>
           )}
           <Button
             type="button"
-            variant="blue"
-            size="sm"
-            shadow
-            className="ml-auto"
+            variant="green"
+            size="md"
+            className="ml-auto shrink-0"
             disabled={!canSubmit}
             onClick={handleSave}
           >
@@ -917,9 +924,9 @@ function SettingsForm({
         </div>
       )}
       {canEdit && errorList.length > 0 && (
-        <ul className="flex flex-col gap-1 rounded-sm border border-negative bg-negative-soft px-3 py-2.5" data-settings-errors role="alert">
+        <ul className="flex flex-col gap-1 rounded-xl bg-negative-soft px-3.5 py-2.5" data-settings-errors role="alert">
           {errorList.map((e) => (
-            <li key={`${e.section}:${e.message}`} className="text-[12px] font-semibold" data-settings-error={e.section}>
+            <li key={`${e.section}:${e.message}`} className="text-[11px] font-medium" data-settings-error={e.section}>
               <Link href={settingsHref(leagueId, e.section)} className="font-bold underline underline-offset-2">
                 {e.title}
               </Link>
@@ -947,7 +954,7 @@ function SettingsForm({
       {isFormSection(section) && (
       <fieldset
         disabled={!canEdit}
-        className={cn('m-0 flex min-w-0 flex-col gap-4 border-0 p-0', !canEdit && 'opacity-95')}
+        className={cn('m-0 flex min-w-0 flex-col gap-5 border-0 p-0', !canEdit && 'opacity-95')}
         data-settings-fieldset={canEdit ? 'open' : 'closed'}
         data-settings-section={section}
       >
@@ -961,7 +968,7 @@ function SettingsForm({
         {/* A nested fieldset: 129 refuses the whole `draft` block in-season, so
             its two groups close as one (a disabled ancestor cannot be re-enabled
             by a child — this only ever CLOSES more). */}
-        <fieldset disabled={draftRefusal !== null} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0" data-draft-fieldset={draftRefusal !== null ? 'closed' : 'open'}>
+        <fieldset disabled={draftRefusal !== null} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0" data-draft-fieldset={draftRefusal !== null ? 'closed' : 'open'}>
         <ScheduleDraftGroup
           value={working.draft.draft_scheduled_at}
           year={detail.league.season}
@@ -995,6 +1002,7 @@ function SettingsForm({
                 value={working.roster_settings}
                 onChange={setRoster}
                 teamCount={working.team_count}
+                className="pb-3.5"
               />
             </GroupCard>
             <LineupsGroup s={working} onSettings={updateSettings} />
@@ -1007,13 +1015,13 @@ function SettingsForm({
               matches no card, so without this line the picker would read as
               "nothing selected" with no explanation. */}
           {customized && (
-            <p className="text-[12px] font-semibold text-n-3">
+            <p className="pb-2.5 text-[11px] font-medium text-n-3">
               This league scores with its own custom copy — values are edited
               in the Custom scoring section below. Picking a template here
               switches back to that shared rulebook.
             </p>
           )}
-          <div className={cn(!canEdit && 'pointer-events-none opacity-95')}>
+          <div className={cn('pb-3', !canEdit && 'pointer-events-none opacity-95')}>
             <ScoringTemplatePicker
               value={scoringId}
               onChange={setScoringId}
@@ -1159,12 +1167,15 @@ function LeaveSettingsDialog({ href, onStay, onLeave }: { href: string | null; o
  * section's groups show in full once it is opened.
  */
 function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
+  // v7 commissioner section: a hairline card, the section title on top and
+  // every row under it split by a hairline (`settings-rows` turns that on for
+  // the shared FieldRow / ToggleRow / InlineIssue — settings-form-controls).
   return (
     <Card data-settings-group={title}>
-      <div className="flex min-h-header items-center px-card-pad py-2.5">
-        <CardTitle>{title}</CardTitle>
+      <div className="flex items-center px-4 pb-2.5 pt-3.5">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">{title}</CardTitle>
       </div>
-      <CardContent className="flex flex-col gap-3.5 border-t border-ink">
+      <CardContent className="settings-rows flex flex-col px-4 pb-1.5 pt-0">
         {children}
       </CardContent>
     </Card>
@@ -1371,7 +1382,7 @@ function WaiversGroup({
               max={1000}
               value={s.faab_budget}
               onChange={(e) => onSettings({ faab_budget: clampInt(e.target.value, 0, 1000, s.faab_budget) })}
-              className="h-btn-md w-24 text-[12px]"
+              className="w-24"
             />
           </FieldRow>
           <FieldRow label="Minimum bid" htmlFor="set-faab-min">
@@ -1382,7 +1393,7 @@ function WaiversGroup({
               max={10}
               value={s.faab_min_bid}
               onChange={(e) => onSettings({ faab_min_bid: clampInt(e.target.value, 0, 10, s.faab_min_bid) })}
-              className="h-btn-md w-24 text-[12px]"
+              className="w-24"
             />
           </FieldRow>
           {/* v2.16.69 (L.D2.17 — Chris 2026-09-29): rolling priority is the default tiebreaker. */}
@@ -1440,7 +1451,7 @@ function WaiversGroup({
           max={48}
           value={s.fa_hold_hours}
           onChange={(e) => onSettings({ fa_hold_hours: clampInt(e.target.value, 0, 48, s.fa_hold_hours) })}
-          className="h-btn-md w-24 text-[12px]"
+          className="w-24"
         />
       </FieldRow>
 
@@ -1479,7 +1490,7 @@ function UnlimitedOrNumber({
             max={max}
             value={value}
             onChange={(e) => onChange(clampInt(e.target.value, 0, max, value))}
-            className="h-btn-md w-20 text-[12px]"
+            className="w-20"
           />
         )}
         <ChoiceSelect
@@ -1547,7 +1558,7 @@ function TradesGroup({
               // R109 fix, correct here from the start.
               onSettings({ trade_veto_votes: clampInt(e.target.value, 1, s.team_count, s.trade_veto_votes) })
             }
-            className="h-btn-md w-24 text-[12px]"
+            className="w-24"
           />
         </FieldRow>
       )}
@@ -1562,7 +1573,7 @@ function TradesGroup({
           onChange={(e) =>
             onSettings({ trade_review_period_hours: clampInt(e.target.value, 0, 96, s.trade_review_period_hours) })
           }
-          className="h-btn-md w-24 text-[12px]"
+          className="w-24"
         />
       </FieldRow>
 
@@ -1630,7 +1641,7 @@ function LineupsGroup({
           itself stays visible as a static line (redesign: clarity over density — a commissioner
           reading this group should still learn WHEN lineups lock). */}
       <FieldRow label="Lineup lock" hint="Each player locks at his own kickoff. There is no league-wide lock.">
-        <span className="text-[12px] font-semibold text-n-3">Per-player kickoff</span>
+        <span className="text-[11px] font-medium text-n-3">Per-player kickoff</span>
       </FieldRow>
 
       <ToggleRow
@@ -1653,7 +1664,7 @@ function LineupsGroup({
           custom-hours control changed nothing (no job reads `stat_correction_window`; since 158 the
           window is the next week's first kickoff), so it is gone; the stored value is untouched. */}
       <FieldRow label="Stat corrections" hint={`${STAT_FIX_RULE_COPY}. The same rule for every league this season.`}>
-        <span className="text-[12px] font-semibold text-n-3" data-stat-fix-rule>
+        <span className="text-[11px] font-medium text-n-3" data-stat-fix-rule>
           Next week’s first game
         </span>
       </FieldRow>
@@ -1693,22 +1704,22 @@ function TiebreakersGroup({
 
   return (
     <GroupCard title="Tiebreakers">
-      <p className="text-[12px] font-semibold text-n-3">
+      <p className="pb-2.5 text-[11px] font-medium text-n-3">
         Applied in order whenever teams tie on the primary sort — standings and playoff seeding
         share this one chain.
       </p>
-      <ol className="flex flex-col gap-1.5">
+      <ol className="-mx-4 flex flex-col">
         {chain.map((entry, i) => (
           <li
             key={entry}
-            className="flex items-center gap-2.5 rounded-sm border border-n-4 px-3 py-2 text-[12px] font-bold"
+            className="flex min-h-[40px] items-center gap-2.5 border-t border-n-4 px-4 py-1 text-[11px] font-semibold"
           >
-            <span className="fs-num w-5 shrink-0 text-n-3">{i + 1}</span>
+            <span className="fs-num w-5 shrink-0 text-[10px] font-bold text-n-6">{i + 1}</span>
             <span className="mr-auto">{TIEBREAKER_LABELS[entry] ?? entry}</span>
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               aria-label={`Move ${TIEBREAKER_LABELS[entry]} up`}
               disabled={i === 0}
               onClick={() => move(i, -1)}
@@ -1718,7 +1729,7 @@ function TiebreakersGroup({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               aria-label={`Move ${TIEBREAKER_LABELS[entry]} down`}
               disabled={i === chain.length - 1}
               onClick={() => move(i, 1)}
@@ -1939,7 +1950,7 @@ function ScheduleDraftGroup({
         </div>
       </FieldRow>
 
-      <p className="text-[12px] font-semibold text-n-3">
+      <p className="border-t border-n-4 py-2.5 text-[11px] font-medium text-n-3">
         {value ? (
           <>
             Drafting{' '}

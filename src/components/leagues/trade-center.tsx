@@ -287,9 +287,9 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
           ) : pastDeadline && deadlineState?.state === 'known' ? (
             // Q76 / Chris 2026-09-29: past the deadline there is no door to
             // propose (or counter) — said with the date, never a refusal.
-            <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2" role="status" data-trade-door-closed="deadline">
-              <p className="text-[12px] font-bold">🔒 {DEADLINE_PASSED_TITLE}</p>
-              <p className="text-[11px] font-medium text-ink">{deadlinePassedCopy(deadlineState.view, fmt)}</p>
+            <div className="flex flex-col gap-1 rounded-xl bg-caution-soft px-3 py-2.5" role="status" data-trade-door-closed="deadline">
+              <p className="text-[11px] font-bold text-ink">🔒 {DEADLINE_PASSED_TITLE}</p>
+              <p className="text-[11px] font-medium text-n-2">{deadlinePassedCopy(deadlineState.view, fmt)}</p>
             </div>
           ) : builder && defaultFrom && rostersState !== 'ready' ? (
             <BuilderRostersWait state={rostersState} error={rosters.error} onRetry={() => void rosters.refetch()} />
@@ -322,7 +322,7 @@ function TradesContent({ leagueId, detail, initialWith, initialPlayer }: { leagu
             <span>
               <Button
                 variant="blue"
-                size="sm"
+                size="md"
                 shadow
                 onClick={() => openBuilder({ mode: 'propose', fromTeamId: defaultFrom, counterOf: null, initialTo: null, initialGet: [] })}
                 data-propose-open
@@ -431,9 +431,9 @@ export function TradeCenterView(props: TradeCenterViewProps) {
   if (error && isTradesUnavailable(error)) {
     return (
       <Card data-trades-unavailable>
-        <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold">{TRADES_UNAVAILABLE_TITLE}</p>
-          <p className="text-[12px] font-medium text-n-3">{error instanceof Error ? error.message : 'Trades aren’t available yet.'}</p>
+        <CardContent className="flex flex-col items-center gap-1.5 px-6 py-8 text-center">
+          <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">{TRADES_UNAVAILABLE_TITLE}</p>
+          <p className="max-w-md text-[11px] font-medium text-n-6">{error instanceof Error ? error.message : 'Trades aren’t available yet.'}</p>
         </CardContent>
       </Card>
     )
@@ -453,7 +453,7 @@ export function TradeCenterView(props: TradeCenterViewProps) {
             {deadlineRefusal ? `🔒 ${userFacingMessage(deadlineRefusal)}` : tradeDeadlineLine(deadlineWeek, deadlineView, props.fmt)}
           </span>
         </StatusBanner>
-        {doc && <p className="text-[11px] font-medium text-n-3" data-trade-review-mode={doc.settings.trade_review}>{reviewModeCopy(doc.settings)}</p>}
+        {doc && <p className="text-[10px] font-medium text-n-6" data-trade-review-mode={doc.settings.trade_review}>{reviewModeCopy(doc.settings)}</p>}
       </div>
 
       {props.proposeDoor}
@@ -470,22 +470,22 @@ export function TradeCenterView(props: TradeCenterViewProps) {
       {loading ? (
         <div className="flex flex-col gap-2" data-skeleton="trades">
           {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-24 rounded-sm" />
+            <Skeleton key={i} className="h-24 rounded-2xl bg-surface-control" />
           ))}
         </div>
       ) : error ? (
-        <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-trades-error>
-          <p className="text-[12px] font-bold">{TRADES_ERROR_TITLE}</p>
+        <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-trades-error>
+          <p className="text-[11px] font-bold text-ink">{TRADES_ERROR_TITLE}</p>
           <p className="text-[11px] font-medium text-n-3">{error instanceof Error ? error.message : 'The trades read failed.'}</p>
           <Button variant="stroke" size="sm" onClick={onRetry}>
-            <Icon name="reset" size={13} /> Retry
+            <Icon name="reset" size={11} /> Retry
           </Button>
         </div>
       ) : shown.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 px-6 py-8 text-center">
-            <Icon name="transfer" size={18} className="text-n-3" />
-            <p className="max-w-md text-[13px] font-medium text-n-3" data-empty={tab}>
+            <Icon name="transfer" size={18} className="text-n-6" />
+            <p className="max-w-md text-[11px] font-medium text-n-6" data-empty={tab}>
               {tab === 'pending' ? TRADES_PENDING_EMPTY_COPY : TRADES_HISTORY_EMPTY_COPY}
             </p>
           </CardContent>
@@ -610,37 +610,37 @@ export function TradeCard({
 
   return (
     <Card data-trade={trade.id} data-trade-status={trade.status}>
-      <CardHeader className="min-h-0 flex-wrap justify-start py-2">
-        <CardTitle className="flex min-w-0 flex-wrap items-center gap-1 text-[12px]">
+      <CardHeader className="min-h-0 flex-wrap justify-start border-b-0 pb-0 pt-3">
+        <CardTitle className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px]">
           <TeamNameLink name={trade.proposer.name ?? 'A team'} leagueId={leagueId} teamId={trade.proposer.team_id} />
-          <span className="text-n-3">⇄</span>
+          <span className="text-n-6">⇄</span>
           <TeamNameLink name={trade.recipient.name ?? 'A team'} leagueId={leagueId} teamId={trade.recipient.team_id} />
         </CardTitle>
         <span className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] font-medium text-n-3">Offered {fmt(trade.created_at)}</span>
+          <span className="text-[10px] font-medium text-n-6">Offered {fmt(trade.created_at)}</span>
           <Badge variant={TONE_BADGE[status.tone]} data-trade-status-label>
             {status.label}
           </Badge>
         </span>
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5 px-card-pad py-3">
-        <div className="grid grid-cols-1 divide-y divide-n-4 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {sides.map((side) => (
-            <div key={side.teamId} className="flex min-w-0 flex-col gap-1 py-1.5 first:pt-0 last:pb-0 sm:px-3 sm:py-0 sm:first:pl-0 sm:last:pr-0" data-trade-gives={side.teamId}>
-              <p className="fs-overline text-[9px] text-n-3">{side.teamName} gives</p>
+            <div key={side.teamId} className="flex min-w-0 flex-col gap-1.5 rounded-xl bg-surface-sunken px-3 py-2.5" data-trade-gives={side.teamId}>
+              <p className="text-[10px] font-semibold text-n-6">{side.teamName} gives</p>
               {side.gives.length === 0 ? (
-                <p className="text-[11px] font-medium text-n-3">Nothing</p>
+                <p className="text-[11px] font-medium text-n-6">Nothing</p>
               ) : (
-                <ul className="flex flex-col gap-0.5">
+                <ul className="flex flex-col gap-1">
                   {side.gives.map((g) => (
-                    <li key={g.playerId ?? `faab-${g.faab}`} className="flex min-w-0 items-center gap-1.5 text-[12px]">
+                    <li key={g.playerId ?? `faab-${g.faab}`} className="flex min-w-0 items-center gap-1.5 text-[11px]">
                       {g.position && <PositionBadge position={g.position} size="sm" />}
                       {g.playerId ? (
-                        <PlayerLink playerId={g.playerId} name={g.name} context={leagueCardContext(leagueId)} className="font-bold text-ink" />
+                        <PlayerLink playerId={g.playerId} name={g.name} context={leagueCardContext(leagueId)} className="font-semibold text-ink" />
                       ) : (
-                        <span className="truncate font-bold text-ink">{g.name}</span>
+                        <span className="truncate font-semibold text-ink">{g.name}</span>
                       )}
-                      {g.nflTeam && <span className="shrink-0 text-[10px] font-medium text-n-3">{g.nflTeam}</span>}
+                      {g.nflTeam && <span className="shrink-0 text-[10px] font-medium text-n-6">{g.nflTeam}</span>}
                       {trade.in_flight && g.playerId && lockedIds.has(g.playerId) && (
                         <LockTag title={lockedAssetTitle(lockBehavior)} data-lock />
                       )}
@@ -649,7 +649,7 @@ export function TradeCard({
                 </ul>
               )}
               {side.drops.length > 0 && (
-                <p className="text-[10px] font-medium text-n-3" data-trade-drops-of={side.teamId}>
+                <p className="text-[10px] font-medium text-n-6" data-trade-drops-of={side.teamId}>
                   Drops{' '}
                   {side.drops.map((d, i) => (
                     <span key={d.playerId}>
@@ -682,17 +682,17 @@ export function TradeCard({
 
         {tally && trade.tally && (
           <div className="flex flex-col gap-0.5 border-t border-n-4 pt-2" data-trade-tally={`${trade.tally.veto_votes}/${trade.tally.veto_number}`}>
-            <p className="text-[12px] font-bold text-ink">{tally.count}</p>
+            <p className="text-[11px] font-bold text-ink">{tally.count}</p>
             <p className="text-[11px] font-medium text-n-3" data-trade-tally-rule={trade.tally.capped ? 'capped' : 'setting'}>
               {tally.rule}
             </p>
             {tally.mine && <p className="text-[11px] font-medium text-ink">{tally.mine}</p>}
-            <p className="text-[10px] font-medium text-n-3">{NEVER_WHO_VOTED_COPY}</p>
+            <p className="text-[10px] font-medium text-n-6">{NEVER_WHO_VOTED_COPY}</p>
           </div>
         )}
 
         {refusal && !(recipientOverflows && pickingDrops) && (
-          <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-trade-card-refusal>
+          <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-trade-card-refusal>
             {/* The server's sentence, its builder citations removed (R1244). */}
             {userFacingMessage(refusal)}
           </p>
@@ -705,15 +705,15 @@ export function TradeCard({
         )}
 
         {gate && gate.reason && gate.state !== 'checking' && (
-          <p className="rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[11px] font-medium text-ink" role="status" data-accept-gate={gate.state}>
+          <p className="rounded-xl bg-caution-soft px-3 py-2 text-[11px] font-medium text-ink" role="status" data-accept-gate={gate.state}>
             {gate.reason}
           </p>
         )}
 
         {pickingDrops && recipientRoster && (
-          <div className="flex flex-col gap-1.5 rounded-sm border border-ink px-2 py-2" data-accept-drops data-accept-must-drop={checked ? gate.mustDrop : undefined}>
+          <div className="flex flex-col gap-1.5 rounded-xl border border-n-4 px-2.5 py-2.5" data-accept-drops data-accept-must-drop={checked ? gate.mustDrop : undefined}>
             {!checked && recipientOverflows && refusal && <p className="text-[11px] font-medium text-ink">{userFacingMessage(refusal)}</p>}
-            <p className="text-[11px] font-bold text-ink">
+            <p className="text-[11px] font-semibold text-ink">
               {checked
                 ? gate.mustDrop > 0
                   ? dropsNeededCopy(gate.mustDrop, dropWords)
@@ -731,7 +731,7 @@ export function TradeCard({
             />
             <span className="flex flex-wrap items-center gap-2">
               <Button
-                variant="blue"
+                variant="green"
                 size="sm"
                 disabled={pending || (checked ? gate.state !== 'ready' : (acceptDrops ?? []).length === 0)}
                 onClick={() => onRespond(trade, 'accept', acceptDrops ?? [])}
@@ -739,7 +739,7 @@ export function TradeCard({
               >
                 {pending ? 'Sending…' : 'Accept with these drops'}
               </Button>
-              {checked && gate.state === 'checking' && <span className="text-[10px] font-medium text-n-3">{gate.reason}</span>}
+              {checked && gate.state === 'checking' && <span className="text-[10px] font-medium text-n-6">{gate.reason}</span>}
               {(!checked || (gate.state !== 'needs_drops' && gate.mustDrop === 0)) && (
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => setAcceptDrops(null)}>
                   Never mind
@@ -818,10 +818,10 @@ function TradeButtons({
   return (
     <div className="flex flex-col gap-2">
       {manager && (
-        <div className="flex flex-wrap items-center gap-2" data-trade-actions>
+        <div className="flex flex-wrap items-center gap-[5px] border-t border-n-4 pt-2.5" data-trade-actions>
           {actions.accept && accept.show && (
             <>
-              <Button variant="blue" size="sm" disabled={pending || !accept.enabled} onClick={onAccept} data-trade-op="accept">
+              <Button variant="green" size="sm" disabled={pending || !accept.enabled} onClick={onAccept} data-trade-op="accept">
                 {pending ? 'Sending…' : 'Accept'}
               </Button>
               {accept.withDrops && (
@@ -829,7 +829,7 @@ function TradeButtons({
                   Accept with drops…
                 </Button>
               )}
-              {accept.note && <span className="text-[10px] font-medium text-n-3">{accept.note}</span>}
+              {accept.note && <span className="text-[10px] font-medium text-n-6">{accept.note}</span>}
             </>
           )}
           {actions.counter && accept.counter && (
@@ -838,7 +838,7 @@ function TradeButtons({
             </Button>
           )}
           {actions.reject && (
-            <Button variant="stroke" size="sm" disabled={pending} onClick={() => onRespond('reject')} data-trade-op="reject">
+            <Button variant="destructive" size="sm" disabled={pending} onClick={() => onRespond('reject')} data-trade-op="reject">
               Turn down
             </Button>
           )}
@@ -858,19 +858,19 @@ function TradeButtons({
             </>
           )}
           {actions.reviewApprove && (
-            <Button variant="blue" size="sm" disabled={pending} onClick={() => onCommish('approve')} data-trade-op="approve">
+            <Button variant="green" size="sm" disabled={pending} onClick={() => onCommish('approve')} data-trade-op="approve">
               Approve
             </Button>
           )}
           {actions.reviewVeto && (
-            <Button variant="stroke" size="sm" disabled={pending} onClick={() => onCommish('veto')} data-trade-op="veto">
+            <Button variant="destructive" size="sm" disabled={pending} onClick={() => onCommish('veto')} data-trade-op="veto">
               Veto
             </Button>
           )}
         </div>
       )}
       {override && (
-        <div className="flex flex-wrap items-center gap-2" data-trade-override>
+        <div className="flex flex-wrap items-center gap-[5px]" data-trade-override>
           {actions.overrideApprove && (
             <Button variant="stroke" size="sm" disabled={pending} onClick={() => onCommish('approve')} data-trade-op="approve">
               {COMMISH_OP_LABELS.approve}
@@ -909,7 +909,7 @@ export function CommishConfirm({
 }) {
   return (
     <div className="flex flex-col gap-3" data-commish-confirm="force">
-      <ul className="flex flex-col gap-1 rounded-sm border border-n-4 px-2 py-2 text-[12px] font-medium text-ink">
+      <ul className="flex flex-col gap-1 rounded-xl bg-surface-sunken px-3 py-2.5 text-[11px] font-medium text-ink">
         {commishConfirmLines(trade).map((line) => (
           <li key={line}>{line}</li>
         ))}
@@ -934,17 +934,17 @@ export function BuilderRostersWait({ state, error, onRetry }: { state: 'loading'
   if (state === 'loading') {
     return (
       <div className="flex flex-col gap-2" data-skeleton="trade-builder" aria-busy="true">
-        <Skeleton className="h-9 rounded-sm" />
-        <Skeleton className="h-40 rounded-sm" />
+        <Skeleton className="h-9 rounded-xl bg-surface-control" />
+        <Skeleton className="h-40 rounded-2xl bg-surface-control" />
       </div>
     )
   }
   return (
-    <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-trade-builder="rosters-error">
-      <p className="text-[12px] font-bold">{BUILDER_ROSTERS_ERROR_TITLE}</p>
+    <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-trade-builder="rosters-error">
+      <p className="text-[11px] font-bold text-ink">{BUILDER_ROSTERS_ERROR_TITLE}</p>
       <p className="text-[11px] font-medium text-n-3">{error instanceof Error ? error.message : 'The rosters read failed.'}</p>
       <Button variant="stroke" size="sm" onClick={onRetry}>
-        <Icon name="reset" size={13} /> Retry
+        <Icon name="reset" size={11} /> Retry
       </Button>
     </div>
   )
@@ -954,10 +954,10 @@ function TradesSkeleton() {
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title={TRADES_TITLE} />
-      <Skeleton className="h-9 rounded-sm" />
-      <Skeleton className="h-7 w-48 rounded-sm" />
-      <Skeleton className="h-24 rounded-sm" />
-      <Skeleton className="h-24 rounded-sm" />
+      <Skeleton className="h-9 rounded-xl" />
+      <Skeleton className="h-tab w-48 rounded-pill" />
+      <Skeleton className="h-24 rounded-2xl" />
+      <Skeleton className="h-24 rounded-2xl" />
     </div>
   )
 }

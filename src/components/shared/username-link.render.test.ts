@@ -228,7 +228,7 @@ describe('the commissioner log (League Home, the console, the Activity page) —
   })
   it('a receipt with no named actor reads "A commissioner" — plain, never a dead link', () => {
     const out = render([item({ actor: { id: 'user-x', username: null } })])
-    expect(out).toContain('<span class="font-bold">A commissioner</span>')
+    expect(out).toContain('<span class="font-bold text-ink">A commissioner</span>')
     expect(out.match(/data-username-link=/g)).toHaveLength(1) // dana only
   })
 })

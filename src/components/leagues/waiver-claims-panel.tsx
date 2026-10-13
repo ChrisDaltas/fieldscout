@@ -141,11 +141,11 @@ export function WaiverClaimsPanelView({
 
   return (
     <Card data-waiver-claims-panel>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <CardHeader className="min-h-0 py-2.5">
+        <CardTitle className="flex flex-1 flex-wrap items-center gap-2 text-[15px]">
           Your waiver claims
           {doc && (
-            <span className="ml-auto text-[11px] font-medium text-n-3" data-claims-budget>
+            <span className="ml-auto text-[10px] font-semibold text-n-6" data-claims-budget>
               {/* L.D2.18 (F484): the stored order — FAAB: the tie order after the balance. */}
               {[faab ? faabLeftCopy(doc.faab_balance, doc.faab_budget) : null, waiverOrderCopy(doc, doc.waiver_priority, true)]
                 .filter((p) => p !== null)
@@ -154,35 +154,35 @@ export function WaiverClaimsPanelView({
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2 px-card-pad py-3">
+      <CardContent className="flex flex-col gap-2.5 px-card-pad py-3">
         {loading ? (
           <div className="flex flex-col gap-1.5" data-skeleton="claims">
             {Array.from({ length: 2 }, (_, i) => (
-              <Skeleton key={i} className="h-10 rounded-sm" />
+              <Skeleton key={i} className="h-10 rounded-md bg-surface-control" />
             ))}
           </div>
         ) : error ? (
-          <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-claims-error>
-            <p className="text-[12px] font-bold">{CLAIMS_ERROR_TITLE}</p>
+          <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-claims-error>
+            <p className="text-[11px] font-bold text-ink">{CLAIMS_ERROR_TITLE}</p>
             <p className="text-[11px] font-medium text-n-3">{error}</p>
             <Button variant="stroke" size="sm" onClick={onRetry}>
-              <Icon name="reset" size={13} /> Retry
+              <Icon name="reset" size={11} /> Retry
             </Button>
           </div>
         ) : (
           <>
             {refusal && (
-              <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-claims-refusal>
+              <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-claims-refusal>
                 {refusal}
               </p>
             )}
             {ordered.length === 0 ? (
-              <p className="text-[12px] font-medium text-n-3" data-empty="claims">
+              <p className="py-2 text-[11px] font-medium text-n-6" data-empty="claims">
                 {CLAIMS_EMPTY_COPY}
               </p>
             ) : (
               <>
-                <p className="text-[11px] font-medium text-n-3">
+                <p className="text-[10px] font-medium text-n-6">
                   {faab
                     ? 'Tried biggest bid first; drag to order claims with the same bid.'
                     : 'Tried top to bottom; drag to change the order.'}
@@ -190,7 +190,7 @@ export function WaiverClaimsPanelView({
                 </p>
                 <DndContext sensors={sensors} onDragEnd={onDragEnd}>
                   <SortableContext items={ordered.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                    <ol className="flex flex-col gap-1" data-claims-pending>
+                    <ol className="flex flex-col border-t border-n-4" data-claims-pending>
                       {ordered.map((claim, i) => (
                         <PendingClaimRow
                           key={claim.id}
@@ -210,9 +210,9 @@ export function WaiverClaimsPanelView({
               </>
             )}
             {showResults && settled.length > 0 && (
-              <div className="flex flex-col gap-1 border-t border-n-4 pt-2" data-claims-results>
-                <p className="fs-overline text-[9px] text-n-3">Recent results</p>
-                <ul className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 pt-1" data-claims-results>
+                <p className="text-[10px] font-bold text-ink">Recent results</p>
+                <ul className="flex flex-col border-t border-n-4 [&>li]:border-b [&>li]:border-n-4">
                   {settled.map((claim) => (
                     <SettledClaimRow key={claim.id} leagueId={doc!.league_id} claim={claim} outcome={claimOutcome(claim, waiverType)} />
                   ))}
@@ -232,9 +232,9 @@ export function ClaimPlayers({ leagueId, claim }: { leagueId: string; claim: Wai
     <span className="flex min-w-0 flex-1 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
         {claim.add.position && <PositionBadge position={claim.add.position} size="sm" />}
-        <PlayerLink playerId={claim.add.player_id} name={claim.add.full_name ?? claim.add.player_id} context={context} className="text-[12px] font-bold text-ink" />
+        <PlayerLink playerId={claim.add.player_id} name={claim.add.full_name ?? claim.add.player_id} context={context} className="text-[11px] font-semibold text-ink" />
       </span>
-      <span className="truncate text-[10px] font-medium text-n-3">
+      <span className="truncate text-[10px] font-medium text-n-6">
         {claim.drop ? (
           <>
             Drop <PlayerLink playerId={claim.drop.player_id} name={claim.drop.full_name ?? claim.drop.player_id} context={context} />
@@ -272,7 +272,7 @@ function PendingClaimRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'flex items-center gap-2 rounded-sm border border-n-4 bg-white px-2 py-1.5',
+        'flex items-center gap-2 border-b border-n-4 bg-white px-1 py-1.5 transition-colors hover:bg-surface-sunken',
         // A drag ghost is a true overlay — its lift is the one resting shadow here.
         isDragging && 'shadow-hard-4',
       )}
@@ -280,13 +280,13 @@ function PendingClaimRow({
       data-claim-rank={rank}
     >
       {draggable ? (
-        <button type="button" className="cursor-grab text-n-3 hover:text-ink" aria-label={`Drag to reorder ${claim.add.full_name ?? 'claim'}`} {...attributes} {...listeners} data-claim-drag>
+        <button type="button" className="flex h-[22px] w-[19px] cursor-grab items-center justify-center rounded text-n-7 transition-colors hover:bg-surface-hover hover:text-ink" aria-label={`Drag to reorder ${claim.add.full_name ?? 'claim'}`} {...attributes} {...listeners} data-claim-drag>
           <Icon name="dots-vertical" size={13} />
         </button>
       ) : (
-        <span className="w-[13px]" aria-hidden="true" />
+        <span className="w-[19px]" aria-hidden="true" />
       )}
-      <span className="fs-num w-4 text-right text-[11px] font-bold text-n-3">{rank}</span>
+      <span className="fs-num w-4 text-right text-[10px] font-bold text-n-6">{rank}</span>
       <ClaimPlayers leagueId={leagueId} claim={claim} />
       <PendingClaimControls claim={claim} faab={faab} pending={pending} onEditBid={onEditBid} onCancel={onCancel} />
     </li>
@@ -321,7 +321,7 @@ export function PendingClaimControls({
               onChange={(e) => setText(e.target.value)}
               inputMode="numeric"
               aria-label="New bid in dollars"
-              className="h-btn-sm w-16 px-2 text-[12px]"
+              className="h-btn-sm w-16"
             />
             <Button
               variant="blue"
@@ -342,7 +342,7 @@ export function PendingClaimControls({
         ) : (
           <button
             type="button"
-            className="fs-num rounded-sm border border-ink px-2 py-0.5 text-[12px] font-bold hover:bg-ink hover:text-white"
+            className="fs-num inline-flex h-btn-sm items-center rounded-pill bg-surface-control px-[9px] text-[11px] font-semibold text-ink transition-colors hover:bg-surface-pressed disabled:opacity-40"
             onClick={() => {
               setText(String(claim.faab_bid))
               setEditing(true)
@@ -363,7 +363,7 @@ export function PendingClaimControls({
 
 function SettledClaimRow({ leagueId, claim, outcome }: { leagueId: string; claim: WaiverClaimView; outcome: ClaimOutcome }) {
   return (
-    <li className="flex items-start gap-2 px-1 py-1" data-claim-result={claim.status}>
+    <li className="flex items-start gap-2 px-1 py-1.5" data-claim-result={claim.status}>
       <Badge
         variant={outcome.tone === 'positive' ? 'stroke-green' : outcome.tone === 'negative' ? 'stroke-pink' : 'stroke'}
         className="shrink-0"
@@ -372,7 +372,7 @@ function SettledClaimRow({ leagueId, claim, outcome }: { leagueId: string; claim
       </Badge>
       <span className="flex min-w-0 flex-1 flex-col">
         <ClaimPlayers leagueId={leagueId} claim={claim} />
-        {outcome.detail && <span className="text-[11px] font-medium text-n-3">{outcome.detail}</span>}
+        {outcome.detail && <span className="text-[10px] font-medium text-n-6">{outcome.detail}</span>}
       </span>
     </li>
   )
