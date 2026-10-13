@@ -14,17 +14,18 @@ interface TagChipProps {
   className?: string
 }
 
-/** List tag chip — ink outline on an accent-soft tint (tags are metadata,
- *  not controls, so they stay a badge rather than a FilterChip). */
+/** List tag chip — v7 grey pill; `active` takes the selected-chip blue wash
+ *  (tags are metadata, not controls, so they stay a badge rather than a
+ *  FilterChip). */
 export function TagChip({ name, slug, href, onRemove, active, className }: TagChipProps) {
   const target = href ?? (slug ? `/tag/${slug}` : undefined)
 
   const inner = (
     <span
       className={cn(
-        'inline-flex h-chip items-center gap-1 whitespace-nowrap rounded-sm border border-ink px-2 text-[11px] font-bold leading-none text-ink transition-colors',
-        active ? 'bg-accent text-accent-foreground' : 'bg-accent-soft',
-        target && !onRemove && 'hover:bg-accent hover:text-accent-foreground',
+        'inline-flex h-chip items-center gap-1 whitespace-nowrap rounded-pill px-2 text-[10px] font-semibold leading-none transition-colors',
+        active ? 'bg-accent-soft text-accent-deep' : 'bg-surface-control text-n-2',
+        target && !onRemove && 'hover:bg-surface-pressed hover:text-ink',
         className,
       )}
     >
@@ -37,7 +38,7 @@ export function TagChip({ name, slug, href, onRemove, active, className }: TagCh
             e.stopPropagation()
             onRemove()
           }}
-          className="-mr-0.5 inline-flex items-center text-ink transition-colors hover:text-accent"
+          className="-mr-0.5 inline-flex items-center text-n-6 transition-colors hover:text-ink"
           aria-label={`Remove ${name}`}
         >
           <Icon name="close" size={10} />

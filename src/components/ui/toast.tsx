@@ -35,7 +35,7 @@ ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 // Elevation exception: a toast floats over the whole app, so it keeps its
 // resting shadow. See CLAUDE.md → "Elevation".
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-auto max-w-[336px] items-center gap-2 overflow-hidden rounded-sm border border-ink bg-white py-2 pl-3 pr-2 text-[13px] font-bold text-ink shadow-hard-4 transition-all duration-200 data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[swipe=end]:animate-out",
+  "group pointer-events-auto relative flex w-auto max-w-[336px] items-center gap-2 overflow-hidden rounded-pill bg-ink py-2 pl-4 pr-2 text-[11px] font-semibold text-white shadow-hard-8 transition-all duration-200 data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[swipe=end]:animate-out",
   {
     variants: {
       variant: {
@@ -45,7 +45,7 @@ const toastVariants = cva(
         caution: "",
         // Negative = pastel fill + ink text everywhere in the DS (no
         // readable-on-white strong red exists).
-        destructive: "bg-negative",
+        destructive: "bg-negative-strong",
       },
     },
     defaultVariants: {
@@ -76,7 +76,7 @@ const ToastAction = React.forwardRef<
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      "inline-flex h-btn-sm shrink-0 items-center justify-center whitespace-nowrap rounded-sm border border-ink bg-transparent px-3 text-[11px] font-bold leading-none text-ink transition-colors hover:bg-ink hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
+      "inline-flex h-btn-sm shrink-0 items-center justify-center whitespace-nowrap rounded-pill bg-white/15 px-[9px] text-[10px] font-semibold leading-none text-white transition-colors hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-40",
       className
     )}
     {...props}
@@ -91,7 +91,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "shrink-0 rounded-sm p-1 text-n-3 transition-colors hover:bg-n-4 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+      "shrink-0 rounded-full p-1 text-white/60 transition-colors hover:bg-white/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
       className
     )}
     toast-close=""
@@ -109,7 +109,7 @@ const ToastTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Title
     ref={ref}
-    className={cn("text-[13px] font-bold leading-tight", className)}
+    className={cn("text-[11px] font-semibold leading-tight", className)}
     {...props}
   />
 ))
@@ -121,7 +121,7 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn("text-[12px] font-medium leading-snug text-n-3", className)}
+    className={cn("text-[10px] font-medium leading-snug text-white/70", className)}
     {...props}
   />
 ))

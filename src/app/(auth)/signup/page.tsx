@@ -57,26 +57,26 @@ export default function SignupPage() {
   if (emailSent) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>Check your email</CardTitle>
+        <CardHeader className="min-h-0 border-0 px-[19px] pb-0 pt-[19px]">
+          <CardTitle className="text-[24px] font-bold tracking-[-0.03em]">Check your email</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3.5 px-[19px] pb-[19px] pt-2">
           <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-ink bg-accent-soft">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-deep">
               <Icon name="email" size={15} />
             </span>
-            <p className="text-[13px] font-medium leading-snug text-n-3">
+            <p className="text-[11px] font-medium leading-[1.5] text-n-3">
               We sent a confirmation link to{' '}
               <strong className="text-ink">{email}</strong>. Click the link to
               verify your account and get started.
             </p>
           </div>
-          <p className="text-center text-[12px] font-medium text-n-3">
+          <p className="text-center text-[11px] font-medium text-n-6">
             Didn&apos;t receive the email?{' '}
             <button
               type="button"
               onClick={() => setEmailSent(false)}
-              className="font-bold text-accent hover:underline"
+              className="font-semibold text-accent hover:underline"
             >
               Try again
             </button>
@@ -88,16 +88,16 @@ export default function SignupPage() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Create your account</CardTitle>
+      <CardHeader className="min-h-0 border-0 px-[19px] pb-0 pt-[19px]">
+        <CardTitle className="text-[24px] font-bold tracking-[-0.03em]">Create your account</CardTitle>
       </CardHeader>
       <form onSubmit={handleSignup}>
-        <CardContent className="space-y-4">
-          <p className="text-[12px] font-medium text-n-3">
+        <CardContent className="space-y-3.5 px-[19px] pb-[19px] pt-2">
+          <p className="text-[11px] font-medium text-n-3">
             Start ranking players in seconds
           </p>
           {error && (
-            <div className="flex items-center gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-bold text-ink">
+            <div className="flex items-center gap-2 rounded-md bg-negative-soft px-2.5 py-2 text-[11px] font-semibold text-negative-strong">
               <Icon name="info-circle" size={13} className="shrink-0" />
               {error}
             </div>
@@ -139,13 +139,13 @@ export default function SignupPage() {
               autoComplete="new-password"
             />
           </div>
-          <div className="flex flex-col gap-4 pt-1">
+          <div className="flex flex-col gap-3.5 pt-1">
             <Button variant="blue" type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? 'Creating account…' : 'Create account'}
             </Button>
-            <p className="text-center text-[12px] font-medium text-n-3">
+            <p className="text-center text-[11px] font-medium text-n-6">
               Already have an account?{' '}
-              <Link href="/login" className="font-bold text-accent hover:underline">
+              <Link href="/login" className="font-semibold text-accent hover:underline">
                 Sign in
               </Link>
             </p>

@@ -60,8 +60,8 @@ function useDraftAlert() {
   return deriveDraftAlert(candidate, active.scheduledAt, nowMs, pathname)
 }
 
-/** Full-width lime alert bar above the header — only when a draft is live or
- *  about to start. The platform-wide urgency signal ("look here" lime, never
+/** Full-width green alert bar above the header — only when a draft is live or
+ *  about to start. The platform-wide urgency signal (v7 "look here" green, never
  *  a control surface — the Join button is dark). */
 export function DraftBar() {
   const draft = useDraftAlert()
@@ -71,23 +71,23 @@ export function DraftBar() {
   if (!draft) return null
 
   return (
-    <div className="flex h-chrome-band shrink-0 items-center gap-3 border-b border-ink bg-brand px-7 text-ink">
-      <Button variant="dark" size="sm" shadow asChild>
+    <div className="flex h-chrome-band shrink-0 items-center gap-3 bg-brand px-4 text-ink lg:px-7">
+      <Button variant="dark" size="sm" asChild>
         <Link href={draft.href} {...roomEntry}>
           Join
           <Icon name="arrow-next" />
         </Link>
       </Button>
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-extrabold">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-bold">
         <span
           className={`h-2 w-2 rounded-pill bg-current ${draft.live ? 'animate-pulse' : ''}`}
         />
         {draft.live ? 'Live draft' : 'Draft scheduled'}
       </span>
-      <span className="whitespace-nowrap text-[12px] font-bold">
+      <span className="whitespace-nowrap text-[12px] font-semibold">
         {draft.league}
       </span>
-      <span className="truncate text-[12px] font-medium text-ink/60">
+      <span className="truncate text-[11px] font-medium text-ink/70">
         {draft.detail}
       </span>
     </div>

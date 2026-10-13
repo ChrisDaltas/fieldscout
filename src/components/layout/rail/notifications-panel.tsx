@@ -13,6 +13,11 @@ import {
 } from '@/components/layout/rail/notifications-panel-ops'
 import { RailPanelShell } from '@/components/layout/rail/rail-panel-shell'
 import { notificationHref } from '@/components/notifications/notification-href'
+import {
+  NOTIFICATION_TONE,
+  notificationKind,
+  relativeTime,
+} from '@/components/notifications/notifications-feed'
 import { FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
@@ -25,21 +30,6 @@ import {
 } from '@/hooks/use-notifications'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
-
-function relativeTime(iso: string): string {
-  const seconds = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(iso).getTime()) / 1000),
-  )
-  if (seconds < 60) return 'just now'
-  const m = Math.floor(seconds / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  if (d < 7) return `${d}d ago`
-  return new Date(iso).toLocaleDateString()
-}
 
 interface NotificationsPanelProps {
   onClose: () => void
@@ -120,7 +110,7 @@ export function NotificationsBody({
   return (
     <>
       {leagues.length > 0 && (
-        <div className="shrink-0 border-b border-ink p-3" data-notif-filters>
+        <div className="shrink-0 border-b border-n-4 px-3 py-2.5" data-notif-filters>
           <div className="flex flex-wrap items-center gap-1">
             <FilterChip pressed={filter === null} onPressedChange={() => onFilter(null)} data-notif-filter="all">
               All
@@ -134,32 +124,32 @@ export function NotificationsBody({
                 title={l.name}
                 onClick={() => onFilter(filter === l.id ? null : l.id)}
                 className={cn(
-                  'inline-flex h-btn-sm items-center rounded-sm border px-1 transition-colors',
-                  filter === l.id ? 'border-ink bg-accent-soft' : 'border-transparent hover:bg-n-4',
+                  'inline-flex h-btn-sm items-center rounded-pill px-0.5 transition-colors duration-100 ease-linear',
+                  filter === l.id ? 'bg-accent-soft shadow-ring-accent' : 'hover:bg-surface-hover',
                 )}
                 data-notif-filter={l.id}
               >
-                <Crest name={l.name} src={l.avatar_url} className="h-5 w-5" />
+                <Crest name={l.name} src={l.avatar_url} className="h-5 w-5 rounded-[6px]" />
               </button>
             ))}
           </div>
           {filterName && (
-            <p className="mt-2 text-[10px] font-semibold text-n-3" data-notif-filter-note>
+            <p className="mt-2 text-[10px] font-medium text-n-6" data-notif-filter-note>
               Only {filterName}. Field Scout notifications are hidden.
             </p>
           )}
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-rail-scroll>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-[5px]" data-rail-scroll>
         {loading && notifications.length === 0 && (
-          <div className="space-y-2.5 p-3">
+          <div className="space-y-1">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <Skeleton className="h-6 w-6" />
+              <div key={i} className="flex items-start gap-[9px] p-[9px]">
+                <Skeleton className="h-6 w-6 rounded-[7px]" />
                 <div className="flex-1 space-y-1.5">
-                  <Skeleton className="h-3 w-3/4" />
                   <Skeleton className="h-2.5 w-16" />
+                  <Skeleton className="h-3 w-3/4" />
                 </div>
               </div>
             ))}
@@ -167,8 +157,8 @@ export function NotificationsBody({
         )}
 
         {error && notifications.length === 0 && (
-          <div className="flex flex-col items-center gap-2 px-4 py-12 text-center" data-notif-error>
-            <p className="text-[12px] font-bold text-ink">Couldn&apos;t load notifications.</p>
+          <div className="flex flex-col items-center gap-2.5 px-4 py-10 text-center" data-notif-error>
+            <p className="text-[11px] font-medium text-n-6">Couldn&apos;t load notifications.</p>
             <Button variant="stroke" size="sm" onClick={onRetry} data-notif-retry>
               Retry
             </Button>
@@ -176,9 +166,9 @@ export function NotificationsBody({
         )}
 
         {!loading && !(error && notifications.length === 0) && shown.length === 0 && (
-          <div className="flex flex-col items-center gap-1.5 px-4 py-12 text-center" data-notif-empty>
-            <Icon name="notification" size={16} className="text-n-3" />
-            <p className="text-[12px] font-bold text-ink">
+          <div className="flex flex-col items-center gap-1.5 px-[9px] pb-[17px] pt-[15px] text-center" data-notif-empty>
+            <Icon name="notification" size={14} className="text-n-7" />
+            <p className="text-[11px] font-medium text-n-6">
               {filterName
                 ? `Nothing from ${filterName} in your recent notifications`
                 : 'No notifications yet'}
@@ -188,35 +178,51 @@ export function NotificationsBody({
 
         {shown.map((n) => {
           const leagueId = notificationLeagueId(n)
+          const kind = notificationKind(n.type)
           return (
             <button
               key={n.id}
               type="button"
               onClick={() => onOpen(n)}
-              className="flex w-full items-start gap-2.5 border-b border-n-4 px-3 py-2.5 text-left transition-colors duration-200 ease-linear hover:bg-n-4"
+              className="flex w-full items-start gap-[9px] rounded-[9px] p-[9px] text-left transition-colors duration-100 ease-linear hover:bg-surface-sunken"
               data-notif-row={n.id}
               data-notif-read={n.read ? 'true' : 'false'}
             >
               {leagueId ? (
-                <Crest name={names.get(leagueId) ?? 'League'} src={avatars.get(leagueId) ?? null} />
+                <Crest
+                  name={names.get(leagueId) ?? 'League'}
+                  src={avatars.get(leagueId) ?? null}
+                  className="rounded-[7px]"
+                />
               ) : (
                 <span
                   aria-hidden
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink bg-white text-ink"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-surface-control text-ink"
                   data-notif-icon={notificationIcon(n.type)}
                 >
                   <Icon name={notificationIcon(n.type)} size={12} />
                 </span>
               )}
-              <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 {isFieldScoutNotice(n) && (
                   <span className="block text-[10px] font-bold text-accent" data-notif-from-fieldscout>
                     From FieldScout
                   </span>
                 )}
+                <span className="flex items-center gap-[5px]">
+                  <span className={cn('shrink-0 whitespace-nowrap text-[10px] font-bold', NOTIFICATION_TONE[kind.tone])}>
+                    {kind.label}
+                  </span>
+                  <span className="fs-num ml-auto min-w-0 truncate text-[10px] font-medium text-n-6" data-notif-source>
+                    {notificationSource(leagueId, names)} · {relativeTime(n.created_at)}
+                  </span>
+                  {!n.read && (
+                    <span aria-label="Unread" className="h-1.5 w-1.5 shrink-0 rounded-pill bg-accent" data-notif-unread />
+                  )}
+                </span>
                 <span
                   className={cn(
-                    'block text-[12px] leading-snug text-ink',
+                    'block text-[11px] leading-[1.45] text-ink',
                     n.read ? 'font-medium' : 'font-bold',
                   )}
                   data-notif-title
@@ -224,17 +230,11 @@ export function NotificationsBody({
                   {n.title}
                 </span>
                 {n.body && (
-                  <span className="mt-0.5 block truncate text-[11px] font-medium text-n-3">
+                  <span className="block truncate text-[11px] font-medium leading-[1.45] text-n-3">
                     {n.body}
                   </span>
                 )}
-                <span className="fs-num mt-0.5 block text-[10px] font-medium text-n-3" data-notif-source>
-                  {notificationSource(leagueId, names)} · {relativeTime(n.created_at)}
-                </span>
               </span>
-              {!n.read && (
-                <span aria-label="Unread" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-pill bg-accent" data-notif-unread />
-              )}
             </button>
           )
         })}

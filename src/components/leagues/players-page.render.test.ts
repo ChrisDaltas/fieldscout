@@ -471,7 +471,7 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
     const html = renderWithValues()
     expect(html).toMatch(/<th[^>]*>Opp<\/th>/)
     expect(html).toMatch(/aria-sort="descending" data-sort-col="proj"/)
-    expect(html).toMatch(/class="[^"]*bg-accent-soft[^"]*" aria-sort="descending" data-sort-col="proj"/)
+    expect(html).toMatch(/class="[^"]*text-accent[^"]*" aria-sort="descending" data-sort-col="proj"/)
     expect(html).toContain('data-sort-col="season"')
     expect(html).toContain('data-sort-col="avg"')
   })

@@ -60,30 +60,30 @@ export default async function FollowingPage({ params }: PageProps) {
 
   return (
     <GuestShell>
-      <div className="mx-auto max-w-2xl space-y-[19px]">
+      <div className="mx-auto flex max-w-2xl flex-col gap-5">
         <header>
           <Link
             href={userProfileHref(profile.username)}
-            className="text-[11px] font-bold text-n-3 transition-colors hover:text-ink hover:underline"
+            className="text-[11px] font-semibold text-n-3 transition-colors hover:text-ink"
           >
             ← @{profile.username}
           </Link>
-          <h1 className="mt-1 text-h4">Following</h1>
-          <p className="mt-0.5 text-[13px] font-bold text-n-3">
+          <h1 className="mt-2 text-h3 text-ink">Following</h1>
+          <p className="mt-1 text-[11px] font-semibold text-n-3">
             Following <span className="fs-num">{following.length}</span> user
             {following.length === 1 ? '' : 's'}
           </p>
         </header>
 
         {following.length === 0 ? (
-          <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-            <h2 className="text-h5">Not following anyone yet</h2>
-            <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+          <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+            <h2 className="text-h6 text-ink">Not following anyone yet</h2>
+            <p className="mx-auto mt-1.5 max-w-md text-[11px] font-medium text-n-6">
               Scouts @{profile.username} follows will show up here.
             </p>
           </div>
         ) : (
-          <div className="rounded-sm border border-ink bg-white">
+          <div className="overflow-hidden rounded-2xl border border-n-4 bg-white">
             <ul className="divide-y divide-n-4">
               {following.map((p) => (
                 <li key={p.id}>

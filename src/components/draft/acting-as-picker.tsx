@@ -43,12 +43,12 @@ export function ActingAsPicker({
   if (options.length === 0) return null
   return (
     <label className={cn('flex flex-col gap-1', className)}>
-      <span className="fs-overline text-[9px] text-n-3">{label}</span>
+      <span className="text-[10px] font-semibold text-n-6">{label}</span>
       <Select
         value={pickerValue(control.picked, control.myTeamId)}
         onValueChange={(value) => control.onPick(pickedFromValue(value))}
       >
-        <SelectTrigger className="h-btn-md min-w-40 text-[12px] font-bold" aria-label={label}>
+        <SelectTrigger className="h-btn-md min-w-40 text-[11px] font-semibold" aria-label={label}>
           <SelectValue placeholder="Choose a team…" />
         </SelectTrigger>
         <SelectContent>

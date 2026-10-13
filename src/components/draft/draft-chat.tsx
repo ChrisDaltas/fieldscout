@@ -110,33 +110,33 @@ export function DraftChat({ scope, draftId, userId, className }: DraftChatProps)
   return (
     <Card className={cn('flex min-h-0 flex-col', className)}>
       <CardHeader>
-        <span className="text-[13px] font-extrabold">Draft chat</span>
+        <span className="text-[13px] font-bold tracking-[-0.01em]">Draft chat</span>
         {/* Bounded-window honesty: the pane holds the recent scroll, not the
             whole history — no count rendered, nothing to over-claim. */}
       </CardHeader>
       <CardContent className="flex min-h-0 flex-col gap-2.5">
         <div
           ref={listRef}
-          className="flex max-h-72 min-h-[96px] flex-col gap-1.5 overflow-y-auto pr-0.5"
+          className="flex max-h-72 min-h-[96px] flex-col gap-3 overflow-y-auto pr-0.5"
           role="log"
           aria-label="Draft chat messages"
         >
           {chat.isPending && (
             <div className="flex flex-col gap-1.5">
-              <Skeleton className="h-8 rounded-sm" />
-              <Skeleton className="h-8 rounded-sm" />
+              <Skeleton className="h-8 rounded-md" />
+              <Skeleton className="h-8 rounded-md" />
             </div>
           )}
           {chat.isError && (
             <div className="flex flex-col items-start gap-1.5">
-              <p className="text-[12px] font-medium text-n-3">Chat didn’t load.</p>
+              <p className="text-[11px] font-medium text-n-3">Chat didn’t load.</p>
               <Button variant="stroke" size="sm" onClick={() => void chat.refetch()}>
                 <Icon name="reset" size={13} /> Retry
               </Button>
             </div>
           )}
           {chat.isSuccess && items.length === 0 && (
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="py-6 text-center text-[11px] font-medium text-n-6">
               {standalone
                 ? // Nobody to hear you: the seats are CPUs (D226(2)). What
                   // lands here is the engine's own notices.
@@ -164,11 +164,11 @@ export function DraftChat({ scope, draftId, userId, className }: DraftChatProps)
               placeholder={userId ? 'Message the room…' : 'Sign in to chat'}
               disabled={!userId || send.isPending}
               aria-label="Chat message"
-              className="h-btn-md text-[12px]"
+              className="rounded-pill px-3"
             />
             <Button
               variant="blue"
-              size="sm"
+              size="icon-md"
               onClick={handleSend}
               disabled={!sendable}
               aria-label="Send message"
@@ -188,7 +188,7 @@ export function ChatItem({ view }: { view: ChatItemView }) {
     // the actor is named in the message text itself (D108(15): actorless by
     // shape; the tick's posts carry user_id NULL and render identically).
     return (
-      <p className="rounded-sm border-l-2 border-accent bg-accent-soft px-2 py-1 text-[12px] font-semibold text-ink">
+      <p className="rounded-lg bg-accent-soft px-2.5 py-1.5 text-[11px] font-semibold text-accent-deep">
         <TextWithActor text={view.message} actor={view.username} newTab />
       </p>
     )
@@ -197,15 +197,15 @@ export function ChatItem({ view }: { view: ChatItemView }) {
     <div className="flex min-w-0 flex-col">
       <span
         className={cn(
-          'fs-overline truncate text-[9px]',
-          view.kind === 'former-member' ? 'italic text-n-3' : 'text-n-3',
+          'truncate text-[11px] font-semibold',
+          view.kind === 'former-member' ? 'italic text-n-6' : 'text-ink',
           view.mine && 'text-accent-strong',
         )}
       >
         <ChatAuthor label={view.authorLabel} username={view.username} />
         {view.mine ? ' (You)' : ''}
       </span>
-      <p className="whitespace-pre-wrap break-words text-[12px] font-medium text-ink">
+      <p className="whitespace-pre-wrap break-words text-[12px] font-medium leading-[1.4] text-n-2">
         {view.message}
       </p>
     </div>

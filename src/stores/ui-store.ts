@@ -1,11 +1,11 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-// Field Scout ink sidebar — package tokens ×0.8 (304/230/380/84).
-const SIDEBAR_DEFAULT = 243
-const SIDEBAR_MIN = 184
-const SIDEBAR_MAX = 304
-const SIDEBAR_COLLAPSED = 67
+// v7 left rail — 156px expanded, 41px minimised; still drag-resizable.
+const SIDEBAR_DEFAULT = 156
+const SIDEBAR_MIN = 140
+const SIDEBAR_MAX = 280
+const SIDEBAR_COLLAPSED = 41
 
 interface UIStore {
   sidebarWidth: number
@@ -60,6 +60,13 @@ export const useUIStore = create<UIStore>()(
     {
       name: 'fieldscout.ui',
       storage: createJSONStorage(() => localStorage),
+      // v1 (v7 redesign): widths saved against the old 243px sidebar reset
+      // to the v7 default once.
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Partial<UIStore>
+        return version < 1 ? { ...state, sidebarWidth: SIDEBAR_DEFAULT } : state
+      },
       partialize: (state) => ({
         sidebarWidth: state.sidebarWidth,
         isSidebarCollapsed: state.isSidebarCollapsed,

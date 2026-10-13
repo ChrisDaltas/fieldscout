@@ -41,23 +41,23 @@ export function RankingHistoryCard() {
     >
       {isLoading ? (
         <CardContent className="space-y-2">
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-[34px] w-full rounded-md bg-surface-control" />
+          <Skeleton className="h-[34px] w-full rounded-md bg-surface-control" />
+          <Skeleton className="h-[34px] w-full rounded-md bg-surface-control" />
         </CardContent>
       ) : isError ? (
         <CardContent>
-          <p className="text-[13px] font-medium text-negative-strong">
+          <p className="text-[11px] font-medium text-negative-strong">
             Couldn&apos;t load your ranking history. Refresh to retry.
           </p>
         </CardContent>
       ) : snapshots.length === 0 ? (
         <CardContent className="py-8 text-center">
           <h3 className="text-h6">No saved boards yet</h3>
-          <p className="mx-auto mt-1 max-w-sm text-[13px] font-medium text-n-3">
+          <p className="mx-auto mt-1 max-w-sm text-[11px] font-medium text-n-6">
             Every time you update your big board, a snapshot lands here.
           </p>
-          <Button asChild variant="stroke" size="sm" className="mt-4">
+          <Button asChild variant="stroke" size="sm" className="mt-3">
             <Link href="/app/big-board">Open the big board</Link>
           </Button>
         </CardContent>
@@ -75,18 +75,18 @@ export function RankingHistoryCard() {
                       : undefined
                   }
                 >
-                  <div className="flex items-center justify-between gap-3 px-card-pad py-2.5">
+                  <div className="flex min-h-[34px] items-center justify-between gap-3 px-card-pad py-2">
                     <div className="min-w-0">
-                      <div className="text-[13px] font-extrabold text-ink">
+                      <div className="text-[11px] font-semibold text-ink">
                         {DATE_FMT.format(saved)}
                       </div>
-                      <div className="text-[11px] font-medium text-n-3">
+                      <div className="text-[10px] font-medium text-n-6">
                         {TIME_FMT.format(saved)}
                       </div>
                     </div>
-                    <span className="fs-num shrink-0 text-[13px] font-bold text-ink">
+                    <span className="fs-num shrink-0 text-[11px] font-semibold text-ink">
                       {snap.player_count}{' '}
-                      <span className="text-[11px] font-semibold text-n-3">
+                      <span className="text-[10px] font-medium text-n-6">
                         players
                       </span>
                     </span>
@@ -95,10 +95,10 @@ export function RankingHistoryCard() {
               )
             })}
           </ul>
-          <div className="border-t border-ink px-card-pad py-2.5">
+          <div className="border-t border-n-4 px-card-pad py-2.5">
             <Link
               href="/app/big-board"
-              className="text-[12px] font-bold text-accent hover:underline"
+              className="text-[11px] font-semibold text-accent hover:underline"
             >
               Open the big board to restore a save
             </Link>

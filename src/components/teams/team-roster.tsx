@@ -40,8 +40,8 @@ interface TeamRosterProps {
 }
 
 /**
- * Fantasy-relevant roster for an NFL team page — the Field Scout stat table:
- * 11px bold header over an ink rule, n-4 hairlines, mono numerals right.
+ * Fantasy-relevant roster for an NFL team page — the v7 stat table: 10px
+ * grey header, 11px rows on n-4 hairlines, mono numerals right.
  * Player names open the mini player card. Rows arrive ADP-sorted from the
  * page query.
  */
@@ -50,9 +50,9 @@ export function TeamRoster({ players }: TeamRosterProps) {
 
   if (players.length === 0) {
     return (
-      <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-        <p className="text-h5 text-ink">No players found</p>
-        <p className="max-w-md text-[13px] font-medium text-n-3">
+      <Card className="flex flex-col items-center gap-1 px-6 py-16 text-center">
+        <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">No players found</p>
+        <p className="max-w-md text-[11px] font-medium text-n-6">
           No fantasy-relevant players on this roster yet.
         </p>
       </Card>
@@ -61,7 +61,7 @@ export function TeamRoster({ players }: TeamRosterProps) {
 
   return (
     <Card className="overflow-hidden">
-      <Table>
+      <Table className="text-[11px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-10 text-right">No.</TableHead>
@@ -87,7 +87,7 @@ export function TeamRoster({ players }: TeamRosterProps) {
 
             return (
               <TableRow key={player.id}>
-                <TableCell className="fs-num text-right text-[12px] font-semibold text-n-3">
+                <TableCell className="fs-num text-right text-[11px] font-semibold text-n-6">
                   {player.jersey_number ?? '—'}
                 </TableCell>
                 <TableCell>
@@ -101,7 +101,7 @@ export function TeamRoster({ players }: TeamRosterProps) {
                     <button
                       type="button"
                       onClick={() => openPlayer(player.id)}
-                      className="min-w-0 truncate text-left font-extrabold text-ink hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+                      className="min-w-0 truncate text-left text-[12px] font-semibold text-ink transition-colors hover:text-accent-strong hover:underline focus:outline-none focus-visible:underline"
                     >
                       {player.full_name}
                     </button>
@@ -110,19 +110,19 @@ export function TeamRoster({ players }: TeamRosterProps) {
                 <TableCell>
                   <PositionBadge position={player.position} size="sm" />
                 </TableCell>
-                <TableCell className="fs-num text-right font-bold">
+                <TableCell className="fs-num text-right font-semibold">
                   {player.adp != null ? Number(player.adp).toFixed(1) : '—'}
                 </TableCell>
-                <TableCell className="fs-num text-right font-bold">
+                <TableCell className="fs-num text-right font-semibold">
                   {player.bye_week ?? '—'}
                 </TableCell>
                 <TableCell>
                   {injured ? (
-                    <span className="inline-flex rounded-sm border border-negative bg-negative-soft px-1 py-px text-[10px] font-bold leading-tight text-negative-strong">
+                    <span className="inline-flex h-[17px] items-center rounded-sm bg-negative-soft px-1 text-[9px] font-bold text-negative-strong">
                       {player.status}
                     </span>
                   ) : (
-                    <span className="text-[11px] font-semibold text-n-3">
+                    <span className="text-[10px] font-semibold text-n-6">
                       {player.status ?? '—'}
                     </span>
                   )}

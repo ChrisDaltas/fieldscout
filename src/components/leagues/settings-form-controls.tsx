@@ -20,14 +20,24 @@ import { cn } from '@/lib/utils'
  * `derived-settings` / `league-create-wizard-ops` modules.
  */
 
+/**
+ * v7 settings rows: inside a settings group card (a `.settings-rows`
+ * container — see settings-panel's GroupCard) every row is separated by a
+ * 1px hairline and sits ~43px tall, like v7's commissioner sections. Outside
+ * one (the create wizard, the mock-launch dialog) the same rows render bare,
+ * so those surfaces keep their own rhythm.
+ */
+const IN_GROUP_ROW =
+  '[.settings-rows_&]:min-h-[43px] [.settings-rows_&]:border-t [.settings-rows_&]:border-n-4 [.settings-rows_&]:py-2'
+
 /** A validation/advisory message box (error = alert, warning = status). */
 export function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: string }) {
   return (
     <p
       role={tone === 'error' ? 'alert' : 'status'}
       className={cn(
-        'rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-        tone === 'error' ? 'border-negative bg-negative-soft' : 'border-caution bg-caution-soft',
+        'rounded-lg px-3 py-2 text-[11px] font-semibold text-ink [.settings-rows_&]:my-2',
+        tone === 'error' ? 'bg-negative-soft' : 'bg-caution-soft',
       )}
     >
       {message}
@@ -48,12 +58,12 @@ export function FieldRow({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2.5">
-      <div className="min-w-0">
-        <Label htmlFor={htmlFor} className="text-[13px] font-bold">
+    <div className={cn('flex flex-wrap items-center justify-between gap-x-3.5 gap-y-2', IN_GROUP_ROW)}>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <Label htmlFor={htmlFor} className="text-[11px] font-semibold leading-tight">
           {label}
         </Label>
-        {hint && <p className="text-[11px] font-semibold text-n-3">{hint}</p>}
+        {hint && <p className="text-[10px] font-medium text-n-6">{hint}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -77,12 +87,12 @@ export function ToggleRow({
   disabled?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <label htmlFor={id} className="text-[13px] font-bold">
+    <div className={cn('flex items-center justify-between gap-3.5', IN_GROUP_ROW)}>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <label htmlFor={id} className="text-[11px] font-semibold leading-tight text-ink">
           {label}
         </label>
-        {hint && <p className="text-[11px] font-semibold text-n-3">{hint}</p>}
+        {hint && <p className="text-[10px] font-medium text-n-6">{hint}</p>}
       </div>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
     </div>
@@ -113,7 +123,7 @@ export function ChoiceSelect({
 }) {
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger id={id} aria-label={ariaLabel} className={cn('h-btn-md text-[12px] font-bold', width)}>
+      <SelectTrigger id={id} aria-label={ariaLabel} className={width}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -127,9 +137,12 @@ export function ChoiceSelect({
   )
 }
 
-/** A group divider label (overline style) above a settings sub-section. */
+/** A sub-section title inside a settings group (the next row's hairline
+ *  sits under it). */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="fs-overline border-t border-n-4 pt-2.5 text-[11px] text-n-3">{children}</div>
+  return (
+    <div className="pb-2 pt-5 text-[13px] font-bold tracking-[-0.01em] text-ink">{children}</div>
+  )
 }
 
 /** {value,label} option list from numbers, with an optional unit suffix. */

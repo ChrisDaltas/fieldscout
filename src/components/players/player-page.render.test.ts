@@ -425,7 +425,7 @@ describe('player view — the calm default view + progressive disclosure (D486(1
     expect(out).toContain('4th toughest vs RB')
     // D486(14) Key stats: the RB's six, from stored / derived values only.
     expect([...out.matchAll(/data-key-stat="([^"]+)"/g)].map((m) => m[1])).toEqual(['snap_pct', 'carries_pg', 'rush_yds', 'rush_td', 'targets', 'receptions'])
-    expect(out).toMatch(/data-key-stat="carries_pg"><p[^>]*>15\.5</)
+    expect(out).toMatch(/data-key-stat="carries_pg"><p[^>]*>Carries \/ gm<\/p><p[^>]*>15\.5</)
   })
 
   it('every section is collapsed by default — no stats, game log, dropdown or value grid rendered', () => {

@@ -39,7 +39,7 @@ export function WaiverScheduleFields({
   const matched = matchWaiverPreset(s)
   const showDetail = detail && s.waiver_type !== 'none_fcfs'
   return (
-    <div className="flex flex-col gap-2.5" data-waiver-schedule-fields>
+    <div className="flex flex-col gap-2.5 [.settings-rows_&]:gap-0" data-waiver-schedule-fields>
       <FieldRow label="Schedule" htmlFor={`${idPrefix}-waiver-schedule`} hint={describeWaiverSchedule(s)}>
         <ChoiceSelect
           id={`${idPrefix}-waiver-schedule`}
@@ -70,7 +70,7 @@ export function WaiverScheduleFields({
                     variant="stroke"
                     size="sm"
                     aria-pressed={on}
-                    className={on ? 'bg-accent-soft' : undefined}
+                    className={on ? 'bg-accent-soft text-accent-deep hover:bg-accent-soft' : undefined}
                     onClick={() => onSettings({ waiver_run_days: toggleRunDay(s.waiver_run_days, d) })}
                   >
                     {WEEKDAY_SHORT[d]}
@@ -87,7 +87,7 @@ export function WaiverScheduleFields({
                 step={60}
                 value={s.waiver_run_time}
                 onChange={(e) => e.target.value && onSettings({ waiver_run_time: e.target.value.slice(0, 5) })}
-                className="h-btn-md w-28 text-[12px]"
+                className="w-28"
               />
               <ChoiceSelect
                 ariaLabel="Waiver time zone"
@@ -125,7 +125,7 @@ export function WaiverScheduleFields({
                   step={60}
                   value={s.free_agency_open_time}
                   onChange={(e) => e.target.value && onSettings({ free_agency_open_time: e.target.value.slice(0, 5) })}
-                  className="h-btn-md w-28 text-[12px]"
+                  className="w-28"
                 />
               </span>
             </FieldRow>

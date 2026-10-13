@@ -88,15 +88,15 @@ export function ListDetailsTab({
         <SectionLabel>Position mix</SectionLabel>
         <div className="flex flex-wrap gap-2">
           {positionMix.length === 0 && (
-            <p className="text-[11px] font-medium text-n-3">No players on this list yet.</p>
+            <p className="text-[11px] font-medium text-n-6">No players on this list yet.</p>
           )}
           {positionMix.map(([position, count]) => (
             <span
               key={position}
-              className="inline-flex items-center gap-1.5 rounded-sm border border-ink px-2 py-1"
+              className="inline-flex items-center gap-1.5 rounded-pill bg-surface-control py-1 pl-1 pr-2.5"
             >
               <PositionBadge position={position} />
-              <span className="fs-num text-[11px] font-bold">{count}</span>
+              <span className="fs-num text-[11px] font-bold text-ink">{count}</span>
             </span>
           ))}
         </div>
@@ -106,7 +106,7 @@ export function ListDetailsTab({
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="mb-1.5 text-[11px] font-bold text-ink">{children}</div>
+  return <div className="mb-2 text-[13px] font-bold tracking-[-0.01em] text-ink">{children}</div>
 }
 
 function TagsSection({
@@ -143,7 +143,7 @@ function TagsSection({
           <span
             key={fixed}
             title="Set in list options"
-            className="inline-flex h-[19px] items-center rounded-sm border border-n-4 bg-n-4 px-2 text-[9.5px] font-medium text-n-3"
+            className="inline-flex h-chip items-center rounded-pill bg-surface-control px-2.5 text-[10px] font-semibold text-n-3"
           >
             {fixed}
           </span>
@@ -151,7 +151,7 @@ function TagsSection({
         {list.tags.map((tag) => (
           <span
             key={tag.id}
-            className="inline-flex h-[19px] items-center gap-1 rounded-sm border border-ink bg-accent-soft pl-2 pr-1 text-[9.5px] font-medium"
+            className="inline-flex h-chip items-center gap-1 rounded-pill bg-accent-soft pl-2.5 pr-1 text-[10px] font-semibold text-accent-deep"
           >
             {tag.name}
             {editable && (
@@ -159,7 +159,7 @@ function TagsSection({
                 type="button"
                 title={`Remove ${tag.name}`}
                 onClick={() => onSaveTags?.(names.filter((name) => name !== tag.name))}
-                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm transition-colors hover:bg-white"
+                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-pill transition-colors hover:bg-white"
               >
                 <Icon name="close" size={9} />
               </button>
@@ -182,7 +182,7 @@ function TagsSection({
               }}
               placeholder="tag name"
               aria-label="New tag"
-              className="h-[19px] w-[104px] px-2 text-[10px]"
+              className="h-chip w-[104px] rounded-pill text-[10px]"
             />
           ) : (
             <button
@@ -194,7 +194,7 @@ function TagsSection({
                   ? `A list carries at most ${MAX_TAGS_PER_LIST} tags`
                   : undefined
               }
-              className="inline-flex h-[19px] items-center gap-1 rounded-sm border border-dashed border-n-3 px-2 text-[9.5px] font-medium text-n-3 transition-colors hover:border-ink hover:text-ink disabled:opacity-45 disabled:hover:border-n-3 disabled:hover:text-n-3"
+              className="inline-flex h-chip items-center gap-1 rounded-pill border border-dashed border-n-7 px-2.5 text-[10px] font-semibold text-n-3 transition-colors hover:border-n-6 hover:text-ink disabled:opacity-45 disabled:hover:border-n-7 disabled:hover:text-n-3"
             >
               <Icon name="plus" size={9} />
               Add tag
@@ -225,12 +225,12 @@ function DescriptionSection({
   return (
     <section>
       <div className="mb-1.5 flex items-center gap-2">
-        <span className="mr-auto text-[11px] font-bold text-ink">Description</span>
+        <span className="mr-auto text-[13px] font-bold tracking-[-0.01em] text-ink">Description</span>
         {canEdit && onSave && !editing && (
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="text-[10px] font-medium text-accent transition-colors hover:text-accent-strong"
+            className="text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong"
           >
             Edit
           </button>
@@ -245,7 +245,7 @@ function DescriptionSection({
             onChange={(event) => setDraft(event.target.value)}
             placeholder="What is this list for? What rule decides who makes it?"
             aria-label="List description"
-            className="w-full rounded-sm border border-ink bg-white p-2 text-[12px] font-medium leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="w-full rounded-md bg-surface-control p-2.5 text-[12px] font-medium leading-relaxed text-ink outline-none transition-shadow placeholder:text-n-6 focus-visible:bg-white focus-visible:shadow-field"
           />
           <div className="mt-2 flex justify-end gap-2">
             <Button
@@ -274,7 +274,7 @@ function DescriptionSection({
         <p
           className={cn(
             'text-[12px] font-medium leading-relaxed',
-            list.description ? 'text-ink' : 'text-n-3',
+            list.description ? 'text-n-2' : 'text-n-6',
           )}
         >
           {list.description ||
@@ -293,8 +293,7 @@ function DescriptionSection({
  *
  * `screens/detail-tab-details.png` shows the card exactly: a solid colour block
  * on the left, the title in bold, a muted `source · duration` line beneath it,
- * and a bare `×` on the right, inside a 1px ink-bordered box. All of that is
- * implemented as drawn.
+ * and a bare `×` on the right, inside a box — now v7's rounded hairline card.
  *
  * It shows **one** card, a video, and no form — so three things are extended
  * per CLAUDE.md's "where the prototype is silent, extend the new design
@@ -348,12 +347,12 @@ function LinksSection({
   return (
     <section>
       <div className="mb-1.5 flex items-center gap-2">
-        <span className="mr-auto text-[11px] font-bold text-ink">Attached links</span>
+        <span className="mr-auto text-[13px] font-bold tracking-[-0.01em] text-ink">Attached links</span>
         {canEdit && onAdd && !attaching && (
           <button
             type="button"
             onClick={() => setAttaching(true)}
-            className="text-[10px] font-medium text-accent transition-colors hover:text-accent-strong"
+            className="text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong"
           >
             Attach a video or article
           </button>
@@ -363,11 +362,11 @@ function LinksSection({
       {list.links.length > 0 && (
         <ul className="flex flex-col gap-1.5">
           {list.links.map((link) => (
-            <li key={link.id} className="flex items-center gap-2.5 border border-ink bg-white p-2">
+            <li key={link.id} className="flex items-center gap-2.5 rounded-xl border border-n-4 bg-white p-2">
               <span
                 aria-hidden="true"
                 className={cn(
-                  'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-sm border border-ink',
+                  'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-md text-ink',
                   link.kind === 'video' ? 'bg-tier-2/50' : 'bg-tier-4/50',
                 )}
               >
@@ -379,11 +378,11 @@ function LinksSection({
                   href={link.url}
                   target="_blank"
                   rel="ugc nofollow noopener noreferrer"
-                  className="truncate text-[12px] font-bold text-ink underline-offset-2 hover:underline"
+                  className="truncate text-[12px] font-semibold text-ink underline-offset-2 transition-colors hover:text-accent-strong hover:underline"
                 >
                   {link.title}
                 </a>
-                <span className="truncate text-[10px] font-medium text-n-3">
+                <span className="truncate text-[10px] font-medium text-n-6">
                   {[link.source_label, link.duration_label].filter(Boolean).join(' · ') || link.url}
                 </span>
               </span>
@@ -395,7 +394,7 @@ function LinksSection({
                   title={`Remove “${link.title}”`}
                   aria-label={`Remove ${link.title}`}
                   onClick={() => onRemove(link.id)}
-                  className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm transition-colors hover:bg-n-4 disabled:opacity-45"
+                  className="ml-auto inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-pill text-n-6 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-45"
                 >
                   <Icon name="close" size={11} />
                 </button>
@@ -406,7 +405,7 @@ function LinksSection({
       )}
 
       {list.links.length === 0 && !attaching && (
-        <p className="text-[12px] font-medium leading-relaxed text-n-3">
+        <p className="text-[11px] font-medium leading-relaxed text-n-6">
           {canEdit
             ? 'Nothing attached yet. A film breakdown or an article gives readers the reasoning behind the order.'
             : 'Nothing attached to this list.'}
@@ -456,7 +455,7 @@ function AttachLinkForm({
 
   return (
     <form
-      className="mt-1.5 flex flex-col gap-2 border border-ink bg-white p-2.5"
+      className="mt-1.5 flex flex-col gap-2 rounded-2xl border border-n-4 bg-white p-3"
       onSubmit={(event) => {
         event.preventDefault()
         if (!ready) return
@@ -489,14 +488,12 @@ function AttachLinkForm({
         onChange={(event) => setUrl(event.target.value)}
         placeholder="https://youtube.com/watch?v=…"
         aria-label="Link address"
-        className="h-[24px] text-[11px]"
       />
       <Input
         value={title}
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Title — what is this?"
         aria-label="Link title"
-        className="h-[24px] text-[11px]"
       />
       <div className="flex gap-2">
         <Input
@@ -504,14 +501,14 @@ function AttachLinkForm({
           onChange={(event) => setSource(event.target.value)}
           placeholder="Source (optional) — Field Scout on YouTube"
           aria-label="Link source"
-          className="h-[24px] flex-1 text-[11px]"
+          className="flex-1"
         />
         <Input
           value={duration}
           onChange={(event) => setDuration(event.target.value)}
           placeholder="18:42"
           aria-label="Link duration"
-          className="h-[24px] w-[74px] text-[11px]"
+          className="w-[74px]"
         />
       </div>
 

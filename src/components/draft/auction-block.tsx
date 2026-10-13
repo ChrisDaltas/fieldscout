@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { PlayerAvatarImage } from '@/components/players/player-image'
 import { PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -11,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { useDraftBids } from '@/hooks/use-draft-bids'
 import type { PlayerIdentity } from '@/hooks/use-players-by-ids'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
+import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { cn } from '@/lib/utils'
 
@@ -367,7 +370,7 @@ function Nomination({
   return (
     <Card>
       <CardHeader>
-        <span className="text-[13px] font-extrabold">
+        <span className="text-[13px] font-bold tracking-[-0.01em]">
           {phase === 'bidding' ? 'Up for bid' : 'Nominating'}
         </span>
         {/* The floor's STATE, never a second countdown (§16.3 say-a-thing-
@@ -375,8 +378,8 @@ function Nomination({
         {snipe.active && (
           <span
             className={cn(
-              'fs-overline text-[9px]',
-              snipe.reArmed || snipe.inWindow ? 'text-negative-strong' : 'text-n-3',
+              'fs-overline',
+              snipe.reArmed || snipe.inWindow ? 'text-negative-strong' : 'text-n-6',
             )}
             role={snipe.reArmed ? 'status' : undefined}
           >
@@ -388,7 +391,7 @@ function Nomination({
           </span>
         )}
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-3.5">
         {/* §8.6.9's beat (AP.2). It sits where the subject headline goes,
             because for these 3 seconds that IS what the centrepiece has to
             say — and it sits there INSTEAD of the next nomination's prompt,
@@ -401,38 +404,43 @@ function Nomination({
         {beat !== null ? (
           <p
             role="status"
-            className="text-[15px] font-extrabold leading-snug text-accent-strong"
+            className="rounded-2xl bg-accent-soft px-4 py-3 text-[15px] font-bold leading-snug tracking-[-0.02em] text-accent-deep"
           >
             {beat}
           </p>
         ) : subject === null ? (
-          <p className="text-[12px] font-medium text-n-3">
+          <p className="rounded-2xl bg-surface-sunken px-4 py-5 text-center text-[11px] font-medium text-n-3">
             {box.blocker === 'not-nominator'
               ? 'Waiting on the nominating team to put a player up.'
               : 'Open the Players panel and choose a player to nominate.'}
           </p>
         ) : (
-          <div className="flex flex-wrap items-center gap-2.5">
-            {player?.position && <PositionBadge position={player.position} />}
-            <span className="text-[18px] font-extrabold leading-none">
-              {player ? <PlayerLink playerId={player.id} name={player.full_name} /> : 'Loading player…'}
-            </span>
-            {player?.team && (
-              <span className="fs-overline text-[9px] text-n-3">{player.team}</span>
-            )}
+          <div className="flex flex-wrap items-center gap-3">
+            {player && <NomineeHeadshot player={player} />}
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="truncate text-[17px] font-bold leading-tight tracking-[-0.02em]">
+                {player ? <PlayerLink playerId={player.id} name={player.full_name} /> : 'Loading player…'}
+              </span>
+              {(player?.position || player?.team) && (
+                <span className="flex items-center gap-1.5 text-[10px] font-medium text-n-3">
+                  {player?.position && <PositionBadge position={player.position} />}
+                  {player?.team && <span>{player.team}</span>}
+                </span>
+              )}
+            </div>
             {phase === 'bidding' && nomination && (
-              <span className="ml-auto flex items-baseline gap-1.5">
-                <span className="fs-overline text-[9px] text-n-3">High bid</span>
-                <span className="fs-num text-[22px] font-extrabold text-accent-strong">
+              <span className="ml-auto flex flex-col items-end gap-1">
+                <span className="text-[10px] font-semibold text-n-6">High bid</span>
+                <span className="fs-num text-[28px] font-bold leading-none tracking-[-0.03em] text-ink">
                   ${nomination.high_bid}
                 </span>
-                <span className="text-[12px] font-bold">
+                <span className="text-[11px] font-semibold text-n-3">
                   {teamNameById.get(nomination.high_bidder_team_id) ?? 'a team'}
                 </span>
               </span>
             )}
             {phase === 'nominating' && (
-              <Button variant="stroke" size="sm" className="ml-auto" onClick={onClearNominee}>
+              <Button variant="stroke" size="md" className="ml-auto" onClick={onClearNominee}>
                 Choose another
               </Button>
             )}
@@ -441,10 +449,10 @@ function Nomination({
 
         {/* The bid / opening-bid input, with the max-bid cap SURFACED (§8.6.1;
             L.C3.1 item 1 — "E5's message prevented at the UI"). */}
-        <div className="flex flex-wrap items-end gap-2.5">
+        <div className="flex flex-wrap items-end gap-2.5 rounded-2xl bg-surface-sunken p-3">
           {actingAs && <ActingAsPicker label="Bid for" control={actingAs} />}
           <label className="flex flex-col gap-1">
-            <span className="fs-overline text-[9px] text-n-3">
+            <span className="text-[10px] font-semibold text-n-6">
               {phase === 'bidding' ? (actingForName ? `${actingForName}’s bid` : 'Your bid') : 'Opening bid'}
               {box.maxAmount !== null && (
                 <>
@@ -456,7 +464,7 @@ function Nomination({
             <Input
               type="number"
               inputMode="numeric"
-              className="w-32"
+              className="fs-num h-btn w-28 rounded-pill bg-white px-4 text-[13px] font-semibold hover:bg-white"
               aria-label={phase === 'bidding' ? 'Your bid' : 'Opening bid'}
               min={box.minAmount}
               max={box.maxAmount ?? undefined}
@@ -470,9 +478,8 @@ function Nomination({
             />
           </label>
           <Button
-            variant="green"
-            size="sm"
-            shadow
+            variant="blue"
+            className="min-w-[92px]"
             disabled={!acceptable || submitting || subject === null}
             onClick={submit}
           >
@@ -482,7 +489,7 @@ function Nomination({
                 ? bidButtonLabel(Number.isInteger(parsed) ? parsed : box.minAmount, actingForName)
                 : `Nominate at $${Number.isInteger(parsed) ? parsed : box.minAmount}`}
           </Button>
-          <p className="text-[11px] font-semibold text-n-3">
+          <p className="basis-full text-[11px] font-medium text-n-3 sm:basis-auto sm:self-center">
             {box.canAct
               ? acceptable
                 ? `Minimum $${box.minAmount}.`
@@ -497,9 +504,9 @@ function Nomination({
             {history.map((row) => (
               <span
                 key={`${row.teamId}-${row.amount}-${row.createdAt}`}
-                className="flex items-center gap-1 rounded-sm border border-ink bg-white px-2 py-0.5 text-[11px] font-semibold"
+                className="flex h-[22px] items-center gap-1 rounded-pill bg-surface-control px-2.5 text-[11px] font-medium"
               >
-                <span className="fs-num font-extrabold">${row.amount}</span>
+                <span className="fs-num font-bold">${row.amount}</span>
                 <span className="truncate text-n-3">
                   {teamNameById.get(row.teamId) ?? 'a team'}
                 </span>
@@ -509,6 +516,27 @@ function Nomination({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/** The nominee's headshot — v7 FSHeadshot7: a circle ringed in the team
+ *  colour (a white gap, then the colour; the colour is data, not a token). */
+function NomineeHeadshot({ player }: { player: PlayerIdentity }) {
+  const teamColor = player.team ? NFL_TEAM_COLORS[player.team]?.primary : undefined
+  const initials = player.full_name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+  return (
+    <Avatar
+      className="size-11 shrink-0 bg-surface-control"
+      style={teamColor ? { boxShadow: `0 0 0 1px #fff, 0 0 0 2.5px ${teamColor}` } : undefined}
+    >
+      <PlayerAvatarImage player={player} alt="" />
+      <AvatarFallback className="text-[13px] font-semibold text-n-3">{initials}</AvatarFallback>
+    </Avatar>
   )
 }
 
@@ -681,13 +709,13 @@ function TeamColumns({
   return (
     <Card>
       <CardHeader>
-        <span className="text-[13px] font-extrabold">Teams</span>
-        <span className="fs-overline text-[9px] text-n-3">By nomination order</span>
+        <span className="text-[13px] font-bold tracking-[-0.01em]">Teams</span>
+        <span className="fs-overline text-n-6">By nomination order</span>
       </CardHeader>
       <CardContent>
         {/* Desktop: every team, side by side. */}
         <div
-          className="hidden gap-1.5 overflow-x-auto pb-0.5 lg:flex"
+          className="hidden gap-2 overflow-x-auto pb-0.5 lg:flex"
           role="region"
           aria-label="Team budgets and rosters"
           tabIndex={0}
@@ -704,7 +732,7 @@ function TeamColumns({
         </div>
 
         {/* Mobile: my row resident, the rest summoned. */}
-        <div className="flex flex-col gap-1.5 lg:hidden">
+        <div className="flex flex-col gap-2 lg:hidden">
           {mine && <TeamColumnCard column={mine} playerById={playerById} reserve={reserve} />}
           <Button
             variant="stroke"
@@ -747,7 +775,7 @@ function TeamColumnCard({
   return (
     <div
       className={cn(
-        'flex flex-col gap-1.5 rounded-sm border border-ink bg-white p-2',
+        'flex flex-col gap-2 rounded-xl border border-n-4 bg-white p-2.5',
         // The three §16.4 marks: FILL and BORDER only (CLAUDE.md — a resting
         // shadow would be an elevation lie, and these are resting states).
         // Nominating borrows the room's existing on-the-clock language
@@ -769,13 +797,13 @@ function TeamColumnCard({
         column.isLatestBid
           ? 'border-positive bg-positive-soft'
           : column.isNominating && 'border-accent bg-accent-soft',
-        column.isMe && 'border-l-4 border-l-ink',
-        column.rosterComplete && !column.isNominating && !column.isLatestBid && 'bg-n-1/40',
+        column.isMe && 'border-l-[3px] border-l-n-1',
+        column.rosterComplete && !column.isNominating && !column.isLatestBid && 'bg-surface-sunken',
         className,
       )}
     >
       <div className="flex min-w-0 items-center gap-1">
-        <span className="min-w-0 flex-1 truncate text-[12px] font-extrabold">{column.name}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] font-bold">{column.name}</span>
         {column.isMe && (
           <Badge variant="black" className="shrink-0">
             You
@@ -788,20 +816,20 @@ function TeamColumnCard({
         {column.rosterComplete && <Badge variant="stroke">Roster full</Badge>}
       </div>
 
-      <dl className="flex flex-col gap-0.5 text-[11px] font-semibold">
+      <dl className="flex flex-col gap-0.5 text-[11px] font-medium">
         <div className="flex items-baseline justify-between gap-1">
           <dt className="text-n-3">Budget</dt>
-          <dd className="fs-num font-extrabold">
+          <dd className="fs-num font-bold">
             {budget ? `$${budget.remaining}` : '—'}
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-1">
           <dt className="text-n-3">Max bid</dt>
-          <dd className="fs-num font-extrabold">{budget ? `$${budget.maxBid}` : '—'}</dd>
+          <dd className="fs-num font-bold">{budget ? `$${budget.maxBid}` : '—'}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-1">
           <dt className="text-n-3">Spots left</dt>
-          <dd className="fs-num font-extrabold">{budget ? budget.openSlots : '—'}</dd>
+          <dd className="fs-num font-bold">{budget ? budget.openSlots : '—'}</dd>
         </div>
       </dl>
 
@@ -809,12 +837,12 @@ function TeamColumnCard({
           carried by "Spots left" — they are a count, not a position. */}
       <div className="flex flex-wrap gap-1">
         {column.needs.length === 0 ? (
-          <span className="fs-overline text-[9px] text-n-3">Starters covered</span>
+          <span className="text-[10px] font-medium text-n-6">Starters covered</span>
         ) : (
           column.needs.map((need) => (
             <span
               key={need.key}
-              className="rounded-sm border border-dashed border-n-3 px-1 text-[10px] font-bold text-n-3"
+              className="rounded-sm bg-surface-control px-1 text-[9px] font-bold leading-[15px] text-n-2"
             >
               {need.label}
               {need.count > 1 ? ` ×${need.count}` : ''}
@@ -824,9 +852,9 @@ function TeamColumnCard({
       </div>
 
       {/* Drafted players WITH PRICES (§16.4) — the auction's board. */}
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex flex-col gap-0.5 border-t border-n-4 pt-1.5">
         {column.picks.length === 0 ? (
-          <li className="fs-overline text-[9px] text-n-3">No buys yet</li>
+          <li className="text-[10px] font-medium text-n-6">No buys yet</li>
         ) : (
           column.picks.map((pick) => {
             const player = playerById.get(pick.playerId)
@@ -835,10 +863,10 @@ function TeamColumnCard({
                 key={pick.pickNumber}
                 className="flex items-baseline justify-between gap-1 text-[11px]"
               >
-                <span className="min-w-0 truncate font-bold">
+                <span className="min-w-0 truncate font-semibold">
                   {player ? <PlayerLink playerId={pick.playerId} name={abbreviateName(player.full_name)} /> : '…'}
                 </span>
-                <span className="fs-num shrink-0 font-semibold text-n-3">
+                <span className="fs-num shrink-0 font-medium text-n-3">
                   ${pick.price ?? reserve}
                 </span>
               </li>

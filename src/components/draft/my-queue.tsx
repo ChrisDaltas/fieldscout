@@ -118,11 +118,11 @@ export function MyQueue({
       {queue.isPending ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
+            <Skeleton key={i} className="h-10 w-full rounded-md" />
           ))}
         </div>
       ) : queue.isError ? (
-        <p className="p-card-pad text-[12px] font-medium text-n-3" role="alert">
+        <p className="p-card-pad text-[11px] font-medium text-n-3" role="alert">
           {forAnother
             ? `${actingForName}’s Targets didn’t load. ${queue.error instanceof Error ? queue.error.message : ''}`
             : 'Your Targets didn’t load. They refresh automatically.'}
@@ -130,7 +130,7 @@ export function MyQueue({
       ) : view.length === 0 ? (
         // Timeouts-draft-from-the-queue is §8.4's rule — cited here, not in
         // user-facing copy (R268, M2 batch 13).
-        <p className="p-card-pad text-[12px] font-medium text-n-3">
+        <p className="px-card-pad py-8 text-center text-[11px] font-medium text-n-6">
           {forAnother
             ? `${actingForName} has no Targets yet. Add players from the pool — timeouts draft from the top of a team’s Targets first.`
             : 'Add players from the pool so a plan is ready when the clock hits you. Timeouts draft from the top of your Targets first.'}
@@ -185,14 +185,14 @@ function QueueRow({
     return (
       <li ref={setNodeRef} style={style}>
         {identityPending ? (
-          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full rounded-md" />
         ) : (
-          <div className="flex h-10 items-center justify-between rounded-sm border border-n-4 px-2 text-[11px] font-medium text-n-3">
+          <div className="flex h-10 items-center justify-between rounded-lg bg-surface-sunken px-2.5 text-[11px] font-medium text-n-3">
             <span className="truncate">Unknown player ({row.player_id})</span>
             <button
               type="button"
               onClick={onRemove}
-              className="shrink-0 font-bold hover:underline"
+              className="shrink-0 font-semibold text-accent hover:underline"
             >
               Remove
             </button>

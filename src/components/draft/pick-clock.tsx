@@ -36,35 +36,49 @@ export function PickClock({ draft, offsetMs, className }: PickClockProps) {
 
   if (view.mode === 'untimed') {
     return (
-      <span className={cn('fs-overline text-n-3', className)}>No clock</span>
+      <span className={cn('text-[11px] font-medium text-n-6', className)}>No clock</span>
     )
   }
 
+  // v7 clock: a grey pill with the time in 13px semibold tabular numerals.
+  // Paused freezes it (no live dot); low time is a red wash + red text —
+  // fill and colour only, never a shadow.
   if (view.mode === 'paused') {
     return (
-      <span className={cn('flex items-baseline gap-1.5', className)}>
-        <span className="fs-overline text-n-3">Paused</span>
-        <span className="fs-num text-[18px] font-extrabold text-ink">
+      <span
+        className={cn(
+          'inline-flex h-btn-md items-center gap-1.5 rounded-pill bg-surface-control px-3',
+          className,
+        )}
+      >
+        <span className="text-[11px] font-medium text-n-3">Paused</span>
+        <span className="fs-num text-[13px] font-semibold text-ink">
           {formatClockMs(view.remainingMs ?? 0)}
         </span>
-        <span className="fs-overline text-n-3">left</span>
+        <span className="text-[11px] font-medium text-n-3">left</span>
       </span>
     )
   }
 
   // running | expired — the countdown proper.
+  const urgent = isLowTime(view) || view.mode === 'expired'
   return (
     <span
       className={cn(
-        'fs-num text-[18px] font-extrabold',
-        isLowTime(view) || view.mode === 'expired'
-          ? 'text-negative-strong'
-          : 'text-accent-strong',
+        'fs-num inline-flex h-btn-md items-center gap-1.5 rounded-pill px-3 text-[13px] font-semibold',
+        urgent ? 'bg-negative-soft text-negative-strong' : 'bg-surface-control text-ink',
         className,
       )}
       role="timer"
       aria-live="off"
     >
+      <span
+        aria-hidden
+        className={cn(
+          'h-1.5 w-1.5 shrink-0 rounded-pill',
+          urgent ? 'bg-negative-strong' : 'bg-brand',
+        )}
+      />
       {formatClockMs(view.remainingMs ?? 0)}
     </span>
   )

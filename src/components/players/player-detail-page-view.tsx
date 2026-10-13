@@ -93,8 +93,8 @@ export function PlayerView({
   if (error || !data) {
     return (
       <div className="p-6">
-        <p className="text-h6">Player not found</p>
-        <p className="mt-1 text-[13px] font-medium text-negative-strong">
+        <p className="text-h5">Player not found</p>
+        <p className="mt-1 text-[11px] font-medium text-negative-strong">
           {error?.message ?? 'This player may have moved or been removed.'}
         </p>
       </div>
@@ -221,7 +221,7 @@ export function PlayerBody({
       return next
     })
   return (
-    <div className="space-y-6 p-5 sm:p-7">
+    <div className="space-y-5 p-5 sm:px-[27px] sm:py-6">
       <div className="grid gap-4 pr-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <PlayerDetailHeader player={player} size="expanded" />
         <ActionsColumn player={player} leagueId={leagueId} goContext={goContext} listContext={listContext} onRemoved={onRemoved} />
@@ -236,7 +236,7 @@ export function PlayerBody({
       <SectionToggles open={open} onToggle={toggle} />
       {SECTIONS.filter((sec) => open.includes(sec.key)).map((sec) => (
         <section key={sec.key} className="border-t border-n-4 pt-4" data-section={sec.key}>
-          <p className="fs-overline mb-2 text-n-3">{sec.label}</p>
+          <h2 className="mb-2 text-[14px] font-bold tracking-[-0.015em]">{sec.label}</h2>
           {sec.key === 'stats' && (
             <div className="space-y-5">
               {keys.more.length > 0 && <KeyStatsPanel tiles={keys.more} more />}
@@ -254,20 +254,20 @@ export function PlayerBody({
 
 export function SectionToggles({ open, onToggle }: { open: readonly SectionKey[]; onToggle: (k: SectionKey) => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5 border-t border-n-4 pt-4" data-section-toggles>
+    <div className="flex flex-wrap gap-[5px] border-t border-n-4 pt-4" data-section-toggles>
       {SECTIONS.map((sec) => {
         const on = open.includes(sec.key)
         return (
           <Button
             key={sec.key}
-            variant="ghost"
-            size="sm"
+            variant="stroke"
+            size="md"
             onClick={() => onToggle(sec.key)}
             aria-expanded={on}
             data-section-toggle={sec.key}
-            className={cn(on && 'bg-accent-soft')}
+            className={cn(on && 'bg-surface-selected')}
           >
-            <Icon name={on ? 'arrow-up' : 'arrow-bottom'} size={12} />
+            <Icon name={on ? 'arrow-up' : 'arrow-bottom'} size={11} />
             {sec.label}
           </Button>
         )
@@ -294,7 +294,7 @@ function DecisionLine({
       <button
         type="button"
         onClick={onBasis}
-        className="mt-1.5 text-[11px] font-semibold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-ink hover:decoration-current"
+        className="mt-2 text-[10px] font-semibold text-n-6 underline decoration-transparent underline-offset-2 transition-colors hover:text-accent hover:decoration-current"
         data-core-basis
       >
         {scored.label}
@@ -303,22 +303,27 @@ function DecisionLine({
   )
 }
 
-/** Three large numbers with small labels — no boxes, generous space. */
+/** The decision numbers as v7 overview tiles — grey 14px-radius tiles, a
+ *  10px label over a 19px value. */
 export function StatsStrip({ tiles, pending = false }: { tiles: ReturnType<typeof coreTiles>; pending?: boolean }) {
   return (
-    <div className="grid grid-cols-3 gap-4" data-stats-strip>
+    <div className="grid grid-cols-3 gap-2.5" data-stats-strip>
       {tiles.map((t) => (
-        <div key={t.key} className="min-w-0" data-core-tile={t.key}>
+        <div
+          key={t.key}
+          className="flex min-w-0 flex-col gap-[3px] rounded-2xl bg-surface-sunken px-[15px] py-3.5"
+          data-core-tile={t.key}
+        >
+          <p className="truncate text-[10px] font-semibold text-n-3">{t.label}</p>
           <p
             className={cn(
-              'fs-num truncate text-[29px] font-extrabold leading-none',
-              t.value === '—' && 'text-n-3',
+              'fs-num truncate text-[19px] font-bold leading-tight tracking-[-0.02em]',
+              t.value === '—' && 'text-n-6',
               pending && 'animate-pulse',
             )}
           >
             {t.value}
           </p>
-          <p className="fs-overline mt-1.5 truncate text-n-3">{t.label}</p>
         </div>
       ))}
     </div>
@@ -334,14 +339,14 @@ export function KeyStatsPanel({ tiles, more = false }: { tiles: KeyStatTile[]; m
   if (tiles.length === 0) return null
   return (
     <div data-key-stats={more ? 'more' : 'primary'}>
-      {!more && <p className="fs-overline mb-2 text-n-3">Key stats · season</p>}
-      <div className="grid grid-cols-3 gap-x-4 gap-y-3 sm:grid-cols-6">
+      {!more && <h2 className="mb-[7px] text-[14px] font-bold tracking-[-0.015em]">Key stats · season</h2>}
+      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
         {tiles.map((t) => (
-          <div key={t.key} className="min-w-0" data-key-stat={t.key}>
-            <p className="fs-num truncate text-[17px] font-extrabold leading-tight">{t.value}</p>
-            <p className="fs-overline mt-0.5 truncate text-n-3" title={t.label}>
+          <div key={t.key} className="flex min-w-0 flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2.5" data-key-stat={t.key}>
+            <p className="truncate text-[10px] font-semibold text-n-3" title={t.label}>
               {t.label}
             </p>
+            <p className="fs-num truncate text-[15px] font-bold leading-tight tracking-[-0.015em]">{t.value}</p>
           </div>
         ))}
       </div>
@@ -354,7 +359,7 @@ function ScoringPicker({ scored }: { scored: ReturnType<typeof useScoredStats> }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <Select value={scored.value} onValueChange={scored.onPick}>
-        <SelectTrigger className="h-btn-md w-auto min-w-[170px] px-3 text-[12px] font-bold" aria-label="Scoring" data-core-scoring>
+        <SelectTrigger className="h-btn-md w-auto min-w-[170px] rounded-pill px-3" aria-label="Scoring" data-core-scoring>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -365,7 +370,7 @@ function ScoringPicker({ scored }: { scored: ReturnType<typeof useScoredStats> }
           ))}
         </SelectContent>
       </Select>
-      <p className="text-[11px] font-medium text-n-3" data-core-avg-note>
+      <p className="text-[10px] font-medium text-n-6" data-core-avg-note>
         Avg of completed weeks
       </p>
     </div>
@@ -379,13 +384,13 @@ export function DraftValue({ player, stats }: { player: PlayerStatsPlayer; stats
     ...draftValueCells(player),
     ...valueTiles(stats).filter((t) => t.value !== MISSING),
   ]
-  if (cells.length === 0) return <p className="text-[12px] font-semibold text-n-3">Nothing on file yet.</p>
+  if (cells.length === 0) return <p className="text-[11px] font-medium text-n-6">Nothing on file yet.</p>
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-5" data-draft-value>
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5" data-draft-value>
       {cells.map((c) => (
-        <div key={c.key} data-draft-cell={c.key}>
-          <p className="fs-num text-[17px] font-extrabold leading-tight">{c.value}</p>
-          <p className="fs-overline mt-0.5 text-n-3">{c.label}</p>
+        <div key={c.key} className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2.5" data-draft-cell={c.key}>
+          <p className="text-[10px] font-semibold text-n-3">{c.label}</p>
+          <p className="fs-num text-[15px] font-bold leading-tight tracking-[-0.015em]">{c.value}</p>
         </div>
       ))}
     </div>
@@ -401,8 +406,8 @@ export function ThisWeekBlock({ tw, position }: { tw: ThisWeek; position: string
   if (tw.kind === 'bye') {
     return (
       <div data-this-week="bye">
-        <p className="fs-overline text-n-3">This week · Wk {tw.week}</p>
-        <p className="mt-0.5 text-h6" data-this-week-bye>
+        <p className="text-[10px] font-semibold text-n-6">This week · Wk {tw.week}</p>
+        <p className="mt-0.5 text-[15px] font-bold tracking-[-0.02em]" data-this-week-bye>
           Bye week
         </p>
       </div>
@@ -414,19 +419,19 @@ export function ThisWeekBlock({ tw, position }: { tw: ThisWeek; position: string
   const vs = tw.home ? 'vs' : '@'
   return (
     <div data-this-week="game">
-      <p className="fs-overline text-n-3">This week · Wk {tw.week}</p>
+      <p className="text-[10px] font-semibold text-n-6">This week · Wk {tw.week}</p>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-h6" title={team ? `${vs} ${team.city} ${team.name}` : undefined} data-this-week-opp>
+        <span className="text-[15px] font-bold tracking-[-0.02em]" title={team ? `${vs} ${team.city} ${team.name}` : undefined} data-this-week-opp>
           {`${vs} ${tw.opp}`}
         </span>
         {kickoff && (
-          <span className="fs-num text-[12px] font-semibold text-n-3" data-this-week-kickoff>
+          <span className="fs-num text-[11px] font-medium text-n-3" data-this-week-kickoff>
             {`· ${kickoff}`}
           </span>
         )}
         {badge && (
           <span
-            className={cn('inline-flex rounded-sm px-1.5 py-px text-[11px] font-extrabold', oprkPillClass(badge.tone))}
+            className={cn('inline-flex h-[18px] items-center rounded-pill px-[7px] text-[10px] font-semibold', oprkPillClass(badge.tone))}
             data-matchup-badge={badge.tone}
           >
             {badge.text}
@@ -457,24 +462,24 @@ export function SeasonTable({
   season?: number
 }) {
   if (loading) return <Skeleton className="h-40 w-full" />
-  if (error) return <p className="text-[12px] font-semibold text-n-3">Couldn&apos;t load the schedule.</p>
+  if (error) return <p className="text-[11px] font-medium text-negative-strong">Couldn&apos;t load the schedule.</p>
   if (rows.length === 0) {
     return (
-      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
+      <p className="rounded-xl bg-surface-sunken p-3 text-center text-[11px] font-medium text-n-6">
         No schedule on file for this season yet.
       </p>
     )
   }
   return (
     <div>
-      {season !== undefined && <p className="fs-overline mb-1.5 text-n-3">{season} season</p>}
-    <table className="w-full table-fixed text-[13px]" data-season-table>
+      {season !== undefined && <h2 className="mb-[7px] text-[14px] font-bold tracking-[-0.015em]">{season} season</h2>}
+    <table className="w-full table-fixed text-[11px]" data-season-table>
       <thead>
-        <tr className="border-b border-ink text-left text-[11px] font-semibold text-n-3">
-          <th className="w-10 py-1.5 font-semibold">Wk</th>
-          <th className="py-1.5 font-semibold">Opp</th>
-          <th className="w-14 py-1.5 text-right font-semibold">Proj</th>
-          <th className="w-[84px] py-1.5 text-right font-semibold">Pts</th>
+        <tr className="text-left text-[10px] font-semibold text-n-6">
+          <th className="w-12 px-[7px] pb-[7px] font-semibold">Wk</th>
+          <th className="pb-[7px] font-semibold">Opp</th>
+          <th className="w-14 pb-[7px] text-right font-semibold">Proj</th>
+          <th className="w-[84px] px-[7px] pb-[7px] text-right font-semibold">Pts</th>
         </tr>
       </thead>
       <tbody>
@@ -484,25 +489,25 @@ export function SeasonTable({
           return (
             <tr
               key={r.week}
-              className={cn('border-b border-n-4', r.current && 'bg-accent-soft')}
+              className={cn('border-t border-n-4', r.current && 'bg-accent-soft')}
               data-season-week={r.week}
               data-current={r.current || undefined}
             >
-              <td className="fs-num py-2.5 font-bold text-n-3">{r.week}</td>
-              <td className="truncate py-2.5 font-extrabold">
+              <td className="fs-num px-[7px] py-2 font-semibold text-n-6">{r.week}</td>
+              <td className="truncate py-2 font-semibold">
                 {oppCell(r)}
                 {!bye && r.oprk !== null && r.tone && r.oprk > 0 && (
                   <span
-                    className={cn('fs-num ml-1.5 inline-flex rounded-sm px-1 py-px text-[10px] font-extrabold', oprkPillClass(r.tone))}
+                    className={cn('fs-num ml-1.5 inline-flex rounded-sm px-1 py-px text-[9px] font-bold', oprkPillClass(r.tone))}
                     data-oprk={r.oprk}
                   >
                     {ordinalShort(r.oprk)}
                   </span>
                 )}
               </td>
-              <td className={cn('fs-num py-2.5 text-right font-semibold', PROJ_TEXT)}>{bye ? '' : pts(r.proj)}</td>
-              <td className="fs-num truncate py-2.5 text-right font-extrabold">
-                {bye ? '' : kickoff ? <span className="text-[11px] font-semibold text-n-3">{kickoff}</span> : pts(r.points)}
+              <td className={cn('fs-num py-2 text-right font-medium', PROJ_TEXT)}>{bye ? '' : pts(r.proj)}</td>
+              <td className="fs-num truncate px-[7px] py-2 text-right font-bold">
+                {bye ? '' : kickoff ? <span className="text-[10px] font-medium text-n-3">{kickoff}</span> : pts(r.points)}
               </td>
             </tr>
           )
@@ -581,14 +586,14 @@ function InLeagueBlock({
   const league = useLeague(leagueId)
   return (
     <div>
-      <p className="fs-overline mb-1.5 text-n-3" data-viewing-in>
+      <p className="mb-1.5 text-[10px] font-semibold text-n-6" data-viewing-in>
         Viewing in {league.data?.league.name ?? '…'}
       </p>
       <LeagueCardActions player={pool} leagueId={leagueId} />
       <button
         type="button"
         onClick={() => goContext(null)}
-        className="mt-1.5 text-[11px] font-bold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-ink hover:decoration-current"
+        className="mt-1.5 text-[10px] font-semibold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-accent hover:decoration-current"
         data-card-all-leagues
       >
         See all my leagues
@@ -601,14 +606,14 @@ function YourLeaguesBlock({ pool, goContext }: { pool: PoolPlayer; goContext: (l
   const { data: leagues, isPending, isError } = useLeagues()
   return (
     <div>
-      <p className="fs-overline mb-1 text-n-3">Your leagues</p>
+      <p className="mb-1 text-[10px] font-semibold text-n-6">Your leagues</p>
       {isPending ? (
         <div className="space-y-1.5">
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />
         </div>
       ) : isError ? (
-        <p className="py-2 text-[12px] font-semibold text-n-3">Couldn&apos;t load your leagues.</p>
+        <p className="py-2 text-[11px] font-medium text-negative-strong">Couldn&apos;t load your leagues.</p>
       ) : leagues && leagues.length > 0 ? (
         <div>
           {leagues.map((lg, i) => (
@@ -622,7 +627,7 @@ function YourLeaguesBlock({ pool, goContext }: { pool: PoolPlayer; goContext: (l
           ))}
         </div>
       ) : (
-        <p className="py-2 text-[12px] font-medium text-n-3">Join a league to track availability.</p>
+        <p className="py-2 text-[11px] font-medium text-n-6">Join a league to track availability.</p>
       )}
     </div>
   )

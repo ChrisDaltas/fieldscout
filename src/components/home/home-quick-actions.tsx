@@ -10,12 +10,12 @@ import { LeagueCreateModal } from '@/components/leagues/league-create-modal'
 import { JoinLeagueDialog } from '@/components/leagues/leagues-index'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { featureFlags } from '@/lib/feature-flags'
-import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 
 /**
- * Home header quick-create chips — Join / League / List / Mock (package
- * screen 01). The icon tile flips to a plus on hover, Figma-style. Join and
+ * Home header quick-create chips — Join / League / List / Mock. v7: secondary
+ * (grey-fill) pills at the 27px size with a leading glyph, which flips to a
+ * plus on hover, Figma-style. Join and
  * League open the real create and join flows (the backend shipped with M1–M4;
  * they were stubs until 2026-09-09, when Chris hit the dead button on Home
  * while standing up the first test league); List opens the
@@ -60,28 +60,14 @@ import { useUIStore } from '@/stores/ui-store'
 interface ActionChipProps {
   icon: IconName
   label: string
-  /** Tile fill + icon color classes (tiles keep the 1px ink border). */
-  tileClassName: string
   onClick: () => void
 }
 
-function ActionChip({ icon, label, tileClassName, onClick }: ActionChipProps) {
+function ActionChip({ icon, label, onClick }: ActionChipProps) {
   return (
-    <Button
-      variant="stroke"
-      size="sm"
-      onClick={onClick}
-      className="group gap-1.5 pl-1.5"
-    >
-      <span
-        className={cn(
-          'inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-sm border border-ink',
-          tileClassName,
-        )}
-      >
-        <Icon name={icon} size={11} className="group-hover:hidden" />
-        <Icon name="plus" size={11} className="hidden group-hover:block" />
-      </span>
+    <Button variant="stroke" size="md" onClick={onClick} className="group">
+      <Icon name={icon} size={12} className="text-n-3 group-hover:hidden" />
+      <Icon name="plus" size={12} className="hidden text-ink group-hover:block" />
       {label}
     </Button>
   )
@@ -95,19 +81,17 @@ export function HomeQuickActions() {
   const [joinLeagueOpen, setJoinLeagueOpen] = useState(false)
 
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex flex-wrap items-center gap-[5px]">
       {featureFlags.leagues && (
       <>
       <ActionChip
         icon="team"
         label="Join"
-        tileClassName="bg-brand text-ink"
         onClick={() => setJoinLeagueOpen(true)}
       />
       <ActionChip
         icon="cup"
         label="League"
-        tileClassName="bg-accent text-accent-foreground"
         onClick={() => setCreateLeagueOpen(true)}
       />
       <LeagueCreateModal open={createLeagueOpen} onOpenChange={setCreateLeagueOpen} />
@@ -117,7 +101,6 @@ export function HomeQuickActions() {
       <ActionChip
         icon="list"
         label="List"
-        tileClassName="bg-ink text-white"
         onClick={() => setCreateListOpen(true)}
       />
       {featureFlags.mockDrafts && (
@@ -125,16 +108,6 @@ export function HomeQuickActions() {
       <ActionChip
         icon="rocket"
         label="Mock"
-        // A SATURATED resting fill, like all three of its row-mates (R538).
-        // `bg-accent-soft` was the first cut and is withdrawn: globals.css
-        // annotates it "hover surfaces" (`:37`), and a tile that reads
-        // lighter than every neighbour looks like an unfinished state rather
-        // than a fourth identity. `brand-strong` is the shipped `lime`
-        // button variant's own resting fill (button.tsx:37), with that
-        // variant's ink pairing — the three saturated tiles beside it are
-        // taken (brand / accent / ink), and lime is "look here", which is
-        // what a practice draft you are about to start is.
-        tileClassName="bg-brand-strong text-ink"
         onClick={() => setMockLaunchOpen(true)}
       />
       <MockLaunchDialog

@@ -131,7 +131,7 @@ export function PlayoffBracket({
   if (doc.kind !== 'bracket') {
     return (
       <section className="flex flex-col gap-3" data-playoff-bracket={shape} data-compact={compact ? '' : undefined}>
-        <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3">
+        <p role="status" className="rounded-2xl bg-surface-sunken px-[15px] py-3 text-[11px] font-medium text-n-2">
           {pointsRaceCopy(doc.kind)}
         </p>
         <ChampionLine doc={doc} teamNames={teamNames} />
@@ -145,13 +145,13 @@ export function PlayoffBracket({
   return (
     <section className="flex flex-col gap-3" data-playoff-bracket={shape} data-compact={compact ? '' : undefined}>
       <header className="flex flex-wrap items-center gap-2">
-        <h3 className="text-[13px] font-extrabold text-ink">{shape === 'projected' ? PROJECTED_TITLE : BUILT_TITLE}</h3>
+        <h3 className="text-[15px] font-bold tracking-[-0.02em] text-ink">{shape === 'projected' ? PROJECTED_TITLE : BUILT_TITLE}</h3>
         {shape === 'projected' && (
           <Badge variant="stroke-purple" data-bracket-badge="projected">
             Projected
           </Badge>
         )}
-        <span className="text-[11px] font-medium text-n-3">
+        <span className="text-[10px] font-semibold text-n-6">
           <span className="fs-num">{doc.playoff_teams}</span> teams · <span className="fs-num">{doc.bracket_size}</span>-team bracket ·{' '}
           <span className="fs-num">{doc.rounds}</span> round{doc.rounds === 1 ? '' : 's'}
           {doc.weeks_per_round === 2 ? ' · two weeks per round' : ''} · {doc.reseed ? 'reseeded each round' : 'fixed bracket'}
@@ -164,12 +164,12 @@ export function PlayoffBracket({
         </p>
       )}
       {shape === 'awaiting_build' && (
-        <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3" data-awaiting-build>
+        <p role="status" className="rounded-2xl bg-surface-sunken px-[15px] py-3 text-[11px] font-medium text-n-2" data-awaiting-build>
           {AWAITING_BUILD_COPY}
         </p>
       )}
       {foreign && (
-        <p role="status" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-foreign-rows>
+        <p role="status" className="rounded-2xl bg-negative-soft px-[15px] py-3 text-[11px] font-semibold text-ink" data-foreign-rows>
           {foreign}
         </p>
       )}
@@ -187,10 +187,10 @@ export function PlayoffBracket({
 
       <ChampionLine doc={doc} teamNames={teamNames} />
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:overflow-x-auto md:pb-1" data-rounds>
+      <div className="flex flex-col gap-4 md:flex-row md:items-stretch md:overflow-x-auto md:pb-1" data-rounds>
         {shape === 'projected'
           ? projectedRounds(doc).map((round) => (
-              <RoundColumn key={round.round} label={roundLabel(round.round, doc.rounds)} badge={null} note={null} correction={false}>
+              <RoundColumn key={round.round} label={roundLabel(round.round, doc.rounds)} badge={null} note={null} correction={false} connect={round.round < doc.rounds}>
                 {round.pairs
                   ? round.pairs.map((pair, i) => (
                       <ProjectedGame key={i} leagueId={doc.league_id} pair={pair} teamNames={teamNames} myTeamId={myTeamId} />
@@ -208,6 +208,7 @@ export function PlayoffBracket({
                   note={sourceLabel(round)}
                   correction={seededBeforeCorrection(doc, round, finalStandings)}
                   round={round.round}
+                  connect={round.round < doc.rounds}
                 >
                   {round.built
                     ? round.games.map((game, i) => (
@@ -256,6 +257,7 @@ function RoundColumn({
   note,
   correction,
   round,
+  connect = false,
   children,
 }: {
   label: string
@@ -263,25 +265,37 @@ function RoundColumn({
   note: string | null
   correction: boolean
   round?: number
+  /** Draw the hairline connector from each game to the next round (md+). */
+  connect?: boolean
   children: React.ReactNode
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-2 md:min-w-[220px]" data-round={round ?? label}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-ink">{label}</span>
+        <span className="text-[12px] font-bold tracking-[-0.01em] text-ink">{label}</span>
         {badge && (
-          <Badge variant={badge.variant} title={badge.title} data-round-badge={badge.state} className="text-[10px]">
+          <Badge variant={badge.variant} title={badge.title} data-round-badge={badge.state}>
             {badge.label}
           </Badge>
         )}
       </div>
-      {note && <p className="text-[10px] font-medium text-n-3">{note}</p>}
+      {note && <p className="text-[10px] font-medium text-n-6">{note}</p>}
       {correction && (
-        <p className="text-[10px] font-semibold text-ink" title={SEEDED_BEFORE_CORRECTION_TITLE} data-seeded-before-correction>
+        <p className="text-[10px] font-semibold text-caution-strong" title={SEEDED_BEFORE_CORRECTION_TITLE} data-seeded-before-correction>
           {SEEDED_BEFORE_CORRECTION_COPY}
         </p>
       )}
-      <div className="flex flex-col gap-2">{children}</div>
+      {/* The games spread over the column's height so later rounds sit
+          between the games that feed them; a 1px hairline runs from each game
+          across the gap to the next round. */}
+      <div
+        className={cn(
+          'flex flex-col gap-2 md:flex-1 md:justify-around',
+          connect && "md:[&>*]:relative md:[&>*]:after:absolute md:[&>*]:after:left-full md:[&>*]:after:top-1/2 md:[&>*]:after:w-4 md:[&>*]:after:border-t md:[&>*]:after:border-n-4 md:[&>*]:after:content-['']",
+        )}
+      >
+        {children}
+      </div>
     </div>
   )
 }
@@ -293,6 +307,7 @@ function TeamLine({
   teamId,
   mine,
   winner,
+  decided = false,
   cells,
   total,
 }: {
@@ -304,29 +319,34 @@ function TeamLine({
   teamId: string | null
   mine: boolean
   winner: boolean
+  /** The game has a stored winner — the other side reads as the trailer. */
+  decided?: boolean
   cells?: string[]
   total?: string
 }) {
+  const trailing = decided && !winner
   return (
-    <div className={cn('flex items-center gap-2 px-2.5 py-1.5', winner && 'bg-accent-soft')} data-team-line data-winner={winner ? '' : undefined}>
-      <span className="fs-num w-4 shrink-0 text-right text-[11px] font-bold text-n-3">{seed ?? '—'}</span>
-      <Crest name={name} src={null} className="h-5 w-5" />
+    // The viewer's own team is a resting FILL; the winner is carried by ink
+    // weight and the trailer by grey (v7) — never a shadow.
+    <div className={cn('flex min-h-[34px] items-center gap-2 px-3 py-1.5', mine && 'bg-accent-soft')} data-team-line data-winner={winner ? '' : undefined}>
+      <span className="fs-num w-4 shrink-0 text-right text-[10px] font-bold text-n-6">{seed ?? '—'}</span>
+      <Crest name={name} src={null} className="h-5 w-5 rounded" fallbackClassName="text-[8px]" />
       <TeamNameLink
         name={name}
         leagueId={leagueId}
         teamId={teamId}
-        className={cn('min-w-0 flex-1 truncate text-[12px]', winner ? 'font-extrabold text-ink' : 'font-semibold text-ink')}
+        className={cn('min-w-0 flex-1 truncate text-[12px]', winner ? 'font-bold text-ink' : trailing ? 'font-medium text-n-3' : 'font-semibold text-ink')}
       />
       {mine && (
-        <Badge variant="stroke" className="text-[9px]">
+        <Badge variant="stroke-purple" className="h-4 px-1.5 text-[9px]">
           You
         </Badge>
       )}
       {total !== undefined && (
         <span className="flex shrink-0 flex-col items-end">
-          <span className="fs-num text-[12px] font-bold text-ink">{total}</span>
+          <span className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', trailing ? 'text-n-3' : 'text-ink')}>{total}</span>
           {cells && cells.length > 1 && (
-            <span className="fs-num text-[9px] text-n-3" data-week-cells>
+            <span className="fs-num text-[9px] font-medium text-n-6" data-week-cells>
               {cells.join(' + ')}
             </span>
           )}
@@ -338,12 +358,12 @@ function TeamLine({
 
 function ProjectedGame({ leagueId, pair, teamNames, myTeamId }: { leagueId: string; pair: ProjectedPair; teamNames: ReadonlyMap<string, string>; myTeamId: string | null }) {
   return (
-    <div className="divide-y divide-n-4 rounded-sm border border-ink bg-white" data-game="projected">
+    <div className="divide-y divide-n-4 overflow-hidden rounded-xl border border-n-4 bg-white" data-game="projected">
       <TeamLine seed={pair.home.seed} name={teamName(teamNames, pair.home.team_id)} leagueId={leagueId} teamId={pair.home.team_id} mine={pair.home.team_id === myTeamId} winner={false} />
       {pair.away ? (
         <TeamLine seed={pair.away.seed} name={teamName(teamNames, pair.away.team_id)} leagueId={leagueId} teamId={pair.away.team_id} mine={pair.away.team_id === myTeamId} winner={false} />
       ) : (
-        <p className="px-2.5 py-1.5 text-[11px] font-medium text-n-3" data-bye>
+        <p className="flex min-h-[34px] items-center px-3 py-1.5 text-[11px] font-medium text-n-6" data-bye>
           Bye
         </p>
       )}
@@ -379,9 +399,10 @@ function BuiltGame({
   const awayCells = game.weeks.map((w) => formatBracketScore(w.away_score, w.status))
   const bye = game.away_team_id === null
   const total = (t: number, cells: string[]) => (played ? (game.weeks.length > 1 ? formatTotal(t) : cells[0]) : '—')
+  const decided = !bye && played && game.winner_team_id != null
   return (
     <div
-      className={cn('rounded-sm border bg-white', picking ? 'border-accent' : 'border-ink')}
+      className={cn('overflow-hidden rounded-xl border bg-white', picking ? 'border-accent' : 'border-n-4')}
       data-game={game.decided_by}
       data-final={game.final ? '' : undefined}
       data-played={played ? '' : undefined}
@@ -396,11 +417,12 @@ function BuiltGame({
           teamId={game.home_team_id}
           mine={game.home_team_id === myTeamId}
           winner={!bye && played && game.winner_team_id === game.home_team_id}
+          decided={decided}
           cells={bye ? undefined : homeCells}
           total={bye ? undefined : total(game.home_total, homeCells)}
         />
         {bye ? (
-          <p className="px-2.5 py-1.5 text-[11px] font-medium text-n-3" data-bye>
+          <p className="flex min-h-[34px] items-center px-3 py-1.5 text-[11px] font-medium text-n-6" data-bye>
             Bye
           </p>
         ) : (
@@ -411,18 +433,19 @@ function BuiltGame({
             teamId={game.away_team_id}
             mine={game.away_team_id === myTeamId}
             winner={played && game.winner_team_id === game.away_team_id}
+            decided={decided}
             cells={awayCells}
             total={total(game.away_total, awayCells)}
           />
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-n-4 px-2.5 py-1">
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-n-4 px-3 py-1.5">
         {played || bye ? (
-          <Badge variant={game.final ? 'stroke-green' : 'stroke'} title={verdict.title} className="text-[9px]" data-verdict={game.decided_by}>
+          <Badge variant={game.final ? 'green' : 'stroke'} title={verdict.title} data-verdict={game.decided_by}>
             {verdict.label}
           </Badge>
         ) : (
-          <span className="text-[10px] font-medium text-n-3" data-not-played>
+          <span className="text-[10px] font-medium text-n-6" data-not-played>
             Not played yet
           </span>
         )}
@@ -431,10 +454,10 @@ function BuiltGame({
         {game.weeks.some((w) => w.is_overridden) && (
           <Link
             href={commishMatchupHref(leagueId, game.weeks.find((w) => w.is_overridden)?.week ?? null, game.home_team_id)}
-            className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="rounded-pill focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
             data-overridden-link
           >
-            <Badge variant="stroke" className="text-[9px] hover:bg-accent-soft">
+            <Badge variant="stroke-purple" className="hover:bg-surface-selected">
               ✸ commissioner-adjusted
             </Badge>
           </Link>
@@ -442,10 +465,10 @@ function BuiltGame({
         {gameHandPicked(game) && (
           <Link
             href={commishEntryHref(leagueId, game.weeks.find((w) => w.hand_picked_action_id != null)?.hand_picked_action_id ?? '')}
-            className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="rounded-pill focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
             data-hand-picked-link
           >
-            <Badge variant="stroke-purple" className="text-[9px] hover:bg-accent-soft" data-hand-picked-badge>
+            <Badge variant="stroke-purple" className="hover:bg-surface-selected" data-hand-picked-badge>
               {HAND_PICKED_BADGE}
             </Badge>
           </Link>
@@ -467,7 +490,7 @@ function BuiltGame({
           </span>
         )}
         {game.weeks.length > 1 && (
-          <span className="text-[10px] font-medium text-n-3">
+          <span className="text-[10px] font-medium text-n-6">
             Weeks <span className="fs-num">{game.weeks.map((w) => w.week).join(' + ')}</span>
           </span>
         )}
@@ -478,9 +501,9 @@ function BuiltGame({
 
 function TbdGame() {
   return (
-    <div className="divide-y divide-n-4 rounded-sm border border-dashed border-n-3 bg-white" data-game="tbd">
-      <p className="px-2.5 py-1.5 text-[12px] font-semibold text-n-3">{TBD_LABEL}</p>
-      <p className="px-2.5 py-1.5 text-[12px] font-semibold text-n-3">{TBD_LABEL}</p>
+    <div className="divide-y divide-n-4 rounded-xl border border-dashed border-n-7 bg-white" data-game="tbd">
+      <p className="flex min-h-[34px] items-center px-3 py-1.5 text-[11px] font-medium text-n-6">{TBD_LABEL}</p>
+      <p className="flex min-h-[34px] items-center px-3 py-1.5 text-[11px] font-medium text-n-6">{TBD_LABEL}</p>
     </div>
   )
 }
@@ -489,7 +512,7 @@ function RolloverLine({ label, display, marker }: { label: string; display: Retu
   return (
     <p className="text-[11px] font-medium text-n-3" data-rollover={display.kind} data-rollover-line={marker ?? 'rollover'}>
       {label} ·{' '}
-      <span className="fs-num text-ink" title={display.title ?? undefined}>
+      <span className="fs-num font-semibold text-ink" title={display.title ?? undefined}>
         {display.text}
       </span>
       {display.kind === 'instant' && <span> (your time{display.title ? '; league time on hover' : ''})</span>}
@@ -501,10 +524,10 @@ function ChampionLine({ doc, teamNames }: { doc: PlayoffBracketDoc; teamNames: R
   if (doc.status !== 'complete') return null
   const id = doc.champion_team_id ?? (doc.kind === 'bracket' ? doc.bracket_champion_team_id : null)
   return (
-    <p className="flex items-center gap-2 rounded-sm border border-ink bg-brand px-3 py-2 text-[13px] font-extrabold text-ink" data-champion={id ?? 'none'}>
+    <p className="flex items-center gap-2.5 rounded-2xl bg-brand-soft px-[15px] py-3 text-[13px] font-bold tracking-[-0.01em] text-ink" data-champion={id ?? 'none'}>
       {id ? (
         <>
-          <Crest name={teamName(teamNames, id)} src={null} />
+          <Crest name={teamName(teamNames, id)} src={null} className="h-[31px] w-[31px] bg-white" fallbackClassName="bg-white text-[10px]" />
           {/* ONE flex item so the crest gap stays the only gap — the anchor
               wraps the NAME, never the "Champion · " prefix. */}
           <span>

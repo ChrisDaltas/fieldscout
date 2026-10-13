@@ -120,7 +120,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="standings" className="flex flex-col gap-4" data-tab-panel="standings">
+        <TabsContent value="standings" className="mt-4 flex flex-col gap-4" data-tab-panel="standings">
           {standingsProblem && standings.data && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -135,7 +135,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
             <div className="flex items-center gap-2">
               {detail.settings.schedule_mode === 'total_points' && <Badge variant="stroke">Total points</Badge>}
               {standings.data && (
-                <span className="text-[11px] font-medium text-n-3" data-weeks-counted>
+                <span className="text-[10px] font-medium text-n-6" data-weeks-counted>
                   <span className="fs-num">{standings.data.weeks_final}</span> week{standings.data.weeks_final === 1 ? '' : 's'} final
                   {standings.data.projected && (
                     <>
@@ -148,7 +148,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
             </div>
           </div>
           {view === 'projected' && (
-            <p className="text-[11px] font-medium text-n-3" data-projected-copy>
+            <p className="text-[11px] font-medium text-n-6" data-projected-copy>
               {PROJECTED_COPY}
             </p>
           )}
@@ -184,7 +184,7 @@ function StandingsContent({ leagueId, detail, initialTab }: { leagueId: string; 
           )}
         </TabsContent>
 
-        <TabsContent value="playoffs" className="flex flex-col gap-4" data-tab-panel="playoffs">
+        <TabsContent value="playoffs" className="mt-4 flex flex-col gap-4" data-tab-panel="playoffs">
           {bracketProblem && bracket.data && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
           {bracket.isPending ? (
             <BracketSkeleton />
@@ -216,7 +216,7 @@ function StandingsSkeleton() {
   return (
     <div className="flex flex-col gap-4">
       <LeaguePageTitle title="Standings" />
-      <Skeleton className="h-7 w-48 rounded-sm" />
+      <Skeleton className="h-7 w-48 rounded-pill" />
       <TableSkeleton />
     </div>
   )
@@ -225,9 +225,9 @@ function StandingsSkeleton() {
 function TableSkeleton() {
   return (
     <div className="flex flex-col gap-2" data-skeleton="standings-table">
-      <Skeleton className="h-6 w-80 rounded-sm" />
+      <Skeleton className="h-6 w-80 rounded-pill" />
       {Array.from({ length: 6 }, (_, i) => (
-        <Skeleton key={i} className="h-9 rounded-sm" />
+        <Skeleton key={i} className="h-9 rounded-md" />
       ))}
     </div>
   )
@@ -236,10 +236,10 @@ function TableSkeleton() {
 export function BracketSkeleton() {
   return (
     <div className="flex flex-col gap-2" data-skeleton="playoff-bracket">
-      <Skeleton className="h-6 w-64 rounded-sm" />
+      <Skeleton className="h-6 w-64 rounded-pill" />
       <div className="flex flex-col gap-3 md:flex-row">
         {Array.from({ length: 3 }, (_, i) => (
-          <Skeleton key={i} className="h-28 flex-1 rounded-sm" />
+          <Skeleton key={i} className="h-28 flex-1 rounded-xl" />
         ))}
       </div>
     </div>

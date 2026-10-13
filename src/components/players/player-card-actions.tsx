@@ -132,7 +132,7 @@ export function LeagueActionsBody({
 }) {
   return (
     <div className="flex flex-col gap-1.5" data-card-league={view.kind}>
-      <p className="text-[12px] font-extrabold text-ink" data-card-where>
+      <p className="text-[11px] font-bold text-ink" data-card-where>
         {view.where}
       </p>
       {view.kind === 'mine' && myTeamId && <MineActions view={view} leagueId={leagueId} teamId={myTeamId} />}
@@ -149,7 +149,7 @@ export function LeagueActionsBody({
           <ClosedReason>{view.trade.reason}</ClosedReason>
         ))}
       {view.kind !== 'available' && move?.data && (
-        <p className="text-[12px] font-semibold text-positive-strong" role="status" data-card-result>
+        <p className="text-[11px] font-semibold text-positive-strong" role="status" data-card-result>
           {moveReadout(move.data, (iso) => iso).headline}.
         </p>
       )}
@@ -232,14 +232,14 @@ export function PickupActions({
 
   if (move.data) {
     return (
-      <p className="text-[12px] font-semibold text-positive-strong" role="status" data-card-result>
+      <p className="text-[11px] font-semibold text-positive-strong" role="status" data-card-result>
         {moveReadout(move.data, (iso) => iso).headline}.
       </p>
     )
   }
   if (claim.data) {
     return (
-      <p className={cn('text-[12px] font-semibold text-ink', inline && 'basis-full text-[11px]')} role="status" data-card-result>
+      <p className={cn('text-[11px] font-semibold text-ink', inline && 'basis-full text-[11px]')} role="status" data-card-result>
         {claimPlacedCopy(name, view.nextRunLocal)}
       </p>
     )
@@ -298,7 +298,7 @@ export function PickupActions({
         </div>
       )}
       {refusal && (
-        <p role="alert" className="basis-full rounded-sm border border-negative bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-card-refusal>
+        <p role="alert" className="basis-full rounded-lg bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-card-refusal>
           {refusal instanceof Error ? refusal.message : 'The move was refused.'}
         </p>
       )}
@@ -342,7 +342,7 @@ export function AcquireStep({
   const copy = acquireConfirmCopy(kind === 'add' ? { kind } : { kind, nextRunLocal, bid: faab ? bid : null }, name)
   return (
     <div className="flex flex-col gap-1.5" data-card-acquire-choice={kind === 'claim' && faab ? 'bid' : kind}>
-      <p className="text-[12px] font-semibold text-ink" data-card-acquire-copy>
+      <p className="text-[11px] font-semibold text-ink" data-card-acquire-copy>
         {copy}
       </p>
       {needsDrop && (
@@ -351,7 +351,7 @@ export function AcquireStep({
           <select
             value={dropId}
             onChange={(e) => onDrop(e.target.value)}
-            className="h-btn-md rounded-sm border border-ink bg-white px-2 text-[12px] font-medium text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="h-btn-md rounded-pill bg-surface-control px-2.5 text-[11px] font-medium text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
             data-card-drop-pick
           >
             <option value="">Choose who to drop</option>
@@ -368,7 +368,7 @@ export function AcquireStep({
           <Button variant="stroke" size="icon-sm" aria-label="Lower the bid" onClick={() => onBid((b) => stepBid(b, -1, faab))}>
             −
           </Button>
-          <span className="fs-num min-w-[32px] text-center text-[12px] font-extrabold" data-card-bid-amount>
+          <span className="fs-num min-w-[32px] text-center text-[11px] font-bold" data-card-bid-amount>
             ${bid}
           </span>
           <Button variant="stroke" size="icon-sm" aria-label="Raise the bid" onClick={() => onBid((b) => stepBid(b, 1, faab))}>
@@ -431,7 +431,7 @@ export function LeagueAvailabilityRow({
     <div className={cn('flex items-center gap-2 py-1.5', !first && 'border-t border-n-4')} data-card-league-row={league.id}>
       <Crest name={league.name} src={league.avatar_url} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-extrabold leading-tight">{league.name}</span>
+        <span className="block truncate text-[11px] font-bold leading-tight">{league.name}</span>
         <span
           className={cn('mt-0.5 block text-[11px] font-semibold leading-tight', status?.kind === 'available' ? 'text-brand-strong' : 'text-n-3')}
           data-card-league-status
@@ -471,15 +471,15 @@ export function GlobalLeaguesExpander({ player }: { player: PoolPlayer }) {
   const [open, setOpen] = useState(false)
   const { data: leagues, isPending } = useLeagues()
   const count = leagues?.length ?? 0
-  if (isPending) return <span className="py-1 text-[12px] font-semibold text-n-3">Checking your leagues…</span>
-  if (count === 0) return <span className="py-1 text-[12px] font-medium text-n-3">Join a league to track availability</span>
+  if (isPending) return <span className="py-1 text-[11px] font-semibold text-n-3">Checking your leagues…</span>
+  if (count === 0) return <span className="py-1 text-[11px] font-medium text-n-3">Join a league to track availability</span>
   return (
     <div className="flex w-full flex-col">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 self-start py-1 text-[12px] font-extrabold text-accent-strong transition-colors hover:text-accent"
+        className="inline-flex items-center gap-1 self-start py-1 text-[11px] font-bold text-accent-strong transition-colors hover:text-accent"
         data-card-leagues-toggle
       >
         Available in {count} {count === 1 ? 'league' : 'leagues'}

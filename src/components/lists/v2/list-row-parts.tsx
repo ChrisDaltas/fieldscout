@@ -24,9 +24,14 @@ import type { Bucket } from './list-buckets'
  * the note mark and its hover card, the drafted checkbox, the row menu, and a
  * bucket header.
  *
- * Sizes are the design's stated values converted to this app's ×0.8 scale
- * (plan §1, "Scale"): a 30px headshot is 24, a 26px one is 21, a 60px row is
- * 48, a 44px row is 36.
+ * v7 restyle (FieldScout Next v7, "One list" / "Rankings"): hairline
+ * separators, grey 10px meta, round headshots, pill controls, and tier/bucket
+ * headers as a coloured pill on a hairline rather than a saturated band.
+ *
+ * **Several of these render inside the pop-out's `.fs-dark` wrapper** (see
+ * `list-window.tsx` and the R238 audit in `list-windows-host.test.ts`), so their
+ * colours stay on the utilities `globals.css` redirects there — `text-n-3`,
+ * `border-n-4`, `bg-n-4`, `bg-white` — rather than v7's `surface-*` fills.
  */
 
 // -----------------------------------------------------------------------------
@@ -151,11 +156,11 @@ export function PlayerMeta({
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
       <PositionBadge position={entry.player.position ?? 'FLEX'} />
-      <span className="fs-num whitespace-nowrap text-[10px] font-medium text-n-3">
+      <span className="fs-num whitespace-nowrap text-[10px] font-medium text-n-6">
         {entry.player.team ?? 'FA'}
       </span>
       {status && status !== 'Active' ? (
-        <span className="inline-flex h-[13px] shrink-0 items-center rounded-sm border border-ink bg-caution px-1 text-[8px] font-bold text-ink">
+        <span className="inline-flex h-[14px] shrink-0 items-center rounded-sm bg-caution px-1 text-[9px] font-bold text-ink">
           {status === 'Questionable' ? 'Q' : status === 'Out' ? 'Out' : status.slice(0, 3)}
         </span>
       ) : null}
@@ -170,7 +175,7 @@ export function PlayerMeta({
 /**
  * "A note is a mark, not a paragraph" (design LAW, Notes): one accent
  * `comments` glyph beside the player, and the note itself only on hover, in a
- * white ink-stroked box at modal elevation.
+ * white rounded card at overlay elevation.
  */
 export function NoteMark({ note, size = 11 }: { note: string | null; size?: number }) {
   if (!note?.trim()) return null
@@ -183,7 +188,9 @@ export function NoteMark({ note, size = 11 }: { note: string | null; size?: numb
       </TooltipTrigger>
       <TooltipContent
         side="bottom"
-        className="max-w-[208px] border-1 border-ink bg-white p-2 text-[11px] font-medium leading-snug text-ink shadow-hard-8"
+        // A tooltip is a true overlay, so it keeps a resting shadow (CLAUDE.md
+        // → Elevation, overlay exception).
+        className="max-w-[208px] rounded-xl border-0 bg-white p-2.5 text-[11px] font-medium leading-snug text-ink shadow-hard-8"
       >
         {note}
       </TooltipContent>
@@ -219,7 +226,7 @@ export function DraftedCheckbox({
       title={drafted ? 'Mark undrafted' : 'Mark drafted'}
       aria-pressed={drafted}
       className={cn(
-        'inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-sm border-1 border-ink transition-colors',
+        'inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-sm border border-n-7 transition-colors',
         drafted ? 'bg-positive' : 'bg-white hover:bg-accent-soft',
         className,
       )}
@@ -267,7 +274,7 @@ export function RowMenu({ actions, className }: { actions: RowMenuActions; class
           title="Row options"
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-accent-soft',
+            'inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-pill text-n-6 transition-colors hover:bg-surface-hover hover:text-ink',
             className,
           )}
         >
@@ -402,11 +409,11 @@ export function DropGap({
       }
     >
       <div
-        className="flex h-full items-center gap-1.5 border border-dashed border-accent bg-accent-soft px-2.5"
+        className="flex h-full items-center gap-1.5 rounded-md border border-dashed border-accent bg-accent-soft px-2.5"
         style={{ width: horizontal ? width : undefined }}
       >
         <Icon name="arrow-next" size={11} className="shrink-0 text-accent-strong" />
-        <span className="truncate text-[11px] font-medium text-accent-strong">{name}</span>
+        <span className="truncate text-[11px] font-semibold text-accent-strong">{name}</span>
       </div>
     </div>
   )
@@ -436,8 +443,8 @@ export function NewBucketZone({
     <div
       data-drop-new={bucketKey}
       className={cn(
-        'flex h-[42px] items-center justify-center gap-2 border border-dashed text-[11px] font-bold transition-colors',
-        over ? 'border-accent bg-accent-soft text-accent-strong' : 'border-ink text-n-3',
+        'flex h-[42px] items-center justify-center gap-2 rounded-xl border border-dashed text-[11px] font-semibold transition-colors',
+        over ? 'border-accent bg-accent-soft text-accent-strong' : 'border-n-7 text-n-6',
       )}
     >
       <Icon name="plus" size={12} />
@@ -459,10 +466,13 @@ export function NewBucketZone({
  */
 export function EmptyListState({ canEdit }: { canEdit: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-2 border border-dashed border-ink px-6 py-10 text-center">
-      <Icon name="list" size={20} className="text-n-3" />
-      <p className="text-[13px] font-bold">No players on this list yet.</p>
-      <p className="max-w-[300px] text-[11px] font-medium text-n-3">
+    // v7's sunken empty panel. `bg-n-4` rather than `bg-surface-sunken`
+    // because this renders inside the pop-out's `.fs-dark` wrapper too, where
+    // only the redirected utilities invert (globals.css).
+    <div className="flex flex-col items-center gap-[9px] rounded-2xl bg-n-4 px-5 py-10 text-center">
+      <Icon name="list" size={18} className="text-n-3" />
+      <p className="text-[14px] font-bold">No players on this list yet.</p>
+      <p className="max-w-[289px] text-[11px] font-medium text-n-3">
         {canEdit
           ? 'Use Add players to search the pool and start building the board.'
           : 'The owner has not added anyone yet.'}
@@ -579,10 +589,10 @@ export function ListReadFailure({
         size={16}
         className={gone ? 'text-n-3' : 'text-negative-strong'}
       />
-      <p className="text-[11px] font-bold">
+      <p className="text-[13px] font-bold">
         {gone ? LIST_UNAVAILABLE : 'This list could not be loaded.'}
       </p>
-      {detail !== null && <p className="text-[9px] font-medium text-n-3">{detail}</p>}
+      {detail !== null && <p className="text-[10px] font-medium text-n-3">{detail}</p>}
     </div>
   )
 }
@@ -604,7 +614,7 @@ export function ListRowsSkeleton({ rows = 6, rowHeight }: { rows?: number; rowHe
           style={{ height: rowHeight }}
           className="block border-b border-n-4 p-2"
         >
-          <span className="block h-full rounded-sm bg-n-4" />
+          <span className="block h-full rounded-md bg-n-4" />
         </span>
       ))}
     </div>
@@ -616,9 +626,13 @@ export function ListRowsSkeleton({ rows = 6, rowHeight }: { rows?: number; rowHe
 // -----------------------------------------------------------------------------
 
 /**
- * The saturated band above each section: value alone on the left (never
- * "Tier 3" — the grouping control above already says the word), the running
- * spend where a grouping has one, and `Add +` on the right.
+ * The header above each section: value alone on the left (never "Tier 3" —
+ * the grouping control above already says the word), the running spend where
+ * a grouping has one, and `Add +` on the right.
+ *
+ * v7 shape (FieldScout Next v7, Rankings tier rows): a hairline-topped label
+ * row rather than a saturated band. The tier colour identity is kept — the
+ * value sits in a pill filled with the band's own `bucket.className`.
  *
  * Cost bands are the one renameable bucket, edited **inline in the header**
  * (`screens/detail-grouping-avg-cost.png`).
@@ -655,9 +669,8 @@ export function BucketHeader({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 border-b border-ink pl-2.5 pr-1.5',
-        compact ? 'h-[26px]' : 'h-8',
-        bucket.className,
+        'flex items-center gap-2 px-2.5',
+        compact ? 'h-[28px]' : 'h-8',
       )}
     >
       {editing ? (
@@ -673,32 +686,42 @@ export function BucketHeader({
               setEditing(false)
             }
           }}
-          className="h-[19px] w-[94px] rounded-sm border-1 border-caution-strong bg-white px-1.5 text-[10px] font-bold text-ink outline-none"
+          className="h-[20px] w-[104px] rounded-md bg-white px-2 text-[10px] font-semibold text-ink shadow-field outline-none"
         />
       ) : renameable ? (
         <button
           type="button"
           onClick={() => setEditing(true)}
           title="Rename this band"
-          className="inline-flex cursor-text items-center gap-1 whitespace-nowrap text-[10px] font-bold leading-none"
+          className={cn(
+            'inline-flex h-[18px] cursor-text items-center gap-1 whitespace-nowrap rounded-pill px-2 text-[10px] font-bold leading-none',
+            bucket.className,
+          )}
         >
           {bucket.label}
-          <Icon name="edit" size={9} className="opacity-60" />
+          <Icon name="edit" size={9} className="opacity-70" />
         </button>
       ) : (
-        <span className="whitespace-nowrap text-[10px] font-bold leading-none">{bucket.label}</span>
+        <span
+          className={cn(
+            'inline-flex h-[18px] items-center whitespace-nowrap rounded-pill px-2 text-[10px] font-bold leading-none',
+            bucket.className,
+          )}
+        >
+          {bucket.label}
+        </span>
       )}
 
       <span className="ml-auto" />
       {bucket.meta ? (
-        <span className="fs-num text-[10px] font-medium">{bucket.meta}</span>
+        <span className="fs-num text-[10px] font-semibold text-n-6">{bucket.meta}</span>
       ) : null}
       {canEdit && onAdd ? (
         <button
           type="button"
           onClick={onAdd}
           title={`Add a player to ${bucket.label}`}
-          className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium opacity-85 transition-opacity hover:opacity-100"
+          className="inline-flex h-[20px] shrink-0 items-center gap-1 rounded-pill px-2 text-[10px] font-semibold text-accent transition-colors hover:bg-accent-soft hover:text-accent-deep"
         >
           Add
           <Icon name="plus" size={10} />

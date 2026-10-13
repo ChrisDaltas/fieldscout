@@ -29,11 +29,11 @@ import { formatCreated } from './list-stats'
  * `screens/list-rail-list-view.png`: cover tile, name with a rename pencil that
  * fades in on hover (owner only), a byline of avatar + `@handle` +
  * `created Aug 8` + `· N players`, and the action cluster on the right —
- * **Share** in brand lime, then dots, expand, pop out, close.
+ * **Share**, then dots, expand, pop out, close.
  *
- * The Share button is brand lime carrying ink text. `Button`'s `lime` variant
- * fills `brand-strong` (the deep green), so the fill is overridden here rather
- * than by minting a variant on the shared primitive.
+ * v7 restyle (FieldScout Next v7, "One list"): the name is the 24px page
+ * title, the byline is v7's 11px grey meta line, and Share is a v7 secondary
+ * pill (`stroke`, size `sm`) — the old lime override is gone.
  *
  * ## Two surfaces, one hero (LV.6)
  *
@@ -98,7 +98,6 @@ export function ListHeroShell({
 
   return (
     <div className="flex flex-wrap items-start gap-3">
-      {/* 64px in the handoff → 51 at this app's ×0.8 scale. */}
       <ListCoverTile
         list={list}
         // The detail route returns the whole list, so the hero's headshots come
@@ -122,9 +121,9 @@ export function ListHeroShell({
                 }
               }}
               aria-label="List name"
-              className="h-btn-md max-w-[320px] flex-[1_1_200px] text-[16px] font-bold"
+              className="h-btn max-w-[320px] flex-[1_1_200px] text-[17px] font-bold"
             />
-            <Button variant="blue" size="sm" shadow onClick={save}>
+            <Button variant="blue" size="sm" onClick={save}>
               Save
             </Button>
             <Button
@@ -140,7 +139,7 @@ export function ListHeroShell({
           </div>
         ) : (
           <div className="group/name inline-flex flex-wrap items-center gap-1.5">
-            <Heading className="text-[16px] font-bold leading-tight tracking-[-0.01em]">
+            <Heading className="text-[24px] font-bold leading-[28px] tracking-[-0.03em] text-ink">
               {list.title}
             </Heading>
             {renameable && (
@@ -148,7 +147,7 @@ export function ListHeroShell({
                 type="button"
                 title="Rename"
                 onClick={() => setRenaming(true)}
-                className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-ink opacity-0 transition-opacity hover:bg-accent-soft focus-visible:opacity-100 group-hover/name:opacity-100"
+                className="inline-flex h-btn-sm w-btn-sm items-center justify-center rounded-pill text-n-3 opacity-0 transition-[opacity,background-color,color] hover:bg-surface-hover hover:text-ink focus-visible:opacity-100 group-hover/name:opacity-100"
               >
                 <Icon name="edit" size={12} />
               </button>
@@ -156,24 +155,24 @@ export function ListHeroShell({
           </div>
         )}
 
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <UserAvatar
             src={owner.avatarUrl}
             name={owner.username}
             className="h-[17px] w-[17px]"
             fallbackClassName="text-[8px]"
           />
-          <UsernameLink username={owner.username} className="text-[9.5px] font-bold text-ink" />
-          <span className="whitespace-nowrap text-[9px] font-medium text-n-3">
+          <UsernameLink username={owner.username} className="text-[11px] font-semibold text-ink" />
+          <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
             created {formatCreated(list.created_at)}
           </span>
-          <span className="whitespace-nowrap text-[9px] font-medium text-n-3">
+          <span className="whitespace-nowrap text-[11px] font-semibold text-n-6">
             · {list.players.length} {list.players.length === 1 ? 'player' : 'players'}
           </span>
         </div>
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>
+      <div className="ml-auto flex shrink-0 items-center gap-[5px]">{actions}</div>
     </div>
   )
 }
@@ -250,19 +249,13 @@ export function ListDetailHero({
       onRename={onRename}
       actions={
         <>
-          <Button
-          variant="lime"
-          size="sm"
-          shadow
-          onClick={onShare}
-          className="bg-brand hover:bg-brand"
-        >
-          <Icon name="send" size={13} /> Share
-        </Button>
+          <Button variant="stroke" size="sm" onClick={onShare}>
+            <Icon name="send" size={11} /> Share
+          </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="stroke" size="icon-sm" title="List options">
+            <Button variant="ghost" size="icon-sm" title="List options">
               <Icon name="dots" size={13} />
             </Button>
           </DropdownMenuTrigger>
@@ -346,7 +339,7 @@ export function ListDetailHero({
         </DropdownMenu>
 
         <Button
-          variant="stroke"
+          variant="ghost"
           size="icon-sm"
           onClick={onToggleExpanded}
           title={expanded ? 'Minimize' : 'Expand to full width'}
@@ -363,7 +356,7 @@ export function ListDetailHero({
             not at all), and the two surfaces cannot disagree — one
             `useDraftMode(listId)` cache, one `list-display-store` entry. */}
         <Button
-          variant="stroke"
+          variant="ghost"
           size="icon-sm"
           onClick={onPopOut}
           title="Pop out into a window"
@@ -371,7 +364,7 @@ export function ListDetailHero({
           <Icon name="arrow-up-right" size={13} />
         </Button>
 
-        <Button variant="stroke" size="icon-sm" onClick={onClose} title="Close list">
+        <Button variant="ghost" size="icon-sm" onClick={onClose} title="Close list">
           <Icon name="close" size={13} />
         </Button>
         </>

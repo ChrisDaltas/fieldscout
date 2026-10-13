@@ -27,9 +27,8 @@ interface AccountMenuProps {
 }
 
 /**
- * Account control — round avatar trigger that opens the white ink-bordered
- * menu panel. Renders in the rail strip (ink) and the mobile top bar (page
- * grey), so the trigger keeps its own surface-neutral hover.
+ * Account control — round avatar trigger that opens the account menu. In
+ * the v7 top bar it's a 27px avatar with a light halo on hover.
  */
 export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountMenuProps) {
   const { user, profile, signOut } = useAuth()
@@ -100,12 +99,12 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
           aria-label="Account"
           title={isCompact ? handle : undefined}
           className={cn(
-            'flex items-center rounded-sm transition-opacity duration-200 ease-linear hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+            'flex items-center rounded-pill transition-[opacity,box-shadow] duration-200 ease-linear focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
             isTopbar
-              ? 'h-btn-md w-btn-md justify-center'
+              ? 'size-btn-md justify-center hover:shadow-avatar-hover'
               : collapsed
-                ? 'h-btn-md w-btn-md justify-center px-0'
-                : 'h-9 w-full gap-2.5 px-2 text-left hover:bg-n-4 hover:opacity-100',
+                ? 'h-btn-md w-btn-md justify-center px-0 hover:opacity-80'
+                : 'h-9 w-full gap-2.5 rounded-md px-2 text-left hover:bg-surface-hover',
           )}
         >
           {/* !rounded-pill: the base Avatar's rounded-sm survives twMerge
@@ -113,7 +112,8 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
           <UserAvatar
             src={profile.avatar_url}
             name={profile.username}
-            className="h-7 w-7 shrink-0 !rounded-pill"
+            className={cn('shrink-0 !rounded-pill', isTopbar ? 'size-btn-md' : 'h-7 w-7')}
+            fallbackClassName={isTopbar ? 'bg-ink text-[9px] font-bold text-white' : undefined}
           />
           {!isCompact && (
             <div className="min-w-0 flex-1">

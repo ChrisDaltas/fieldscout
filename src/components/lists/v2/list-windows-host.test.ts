@@ -822,12 +822,13 @@ describe('LV.15 — Escape closes the top window, and only the top one (R227)', 
   })
 })
 
-describe('LV.15 — the frame: stroke carries the lift, and there is no shadow', () => {
-  it('1px n-3 stroke shifting to brand on hover', () => {
-    const source = code(WINDOW)
-    expect(source).toContain('border-n-3')
-    expect(source).toContain('hover:border-brand')
-    expect(source).toContain('bg-n-2')
+describe('LV.15 — the frame (v7 restyle): rounded, no stroke, soft overlay lift', () => {
+  it('v7 frame: rounded-2xl dark panel with no stroke', () => {
+    const frame = classNameContaining(WINDOW, 'fixed flex flex-col')
+    expect(frame).toContain('rounded-2xl')
+    expect(frame).toContain('bg-ink')
+    expect(frame).not.toMatch(/\bborder\b/)
+    expect(code(WINDOW)).not.toContain('hover:border-brand')
   })
 
   /**
@@ -837,10 +838,11 @@ describe('LV.15 — the frame: stroke carries the lift, and there is no shadow',
    * token at any state. `ui/elevation-rule.test.ts` is deliberately untouched:
    * it guards `src/components/ui/**`, and a pop-out is not a `ui/` primitive.
    */
-  it('no shadow at any state, in either file', () => {
-    for (const file of [WINDOW, HOST]) {
-      expect(code(file), file).not.toMatch(/shadow-/)
-    }
+  it('the window rests on the one overlay lift; the host paints none', () => {
+    // v7 restyle (2026-10-12): a floating window is CLAUDE.md's true-overlay
+    // exception, and v7's soft `shadow-hard-8` reads on a dark panel.
+    expect(code(WINDOW).match(/shadow-[\w-]+/g)).toEqual(['shadow-hard-8'])
+    expect(code(HOST), HOST).not.toMatch(/shadow-/)
   })
 })
 
@@ -1169,11 +1171,6 @@ const INSIDE_THE_WRAPPER: { file: string; declaration: string; why: string }[] =
  * reason it still reads on `#161616`.
  */
 const LEGIBLE_ON_DARK: Record<string, string> = {
-  // The window's own surface and stroke. These are *outside* the wrapper — they
-  // are what the wrapper is dark against.
-  'bg-n-2': 'the window surface itself (#161616) — the thing everything else sits on',
-  'border-n-3': 'the frame’s resting stroke, which carries the lift instead of a shadow',
-  'hover:border-brand': 'the frame’s hover stroke',
   // Deliberate white-on-dark, stated at each site.
   'text-white': 'already white — the wrapper’s own inherited colour',
   'border-white': 'the LAW’s `rgba(255,255,255,.75)` checkbox stroke, and the cover’s hairline',
@@ -1197,7 +1194,8 @@ const LEGIBLE_ON_DARK: Record<string, string> = {
   // `gap-px` gutter between quadrants: on `#161616` that gutter reads as a seam
   // rather than a rule, and what separates the quadrants is their own fills plus
   // the tile's outer `border-ink`, which *is* redirected.
-  'bg-ink': 'the cover tile’s backdrop and its AP/TM label fill — black under white text, by ruling',
+  'bg-ink':
+    'the window frame’s own dark surface (v7 restyle), and the cover tile’s backdrop and AP/TM label fill — black under white text, by ruling',
   // The accent chip the open gap is: a light fill with dark ink, which is a
   // deliberate highlight against the window rather than a thing to invert.
   'bg-accent-soft': 'the open gap’s pale fill, read against `text-accent-strong` on top of it',
@@ -1693,7 +1691,7 @@ describe('LV.17 — loading / empty / failed / unavailable, inside a window', ()
     expect(rows).toContain('<EmptyListState canEdit={canEdit} />')
     // …and the column renders the same two, so the two surfaces cannot drift.
     expect(code(COLUMNS)).toContain('<ListReadFailure error={detail.error} canEdit={canEdit} />')
-    expect(code(COLUMNS)).toContain('<ListRowsSkeleton rowHeight={30} />')
+    expect(code(COLUMNS)).toContain('<ListRowsSkeleton rowHeight={34} />')
     // The body no longer spells either one itself. (The *header* keeps its own
     // one-word `Loading…` / `Could not load` fallback for the title — that is a
     // label for the window, not a state for the rows.)

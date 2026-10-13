@@ -32,8 +32,8 @@ export const POS_TINTS: Record<ListThumbnailLabel, { bg: string; fg: string }> =
   RB: { bg: 'bg-pos-rb', fg: 'text-white' },
   WR: { bg: 'bg-pos-wr', fg: 'text-white' },
   TE: { bg: 'bg-pos-te', fg: 'text-white' },
-  K: { bg: 'bg-pos-k', fg: 'text-white' },
-  DEF: { bg: 'bg-pos-def', fg: 'text-white' },
+  K: { bg: 'bg-pos-k', fg: 'text-pos-text-dark' },
+  DEF: { bg: 'bg-pos-def', fg: 'text-pos-text-dark' },
   FLEX: { bg: 'bg-pos-flex', fg: 'text-white' },
   AP: { bg: 'bg-ink', fg: 'text-white' },
   TM: { bg: 'bg-ink', fg: 'text-white' },
@@ -134,7 +134,16 @@ function metricsFor(size: ListThumbnailSize, labelLength: number): ThumbnailMetr
   }
 }
 
-/** 2×2 headshot tile — square, 1px ink border, 1px ink seams. */
+/**
+ * v7 corner radius for the tile: 6px at rail/row sizes, 8px from 40px up
+ * (v7 "things are rounded squares" — radius grows with the object).
+ */
+function radiusFor(size: ListThumbnailSize): string {
+  const px = typeof size === 'number' ? size : size === 'sm' ? 32 : 40
+  return px < 40 ? 'rounded' : 'rounded-md'
+}
+
+/** 2×2 headshot tile — rounded square, no outline, 1px white seams (v7). */
 export function ListThumbnail({
   positionFilter,
   isTeam = false,
@@ -153,7 +162,8 @@ export function ListThumbnail({
       <div
         aria-hidden
         className={cn(
-          'inline-flex shrink-0 overflow-hidden rounded-sm border border-ink',
+          'inline-flex shrink-0 overflow-hidden bg-surface-control',
+          radiusFor(size),
           metrics.boxClass,
           className,
         )}
@@ -183,7 +193,9 @@ export function ListThumbnail({
     <div
       aria-hidden
       className={cn(
-        'inline-flex shrink-0 overflow-hidden rounded-sm border border-ink bg-ink',
+        // `bg-white` shows through the `gap-px` grid as the quadrant seams.
+        'inline-flex shrink-0 overflow-hidden bg-white',
+        radiusFor(size),
         metrics.boxClass,
         className,
       )}
@@ -205,6 +217,9 @@ export function ListThumbnail({
         <PlayerQuadrant player={top3[0]} metrics={metrics} />
         <PlayerQuadrant player={top3[1]} metrics={metrics} />
         {isEmpty ? (
+          // `bg-n-4 text-n-3`, not the surface tokens: the pop-out window's
+          // `.fs-dark` wrapper redirects exactly these (globals.css), and
+          // `list-windows-host.test.ts` pins it.
           <div className="flex items-center justify-center bg-n-4 text-n-3">
             <Icon name="edit" size={metrics.iconSize} />
           </div>
@@ -241,9 +256,9 @@ function PlayerQuadrant({
   // which is precisely "nothing happened" being displayed as content
   // (CLAUDE.md). `PlayerAvatarImage` also resolves DEF to its team logo.
   //
-  // The quadrant is a seam in a 2×2 grid, so the primitive's own tile chrome
-  // (`rounded-sm border border-ink`, `bg-n-4`) is turned off — the team colour
-  // is the fill, and the tile's border belongs to the wrapper.
+  // The quadrant is a cell in a 2×2 grid, so the primitive's own chrome (its
+  // round shape and grey fill) is turned off — the team colour is the fill,
+  // and the tile's rounded corners belong to the wrapper.
   return (
     <Avatar
       className="h-full w-full rounded-none border-0"

@@ -6,7 +6,7 @@
  *     filter shows ONLY that league's rows, with the hidden-items note.
  *  2. Rows: league avatar or a type tile; bold + accent dot while unread;
  *     the "<League or Field Scout> · <time>" line.
- *  3. The strip badge: lime with ink text, the real unread count.
+ *  3. The strip badge: v7 blue with white text, the real unread count.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement, type ReactElement } from 'react'
@@ -117,13 +117,13 @@ describe('notifications — rows', () => {
 })
 
 describe('notifications — the strip badge', () => {
-  it('lime with ink text, the real unread count', () => {
+  it('v7 blue with white text, the real unread count', () => {
     const qc = new QueryClient()
     qc.setQueryData(['notifications'], { notifications: N, unreadCount: 7 })
     const out = html(createElement(ResearchRail), qc)
     const badge = out.slice(out.indexOf('data-rail-badge="notifications"'), out.indexOf('</span>', out.indexOf('data-rail-badge="notifications"')))
-    expect(badge).toContain('bg-brand')
-    expect(badge).toContain('text-ink')
+    expect(badge).toContain('bg-accent')
+    expect(badge).toContain('text-white')
     expect(badge).toMatch(/>7$/)
   })
 

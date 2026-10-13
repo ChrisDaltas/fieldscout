@@ -256,22 +256,24 @@ export function ListFormDialog({
                       }))
                     }
                     className={cn(
-                      'flex w-full items-center justify-between gap-3 rounded-sm border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                      'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-[background-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-40',
+                      // Selected is a fill plus v7's 1px inset accent ring
+                      // (the selected-chip form) — never a lift.
                       active
-                        ? 'border-accent bg-accent-soft'
-                        : 'border-ink bg-white hover:bg-n-4',
+                        ? 'bg-accent-soft shadow-ring-accent'
+                        : 'bg-surface-sunken hover:bg-surface-hover',
                     )}
                   >
-                    <span className="flex flex-col">
-                      <span className="text-sm font-bold text-ink">{opt.label}</span>
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-semibold text-ink">{opt.label}</span>
                       <span className="text-[11px] font-medium text-n-3">
                         {opt.description}
                       </span>
                     </span>
                     <span
                       className={cn(
-                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
-                        active ? 'border-accent bg-accent' : 'border-ink bg-white',
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+                        active ? 'bg-accent' : 'bg-white shadow-ring-control',
                       )}
                     >
                       {active && (
@@ -289,7 +291,7 @@ export function ListFormDialog({
               <div className="grid grid-cols-3 gap-2">
                 {ROSTER_FIELDS.map((f) => (
                   <label key={f.key} className="block">
-                    <span className="mb-1 block text-[11px] font-bold text-ink">
+                    <span className="mb-1 block text-[10px] font-semibold text-n-3">
                       {f.label}
                     </span>
                     <Input
@@ -307,14 +309,14 @@ export function ListFormDialog({
                           roster: { ...s.roster, [f.key]: v },
                         }))
                       }}
-                      className="fs-num h-9 px-2 text-sm"
+                      className="fs-num px-2"
                     />
                   </label>
                 ))}
               </div>
-              <p className="mt-2 text-xs font-medium text-n-3">
+              <p className="mt-2 text-[11px] font-medium text-n-6">
                 Total players:{' '}
-                <span className="fs-num font-bold text-ink">{total}</span>
+                <span className="fs-num font-semibold text-ink">{total}</span>
               </p>
             </Field>
           )}
@@ -345,7 +347,7 @@ export function ListFormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" variant="blue" shadow disabled={!canSubmit}>
+            <Button type="submit" variant="blue" disabled={!canSubmit}>
               {submitting
                 ? mode === 'create'
                   ? 'Creating…'
@@ -364,7 +366,7 @@ export function ListFormDialog({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-[12px] font-bold text-ink">{label}</label>
+      <label className="block text-[11px] font-semibold text-ink">{label}</label>
       {children}
     </div>
   )

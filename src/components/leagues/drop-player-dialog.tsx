@@ -43,15 +43,15 @@ export function DropConfirm({
 
   return (
     <div className="flex flex-col gap-2" data-drop-confirm-for={player.player_id}>
-      <p className="text-[12px] font-semibold text-ink" data-drop-copy>
+      <p className="text-[11px] font-medium text-n-2" data-drop-copy>
         {done ? `${done.headline}.` : dropConfirmCopy(player.full_name)}
       </p>
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-2 py-1.5 text-[11px] font-medium text-ink" data-drop-refusal>
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-medium text-ink" data-drop-refusal>
           {refusal}
         </p>
       )}
-      <div className="flex flex-wrap justify-end gap-1.5">
+      <div className="flex flex-wrap justify-end gap-[5px] pt-1">
         {done ? (
           <Button variant="stroke" size="sm" onClick={close} data-drop-done>
             Done

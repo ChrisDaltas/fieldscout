@@ -26,8 +26,9 @@ import { formatCount, formatCreated } from './list-stats'
  * description clamp, position badges with the player count, then a footer of
  * avatar, date, view count and a bordered comments pill.
  *
- * Cards **rest flat and lift on hover** — the only elevation rule in the design
- * (design LAW, Geometry).
+ * v7 card: 14px radius, hairline edge, no resting shadow; on hover the edge
+ * darkens and the card lifts (design LAW, Geometry — elevation is a hover
+ * affordance). The cover band is clipped to the card's rounded top.
  *
  * Two things this card cannot say as truthfully as the reference does:
  *
@@ -74,12 +75,12 @@ export function ListGalleryCard({
     : { username: viewer.username, avatarUrl: viewer.avatarUrl }
 
   return (
-    <div className="flex flex-col border border-ink bg-white transition-shadow hover:shadow-hard-4">
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-n-4 bg-white transition-[border-color,box-shadow] hover:border-surface-strong hover:shadow-hard-6">
       <button type="button" onClick={onOpen} className="block text-left">
         <ListCoverBand list={list} players={list.first_players} />
       </button>
 
-      <div className="flex flex-1 flex-col gap-2 p-2.5">
+      <div className="flex flex-1 flex-col gap-2.5 p-[14px]">
         <div className="flex items-center gap-1.5">
           <Chip>{list.ranking_mode === 'unranked' ? 'List' : 'Ranking'}</Chip>
           <Chip>{list.is_private ? 'Private' : 'Public'}</Chip>
@@ -88,7 +89,7 @@ export function ListGalleryCard({
               <button
                 type="button"
                 title="List options"
-                className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded-sm text-ink transition-colors hover:bg-accent-soft"
+                className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-pill text-n-3 transition-colors hover:bg-surface-hover hover:text-ink"
               >
                 <Icon name="dots" size={13} />
               </button>
@@ -158,7 +159,7 @@ export function ListGalleryCard({
         </div>
 
         <button type="button" onClick={onOpen} className="text-left">
-          <span className="block text-[12px] font-bold leading-tight tracking-[-0.01em]">
+          <span className="block text-[13px] font-bold leading-tight tracking-[-0.01em] text-ink">
             {list.title}
             {list.is_favorited && (
               <Icon
@@ -172,31 +173,31 @@ export function ListGalleryCard({
         </button>
 
         {list.description ? (
-          <p className="line-clamp-2 text-[10px] font-medium leading-normal text-n-3">
+          <p className="-mt-1 line-clamp-2 text-[11px] font-medium leading-snug text-n-3">
             {list.description}
           </p>
         ) : null}
 
-        <div className="mt-auto flex items-center gap-1 pt-1.5">
+        <div className="mt-auto flex items-center gap-1 pt-0.5">
           {positions.map((position) => (
             <PositionBadge key={position} position={position} />
           ))}
-          <span className="ml-auto whitespace-nowrap text-[9px] font-medium text-n-3">
+          <span className="ml-auto whitespace-nowrap text-[10px] font-medium text-n-6">
             {list.player_count ?? 0} players
           </span>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-n-4 pt-2">
+        <div className="flex items-center gap-2 border-t border-n-4 pt-2.5">
           <UserAvatar
             src={author.avatarUrl}
             name={author.username}
             className="h-[17px] w-[17px] shrink-0"
             fallbackClassName="text-[8px]"
           />
-          <span className="mr-auto whitespace-nowrap text-[9px] font-medium text-n-3">
+          <span className="mr-auto whitespace-nowrap text-[10px] font-medium text-n-6">
             {formatCreated(list.created_at)}
           </span>
-          <span className="inline-flex items-center gap-1 text-[9px] font-medium text-n-3">
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-n-6">
             <Icon name="eye" size={11} />
             <span className="fs-num">{formatCount(list.view_count)}</span>
           </span>
@@ -204,7 +205,7 @@ export function ListGalleryCard({
             type="button"
             onClick={onOpenComments}
             title="Comments"
-            className="inline-flex h-[21px] items-center gap-1 rounded-sm border border-ink px-1.5 text-[9px] font-bold transition-colors hover:bg-accent-soft"
+            className="inline-flex h-6 items-center gap-1 rounded-pill bg-surface-control px-2 text-[10px] font-semibold text-n-2 transition-colors hover:bg-surface-pressed"
           >
             <Icon name="comments" size={11} />
           </button>
@@ -216,22 +217,23 @@ export function ListGalleryCard({
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-[15px] items-center rounded-sm border border-n-4 bg-n-4 px-1.5 text-[8.5px] font-medium text-n-3">
+    <span className="inline-flex h-[17px] items-center rounded-sm bg-surface-control px-1.5 text-[9px] font-semibold text-n-3">
       {children}
     </span>
   )
 }
 
-/** The dashed tile that closes the gallery (`screens/cards-gallery.png`). */
+/** The dashed tile that closes the gallery (`screens/cards-gallery.png`),
+ *  in v7's card geometry. */
 export function NewListTile({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-[192px] flex-col items-center justify-center gap-1.5 border border-dashed border-ink text-n-3 transition-colors hover:bg-accent-soft hover:text-ink"
+      className="flex min-h-[192px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-n-7 text-n-3 transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <Icon name="plus" size={18} />
-      <span className="text-[10px] font-bold">New list</span>
+      <span className="text-[11px] font-semibold">New list</span>
     </button>
   )
 }

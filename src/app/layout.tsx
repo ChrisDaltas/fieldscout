@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Roboto_Flex, Roboto_Mono, Silkscreen } from 'next/font/google'
+import { Inter, Silkscreen } from 'next/font/google'
 
 import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
@@ -9,20 +9,6 @@ import { QueryProvider } from '@/components/providers/query-provider'
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
 
-// Workhorse type — variable optical size + weight (400–800 headings).
-const robotoFlex = Roboto_Flex({
-  subsets: ['latin'],
-  axes: ['opsz'],
-  variable: '--font-sans',
-})
-
-// Every numeral/stat renders mono + tabular (see .fs-num).
-const robotoMono = Roboto_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-mono',
-})
-
 // Logomark only ("FieldScout" wordmark) — pixel font.
 const silkscreen = Silkscreen({
   subsets: ['latin'],
@@ -30,8 +16,9 @@ const silkscreen = Silkscreen({
   variable: '--font-silkscreen',
 })
 
-// v13 look (landing first) — Inter with the optical-size axis, so large
-// headings render as Inter Display like the design.
+// All UI text and numerals (v7 look) — Inter with the optical-size axis,
+// pinned to its Display cut in globals.css. --font-sans and --font-mono both
+// alias it; .fs-num keeps tabular digits so stat columns stay aligned.
 const inter = Inter({
   subsets: ['latin'],
   axes: ['opsz'],
@@ -56,8 +43,6 @@ export default function RootLayout({
       <body
         className={cn(
           'min-h-screen bg-background font-sans text-foreground antialiased',
-          robotoFlex.variable,
-          robotoMono.variable,
           silkscreen.variable,
           inter.variable,
         )}

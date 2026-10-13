@@ -73,7 +73,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   return (
     <GuestShell>
-      <div className="mx-auto max-w-4xl space-y-[19px]">
+      <div className="mx-auto flex max-w-[833px] flex-col gap-6">
         <ProfileHeader
           username={profile.username}
           bio={profile.bio}
@@ -92,8 +92,10 @@ export default async function PublicProfilePage({ params }: PageProps) {
         />
 
         <section>
-          <div className="mb-2.5 flex items-center justify-between gap-3">
-            <h2 className="text-h6">Public lists</h2>
+          <div className="mb-[9px] flex items-center justify-between gap-3">
+            <h2 className="text-[14px] font-bold tracking-[-0.015em] text-ink">
+              Public lists
+            </h2>
             {/* The public big board is release-gated out of the 2026 go-live
                 scope — hide its entry point rather than 404 a visitor. */}
             {featureFlags.bigBoard && (
@@ -105,14 +107,14 @@ export default async function PublicProfilePage({ params }: PageProps) {
             )}
           </div>
           {lists.length === 0 ? (
-            <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-              <h3 className="text-h5">No public lists yet</h3>
-              <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+            <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+              <h3 className="text-h6 text-ink">No public lists yet</h3>
+              <p className="mx-auto mt-1.5 max-w-md text-[11px] font-medium text-n-6">
                 Public lists @{profile.username} publishes will show up here.
               </p>
             </div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2.5">
               {lists.map((list) => (
                 <li key={list.id}>
                   <PublicListCard

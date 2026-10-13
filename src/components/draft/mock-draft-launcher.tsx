@@ -155,17 +155,17 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="text-[11px] font-medium text-n-3">
               A solo run of YOUR draft — real settings, real order, real countdown — against
               CPU opponents. Nothing here touches the league — it&apos;s practice, not the
               draft.
             </p>
 
             <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold">Draft from seat</span>
+              <span className="text-[11px] font-semibold">Draft from seat</span>
               <Select value={seatId ?? ''} onValueChange={setSeatId}>
                 <SelectTrigger
-                  className="h-btn-md w-full max-w-xs text-[12px] font-bold"
+                  className="h-btn-md w-full max-w-xs"
                   aria-label="Seat to practice from"
                 >
                   <SelectValue placeholder="Choose a seat…" />
@@ -186,14 +186,14 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
                 league's order is already drawn (§8.8 fidelity: the mock
                 inherits it, actual slot included). */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold">Draft slot</span>
+              <span className="text-[11px] font-semibold">Draft slot</span>
               <Select
                 value={slotDisabledReason === null ? slotValue : ''}
                 onValueChange={setSlotValue}
                 disabled={slotDisabledReason !== null}
               >
                 <SelectTrigger
-                  className="h-btn-md w-full max-w-xs text-[12px] font-bold"
+                  className="h-btn-md w-full max-w-xs"
                   aria-label="Draft slot"
                 >
                   {/* An inherited order is not "Random" — the disabled state
@@ -210,12 +210,12 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
                 </SelectContent>
               </Select>
               {slotDisabledReason !== null && (
-                <p className="text-[10px] font-medium text-n-3">{slotDisabledReason}</p>
+                <p className="text-[10px] font-medium text-n-6">{slotDisabledReason}</p>
               )}
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold">CPU speed</span>
+              <span className="text-[11px] font-semibold">CPU speed</span>
               <Segment aria-label="CPU speed" className="w-fit">
                 <SegmentItem
                   active={cpuSpeed === 'realistic'}
@@ -227,7 +227,7 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
                   Fast
                 </SegmentItem>
               </Segment>
-              <p className="text-[10px] font-medium text-n-3">
+              <p className="text-[10px] font-medium text-n-6">
                 Affects bot think-time only — your own clock always runs real.
               </p>
             </div>
@@ -245,23 +245,22 @@ export function MockDraftLauncher({ leagueId, detail, userId }: MockDraftLaunche
             <div className="flex flex-wrap items-center gap-2.5">
               <Button
                 variant="blue"
-                size="sm"
-                shadow
+                size="md"
                 disabled={launch.isPending || Boolean(capReason) || !seatId}
                 onClick={handleLaunch}
               >
                 <Icon name="rocket" size={13} />
                 {launch.isPending ? 'Setting up…' : 'Start practice draft'}
               </Button>
-              <span className="text-[10px] font-medium text-n-3">{MOCK_CAP_NOTE}</span>
+              <span className="text-[10px] font-medium text-n-6">{MOCK_CAP_NOTE}</span>
             </div>
           </CardContent>
         </Card>
       ) : (
         <Card>
-          <CardContent className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold">Practice launches before draft night</p>
-            <p className="text-[12px] font-medium text-n-3">
+          <CardContent className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <p className="text-[15px] font-bold tracking-[-0.02em]">Practice launches before draft night</p>
+            <p className="max-w-sm text-[11px] font-medium text-n-3">
               New practice drafts are for leagues still in setup or scheduled. Anything you
               already started or finished is below.
             </p>
@@ -288,13 +287,13 @@ function MockList({
   mocks: ReturnType<typeof useMockDrafts>
 }) {
   if (mocks.isPending) {
-    return <Skeleton className="h-24 rounded-sm" />
+    return <Skeleton className="h-24 rounded-2xl" />
   }
   if (mocks.isError) {
     return (
       <Card className="border-negative bg-negative-soft">
         <CardContent className="flex flex-col items-start gap-2 p-4">
-          <p className="text-[13px] font-bold" role="alert">
+          <p className="text-[15px] font-bold tracking-[-0.02em]" role="alert">
             Couldn&apos;t load your practice drafts.
           </p>
           <Button variant="stroke" size="sm" onClick={() => void mocks.refetch()}>
@@ -309,8 +308,8 @@ function MockList({
   if (active.length === 0 && recaps.length === 0) {
     return (
       <Card>
-        <CardContent className="p-4">
-          <p className="text-[12px] font-medium text-n-3">
+        <CardContent className="px-4 py-8">
+          <p className="text-center text-[11px] font-medium text-n-6">
             No practice drafts yet — your runs and their recaps will list here.
           </p>
         </CardContent>
@@ -343,7 +342,7 @@ function MockList({
           />
         ))}
         {active.length > 0 && (
-          <p className="text-[10px] font-medium text-n-3">{MOCK_EXPIRY_NOTE}</p>
+          <p className="text-[10px] font-medium text-n-6">{MOCK_EXPIRY_NOTE}</p>
         )}
       </CardContent>
     </Card>
@@ -449,7 +448,7 @@ export function MockRow({
     // about their own shape. Below `sm` the actions take their own full-width
     // line every time; at `sm` and up they sit inline. The text block shrinks
     // (`min-w-0 flex-1`) instead of pushing them out.
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-sm border border-ink bg-white px-2.5 py-2">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-xl border border-n-4 bg-white px-3 py-2.5">
       <Badge variant={complete ? 'stroke' : row.status === 'paused' ? 'yellow' : 'green'}>
         {complete
           ? 'Report'
@@ -460,10 +459,10 @@ export function MockRow({
       <div className="min-w-0 flex-1 basis-32">
         {/* What this run WAS — not the constant "Practice draft" every row
             used to print. See `mockIdentityLabel` (MP.10). */}
-        <p className="truncate text-[12px] font-extrabold leading-tight">
+        <p className="truncate text-[12px] font-bold leading-tight">
           {mockIdentityLabel(row, seatCount)}
         </p>
-        <p className="truncate text-[10px] font-semibold text-n-3">
+        <p className="truncate text-[10px] font-medium text-n-3">
           {complete
             ? row.completed_at
               ? `Finished ${new Date(row.completed_at).toLocaleDateString(undefined, {
@@ -474,7 +473,7 @@ export function MockRow({
             : mockProgressLabel(row, seatCount)}
         </p>
         {openBlocked && (
-          <p className="truncate text-[10px] font-semibold text-n-3" role="status">
+          <p className="truncate text-[10px] font-medium text-n-6" role="status">
             {openBlocked}
           </p>
         )}
@@ -499,7 +498,7 @@ export function MockRow({
           </Button>
         )}
         <Button
-          variant="ghost"
+          variant="destructive"
           size="sm"
           disabled={deleteMock.isPending}
           onClick={handleDelete}

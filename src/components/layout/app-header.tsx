@@ -34,8 +34,8 @@ function routeTitle(pathname: string): string {
   return hit ? hit[1] : 'FieldScout'
 }
 
-/** Sticky page header — 58px, white, 1px ink bottom border. Title left,
- *  page-scoped actions right. The ONE page header of the logged-in app
+/** Sticky page title band — v7: no rule, the page title at 24px bold with
+ *  page-scoped actions right (the top bar above carries the app chrome). The ONE page header of the logged-in app
  *  (F577, D487): pages claim it with `PageHeader`, and
  *  `page-header-rule.test.ts` stops new one-off page headers. */
 export function AppHeader() {
@@ -48,7 +48,7 @@ export function AppHeader() {
   // PageHeader title is ignored here, so there is never a second header.
   if (league) {
     return (
-      <header className="sticky top-0 z-20 shrink-0 border-b border-ink bg-white px-7" data-league-header>
+      <header className="sticky top-0 z-20 shrink-0 border-b border-n-4 bg-white px-7" data-league-header>
         <div className="flex min-w-0 items-center gap-3 pt-3">{league.above}</div>
         <div className="flex h-11 items-center gap-3">
           <div className="mr-auto flex min-w-0 items-center">{league.nav}</div>
@@ -59,8 +59,8 @@ export function AppHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-20 shrink-0 border-b border-ink bg-white px-7" data-page-header-bar>
-      <div className="flex h-header items-center gap-3">
+    <header className="sticky top-0 z-20 shrink-0 bg-white px-7 pt-[18px]" data-page-header-bar>
+      <div className="flex min-h-[44px] items-center gap-3 pb-1.5">
         <div className="mr-auto flex min-w-0 items-center gap-3">
           <HeaderTitle page={page ?? { title: routeTitle(pathname) }} />
         </div>
@@ -81,7 +81,7 @@ function HeaderTitle({ page }: { page: PageHeaderContent }) {
       editableTitle ? (
         <EditableTitle value={title ?? ''} {...editableTitle} />
       ) : (
-        <h3 className="truncate text-h5">{title}</h3>
+        <h3 className="truncate text-h3">{title}</h3>
       )
     ) : (
       title
@@ -91,7 +91,7 @@ function HeaderTitle({ page }: { page: PageHeaderContent }) {
       <div className="flex min-w-0 flex-col justify-center">
         {heading}
         {subtitle != null && (
-          <p className="truncate text-[11px] font-semibold text-n-3" data-page-header-subtitle>
+          <p className="truncate text-[11px] font-medium text-n-6" data-page-header-subtitle>
             {subtitle}
           </p>
         )}
@@ -101,7 +101,7 @@ function HeaderTitle({ page }: { page: PageHeaderContent }) {
   )
 }
 
-/** The editable-title option: the standard `text-h5` heading as a button;
+/** The editable-title option: the standard `text-h3` heading as a button;
  *  click → an input of the same type size. */
 function EditableTitle({
   value,
@@ -132,18 +132,18 @@ function EditableTitle({
           if (e.key === 'Enter' || e.key === 'Escape') setEditing(false)
         }}
         maxLength={maxLength}
-        className="w-full max-w-md rounded-sm border border-ink bg-white px-1 text-h5 text-ink outline-none transition-colors focus:border-accent"
+        className="w-full max-w-md rounded-md bg-white px-1 text-h3 text-ink outline-none transition-shadow focus:shadow-field"
       />
     )
   }
   return (
-    <h3 className="min-w-0 text-h5">
+    <h3 className="min-w-0 text-h3">
       <button
         type="button"
         aria-label={`${label}: ${value || placeholder}`}
         onClick={() => setEditing(true)}
         className={cn(
-          'max-w-full truncate rounded-sm px-1 text-left transition-colors hover:bg-n-4',
+          'max-w-full truncate rounded-md px-1 text-left transition-colors hover:bg-surface-hover',
           value ? 'text-ink' : 'text-n-3',
         )}
       >

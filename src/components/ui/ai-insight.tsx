@@ -11,8 +11,8 @@ const CONFIDENCE_LABEL: Record<Confidence, string> = {
 }
 
 /**
- * The Scout AI mark — an accent square holding one glyph. It anchors every AI
- * moment in the app, and AI moments are always ultramarine, never lime.
+ * The Scout AI mark — a blue rounded tile holding one glyph (v7 blue). It
+ * anchors the AI dialogs and banners; inline AI cards use v7's blue dot.
  *
  * **Extracted at LV.5, not invented there.** Three surfaces had hand-copied the
  * same eleven classes: `AIInsight` below, the "Generate with AI" dialog title,
@@ -38,7 +38,7 @@ export function ScoutAiMark({
     <span
       aria-hidden
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-sm border border-ink bg-accent text-accent-foreground',
+        'flex shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground',
         size === 'sm' ? 'h-5 w-5' : 'h-6 w-6',
         className,
       )}
@@ -57,8 +57,9 @@ interface AIInsightProps {
   className?: string
 }
 
-/** Scout AI insight — accent-tinted card: star badge, one call, one stat,
- *  confidence tag. AI moments are always ultramarine, never lime. */
+/** Scout AI insight — v7's Scout AI card: sunken grey panel, a blue dot +
+ *  "Scout AI" label, one call as a headline, one stat-backed line, and an
+ *  optional confidence tag. */
 export function AIInsight({
   heading,
   children,
@@ -68,24 +69,24 @@ export function AIInsight({
   return (
     <div
       className={cn(
-        'rounded-sm border border-ink bg-accent-soft p-card-pad',
+        'flex flex-col gap-[7px] rounded-2xl bg-surface-sunken px-[19px] py-[17px]',
         className,
       )}
     >
-      <div className="flex items-center gap-2">
-        <ScoutAiMark />
-        <span className="text-[12px] font-extrabold">Scout AI</span>
+      <div className="flex items-center gap-[7px] text-[10px] font-semibold text-n-3">
+        <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+        <span>Scout AI</span>
         {confidence && (
           <Badge variant="stroke" className="ml-auto bg-white">
             {CONFIDENCE_LABEL[confidence]}
           </Badge>
         )}
       </div>
-      <p className="mt-2.5 text-[14px] font-extrabold leading-snug">
+      <p className="text-[19px] font-bold leading-[1.15] tracking-[-0.025em] [text-wrap:balance]">
         {heading}
       </p>
       {children && (
-        <div className="mt-1 text-[13px] font-medium text-ink/70">
+        <div className="text-[13px] font-medium leading-[1.45] text-n-3">
           {children}
         </div>
       )}

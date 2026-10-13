@@ -26,6 +26,7 @@ import {
   type PlayerStatsPlayer,
 } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
+import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 import {
   usePlayerWindowsStore,
@@ -139,7 +140,8 @@ export function PlayerWindow({
 }
 
 // ---------------------------------------------------------------------------
-// Header — square ink-stroked headshot tile, name, position badge + team · bye
+// Header — v7: round headshot with a team-colour ring, name, position pill +
+// team · bye in grey
 // ---------------------------------------------------------------------------
 
 /** Status designation chip (Q / D / O / IR …) after the name, kit-style. */
@@ -162,15 +164,20 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
     .join('')
     .toUpperCase()
   const status = player.status ? STATUS_CHIPS[player.status] : undefined
+  // v7 headshot ring: white gap, then the team colour (data, not a token).
+  const teamColor = player.team ? NFL_TEAM_COLORS[player.team]?.primary : undefined
 
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      <Avatar className="h-9 w-9">
+    <div className="flex min-w-0 items-center gap-[11px]">
+      <Avatar
+        className="size-10"
+        style={teamColor ? { boxShadow: `0 0 0 1px #fff, 0 0 0 2.5px ${teamColor}` } : undefined}
+      >
         <PlayerAvatarImage player={player} alt={player.full_name} />
-        <AvatarFallback>{initials}</AvatarFallback>
+        <AvatarFallback className="text-[13px] text-n-3">{initials}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 text-[16px] font-extrabold leading-tight">
+        <p className="flex items-center gap-1.5 text-[15px] font-bold leading-tight tracking-[-0.02em]">
           <span className="truncate">{player.full_name}</span>
           {status && (
             <span
@@ -180,13 +187,15 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
                   .join(' — ') || undefined
               }
               className={cn(
-                'inline-flex shrink-0 items-center rounded-sm px-1 py-px text-[10px] font-extrabold leading-none',
-                status.tone === 'caution' ? 'bg-caution' : 'bg-negative',
+                'inline-flex h-4 shrink-0 items-center rounded-pill px-1.5 text-[9px] font-semibold leading-none tracking-normal',
+                status.tone === 'caution'
+                  ? 'bg-caution-soft text-caution-strong'
+                  : 'bg-negative-soft text-negative-strong',
               )}
             >
               {status.label}
               {player.injury_body_part && (
-                <span className="ml-1 font-bold opacity-80">
+                <span className="ml-1 font-medium opacity-80">
                   — {player.injury_body_part}
                 </span>
               )}
@@ -194,8 +203,8 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
           )}
         </p>
         <p className="mt-1 flex items-center gap-1.5">
-          <PositionBadge position={player.position} className="rounded-sm" />
-          <span className="truncate text-[11px] font-bold text-n-3">
+          <PositionBadge position={player.position} />
+          <span className="truncate text-[11px] font-semibold text-n-3">
             {player.team ?? 'FA'}
             {player.bye_week != null ? ` · Bye ${player.bye_week}` : ''}
           </span>
@@ -206,7 +215,7 @@ function MiniCardHeader({ player }: { player: PlayerStatsPlayer }) {
 }
 
 // ---------------------------------------------------------------------------
-// Vitals — hairline-celled grid under the header
+// Vitals — v7 mini tiles under the header
 // ---------------------------------------------------------------------------
 
 function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
@@ -215,16 +224,16 @@ function VitalsGrid({ player }: { player: PlayerStatsPlayer }) {
   const cells = vitalCells(player, new Date())
 
   return (
-    <div className="grid shrink-0 grid-cols-4">
+    <div className="grid shrink-0 grid-cols-4 gap-1.5 px-3.5 pb-3">
       {cells.map(({ label, value }) => (
         <div
           key={label}
-          className="border-b border-r border-n-4 px-2 py-1.5 [&:nth-child(4n)]:border-r-0"
+          className="min-w-0 rounded-lg bg-surface-sunken px-2 py-[7px]"
         >
-          <p className="truncate text-[11px] font-semibold leading-tight text-n-3">
+          <p className="truncate text-[9px] font-semibold leading-tight text-n-3">
             {label}
           </p>
-          <p className="fs-num mt-0.5 truncate text-[13px] font-extrabold leading-tight">
+          <p className="fs-num mt-0.5 truncate text-[13px] font-bold leading-tight tracking-[-0.01em]">
             {value ?? '—'}
           </p>
         </div>
@@ -273,14 +282,14 @@ function LeaguesAndActionsRow({
   const setContext = usePlayerWindowsStore((s) => s.setContext)
 
   return (
-    <div className="flex flex-col gap-1.5 border-b border-n-4 px-3 py-2" data-card-actions={context.kind}>
+    <div className="flex flex-col gap-2 border-y border-n-4 px-3.5 py-3" data-card-actions={context.kind}>
       {leaguesEnabled && context.kind === 'league' && (
         <>
           <LeagueCardActions player={pool} leagueId={context.leagueId} />
           <button
             type="button"
             onClick={() => setContext(player.id, GLOBAL_CARD_CONTEXT)}
-            className="self-start text-[11px] font-bold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-ink hover:decoration-current"
+            className="self-start text-[10px] font-semibold text-n-3 underline decoration-transparent underline-offset-2 transition-colors hover:text-accent hover:decoration-current"
             data-card-all-leagues
           >
             See all my leagues
@@ -291,7 +300,7 @@ function LeaguesAndActionsRow({
       <div className="flex flex-wrap items-center gap-1.5">
         {context.kind === 'draft' && <DraftCardActions playerId={player.id} context={context} />}
         {/* Downsize the (shared) action buttons to the mini-card scale. */}
-        <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5 [&>a]:h-btn-sm [&>a]:px-2.5 [&>a]:text-[11px] [&>button]:h-btn-sm [&>button]:px-2.5 [&>button]:text-[11px]">
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5 [&>a]:h-btn-sm [&>a]:px-[9px] [&>a]:text-[10px] [&>button]:h-btn-sm [&>button]:px-[9px] [&>button]:text-[10px]">
           {actions}
         </span>
       </div>
@@ -305,9 +314,9 @@ function LeaguesAndActionsRow({
 
 function PlayerWindowSkeleton() {
   return (
-    <div className="space-y-3 p-3">
-      <div className="flex items-center gap-2.5">
-        <Skeleton className="h-9 w-9" />
+    <div className="space-y-3 p-3.5">
+      <div className="flex items-center gap-[11px]">
+        <Skeleton className="size-10 rounded-full" />
         <div className="space-y-1.5">
           <Skeleton className="h-4 w-36" />
           <Skeleton className="h-3 w-24" />

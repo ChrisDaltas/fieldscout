@@ -54,7 +54,7 @@ export function PublicListCard({
   // (`after:inset-0`), so the owner's handle can be its own link above it —
   // never an anchor inside an anchor (L.E1.41).
   return (
-    <div className="relative block rounded-sm border border-ink bg-white p-4 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4">
+    <div className="relative block rounded-2xl border border-n-4 bg-white p-[15px] transition-[border-color,box-shadow] hover:border-surface-strong hover:shadow-hard-6">
       <div className="flex items-start gap-3">
         <UserAvatar
           src={owner.avatar_url}
@@ -63,10 +63,10 @@ export function PublicListCard({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-extrabold text-ink">
+            <h3 className="truncate text-[13px] font-bold tracking-[-0.01em] text-ink">
               <Link
                 href={href}
-                className="after:absolute after:inset-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                className="after:absolute after:inset-0 after:rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 {title}
               </Link>
@@ -78,11 +78,11 @@ export function PublicListCard({
             )}
           </div>
           {description && (
-            <p className="mt-0.5 line-clamp-2 text-xs font-medium text-n-3">
+            <p className="mt-0.5 line-clamp-2 text-[11px] font-medium leading-snug text-n-3">
               {description}
             </p>
           )}
-          <div className="mt-2 flex items-center gap-2.5 text-[11px] font-semibold text-n-3">
+          <div className="mt-2 flex items-center gap-2 text-[10px] font-medium text-n-6">
             <span className="truncate">
               {owner.name ? `${owner.name} · ` : ''}
               {linkOwner && !owner.name ? (

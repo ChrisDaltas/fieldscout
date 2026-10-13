@@ -198,7 +198,7 @@ export function TradeBuilderView({
           <StatusBanner tone="accent">
             <strong>{mode === 'counter' ? `Counter-offer sent to ${sentTo}.` : `Offer sent to ${sentTo}.`}</strong>
           </StatusBanner>
-          <p className="text-[12px] font-medium text-n-3">They’ll get a notification. It’s listed under Pending until they answer — you can call it off there.</p>
+          <p className="text-[11px] font-medium text-n-3">They’ll get a notification. It’s listed under Pending until they answer — you can call it off there.</p>
           <span>
             <Button variant="stroke" size="sm" onClick={onClose}>
               Done
@@ -234,8 +234,8 @@ export function TradeBuilderView({
 
   return (
     <Card data-trade-builder={mode}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <CardHeader className="min-h-0 py-2.5">
+        <CardTitle className="flex flex-1 flex-wrap items-center gap-2 text-[15px]">
           {mode === 'counter' ? `Counter-offer to ${to?.name ?? 'the other team'}` : 'Propose a trade'}
           <span className="ml-auto">
             <Button variant="ghost" size="sm" onClick={onClose} disabled={pending}>
@@ -246,27 +246,27 @@ export function TradeBuilderView({
       </CardHeader>
       <CardContent className="flex flex-col gap-3 px-card-pad py-3">
         {locked && (
-          <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2" role="status" data-trade-deadline-locked>
-            <p className="text-[12px] font-bold">🔒 Trades are closed for the season.</p>
+          <div className="flex flex-col gap-1 rounded-xl bg-caution-soft px-3 py-2.5" role="status" data-trade-deadline-locked>
+            <p className="text-[11px] font-bold text-ink">🔒 Trades are closed for the season.</p>
             {/* VERBATIM — the server names the week and the instant (F452). */}
-            <p className="text-[11px] font-medium text-ink">{userFacingMessage(locked)}</p>
+            <p className="text-[11px] font-medium text-n-2">{userFacingMessage(locked)}</p>
           </div>
         )}
 
         {unanswerable && !toTeamId && (
-          <p className="text-[11px] font-medium text-ink" role="status" data-trade-no-manager={unanswerable.team_id}>
+          <p className="rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-medium text-n-2" role="status" data-trade-no-manager={unanswerable.team_id}>
             {noManagerCopy(unanswerable.name)}
           </p>
         )}
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+          <div className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
             Offering team
-            <span className="flex h-btn-md items-center px-0.5 text-[12px] font-bold text-ink" data-trade-from={fromTeamId}>
+            <span className="flex h-input items-center px-0.5 text-[13px] font-semibold text-ink" data-trade-from={fromTeamId}>
               {from?.name ?? 'Your team'}
             </span>
           </div>
-          <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+          <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
             Trade with
             <Select
               value={toTeamId ?? ''}
@@ -277,7 +277,7 @@ export function TradeBuilderView({
                 setFaabGetText('')
               }}
             >
-              <SelectTrigger className="h-btn-md px-2 text-[12px]" data-trade-to={toTeamId ?? ''}>
+              <SelectTrigger data-trade-to={toTeamId ?? ''}>
                 <SelectValue placeholder="Pick a team" />
               </SelectTrigger>
               <SelectContent>
@@ -319,7 +319,7 @@ export function TradeBuilderView({
         <div className="flex flex-col gap-1.5" data-trade-drops={dropsOpen ? 'open' : 'closed'}>
           {dropsOpen ? (
             <>
-              <p className={cn('text-[11px] font-bold', dropsNeed > 0 ? 'text-ink' : 'text-n-3')} data-trade-drops-prompt={dropsNeed > 0 ? dropsNeed : undefined}>
+              <p className={cn('text-[11px] font-semibold', dropsNeed > 0 ? 'text-ink' : 'text-n-6')} data-trade-drops-prompt={dropsNeed > 0 ? dropsNeed : undefined}>
                 {dropsPrompt}
               </p>
               <DropPicker
@@ -339,24 +339,24 @@ export function TradeBuilderView({
           )}
         </div>
 
-        <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
           Note (optional)
-          <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="A word to the other manager" className="h-btn-md px-2 text-[12px]" />
+          <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="A word to the other manager" />
         </label>
 
         {refusal && !locked && (
-          <div className="flex flex-col gap-1 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-trade-refusal>
-            <p className="text-[12px] font-bold">The offer wasn’t sent.</p>
+          <div className="flex flex-col gap-1 rounded-xl bg-negative-soft px-3 py-2.5" role="alert" data-trade-refusal>
+            <p className="text-[11px] font-bold text-ink">The offer wasn’t sent.</p>
             {/* The server's sentence, its builder citations removed (R1244). */}
             <p className="text-[11px] font-medium text-ink">{userFacingMessage(refusal)}</p>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="blue" size="sm" shadow disabled={pending || !gate.canSend || locked !== null} onClick={send} data-trade-send>
+        <div className="flex flex-wrap items-center gap-2.5 border-t border-n-4 pt-3">
+          <Button variant="blue" size="md" shadow disabled={pending || !gate.canSend || locked !== null} onClick={send} data-trade-send>
             {pending ? 'Sending…' : mode === 'counter' ? 'Send counter-offer' : 'Send offer'}
           </Button>
-          <span className={cn('text-[10px] font-medium', gateTag === 'blocked' || gateTag === 'failed' ? 'text-ink' : 'text-n-3')} data-trade-gate={gateTag} role={gateTag === 'failed' ? 'status' : undefined}>
+          <span className={cn('text-[10px] font-medium', gateTag === 'blocked' || gateTag === 'failed' ? 'text-ink' : 'text-n-6')} data-trade-gate={gateTag} role={gateTag === 'failed' ? 'status' : undefined}>
             {gate.reason}
           </span>
         </div>
@@ -391,19 +391,20 @@ function SideColumn({
   empty: string
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-trade-side={side}>
-      <p className="fs-overline text-[9px] text-n-3">{title}</p>
+    // v7: each side of the trade is its own card.
+    <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-n-4 bg-white p-3" data-trade-side={side}>
+      <p className="truncate px-1 text-[13px] font-bold tracking-[-0.02em] text-ink">{title}</p>
       {roster.length === 0 ? (
-        <p className="rounded-sm border border-n-4 px-2 py-3 text-[11px] font-medium text-n-3">{empty}</p>
+        <p className="rounded-xl bg-surface-sunken px-3 py-4 text-center text-[11px] font-medium text-n-6">{empty}</p>
       ) : (
-        <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+        <ul className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
           {roster.map((p) => (
             <PlayerPickRow key={p.player_id} leagueId={leagueId} player={p} checked={picked.includes(p.player_id)} lockBehavior={lockBehavior} onToggle={onToggle} />
           ))}
         </ul>
       )}
       {faab && (
-        <label className="flex items-center gap-2 text-[11px] font-bold text-ink">
+        <label className="flex items-center gap-2 border-t border-n-4 px-1 pt-2 text-[11px] font-semibold text-ink">
           FAAB $
           <Input
             value={faab.text}
@@ -411,11 +412,11 @@ function SideColumn({
             inputMode="numeric"
             aria-label={`${title}: FAAB dollars`}
             aria-invalid={faab.over || undefined}
-            className={cn('h-btn-sm w-20 px-2 text-[12px]', faab.over && 'border-negative')}
+            className={cn('h-btn-sm w-20', faab.over && 'bg-negative-soft shadow-ring-negative')}
             data-trade-faab={side}
             data-faab-over={faab.over || undefined}
           />
-          {faab.balance !== null && <span className={cn('text-[10px] font-medium', faab.over ? 'text-negative-strong' : 'text-n-3')}>${faab.balance} left</span>}
+          {faab.balance !== null && <span className={cn('text-[10px] font-medium', faab.over ? 'text-negative-strong' : 'text-n-6')}>${faab.balance} left</span>}
         </label>
       )}
     </div>
@@ -444,7 +445,7 @@ export function PlayerPickRow({
   const id = `pick-${player.player_id}`
   return (
     <li
-      className={cn('flex items-center gap-2 rounded-sm border px-2 py-1', checked ? 'border-accent bg-accent-soft' : 'border-n-4 bg-white')}
+      className={cn('flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors', checked ? 'bg-accent-soft' : 'hover:bg-surface-sunken')}
       data-trade-pick={player.player_id}
       data-picked={checked || undefined}
     >
@@ -452,10 +453,10 @@ export function PlayerPickRow({
       <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-1.5">
         <PositionBadge position={player.position} size="sm" />
         {/* The name opens his card; the rest of the row still picks him. */}
-        <PlayerLink playerId={player.player_id} name={player.full_name} context={leagueCardContext(leagueId)} className="text-[12px] font-bold text-ink" />
-        <span className="shrink-0 text-[10px] font-medium text-n-3">{player.nfl_team ?? '—'}</span>
+        <PlayerLink playerId={player.player_id} name={player.full_name} context={leagueCardContext(leagueId)} className="text-[11px] font-semibold text-ink" />
+        <span className="shrink-0 text-[10px] font-medium text-n-6">{player.nfl_team ?? '—'}</span>
         {lock.locked && checked && (
-          <span className="basis-full text-[10px] font-medium text-n-3" data-lock-note={lockBehavior}>
+          <span className="basis-full text-[10px] font-medium text-n-6" data-lock-note={lockBehavior}>
             {lockedAssetTitle(lockBehavior)}
           </span>
         )}
@@ -481,9 +482,9 @@ export function DropPicker({
   onToggle: (playerId: string) => void
 }) {
   const sorted = useMemo(() => [...roster].sort((a, b) => a.position.localeCompare(b.position) || a.full_name.localeCompare(b.full_name)), [roster])
-  if (sorted.length === 0) return <p className="text-[11px] font-medium text-n-3">No other players on this roster.</p>
+  if (sorted.length === 0) return <p className="text-[11px] font-medium text-n-6">No other players on this roster.</p>
   return (
-    <ul className="grid max-h-56 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2" data-drop-picker>
+    <ul className="grid max-h-56 grid-cols-1 gap-0.5 overflow-y-auto sm:grid-cols-2" data-drop-picker>
       {sorted.map((p) => (
         <PlayerPickRow key={p.player_id} leagueId={leagueId} player={p} checked={picked.includes(p.player_id)} lockBehavior={lockBehavior} onToggle={onToggle} />
       ))}

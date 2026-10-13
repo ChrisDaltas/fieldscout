@@ -208,11 +208,14 @@ const EMPTY_BUCKET = 'Nothing in this section yet.'
 
 /** The accent outline the prototype puts on a section a drop would land in. */
 function bucketOutline(drag: ListDragApi, bucketKey: string): string | false {
-  return drag.isOverBucket(bucketKey) && 'outline outline-2 -outline-offset-2 outline-accent'
+  return (
+    drag.isOverBucket(bucketKey) && 'rounded-xl outline outline-2 -outline-offset-2 outline-accent'
+  )
 }
 
 // =============================================================================
-// List view — 48px rows, each stat a right-aligned cell with a caption
+// List view — v7 "One list" rows: 24px headshot, name + pos + team on one
+// line, hairline-topped, each stat a right-aligned cell with a caption
 // =============================================================================
 
 function RowsBody(props: ViewProps) {
@@ -221,15 +224,14 @@ function RowsBody(props: ViewProps) {
   const minWidth = 264 + stats.length * 58
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col">
       {buckets.map((bucket) => (
+        // v7: sections are not cards — the panel is the card. A section is its
+        // tier label plus hairline-topped rows, with a little air above it.
         <div
           key={bucket.key}
           data-drop-bucket={bucket.key}
-          className={cn(
-            'border border-ink bg-white transition-shadow hover:shadow-hard-4',
-            bucketOutline(drag, bucket.key),
-          )}
+          className={cn('mt-2 first:mt-0', bucketOutline(drag, bucket.key))}
         >
           {bucket.label !== null && (
             <BucketHeader
@@ -277,7 +279,7 @@ function RowsBody(props: ViewProps) {
                 />
               )}
               {bucket.entries.length === 0 && (
-                <div className="p-4 text-center text-[11px] font-semibold text-n-3">
+                <div className="border-t border-n-4 p-4 text-center text-[11px] font-medium text-n-6">
                   {EMPTY_BUCKET}
                 </div>
               )}
@@ -317,8 +319,8 @@ function ListRow({
       data-drop-row={`${bucketKey}:${index}`}
       data-drag-id={entry.id}
       className={cn(
-        'flex h-12 items-center gap-2.5 border-b border-n-4 px-2.5 transition-[background-color,opacity] last:border-b-0',
-        drafted ? 'bg-n-4' : 'bg-white hover:bg-accent-soft',
+        'flex h-[42px] items-center gap-2.5 border-t border-n-4 px-[7px] transition-[background-color,opacity]',
+        drafted ? 'bg-surface-sunken' : 'bg-white hover:bg-surface-sunken',
         view.canDrag && 'touch-manipulation',
         dragging && 'opacity-35',
       )}
@@ -326,26 +328,26 @@ function ListRow({
       {view.showGrip && (
         <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
       )}
-      <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
+      <span className="fs-num w-6 shrink-0 text-[10px] font-semibold text-n-6">#{rank}</span>
       <PlayerFace entry={entry} size={24} />
-      <span className="min-w-0 flex-1">
+      <span className="flex min-w-0 flex-1 items-center gap-[9px]">
         <span className="flex min-w-0 items-center gap-1.5">
           <PlayerName
             name={entry.player.full_name}
             drafted={drafted}
             onOpen={handlers.onOpenPlayer && (() => handlers.onOpenPlayer?.(entry))}
-            className="min-w-0 truncate text-[11.5px] font-semibold leading-tight"
+            className="min-w-0 truncate text-[12px] font-semibold leading-tight text-ink"
           />
           <NoteMark note={entry.notes} />
         </span>
-        <PlayerMeta entry={entry} className="mt-1" />
+        <PlayerMeta entry={entry} className="shrink-0" />
       </span>
       {stats.map((stat) => (
-        <span key={stat.id} className="w-[50px] shrink-0 text-right">
-          <span className="block text-[11.5px] font-medium leading-none tabular-nums">
+        <span key={stat.id} className="w-[51px] shrink-0 text-right">
+          <span className="block text-[11px] font-bold leading-none tabular-nums text-ink">
             {formatStat(stat, entry)}
           </span>
-          <span className="mt-1 block whitespace-nowrap text-[8px] font-normal leading-none text-n-3">
+          <span className="mt-1 block whitespace-nowrap text-[9px] font-medium leading-none text-n-6">
             {stat.label}
           </span>
         </span>
@@ -365,7 +367,7 @@ function ListRow({
 }
 
 // =============================================================================
-// Table view — 36px rows under one sticky column header
+// Table view — v7 table: 10px grey column captions, hairline-topped rows
 // =============================================================================
 
 function TableBody(props: ViewProps) {
@@ -383,15 +385,16 @@ function TableBody(props: ViewProps) {
   const minWidth = 270 + (showBudgetShare ? 112 : 0) + stats.length * 70
 
   return (
-    <div className="overflow-x-auto border border-ink bg-white transition-shadow hover:shadow-hard-4">
+    // v7: the table sits straight on the panel — no frame, no lift.
+    <div className="overflow-x-auto bg-white">
       <div style={{ minWidth }}>
-        <div className="flex h-[29px] items-center gap-2.5 border-b border-ink bg-white px-2.5">
+        <div className="flex h-[24px] items-center gap-2.5 bg-white px-[7px]">
           {props.showGrip && <span className="w-[9px]" />}
-          <span className="w-6 text-[9px] font-medium text-n-3">#</span>
+          <span className="w-6 text-[10px] font-semibold text-n-6">#</span>
           <span className="w-[21px]" />
-          <span className="flex-1 text-[9px] font-medium text-n-3">Player</span>
+          <span className="flex-1 text-[10px] font-semibold text-n-6">Player</span>
           {showBudgetShare && (
-            <span className="w-[104px] text-right text-[9px] font-medium text-n-3">
+            <span className="w-[104px] text-right text-[10px] font-semibold text-n-6">
               Share of budget
             </span>
           )}
@@ -399,7 +402,7 @@ function TableBody(props: ViewProps) {
             <span
               key={stat.id}
               title={stat.full}
-              className="w-[70px] shrink-0 cursor-help text-right text-[9px] font-medium text-n-3"
+              className="w-[70px] shrink-0 cursor-help text-right text-[10px] font-semibold text-n-6"
             >
               {stat.label}
             </span>
@@ -459,7 +462,7 @@ function TableBody(props: ViewProps) {
               />
             )}
             {bucket.entries.length === 0 && (
-              <div className="border-b border-n-4 p-3 text-center text-[11px] font-semibold text-n-3">
+              <div className="border-t border-n-4 p-3 text-center text-[11px] font-medium text-n-6">
                 {EMPTY_BUCKET}
               </div>
             )}
@@ -499,8 +502,8 @@ function TableRow({
       data-drop-row={`${bucketKey}:${index}`}
       data-drag-id={entry.id}
       className={cn(
-        'flex h-9 items-center gap-2.5 border-b border-n-4 px-2.5 transition-[background-color,opacity]',
-        drafted ? 'bg-n-4' : 'bg-white hover:bg-accent-soft',
+        'flex h-[34px] items-center gap-2.5 border-t border-n-4 px-[7px] transition-[background-color,opacity]',
+        drafted ? 'bg-surface-sunken' : 'bg-white hover:bg-surface-sunken',
         view.canDrag && 'touch-manipulation',
         dragging && 'opacity-35',
       )}
@@ -508,27 +511,27 @@ function TableRow({
       {view.showGrip && (
         <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
       )}
-      <span className="fs-num w-6 shrink-0 text-[10px] font-bold text-ink">#{rank}</span>
+      <span className="fs-num w-6 shrink-0 text-[10px] font-semibold text-n-6">#{rank}</span>
       <PlayerFace entry={entry} size={21} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <PlayerName
           name={entry.player.full_name}
           drafted={drafted}
           onOpen={handlers.onOpenPlayer && (() => handlers.onOpenPlayer?.(entry))}
-          className="min-w-0 truncate text-[11px] font-bold"
+          className="min-w-0 truncate text-[11px] font-semibold text-ink"
         />
         <PlayerMeta entry={entry} />
       </span>
 
       {view.showBudgetShare && (
         <span className="flex w-[104px] shrink-0 items-center gap-1.5">
-          <span className="relative h-[7px] flex-1 border border-ink bg-n-4">
+          <span className="relative h-[6px] flex-1 overflow-hidden rounded-pill bg-surface-control">
             <span
-              className="absolute inset-y-0 left-0 bg-brand"
+              className="absolute inset-y-0 left-0 rounded-pill bg-accent"
               style={{ width: `${Math.min(100, (share ?? 0) * 2.5)}%` }}
             />
           </span>
-          <span className="fs-num w-[26px] text-right text-[10px] font-medium">
+          <span className="fs-num w-[26px] text-right text-[10px] font-medium text-n-3">
             {share == null ? '—' : `${share}%`}
           </span>
         </span>
@@ -537,7 +540,7 @@ function TableRow({
       {stats.map((stat) => (
         <span
           key={stat.id}
-          className="fs-num w-[70px] shrink-0 text-right text-[11px] font-semibold"
+          className="fs-num w-[70px] shrink-0 text-right text-[11px] font-semibold text-ink"
         >
           {formatStat(stat, entry)}
         </span>
@@ -560,7 +563,7 @@ function TableRow({
 }
 
 // =============================================================================
-// Cards view — 131px tiles, wrapping inside each section
+// Cards view — 131px tiles (v7 rounded cards), wrapping inside each section
 // =============================================================================
 
 /**
@@ -586,14 +589,16 @@ function CardsBody(props: ViewProps) {
             data-drop-bucket={bucket.key}
             className={cn(
               'flex items-stretch',
-              grouped && 'border border-ink bg-white transition-shadow hover:shadow-hard-4',
+              // v7: a grouped section is a hairline card that rests flat — the
+              // section itself is not interactive, so it does not lift.
+              grouped && 'overflow-hidden rounded-2xl border border-n-4 bg-white',
               bucketOutline(drag, bucket.key),
             )}
           >
             {grouped && (
               <div
                 className={cn(
-                  'flex w-[50px] shrink-0 flex-col items-center gap-0.5 border-r border-ink px-1.5 py-2',
+                  'flex w-[50px] shrink-0 flex-col items-center gap-0.5 px-1.5 py-2',
                   bucket.className,
                 )}
               >
@@ -619,7 +624,7 @@ function CardsBody(props: ViewProps) {
                   <button
                     type="button"
                     onClick={() => onAddToBucket(bucket)}
-                    className="inline-flex items-center gap-0.5 text-[9px] font-medium opacity-85 hover:opacity-100"
+                    className="inline-flex items-center gap-0.5 rounded-pill px-1 text-[9px] font-semibold opacity-85 transition-opacity hover:opacity-100"
                   >
                     Add
                     <Icon name="plus" size={9} />
@@ -671,7 +676,7 @@ function CardsBody(props: ViewProps) {
                 />
               )}
               {bucket.entries.length === 0 && (
-                <div className="px-1.5 py-4 text-[11px] font-medium text-n-3">{EMPTY_BUCKET}</div>
+                <div className="px-1.5 py-4 text-[11px] font-medium text-n-6">{EMPTY_BUCKET}</div>
               )}
             </div>
           </div>
@@ -747,8 +752,10 @@ function PlayerTile({
       data-drop-row={`${bucketKey}:${index}`}
       data-drag-id={entry.id}
       className={cn(
-        'group relative flex w-[131px] shrink-0 flex-col self-start border-1 border-ink transition-[box-shadow,opacity] hover:shadow-hard-4',
-        drafted ? 'bg-n-4' : 'bg-white',
+        // A tile is a drag source and opens the player, so it may lift on
+        // hover (CLAUDE.md → Elevation); at rest it is a flat hairline card.
+        'group relative flex w-[131px] shrink-0 flex-col self-start overflow-hidden rounded-xl border border-n-4 transition-[box-shadow,opacity] hover:shadow-hard-4',
+        drafted ? 'bg-surface-sunken' : 'bg-white',
         view.canDrag && 'cursor-grab touch-manipulation',
         dragging && 'opacity-35',
       )}
@@ -757,15 +764,15 @@ function PlayerTile({
         {/* Corner cells sit flush to the corner, closed by an inner rule. */}
         <span
           className={cn(
-            'fs-num absolute left-0 top-0 inline-flex h-[18px] items-center border-b-1 border-r-1 border-ink px-1.5 text-[10px] font-bold leading-none',
-            bandClassName ?? 'bg-brand text-ink',
+            'fs-num absolute left-1.5 top-1.5 inline-flex h-[17px] items-center rounded-sm px-1 text-[9px] font-bold leading-none',
+            bandClassName ?? 'bg-surface-control text-n-2',
           )}
         >
           #{rank}
         </span>
         <span
           title={`${ordinal(positionRank)} ${entry.player.position ?? ''} on this list`}
-          className="fs-num absolute right-0 top-0 inline-flex h-[18px] items-center border-b-1 border-l-1 border-ink px-1.5 text-[10px] font-bold leading-none text-ink"
+          className="fs-num absolute right-1.5 top-1.5 inline-flex h-[17px] items-center px-0.5 text-[9px] font-semibold leading-none text-n-6"
         >
           {ordinal(positionRank)}
         </span>
@@ -774,7 +781,7 @@ function PlayerTile({
           name={entry.player.full_name}
           drafted={drafted}
           onOpen={handlers.onOpenPlayer && (() => handlers.onOpenPlayer?.(entry))}
-          className="max-w-full truncate text-center text-[12px] font-semibold leading-none"
+          className="max-w-full truncate text-center text-[12px] font-semibold leading-none text-ink"
         />
         <span className="flex items-center gap-1">
           {handlers.canMark && (
@@ -789,7 +796,7 @@ function PlayerTile({
           <NoteMark note={entry.notes} size={10} />
         </span>
         {view.showMenu && (
-          <span className="absolute right-0 top-0 hidden border-1 border-ink bg-white group-hover:inline-flex">
+          <span className="absolute right-1 top-1 hidden rounded-pill bg-white group-hover:inline-flex">
             <RowMenu
               actions={{
                 drafted,
@@ -806,15 +813,15 @@ function PlayerTile({
       </div>
       {stats.length > 0 && (
         <div
-          className="grid border-t-1 border-ink"
+          className="grid border-t border-n-4"
           style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}
         >
           {stats.map((stat) => (
             <span key={stat.id} className="min-w-0 px-px pb-1 pt-1.5 text-center">
-              <span className="block text-[12px] font-medium leading-none tabular-nums">
+              <span className="block text-[11px] font-bold leading-none tabular-nums text-ink">
                 {formatStat(stat, entry)}
               </span>
-              <span className="mt-0.5 block truncate text-[8px] font-normal leading-none text-n-3">
+              <span className="mt-0.5 block truncate text-[9px] font-medium leading-none text-n-6">
                 {stat.label}
               </span>
             </span>

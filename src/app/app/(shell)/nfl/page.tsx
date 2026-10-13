@@ -8,8 +8,8 @@ import { NFL_DIVISIONS, teamsInDivision } from '@/lib/nfl-teams'
 export const metadata = { title: 'NFL teams · FieldScout' }
 
 /**
- * NFL teams index — one flat white card per division, flush team rows with
- * square team-color crests. Batch E surface: extends the design language,
+ * NFL teams index — one v7 card per division, flush team rows with
+ * rounded-square team-color crests. Batch E surface: extends the design language,
  * no prototype screen to match.
  */
 export default function NflTeamsPage() {
@@ -20,7 +20,7 @@ export default function NflTeamsPage() {
       {NFL_DIVISIONS.map(({ conference, division }) => (
         <Card key={`${conference}-${division}`}>
           <CardHeader className="min-h-0 py-2.5">
-            <CardTitle>
+            <CardTitle className="text-[13px] font-bold tracking-[-0.01em]">
               {conference} {division}
             </CardTitle>
           </CardHeader>
@@ -31,15 +31,15 @@ export default function NflTeamsPage() {
                 <li key={team.abbr} className="border-b border-n-4 last:border-0">
                   <Link
                     href={`/app/nfl/${team.abbr}`}
-                    className="flex h-[45px] items-center gap-2.5 px-card-pad transition-colors duration-200 ease-linear hover:bg-accent-soft"
+                    className="flex h-[41px] items-center gap-2.5 px-card-pad transition-colors hover:bg-surface-sunken"
                   >
                     <span
-                      className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm border border-ink text-[10px] font-extrabold text-white"
+                      className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md text-[9px] font-bold text-white"
                       style={{ backgroundColor: colors.primary }}
                     >
                       {team.abbr}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-extrabold text-ink">
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">
                       {team.city} {team.name}
                     </span>
                   </Link>

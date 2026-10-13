@@ -81,8 +81,7 @@ export function MocksHome() {
   const startButton = (
     <Button
       variant="blue"
-      size="sm"
-      shadow
+      size="md"
       disabled={Boolean(capReason)}
       onClick={() => setLaunchOpen(true)}
     >
@@ -121,13 +120,13 @@ export function MocksHome() {
       {mocks.isPending ? (
         <div className="flex flex-col gap-2.5" aria-busy="true">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[52px] rounded-sm" />
+            <Skeleton key={i} className="h-[52px] rounded-xl" />
           ))}
         </div>
       ) : mocks.isError ? (
         <Card className="border-negative bg-negative-soft">
           <CardContent className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold" role="alert">
+            <p className="text-[15px] font-bold tracking-[-0.02em]" role="alert">
               Couldn&apos;t load your practice drafts.
             </p>
             <Button variant="stroke" size="sm" onClick={() => void mocks.refetch()}>
@@ -139,13 +138,15 @@ export function MocksHome() {
         // Every new user's first visit, so the empty state IS the launch
         // affordance rather than a notice beside one (§4 rule 14).
         <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-          <Icon name="rocket" size={18} className="text-n-3" />
+          <span className="flex size-10 items-center justify-center rounded-full bg-surface-sunken text-n-3">
+            <Icon name="rocket" size={18} />
+          </span>
           <p className="text-h5 text-ink">No practice drafts yet</p>
-          <p className="max-w-md text-[13px] font-medium text-n-3">
+          <p className="max-w-md text-[11px] font-medium text-n-3">
             Your runs and their reports will list here.
           </p>
           <div className="mt-1 flex items-center gap-2.5">{startButton}</div>
-          <span className="text-[10px] font-medium text-n-3">{MOCK_CAP_NOTE}</span>
+          <span className="text-[10px] font-medium text-n-6">{MOCK_CAP_NOTE}</span>
         </Card>
       ) : (
         <>
@@ -182,7 +183,10 @@ function MockSection({
     <Card>
       <CardHeader>
         <CardTitle>
-          {title} <span className="fs-num text-n-3">{rows.length}</span>
+          {title}{' '}
+          <span className="fs-num ml-1 inline-flex h-[17px] min-w-[20px] items-center justify-center rounded-sm bg-surface-control px-1 align-[2px] text-[9px] font-bold text-n-2">
+            {rows.length}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5">
@@ -199,7 +203,7 @@ function MockSection({
             row={row}
           />
         ))}
-        {note && <p className="text-[10px] font-medium text-n-3">{note}</p>}
+        {note && <p className="text-[10px] font-medium text-n-6">{note}</p>}
       </CardContent>
     </Card>
   )

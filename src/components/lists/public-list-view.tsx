@@ -143,7 +143,7 @@ export function PublicListView({
   }
 
   return (
-    <article className="flex flex-col gap-3 border border-ink bg-white p-[18px]">
+    <article className="flex flex-col gap-3 rounded-2xl border border-n-4 bg-white p-[17px]">
       <ListHeroShell
         list={list}
         owner={owner}
@@ -168,7 +168,7 @@ export function PublicListView({
         onValueChange={(next) => setTab(next as DetailTab)}
         className="flex flex-col gap-3"
       >
-        <div className="flex flex-wrap items-stretch gap-1 border-b border-ink">
+        <div className="flex flex-wrap items-stretch gap-1 border-b border-n-4">
           <TabsList aria-label="List sections" className="flex-wrap">
             <TabsTrigger value="list">List</TabsTrigger>
             <TabsTrigger value="details">Details</TabsTrigger>
@@ -179,7 +179,7 @@ export function PublicListView({
           {/* The app panel shows views here. A shared list is also the social
               artifact, so likes ride alongside — the one addition this screen
               makes to the panel's tab row, and it is data the page already has. */}
-          <span className="ml-auto flex items-center gap-2.5 pb-1.5 text-[10px] font-medium text-n-3">
+          <span className="ml-auto flex items-center gap-2.5 pb-1.5 text-[10px] font-medium text-n-6">
             <span className="flex items-center gap-1.5">
               <Icon name="eye" size={12} />
               <span className="fs-num">{formatCount(list.view_count)}</span>
@@ -243,8 +243,8 @@ export function PublicListView({
 }
 
 /**
- * Share — brand lime, the same button the app panel's hero carries, copying the
- * page's own address.
+ * Share — a v7 secondary button, the same one the app panel's hero carries,
+ * copying the page's own address.
  *
  * `window` is read inside the handler and never during render, so this survives
  * the server pass that puts the list into the initial HTML.
@@ -267,14 +267,8 @@ function ShareLinkButton() {
   }
 
   return (
-    <Button
-      variant="lime"
-      size="sm"
-      shadow
-      onClick={share}
-      className="bg-brand hover:bg-brand"
-    >
-      <Icon name="send" size={13} /> Share
+    <Button variant="stroke" size="sm" onClick={share}>
+      <Icon name="send" size={11} /> Share
     </Button>
   )
 }

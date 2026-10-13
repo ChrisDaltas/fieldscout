@@ -160,28 +160,28 @@ export function PlayerSidebar({
     <aside
       className={cn(
         'flex h-full w-full flex-col',
-        !frameless && 'rounded-sm border border-ink bg-white',
+        !frameless && 'rounded-2xl border border-n-4 bg-white',
       )}
     >
       <div
-        className={cn('space-y-2.5 p-3', !frameless && 'border-b border-ink')}
+        className={cn('space-y-2.5 p-3', !frameless && 'border-b border-n-4')}
       >
         <div className="flex items-center gap-2">
-          <div className="flex h-btn-md flex-1 items-center gap-1.5 rounded-sm border border-ink bg-white px-2.5 transition-colors focus-within:border-accent">
+          <div className="flex h-input flex-1 items-center gap-1.5 rounded-pill bg-surface-control px-3 transition-shadow focus-within:bg-white focus-within:shadow-field">
             <Icon name="search" size={13} className="shrink-0 text-n-3" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search players…"
-              className="h-full min-w-0 flex-1 bg-transparent text-[12px] font-medium text-ink outline-none placeholder:text-n-3"
+              className="h-full min-w-0 flex-1 bg-transparent text-[11px] font-medium text-ink outline-none placeholder:text-n-6"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery('')}
                 aria-label="Clear search"
-                className="shrink-0 text-n-3 transition-colors hover:text-ink"
+                className="shrink-0 text-n-6 transition-colors hover:text-ink"
               >
                 <Icon name="close" size={12} />
               </button>
@@ -198,7 +198,7 @@ export function PlayerSidebar({
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56 p-3">
-              <p className="mb-2 text-[12px] font-bold text-ink">
+              <p className="mb-2 text-[10px] font-semibold text-n-6">
                 Stat columns
               </p>
               <ul className="space-y-1">
@@ -247,7 +247,7 @@ export function PlayerSidebar({
         >
           <SelectTrigger
             aria-label="Filter by team"
-            className="h-btn-md px-2.5 text-[12px] font-bold"
+            className="h-btn-md text-[11px]"
           >
             <SelectValue />
           </SelectTrigger>
@@ -261,8 +261,8 @@ export function PlayerSidebar({
           </SelectContent>
         </Select>
 
-        <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-sm border border-ink bg-white px-2.5 py-1.5">
-          <span className="text-[12px] font-bold text-ink">
+        <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md bg-surface-sunken px-2.5 py-1.5">
+          <span className="text-[11px] font-semibold text-ink">
             Show added players
           </span>
           <Switch checked={showAdded} onCheckedChange={setShowAdded} />
@@ -271,19 +271,19 @@ export function PlayerSidebar({
 
       <div className="flex-1 overflow-y-auto">
         {error && (
-          <p className="m-3 rounded-sm border border-negative-strong bg-negative-soft p-2.5 text-[12px] font-medium text-ink">
+          <p className="m-3 rounded-xl bg-negative-soft p-2.5 text-[11px] font-medium text-negative-strong">
             {error}
           </p>
         )}
         {isLoading && players.length === 0 && (
           <div className="space-y-1 p-2">
             {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-11 w-full" />
+              <Skeleton key={i} className="h-11 w-full rounded-md bg-surface-control" />
             ))}
           </div>
         )}
         {!isLoading && filtered.length === 0 && (
-          <p className="p-6 text-center text-[12px] font-medium text-n-3">
+          <p className="p-6 text-center text-[11px] font-medium text-n-6">
             No players match these filters.
           </p>
         )}
@@ -317,7 +317,7 @@ export function PlayerSidebar({
           </ul>
         )}
 
-        <p className="fs-num p-3 text-center text-[10px] font-semibold text-n-3">
+        <p className="fs-num p-3 text-center text-[10px] font-semibold text-n-6">
           Showing {filtered.length} of {players.length} players
         </p>
       </div>
@@ -344,16 +344,16 @@ function ToggleRow({
     <li>
       <label
         className={cn(
-          'flex items-center justify-between gap-3 rounded-sm px-1 py-1 transition-colors',
-          disabled ? 'cursor-default' : 'cursor-pointer hover:bg-n-4/60',
+          'flex items-center justify-between gap-3 rounded-md px-1.5 py-1 transition-colors',
+          disabled ? 'cursor-default' : 'cursor-pointer hover:bg-surface-sunken',
         )}
       >
         <span className="min-w-0">
-          <span className="block text-[12px] font-medium text-ink">
+          <span className="block text-[11px] font-semibold text-ink">
             {label}
           </span>
           {description && (
-            <span className="block text-[10px] font-medium text-n-3">
+            <span className="block text-[10px] font-medium text-n-6">
               {description}
             </span>
           )}
@@ -437,16 +437,16 @@ const SidebarPlayerCard = memo(function SidebarPlayerCard({
           added ? `${player.full_name} already added` : `Add ${player.full_name}`
         }
         className={cn(
-          'group relative flex w-full touch-manipulation flex-col items-center gap-1.5 rounded-sm border border-ink bg-white p-2.5 pt-3 transition-all',
+          'group relative flex w-full touch-manipulation flex-col items-center gap-1.5 rounded-2xl border border-n-4 p-2.5 pt-3 transition-[background-color,box-shadow]',
           added
-            ? 'cursor-default bg-n-4/60'
-            : 'cursor-grab hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4 active:cursor-grabbing',
+            ? 'cursor-default bg-surface-sunken'
+            : 'cursor-grab bg-white hover:shadow-hard-4 active:cursor-grabbing',
           isDragging && 'opacity-40',
         )}
       >
         <span
           className={cn(
-            'absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-sm border border-ink transition-opacity',
+            'absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-pill transition-opacity',
             added
               ? 'bg-positive text-ink opacity-100'
               : 'bg-accent text-white opacity-0 group-hover:opacity-100',
@@ -461,7 +461,7 @@ const SidebarPlayerCard = memo(function SidebarPlayerCard({
         </Avatar>
 
         <span
-          className="w-full truncate text-center text-[12px] font-extrabold leading-tight text-ink"
+          className="w-full truncate text-center text-[12px] font-semibold leading-tight text-ink"
           title={player.full_name}
         >
           {player.full_name}
@@ -470,7 +470,7 @@ const SidebarPlayerCard = memo(function SidebarPlayerCard({
         <span className="flex items-center gap-1.5">
           <PositionBadge position={player.position} size="sm" />
           {player.team && (
-            <span className="text-[10px] font-semibold text-n-3">
+            <span className="text-[10px] font-medium text-n-6">
               {player.team}
             </span>
           )}
@@ -575,10 +575,10 @@ function AddButton({
       disabled={added}
       aria-label={added ? `${player.full_name} already added` : `Add ${player.full_name}`}
       className={cn(
-        'flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border border-ink transition-colors',
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-pill transition-colors',
         added
-          ? 'cursor-default border-positive bg-positive-soft text-ink'
-          : 'bg-white text-ink hover:bg-ink hover:text-white',
+          ? 'cursor-default bg-positive-soft text-positive-strong'
+          : 'bg-surface-control text-ink hover:bg-accent hover:text-white',
       )}
     >
       <Icon name={added ? 'check' : 'plus'} size={12} />

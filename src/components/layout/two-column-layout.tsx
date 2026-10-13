@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
  * width; the aside (context) column is capped at a mobile-compliant 374px on
  * desktop and stacks below on mobile. Pair the aside with <CollapsibleCard>s
  * so the context content folds into single-row menus on mobile, keeping the
- * main content reachable by a short scroll.
+ * main content reachable by a short scroll. v7: cards sit 10px apart.
  */
 export function TwoColumnLayout({
   main,
@@ -24,12 +24,12 @@ export function TwoColumnLayout({
   return (
     <div
       className={cn(
-        'flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5',
+        'flex flex-col gap-[10px] lg:flex-row lg:items-start',
         className,
       )}
     >
       <div className="min-w-0 flex-1">{main}</div>
-      <div className="flex w-full flex-col gap-4 lg:w-[374px] lg:shrink-0">
+      <div className="flex w-full flex-col gap-[10px] lg:w-[374px] lg:shrink-0">
         {aside}
       </div>
     </div>
@@ -52,6 +52,11 @@ interface CollapsibleCardProps {
  * on mobile: the header becomes a toggle with a right-side chevron, and the
  * body folds away. Use for context/aside cards so they don't push the main
  * content down the page on small screens.
+ *
+ * v7 card: white, 14px radius, hairline border, no resting shadow, and no
+ * rule under the header — a 13px bold title with optional right-side meta
+ * (v7's "Your lists" card). Bodies that list rows start them with their own
+ * `border-t border-n-4` hairline.
  */
 export function CollapsibleCard({
   title,
@@ -64,21 +69,23 @@ export function CollapsibleCard({
   const [open, setOpen] = useState(defaultOpen)
 
   return (
-    <div className={cn('rounded-sm border border-ink bg-white', className)}>
-      <div className="flex min-h-header items-center gap-2 border-b border-ink pr-card-pad">
+    <div className={cn('rounded-2xl border border-n-4 bg-white', className)}>
+      <div className="flex min-h-[46px] items-center gap-2 pr-[15px]">
         {/* Toggle on mobile; inert (always-open) on desktop. */}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 px-card-pad py-2.5 text-left lg:pointer-events-none"
+          className="group flex min-w-0 flex-1 items-center gap-2 px-[15px] py-3 text-left lg:pointer-events-none"
         >
-          <span className="mr-auto truncate text-h6">{title}</span>
+          <span className="mr-auto truncate text-[13px] font-bold tracking-[-0.01em] text-ink">
+            {title}
+          </span>
           <Icon
             name="arrow-bottom"
             size={14}
             className={cn(
-              'shrink-0 text-n-3 transition-transform lg:hidden',
+              'shrink-0 text-n-6 transition-[transform,color] group-hover:text-ink lg:hidden',
               open && 'rotate-180',
             )}
           />

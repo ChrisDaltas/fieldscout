@@ -131,7 +131,7 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
         <p className="text-[11px] font-medium text-n-3" data-schedule-commish-hint>
           <Link
             href={scheduleConsoleHref(leagueId)}
-            className="text-accent underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="font-semibold text-accent underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           >
             {SCHEDULE_COMMISH_HINT_COPY}
           </Link>
@@ -139,7 +139,7 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2" data-schedule-toolbar>
-        <span className="text-[11px] font-medium text-n-3">
+        <span className="text-[10px] font-semibold text-n-6">
           {schedule.data ? (
             <>
               <span className="fs-num">{schedule.data.weeks.length}</span> week{schedule.data.weeks.length === 1 ? '' : 's'} ·{' '}
@@ -165,8 +165,8 @@ function ScheduleContent({ leagueId, detail }: { leagueId: string; detail: Leagu
       ) : grid.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 px-6 py-8 text-center">
-            <Icon name="calendar" size={18} className="text-n-3" />
-            <p role="status" className="max-w-md text-[13px] font-medium text-n-3" data-empty="schedule">
+            <Icon name="calendar" size={18} className="text-n-6" />
+            <p role="status" className="max-w-md text-[11px] font-medium text-n-6" data-empty="schedule">
               {NO_SCHEDULE_COPY}
             </p>
           </CardContent>
@@ -201,17 +201,17 @@ function WeekCard({
 }) {
   const badge = weekStatusBadge(week.status)
   return (
-    <Card data-week={week.week} data-week-kind={week.kind} className={cn(isCurrent && 'border-accent')}>
-      <CardHeader className="min-h-0 flex-wrap py-2">
-        <CardTitle className="flex items-center gap-2 text-[12px]">
+    <Card data-week={week.week} data-week-kind={week.kind} className={cn('overflow-hidden', isCurrent && 'border-accent')}>
+      <CardHeader className="min-h-0 flex-wrap px-[15px] py-2.5">
+        <CardTitle className="flex items-center gap-2 text-[13px] font-bold tracking-[-0.02em]">
           Week <span className="fs-num">{week.week}</span>
           {week.kind === 'playoff' && <Badge variant="stroke-purple">Playoffs</Badge>}
           {isCurrent && <Badge variant="green">Current</Badge>}
         </CardTitle>
         <span className="flex items-center gap-2">
           {week.median_score !== null && (
-            <span className="text-[11px] font-medium text-n-3">
-              median <span className="fs-num">{week.median_score.toFixed(2)}</span>
+            <span className="text-[10px] font-medium text-n-6">
+              median <span className="fs-num font-semibold text-n-2">{week.median_score.toFixed(2)}</span>
             </span>
           )}
           <Badge variant={badge.variant}>{badge.label}</Badge>
@@ -219,7 +219,7 @@ function WeekCard({
       </CardHeader>
       <CardContent className="flex flex-col divide-y divide-n-4 px-0 py-0">
         {week.note ? (
-          <p className="px-card-pad py-3 text-[12px] font-medium text-n-3" data-week-note>
+          <p className="px-[15px] py-3 text-[11px] font-medium text-n-6" data-week-note>
             {week.note}
           </p>
         ) : (
@@ -244,18 +244,18 @@ function MatchupRowView({
   const mine = row.home.id === myTeamId || row.away?.id === myTeamId
   return (
     <div
-      className={cn('flex flex-col gap-1 px-card-pad py-2', mine && 'bg-accent-soft')}
+      className={cn('flex min-h-[34px] flex-col justify-center gap-1 px-[15px] py-1.5 transition-colors', mine ? 'bg-accent-soft' : 'hover:bg-surface-sunken')}
       data-matchup={row.id}
       data-round-type={row.round_type}
     >
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
         <TeamLabel leagueId={leagueId} team={row.home} winner={row.result === 'home'} />
-        <span className="fs-num text-[12px] font-bold text-ink">{formatScore(row.home_score, row.status)}</span>
-        <span className="text-[10px] font-bold text-n-3">vs</span>
+        <span className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', row.result === 'away' ? 'text-n-3' : 'text-ink')}>{formatScore(row.home_score, row.status)}</span>
+        <span className="text-[9px] font-bold text-n-6">vs</span>
         {row.away ? (
           <>
             <TeamLabel leagueId={leagueId} team={row.away} winner={row.result === 'away'} />
-            <span className="fs-num text-[12px] font-bold text-ink">{formatScore(row.away_score, row.status)}</span>
+            <span className={cn('fs-num text-[13px] font-bold tracking-[-0.01em]', row.result === 'home' ? 'text-n-3' : 'text-ink')}>{formatScore(row.away_score, row.status)}</span>
           </>
         ) : (
           <Badge variant="stroke">bye</Badge>
@@ -267,7 +267,7 @@ function MatchupRowView({
           {row.is_overridden && (
             <Link
               href={commishMatchupHref(leagueId, week, row.home.id)}
-              className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className="rounded-pill focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               data-overridden-link
             >
               <Badge variant="stroke-purple" className="hover:bg-accent-soft">
@@ -285,8 +285,8 @@ function MatchupRowView({
  *  underline — the two treatments compose instead of competing. */
 function TeamLabel({ leagueId, team, winner }: { leagueId: string; team: TeamRef; winner: boolean }) {
   return (
-    <span className={cn('flex items-center gap-1.5', winner && 'font-bold')}>
-      <Crest name={team.name} src={null} className="h-5 w-5" fallbackClassName="text-[8px]" />
+    <span className={cn('flex items-center gap-1.5', winner ? 'font-bold' : 'font-semibold')}>
+      <Crest name={team.name} src={null} className="h-5 w-5 rounded" fallbackClassName="text-[8px]" />
       <TeamNameLink name={team.name} leagueId={leagueId} teamId={team.id} className="text-ink" />
     </span>
   )
@@ -325,7 +325,7 @@ export function EditMatchupForm({
           <strong>Matchup edited.</strong> <span className="fs-num">{applied.rows_changed}</span> row
           {applied.rows_changed === 1 ? '' : 's'} changed — the grid re-read the server’s pairings.
         </StatusBanner>
-        <p className="text-[11px] font-medium text-n-3" data-system-post>
+        <p className="text-[11px] font-medium text-n-6" data-system-post>
           Posted to league chat: {applied.system_post}
         </p>
         <span>
@@ -348,10 +348,10 @@ export function EditMatchupForm({
       }}
     >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
           Home
           <Select value={home} onValueChange={setHome}>
-            <SelectTrigger className="h-btn-md px-2 text-[12px]" data-edit-home>
+            <SelectTrigger data-edit-home>
               <SelectValue placeholder="Home team" />
             </SelectTrigger>
             <SelectContent>
@@ -363,10 +363,10 @@ export function EditMatchupForm({
             </SelectContent>
           </Select>
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+        <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
           Away
           <Select value={away} onValueChange={setAway}>
-            <SelectTrigger className="h-btn-md px-2 text-[12px]" data-edit-away>
+            <SelectTrigger data-edit-away>
               <SelectValue placeholder="Away team" />
             </SelectTrigger>
             <SelectContent>
@@ -379,10 +379,10 @@ export function EditMatchupForm({
           </Select>
         </label>
       </div>
-      <label className="flex flex-col gap-1 text-[10px] font-bold text-n-3">
+      <label className="flex flex-col gap-1 text-[10px] font-semibold text-n-6">
         Reason{reasonRefused ? ' (see the refusal below)' : ' (optional — posted to league chat if you give one)'}
         <Input
-          className={cn('h-btn-md px-2 text-[12px]', reasonRefused && 'border-negative')}
+          className={cn(reasonRefused && 'shadow-ring-negative')}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           maxLength={500}
@@ -392,16 +392,16 @@ export function EditMatchupForm({
         />
       </label>
       {problem && (
-        <p className="text-[11px] font-medium text-n-3" data-edit-problem>
+        <p className="text-[11px] font-medium text-n-6" data-edit-problem>
           {problem}
         </p>
       )}
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-2 py-1 text-[12px] font-semibold text-ink">
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink">
           {refusal}
         </p>
       )}
-      <p className="text-[10px] font-medium text-n-3">
+      <p className="text-[10px] font-medium text-n-6">
         The displaced teams are re-paired for you so every team still plays once this week.
       </p>
       <div className="flex items-center gap-2">
@@ -433,7 +433,7 @@ function GridSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-skeleton="schedule-grid">
       {Array.from({ length: 4 }, (_, i) => (
-        <Skeleton key={i} className="h-40 rounded-sm" />
+        <Skeleton key={i} className="h-40 rounded-2xl bg-surface-control" />
       ))}
     </div>
   )

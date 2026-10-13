@@ -453,22 +453,25 @@ export function BigBoardDashboard() {
     </div>
   )
 
+  // Tier headers (v7): the tier's own colour as a small label, a grey
+  // count note, then a hairline running out to the edge — no heavy bands.
   const board = tiers ? (
     <div className="flex flex-col gap-5">
       {tierBands(cardData.length).map((band, i) => (
         <div key={band.tier}>
-          <div className="mb-2.5 flex items-center gap-2.5">
+          <div className="mb-2.5 flex items-center gap-2">
             <span
               className={cn(
-                'fs-num inline-flex items-center rounded-sm border border-ink px-2.5 py-0.5 text-[12px] font-extrabold',
+                'fs-num inline-flex h-[19px] shrink-0 items-center rounded px-2 text-[10px] font-semibold leading-none',
                 TIER_RAMP[i],
               )}
             >
               Tier {band.tier}
             </span>
-            <span className="text-[11px] font-bold text-n-3">
+            <span className="shrink-0 text-[11px] font-medium text-n-6">
               {band.end - band.start} players
             </span>
+            <span aria-hidden className="h-px flex-1 bg-n-4" />
           </div>
           {renderCards(cardData.slice(band.start, band.end))}
         </div>
@@ -481,11 +484,11 @@ export function BigBoardDashboard() {
   return (
     <section>
       {/* controls */}
-      <div className="mb-2 flex flex-wrap items-end gap-3">
+      <div className="mb-3 flex flex-wrap items-end gap-2.5">
         <label className="flex w-[200px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Board</span>
+          <span className="fs-overline text-n-6">Board</span>
           <Select value={source} onValueChange={(v) => pickSource(v as SourceId)}>
-            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -505,9 +508,9 @@ export function BigBoardDashboard() {
         </label>
 
         <label className="flex w-[170px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Position</span>
+          <span className="fs-overline text-n-6">Position</span>
           <Select value={pos} onValueChange={(v) => setPos(v as PositionFilter)}>
-            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -521,18 +524,18 @@ export function BigBoardDashboard() {
         </label>
 
         {pos !== 'ALL' && (
-          <label className="flex h-btn-md cursor-pointer items-center gap-2">
+          <label className="flex h-input cursor-pointer items-center gap-2">
             <Switch checked={hideOthers} onCheckedChange={setHideOthers} />
-            <span className="text-[12px] font-bold">
+            <span className="text-[11px] font-semibold text-n-2">
               {hideOthers ? 'Hide others' : 'Fade others'}
             </span>
           </label>
         )}
 
         <label className="flex w-[130px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Scoring</span>
+          <span className="fs-overline text-n-6">Scoring</span>
           <Select value={scoring} onValueChange={(v) => setScoring(v as Scoring)}>
-            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -546,12 +549,12 @@ export function BigBoardDashboard() {
         </label>
 
         <label className="flex w-[120px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Pro team</span>
+          <span className="fs-overline text-n-6">Pro team</span>
           <Select
             value={team || 'ALL'}
             onValueChange={(v) => setTeam(v === 'ALL' ? '' : v)}
           >
-            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -566,19 +569,18 @@ export function BigBoardDashboard() {
         </label>
 
         <label className="flex w-[170px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Search</span>
+          <span className="fs-overline text-n-6">Search</span>
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search players…"
-            className="h-btn-md px-3 text-[12px]"
           />
         </label>
 
         <label className="flex w-[110px] flex-col gap-1">
-          <span className="fs-overline text-n-3">Width</span>
+          <span className="fs-overline text-n-6">Width</span>
           <Select value={width} onValueChange={setWidth}>
-            <SelectTrigger className="h-btn-md px-3 text-[12px]">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -591,9 +593,9 @@ export function BigBoardDashboard() {
           </Select>
         </label>
 
-        <label className="flex h-btn-md cursor-pointer items-center gap-2">
+        <label className="flex h-input cursor-pointer items-center gap-2">
           <Switch checked={tiers} onCheckedChange={setTiers} />
-          <span className="text-[12px] font-bold">Tiers</span>
+          <span className="text-[11px] font-semibold text-n-2">Tiers</span>
         </label>
 
         <span className="ml-auto">
@@ -604,14 +606,14 @@ export function BigBoardDashboard() {
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-60 p-3.5">
-              <p className="mb-2.5 text-[11px] font-extrabold text-n-3">
+              <p className="fs-overline mb-2.5 text-n-6">
                 Show on every card · latest 4 show
               </p>
               <div className="flex flex-col gap-2.5">
                 {FIELDS.map((f) => (
                   <label
                     key={f.id}
-                    className="flex cursor-pointer items-center gap-2 text-[13px] font-bold"
+                    className="flex cursor-pointer items-center gap-2 text-[12px] font-medium text-ink"
                   >
                     <Checkbox
                       checked={fields.includes(f.id)}
@@ -628,7 +630,7 @@ export function BigBoardDashboard() {
 
       {/* status line */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <span className="text-[12px] font-bold text-n-3">
+        <span className="text-[11px] font-medium text-n-3">
           {sourceTitle} · rest of season · {cardData.length} players ·{' '}
           {source === 'mine'
             ? tiers
@@ -639,7 +641,7 @@ export function BigBoardDashboard() {
             : 'read-only view'}
         </span>
         {draftedCount > 0 && (
-          <label className="flex cursor-pointer items-center gap-1.5 text-[12px] font-bold">
+          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-n-2">
             <Checkbox
               checked={hideDrafted}
               onCheckedChange={(v) => setHideDrafted(v === true)}
@@ -653,20 +655,20 @@ export function BigBoardDashboard() {
       {activeQuery?.isPending ? (
         <div style={gridStyle}>
           {Array.from({ length: 12 }, (_, i) => (
-            <Skeleton key={i} className="h-[95px] w-full" />
+            <Skeleton key={i} className="h-24 w-full rounded-2xl bg-surface-control" />
           ))}
         </div>
       ) : activeQuery?.isError ? (
-        <div className="rounded-sm border border-ink bg-white px-6 py-10 text-center">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-10 text-center">
           <h3 className="text-h6">Could not load this board</h3>
-          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-negative-strong">
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-negative-strong">
             {(activeQuery.error as Error)?.message ?? 'Something went wrong.'}
           </p>
         </div>
       ) : cardData.length === 0 ? (
-        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
           <h3 className="text-h6">No players to show</h3>
-          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
             {pos !== 'ALL' && hideOthers
               ? `No ${pos} players on this board — try another position or switch back to fade.`
               : 'This board is empty right now.'}

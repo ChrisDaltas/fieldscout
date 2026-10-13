@@ -90,7 +90,7 @@ export function StandingsTable({
       <ol className="flex flex-wrap items-center gap-1.5" aria-label="Tiebreaker order" data-chain>
         {chain.map((entry, i) => (
           <li key={entry.entry} className="flex items-center gap-1.5" data-chain-entry={entry.entry}>
-            {i > 0 && <span className="text-[10px] font-bold text-n-3">→</span>}
+            {i > 0 && <span className="text-[10px] font-semibold text-n-7">→</span>}
             <Badge
               variant={entry.status === 'applied' ? 'stroke' : 'stroke-pink'}
               className={cn(entry.status !== 'applied' && 'line-through')}
@@ -103,12 +103,12 @@ export function StandingsTable({
       </ol>
 
       {emptyCopy && (
-        <p role="status" className="rounded-sm border border-ink bg-white px-3 py-2 text-[12px] font-semibold text-n-3">
+        <p role="status" className="rounded-xl bg-surface-sunken px-3.5 py-2.5 text-[11px] font-medium text-n-3">
           {emptyCopy}
         </p>
       )}
 
-      <Table>
+      <Table className="text-[11px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-8 text-right">#</TableHead>
@@ -136,22 +136,27 @@ export function StandingsTable({
                 data-separated-by={row.separated_by ?? ''}
                 className={cn(row.team_id === highlightTeamId && 'bg-accent-soft hover:bg-accent-soft')}
               >
-                <TableCell className="fs-num text-right font-bold">{row.rank}</TableCell>
+                <TableCell className="fs-num text-right text-[10px] font-semibold text-n-6">{row.rank}</TableCell>
                 <TableCell>
                   <span className="flex items-center gap-2">
-                    <Crest name={row.name} src={null} />
+                    <Crest name={row.name} src={null} className="h-[17px] w-[17px] rounded-[5px]" />
                     {/* The one list of every franchise with its id in hand —
                         so it is the commissioner's index into the team pages
                         (§16.1). `doc.league_id` is 117's own; no new prop.
                         The link carries its OWN hover underline because the
                         viewer's row deliberately suppresses the table's row
                         wash (`hover:bg-accent-soft` above). */}
-                    <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className="font-bold text-ink" />
+                    <TeamNameLink
+                      name={row.name}
+                      leagueId={doc.league_id}
+                      teamId={row.team_id}
+                      className={cn('text-ink', row.team_id === highlightTeamId ? 'font-bold' : 'font-semibold')}
+                    />
                     {/* §10.3 / F233(d): the ✸ lands on the log — every action naming this team. */}
                     {overriddenWeeks && (
                       <Link
                         href={commishTeamHref(doc.league_id, row.team_id)}
-                        className="shrink-0 rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                        className="shrink-0 rounded-pill focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                         data-overridden-link
                       >
                         <Badge variant="stroke-purple" className="hover:bg-accent-soft" title={overriddenTitle(overriddenWeeks)} data-overridden={overriddenWeeks.join(',')}>
@@ -163,11 +168,11 @@ export function StandingsTable({
                   </span>
                 </TableCell>
                 {managers && (
-                  <TableCell className="text-[12px]" data-manager={manager ?? ''}>
-                    {manager ? <UsernameLink username={manager} /> : <span className="text-n-3">—</span>}
+                  <TableCell className="text-[11px] text-n-3" data-manager={manager ?? ''}>
+                    {manager ? <UsernameLink username={manager} /> : <span className="text-n-6">—</span>}
                   </TableCell>
                 )}
-                <TableCell className="fs-num text-right">{formatRecord(row)}</TableCell>
+                <TableCell className="fs-num text-right font-semibold">{formatRecord(row)}</TableCell>
                 <TableCell className="fs-num text-right">{formatWinPct(row.win_pct)}</TableCell>
                 <TableCell className="fs-num text-right">{formatPoints(row.points_for)}</TableCell>
                 <TableCell className="fs-num text-right">{formatPoints(row.points_against)}</TableCell>
@@ -180,11 +185,9 @@ export function StandingsTable({
                 )}
                 <TableCell>
                   {separator ? (
-                    <Badge variant="stroke" className="text-[10px]">
-                      {separator}
-                    </Badge>
+                    <Badge variant="stroke">{separator}</Badge>
                   ) : (
-                    <span className="text-[11px] text-n-3">—</span>
+                    <span className="text-n-6">—</span>
                   )}
                 </TableCell>
               </TableRow>
@@ -199,18 +202,18 @@ export function StandingsTable({
         </p>
       )}
       {anyOverridden && (
-        <p className="text-[11px] font-medium text-n-3" data-overridden-legend>
+        <p className="text-[10px] font-medium text-n-6" data-overridden-legend>
           {STANDINGS_OVERRIDDEN_LEGEND}
         </p>
       )}
       {notes.length > 0 && (
-        <ul className="flex flex-col gap-1 text-[11px] font-medium text-n-3" data-skip-notes>
+        <ul className="flex flex-col gap-1 text-[10px] font-medium text-n-6" data-skip-notes>
           {notes.map((note) => (
             <li key={note}>{note}</li>
           ))}
         </ul>
       )}
-      <p className="text-[11px] font-medium text-n-3">
+      <p className="text-[10px] font-medium text-n-6">
         Coin flips are seeded on the league’s schedule seed (<span className="fs-num">{doc.coin_flip_seed}</span>) — the same
         tie always breaks the same way.
       </p>

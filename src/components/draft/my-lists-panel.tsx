@@ -266,12 +266,12 @@ export function MyListsPanel({
       {(standalone ? myLists.isPending : lists.isPending || myLists.isPending) ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
+            <Skeleton key={i} className="h-10 w-full rounded-md" />
           ))}
         </div>
       ) : (standalone ? myLists.isError : lists.isError) ? (
         <div className="flex flex-col items-start gap-2 p-card-pad">
-          <p className="text-[12px] font-medium text-n-3" role="alert">
+          <p className="text-[11px] font-medium text-n-3" role="alert">
             Your lists didn&rsquo;t load.
           </p>
           <Button
@@ -283,8 +283,8 @@ export function MyListsPanel({
           </Button>
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col items-start gap-2 p-card-pad">
-          <p className="text-[12px] font-medium text-n-3">
+        <div className="flex flex-col items-center gap-2 px-card-pad py-8 text-center">
+          <p className="text-[11px] font-medium text-n-6">
             {standalone
               ? // Nothing to attach to and nothing to attach: what is empty
                 // is the caller's own lists (§4 rule 16 — say what is empty,
@@ -312,7 +312,7 @@ export function MyListsPanel({
             >
               <Icon name="arrow-prev" size={13} />
             </Button>
-            <span className="truncate text-[12px] font-bold">{cheatSheet.title}</span>
+            <span className="truncate text-[13px] font-bold tracking-[-0.01em]">{cheatSheet.title}</span>
           </div>
           <CheatSheetBody
             listId={cheatSheet.listId}
@@ -326,11 +326,11 @@ export function MyListsPanel({
           {primaryRow && bestPlayer && (
             // §8.9's optional helper: highest-ranked still-available from
             // the primary board; E17 keeps it honest as picks land.
-            <div className="flex items-center gap-2 rounded-sm border border-n-4 bg-page px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-xl bg-surface-sunken px-2.5 py-1.5">
               <Icon name="star" size={12} className="shrink-0 text-accent" />
               <span className="mr-auto min-w-0 truncate text-[11px] font-semibold">
                 Best on your board:{' '}
-                <PlayerLink playerId={bestPlayer.id} name={bestPlayer.full_name} className="font-extrabold" />{' '}
+                <PlayerLink playerId={bestPlayer.id} name={bestPlayer.full_name} className="font-bold" />{' '}
                 <span className="text-n-3">
                   {bestPlayer.position}
                   {bestPlayer.team ? ` · ${bestPlayer.team}` : ''}
@@ -363,13 +363,14 @@ export function MyListsPanel({
             </div>
           )}
 
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-0.5">
             {rows.map((row) => (
               <li
                 key={row.key}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-sm border px-2 py-1.5',
-                  overlay?.listId === row.listId ? 'border-ink bg-accent-soft' : 'border-n-4',
+                  'flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors',
+                  // The overlaid list is a resting selection — fill only.
+                  overlay?.listId === row.listId ? 'bg-accent-soft' : 'hover:bg-surface-sunken',
                 )}
               >
                 {/* L.E1.41: the owner's name opens his profile (new tab — the
@@ -386,14 +387,14 @@ export function MyListsPanel({
                   >
                     <span
                       className={cn(
-                        'block truncate text-[12px] font-bold',
+                        'block truncate text-[12px] font-semibold',
                         row.dangling && 'text-n-3',
                       )}
                     >
                       {row.title}
                     </span>
                   </button>
-                  <span className="block truncate text-[10px] font-medium text-n-3" data-list-row-sub>
+                  <span className="block truncate text-[10px] font-medium text-n-6" data-list-row-sub>
                     {row.dangling ? (
                       'Deleted by its owner — detach to clear it'
                     ) : row.playerCount == null && !row.ownerLabel ? (
@@ -580,20 +581,20 @@ function CheatSheetBody({
     return (
       <div className="flex flex-col gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
+          <Skeleton key={i} className="h-10 w-full rounded-md" />
         ))}
       </div>
     )
   }
   if (rows.isError) {
     return (
-      <p className="text-[12px] font-medium text-n-3" role="alert">
+      <p className="text-[11px] font-medium text-n-3" role="alert">
         This list didn&rsquo;t load.
       </p>
     )
   }
   if ((rows.data ?? []).length === 0) {
-    return <p className="text-[12px] font-medium text-n-3">This list has no players.</p>
+    return <p className="py-8 text-center text-[11px] font-medium text-n-6">This list has no players.</p>
   }
   return (
     <ul className="flex flex-col gap-0.5">
@@ -604,9 +605,9 @@ function CheatSheetBody({
           return (
             <li key={`${row.player_id}-${index}`}>
               {identityPending ? (
-                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full rounded-md" />
               ) : (
-                <div className="flex h-10 items-center rounded-sm border border-n-4 px-2 text-[11px] font-medium text-n-3">
+                <div className="flex h-10 items-center rounded-lg bg-surface-sunken px-2.5 text-[11px] font-medium text-n-3">
                   Unknown player ({row.player_id})
                 </div>
               )}
@@ -655,7 +656,7 @@ function CheatSheetBody({
                 costs vertical space and says nothing (§16.5.4's designed-
                 empty rule is about designed copy, not blank containers). */}
             {notes && (
-              <p className="mt-0.5 border-l-2 border-accent pl-2 text-[11px] font-semibold text-n-3">
+              <p className="mx-1.5 mb-1 mt-0.5 rounded-md bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-deep">
                 {notes}
               </p>
             )}

@@ -285,7 +285,7 @@ function BuilderHeader({
               <Icon name="dots" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-72 p-3">
+          <PopoverContent align="end" className="w-72 p-[15px]">
             <div className="space-y-4">
               <Field label="Position group">
                 <Select
@@ -296,7 +296,7 @@ function BuilderHeader({
                 >
                   <SelectTrigger
                     aria-label="Position group"
-                    className="h-btn-md px-2.5 text-[12px] font-bold"
+                    className="h-btn-md text-[11px]"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -322,7 +322,7 @@ function BuilderHeader({
                 >
                   <SelectTrigger
                     aria-label="Scoring system"
-                    className="h-btn-md px-2.5 text-[12px] font-bold"
+                    className="h-btn-md text-[11px]"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -334,7 +334,7 @@ function BuilderHeader({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="mt-1 text-[11px] font-medium text-n-3">
+                <p className="mt-1 text-[10px] font-medium text-n-6">
                   Affects projected and season fantasy points in the player
                   list.
                 </p>
@@ -358,7 +358,7 @@ function BuilderHeader({
           </PopoverContent>
         </Popover>
 
-        <Button variant="blue" size="md" shadow onClick={onSave} disabled={saving}>
+        <Button variant="blue" size="md" onClick={onSave} disabled={saving}>
           {saving ? (
             <>
               <Icon name="save" className="animate-pulse" /> Saving…
@@ -384,13 +384,13 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-[12px] font-bold text-ink">{label}</label>
+      <label className="block text-[10px] font-semibold text-n-6">{label}</label>
       {children}
     </div>
   )
 }
 
-/** Switch row for the list-options popover — lime-on switch per the control
+/** Switch row for the list-options popover — the shared v7 switch per the control
  *  recipes (these are on/off settings, not selections). */
 function ToggleRow({
   label,
@@ -404,11 +404,11 @@ function ToggleRow({
   onChange: (next: boolean) => void
 }) {
   return (
-    <label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-sm px-1 py-1 transition-colors hover:bg-n-4/60">
+    <label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-surface-sunken">
       <span className="min-w-0">
-        <span className="block text-[12px] font-medium text-ink">{label}</span>
+        <span className="block text-[11px] font-semibold text-ink">{label}</span>
         {description && (
-          <span className="block text-[10px] font-medium text-n-3">
+          <span className="block text-[10px] font-medium text-n-6">
             {description}
           </span>
         )}

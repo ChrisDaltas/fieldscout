@@ -27,9 +27,15 @@ export default async function PersonasIndexPage() {
   return (
     <GuestShell>
       <div className="mx-auto max-w-4xl space-y-[19px]">
-        <header>
-          <h1 className="text-h3">The AI experts</h1>
-          <p className="mt-2 max-w-2xl text-[13px] font-medium text-n-3">
+        <header className="flex flex-col gap-[3px]">
+          <span className="flex items-center gap-[7px] text-[10px] font-semibold text-n-3">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
+            Scout AI
+          </span>
+          <h1 className="text-[24px] font-bold tracking-[-0.03em] text-ink">
+            The AI experts
+          </h1>
+          <p className="mt-1 max-w-2xl text-[11px] font-medium leading-[1.5] text-n-3">
             Fictional, AI-generated analyst personas — each with its own
             ranking style and always-fresh boards. Parody, not affiliated with
             or endorsed by any real person.
@@ -37,9 +43,11 @@ export default async function PersonasIndexPage() {
         </header>
 
         {!personas || personas.length === 0 ? (
-          <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-            <h2 className="text-h5">The experts are warming up</h2>
-            <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+          <div className="rounded-2xl bg-surface-sunken px-6 py-14 text-center">
+            <h2 className="text-[15px] font-bold tracking-[-0.02em] text-ink">
+              The experts are warming up
+            </h2>
+            <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
               New AI analyst boards land here soon — check back shortly.
             </p>
           </div>

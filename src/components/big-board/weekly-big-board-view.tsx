@@ -38,9 +38,9 @@ export function WeeklyBigBoardView({
 
   if (status === 'invalid') {
     return (
-      <div className="rounded-sm border border-ink bg-white px-6 py-10 text-center">
+      <div className="rounded-2xl border border-n-4 bg-white px-6 py-10 text-center">
         <h3 className="text-h6">That week doesn&apos;t exist</h3>
-        <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-negative-strong">
+        <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-negative-strong">
           Week must be between 1 and 18.
         </p>
       </div>
@@ -55,10 +55,10 @@ export function WeeklyBigBoardView({
           active={weekNumber}
           currentWeek={currentWeek}
         />
-        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-          <Icon name="clock" size={20} className="mx-auto text-n-3" />
-          <h3 className="mt-3 text-h6">Week {weekNumber} is locked</h3>
-          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+          <Icon name="clock" size={20} className="mx-auto text-n-6" />
+          <h3 className="mt-2.5 text-h6">Week {weekNumber} is locked</h3>
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
             You can only edit the current week&apos;s big board. This unlocks
             once the prior week&apos;s board locks at first kickoff.
           </p>

@@ -114,11 +114,11 @@ export function PlayerSearch({
   const skeletons = useMemo(
     () =>
       Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-2 py-2">
-          <Skeleton className="h-8 w-8" />
-          <div className="flex-1 space-y-2">
-            <Skeleton className="h-3 w-32" />
-            <Skeleton className="h-3 w-20" />
+        <div key={i} className="flex items-center gap-2.5 px-2 py-2">
+          <Skeleton className="h-7 w-7 rounded-full bg-surface-control" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-3 w-32 rounded-md bg-surface-control" />
+            <Skeleton className="h-2.5 w-20 rounded-md bg-surface-control" />
           </div>
         </div>
       )),
@@ -126,7 +126,7 @@ export function PlayerSearch({
   )
 
   return (
-    <Command shouldFilter={false} className="rounded-sm border border-ink">
+    <Command shouldFilter={false} className="rounded-xl border border-n-4">
       <CommandInput
         value={query}
         onValueChange={setQuery}
@@ -142,11 +142,11 @@ export function PlayerSearch({
                 key={player.id}
                 value={`${player.full_name} ${player.team ?? ''} ${player.position}`}
                 onSelect={() => onSelect?.(player)}
-                className="flex items-center gap-3 py-2"
+                className="flex items-center gap-2.5 py-1.5"
               >
-                <Avatar className="h-8 w-8">
+                <Avatar className="h-7 w-7">
                   <PlayerAvatarImage player={player} alt={player.full_name} />
-                  <AvatarFallback className="text-[9px]">
+                  <AvatarFallback className="text-[9px] font-semibold">
                     {player.full_name
                       .split(' ')
                       .map((n) => n[0])
@@ -156,7 +156,7 @@ export function PlayerSearch({
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-extrabold">
+                    <span className="truncate text-[12px] font-semibold">
                       {player.full_name}
                     </span>
                     {isInjuryStatus(player.status) && (
@@ -168,10 +168,10 @@ export function PlayerSearch({
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5">
+                  <div className="mt-[3px] flex items-center gap-1.5">
                     <PositionBadge position={player.position} size="sm" />
                     {player.team && (
-                      <span className="text-[10px] font-semibold text-n-3">
+                      <span className="text-[10px] font-medium text-n-6">
                         {player.team}
                       </span>
                     )}

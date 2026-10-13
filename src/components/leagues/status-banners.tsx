@@ -9,16 +9,18 @@ import { cn } from '@/lib/utils'
  * room needs; later tasks EXTEND this file per the catalog (live-stats
  * delayed, charting, maintenance, acting-as) rather than forking treatments.
  *
- * Banners sit in normal page flow: 1px ink border, flat — no resting
- * elevation (CLAUDE.md elevation rule, 2026-08-11).
+ * Banners sit in normal page flow as v7 tinted strips — a soft fill, 12px
+ * corners, no ink border, flat — no resting elevation (CLAUDE.md elevation
+ * rule, 2026-08-11). The neutral tone keeps the 1px hairline because a white
+ * strip on a white page needs an edge.
  */
 
 type BannerTone = 'caution' | 'accent' | 'neutral'
 
 const TONE_CLASSES: Record<BannerTone, string> = {
-  caution: 'border-ink bg-caution-soft',
-  accent: 'border-accent bg-accent-soft',
-  neutral: 'border-ink bg-white',
+  caution: 'border-transparent bg-caution-soft',
+  accent: 'border-transparent bg-accent-soft',
+  neutral: 'border-n-4 bg-white',
 }
 
 interface StatusBannerProps {
@@ -45,7 +47,7 @@ export function StatusBanner({
     <div
       role="status"
       className={cn(
-        'flex items-center gap-2.5 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
+        'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-[11px] font-semibold text-ink',
         TONE_CLASSES[tone],
         className,
       )}

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 
-import { AccountMenu } from '@/components/layout/account-menu'
 import { MessagesPanel, dmUnreadCount } from '@/components/layout/rail/messages-panel'
 import { NotificationsPanel } from '@/components/layout/rail/notifications-panel'
 import { PlayersPanel } from '@/components/layout/rail/players-panel'
@@ -80,29 +79,17 @@ export function ResearchRail() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      {/* Icon strip — ink, full height, above the panel. Pinned over the
-          scrolling page (an overlay per CLAUDE.md's elevation rule), so its
-          resting border stays. */}
+      {/* Icon strip — v7: white, hairline left edge, under the top bar.
+          Pinned beside the scrolling page, never over it. */}
       <div
         onWheel={onWheel}
-        className="fixed inset-y-0 right-0 z-40 hidden w-rail-strip flex-col items-center border-l border-ink bg-ink lg:flex"
+        className="fixed bottom-0 right-0 top-header z-30 hidden w-rail-strip flex-col items-center border-l border-n-4 bg-white lg:flex"
         role="toolbar"
         aria-label="Research rail"
         aria-orientation="vertical"
       >
-        {/* Account zone — the logo band's height. Prototype: it turns white
-            while a panel is open (the panel's head continues across it). */}
-        <div
-          className={cn(
-            'flex h-chrome-band w-full shrink-0 items-center justify-center border-b transition-colors duration-200 ease-linear',
-            activeTool ? 'border-ink bg-white' : 'border-on-ink-rule',
-          )}
-          data-rail-account={activeTool ? 'open' : 'closed'}
-        >
-          <AccountMenu variant="topbar" />
-        </div>
-
-        <div className="flex flex-col items-center gap-1.5 pt-2.5">
+        {/* The account control moved to the v7 top bar. */}
+        <div className="flex flex-col items-center gap-0.5 pt-[7px]">
           {TOOLS.map((tool) => {
             const isActive = activeTool === tool.id
             const count = unseen[tool.id] ?? 0
@@ -116,15 +103,13 @@ export function ResearchRail() {
                     data-rail-tool={tool.id}
                     onClick={() => toggleTool(tool.id)}
                     className={cn(
-                      'relative flex h-nav-tile w-nav-tile items-center justify-center rounded-sm transition-colors duration-200 ease-linear',
-                      isActive
-                        ? 'bg-white text-ink'
-                        : 'text-on-ink hover:bg-on-ink-wash hover:text-white',
+                      'relative flex size-btn-md items-center justify-center rounded-pill text-ink transition-colors duration-200 ease-linear',
+                      isActive ? 'bg-surface-selected' : 'hover:bg-surface-hover',
                     )}
                   >
-                    <Icon name={tool.icon} size={16} />
+                    <Icon name={tool.icon} size={15} />
                     {count > 0 && (
-                      <span data-rail-badge={tool.id} className="fs-num absolute -right-1 -top-1 inline-flex h-count-chip min-w-count-chip items-center justify-center rounded-pill bg-brand px-1 text-[9px] font-bold leading-none text-ink">
+                      <span data-rail-badge={tool.id} className="fs-num absolute -right-1 -top-1 inline-flex h-count-chip min-w-count-chip items-center justify-center rounded-pill bg-accent px-1 text-[9px] font-bold leading-none text-white">
                         {count > 9 ? '9+' : count}
                       </span>
                     )}
@@ -142,7 +127,7 @@ export function ResearchRail() {
       {activeTool && (
         <aside
           onWheel={onWheel}
-          className="fixed inset-y-0 right-rail-strip z-30 hidden w-rail-panel flex-col border-l border-ink bg-white duration-200 ease-linear animate-in fade-in-0 slide-in-from-right-4 lg:flex"
+          className="fixed bottom-0 right-rail-strip top-header z-30 hidden w-rail-panel flex-col border-l border-n-4 bg-white duration-200 ease-linear animate-in fade-in-0 slide-in-from-right-4 lg:flex"
           aria-label={`${TOOLS.find((t) => t.id === activeTool)?.label} panel`}
         >
           {activeTool === 'notifications' && <NotificationsPanel onClose={closeRail} />}

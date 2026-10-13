@@ -132,18 +132,20 @@ export function LeagueIndexCard({ league }: { league: MyLeagueRow }) {
   const roleLabel = ROLE_LABEL[league.my_role] ?? league.my_role
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-hard-4">
+    // v7 "Leagues this week" card: hairline, 14px corners, 15px pad, a
+    // rounded-square league tile; the lift is the hover affordance only.
+    <Card className="flex flex-col gap-[14px] p-[15px] transition-shadow hover:shadow-hard-6">
       {/* Head row */}
-      <div className="flex items-center gap-2.5 border-b border-ink px-[13px] py-2.5">
-        <Crest name={league.name} className="h-8 w-8" fallbackClassName="text-[10px]" />
-        <div className="mr-auto flex min-w-0 flex-col">
+      <div className="flex min-w-0 items-center gap-[9px]">
+        <Crest name={league.name} className="h-[27px] w-[27px]" />
+        <div className="mr-auto flex min-w-0 flex-col gap-px">
           <Link
             href={`/app/leagues/${league.id}`}
-            className="truncate text-[12px] font-extrabold leading-tight hover:underline hover:decoration-2 hover:underline-offset-2"
+            className="truncate text-[13px] font-semibold leading-tight tracking-[-0.01em] text-ink hover:underline hover:underline-offset-2"
           >
             {league.name}
           </Link>
-          <span className="truncate text-[10px] font-semibold leading-tight text-n-3">
+          <span className="truncate text-[10px] font-medium leading-tight text-n-6">
             <span className="fs-num">{league.season}</span> season ·{' '}
             <span className="fs-num">{league.team_count}</span>-team · {roleLabel}
           </span>
@@ -152,7 +154,7 @@ export function LeagueIndexCard({ league }: { league: MyLeagueRow }) {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center gap-2.5 px-[13px] py-2.5">
+      <div className="flex items-center gap-2.5">
         <span className="mr-auto text-[10px] font-medium text-n-3">
           {league.status === 'setup'
             ? 'Finish setting up your league'
@@ -181,9 +183,9 @@ export function LeaguesIndex() {
       <PageHeader
         title="Leagues"
         actions={
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <JoinLeagueDialog />
-            <Button variant="blue" size="sm" shadow onClick={() => setCreateOpen(true)}>
+            <Button variant="blue" size="sm" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" size={13} />
               Create league
             </Button>
@@ -192,15 +194,15 @@ export function LeaguesIndex() {
       />
 
       {isPending ? (
-        <div className="grid grid-cols-1 gap-[19px] lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[104px] rounded-sm" />
+            <Skeleton key={i} className="h-[104px] rounded-2xl" />
           ))}
         </div>
       ) : isError ? (
-        <Card className="border-negative bg-negative-soft">
-          <div className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold" role="alert">
+        <Card className="border-transparent bg-negative-soft">
+          <div className="flex flex-col items-start gap-2 px-[17px] py-[15px]">
+            <p className="text-[13px] font-bold text-ink" role="alert">
               Couldn&apos;t load your leagues.
             </p>
             <Button variant="stroke" size="sm" onClick={() => refetch()}>
@@ -209,22 +211,22 @@ export function LeaguesIndex() {
           </div>
         </Card>
       ) : leagues && leagues.length > 0 ? (
-        <div className="grid grid-cols-1 gap-[19px] lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {leagues.map((league) => (
             <LeagueIndexCard key={league.id} league={league} />
           ))}
         </div>
       ) : (
         <Card className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-          <Icon name="cup" size={18} className="text-n-3" />
-          <p className="text-h5 text-ink">No leagues yet</p>
-          <p className="max-w-md text-[13px] font-medium text-n-3">
+          <Icon name="cup" size={18} className="text-n-6" />
+          <p className="text-h6 text-ink">No leagues yet</p>
+          <p className="max-w-md text-[11px] font-medium text-n-6">
             Create your own league and invite your friends, or join one with an invite
             code. Both are free.
           </p>
-          <div className="mt-1 flex items-center gap-2.5">
+          <div className="mt-1 flex items-center gap-2">
             <JoinLeagueDialog />
-            <Button variant="blue" size="sm" shadow onClick={() => setCreateOpen(true)}>
+            <Button variant="blue" size="sm" onClick={() => setCreateOpen(true)}>
               <Icon name="plus" size={13} />
               Create league
             </Button>

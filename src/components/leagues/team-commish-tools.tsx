@@ -169,33 +169,33 @@ export function TeamCommishToolsView({
 
   return (
     <section
-      className="flex flex-col gap-3 rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3"
+      className="flex flex-col gap-3 rounded-2xl border-2 border-brand-strong bg-brand-soft p-2 sm:p-3"
       aria-label={TEAM_TOOLS_TITLE}
       data-team-commish-tools
     >
-      <div className="flex flex-col gap-3 rounded-sm border border-ink bg-white px-3 py-3">
-        <h3 className="text-[12px] font-bold text-ink">{TEAM_TOOLS_TITLE}</h3>
+      <div className="flex flex-col gap-3 rounded-xl bg-white px-[15px] py-3.5">
+        <h3 className="text-[15px] font-bold tracking-[-0.02em] text-ink">{TEAM_TOOLS_TITLE}</h3>
         <p className="text-[11px] font-medium text-n-3">{TEAM_TOOLS_INTRO}</p>
 
         {/* The verb's refusal, VERBATIM — that text is the UX. */}
         {refusal && (
-          <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-tools-refusal>
+          <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-tools-refusal>
             {refusal}
           </p>
         )}
         {!refusal && said && <OutcomeNote said={said} extra={bypassed} extraMarker="data-tools-bypassed" marker="data-tools-outcome" />}
         {pending && (
-          <p role="status" className="text-[11px] font-semibold text-n-3" data-tools-pending>
+          <p role="status" className="text-[11px] font-semibold text-n-6" data-tools-pending>
             Saving…
           </p>
         )}
 
         {roster.length === 0 ? (
-          <p className="text-[12px] font-medium text-n-3" data-empty="commish-roster">
+          <p className="text-[11px] font-medium text-n-6" data-empty="commish-roster">
             {TEAM_TOOLS_EMPTY_ROSTER_COPY}
           </p>
         ) : (
-          <ul className="flex flex-col divide-y divide-n-4" data-tools-roster>
+          <ul className="flex flex-col border-t border-n-4 [&>li]:border-b [&>li]:border-n-4" data-tools-roster>
             {roster.map((player) => (
               <RosterToolRow key={player.player_id} leagueId={leagueId} player={player} otherTeams={otherTeams} pending={pending} onMove={onMove} onDrop={onDrop} />
             ))}
@@ -203,7 +203,7 @@ export function TeamCommishToolsView({
         )}
 
         <div className="flex flex-col gap-2 border-t border-n-4 pt-3" data-tools-add>
-          <label htmlFor={`${id}-add`} className="text-[11px] font-bold text-ink">
+          <label htmlFor={`${id}-add`} className="text-[10px] font-semibold text-n-6">
             {`Add a player to ${teamName}`}
           </label>
           <Input
@@ -213,36 +213,36 @@ export function TeamCommishToolsView({
             placeholder="Search players by name"
             autoComplete="off"
             disabled={pending}
-            className="h-btn-md px-2 text-[12px]"
+            className="max-w-[272px]"
             data-add-search
           />
-          {candidates.state === 'idle' && <p className="text-[11px] font-medium text-n-3">{ADD_SEARCH_HINT}</p>}
+          {candidates.state === 'idle' && <p className="text-[11px] font-medium text-n-6">{ADD_SEARCH_HINT}</p>}
           {candidates.state === 'loading' && (
             <div className="flex flex-col gap-1.5" data-skeleton="add-candidates">
-              <Skeleton className="h-6 rounded-sm" />
-              <Skeleton className="h-6 rounded-sm" />
+              <Skeleton className="h-6 rounded-md bg-surface-control" />
+              <Skeleton className="h-6 rounded-md bg-surface-control" />
             </div>
           )}
           {candidates.state === 'error' && (
-            <div role="alert" className="flex flex-wrap items-center gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" data-add-problem>
-              <p className="text-[12px] font-bold text-ink">Couldn’t search players — this is a failed read, not an empty result.</p>
+            <div role="alert" className="flex flex-wrap items-center gap-2 rounded-xl bg-negative-soft px-3 py-2" data-add-problem>
+              <p className="text-[11px] font-bold text-ink">Couldn’t search players — this is a failed read, not an empty result.</p>
               <Button variant="stroke" size="sm" onClick={candidates.retry}>
                 Retry
               </Button>
             </div>
           )}
           {candidates.state === 'ready' && candidates.players.length === 0 && (
-            <p className="text-[12px] font-medium text-n-3" data-empty="add-candidates">
+            <p className="text-[11px] font-medium text-n-6" data-empty="add-candidates">
               {ADD_NO_MATCH_COPY}
             </p>
           )}
           {candidates.state === 'ready' && candidates.players.length > 0 && (
-            <ul className="flex flex-col divide-y divide-n-4" data-add-candidates>
+            <ul className="flex flex-col border-t border-n-4 [&>li]:border-b [&>li]:border-n-4" data-add-candidates>
               {candidates.players.map((candidate) => (
-                <li key={candidate.id} className="flex items-center justify-between gap-2 py-1.5">
-                  <span className="min-w-0 truncate text-[12px] font-semibold text-ink">
+                <li key={candidate.id} className="flex items-center justify-between gap-2 px-1 py-1.5 transition-colors hover:bg-surface-sunken">
+                  <span className="min-w-0 truncate text-[11px] font-semibold text-ink">
                     <PlayerLink playerId={candidate.id} name={candidate.full_name} context={leagueCardContext(leagueId)} />{' '}
-                    <span className="font-medium text-n-3">{[candidate.position, candidate.team].filter(Boolean).join(' · ')}</span>
+                    <span className="text-[10px] font-medium text-n-6">{[candidate.position, candidate.team].filter(Boolean).join(' · ')}</span>
                   </span>
                   <Button variant="stroke" size="sm" disabled={pending} onClick={() => onAdd(candidate)} data-add-player={candidate.id}>
                     Add
@@ -274,15 +274,15 @@ function RosterToolRow({
 }) {
   const [target, setTarget] = useState('')
   return (
-    <li className="flex flex-wrap items-center gap-2 py-1.5" data-tools-player={player.player_id}>
-      <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">
+    <li className="flex flex-wrap items-center gap-2 px-1 py-1.5 transition-colors hover:bg-surface-sunken" data-tools-player={player.player_id}>
+      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ink">
         <PlayerLink playerId={player.player_id} name={player.full_name} context={leagueCardContext(leagueId)} />{' '}
-        <span className="font-medium text-n-3">{[player.position, player.nfl_team].filter(Boolean).join(' · ')}</span>
+        <span className="text-[10px] font-medium text-n-6">{[player.position, player.nfl_team].filter(Boolean).join(' · ')}</span>
       </span>
       {otherTeams.length > 0 && (
         <>
           <Select value={target} onValueChange={setTarget} disabled={pending}>
-            <SelectTrigger className="h-btn-md w-40 px-2 text-[12px]" aria-label={`Move ${player.full_name} to`} data-move-target>
+            <SelectTrigger className="w-40" aria-label={`Move ${player.full_name} to`} data-move-target>
               <SelectValue placeholder="Move to…" />
             </SelectTrigger>
             <SelectContent>
@@ -327,16 +327,16 @@ function OutcomeNote({
     <div
       role="status"
       className={cn(
-        'flex flex-col gap-1 rounded-sm border px-3 py-2 text-[12px] font-semibold text-ink',
-        said.tone === 'positive' && 'border-positive bg-positive-soft',
-        said.tone === 'caution' && 'border-ink bg-caution-soft',
-        said.tone === 'neutral' && 'border-ink bg-n-4',
+        'flex flex-col gap-1 rounded-xl px-3 py-2 text-[11px] font-semibold text-ink',
+        said.tone === 'positive' && 'bg-positive-soft',
+        said.tone === 'caution' && 'bg-caution-soft',
+        said.tone === 'neutral' && 'bg-surface-sunken',
       )}
       {...{ [marker]: said.branch }}
     >
       <span>{said.text}</span>
       {extra && (
-        <span className="text-[11px] font-medium" {...{ [extraMarker]: '' }}>
+        <span className="text-[11px] font-medium text-n-3" {...{ [extraMarker]: '' }}>
           {extra}
         </span>
       )}
@@ -378,7 +378,7 @@ export function TeamRename({
 
   if (arm === null) {
     return showOverrideHint ? (
-      <span className="text-[11px] font-medium text-n-3" data-rename-hint>
+      <span className="text-[11px] font-medium text-n-6" data-rename-hint>
         {RENAME_VIA_OVERRIDE_HINT}
       </span>
     ) : null
@@ -450,7 +450,7 @@ export function TeamRenameView({
       }}
       data-rename-form={arm}
     >
-      <label htmlFor={`${id}-name`} className="text-[11px] font-bold text-ink">
+      <label htmlFor={`${id}-name`} className="text-[10px] font-semibold text-n-6">
         {arm === 'commissioner' ? 'Team name (commissioner rename — recorded and posted to the league)' : 'Team name'}
       </label>
       <div className="flex flex-wrap items-center gap-2">
@@ -462,7 +462,7 @@ export function TeamRenameView({
           disabled={pending}
           aria-describedby={gate.ok ? undefined : gateId}
           onChange={(event) => onDraft(event.target.value)}
-          className="h-btn-md min-w-0 flex-1 px-2 text-[12px]"
+          className="min-w-0 flex-1"
           data-rename-input
         />
         <Button type="submit" variant="blue" size="sm" disabled={!gate.ok || pending} data-rename-save>
@@ -474,12 +474,12 @@ export function TeamRenameView({
       </div>
       {/* WHY Save is disabled, said (rule (h)) — never a dead button. */}
       {!gate.ok && (
-        <span id={gateId} className="text-[11px] font-semibold text-n-3" data-rename-gate>
+        <span id={gateId} className="text-[11px] font-medium text-n-6" data-rename-gate>
           {gate.why}
         </span>
       )}
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-rename-refusal>
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-rename-refusal>
           {refusal}
         </p>
       )}
@@ -532,18 +532,18 @@ export function TeamAutopilotSwitchView({
     <div className="flex w-full flex-col gap-1.5" data-autopilot-switch={on ? 'on' : 'off'}>
       <div className="flex items-center gap-2">
         <Switch id={id} checked={on} disabled={pending} onCheckedChange={onChange} data-autopilot-toggle />
-        <Label htmlFor={id} className="text-[12px] font-bold text-ink">
+        <Label htmlFor={id} className="text-[11px] font-semibold text-ink">
           {AUTOPILOT_SWITCH_LABEL}
         </Label>
         {pending && (
-          <span role="status" className="text-[11px] font-semibold text-n-3" data-autopilot-pending>
+          <span role="status" className="text-[11px] font-semibold text-n-6" data-autopilot-pending>
             Saving…
           </span>
         )}
       </div>
       {/* The verb's refusal, VERBATIM — that text is the UX. */}
       {refusal && (
-        <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-autopilot-refusal>
+        <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-autopilot-refusal>
           {refusal}
         </p>
       )}
@@ -613,27 +613,27 @@ export function TeamFaabEditView({
   const [text, setText] = useState(balance === null ? '' : String(balance))
   const next = /^\d{1,9}$/.test(text.trim()) ? Number(text.trim()) : null
   return (
-    <section className="flex flex-col gap-2 rounded-sm border-2 border-brand-strong bg-brand-soft p-2 sm:p-3" aria-label="FAAB balance" data-team-faab-edit>
-      <div className="flex flex-col gap-2 rounded-sm border border-ink bg-white px-3 py-3">
-        <label htmlFor={`${id}-faab`} className="text-[12px] font-bold text-ink">
+    <section className="flex flex-col gap-2 rounded-2xl border-2 border-brand-strong bg-brand-soft p-2 sm:p-3" aria-label="FAAB balance" data-team-faab-edit>
+      <div className="flex flex-col gap-2 rounded-xl bg-white px-[15px] py-3.5">
+        <label htmlFor={`${id}-faab`} className="text-[15px] font-bold tracking-[-0.02em] text-ink">
           {`${teamName}’s FAAB balance`}
         </label>
         <p className="text-[11px] font-medium text-n-3">
           Now {balance === null ? 'not set' : `$${balance}`}. Set any whole-dollar amount — the manager is told, and the change shows in league activity.
         </p>
         {refusal && (
-          <p role="alert" className="rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-semibold text-ink" data-faab-refusal>
+          <p role="alert" className="rounded-xl bg-negative-soft px-3 py-2 text-[11px] font-semibold text-ink" data-faab-refusal>
             {refusal}
           </p>
         )}
         {!refusal && outcome && (
-          <p role="status" className="text-[12px] font-semibold text-ink" data-faab-outcome>
+          <p role="status" className="text-[11px] font-semibold text-ink" data-faab-outcome>
             {faabEditOutcome(outcome)}
           </p>
         )}
         <span className="flex items-center gap-2">
-          <span className="text-[13px] font-bold">$</span>
-          <Input id={`${id}-faab`} value={text} onChange={(e) => setText(e.target.value)} inputMode="numeric" className="h-btn-md w-24 px-2 text-[12px]" />
+          <span className="text-[13px] font-bold text-n-3">$</span>
+          <Input id={`${id}-faab`} value={text} onChange={(e) => setText(e.target.value)} inputMode="numeric" className="w-24" />
           <Button variant="blue" size="sm" disabled={pending || next === null} onClick={() => next !== null && onSave(next)} data-faab-save>
             {pending ? 'Saving…' : 'Set balance'}
           </Button>

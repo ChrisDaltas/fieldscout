@@ -163,7 +163,6 @@ export function AvailablePlayers({
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search players"
           aria-label="Search available players"
-          className="h-8 text-[12px]"
         />
         <Segment aria-label="Position filter" className="w-full">
           <SegmentItem
@@ -188,7 +187,7 @@ export function AvailablePlayers({
         {overlay && (
           // §8.9 overlay banner (L.B4.2): which list is on the pool, the
           // "only players on this list" toggle, and clear.
-          <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-n-4 bg-page px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-surface-sunken px-2.5 py-1.5">
             <Icon name="eye" size={12} className="shrink-0 text-n-3" />
             <span className="mr-auto min-w-0 truncate text-[11px] font-semibold">
               {overlay.title}
@@ -229,12 +228,12 @@ export function AvailablePlayers({
       }) ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
+            <Skeleton key={i} className="h-10 w-full rounded-md" />
           ))}
         </div>
       ) : (onlyMode ? overlayRows.isError : pool.isError) ? (
         <div className="flex flex-col items-start gap-2 p-card-pad">
-          <p className="text-[12px] font-medium text-n-3" role="alert">
+          <p className="text-[11px] font-medium text-n-3" role="alert">
             {onlyMode ? 'The overlaid list didn’t load.' : 'The player pool didn’t load.'}
           </p>
           <Button
@@ -246,7 +245,7 @@ export function AvailablePlayers({
           </Button>
         </div>
       ) : rows.length === 0 ? (
-        <p className="p-card-pad text-[12px] font-medium text-n-3">
+        <p className="px-card-pad py-8 text-center text-[11px] font-medium text-n-6">
           {search || position
             ? 'No available players match. Loosen the search or filter.'
             : onlyMode
@@ -303,6 +302,13 @@ export function AvailablePlayers({
                       }
                       title={queuedIds.has(player.id) ? 'In Targets' : 'Add to Targets'}
                       disabled={queuedIds.has(player.id)}
+                      // v7: a queued player's button turns accent-soft (state
+                      // by fill), so it reads "in" rather than greyed out.
+                      className={
+                        queuedIds.has(player.id)
+                          ? 'bg-accent-soft text-accent disabled:opacity-100'
+                          : undefined
+                      }
                       onClick={() => onQueue(player.id)}
                     >
                       <Icon name={queuedIds.has(player.id) ? 'check' : 'plus'} size={13} />

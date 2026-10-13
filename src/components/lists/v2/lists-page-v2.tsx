@@ -388,7 +388,7 @@ export function ListsPageV2() {
               <Icon name="folder" size={13} /> New folder
             </Button>
             {changeListsButton}
-            <Button variant="blue" size="sm" shadow onClick={() => openCreateList(true)}>
+            <Button variant="blue" size="sm" onClick={() => openCreateList(true)}>
               <Icon name="plus" size={13} /> New list
             </Button>
           </div>
@@ -501,8 +501,10 @@ export function ListsPageV2() {
             // `grid-cols-1` is load-bearing, not decoration: without it the
             // single implicit column is `auto`, so the table's own min-width
             // pushes the whole page into a horizontal scroll on a phone.
-            'grid grid-cols-1 items-start gap-3 lg:gap-0',
-            expanded ? 'lg:grid-cols-1' : 'lg:grid-cols-[160px_minmax(0,1fr)]',
+            'grid grid-cols-1 items-start gap-3 lg:gap-4',
+            // v7's context panel width — the old 160px was the ×0.8 scale,
+            // which v7 retires.
+            expanded ? 'lg:grid-cols-1' : 'lg:grid-cols-[200px_minmax(0,1fr)]',
           )}
         >
           {!expanded && (
@@ -573,6 +575,9 @@ export function ListsPageV2() {
   )
 }
 
+/** v7's gallery grid: 213px minimum tracks, 10px gutters. */
+const GALLERY_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,213px),1fr))] gap-2.5'
+
 function Gallery({
   lists,
   loading,
@@ -605,10 +610,17 @@ function Gallery({
 }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(214px,1fr))] gap-3">
+      <div className={GALLERY_GRID}>
         {[0, 1, 2, 3, 4, 5].map((index) => (
-          <div key={index} className="h-[228px] animate-pulse border border-n-4 bg-white">
-            <div className="h-[93px] bg-n-4" />
+          <div
+            key={index}
+            className="flex h-[228px] animate-pulse flex-col overflow-hidden rounded-2xl border border-n-4 bg-white"
+          >
+            <div className="h-[93px] bg-surface-control" />
+            <div className="flex flex-col gap-2 p-[14px]">
+              <div className="h-3 w-2/3 rounded-md bg-surface-control" />
+              <div className="h-2.5 w-1/3 rounded-md bg-surface-control" />
+            </div>
           </div>
         ))}
       </div>
@@ -617,11 +629,11 @@ function Gallery({
 
   if (lists.length === 0) {
     return (
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(214px,1fr))] gap-3">
+      <div className={GALLERY_GRID}>
         {tab === 'mine' ? (
           <NewListTile onClick={onNew} />
         ) : (
-          <p className="col-span-full py-12 text-center text-[12px] font-semibold text-n-3">
+          <p className="col-span-full py-12 text-center text-[11px] font-medium text-n-6">
             Lists you save from other people show up here.
           </p>
         )}
@@ -630,7 +642,7 @@ function Gallery({
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(214px,1fr))] gap-3">
+    <div className={GALLERY_GRID}>
       {lists.map((list) => (
         <ListGalleryCard
           key={list.id}
@@ -658,13 +670,13 @@ function Gallery({
 
 function EmptyDetail({ loading, onNew }: { loading: boolean; onNew: () => void }) {
   return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center">
-      <Icon name="list" size={21} className="text-n-3" />
-      <span className="text-[13px] font-bold">
+    <div className="flex min-h-[288px] flex-col items-center justify-center gap-2.5 rounded-2xl border border-n-4 bg-white p-8 text-center">
+      <Icon name="list" size={20} className="text-n-6" />
+      <span className="text-[15px] font-bold tracking-[-0.02em] text-ink">
         {loading ? 'Loading your lists…' : 'Select or create a new list'}
       </span>
       {!loading && (
-        <Button variant="blue" size="sm" shadow onClick={onNew}>
+        <Button variant="blue" size="sm" onClick={onNew}>
           <Icon name="plus" size={13} /> New list
         </Button>
       )}
@@ -674,10 +686,12 @@ function EmptyDetail({ loading, onNew }: { loading: boolean; onNew: () => void }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 border border-ink bg-white p-8 text-center">
-      <Icon name="info-circle" size={21} className="text-negative-strong" />
-      <span className="text-[13px] font-bold">Your lists could not be loaded.</span>
-      <p className="max-w-[360px] text-[11px] font-medium text-n-3">{message}</p>
+    <div className="flex min-h-[288px] flex-col items-center justify-center gap-2.5 rounded-2xl border border-n-4 bg-white p-8 text-center">
+      <Icon name="info-circle" size={20} className="text-negative-strong" />
+      <span className="text-[15px] font-bold tracking-[-0.02em] text-ink">
+        Your lists could not be loaded.
+      </span>
+      <p className="max-w-[360px] text-[11px] font-medium text-n-6">{message}</p>
       <Button variant="stroke" size="sm" onClick={onRetry}>
         <Icon name="reset" size={13} /> Try again
       </Button>

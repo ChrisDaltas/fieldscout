@@ -69,6 +69,14 @@ import { LiveStatsDelayedBanner, ReconnectingBanner, STALE_LEAGUE_COPY, STALE_SC
 import { problemCopy } from './team-page'
 import { tradesHref } from './trades-ops'
 
+/** v7 League Home vocabulary: 15px bold section titles over hairline lists,
+ *  each with an 11px semibold blue "view all" door on the right. */
+const SECTION_TITLE = 'text-h6 text-ink'
+const SECTION_LINK =
+  'shrink-0 text-[11px] font-semibold text-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+/** v7 inner card (Set lineup, draft doors): 14px radius hairline, ~15px pad. */
+const CARD_TITLE = 'text-[13px] font-bold tracking-[-0.01em] text-ink'
+
 /**
  * The league home's SEASON heroes — §16.5.1's `in_season` / `playoffs` /
  * `complete` rows (M4 task L.D5.4; the F46 discharge incl. the R281 post-
@@ -156,7 +164,7 @@ export function SeasonHero({
   }
 
   return (
-    <div className="flex flex-col gap-4" data-season-hero={state}>
+    <div className="flex flex-col gap-6" data-season-hero={state}>
       {connection === 'reconnecting' && <ReconnectingBanner>Reconnecting — syncing this league…</ReconnectingBanner>}
       {matchupsProblem && matchups.data && <StaleDataBanner>{STALE_SCORES_COPY}</StaleDataBanner>}
       {inPlay && delay.delayed && (
@@ -165,10 +173,10 @@ export function SeasonHero({
 
       {state === 'complete' && <ChampionBanner data={data} />}
 
-      {/* The prototype's HomeTab: 1.6fr / 1fr, gap 24 → 19px at ×0.8. R900:
-          minmax(0, …fr) so one long line never grows a column past its share. */}
-      <div className="grid grid-cols-1 items-start gap-[19px] lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="flex min-w-0 flex-col gap-[19px]">
+      {/* v7 League Home: 1.7fr / 1fr, gap 27. R900: minmax(0, …fr) so one
+          long line never grows a column past its share. */}
+      <div className="grid grid-cols-1 items-start gap-[27px] lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-[27px]">
           {inPlay ? (
             <LiveScoreboard
               leagueId={leagueId}
@@ -203,7 +211,7 @@ export function SeasonHero({
           <ActivityFeedCard leagueId={leagueId} data={data} />
         </div>
 
-        <div className="flex min-w-0 flex-col gap-[19px]">
+        <div className="flex min-w-0 flex-col gap-[27px]">
           {inPlay && <HomeStandingsCard {...standingsProps} week={currentWeek} />}
           {inPlay && (
             <SetLineupCard
@@ -267,7 +275,7 @@ function LiveScoreboard({
   return (
     <section className="flex min-w-0 flex-col gap-2.5" data-live-scoreboard>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto whitespace-nowrap text-h5 text-ink">Live scoreboard</h2>
+        <h2 className={cn('whitespace-nowrap', SECTION_TITLE)}>Live scoreboard</h2>
         {live && (
           <Badge variant="green" data-live-badge>
             <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-pill bg-current" aria-hidden="true" />
@@ -284,7 +292,7 @@ function LiveScoreboard({
               </SegmentItem>
             ))}
           </Segment>
-          <span className="text-[11px] font-semibold text-n-3">Updates live · no refresh needed</span>
+          <span className="text-[10px] font-medium text-n-6">Updates live · no refresh needed</span>
         </div>
       )}
       {activeTab?.kind === 'playoffs' ? (
@@ -334,7 +342,7 @@ function ScoreboardWeek({
   managers: ReadonlyMap<string, string>
 }) {
   if (scheduleState === 'pending' || (week !== null && matchupsPending && !matchups)) {
-    return <Skeleton className="h-36 rounded-sm" data-skeleton="scoreboard" />
+    return <Skeleton className="h-36 rounded-xl" data-skeleton="scoreboard" />
   }
   if (scheduleState === 'error') {
     return <InlineProblem title="Couldn’t load the schedule." detail={null} onRetry={onScheduleRetry} />
@@ -365,7 +373,7 @@ function ScoreboardWeek({
   // The viewer's own game first, then the rest in the stored order.
   const rows = [...primary].sort((a, b) => Number(isMine(b, myTeamId)) - Number(isMine(a, myTeamId)))
   return (
-    <ol className="flex flex-col gap-2.5" data-scoreboard-week={week}>
+    <ol className="flex flex-col gap-[9px]" data-scoreboard-week={week}>
       {rows.map((row) => (
         <li key={row.id}>
           <ScoreboardMatchup leagueId={leagueId} doc={matchups} row={row} myTeamId={myTeamId} managers={managers} />
@@ -398,40 +406,42 @@ function ScoreboardMatchup({
 }) {
   const href = `/app/leagues/${leagueId}/matchup/${row.id}`
   return (
-    <Card className={cn('min-w-0', isMine(row, myTeamId) && 'border-accent')} data-matchup={row.id} data-matchup-status={row.status}>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
-        <div className="flex items-center gap-3">
-          <ScoreboardSide doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
-          <span className="shrink-0 text-[11px] font-bold uppercase text-n-3">vs</span>
-          {row.away_team_id ? (
-            <ScoreboardSide doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} align="end" />
-          ) : (
-            <p className="min-w-0 flex-1 text-right text-[12px] font-semibold text-n-3" data-side="bye">
-              Bye
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {row.is_overridden && (
-            <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} data-overridden>
-              {OVERRIDDEN_LABEL}
-            </Badge>
-          )}
-          <span className="ml-auto flex gap-2">
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={href} data-open-matchup>
-                Matchup
-              </Link>
-            </Button>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`${href}#box-scores`} data-open-box-score>
-                Box score
-              </Link>
-            </Button>
-          </span>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex min-w-0 flex-col gap-[7px]" data-matchup={row.id} data-matchup-status={row.status}>
+      {/* v7's matchup pair: two side tiles with a "vs" disc between them. */}
+      <div className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-[7px]">
+        <ScoreboardSide doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
+        {row.away_team_id ? (
+          <ScoreboardSide doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} align="end" />
+        ) : (
+          <p className="flex min-w-0 items-center justify-end rounded-xl border border-n-4 px-3.5 py-3 text-right text-[12px] font-semibold text-n-6" data-side="bye">
+            Bye
+          </p>
+        )}
+        <span
+          className="pointer-events-none absolute left-1/2 top-1/2 flex h-[29px] w-[29px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-surface-control text-[9px] font-bold text-n-6 ring-[3px] ring-white">
+          vs
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {row.is_overridden && (
+          <Badge variant="stroke-purple" title={OVERRIDDEN_TITLE} data-overridden>
+            {OVERRIDDEN_LABEL}
+          </Badge>
+        )}
+        <span className="ml-auto flex gap-1">
+          <Button variant="stroke" size="sm" asChild>
+            <Link href={href} data-open-matchup>
+              Matchup
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={`${href}#box-scores`} data-open-box-score>
+              Box score
+            </Link>
+          </Button>
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -456,20 +466,30 @@ function ScoreboardSide({
   const cell = scoreCell(score, row.status)
   const lost = resultChip(sideResult(row, teamId, doc.results)).text === 'L'
   return (
-    <div className={cn('flex min-w-0 flex-1 flex-col gap-1.5', align === 'end' && 'items-end text-right')} data-side={teamId} data-mine={mine || undefined}>
-      <div className={cn('flex min-w-0 max-w-full items-center gap-2', align === 'end' && 'flex-row-reverse')}>
-        <Crest name={name} src={null} />
+    <div
+      className={cn(
+        // The viewer's own side is a resting FILL (never a shadow); the rest
+        // sit on the 1px hairline.
+        'flex min-w-0 flex-col gap-[9px] rounded-xl border px-3.5 py-3',
+        mine ? 'border-transparent bg-accent-soft' : 'border-n-4 bg-white',
+        align === 'end' && 'items-end text-right',
+      )}
+      data-side={teamId}
+      data-mine={mine || undefined}
+    >
+      <div className={cn('flex min-w-0 max-w-full items-center gap-2.5', align === 'end' && 'flex-row-reverse')}>
+        <Crest name={name} src={null} className="h-[27px] w-[27px]" />
         <div className="min-w-0">
-          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="block truncate text-[13px] font-bold text-ink" />
+          <TeamNameLink name={name} leagueId={doc.league_id} teamId={teamId} className="block truncate text-[12px] font-bold tracking-[-0.01em] text-ink" />
           {manager && (
-            <span className="block truncate text-[11px] font-semibold text-n-3">
+            <span className="block truncate text-[10px] font-medium text-n-6">
               <UsernameLink username={manager} />
             </span>
           )}
         </div>
       </div>
       <p
-        className={cn('fs-num text-[21px] font-extrabold leading-none', cell.pending || lost ? 'text-n-3' : 'text-ink')}
+        className={cn('fs-num text-[20px] font-bold leading-none tracking-[-0.02em]', cell.pending || lost ? 'text-n-6' : 'text-ink')}
         title={cell.title ?? undefined}
         data-score={cell.pending ? 'pending' : cell.text}
       >
@@ -510,19 +530,17 @@ function BracketCard({
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
   return (
     <Card data-bracket-card>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <CardHeader className="min-h-0 border-b-0 px-[15px] pb-0 pt-[13px]">
+        <CardTitle className={cn('flex flex-wrap items-center gap-2', CARD_TITLE)}>
           Playoff bracket
           <span className="ml-auto">
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}/standings?tab=playoffs`} data-open-bracket>
-                Full bracket
-              </Link>
-            </Button>
+            <Link href={`/app/leagues/${leagueId}/standings?tab=playoffs`} className={SECTION_LINK} data-open-bracket>
+              Full bracket
+            </Link>
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
+      <CardContent className="flex flex-col gap-3 px-[15px] pb-[15px] pt-2.5">
         {problem !== null && doc && <StaleDataBanner>{STALE_LEAGUE_COPY}</StaleDataBanner>}
         {pending && !doc ? (
           <BracketSkeleton />
@@ -555,39 +573,44 @@ function WeekSoFar({ leagueId, doc, myTeamId, title }: { leagueId: string; doc: 
   const shown = mine && !top.some((r) => r.team_id === mine.team_id) ? [...top, mine] : top
   const badge = weekBadge(doc.league_week.status)
   return (
-    <Card data-variant="total_points" data-week-so-far>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
-          {title} · Your week so far vs the field
-          <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
-            {badge.label}
-          </Badge>
-          <span className="ml-auto">
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}/matchup`}>Open leaderboard</Link>
-            </Button>
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col divide-y divide-n-4 px-0 py-0">
-        {shown.length === 0 && <p className="px-card-pad py-3 text-[12px] font-medium text-n-3">No scores yet this week.</p>}
+    <div className="flex min-w-0 flex-col gap-1.5" data-variant="total_points" data-week-so-far>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title} · Your week so far vs the field</span>
+        <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
+          {badge.label}
+        </Badge>
+        <span className="ml-auto">
+          <Link href={`/app/leagues/${leagueId}/matchup`} className={SECTION_LINK}>
+            Open leaderboard
+          </Link>
+        </span>
+      </div>
+      <div className="flex flex-col">
+        {shown.length === 0 && <p className="border-t border-n-4 py-3 text-[11px] font-medium text-n-6">No scores yet this week.</p>}
         {shown.map((row) => (
-          <div key={row.team_id} className={cn('flex items-center gap-2 px-card-pad py-2', row.team_id === myTeamId && 'bg-accent-soft')} data-leaderboard-row={row.team_id}>
-            <span className="fs-num w-6 shrink-0 text-right text-[12px] font-bold">{row.rank ?? '—'}</span>
-            <Crest name={row.name} src={null} />
+          <div
+            key={row.team_id}
+            className={cn(
+              'flex min-h-[34px] items-center gap-2 border-t border-n-4 px-[5px] py-1 text-[11px]',
+              row.team_id === myTeamId && 'rounded-md border-transparent bg-accent-soft',
+            )}
+            data-leaderboard-row={row.team_id}
+          >
+            <span className="fs-num w-4 shrink-0 text-[10px] font-semibold text-n-6">{row.rank ?? '—'}</span>
+            <Crest name={row.name} src={null} className="h-[17px] w-[17px] rounded-[5px]" />
             {/* A total-points league has no matchup rows at all (§16.5.3), so
                 this leaderboard is that league's only team list on the home
                 page — and a plain <div> row, so the name links cleanly. */}
-            <TeamNameLink name={row.name} leagueId={leagueId} teamId={row.team_id} className="min-w-0 flex-1 truncate text-[12px] font-bold" />
+            <TeamNameLink name={row.name} leagueId={leagueId} teamId={row.team_id} className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ink" />
             {row.points !== null ? (
-              <span className="fs-num shrink-0 text-[13px] font-bold text-ink">{formatPoints(row.points)}</span>
+              <span className="fs-num shrink-0 text-[12px] font-bold text-ink">{formatPoints(row.points)}</span>
             ) : (
-              <span className="shrink-0 text-[12px] font-medium text-n-3">pending</span>
+              <span className="shrink-0 text-[10px] font-medium text-n-6">pending</span>
             )}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -617,14 +640,14 @@ function SetLineupCard({
   const trades = tradeChip(data.settings)
   return (
     <Card data-set-lineup>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">Your team</CardTitle>
+      <CardHeader className="min-h-0 border-b-0 px-[15px] pb-0 pt-[13px]">
+        <CardTitle className={CARD_TITLE}>Your team</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-card-pad py-3">
+      <CardContent className="flex flex-col gap-3 px-[15px] pb-[15px] pt-2.5">
         {myTeamId ? (
           <>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Button variant="blue" size="sm" shadow asChild>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="blue" size="sm" asChild>
                 <Link href={teamPageHref(leagueId, myTeamId)} data-set-lineup-cta>
                   <Icon name="team" size={13} />
                   Set lineup
@@ -640,7 +663,7 @@ function SetLineupCard({
             {/* R779: the RECORD ("locks from"), never the lock; no countdown
                 while its referent is an open question (Q40 — the team page's
                 named placeholder carries it). */}
-            <p className="text-[11px] font-medium text-n-3" data-lock-record title={locksAt?.title ?? undefined}>
+            <p className="text-[10px] font-medium text-n-6" data-lock-record title={locksAt?.title ?? undefined}>
               {week !== null && (
                 <>
                   Week <span className="fs-num">{week}</span> ·{' '}
@@ -650,7 +673,7 @@ function SetLineupCard({
             </p>
           </>
         ) : (
-          <p className="text-[12px] font-medium text-n-3" data-empty="no-seat">
+          <p className="text-[11px] font-medium text-n-6" data-empty="no-seat">
             {NO_SEAT_COPY}
           </p>
         )}
@@ -659,8 +682,8 @@ function SetLineupCard({
             {waivers.label}
           </Badge>
           {/* L.D3.7: the trade chip is the door to the trade center. */}
-          <Link href={tradesHref(leagueId)} title={trades.title} className="rounded-sm focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent" data-trades-link>
-            <Badge variant="stroke" className="transition-colors hover:bg-ink hover:text-white" data-chip="trades">
+          <Link href={tradesHref(leagueId)} title={trades.title} className="rounded-pill focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" data-trades-link>
+            <Badge variant="stroke" className="transition-colors hover:bg-surface-pressed" data-chip="trades">
               <Icon name="transfer" size={11} />
               {trades.label}
             </Badge>
@@ -694,74 +717,80 @@ interface StandingsCardProps {
 function HomeStandingsCard({ leagueId, doc, pending, problem, onRetry, myTeamId, managers, week }: StandingsCardProps & { week: number | null }) {
   const emptyCopy = doc ? standingsEmptyCopy(doc) : null
   return (
-    <Card data-home-standings>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex items-center gap-2 text-[12px]">
-          Standings
-          {week !== null && (
-            <Badge variant="stroke" data-standings-week>
-              Week <span className="fs-num">{week}</span>
-            </Badge>
-          )}
-          <span className="ml-auto">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}/standings`} data-open-standings>
-                Full table
-              </Link>
-            </Button>
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col px-0 py-0">
-        {problem != null && doc && <StaleDataBanner className="m-2">{STALE_SCORES_COPY}</StaleDataBanner>}
+    // v7's right-column Standings: a bare section — 15px title, 10px grey
+    // column heads, 11px hairline rows, the viewer's row an accent-soft fill.
+    <div className="flex min-w-0 flex-col gap-2.5" data-home-standings>
+      <div className="flex items-center gap-2">
+        <span className={SECTION_TITLE}>Standings</span>
+        {week !== null && (
+          <Badge variant="stroke" data-standings-week>
+            Week <span className="fs-num">{week}</span>
+          </Badge>
+        )}
+        <span className="ml-auto">
+          <Link href={`/app/leagues/${leagueId}/standings`} className={SECTION_LINK} data-open-standings>
+            Full table
+          </Link>
+        </span>
+      </div>
+      <div className="flex flex-col">
+        {problem != null && doc && <StaleDataBanner className="mb-2">{STALE_SCORES_COPY}</StaleDataBanner>}
         {pending && !doc ? (
-          <div className="flex flex-col gap-1.5 px-card-pad py-2" data-skeleton="home-standings">
+          <div className="flex flex-col gap-1.5" data-skeleton="home-standings">
             {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-7 rounded-sm" />
+              <Skeleton key={i} className="h-7 rounded-md" />
             ))}
           </div>
         ) : problem != null && !doc ? (
-          <div className="px-card-pad py-2">
-            <InlineProblem title="Couldn’t load the standings." detail={problemCopy(problem)} onRetry={onRetry} inline />
-          </div>
+          <InlineProblem title="Couldn’t load the standings." detail={problemCopy(problem)} onRetry={onRetry} inline />
         ) : doc ? (
           <>
             {/* 117's own reason over the rows — a stored 0 is a stored 0 and
                 the reason is what says "nothing final yet". */}
             {emptyCopy && (
-              <p role="status" className="px-card-pad pt-2 text-[11px] font-medium text-n-3" data-standings-reason={doc.reason ?? ''}>
+              <p role="status" className="pb-2 text-[11px] font-medium text-n-6" data-standings-reason={doc.reason ?? ''}>
                 {emptyCopy}
               </p>
             )}
-            <ol className="flex flex-col divide-y divide-n-4" data-standings-rows={doc.standings.length}>
+            <div className="flex items-center gap-[9px] px-[5px] pb-[5px] text-[10px] font-semibold text-n-6">
+              <span className="w-[15px] shrink-0" />
+              <span className="mr-auto">Team</span>
+              <span className="shrink-0 text-right">Record</span>
+              <span className="w-12 shrink-0 text-right">PF</span>
+            </div>
+            <ol className="flex flex-col" data-standings-rows={doc.standings.length}>
               {doc.standings.map((row) => {
                 const manager = managers.get(row.team_id) ?? null
+                const mine = row.team_id === myTeamId
                 return (
                   <li
                     key={row.team_id}
-                    className={cn('flex items-center gap-2 px-card-pad py-2', row.team_id === myTeamId && 'bg-accent-soft')}
+                    className={cn(
+                      'flex min-h-[31px] items-center gap-[9px] border-t px-[5px] py-1 text-[11px] transition-colors',
+                      mine ? 'rounded-md border-transparent bg-accent-soft' : 'border-n-4 hover:bg-surface-sunken',
+                    )}
                     data-standings-row={row.team_id}
                   >
-                    <span className="fs-num w-4 shrink-0 text-[12px] font-extrabold text-n-3">{row.rank}</span>
-                    <Crest name={row.name} src={null} />
-                    <div className="mr-auto min-w-0">
-                      <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className="block truncate text-[12px] font-bold text-ink" />
+                    <span className="fs-num w-[15px] shrink-0 text-[10px] font-semibold text-n-6">{row.rank}</span>
+                    <Crest name={row.name} src={null} className="h-[17px] w-[17px] rounded-[5px]" />
+                    <div className="mr-auto flex min-w-0 items-baseline gap-1.5">
+                      <TeamNameLink name={row.name} leagueId={doc.league_id} teamId={row.team_id} className={cn('min-w-0 truncate text-ink', mine ? 'font-bold' : 'font-semibold')} />
                       {manager && (
-                        <span className="block truncate text-[11px] font-semibold text-n-3">
+                        <span className="min-w-0 truncate text-[10px] font-medium text-n-6">
                           <UsernameLink username={manager} />
                         </span>
                       )}
                     </div>
-                    <span className="fs-num shrink-0 text-[12px] font-extrabold">{formatRecord(row)}</span>
-                    <span className="fs-num w-12 shrink-0 text-right text-[11px] font-bold text-n-3">{formatPoints(row.points_for)}</span>
+                    <span className="fs-num shrink-0 text-right font-semibold text-ink">{formatRecord(row)}</span>
+                    <span className="fs-num w-12 shrink-0 text-right font-medium text-n-6">{formatPoints(row.points_for)}</span>
                   </li>
                 )
               })}
             </ol>
           </>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -772,10 +801,10 @@ function HomeStandingsCard({ leagueId, doc, pending, problem, onRetry, myTeamId,
 function ChampionBanner({ data }: { data: LeagueDetail }) {
   const champion = championName(data)
   return (
-    <Card className={cn(champion && 'bg-brand')} data-champion={champion ?? 'unrecorded'}>
+    <Card className={cn('border-transparent', champion ? 'bg-brand-soft' : 'bg-surface-sunken')} data-champion={champion ?? 'unrecorded'}>
       <CardContent className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-        <Icon name="cup" size={20} className="text-ink" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-n-3">
+        <Icon name="cup" size={20} className={champion ? 'text-brand-strong' : 'text-n-6'} />
+        <p className="text-[10px] font-semibold text-n-3">
           <span className="fs-num">{data.league.season}</span> champion
         </p>
         {champion ? (
@@ -786,7 +815,7 @@ function ChampionBanner({ data }: { data: LeagueDetail }) {
             <TeamNameLink name={champion} leagueId={data.league.id} teamId={data.league.champion_team_id} />
           </p>
         ) : (
-          <p className="max-w-md text-[13px] font-medium text-n-3">{CHAMPION_UNRECORDED_COPY}</p>
+          <p className="max-w-md text-[11px] font-medium text-n-6">{CHAMPION_UNRECORDED_COPY}</p>
         )}
       </CardContent>
     </Card>
@@ -796,23 +825,21 @@ function ChampionBanner({ data }: { data: LeagueDetail }) {
 function FinalStandingsCard({ leagueId, data, doc, pending, problem, onRetry, myTeamId, managers }: StandingsCardProps & { data: LeagueDetail }) {
   const teamNames = new Map(data.teams.map((t) => [t.id, t.name]))
   return (
-    <Card data-final-standings>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex items-center gap-2 text-[12px]">
-          Final standings
-          <span className="ml-auto">
-            <Button variant="stroke" size="sm" asChild>
-              <Link href={`/app/leagues/${leagueId}/standings`}>Standings page</Link>
-            </Button>
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-card-pad py-2">
+    <div className="flex min-w-0 flex-col gap-2.5" data-final-standings>
+      <div className="flex items-center gap-2">
+        <span className={SECTION_TITLE}>Final standings</span>
+        <span className="ml-auto">
+          <Link href={`/app/leagues/${leagueId}/standings`} className={SECTION_LINK}>
+            Standings page
+          </Link>
+        </span>
+      </div>
+      <div className="min-w-0">
         {problem != null && doc && <StaleDataBanner className="mb-2">{STALE_SCORES_COPY}</StaleDataBanner>}
         {pending && !doc ? (
           <div className="flex flex-col gap-1.5" data-skeleton="final-standings">
             {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="h-8 rounded-sm" />
+              <Skeleton key={i} className="h-8 rounded-md" />
             ))}
           </div>
         ) : problem != null && !doc ? (
@@ -826,8 +853,8 @@ function FinalStandingsCard({ leagueId, data, doc, pending, problem, onRetry, my
             managers={managers}
           />
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -884,12 +911,12 @@ function DraftDoorsCard({ leagueId, complete }: { leagueId: string; complete: bo
   const doors = draftDoors(leagueId)
   return (
     <Card data-draft-doors>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="text-[12px]">{complete ? 'History' : 'Draft'}</CardTitle>
+      <CardHeader className="min-h-0 border-b-0 px-[15px] pb-0 pt-[13px]">
+        <CardTitle className={CARD_TITLE}>{complete ? 'History' : 'Draft'}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2.5 px-card-pad py-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Button variant={complete ? 'blue' : 'stroke'} size="sm" shadow={complete} asChild>
+      <CardContent className="flex flex-col gap-2.5 px-[15px] pb-[15px] pt-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant={complete ? 'blue' : 'stroke'} size="sm" asChild>
             <Link href={doors.recap} data-door="recap">
               <Icon name="document" size={13} />
               {complete ? 'View History' : 'Draft recap'}
@@ -902,7 +929,7 @@ function DraftDoorsCard({ leagueId, complete }: { leagueId: string; complete: bo
             </Link>
           </Button>
         </div>
-        <p className="text-[10px] font-semibold text-n-3">
+        <p className="text-[10px] font-medium text-n-6">
           {complete
             ? 'The final draft board and every roster as drafted. Practice drafts you kept stay in the launcher.'
             : 'The final board and every roster as drafted; practice drafts you kept stay in the launcher.'}
@@ -930,8 +957,8 @@ function EmptyCard({
 } & Record<string, unknown>) {
   return (
     <Card {...rest}>
-      <CardHeader className="min-h-0 py-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-[12px]">
+      <CardContent className="flex flex-col items-center gap-2 px-[15px] py-8 text-center">
+        <CardTitle className="flex flex-wrap items-center justify-center gap-2">
           {title}
           {badge && (
             <Badge variant={badge.variant} title={badge.title} data-week-badge={badge.state}>
@@ -939,9 +966,7 @@ function EmptyCard({
             </Badge>
           )}
         </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col items-start gap-2 px-card-pad py-3">
-        <p className="max-w-md text-[12px] font-medium text-n-3">{copy}</p>
+        <p className="max-w-md text-[11px] font-medium text-n-6">{copy}</p>
         {children}
       </CardContent>
     </Card>
@@ -962,8 +987,8 @@ export function InlineProblem({
   inline?: boolean
 }) {
   const body = (
-    <div className="flex flex-col items-start gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2" role="alert" data-problem>
-      <p className="text-[12px] font-bold">{title}</p>
+    <div className="flex flex-col items-start gap-2 rounded-xl bg-negative-soft px-3.5 py-3" role="alert" data-problem>
+      <p className="text-[12px] font-bold text-ink">{title}</p>
       {detail && <p className="text-[11px] font-medium text-n-3">{detail}</p>}
       <Button variant="stroke" size="sm" onClick={onRetry}>
         <Icon name="reset" size={13} /> Retry

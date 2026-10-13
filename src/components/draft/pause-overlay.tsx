@@ -32,5 +32,6 @@
  * layer casts no shadow).
  */
 export function DraftPauseOverlay() {
-  return <div aria-hidden="true" className="absolute inset-0 z-10 rounded-sm bg-white/80" />
+  // v7: a soft white veil matching the board card's corners.
+  return <div aria-hidden="true" className="absolute inset-0 z-10 rounded-2xl bg-white/80" />
 }

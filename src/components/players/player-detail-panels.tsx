@@ -75,7 +75,7 @@ export function GameLogPanel({ data }: { data: PlayerStatsResponse }) {
 
   if (rows.length === 0) {
     return (
-      <p className="rounded-sm border border-n-4 p-5 text-center text-[12px] font-semibold text-n-3">
+      <p className="rounded-xl bg-surface-sunken p-5 text-center text-[11px] font-semibold text-n-3">
         No game log yet for the current season.
       </p>
     )
@@ -110,7 +110,7 @@ function performanceChip(ppr: number, ppg: number): string {
 
 function FantasyGameLog({ rows, ppg }: { rows: GameLogRow[]; ppg: number }) {
   return (
-    <div className="rounded-sm border border-ink">
+    <div className="rounded-xl border border-n-4">
       <Table>
         <TableHeader>
           <TableRow>
@@ -127,7 +127,7 @@ function FantasyGameLog({ rows, ppg }: { rows: GameLogRow[]; ppg: number }) {
               <TableCell className="text-right">
                 <span
                   className={cn(
-                    'fs-num inline-block min-w-[3rem] rounded-sm border border-ink px-1.5 py-px text-right text-[12px] font-bold text-ink',
+                    'fs-num inline-block min-w-[3rem] rounded-xl border border-n-4 px-1.5 py-px text-right text-[11px] font-bold text-ink',
                     performanceChip(row.fantasy.ppr, ppg),
                   )}
                 >
@@ -153,7 +153,7 @@ function FantasyGameLog({ rows, ppg }: { rows: GameLogRow[]; ppg: number }) {
 function NflGameLog({ rows, position }: { rows: GameLogRow[]; position: string }) {
   const cols = positionColumns(position)
   return (
-    <div className="rounded-sm border border-ink">
+    <div className="rounded-xl border border-n-4">
       <Table>
         <TableHeader>
           <TableRow>
@@ -271,9 +271,9 @@ export function SeasonCard({
   return (
     <div
       className={cn(
-        'rounded-sm border bg-white p-3.5',
+        'rounded-2xl border bg-white p-3.5',
         // Projected card takes the quieter grey border; real seasons get ink.
-        muted ? 'border-n-3' : 'border-ink',
+        'border-n-4',
       )}
     >
       <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -307,7 +307,7 @@ function FantasyBlock({ season, projected = false }: { season: SeasonBlock; proj
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-2">
-        <span className={cn('fs-num text-[24px] font-extrabold leading-none', projected ? PROJ_TEXT : 'text-ink')}>
+        <span className={cn('fs-num text-[24px] font-bold leading-none', projected ? PROJ_TEXT : 'text-ink')}>
           {season.fantasy.ppr.toFixed(1)}
         </span>
         <span className="text-[11px] font-semibold text-n-3">PPR</span>
@@ -399,9 +399,9 @@ export function Stat({
   value: string | number
 }) {
   return (
-    <div className="rounded-sm border border-n-4 px-2 py-1.5">
+    <div className="rounded-lg bg-surface-sunken px-2 py-1.5">
       <p className="fs-overline truncate text-n-3">{label}</p>
-      <p className="fs-num text-[13px] font-extrabold">{value}</p>
+      <p className="fs-num text-[13px] font-bold">{value}</p>
     </div>
   )
 }
@@ -409,7 +409,7 @@ export function Stat({
 /**
  * Fantasy / NFL — the **label-only** variation of the shared segmented control
  * (`ui/tabs.tsx`). It was hand-rolled with its own near-copy of the same
- * treatment (`hover:bg-n-4` rather than the `accent-soft` wash, `font-extrabold`
+ * treatment (`hover:bg-n-4` rather than the `accent-soft` wash, `font-bold`
  * rather than bold), which is one of the four looks Chris asked to collapse
  * into one (2026-08-11).
  *
@@ -506,7 +506,7 @@ export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
   const rows = data.gameLog
   if (rows.length === 0) {
     return (
-      <p className="border border-n-4 p-3 text-center text-[12px] font-semibold text-n-3">
+      <p className="rounded-xl bg-surface-sunken p-3 text-center text-[11px] font-semibold text-n-3">
         No games logged yet for the current season.
       </p>
     )
@@ -519,11 +519,11 @@ export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
   return (
     <div data-weekly-points>
       <p className="mb-2.5 text-[11px] font-semibold text-n-3">
-        <span className="fs-num text-[15px] font-extrabold text-ink">
+        <span className="fs-num text-[15px] font-bold text-ink">
           {avg.toFixed(1)}
         </span>{' '}
         avg per week ·{' '}
-        <span className="fs-num text-[15px] font-extrabold text-ink">
+        <span className="fs-num text-[15px] font-bold text-ink">
           {Math.round(total)}
         </span>{' '}
         total
@@ -537,18 +537,18 @@ export function WeeklyPointsList({ data }: { data: PlayerStatsResponse }) {
               <span className="fs-num w-9 shrink-0 text-[11px] font-bold text-n-3">
                 Wk {row.week}
               </span>
-              <span className="h-3.5 min-w-0 flex-1 bg-n-4">
+              <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-pill bg-surface-control">
                 {width > 0 && (
                   <span
                     className={cn(
-                      'block h-full border border-ink',
+                      'block h-full rounded-pill',
                       pts >= avg ? 'bg-brand' : 'bg-n-3/40',
                     )}
                     style={{ width: `${width}%` }}
                   />
                 )}
               </span>
-              <span className="fs-num w-10 shrink-0 text-right text-[12px] font-extrabold">
+              <span className="fs-num w-10 shrink-0 text-right text-[11px] font-bold">
                 {pts.toFixed(1)}
               </span>
             </div>

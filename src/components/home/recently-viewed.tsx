@@ -15,8 +15,8 @@ const MAX_TILES = 12
  * store (populated whenever a list detail page is opened). For lists the user
  * owns or has pinned we render the real 4-quadrant thumbnail; for anything
  * else we fall back to the stored image or a generic icon. FieldScout-only
- * surface (not in the package mock) — styled per the hub's white-card /
- * ink-border language.
+ * surface (not in v7) — restyled in v7's card language: hairline tiles that
+ * fill sunken grey on hover, 12px semibold name, 10px grey meta.
  */
 export function RecentlyViewed() {
   const entries = useHistoryStore((s) => s.entries)
@@ -33,13 +33,13 @@ export function RecentlyViewed() {
   )
 
   return (
-    <section>
-      <h2 className="mb-2.5 text-h5">Recently viewed</h2>
+    <section className="flex flex-col gap-[9px]">
+      <h2 className="text-h6">Recently viewed</h2>
 
       {recent.length === 0 ? (
-        <div className="rounded-sm border border-ink bg-white p-4">
-          <p className="text-[13px] font-extrabold">Nothing here yet</p>
-          <p className="mt-1 text-[11px] font-medium text-n-3">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-8 text-center">
+          <p className="text-[15px] font-bold tracking-[-0.02em]">Nothing here yet</p>
+          <p className="mx-auto mt-1 max-w-xs text-[11px] font-medium leading-[1.45] text-n-6">
             Lists you open will show up here so you can pick up where you left
             off.
           </p>
@@ -53,7 +53,7 @@ export function RecentlyViewed() {
               <li key={entry.href}>
                 <Link
                   href={entry.href}
-                  className="flex h-12 items-center gap-2.5 overflow-hidden rounded-sm border border-ink bg-white transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
+                  className="flex h-[52px] items-center gap-[9px] overflow-hidden rounded-xl border border-n-4 bg-white transition-colors hover:bg-surface-sunken"
                 >
                   {list ? (
                     <ListThumbnail
@@ -69,22 +69,22 @@ export function RecentlyViewed() {
                     <img
                       src={entry.imageUrl}
                       alt=""
-                      className="m-1 h-10 w-10 shrink-0 rounded-sm border border-ink object-cover"
+                      className="m-1 h-10 w-10 shrink-0 rounded-md object-cover"
                     />
                   ) : (
                     <span
                       aria-hidden
-                      className="m-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-ink bg-n-4 text-ink"
+                      className="m-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-surface-control text-n-3"
                     >
                       <Icon name="list" size={14} />
                     </span>
                   )}
                   <div className="min-w-0 flex-1 pr-2.5">
-                    <p className="truncate text-[12px] font-extrabold">
+                    <p className="truncate text-[12px] font-semibold tracking-[-0.01em] text-ink">
                       {list?.title ?? entry.name}
                     </p>
                     {(list || entry.subtitle) && (
-                      <p className="truncate text-[10px] font-semibold text-n-3">
+                      <p className="truncate text-[10px] font-medium text-n-6">
                         {list
                           ? `${list.player_count} player${list.player_count === 1 ? '' : 's'}`
                           : entry.subtitle}

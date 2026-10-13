@@ -39,9 +39,10 @@ import type { ListFolder } from '@/types/database'
  *   somebody else and `lists.folder_id` is the owner's field, so there is
  *   nothing to file on the Saved tab.
  *
- * The tiles are flat at rest and lift on hover — they are clickable, so the
- * lift is an affordance for the thing you are about to click (CLAUDE.md,
- * "Elevation is a hover state, never a resting one").
+ * v7 look: hairline cards (12px radius) that are flat at rest and lift on
+ * hover — they are clickable, so the lift is an affordance for the thing you
+ * are about to click (CLAUDE.md, "Elevation is a hover state, never a resting
+ * one").
  */
 
 /** The bar that replaces the grid once you are inside a folder. */
@@ -59,8 +60,8 @@ export function FolderScopeCrumb({
       <Button variant="stroke" size="sm" onClick={onClear}>
         <Icon name="arrow-prev" size={13} /> All lists
       </Button>
-      <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink">
-        <Icon name="folder" size={14} /> {folder.name}
+      <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-[-0.01em] text-ink">
+        <Icon name="folder" size={14} className="text-n-3" /> {folder.name}
       </span>
       <Badge variant="stroke" className="fs-num">
         {count}
@@ -85,9 +86,9 @@ export function ListFoldersSection({
   if (folders.length === 0) return null
 
   return (
-    <section className="mb-4 flex flex-col gap-2">
-      <h2 className="text-[10px] font-bold uppercase tracking-[0.08em] text-n-3">Folders</h2>
-      <div className="grid gap-2 md:grid-cols-2">
+    <section className="mb-4 flex flex-col gap-[9px]">
+      <h2 className="text-[13px] font-bold tracking-[-0.01em] text-ink">Folders</h2>
+      <div className="grid gap-2.5 md:grid-cols-2">
         {folders.map((folder) => {
           const count = countFor(folder)
           return (
@@ -107,21 +108,25 @@ export function ListFoldersSection({
                   onOpen(folder)
                 }
               }}
-              className="flex cursor-pointer items-center gap-2.5 border border-ink bg-white px-3 py-2 transition-shadow hover:shadow-hard-4"
+              className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-n-4 bg-white px-3 py-2.5 transition-[border-color,box-shadow] hover:border-surface-strong hover:shadow-hard-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               {folder.thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={folder.thumbnail_url}
                   alt=""
-                  className="h-7 w-7 shrink-0 border border-ink object-cover"
+                  className="h-7 w-7 shrink-0 rounded-md object-cover"
                 />
               ) : (
-                <Icon name="folder" size={16} className="shrink-0 text-ink" />
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-sunken text-n-3">
+                  <Icon name="folder" size={15} />
+                </span>
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] font-bold text-ink">{folder.name}</p>
-                <p className="text-[9px] font-medium text-n-3">
+                <p className="truncate text-[12px] font-bold tracking-[-0.01em] text-ink">
+                  {folder.name}
+                </p>
+                <p className="text-[10px] font-medium text-n-6">
                   <span className="fs-num">{count}</span> list{count === 1 ? '' : 's'}
                 </p>
               </div>
@@ -130,7 +135,7 @@ export function ListFoldersSection({
                   <button
                     type="button"
                     title={`Actions for ${folder.name}`}
-                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink transition-colors hover:bg-accent-soft"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-pill text-n-3 transition-colors hover:bg-surface-hover hover:text-ink"
                   >
                     <Icon name="dots" size={13} />
                   </button>
