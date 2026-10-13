@@ -23,22 +23,22 @@ export function YourLeagues() {
   const { data: leagues, isPending, isError, refetch } = useLeagues()
 
   return (
-    <section>
-      <div className="mb-2.5 flex items-center">
-        <h2 className="mr-auto text-h5">Your leagues</h2>
+    <section className="flex flex-col gap-[9px]">
+      <div className="flex items-center gap-[9px]">
+        <h2 className="mr-auto text-h6">Your leagues</h2>
         <JoinLeagueDialog />
       </div>
 
       {isPending ? (
-        <div className="flex flex-col gap-[13px]">
+        <div className="flex flex-col gap-[10px]">
           {Array.from({ length: 2 }).map((_, i) => (
-            <Skeleton key={i} className="h-[104px] rounded-sm" />
+            <Skeleton key={i} className="h-[104px] rounded-2xl bg-surface-control" />
           ))}
         </div>
       ) : isError ? (
-        <Card className="border-negative bg-negative-soft">
-          <div className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold" role="alert">
+        <Card className="border-0 bg-negative-soft">
+          <div className="flex flex-col items-start gap-[9px] px-[17px] py-[15px]">
+            <p className="text-[13px] font-bold text-ink" role="alert">
               Couldn&apos;t load your leagues.
             </p>
             <Button variant="stroke" size="sm" onClick={() => refetch()}>
@@ -47,19 +47,19 @@ export function YourLeagues() {
           </div>
         </Card>
       ) : leagues && leagues.length > 0 ? (
-        <div className="flex flex-col gap-[13px]">
+        <div className="flex flex-col gap-[10px]">
           {leagues.map((league) => (
             <LeagueIndexCard key={league.id} league={league} />
           ))}
         </div>
       ) : (
-        <Card className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-          <Icon name="cup" size={18} className="text-n-3" />
-          <p className="text-[13px] font-bold text-ink">No leagues yet</p>
-          <p className="max-w-xs text-[12px] font-medium text-n-3">
+        <Card className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
+          <Icon name="cup" size={18} className="text-n-6" />
+          <p className="text-[15px] font-bold tracking-[-0.02em] text-ink">No leagues yet</p>
+          <p className="max-w-xs text-[11px] font-medium leading-[1.45] text-n-6">
             Create a league or join one with an invite code — both are free.
           </p>
-          <Button variant="stroke" size="sm" asChild className="mt-1">
+          <Button variant="stroke" size="md" asChild className="mt-1.5">
             <Link href="/app/leagues">
               Go to leagues
               <Icon name="arrow-next" size={13} />

@@ -7,7 +7,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/app-header'
 import { AIInsight } from '@/components/ui/ai-insight'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,6 +31,7 @@ import {
 } from '@/lib/scoring/default'
 import { readPersonalScoringSystem } from '@/lib/scoring/personal-scoring-system'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
 import type { Database, Json } from '@/types/database'
 
 type ScoringSystemRow = Database['public']['Tables']['scoring_systems']['Row']
@@ -174,9 +174,10 @@ function deriveInsight(rules: ScoringRules): { heading: string; body: string } {
 /* --------------------------------- Page --------------------------------- */
 
 /**
- * Scoring builder — outside-the-nav settings page (Back stroke button, no
- * active nav item). Two columns: Basic settings on the left, Scout AI read +
- * per-phase scoring cards on the right.
+ * Scoring builder — outside-the-nav settings page (quiet Back button, no
+ * active nav item), in the v7 Account settings language: 14px bold section
+ * titles over hairline-bordered row groups. Two columns: Basic settings on
+ * the left, Scout AI read + per-phase scoring groups on the right.
  *
  * System defaults (lib/scoring presets) are visible and selectable for
  * everyone; editing values and saving a custom system is Pro-only
@@ -296,8 +297,8 @@ export default function ScoringSettingsPage() {
     <div className="max-w-[880px]">
       <PageHeader title="Scoring" />
 
-      <div className="mb-4">
-        <Button variant="stroke" size="sm" onClick={() => router.back()}>
+      <div className="mb-3">
+        <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <Icon name="arrow-prev" size={13} />
           Back
         </Button>
@@ -306,16 +307,15 @@ export default function ScoringSettingsPage() {
       {isPageLoading ? (
         <ScoringSkeleton />
       ) : (
-        <div className="grid items-start gap-5 lg:grid-cols-[1fr_1.3fr]">
+        <div className="grid items-start gap-6 lg:grid-cols-[1fr_1.3fr]">
           {/* Left: basics + Pro moment */}
-          <div className="flex flex-col gap-5">
-            <Card>
-              <CardHeader>
-                <CardTitle>Basic settings</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="scoring-name">System name</Label>
+          <div className="flex flex-col gap-6">
+            <ScoringSection title="Basic settings">
+              <div className="flex flex-col gap-3 px-3.5 py-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="scoring-name" className={FIELD_LABEL}>
+                    System name
+                  </Label>
                   <Input
                     id="scoring-name"
                     value={mode === 'custom' ? name : getScoringPreset(mode).label}
@@ -323,15 +323,17 @@ export default function ScoringSettingsPage() {
                     maxLength={60}
                     disabled={!isPro || mode !== 'custom'}
                   />
-                  <p className="text-[11px] font-medium text-n-3">
+                  <p className="text-[10px] font-medium text-n-6">
                     {mode === 'custom'
                       ? 'Names your custom system across FieldScout.'
                       : 'Platform presets keep their own names.'}
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="scoring-type">Scoring type</Label>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="scoring-type" className={FIELD_LABEL}>
+                    Scoring type
+                  </Label>
                   <Select value={mode} onValueChange={handleModeChange}>
                     <SelectTrigger id="scoring-type">
                       <SelectValue placeholder="Pick a scoring system" />
@@ -353,27 +355,26 @@ export default function ScoringSettingsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                <div className="flex items-center gap-3 border-t border-n-4 pt-4">
-                  <div className="mr-auto min-w-0">
-                    <div className="text-[13px] font-bold leading-tight">
-                      Full PPR
-                    </div>
-                    <div className="mt-0.5 text-[12px] font-medium text-n-3">
-                      1 point per reception
-                    </div>
-                  </div>
-                  <Switch
-                    checked={isFullPpr}
-                    onCheckedChange={(checked) =>
-                      applyRuleChange('receptions', checked ? 1 : 0)
-                    }
-                    disabled={!isPro}
-                    aria-label="Full PPR"
-                  />
+              </div>
+              <div className="flex min-h-[44px] items-center gap-3.5 border-t border-n-4 px-3.5 py-[7px]">
+                <div className="mr-auto flex min-w-0 flex-col gap-0.5">
+                  <span className="text-[11px] font-semibold text-ink">
+                    Full PPR
+                  </span>
+                  <span className="text-[10px] font-medium text-n-6">
+                    1 point per reception
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
+                <Switch
+                  checked={isFullPpr}
+                  onCheckedChange={(checked) =>
+                    applyRuleChange('receptions', checked ? 1 : 0)
+                  }
+                  disabled={!isPro}
+                  aria-label="Full PPR"
+                />
+              </div>
+            </ScoringSection>
 
             {!isPro && (
               <AIInsight heading="Custom scoring is a Pro tool.">
@@ -396,40 +397,34 @@ export default function ScoringSettingsPage() {
           </div>
 
           {/* Right: Scout AI read + per-phase scoring */}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-6">
             <AIInsight heading={insight.heading} confidence="medium">
               {insight.body}
             </AIInsight>
 
             {SCORING_GROUPS.map((group) => (
-              <Card key={group.title}>
-                <CardHeader>
-                  <CardTitle>{group.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="py-1">
-                  {group.fields.map((field, i) => (
-                    <ScoreRow
-                      key={field.key}
-                      field={field}
-                      value={rules[field.key]}
-                      isLast={i === group.fields.length - 1}
-                      disabled={!isPro}
-                      onChange={(value) => applyRuleChange(field.key, value)}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
+              <ScoringSection key={group.title} title={group.title}>
+                {group.fields.map((field) => (
+                  <ScoreRow
+                    key={field.key}
+                    field={field}
+                    value={rules[field.key]}
+                    disabled={!isPro}
+                    onChange={(value) => applyRuleChange(field.key, value)}
+                  />
+                ))}
+              </ScoringSection>
             ))}
 
             {isPro && (
-              <div className="flex justify-end gap-2.5">
-                <Button variant="stroke" size="sm" onClick={handleReset}>
+              <div className="flex justify-end gap-[5px]">
+                <Button variant="stroke" size="md" onClick={handleReset}>
                   <Icon name="reset" size={13} />
                   Reset to default
                 </Button>
                 <Button
                   variant="blue"
-                  size="sm"
+                  size="md"
                   disabled={mode !== 'custom' || saveMutation.isPending}
                   onClick={() => saveMutation.mutate()}
                 >
@@ -450,26 +445,22 @@ export default function ScoringSettingsPage() {
 function ScoreRow({
   field,
   value,
-  isLast,
   disabled,
   onChange,
 }: {
   field: StatFieldMeta
   value: number
-  isLast: boolean
   disabled: boolean
   onChange: (value: number) => void
 }) {
   return (
-    <div
-      className={`flex items-center gap-3 py-[7px] ${
-        isLast ? '' : 'border-b border-n-4'
-      }`}
-    >
-      <span className="mr-auto min-w-0 truncate text-[13px] font-bold">
+    <div className="flex min-h-[38px] items-center gap-3 border-t border-n-4 px-3.5 py-[5px] first:border-t-0">
+      <span className="mr-auto min-w-0 truncate text-[11px] font-semibold text-ink">
         {field.label}
       </span>
-      <span className="fs-overline shrink-0 text-n-3">{field.unit}</span>
+      <span className="shrink-0 text-[10px] font-medium text-n-6">
+        {field.unit}
+      </span>
       <div className="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
@@ -481,9 +472,10 @@ function ScoreRow({
           <Icon name="minus-circle" size={13} />
         </Button>
         <span
-          className={`fs-num min-w-11 text-center text-[13px] font-extrabold ${
-            value < 0 ? 'text-negative-strong' : 'text-ink'
-          }`}
+          className={cn(
+            'fs-num min-w-11 text-center text-[12px] font-bold',
+            value < 0 ? 'text-negative-strong' : 'text-ink',
+          )}
         >
           {formatPoints(value)}
         </span>
@@ -501,18 +493,42 @@ function ScoreRow({
   )
 }
 
+/* ------------------------------ Section shell ---------------------------- */
+
+const FIELD_LABEL = 'text-[11px] font-semibold leading-tight'
+
+/** Settings section — 14px bold title over a hairline-bordered row group. */
+function ScoringSection({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="flex flex-col gap-[9px]">
+      <h2 className="text-[14px] font-bold tracking-[-0.015em] text-ink">
+        {title}
+      </h2>
+      <div className="overflow-hidden rounded-2xl border border-n-4 bg-white">
+        {children}
+      </div>
+    </section>
+  )
+}
+
 /* -------------------------------- Skeleton ------------------------------- */
 
 function ScoringSkeleton() {
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[1fr_1.3fr]">
-      <div className="flex flex-col gap-5">
-        <Skeleton className="h-80" />
+    <div className="grid items-start gap-6 lg:grid-cols-[1fr_1.3fr]">
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-64 rounded-2xl bg-surface-control" />
       </div>
-      <div className="flex flex-col gap-5">
-        <Skeleton className="h-28" />
-        <Skeleton className="h-52" />
-        <Skeleton className="h-44" />
+      <div className="flex flex-col gap-6">
+        <Skeleton className="h-28 rounded-2xl bg-surface-control" />
+        <Skeleton className="h-44 rounded-2xl bg-surface-control" />
+        <Skeleton className="h-36 rounded-2xl bg-surface-control" />
       </div>
     </div>
   )

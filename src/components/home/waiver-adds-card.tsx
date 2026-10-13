@@ -36,12 +36,12 @@ export function WaiverAddsCard() {
     <CollapsibleCard
       title="Top waiver adds"
       headerRight={
-        <span className="text-[10px] font-medium tracking-[0.01em] text-n-3">
+        <span className="text-[10px] font-semibold text-n-6">
           This week
         </span>
       }
     >
-      <div className="divide-y divide-n-4">
+      <div>
         {MOCK_WAIVERS.map((p) => (
           <HomePlayerRow
             key={p.name}
@@ -54,10 +54,10 @@ export function WaiverAddsCard() {
             }
             right={
               <>
-                <div className="fs-num text-[11px] font-extrabold text-positive-strong">
+                <div className="fs-num text-[11px] font-bold text-positive-strong">
                   +{p.addPct}%
                 </div>
-                <div className="fs-num text-[9px] font-medium text-n-3">
+                <div className="fs-num text-[9px] font-medium text-n-6">
                   {p.faab} FAAB
                 </div>
               </>

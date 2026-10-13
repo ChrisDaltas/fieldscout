@@ -61,14 +61,14 @@ function TrendRows({
 }) {
   if (entries.length === 0) {
     return (
-      <p className="px-[13px] py-3 text-[11px] font-medium text-n-3">
+      <p className="border-t border-n-4 px-[15px] py-6 text-center text-[11px] font-medium text-n-6">
         {emptyLabel}
       </p>
     )
   }
 
   return (
-    <div className="divide-y divide-n-4">
+    <div>
       {entries.map(({ player, delta }) => {
         const up = delta >= 0
         return (
@@ -90,14 +90,14 @@ function TrendRows({
             right={
               <>
                 <div
-                  className={`fs-num text-[11px] font-extrabold ${
+                  className={`fs-num text-[11px] font-bold ${
                     up ? 'text-positive-strong' : 'text-negative-strong'
                   }`}
                 >
                   {up ? '+' : ''}
                   {delta.toFixed(1)}
                 </div>
-                <div className="fs-num text-[9px] font-medium text-n-3">
+                <div className="fs-num text-[9px] font-medium text-n-6">
                   vs last season
                 </div>
               </>
@@ -136,7 +136,7 @@ export function TrendingPlayersCard() {
   return (
     <CollapsibleCard title="Trending players">
       <Tabs defaultValue="risers">
-        <div className="flex justify-end border-b border-n-4 px-[13px] py-2">
+        <div className="flex justify-end px-[15px] pb-[9px]">
           <TabsList>
             <TabsTrigger value="risers">Risers</TabsTrigger>
             <TabsTrigger value="fallers">Fallers</TabsTrigger>
@@ -144,13 +144,13 @@ export function TrendingPlayersCard() {
         </div>
 
         {isLoading ? (
-          <div className="space-y-2 p-[13px]">
+          <div className="space-y-2 border-t border-n-4 px-[15px] py-[11px]">
             {Array.from({ length: ROWS_PER_TAB }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
+              <Skeleton key={i} className="h-8 w-full rounded-md bg-surface-control" />
             ))}
           </div>
         ) : isError ? (
-          <p className="px-[13px] py-8 text-center text-[12px] font-medium text-negative-strong">
+          <p className="border-t border-n-4 px-[15px] py-6 text-center text-[11px] font-medium text-negative-strong">
             Couldn&apos;t load trending players. Refresh to try again.
           </p>
         ) : (

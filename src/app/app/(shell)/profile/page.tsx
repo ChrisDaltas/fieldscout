@@ -17,8 +17,9 @@ import { userProfileHref } from '@/components/shared/username-link-ops'
 /**
  * My stats — how the user's profile performs (package screen 09). The shell
  * PageHeader owns the page title; edit/share actions live there. Content:
- * profile hero card, real stat tiles (cred / tier / followers / following),
- * cred progress bar, accuracy placeholders, ranking history.
+ * profile header, real stat tiles (cred / tier / followers / following),
+ * cred progress bar, accuracy placeholders, ranking history — in the v7
+ * Profile language (grey tiles, plain sections, thin pill bars).
  */
 export default function ProfilePage() {
   const { profile, isLoading } = useAuth()
@@ -27,15 +28,21 @@ export default function ProfilePage() {
     return (
       <>
         <PageHeader title="My stats" />
-        <div className="space-y-[19px]">
-          <Skeleton className="h-28 w-full" />
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Skeleton className="h-20" />
-            <Skeleton className="h-20" />
-            <Skeleton className="h-20" />
-            <Skeleton className="h-20" />
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-[15px]">
+            <Skeleton className="h-[65px] w-[65px] shrink-0 rounded-full bg-surface-control" />
+            <div className="flex flex-1 flex-col gap-2">
+              <Skeleton className="h-6 w-40 rounded-md bg-surface-control" />
+              <Skeleton className="h-3 w-56 rounded-md bg-surface-control" />
+            </div>
           </div>
-          <Skeleton className="h-40 w-full" />
+          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            <Skeleton className="h-[78px] rounded-2xl bg-surface-control" />
+            <Skeleton className="h-[78px] rounded-2xl bg-surface-control" />
+            <Skeleton className="h-[78px] rounded-2xl bg-surface-control" />
+            <Skeleton className="h-[78px] rounded-2xl bg-surface-control" />
+          </div>
+          <Skeleton className="h-40 w-full rounded-2xl bg-surface-control" />
         </div>
       </>
     )
@@ -45,9 +52,9 @@ export default function ProfilePage() {
     return (
       <>
         <PageHeader title="My stats" />
-        <div className="mx-auto max-w-2xl rounded-sm border border-ink bg-white px-6 py-14 text-center">
-          <h2 className="text-h5">Profile unavailable</h2>
-          <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-negative-strong">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
+          <h2 className="text-h6 text-ink">Profile unavailable</h2>
+          <p className="mx-auto mt-1.5 max-w-md text-[11px] font-medium text-negative-strong">
             We couldn&apos;t load your profile. Refresh to try again.
           </p>
         </div>
@@ -67,7 +74,7 @@ export default function ProfilePage() {
                 Edit profile
               </Link>
             </Button>
-            <Button asChild variant="blue" size="md">
+            <Button asChild variant="stroke" size="md">
               <Link href={userProfileHref(profile.username)}>
                 <Icon name="external-link" />
                 View public profile
@@ -77,7 +84,7 @@ export default function ProfilePage() {
         }
       />
 
-      <div className="space-y-[19px]">
+      <div className="flex flex-col gap-6">
         <ProfileHeader
           username={profile.username}
           bio={profile.bio}
