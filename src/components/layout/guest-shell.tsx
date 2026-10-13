@@ -16,7 +16,7 @@ interface GuestShellProps {
   wide?: boolean
 }
 
-/** Guest chrome — white top bar, lime signup banner, page-grey content. */
+/** Guest chrome — white top bar, soft-green signup banner, white page. */
 export function GuestShell({
   children,
   showBanner = true,

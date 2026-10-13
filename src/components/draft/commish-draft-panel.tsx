@@ -456,12 +456,14 @@ function PanelSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="flex flex-col gap-2.5 rounded-sm border border-ink bg-white p-3">
-      <div className="flex flex-col gap-0.5">
-        <h3 className="text-[13px] font-extrabold text-ink">{title}</h3>
-        {hint && <p className="text-[11px] font-medium text-n-3">{hint}</p>}
+    // v7 settings group: the title sits above a hairline box (Next v7's
+    // League settings sections) — flat at rest, the hairline separates it.
+    <section className="flex flex-col gap-[7px]">
+      <div className="flex flex-col gap-0.5 px-[3px]">
+        <h3 className="text-[13px] font-bold tracking-[-0.01em] text-ink">{title}</h3>
+        {hint && <p className="text-[10px] font-medium text-n-6">{hint}</p>}
       </div>
-      {children}
+      <div className="flex flex-col gap-2.5 rounded-xl border border-n-4 bg-white p-3.5">{children}</div>
     </section>
   )
 }
@@ -485,7 +487,7 @@ function ReasonInput({
         onChange={(e) => onChange(e.target.value)}
         maxLength={500}
         placeholder="Why — the audit log arrives in M6; chat shows the action either way"
-        className="h-btn-md text-[12px]"
+        className="h-btn-md"
       />
     </div>
   )
@@ -551,7 +553,7 @@ function ClockSection({
         <div className="flex flex-col gap-1.5">
           <Label className="text-[11px]">New pick clock (applies to subsequent picks)</Label>
           <Select value={timer} onValueChange={setTimer} disabled={gate.blocked}>
-            <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="New pick clock">
+            <SelectTrigger className="h-btn-md" aria-label="New pick clock">
               <SelectValue placeholder="Choose a timer…" />
             </SelectTrigger>
             <SelectContent>
@@ -711,7 +713,7 @@ function TimerInput({
         disabled={disabled}
         aria-label={`${label} seconds`}
         onChange={(e) => onChange(e.target.value)}
-        className="h-btn-md w-24 text-[12px]"
+        className="fs-num h-btn-md w-24"
       />
     </div>
   )
@@ -808,7 +810,7 @@ function UndoSection({
             placeholder={bounds ? `Pick ${bounds.min}–${bounds.max}` : 'No picks yet'}
             disabled={gate.blocked || !bounds}
             aria-label="First pick to revert"
-            className="h-btn-md w-28 text-[12px]"
+            className="fs-num h-btn-md w-28"
           />
           <Button
             variant="stroke"
@@ -833,9 +835,9 @@ function UndoSection({
                 : 'The player returns to the pool and the clock rewinds to that team.'}
             </DialogDescription>
           </DialogHeader>
-          <ul className="flex max-h-56 flex-col gap-1 overflow-y-auto text-[12px] font-semibold text-ink">
+          <ul className="flex max-h-56 flex-col gap-1 overflow-y-auto text-[11px] font-semibold text-ink">
             {preview?.reverts.map((p) => (
-              <li key={p.pick_number} className="rounded-sm border border-ink px-2 py-1">
+              <li key={p.pick_number} className="rounded-md bg-surface-sunken px-2.5 py-1.5">
                 {pickSummary(p)}
               </li>
             ))}
@@ -923,7 +925,7 @@ function FixPickSection({
       <div className="flex flex-col gap-1.5">
         <Label className="text-[11px]">Reassign a pick</Label>
         <Select value={pickId} onValueChange={setPickId} disabled={gate.blocked}>
-          <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="Pick to reassign">
+          <SelectTrigger className="h-btn-md" aria-label="Pick to reassign">
             <SelectValue placeholder="Choose a pick…" />
           </SelectTrigger>
           <SelectContent>
@@ -935,7 +937,7 @@ function FixPickSection({
           </SelectContent>
         </Select>
         <Select value={newTeam} onValueChange={setNewTeam} disabled={gate.blocked}>
-          <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="New team">
+          <SelectTrigger className="h-btn-md" aria-label="New team">
             <SelectValue placeholder="New team (optional)" />
           </SelectTrigger>
           <SelectContent>
@@ -981,7 +983,7 @@ function FixPickSection({
       <div className="flex flex-col gap-1.5">
         <Label className="text-[11px]">Move a drafted player</Label>
         <Select value={movePickNumber} onValueChange={setMovePickNumber} disabled={gate.blocked}>
-          <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="Player to move">
+          <SelectTrigger className="h-btn-md" aria-label="Player to move">
             <SelectValue placeholder="Choose a drafted player…" />
           </SelectTrigger>
           <SelectContent>
@@ -993,7 +995,7 @@ function FixPickSection({
           </SelectContent>
         </Select>
         <Select value={moveTo} onValueChange={setMoveTo} disabled={gate.blocked}>
-          <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="Destination team">
+          <SelectTrigger className="h-btn-md" aria-label="Destination team">
             <SelectValue placeholder="Move to team…" />
           </SelectTrigger>
           <SelectContent>
@@ -1142,7 +1144,7 @@ function OrderSection({
         {working.map((teamId, index) => (
           <li
             key={teamId}
-            className="flex items-center justify-between gap-1.5 rounded-sm border border-ink px-2 py-1 text-[12px] font-semibold"
+            className="flex items-center justify-between gap-1.5 rounded-md bg-surface-sunken px-2.5 py-1 text-[11px] font-semibold"
           >
             <span className="min-w-0 truncate">
               <span className="fs-num text-n-3">{index + 1}.</span>{' '}
@@ -1236,7 +1238,7 @@ function AutopickSection({
           return (
             <li
               key={member.id}
-              className="flex items-center justify-between gap-1.5 rounded-sm border border-ink px-2 py-1"
+              className="flex items-center justify-between gap-1.5 rounded-md bg-surface-sunken px-2.5 py-1.5"
             >
               <span className="min-w-0 truncate text-[12px] font-semibold">
                 {teamName}
@@ -1252,7 +1254,7 @@ function AutopickSection({
               {noUser ? (
                 // A seat with no user autopicks by rule (E48/D102) — there
                 // is nothing to toggle, and pretending otherwise would lie.
-                <span className="fs-overline shrink-0 text-[9px] text-n-3">Auto (no manager)</span>
+                <span className="fs-overline shrink-0 text-n-6">Auto (no manager)</span>
               ) : (
                 <Switch
                   checked={member.is_autodraft === true}
@@ -1359,7 +1361,7 @@ function ResetSection({
               room sees a system post; this cannot be undone from here.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1 rounded-sm border border-ink bg-caution-soft px-3 py-2 text-[11px] font-semibold text-ink" data-reset-before-after>
+          <div className="flex flex-col gap-1 rounded-xl bg-caution-soft px-3 py-2.5 text-[11px] font-medium text-ink" data-reset-before-after>
             <p data-confirm-before>{beforeAfter.before}</p>
             <p data-confirm-after>{beforeAfter.after}</p>
           </div>
@@ -1371,7 +1373,7 @@ function ResetSection({
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               aria-label="Type RESET to confirm"
-              className="h-btn-md text-[12px]"
+              className="h-btn-md"
             />
           </div>
           <ReasonInput value={reason} onChange={setReason} />
@@ -1494,7 +1496,7 @@ function ManualEditSection({
         <div className="flex flex-col gap-1.5" aria-label="Drafted players by team">
           {columns.map((column) => (
             <div key={column.teamId} className="flex flex-col gap-1">
-              <span className="fs-overline text-[9px] text-n-3">
+              <span className="fs-overline text-n-6">
                 {column.name}
                 {column.budget ? ` · $${column.budget.remaining} left` : ''}
               </span>
@@ -1508,7 +1510,7 @@ function ManualEditSection({
                       <button
                         key={pick.pickNumber}
                         type="button"
-                        className="flex items-center gap-1 rounded-sm border border-ink bg-white px-1.5 py-0.5 text-[11px] font-bold transition-colors hover:bg-accent-soft"
+                        className="flex items-center gap-1 rounded-pill bg-surface-control px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-surface-pressed"
                         onClick={() =>
                           setTarget({
                             pickNumber: pick.pickNumber,
@@ -1632,7 +1634,7 @@ function ManualEditDialog({
           <div className="flex flex-col gap-1.5">
             <p className="text-[12px] font-semibold">
               {target.playerName} returns to the pool and {target.teamName} is refunded{' '}
-              <span className="fs-num font-extrabold">${target.price ?? reserve}</span>.
+              <span className="fs-num font-bold">${target.price ?? reserve}</span>.
             </p>
             <ReasonInput value={reason} onChange={setReason} required />
           </div>
@@ -1642,7 +1644,7 @@ function ManualEditDialog({
           <div className="flex flex-col gap-1.5">
             <Label className="text-[11px]">New team</Label>
             <Select value={toTeam} onValueChange={setToTeam}>
-              <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="New team">
+              <SelectTrigger className="h-btn-md" aria-label="New team">
                 <SelectValue placeholder="Move to team…" />
               </SelectTrigger>
               <SelectContent>
@@ -1673,7 +1675,7 @@ function ManualEditDialog({
               onChange={(e) => setPrice(e.target.value)}
               inputMode="numeric"
               aria-label="Cost to the new team"
-              className="h-btn-md w-28 text-[12px]"
+              className="fs-num h-btn-md w-28"
             />
             <p className="text-[10px] font-medium text-n-3">{cost.hint}</p>
             <ReasonInput value={reason} onChange={setReason} required />
@@ -1776,8 +1778,8 @@ function CancelNominationSection({
     >
       {nomination ? (
         <p className="text-[12px] font-semibold">
-          On the block: <span className="font-extrabold">{playerLabel(nomination.player_id)}</span>{' '}
-          at <span className="fs-num font-extrabold">${nomination.high_bid}</span>
+          On the block: <span className="font-bold">{playerLabel(nomination.player_id)}</span>{' '}
+          at <span className="fs-num font-bold">${nomination.high_bid}</span>
           {nominatingTeamName ? ` · ${nominatingTeamName} nominates again on resume` : ''}
         </p>
       ) : (
@@ -1887,7 +1889,7 @@ function BudgetSection({
       hint="Add or remove dollars from a team's auction budget. Adjustments COMPOSE — each one is added to what came before. Works while the draft is live or paused."
     >
       <Select value={teamId} onValueChange={setTeamId}>
-        <SelectTrigger className="h-btn-md text-[12px] font-bold" aria-label="Team to adjust">
+        <SelectTrigger className="h-btn-md" aria-label="Team to adjust">
           <SelectValue placeholder="Choose a team…" />
         </SelectTrigger>
         <SelectContent>
@@ -1914,7 +1916,7 @@ function BudgetSection({
           inputMode="numeric"
           placeholder="+10 / -10"
           aria-label="Budget adjustment"
-          className="h-btn-md w-28 text-[12px]"
+          className="fs-num h-btn-md w-28"
         />
       </div>
 
@@ -1923,17 +1925,17 @@ function BudgetSection({
           refusal, with its own numbers and remedy, is what a commissioner
           reads if a floor is really breached. */}
       {preview.before && (
-        <div className="flex flex-col gap-0.5 rounded-sm border border-n-4 px-2 py-1.5 text-[11px] font-semibold">
-          <span className="fs-overline text-[9px] text-n-3">
+        <div className="flex flex-col gap-0.5 rounded-xl bg-surface-sunken px-3 py-2 text-[11px] font-medium">
+          <span className="fs-overline text-n-6">
             {parsedDelta === null || parsedDelta === 0 ? 'Now' : 'After this adjustment'}
           </span>
           <span>
             Budget{' '}
-            <span className="fs-num font-extrabold">
+            <span className="fs-num font-bold">
               ${(preview.after ?? preview.before).remaining}
             </span>{' '}
             · max bid{' '}
-            <span className="fs-num font-extrabold">
+            <span className="fs-num font-bold">
               ${(preview.after ?? preview.before).maxBid}
             </span>{' '}
             · <span className="fs-num">{preview.before.openSlots}</span> open{' '}
@@ -2033,9 +2035,9 @@ function EndDraftSection({
               Ending stops the draft where it is. Here is exactly what happens:
             </DialogDescription>
           </DialogHeader>
-          <ul className="flex flex-col gap-1 text-[12px] font-semibold text-ink">
+          <ul className="flex flex-col gap-1 text-[11px] font-semibold text-ink">
             {consequences.map((line) => (
-              <li key={line} className="rounded-sm border border-ink px-2 py-1">
+              <li key={line} className="rounded-md bg-surface-sunken px-2.5 py-1.5">
                 {line}
               </li>
             ))}
@@ -2048,7 +2050,7 @@ function EndDraftSection({
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               aria-label="Type END to confirm"
-              className="h-btn-md text-[12px]"
+              className="h-btn-md"
             />
           </div>
           <ReasonInput value={reason} onChange={setReason} required />
@@ -2103,7 +2105,7 @@ function PlayerSearchPicker({
 
   if (selected) {
     return (
-      <div className="flex items-center justify-between gap-1.5 rounded-sm border border-accent bg-accent-soft px-2 py-1">
+      <div className="flex items-center justify-between gap-1.5 rounded-md bg-accent-soft px-2.5 py-1 text-accent-deep">
         <span className="min-w-0 truncate text-[12px] font-semibold">{selected.name}</span>
         <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onSelect(null)}>
           Change
@@ -2121,7 +2123,7 @@ function PlayerSearchPicker({
         placeholder="Search players…"
         aria-label={label}
         disabled={disabled}
-        className="h-btn-md text-[12px]"
+        className="h-btn-md"
       />
       {results.length > 0 && (
         <ul className="flex flex-col gap-0.5">
@@ -2129,7 +2131,7 @@ function PlayerSearchPicker({
             <li key={p.id}>
               <button
                 type="button"
-                className="w-full rounded-sm border border-ink px-2 py-1 text-left text-[12px] font-semibold transition-colors hover:bg-n-4"
+                className="w-full rounded-md px-2.5 py-1.5 text-left text-[11px] font-semibold transition-colors hover:bg-surface-sunken"
                 onClick={() => {
                   onSelect({ id: p.id, name: p.full_name })
                   setTerm('')

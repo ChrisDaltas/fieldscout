@@ -30,8 +30,8 @@ interface DraftStatusStripProps {
  * clock and presence took a second row. There is no third band (D149).
  *
  * Elevation: the strip does NOT rest elevated (CLAUDE.md's ordinary rule —
- * it is not one of D152's two sanctioned resting shadows; the bar above it
- * is). The 1px ink rule beneath is the separation, and on-clock emphasis is
+ * it is not one of D152's sanctioned resting shadows; under v7 the bar above
+ * rests flat too). The 1px hairline beneath is the separation, and on-clock emphasis is
  * text color/weight — fill/border/text only, never a shadow.
  */
 export function DraftStatusStrip({ strip, seats, clock, offsetMs }: DraftStatusStripProps) {
@@ -40,14 +40,14 @@ export function DraftStatusStrip({ strip, seats, clock, offsetMs }: DraftStatusS
   return (
     <section
       aria-label="Draft status"
-      className="flex h-draft-status w-full shrink-0 items-center gap-2.5 border-b border-ink bg-white px-3"
+      className="flex h-draft-status w-full shrink-0 items-center gap-3 border-b border-n-4 bg-white px-3"
     >
       {/* Requirement (3): whose turn — the strip's LEADING element. */}
       <span
         className={
           model.left.onClock.you
-            ? 'fs-overline shrink-0 text-accent-strong'
-            : 'fs-overline min-w-0 shrink truncate text-n-3'
+            ? 'shrink-0 text-[13px] font-bold text-accent-strong'
+            : 'min-w-0 shrink truncate text-[13px] font-semibold text-ink'
         }
       >
         {model.left.onClock.text}
@@ -68,7 +68,7 @@ export function DraftStatusStrip({ strip, seats, clock, offsetMs }: DraftStatusS
           labels precedent, re-measured here at 375: the band's rigid run is
           357px of 375, starving presence to a 3px sliver — compressing this
           span hands presence ~70px, one full chip plus its scroll). */}
-      <span className="shrink-0 text-[13px] font-extrabold">
+      <span className="shrink-0 text-[11px] font-medium text-n-6">
         <span className="hidden sm:inline">Round </span>
         <span className="sm:hidden">R</span>
         <span className="fs-num">{model.left.round}</span>
@@ -78,7 +78,7 @@ export function DraftStatusStrip({ strip, seats, clock, offsetMs }: DraftStatusS
       </span>
 
       {model.left.nextHint && (
-        <span className="fs-overline hidden shrink-0 text-[9px] text-n-3 sm:inline">
+        <span className="hidden shrink-0 text-[11px] font-medium text-n-6 sm:inline">
           Your next: <span className="fs-num">{model.left.nextHint.label}</span>
         </span>
       )}

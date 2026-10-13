@@ -105,8 +105,8 @@ export function MockDraftReport({ mockId }: { mockId: string }) {
     // all: a phone got an unlabelled skeleton with no way back.
     return (
       <ReportShell>
-        <Skeleton className="h-9 rounded-sm" />
-        <Skeleton className="h-64 rounded-sm" />
+        <Skeleton className="h-9 rounded-md" />
+        <Skeleton className="h-64 rounded-2xl" />
       </ReportShell>
     )
   }
@@ -116,10 +116,10 @@ export function MockDraftReport({ mockId }: { mockId: string }) {
       <ReportShell>
         <Card className="border-negative bg-negative-soft">
           <CardContent className="flex flex-col items-start gap-2 p-4">
-            <p className="text-[13px] font-bold" role="alert">
+            <p className="text-[15px] font-bold tracking-[-0.02em]" role="alert">
               Couldn&apos;t load this report.
             </p>
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="text-[11px] font-medium text-n-3">
               The draft didn&apos;t come back. Retry, or head back to your practice drafts.
             </p>
             <div className="flex items-center gap-2.5">
@@ -183,14 +183,16 @@ export function MockReportMissing() {
     <ReportShell>
       <Card>
         <CardContent className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-          <Icon name="rocket" size={18} className="text-n-3" />
+          <span className="flex size-10 items-center justify-center rounded-full bg-surface-sunken text-n-3">
+            <Icon name="rocket" size={18} />
+          </span>
           <p className="text-h5 text-ink">No report here yet</p>
-          <p className="max-w-md text-[13px] font-medium text-n-3">
+          <p className="max-w-md text-[11px] font-medium text-n-3">
             A report appears once a practice draft finishes. This one may still be running, or it
             may have been deleted.
           </p>
           <div className="mt-1">
-            <Button variant="blue" size="sm" shadow asChild>
+            <Button variant="blue" size="md" asChild>
               <Link href={PRACTICE_HOME_HREF}>Back to practice drafts</Link>
             </Button>
           </div>
@@ -272,24 +274,25 @@ function MockReportBody({
       <Card>
         <CardHeader>
           <CardTitle>{isAuction ? 'Every buy' : 'Every pick'}</CardTitle>
-          <span className="fs-overline text-[9px] text-n-3">
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3.5">
+          {/* v7 stat tiles — the report's totals, said once. */}
+          <dl className="grid grid-cols-2 gap-2 sm:w-fit sm:grid-cols-[repeat(2,minmax(120px,auto))]">
             {isAuction ? (
               <>
-                <span className="fs-num">{rowCount}</span> {rowCount === 1 ? 'buy' : 'buys'} ·{' '}
-                <span className="fs-num">${totalSpent}</span> spent
+                <ReportStat label={rowCount === 1 ? 'Buy' : 'Buys'} value={String(rowCount)} />
+                <ReportStat label="Spent" value={`$${totalSpent}`} />
               </>
             ) : (
               <>
-                <span className="fs-num">{rowCount}</span> {rowCount === 1 ? 'pick' : 'picks'} ·{' '}
-                <span className="fs-num">{draft.total_rounds ?? 0}</span> rounds
+                <ReportStat label={rowCount === 1 ? 'Pick' : 'Picks'} value={String(rowCount)} />
+                <ReportStat label="Rounds" value={String(draft.total_rounds ?? 0)} />
               </>
             )}
-          </span>
-        </CardHeader>
-        <CardContent>
+          </dl>
           {rowCount === 0 ? (
             // Completed with nothing drafted — an ended-early practice run.
-            <p className="text-[12px] font-medium text-n-3">
+            <p className="py-6 text-center text-[11px] font-medium text-n-6">
               {isAuction
                 ? 'No player was bought before this draft ended.'
                 : 'No player was drafted before this draft ended.'}
@@ -328,6 +331,16 @@ function MockReportBody({
           </CardContent>
         </Card>
       )}
+    </div>
+  )
+}
+
+/** A v7 stat tile — sunken panel, small grey label, bold tabular value. */
+function ReportStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-2xl bg-surface-sunken px-3.5 py-2.5">
+      <dt className="text-[10px] font-semibold text-n-6">{label}</dt>
+      <dd className="fs-num text-[20px] font-bold leading-6 tracking-[-0.03em] text-ink">{value}</dd>
     </div>
   )
 }
@@ -419,7 +432,7 @@ function AuctionReportTable({
             <TableRow key={pick.pick_number} className={anchorRow(pick.team_id, anchorTeamId)}>
               <PlayerCells pick={pick} playerById={playerById} />
               <TableCell className="font-semibold text-n-3">{teamName(pick.team_id)}</TableCell>
-              <TableCell className="fs-num text-right font-extrabold">
+              <TableCell className="fs-num text-right font-bold">
                 ${pick.price ?? 0}
               </TableCell>
               <TableCell className="fs-num text-right text-n-3">{pick.pick_number}</TableCell>
@@ -523,7 +536,7 @@ function TeamSpendTable({
                   )}
                 </TableCell>
                 <TableCell className="fs-num text-right">{teamPicks.length}</TableCell>
-                <TableCell className="fs-num text-right font-extrabold">${spend.total}</TableCell>
+                <TableCell className="fs-num text-right font-bold">${spend.total}</TableCell>
                 <TableCell className="font-semibold text-n-3">
                   {spend.biggest
                     ? `${biggest ? biggest.full_name : spend.biggest.player_id} · $${spend.biggest.price ?? 0}`

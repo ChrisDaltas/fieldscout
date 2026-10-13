@@ -15,6 +15,7 @@ import { PlayerFace, PlayerLink } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { FilterChip } from '@/components/ui/badge'
 import { Icon } from '@/components/ui/icon'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -44,7 +45,7 @@ import {
 
 /** Plain-words states shared by both lists. */
 function RailMessage({ children }: { children: React.ReactNode }) {
-  return <p className="px-4 py-10 text-center text-[11px] font-medium text-n-3" data-rail-message>{children}</p>
+  return <p className="px-4 py-10 text-center text-[11px] font-medium text-n-6" data-rail-message>{children}</p>
 }
 
 function RailSkeleton() {
@@ -52,7 +53,7 @@ function RailSkeleton() {
     <div className="space-y-2.5 p-3" aria-label="Loading players">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="flex items-center gap-2.5">
-          <Skeleton className="h-6 w-6 rounded-sm" />
+          <Skeleton className="h-[26px] w-[26px] rounded-pill" />
           <div className="flex-1 space-y-1.5">
             <Skeleton className="h-3 w-2/3" />
             <Skeleton className="h-2.5 w-20" />
@@ -92,7 +93,7 @@ function DraggableRow({ player, children }: { player: PoolPlayer; children: Reac
       {...attributes}
       {...listeners}
       className={cn(
-        'flex cursor-grab touch-manipulation flex-wrap items-center gap-x-2 border-b border-n-4 px-3 py-1.5 transition-colors duration-200 ease-linear hover:bg-n-4 active:cursor-grabbing',
+        'flex min-h-[38px] cursor-grab touch-manipulation flex-wrap items-center gap-x-2 border-b border-n-4 px-3 py-1.5 transition-colors duration-100 ease-linear hover:bg-surface-sunken active:cursor-grabbing',
         isDragging && 'opacity-40',
       )}
       data-rail-row={player.id}
@@ -116,10 +117,10 @@ function RowIdentity({ player, meta, context }: { player: PoolPlayer; meta: stri
         size={26}
       />
       <span className="min-w-0 flex-1">
-        <PlayerLink playerId={player.id} name={player.full_name} context={context} className="block text-[12px] font-bold leading-tight" />
+        <PlayerLink playerId={player.id} name={player.full_name} context={context} className="block truncate text-[11px] font-semibold leading-tight" />
         <span className="mt-0.5 flex items-center gap-1.5">
           <PositionBadge position={player.position} />
-          <span className="fs-num truncate text-[10px] font-semibold text-n-3" data-rail-meta>
+          <span className="fs-num truncate text-[10px] font-medium text-n-6" data-rail-meta>
             {meta}
           </span>
         </span>
@@ -186,7 +187,7 @@ export function LeaguePlayersList({
 
   return (
     <TooltipProvider delayDuration={200}>
-      <p className="border-b border-n-4 px-3 py-1.5 text-[10px] font-bold text-n-3" data-rail-adds-to>
+      <p className="border-b border-n-4 px-3 py-1.5 text-[10px] font-semibold text-n-6" data-rail-adds-to>
         {addsTo ?? 'You don’t manage a team in this league — research only.'}
       </p>
       {lastAdded && (
@@ -209,7 +210,7 @@ export function LeaguePlayersList({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span tabIndex={0} aria-label={ownerTooltip(a.teamName, manager)} data-rail-owner={a.teamId}>
-                    <Crest name={crest?.name ?? a.teamName} src={null} className="h-6 w-6" />
+                    <Crest name={crest?.name ?? a.teamName} src={null} className="h-5 w-5 rounded-[6px]" />
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="left">{ownerTooltip(a.teamName, manager)}</TooltipContent>
@@ -323,14 +324,14 @@ export function PlayersPanel({ onClose, pathname: pathOverride }: PlayersPanelPr
 
   return (
     <RailPanelShell title="Players" onClose={onClose}>
-      <div className="shrink-0 space-y-2 border-b border-ink p-3">
+      <div className="shrink-0 space-y-2 border-b border-n-4 p-3">
         {!pageLeague && myLeagues.length > 0 && (
-          <label className="flex items-center gap-2 text-[10px] font-bold text-n-3">
+          <label className="flex items-center gap-2 text-[10px] font-semibold text-n-6">
             League
             <select
               value={pickedLeague ?? ''}
               onChange={(e) => setPicked(e.target.value)}
-              className="h-btn-md min-w-0 flex-1 rounded-sm border border-ink bg-white px-2 text-[11px] font-semibold text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              className="h-btn-md min-w-0 flex-1 rounded-md bg-surface-control px-2 text-[11px] font-semibold text-ink outline-none transition-[background-color,box-shadow] duration-150 ease-linear hover:bg-n-4 focus-visible:bg-white focus-visible:shadow-field"
               data-rail-league-pick
             >
               {myLeagues.map((l) => (
@@ -342,14 +343,14 @@ export function PlayersPanel({ onClose, pathname: pathOverride }: PlayersPanelPr
           </label>
         )}
         <div className="relative">
-          <Icon name="search" size={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-n-3" />
-          <input
+          <Icon name="search" size={12} className="pointer-events-none absolute left-2.5 top-1/2 z-10 -translate-y-1/2 text-n-6" />
+          <Input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search players…"
             aria-label="Search players"
-            className="h-btn-md w-full rounded-sm border border-ink bg-white pl-7 pr-2.5 text-[11px] font-medium text-ink outline-none transition-colors duration-200 ease-linear placeholder:text-n-3 focus:border-accent"
+            className="h-btn-md rounded-pill pl-7 pr-2.5"
           />
         </div>
 
@@ -366,10 +367,10 @@ export function PlayersPanel({ onClose, pathname: pathOverride }: PlayersPanelPr
         </div>
 
         {leagueId && (
-          <label className="flex items-center gap-2 text-[11px] font-bold text-ink">
+          <label className="flex items-center gap-2 text-[11px] font-semibold text-ink">
             <Switch checked={onRosters} onCheckedChange={setOnRosters} aria-label="On rosters" data-rail-switch />
             On rosters
-            <span className="ml-auto text-[10px] font-semibold text-n-3" data-rail-switch-label>
+            <span className="ml-auto text-[10px] font-medium text-n-6" data-rail-switch-label>
               {poolSwitchLabel(onRosters)}
             </span>
           </label>

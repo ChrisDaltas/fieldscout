@@ -17,7 +17,8 @@ interface FollowButtonProps {
  * Community follow control (package screen 08). Reads the viewer's follow set
  * from the shared `useFollowingIds` query so every button stays in sync, and
  * toggles optimistically. Renders nothing for the viewer's own row; a
- * signed-out click routes to login. Following inverts stroke → solid ink.
+ * signed-out click routes to login. v7 pills: Follow is the blue primary;
+ * Following settles to the grey secondary.
  */
 export function FollowButton({ userId, className }: FollowButtonProps) {
   const router = useRouter()
@@ -43,7 +44,7 @@ export function FollowButton({ userId, className }: FollowButtonProps) {
 
   return (
     <Button
-      variant={isFollowing ? 'dark' : 'stroke'}
+      variant={isFollowing ? 'stroke' : 'blue'}
       size="sm"
       onClick={onClick}
       disabled={toggle.isPending}

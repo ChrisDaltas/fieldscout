@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 
+import { LogoTile, Wordmark } from '@/components/landing/fieldscout-logo'
 import { ClaimInviteCard } from '@/components/leagues/claim-invite-card'
 import { parseJoinPreview } from '@/components/leagues/claim-invite-card-ops'
-import { Wordmark } from '@/components/shared/wordmark'
 import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -36,9 +36,9 @@ export default async function JoinPage({
   if (!featureFlags.leagues) {
     return (
       <JoinShell>
-        <div className="rounded-sm border border-ink bg-white px-card-pad py-10 text-center text-ink">
-          <p className="text-h5">Leagues aren&apos;t available yet</p>
-          <p className="mt-1.5 text-[12px] font-medium text-n-3">
+        <div className="rounded-2xl border border-n-4 bg-white px-[19px] py-10 text-center text-ink">
+          <p className="text-[15px] font-bold tracking-[-0.02em]">Leagues aren&apos;t available yet</p>
+          <p className="mt-1 text-[11px] font-medium text-n-6">
             League invites open up soon — check back shortly.
           </p>
         </div>
@@ -66,18 +66,19 @@ export default async function JoinPage({
   )
 }
 
-/** Centered pre-auth shell — mirrors the (auth) layout's wordmark + card
- *  language for a visitor who arrives before the app shell exists. */
+/** Centered pre-auth shell — mirrors the (auth) layout's v7 logo lockup +
+ *  ~360px card for a visitor who arrives before the app shell exists. */
 function JoinShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-page px-4 py-10">
-      <div className="mb-7 text-center">
-        <h1 className="text-4xl text-ink">
-          <Wordmark />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white px-4 py-10">
+      <div className="mb-6 flex flex-col items-center gap-2 text-center">
+        <h1 className="flex items-center gap-2.5 text-ink">
+          <LogoTile size={30} />
+          <Wordmark height={16} />
         </h1>
-        <p className="mt-1.5 text-[13px] font-medium text-n-3">Fantasy football, ranked.</p>
+        <p className="text-[11px] font-medium text-n-6">Fantasy football, ranked.</p>
       </div>
-      <div className="w-full max-w-sm">{children}</div>
+      <div className="w-full max-w-[360px]">{children}</div>
     </div>
   )
 }

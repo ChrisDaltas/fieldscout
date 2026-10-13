@@ -22,8 +22,8 @@ interface PresenceBarProps {
  * Presentational: `useDraftRoom` owns the Presence join and hands the
  * online set down; this renders one chip per franchise in draft order.
  *
- * On-clock is a RESTING state, so it's carried by fill + border
- * (bg-accent-soft/border-accent), never a shadow (CLAUDE.md elevation rule);
+ * On-clock is a RESTING state, so it's carried by fill + text colour
+ * (bg-accent-soft/text-accent-deep), never a shadow (CLAUDE.md elevation rule);
  * online-ness is the dot's fill, plus text for color-independence (§16.3 AA).
  */
 export function PresenceBar({ seats, className }: PresenceBarProps) {
@@ -45,17 +45,17 @@ export function PresenceBar({ seats, className }: PresenceBarProps) {
           key={seat.teamId}
           role="listitem"
           className={cn(
-            'flex h-chip shrink-0 items-center gap-1.5 rounded-sm border px-2 text-[11px] font-bold leading-none',
+            'flex h-btn-sm shrink-0 items-center gap-1.5 rounded-pill px-2.5 text-[11px] font-semibold leading-none',
             seat.onClock
-              ? 'border-accent bg-accent-soft text-ink'
-              : 'border-ink bg-white text-ink',
+              ? 'bg-accent-soft text-accent-deep'
+              : 'bg-surface-control text-ink',
           )}
         >
           <span
             aria-hidden
             className={cn(
               'h-1.5 w-1.5 shrink-0 rounded-pill',
-              seat.online ? 'bg-positive-strong' : 'border border-n-3 bg-transparent',
+              seat.online ? 'bg-brand' : 'border border-n-7 bg-transparent',
             )}
           />
           <span className="max-w-[128px] truncate">
@@ -64,11 +64,11 @@ export function PresenceBar({ seats, className }: PresenceBarProps) {
           </span>
           <span className="sr-only">{seat.online ? 'online' : 'offline'}</span>
           {seat.autopick && (
-            <span className="fs-overline rounded-sm bg-caution-soft px-1 text-[9px] text-ink">
+            <span className="rounded-sm bg-caution-soft px-1 py-0.5 text-[9px] font-bold text-caution-strong">
               Auto
             </span>
           )}
-          {seat.onClock && <span className="fs-overline text-[9px] text-accent-strong">On clock</span>}
+          {seat.onClock && <span className="text-[10px] font-semibold text-accent-deep">On clock</span>}
         </div>
       ))}
     </div>

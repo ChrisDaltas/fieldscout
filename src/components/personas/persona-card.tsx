@@ -13,8 +13,8 @@ interface PersonaCardProps {
 
 /**
  * Profile card for explore/feed surfaces. Links to the public persona page.
- * White card, ink border, round robot avatar, stroke AI badge; lifts onto a
- * hard shadow on hover like the other clickable cards.
+ * v7 card (hairline, no resting shadow), round avatar and the AI badge;
+ * it is a link, so it lifts softly on hover.
  */
 export function PersonaCard({
   username,
@@ -26,7 +26,7 @@ export function PersonaCard({
   return (
     <Link
       href={`/personas/${username}`}
-      className="block h-full rounded-sm border border-ink bg-white p-card-pad transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
+      className="block h-full rounded-2xl border border-n-4 bg-white p-[15px] transition-shadow hover:shadow-hard-4"
     >
       <div className="flex items-start gap-3">
         <UserAvatar
@@ -37,16 +37,16 @@ export function PersonaCard({
         />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="truncate text-[13px] font-extrabold text-ink">
+            <span className="truncate text-[13px] font-bold tracking-[-0.01em] text-ink">
               {displayName}
             </span>
             <PersonaBadge />
           </div>
-          <p className="mt-1 line-clamp-2 text-[12px] font-medium text-n-3">
+          <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-[1.45] text-n-3">
             {bio}
           </p>
           {typeof listCount === 'number' && (
-            <p className="fs-num mt-2 text-[11px] font-semibold text-n-3">
+            <p className="fs-num mt-2 text-[10px] font-semibold text-n-6">
               {listCount} {listCount === 1 ? 'list' : 'lists'}
             </p>
           )}

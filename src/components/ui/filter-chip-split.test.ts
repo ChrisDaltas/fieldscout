@@ -58,6 +58,9 @@ const FILTER_CHIP_CALLERS: Record<string, Reason> = {
   // The prototype's NotificationsTool: "All" beside league-avatar chips;
   // tapping the pressed league clears it back to null = all notifications.
   'components/layout/rail/notifications-panel.tsx': 'zero-selected-is-valid',
+  // Same shape in the Messages tool: "All" beside GM-avatar chips; tapping
+  // the pressed GM clears it back to null = all threads.
+  'components/layout/rail/messages-panel.tsx': 'zero-selected-is-valid',
   // Documents the surviving component beside the segment it was split from.
   'app/app/(shell)/styleguide/page.tsx': 'styleguide-demo',
 }

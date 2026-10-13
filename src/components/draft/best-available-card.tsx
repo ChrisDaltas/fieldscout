@@ -90,11 +90,11 @@ export function BestAvailableCard({
       {isLoading ? (
         <div className="flex flex-col gap-2 p-card-pad">
           {Array.from({ length: POOL_SIZE }).map((_, i) => (
-            <Skeleton key={i} className="h-11 w-full" />
+            <Skeleton key={i} className="h-11 w-full rounded-md" />
           ))}
         </div>
       ) : isError || pool.length === 0 ? (
-        <p className="p-card-pad text-[11px] font-medium text-n-3">
+        <p className="px-card-pad py-8 text-center text-[11px] font-medium text-n-6">
           Player pool unavailable right now.
         </p>
       ) : (

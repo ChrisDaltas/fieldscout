@@ -156,7 +156,7 @@ export default function UsernamePage() {
 
   const showStatus = username.length > 0 && !validationError
   const statusIcon = isChecking ? (
-    <Icon name="dots" size={13} className="text-n-3" />
+    <Icon name="dots" size={13} className="text-n-6" />
   ) : isAvailable === true ? (
     <Icon name="check" size={13} className="text-positive-strong" />
   ) : isAvailable === false ? (
@@ -165,16 +165,16 @@ export default function UsernamePage() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Choose your username</CardTitle>
+      <CardHeader className="min-h-0 border-0 px-[19px] pb-0 pt-[19px]">
+        <CardTitle className="text-[24px] font-bold tracking-[-0.03em]">Choose your username</CardTitle>
       </CardHeader>
       <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-          <p className="text-[12px] font-medium text-n-3">
+        <CardContent className="space-y-3.5 px-[19px] pb-[19px] pt-2">
+          <p className="text-[11px] font-medium text-n-3">
             This is how other scouts will find you
           </p>
           {error && (
-            <div className="flex items-center gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-bold text-ink">
+            <div className="flex items-center gap-2 rounded-md bg-negative-soft px-2.5 py-2 text-[11px] font-semibold text-negative-strong">
               <Icon name="info-circle" size={13} className="shrink-0" />
               {error}
             </div>
@@ -196,27 +196,27 @@ export default function UsernamePage() {
                 className="pr-10"
               />
               {showStatus && (
-                <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
                   {statusIcon}
                 </div>
               )}
             </div>
             {validationError && (
-              <p className="text-[11px] font-bold text-negative-strong">
+              <p className="text-[10px] font-semibold text-negative-strong">
                 {validationError}
               </p>
             )}
             {!validationError && isAvailable === false && (
-              <p className="text-[11px] font-bold text-negative-strong">
+              <p className="text-[10px] font-semibold text-negative-strong">
                 Username is taken
               </p>
             )}
             {!validationError && isAvailable === true && (
-              <p className="text-[11px] font-bold text-positive-strong">
+              <p className="text-[10px] font-semibold text-positive-strong">
                 Username is available
               </p>
             )}
-            <p className="text-[11px] font-medium text-n-3">
+            <p className="text-[10px] font-medium text-n-6">
               5–20 characters. Letters, numbers, and underscores. Usernames are permanent.
             </p>
           </div>

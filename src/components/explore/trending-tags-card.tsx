@@ -21,10 +21,10 @@ export function TrendingTagsCard() {
       <div className="flex flex-wrap gap-2 p-[13px]">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-chip w-16" />
+            <Skeleton key={i} className="h-chip w-16 rounded-pill bg-surface-control" />
           ))
         ) : tags.length === 0 ? (
-          <p className="text-[11px] font-medium text-n-3">No tags yet.</p>
+          <p className="text-[11px] font-medium text-n-6">No tags yet.</p>
         ) : (
           tags.map((tag) => (
             <TagChip key={tag.id} name={`#${tag.name}`} slug={tag.slug} />

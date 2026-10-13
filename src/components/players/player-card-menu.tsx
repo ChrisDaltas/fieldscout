@@ -78,7 +78,7 @@ export function PlayerCardMenu({
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-sm border border-ink bg-white text-ink transition-colors hover:bg-n-4 hover:text-accent',
+            'flex h-6 w-6 items-center justify-center rounded-pill bg-surface-control text-n-2 transition-colors hover:bg-surface-pressed hover:text-ink data-[state=open]:bg-surface-pressed data-[state=open]:text-ink',
             className,
           )}
         >

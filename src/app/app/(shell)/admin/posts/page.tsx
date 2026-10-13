@@ -99,10 +99,10 @@ export default function AdminPostsPage() {
   const shown = view === 'drafts' ? drafts : published
 
   return (
-    <div className="mx-auto max-w-3xl space-y-[19px]">
+    <div className="max-w-3xl space-y-[19px]">
       {/* The app's standard header (D486(12) audit) — not a page-level h1. */}
       <PageHeader title="Persona posts" />
-      <p className="text-[13px] font-medium text-n-3">
+      <p className="text-[11px] font-medium leading-[1.5] text-n-3">
         Review queue for the content engine. Publishing makes a post public
         and SEO-indexable; takedown removes it everywhere immediately.
       </p>
@@ -129,15 +129,15 @@ export default function AdminPostsPage() {
       {isLoading && (
         <div className="space-y-2.5">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 w-full" />
+            <Skeleton key={i} className="h-28 w-full rounded-2xl bg-surface-control" />
           ))}
         </div>
       )}
 
       {error != null && (
-        <div className="rounded-sm border border-negative-strong bg-negative-soft p-4">
-          <p className="text-[13px] font-bold text-ink">Could not load the queue</p>
-          <p className="mt-1 text-[13px] font-medium text-n-3">
+        <div className="rounded-2xl bg-negative-soft px-[17px] py-[15px]">
+          <p className="text-[13px] font-bold text-negative-strong">Could not load the queue</p>
+          <p className="mt-1 text-[11px] font-medium text-n-3">
             {error instanceof Error ? error.message : 'Failed to load.'}
           </p>
         </div>
@@ -146,11 +146,11 @@ export default function AdminPostsPage() {
       {!isLoading && !error && (
         <>
           {shown.length === 0 ? (
-            <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
-              <h2 className="text-h5">
+            <div className="rounded-2xl bg-surface-sunken px-6 py-14 text-center">
+              <h2 className="text-[15px] font-bold tracking-[-0.02em] text-ink">
                 {view === 'drafts' ? 'No drafts waiting' : 'Nothing published yet'}
               </h2>
-              <p className="mx-auto mt-2 max-w-md text-[13px] font-medium text-n-3">
+              <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
                 {view === 'drafts'
                   ? 'The content engine drops new drafts here for review.'
                   : 'Approve a draft and it shows up here, live on the site.'}
@@ -188,7 +188,7 @@ export default function AdminPostsPage() {
                       <>
                         <Link
                           href={`/personas/${personaOf(post).username}/posts/${post.slug}`}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-n-3 transition-colors hover:text-accent hover:underline"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong hover:underline"
                         >
                           <Icon name="external-link" size={12} />
                           View live
@@ -219,7 +219,7 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
   const [expanded, setExpanded] = useState(false)
   const persona = personaOf(post)
   return (
-    <li className="rounded-sm border border-ink bg-white p-card-pad">
+    <li className="rounded-2xl border border-n-4 bg-white p-[15px]">
       <div className="flex items-center gap-2">
         <UserAvatar
           src={persona.avatar_url ?? undefined}
@@ -227,7 +227,7 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
           name={persona.display_name}
           className="h-6 w-6 shrink-0"
         />
-        <span className="truncate text-[11px] font-bold text-n-3">
+        <span className="truncate text-[11px] font-semibold text-n-3">
           {persona.display_name}
         </span>
         <PersonaBadge />
@@ -235,16 +235,16 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
           {post.kind}
         </Badge>
       </div>
-      <p className="mt-2 text-[14px] font-extrabold text-ink">{post.title}</p>
+      <p className="mt-2 text-[14px] font-bold tracking-[-0.015em] text-ink">{post.title}</p>
       {post.dek && (
-        <p className="mt-1 text-[12px] font-medium text-n-3">{post.dek}</p>
+        <p className="mt-1 text-[11px] font-medium text-n-3">{post.dek}</p>
       )}
 
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="mt-2 flex items-center gap-1 text-[11px] font-bold text-n-3 transition-colors hover:text-ink"
+        className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-accent transition-colors hover:text-accent-strong"
       >
         <Icon
           name="arrow-bottom"
@@ -255,11 +255,11 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
       </button>
       {expanded && (
         <div className="mt-3 space-y-3 border-t border-n-4 pt-3">
-          <pre className="whitespace-pre-wrap font-sans text-[13px] font-medium leading-relaxed text-ink">
+          <pre className="whitespace-pre-wrap rounded-xl bg-surface-sunken p-3 font-sans text-[12px] font-medium leading-[1.6] text-n-2">
             {post.body_md}
           </pre>
           {post.citations.length > 0 && (
-            <div className="text-[11px] font-semibold text-n-3">
+            <div className="text-[10px] font-semibold text-n-6">
               Sources:{' '}
               {post.citations.map((c, i) =>
                 /^https?:\/\//i.test(c.source_url) ? (
@@ -268,7 +268,7 @@ function PostCard({ post, actions }: { post: AdminPost; actions: React.ReactNode
                     href={c.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="fs-num underline hover:text-ink"
+                    className="fs-num text-accent hover:underline"
                   >
                     [{i + 1}]
                   </a>

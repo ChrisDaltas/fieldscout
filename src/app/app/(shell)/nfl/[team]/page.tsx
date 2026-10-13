@@ -65,16 +65,16 @@ export default async function NflTeamPage({ params }: NflTeamPageProps) {
       <Card>
         <CardContent className="flex flex-wrap items-center gap-4">
           <span
-            className="flex h-[51px] w-[51px] shrink-0 items-center justify-center rounded-sm border border-ink text-[15px] font-extrabold text-white"
+            className="flex h-[51px] w-[51px] shrink-0 items-center justify-center rounded-xl text-[15px] font-bold text-white"
             style={{ backgroundColor: colors.primary }}
           >
             {info.abbr}
           </span>
           <div className="min-w-0">
-            <h1 className="text-h4 text-ink">
+            <h1 className="text-[20px] font-bold tracking-[-0.03em] text-ink">
               {info.city} {info.name}
             </h1>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] font-semibold text-n-3">
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] font-semibold text-n-6">
               <span>
                 {info.conference} {info.division}
               </span>

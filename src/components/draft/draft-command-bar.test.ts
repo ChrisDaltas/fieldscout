@@ -12,8 +12,8 @@ import { describe, expect, it } from 'vitest'
  * PR's per-variant DOM inventories.
  *
  * What is pinned, and why:
- *   - the bar's physical contract — 54px token / ink fill / pinned /
- *     resting shadow with the D152 exception named in a comment;
+ *   - the bar's physical contract — 54px token / white fill / pinned /
+ *     flat on its hairline (v7), with the D152 reasoning named in a comment;
  *   - Exit Draft surviving the deletion of EVERY variant gate in the file
  *     (Q13: everyone can leave — commissioner, member, mock);
  *   - the room mounting the bar and containing no PageHeader element or
@@ -82,19 +82,17 @@ describe('the bar’s physical contract (spec §16.4 zone 1; D149/D152; C47)', (
     expect(read(TAILWIND)).toMatch(/'draft-topbar':\s*'54px'/)
   })
 
-  it('is ink-filled and pinned over the scrolling room', () => {
-    expect(source).toMatch(/bg-ink/)
+  it('is white and pinned over the scrolling room (v7 light room)', () => {
+    expect(source).toMatch(/bg-white/)
     expect(source).toMatch(/sticky top-0/)
   })
 
-  it('keeps a RESTING hard shadow — the D152 pinned-bar exception', () => {
-    // The accent member of the shadow-hard family (an ink shadow disappears
-    // into an ink fill), with NO interaction prefix in front of it.
-    expect(source).toMatch(/(?<!:)shadow-hard-accent-4/)
-    expect(source).not.toMatch(/hover:shadow-hard-accent-4/)
+  it('rests flat on its hairline — v7 retires the D152 pinned-bar shadow', () => {
+    expect(source).toMatch(/border-b border-n-4/)
+    expect(source).not.toMatch(/shadow-hard/)
   })
 
-  it('names the D152 exception in a comment beside the shadow', () => {
+  it('names D152 in a comment beside the bar’s elevation choice', () => {
     // Raw source on purpose: the COMMENT is the requirement here (D152:
     // "with a comment naming the exception").
     const raw = read(BAR)

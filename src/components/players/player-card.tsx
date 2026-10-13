@@ -27,10 +27,11 @@ export interface PlayerCardStatChip {
   tone?: 'ink' | 'pink' | 'green'
 }
 
+// v7 status pills: soft tint + same-hue text (neutral grey for plain stats).
 const CHIP_TONES: Record<NonNullable<PlayerCardStatChip['tone']>, string> = {
-  ink: 'bg-ink text-white',
-  pink: 'bg-negative text-ink',
-  green: 'bg-brand text-ink',
+  ink: 'bg-surface-control text-n-2',
+  pink: 'bg-negative-soft text-negative-strong',
+  green: 'bg-positive-soft text-positive-strong',
 }
 
 interface PlayerCardProps {
@@ -77,10 +78,9 @@ interface PlayerCardProps {
   onRemove?: () => void
   /**
    * 'tile' (default) is the vertical centered card. 'board' is the Big Board
-   * dashboard card (Figma Hadouken 802:8): name top-left over a position ·
-   * team · bye meta row, accent rank chip flush in the top-right corner,
-   * headshot bleeding to the right edge, labeled stat pills along the bottom,
-   * and hover-revealed drafted / do-not-draft buttons.
+   * dashboard card (v7): round headshot, name over a position · team · bye
+   * meta row, accent rank chip at the top-right, labeled stat pills along the
+   * bottom, and hover-revealed drafted / do-not-draft buttons.
    */
   layout?: 'tile' | 'board'
   /** Board layout only: labeled stat pills along the card bottom (max 4). */
@@ -159,7 +159,7 @@ function FittedName({
       ref={ref}
       title={fullName}
       className={cn(
-        'block w-full truncate font-extrabold leading-tight',
+        'block w-full truncate font-semibold leading-tight tracking-[-0.01em]',
         compact ? 'text-[12px]' : 'text-[13px]',
         drafted && 'line-through',
       )}
@@ -180,7 +180,7 @@ function FittedName({
         onOpen()
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      className="block w-full min-w-0 cursor-pointer text-center hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+      className="block w-full min-w-0 cursor-pointer text-center transition-colors hover:text-accent-strong hover:underline hover:underline-offset-2 focus:outline-none focus-visible:underline"
     >
       {name}
     </button>
@@ -254,49 +254,52 @@ export function PlayerCard({
     const name = (
       <span
         title={player.full_name}
-        className="block truncate text-[20px] font-bold leading-normal"
+        className={cn(
+          'block truncate text-[13px] font-semibold leading-tight tracking-[-0.01em]',
+          drafted2 && 'line-through decoration-n-6',
+        )}
       >
         {abbrev}
       </span>
     )
+    // Quick-label toggles (v7 round icon buttons). Resting hover shows bare
+    // glyphs; once a label is active both stay visible — filled active,
+    // grey idle (Figma states: Hover / Highlighted / Demoted).
+    const labelButtonClass = (active: boolean, activeFill: string) =>
+      cn(
+        'flex h-6 w-6 items-center justify-center rounded-pill transition-[background-color,color,opacity] focus-visible:opacity-100',
+        active
+          ? `${activeFill} text-white opacity-100`
+          : label != null
+            ? 'bg-surface-control text-n-2 opacity-100 hover:bg-surface-pressed hover:text-ink'
+            : 'text-n-6 opacity-0 hover:bg-surface-hover hover:text-ink group-hover:opacity-100',
+      )
+    const hasFooter = Boolean(onToggleLabel) || Boolean(statChips && statChips.length > 0)
     return (
       <div
         {...dragHandleProps}
         className={cn(
-          'group relative overflow-hidden rounded-sm border-[0.5px] border-ink transition-all hover:shadow-hard-4',
-          drafted2 ? 'bg-positive-soft' : dnd ? 'bg-n-4' : 'bg-white',
+          // v7 card: hairline only at rest; the soft lift is the hover
+          // affordance (the card is a drag / open target).
+          'group relative flex flex-col gap-2.5 rounded-2xl border border-n-4 p-3 transition-shadow hover:shadow-hard-4',
+          drafted2 ? 'bg-positive-soft' : dnd ? 'bg-surface-sunken' : 'bg-white',
           draggable && 'cursor-grab active:cursor-grabbing',
+          // Mid-drag the card genuinely floats over the grid — it keeps the
+          // lift at rest while it's being carried (drag-ghost exception).
           isDragging && 'z-10 shadow-hard-6',
           faded && 'opacity-50',
           className,
         )}
       >
-        {/* headshot — flush to the right edge, full header height (802:30) */}
-        <Avatar
-          className={cn(
-            'absolute right-0 top-0 z-0 h-[93px] w-[60%] max-w-[140px] rounded-none',
-            dimContent && 'opacity-40 grayscale',
-          )}
-        >
-          <PlayerAvatarImage player={player} alt={player.full_name} />
-          <AvatarFallback className="rounded-none text-sm">{initials}</AvatarFallback>
-        </Avatar>
+        {/* header — round headshot, name over a position · team · bye meta
+            row, the board's rank chip at the right */}
+        <div className={cn('flex items-start gap-2.5', dimContent && 'opacity-60')}>
+          <Avatar className={cn('h-[38px] w-[38px] shrink-0', dimContent && 'grayscale')}>
+            <PlayerAvatarImage player={player} alt={player.full_name} />
+            <AvatarFallback className="text-[11px] font-semibold">{initials}</AvatarFallback>
+          </Avatar>
 
-        {showRank && (
-          <span className="fs-num absolute right-[20px] top-[8px] z-20 inline-flex w-[25px] items-center justify-center rounded-sm border-[0.5px] border-ink bg-accent p-[4px] text-[14px] font-medium leading-none text-accent-foreground">
-            {rank}
-          </span>
-        )}
-
-        {/* header block — name, meta, hover quick-labels (text sits over the
-            photo zone like the mock; 802:31 caps the text column's width) */}
-        <div
-          className={cn(
-            'relative z-10 flex min-h-[93px] flex-col pb-2 pl-[10px] pt-[8px]',
-            dimContent && 'opacity-60',
-          )}
-        >
-          <div className="w-[52%] min-w-[96px]">
+          <div className="min-w-0 flex-1 pt-px">
             {onOpen ? (
               <button
                 type="button"
@@ -305,7 +308,7 @@ export function PlayerCard({
                   onOpen()
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="block w-full cursor-pointer text-left hover:underline hover:decoration-2 hover:underline-offset-2 focus:outline-none focus-visible:underline"
+                className="block w-full cursor-pointer text-left transition-colors hover:text-accent-strong hover:underline hover:underline-offset-2 focus:outline-none focus-visible:underline"
               >
                 {name}
               </button>
@@ -313,86 +316,77 @@ export function PlayerCard({
               name
             )}
 
-            <span className="mt-px flex items-center gap-[3px]">
-              <PositionBadge position={player.position} className="border-0 px-1 py-0.5 text-[12px] font-semibold" />
-              <span className="truncate text-[12px] font-semibold text-n-3">
-                {[player.team, player.bye_week != null ? `BYE ${player.bye_week}` : null]
+            <span className="mt-[5px] flex items-center gap-[5px]">
+              <PositionBadge position={player.position} className="shrink-0" />
+              <span className="truncate text-[10px] font-medium text-n-6">
+                {[player.team, player.bye_week != null ? `Bye ${player.bye_week}` : null]
                   .filter(Boolean)
                   .join(' · ')}
               </span>
             </span>
           </div>
 
-          {onToggleLabel && (
-            <span className="mt-auto flex items-center gap-1.5 pt-1.5">
-              {/* Resting hover shows bare glyphs; once a label is active both
-                  buttons stay visible boxed — filled active, outlined idle
-                  (Figma states: Hover / Highlighted / Demoted). */}
-              <button
-                type="button"
-                aria-label={dnd ? 'Undo do not draft' : 'Do not draft'}
-                aria-pressed={dnd}
-                title={dnd ? 'Undo do not draft' : 'Do not draft'}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleLabel('dnd')
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                className={cn(
-                  'flex h-[24px] w-[28px] items-center justify-center rounded-[5px] transition-all focus-visible:opacity-100',
-                  dnd
-                    ? 'bg-ink text-white opacity-100'
-                    : label != null
-                      ? 'border border-n-3 bg-white text-ink opacity-100'
-                      : 'text-n-3 opacity-0 hover:text-ink group-hover:opacity-100',
-                )}
-              >
-                <Icon name="eye-off" size={14} />
-              </button>
-              <button
-                type="button"
-                aria-label={drafted2 ? 'Undo drafted' : 'Mark drafted'}
-                aria-pressed={drafted2}
-                title={drafted2 ? 'Undo drafted' : 'Mark drafted'}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleLabel('drafted')
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                className={cn(
-                  'flex h-[24px] w-[28px] items-center justify-center rounded-[5px] transition-all focus-visible:opacity-100',
-                  drafted2
-                    ? 'bg-positive-strong text-white opacity-100'
-                    : label != null
-                      ? 'border border-n-3 bg-white text-ink opacity-100'
-                      : 'text-n-3 opacity-0 hover:text-ink group-hover:opacity-100',
-                )}
-              >
-                <Icon name="check" size={14} />
-              </button>
+          {showRank && (
+            <span className="fs-num inline-flex h-[19px] min-w-[26px] shrink-0 items-center justify-center rounded bg-accent px-[5px] text-[10px] font-bold leading-none text-accent-foreground">
+              {rank}
             </span>
           )}
         </div>
 
-        {/* labeled stat pills — full width, below the headshot zone */}
-        {statChips && statChips.length > 0 && (
-          <div
-            className={cn(
-              'relative z-10 flex flex-wrap items-center gap-1 px-2 pb-2',
-              dimContent && 'opacity-60',
-            )}
-          >
-            {statChips.slice(0, 4).map((chip) => (
-              <span
-                key={chip.id}
-                className={cn(
-                  'fs-num inline-flex items-center rounded-full px-2 py-[3px] text-[10px] font-bold leading-none',
-                  CHIP_TONES[chip.tone ?? 'ink'],
-                )}
-              >
-                {chip.text}
+        {hasFooter && (
+          <div className="flex min-h-6 items-center gap-1">
+            {/* labeled stat pills (max 4) */}
+            <div
+              className={cn(
+                'flex min-w-0 flex-1 flex-wrap items-center gap-1',
+                dimContent && 'opacity-60',
+              )}
+            >
+              {(statChips ?? []).slice(0, 4).map((chip) => (
+                <span
+                  key={chip.id}
+                  className={cn(
+                    'fs-num inline-flex h-[18px] items-center rounded-pill px-[7px] text-[10px] font-semibold leading-none',
+                    CHIP_TONES[chip.tone ?? 'ink'],
+                  )}
+                >
+                  {chip.text}
+                </span>
+              ))}
+            </div>
+
+            {onToggleLabel && (
+              <span className="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  aria-label={dnd ? 'Undo do not draft' : 'Do not draft'}
+                  aria-pressed={dnd}
+                  title={dnd ? 'Undo do not draft' : 'Do not draft'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleLabel('dnd')
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className={labelButtonClass(dnd, 'bg-ink')}
+                >
+                  <Icon name="eye-off" size={13} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={drafted2 ? 'Undo drafted' : 'Mark drafted'}
+                  aria-pressed={drafted2}
+                  title={drafted2 ? 'Undo drafted' : 'Mark drafted'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleLabel('drafted')
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className={labelButtonClass(drafted2, 'bg-positive-strong')}
+                >
+                  <Icon name="check" size={13} />
+                </button>
               </span>
-            ))}
+            )}
           </div>
         )}
 
@@ -401,20 +395,24 @@ export function PlayerCard({
     )
   }
 
-  // Hover lift stays shadow-only: dnd-kit drives `transform` inline, so a
-  // translate hover would fight the drag transform.
+  // v7 card: hairline at rest, soft lift on hover only. The lift stays
+  // shadow-only: dnd-kit drives `transform` inline, so a translate hover
+  // would fight the drag transform.
   return (
     <div
       {...dragHandleProps}
       onClick={onSelect}
       className={cn(
-        'group relative flex flex-col items-stretch rounded-sm border border-ink bg-white transition-all hover:shadow-hard-4',
+        'group relative flex flex-col items-stretch rounded-2xl border border-n-4 bg-white transition-[box-shadow,background-color,border-color] hover:shadow-hard-4',
         // Compact is a fixed 120×112 tile (list detail cards view) that must
         // never resize; default fills its column and is 160px tall.
-        compact ? 'h-[112px] w-[120px] px-2 pt-1.5 pb-1' : 'h-40 px-3 pt-2.5 pb-1.5',
+        compact ? 'h-[112px] w-[120px] px-2 pt-1.5 pb-1.5' : 'h-40 px-3 pt-2.5 pb-2',
         draggable && 'cursor-grab active:cursor-grabbing',
+        // Drag ghost / card mid-drag: it really floats above the page, so it
+        // keeps its lift at rest (overlay exception).
         isDragging && 'z-10 shadow-hard-6',
-        selected && 'bg-accent-soft ring-2 ring-ink',
+        // Selected is a resting state — fill + blue edge, never a shadow.
+        selected && 'border-accent bg-accent-soft',
         drafted && 'opacity-50',
         className,
       )}
@@ -431,7 +429,7 @@ export function PlayerCard({
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Remove from list"
           className={cn(
-            'absolute right-1 top-1 z-10 flex items-center justify-center rounded-sm border border-ink bg-white text-ink opacity-0 transition-all hover:bg-negative hover:text-ink focus-visible:opacity-100 group-hover:opacity-100',
+            'absolute right-1.5 top-1.5 z-10 flex items-center justify-center rounded-pill bg-surface-control text-n-2 opacity-0 transition-[background-color,color,opacity] hover:bg-negative-soft hover:text-negative-strong focus-visible:opacity-100 group-hover:opacity-100',
             compact ? 'h-5 w-5' : 'h-6 w-6',
           )}
         >
@@ -448,14 +446,14 @@ export function PlayerCard({
         {showRank && (
           <span
             className={cn(
-              'fs-num font-extrabold text-ink',
-              compact ? 'text-sm' : 'text-base',
+              'fs-num font-bold text-ink',
+              compact ? 'text-[12px]' : 'text-[13px]',
             )}
           >
             {rank}
           </span>
         )}
-        <span className={cn('fs-num text-[11px] font-semibold', PROJ_TEXT)} data-proj>
+        <span className={cn('fs-num text-[11px] font-bold', PROJ_TEXT)} data-proj>
           {projectionLabel}
         </span>
       </div>
@@ -485,7 +483,7 @@ export function PlayerCard({
       <div className="mt-auto flex items-center justify-center gap-1.5">
         <PositionBadge position={player.position} />
         {player.team && (
-          <span className="text-[10px] font-semibold text-n-3">{player.team}</span>
+          <span className="text-[10px] font-medium text-n-6">{player.team}</span>
         )}
       </div>
 
@@ -498,13 +496,13 @@ export function PlayerCard({
           }}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'mt-1 rounded-sm border border-ink py-1 text-[10px] font-bold leading-none opacity-0 transition-all focus-visible:opacity-100 group-hover:opacity-100',
+            'mt-1.5 flex h-btn-sm items-center justify-center rounded-pill text-[10px] font-semibold leading-none opacity-0 transition-[background-color,opacity] focus-visible:opacity-100 group-hover:opacity-100',
             drafted
-              ? 'bg-white text-ink hover:bg-n-4'
+              ? 'bg-surface-control text-n-2 hover:bg-surface-pressed'
               : 'bg-accent text-accent-foreground hover:bg-accent-strong',
           )}
         >
-          {drafted ? <Icon name="check" size={12} className="mx-auto" /> : 'Mark drafted'}
+          {drafted ? <Icon name="check" size={12} /> : 'Mark drafted'}
         </button>
       )}
     </div>

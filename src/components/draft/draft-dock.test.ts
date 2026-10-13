@@ -85,8 +85,8 @@ describe('the tab strip renders the ops catalog (five tabs, one source of labels
     expect(source).toMatch(/overflow-x-auto/)
   })
 
-  it('open-state emphasis is fill + border, never a shadow (D152’s ordinary rule)', () => {
-    expect(source).toMatch(/border-accent bg-accent-soft/)
+  it('open-state emphasis is fill + text colour, never a shadow (D152’s ordinary rule)', () => {
+    expect(source).toMatch(/bg-accent-soft text-accent-deep/)
   })
 })
 

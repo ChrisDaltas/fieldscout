@@ -21,7 +21,7 @@ interface GuestSignupPromptProps {
 }
 
 /** Signup gate for guests — accent-blue "do a thing" moment on the standard
- *  white ink-bordered dialog. */
+ *  v7 dialog. */
 export function GuestSignupPrompt({
   open,
   onOpenChange,
@@ -44,7 +44,7 @@ export function GuestSignupPrompt({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Button variant="blue" shadow asChild className="w-full">
+          <Button variant="blue" asChild className="w-full">
             <Link href={signupHref}>Sign up free</Link>
           </Button>
           <Button variant="ghost" asChild className="w-full">

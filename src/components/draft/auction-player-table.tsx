@@ -328,7 +328,7 @@ export function AuctionPlayerTable({
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search players"
             aria-label="Search available players"
-            className="h-8 min-w-[140px] flex-1 text-[12px]"
+            className="h-btn-md min-w-[140px] flex-1 rounded-pill px-3.5"
           />
           <Button
             variant={favoritesOnly ? 'blue' : 'stroke'}
@@ -377,7 +377,7 @@ export function AuctionPlayerTable({
         {overlay && (
           // §8.9's overlay banner, carried over from the pool so attaching a
           // list still reaches the auction room's player browser (L.B4.2).
-          <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-n-4 bg-page px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-surface-sunken px-2.5 py-1.5">
             <Icon name="eye" size={12} className="shrink-0 text-n-3" />
             <span className="mr-auto min-w-0 truncate text-[11px] font-semibold">
               {overlay.title}
@@ -411,10 +411,10 @@ export function AuctionPlayerTable({
           // scope inside it is the shape D119(6) warns about. Only columns
           // the C43 gate allows are offered — an option that can only
           // produce an empty column is the same lie as the column.
-          <div className="flex flex-col gap-2 rounded-sm border border-n-4 bg-page p-2">
+          <div className="flex flex-col gap-2 rounded-2xl bg-surface-sunken p-3">
             {groups.map(({ label, columns: cols }) => (
               <div key={label} className="flex flex-wrap items-center gap-1">
-                <span className="fs-overline mr-1 w-16 shrink-0 text-[9px] text-n-3">
+                <span className="mr-1 w-16 shrink-0 text-[10px] font-semibold text-n-6">
                   {label}
                 </span>
                 {cols.map((column) => {
@@ -467,8 +467,8 @@ export function AuctionPlayerTable({
           ))}
         </div>
       ) : failure !== null ? (
-        <div className="flex flex-col items-start gap-2">
-          <p className="text-[12px] font-medium text-n-3" role="alert">
+        <div className="flex flex-col items-center gap-2 py-6 text-center">
+          <p className="text-[11px] font-medium text-n-3" role="alert">
             {FAILURE_COPY[failure]}
           </p>
           <Button
@@ -485,7 +485,7 @@ export function AuctionPlayerTable({
           </Button>
         </div>
       ) : shown.length === 0 ? (
-        <p className="text-[12px] font-medium text-n-3">
+        <p className="py-6 text-center text-[11px] font-medium text-n-6">
           {
             EMPTY_COPY[
               emptyReason({
@@ -503,7 +503,7 @@ export function AuctionPlayerTable({
       ) : (
         <>
           <div className="flex items-center justify-between">
-            <span className="fs-num text-[10px] font-semibold text-n-3">
+            <span className="fs-num text-[10px] font-semibold text-n-6">
               {shown.length} shown
             </span>
             {dnd.isError && (
@@ -636,7 +636,7 @@ function AuctionPlayerRows({
           // Drafted rows stay in place, greyed, carrying their price — the
           // §16.4 toggle's whole point. DND greys and strikes; it removes
           // nothing (C42: display-only).
-          row.drafted && 'bg-n-4/40 text-n-3',
+          row.drafted && 'bg-surface-sunken text-n-3',
           row.dnd && !row.drafted && 'text-n-3',
         )}
       >
@@ -659,19 +659,19 @@ function AuctionPlayerRows({
               type="button"
               onClick={onOpenPlayer}
               className={cn(
-                'min-w-0 truncate text-left text-[12px] font-bold hover:text-accent',
+                'min-w-0 truncate text-left text-[12px] font-semibold hover:text-accent',
                 row.dnd && 'line-through',
               )}
             >
               {row.full_name}
             </button>
             {row.dnd && (
-              <span className="fs-overline shrink-0 rounded-sm border border-ink px-1 text-[8px]">
+              <span className="shrink-0 rounded-sm bg-surface-control px-1 text-[9px] font-bold leading-[15px] text-n-2">
                 DND
               </span>
             )}
             {row.drafted && (
-              <span className="fs-num shrink-0 text-[10px] font-semibold">
+              <span className="fs-num shrink-0 text-[10px] font-semibold text-n-3">
                 ${row.price ?? 0}
                 {winner ? ` · ${winner}` : ''}
               </span>
@@ -683,7 +683,7 @@ function AuctionPlayerRows({
           <TableCell
             key={column.key}
             className={cn(
-              'fs-num px-1.5 text-right text-[12px] lg:px-2',
+              'fs-num px-1.5 text-right text-[11px] lg:px-2',
               column.essential ? null : 'hidden lg:table-cell',
               (column.key === 'proj_points' || column.key === 'proj_points_week') && PROJ_TEXT,
             )}
@@ -722,7 +722,7 @@ function AuctionPlayerRows({
               <Icon name="remove" size={13} />
             </Button>
             {canNominate && !row.drafted && (
-              <Button variant="green" size="sm" disabled={submitting} onClick={() => onNominate(row.id)}>
+              <Button variant="blue" size="sm" disabled={submitting} onClick={() => onNominate(row.id)}>
                 {submitting ? 'Submitting…' : 'Nominate'}
               </Button>
             )}
@@ -733,23 +733,23 @@ function AuctionPlayerRows({
       {expanded && (
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={columns.length + 3} className="px-1.5 pb-3 lg:px-2">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3 lg:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl bg-surface-sunken px-3 py-2.5 sm:grid-cols-3 lg:grid-cols-4">
               {offerable.map((column) => (
                 <div key={column.key} className="flex items-baseline justify-between gap-2">
-                  <dt className="truncate text-[11px] font-medium text-n-3">{column.full}</dt>
-                  <dd className="fs-num shrink-0 text-[12px] font-bold">
+                  <dt className="truncate text-[10px] font-medium text-n-3">{column.full}</dt>
+                  <dd className="fs-num shrink-0 text-[11px] font-bold">
                     {formatColumnValue(columnValue(row, column), column.key)}
                   </dd>
                 </div>
               ))}
               <div className="flex items-baseline justify-between gap-2">
-                <dt className="truncate text-[11px] font-medium text-n-3">NFL team</dt>
-                <dd className="shrink-0 text-[12px] font-bold">{row.team ?? '—'}</dd>
+                <dt className="truncate text-[10px] font-medium text-n-3">NFL team</dt>
+                <dd className="shrink-0 text-[11px] font-bold">{row.team ?? '—'}</dd>
               </div>
               {row.drafted && (
                 <div className="flex items-baseline justify-between gap-2">
-                  <dt className="truncate text-[11px] font-medium text-n-3">Won by</dt>
-                  <dd className="fs-num shrink-0 text-[12px] font-bold">
+                  <dt className="truncate text-[10px] font-medium text-n-3">Won by</dt>
+                  <dd className="fs-num shrink-0 text-[11px] font-bold">
                     ${row.price ?? 0}
                     {winner ? ` · ${winner}` : ''}
                   </dd>

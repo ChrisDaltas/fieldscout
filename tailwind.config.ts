@@ -78,14 +78,15 @@ const config: Config = {
         lock: { DEFAULT: '#fff3b8', fg: '#5c4300' },
         // Position identity (v7). White text, except K and DEF/DST which are
         // light fills and take ink text (`pos-text-dark`). IDP keeps a grey.
+        // `-tint` = v7 Draft Room's pale board-cell fill for each position.
         pos: {
-          qb: '#F75252',
-          rb: '#5C7CE5',
-          wr: '#9D70E9',
-          te: '#ECAD48',
-          flex: '#00A3A0',
-          k: '#D2E8E8',
-          def: '#FFE75E',
+          qb: { DEFAULT: '#F75252', tint: '#FDE4E4' },
+          rb: { DEFAULT: '#5C7CE5', tint: '#E3E9FB' },
+          wr: { DEFAULT: '#9D70E9', tint: '#EEE6FC' },
+          te: { DEFAULT: '#ECAD48', tint: '#FBF0DC' },
+          flex: { DEFAULT: '#00A3A0', tint: '#DDF3F2' },
+          k: { DEFAULT: '#D2E8E8', tint: '#E9F4F4' },
+          def: { DEFAULT: '#FFE75E', tint: '#FFF8CF' },
           idp: '#8E8E93',
           text: '#ffffff',
           'text-dark': '#1D1D1F',

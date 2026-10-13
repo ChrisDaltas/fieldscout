@@ -51,16 +51,16 @@ export default function ResetPasswordPage() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Set new password</CardTitle>
+      <CardHeader className="min-h-0 border-0 px-[19px] pb-0 pt-[19px]">
+        <CardTitle className="text-[24px] font-bold tracking-[-0.03em]">Set new password</CardTitle>
       </CardHeader>
       <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-          <p className="text-[12px] font-medium text-n-3">
+        <CardContent className="space-y-3.5 px-[19px] pb-[19px] pt-2">
+          <p className="text-[11px] font-medium text-n-3">
             Enter your new password below
           </p>
           {error && (
-            <div className="flex items-center gap-2 rounded-sm border border-negative bg-negative-soft px-3 py-2 text-[12px] font-bold text-ink">
+            <div className="flex items-center gap-2 rounded-md bg-negative-soft px-2.5 py-2 text-[11px] font-semibold text-negative-strong">
               <Icon name="info-circle" size={13} className="shrink-0" />
               {error}
             </div>

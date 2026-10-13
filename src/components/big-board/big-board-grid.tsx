@@ -333,9 +333,9 @@ export function BigBoardGrid({
       <section>
         {weekTabs}
         <div className="space-y-2">
-          <Skeleton className="h-btn-sm w-52" />
+          <Skeleton className="h-btn-sm w-52 rounded-pill bg-surface-control" />
           {Array.from({ length: 8 }, (_, i) => (
-            <Skeleton key={i} className="h-11 w-full" />
+            <Skeleton key={i} className="h-11 w-full rounded-md bg-surface-control" />
           ))}
         </div>
       </section>
@@ -346,9 +346,9 @@ export function BigBoardGrid({
     return (
       <section>
         {weekTabs}
-        <div className="rounded-sm border border-ink bg-white px-6 py-10 text-center">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-10 text-center">
           <h3 className="text-h6">Could not load the board</h3>
-          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-negative-strong">
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-negative-strong">
             {(error as Error)?.message ?? 'Something went wrong loading this board.'}
           </p>
         </div>
@@ -363,7 +363,7 @@ export function BigBoardGrid({
   return (
     <section>
       <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-        <h2 className="mr-auto whitespace-nowrap text-h5">
+        <h2 className="mr-auto whitespace-nowrap text-h6">
           {isWeekly ? `Week ${weekNumber} big board` : 'Pre draft rankings'}
         </h2>
 
@@ -405,7 +405,7 @@ export function BigBoardGrid({
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-60">
-                <p className="fs-overline text-n-3">Board size</p>
+                <p className="fs-overline text-n-6">Board size</p>
                 <p className="fs-num mt-1 text-h4">{boardSize}</p>
                 <Slider
                   className="mt-2"
@@ -416,7 +416,7 @@ export function BigBoardGrid({
                   onValueChange={([v]) => handleSizeChange(v)}
                   aria-label="Board size"
                 />
-                <p className="mt-2 text-[11px] font-medium text-n-3">
+                <p className="mt-2 text-[11px] font-medium text-n-6">
                   Players beyond {boardSize} stay on your board but are hidden.
                 </p>
               </PopoverContent>
@@ -424,7 +424,7 @@ export function BigBoardGrid({
 
             {dirty && (
               <Button
-                variant="stroke"
+                variant="ghost"
                 size="sm"
                 onClick={handleReset}
                 disabled={saving}
@@ -433,7 +433,7 @@ export function BigBoardGrid({
               </Button>
             )}
             <Button
-              variant="green"
+              variant="blue"
               size="sm"
               onClick={handleSave}
               disabled={!dirty || saving}
@@ -452,9 +452,9 @@ export function BigBoardGrid({
       {weekTabs}
 
       {orderedPlayers.length === 0 ? (
-        <div className="rounded-sm border border-ink bg-white px-6 py-14 text-center">
+        <div className="rounded-2xl border border-n-4 bg-white px-6 py-14 text-center">
           <h3 className="text-h6">This board is empty</h3>
-          <p className="mx-auto mt-1 max-w-md text-[13px] font-medium text-n-3">
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
             {isWeekly
               ? 'Empty week. Add players using the search below.'
               : 'Your big board is empty. Refresh to auto-fill the top 50 players from last season.'}
@@ -462,13 +462,13 @@ export function BigBoardGrid({
         </div>
       ) : (
         <Card>
-          <div className="flex flex-wrap items-center gap-2 border-b border-ink px-4 py-2.5">
-            <span className="text-[12px] font-extrabold">{boardLabel}</span>
+          <div className="flex flex-wrap items-center gap-2 border-b border-n-4 px-4 py-2.5">
+            <span className="text-[13px] font-bold tracking-[-0.01em]">{boardLabel}</span>
             {dirty && <Badge variant="yellow">Unsaved changes</Badge>}
-            <span className="fs-num ml-auto whitespace-nowrap text-[11px] font-bold text-n-3">
+            <span className="fs-num ml-auto whitespace-nowrap text-[10px] font-medium text-n-6">
               {visiblePlayers.length} of {orderedPlayers.length} players
             </span>
-            <span className="whitespace-nowrap text-[11px] font-bold text-n-3">
+            <span className="whitespace-nowrap text-[10px] font-medium text-n-6">
               {editable ? 'Drag to reorder' : 'View only'}
             </span>
           </div>
@@ -483,7 +483,7 @@ export function BigBoardGrid({
                 items={visiblePlayers.map((p) => p.player_id)}
                 strategy={verticalListSortingStrategy}
               >
-                <ul className="space-y-0.5 p-1">
+                <ul className="space-y-px p-1.5">
                   {visiblePlayers.map((entry, i) => (
                     <SortableBoardRow
                       key={entry.player_id}
@@ -499,7 +499,7 @@ export function BigBoardGrid({
               </SortableContext>
             </DndContext>
           ) : (
-            <ul className="space-y-0.5 p-1">
+            <ul className="space-y-px p-1.5">
               {visiblePlayers.map((entry, i) => (
                 <SortableBoardRow
                   key={entry.player_id}
@@ -518,7 +518,7 @@ export function BigBoardGrid({
 
       {editable && (
         <div className="mt-6 max-w-md">
-          <p className="fs-overline mb-2 text-n-3">Add a player</p>
+          <p className="fs-overline mb-2 text-n-6">Add a player</p>
           <PlayerSearch
             placeholder="Search by name…"
             limit={15}
@@ -562,19 +562,19 @@ function HistorySheet({
           {isLoading && (
             <div className="space-y-2">
               {Array.from({ length: 4 }, (_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
+                <Skeleton key={i} className="h-12 w-full rounded-xl bg-surface-control" />
               ))}
             </div>
           )}
           {isError && (
-            <p className="text-[13px] font-medium text-negative-strong">
+            <p className="text-[11px] font-medium text-negative-strong">
               {(error as Error)?.message ?? 'Could not load history.'}
             </p>
           )}
           {!isLoading && data?.snapshots.length === 0 && (
-            <div className="rounded-sm border border-ink bg-white px-4 py-8 text-center">
+            <div className="rounded-2xl border border-n-4 bg-white px-4 py-8 text-center">
               <h3 className="text-h6">No saved versions yet</h3>
-              <p className="mt-1 text-[12px] font-medium text-n-3">
+              <p className="mt-1 text-[11px] font-medium text-n-6">
                 Hit Update big board to capture your first snapshot.
               </p>
             </div>
@@ -583,13 +583,13 @@ function HistorySheet({
             {(data?.snapshots ?? []).map((snap) => (
               <li
                 key={snap.id}
-                className="flex items-center justify-between gap-3 rounded-sm border border-ink bg-white px-3 py-2.5"
+                className="flex items-center justify-between gap-3 rounded-xl border border-n-4 bg-white px-3 py-2.5"
               >
                 <div className="min-w-0">
-                  <p className="fs-num text-[12px] font-bold">
+                  <p className="fs-num text-[12px] font-semibold">
                     {new Date(snap.saved_at).toLocaleString()}
                   </p>
-                  <p className="text-[11px] font-medium text-n-3">
+                  <p className="text-[10px] font-medium text-n-6">
                     <span className="fs-num">{snap.player_count}</span> player
                     {snap.player_count === 1 ? '' : 's'}
                   </p>

@@ -124,16 +124,14 @@ export function DraftCommandBar({
   )
 
   return (
-    // D152 exception, stated: this bar is pinned chrome over scrolling content
-    // (CLAUDE.md → Elevation, "bars pinned over scrolling content" is the
-    // overlay clause), so it keeps a RESTING shadow deliberately —
-    // `shadow-hard-accent-4`, the accent member of the sanctioned
-    // `shadow-hard-*` family, because an ink shadow disappears into an ink
-    // fill (tailwind.config.ts boxShadow note). Everything else in the room
-    // stays interaction-prefixed per the ordinary rule.
+    // D152, revisited for v7 (FieldScout Draft Room): this bar is
+    // pinned chrome over scrolling content, which CLAUDE.md's overlay clause
+    // would let rest elevated — but the v7 room is light, and its header sits on
+    // the white page separated by the 1px hairline alone. So the bar rests
+    // FLAT: white fill, `border-b border-n-4`, no shadow of any kind.
     <header
       aria-label="Draft command bar"
-      className="sticky top-0 z-40 flex h-draft-topbar w-full shrink-0 items-center gap-2 bg-ink px-3 text-white shadow-hard-accent-4"
+      className="sticky top-0 z-40 flex h-draft-topbar w-full shrink-0 items-center gap-2 border-b border-n-4 bg-white px-3 text-ink"
     >
       {showMockBadge && (
         <Badge variant="yellow" className="shrink-0">
@@ -141,13 +139,13 @@ export function DraftCommandBar({
         </Badge>
       )}
       {showMockBadge && (
-        <span className="hidden shrink-0 text-[12px] font-bold sm:inline">Practice draft</span>
+        <span className="hidden shrink-0 text-[13px] font-semibold sm:inline">Practice draft</span>
       )}
 
       {showPauseResume && (
         <Button
-          variant="blue"
-          size="sm"
+          variant="stroke"
+          size="md"
           className="shrink-0"
           disabled={pausePending}
           onClick={() => onPauseResume?.(model.pauseResume === 'resume' ? 'resume' : 'pause')}
@@ -176,11 +174,7 @@ export function DraftCommandBar({
       {showPracticeOptions && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="stroke"
-              size="sm"
-              className="shrink-0 border-white/40 text-white hover:bg-white hover:text-ink"
-            >
+            <Button variant="stroke" size="md" className="shrink-0">
               <span className="sm:hidden">Options</span>
               <span className="hidden sm:inline">Practice options</span>
             </Button>
@@ -202,7 +196,7 @@ export function DraftCommandBar({
           the duplicate tellings: the overlay's copy, the MockBanner, and
           the board-zone reconnecting banner all said their piece here or
           nowhere). */}
-      <span role="status" className="min-w-0 truncate text-[12px] font-semibold text-white/75">
+      <span role="status" className="min-w-0 truncate text-[13px] font-semibold text-ink">
         {model.statusText}
       </span>
 
@@ -242,8 +236,8 @@ export function DraftCommandBar({
           cleanup is the away path. */}
       <Button
         variant="stroke"
-        size="sm"
-        className="ml-auto shrink-0 border-white/40 text-white hover:bg-white hover:text-ink"
+        size="md"
+        className="ml-auto shrink-0"
         title={exitTitle}
         asChild
       >
