@@ -91,16 +91,14 @@ export function EditableUserAvatar({
   }
 
   return (
-    <div className={cn('flex items-center gap-4', className)}>
-      {/* !rounded-pill: the base Avatar's rounded-sm survives twMerge (custom
-          token), so force the people-are-round rule here. */}
+    <div className={cn('flex items-center gap-3.5', className)}>
       <UserAvatar
         src={src}
         name={name}
-        className="h-16 w-16 shrink-0 !rounded-pill"
-        fallbackClassName="text-[16px]"
+        className="h-[52px] w-[52px] shrink-0"
+        fallbackClassName="text-[17px] font-bold"
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-[5px]">
         <Button
           variant="stroke"
           size="sm"

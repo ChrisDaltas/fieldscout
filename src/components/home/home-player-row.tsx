@@ -6,9 +6,10 @@ import { PositionBadge } from '@/components/players/position-badge'
 
 /**
  * Compact card-flush player row shared by the home hub's right-column cards
- * (trending / waivers / injuries): square headshot tile, name (optionally a
- * link into the player window), position badge + meta line, right-aligned
- * stat block. Home-local on purpose — once batch B reskins
+ * (trending / waivers / injuries): round 31px headshot, name (optionally a
+ * link into the player window), position badge + grey meta line,
+ * right-aligned stat block. v7 row: each row carries its own top hairline
+ * (`border-t border-n-4`), so a list of them reads as v7's separated rows. Home-local on purpose — once batch B reskins
  * `players/player-row.tsx`, this should fold into it as a compact variant
  * (reported, not created as a shared primitive here).
  */
@@ -58,8 +59,8 @@ export function HomePlayerRow({
   onOpen,
 }: HomePlayerRowProps) {
   return (
-    <div className="flex items-start gap-2.5 px-[13px] py-2">
-      <Avatar className="h-8 w-8">
+    <div className="flex items-start gap-[9px] border-t border-n-4 px-[15px] py-[9px]">
+      <Avatar className="h-[31px] w-[31px] shrink-0">
         <PlayerAvatarImage
           player={{ position, team, headshot_url: headshotUrl }}
           alt={name}
@@ -68,17 +69,17 @@ export function HomePlayerRow({
       </Avatar>
 
       <div className="mr-auto min-w-0">
-        <div className="flex items-center gap-1.5 leading-tight">
+        <div className="flex min-h-[16px] items-center gap-1.5 leading-tight">
           {onOpen ? (
             <button
               type="button"
               onClick={onOpen}
-              className="min-w-0 truncate text-left text-[11px] font-extrabold hover:underline hover:decoration-2 hover:underline-offset-2 focus-visible:underline focus:outline-none"
+              className="min-w-0 truncate text-left text-[12px] font-semibold tracking-[-0.01em] text-ink transition-colors hover:text-accent focus:outline-none focus-visible:underline focus-visible:underline-offset-2"
             >
               {name}
             </button>
           ) : (
-            <span className="min-w-0 truncate text-[11px] font-extrabold">
+            <span className="min-w-0 truncate text-[12px] font-semibold tracking-[-0.01em] text-ink">
               {name}
             </span>
           )}
@@ -87,13 +88,13 @@ export function HomePlayerRow({
         <div className="mt-0.5 flex items-center gap-1.5">
           <PositionBadge position={position} size="sm" className="shrink-0" />
           {meta && (
-            <span className="truncate text-[10px] font-semibold text-n-3">
+            <span className="truncate text-[10px] font-medium text-n-6">
               {meta}
             </span>
           )}
         </div>
         {note && (
-          <div className="mt-1 text-[10px] font-medium leading-snug text-n-3">
+          <div className="mt-1 text-[11px] font-medium leading-[1.45] text-n-3">
             {note}
           </div>
         )}

@@ -71,9 +71,13 @@ export function InjuryNewsCard() {
   return (
     <CollapsibleCard
       title="Injury report"
-      headerRight={<Badge variant="stroke">Your players + top 50</Badge>}
+      headerRight={
+        <span className="text-[10px] font-semibold text-n-6">
+          Your players + top 50
+        </span>
+      }
     >
-      <div className="divide-y divide-n-4">
+      <div>
         {MOCK_INJURIES.map((p) => (
           <HomePlayerRow
             key={p.name}

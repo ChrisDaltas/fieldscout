@@ -4,7 +4,6 @@ import Link from 'next/link'
 
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { usePersonaBoards, usePersonaPosts } from '@/hooks/use-persona-boards'
@@ -44,8 +43,9 @@ type ShelfItem =
 /**
  * Home shelf: the AI experts' latest content — ranking boards and published
  * posts, merged newest-first. Hidden entirely until anything exists.
- * FieldScout-only surface (not in the package mock) — styled per the hub's
- * white-card / ink-border language.
+ * FieldScout-only surface (not in v7) — given v7's Scout AI treatment: a
+ * sunken grey panel with the blue-dot "Scout AI" label and a 19px headline,
+ * holding one white card per item.
  *
  * The persona profiles and posts are release-gated (out of the 2026 go-live
  * scope), so with that flag off the shelf keeps the AI ranking boards — they
@@ -86,25 +86,32 @@ export function AiExpertShelf() {
   if (items.length === 0) return null
 
   return (
-    <section>
-      <div className="mb-2.5 flex items-center">
-        <h2 className="mr-auto text-h5">From the AI experts</h2>
-        {featureFlags.personas && (
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/personas">
+    <section className="flex flex-col gap-3 rounded-2xl bg-surface-sunken px-[19px] py-[17px]">
+      <div className="flex flex-col gap-[7px]">
+        <div className="flex items-center gap-[7px] text-[10px] font-semibold text-n-3">
+          <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+          <span className="mr-auto">Scout AI · AI experts</span>
+          {featureFlags.personas && (
+            <Link
+              href="/personas"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-strong"
+            >
               Meet the experts
-              <Icon name="arrow-next" />
+              <Icon name="arrow-next" size={11} />
             </Link>
-          </Button>
-        )}
+          )}
+        </div>
+        <h2 className="text-[19px] font-bold leading-[1.15] tracking-[-0.025em]">
+          From the AI experts
+        </h2>
       </div>
 
-      <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-[10px] sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
           <li key={item.id}>
             <Link
               href={item.href}
-              className="block rounded-sm border border-ink bg-white p-2.5 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-hard-4"
+              className="block rounded-xl bg-white px-[13px] py-3 transition-shadow hover:shadow-hard-4"
             >
               <div className="flex items-center gap-1.5">
                 <UserAvatar
@@ -113,7 +120,7 @@ export function AiExpertShelf() {
                   name={item.persona.display_name}
                   className="h-6 w-6 shrink-0"
                 />
-                <span className="truncate text-[10px] font-bold text-n-3">
+                <span className="truncate text-[10px] font-semibold text-n-3">
                   {item.persona.display_name}
                 </span>
                 <Badge variant="stroke" className="ml-auto shrink-0">
@@ -127,10 +134,10 @@ export function AiExpertShelf() {
                   />
                 )}
               </div>
-              <p className="mt-2 truncate text-[12px] font-extrabold">
+              <p className="mt-2 truncate text-[13px] font-bold tracking-[-0.015em] text-ink">
                 {item.title}
               </p>
-              <p className="mt-0.5 truncate text-[10px] font-semibold text-n-3">
+              <p className="mt-0.5 truncate text-[10px] font-medium text-n-6">
                 {item.meta}
                 {item.date && <> · {formatRelative(item.date)}</>}
               </p>
