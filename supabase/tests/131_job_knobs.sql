@@ -63,7 +63,10 @@ select is(
      -- RE-PINNED BY L.G1.4 (additive, R992): 184's op_set_game_status pair is pinned by pgTAP 132 A4.
      and p.proname not like 'op\_set\_game\_status%'
      -- RE-PINNED BY L.G1.2 (additive, R992): 185's op_send_notification pair + op_notice_recipients_internal are pinned by pgTAP 133 A1.
-     and p.proname not like 'op\_send\_notification%' and p.proname <> 'op_notice_recipients_internal'),
+     and p.proname not like 'op\_send\_notification%' and p.proname <> 'op_notice_recipients_internal'
+     -- RE-PINNED BY L.G1.5 (additive, R992): 186's live-state reads are pinned by pgTAP 134 A1.
+     and p.proname not in ('op_league_state', 'op_league_state_internal', 'op_platform_state',
+       'op_platform_state_internal', 'op_cron_last_runs_internal', 'op_pause_json_internal', 'op_week_games_internal')),
   'op_job_check_internal=f:search_path="":f:f op_job_words_internal=f:search_path="":f:f op_league_line_internal=f:search_path="":f:f op_pause_job=t:search_path="":f:t op_pause_job_internal=f:search_path="":f:f op_resume_job=t:search_path="":f:t op_resume_job_internal=f:search_path="":f:f op_run_job_now=t:search_path="":f:t op_run_job_now_internal=f:search_path="":f:f op_verb_prelude_internal=f:search_path="":f:f',
   'A4 the three doors DEFINER + search_path '''' + authenticated only; every internal plain and closed to anon / authenticated');
 select is(
