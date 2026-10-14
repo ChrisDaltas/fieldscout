@@ -48,7 +48,7 @@ export function BottomTabs({ onMoreClick }: BottomTabsProps) {
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-ink bg-ink lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-stretch border-t border-ink bg-ink desk:hidden">
       {TABS.map((tab) => {
         const active = isTabActive(pathname, tab)
         const inner = (

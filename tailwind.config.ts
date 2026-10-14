@@ -7,6 +7,37 @@ import tailwindcssAnimate from 'tailwindcss-animate'
 // every screen picks up the v7 look; screens are then re-laid-out one by one.
 // Single theme: palette is literal hex here; the HSL-triplet vars in
 // globals.css are the shadcn compatibility layer.
+/**
+ * Layout mode (Chris, 2026-10-13). Inside the app, `<html data-layout>` is
+ * `desktop` for a mouse/trackpad device and `mobile` for touch devices (or
+ * when a desktop user switches to the mobile layout in a very narrow window)
+ * — set by `src/hooks/use-layout-mode.ts` and its head script.
+ *
+ * - `sm` / `md` / `lg`: the width media query OR desktop mode, so the desktop
+ *   layout holds at any window width (the shell's `min-w-app` makes the window
+ *   cover the app instead). Outside the app (landing, auth) there is no
+ *   attribute and these are plain width breakpoints.
+ * - `xl` / `2xl`: width only — they refine the desktop layout on big screens.
+ * - `max-sm` / `max-md`: width AND not desktop mode.
+ * - `desk`: desktop mode only — the app frame's switch (sidebar, top bar,
+ *   right-side bar vs bottom tabs).
+ *
+ * `:where()` keeps specificity at a single class, so source order (sm < md <
+ * lg < xl < 2xl) decides overlaps exactly as Tailwind's own screens do.
+ */
+const DESKTOP = ':where(html[data-layout="desktop"]) &'
+const NOT_DESKTOP = ':where(html:not([data-layout="desktop"])) &'
+function layoutModeVariants({ addVariant }: { addVariant: (name: string, def: string | string[]) => void }) {
+  addVariant('max-sm', `@media not all and (min-width: 640px) { ${NOT_DESKTOP} }`)
+  addVariant('max-md', `@media not all and (min-width: 768px) { ${NOT_DESKTOP} }`)
+  addVariant('sm', ['@media (min-width: 640px)', DESKTOP])
+  addVariant('md', ['@media (min-width: 768px)', DESKTOP])
+  addVariant('lg', ['@media (min-width: 1024px)', DESKTOP])
+  addVariant('xl', '@media (min-width: 1280px)')
+  addVariant('2xl', '@media (min-width: 1536px)')
+  addVariant('desk', DESKTOP)
+}
+
 const config: Config = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -14,6 +45,12 @@ const config: Config = {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
+    // Breakpoints are registered by the `layoutModeVariants` plugin below, not
+    // here: inside the app a mouse/trackpad device keeps sm/md/lg ON at any
+    // window width (the desktop layout locks at its 1024px minimum instead of
+    // degrading). Leaving this empty stops Tailwind's own screen variants from
+    // shadowing the plugin's.
+    screens: {},
     extend: {
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
@@ -344,6 +381,9 @@ const config: Config = {
       // Tailwind v3's `minWidth` scale does NOT inherit from `spacing`, so
       // the count-chip constant needs its own entry to generate min-w-count-chip.
       minWidth: {
+        // Desktop app minimum: below it the window covers the app rather than
+        // the layout degrading (layout-mode, Chris 2026-10-13).
+        app: '1024px',
         'count-chip': '14px',
       },
       // v7 hairlines: 1px in the light --border grey.
@@ -410,7 +450,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [layoutModeVariants, tailwindcssAnimate],
 }
 
 export default config

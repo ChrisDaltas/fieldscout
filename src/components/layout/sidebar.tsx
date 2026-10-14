@@ -189,7 +189,7 @@ export function Sidebar() {
     <aside
       style={{ width }}
       className={cn(
-        'relative hidden shrink-0 flex-col gap-0.5 overflow-visible border-r border-n-4 bg-white py-[7px] text-ink lg:flex',
+        'relative hidden shrink-0 flex-col gap-0.5 overflow-visible border-r border-n-4 bg-white py-[7px] text-ink desk:flex',
         isCollapsed ? 'px-[7px]' : 'px-2',
         animateWidth && 'transition-[width] duration-200',
       )}

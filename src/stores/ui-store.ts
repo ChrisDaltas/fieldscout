@@ -15,6 +15,9 @@ interface UIStore {
   /** When set, the global create-list dialog adds this player to the new list. */
   createListSeedPlayerId: string | null
   isHistoryExpanded: boolean
+  /** A desktop user chose the mobile layout in a very narrow window. Not
+   *  persisted; cleared when the window is back at the desktop minimum. */
+  forceMobileLayout: boolean
 
   setSidebarWidth: (width: number) => void
   toggleSidebarCollapsed: () => void
@@ -23,6 +26,7 @@ interface UIStore {
   setCreateListOpen: (open: boolean) => void
   setCreateListSeedPlayerId: (playerId: string | null) => void
   toggleHistoryExpanded: () => void
+  setForceMobileLayout: (force: boolean) => void
 }
 
 export const SIDEBAR_DIMENSIONS = {
@@ -41,6 +45,7 @@ export const useUIStore = create<UIStore>()(
       isCreateListOpen: false,
       createListSeedPlayerId: null,
       isHistoryExpanded: false,
+      forceMobileLayout: false,
 
       setSidebarWidth: (width) =>
         set({
@@ -56,6 +61,7 @@ export const useUIStore = create<UIStore>()(
         set({ createListSeedPlayerId: playerId }),
       toggleHistoryExpanded: () =>
         set((state) => ({ isHistoryExpanded: !state.isHistoryExpanded })),
+      setForceMobileLayout: (force) => set({ forceMobileLayout: force }),
     }),
     {
       name: 'fieldscout.ui',

@@ -361,11 +361,23 @@ function useIsSmallViewport(): boolean {
   const subscribe = React.useCallback((onChange: () => void) => {
     const query = window.matchMedia(`(max-width: ${WINDOW_MOBILE_MAX_W - 1}px)`)
     query.addEventListener('change', onChange)
-    return () => query.removeEventListener('change', onChange)
+    // The layout mode can flip without a resize (the narrow-window "Switch to
+    // mobile layout" prompt), so watch `<html data-layout>` too.
+    const observer = new MutationObserver(onChange)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout'] })
+    return () => {
+      query.removeEventListener('change', onChange)
+      observer.disconnect()
+    }
   }, [])
   return React.useSyncExternalStore(
     subscribe,
-    () => isSmallViewport(viewportNow()),
+    // A narrow DESKTOP window keeps the desktop layout (and no bottom tabs —
+    // use-layout-mode), so the window stays a window there; the sheet is for
+    // the mobile layout only.
+    () =>
+      isSmallViewport(viewportNow()) &&
+      document.documentElement.getAttribute('data-layout') !== 'desktop',
     () => false,
   )
 }

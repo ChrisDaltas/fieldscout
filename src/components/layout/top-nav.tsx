@@ -35,7 +35,7 @@ interface TopNavProps {
  * and the account avatar on the right. Guest pages get search (signed in) or
  * sign in / sign up.
  *
- * Below `lg` the same bar is the phone top bar: the league switcher and the
+ * In the mobile layout (touch devices) the same bar is the phone top bar: the league switcher and the
  * search field drop out (search lives in the bottom tabs), and the bell links
  * to the notifications page instead of opening the right-side panel.
  */
@@ -61,7 +61,7 @@ export function TopNav({ variant = 'app' }: TopNavProps) {
 
       {isSignedIn ? (
         <>
-          <div className={cn('hidden w-[220px] min-w-0', variant === 'guest' ? 'block' : 'lg:block')}>
+          <div className={cn('hidden w-[220px] min-w-0', variant === 'guest' ? 'block' : 'desk:block')}>
             <TopSearch />
           </div>
           <NotificationBell />
@@ -139,7 +139,7 @@ function LeagueSwitcher() {
         <button
           type="button"
           className={cn(
-            'ml-[7px] hidden h-btn-md shrink-0 items-center gap-[7px] whitespace-nowrap rounded-[9px] pr-[9px] text-[11px] font-semibold text-ink shadow-ring-chip transition-colors hover:bg-surface-sunken data-[state=open]:bg-surface-sunken lg:flex',
+            'ml-[7px] hidden h-btn-md shrink-0 items-center gap-[7px] whitespace-nowrap rounded-[9px] pr-[9px] text-[11px] font-semibold text-ink shadow-ring-chip transition-colors hover:bg-surface-sunken data-[state=open]:bg-surface-sunken desk:flex',
             current ? 'pl-[3px]' : 'pl-2.5',
           )}
         >
@@ -195,7 +195,7 @@ function NotificationBell() {
 
   return (
     <>
-      <Link href="/app/notifications" aria-label={label} className={cn(base, 'lg:hidden')}>
+      <Link href="/app/notifications" aria-label={label} className={cn(base, 'desk:hidden')}>
         <Icon name="notification" size={15} />
         {badge}
       </Link>
@@ -205,7 +205,7 @@ function NotificationBell() {
         aria-pressed={openTool === 'notifications'}
         title="Notifications"
         onClick={() => toggleTool('notifications')}
-        className={cn(base, 'hidden lg:inline-flex', openTool === 'notifications' && 'bg-surface-hover')}
+        className={cn(base, 'hidden desk:inline-flex', openTool === 'notifications' && 'bg-surface-hover')}
       >
         <Icon name="notification" size={15} />
         {badge}

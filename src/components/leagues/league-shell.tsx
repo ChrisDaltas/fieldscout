@@ -74,7 +74,7 @@ export function LeagueShell({ leagueId, children }: { leagueId: string; children
     <>
       {data ? <LeagueHeaderClaim leagueId={leagueId} data={data} /> : null}
       {data ? (
-        <div className="mb-4 flex flex-col gap-3 border-b border-n-4 pb-3 lg:hidden" data-league-header-mobile>
+        <div className="mb-4 flex flex-col gap-3 border-b border-n-4 pb-3 desk:hidden" data-league-header-mobile>
           <LeagueHeaderParts leagueId={leagueId} data={data} />
         </div>
       ) : null}

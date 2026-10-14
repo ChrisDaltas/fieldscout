@@ -5,6 +5,7 @@ import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
 import { PlayerWindowsLayer } from '@/components/players/player-windows-layer'
 import { DevAuthProvider } from '@/components/providers/dev-auth-provider'
+import { LAYOUT_MODE_HEAD_SCRIPT } from '@/hooks/use-layout-mode'
 import { QueryProvider } from '@/components/providers/query-provider'
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
@@ -40,6 +41,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Desktop vs mobile layout before first paint (use-layout-mode). */}
+        <script dangerouslySetInnerHTML={{ __html: LAYOUT_MODE_HEAD_SCRIPT }} />
+      </head>
       <body
         className={cn(
           'min-h-screen bg-background font-sans text-foreground antialiased',
