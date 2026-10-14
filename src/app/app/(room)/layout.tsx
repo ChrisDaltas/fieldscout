@@ -1,3 +1,5 @@
+import { LayoutModeFrame } from '@/components/layout/layout-mode-frame'
+
 /**
  * The draft room's own frame — full-viewport, chrome-free (DR.1; spec §16.1
  * v2.12, ruled by Chris 2026-08-17: *"having a bunch unnecessary UI mid draft
@@ -25,7 +27,7 @@ export default function DraftRoomLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-page">
+    <LayoutModeFrame className="flex min-h-0 flex-col bg-page">
       {/* ONE scroll region for the page-shaped resolver states (skeleton,
           lobby, launcher, problem/empty cards…). The LIVE room does not use
           it (DR.4): `DraftRoomLive`'s root is `h-full` + `overflow-hidden`,
@@ -37,6 +39,6 @@ export default function DraftRoomLayout({
           wrapper; what landed is the equivalent inside-out form — the bands
           are flex bands inside the room's non-scrolling root.) */}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-    </div>
+    </LayoutModeFrame>
   )
 }

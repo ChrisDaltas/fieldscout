@@ -7,6 +7,7 @@ import { AppDndContext } from '@/components/layout/app-dnd-context'
 import { AppHeader } from '@/components/layout/app-header'
 import { BottomTabs } from '@/components/layout/bottom-tabs'
 import { DraftBar } from '@/components/layout/draft-bar'
+import { LayoutModeFrame } from '@/components/layout/layout-mode-frame'
 import { MoreSheet } from '@/components/layout/more-sheet'
 import { ResearchRail, useActiveRailTool } from '@/components/layout/rail/research-rail'
 import { Sidebar } from '@/components/layout/sidebar'
@@ -54,17 +55,19 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <AppDndContext>
-      <div className="flex h-screen flex-col overflow-hidden bg-page">
+      <LayoutModeFrame className="flex flex-col bg-page">
         <TopNav variant="app" />
 
-        {/* The rail strip is fixed-right; clear it on desktop — and the
-            open panel too, so it never covers the page (D483). */}
-        <div className={cn('flex min-h-0 flex-1', railTool ? 'lg:pr-rail-open' : 'lg:pr-rail-strip')}>
+        {/* The right-side bar sits at this row's right edge; clear it on
+            desktop — and the open panel too, so it never covers the page
+            (D483). `relative` anchors it inside the min-width frame, so a
+            narrow window covers it like the rest of the app. */}
+        <div className={cn('relative flex min-h-0 flex-1', railTool ? 'desk:pr-rail-open' : 'desk:pr-rail-strip')}>
           <Sidebar />
 
           <div className="flex min-w-0 flex-1 flex-col">
             <DraftBar />
-            <div className="hidden lg:block">
+            <div className="hidden desk:block">
               <AppHeader />
             </div>
             <main className="min-h-0 flex-1 overflow-y-auto">
@@ -102,7 +105,7 @@ export function AppShell({ children }: AppShellProps) {
           mode="create"
           seedPlayerId={createListSeedPlayerId}
         />
-      </div>
+      </LayoutModeFrame>
     </AppDndContext>
   )
 }

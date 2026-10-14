@@ -155,7 +155,7 @@ function EditableTitle({
 
 interface PageHeaderProps extends PageHeaderContent {
   /**
-   * The shell hides its header below `lg` (the mobile top bar replaces it).
+   * The shell hides its header in the mobile layout (the phone top bar replaces it).
    * Set this when the page's title or actions must still reach a phone: the
    * SAME title cluster and actions render in the page, below `lg` only.
    */
@@ -176,7 +176,7 @@ export function PageHeader({ inPageOnMobile = false, ...content }: PageHeaderPro
 
   if (!inPageOnMobile) return null
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 lg:hidden" data-page-header-mobile>
+    <div className="mb-3 flex flex-wrap items-center gap-2 desk:hidden" data-page-header-mobile>
       <div className="mr-auto flex min-w-0 items-center gap-3">
         <HeaderTitle page={{ title, subtitle, editableTitle }} />
       </div>

@@ -553,6 +553,10 @@ const TAILWIND_BREAKPOINTS: Record<string, number> = { sm: 640, md: 768, lg: 102
  */
 const bottomTabsHiddenFrom = (): number => {
   const nav = code(BOTTOM_TABS).match(/<nav className="([^"]*)"/)!
+  // `desk:hidden` (use-layout-mode): the bar is hidden only in the desktop
+  // layout, which never shows the sheet — so in the mobile layout it is
+  // present at every width.
+  if (/(?:^|\s)desk:hidden(?=\s|$)/.test(nav[1])) return Number.POSITIVE_INFINITY
   const hides = [...nav[1].matchAll(/(?:^|\s)(sm|md|lg|xl):hidden(?=\s|$)/g)].map((hit) => hit[1])
   if (hides.length !== 1) {
     throw new Error(

@@ -32,7 +32,7 @@ const TOOLS: ReadonlyArray<{ id: RailTool; icon: IconName; label: string }> = [
  *
  * Mount once inside the app shell, INSIDE `AppDndContext`, so player rows in
  * the Players tool can drag onto sidebar lists / tier zones. Desktop content
- * needs `lg:pr-rail-strip` (or equivalent) on the shell so the strip never
+ * needs `desk:pr-rail-strip` (or equivalent) on the shell so the strip never
  * overlaps it.
  */
 /**
@@ -83,7 +83,7 @@ export function ResearchRail() {
           Pinned beside the scrolling page, never over it. */}
       <div
         onWheel={onWheel}
-        className="fixed bottom-0 right-0 top-header z-30 hidden w-rail-strip flex-col items-center border-l border-n-4 bg-white lg:flex"
+        className="absolute inset-y-0 right-0 z-30 hidden w-rail-strip flex-col items-center border-l border-n-4 bg-white desk:flex"
         role="toolbar"
         aria-label="Research rail"
         aria-orientation="vertical"
@@ -127,7 +127,7 @@ export function ResearchRail() {
       {activeTool && (
         <aside
           onWheel={onWheel}
-          className="fixed bottom-0 right-rail-strip top-header z-30 hidden w-rail-panel flex-col border-l border-n-4 bg-white duration-200 ease-linear animate-in fade-in-0 slide-in-from-right-4 lg:flex"
+          className="absolute inset-y-0 right-rail-strip z-30 hidden w-rail-panel flex-col border-l border-n-4 bg-white duration-200 ease-linear animate-in fade-in-0 slide-in-from-right-4 desk:flex"
           aria-label={`${TOOLS.find((t) => t.id === activeTool)?.label} panel`}
         >
           {activeTool === 'notifications' && <NotificationsPanel onClose={closeRail} />}
