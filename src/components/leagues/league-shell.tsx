@@ -26,8 +26,6 @@ import { useHeaderStore } from '@/stores/header-store'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import { useCommishOverrideStore, useOverrideMode, useOverrideSaving } from '@/stores/commish-override-store'
 
-import { MobileLeagueFallbackHeader } from '@/components/mobile/league/fallback-header'
-
 import { Crest } from './league-cells'
 import {
   LEAGUE_STATUS_BADGE,
@@ -77,11 +75,8 @@ export function LeagueShell({ leagueId, children }: { leagueId: string; children
     <>
       {data ? <LeagueHeaderClaim leagueId={leagueId} data={data} /> : null}
       {/* Mobile layout: the dock is the league's navigation and each league
-          screen draws its own header; a page with no mobile screen yet gets
-          a plain close + title row (FieldScout Mobile sub-screen header). */}
-      <div className="hidden mob:contents">
-        <MobileLeagueFallbackHeader leagueId={leagueId} />
-      </div>
+          screen draws its own header (a page with no mobile screen yet gets
+          the shell's close + title row, `MobileFallbackHeader`). */}
       {children}
     </>
   )

@@ -35,6 +35,7 @@ import {
   useCommunityPlayerMatches,
   useMobileCommunityFeed,
 } from '@/hooks/use-mobile-community-feed'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 /**
@@ -169,7 +170,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
         {searchOpen ? <SearchRow /> : <HeaderRow onCreate={() => setCreateOpen(true)} />}
 
         <div className="-mx-4 mt-0.5 flex gap-[18px] overflow-x-auto border-b border-m-b3 px-4 scrollbar-none">
-          {COMMUNITY_TABS.map((t) => {
+          {COMMUNITY_TABS.filter(tabSwitchedOn).map((t) => {
             const on = tab === t.value
             return (
               <button
@@ -239,16 +240,21 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
 
             {shelves ? (
               <>
-                {/* Shelf 1 always renders (§2.7). Start/sit questions have
-                    no backend yet, so it holds the empty card. */}
-                <ShelfHeader
-                  title={`Start or sit · Week ${activeWeekOf(currentWeek)}`}
-                  onSeeAll={() => setTab('poll')}
-                  className="mb-[10px] mt-[22px]"
-                />
-                <p className="rounded-[18px] bg-m-b1 px-4 py-6 text-center text-[13px] font-medium text-m-t3">
-                  No start or sit questions yet
-                </p>
+                {/* Shelf 1 renders while Start-or-sit is switched on (§2.7).
+                    Start/sit questions have no backend yet, so it holds the
+                    empty card. */}
+                {featureFlags.startOrSit && (
+                  <>
+                    <ShelfHeader
+                      title={`Start or sit · Week ${activeWeekOf(currentWeek)}`}
+                      onSeeAll={() => setTab('poll')}
+                      className="mb-[10px] mt-[22px]"
+                    />
+                    <p className="rounded-[18px] bg-m-b1 px-4 py-6 text-center text-[13px] font-medium text-m-t3">
+                      No start or sit questions yet
+                    </p>
+                  </>
+                )}
                 {ranks.length > 0 && (
                   <>
                     <ShelfHeader title="Rankings this week" onSeeAll={() => setTab('rank')} className="mb-[6px] mt-[22px]" />
@@ -454,4 +460,12 @@ function FeedSkeleton() {
       </div>
     </div>
   )
+}
+
+/** Launch scope (CLAUDE.md): a switched-off surface is hidden, not shown
+ *  empty — Start or sit and Rankings follow their own switches. */
+function tabSwitchedOn(t: { value: string }): boolean {
+  if (t.value === 'poll') return featureFlags.startOrSit
+  if (t.value === 'rank') return featureFlags.weeklyRanks
+  return true
 }

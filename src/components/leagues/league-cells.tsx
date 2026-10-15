@@ -252,7 +252,7 @@ export function LockTag({ className, label, ...props }: React.HTMLAttributes<HTM
 export function LeaguePageTitle({ title, actions }: { title: React.ReactNode; actions?: React.ReactNode }) {
   // Mobile layout: only league pages with no mobile screen of their own
   // render this, and the league shell's mobile header already titles them
-  // (`MobileLeagueFallbackHeader`) — keep the actions, drop the title.
+  // (`MobileFallbackHeader`) — keep the actions, drop the title.
   return (
     <div className={cn('flex flex-wrap items-center gap-3', actions == null && 'mob:hidden')} data-page-title>
       <h2 className="mr-auto min-w-0 truncate text-[20px] font-bold leading-6 tracking-[-0.03em] text-ink mob:hidden">{title}</h2>

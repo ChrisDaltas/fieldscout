@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { leagueFallbackTitle, leagueTabHref, mobileRoute } from './mobile-nav'
+import { leagueFallbackTitle, leagueTabHref, mobileFallback, mobileRoute } from './mobile-nav'
 
 const L = '/app/leagues/lg1'
 
@@ -62,5 +62,26 @@ describe('leagueTabHref', () => {
     expect(leagueTabHref('lg1', 'team', 't1')).toBe(`${L}/team/t1`)
     expect(leagueTabHref('lg1', 'team', null)).toBe(`${L}/team/mine`)
     expect(leagueTabHref('lg1', 'league', null)).toBe(L)
+  })
+})
+
+describe('mobileFallback — account pages with no mobile screen yet', () => {
+  it('titles them, with Settings returning to Profile and the rest to Home', () => {
+    expect(mobileFallback('/app/settings')).toEqual({ kind: 'account', title: 'Settings', parent: '/app/profile' })
+    expect(mobileFallback('/app/settings/scoring')).toEqual({ kind: 'account', title: 'Scoring', parent: '/app/profile' })
+    expect(mobileFallback('/app/mocks')).toEqual({ kind: 'account', title: 'Mock drafts', parent: '/app' })
+    expect(mobileFallback('/app/mocks/m1/report')?.title).toBe('Mock draft report')
+    expect(mobileFallback('/app/leagues')?.title).toBe('Leagues')
+    expect(mobileFallback('/app/trash')?.title).toBe('Trash')
+    expect(mobileFallback('/app/nfl/BUF')?.title).toBe('NFL team')
+    expect(mobileFallback('/app/weekly-ranks/history')?.title).toBe('Ranking history')
+  })
+  it('leaves screens with their own mobile header alone', () => {
+    for (const path of ['/app', '/app/profile', '/app/lists', '/app/lists/new', '/app/weekly-ranks', '/app/start-or-sit', '/app/research', '/app/messages', '/app/notifications', '/app/mocks/m1']) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
+  })
+  it('names the league for a league page', () => {
+    expect(mobileFallback('/app/leagues/lg1/members')).toEqual({ kind: 'league', title: 'Members', leagueId: 'lg1' })
   })
 })

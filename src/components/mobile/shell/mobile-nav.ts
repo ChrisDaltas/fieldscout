@@ -54,11 +54,10 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
 }
 
 /**
- * League pages with no FieldScout Mobile screen of their own yet, by the
- * title their Menu row uses. The league shell gives these a plain mobile
- * header (close + title) in place of the desktop league header. Null = the
- * route draws its own mobile screen (the four tabs, Activity and its
- * sub-screens, trades, team views, matchups).
+ * Pages with no FieldScout Mobile screen of their own yet, by title. The
+ * shell gives these a plain mobile header — close (league pages, reached
+ * from the league Menu) or back (account pages) and the title — over the
+ * page's existing layout. Null = the route draws its own mobile screen.
  */
 const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
   [/^\/settings(\/|$)/, 'League settings'],
@@ -69,10 +68,45 @@ const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
   [/^\/stats(\/|$)/, 'League stats'],
 ]
 
-export function leagueFallbackTitle(pathname: string): string | null {
-  const rest = LEAGUE.exec(pathname)?.[2] ?? ''
-  for (const [re, title] of LEAGUE_FALLBACK_TITLES) if (re.test(rest)) return title
+const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
+  [/^\/app\/settings\/scoring\/?$/, 'Scoring'],
+  [/^\/app\/settings\/billing\/?$/, 'Billing'],
+  [/^\/app\/settings\/?$/, 'Settings'],
+  [/^\/app\/leagues\/?$/, 'Leagues'],
+  [/^\/app\/mocks\/?$/, 'Mock drafts'],
+  [/^\/app\/mocks\/[^/]+\/report\/?$/, 'Mock draft report'],
+  [/^\/app\/nfl\/?$/, 'NFL teams'],
+  [/^\/app\/nfl\/[^/]+\/?$/, 'NFL team'],
+  [/^\/app\/trash\/?$/, 'Trash'],
+  [/^\/app\/weekly-ranks\/history\/?$/, 'Ranking history'],
+  [/^\/app\/start-or-sit\/new\/?$/, 'Ask a question'],
+  [/^\/app\/start-or-sit\/[^/]+\/?$/, 'Start or sit'],
+  [/^\/app\/teams\/[^/]+(\/live)?\/?$/, 'Team'],
+  [/^\/app\/admin\/posts\/?$/, 'Posts'],
+]
+
+export type MobileFallback =
+  | { kind: 'league'; title: string; leagueId: string }
+  | { kind: 'account'; title: string; parent: string }
+
+export function mobileFallback(pathname: string): MobileFallback | null {
+  const league = LEAGUE.exec(pathname)
+  if (league && league[1]) {
+    const rest = league[2] ?? ''
+    for (const [re, title] of LEAGUE_FALLBACK_TITLES) if (re.test(rest)) return { kind: 'league', title, leagueId: league[1] }
+    return null
+  }
+  for (const [re, title] of ACCOUNT_FALLBACK_TITLES) {
+    if (re.test(pathname)) return { kind: 'account', title, parent: pathname.startsWith('/app/settings') ? '/app/profile' : '/app' }
+  }
   return null
+}
+
+/** The title alone (league pages), for callers that only need to know the
+ *  shell titles the page. */
+export function leagueFallbackTitle(pathname: string): string | null {
+  const f = mobileFallback(pathname)
+  return f?.kind === 'league' ? f.title : null
 }
 
 export function leagueTabHref(leagueId: string, tab: LeagueTab, myTeamId: string | null): string {

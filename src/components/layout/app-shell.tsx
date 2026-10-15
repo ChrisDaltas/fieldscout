@@ -10,6 +10,7 @@ import { ResearchRail, useActiveRailTool } from '@/components/layout/rail/resear
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopNav } from '@/components/layout/top-nav'
 import { ListFormDialog } from '@/components/lists/list-form-dialog'
+import { MobileFallbackHeader } from '@/components/mobile/shell/fallback-header'
 import { MobileDock, useMobileDock } from '@/components/mobile/shell/mobile-dock'
 import { ListWindowsHost } from '@/components/lists/v2/list-windows-host'
 import { CommandPalette } from '@/components/shared/command-palette'
@@ -84,6 +85,11 @@ export function AppShell({ children }: AppShellProps) {
                   'mob:px-4',
                 )}
               >
+                {/* A page with no mobile screen yet: the mobile close /
+                    back + title row over its own layout. */}
+                <div className="hidden mob:contents">
+                  <MobileFallbackHeader />
+                </div>
                 {children}
               </div>
             </main>

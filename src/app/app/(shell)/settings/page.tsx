@@ -33,7 +33,8 @@ export default function SettingsPage() {
     <div className="max-w-[612px] pb-[54px]">
       <PageHeader title="Account settings" />
 
-      <div className="mb-3">
+      {/* Mobile layout: the shell's mobile header carries Back. */}
+      <div className="mb-3 mob:hidden">
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <Icon name="arrow-prev" size={13} />
           Back

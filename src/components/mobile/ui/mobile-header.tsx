@@ -80,7 +80,9 @@ export function HeaderIconButton({
   )
 }
 
-/** Search · Notifications · Messages — the right group on Home and League. */
+/** Search · Notifications · Messages — the right group on Home and League.
+ *  Messages holds direct messages and league boards, so it shows while
+ *  either switch is on. */
 export function HeaderActions() {
   const openSearch = useUIStore((s) => s.setCommandPaletteOpen)
   const { data } = useNotifications()
@@ -90,7 +92,9 @@ export function HeaderActions() {
     <div className="flex flex-none items-center gap-0.5">
       <HeaderIconButton icon="search" label="Search" onClick={() => openSearch(true)} />
       <HeaderIconButton icon="bell" label={unread ? `Notifications (${unread} unread)` : 'Notifications'} href="/app/notifications" badge={unread} />
-      <HeaderIconButton icon="chat" label="Messages" href="/app/messages" badge={dms} badgeTone="blue" />
+      {(featureFlags.messages || featureFlags.leagues) && (
+        <HeaderIconButton icon="chat" label="Messages" href="/app/messages" badge={dms} badgeTone="blue" />
+      )}
     </div>
   )
 }

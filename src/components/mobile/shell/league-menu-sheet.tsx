@@ -11,6 +11,7 @@ import { useLeagueScoringFamily } from '@/hooks/use-draft-pool'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import type { MyLeagueRow } from '@/hooks/use-leagues'
 import { toast } from '@/hooks/use-toast'
+import { featureFlags } from '@/lib/feature-flags'
 
 interface MenuRow {
   label: string
@@ -61,7 +62,7 @@ export function LeagueMenuSheet({
   ]
   const apps: Array<{ label: string; icon: MIconName; href: string }> = [
     { label: 'Home', icon: 'home', href: '/app' },
-    { label: 'Community', icon: 'star', href: '/app/explore' },
+    ...(featureFlags.community ? [{ label: 'Community', icon: 'star' as MIconName, href: '/app/explore' }] : []),
     { label: 'Stats', icon: 'leaders', href: '/app/stats' },
     { label: 'Profile', icon: 'profile', href: '/app/profile' },
     { label: 'Settings', icon: 'gear', href: '/app/settings' },

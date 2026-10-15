@@ -145,13 +145,14 @@ function TabItem({
   )
 }
 
-/** Outside a league: Home · Community · Players · Profile (avatar). */
+/** Outside a league: Home · Community · Players · Profile (avatar).
+ *  Community shows only while its switch is on (launch scope). */
 function AccountTabBar({ active }: { active: string | null }) {
   const { profile } = useAuth()
   return (
     <TabBar>
       <TabItem href="/app" label="Home" icon="home" on={active === 'home'} />
-      <TabItem href="/app/explore" label="Community" icon="star" on={active === 'community'} />
+      {featureFlags.community && <TabItem href="/app/explore" label="Community" icon="star" on={active === 'community'} />}
       <TabItem href="/app/research" label="Players" icon="players" on={active === 'players'} />
       <TabItem href="/app/profile" label="Profile" on={active === 'profile'}>
         <span

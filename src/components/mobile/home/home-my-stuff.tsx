@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 import { M_ICON } from '@/components/mobile/ui/m-icon'
 import { useMobileHomeStuff, type StuffCount } from '@/hooks/use-mobile-home-stuff'
+import { cn } from '@/lib/utils'
 
 import { plural } from './home-ops'
 import { HomeNote, HomeSectionTitle } from './home-section'
@@ -33,6 +34,9 @@ function sub<T>(count: StuffCount<T>, text: (value: T) => string): Pick<Tile, 's
  * line keeps its height empty (no placeholder number); a count that fails
  * says so, with Try again under the tiles.
  */
+/** The tiles that are switched on share the row. */
+const TILE_COLS: Record<number, string> = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' }
+
 export function HomeMyStuff() {
   const stuff = useMobileHomeStuff(Date.now())
   const tiles: Tile[] = [
@@ -55,7 +59,7 @@ export function HomeMyStuff() {
   return (
     <section>
       <HomeSectionTitle title="My stuff" className="mt-[14px]" />
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <div className={cn('mt-2 grid gap-2', TILE_COLS[tiles.length] ?? 'grid-cols-3')}>
         {tiles.map((t) => (
           <Link
             key={t.label}
