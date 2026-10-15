@@ -216,6 +216,20 @@ const config: Config = {
           dock: 'var(--m-dock)',
           // Inactive switcher dots — the same in both themes (handoff §2.2).
           dot: '#636366',
+          // Fixed (non-theme) colours from the mobile handoff:
+          gold: '#C98A1F', // waiver / claim actions, TE text
+          median: '#FFF6E5', // league-median card
+          'head-bg': '#EEEEF1', // headshot initials fallback
+          // Position colours as TEXT on a light surface (README table).
+          'pos-qb': '#E03E3E',
+          'pos-rb': '#4A68D4',
+          'pos-wr': '#8656D8',
+          'pos-te': '#C98A1F',
+          'pos-k': '#5E8C8C',
+          'pos-dst': '#A68A00',
+          // Manager avatar colours not already in the palette.
+          'av-teal': '#00A6A3',
+          'av-pink': '#E5508A',
           'bar-a': 'var(--m-bar-a)',
         },
 
@@ -350,6 +364,14 @@ const config: Config = {
         // ring — handoff §2.3) and the header badge's page-coloured ring.
         'm-tab-avatar': '0 0 0 2px rgb(var(--m-ink)), 0 0 0 3.5px rgb(var(--m-b0))',
         'm-badge': '0 0 0 2px rgb(var(--m-b0))',
+        // Mobile segmented "on" pill (README: 0 1px 2px; some screens 3px).
+        'm-seg': '0 1px 2px rgba(0,0,0,.12)',
+        'm-seg-3': '0 1px 3px rgba(0,0,0,.12)',
+        // Mobile selection ring and outlined card (README "Shadows").
+        'm-select': 'inset 0 0 0 2px #0088FF',
+        'm-outline': 'inset 0 0 0 1px rgb(var(--m-b3))',
+        // Mobile menus / popovers (README).
+        'm-menu': '0 10px 30px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.05)',
       },
       // v7's heaviest weight is 700: the old extra-heavy weights resolve to
       // bold, so pre-v7 `font-extrabold` / `font-black` read as v7 bold.
