@@ -294,3 +294,80 @@
 .fs-dark .hover\:bg-accent-soft:hover {
   background-color: var(--fs-dark-wash);
 }
+
+/* ===========================================================================
+   Mobile theme tokens (FieldScout Mobile handoff, 2026-10-15)
+   ===========================================================================
+   The mobile layout's colours, light and dark, from the handoff README and
+   the prototype's `--x-*` variables (one token per distinct light value —
+   several light greys collapse to one dark grey). RGB channels so Tailwind's
+   `/<alpha>` works: `bg-m-b1`, `text-m-t3/60`.
+
+   Dark mode is MOBILE ONLY (Chris, 2026-10-15): `<html data-theme="dark">`
+   is set only in the mobile layout (use-mobile-theme / the head script), so
+   the desktop app never sees it. */
+@layer base {
+  :root {
+    --m-t1: 29 29 31;
+    --m-t2: 58 58 60;
+    --m-t3: 110 110 115;
+    --m-t4: 142 142 147;
+    --m-t5: 174 174 178;
+    --m-b0: 255 255 255;
+    --m-b1: 245 245 247;
+    --m-b2: 242 242 244;
+    --m-b2h: 237 237 240;
+    --m-b3: 235 235 238;
+    --m-b3s: 229 229 234;
+    --m-b4: 209 209 214;
+    --m-b4m: 199 199 204;
+    --m-b4l: 174 174 178;
+    --m-ink: 29 29 31;
+    --m-bar: 29 29 31;
+    --m-mini: 58 58 60;
+    --m-gg: 227 249 236;
+    --m-tg: 6 122 62;
+    --m-gr: 255 233 236;
+    --m-tr: 200 0 28;
+    --m-gb: 230 242 255;
+    --m-tb: 0 116 219;
+    --m-go: 255 243 230;
+    --m-to: 178 92 0;
+    --m-gb2: 245 250 255;
+    --m-gp: 243 237 253;
+    --m-dock: rgba(29, 29, 31, 0.9);
+    --m-bar-a: rgba(29, 29, 31, 0.94);
+  }
+  html[data-theme='dark'] {
+    --m-t1: 255 255 255;
+    --m-t2: 217 217 217;
+    --m-t3: 179 179 179;
+    --m-t4: 167 167 167;
+    --m-t5: 114 114 114;
+    --m-b0: 18 18 18;
+    --m-b1: 40 40 40;
+    --m-b2: 51 51 51;
+    --m-b2h: 51 51 51;
+    --m-b3: 62 62 62;
+    --m-b3s: 62 62 62;
+    --m-b4: 87 87 87;
+    --m-b4m: 87 87 87;
+    --m-b4l: 87 87 87;
+    --m-ink: 77 77 77;
+    --m-bar: 18 18 18;
+    --m-mini: 9 9 9;
+    --m-gg: 18 48 31;
+    --m-tg: 30 215 96;
+    --m-gr: 58 26 29;
+    --m-tr: 255 107 107;
+    --m-gb: 18 38 63;
+    --m-tb: 111 181 255;
+    --m-go: 58 42 20;
+    --m-to: 255 179 64;
+    --m-gb2: 22 33 46;
+    --m-gp: 38 30 54;
+    --m-dock: rgba(18, 18, 18, 0.86);
+    --m-bar-a: rgba(18, 18, 18, 0.92);
+    color-scheme: dark;
+  }
+}

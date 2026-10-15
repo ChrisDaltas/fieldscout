@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
+import { THEME_STORAGE_KEY, useThemeStore } from '@/stores/theme-store'
 import { useUIStore } from '@/stores/ui-store'
 
 /**
@@ -29,7 +30,7 @@ export type LayoutMode = 'desktop' | 'mobile'
  * a full load of an app page. App routes only — the landing and auth pages
  * stay plain width-responsive.
  */
-export const LAYOUT_MODE_HEAD_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/app'||p.indexOf('/app/')===0){document.documentElement.setAttribute('data-layout',window.matchMedia('${DESKTOP_POINTER}').matches?'desktop':'mobile')}}catch(e){}})();`
+export const LAYOUT_MODE_HEAD_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/app'||p.indexOf('/app/')===0){var h=document.documentElement,d=window.matchMedia('${DESKTOP_POINTER}').matches;h.setAttribute('data-layout',d?'desktop':'mobile');if(!d&&localStorage.getItem('${THEME_STORAGE_KEY}')==='dark')h.setAttribute('data-theme','dark')}}catch(e){}})();`
 
 function readViewport() {
   if (typeof window === 'undefined') return { desktopPointer: true, width: DESKTOP_MIN_WIDTH }
@@ -71,9 +72,24 @@ export function useLayoutMode() {
     document.documentElement.setAttribute('data-layout', mode)
   }, [mode])
 
-  // Leaving the app (e.g. to the landing page) drops the attribute so public
-  // pages are plain width-responsive again.
-  useEffect(() => () => document.documentElement.removeAttribute('data-layout'), [])
+  // Dark mode is mobile-only (Chris, 2026-10-15): the theme attribute follows
+  // the stored preference in the mobile layout and is absent on desktop.
+  const dark = useThemeStore((t) => t.dark)
+  useEffect(() => {
+    const html = document.documentElement
+    if (mode === 'mobile' && dark) html.setAttribute('data-theme', 'dark')
+    else html.removeAttribute('data-theme')
+  }, [mode, dark])
+
+  // Leaving the app (e.g. to the landing page) drops both attributes so
+  // public pages are plain width-responsive and light again.
+  useEffect(
+    () => () => {
+      document.documentElement.removeAttribute('data-layout')
+      document.documentElement.removeAttribute('data-theme')
+    },
+    [],
+  )
 
   return {
     mode,

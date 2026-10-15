@@ -20,7 +20,7 @@ import tailwindcssAnimate from 'tailwindcss-animate'
  * - `xl` / `2xl`: width only — they refine the desktop layout on big screens.
  * - `max-sm` / `max-md`: width AND not desktop mode.
  * - `desk`: desktop mode only — the app frame's switch (sidebar, top bar,
- *   right-side bar vs bottom tabs).
+ *   right-side bar vs bottom tabs). `mob`: mobile mode only.
  *
  * `:where()` keeps specificity at a single class, so source order (sm < md <
  * lg < xl < 2xl) decides overlaps exactly as Tailwind's own screens do.
@@ -36,6 +36,7 @@ function layoutModeVariants({ addVariant }: { addVariant: (name: string, def: st
   addVariant('xl', '@media (min-width: 1280px)')
   addVariant('2xl', '@media (min-width: 1536px)')
   addVariant('desk', DESKTOP)
+  addVariant('mob', ':where(html[data-layout="mobile"]) &')
 }
 
 const config: Config = {
@@ -179,6 +180,41 @@ const config: Config = {
           green: '#00D167',
           caution: '#FFE58A',
           violet: { DEFAULT: '#5B2FD1', soft: '#F0EBFF', wash: '#FBFAFF', scout: '#A970FF' },
+        },
+
+        /* ---- Mobile theme (FieldScout Mobile handoff). CSS-variable backed so
+           the mobile layout can switch light/dark — globals.css. Use only in
+           mobile components. ---- */
+        m: {
+          't1': 'rgb(var(--m-t1) / <alpha-value>)',
+          't2': 'rgb(var(--m-t2) / <alpha-value>)',
+          't3': 'rgb(var(--m-t3) / <alpha-value>)',
+          't4': 'rgb(var(--m-t4) / <alpha-value>)',
+          't5': 'rgb(var(--m-t5) / <alpha-value>)',
+          'b0': 'rgb(var(--m-b0) / <alpha-value>)',
+          'b1': 'rgb(var(--m-b1) / <alpha-value>)',
+          'b2': 'rgb(var(--m-b2) / <alpha-value>)',
+          'b2h': 'rgb(var(--m-b2h) / <alpha-value>)',
+          'b3': 'rgb(var(--m-b3) / <alpha-value>)',
+          'b3s': 'rgb(var(--m-b3s) / <alpha-value>)',
+          'b4': 'rgb(var(--m-b4) / <alpha-value>)',
+          'b4m': 'rgb(var(--m-b4m) / <alpha-value>)',
+          'b4l': 'rgb(var(--m-b4l) / <alpha-value>)',
+          'ink': 'rgb(var(--m-ink) / <alpha-value>)',
+          'bar': 'rgb(var(--m-bar) / <alpha-value>)',
+          'mini': 'rgb(var(--m-mini) / <alpha-value>)',
+          'gg': 'rgb(var(--m-gg) / <alpha-value>)',
+          'tg': 'rgb(var(--m-tg) / <alpha-value>)',
+          'gr': 'rgb(var(--m-gr) / <alpha-value>)',
+          'tr': 'rgb(var(--m-tr) / <alpha-value>)',
+          'gb': 'rgb(var(--m-gb) / <alpha-value>)',
+          'tb': 'rgb(var(--m-tb) / <alpha-value>)',
+          'go': 'rgb(var(--m-go) / <alpha-value>)',
+          'to': 'rgb(var(--m-to) / <alpha-value>)',
+          'gb2': 'rgb(var(--m-gb2) / <alpha-value>)',
+          'gp': 'rgb(var(--m-gp) / <alpha-value>)',
+          dock: 'var(--m-dock)',
+          'bar-a': 'var(--m-bar-a)',
         },
 
         /* ---- Legacy shadcn compatibility layer (HSL vars in globals.css) ---- */
