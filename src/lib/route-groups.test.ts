@@ -226,7 +226,7 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // FieldScout Mobile — the league's TRANSACTIONS, COMMISSIONER LOG and STAT
   // CORRECTIONS as full screens (m-league §2.5: the Team tab's Moves tile and
   // a team's "See all" land on Transactions). The mobile layout's screens;
-  // the desktop layout shows the Activity page on the matching tab. Same
+  // a desktop visit is sent to the Activity page on the matching tab. Same
   // gates as `/activity` (leagues flag + members only, server-decided).
   '/app/leagues/[leagueId]/activity/commissioner',
   '/app/leagues/[leagueId]/activity/corrections',

@@ -66,14 +66,14 @@ describe('leagueTabHref', () => {
 })
 
 describe('mobileFallback — account pages with no mobile screen yet', () => {
-  it('titles them, with Settings returning to Profile and the rest to Home', () => {
-    expect(mobileFallback('/app/settings')).toEqual({ kind: 'account', title: 'Settings', parent: '/app/profile' })
-    expect(mobileFallback('/app/settings/scoring')).toEqual({ kind: 'account', title: 'Scoring', parent: '/app/profile' })
-    expect(mobileFallback('/app/mocks')).toEqual({ kind: 'account', title: 'Mock drafts', parent: '/app' })
+  it('titles them, with Settings returning to Profile, its sub-pages to Settings and the rest to Home', () => {
+    expect(mobileFallback('/app/settings')).toEqual({ kind: 'account', title: 'Settings', parent: '/app/profile', heading: true })
+    expect(mobileFallback('/app/settings/scoring')).toEqual({ kind: 'account', title: 'Scoring', parent: '/app/settings', heading: true })
+    expect(mobileFallback('/app/mocks')).toEqual({ kind: 'account', title: 'Mock drafts', parent: '/app', heading: true })
     expect(mobileFallback('/app/mocks/m1/report')?.title).toBe('Mock draft report')
     expect(mobileFallback('/app/leagues')?.title).toBe('Leagues')
     expect(mobileFallback('/app/trash')?.title).toBe('Trash')
-    expect(mobileFallback('/app/nfl/BUF')?.title).toBe('NFL team')
+    expect(mobileFallback('/app/nfl/BUF')).toMatchObject({ title: 'NFL team', heading: false })
     expect(mobileFallback('/app/weekly-ranks/history')?.title).toBe('Ranking history')
   })
   it('leaves screens with their own mobile header alone', () => {
@@ -82,6 +82,6 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
     }
   })
   it('names the league for a league page', () => {
-    expect(mobileFallback('/app/leagues/lg1/members')).toEqual({ kind: 'league', title: 'Members', leagueId: 'lg1' })
+    expect(mobileFallback('/app/leagues/lg1/members')).toEqual({ kind: 'league', title: 'Members', leagueId: 'lg1', heading: true })
   })
 })

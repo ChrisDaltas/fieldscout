@@ -20,6 +20,7 @@ import {
 } from '@/components/leagues/trades-ops'
 import { problemCopy } from '@/components/leagues/team-page'
 import { MIcon } from '@/components/mobile/ui/m-icon'
+import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { useAuth } from '@/hooks/use-auth'
@@ -65,11 +66,14 @@ export function MobileTradesScreen({
     else router.push(`/app/leagues/${leagueId}`)
   }
   const header = (
-    <div className="flex h-[52px] items-center px-3">
-      <RoundNavButton kind="back" onClick={back} />
-      <h1 className="min-w-0 flex-1 truncate text-center text-[16px] font-semibold">Trades</h1>
-      <span className="size-9 flex-none" aria-hidden />
-    </div>
+    <>
+      <div className="flex h-[52px] items-center px-3">
+        <RoundNavButton kind="back" onClick={back} />
+        <h1 className="min-w-0 flex-1 truncate text-center text-[16px] font-semibold">Trades</h1>
+        <span className="size-9 flex-none" aria-hidden />
+      </div>
+      <MobileOverrideStrip leagueId={leagueId} className="mb-1.5" />
+    </>
   )
   if (league.isPending || (!user && authLoading)) {
     return (

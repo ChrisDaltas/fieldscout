@@ -8,7 +8,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { commishMatchupHref } from '@/components/leagues/activity-page-ops'
 import { boxPointsNote, weekMayHaveCorrections } from '@/components/leagues/corrections-view-ops'
 import { managersByTeam, scoringLive } from '@/components/leagues/league-home-season-ops'
-import { OVERRIDE_ON_INDICATOR } from '@/components/leagues/league-shell-ops'
 import { currentWeekOf, formatInstantWithDate, formatKickoff } from '@/components/leagues/lineup-editor-ops'
 import {
   BENCH_NOT_COUNTED_COPY,
@@ -70,7 +69,7 @@ import type { BoxGame, BoxStarter, StarterPhase, TeamBoxScore } from '@/lib/leag
 import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { cn } from '@/lib/utils'
-import { useCommishOverrideStore, useOverrideMode, useOverrideSaving } from '@/stores/commish-override-store'
+import { useOverrideMode } from '@/stores/commish-override-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { MobileCorrectionNote } from './match-correction-note'
@@ -142,7 +141,7 @@ export function MobileMatch({
   const league = useLeague(leagueId)
   useForgetOnRetap(leagueId)
   return (
-    <MobileScreen header={<MobileLeagueHeader leagueName={league.data?.league.name ?? ''} />}>
+    <MobileScreen header={<MobileLeagueHeader leagueName={league.data?.league.name ?? ''} leagueId={leagueId} />}>
       <div className="pb-5 leading-[normal] tabular-nums" data-mobile-match>
         {league.isPending ? (
           <MatchSkeleton />
@@ -256,7 +255,6 @@ function MatchContent({
         <Problem title="Couldn’t load this week." detail={problemCopy(problem)} onRetry={() => matchups.refetch()} />
       ) : doc ? (
         <>
-          <OverrideStrip leagueId={leagueId} detail={detail} />
           {doc.schedule_mode === 'total_points' ? (
             <LeaderboardWeek leagueId={leagueId} doc={doc} detail={detail} weeks={weeks} currentWeek={currentWeek} myTeamId={myTeamId} tz={tz} />
           ) : (
@@ -1292,31 +1290,6 @@ function LeaderboardWeek({
 // ---------------------------------------------------------------------------
 // Commissioner override (app-only) — the mode's indicator and its Turn off
 // ---------------------------------------------------------------------------
-
-function OverrideStrip({ leagueId, detail }: { leagueId: string; detail: LeagueDetail }) {
-  const on = useOverrideMode(leagueId)
-  const exit = useCommishOverrideStore((s) => s.exit)
-  const busy = useOverrideSaving()
-  const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
-  if (!on || !isCommish) return null
-  return (
-    <div className="mx-3 mt-1.5 flex items-center justify-between gap-3 rounded-[12px] bg-m-gg px-3 py-2" role="status" data-override-indicator>
-      <span className="text-[13px] font-semibold text-m-tg">{OVERRIDE_ON_INDICATOR}</span>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          if (!busy) exit()
-        }}
-        className="flex-none text-[13px] font-semibold text-accent disabled:text-m-t5"
-        title={busy ? 'Wait for the save to finish.' : undefined}
-        data-override-off
-      >
-        Turn off
-      </button>
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // States

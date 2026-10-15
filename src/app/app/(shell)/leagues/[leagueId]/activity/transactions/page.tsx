@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 
-import { ActivityPage } from '@/components/leagues/activity-page'
-import { parseActivityRoute } from '@/components/leagues/activity-page-ops'
+import { activityHref } from '@/components/leagues/activity-page-ops'
 import { ByLayout } from '@/components/mobile/by-layout'
+import { DesktopRedirect } from '@/components/mobile/desktop-redirect'
 import { TransactionsScreen } from '@/components/mobile/league/league/transactions-screen'
 import { readActivityPageGate } from '@/lib/leagues/api/activity-page-gate'
 import { createServerClient } from '@/lib/supabase/server'
@@ -35,7 +35,7 @@ export default async function LeagueTransactionsRoute({ params, searchParams }: 
   const team = rawTeam && UUID_RE.test(rawTeam) ? rawTeam.toLowerCase() : null
   return (
     <ByLayout
-      desktop={<ActivityPage leagueId={leagueId} initial={parseActivityRoute({})} />}
+      desktop={<DesktopRedirect href={activityHref(leagueId)} />}
       mobile={<TransactionsScreen leagueId={leagueId} mine={mine} team={team} />}
     />
   )

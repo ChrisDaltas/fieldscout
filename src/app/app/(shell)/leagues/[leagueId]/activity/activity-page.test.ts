@@ -26,6 +26,7 @@ vi.mock('next/navigation', () => ({
 
 import { ActivityPage } from '@/components/leagues/activity-page'
 import { ByLayout } from '@/components/mobile/by-layout'
+import { DesktopRedirect } from '@/components/mobile/desktop-redirect'
 import { ActivitySubscreenRoute } from '@/components/mobile/league/league/activity-subscreens'
 import { MobileLeagueTab } from '@/components/mobile/league/league/league-tab'
 
@@ -125,16 +126,18 @@ describe('the mobile full screens — /activity/commissioner and /activity/corre
     expect(await run(LeagueCorrectionsScreenRoute, LEAGUE, {})).toEqual({ redirectedTo: `/app/leagues/${LEAGUE}` })
   })
 
-  it('each opens its tab with the URL’s filters — desktop the Activity page, mobile the full screen', async () => {
+  it('each opens its tab with the URL’s filters — mobile the full screen, desktop sent to the Activity page on that tab', async () => {
     rpc.mockResolvedValue({ data: true, error: null })
     const log = (await run(LeagueCommishLogRoute, LEAGUE, { team: TEAM, week: '4' })) as { rendered: { type: unknown; props: { desktop: { type: unknown; props: unknown }; mobile: { type: unknown; props: unknown } } } }
     const commish = { tab: 'commissioner', week: 4, team: TEAM, entry: null }
     expect(log.rendered.type).toBe(ByLayout)
-    expect(log.rendered.props.desktop.type).toBe(ActivityPage)
-    expect(log.rendered.props.desktop.props).toStrictEqual({ leagueId: LEAGUE, initial: commish })
+    // ActivityPage reads its tab from the URL, so desktop goes to the URL that names it.
+    expect(log.rendered.props.desktop.type).toBe(DesktopRedirect)
+    expect(log.rendered.props.desktop.props).toStrictEqual({ href: `/app/leagues/${LEAGUE}/activity?tab=commissioner&week=4&team=${TEAM}` })
     expect(log.rendered.props.mobile.type).toBe(ActivitySubscreenRoute)
     expect(log.rendered.props.mobile.props).toStrictEqual({ leagueId: LEAGUE, initial: commish })
     const fixes = (await run(LeagueCorrectionsScreenRoute, LEAGUE, { week: '3', tab: 'all' })) as { rendered: { props: { mobile: { props: unknown } } } }
     expect(fixes.rendered.props.mobile.props).toStrictEqual({ leagueId: LEAGUE, initial: { tab: 'corrections', week: 3, team: null, entry: null } })
+    expect((fixes.rendered.props as unknown as { desktop: { props: unknown } }).desktop.props).toStrictEqual({ href: `/app/leagues/${LEAGUE}/activity?tab=corrections&week=3` })
   })
 })

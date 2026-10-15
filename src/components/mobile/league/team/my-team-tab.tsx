@@ -125,7 +125,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   ]
 
   return (
-    <MobileScreen header={<MobileLeagueHeader leagueName={detail.league.name} />}>
+    <MobileScreen header={<MobileLeagueHeader leagueName={detail.league.name} leagueId={leagueId} />}>
       {rosters.connection === 'reconnecting' && <Banner>Reconnecting — syncing this league…</Banner>}
       {((rosters.isError && rosters.data) || (lineup.isError && lineup.data !== undefined)) && <Banner>{STALE_LEAGUE_COPY}</Banner>}
       {inOverride && <Banner tone="green">Commissioner override is on — kickoff locks don’t stop your changes, and every change is logged.</Banner>}

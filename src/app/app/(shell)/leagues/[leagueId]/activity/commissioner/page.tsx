@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 
-import { ActivityPage } from '@/components/leagues/activity-page'
-import { parseActivityRoute } from '@/components/leagues/activity-page-ops'
+import { activityHref, parseActivityRoute } from '@/components/leagues/activity-page-ops'
 import { ByLayout } from '@/components/mobile/by-layout'
+import { DesktopRedirect } from '@/components/mobile/desktop-redirect'
 import { ActivitySubscreenRoute } from '@/components/mobile/league/league/activity-subscreens'
 import { readActivityPageGate } from '@/lib/leagues/api/activity-page-gate'
 import { createServerClient } from '@/lib/supabase/server'
@@ -31,7 +31,7 @@ export default async function LeagueCommishLogRoute({ params, searchParams }: Co
   const initial = parseActivityRoute({ ...query, tab: 'commissioner' })
   return (
     <ByLayout
-      desktop={<ActivityPage leagueId={leagueId} initial={initial} />}
+      desktop={<DesktopRedirect href={activityHref(leagueId, initial)} />}
       mobile={<ActivitySubscreenRoute leagueId={leagueId} initial={initial} />}
     />
   )

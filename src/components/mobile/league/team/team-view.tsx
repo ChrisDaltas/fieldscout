@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { currentWeekOf, defaultLineupWeek, keptStarters, weekEditability } from '@/components/leagues/lineup-editor-ops'
 import { problemCopy } from '@/components/leagues/team-page'
 import { transactionsHref } from '@/components/mobile/league/league/league-tab-ops'
+import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
 import { MOverlay, MOverlayScroll } from '@/components/mobile/trades/m-overlay'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
 import { managerOf } from '@/components/mobile/trades/trades-mobile-ops'
@@ -127,6 +128,7 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
           <MIcon name="back" size={18} stroke={2} />
         </button>
       </div>
+      <MobileOverrideStrip leagueId={leagueId} className="mb-1.5 flex-none" />
       <MOverlayScroll className="px-4 pb-7">
         <div className="flex items-center gap-[14px]">
           <TeamAvatar teamId={teamId} name={team.name} teamIds={order} myTeamId={myTeamId} size={64} fontSize={24} />

@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 
-import { ActivityPage } from '@/components/leagues/activity-page'
-import { parseActivityRoute } from '@/components/leagues/activity-page-ops'
+import { activityHref, parseActivityRoute } from '@/components/leagues/activity-page-ops'
 import { ByLayout } from '@/components/mobile/by-layout'
+import { DesktopRedirect } from '@/components/mobile/desktop-redirect'
 import { ActivitySubscreenRoute } from '@/components/mobile/league/league/activity-subscreens'
 import { readActivityPageGate } from '@/lib/leagues/api/activity-page-gate'
 import { createServerClient } from '@/lib/supabase/server'
@@ -19,7 +19,7 @@ interface CorrectionsScreenRouteProps {
  * m-league — the mobile design has no home for it, so it opens like the
  * Transactions screen: no switcher, no lit tab). `?week=` is the Activity
  * page's own corrections filter. Members only, decided on the server like
- * the Activity page. The desktop layout shows the Activity page on its
+ * the Activity page. A desktop visit goes to the Activity page on its
  * Stat corrections tab.
  */
 export default async function LeagueCorrectionsScreenRoute({ params, searchParams }: CorrectionsScreenRouteProps) {
@@ -31,7 +31,7 @@ export default async function LeagueCorrectionsScreenRoute({ params, searchParam
   const initial = parseActivityRoute({ ...query, tab: 'corrections' })
   return (
     <ByLayout
-      desktop={<ActivityPage leagueId={leagueId} initial={initial} />}
+      desktop={<DesktopRedirect href={activityHref(leagueId, initial)} />}
       mobile={<ActivitySubscreenRoute leagueId={leagueId} initial={initial} />}
     />
   )

@@ -544,7 +544,7 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
 
   const header = (
     <>
-      <MobileLeagueHeader leagueName={detail.league.name} />
+      <MobileLeagueHeader leagueName={detail.league.name} leagueId={leagueId} />
       <FilterBar pills={pills} open={menu} onOpenChange={setMenu} />
     </>
   )

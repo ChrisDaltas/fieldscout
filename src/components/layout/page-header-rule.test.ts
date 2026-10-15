@@ -47,16 +47,29 @@ const EXCEPTIONS: Record<string, string> = {
     'The full-screen draft room\'s command bar (D-room chrome, pinned over the board) — the room replaces the shell, it is not a page header.',
   'src/components/leagues/playoff-bracket.tsx':
     'A section header inside a card (13px h3), not a page header.',
+  'src/components/mobile/community/community-detail.tsx':
+    "FieldScout Mobile list detail — its title over the cover is the screen's h1 (mobile handoff; the shell's AppHeader is desktop-only).",
+  'src/components/mobile/league/team/team-view.tsx':
+    'FieldScout Mobile team view — a full-screen overlay whose team name is its h1 (mobile handoff; AppHeader is desktop-only).',
+  'src/components/mobile/lists/list-view.tsx':
+    "FieldScout Mobile list view — the list title is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/lists/lists-grid.tsx':
+    "FieldScout Mobile Lists grid — its large “Lists” title is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/messages/messages-list-screen.tsx':
+    "FieldScout Mobile Messages — its large “Messages” title is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/messages/thread-screen.tsx':
+    "FieldScout Mobile conversation — the thread's name in its header row is the h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/players/research-players-screen.tsx':
+    "FieldScout Mobile Players — its large “Players” title is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/shell/fallback-header.tsx':
+    "The mobile header for pages with no mobile screen yet — it IS that page's header in the mobile layout (AppHeader is desktop-only); the page's own title is hidden there.",
+  'src/components/mobile/trades/mobile-trades-screen.tsx':
+    "FieldScout Mobile Trades — “Trades” in its header row is the screen's h1 (mobile handoff; AppHeader is desktop-only).",
+  'src/components/mobile/trades/trade-builder-overlay.tsx':
+    'FieldScout Mobile trade builder — a full-screen overlay titled in its own header row (mobile handoff).',
+  'src/components/mobile/trades/trade-detail-overlay.tsx':
+    'FieldScout Mobile trade detail — a full-screen overlay whose “Trade offer” title is its h1 (mobile handoff).',
 }
-
-/**
- * FieldScout Mobile screens (the mobile handoff) each design their own header
- * row — logo lockup, back pill, title, actions — and the shell's AppHeader is
- * desktop-only (hidden in the mobile layout; `ByLayout` renders one tree), so
- * a mobile screen owns its `<h1>` / `<header>`. A–C don't apply under this
- * folder; D and E still do.
- */
-const MOBILE_SCREENS = 'src/components/mobile/'
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -113,7 +126,7 @@ describe('F577 / D487 — page headers are the standard PageHeader', () => {
       const offenders = files
         .map(rel)
         .filter((f) => rule.test(code(f)))
-        .filter((f) => !(rule.pinnable && (f in EXCEPTIONS || f.startsWith(MOBILE_SCREENS))))
+        .filter((f) => !(rule.pinnable && f in EXCEPTIONS))
       expect(offenders).toEqual([])
     })
   }

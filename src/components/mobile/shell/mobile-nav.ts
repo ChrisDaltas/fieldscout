@@ -68,7 +68,9 @@ const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
   [/^\/stats(\/|$)/, 'League stats'],
 ]
 
-const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
+/** `false` third entry: the page already owns its h1 (the shell's title
+ *  renders as plain text there). */
+const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string, boolean?]> = [
   [/^\/app\/settings\/scoring\/?$/, 'Scoring'],
   [/^\/app\/settings\/billing\/?$/, 'Billing'],
   [/^\/app\/settings\/?$/, 'Settings'],
@@ -76,7 +78,7 @@ const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
   [/^\/app\/mocks\/?$/, 'Mock drafts'],
   [/^\/app\/mocks\/[^/]+\/report\/?$/, 'Mock draft report'],
   [/^\/app\/nfl\/?$/, 'NFL teams'],
-  [/^\/app\/nfl\/[^/]+\/?$/, 'NFL team'],
+  [/^\/app\/nfl\/[^/]+\/?$/, 'NFL team', false],
   [/^\/app\/trash\/?$/, 'Trash'],
   [/^\/app\/weekly-ranks\/history\/?$/, 'Ranking history'],
   [/^\/app\/start-or-sit\/new\/?$/, 'Ask a question'],
@@ -86,20 +88,27 @@ const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
 ]
 
 export type MobileFallback =
-  | { kind: 'league'; title: string; leagueId: string }
-  | { kind: 'account'; title: string; parent: string }
+  | { kind: 'league'; title: string; leagueId: string; heading: true }
+  | { kind: 'account'; title: string; parent: string; heading: boolean }
 
 export function mobileFallback(pathname: string): MobileFallback | null {
   const league = LEAGUE.exec(pathname)
   if (league && league[1]) {
     const rest = league[2] ?? ''
-    for (const [re, title] of LEAGUE_FALLBACK_TITLES) if (re.test(rest)) return { kind: 'league', title, leagueId: league[1] }
+    for (const [re, title] of LEAGUE_FALLBACK_TITLES) if (re.test(rest)) return { kind: 'league', title, leagueId: league[1], heading: true }
     return null
   }
-  for (const [re, title] of ACCOUNT_FALLBACK_TITLES) {
-    if (re.test(pathname)) return { kind: 'account', title, parent: pathname.startsWith('/app/settings') ? '/app/profile' : '/app' }
+  for (const [re, title, heading] of ACCOUNT_FALLBACK_TITLES) {
+    if (re.test(pathname)) return { kind: 'account', title, parent: fallbackParent(pathname), heading: heading !== false }
   }
   return null
+}
+
+/** Where an account page's Back goes when nothing in the app is behind it. */
+function fallbackParent(pathname: string): string {
+  if (/^\/app\/settings\/.+/.test(pathname)) return '/app/settings'
+  if (pathname.startsWith('/app/settings')) return '/app/profile'
+  return '/app'
 }
 
 /** The title alone (league pages), for callers that only need to know the

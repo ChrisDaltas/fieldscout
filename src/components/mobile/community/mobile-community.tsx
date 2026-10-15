@@ -123,7 +123,8 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     // Player-name matches join once the debounced query catches up.
     queryListIds: debouncedQ === q ? queryMatches.data : undefined,
   })
-  const ranksAll = filtered.filter((i) => i.kind === 'rank')
+  // Rankings follow their own switch (launch scope), not just the tab bar.
+  const ranksAll = featureFlags.weeklyRanks ? filtered.filter((i) => i.kind === 'rank') : []
   const ranks = tab === 'rank' ? ranksAll.filter((i) => rankFilterOk(i, rk)) : ranksAll
   const lists = filtered.filter((i) => i.kind === 'list')
   const shelves = tab === 'all' && !topic && !q

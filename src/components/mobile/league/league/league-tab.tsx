@@ -118,7 +118,7 @@ function LeagueTabScreen({
   const myTeamId = data?.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
 
   return (
-    <MobileScreen header={<MobileLeagueHeader leagueName={data?.league.name ?? ''} />}>
+    <MobileScreen header={<MobileLeagueHeader leagueName={data?.league.name ?? ''} leagueId={leagueId} />}>
       <div className="px-4 pb-1 pt-3">
         <MSegmented
           options={SEGMENTS}

@@ -307,10 +307,7 @@
    is set only in the mobile layout (use-mobile-theme / the head script), so
    the desktop app never sees it. */
 @layer base {
-  /* A page with no mobile screen yet (no `ByLayout` in it) stays LIGHT in
-     mobile dark mode: its desktop-styled content assumes a light page. */
-  :root,
-  html[data-theme='dark'] main[data-app-main]:not(:has([data-by-layout])) {
+  :root {
     --m-t1: 29 29 31;
     --m-t2: 58 58 60;
     --m-t3: 110 110 115;
@@ -373,8 +370,53 @@
     --m-bar-a: rgba(18, 18, 18, 0.92);
     color-scheme: dark;
   }
+  /* A page with no mobile screen yet (no `ByLayout` in it) stays LIGHT in
+     mobile dark mode: its desktop-styled content assumes a light page. Its
+     own rule (not joined to `:root`), so a browser without `:has()` drops
+     only this, never the light palette itself. */
   html[data-theme='dark'] main[data-app-main]:not(:has([data-by-layout])) {
+    --m-t1: 29 29 31;
+    --m-t2: 58 58 60;
+    --m-t3: 110 110 115;
+    --m-t4: 142 142 147;
+    --m-t5: 174 174 178;
+    --m-b0: 255 255 255;
+    --m-b1: 245 245 247;
+    --m-b2: 242 242 244;
+    --m-b2h: 237 237 240;
+    --m-b3: 235 235 238;
+    --m-b3s: 229 229 234;
+    --m-b4: 209 209 214;
+    --m-b4m: 199 199 204;
+    --m-b4l: 174 174 178;
+    --m-ink: 29 29 31;
+    --m-bar: 29 29 31;
+    --m-mini: 58 58 60;
+    --m-gg: 227 249 236;
+    --m-tg: 6 122 62;
+    --m-gr: 255 233 236;
+    --m-tr: 200 0 28;
+    --m-gb: 230 242 255;
+    --m-tb: 0 116 219;
+    --m-go: 255 243 230;
+    --m-to: 178 92 0;
+    --m-gb2: 245 250 255;
+    --m-gp: 243 237 253;
+    --m-dock: rgba(29, 29, 31, 0.9);
+    --m-bar-a: rgba(29, 29, 31, 0.94);
     color-scheme: light;
     background-color: rgb(var(--m-b0));
+  }
+
+  /* iOS zooms into any text field under 16px when it takes focus; the mobile
+     design's fields are 15px. 16px on iOS (WebKit) stops the zoom without
+     limiting pinch zoom — a viewport scale limit would block it in iOS
+     in-app browsers. */
+  @supports (-webkit-touch-callout: none) {
+    html[data-layout='mobile'] input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    html[data-layout='mobile'] textarea,
+    html[data-layout='mobile'] select {
+      font-size: max(16px, 1em);
+    }
   }
 }

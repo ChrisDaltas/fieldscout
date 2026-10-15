@@ -52,7 +52,7 @@ export const NEW_LIST_FROM_ELSEWHERE_HREF = '/app/lists/new?from=back'
  * previous entry is ours; without the API, fall back to a same-origin
  * referrer (a page opened from another site, or in a fresh tab, has none).
  */
-function appEntryBehind(): boolean {
+export function appEntryBehind(): boolean {
   if (typeof window === 'undefined') return false
   const nav = (window as Window & { navigation?: { currentEntry?: { index: number } | null } }).navigation
   if (nav?.currentEntry) return nav.currentEntry.index > 0
