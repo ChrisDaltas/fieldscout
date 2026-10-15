@@ -214,6 +214,8 @@ const config: Config = {
           'gb2': 'rgb(var(--m-gb2) / <alpha-value>)',
           'gp': 'rgb(var(--m-gp) / <alpha-value>)',
           dock: 'var(--m-dock)',
+          // Inactive switcher dots — the same in both themes (handoff §2.2).
+          dot: '#636366',
           'bar-a': 'var(--m-bar-a)',
         },
 
@@ -344,6 +346,10 @@ const config: Config = {
         'ring-control-hover': 'inset 0 0 0 1px #AEAEB2',
         'ring-chip': 'inset 0 0 0 1px #E5E5EA', // league switcher chip
         'avatar-hover': '0 0 0 3px #E5E5EA', // top-bar avatar hover halo
+        // Mobile: active Profile tab avatar (2px ink band, then a 1.5px page
+        // ring — handoff §2.3) and the header badge's page-coloured ring.
+        'm-tab-avatar': '0 0 0 2px rgb(var(--m-ink)), 0 0 0 3.5px rgb(var(--m-b0))',
+        'm-badge': '0 0 0 2px rgb(var(--m-b0))',
       },
       // v7's heaviest weight is 700: the old extra-heavy weights resolve to
       // bold, so pre-v7 `font-extrabold` / `font-black` read as v7 bold.

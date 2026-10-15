@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
 import { THEME_STORAGE_KEY, useThemeStore } from '@/stores/theme-store'
 import { useUIStore } from '@/stores/ui-store'
@@ -96,4 +96,27 @@ export function useLayoutMode() {
     showMobilePrompt: mounted && mode === 'desktop' && viewport.width < MOBILE_PROMPT_WIDTH,
     switchToMobile: () => setForced(true),
   }
+}
+
+function subscribeLayout(onChange: () => void) {
+  const observer = new MutationObserver(onChange)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout'] })
+  return () => observer.disconnect()
+}
+
+/**
+ * The current layout mode as read from `<html data-layout>`, for components
+ * that render a different TREE per mode (`ByLayout`). `null` on the server and
+ * during hydration — callers must render something that is correct for both
+ * until it resolves.
+ */
+export function useLayoutModeValue(): LayoutMode | null {
+  return useSyncExternalStore(
+    subscribeLayout,
+    () => {
+      const v = document.documentElement.getAttribute('data-layout')
+      return v === 'mobile' || v === 'desktop' ? v : null
+    },
+    () => null,
+  )
 }
