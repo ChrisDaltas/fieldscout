@@ -215,6 +215,12 @@ function IdentitySkeleton() {
  * picks the segment (Home's My stuff tiles); otherwise the last segment of
  * the session is kept.
  */
+const SEE_ALL_HREF: Record<MeTab, string> = {
+  lists: '/app/lists',
+  rankings: MY_RANKINGS_HREF,
+  ss: '/app/start-or-sit',
+}
+
 function MyStuff({ userId }: { userId: string | undefined }) {
   const params = useSearchParams()
   const stored = useProfileTabStore((s) => s.tab)
@@ -248,7 +254,15 @@ function MyStuff({ userId }: { userId: string | undefined }) {
 
   return (
     <>
-      <h3 className="mt-5 text-[17px] font-semibold leading-normal tracking-[-0.01em]">My stuff</h3>
+      <div className="mt-5 flex items-baseline justify-between">
+        <h3 className="text-[17px] font-semibold leading-normal tracking-[-0.01em]">My stuff</h3>
+        {/* The whole of the segment — the design's rows open the Lists grid
+            (Saved tab included); ours open the row's own item, so the grid
+            gets its own door. */}
+        <Link href={SEE_ALL_HREF[tab]} className="text-[13px] font-semibold text-accent" data-my-stuff-see-all>
+          See all
+        </Link>
+      </div>
       {available.length > 1 && (
         <MSegmented
           label="My stuff"

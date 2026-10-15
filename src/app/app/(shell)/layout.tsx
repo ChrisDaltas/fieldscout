@@ -1,4 +1,15 @@
+import type { Viewport } from 'next'
+
 import { AppShell } from '@/components/layout/app-shell'
+
+// FieldScout Mobile runs edge to edge — under the notch and the home
+// indicator — and pads with env(safe-area-inset-*) itself (MobileScreen, the
+// dock). Only the shell's pages do that, so only they opt in.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
 
 /**
  * Every `/app` route that wears the app chrome — sidebar, header, draft bar,

@@ -1,6 +1,29 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const FREE_PRIVATE_LIST_LIMIT = 1
+/**
+ * Free accounts' private-list cap — SUSPENDED (Chris, 2026-10-15): the Pro
+ * rules are paused for the free-only launch (CLAUDE.md), so private lists are
+ * unlimited for everyone. The checks stay in place (don't rip them out); a
+ * Pro tier brings the cap back by putting a number here (it was 1).
+ */
+export const FREE_PRIVATE_LIST_LIMIT: number | null = null
+
+/** The free-tier private-list refusal, as the API has always worded it. */
+export const PRIVATE_LIMIT_BODY = {
+  error: 'Free accounts can have one private list. Upgrade to Pro for unlimited private lists.',
+  code: 'PRIVATE_LIMIT_REACHED',
+} as const
+
+/**
+ * The DATABASE's own private-list refusal (the `enforce_free_list_caps`
+ * trigger, 018/028). Migration 187 switches it off; until that migration is
+ * pushed to an environment, the routes turn this refusal back into the
+ * friendly 403 (and duplicate falls back to a public copy), so the app keeps
+ * working on the older schema and is unlimited the moment 187 lands.
+ */
+export function isPrivateListCapError(error: { code?: string; message?: string } | null | undefined): boolean {
+  return error?.code === '23514' && /one private list/i.test(error.message ?? '')
+}
 
 /**
  * Best-effort: notify everyone who has pinned (favorited) `listId` that the
@@ -124,7 +147,8 @@ export async function replaceTagsForList(
 
 /**
  * Count a user's existing private (non-deleted) lists. Used to enforce the
- * free-tier limit of 1 private list before allowing is_private = TRUE.
+ * free-tier private-list cap (`FREE_PRIVATE_LIST_LIMIT`, suspended) before
+ * allowing is_private = TRUE.
  */
 export async function countPrivateLists(
   supabase: SupabaseClient,

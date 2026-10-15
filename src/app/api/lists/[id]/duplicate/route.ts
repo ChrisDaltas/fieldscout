@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
+  isPrivateListCapError,
   generateUniqueSlug,
 } from '@/lib/lists/helpers'
 import { createServerClient } from '@/lib/supabase/server'
@@ -48,7 +49,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
   // A duplicated private list still counts against the private-list cap. For
   // free users at the cap, fork as public instead of failing outright.
   let forcePublic = false
-  if (source.is_private && !isPro) {
+  if (source.is_private && !isPro && FREE_PRIVATE_LIST_LIMIT !== null) {
     const count = await countPrivateLists(supabase, user.id)
     if (count >= FREE_PRIVATE_LIST_LIMIT) {
       forcePublic = true
@@ -84,14 +85,21 @@ export async function POST(_request: Request, { params }: RouteParams) {
   // players (with slots) and tags in a single transaction, so a failure can
   // never leave a half-created list behind. It also derives ranking_mode and
   // its legacy boolean pair, and preserves is_team / roster_settings.
-  const { data: created, error: rpcError } = await supabase
-    .rpc('duplicate_list', {
-      p_source_id: id,
-      p_title: newTitle,
-      p_slug: slug,
-      p_force_public: forcePublic,
-    })
-    .single()
+  const duplicate = (forcePublicCopy: boolean) =>
+    supabase
+      .rpc('duplicate_list', {
+        p_source_id: id,
+        p_title: newTitle,
+        p_slug: slug,
+        p_force_public: forcePublicCopy,
+      })
+      .single()
+  let { data: created, error: rpcError } = await duplicate(forcePublic)
+  // Before migration 187 is pushed the database still caps private lists:
+  // fall back to a public copy, as this route did while the API held the cap.
+  if (rpcError && isPrivateListCapError(rpcError) && !forcePublic) {
+    ;({ data: created, error: rpcError } = await duplicate(true))
+  }
 
   if (rpcError || !created) {
     // P0002 = the source vanished between the pre-check and the RPC.

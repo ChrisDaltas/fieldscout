@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
+  isPrivateListCapError,
+  PRIVATE_LIMIT_BODY,
   generateUniqueSlug,
   replaceTagsForList,
   resolveTagIds,
@@ -216,8 +218,8 @@ export async function POST(request: Request) {
     )
   }
 
-  // Free-tier private list cap
-  if (input.is_private) {
+  // Free-tier private list cap (suspended while FREE_PRIVATE_LIST_LIMIT is null)
+  if (input.is_private && FREE_PRIVATE_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')
@@ -226,14 +228,7 @@ export async function POST(request: Request) {
     if (!profile?.is_pro) {
       const existing = await countPrivateLists(supabase, user.id)
       if (existing >= FREE_PRIVATE_LIST_LIMIT) {
-        return NextResponse.json(
-          {
-            error:
-              'Free accounts can have one private list. Upgrade to Pro for unlimited private lists.',
-            code: 'PRIVATE_LIMIT_REACHED',
-          },
-          { status: 403 },
-        )
+        return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
       }
     }
   }
@@ -307,6 +302,10 @@ export async function POST(request: Request) {
     .single()
 
   if (insertError || !created) {
+    // Before migration 187 is pushed the database still caps private lists.
+    if (isPrivateListCapError(insertError)) {
+      return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
     return NextResponse.json(
       { error: insertError?.message ?? 'Could not create list' },
       { status: 500 },

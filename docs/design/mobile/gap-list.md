@@ -15,6 +15,11 @@
 
 ## 1. Decisions for you
 
+> **Rulings, 15 Oct 2026**
+> - **1 go live:** agreed, once the toast is built. **3 toast:** built (dark pill, ~2s for a one-line confirmation, 4.5s for errors and longer messages, above the bottom bar). **4 Rankings:** phones and desktop switch on together (same switches). **5 private lists:** cap lifted — migration 187 for the database, which **needs `db push`**; until then the app behaves as before.
+> - **6** full profile on phone taps — agreed (desktop keeps mini card first). **7** keep the gear — agreed. **8** person avatars: the profile photo, two letters when there's none. **9** six cover colours, position colour as default — agreed. **10** desktop's tier palette everywhere — agreed. **11** YouTube title lookup — agreed. **12** leave League legend out — agreed (it was never built). **13 Commissioner note — on hold**, more explanation requested. **14** red dot when something needs you — agreed. **15** remove Scout AI and Top waiver adds from phone **and desktop** Home.
+> - 16–48: not answered yet.
+
 ### A. Launch blockers (please answer these first)
 
 1. **When should mobile go live?** At the moment everything sits on mobile/v1. Merging it into main puts it on fieldscout.gg straight away.

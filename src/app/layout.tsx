@@ -26,12 +26,12 @@ const inter = Inter({
   variable: '--font-inter',
 })
 
-// viewport-fit=cover lets the mobile layout run under the notch and home
-// indicator and pad with env(safe-area-inset-*) itself (FieldScout Mobile).
+// viewport-fit=cover is set only by the app shell's layout, where the mobile
+// screens pad for the notch and home indicator themselves; public pages and
+// the draft room keep Safari's own safe-area insets.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  viewportFit: 'cover',
 }
 
 export const metadata: Metadata = {

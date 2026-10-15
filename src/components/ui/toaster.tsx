@@ -11,6 +11,7 @@ import {
   ToastViewport,
   type ToastProps,
 } from "@/components/ui/toast"
+import { useLayoutModeValue } from "@/hooks/use-layout-mode"
 import { cn } from "@/lib/utils"
 
 type ToastVariant = NonNullable<ToastProps["variant"]>
@@ -29,6 +30,10 @@ const toastIcons: Record<ToastVariant, { name: IconName; className: string }> =
 
 export function Toaster() {
   const { toasts } = useToast()
+  // The mobile design's toast is a one-line confirmation shown for about 2s
+  // (handoff: 1.8–2.2s). An error, a second line or an action needs time to
+  // read on a phone with no close button, so those keep the 4.5s default.
+  const mobile = useLayoutModeValue() === "mobile"
 
   return (
     // Bottom-center stack; 4.5s auto-dismiss default, swipe down to clear.
@@ -43,11 +48,16 @@ export function Toaster() {
       }) {
         const icon = toastIcons[variant ?? "default"]
         return (
-          <Toast key={id} variant={variant} {...props}>
+          <Toast
+            key={id}
+            variant={variant}
+            {...props}
+            duration={props.duration ?? (mobile && !description && !action && variant !== "destructive" ? 2000 : undefined)}
+          >
             <Icon
               name={icon.name}
               size={14}
-              className={cn("shrink-0", icon.className)}
+              className={cn("shrink-0 mob:hidden", icon.className)}
             />
             <div className="grid min-w-0 flex-1 gap-0.5">
               {title && <ToastTitle>{title}</ToastTitle>}

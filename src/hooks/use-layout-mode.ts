@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
 import { THEME_STORAGE_KEY, useThemeStore } from '@/stores/theme-store'
 import { useUIStore } from '@/stores/ui-store'
@@ -24,6 +24,18 @@ export const MOBILE_PROMPT_WIDTH = 768
 const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)'
 
 export type LayoutMode = 'desktop' | 'mobile'
+
+// The attributes must be on <html> before the first paint: the head script
+// covers a full load of an app page, this covers arriving by client-side
+// navigation (signup → /app, a link from a public page).
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+/** The mode the head script would pick, for a client-side entry into the app
+ *  before `<html data-layout>` exists. */
+function detectMode(): LayoutMode {
+  if (useUIStore.getState().forceMobileLayout) return 'mobile'
+  return window.matchMedia(DESKTOP_POINTER).matches ? 'desktop' : 'mobile'
+}
 
 /**
  * Runs in <head> before first paint so the right layout renders immediately on
@@ -68,14 +80,14 @@ export function useLayoutMode() {
 
   const mode: LayoutMode = viewport.desktopPointer && !forced ? 'desktop' : 'mobile'
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     document.documentElement.setAttribute('data-layout', mode)
   }, [mode])
 
   // Dark mode is mobile-only (Chris, 2026-10-15): the theme attribute follows
   // the stored preference in the mobile layout and is absent on desktop.
   const dark = useThemeStore((t) => t.dark)
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const html = document.documentElement
     if (mode === 'mobile' && dark) html.setAttribute('data-theme', 'dark')
     else html.removeAttribute('data-theme')
@@ -108,14 +120,20 @@ function subscribeLayout(onChange: () => void) {
  * The current layout mode as read from `<html data-layout>`, for components
  * that render a different TREE per mode (`ByLayout`). `null` on the server and
  * during hydration — callers must render something that is correct for both
- * until it resolves.
+ * until it resolves. On a client-side entry into the app (no attribute yet)
+ * it answers as the head script would.
  */
 export function useLayoutModeValue(): LayoutMode | null {
   return useSyncExternalStore(
     subscribeLayout,
     () => {
       const v = document.documentElement.getAttribute('data-layout')
-      return v === 'mobile' || v === 'desktop' ? v : null
+      if (v === 'mobile' || v === 'desktop') return v
+      // A client-side entry into the app renders before the shell has set
+      // the attribute: answer as the head script would, so a phone never
+      // mounts (and paints) the desktop tree first.
+      const p = window.location.pathname
+      return p === '/app' || p.startsWith('/app/') ? detectMode() : null
     },
     () => null,
   )
