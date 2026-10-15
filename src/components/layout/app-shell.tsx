@@ -68,6 +68,7 @@ export function AppShell({ children }: AppShellProps) {
               <AppHeader />
             </div>
             <main
+              data-app-main
               className="min-h-0 flex-1 overflow-y-auto"
               style={{ '--m-dockpad': `${dock.clearance}px` } as React.CSSProperties}
             >

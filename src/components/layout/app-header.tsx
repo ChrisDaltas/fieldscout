@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
+import { leagueFallbackTitle } from '@/components/mobile/shell/mobile-nav'
 import { cn } from '@/lib/utils'
 import { useHeaderStore, type PageHeaderContent } from '@/stores/header-store'
 
@@ -174,10 +175,19 @@ export function PageHeader({ inPageOnMobile = false, ...content }: PageHeaderPro
     return () => clearHeader()
   }, [title, actions, subnav, subtitle, aside, editableTitle, setHeader, clearHeader])
 
+  // A league page with no mobile screen of its own gets its title from the
+  // league shell's mobile header (`leagueFallbackTitle`) — keep the actions
+  // here, drop the second title.
+  const pathname = usePathname() ?? ''
+  const titledByShell = leagueFallbackTitle(pathname) !== null
+
   if (!inPageOnMobile) return null
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 desk:hidden" data-page-header-mobile>
-      <div className="mr-auto flex min-w-0 items-center gap-3">
+    <div
+      className={cn('mb-3 flex flex-wrap items-center gap-2 desk:hidden', titledByShell && actions == null && aside == null && 'mob:hidden')}
+      data-page-header-mobile
+    >
+      <div className={cn('mr-auto flex min-w-0 items-center gap-3', titledByShell && 'mob:hidden')}>
         <HeaderTitle page={{ title, subtitle, editableTitle }} />
       </div>
       {actions}

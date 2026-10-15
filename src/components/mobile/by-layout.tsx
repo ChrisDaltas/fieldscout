@@ -23,9 +23,16 @@ export function ByLayout({
   mobile: React.ReactNode
 }) {
   const mode = useLayoutModeValue()
-  if (mode === 'mobile') return <>{mobile}</>
+  // `data-by-layout` marks a page that HAS a mobile screen (globals.css keeps
+  // pages without one light in mobile dark mode).
+  if (mode === 'mobile')
+    return (
+      <div className="contents" data-by-layout>
+        {mobile}
+      </div>
+    )
   return (
-    <div className="contents mob:hidden">
+    <div className="contents mob:hidden" data-by-layout>
       <DesktopBranch>{desktop}</DesktopBranch>
     </div>
   )

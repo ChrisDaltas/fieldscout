@@ -307,7 +307,10 @@
    is set only in the mobile layout (use-mobile-theme / the head script), so
    the desktop app never sees it. */
 @layer base {
-  :root {
+  /* A page with no mobile screen yet (no `ByLayout` in it) stays LIGHT in
+     mobile dark mode: its desktop-styled content assumes a light page. */
+  :root,
+  html[data-theme='dark'] main[data-app-main]:not(:has([data-by-layout])) {
     --m-t1: 29 29 31;
     --m-t2: 58 58 60;
     --m-t3: 110 110 115;
@@ -369,5 +372,9 @@
     --m-dock: rgba(18, 18, 18, 0.86);
     --m-bar-a: rgba(18, 18, 18, 0.92);
     color-scheme: dark;
+  }
+  html[data-theme='dark'] main[data-app-main]:not(:has([data-by-layout])) {
+    color-scheme: light;
+    background-color: rgb(var(--m-b0));
   }
 }

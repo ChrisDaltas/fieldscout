@@ -3,9 +3,12 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+import { SCORING_FAMILY_LABEL } from '@/components/leagues/league-shell-ops'
 import { initials, useLeagueCard } from '@/components/mobile/shell/use-league-card'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { useLeagueScoringFamily } from '@/hooks/use-draft-pool'
+import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import type { MyLeagueRow } from '@/hooks/use-leagues'
 import { toast } from '@/hooks/use-toast'
 
@@ -37,10 +40,12 @@ export function LeagueMenuSheet({
   const card = useLeagueCard(league)
   const base = `/app/leagues/${league.id}`
   const isCommish = league.my_role === 'commissioner' || league.my_role === 'co_commissioner'
+  const detail = useLeague(open ? league.id : undefined)
+  const { family } = useLeagueScoringFamily(open ? league.id : null)
   const rows: MenuRow[] = [
     { label: 'League settings', sub: `${league.team_count} teams`, icon: 'leaders', href: `${base}/settings` },
-    { label: 'Scoring', icon: 'scoring', href: `${base}/settings?section=scoring` },
-    { label: 'Playoffs', icon: 'playoffs', href: `${base}/settings?section=league` },
+    { label: 'Scoring', sub: family ? SCORING_FAMILY_LABEL[family] : undefined, icon: 'scoring', href: `${base}/settings?section=scoring` },
+    { label: 'Playoffs', sub: playoffWeeks(detail.data?.settings), icon: 'playoffs', href: `${base}/settings?section=league` },
     { label: 'Draft results', icon: 'lists', href: `${base}/draft/recap` },
     { label: 'Schedule', icon: 'sched', href: `${base}/schedule` },
     { label: 'Trades', icon: 'trade', href: `${base}/trades` },
@@ -118,4 +123,15 @@ export function LeagueMenuSheet({
       </div>
     </MobileSheet>
   )
+}
+
+/** "Weeks 15–17" — the playoff run from the league's settings (one round per
+ *  halving of the playoff field, each round 1 or 2 weeks); "None" without
+ *  playoffs. Undefined until the settings load. */
+export function playoffWeeks(settings: Pick<LeagueDetail['settings'], 'playoff_teams' | 'playoff_start_week' | 'playoff_weeks_per_round'> | undefined): string | undefined {
+  if (!settings) return undefined
+  if (settings.playoff_teams === 0) return 'None'
+  const rounds = Math.ceil(Math.log2(settings.playoff_teams))
+  const last = settings.playoff_start_week + rounds * settings.playoff_weeks_per_round - 1
+  return last === settings.playoff_start_week ? `Week ${last}` : `Weeks ${settings.playoff_start_week}–${last}`
 }
