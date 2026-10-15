@@ -30,13 +30,14 @@ const toastIcons: Record<ToastVariant, { name: IconName; className: string }> =
 
 export function Toaster() {
   const { toasts } = useToast()
-  // The mobile design's toast shows for about 2s (handoff: 1.8–2.2s).
+  // The mobile design's toast is a one-line confirmation shown for about 2s
+  // (handoff: 1.8–2.2s). An error, a second line or an action needs time to
+  // read on a phone with no close button, so those keep the 4.5s default.
   const mobile = useLayoutModeValue() === "mobile"
 
   return (
-    // Bottom-center stack; 4.5s auto-dismiss default (2s on mobile), swipe
-    // down to clear.
-    <ToastProvider duration={mobile ? 2000 : 4500} swipeDirection="down">
+    // Bottom-center stack; 4.5s auto-dismiss default, swipe down to clear.
+    <ToastProvider duration={4500} swipeDirection="down">
       {toasts.map(function ({
         id,
         title,
@@ -47,7 +48,12 @@ export function Toaster() {
       }) {
         const icon = toastIcons[variant ?? "default"]
         return (
-          <Toast key={id} variant={variant} {...props}>
+          <Toast
+            key={id}
+            variant={variant}
+            {...props}
+            duration={props.duration ?? (mobile && !description && !action && variant !== "destructive" ? 2000 : undefined)}
+          >
             <Icon
               name={icon.name}
               size={14}

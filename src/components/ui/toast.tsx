@@ -17,8 +17,10 @@ import { cn } from "@/lib/utils"
  *
  * Mobile layout (FieldScout Mobile handoff §2.9): the design's toast — a 36px
  * dark pill (`m-ink`), 13/500 white text, no icon, no close, no slide, ~2s
- * (toaster.tsx), 16px above whichever bottom bar is showing (`--m-dock-h`,
- * set by the dock) so it never covers the league switcher.
+ * for a short confirmation (toaster.tsx), 16px above whichever bottom bar is
+ * showing (`--m-dock-h`, set by the dock) so it never covers the league
+ * switcher. Its full-width viewport lets taps through to the page; the pill
+ * itself keeps `pointer-events-auto` (swipe to dismiss).
  */
 const ToastProvider = ToastPrimitives.Provider
 
@@ -29,7 +31,7 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed bottom-0 left-1/2 z-[100] flex max-h-screen w-full max-w-[368px] -translate-x-1/2 flex-col items-center gap-2 p-4 mob:bottom-[calc(var(--m-dock-h,84px)+max(0px,env(safe-area-inset-bottom)-26px))] mob:max-w-full",
+      "fixed bottom-0 left-1/2 z-[100] flex max-h-screen w-full max-w-[368px] -translate-x-1/2 flex-col items-center gap-2 p-4 mob:bottom-[calc(var(--m-dock-h,84px)+max(0px,env(safe-area-inset-bottom)-26px))] mob:max-w-full mob:pointer-events-none",
       className
     )}
     {...props}

@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
+  isPrivateListCapError,
+  PRIVATE_LIMIT_BODY,
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
@@ -215,14 +217,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!profile?.is_pro) {
       const count = await countPrivateLists(supabase, user.id, id)
       if (count >= FREE_PRIVATE_LIST_LIMIT) {
-        return NextResponse.json(
-          {
-            error:
-              'Free accounts can have one private list. Upgrade to Pro for unlimited private lists.',
-            code: 'PRIVATE_LIMIT_REACHED',
-          },
-          { status: 403 },
-        )
+        return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
       }
     }
   }
@@ -278,6 +273,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     .single()
 
   if (updateError) {
+    // Before migration 187 is pushed the database still caps private lists.
+    if (isPrivateListCapError(updateError)) {
+      return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
 
