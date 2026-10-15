@@ -16,36 +16,36 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useAdminVerb } from '@/hooks/use-admin-verb'
+import { useAuth } from '@/hooks/use-auth'
 import { newActionId } from '@/lib/admin/admin-api'
 
 import { AdminHeader, AdminSection } from './admin-parts'
 import {
   AUDIENCE_LABEL,
   NOTICE_BODY_MAX,
-  NOTICE_DRAFT_KEY,
   NOTICE_TITLE_MAX,
   emptyNoticeDraft,
   noticePreviewItem,
   noticeProblem,
+  noticeDraftKey,
   noticeRequest,
-  parseNoticeDraft,
+  restoreNoticeDraft,
   type NoticeAudience,
   type NoticeDraft,
 } from './admin-console-ops'
 import { LeagueFinder } from './admin-leagues'
 
-function loadDraft(): NoticeDraft | null {
+function loadDraft(userId: string): NoticeDraft | null {
   try {
-    return parseNoticeDraft(window.localStorage.getItem(NOTICE_DRAFT_KEY))
+    return restoreNoticeDraft(window.localStorage, userId)
   } catch {
     return null
   }
 }
 
-function saveDraft(d: NoticeDraft | null) {
+function saveDraft(d: NoticeDraft) {
   try {
-    if (d) window.localStorage.setItem(NOTICE_DRAFT_KEY, JSON.stringify(d))
-    else window.localStorage.removeItem(NOTICE_DRAFT_KEY)
+    if (d.ownerId) window.localStorage.setItem(noticeDraftKey(d.ownerId), JSON.stringify(d))
   } catch {
     // Storage blocked (private window): the draft just isn't kept.
   }
@@ -59,6 +59,8 @@ function saveDraft(d: NoticeDraft | null) {
  * failure can never send twice; a successful send starts a new one.
  */
 export function AdminNotify() {
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
   const [draft, setDraft] = useState<NoticeDraft>(() => emptyNoticeDraft(newActionId()))
   const [loaded, setLoaded] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -66,11 +68,13 @@ export function AdminNotify() {
   const verb = useAdminVerb()
 
   // Restore after mount (localStorage is browser-only), then autosave.
+  // Per user (R1562): wait for the signed-in user, then restore only their draft.
   useEffect(() => {
-    const d = loadDraft()
-    if (d) setDraft(d)
+    if (!userId) return
+    const d = loadDraft(userId)
+    setDraft(d ?? emptyNoticeDraft(newActionId(), userId))
     setLoaded(true)
-  }, [])
+  }, [userId])
   useEffect(() => {
     if (loaded) saveDraft(draft)
   }, [draft, loaded])
@@ -89,7 +93,7 @@ export function AdminNotify() {
           setConfirming(false)
           // Fail loud: a send that does not report its count is not shown as "sent to 0".
           setSent({ recipients: typeof r.recipients === 'number' ? r.recipients : -1, title: draft.title.trim() })
-          const fresh = emptyNoticeDraft(newActionId())
+          const fresh = emptyNoticeDraft(newActionId(), userId)
           setDraft(fresh)
         },
       },

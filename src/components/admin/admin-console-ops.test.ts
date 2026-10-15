@@ -17,6 +17,9 @@ import {
   noticeProblem,
   noticeRequest,
   parseNoticeDraft,
+  restoreNoticeDraft,
+  noticeDraftKey,
+  LEGACY_NOTICE_DRAFT_KEY,
   receiptDetail,
   stalledJobs,
   type OpGame,
@@ -144,11 +147,31 @@ describe('the notice draft (185)', () => {
     expect(p).toMatchObject({ type: 'operator_notice', title: 'Hi', body: null, data: { from: 'fieldscout', league_id: LEAGUE, link: '/app' } })
   })
 
-  it('a stored draft round-trips; junk is dropped', () => {
-    const d = { ...emptyNoticeDraft(ACTION), title: 'Hi' }
-    expect(parseNoticeDraft(JSON.stringify(d))).toEqual(d)
-    expect(parseNoticeDraft('{"audience":"everyone"}')).toBeNull()
-    expect(parseNoticeDraft('not json')).toBeNull()
-    expect(parseNoticeDraft(null)).toBeNull()
+  it('a stored draft round-trips for its owner; junk is dropped', () => {
+    const d = { ...emptyNoticeDraft(ACTION, 'u1'), title: 'Hi' }
+    expect(parseNoticeDraft(JSON.stringify(d), 'u1')).toEqual(d)
+    expect(parseNoticeDraft(JSON.stringify(d), 'u2')).toBeNull()
+    expect(parseNoticeDraft('{"audience":"everyone"}', 'u1')).toBeNull()
+    expect(parseNoticeDraft('not json', 'u1')).toBeNull()
+    expect(parseNoticeDraft(null, 'u1')).toBeNull()
+  })
+
+  it('R1562: drafts are keyed per user; another owner’s draft and the legacy unkeyed one are removed, never restored', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      removeItem: (k: string) => void store.delete(k),
+    }
+    const mine = { ...emptyNoticeDraft(ACTION, 'u1'), title: 'Mine' }
+    store.set(LEGACY_NOTICE_DRAFT_KEY, JSON.stringify({ ...mine, title: 'Legacy' }))
+    store.set(noticeDraftKey('u1'), JSON.stringify(mine))
+    // A draft under u2's key that claims another owner (tampered / copied).
+    store.set(noticeDraftKey('u2'), JSON.stringify(mine))
+    expect(noticeDraftKey('u1')).toBe('fs-admin-notice-draft:u1')
+    expect(restoreNoticeDraft(storage, 'u1')).toEqual(mine)
+    expect(store.has(LEGACY_NOTICE_DRAFT_KEY)).toBe(false)
+    expect(restoreNoticeDraft(storage, 'u2')).toBeNull()
+    expect(store.has(noticeDraftKey('u2'))).toBe(false)
+    expect(store.has(noticeDraftKey('u1'))).toBe(true)
   })
 })

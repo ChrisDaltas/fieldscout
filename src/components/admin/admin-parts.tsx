@@ -187,7 +187,9 @@ export interface ConfirmSpec {
 export function ConfirmActionDialog({ spec, onClose }: { spec: ConfirmSpec | null; onClose: () => void }) {
   return (
     <Dialog open={spec !== null} onOpenChange={(o) => !o && onClose()}>
-      {/* Keyed on the spec so each opening gets a fresh action id and form. */}
+      {/* Keyed on the spec, and remounted on every open: each opening is a NEW
+          attempt with a fresh action id (TD3). Only a retry inside the same
+          open dialog reuses its id; closing and reopening never does. */}
       {spec && <ConfirmBody key={`${spec.url}:${JSON.stringify(spec.body)}`} spec={spec} onClose={onClose} />}
     </Dialog>
   )

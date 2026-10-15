@@ -17,6 +17,23 @@ import { createServerClient } from '@/lib/supabase/server'
  */
 
 
+/**
+ * The one read both gates share: the user's own `profiles.is_admin`.
+ * Returns the boolean, or the read's error — never folds an error into false.
+ */
+export async function readIsAdmin(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ isAdmin: boolean; error: null } | { isAdmin: false; error: { message: string } }> {
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', userId)
+    .single()
+  if (error) return { isAdmin: false, error }
+  return { isAdmin: profile?.is_admin === true, error: null }
+}
+
 function notFound(): NextResponse {
   return NextResponse.json(ADMIN_NOT_FOUND_BODY, { status: 404 })
 }
@@ -35,11 +52,7 @@ export async function requireAdminUser(): Promise<RequireAdminResult> {
     return { ok: false, response: notFound() }
   }
 
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single()
+  const { isAdmin, error } = await readIsAdmin(supabase, user.id)
 
   if (error) {
     return {
@@ -48,7 +61,7 @@ export async function requireAdminUser(): Promise<RequireAdminResult> {
     }
   }
 
-  if (!profile?.is_admin) {
+  if (!isAdmin) {
     return { ok: false, response: notFound() }
   }
 
@@ -66,11 +79,7 @@ export async function isAdminViewer(): Promise<boolean> {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return false
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single()
+  const { isAdmin, error } = await readIsAdmin(supabase, user.id)
   if (error) throw new Error(`admin gate: could not read the profile — ${error.message}`)
-  return profile?.is_admin === true
+  return isAdmin
 }

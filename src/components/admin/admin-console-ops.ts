@@ -325,18 +325,26 @@ export interface NoticeDraft {
   link: string
   /** The retry key: kept across retries of this compose, replaced after a send. */
   actionId: string
+  /** Who wrote it — a stored draft for anyone else is discarded (R1562). */
+  ownerId: string
 }
 
-export const NOTICE_DRAFT_KEY = 'fs-admin-notice-draft'
+/** The pre-R1562 unkeyed key — removed on sight, never restored. */
+export const LEGACY_NOTICE_DRAFT_KEY = 'fs-admin-notice-draft'
+
+/** Drafts are kept per user (R1562): two admins on one browser never see each other's. */
+export function noticeDraftKey(userId: string): string {
+  return `${LEGACY_NOTICE_DRAFT_KEY}:${userId}`
+}
 export const NOTICE_TITLE_MAX = 120
 export const NOTICE_BODY_MAX = 2000
 
-export function emptyNoticeDraft(actionId: string): NoticeDraft {
-  return { audience: 'all_league_members', leagueId: null, leagueName: null, title: '', body: '', link: '', actionId }
+export function emptyNoticeDraft(actionId: string, ownerId = ''): NoticeDraft {
+  return { audience: 'all_league_members', leagueId: null, leagueName: null, title: '', body: '', link: '', actionId, ownerId }
 }
 
 /** A stored draft back from localStorage — anything malformed is dropped, never half-used. */
-export function parseNoticeDraft(raw: string | null): NoticeDraft | null {
+export function parseNoticeDraft(raw: string | null, ownerId: string): NoticeDraft | null {
   if (!raw) return null
   try {
     const d = JSON.parse(raw) as Partial<NoticeDraft>
@@ -344,7 +352,8 @@ export function parseNoticeDraft(raw: string | null): NoticeDraft | null {
       d && typeof d === 'object' &&
       (d.audience === 'all_league_members' || d.audience === 'all_users' || d.audience === 'league') &&
       typeof d.title === 'string' && typeof d.body === 'string' && typeof d.link === 'string' &&
-      typeof d.actionId === 'string' && UUID_RE.test(d.actionId)
+      typeof d.actionId === 'string' && UUID_RE.test(d.actionId) &&
+      d.ownerId === ownerId && ownerId !== ''
     ) {
       return {
         audience: d.audience,
@@ -354,12 +363,29 @@ export function parseNoticeDraft(raw: string | null): NoticeDraft | null {
         body: d.body,
         link: d.link,
         actionId: d.actionId,
+        ownerId: d.ownerId,
       }
     }
   } catch {
     // fall through
   }
   return null
+}
+
+type DraftStorage = Pick<Storage, 'getItem' | 'removeItem'>
+
+/**
+ * Restore this user's draft: the legacy unkeyed draft is removed; a stored
+ * draft that does not belong to `ownerId` (or is malformed) is removed too,
+ * never restored.
+ */
+export function restoreNoticeDraft(storage: DraftStorage, ownerId: string): NoticeDraft | null {
+  storage.removeItem(LEGACY_NOTICE_DRAFT_KEY)
+  const key = noticeDraftKey(ownerId)
+  const raw = storage.getItem(key)
+  const d = parseNoticeDraft(raw, ownerId)
+  if (raw !== null && d === null) storage.removeItem(key)
+  return d
 }
 
 /** 185's link rule: a page inside FieldScout, starting with one "/". Blank is fine (no link). */
