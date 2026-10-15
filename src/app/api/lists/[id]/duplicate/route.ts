@@ -48,7 +48,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
   // A duplicated private list still counts against the private-list cap. For
   // free users at the cap, fork as public instead of failing outright.
   let forcePublic = false
-  if (source.is_private && !isPro) {
+  if (source.is_private && !isPro && FREE_PRIVATE_LIST_LIMIT !== null) {
     const count = await countPrivateLists(supabase, user.id)
     if (count >= FREE_PRIVATE_LIST_LIMIT) {
       forcePublic = true

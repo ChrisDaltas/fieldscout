@@ -216,8 +216,8 @@ export async function POST(request: Request) {
     )
   }
 
-  // Free-tier private list cap
-  if (input.is_private) {
+  // Free-tier private list cap (suspended while FREE_PRIVATE_LIST_LIMIT is null)
+  if (input.is_private && FREE_PRIVATE_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')

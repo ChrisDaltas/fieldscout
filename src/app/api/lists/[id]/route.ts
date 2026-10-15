@@ -204,8 +204,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     }
   }
 
-  // Free tier: enforce 1-private-list cap on transitions to is_private=true
-  if (input.is_private === true && !existing.is_private) {
+  // Free tier: enforce the private-list cap on transitions to is_private=true
+  // (suspended while FREE_PRIVATE_LIST_LIMIT is null)
+  if (input.is_private === true && !existing.is_private && FREE_PRIVATE_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')

@@ -1,6 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const FREE_PRIVATE_LIST_LIMIT = 1
+/**
+ * Free accounts' private-list cap — SUSPENDED (Chris, 2026-10-15): the Pro
+ * rules are paused for the free-only launch (CLAUDE.md), so private lists are
+ * unlimited for everyone. The checks stay in place (don't rip them out); a
+ * Pro tier brings the cap back by putting a number here (it was 1).
+ */
+export const FREE_PRIVATE_LIST_LIMIT: number | null = null
 
 /**
  * Best-effort: notify everyone who has pinned (favorited) `listId` that the
@@ -124,7 +130,8 @@ export async function replaceTagsForList(
 
 /**
  * Count a user's existing private (non-deleted) lists. Used to enforce the
- * free-tier limit of 1 private list before allowing is_private = TRUE.
+ * free-tier private-list cap (`FREE_PRIVATE_LIST_LIMIT`, suspended) before
+ * allowing is_private = TRUE.
  */
 export async function countPrivateLists(
   supabase: SupabaseClient,

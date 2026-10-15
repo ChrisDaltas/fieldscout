@@ -64,6 +64,17 @@ export function MobileDock() {
   const setSwitchOpen = useMobileNavStore((s) => s.setSwitchOpen)
   const league = dock.leagues.find((l) => l.id === dock.leagueId) ?? null
 
+  // The dock's height for things that float above it outside the shell
+  // (the toast viewport): 84px with the tab bar alone, 150px with the
+  // switcher strip. Cleared when the dock goes (the draft room, desktop).
+  useEffect(() => {
+    const html = document.documentElement
+    html.style.setProperty('--m-dock-h', `${dock.clearance}px`)
+    return () => {
+      html.style.removeProperty('--m-dock-h')
+    }
+  }, [dock.clearance])
+
   return (
     <>
       <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col" data-mobile-dock>
