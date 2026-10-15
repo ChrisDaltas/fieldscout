@@ -24,9 +24,9 @@ beforeEach(() => {
 
 describe('GET /api/admin/state', () => {
   it('a non-admin gets the gate response and the RPC is never called', async () => {
-    gate.mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) })
-    expect((await platformGET()).status).toBe(403)
-    expect((await leagueCall(LEAGUE)).status).toBe(403)
+    gate.mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'Not found' }, { status: 404 }) })
+    expect((await platformGET()).status).toBe(404)
+    expect((await leagueCall(LEAGUE)).status).toBe(404)
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -38,10 +38,10 @@ describe('GET /api/admin/state', () => {
     expect(rpc).toHaveBeenCalledWith('op_platform_state')
   })
 
-  it('maps failures loudly: 503 before the push, 403, 500, and a null payload is 500 not an empty state', async () => {
+  it('maps failures loudly: 503 before the push, 404, 500, and a null payload is 500 not an empty state', async () => {
     for (const [error, status] of [
       [{ code: 'PGRST202', message: 'Could not find the function' }, 503],
-      [{ code: '42501', message: 'only a platform operator' }, 403],
+      [{ code: '42501', message: 'only a platform operator' }, 404],
       [{ code: 'XX000', message: 'boom' }, 500],
     ] as const) {
       rpc.mockResolvedValueOnce({ data: null, error })

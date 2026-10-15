@@ -148,6 +148,16 @@ export function AccountMenu({ collapsed = false, variant = 'sidebar' }: AccountM
             </Link>
           </DropdownMenuItem>
         )}
+        {/* Platform operators only (spec §24.4, Q96): nobody else sees the link,
+            and /app/admin answers "page not found" to them anyway. */}
+        {profile.is_admin === true && (
+          <DropdownMenuItem asChild>
+            <Link href="/app/admin" data-account-admin>
+              <Icon name="gear" size={14} />
+              Admin
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <Link href="/app/styleguide">
             <Icon name="layers" size={14} />
