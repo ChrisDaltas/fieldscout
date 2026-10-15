@@ -46,6 +46,12 @@ const sheetVariants = cva(
         left: "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
         right:
           "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
+        // FieldScout Mobile handoff bottom sheet: full width, 24px top
+        // corners, max 86% tall, no border or padding of its own (the
+        // mobile sheet lays out its grab handle, header, body and footer).
+        // Mounts instantly — the handoff has no sheet animation.
+        mobile:
+          "inset-x-0 bottom-0 flex max-h-[86%] flex-col gap-0 rounded-t-[24px] border-0 bg-m-b0 px-0 pb-[max(30px,env(safe-area-inset-bottom))] pt-2 text-m-t1 shadow-none data-[state=closed]:animate-none data-[state=open]:animate-none",
       },
     },
     defaultVariants: {
@@ -56,23 +62,27 @@ const sheetVariants = cva(
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+    VariantProps<typeof sheetVariants> {
+  /** Drop the built-in corner close button (the mobile sheet draws its own). */
+  hideClose?: boolean
+  overlayClassName?: string
+}
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
+>(({ side = "right", className, children, hideClose = false, overlayClassName, ...props }, ref) => (
   <SheetPortal>
-    <SheetOverlay />
+    <SheetOverlay className={overlayClassName} />
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), className)}
       {...props}
     >
-      <SheetPrimitive.Close className="absolute right-3 top-3 inline-flex items-center justify-center rounded-full p-[5px] text-n-3 transition-colors hover:bg-surface-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none">
+      {!hideClose && <SheetPrimitive.Close className="absolute right-3 top-3 inline-flex items-center justify-center rounded-full p-[5px] text-n-3 transition-colors hover:bg-surface-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none">
         <Icon name="close" />
         <span className="sr-only">Close</span>
-      </SheetPrimitive.Close>
+      </SheetPrimitive.Close>}
       {children}
     </SheetPrimitive.Content>
   </SheetPortal>

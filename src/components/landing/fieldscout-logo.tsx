@@ -23,14 +23,24 @@ const WORDMARK_PATHS = [
 ]
 
 /** Green rounded tile with the ink logomark. `size` is the tile edge in px. */
-export function LogoTile({ size = 26, className }: { size?: number; className?: string }) {
+export function LogoTile({
+  size = 26,
+  markSize,
+  className,
+}: {
+  size?: number
+  /** The mark's size; defaults to 62% of the tile (mobile: 15 on 28). */
+  markSize?: number
+  className?: string
+}) {
+  const mark = markSize ?? size * 0.62
   return (
     <span
       className={cn('flex flex-none items-center justify-center bg-fs-green text-fs-ink', className)}
       style={{ width: size, height: size, borderRadius: Math.round(size * 0.27) }}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 45 45" fill="currentColor" width={size * 0.62} height={size * 0.62}>
+      <svg viewBox="0 0 45 45" fill="currentColor" width={mark} height={mark}>
         <path d={MARK_PATH} />
       </svg>
     </span>

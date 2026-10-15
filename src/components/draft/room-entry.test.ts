@@ -156,6 +156,10 @@ describe('every room-entry URL in src/ is enumerated with a disposition', () => 
       ['src/components/leagues/commish-console-ops.ts', 1], // M6 L.E1.33's draft-room doors (`draftRoomDoor`, one spelling) — SPLIT via commish-console.tsx's ConsoleDoorLink (`door.room`)
       ['src/components/leagues/league-home-season-ops.ts', 1], // L.D5.4's practice DOOR (F46/R281) — the launcher helper, in place: post-draft the launcher is the resume/recap LIST surface (071 refuses a launch), never the room
       ['src/components/leagues/league-home-states.tsx', 3], // 2 literals SPLIT + the practice CTA's helper call, in place
+      ['src/components/mobile/home/home-matchups.tsx', 1], // FieldScout Mobile Home's "Draft live" league card — SPLIT (Link spreads roomEntry)
+      ['src/components/mobile/home/home-practice.tsx', 1], // mobile Home's practice card — router.push after the MockLaunchDialog POST, in place like home-quick-actions (R536)
+      ['src/components/mobile/league/league/preseason-parts.tsx', 1], // mobile League tab's league-mock Rejoin row — SPLIT (roomEntry passed down from preseason.tsx)
+      ['src/components/mobile/league/league/preseason.tsx', 3], // mobile League tab pre-draft: 2 /draft literals SPLIT + the practice door's launcher helper, in place (as league-home-season-ops)
     ])
   })
 })
@@ -194,6 +198,7 @@ describe('the split sites carry the entry-target spread on a real anchor', () =>
       'src/app/app/(room)/leagues/[leagueId]/draft/page.tsx',
       'src/app/app/(room)/mocks/[mockId]/page.tsx',
       'src/components/home/home-quick-actions.tsx',
+      'src/components/mobile/home/home-practice.tsx',
     ]) {
       expect(code(rel), rel).not.toContain('useRoomEntryTarget')
     }

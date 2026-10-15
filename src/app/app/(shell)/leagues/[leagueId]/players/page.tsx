@@ -1,4 +1,4 @@
-import { PlayersPage } from '@/components/leagues/players-page'
+import { LeaguePlayersByLayout } from '@/components/mobile/players/league-players-route'
 
 export const metadata = { title: 'Players · FieldScout' }
 
@@ -15,8 +15,12 @@ interface PlayersRouteProps {
  * Waiver claims and trades are later milestones' — the page says so where
  * their affordances would sit rather than mounting a button that posts
  * nowhere.
+ *
+ * FieldScout Mobile: on the mobile layout the route renders the handoff's
+ * League › Players tab instead (`LeaguePlayersByLayout`); desktop is the
+ * same `PlayersPage`.
  */
 export default async function LeaguePlayersRoute({ params }: PlayersRouteProps) {
   const { leagueId } = await params
-  return <PlayersPage leagueId={leagueId} />
+  return <LeaguePlayersByLayout leagueId={leagueId} />
 }

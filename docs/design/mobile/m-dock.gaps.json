@@ -1,0 +1,212 @@
+[
+ {
+  "feature": "Initial launch screen (League/Match with large dock)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app opens on Home (/app). Leagues are a flag-gated test cohort. Whether mobile should open in a league is a product call."
+ },
+ {
+  "feature": "Presentation shell (jump panel, bezel, JUMPS)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Prototype-only, do not build. Deep links are already covered by real routes."
+ },
+ {
+  "feature": "Safe-area handling (status bar inset, home-indicator zone)",
+  "kind": "restyle-only",
+  "detail": "No viewport-fit=cover or env(safe-area-inset-*) anywhere in src or src/app/layout.tsx."
+ },
+ {
+  "feature": "Dark mode toggle and dark token values",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme and no toggle. HEAD 27d455b added mobile-only dark tokens, theme-store.ts and a pre-paint head script citing a 2026-10-15 ruling, but no toggle UI exists. Chris needs to settle the conflict. Do not copy the prototype's dark defects."
+ },
+ {
+  "feature": "Translucent overlay dock with scroller clearance",
+  "kind": "restyle-only",
+  "detail": "bottom-tabs.tsx is an opaque fixed h-16 bg-ink bar and app-shell uses pb-20. The m-dock/m-bar-a tokens exist. Needs the overlay layout, the 80/148px heights and safe-area clearance."
+ },
+ {
+  "feature": "Outside-league tab set (Home, Community, Players, Profile)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The current bar is Home/Lists/Players/Search/More. Lists, the launch surface, has no tab in the design, and Community is flag-off at launch. Needs a ruling."
+ },
+ {
+  "feature": "Profile tab avatar with active ring",
+  "kind": "restyle-only",
+  "detail": "UserAvatar and profiles.avatar_url/username exist. There is no per-user colour column, so use the image or a derived colour."
+ },
+ {
+  "feature": "In-league bottom tab bar (Match/Team/Players/League/Menu)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Routes exist (matchup, team/[id], players, standings/schedule/activity). league-shell-ops leagueTabs is a 6-tab top sub-nav plus More, so the mapping and bar are new. Pre-draft disabled tabs need a mobile treatment."
+ },
+ {
+  "feature": "Home for League Home, Schedule and Stats pages in the mobile league IA",
+  "kind": "out-of-scope-or-question",
+  "detail": "The design's 4-tab league bar has no slot for League Home (message board), Schedule or the Stats head-to-head page, and the delete-nothing rule applies."
+ },
+ {
+  "feature": "League switcher card in the dock",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/api/leagues (MyLeagueRow) lacks my team name, record, format and draft date. Extend the list read or fan out to use-league/use-standings/useLeagueScoringFamily. The desktop dropdown in top-nav.tsx is desk-only."
+ },
+ {
+  "feature": "League switcher swipe gestures and animations",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Hand-rolled pointer events (no gesture library): swipe next/previous with wrap, 140ms slide/fade, upward swipe or tap opens the sheet, dots, 'Switched to {team}' toast. A switch must route to the same tab in the other league, where the my-team id differs. Guard the double-swipe race."
+ },
+ {
+  "feature": "League avatar colours",
+  "kind": "restyle-only",
+  "detail": "No league colour column. Use avatar_url with the Crest ink-initials fallback, or a fixed palette. A stored colour would need backend."
+ },
+ {
+  "feature": "Switch league sheet",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The top-nav dropdown lists name, role and a check. The sheet also needs team name, record and '{name} \u00b7 {N-team format}', the same data gap as the switcher card."
+ },
+ {
+  "feature": "Mobile bottom-sheet variant",
+  "kind": "restyle-only",
+  "detail": "ui/sheet.tsx side=bottom exists (Radix). Add a CVA variant: grab handle, 24px top radius, 19/600 title, optional subtitle, optional \u00d7, max-h 86%, footer slot, backdrop .32. Keep Radix Escape and focus handling."
+ },
+ {
+  "feature": "Create sheet",
+  "kind": "restyle-only",
+  "detail": "CreateMenu dropdown and ListFormDialog exist. Start or sit and Ranking rows sit behind startOrSit/weeklyRanks flags (off at launch). Its Community '+' entry point is behind the community flag. The app's league and mock-draft create rows are absent from the design."
+ },
+ {
+  "feature": "Transaction filters sheet with multi-team select",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The activity page uses URL tabs. The /api/leagues/[id]/activity route takes a type csv but only a single team_id, so multi-select needs a small route change. Free agents vs Waivers splits on transactions.type."
+ },
+ {
+  "feature": "Customize stats sheet (base and derived columns) on the league Players page",
+  "kind": "new-ui-on-existing-data",
+  "detail": "CustomizePopover exists only on the research spreadsheet. Avg pts, Pos/Ovr rk, Cmp %, Catch %, Touches, Opps, Snap % and Tgt share (player_usage), and OPRK (defense_position_splits) are all derivable from stored data."
+ },
+ {
+  "feature": "Customize stats advanced and ownership columns",
+  "kind": "needs-new-backend",
+  "detail": "Rost %, +/-, Start %, Air yds, aDOT, CPOE, Rush share, YCO/att, RYOE, Broken tkl, RZ att, YAC and YPRR have no source. player_stats.advanced JSONB exists but nothing fills it."
+ },
+ {
+  "feature": "Column tip popover with descriptions",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The full column name (title attribute) and sorting exist. Per-column description copy does not, and it is copy only."
+ },
+ {
+  "feature": "Swap player bottom sheet",
+  "kind": "restyle-only",
+  "detail": "moveOptions/planMove eligibility, useSetLineup autosave, PlayerFace, formatKickoff, oprkOf/oprkTone and moveToastCopy all exist. Only the sheet presentation and the swap-target ring are new. Keep the app's OPRK band (23+ green) and lock/IR states."
+ },
+ {
+  "feature": "Menu sheet: My team card (rename)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "POST /api/leagues/[id]/teams/[tid]/name (rename_own_team) exists."
+ },
+ {
+  "feature": "Team avatar/colour editing",
+  "kind": "needs-new-backend",
+  "detail": "The teams table has no avatar or colour column."
+ },
+ {
+  "feature": "Menu sheet league rows that exist (settings, scoring, playoffs, draft results, stat corrections)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Routes: settings?section=, the playoff bracket, draft/recap and corrections. Row subs can come from settings-index-ops indexRows."
+ },
+ {
+  "feature": "League history and Previous seasons",
+  "kind": "needs-new-backend",
+  "detail": "No season-to-season league linkage exists; there is only leagues.season."
+ },
+ {
+  "feature": "Co-owners",
+  "kind": "needs-new-backend",
+  "detail": "No co-owner model exists. Each team has a single manager."
+ },
+ {
+  "feature": "Commissioner note",
+  "kind": "needs-new-backend",
+  "detail": "No note field exists. The unused leagues.description could be repurposed (question)."
+ },
+ {
+  "feature": "Per-league notification settings",
+  "kind": "needs-new-backend",
+  "detail": "No notification-preference table exists."
+ },
+ {
+  "feature": "League legend",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Static explanatory copy. No backend needed."
+ },
+ {
+  "feature": "Menu sheet app grid (Home, Community, Stats, Profile, Settings)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Routes exist: /app, /app/explore (community flag off), /app/stats, the profile route and /app/settings."
+ },
+ {
+  "feature": "Placement of current More-sheet items (Mock drafts, Big board, Rankings, Start or sit, Teams, Leagues, History, Sign out, Search)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The design's Menu and tab bars don't include them. Where they live on mobile needs a ruling."
+ },
+ {
+  "feature": "League chat sheet",
+  "kind": "restyle-only",
+  "detail": "league_chat, use-league-chat and the LeagueMessageBoard composer and system posts exist. Keep the chat draft separate from the DM draft."
+ },
+ {
+  "feature": "League settings tile grid overlay",
+  "kind": "restyle-only",
+  "detail": "settings-index-ops already has 6 sections and the commish console. Re-lay them out as tiles and keep the sections the design lacks."
+ },
+ {
+  "feature": "Ink-pill toast",
+  "kind": "restyle-only",
+  "detail": "The Radix toaster exists (limit 1, 4500ms). Restyle it to a 36px ink pill above the dock with max-width and truncation."
+ },
+ {
+  "feature": "DM conversation composer",
+  "kind": "needs-new-backend",
+  "detail": "DMs are mock-only (featureFlags.messages, rail/messages-panel.tsx). The '+' attachment is a prototype placeholder."
+ },
+ {
+  "feature": "Header chat button with unread-conversation badge",
+  "kind": "needs-new-backend",
+  "detail": "Needs DM threads and read state. league_chat has no read marker."
+ },
+ {
+  "feature": "Header bell with red unread badge",
+  "kind": "restyle-only",
+  "detail": "NotificationBell exists with a real unreadCount and a mobile link to /app/notifications. Restyle the badge and place it in the Home and League headers."
+ },
+ {
+  "feature": "Notifications screen rows",
+  "kind": "restyle-only",
+  "detail": "notifications-feed.tsx already provides real data, type tone, icon and unread dot."
+ },
+ {
+  "feature": "Notifications 'Mark all read' and Back header",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useMarkNotificationsRead supports all or ids. The page currently auto-marks everything read on open, so keeping that is a question."
+ },
+ {
+  "feature": "Waiver-claim notification deep link",
+  "kind": "new-ui-on-existing-data",
+  "detail": "notification-href.ts has no arm for league_waiver_claim, so those rows are inert."
+ },
+ {
+  "feature": "TD-scored, out-this-week-in-lineup and lineup-lock-reminder notifications",
+  "kind": "needs-new-backend",
+  "detail": "No notification producers exist for scoring events, injury-vs-lineup alerts or scheduled lock reminders."
+ },
+ {
+  "feature": "Overlay stacking and pressed states",
+  "kind": "restyle-only",
+  "detail": "Define a mobile z-order for the existing overlays (player card modal, trade builder, command palette, list windows) and use :active fills instead of hover."
+ },
+ {
+  "feature": "Live plays feed",
+  "kind": "needs-new-backend",
+  "detail": "No live play-by-play data. Referenced here only for dock state."
+ }
+]

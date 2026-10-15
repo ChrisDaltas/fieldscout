@@ -1,0 +1,491 @@
+'use client'
+
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { useEffect } from 'react'
+
+import {
+  ME_TABS,
+  MY_RANKINGS_HREF,
+  NEW_RANKING_HREF,
+  listRowSub,
+  parseMeTab,
+  plural,
+  rankingRowSub,
+  rankingRowTitle,
+  resolveMeTab,
+  sortRankingRows,
+  sortSsQuestions,
+  ssIsOpen,
+  ssPreviewSub,
+  ssTitle,
+  type MeTab,
+} from '@/components/mobile/profile/profile-ops'
+import { useProfileTabStore } from '@/components/mobile/profile/profile-tab-store'
+import { M_ICON, MIcon } from '@/components/mobile/ui/m-icon'
+import { MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { MSegmented } from '@/components/mobile/ui/m-segmented'
+import { UsernameLink } from '@/components/shared/username-link'
+import { UserAvatar } from '@/components/ui/user-avatar'
+import { useAuth } from '@/hooks/use-auth'
+import { useLeagues } from '@/hooks/use-leagues'
+import { useLists } from '@/hooks/use-lists'
+import { useMobileProfileListMeta } from '@/hooks/use-mobile-profile-list-meta'
+import { useMobileProfileRankings } from '@/hooks/use-mobile-profile-rankings'
+import { useMobileProfileStartSit } from '@/hooks/use-mobile-profile-start-sit'
+import { useMobileProfileTitles } from '@/hooks/use-mobile-profile-titles'
+import { featureFlags } from '@/lib/feature-flags'
+import { cn } from '@/lib/utils'
+import { useThemeStore } from '@/stores/theme-store'
+import { NEW_LIST_FROM_ELSEWHERE_HREF } from '@/components/mobile/lists/lists-nav'
+
+/** The design's up-and-down arrows (Start/Sit rows, §5). */
+const START_SIT_PATH = 'M5 3v10M2.5 10.5L5 13l2.5-2.5M11 13V3M8.5 5.5L11 3l2.5 2.5'
+
+/**
+ * Profile — the account root in the mobile layout (handoff `m-profile.md`
+ * P0–P5): "Profile" + the Dark/Light pill (where mobile dark mode is
+ * switched), the user's identity and stats, then "My stuff" — Rankings /
+ * Lists / Start/Sit previews with a contextual create button.
+ *
+ * The header scrolls away with the content (it is inside the scroller in the
+ * handoff, not sticky). The shell already clears the dock below.
+ */
+export function MobileProfile() {
+  const { user, profile, isLoading } = useAuth()
+
+  return (
+    <MobileScreen>
+      <div className="px-4 pb-6">
+        <div className="flex h-12 items-center justify-between">
+          <h2 className="text-[28px] font-semibold leading-normal tracking-[-0.03em]">Profile</h2>
+          <div className="flex items-center gap-2">
+            {/* Not in the handoff: account settings (avatar, sign-in,
+                notifications — desktop's "Edit profile") need a door on
+                mobile, and the Menu sheet's Settings tile only exists inside
+                a league. Same 34px b2 circle as the design's round buttons. */}
+            <Link
+              href="/app/settings"
+              aria-label="Account settings"
+              title="Account settings"
+              className="flex size-[34px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1"
+            >
+              <MIcon name="gear" size={16} stroke={1.5} />
+            </Link>
+            <ThemePill />
+          </div>
+        </div>
+
+        {isLoading ? (
+          <IdentitySkeleton />
+        ) : !profile ? (
+          <p className="py-9 text-center text-[13px] font-medium text-m-t3">
+            We couldn&apos;t load your profile. Refresh to try again.
+          </p>
+        ) : (
+          <Identity
+            username={profile.username}
+            avatarUrl={profile.avatar_url}
+            credScore={profile.cred_score ?? 0}
+            followers={profile.follower_count ?? 0}
+            following={profile.following_count ?? 0}
+          />
+        )}
+
+        <MyStuff userId={user?.id} />
+      </div>
+    </MobileScreen>
+  )
+}
+
+/** Moon + "Dark" in light mode, sun + "Light" in dark mode (§2 P0.1). */
+function ThemePill() {
+  const dark = useThemeStore((s) => s.dark)
+  const toggle = useThemeStore((s) => s.toggle)
+  const tip = dark ? 'Switch to light mode' : 'Switch to dark mode'
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={tip}
+      aria-label={tip}
+      className="flex h-[34px] items-center gap-1.5 rounded-pill bg-m-b2 pl-2.5 pr-3 text-[13px] font-semibold text-m-t1"
+    >
+      <MIcon name={dark ? 'sun' : 'moon'} size={16} stroke={1.5} />
+      {dark ? 'Light' : 'Dark'}
+    </button>
+  )
+}
+
+/**
+ * Avatar, the handle and the stats (§2 P0.2–3). FieldScout keeps no display
+ * name — the handle is the only name (ruling 2026-08-05) — so the handle
+ * takes the 18/700 name line and the t3 line below keeps the rest of the
+ * design's "@handle · N leagues": the league count, while leagues are on.
+ *
+ * Stats, against the design's Ranking accuracy · Followers · Titles:
+ *  - Ranking accuracy has no data (no grading job writes it), so the first
+ *    card is the cred score — the app's real prediction-credibility number.
+ *  - Followers as designed.
+ *  - Titles = leagues won (champion = the team you manage). Leagues are a
+ *    gated test cohort; while they're off there is nothing to count, and the
+ *    card shows Following instead so the row keeps the design's three cards.
+ */
+function Identity({
+  username,
+  avatarUrl,
+  credScore,
+  followers,
+  following,
+}: {
+  username: string
+  avatarUrl: string | null
+  credScore: number
+  followers: number
+  following: number
+}) {
+  const leaguesOn = featureFlags.leagues
+  const leagues = useLeagues({ enabled: leaguesOn })
+  const titles = useMobileProfileTitles(leagues.data, leaguesOn)
+  const sub = leaguesOn && leagues.data ? plural(leagues.data.length, 'league', 'leagues') : null
+
+  return (
+    <>
+      <div className="mt-2 flex items-center gap-[14px]">
+        <UserAvatar
+          src={avatarUrl}
+          name={username}
+          className="size-16 flex-none"
+          fallbackClassName="bg-accent text-[24px] font-semibold text-white"
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {/* A username is always a door to that person's profile (D462) —
+              here, your own public page (desktop's "View public profile"). */}
+          <UsernameLink username={username} className="truncate text-[18px] font-bold tracking-[-0.02em]" />
+          {sub && <span className="text-[13px] font-medium text-m-t3">{sub}</span>}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <StatCard value={credScore.toLocaleString('en-US')} label="Cred score" />
+        <StatCard value={followers.toLocaleString('en-US')} label="Followers" />
+        {leaguesOn ? (
+          // "–" while loading or when the read fails — never a guessed 0.
+          <StatCard value={titles.data !== undefined ? titles.data.toLocaleString('en-US') : '–'} label="Titles" />
+        ) : (
+          <StatCard value={following.toLocaleString('en-US')} label="Following" />
+        )}
+      </div>
+    </>
+  )
+}
+
+function StatCard({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 rounded-[14px] bg-m-b1 px-3 py-2.5">
+      <span className="truncate text-[17px] font-bold tabular-nums">{value}</span>
+      <span className="text-[11px] font-medium text-m-t3">{label}</span>
+    </div>
+  )
+}
+
+function IdentitySkeleton() {
+  return (
+    <div aria-hidden>
+      <div className="mt-2 flex items-center gap-[14px]">
+        <span className="size-16 flex-none rounded-full bg-m-b1" />
+        <span className="flex flex-1 flex-col gap-2">
+          <span className="h-[18px] w-32 rounded-md bg-m-b1" />
+          <span className="h-[13px] w-40 rounded-md bg-m-b1" />
+        </span>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="h-[56px] rounded-[14px] bg-m-b1" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * "My stuff": segmented Rankings / Lists / Start/Sit (only the released
+ * surfaces — Rankings and Start/Sit follow their launch flags), preview rows
+ * from the user's real content, and the segment's create button. `?tab=`
+ * picks the segment (Home's My stuff tiles); otherwise the last segment of
+ * the session is kept.
+ */
+function MyStuff({ userId }: { userId: string | undefined }) {
+  const params = useSearchParams()
+  const stored = useProfileTabStore((s) => s.tab)
+  const setStored = useProfileTabStore((s) => s.setTab)
+
+  const available = ME_TABS.filter(
+    (t) =>
+      t.value === 'lists' ||
+      (t.value === 'rankings' && featureFlags.weeklyRanks) ||
+      (t.value === 'ss' && featureFlags.startOrSit),
+  )
+  const requested = parseMeTab(params.get('tab'))
+  const tab = resolveMeTab(
+    requested ?? stored,
+    available.map((t) => t.value),
+  )
+
+  // A `?tab=` arrival (Home's My stuff tiles) becomes the session's segment,
+  // as the handoff's `set({ meTab })` does — the Profile tab reopens on it.
+  useEffect(() => {
+    if (requested) setStored(requested)
+  }, [requested, setStored])
+
+  const select = (next: MeTab) => {
+    setStored(next)
+    // Keep the URL in step so a reload or a shared link reopens this segment.
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', next)
+    window.history.replaceState(window.history.state, '', url)
+  }
+
+  return (
+    <>
+      <h3 className="mt-5 text-[17px] font-semibold leading-normal tracking-[-0.01em]">My stuff</h3>
+      {available.length > 1 && (
+        <MSegmented
+          label="My stuff"
+          options={available}
+          value={tab}
+          onChange={select}
+          className="mt-2"
+          itemClassName="h-8 transition-none"
+        />
+      )}
+      {tab === 'rankings' ? (
+        <RankingsPreview userId={userId} />
+      ) : tab === 'ss' ? (
+        <StartSitPreview userId={userId} />
+      ) : (
+        <ListsPreview userId={userId} />
+      )}
+    </>
+  )
+}
+
+/** Every row opens My rankings, as the design's `#mine` does (§3). */
+function RankingsPreview({ userId }: { userId: string | undefined }) {
+  const { data, isLoading, isError, refetch } = useMobileProfileRankings(userId)
+  const rows = sortRankingRows(data ?? []).slice(0, 3)
+
+  return (
+    <>
+      <PreviewBody
+        loading={isLoading || !userId}
+        error={isError ? { copy: 'Couldn’t load your rankings.', retry: () => void refetch() } : null}
+        emptyCopy="No rankings yet"
+        count={rows.length}
+      >
+        {rows.map((r) => (
+          <PreviewRow
+            key={r.listId}
+            href={MY_RANKINGS_HREF}
+            iconPath={M_ICON.rank}
+            title={rankingRowTitle(r)}
+            sub={rankingRowSub(r)}
+            subClassName="text-m-tb"
+          />
+        ))}
+      </PreviewBody>
+      <CreateButton href={NEW_RANKING_HREF}>New ranking</CreateButton>
+    </>
+  )
+}
+
+/**
+ * The user's own lists, newest first — weekly ranking boards left out (the
+ * weekly-ranks API stores them as lists; they show under Rankings). The same
+ * 100-list read Home's My stuff makes, so the two share one cache entry.
+ */
+function ListsPreview({ userId }: { userId: string | undefined }) {
+  const lists = useLists(1, 100)
+  const meta = useMobileProfileListMeta(userId)
+  const weekly = new Set(meta.data?.weeklyBoardIds ?? [])
+  const videos = new Set(meta.data?.videoListIds ?? [])
+  // Own lists only (a saved list from someone else carries its `owner`).
+  const rows = (lists.data?.lists ?? []).filter((l) => !l.owner && !weekly.has(l.id)).slice(0, 3)
+
+  return (
+    <>
+      <PreviewBody
+        loading={lists.isLoading || meta.isLoading || !userId}
+        error={
+          lists.isError || meta.isError
+            ? {
+                copy: 'Couldn’t load your lists.',
+                retry: () => {
+                  if (lists.isError) void lists.refetch()
+                  if (meta.isError) void meta.refetch()
+                },
+              }
+            : null
+        }
+        emptyCopy="No lists yet"
+        count={rows.length}
+      >
+        {rows.map((l) => (
+          <PreviewRow
+            key={l.id}
+            href={`/app/lists/${l.id}`}
+            iconPath={M_ICON.lists}
+            title={l.title}
+            sub={listRowSub(l, videos.has(l.id))}
+          />
+        ))}
+      </PreviewBody>
+      <CreateButton href={NEW_LIST_FROM_ELSEWHERE_HREF}>New list</CreateButton>
+    </>
+  )
+}
+
+/**
+ * The user's own questions (first four, My start/sit's order), each opening
+ * My start/sit on All (§3). "Ask a question" is left out: the app has no
+ * start/sit composer. With no rows, the design's "No questions here yet".
+ */
+function StartSitPreview({ userId }: { userId: string | undefined }) {
+  const { data, isLoading, isError, refetch } = useMobileProfileStartSit(userId)
+  // Read once per render — the open/closed split is a moment in time.
+  const now = Date.now()
+  const rows = sortSsQuestions(data ?? [], now).slice(0, 4)
+
+  return (
+    <PreviewBody
+      loading={isLoading || !userId}
+      error={isError ? { copy: 'Couldn’t load your questions.', retry: () => void refetch() } : null}
+      emptyCopy="No questions here yet"
+      count={rows.length}
+    >
+      {rows.map((q) => (
+        <PreviewRow
+          key={q.id}
+          href="/app/start-or-sit"
+          iconPath={START_SIT_PATH}
+          title={ssTitle(q)}
+          sub={ssPreviewSub(q, now)}
+          subClassName={ssIsOpen(q, now) ? 'text-positive-strong' : 'text-m-t3'}
+        />
+      ))}
+    </PreviewBody>
+  )
+}
+
+function PreviewBody({
+  loading,
+  error,
+  emptyCopy,
+  count,
+  children,
+}: {
+  loading: boolean
+  error: { copy: string; retry: () => void } | null
+  emptyCopy: string
+  count: number
+  children: React.ReactNode
+}) {
+  if (loading) {
+    return (
+      <div className="mt-1.5 flex flex-col" aria-busy="true" aria-label="Loading">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-3 border-b border-m-b2 py-3">
+            <span className="size-10 flex-none rounded-[12px] bg-m-b1" />
+            <span className="flex flex-1 flex-col gap-1.5">
+              <span className="h-[15px] w-3/5 rounded-md bg-m-b1" />
+              <span className="h-3 w-2/5 rounded-md bg-m-b1" />
+            </span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div className="mt-1.5 flex flex-col items-center gap-2 py-9 text-center">
+        <p className="text-[13px] font-medium text-m-t3">{error.copy}</p>
+        <button type="button" onClick={error.retry} className="text-[13px] font-semibold text-accent">
+          Try again
+        </button>
+      </div>
+    )
+  }
+  if (count === 0) {
+    return <p className="mt-1.5 py-9 text-center text-[13px] font-medium text-m-t3">{emptyCopy}</p>
+  }
+  return <div className="mt-1.5 flex flex-col">{children}</div>
+}
+
+/** 40px icon tile · title / sub · chevron, ruled off below (§2 P0.6). */
+function PreviewRow({
+  href,
+  iconPath,
+  title,
+  sub,
+  subClassName = 'text-m-t3',
+}: {
+  href: string
+  iconPath: string
+  title: string
+  sub: string
+  subClassName?: string
+}) {
+  return (
+    <Link href={href} className="flex items-center gap-3 border-b border-m-b2 py-3 text-m-t1">
+      <span className="flex size-10 flex-none items-center justify-center rounded-[12px] bg-m-b2">
+        <svg
+          viewBox="0 0 16 16"
+          width={18}
+          height={18}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d={iconPath} />
+        </svg>
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[15px] font-semibold">{title}</span>
+        <span className={cn('text-[12px] font-medium', subClassName)}>{sub}</span>
+      </span>
+      <MIcon name="chevronRight" size={12} stroke={2} className="text-m-t5" />
+    </Link>
+  )
+}
+
+/** Outlined 44px button with a plus (§2 P0.7). */
+function CreateButton({
+  href,
+  onClick,
+  children,
+}: {
+  href?: string
+  onClick?: () => void
+  children: React.ReactNode
+}) {
+  const cls =
+    'mt-[14px] flex h-11 w-full items-center justify-center gap-1.5 rounded-[14px] border-[1.5px] border-m-b3s text-[14px] font-semibold text-m-t1'
+  const body = (
+    <>
+      <MIcon name="avail" size={12} stroke={2.2} />
+      {children}
+    </>
+  )
+  return href ? (
+    <Link href={href} className={cls}>
+      {body}
+    </Link>
+  ) : (
+    <button type="button" onClick={onClick} className={cls}>
+      {body}
+    </button>
+  )
+}

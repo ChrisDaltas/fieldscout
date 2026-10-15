@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
+import { THEME_STORAGE_KEY, useThemeStore } from '@/stores/theme-store'
 import { useUIStore } from '@/stores/ui-store'
 
 /**
@@ -29,7 +30,7 @@ export type LayoutMode = 'desktop' | 'mobile'
  * a full load of an app page. App routes only — the landing and auth pages
  * stay plain width-responsive.
  */
-export const LAYOUT_MODE_HEAD_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/app'||p.indexOf('/app/')===0){document.documentElement.setAttribute('data-layout',window.matchMedia('${DESKTOP_POINTER}').matches?'desktop':'mobile')}}catch(e){}})();`
+export const LAYOUT_MODE_HEAD_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/app'||p.indexOf('/app/')===0){var h=document.documentElement,d=window.matchMedia('${DESKTOP_POINTER}').matches;h.setAttribute('data-layout',d?'desktop':'mobile');if(!d&&localStorage.getItem('${THEME_STORAGE_KEY}')==='dark')h.setAttribute('data-theme','dark')}}catch(e){}})();`
 
 function readViewport() {
   if (typeof window === 'undefined') return { desktopPointer: true, width: DESKTOP_MIN_WIDTH }
@@ -71,13 +72,51 @@ export function useLayoutMode() {
     document.documentElement.setAttribute('data-layout', mode)
   }, [mode])
 
-  // Leaving the app (e.g. to the landing page) drops the attribute so public
-  // pages are plain width-responsive again.
-  useEffect(() => () => document.documentElement.removeAttribute('data-layout'), [])
+  // Dark mode is mobile-only (Chris, 2026-10-15): the theme attribute follows
+  // the stored preference in the mobile layout and is absent on desktop.
+  const dark = useThemeStore((t) => t.dark)
+  useEffect(() => {
+    const html = document.documentElement
+    if (mode === 'mobile' && dark) html.setAttribute('data-theme', 'dark')
+    else html.removeAttribute('data-theme')
+  }, [mode, dark])
+
+  // Leaving the app (e.g. to the landing page) drops both attributes so
+  // public pages are plain width-responsive and light again.
+  useEffect(
+    () => () => {
+      document.documentElement.removeAttribute('data-layout')
+      document.documentElement.removeAttribute('data-theme')
+    },
+    [],
+  )
 
   return {
     mode,
     showMobilePrompt: mounted && mode === 'desktop' && viewport.width < MOBILE_PROMPT_WIDTH,
     switchToMobile: () => setForced(true),
   }
+}
+
+function subscribeLayout(onChange: () => void) {
+  const observer = new MutationObserver(onChange)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout'] })
+  return () => observer.disconnect()
+}
+
+/**
+ * The current layout mode as read from `<html data-layout>`, for components
+ * that render a different TREE per mode (`ByLayout`). `null` on the server and
+ * during hydration — callers must render something that is correct for both
+ * until it resolves.
+ */
+export function useLayoutModeValue(): LayoutMode | null {
+  return useSyncExternalStore(
+    subscribeLayout,
+    () => {
+      const v = document.documentElement.getAttribute('data-layout')
+      return v === 'mobile' || v === 'desktop' ? v : null
+    },
+    () => null,
+  )
 }

@@ -20,7 +20,7 @@ import tailwindcssAnimate from 'tailwindcss-animate'
  * - `xl` / `2xl`: width only — they refine the desktop layout on big screens.
  * - `max-sm` / `max-md`: width AND not desktop mode.
  * - `desk`: desktop mode only — the app frame's switch (sidebar, top bar,
- *   right-side bar vs bottom tabs).
+ *   right-side bar vs bottom tabs). `mob`: mobile mode only.
  *
  * `:where()` keeps specificity at a single class, so source order (sm < md <
  * lg < xl < 2xl) decides overlaps exactly as Tailwind's own screens do.
@@ -36,6 +36,7 @@ function layoutModeVariants({ addVariant }: { addVariant: (name: string, def: st
   addVariant('xl', '@media (min-width: 1280px)')
   addVariant('2xl', '@media (min-width: 1536px)')
   addVariant('desk', DESKTOP)
+  addVariant('mob', ':where(html[data-layout="mobile"]) &')
 }
 
 const config: Config = {
@@ -181,6 +182,57 @@ const config: Config = {
           violet: { DEFAULT: '#5B2FD1', soft: '#F0EBFF', wash: '#FBFAFF', scout: '#A970FF' },
         },
 
+        /* ---- Mobile theme (FieldScout Mobile handoff). CSS-variable backed so
+           the mobile layout can switch light/dark — globals.css. Use only in
+           mobile components. ---- */
+        m: {
+          't1': 'rgb(var(--m-t1) / <alpha-value>)',
+          't2': 'rgb(var(--m-t2) / <alpha-value>)',
+          't3': 'rgb(var(--m-t3) / <alpha-value>)',
+          't4': 'rgb(var(--m-t4) / <alpha-value>)',
+          't5': 'rgb(var(--m-t5) / <alpha-value>)',
+          'b0': 'rgb(var(--m-b0) / <alpha-value>)',
+          'b1': 'rgb(var(--m-b1) / <alpha-value>)',
+          'b2': 'rgb(var(--m-b2) / <alpha-value>)',
+          'b2h': 'rgb(var(--m-b2h) / <alpha-value>)',
+          'b3': 'rgb(var(--m-b3) / <alpha-value>)',
+          'b3s': 'rgb(var(--m-b3s) / <alpha-value>)',
+          'b4': 'rgb(var(--m-b4) / <alpha-value>)',
+          'b4m': 'rgb(var(--m-b4m) / <alpha-value>)',
+          'b4l': 'rgb(var(--m-b4l) / <alpha-value>)',
+          'ink': 'rgb(var(--m-ink) / <alpha-value>)',
+          'bar': 'rgb(var(--m-bar) / <alpha-value>)',
+          'mini': 'rgb(var(--m-mini) / <alpha-value>)',
+          'gg': 'rgb(var(--m-gg) / <alpha-value>)',
+          'tg': 'rgb(var(--m-tg) / <alpha-value>)',
+          'gr': 'rgb(var(--m-gr) / <alpha-value>)',
+          'tr': 'rgb(var(--m-tr) / <alpha-value>)',
+          'gb': 'rgb(var(--m-gb) / <alpha-value>)',
+          'tb': 'rgb(var(--m-tb) / <alpha-value>)',
+          'go': 'rgb(var(--m-go) / <alpha-value>)',
+          'to': 'rgb(var(--m-to) / <alpha-value>)',
+          'gb2': 'rgb(var(--m-gb2) / <alpha-value>)',
+          'gp': 'rgb(var(--m-gp) / <alpha-value>)',
+          dock: 'var(--m-dock)',
+          // Inactive switcher dots — the same in both themes (handoff §2.2).
+          dot: '#636366',
+          // Fixed (non-theme) colours from the mobile handoff:
+          gold: '#C98A1F', // waiver / claim actions, TE text
+          median: '#FFF6E5', // league-median card
+          'head-bg': '#EEEEF1', // headshot initials fallback
+          // Position colours as TEXT on a light surface (README table).
+          'pos-qb': '#E03E3E',
+          'pos-rb': '#4A68D4',
+          'pos-wr': '#8656D8',
+          'pos-te': '#C98A1F',
+          'pos-k': '#5E8C8C',
+          'pos-dst': '#A68A00',
+          // Manager avatar colours not already in the palette.
+          'av-teal': '#00A6A3',
+          'av-pink': '#E5508A',
+          'bar-a': 'var(--m-bar-a)',
+        },
+
         /* ---- Legacy shadcn compatibility layer (HSL vars in globals.css) ---- */
         border: 'hsl(var(--border))',
         'border-subtle': 'hsl(var(--border-subtle))',
@@ -308,6 +360,21 @@ const config: Config = {
         'ring-control-hover': 'inset 0 0 0 1px #AEAEB2',
         'ring-chip': 'inset 0 0 0 1px #E5E5EA', // league switcher chip
         'avatar-hover': '0 0 0 3px #E5E5EA', // top-bar avatar hover halo
+        // Mobile: active Profile tab avatar (2px ink band, then a 1.5px page
+        // ring — handoff §2.3) and the header badge's page-coloured ring.
+        'm-tab-avatar': '0 0 0 2px rgb(var(--m-ink)), 0 0 0 3.5px rgb(var(--m-b0))',
+        'm-badge': '0 0 0 2px rgb(var(--m-b0))',
+        // Mobile segmented "on" pill (README: 0 1px 2px; some screens 3px).
+        'm-seg': '0 1px 2px rgba(0,0,0,.12)',
+        'm-seg-3': '0 1px 3px rgba(0,0,0,.12)',
+        // Mobile selection ring and outlined card (README "Shadows").
+        'm-select': 'inset 0 0 0 2px #0088FF',
+        'm-outline': 'inset 0 0 0 1px rgb(var(--m-b3))',
+        // Mobile menus / popovers (README).
+        'm-menu': '0 10px 30px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.05)',
+        // Mobile centred tip card (Players column tip) and switch knob.
+        'm-tip': '0 12px 32px rgba(0,0,0,.2)',
+        'm-knob': '0 1px 2px rgba(0,0,0,.2)',
       },
       // v7's heaviest weight is 700: the old extra-heavy weights resolve to
       // bold, so pre-v7 `font-extrabold` / `font-black` read as v7 bold.

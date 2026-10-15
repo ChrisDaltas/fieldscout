@@ -52,8 +52,9 @@ import { formatRecord } from './standings-table-ops'
  * the identity row above, the sub-nav as the main row, and while override
  * mode is on, a slim "Commissioner override on · Turn off" indicator on the
  * right. While it holds the bar, pages' own `PageHeader` titles are not
- * shown, so there is never a second header. Mobile (the shell hides its
- * header below `lg`): the same identity + nav render at the top of the page.
+ * shown, so there is never a second header. In the mobile layout the dock
+ * is the league's navigation instead (FieldScout Mobile) and this header is
+ * not drawn.
  *
  * Reads only the league detail query the pages already share, the viewer's
  * standings row (record / rank — omitted until the season has results) and
@@ -73,11 +74,9 @@ export function LeagueShell({ leagueId, children }: { leagueId: string; children
   return (
     <>
       {data ? <LeagueHeaderClaim leagueId={leagueId} data={data} /> : null}
-      {data ? (
-        <div className="mb-4 flex flex-col gap-3 border-b border-n-4 pb-3 desk:hidden" data-league-header-mobile>
-          <LeagueHeaderParts leagueId={leagueId} data={data} />
-        </div>
-      ) : null}
+      {/* Mobile layout: the dock is the league's navigation and each league
+          screen draws its own header (a page with no mobile screen yet gets
+          the shell's close + title row, `MobileFallbackHeader`). */}
       {children}
     </>
   )

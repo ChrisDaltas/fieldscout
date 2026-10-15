@@ -2250,10 +2250,10 @@ describe('LV.17 — the pop-out host is a sibling of the page, never inside it (
     }
 
     // The host's own enclosing element is the shell root the other app-level
-    // siblings share — pinned against `<BottomTabs`, which is page chrome
-    // rendered at exactly the same depth, so "sibling" is a measured fact.
-    expect(indentOf(SHELL, '<ListWindowsHost />')).toBe(indentOf(SHELL, '<BottomTabs'))
-    expect(ancestorsOf(SHELL, '<BottomTabs')).toEqual(host)
+    // siblings share — pinned against `<CommandPalette`, app chrome rendered
+    // at exactly the same depth, so "sibling" is a measured fact.
+    expect(indentOf(SHELL, '<ListWindowsHost />')).toBe(indentOf(SHELL, '<CommandPalette'))
+    expect(ancestorsOf(SHELL, '<CommandPalette')).toEqual(host)
   })
 
   it('…and the ancestor walk really does find ancestors (control for the pin above)', () => {
@@ -2262,9 +2262,10 @@ describe('LV.17 — the pop-out host is a sibling of the page, never inside it (
     // has had a locator quietly assert nothing (R226, R240, R245).
     const children = ancestorsOf(SHELL, '{children}')
     // It finds a real enclosing element by name…
-    expect(children).toContain('<main className="min-h-0 flex-1 overflow-y-auto">')
-    // …including one whose opening tag Prettier split over four lines, which is
-    // the case a naive walk reports as a bare `>`.
+    expect(children).toContain('<main')
+    // …including opening tags split over several lines (`<main` carries its
+    // dock-clearance style on the next ones), which is the case a naive walk
+    // reports as a bare `>`.
     expect(children.some((line) => line.startsWith('<div'))).toBe(true)
     expect(children).not.toContain('>')
     // Innermost first, outermost last, ending above the JSX entirely.
