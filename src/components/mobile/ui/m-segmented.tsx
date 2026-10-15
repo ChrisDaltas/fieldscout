@@ -40,7 +40,7 @@ export function MSegmented<T extends string>({
             aria-pressed={on}
             onClick={() => onChange(o.value)}
             className={cn(
-              'flex h-[30px] items-center justify-center rounded-lg text-[13px] font-semibold transition-colors',
+              'flex h-[30px] items-center justify-center rounded-[8px] text-[13px] font-semibold',
               on ? cn('bg-m-b0 text-m-t1', shadow === 'm-seg' ? 'shadow-m-seg' : 'shadow-m-seg-3') : 'text-m-t3',
               itemClassName,
             )}

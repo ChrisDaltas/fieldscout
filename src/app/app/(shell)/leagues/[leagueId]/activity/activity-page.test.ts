@@ -25,8 +25,13 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { ActivityPage } from '@/components/leagues/activity-page'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { ActivitySubscreenRoute } from '@/components/mobile/league/league/activity-subscreens'
+import { MobileLeagueTab } from '@/components/mobile/league/league/league-tab'
 
 import LeagueCorrectionsRoute from '../corrections/page'
+import LeagueCommishLogRoute from './commissioner/page'
+import LeagueCorrectionsScreenRoute from './corrections/page'
 import LeagueActivityRoute from './page'
 
 const LEAGUE = 'c3340000-0000-4000-8000-000000000001'
@@ -58,8 +63,18 @@ describe('the Activity page — members only, decided on the server', () => {
     expect('rendered' in outcome).toBe(true)
     const element = (outcome as { rendered: unknown }).rendered
     expect(isValidElement(element)).toBe(true)
-    expect((element as { type: unknown }).type).toBe(ActivityPage)
-    expect((element as { props: unknown }).props).toStrictEqual({ leagueId: LEAGUE, initial: { tab: 'commissioner', week: 4, team: null, entry: null } })
+    // Mobile handoff: the route picks its tree by layout — the desktop tree is
+    // the Activity page as before; the mobile tree is League › Activity with
+    // the same parse of the URL.
+    expect((element as { type: unknown }).type).toBe(ByLayout)
+    const { desktop, mobile } = (element as { props: { desktop: unknown; mobile: unknown } }).props
+    const initial = { tab: 'commissioner', week: 4, team: null, entry: null }
+    expect(isValidElement(desktop)).toBe(true)
+    expect((desktop as { type: unknown }).type).toBe(ActivityPage)
+    expect((desktop as { props: unknown }).props).toStrictEqual({ leagueId: LEAGUE, initial })
+    expect(isValidElement(mobile)).toBe(true)
+    expect((mobile as { type: unknown }).type).toBe(MobileLeagueTab)
+    expect((mobile as { props: unknown }).props).toStrictEqual({ leagueId: LEAGUE, segment: 'activity', activityInitial: initial })
   })
 
   it('a non-UUID id is asked nothing and gets the same answer; only a literal true opens it', async () => {
@@ -89,5 +104,37 @@ describe('the old /corrections route — a deep link to the tab (F536)', () => {
     expect(await go({ week: '3' })).toBe(`/app/leagues/${LEAGUE}/activity?tab=corrections&week=3`)
     expect(await go({})).toBe(`/app/leagues/${LEAGUE}/activity?tab=corrections`)
     expect(await go({ week: 'bogus' })).toBe(`/app/leagues/${LEAGUE}/activity?tab=corrections`)
+  })
+})
+
+describe('the mobile full screens — /activity/commissioner and /activity/corrections', () => {
+  type Route = (props: { params: Promise<{ leagueId: string }>; searchParams: Promise<Record<string, string>> }) => Promise<unknown>
+  const run = async (route: Route, leagueId: string, query: Record<string, string>) => {
+    try {
+      return { rendered: await route({ params: Promise.resolve({ leagueId }), searchParams: Promise.resolve(query) }) }
+    } catch (e) {
+      if (e instanceof RedirectSignal) return { redirectedTo: e.to }
+      throw e
+    }
+  }
+  const TEAM = 'c3340000-0000-4000-8000-0000000000aa'
+
+  it('members only, like the Activity page', async () => {
+    rpc.mockResolvedValue({ data: false, error: null })
+    expect(await run(LeagueCommishLogRoute, LEAGUE, {})).toEqual({ redirectedTo: `/app/leagues/${LEAGUE}` })
+    expect(await run(LeagueCorrectionsScreenRoute, LEAGUE, {})).toEqual({ redirectedTo: `/app/leagues/${LEAGUE}` })
+  })
+
+  it('each opens its tab with the URL’s filters — desktop the Activity page, mobile the full screen', async () => {
+    rpc.mockResolvedValue({ data: true, error: null })
+    const log = (await run(LeagueCommishLogRoute, LEAGUE, { team: TEAM, week: '4' })) as { rendered: { type: unknown; props: { desktop: { type: unknown; props: unknown }; mobile: { type: unknown; props: unknown } } } }
+    const commish = { tab: 'commissioner', week: 4, team: TEAM, entry: null }
+    expect(log.rendered.type).toBe(ByLayout)
+    expect(log.rendered.props.desktop.type).toBe(ActivityPage)
+    expect(log.rendered.props.desktop.props).toStrictEqual({ leagueId: LEAGUE, initial: commish })
+    expect(log.rendered.props.mobile.type).toBe(ActivitySubscreenRoute)
+    expect(log.rendered.props.mobile.props).toStrictEqual({ leagueId: LEAGUE, initial: commish })
+    const fixes = (await run(LeagueCorrectionsScreenRoute, LEAGUE, { week: '3', tab: 'all' })) as { rendered: { props: { mobile: { props: unknown } } } }
+    expect(fixes.rendered.props.mobile.props).toStrictEqual({ leagueId: LEAGUE, initial: { tab: 'corrections', week: 3, team: null, entry: null } })
   })
 })

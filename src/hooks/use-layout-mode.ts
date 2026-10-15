@@ -81,6 +81,22 @@ export function useLayoutMode() {
     else html.removeAttribute('data-theme')
   }, [mode, dark])
 
+  // iOS Safari zooms into any text field under 16px when it takes focus, and
+  // the mobile design's fields are 15px (search, composer). `maximum-scale=1`
+  // stops that focus zoom; iOS ignores it for the user's own pinch zoom, so
+  // nothing is taken away. iOS only — other browsers don't focus-zoom, and
+  // Android would honour it as a pinch-zoom block.
+  useEffect(() => {
+    if (mode !== 'mobile' || !isIos()) return
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+    if (!meta || meta.content.includes('maximum-scale')) return
+    const before = meta.content
+    meta.content = `${before}, maximum-scale=1`
+    return () => {
+      meta.content = before
+    }
+  }, [mode])
+
   // Leaving the app (e.g. to the landing page) drops both attributes so
   // public pages are plain width-responsive and light again.
   useEffect(
@@ -96,6 +112,11 @@ export function useLayoutMode() {
     showMobilePrompt: mounted && mode === 'desktop' && viewport.width < MOBILE_PROMPT_WIDTH,
     switchToMobile: () => setForced(true),
   }
+}
+
+function isIos(): boolean {
+  const nav = window.navigator
+  return /iP(hone|ad|od)/.test(nav.userAgent) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1)
 }
 
 function subscribeLayout(onChange: () => void) {

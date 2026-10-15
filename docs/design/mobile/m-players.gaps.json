@@ -1,0 +1,232 @@
+[
+ {
+  "feature": "League header (logo, Home, league name, Search/Notifications/Messages with badges)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "league-shell.tsx renders identity + scrolling subnav on mobile; notifications are real (use-notifications), the Messages badge is mock behind featureFlags.messages."
+ },
+ {
+  "feature": "League tab bar dock (Match/Team/Players/League/Menu)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Only the global bottom-tabs.tsx (Home/Lists/Players\u2192/app/players/Search/More) and the league subnav (league-shell-ops leagueTabs) exist; needs a league-context bottom bar and an IA mapping of Schedule/Stats/Home into League/Menu."
+ },
+ {
+  "feature": "League switcher strip above the tab bar",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Memberships come from use-leagues.ts; in the app Players data is per league, so switching must refetch."
+ },
+ {
+  "feature": "Players tab state kept across tab switches",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players-page.tsx keeps filters/sort in local useState; needs a Zustand store for status/period/pos/team/view/columns/sort/trendOpen."
+ },
+ {
+  "feature": "Home Trending 'See all' deep link to the league Players tab",
+  "kind": "new-ui-on-existing-data",
+  "detail": "trending-players-card.tsx has no See all and is global, not league-scoped."
+ },
+ {
+  "feature": "Sticky filter pill bar + quick-pick popovers with Reset",
+  "kind": "restyle-only",
+  "detail": "Replaces the Input + Segment controls in players-page.tsx; ui/popover.tsx exists."
+ },
+ {
+  "feature": "Status filter: All/Available/Free agents/Waivers/Rostered/My team",
+  "kind": "new-ui-on-existing-data",
+  "detail": "PoolScope has only free_agents/rostered/all; the Availability kinds (free_agent, on_waivers, rostered.mine) already support every split."
+ },
+ {
+  "feature": "Period filter (this week / last week / season / prior season)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "pool-values-service returns only this week's projection + season-to-date; weekly lines exist in player_stats but the read needs a period param. What each period shows needs a product definition (the prototype's values are placeholders)."
+ },
+ {
+  "feature": "FLEX position option",
+  "kind": "new-ui-on-existing-data",
+  "detail": "use-draft-pool filters eq('position'); FLEX needs an in(RB,WR,TE) filter."
+ },
+ {
+  "feature": "NFL team filter",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players.team exists, but useDraftPool has no team param; add the filter server-side, not over the 300-row window."
+ },
+ {
+  "feature": "In-tab player search",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app has a server-backed search input; the design has none on the tab (header global search only). Keep it on mobile?"
+ },
+ {
+  "feature": "Trending section (collapsible header + tiles with Rost %, change, adds, Proj, action)",
+  "kind": "needs-new-backend",
+  "detail": "No trending adds / rostered % / 7-day change source exists (home trending card is a proxy delta, waiver-adds card is mock). Needs a source decision: cohort aggregates or an external feed."
+ },
+ {
+  "feature": "List header title + count with 40+ cap",
+  "kind": "new-ui-on-existing-data",
+  "detail": "No count today; the app sorts within a 300-row ADP window rather than over all matches."
+ },
+ {
+  "feature": "View toggle List / Cards / Sheet",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The app has a single table view."
+ },
+ {
+  "feature": "Customize stats bottom sheet (grouped column chips)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "ui/sheet.tsx side=bottom exists; precedent in players-spreadsheet CustomizePopover; the league table has fixed columns. Offer only columns that have data; decide a minimum column count."
+ },
+ {
+  "feature": "Action circle Add/Claim(W)/Drop/Trade",
+  "kind": "restyle-only",
+  "detail": "MoveButton already computes add vs claim (acquireAction), Drop and the Trade link."
+ },
+ {
+  "feature": "Add/Claim confirm (prototype is toast-only)",
+  "kind": "restyle-only",
+  "detail": "Keep the D481(n) always-confirm ClaimDialog as a mobile sheet; the server readout replaces the toast."
+ },
+ {
+  "feature": "Drop from Players tab / Roster move panel",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app arms a desktop MovePanel the design lacks; DropConfirm (drop-player-dialog.tsx) is available. Remove the panel on mobile?"
+ },
+ {
+  "feature": "Trade action pre-fills the builder",
+  "kind": "restyle-only",
+  "detail": "tradesHref(teamId, playerId) exists; keep the deadline and unmanaged-team hiding."
+ },
+ {
+  "feature": "Headshot with team-colour ring + initials fallback",
+  "kind": "restyle-only",
+  "detail": "headshot_url + PlayerAvatarImage + NFL_TEAM_COLORS exist; the app shows the team logo for D/ST."
+ },
+ {
+  "feature": "Name line with short name, pos colour, red injury badge",
+  "kind": "restyle-only",
+  "detail": "players.status is real; needs Q/O/IR abbreviation and short-name formatting."
+ },
+ {
+  "feature": "Ownership line (Free agent / Waivers \u00b7 day / Your team / @handle)",
+  "kind": "restyle-only",
+  "detail": "Availability + waivers_until + members.profiles.username exist; handles must link to the profile."
+ },
+ {
+  "feature": "Game line: kickoff/live/final + tinted OPRK ordinal",
+  "kind": "new-ui-on-existing-data",
+  "detail": "nfl_games has kickoff/status/scores/quarter/clock and defense_position_splits feeds oprkOf/oprkTone, but the Players page shows only 'vs X/@ X/BYE'."
+ },
+ {
+  "feature": "Game-lock state and app status banners (loading/error/stale/reconnecting/waivers/no-seat)",
+  "kind": "restyle-only",
+  "detail": "Present in players-page.tsx; not in the design, so extend the design language."
+ },
+ {
+  "feature": "List-view per-row stat strip with fade",
+  "kind": "new-ui-on-existing-data",
+  "detail": "New rendering of the column values."
+ },
+ {
+  "feature": "Cards view (stats under each player)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "New rendering."
+ },
+ {
+  "feature": "Sheet view with sticky player column, group bands, sort header, tier fills",
+  "kind": "new-ui-on-existing-data",
+  "detail": "PoolTable has the sticky column; players-spreadsheet has group bands; the extra columns are the gap."
+ },
+ {
+  "feature": "Column tip modal with descriptions and 'Sort by this'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Full names exist in the research COLUMNS; descriptions are new copy."
+ },
+ {
+  "feature": "Descending-only sort chosen from the tip; hidden sort column; '\u2013' sorts as -1",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app toggles asc/desc on header tap and sinks nulls. Drop ascending on mobile? The hidden-sort and -1 behaviours look like prototype bugs."
+ },
+ {
+  "feature": "Tier colouring of cells (OPRK, +/-, Snap%, TgtSh etc.)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "OPRK_PILL and the new m-gg/m-tg/m-gr/m-tr/m-gb tokens exist; only applies to columns with data."
+ },
+ {
+  "feature": "Empty state copy",
+  "kind": "restyle-only",
+  "detail": "emptyCopy() already exists, per scope and search."
+ },
+ {
+  "feature": "Toast pill",
+  "kind": "restyle-only",
+  "detail": "ui/toast.tsx exists; pick 1.8s or 2.2s."
+ },
+ {
+  "feature": "Name tap opens player profile",
+  "kind": "restyle-only",
+  "detail": "PlayerLink opens the mini card first, then Expand (ruling 2026-10-05)."
+ },
+ {
+  "feature": "Proj / Avg / Tot columns",
+  "kind": "restyle-only",
+  "detail": "Served by usePoolValues."
+ },
+ {
+  "feature": "Position rank / overall rank columns",
+  "kind": "new-ui-on-existing-data",
+  "detail": "core-stats-service computes these for one player; expose them in the list values read."
+ },
+ {
+  "feature": "Rost% / Start% / +/- columns and list-line roster %",
+  "kind": "needs-new-backend",
+  "detail": "No platform-wide ownership/start/trend aggregates exist."
+ },
+ {
+  "feature": "OPRK column",
+  "kind": "new-ui-on-existing-data",
+  "detail": "defense_position_splits + oprkOf."
+ },
+ {
+  "feature": "Base stat columns (yards/TDs/INT, totals)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "player_stats columns / /api/players/builder; not fetched by the league page."
+ },
+ {
+  "feature": "Snap% and Target share columns",
+  "kind": "new-ui-on-existing-data",
+  "detail": "player_usage.snap_pct / target_share, season-level, QB/RB/WR/TE only."
+ },
+ {
+  "feature": "Touches, Opps, Cmp%, Catch%, Att, Sacks, Rush att, Tgt, Rec columns",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Stored or derived from player_stats box columns."
+ },
+ {
+  "feature": "Rush share column",
+  "kind": "needs-new-backend",
+  "detail": "Not stored; extend lib/sync/usage.ts with team rush-attempt sums."
+ },
+ {
+  "feature": "Air yds, pass aDOT, CPOE, YCO, RYOE, Broken tkl, RZ att, YAC, rec aDOT, YPRR columns",
+  "kind": "needs-new-backend",
+  "detail": "Advanced stats are punted until funded (stat-keys.ts); player_stats.advanced is empty."
+ },
+ {
+  "feature": "Transaction filters sheet: type chips (All/Trades/Free agents/Waivers)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The activity API supports a type CSV incl. waiver_claim and topic=trades; the Activity page uses tabs instead."
+ },
+ {
+  "feature": "Transaction filters sheet: Teams multi-select with avatars",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The activity API takes a single team_id (multi-select needs an extension); team colours are not stored (Crest = initials)."
+ },
+ {
+  "feature": "Dark mode for the Players tab and filters sheet",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme, but HEAD 27d455b adds a mobile-only dark switch (Chris 2026-10-15); confirm. Also fix the always-rendered white check and the low-contrast avatars."
+ },
+ {
+  "feature": "Dead ptab design (Search/Trending/Available/Leaders/Trade tabs, Adds/Drops, Recommended)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Unbound in the prototype markup; recommend not building it."
+ }
+]

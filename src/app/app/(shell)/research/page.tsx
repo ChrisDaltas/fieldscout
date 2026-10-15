@@ -4,6 +4,8 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { ResearchPlayersScreen, researchPosFromParam } from '@/components/mobile/players/research-players-screen'
 import { PlayersSpreadsheet } from '@/components/players/players-spreadsheet'
 
 const VALID_POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
@@ -11,15 +13,25 @@ const VALID_POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 /**
  * The canonical Players research surface (decision D2): the full stat table.
  * `/app/players` renders the same table until post-reskin consolidation.
+ * On the mobile layout it is the FieldScout Mobile account Players tab.
  */
 export default function ResearchPage() {
   return (
-    <>
-      <PageHeader title="Players" />
-      <Suspense fallback={null}>
-        <Research />
-      </Suspense>
-    </>
+    <ByLayout
+      desktop={
+        <>
+          <PageHeader title="Players" />
+          <Suspense fallback={null}>
+            <Research />
+          </Suspense>
+        </>
+      }
+      mobile={
+        <Suspense fallback={null}>
+          <MobileResearch />
+        </Suspense>
+      }
+    />
   )
 }
 
@@ -30,4 +42,9 @@ function Research() {
     ? (param as (typeof VALID_POSITIONS)[number])
     : 'All'
   return <PlayersSpreadsheet initialPosition={position} />
+}
+
+function MobileResearch() {
+  const searchParams = useSearchParams()
+  return <ResearchPlayersScreen initialPosition={researchPosFromParam(searchParams.get('position'))} />
 }

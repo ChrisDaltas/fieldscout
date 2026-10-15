@@ -1,0 +1,187 @@
+[
+ {
+  "feature": "League bottom dock (Match / Team / Players / League / Menu)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "bottom-tabs.tsx is app-wide (Home/Lists/Players/Search/More). League pages use a 6-tab sub-nav plus a More menu (league-shell-ops.ts). Every destination route exists; the league-specific dock and the 'League' grouping are new. It needs a pre-season disabled state (NOT_STARTED_REASON)."
+ },
+ {
+  "feature": "League \u203a League tab with Matchups / Standings / Activity segmented control",
+  "kind": "new-ui-on-existing-data",
+  "detail": "These are three separate routes today (/matchup, /standings, /activity). The Segment primitive exists in ui/tabs.tsx. The combined mobile tab is new; the sub-tab could be a URL param so it persists."
+ },
+ {
+  "feature": "Mobile league header (logo tile, Home, league name, Search, Notifications badge)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "league-shell.tsx's mobile header is the identity row plus sub-nav. Notifications have a real unreadCount (use-notifications.ts). Search opens the command palette, which has no league-manager (People \u2192 team) scope."
+ },
+ {
+  "feature": "Header Messages button + unread badge",
+  "kind": "needs-new-backend",
+  "detail": "DMs are mock data behind featureFlags.messages (rail/messages-panel.tsx). The badge count has no real source."
+ },
+ {
+  "feature": "League switcher card (swipe to switch, swipe-up/tap to open sheet, dots) + 'Switched to' toast",
+  "kind": "new-ui-on-existing-data",
+  "detail": "use-leagues.ts lists my leagues (name, avatar_url, my_team_id); the record comes from standings; the toast primitive exists. Showing a record for every league in the sheet needs N standings reads or a new field on GET /api/leagues."
+ },
+ {
+  "feature": "League-wide matchup cards for the week (yours first)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useMatchupsLive plus MatchupList ('Around the league') and league-home-season LiveScoreboard already render every matchup with live scores. Only the mobile card layout is new."
+ },
+ {
+  "feature": "Team record on matchup cards",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Join the standings read (wins/losses/ties via formatRecord) to the week's matchups."
+ },
+ {
+  "feature": "Win-probability bar and % on matchup cards",
+  "kind": "needs-new-backend",
+  "detail": "No source exists; code comments in matchup-view.tsx and league-home-season.tsx cite F566. WinProbMeter in league-cells.tsx is unused. Needs a server model and an API field."
+ },
+ {
+  "feature": "Live / projected league median card",
+  "kind": "needs-new-backend",
+  "detail": "league_weeks.median_score is stored only once every score of the week is in (MEDIAN_PENDING_TITLE). There is no live median and no projected median. Finished-week median exists. Show the card only when settings.median_game is on."
+ },
+ {
+  "feature": "Team avatar colours",
+  "kind": "out-of-scope-or-question",
+  "detail": "The teams table has no colour or avatar; Crest renders initials on neutral. Choose between a deterministic UI palette and a stored team colour or crest."
+ },
+ {
+  "feature": "Week selector on League \u203a Matchups",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype has no week label or selector. The app's WeekStrip (prev/next + Live / Final (pending corrections) badge) would be lost. I'd keep it."
+ },
+ {
+  "feature": "Matchup variants not in the prototype (byes, second-opponent, total-points leaderboard, playoff weeks, \u2738 overridden, delayed/reconnecting/stale banners, skeleton/error)",
+  "kind": "restyle-only",
+  "detail": "These exist in matchup-view.tsx and status-banners.tsx and need the mobile design language."
+ },
+ {
+  "feature": "Standings rows (rank, team, record, PF, @manager)",
+  "kind": "restyle-only",
+  "detail": "standings-table.tsx over the league_standings RPC, with managersByTeam and UsernameLink. The app also highlights the viewer's own row; I'd keep it."
+ },
+ {
+  "feature": "Standings rank movement since last week",
+  "kind": "needs-new-backend",
+  "detail": "league_standings(p_league_id) has no as-of-week argument and no rank snapshot exists. Needs an RPC argument, a per-week rank store, or a field in the standings document."
+ },
+ {
+  "feature": "Standings streak (\u25b2nW / \u25bcnL)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Derivable from stored per-week results (schedule read 'result', team_week_results.h2h_result). The server-authoritative posture suggests adding it to the standings RPC."
+ },
+ {
+  "feature": "Standings Waiver column '$FAAB (priority)'",
+  "kind": "restyle-only",
+  "detail": "faab_balance and waiver_priority are already on StandingsRow; today they render as a FAAB column plus a separate WaiverOrderList. Leagues that aren't FAAB need a priority-only variant."
+ },
+ {
+  "feature": "Playoff cutoff line + 'Top N make the playoffs' footer",
+  "kind": "new-ui-on-existing-data",
+  "detail": "settings.playoff_teams exists; the standings table draws no cutoff. Use the setting for N."
+ },
+ {
+  "feature": "Which desktop standings features survive on mobile",
+  "kind": "out-of-scope-or-question",
+  "detail": "Missing from the mobile design: Final|Projected toggle, Playoffs tab, tiebreaker chain, Win %, PA, vs-median and 2nd-opponent records, Placed-by chip, \u2738 adjusted marker and legend, coin-flip note, no_final_weeks copy, waiver order list."
+ },
+ {
+  "feature": "League \u203a Activity sub-tab content",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype renders only a Filter pill and no feed. The app has a full activity-page.tsx (All, Adds & drops, Trades, Commissioner, Stat corrections). I'd render the Transactions feed here."
+ },
+ {
+  "feature": "Commissioner log and Stat corrections on mobile",
+  "kind": "out-of-scope-or-question",
+  "detail": "Both are live features (activity-page.tsx CommishTab, corrections-view.tsx) with no home in the mobile design."
+ },
+ {
+  "feature": "Transactions screen (X \u2192 Team tab, title, Activity heading, Filter pill, list)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useLeagueActivityPages over GET /api/leagues/[id]/activity provides paging and realtime. The standalone mobile screen is new."
+ },
+ {
+  "feature": "Transaction row meta (manager, type pill, date, $ bid)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "add/drop/add_drop map to Free agency, waiver_claim to Waiver, trade to Trade. faab_bid is in the waiver payload; formatInstantWithDate exists. Manager comes via initiator_team_id and the members map."
+ },
+ {
+  "feature": "Per-player Added/Dropped lines with headshot team ring, short name, pos \u00b7 team",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Add/drop payloads carry player_id, name, position and nfl_team; PlayerAvatarImage and nfl-team-colors.ts exist. Headshots need a players lookup by id, and trade payloads lack position and team. The app shows a team logo for D/ST."
+ },
+ {
+  "feature": "How a trade row reads (sides / counterparty)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype shows one side with no counterparty. The trade payload has both sides (players from/to), FAAB legs and a summary."
+ },
+ {
+  "feature": "Commissioner moves, reversals, vetoes and system posts in Transactions",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype types are only Free agency, Waiver and Trade; the feed carries more."
+ },
+ {
+  "feature": "'My moves' variant from the Team 'Moves' tile",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Use the activity team_id filter. team-transactions-panel.tsx already merges pending, lost and invalid waiver claims; the prototype shows completed moves only. Decide whether pending claims stay."
+ },
+ {
+  "feature": "Team view 'Recent moves' + 'See all' \u2192 Transactions pre-filtered to one team",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The single team_id filter exists. team-page.tsx shows the transactions panel only on your own team today."
+ },
+ {
+  "feature": "Transactions empty state + 'Clear filter'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "New copy and a reset action. Existing TAB_EMPTY_COPY is different."
+ },
+ {
+  "feature": "Transactions paging ('Show older')",
+  "kind": "restyle-only",
+  "detail": "Composite-cursor paging exists in activity-feed.tsx; the prototype doesn't show it."
+ },
+ {
+  "feature": "Transaction filters bottom sheet chrome",
+  "kind": "restyle-only",
+  "detail": "ui/sheet.tsx side='bottom' exists. Backdrop is .32 in code and .4 in the README. Don't copy the prototype's spare spacer inside the sheet."
+ },
+ {
+  "feature": "Type chips filter (All / Trades / Free agents / Waivers)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Maps to the activity route's existing type list and topic=trades params."
+ },
+ {
+  "feature": "Teams multi-select filter",
+  "kind": "needs-new-backend",
+  "detail": "activityQuerySchema accepts a single team_id, refuses topic combined with a team, and matches initiator_team_id only, so the recipient side of a trade is missed. Needs a small route change."
+ },
+ {
+  "feature": "Filter pill with count 'Filter \u00b7 N'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "UI state only."
+ },
+ {
+  "feature": "Playoff bracket at top of League tab during playoffs",
+  "kind": "restyle-only",
+  "detail": "playoff-bracket.tsx and usePlayoffBracketLive exist (the app shows the bracket all season under Standings \u203a Playoffs and on the home hero). Placement is a minor call."
+ },
+ {
+  "feature": "Username and player links in standings and transactions",
+  "kind": "restyle-only",
+  "detail": "The prototype has no links. Project rules require UsernameLink everywhere and the player mini card on tap; reuse the existing components."
+ },
+ {
+  "feature": "Dark mode (spec \u00a76)",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme, no dark mode. Commit 27d455b in this worktree already adds mobile-only m-* light/dark tokens and theme-store.ts ('Chris, 2026-10-15 \u2014 dark mode is mobile-only'), so CLAUDE.md needs reconciling. The prototype's dark mode also has defects (median card, waiver chip, check glyph, switcher dot)."
+ },
+ {
+  "feature": "Status bar / notch / home indicator",
+  "kind": "out-of-scope-or-question",
+  "detail": "Mock device chrome; the real phone provides it. Don't build it."
+ }
+]

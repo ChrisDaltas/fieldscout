@@ -16,11 +16,11 @@ import { useUIStore } from '@/stores/ui-store'
  * Screens compose these into their own 48–56px header rows.
  */
 
-/** Logo tile (28px, radius 8, brand green) + "FieldScout" 19/700. */
+/** Logo tile (28px, radius 8, brand green #07D066, 15px mark) + "FieldScout" 19/700. */
 export function LogoLockup({ href = '/app', withWord = true }: { href?: string | null; withWord?: boolean }) {
   const body = (
     <span className="flex items-center gap-2">
-      <LogoTile size={28} />
+      <LogoTile size={28} markSize={15} className="bg-brand" />
       {withWord && <span className="text-[19px] font-bold tracking-[-0.03em] text-m-t1">FieldScout</span>}
     </span>
   )

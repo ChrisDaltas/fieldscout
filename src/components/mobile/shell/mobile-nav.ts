@@ -43,8 +43,36 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
   if (pathname === '/app') accountTab = 'home'
   else if (pathname.startsWith('/app/explore')) accountTab = 'community'
   else if (pathname.startsWith('/app/research') || pathname.startsWith('/app/players')) accountTab = 'players'
-  else if (pathname.startsWith('/app/profile') || pathname.startsWith('/app/stats')) accountTab = 'profile'
+  // Lists and Rankings open from Profile; the design lights Profile there.
+  else if (
+    ['/app/profile', '/app/stats', '/app/lists', '/app/weekly-ranks', '/app/big-board'].some(
+      (root) => pathname === root || pathname.startsWith(`${root}/`) || pathname.startsWith(`${root}?`),
+    )
+  )
+    accountTab = 'profile'
   return { leagueId: null, leagueTab: null, accountTab }
+}
+
+/**
+ * League pages with no FieldScout Mobile screen of their own yet, by the
+ * title their Menu row uses. The league shell gives these a plain mobile
+ * header (close + title) in place of the desktop league header. Null = the
+ * route draws its own mobile screen (the four tabs, Activity and its
+ * sub-screens, trades, team views, matchups).
+ */
+const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
+  [/^\/settings(\/|$)/, 'League settings'],
+  [/^\/schedule(\/|$)/, 'Schedule'],
+  [/^\/draft\/recap(\/|$)/, 'Draft results'],
+  [/^\/members(\/|$)/, 'Members'],
+  [/^\/commish(\/|$)/, 'Commissioner tools'],
+  [/^\/stats(\/|$)/, 'League stats'],
+]
+
+export function leagueFallbackTitle(pathname: string): string | null {
+  const rest = LEAGUE.exec(pathname)?.[2] ?? ''
+  for (const [re, title] of LEAGUE_FALLBACK_TITLES) if (re.test(rest)) return title
+  return null
 }
 
 export function leagueTabHref(leagueId: string, tab: LeagueTab, myTeamId: string | null): string {

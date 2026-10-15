@@ -1,0 +1,192 @@
+[
+ {
+  "feature": "Ranking record store (type w1-18/ros/pre x scoring x position, title, items with tier markers, from source+author, status, saved_at, submitted snapshot, show_on_profile, accuracy)",
+  "kind": "needs-new-backend",
+  "detail": "No such store exists. weekly_rankings (001) is unused by app code. It lacks scoring, type, status, title and source columns, its unique key is (user, season, week, position), and its RLS is SELECT true, which would expose unsubmitted rankings. big_board_weekly is one cross-position list per week. Needs a new or extended table with owner-only RLS before submit, a submitted snapshot separate from the private working copy, and soft delete."
+ },
+ {
+  "feature": "My rankings screen (#mine) and hub Mine tab",
+  "kind": "needs-new-backend",
+  "detail": "No route or component. Weekly-ranks history page says 'Submission records don't exist yet'. UI is straightforward once the record store exists; needs a new route and feature flag."
+ },
+ {
+  "feature": "Filter chips All/Submitted/Unsubmitted/Finalized with counts; status pills; Finalized display",
+  "kind": "needs-new-backend",
+  "detail": "Requires a per-ranking status (saved/submitted). Finalized should key off nfl_weeks.last_game_ends_at, not 'week < current'."
+ },
+ {
+  "feature": "Period grouping with open window current..current+3, locked weeks 'Opens in Week N', hidden past/pre-draft",
+  "kind": "new-ui-on-existing-data",
+  "detail": "getCurrentNflWeek (src/lib/sports-data/nfl-state.ts), the nfl_weeks table and week-tabs.tsx lock logic exist. Conflict: the app's weekly ranks open only the current week. The README and spec disagree on hiding Pre-draft, and neither defines offseason."
+ },
+ {
+  "feature": "Ranking card (meta line, 5-head stack, accuracy text)",
+  "kind": "needs-new-backend",
+  "detail": "started-from, savedAt, status and accuracy have no store. The headshot stack is a restyle of PlayerAvatarImage with team-colour ring (nfl-team-colors.ts)."
+ },
+ {
+  "feature": "Empty-period card with Start preset",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The prototype always presets PPR + RB via an unrendered mgScoring control. Needs a ruling on default scoring and position."
+ },
+ {
+  "feature": "New ranking step 1 (type cards, week chips, scoring, position grid, progress bar, step counter)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "New controls. The app supports Half-PPR (aggregate-fantasy.ts ScoringKey) but the spec offers only PPR/Standard. The counter reads 'of 3' on a two-step flow."
+ },
+ {
+  "feature": "Existing-ranking check -> 'Open my ranking'",
+  "kind": "needs-new-backend",
+  "detail": "Needs a unique key on (user, season, type, scoring, position); weekly_rankings' key lacks scoring and type."
+ },
+ {
+  "feature": "Scout AI source ranking (model ranking + updated time + per-player scores)",
+  "kind": "needs-new-backend",
+  "detail": "Nothing exists; weekly-ranks-view.tsx has TODO(scout-ai) and a 'coming soon' stub. player_weekly_projections (hourly Sleeper sync) and players.projected_pts_* could seed it. Whether Scout AI may be projection-ordered is a product call. Feeds the step 2 preview, auto tiers and the pick sheet 'Scout AI #n'."
+ },
+ {
+  "feature": "Expert consensus source ('Average of 5 experts')",
+  "kind": "needs-new-backend",
+  "detail": "No expert feed exists. persona_source_rankings is scraped and service-role only, and memory rules out scraping. AI persona boards are not real experts. Needs a data-source ruling."
+ },
+ {
+  "feature": "Users average source ('N submitted rankings')",
+  "kind": "needs-new-backend",
+  "detail": "consensus_rankings MV is season-long and built over all public lists. It is not split by week, type, scoring or position, and it is not built from submissions. Needs an aggregate plus count over submitted rankings (cred weighting per rule 9 if applicable)."
+ },
+ {
+  "feature": "Auto tiers (on start and as a tool)",
+  "kind": "needs-new-backend",
+  "detail": "The algorithm is a pure util (1.55x mean gap, at least 2 per tier, at most 7 breaks) but needs source scores. The tool also wipes manual lines without confirm and over-splits after reordering; needs a ruling."
+ },
+ {
+  "feature": "Tier lines as draggable divider markers (Tier N, colours, Merge tiers X, empty tiers, fixed Tier 1 header)",
+  "kind": "needs-new-backend",
+  "detail": "list_players.tier is a per-player bucket key (S-F, r1-r30, c1-c4; migration 081). It cannot express numeric Tier N, more than 6 tiers or empty tiers. Needs an ordered items array with markers or a tier-break table."
+ },
+ {
+  "feature": "Editor player row (rank, 26px headshot, short name, pos chip + opponent/bye, Pts/Avg/Pos rk, delta)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Season stats via aggregate-fantasy.ts and player_stats, opponent via nfl_games (use-nfl-week-games.ts), bye via players.bye_week, position rank as in players-spreadsheet.tsx. Delta logic resembles weekly-ranks-view.tsx. Short-name collisions and the zero-delta width shift need rulings."
+ },
+ {
+  "feature": "Drag reorder of players and tier lines",
+  "kind": "new-ui-on-existing-data",
+  "detail": "dnd-kit PointerSensor is already used (weekly-ranks-view.tsx, board-row.tsx, lists v2 use-list-drag.tsx) and works on touch. Do not copy the prototype's off-by-one downward drop or its invisible drop line over player rows."
+ },
+ {
+  "feature": "Editor header Save pill + footer status/Submit state machine",
+  "kind": "needs-new-backend",
+  "detail": "Needs status and saved_at. The explicit-save pattern exists in useSaveBigBoard. Prototype bugs to resolve: the Saved date doesn't update after a save, a never-saved ranking reads 'Saved just now', and a dirty Finalized ranking still reads 'Finalized'."
+ },
+ {
+  "feature": "Finalized/Submitted editability and resubmit semantics",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype lets a Finalized ranking be edited, which demotes it to Saved and clears its accuracy. docs/specs/spec-submissions-cred.md says submissions are an immutable frozen snapshot. Needs a ruling on locking at kickoff and on keeping the submitted snapshot."
+ },
+ {
+  "feature": "Leaving editor discards edits silently",
+  "kind": "out-of-scope-or-question",
+  "detail": "Needs a ruling: prompt, autosave, or keep as designed."
+ },
+ {
+  "feature": "Player row tap does nothing",
+  "kind": "out-of-scope-or-question",
+  "detail": "Conflicts with the memory rule that every player click opens the mini card first (use-open-player.ts). Tap and drag must also be told apart on touch."
+ },
+ {
+  "feature": "Zero-player submit, empty title, 'N tiers' counting empty tiers, singular forms",
+  "kind": "out-of-scope-or-question",
+  "detail": "Prototype allows all; needs validation rulings."
+ },
+ {
+  "feature": "Add players sheet (search, position chips, toggle add/remove, append at end)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players table, PlayerSearch (player-search.tsx), useAddPlayer/useRemovePlayer exist. /api/players/search matches names only, not team abbreviations, so filter the position pool on the client. Add a no-results state."
+ },
+ {
+  "feature": "Pick sheet 'Scout AI #n' rank and sort",
+  "kind": "needs-new-backend",
+  "detail": "Needs a Scout AI overall rank. players.adp could stand in until then; needs a ruling."
+ },
+ {
+  "feature": "Pick sheet quirks (All equals the ranking position, untrimmed search, bye players addable to weekly)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Needs a ruling. With the real schedule a bye player shows BYE, not a made-up opponent."
+ },
+ {
+  "feature": "Submit sheet point 'Published to Community \u00b7 Posted as @handle'",
+  "kind": "needs-new-backend",
+  "detail": "Community has no ranking content type: the explore feed reads public lists only (use-explore-feed.ts), and the community flag is OFF. Handle from profiles.username, rendered as a UsernameLink."
+ },
+ {
+  "feature": "Submit sheet 'Counts toward the Users average \u00b7 N other submissions' and confirmation '#N Submission'",
+  "kind": "needs-new-backend",
+  "detail": "Needs a submission count and sequence per ranking key."
+ },
+ {
+  "feature": "Accuracy grading (timing text, 'Top N% accuracy', 'Graded \u2026')",
+  "kind": "needs-new-backend",
+  "detail": "weekly_rankings.accuracy_score and cred_scores exist but nothing writes them. No grading cron exists in src/app/api/cron, and profile-stats.tsx shows accuracy as a placeholder. Pre-draft 'after Week 4' copy contradicts 'Opens for 2027 drafts'."
+ },
+ {
+  "feature": "'Show on my profile' toggle",
+  "kind": "needs-new-backend",
+  "detail": "Needs a per-ranking stored flag plus a profile section that reads it. The prototype stores it globally and it does nothing."
+ },
+ {
+  "feature": "Ranking submitted confirmation screen layout and 'Back to my rankings'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Layout only. The 'Accuracy graded' tile is derived from the ranking type and nfl_weeks."
+ },
+ {
+  "feature": "'View in Community' / community ranking view / 'Start my ranking from this'",
+  "kind": "needs-new-backend",
+  "detail": "Needs a public read of submitted rankings and stored from_user_id; the prototype loses the author on save and allows duplicates. The list duplicate route is an analogue only."
+ },
+ {
+  "feature": "Notification '@user updated <ranking>'",
+  "kind": "needs-new-backend",
+  "detail": "Needs a new notification type plus a trigger on submissions by followed users."
+ },
+ {
+  "feature": "Profile \u203a My stuff \u203a Rankings preview rows + 'New ranking' button",
+  "kind": "needs-new-backend",
+  "detail": "Profile currently shows RankingHistoryCard (big-board snapshots). The prototype rows are hard-coded and should read real records. Whether a row opens that ranking needs a ruling."
+ },
+ {
+  "feature": "Routes for #mine, #new-ranking, #view-<id>, #rankings",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Map to real Next routes with URL and back history, unlike the prototype's one-shot hash read. Needs a new feature flag; weeklyRanks, bigBoard and consensus are all OFF."
+ },
+ {
+  "feature": "Exit/back destinations and the Profile tab's return to the pre-flow source",
+  "kind": "out-of-scope-or-question",
+  "detail": "Every prototype exit lands on League \u203a Match because the main app ignores the hash. Real targets need a ruling."
+ },
+ {
+  "feature": "Tab bar for this area (Home/Community/Leagues/Profile, 84px, avatar ring)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The current mobile bar is Home/Lists/Players/Search/More, 64px ink (bottom-tabs.tsx). The prototype has two conflicting bars (this file vs main app). Community and Leagues are flag-gated."
+ },
+ {
+  "feature": "No route from My rankings to Lists or hub (rootSeg unrendered) and other computed-but-unrendered prototype bits",
+  "kind": "out-of-scope-or-question",
+  "detail": "rootSeg, mgNote, mgScoring, per-period sub/fg/ring/bg, newRank and row up/down/remove are computed but never rendered. Do not build them without a ruling."
+ },
+ {
+  "feature": "Relationship to existing Big Board / Weekly ranks / Consensus and the draft room",
+  "kind": "out-of-scope-or-question",
+  "detail": "The draft room reads the single season Big Board (use-draft-pool.ts). The spec's pre-draft is per position \u00d7 scoring and 'Syncs to the draft room'. Keep, migrate or retire the existing boards?"
+ },
+ {
+  "feature": "Launch scope for mobile rankings",
+  "kind": "out-of-scope-or-question",
+  "detail": "Rankings and Community are outside the 2026 go-live scope and flag-OFF. Free-only applies: no Pro gate per rule 4, and the '2 submissions/week' cap in spec-submissions-cred.md is stale."
+ },
+ {
+  "feature": "Mobile restyle primitives (toast, bottom sheet without animation, switch, 16px position chip with D/ST label, FSHeadshot variant, 84px dock spacer, tier/pos-text colour tokens, tnum/cv11)",
+  "kind": "restyle-only",
+  "detail": "Restyle in place in ui/toast.tsx, ui/sheet.tsx, ui/switch.tsx, position-badge.tsx, player-image.tsx and app-shell.tsx. Add the tier colours (#4A68D4 #8656D8 #C98A1F #E03E3E #5E8C8C) and #A68A00 as tokens. The m-* light/dark tokens already landed."
+ }
+]

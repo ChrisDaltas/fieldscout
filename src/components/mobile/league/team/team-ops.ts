@@ -1,0 +1,344 @@
+/**
+ * FieldScout Mobile — League › Team, Team view and the trade screens: the
+ * pure half (handoff spec `docs/design/mobile/m-team.md`). Formatting and
+ * derivation only — every rule (lineup legality, locks, trade legality) stays
+ * the app's own ops (`lineup-editor-ops.ts`, `trades-ops.ts`) and the
+ * server's. Nothing here reads a clock: relative times and ages are computed
+ * against an instant the caller passes (a read's own `evaluated_at`).
+ */
+import type { ActivityItem } from '@/lib/leagues/api/activity-service'
+import type { SlotInstance } from '@/components/leagues/lineup-editor-ops'
+import type { StandingsRow } from '@/lib/leagues/api/standings-service'
+import { oprkOf, oprkRankedCount, oprkTone, type Tone } from '@/components/leagues/my-team-ops'
+import { teamAvatarClass } from '@/components/mobile/league/match/match-ops'
+import { positionFillClass } from '@/components/players/position-badge'
+
+// ---------------------------------------------------------------------------
+// Names and numbers
+// ---------------------------------------------------------------------------
+
+/** 1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st, 22nd, 23rd (handoff `ord`). */
+export function ord(n: number): string {
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`
+  switch (n % 10) {
+    case 1:
+      return `${n}st`
+    case 2:
+      return `${n}nd`
+    case 3:
+      return `${n}rd`
+    default:
+      return `${n}th`
+  }
+}
+
+/** "B. Robinson" (handoff `short`). Unchanged when the first word already
+ *  has a "." ("A.J. Brown"), for a team defense, or for a one-word name. */
+export function shortName(full: string, position?: string | null): string {
+  const name = full.trim()
+  if (position === 'DEF' || position === 'DST' || /D\/ST$/.test(name)) return name
+  const parts = name.split(/\s+/)
+  if (parts.length < 2) return name
+  if (parts[0].includes('.')) return name
+  return `${parts[0][0]}. ${parts.slice(1).join(' ')}`
+}
+
+/** A projection with 2 decimals ("19.71"), or the en dash. */
+export function proj2(n: number | null | undefined): string {
+  return n === null || n === undefined || !Number.isFinite(n) ? '–' : n.toFixed(2)
+}
+
+// ---------------------------------------------------------------------------
+// Slot chips (handoff "Slot chip colours")
+// ---------------------------------------------------------------------------
+
+/** The short code a slot chip prints: "QB", "FLEX", "D/ST", "BN". */
+export function slotCode(slot: Pick<SlotInstance, 'label' | 'slotKey' | 'eligible' | 'kind'>): string {
+  if (slot.kind === 'start') {
+    if (slot.eligible.length === 1) {
+      const pos = slot.eligible[0]
+      if (pos === 'DST' || pos === 'DEF') return 'D/ST'
+      return pos
+    }
+  }
+  const first = slot.label.split(/[\s(]+/)[0] ?? slot.label
+  const code = first.toUpperCase()
+  return code.length > 5 ? code.slice(0, 4) : code
+}
+
+/** The bench chip — a literal #EDEDF0 / #1D1D1F in both themes (handoff). */
+export const BENCH_CHIP_CLASS = 'bg-surface-hover text-ink'
+
+/** A slot chip's fill: the position's colour for a one-position seat, ink
+ *  (FLEX — flips in dark) for a multi-position seat, the bench grey for IR. */
+export function slotChipClass(slot: Pick<SlotInstance, 'eligible' | 'kind'>): string {
+  if (slot.kind === 'ir') return BENCH_CHIP_CLASS
+  if (slot.eligible.length === 1) {
+    const pos = slot.eligible[0]!
+    return (pos !== 'FLEX' && positionFillClass(pos)) || 'bg-m-ink text-white'
+  }
+  return 'bg-m-ink text-white'
+}
+
+/** "RB", "D/ST" — a player's position as the rows print it. */
+export function posCode(position: string | null | undefined): string {
+  if (!position) return ''
+  return position === 'DEF' || position === 'DST' ? 'D/ST' : position
+}
+
+// ---------------------------------------------------------------------------
+// Team avatars — the handoff's per-team colour circle (§5 TEAMS: one colour
+// per team everywhere). Teams have no stored colour, so the colour is
+// DERIVED by the Match tab's rule (`teamAvatarClass`, match-ops.ts) — the
+// viewer's own team is always the accent blue (#0088FF) and every other team
+// takes the next palette colour in league order (`detail.teams`, oldest
+// first) with yours left out — so a team reads the same colour on Match,
+// Standings, the Team tab, the Team view and the trade screens.
+// ---------------------------------------------------------------------------
+
+/** The league's team ids in league order — `detail.teams` as the league
+ *  read returns them (created_at ascending), the order Match / League use. */
+export function teamOrder(teams: ReadonlyArray<{ id: string }>): string[] {
+  return teams.map((t) => t.id)
+}
+
+/** A team's avatar fill. Pass the viewer's team as `myTeamId` (null = the
+ *  viewer manages no team here: nobody is blue). A caller that doesn't pass
+ *  it yet (undefined) keeps this file's earlier anchor — the league's first
+ *  team is the blue one — until it does. */
+export function teamAvClass(teamId: string, order: readonly string[], myTeamId?: string | null): string {
+  return teamAvatarClass(order, teamId, myTeamId === undefined ? (order[0] ?? null) : myTeamId)
+}
+
+/** A team avatar's letter: the first character of the name. */
+export function teamInitial(name: string | null | undefined): string {
+  const c = (name ?? '').trim()[0]
+  return c ? c.toUpperCase() : '?'
+}
+
+// ---------------------------------------------------------------------------
+// Standings lines
+// ---------------------------------------------------------------------------
+
+export function recordText(row: Pick<StandingsRow, 'wins' | 'losses' | 'ties'>): string {
+  return `${row.wins}-${row.losses}${row.ties ? `-${row.ties}` : ''}`
+}
+
+/** 1-based rank of a value among the rows, highest first (ties share). */
+function rankBy(rows: readonly StandingsRow[], teamId: string, value: (r: StandingsRow) => number): number | null {
+  const me = rows.find((r) => r.team_id === teamId)
+  if (!me) return null
+  return rows.filter((r) => value(r) > value(me)).length + 1
+}
+
+/** "2-6 · 11th · PF 12th · PA 10th" — PF / PA ranks once a game has been
+ *  played (before that every team ties and the ranks say nothing). */
+export function summaryLine(rows: readonly StandingsRow[], teamId: string): string | null {
+  const me = rows.find((r) => r.team_id === teamId)
+  if (!me) return null
+  const parts = [recordText(me), ord(me.rank)]
+  if (me.games > 0) {
+    const pf = rankBy(rows, teamId, (r) => r.points_for)
+    const pa = rankBy(rows, teamId, (r) => r.points_against)
+    if (pf !== null) parts.push(`PF ${ord(pf)}`)
+    if (pa !== null) parts.push(`PA ${ord(pa)}`)
+  }
+  return parts.join(' · ')
+}
+
+/** "W3" / "L2" / "T1" from the decided weeks, newest first — null before
+ *  any result. `result` is the stored `home` / `away` / `tie`. */
+export function streakOf(
+  matchups: ReadonlyArray<{ week: number; home_team_id: string; away_team_id: string | null; result: string | null }>,
+  teamId: string,
+): { text: string; kind: 'W' | 'L' | 'T' } | null {
+  const mine = matchups
+    .filter((m) => m.away_team_id !== null && (m.home_team_id === teamId || m.away_team_id === teamId) && (m.result === 'home' || m.result === 'away' || m.result === 'tie'))
+    .sort((a, b) => b.week - a.week)
+  const outcome = (m: (typeof mine)[number]): 'W' | 'L' | 'T' =>
+    m.result === 'tie' ? 'T' : (m.result === 'home') === (m.home_team_id === teamId) ? 'W' : 'L'
+  if (mine.length === 0) return null
+  const first = outcome(mine[0])
+  let n = 0
+  for (const m of mine) {
+    if (outcome(m) !== first) break
+    n += 1
+  }
+  return { text: `${first}${n}`, kind: first }
+}
+
+// ---------------------------------------------------------------------------
+// The game line — "Sun 1:00 PM vs DET", "Q4 6:50 @ DEN", "Final W 31-20 @ GB"
+// ---------------------------------------------------------------------------
+
+export interface GameLineGame {
+  home_team: string
+  away_team: string
+  kickoff_at: string
+  status: string | null
+  home_score: number | null
+  away_score: number | null
+  quarter: number | null
+  game_clock: string | null
+}
+
+export type GameLine =
+  | { kind: 'game'; text: string; opp: string; started: boolean }
+  | { kind: 'bye'; text: 'BYE' }
+  | { kind: 'unknown' }
+
+/** Weekday + time of a stored kickoff, viewer-local ("Sun 1:00 PM"). */
+export function kickoffText(iso: string): string {
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return ''
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(ms)).replace(',', '')
+}
+
+export function gameLine(nflTeam: string | null | undefined, games: readonly GameLineGame[]): GameLine {
+  if (!nflTeam || games.length === 0) return { kind: 'unknown' }
+  const g = games.find((x) => x.home_team === nflTeam || x.away_team === nflTeam)
+  if (!g) return { kind: 'bye', text: 'BYE' }
+  const home = g.home_team === nflTeam
+  const opp = home ? g.away_team : g.home_team
+  const where = `${home ? 'vs' : '@'} ${opp}`
+  const mine = home ? g.home_score : g.away_score
+  const theirs = home ? g.away_score : g.home_score
+  if (g.status === 'final') {
+    if (mine === null || theirs === null) return { kind: 'game', text: `Final ${where}`, opp, started: true }
+    const wl = mine > theirs ? 'W' : mine < theirs ? 'L' : 'T'
+    return { kind: 'game', text: `Final ${wl} ${mine}-${theirs} ${where}`, opp, started: true }
+  }
+  if (g.status === 'live') {
+    const clock = [g.quarter !== null ? `Q${g.quarter}` : null, g.game_clock].filter(Boolean).join(' ')
+    return { kind: 'game', text: `${clock || 'Live'} ${where}`, opp, started: true }
+  }
+  const k = kickoffText(g.kickoff_at)
+  return { kind: 'game', text: k ? `${k} ${where}` : where, opp, started: false }
+}
+
+/** OPRK as the rows print it: "(9th)" in the band colour (red = tough). */
+export function oprkSpan(
+  splits: ReadonlyArray<{ defense: string; position: string; rank: number }>,
+  line: GameLine,
+  position: string,
+): { text: string; tone: Tone } | null {
+  if (line.kind !== 'game') return null
+  const r = oprkOf(splits, line.opp, position)
+  if (r === null) return null
+  return { text: `(${ord(r)})`, tone: oprkTone(r, oprkRankedCount(splits, position)) }
+}
+
+/** The handoff's rank colours: red #FF0028, orange #FF8A00, green #07A852. */
+export const TONE_TEXT: Record<Tone, string> = {
+  negative: 'text-negative-strong',
+  caution: 'text-warn',
+  positive: 'text-positive-strong',
+}
+
+// ---------------------------------------------------------------------------
+// Moves (team view "Recent moves", "My moves")
+// ---------------------------------------------------------------------------
+
+export interface MoveRow {
+  id: string
+  kind: 'Added' | 'Dropped'
+  playerId: string | null
+  name: string
+  at: string | null
+}
+
+function side(p: unknown): { id: string | null; name: string } | null {
+  if (!p || typeof p !== 'object') return null
+  const o = p as { name?: unknown; player_id?: unknown }
+  const name = typeof o.name === 'string' && o.name !== '' ? o.name : typeof o.player_id === 'string' ? o.player_id : null
+  if (!name) return null
+  return { id: typeof o.player_id === 'string' ? o.player_id : null, name }
+}
+
+/** Transactions flattened to one row per add / drop (handoff `tv.moves`). */
+export function moveRows(items: readonly ActivityItem[]): MoveRow[] {
+  const out: MoveRow[] = []
+  for (const item of items) {
+    if (item.kind !== 'transaction' || item.status !== 'complete') continue
+    const payload = item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload) ? (item.payload as { add?: unknown; drop?: unknown }) : null
+    if (!payload) continue
+    const add = side(payload.add)
+    const drop = side(payload.drop)
+    if (add) out.push({ id: `${item.id}:add`, kind: 'Added', playerId: add.id, name: add.name, at: item.created_at })
+    if (drop) out.push({ id: `${item.id}:drop`, kind: 'Dropped', playerId: drop.id, name: drop.name, at: item.created_at })
+  }
+  return out
+}
+
+/** The team view's "Recent moves" (handoff §2.3 8): the newest `n`
+ *  transactions that went through, one row per add / drop. A transaction
+ *  that didn't complete is skipped BEFORE counting — it never takes the
+ *  place of an older move. `count` is how many transactions were used. */
+export function recentMoveRows(items: readonly ActivityItem[], n: number): { rows: MoveRow[]; count: number } {
+  const rows: MoveRow[] = []
+  let count = 0
+  for (const item of items) {
+    if (count >= n) break
+    const r = moveRows([item])
+    if (r.length === 0) continue
+    rows.push(...r)
+    count += 1
+  }
+  return { rows, count }
+}
+
+/** "Oct 10" — a stored instant's month and day, viewer-local. */
+export function monthDay(iso: string | null): string {
+  if (!iso) return ''
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return ''
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(ms))
+}
+
+// ---------------------------------------------------------------------------
+// Times against a read's own instant
+// ---------------------------------------------------------------------------
+
+/** "8m", "5h", "Tue", "Sep 24" — how long before `nowIso` (the read's own
+ *  `evaluated_at`) an instant was. */
+export function sinceText(iso: string, nowIso: string): string {
+  const at = Date.parse(iso)
+  const now = Date.parse(nowIso)
+  if (Number.isNaN(at)) return ''
+  if (Number.isNaN(now)) return monthDay(iso)
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000))
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  if (hours < 24 * 6) return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(new Date(at))
+  return monthDay(iso)
+}
+
+/** Whole years from a birth date to an instant (the trades read's
+ *  `evaluated_at`); null when either is unreadable. */
+export function ageOn(birthDate: string | null | undefined, atIso: string | null | undefined): number | null {
+  if (!birthDate || !atIso) return null
+  const b = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthDate)
+  const a = /^(\d{4})-(\d{2})-(\d{2})/.exec(atIso)
+  if (!b || !a) return null
+  const [by, bm, bd] = [Number(b[1]), Number(b[2]), Number(b[3])]
+  const [ay, am, ad] = [Number(a[1]), Number(a[2]), Number(a[3])]
+  let age = ay - by
+  if (am < bm || (am === bm && ad < bd)) age -= 1
+  return age >= 0 && age < 80 ? age : null
+}
+
+/** Stable position order for the builder grid: QB → RB → WR → TE → K → D/ST. */
+const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DST']
+export function byPositionOrder<T extends { position: string }>(players: readonly T[]): T[] {
+  const rank = (p: string) => {
+    const i = POS_ORDER.indexOf(p)
+    return i < 0 ? POS_ORDER.length : i
+  }
+  return players
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => rank(a.p.position) - rank(b.p.position) || a.i - b.i)
+    .map((x) => x.p)
+}

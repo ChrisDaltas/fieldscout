@@ -1,0 +1,162 @@
+[
+ {
+  "feature": "Mobile shell frame (no TopNav, per-screen headers, dock overlay, safe-area insets)",
+  "kind": "restyle-only",
+  "detail": "app-shell.tsx always renders TopNav and the 64px ink BottomTabs (Home/Lists/Players/Search/More, lime active). The mob: variant and m-* tokens (27d455b) aren't used anywhere. The app has no viewport-fit=cover or env(safe-area-inset-*) handling, which the status bar, home indicator and the 30px/26px bottom paddings need."
+ },
+ {
+  "feature": "Dock tab set and active-state rule",
+  "kind": "out-of-scope-or-question",
+  "detail": "This file: Home/Community/Leagues/Profile with Profile always lit. Main app and README: Home/Community/Players/Profile, lighting the current tab. App: Home/Lists/Players/Search/More. Community and Leagues are flagged off. Needs a ruling, and the avatar size differs (24px here, 22px in the main app)."
+ },
+ {
+  "feature": "Root header back target (Profile > My stuff)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Back is wired to Profile (goProfile), and the main app reaches Lists and Rankings from Profile > My stuff. The app's /app/profile is 'My stats' and has no My stuff section."
+ },
+ {
+  "feature": "Bottom sheet mobile variant",
+  "kind": "restyle-only",
+  "detail": "ui/sheet.tsx needs a mobile bottom variant: grab handle, title/sub-line and action pill in the header, max height 86%, backdrop .4, radius 22, no X, no animation. It conflicts with the main app's sheet spec (radius 24, title 19/600, backdrop .32)."
+ },
+ {
+  "feature": "Toast mobile style",
+  "kind": "out-of-scope-or-question",
+  "detail": "Spec: full-width card inset 16px, 100px from the bottom, 13/600, 2200ms, no animation. Main app: centred pill, 1800ms. App today: 11px pill, 4500ms, slides. Needs a ruling on which to copy."
+ },
+ {
+  "feature": "Headshot team ring and fill",
+  "kind": "restyle-only",
+  "detail": "player-image.tsx has no team-colour ring, #EEEEF1 fill or scale/translate crop. Team map in nfl-team-colors.ts differs for SEA (#69BE28 vs spec #002244). D/ST shows a logo in the app but initials in the spec."
+ },
+ {
+  "feature": "POSTXT and TIERC colour tokens; D/ST label",
+  "kind": "restyle-only",
+  "detail": "Text-on-white position colours (#E03E3E, #4A68D4, #8656D8, #C98A1F, #5E8C8C, #A68A00) and the tier colours aren't in tailwind.config.ts. Position badges say DEF where the spec displays D/ST."
+ },
+ {
+  "feature": "Underline tabs, flow header with progress bar, chip/pill/segment/radio variants (a)-(x), switch tiles",
+  "kind": "restyle-only",
+  "detail": "Add CVA variants to tabs.tsx, button.tsx, badge.tsx and switch.tsx to match exactly, including blue vs ink selected states per group."
+ },
+ {
+  "feature": "Stroke icon set for mobile",
+  "kind": "out-of-scope-or-question",
+  "detail": "The handoff icons are stroked (viewBox 16), but ui/icon.tsx says filled glyphs only, never outline. Needs a ruling to add a mobile stroke set (chevrons, X, plus, check, search, play, copy, import, auto tiers, add tier, bars, clock, collage, upload, video, grip, dock glyphs)."
+ },
+ {
+  "feature": "Season stat columns Pts/Avg/Pos rk and opponent/bye sub-line on rows",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Data exists in aggregate-fantasy.ts, core-stats-service.ts (pos rank), nfl_games (use-nfl-week-games) and players.bye_week. Needs a batched per-row fetch for hub, editor and list rows."
+ },
+ {
+  "feature": "Compare columns: Experts / Scout AI / Users rank per player",
+  "kind": "needs-new-backend",
+  "detail": "There is no expert consensus (ECR) feed: expert_profiles exist but nothing ingests into them, and memory rules out scraping. There is no Scout AI per-player ranking (the weekly-ranks-view TODO says so). consensus_rankings is overall only, not per week, position or scoring."
+ },
+ {
+  "feature": "Rank movement arrows for ROS/pre-draft",
+  "kind": "needs-new-backend",
+  "detail": "Needs stored history of each source's rankings. big_board_snapshots is per user only."
+ },
+ {
+  "feature": "Ranking record model (type w/ros/pre x scoring x position, from, status, title)",
+  "kind": "needs-new-backend",
+  "detail": "The app has one overall weekly board per (user, season, week) via big_board_weekly, plus the pre-draft big board. There is no ROS type, no per-scoring ranking and no source/status fields. The weekly_rankings table from migration 001 is unused."
+ },
+ {
+  "feature": "Save vs Submit statuses (Saved/Submitted/Finalized), editable window current..+3, locked weeks",
+  "kind": "needs-new-backend",
+  "detail": "weekly-ranks Submit is just a reorder save. The history page says no submissions table or API exists. Future weeks are never fetched because the server would auto-create them."
+ },
+ {
+  "feature": "Accuracy grading ('Graded after Monday night', 'Top 18% accuracy')",
+  "kind": "needs-new-backend",
+  "detail": "cred_scores and weekly_rankings.accuracy_score columns exist, but no grading job or cron route does."
+ },
+ {
+  "feature": "Publishing rankings to Community (Done > View in Community, #view-rN author view, Start my ranking from this, search/notification ranking links)",
+  "kind": "needs-new-backend",
+  "detail": "There are no public user rankings and the community flag is off. Follow should use the follows table (user to user), not the prototype's per-ranking key."
+ },
+ {
+  "feature": "Wizard start-from sources and 'Open my ranking' lookup",
+  "kind": "needs-new-backend",
+  "detail": "Blank works today. Scout AI and Experts need the ranking backend. Users needs a consensus per type and position. The lookup needs the ranking record model."
+ },
+ {
+  "feature": "Placeholder counters and timestamps (5 experts, 2,418 user rankings, #2,419 submission, updated times, follower counts)",
+  "kind": "needs-new-backend",
+  "detail": "Each counter needs a real aggregate from the ranking backend."
+ },
+ {
+  "feature": "Editor draft + Save model vs app autosave",
+  "kind": "out-of-scope-or-question",
+  "detail": "Lists persist every change through the API (reorder, tier, bulk routes). The spec edits a draft, saves explicitly and discards on back with no prompt. Needs a ruling."
+ },
+ {
+  "feature": "Editor delta column and auto-tier breaks() algorithm",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The delta is client-only. No auto-tier code exists, so breaks() should be ported as a pure util, scoring by projected points until a Scout AI score exists."
+ },
+ {
+  "feature": "Tier line rows (draggable markers, merge X, grip, static Tier 1, sticky list-view labels)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list_players.tier, the tier route and list-buckets.ts exist. Needs a mapping from per-player tier labels to between-row markers."
+ },
+ {
+  "feature": "Ranked and Tiers as independent toggles",
+  "kind": "needs-new-backend",
+  "detail": "lists.ranking_mode is an enum (unranked/ranked/rank_and_tier) and can't store 'tiers on, ranked off'. Needs a small schema change or a ruling to disallow that combination."
+ },
+ {
+  "feature": "Touch drag behaviour on mobile",
+  "kind": "out-of-scope-or-question",
+  "detail": "The spec only covers HTML5 mouse drag. use-list-drag.tsx already uses a TouchSensor with a 220ms long-press; confirm that as the mobile rule. The drop indicator only shows on tier rows (prototype quirk)."
+ },
+ {
+  "feature": "List colour swatch",
+  "kind": "needs-new-backend",
+  "detail": "lists has no colour column; colour comes from position_filter (POS_TINTS). The t1 swatch turns white in dark mode."
+ },
+ {
+  "feature": "List stats columns and timeframe saved on the list",
+  "kind": "out-of-scope-or-question",
+  "detail": "list-display-store is session-only by the D3 ruling, pinned by a test. The spec saves stats and tf on the list. Week/Last 3/Season totals can be computed from weekly player_stats."
+ },
+ {
+  "feature": "Add-stats catalogue (25 stats)",
+  "kind": "needs-new-backend",
+  "detail": "STAT_CATALOG has 7. Route %, rush share, YAC, aDOT, YPRR, YCO/att and RYOE have no data source. ECR/Scout AI/Users columns need the ranking backend. Snap % and target share exist in player_usage."
+ },
+ {
+  "feature": "Pick sheet search: team-code match, browse by position, Scout AI sort",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/api/players/search only matches by name, sorts by ADP and caps at 50. Exact team code needs a small route tweak. Scout AI rank waits on the backend; ADP is the stand-in."
+ },
+ {
+  "feature": "Rankings routes (hub, My rankings, new ranking) and deep-link mapping",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/app/lists and /app/lists/new exist. No rankings hub, mine or new-ranking routes; /app/weekly-ranks is gated by the weeklyRanks flag. Recommend real routes with browser history instead of the prototype's read-once hash model."
+ },
+ {
+  "feature": "Rankings side at launch",
+  "kind": "out-of-scope-or-question",
+  "detail": "The weeklyRanks, bigBoard and consensus flags are off and launch scope is Lists + Stats + AI stat lists. Decide whether the mobile Rankings hub ships."
+ },
+ {
+  "feature": "Dark mode toggle placement",
+  "kind": "new-ui-on-existing-data",
+  "detail": "theme-store and the head script exist, but there is no toggle UI. The spec only has one in the jump panel; the README puts it on Profile."
+ },
+ {
+  "feature": "App list features absent from the spec (AI generation, folders, side-by-side, comments, likes, drafted marks, visibility, tags, create fields)",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md requires keeping AI list generation and restyling it. Needs mobile placement for each feature."
+ },
+ {
+  "feature": "Accessibility, pressed states, animations, quirks (Done screen 42px low, Pre-draft always in type menu, Edit details unreachable, My stuff rows open the grid not the item)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Rule on which prototype quirks to copy exactly and which to fix. Recommend keeping semantic buttons and focus-visible."
+ }
+]

@@ -1,0 +1,242 @@
+[
+ {
+  "feature": "Mobile navigation model (routes vs in-memory overlays, back stack)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype keeps navigation in setState with a prevScr stack; the app uses Next routes. Someone must decide which overlays (team view, profile, trade, page, search) get URLs, and that browser back replaces prevScr. player-modal-url-sync.tsx already exists for the player modal."
+ },
+ {
+  "feature": "Safe-area handling for the dock and home indicator",
+  "kind": "restyle-only",
+  "detail": "No env(safe-area-inset-*) usage anywhere in src or tailwind.config.ts. The mobile dock and sheets need it."
+ },
+ {
+  "feature": "Outside tab bar composition (Home/Community/Players/Profile)",
+  "kind": "out-of-scope-or-question",
+  "detail": "bottom-tabs.tsx is Home/Lists/Players/Search/More. The design drops Lists (the launch's core surface), makes Players a dead toast while /app/players research is live, and puts Community (flag off at launch) as a primary tab."
+ },
+ {
+  "feature": "League-context tab bar (Match/Team/Players/League/Menu)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "All destination routes exist (league-shell-ops.ts leagueTabs/leagueMoreItems), but BottomTabs is static and on mobile the league sub-nav renders inside the page."
+ },
+ {
+  "feature": "Dock league switcher card + swipe gestures",
+  "kind": "new-ui-on-existing-data",
+  "detail": "top-nav.tsx LeagueSwitcher is desktop-only. MyLeagueRow (use-leagues.ts) lacks my team name, record, draft date and scoring format; widen GET /api/leagues from teams/standings/drafts. No pointer-gesture primitive exists."
+ },
+ {
+  "feature": "Switch league bottom sheet",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The same memberships as the dropdown, presented as a sheet with team/record rows and a check mark."
+ },
+ {
+  "feature": "Mobile bottom-sheet variant",
+  "kind": "restyle-only",
+  "detail": "ui/sheet.tsx side=bottom exists (bg-black/40, border-t). It needs the mobile CVA variant: radius 24 top, grab handle, title row, Done footer, leagues X."
+ },
+ {
+  "feature": "Compact league header (Home button, league name, search, bell, chat)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "It replaces LeagueIdentity (team crest, record and rank badges, commissioner-override indicator). Someone must decide where those go."
+ },
+ {
+  "feature": "Chat icon + unread DM badge",
+  "kind": "needs-new-backend",
+  "detail": "messages-panel.tsx is mock behind featureFlags.messages and dmUnreadCount is 0. There are no DM tables, and league_chat has no read state."
+ },
+ {
+  "feature": "Messages screen and Conversation screen (DMs)",
+  "kind": "needs-new-backend",
+  "detail": "There is no DM backend. The Trades segment could use real trades (use-trades.ts, trade-center.tsx), and the league group thread could use league_chat (use-league-chat.ts)."
+ },
+ {
+  "feature": "Global search scopes, recent searches, trending pills, league-member results",
+  "kind": "new-ui-on-existing-data",
+  "detail": "command-palette.tsx has Players/Lists/Users/Go to. Scope chips, the recents store, trending pills and current-league member results (opening the team page) are new. Start/sit post results need a backend."
+ },
+ {
+  "feature": "Menu sheet with My team card, league items and FieldScout grid",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Map rows to settingsHref sections, draft/recap, corrections, /app, /app/explore, /app/stats or /app/research, /app/profile and /app/settings. The prototype toasts Stats, Settings and Stat corrections, but those pages exist."
+ },
+ {
+  "feature": "My team avatar colour / photo upload",
+  "kind": "needs-new-backend",
+  "detail": "The teams Row has no avatar or colour column. Rename already exists (/api/leagues/[id]/teams/[tid]/name)."
+ },
+ {
+  "feature": "League history and Previous seasons",
+  "kind": "needs-new-backend",
+  "detail": "leagues has only a season column. There is no renew or parent-league link, and the spec has no renewal."
+ },
+ {
+  "feature": "League notification preferences (Menu > Notifications)",
+  "kind": "needs-new-backend",
+  "detail": "There is no prefs table. The prototype only shows a 'screen coming next' toast."
+ },
+ {
+  "feature": "Co-owners",
+  "kind": "needs-new-backend",
+  "detail": "The team_managers.role CHECK allows only 'manager'. The spec reserves co_manager for post-v1."
+ },
+ {
+  "feature": "Commissioner note",
+  "kind": "out-of-scope-or-question",
+  "detail": "No note field exists, and the prototype only toasts. Commissioner system posts already appear in activity."
+ },
+ {
+  "feature": "Mobile doors for League Home, Trades center, Members/invites, Commissioner console, pre-draft Draft room",
+  "kind": "out-of-scope-or-question",
+  "detail": "These app pages have no entry in the design's tabs or menu."
+ },
+ {
+  "feature": "Swipeable matchup carousel with dots",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The week's matchups exist (use-matchups.ts, matchup/[mid]). The carousel and gesture are new, and a click-suppression rule is needed."
+ },
+ {
+  "feature": "Win probability (Match card, Home cards)",
+  "kind": "needs-new-backend",
+  "detail": "No win-probability source or computation exists."
+ },
+ {
+  "feature": "Live-play row and Live game feed (play-by-play, game chips, per-game box score)",
+  "kind": "needs-new-backend",
+  "detail": "teams/[teamId]/live is a PlaceholderPage. box-score-service.ts has only quarter, game_clock and scores; there are no play events and no down/distance."
+ },
+ {
+  "feature": "'Yet to play' counts",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Derive from the box-score starter phases (up_next/live/final)."
+ },
+ {
+  "feature": "Team tile News",
+  "kind": "needs-new-backend",
+  "detail": "injury-news-card.tsx is mock and no news feed is synced."
+ },
+ {
+  "feature": "Team tile Schedule",
+  "kind": "new-ui-on-existing-data",
+  "detail": "schedule-view.tsx and /schedule exist. The prototype toasts."
+ },
+ {
+  "feature": "Lineup swap bottom sheet",
+  "kind": "new-ui-on-existing-data",
+  "detail": "planMove and the Move menu in lineup-editor(-ops) already enforce eligibility, locks and IR. The work is a new slot-chip-to-sheet presentation."
+ },
+ {
+  "feature": "Players filter popover (status, period, NFL team) and view toggle List/Cards/Sheet",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players-page-ops.ts has only free_agents/rostered/all scopes, positions without FLEX, and a single table view. Waivers and My team derive from Availability; the period filter can use player_stats weeks and seasons."
+ },
+ {
+  "feature": "Customize stats sheet and col tip with Sort by this",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Reuse players-spreadsheet.tsx grouped column defs, player_usage and defense_position_splits. The Ownership % group needs a backend aggregate."
+ },
+ {
+  "feature": "Trending adds/drops (Home segment, league Players trending card)",
+  "kind": "needs-new-backend",
+  "detail": "trending-players-card.tsx uses projection vs last season as a stand-in (TODO(data)). There is no adds/drops trend source."
+ },
+ {
+  "feature": "League tab segmented Matchups/Standings/Activity",
+  "kind": "new-ui-on-existing-data",
+  "detail": "These are separate routes today (matchup, standings, activity). The mobile tab consolidates them."
+ },
+ {
+  "feature": "Transaction filters sheet + Transactions screen (My moves / League, Filter \u00b7 N)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "activity-page-ops.ts tabs and transactions.type (mig 109) support type filtering. A team filter exists only on the Commissioner tab."
+ },
+ {
+  "feature": "Team view 'Message' and trade detail 'Message <@mgr>'",
+  "kind": "needs-new-backend",
+  "detail": "Both need DMs."
+ },
+ {
+  "feature": "Player profile tabs Transactions / Team / History + Recent news",
+  "kind": "new-ui-on-existing-data",
+  "detail": "player-detail-page-view.tsx has Full stats/Game log/Scoring/Draft & value. The new tabs are UI on existing data, except news, which has no feed."
+ },
+ {
+  "feature": "Player click opens full profile directly",
+  "kind": "out-of-scope-or-question",
+  "detail": "A memory rule says every player click opens the mini card first and Expand opens the full view. The design skips the mini card."
+ },
+ {
+  "feature": "Trade offer expiry select",
+  "kind": "needs-new-backend",
+  "detail": "The trades table has an 'expired' status but no per-offer expires_at that a proposer can choose."
+ },
+ {
+  "feature": "Trade 'Send as DM' toggle",
+  "kind": "needs-new-backend",
+  "detail": "Depends on DMs."
+ },
+ {
+  "feature": "Trade 'Hide usernames for screenshots'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "A client-only display toggle."
+ },
+ {
+  "feature": "Draft-pick assets in trades",
+  "kind": "needs-new-backend",
+  "detail": "trade_items holds a player XOR a FAAB amount; there are no pick legs."
+ },
+ {
+  "feature": "Start-or-sit composer (multi-option polls, trade questions, roster attach) and My start/sit screen",
+  "kind": "needs-new-backend",
+  "detail": "The start-or-sit pages are PlaceholderPage. start_sit_questions has only player_a/player_b and no API exists in src."
+ },
+ {
+  "feature": "List composer step 1/2 in mobile form",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list-form-dialog.tsx and list_links exist. The step flow and recommended players are new UI."
+ },
+ {
+  "feature": "List colour",
+  "kind": "needs-new-backend",
+  "detail": "lists has no colour column (only thumbnail_url)."
+ },
+ {
+  "feature": "Community screen tabs, shelves, inline search, list detail Follow/Save/Share",
+  "kind": "new-ui-on-existing-data",
+  "detail": "explore-feed.tsx, follows, list_favorites, list_links and /api/search/community exist. The poll content needs the start/sit backend, and community is flag-off at launch."
+ },
+ {
+  "feature": "Profile screen Rankings/Lists/Start-Sit segment",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/app/profile is 'My stats'; /u/[username] is the public profile. Rankings is flag-gated and start/sit needs a backend."
+ },
+ {
+  "feature": "Home league matchup cards with live score",
+  "kind": "new-ui-on-existing-data",
+  "detail": "LeagueIndexCard shows only name, season, size and role. It needs per-league current matchup and score reads; win % needs a backend."
+ },
+ {
+  "feature": "Injury news rows",
+  "kind": "needs-new-backend",
+  "detail": "injury-news-card.tsx uses mock rows. Only players.status (the designation) is real."
+ },
+ {
+  "feature": "Dark mode toggle (Profile pill) and \u00a76 dark tokens",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme with no toggle, but commit 27d455b adds mobile-only --m-* dark tokens and theme-store.ts ('Chris 2026-10-15'). There is no toggle UI yet. Someone needs to decide which is current and update CLAUDE.md."
+ },
+ {
+  "feature": "Flag-gated dock and menu entries",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype assumes community, messages, leagues, startOrSit and weeklyRanks are all on. Someone should decide what the bars and menus show when each flag is off at launch."
+ },
+ {
+  "feature": "Pre-draft / offseason league navigation",
+  "kind": "out-of-scope-or-question",
+  "detail": "leagueTabs disables Matchup/Schedule/Stats before the season. The design only defines in-season Match/Team/League tabs."
+ },
+ {
+  "feature": "Notification badge colour",
+  "kind": "restyle-only",
+  "detail": "The design uses red (#FF0028) for notifications and blue for messages. The app's bell badge is accent blue."
+ }
+]

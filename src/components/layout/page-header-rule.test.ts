@@ -49,6 +49,15 @@ const EXCEPTIONS: Record<string, string> = {
     'A section header inside a card (13px h3), not a page header.',
 }
 
+/**
+ * FieldScout Mobile screens (the mobile handoff) each design their own header
+ * row — logo lockup, back pill, title, actions — and the shell's AppHeader is
+ * desktop-only (hidden in the mobile layout; `ByLayout` renders one tree), so
+ * a mobile screen owns its `<h1>` / `<header>`. A–C don't apply under this
+ * folder; D and E still do.
+ */
+const MOBILE_SCREENS = 'src/components/mobile/'
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const full = path.join(dir, name)
@@ -104,7 +113,7 @@ describe('F577 / D487 — page headers are the standard PageHeader', () => {
       const offenders = files
         .map(rel)
         .filter((f) => rule.test(code(f)))
-        .filter((f) => !(rule.pinnable && f in EXCEPTIONS))
+        .filter((f) => !(rule.pinnable && (f in EXCEPTIONS || f.startsWith(MOBILE_SCREENS))))
       expect(offenders).toEqual([])
     })
   }

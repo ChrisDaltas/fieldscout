@@ -15,15 +15,8 @@ export function initials(name: string): string {
     .toUpperCase()
 }
 
-/**
- * League avatar colours, cycled by the league's position in your list —
- * the handoff's LEAGUES palette (ink, purple, blue, gold). Gold takes ink
- * text (handoff §2.2: avFg is #1D1D1F on #ECAD48).
- */
-const LEAGUE_AV = ['bg-m-ink text-white', 'bg-pos-wr text-white', 'bg-pos-rb text-white', 'bg-pos-te text-ink']
-export function leagueAvClass(index: number): string {
-  return LEAGUE_AV[index % LEAGUE_AV.length]!
-}
+/** League avatar colours — the shared mobile palette. */
+export { leagueAvClass } from '@/components/mobile/ui/avatar-colors'
 
 /**
  * What the switcher card and the Switch league sheet show for one league:

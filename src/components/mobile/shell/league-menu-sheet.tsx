@@ -51,7 +51,7 @@ export function LeagueMenuSheet({
     { label: 'Notifications', icon: 'bell' },
     { label: 'Co-owners', sub: 'None', icon: 'coowners' },
     { label: 'Commissioner note', icon: 'news' },
-    { label: 'Stat corrections', icon: 'corrections', href: `${base}/corrections` },
+    { label: 'Stat corrections', icon: 'corrections', href: `${base}/activity/corrections` },
     ...(isCommish ? [{ label: 'Commissioner tools', icon: 'gear', href: `${base}/commish` } as MenuRow] : []),
   ]
   const apps: Array<{ label: string; icon: MIconName; href: string }> = [

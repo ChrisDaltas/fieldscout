@@ -28,8 +28,8 @@ const FULL_BLEED_PREFIXES: readonly string[] = ['/app/lists/']
 
 /** v7 shell — the 48px top bar across the whole app, then a row of: left
  *  rail · content column (draft bar + page title band + scrolling main) ·
- *  right-side bar. Phones get the same top bar plus the bottom tabs until
- *  the mobile pass. */
+ *  right-side bar. The mobile layout drops the top bar, rails and page title
+ *  band for the FieldScout Mobile bottom dock. */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const createListOpen = useUIStore((s) => s.isCreateListOpen)

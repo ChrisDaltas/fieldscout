@@ -10,6 +10,8 @@ import { WaiverAddsCard } from '@/components/home/waiver-adds-card'
 import { YourLeagues } from '@/components/home/your-leagues'
 import { PageHeader } from '@/components/layout/app-header'
 import { TwoColumnLayout } from '@/components/layout/two-column-layout'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileHome } from '@/components/mobile/home/mobile-home'
 import { featureFlags } from '@/lib/feature-flags'
 
 /**
@@ -22,6 +24,11 @@ import { featureFlags } from '@/lib/feature-flags'
  * `page-header-rule.test.ts`), with the quick actions as its v7 pills.
  */
 export default function AppHomePage() {
+  // Mobile has its own Home (FieldScout Mobile — `components/mobile/home`).
+  return <ByLayout desktop={<DesktopHome />} mobile={<MobileHome />} />
+}
+
+function DesktopHome() {
   return (
     <div className="space-y-[31px]">
       <PageHeader title="Home" actions={<HomeQuickActions />} />

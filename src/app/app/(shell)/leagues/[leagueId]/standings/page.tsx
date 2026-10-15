@@ -1,4 +1,6 @@
 import { StandingsPage, type StandingsTab } from '@/components/leagues/standings-page'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileLeagueTab } from '@/components/mobile/league/league/league-tab'
 
 export const metadata = { title: 'Standings · FieldScout' }
 
@@ -15,10 +17,18 @@ interface StandingsRouteProps {
  * The "Playoffs" tab (L.D5.5 — spec §16.1 v2.16.25: the bracket ALL SEASON,
  * "what it would be if the playoffs started today") is the same page;
  * `?tab=playoffs` opens it (the league home's hero deep-links it).
+ *
+ * Mobile (FieldScout Mobile handoff): League › Standings; `?tab=playoffs`
+ * shows the bracket over the table.
  */
 export default async function LeagueStandingsRoute({ params, searchParams }: StandingsRouteProps) {
   const { leagueId } = await params
   const { tab } = await searchParams
   const initialTab: StandingsTab = tab === 'playoffs' ? 'playoffs' : 'standings'
-  return <StandingsPage leagueId={leagueId} initialTab={initialTab} />
+  return (
+    <ByLayout
+      desktop={<StandingsPage leagueId={leagueId} initialTab={initialTab} />}
+      mobile={<MobileLeagueTab leagueId={leagueId} segment="standings" standingsTab={initialTab} />}
+    />
+  )
 }

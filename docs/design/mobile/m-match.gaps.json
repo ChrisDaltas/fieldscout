@@ -1,0 +1,202 @@
+[
+ {
+  "feature": "League header Messages bubble + DM unread badge",
+  "kind": "needs-new-backend",
+  "detail": "DMs are mock data behind featureFlags.messages (rail/messages-panel.tsx). There is no DM table or API, so the bubble and badge can only show mock data."
+ },
+ {
+  "feature": "Notification badge lifecycle / 'Mark all read'",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app clears unread when /app/notifications opens (notifications-feed.tsx). The design keeps the badge until 'Mark all read' is tapped. The API (POST /api/notifications/read with no ids) supports either; needs a ruling."
+ },
+ {
+  "feature": "Global search scope chips (All/Players/People/Posts)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "command-palette.tsx groups players, lists and users but has no scope filter, and none of the per-scope caps (All 5/4/4, single scope 30)."
+ },
+ {
+  "feature": "Global search Recent searches",
+  "kind": "new-ui-on-existing-data",
+  "detail": "There is no store. Per-device localStorage is enough (a convenience); cross-device would need a table."
+ },
+ {
+  "feature": "Global search Trending chips",
+  "kind": "needs-new-backend",
+  "detail": "No trending-topics computation exists."
+ },
+ {
+  "feature": "Global search player owner label (Your team / team / Waivers / Free agent)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Rosters and waivers reads exist per league. A global search spans several leagues, so it needs a rule for which league (or show the label only inside a league)."
+ },
+ {
+  "feature": "Global search People: league managers + follower counts",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The league_members, follows and expert_follows tables exist, and /api/search/community already returns users. Grouping managers as 'Team \u00b7 your league' and showing follower counts is new UI."
+ },
+ {
+  "feature": "Global search Posts (Start or sit / Ranking / List / Poll)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Community and start-or-sit are flag-gated out of the 2026 launch, and polls have no backend. Only lists are searchable today."
+ },
+ {
+  "feature": "Match tab as the league's default landing",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app opens a league on League Home (league-shell-ops.ts leagueTabs). The design opens on Match. This is an IA call."
+ },
+ {
+  "feature": "Per-team avatar colours on the matchup card",
+  "kind": "out-of-scope-or-question",
+  "detail": "The teams table has no colour or avatar column, and Crest renders initials on grey. Needs a deterministic palette rule or a stored team colour."
+ },
+ {
+  "feature": "Team record on the matchup card meta line",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useStandings + formatRecord already exist (used in league-shell.tsx). The Scoreboard doesn't read standings yet."
+ },
+ {
+  "feature": "Team streak (\u25b28W / \u25bc2L)",
+  "kind": "needs-new-backend",
+  "detail": "The standings document (standings-service.ts / 117) has no streak, and the client must not compute it. PROGRESS F566 is open."
+ },
+ {
+  "feature": "Win-probability bar + '% win' (matchup card and feed header strip)",
+  "kind": "needs-new-backend",
+  "detail": "There is no win-probability model. WinProbMeter exists in league-cells.tsx but is unused, and matchup-view.render.test.ts pins 'nothing invented'. F566 is open; whether to have a model is a product call."
+ },
+ {
+  "feature": "Swipe between matchups + pager dots",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useMatchupsLive returns all of the week's matchups and /matchup/[mid] routes exist; today other matchups are a list ('Around the league'). Needs the pointer-capture swipe, overflow-x clip, tap suppression after a drag, and 30px dot hit areas."
+ },
+ {
+  "feature": "Re-tap Match resets to your matchup",
+  "kind": "new-ui-on-existing-data",
+  "detail": "selectedMatchup already defaults to the viewer's matchup when there is no mid. This only needs the new tab bar."
+ },
+ {
+  "feature": "Live-play row on the matchup card",
+  "kind": "needs-new-backend",
+  "detail": "No play-by-play source exists (sync-live ingests Sleeper stat lines and nflverse game status only), so it can't show the latest play, situation or fantasy delta."
+ },
+ {
+  "feature": "'Yet to play: N \u00b7 positions' line per side",
+  "kind": "new-ui-on-existing-data",
+  "detail": "yetToPlayCount exists (live weeks, from BoxStarter.phase). The position list can be built from the same box starters; the work is moving it into the card."
+ },
+ {
+  "feature": "Bye week '(bye)' in starter meta",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players.bye_week exists, but the box-score read's BoxStarter.player doesn't select it."
+ },
+ {
+  "feature": "Live game feed screen (route + shell)",
+  "kind": "needs-new-backend",
+  "detail": "No route or API exists, and the feed's core content (plays, situation, field) has no data source."
+ },
+ {
+  "feature": "Feed game picker cards (NFL games with live score/clock/status)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "nfl_games has scores, quarter, game_clock, status and kickoff_at, but it is only read per starter inside box-score-service.ts. Needs a thin read of the week's games (no new table)."
+ },
+ {
+  "feature": "TV network on game cards/header (FOX/CBS)",
+  "kind": "needs-new-backend",
+  "detail": "nfl_games has no network column and the provider doesn't ingest it."
+ },
+ {
+  "feature": "Feed game header: team tiles, scores, live clock",
+  "kind": "new-ui-on-existing-data",
+  "detail": "nfl_games plus NFL_TEAM_COLORS (src/lib/nfl-team-colors.ts) cover tiles, scores, quarter and clock."
+ },
+ {
+  "feature": "NFL team records ('3-2') in feed game header",
+  "kind": "needs-new-backend",
+  "detail": "Not stored. It could be derived server-side from final nfl_games rows."
+ },
+ {
+  "feature": "Possession + down & distance in feed header",
+  "kind": "needs-new-backend",
+  "detail": "Not in nfl_games and not provided by the Sleeper/nflverse ingestion."
+ },
+ {
+  "feature": "Field strip (ball spot, first-down line, end zones, label)",
+  "kind": "needs-new-backend",
+  "detail": "Needs drive and field-position data that isn't ingested."
+ },
+ {
+  "feature": "'My players' feed view and card (Following N players, N new plays)",
+  "kind": "needs-new-backend",
+  "detail": "The followed set (your and your opponent's starters) can be built from box reads, but the plays need a play-by-play feed."
+ },
+ {
+  "feature": "Play-by-play rows (situation, clock, title, TD pill, stat lines, gain, yard bar, New pill + fresh tint)",
+  "kind": "needs-new-backend",
+  "detail": "Needs a play-by-play provider plus realtime per-play pushes. Realtime today only carries matchups scores_updated, and spec \u00a79.1 never broadcasts per-player stat lines."
+ },
+ {
+  "feature": "Per-play fantasy points + owning team colouring",
+  "kind": "needs-new-backend",
+  "detail": "Needs per-play scoring attribution; league_week_player_points stores weekly points only. 'Mine' must be decided by team id, not a name string."
+ },
+ {
+  "feature": "Play row tap \u2192 stat detail",
+  "kind": "out-of-scope-or-question",
+  "detail": "Q1: the prototype has no stat-detail view. Recommendation: open the mini player card per the house rule. Needs a ruling on a separate sheet."
+ },
+ {
+  "feature": "Play by play / Box score segmented control",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The Segment pattern exists (ui/tabs.tsx). Only the Box score half has buildable data."
+ },
+ {
+  "feature": "Box score player groups (Passing / Rushing / Receiving per NFL game)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "player_stats carries game_id (ingested in lib/sync/ingest-week.ts) and every needed column (completions/attempts, yards, TDs, ints, carries, receptions). Needs a read grouped by game_id."
+ },
+ {
+  "feature": "Box score team stats table (total yards, first downs, 3rd down, turnovers, possession)",
+  "kind": "needs-new-backend",
+  "detail": "There is no team-game stats table. Only passing, rushing and turnover sums can be derived from player_stats; first downs, 3rd-down conversions and possession time can't."
+ },
+ {
+  "feature": "Undesigned feed states (pre-game, halftime, final, no live games, loading, error)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Q12: the prototype freezes at 'Q4 0:00' with the live dot still on. nfl_games.status supports scheduled/live/final, but the design language has to be extended."
+ },
+ {
+  "feature": "Play reactions and comments",
+  "kind": "out-of-scope-or-question",
+  "detail": "Q7: the dead PLAYS data and the fire/laugh/clap icons are never rendered. A ruling is needed, and a backend if wanted."
+ },
+ {
+  "feature": "Dock league switcher card (swipe to switch league, swipe-up/tap Switch league sheet)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useLeagues lists memberships, but the switcher is a desktop-only dropdown (top-nav.tsx LeagueSwitcher, desk:flex). Switching navigates to the other league's route, so content re-scopes (resolves Q10)."
+ },
+ {
+  "feature": "In-league bottom tab bar (Match / Team / Players / League / Menu)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "All target pages exist. Mobile today shows the global bottom-tabs.tsx (Home/Lists/Players/Search/More) plus the league sub-nav (Home, My Team, Matchup, Players, Schedule, Stats + More) at the top of the page."
+ },
+ {
+  "feature": "League tab IA mapping (6 tabs + More \u2192 5 dock items)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Needs a ruling on where League Home, Schedule and Stats/Standings go ('League' vs 'Menu'), and whether the league dock replaces the global bottom tabs inside a league."
+ },
+ {
+  "feature": "Dark mode (.fs-dark tokens, theme toggle)",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md rules a single blended theme with no dark/light toggle. Don't build it; \u00a76's dark-mode defects are moot."
+ },
+ {
+  "feature": "README vs prototype conflicts (toast 1800ms vs 2.2s, backdrop .32 vs .4, segmented shadow, slot chip radius)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Q9 needs rulings, which should follow the v13 fs-* tokens. A resting segmented shadow is fine only on v13 surfaces; elsewhere elevation is hover-only."
+ },
+ {
+  "feature": "Status bar / Dynamic Island / home indicator",
+  "kind": "out-of-scope-or-question",
+  "detail": "Device chrome; a web app doesn't render it. Q11: leave the home indicator to the OS."
+ }
+]
