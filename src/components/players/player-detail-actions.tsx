@@ -23,6 +23,10 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
 export interface PlayerListContext {
   listId: string
   listTitle: string
+  /** Set by an editor holding a draft (the phone list editor, where Update
+   *  saves and Back discards): "Remove from list" takes the player out of
+   *  that draft instead of writing at once. */
+  removeFromDraft?: (playerId: string) => void
 }
 
 interface PlayerDetailActionsProps {

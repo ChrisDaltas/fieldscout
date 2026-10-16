@@ -37,7 +37,6 @@ export function ListPickerSheet({
   const router = useRouter()
   const qc = useQueryClient()
   const { data, isPending, isError } = useLists(1, 50)
-  const remove = useRemovePlayer(listContext?.listId ?? '')
   const [working, setWorking] = useState(false)
   const lists = data?.lists ?? []
 
@@ -92,17 +91,10 @@ export function ListPickerSheet({
     }
   }
 
-  const removeFromList = () => {
-    if (!listContext) return
-    remove.mutate(playerId, {
-      onSuccess: () => {
-        toast({ title: 'Removed from list', description: `${playerName} · ${listContext.listTitle}` })
-        onOpenChange(false)
-        onRemoved()
-      },
-      onError: (err) => toast({ title: 'Could not remove', description: err.message, variant: 'destructive' }),
-    })
-  }
+  const removal = useListRemoval(listContext, playerId, playerName, () => {
+    onOpenChange(false)
+    onRemoved()
+  })
 
   return (
     <MobileSheet open={open} onOpenChange={onOpenChange} title="Add to list" subtitle={playerName}>
@@ -110,15 +102,15 @@ export function ListPickerSheet({
         {listContext && (
           <button
             type="button"
-            onClick={removeFromList}
-            disabled={remove.isPending}
+            onClick={removal.remove}
+            disabled={removal.pending}
             className="flex min-h-[52px] items-center gap-3 rounded-[14px] px-2 text-left text-negative-strong active:bg-m-b2 disabled:opacity-40"
           >
             <span className="flex size-8 flex-none items-center justify-center rounded-[9px] bg-m-gr">
               <MIcon name="drop" size={14} stroke={2.2} />
             </span>
             <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">
-              {remove.isPending ? 'Removing…' : `Remove from ${listContext.listTitle}`}
+              {removal.pending ? 'Removing…' : `Remove from ${listContext.listTitle}`}
             </span>
           </button>
         )}
@@ -163,4 +155,47 @@ export function ListPickerSheet({
       </div>
     </MobileSheet>
   )
+}
+
+/** How the profile's "Remove from list" acts: not offered (no list), on the
+ *  list editor's draft (saved by Update, undone by Back), or at once. */
+export function removeMode(listContext: PlayerListContext | null | undefined): 'none' | 'draft' | 'now' {
+  if (!listContext) return 'none'
+  return listContext.removeFromDraft ? 'draft' : 'now'
+}
+
+/**
+ * "Remove from list" for the phone profile — the header's Remove pill and
+ * this sheet's row. From the list editor it acts on the editor's draft (gone
+ * from the list now, saved by Update, undone by Back); from a list the viewer
+ * owns it removes at once.
+ */
+export function useListRemoval(
+  listContext: PlayerListContext | null | undefined,
+  playerId: string,
+  playerName: string,
+  onDone: () => void,
+) {
+  const remove = useRemovePlayer(listContext?.listId ?? '')
+  const mode = removeMode(listContext)
+  return {
+    mode,
+    pending: remove.isPending,
+    remove: () => {
+      if (!listContext || mode === 'none') return
+      if (mode === 'draft') {
+        listContext.removeFromDraft!(playerId)
+        toast({ title: 'Removed from list', description: 'Tap Update to save' })
+        onDone()
+        return
+      }
+      remove.mutate(playerId, {
+        onSuccess: () => {
+          toast({ title: 'Removed from list', description: `${playerName} · ${listContext.listTitle}` })
+          onDone()
+        },
+        onError: (err) => toast({ title: 'Could not remove', description: err.message, variant: 'destructive' }),
+      })
+    },
+  }
 }

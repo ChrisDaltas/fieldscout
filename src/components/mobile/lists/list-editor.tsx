@@ -112,10 +112,10 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  * - **Ranked off + Tiers on can't be stored** (`ranking_mode` has three
  *   values), so turning Tiers on turns Ranked on, and Ranked off turns Tiers
  *   off. A list holds at most six tiers (S–F), so Add tier line stops there.
- * - **A tap on a player opens their profile.** Inside the editor it opens
- *   without the list's "Remove from list" (that writes at once, around the
- *   draft); players come out through Add players here, and the List view's
- *   profile still offers Remove.
+ * - **A tap on a player opens their profile**, with "Remove from list"
+ *   (Chris, 2026-10-15): inside the editor it takes him out of the draft —
+ *   gone from the list at once, saved by Update, undone by Back — like the
+ *   ✓ in Add players. The List view's profile removes at once.
  * - Import a ranking is left out: the app has no rankings to import yet.
  */
 export function ListEditor({
@@ -389,6 +389,15 @@ function EditorBody({
         : addToDraft(current, player, list.id),
     )
 
+  // A tap on a player opens his full profile (the phone has no mini card)
+  // with "Remove from list" acting on this draft.
+  const openPlayer = (playerId: string) =>
+    usePlayerModalStore.getState().openPlayerView(playerId, null, {
+      listId: list.id,
+      listTitle: draft.title || list.title,
+      removeFromDraft: (id) => edit((current) => removeFromDraft(current, id)),
+    })
+
   // ------------------------------------------------------------- the exits --
 
   const update = () => {
@@ -586,6 +595,7 @@ function EditorBody({
               locked={saving}
               lineOf={lineOf}
               onMove={(from, to) => arrange(moveItem(items, from, to))}
+              onOpen={openPlayer}
               onMerge={(index) => {
                 const item = items[index]
                 if (item.t !== 'tier') return
@@ -682,6 +692,7 @@ function DragRows({
   lineOf,
   onMove,
   onMerge,
+  onOpen,
 }: {
   items: EdItem[]
   ranked: boolean
@@ -693,6 +704,8 @@ function DragRows({
   lineOf: (entry: ListPlayerWithPlayer) => { pts: number; games: number } | undefined
   onMove: (from: number, to: number) => void
   onMerge: (index: number) => void
+  /** A tap on a player row: open his profile. */
+  onOpen: (playerId: string) => void
 }) {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -758,6 +771,7 @@ function DragRows({
               posRank={ranks ? (ranks.get(item.entry.player_id) ?? null) : undefined}
               line={lineOf(item.entry)}
               blockClick={justDragged}
+              onOpen={onOpen}
             />
           ) : item.t === 'tier' ? (
             <TierLineBody number={tierNumber.get(item.id) ?? 2} disabled={locked} onMerge={() => onMerge(index)} />
@@ -781,6 +795,7 @@ function DragRows({
                 posRank={ranks ? (ranks.get(active.entry.player_id) ?? null) : undefined}
                 line={lineOf(active.entry)}
                 blockClick={justDragged}
+                onOpen={onOpen}
               />
             ) : active.t === 'tier' ? (
               <TierLineBody number={tierNumber.get(active.id) ?? 2} disabled onMerge={() => undefined} />
@@ -838,6 +853,7 @@ function PlayerRowBody({
   posRank,
   line,
   blockClick,
+  onOpen,
 }: {
   entry: ListPlayerWithPlayer
   number: number | null
@@ -847,6 +863,7 @@ function PlayerRowBody({
    *  read loads (blank, never "–"). */
   line: { pts: number; games: number } | undefined
   blockClick: React.MutableRefObject<boolean>
+  onOpen: (playerId: string) => void
 }) {
   const player = entry.player
   const games = line?.games ?? 0
@@ -863,10 +880,10 @@ function PlayerRowBody({
       tabIndex={0}
       onClick={() => {
         if (blockClick.current) return
-        openPlayer(entry.player_id)
+        onOpen(entry.player_id)
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') openPlayer(entry.player_id)
+        if (event.key === 'Enter') onOpen(entry.player_id)
       }}
       aria-label={`${player.full_name}: tap for player details, long press to drag.`}
       className="flex min-h-[46px] items-center gap-[9px] border-b border-m-b2 bg-m-b0 py-1 pl-1 pr-2"
@@ -892,13 +909,6 @@ function PlayerRowBody({
   )
 }
 
-// The player profile opens through the shared store (on mobile it is the full
-// profile — the design has no mini card). No list context from the editor:
-// the profile's "Remove from list" writes at once, which would go around the
-// draft (and Update would put him back). Removing is Add players' ✓ here.
-function openPlayer(playerId: string) {
-  usePlayerModalStore.getState().openPlayerView(playerId, null, null)
-}
 
 function TierLineBody({ number, disabled = false, onMerge }: { number: number; disabled?: boolean; onMerge: () => void }) {
   const index = number - 1

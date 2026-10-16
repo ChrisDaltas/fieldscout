@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type MutableRefObject } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
-import { ListPickerSheet } from '@/components/mobile/player/list-picker-sheet'
+import { ListPickerSheet, useListRemoval } from '@/components/mobile/player/list-picker-sheet'
 import { PlayerMoveSheet, type MoveSheetKind } from '@/components/mobile/player/player-move-sheet'
 import { LeaguesTab, QueueButton, TransactionsTab } from '@/components/mobile/player/profile-leagues'
 import {
@@ -209,6 +209,9 @@ export function ProfileLoaded({ data, target, onClose }: { data: PlayerStatsResp
 
   const [tab, setTab] = useState<Tab>('summary')
   const [sheet, setSheet] = useState<Sheet>(null)
+  // Opened from your list (its view, or the editor's draft): a visible
+  // "Remove" beside "+ List" (Chris, 2026-10-15).
+  const removal = useListRemoval(target.listContext, player.id, player.full_name, onClose)
   const [builder, setBuilder] = useState<Builder>(null)
   // The Game log's season: reset when a profile opens, kept across tabs (§3).
   const [logYear, setLogYear] = useState(season)
@@ -260,6 +263,7 @@ export function ProfileLoaded({ data, target, onClose }: { data: PlayerStatsResp
         draftLeagueName={draft?.leagueId ? (ctx.leagues.find((l) => l.id === draft.leagueId)?.name ?? null) : null}
         onClose={onClose}
         onList={() => setSheet({ kind: 'list' })}
+        removal={removal}
         onMove={openMove}
         onTrade={openTrade}
       />
@@ -474,6 +478,7 @@ function ProfileHeader({
   draftLeagueName,
   onClose,
   onList,
+  removal,
   onMove,
   onTrade,
 }: {
@@ -485,6 +490,8 @@ function ProfileHeader({
   draftLeagueName: string | null
   onClose: () => void
   onList: () => void
+  /** "Remove from list" when the profile was opened from the viewer's list. */
+  removal: ReturnType<typeof useListRemoval>
   onMove: (kind: MoveSheetKind, leagueId: string) => void
   onTrade: (leagueId: string, teamId: string) => void
 }) {
@@ -524,6 +531,18 @@ function ProfileHeader({
           <MIcon name="add" size={11} stroke={2.4} />
           List
         </button>
+        {removal.mode !== 'none' && (
+          <button
+            type="button"
+            onClick={removal.remove}
+            disabled={removal.pending}
+            aria-label={`Remove ${player.full_name} from the list`}
+            className="flex h-[30px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-negative-strong disabled:opacity-40"
+            data-profile-remove
+          >
+            {removal.pending ? 'Removing…' : 'Remove'}
+          </button>
+        )}
         <span className="flex-1" />
         {status && (
           <span
