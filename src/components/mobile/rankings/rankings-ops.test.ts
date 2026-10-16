@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  afterPublish,
   agreementNote,
+  backAction,
   cmpToneClass,
   expertConsensus,
   expertSpread,
   formatSaved,
   moveItem,
   onBye,
+  opensInWeek,
+  orderChanged,
   parseRankingsParams,
   planSliceSave,
+  publishButtonLabel,
+  publishedToast,
+  rankDelta,
+  rankMap,
+  rankableWeeks,
+  rankingExists,
   shortName,
   tierBreaks,
   toRankingsSearch,
@@ -149,16 +159,119 @@ describe('names and sublines', () => {
   })
 })
 
-describe('weekStatus follows the app rule (current week only)', () => {
+// Chris, 2026-10-15: "This week + 3 weeks out and rest of season" — this
+// replaces the old current-week-only rule these tests used to pin.
+describe('weekStatus: this week and the next three are open', () => {
   it('in season', () => {
     expect(weekStatus('w5', 6)).toBe('past')
     expect(weekStatus('w6', 6)).toBe('current')
-    expect(weekStatus('w7', 6)).toBe('future')
+    expect(weekStatus('w7', 6)).toBe('upcoming')
+    expect(weekStatus('w9', 6)).toBe('upcoming')
+    expect(weekStatus('w10', 6)).toBe('future')
     expect(weekStatus('season', 6)).toBe('season')
   })
-  it('offseason treats week 1 as current', () => {
+  it('offseason treats week 1 as this week', () => {
     expect(weekStatus('w1', 0)).toBe('current')
-    expect(weekStatus('w2', 0)).toBe('future')
+    expect(weekStatus('w2', 0)).toBe('upcoming')
+    expect(weekStatus('w4', 0)).toBe('upcoming')
+    expect(weekStatus('w5', 0)).toBe('future')
+  })
+  it('stops at the regular season’s last week', () => {
+    expect(weekStatus('w18', 16)).toBe('upcoming')
+    expect(weekStatus('w18', 18)).toBe('current')
+    expect(weekStatus('w17', 18)).toBe('past')
+  })
+})
+
+describe('rankableWeeks / opensInWeek', () => {
+  it('this week plus three, capped at week 18', () => {
+    expect(rankableWeeks(6)).toEqual([6, 7, 8, 9])
+    expect(rankableWeeks(0)).toEqual([1, 2, 3, 4])
+    expect(rankableWeeks(16)).toEqual([16, 17, 18])
+    expect(rankableWeeks(18)).toEqual([18])
+  })
+  it('a locked week opens three weeks before it (the handoff’s week − 3)', () => {
+    expect(opensInWeek(10)).toBe(7)
+    expect(opensInWeek(18)).toBe(15)
+    expect(opensInWeek(2)).toBe(1)
+  })
+  it('agrees with weekStatus', () => {
+    for (const cw of [0, 1, 6, 15, 18]) {
+      const open = new Set(rankableWeeks(cw))
+      for (let w = 1; w <= 18; w++) {
+        const st = weekStatus(`w${w}`, cw)
+        expect(open.has(w)).toBe(st === 'current' || st === 'upcoming')
+      }
+    }
+  })
+})
+
+describe('publishing (Chris, 2026-10-15: one commit button, no save-without-publish)', () => {
+  const base = { readOnly: false, isNew: false, dirty: false, publishing: false }
+  it('Publish for a ranking that doesn’t exist yet, Publish updates for one that does', () => {
+    expect(publishButtonLabel({ ...base, isNew: true })).toBe('Publish')
+    expect(publishButtonLabel({ ...base, isNew: true, dirty: true })).toBe('Publish')
+    expect(publishButtonLabel({ ...base, dirty: true })).toBe('Publish updates')
+    expect(publishButtonLabel(base)).toBe('Published')
+  })
+  it('in flight, and a played week stays Finalized', () => {
+    expect(publishButtonLabel({ ...base, dirty: true, publishing: true })).toBe('Publishing…')
+    expect(publishButtonLabel({ ...base, readOnly: true })).toBe('Finalized')
+  })
+  it('never offers a plain save', () => {
+    const labels = new Set<string>()
+    for (const readOnly of [false, true])
+      for (const isNew of [false, true])
+        for (const dirty of [false, true])
+          for (const publishing of [false, true]) labels.add(publishButtonLabel({ readOnly, isNew, dirty, publishing }))
+    expect([...labels].some((l) => /\bsave/i.test(l))).toBe(false)
+  })
+  it('confirmation toast', () => {
+    expect(publishedToast(true)).toBe('Ranking published')
+    expect(publishedToast(false)).toBe('Updates published')
+  })
+
+  const rb = { player: { position: 'RB' } }
+  it('a ranking exists by the board, not by where the draft started', () => {
+    // Starting from the experts over the RB ranking you have → an update.
+    expect(rankingExists([rb, rb], 'RB', null)).toBe(true)
+    expect(rankingExists([{ player: { position: 'WR' } }], 'RB', null)).toBe(false)
+    expect(rankingExists([], 'RB', null)).toBe(false)
+    // After a publish here, that publish decides (emptied → none).
+    expect(rankingExists([rb], 'RB', false)).toBe(false)
+    expect(rankingExists([], 'RB', true)).toBe(true)
+  })
+
+  it('after a publish: nothing unpublished, the +/– markers reset to it', () => {
+    // Opened at A B C D; the draft moved D to the top.
+    const start = rankMap(['A', 'B', 'C', 'D'])
+    const next = ['D', 'A', 'B', 'C']
+    expect(next.map((id, i) => rankDelta(start, id, i + 1))).toEqual([3, -1, -1, -1])
+    expect(orderChanged(next, ['A', 'B', 'C', 'D'])).toBe(true)
+
+    const after = afterPublish(next)
+    expect(after.savedSeq).toEqual(next)
+    expect(orderChanged(next, after.savedSeq)).toBe(false)
+    expect(next.map((id, i) => rankDelta(after.start, id, i + 1))).toEqual([0, 0, 0, 0])
+    expect(after.hasRanking).toBe(true)
+    // A copy, not the draft array itself.
+    expect(after.savedSeq).not.toBe(next)
+  })
+
+  it('publishing an emptied position leaves no ranking there', () => {
+    expect(afterPublish([])).toEqual({ savedSeq: [], start: new Map(), hasRanking: false })
+  })
+
+  it('a draft started from somewhere is publishable once it has players', () => {
+    expect(orderChanged(['A'], [])).toBe(true)
+    expect(orderChanged([], [])).toBe(false)
+    expect(rankDelta(rankMap(['A']), 'Z', 1)).toBeNull()
+  })
+
+  it('Back: asks with changes, leaves without, waits mid-publish', () => {
+    expect(backAction({ dirty: true, publishing: false })).toBe('ask')
+    expect(backAction({ dirty: false, publishing: false })).toBe('leave')
+    expect(backAction({ dirty: true, publishing: true })).toBe('wait')
   })
 })
 

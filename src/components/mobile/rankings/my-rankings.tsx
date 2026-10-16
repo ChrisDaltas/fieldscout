@@ -8,6 +8,7 @@ import {
   RANK_POSITIONS,
   formatSaved,
   fromDbPos,
+  opensInWeek,
   plural,
   rankingTitle,
   seasonLabel,
@@ -22,19 +23,24 @@ import { cn } from '@/lib/utils'
 /**
  * My rankings (lr-myrank §2.1) over the user's real boards. A "ranking" is
  * one position's slice of a board, so each board shows a card per position
- * it holds. Statuses are the ones the app can express: Saved (an editable
- * board) and Finalized (a week that has been played — read-only). There is
- * no submission record, so Submitted / Unsubmitted don't exist here.
+ * it holds. Statuses are the ones the app can express (Chris, 2026-10-15):
+ * Published (a saved board — Publish is the only way to save, so every
+ * stored ranking is published) and Finalized (a week that has been played —
+ * read-only). There is no separate submission or draft state.
+ *
+ * Periods: Rest of season / Pre-draft, this week and the next three (open,
+ * with Start when empty), later weeks locked ("Opens in Week N", three weeks
+ * before), and past weeks only when they hold a ranking.
  */
 
-export type MyRankFilter = 'all' | 'saved' | 'finalized'
+export type MyRankFilter = 'all' | 'published' | 'finalized'
 
 interface RankCard {
   key: string
   type: RankType
   pos: RankPos
   title: string
-  status: Extract<RankStatus, 'Saved' | 'Finalized'>
+  status: RankStatus
   meta: string
   heads: BoardPlayerLite['player'][]
 }
@@ -48,7 +54,14 @@ interface Period {
   empty: null | { open: boolean; sub: string }
 }
 
-function cardsFor(board: MyBoard, type: RankType, status: RankCard['status'], currentWeek: number): RankCard[] {
+function cardsFor(
+  board: MyBoard,
+  type: RankType,
+  status: RankCard['status'],
+  currentWeek: number,
+  /** Leads the meta line — "This week" marks the current week's cards. */
+  lead?: string,
+): RankCard[] {
   const byPos = new Map<RankPos, BoardPlayerLite[]>()
   for (const r of board.players) {
     const pos = fromDbPos(r.player.position)
@@ -68,7 +81,7 @@ function cardsFor(board: MyBoard, type: RankType, status: RankCard['status'], cu
         pos,
         title: rankingTitle(type, pos, currentWeek),
         status,
-        meta: saved ? `${plural(rows.length, 'player')} · ${saved}` : plural(rows.length, 'player'),
+        meta: [lead, plural(rows.length, 'player'), saved].filter(Boolean).join(' · '),
         heads: rows.slice(0, 5).map((r) => r.player),
       },
     ]
@@ -91,7 +104,7 @@ export function MyRankingsBody({
     if (!boards.data) return []
     const out: Period[] = []
     const season = boards.data.season
-    const seasonCards = season ? cardsFor(season, 'season', 'Saved', currentWeek) : []
+    const seasonCards = season ? cardsFor(season, 'season', 'Published', currentWeek) : []
     out.push({
       key: 'season',
       label: seasonLabel(currentWeek),
@@ -104,13 +117,29 @@ export function MyRankingsBody({
       const type: RankType = `w${w}`
       const status = weekStatus(type, currentWeek)
       const board = byWeek.get(w)
-      const cards = board ? cardsFor(board, type, status === 'past' ? 'Finalized' : 'Saved', currentWeek) : []
+      const cards = board
+        ? cardsFor(
+            board,
+            type,
+            status === 'past' ? 'Finalized' : 'Published',
+            currentWeek,
+            status === 'current' ? 'This week' : undefined,
+          )
+        : []
       if (cards.length > 0) {
         out.push({ key: type, label: `Week ${w}`, type, cards, empty: null })
       } else if (status === 'current') {
         out.push({ key: type, label: `Week ${w}`, type, cards, empty: { open: true, sub: 'This week · not started' } })
+      } else if (status === 'upcoming') {
+        out.push({ key: type, label: `Week ${w}`, type, cards, empty: { open: true, sub: 'Not started' } })
       } else if (status === 'future') {
-        out.push({ key: type, label: `Week ${w}`, type, cards, empty: { open: false, sub: `Opens in Week ${w}` } })
+        out.push({
+          key: type,
+          label: `Week ${w}`,
+          type,
+          cards,
+          empty: { open: false, sub: `Opens in Week ${opensInWeek(w)}` },
+        })
       }
     }
     return out
@@ -119,16 +148,16 @@ export function MyRankingsBody({
   const allCards = periods.flatMap((p) => p.cards)
   const counts = {
     all: allCards.length,
-    saved: allCards.filter((c) => c.status === 'Saved').length,
+    published: allCards.filter((c) => c.status === 'Published').length,
     finalized: allCards.filter((c) => c.status === 'Finalized').length,
   }
   const chips: ReadonlyArray<{ key: MyRankFilter; label: string }> = [
     { key: 'all', label: 'All' },
-    { key: 'saved', label: 'Saved' },
+    { key: 'published', label: 'Published' },
     { key: 'finalized', label: 'Finalized' },
   ]
   const filtered =
-    filter === 'all' ? [] : allCards.filter((c) => (filter === 'saved' ? c.status === 'Saved' : c.status === 'Finalized'))
+    filter === 'all' ? [] : allCards.filter((c) => (filter === 'published' ? c.status === 'Published' : c.status === 'Finalized'))
 
   const openCard = (c: RankCard) => nav.open({ kind: 'edit', type: c.type, pos: c.pos, from: null }, 'push')
   const startPeriod = (type: RankType) => nav.open({ kind: 'new', step: 1, type, pos: 'RB' }, 'push')
@@ -185,7 +214,7 @@ export function MyRankingsBody({
         <p className="py-9 text-center text-[13px] font-medium text-m-t3">
           {filter === 'finalized'
             ? 'No finalized rankings yet. Weekly rankings finalize once their week is played.'
-            : 'No saved rankings yet'}
+            : 'No published rankings yet'}
         </p>
       ) : (
         filtered.map((c) => <RankingCard key={c.key} card={c} onOpen={() => openCard(c)} />)

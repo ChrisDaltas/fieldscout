@@ -82,7 +82,8 @@ export function HeaderIconButton({
 
 /** Search · Notifications · Messages — the right group on Home and League.
  *  Messages holds direct messages and league boards, so it shows while
- *  either switch is on. */
+ *  either switch is on. The chat badge counts unread direct messages only —
+ *  never trade offers, which stay inside their league (ruling #22). */
 export function HeaderActions() {
   const openSearch = useUIStore((s) => s.setCommandPaletteOpen)
   const { data } = useNotifications()

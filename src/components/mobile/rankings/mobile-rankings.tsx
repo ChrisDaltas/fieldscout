@@ -82,10 +82,11 @@ export function MobileInvalidWeek() {
  * `useSearchParams` without a server round trip. The hub stays mounted under
  * the overlays, so its scroll position and filters survive them.
  *
- * Unsaved edits are guarded on every way out of the editor: its own back
- * asks first, browser / OS Back (or a swipe) re-opens the editor at once and
- * asks the same question, and a reload or tab close gets the browser's
- * leave-page prompt.
+ * Unpublished edits are guarded on every way out of the editor (Back
+ * discards them, Chris 2026-10-15 — but asks first): its own back asks,
+ * browser / OS Back (or a swipe) re-opens the editor at once and asks the
+ * same question, and a reload or tab close gets the browser's leave-page
+ * prompt.
  */
 export function MobileRankings({
   currentWeek,
@@ -128,7 +129,7 @@ export function MobileRankings({
 
   // An editor the page OPENED on (a `?edit=` link, or the week route) gets
   // its own history entry over My rankings, so browser / OS Back from it
-  // lands where the editor's own back does — inside the unsaved-changes
+  // lands where the editor's own back does — inside the unpublished-changes
   // guard below — instead of leaving the page with the edits.
   const mounted = useRef(false)
   useEffect(() => {
@@ -142,7 +143,7 @@ export function MobileRankings({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ---- unsaved-changes guard for browser / OS Back ------------------------
+  // ---- unpublished-changes guard for browser / OS Back ---------------------
   const [editorDirty, setEditorDirty] = useState(false)
   /** Set just before WE close the editor, so the guard lets it go. */
   const [leaving, setLeaving] = useState(false)
@@ -229,7 +230,7 @@ export function MobileRankings({
           promptSeq={promptSeq}
           onDirtyChange={setEditorDirty}
           onBack={editorBack}
-          onSaved={() => {
+          onPublished={() => {
             if (edit.from) write({ ...state, overlay: { ...edit, from: null } }, 'replace')
           }}
         />

@@ -200,7 +200,7 @@ export function ageText(iso: string, now: number): string {
 /**
  * Why a league card carries the red dot, in the order the label names them:
  *  - `trade`: a trade offer sent to the user's team is still waiting on
- *    their answer (Messages › Trades' `awaitingMe`);
+ *    their answer (`awaitingMe`, as the league Trades screen marks it);
  *  - `out` / `ir`: one of this week's starters is listed Out / on IR;
  *  - `bye`: one of this week's starters is on bye;
  *  - `empty`: a starting slot this week is empty.
@@ -214,7 +214,7 @@ export interface HomeAlertInput {
   myTeamId: string | null
   /** The league's schedule read (week ladder + every pairing); undefined while unread. */
   schedule: { weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]; matchups: readonly Pick<ScheduleMatchup, 'week' | 'home_team_id' | 'away_team_id'>[] } | undefined
-  /** This league's offers as Messages › Trades reads them
+  /** This league's offers as the trades read returns them
    *  (`leagueTradeOffers`); undefined while unread, failed, or trades off. */
   offers: readonly Pick<MTradeOffer, 'awaitingMe'>[] | undefined
   /** The user's roster, the week's stored `slot_map` (null = no row yet —

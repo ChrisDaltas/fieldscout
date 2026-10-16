@@ -286,11 +286,24 @@ describe('mobile Match — header and card', () => {
     expect(html).not.toContain('yd catch')
   })
 
-  it('one pager dot per matchup, yours first and current', () => {
-    const dots = html.match(/aria-label="[^"]+ vs [^"]+"[^>]*>/g) ?? []
-    expect(dots).toHaveLength(2)
-    expect(dots[0]).toContain('Gridiron Gurus vs Touchdown Tacos')
-    expect(dots[0]).toContain('aria-current="true"')
+  // Ruling #23 (2026-10-15): the dots are a position indicator — no tapping,
+  // swiping moves. (Before, each dot was a button naming its matchup.)
+  it('one pager dot per matchup, yours first and current — not tappable, a status for screen readers', () => {
+    const pager = html.match(/data-match-pager="true">[\s\S]*?data-match-pager-step="next"[^>]*>[^<]*<\/button>/)?.[0] ?? ''
+    const dots = pager.match(/data-match-dots="true">([\s\S]*?)<\/div>/)?.[1] ?? ''
+    expect(pager).toMatch(/aria-hidden="true" data-match-dots/)
+    expect(dots.match(/<span /g)).toHaveLength(2)
+    expect(dots).not.toContain('<button')
+    expect(dots).toMatch(/^<span class="[^"]*w-3\.5 bg-m-t1[^"]*" data-dot-current="true">/)
+    expect(pager).toContain('<span role="status" class="sr-only">Matchup 1 of 2: Gridiron Gurus vs Touchdown Tacos</span>')
+  })
+
+  it('keeps Previous / Next matchup for a keyboard or screen reader, off screen until focused', () => {
+    const steps = html.match(/<button[^>]*data-match-pager-step="(prev|next)"[^>]*>[^<]*<\/button>/g) ?? []
+    expect(steps).toHaveLength(2)
+    expect(steps[0]).toContain('>Previous matchup</button>')
+    expect(steps[1]).toContain('>Next matchup</button>')
+    for (const b of steps) expect(b).toMatch(/class="sr-only focus-visible:not-sr-only /)
   })
 
   it('the live week’s yet-to-play line names your positions; the right side its count', () => {

@@ -5,8 +5,8 @@
  * The app's ranking model, which every screen here maps the design onto:
  *   - the user's SEASON board (the big board — "Rest of season" in season,
  *     "Pre-draft" in the offseason; the draft room reads it),
- *   - one WEEKLY board per NFL week (`big_board_weekly`), editable only while
- *     it is the current week, read-only once played.
+ *   - one WEEKLY board per NFL week (`big_board_weekly`), editable for this
+ *     week and the next three, read-only once played.
  * Both are cross-position lists; a mobile "ranking" is one position's slice of
  * a board, edited in place inside that position's own slots.
  *
@@ -70,13 +70,44 @@ export function rankingTitle(type: RankType, pos: RankPos, currentWeek: number):
   return `${typeLabel(type, currentWeek)} · ${rankPosLabel(pos)}`
 }
 
-/** Past (read-only), current (editable) or future (locked, never fetched). */
-export function weekStatus(type: RankType, currentWeek: number): 'season' | 'past' | 'current' | 'future' {
+/** The regular season's last week — nothing is ranked past it. */
+export const LAST_REGULAR_WEEK = 18
+/** How many weeks past this one a phone can rank (Chris, 2026-10-15:
+ *  "This week + 3 weeks out and rest of season"). */
+export const WEEKS_AHEAD = 3
+
+/** The weeks a ranking can be made or edited for right now: this week and
+ *  the next three, capped at the regular season's last week. */
+export function rankableWeeks(currentWeek: number): number[] {
+  const active = activeWeekOf(currentWeek)
+  const last = Math.min(active + WEEKS_AHEAD, LAST_REGULAR_WEEK)
+  const out: number[] = []
+  for (let w = active; w <= last; w++) out.push(w)
+  return out
+}
+
+/** When a locked week becomes rankable: three weeks before it ("Opens in
+ *  Week N", the handoff's N = week − 3). */
+export function opensInWeek(week: number): number {
+  return Math.max(1, week - WEEKS_AHEAD)
+}
+
+/**
+ * Past (read-only, Finalized), current (this week), upcoming (one of the
+ * next three weeks — editable like this week) or future (locked, never
+ * fetched). Opening an upcoming week never creates its board; only Publish
+ * does.
+ */
+export function weekStatus(
+  type: RankType,
+  currentWeek: number,
+): 'season' | 'past' | 'current' | 'upcoming' | 'future' {
   if (type === 'season') return 'season'
   const w = weekOf(type)
   const active = activeWeekOf(currentWeek)
-  if (currentWeek === 0) return w === 1 ? 'current' : 'future'
-  return w < active ? 'past' : w === active ? 'current' : 'future'
+  if (w < active) return 'past'
+  if (w === active) return 'current'
+  return w <= Math.min(active + WEEKS_AHEAD, LAST_REGULAR_WEEK) ? 'upcoming' : 'future'
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +268,7 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`
 }
 
-/** Card / footer save stamp: "Just now" inside a minute, else "Oct 13". */
+/** Card / footer publish stamp: "Just now" inside a minute, else "Oct 13". */
 export function formatSaved(iso: string | null | undefined, now: number = Date.now()): string | null {
   if (!iso) return null
   const t = Date.parse(iso)
@@ -272,6 +303,91 @@ export function updatedLabel(iso: string | null | undefined, now: number = Date.
     return `updated today ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
   }
   return `updated ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+}
+
+// ---------------------------------------------------------------------------
+// Publishing (Chris, 2026-10-15): one commit button, no "save without
+// publishing". Publish is the app's save — a saved ranking is the one that
+// counts — and Back discards anything unpublished.
+// ---------------------------------------------------------------------------
+
+export interface PublishState {
+  /** A played week (Finalized). */
+  readOnly: boolean
+  /** The ranking doesn't exist yet (a new ranking, or a week with no board). */
+  isNew: boolean
+  dirty: boolean
+  publishing: boolean
+}
+
+/** The editor's one commit button: "Publish" for a ranking that doesn't
+ *  exist yet, "Publish updates" for one that does, "Published" (inert) when
+ *  there's nothing to publish. */
+export function publishButtonLabel(s: PublishState): string {
+  if (s.readOnly) return 'Finalized'
+  if (s.publishing) return 'Publishing…'
+  if (s.isNew) return 'Publish'
+  return s.dirty ? 'Publish updates' : 'Published'
+}
+
+/** The confirmation toast after a publish. */
+export function publishedToast(wasNew: boolean): string {
+  return wasNew ? 'Ranking published' : 'Updates published'
+}
+
+/**
+ * Is a ranking published at this position? Where the draft started (the
+ * experts, an AI expert's board, …) doesn't change it: starting over a
+ * ranking you already have still publishes updates to it. Once you've
+ * published here, that publish says (an emptied position leaves none).
+ */
+export function rankingExists(
+  rows: ReadonlyArray<{ player: { position: string } }>,
+  pos: RankPos,
+  publishedHere: boolean | null,
+): boolean {
+  return publishedHere ?? rows.some((r) => fromDbPos(r.player.position) === pos)
+}
+
+/** Each player's rank (1-based) in an order — what the editor's +/–
+ *  movement markers measure from. */
+export function rankMap(seq: readonly string[]): Map<string, number> {
+  return new Map(seq.map((id, i) => [id, i + 1]))
+}
+
+/** A player's movement since the baseline (+ = moved up); null when the
+ *  player wasn't in it. */
+export function rankDelta(start: ReadonlyMap<string, number>, id: string, rank: number): number | null {
+  const s = start.get(id)
+  return s === undefined ? null : s - rank
+}
+
+/** Does the draft differ from the published order? A draft started from
+ *  somewhere has an empty baseline, so any players make it publishable. */
+export function orderChanged(seq: readonly string[], saved: readonly string[]): boolean {
+  return seq.length !== saved.length || seq.some((id, i) => id !== saved[i])
+}
+
+export interface AfterPublish {
+  /** The published order — the draft's new baseline (nothing unpublished). */
+  savedSeq: string[]
+  /** The +/– markers now measure from this publish. */
+  start: Map<string, number>
+  /** Whether a ranking exists here now (an emptied position leaves none). */
+  hasRanking: boolean
+}
+
+/** The editor's state after a successful publish of `next`. */
+export function afterPublish(next: readonly string[]): AfterPublish {
+  return { savedSeq: [...next], start: rankMap(next), hasRanking: next.length > 0 }
+}
+
+/** What Back does: with unpublished changes it asks first ("Discard
+ *  changes?"), without them it just leaves — and never mid-publish, which
+ *  would leave a publish running behind a "discard". */
+export function backAction(s: { dirty: boolean; publishing: boolean }): 'leave' | 'ask' | 'wait' {
+  if (s.publishing) return 'wait'
+  return s.dirty ? 'ask' : 'leave'
 }
 
 // ---------------------------------------------------------------------------

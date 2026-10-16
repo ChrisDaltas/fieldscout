@@ -80,13 +80,17 @@ export function statCells(stat: PoolStat | undefined, position: string): StatCel
   ]
 }
 
-export type RankStatus = 'Finalized' | 'Submitted' | 'Saved' | 'Draft'
+/**
+ * A ranking's status on the phone (Chris, 2026-10-15): Published — the
+ * app's one saved state, which is the ranking that counts — or Finalized, a
+ * played week. There is no "saved but not published" or draft state.
+ */
+export type RankStatus = 'Finalized' | 'Published'
 
 const STATUS_CLASS: Record<RankStatus, string> = {
   Finalized: 'bg-m-t1 text-m-b0',
-  Submitted: 'bg-m-gg text-m-tg',
-  Saved: 'bg-m-gb text-m-tb',
-  Draft: 'bg-m-b2 text-m-t2',
+  // Publish is "save and submit", so it wears the design's Submitted colours.
+  Published: 'bg-m-gg text-m-tg',
 }
 
 export function StatusPill({ status }: { status: RankStatus }) {

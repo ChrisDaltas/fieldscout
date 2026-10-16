@@ -2,16 +2,20 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { fromDbPos, planSliceSave, type RankPos } from '@/components/mobile/rankings/rankings-ops'
+import { fromDbPos, planSliceSave, publishedToast, type RankPos } from '@/components/mobile/rankings/rankings-ops'
 import { bigBoardKeys } from '@/hooks/use-big-board'
 import { listsKeys } from '@/hooks/use-lists'
+import { toast } from '@/hooks/use-toast'
 
 /**
- * Save one position's slice of a board from the mobile ranking editor,
- * through the routes desktop uses:
+ * Publish one position's slice of a board from the mobile ranking editor.
+ * On the phone, Publish IS the save (Chris, 2026-10-15: no "save without
+ * publishing"; a saved ranking is the one that counts), through the routes
+ * desktop uses:
  *   1. read the board fresh — the weekly GET creates a week's board the
  *      first time (seeded from your latest ranking, as on desktop), so a new
- *      week only comes into being when the user saves it;
+ *      week — this one or one of the next three — only comes into being
+ *      when the user publishes it;
  *   2. drop removed players, bulk-add new ones;
  *   3. write the slice's order into its own slots — the season board through
  *      `/api/big-board/save` (which also records a history snapshot), a week
@@ -19,7 +23,7 @@ import { listsKeys } from '@/hooks/use-lists'
  *      every other position keeps its place and its saved date.
  *
  * Each step throws on a non-OK response — a failed step is never reported
- * as a save.
+ * as a publish.
  */
 
 async function ok(res: Response): Promise<void> {
@@ -48,6 +52,8 @@ export interface SaveSliceArgs {
   pos: RankPos
   /** The position's new order. */
   next: string[]
+  /** No ranking existed at this position before (the confirmation toast). */
+  isNew: boolean
 }
 
 export function useSaveRankingSlice() {
@@ -89,6 +95,16 @@ export function useSaveRankingSlice() {
         }
       }
       return { listId }
+    },
+    // The outcome is reported here, not in the caller's `mutate` callbacks:
+    // these still run if the editor has unmounted by the time the steps
+    // finish, so a publish — or a failed step after a partial one — is
+    // never silent.
+    onSuccess: (_data, vars) => {
+      toast({ title: publishedToast(vars.isNew) })
+    },
+    onError: (err) => {
+      toast({ title: "Couldn't publish", description: err.message, variant: 'destructive' })
     },
     onSettled: (data, _err, vars) => {
       if (vars.week === 0) {

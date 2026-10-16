@@ -1,8 +1,16 @@
 import { buildBuckets } from '@/components/lists/v2/list-buckets'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
+import type { PoolPlayer } from '@/hooks/use-mobile-lists-pool'
 import { COVER_COLOR_LABEL, coverColorOf, type CoverColor } from '@/lib/lists/cover-color'
 import { DEFAULT_BUDGET } from '@/stores/list-display-store'
-import { POSITION_FILTERS, TIER_VALUES, isTierKey, type ListBucketKey } from '@/types/schemas/lists'
+import {
+  POSITION_FILTERS,
+  TIER_VALUES,
+  isTierKey,
+  listTitleSchema,
+  type ListBucketKey,
+  type RankingMode,
+} from '@/types/schemas/lists'
 
 type PositionFilter = (typeof POSITION_FILTERS)[number]
 
@@ -295,6 +303,260 @@ export function lastTierLetter(players: readonly ListPlayerWithPlayer[]): ListBu
     if (players.some((entry) => entry.tier === letter)) last = letter
   }
   return last
+}
+
+// =============================================================================
+// The editor's draft (Chris, 2026-10-15, gap list #16): every edit changes a
+// local copy of the list; Update writes it, Back throws it away.
+// =============================================================================
+
+/**
+ * The list as the editor holds it. `entries` is a local copy of the list's
+ * players — each carrying its draft tier, kept in `position` order — so the
+ * editor renders it exactly as it renders a stored list (`draftItems`).
+ *
+ * `base` is the list the draft was made from. The user's changes are the
+ * draft measured against it — never against the list as it stands later,
+ * which may since have changed elsewhere (desktop, another tab, or a refetch
+ * of the cached copy the editor opened on). See `planSave`.
+ */
+export interface ListDraft {
+  title: string
+  mode: RankingMode
+  entries: ListPlayerWithPlayer[]
+  /** Tier lines added after the last player (Add tier line). They hold no
+   *  one yet, so they are nothing to save. */
+  pending: number
+  /** The list as it stood when the draft was made. */
+  base: StoredList
+}
+
+/** The list as the server holds it (or held it, for a draft's `base`). */
+export interface StoredList {
+  title: string
+  ranking_mode: string
+  players: readonly ListPlayerWithPlayer[]
+}
+
+export function draftOf(list: StoredList): ListDraft {
+  return {
+    title: list.title,
+    mode: list.ranking_mode as RankingMode,
+    entries: byPosition(list.players),
+    pending: 0,
+    base: { title: list.title, ranking_mode: list.ranking_mode, players: list.players },
+  }
+}
+
+export function draftItems(draft: ListDraft): EdItem[] {
+  const tiersOn = draft.mode === 'rank_and_tier'
+  return editorItems(draft.entries, tiersOn, tiersOn ? draft.pending : 0)
+}
+
+/**
+ * The draft after an arrangement edit — a drag, a tier merge, auto tiers.
+ * The players take the items' order; while Tiers is on, each segment takes
+ * its letter by `planCommit`'s rule (so a drag re-letters exactly as it did
+ * when the editor wrote each change at once), and the tier lines left after
+ * the last player stay as pending ones.
+ */
+export function arrangeDraft(draft: ListDraft, items: readonly EdItem[]): ListDraft {
+  const tiersOn = draft.mode === 'rank_and_tier'
+  const plan = planCommit(items, draft.entries, tiersOn)
+  const tierBy = new Map(plan.tiers.map((change) => [change.playerId, change.tier]))
+  const players = items.filter((item): item is Extract<EdItem, { t: 'p' }> => item.t === 'p')
+  const entries = players.map(({ entry }, index) => {
+    const position = index + 1
+    const tier = tierBy.has(entry.player_id) ? (tierBy.get(entry.player_id) ?? null) : entry.tier
+    return entry.position === position && tier === entry.tier ? entry : { ...entry, position, overall_rank: position, tier }
+  })
+  return { ...draft, entries, pending: tiersOn ? trailingMarkers(items) : 0 }
+}
+
+/** Ranked / Tiers. Leaving tiers drops the pending tier lines. */
+export function setDraftMode(draft: ListDraft, mode: RankingMode): ListDraft {
+  return { ...draft, mode, pending: mode === 'rank_and_tier' ? draft.pending : 0 }
+}
+
+/**
+ * Add a player from the Add players pool: to the end of the list and, on a
+ * tiered list, into its last tier — the design's append.
+ *
+ * The entry is local until Update. Its season figures are the pool's (the
+ * rows' Pts / Avg and Auto tiers read them); last season's are never shown
+ * in the editor, so they are zero here — the List view re-reads the real
+ * ones after Update.
+ */
+export function addToDraft(draft: ListDraft, player: PoolPlayer, listId: string): ListDraft {
+  if (draft.entries.some((entry) => entry.player_id === player.id)) return draft
+  const position = draft.entries.reduce((max, entry) => Math.max(max, entry.position), 0) + 1
+  const entry: ListPlayerWithPlayer = {
+    id: `draft-${player.id}`,
+    list_id: listId,
+    player_id: player.id,
+    position,
+    overall_rank: position,
+    tier: draft.mode === 'rank_and_tier' ? lastTierLetter(draft.entries) : null,
+    rank_in_tier: null,
+    notes: null,
+    slot: null,
+    added_at: null,
+    updated_at: null,
+    player: {
+      id: player.id,
+      full_name: player.full_name,
+      position: player.position,
+      team: player.team,
+      headshot_url: player.headshot_url,
+      status: player.status,
+    },
+    stats: {
+      current_pts: player.current_pts,
+      current_games: player.current_games,
+      last_pts: 0,
+      last_games: 0,
+      projected_pts: player.projected_pts,
+    },
+  }
+  return { ...draft, entries: [...draft.entries, entry] }
+}
+
+export function removeFromDraft(draft: ListDraft, playerId: string): ListDraft {
+  const entries = draft.entries.filter((entry) => entry.player_id !== playerId)
+  return entries.length === draft.entries.length ? draft : { ...draft, entries }
+}
+
+/**
+ * The writes that apply the user's changes — the draft measured against its
+ * `base` — to the list as `stored` holds it now, each through a route the app
+ * already has:
+ *
+ * - `fields`: the name (when it is a valid title) and Ranked / Tiers, when
+ *   the user changed them and the list doesn't already hold the change;
+ * - `remove`: players the user dropped that the list still holds; `add`:
+ *   players the user added that it doesn't hold yet, in draft order (the
+ *   bulk add appends them in that order);
+ * - `tiers`: players whose draft tier the user changed (or added) and the
+ *   list holds differently (an added player is stored with none);
+ * - `order`: when the user reordered, the draft's order — with anyone only
+ *   the list holds (added elsewhere) after them — if it differs from what the
+ *   list will hold once the removals and additions land.
+ *
+ * Anything changed elsewhere since the draft was made, and not by the user,
+ * is left as the list has it: a player added on desktop is not removed, a
+ * player removed there is not put back, a tier or name set there is not
+ * reverted (lr-lists, gap list #16 review). With `stored` equal to the base —
+ * the editor's "has anything changed?" — this is simply draft vs list.
+ */
+export interface SavePlan {
+  fields: { title?: string; ranking_mode?: RankingMode }
+  remove: string[]
+  add: string[]
+  tiers: Array<{ playerId: string; tier: ListBucketKey | null }>
+  order: string[] | null
+}
+
+export function planSave(draft: ListDraft, stored: StoredList): SavePlan {
+  const base = draft.base
+  const baseById = new Map(base.players.map((entry) => [entry.player_id, entry]))
+  const storedById = new Map(stored.players.map((entry) => [entry.player_id, entry]))
+  const draftOrder = byPosition(draft.entries).map((entry) => entry.player_id)
+  const inDraft = new Set(draftOrder)
+  const storedOrder = byPosition(stored.players).map((entry) => entry.player_id)
+
+  // The user's own removals and additions — only where the list still needs them.
+  const remove = storedOrder.filter((id) => baseById.has(id) && !inDraft.has(id))
+  const add = draftOrder.filter((id) => !baseById.has(id) && !storedById.has(id))
+  const removed = new Set(remove)
+  // The list's players once those land, in the order they leave it.
+  const expected = [...storedOrder.filter((id) => !removed.has(id)), ...add]
+  const onList = new Set(expected)
+
+  const tiers: SavePlan['tiers'] = []
+  for (const entry of byPosition(draft.entries)) {
+    const id = entry.player_id
+    if (!onList.has(id)) continue // removed elsewhere: nothing to tier
+    const after = entry.tier ?? null
+    const was = baseById.get(id)
+    if (was && (was.tier ?? null) === after) continue // not the user's change
+    if ((storedById.get(id)?.tier ?? null) !== after) tiers.push({ playerId: id, tier: after as ListBucketKey | null })
+  }
+
+  // Did the user move anyone? (Removals close up and additions append on
+  // their own, so neither is a reorder.)
+  const baseOrder = byPosition(base.players).map((entry) => entry.player_id)
+  const userAdded = draftOrder.filter((id) => !baseById.has(id))
+  const reordered = !sameOrder([...baseOrder.filter((id) => inDraft.has(id)), ...userAdded], draftOrder)
+  let order: string[] | null = null
+  if (reordered) {
+    const desired = [...draftOrder.filter((id) => onList.has(id)), ...expected.filter((id) => !inDraft.has(id))]
+    if (!sameOrder(desired, expected)) order = desired
+  }
+
+  const fields: SavePlan['fields'] = {}
+  const title = listTitleSchema.safeParse(draft.title)
+  if (title.success && title.data !== base.title && title.data !== stored.title) fields.title = title.data
+  if (draft.mode !== base.ranking_mode && draft.mode !== stored.ranking_mode) fields.ranking_mode = draft.mode
+  return { fields, remove, add, tiers, order }
+}
+
+/** Whether the draft holds any change of the user's (draft vs its base). */
+export function draftChanged(draft: ListDraft): boolean {
+  return !planIsEmpty(planSave(draft, draft.base))
+}
+
+export function planIsEmpty(plan: SavePlan): boolean {
+  return (
+    Object.keys(plan.fields).length === 0 &&
+    plan.remove.length === 0 &&
+    plan.add.length === 0 &&
+    plan.tiers.length === 0 &&
+    plan.order === null
+  )
+}
+
+const countOf = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
+
+/** A plan in words, for the save-failure note: "the name", "2 added players"… */
+export function planParts(plan: SavePlan): string[] {
+  const parts: string[] = []
+  if (plan.fields.title !== undefined) parts.push('the name')
+  if (plan.fields.ranking_mode !== undefined) parts.push('Ranked / Tiers')
+  if (plan.add.length > 0) parts.push(countOf(plan.add.length, 'added player'))
+  if (plan.remove.length > 0) parts.push(countOf(plan.remove.length, 'removed player'))
+  if (plan.tiers.length > 0) parts.push(`tiers for ${countOf(plan.tiers.length, 'player')}`)
+  if (plan.order) parts.push('the order')
+  return parts
+}
+
+/** The part of `attempted` that landed: what no longer appears in `remaining`. */
+export function landedPlan(attempted: SavePlan, remaining: SavePlan): SavePlan {
+  const left = (ids: readonly string[], rest: readonly string[]) => ids.filter((id) => !rest.includes(id))
+  const tierLeft = new Set(remaining.tiers.map((change) => change.playerId))
+  return {
+    fields: {
+      ...(attempted.fields.title !== undefined && remaining.fields.title === undefined ? { title: attempted.fields.title } : {}),
+      ...(attempted.fields.ranking_mode !== undefined && remaining.fields.ranking_mode === undefined
+        ? { ranking_mode: attempted.fields.ranking_mode }
+        : {}),
+    },
+    remove: left(attempted.remove, remaining.remove),
+    add: left(attempted.add, remaining.add),
+    tiers: attempted.tiers.filter((change) => !tierLeft.has(change.playerId)),
+    order: attempted.order && !remaining.order ? attempted.order : null,
+  }
+}
+
+/** The editor's note after a failed Update: the error, then what saved and
+ *  what didn't — never a partial save passed off as a whole one. */
+export function saveFailureNote(error: string, attempted: SavePlan | null, remaining: SavePlan | null): string {
+  if (!attempted) return `${error} Nothing was saved.`
+  if (!remaining) return `${error} What saved couldn’t be checked — your changes are still here.`
+  const saved = planParts(landedPlan(attempted, remaining))
+  const unsaved = planParts(remaining)
+  const savedText = saved.length > 0 ? `Saved: ${saved.join(', ')}.` : 'Nothing was saved.'
+  const unsavedText = unsaved.length > 0 ? ` Not saved: ${unsaved.join(', ')}.` : ''
+  return `${error} ${savedText}${unsavedText}`
 }
 
 // =============================================================================

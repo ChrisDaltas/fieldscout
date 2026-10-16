@@ -11,6 +11,7 @@ import {
   fromDbPos,
   plural,
   rankPosLabel,
+  rankableWeeks,
   rankingTitle,
   seasonLabel,
   shortName,
@@ -25,15 +26,16 @@ import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
 import { cn } from '@/lib/utils'
 
 /**
- * New ranking (lr-myrank §2.2) for the types the app supports: the current
- * week's board and the season board. Scoring isn't a ranking dimension in
- * the app, so step 1 has no Scoring block.
+ * New ranking (lr-myrank §2.2) for the types the app supports: a weekly
+ * board — this week or one of the next three (Chris, 2026-10-15) — and the
+ * season board (Rest of season / Pre-draft). Scoring isn't a ranking
+ * dimension in the app, so step 1 has no Scoring block.
  *
  * A ranking "exists" when that board already holds players at the position
  * — then step 1 opens it. Otherwise step 2 picks where it starts: your
  * latest ranking (what the app seeds a new week from — desktop's default),
  * the AI experts' consensus, the users' average, or blank. Nothing is
- * written until the editor's Save.
+ * written until the editor's Publish.
  */
 
 export interface NewRankingProps {
@@ -75,9 +77,19 @@ interface SourceOption {
   top: string | null
 }
 
-export function NewRanking({ step, type, pos, currentWeek, onClose, onChange, onOpenEditor }: NewRankingProps) {
+export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, onChange, onOpenEditor }: NewRankingProps) {
   const boards = useMyRankingBoards()
   const active = activeWeekOf(currentWeek)
+  // This week and the next three. A week outside them (a stale or hand-made
+  // link) falls back to this week, so a new ranking is never started on a
+  // week that can't be ranked.
+  const weeks = rankableWeeks(currentWeek)
+  const type: RankType =
+    typeProp !== 'season' && !weeks.includes(weekOf(typeProp))
+      ? weeks.length > 0
+        ? `w${active}`
+        : 'season'
+      : typeProp
   const weekly = type !== 'season'
   const week = weekOf(type)
   const summary = rankingTitle(type, pos, currentWeek)
@@ -103,7 +115,7 @@ export function NewRanking({ step, type, pos, currentWeek, onClose, onChange, on
         options.push({
           key: 'carry',
           label: carry.week > 0 ? `Your Week ${carry.week} ranking` : `Your ${seasonLabel(currentWeek).toLowerCase()} ranking`,
-          sub: saved ? `${plural(rows.length, 'player')} · saved ${saved}` : plural(rows.length, 'player'),
+          sub: saved ? `${plural(rows.length, 'player')} · published ${saved}` : plural(rows.length, 'player'),
           top: top3(rows.map((r) => r.player)),
         })
       }
@@ -136,14 +148,15 @@ export function NewRanking({ step, type, pos, currentWeek, onClose, onChange, on
   }
 
   const typeOptions: ReadonlyArray<{ key: string; label: string; sub: string; on: boolean; pick: () => void }> = [
-    ...(active <= 18
+    ...(weeks.length > 0
       ? [
           {
             key: 'weekly',
             label: 'Weekly',
             sub: 'One week of games. Locks once the week is played.',
             on: weekly,
-            pick: () => onChange({ type: `w${active}` }),
+            // Keeps the week already picked; otherwise this week.
+            pick: () => onChange({ type: weekly ? type : `w${active}` }),
           },
         ]
       : []),
@@ -201,7 +214,15 @@ export function NewRanking({ step, type, pos, currentWeek, onClose, onChange, on
               <div className="flex flex-col gap-2">
                 <span className="text-[13px] font-semibold text-m-t3">Week</span>
                 <div className="flex flex-wrap gap-1.5">
-                  <Chip label={`Week ${active}`} on={week === active} onPick={() => onChange({ type: `w${active}` })} />
+                  {weeks.map((w) => (
+                    <Chip
+                      key={w}
+                      label={`Week ${w}`}
+                      note={w === active ? 'This week' : undefined}
+                      on={week === w}
+                      onPick={() => onChange({ type: `w${w}` })}
+                    />
+                  ))}
                 </div>
               </div>
             )}
@@ -334,18 +355,20 @@ function RadioDot({ on }: { on: boolean }) {
   )
 }
 
-function Chip({ label, on, onPick }: { label: string; on: boolean; onPick: () => void }) {
+function Chip({ label, note, on, onPick }: { label: string; note?: string; on: boolean; onPick: () => void }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onPick}
       className={cn(
-        'flex h-[34px] items-center rounded-pill px-3.5 text-[13px] font-semibold',
+        'flex h-[34px] items-center gap-[5px] rounded-pill px-3.5 text-[13px] font-semibold',
         on ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1',
       )}
     >
       {label}
+      {/* Marks this week among the open ones (My rankings' count style). */}
+      {note ? <span className="text-[11px] font-semibold opacity-60">· {note}</span> : null}
     </button>
   )
 }

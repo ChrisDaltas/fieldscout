@@ -11,7 +11,7 @@ import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useAuth } from '@/hooks/use-auth'
 import { useList, useLists, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileListsOwner } from '@/hooks/use-mobile-lists-owner'
-import { posRanks, rankPoolPositions, useMobileListsPool } from '@/hooks/use-mobile-lists-pool'
+import { rankPoolPositions, useMobileListsPosRanks } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { useMobileListsUsage } from '@/hooks/use-mobile-lists-usage'
 import { cn } from '@/lib/utils'
@@ -24,9 +24,28 @@ import { AiBuildStrip } from './ai-build-strip'
 import { ListActionsSheet } from './list-actions-sheet'
 import { playersLabel, shortName, tierChipClass, updatedLabel, viewSections } from './lists-model'
 import { useListsNav } from './lists-nav'
-import { CenterNote, CoverCollage, CoverImage, InlineError, LIcon, PillButton, TimeFrameControl, VideoCard, coverClass } from './lists-parts'
-import { useListTimeFrame } from './lists-session-store'
-import { cellTextClass, needsSource, resolveMobileStats, type MStat, type ValueCtx } from './lists-stats'
+import {
+  CenterNote,
+  CoverCollage,
+  CoverImage,
+  InlineError,
+  LIcon,
+  PillButton,
+  ScoringControl,
+  TimeFrameControl,
+  VideoCard,
+  coverClass,
+} from './lists-parts'
+import { useListScoring, useListTimeFrame } from './lists-session-store'
+import {
+  cellTextClass,
+  needsLastSeason,
+  needsSource,
+  resolveMobileStats,
+  showsPoints,
+  type MStat,
+  type ValueCtx,
+} from './lists-stats'
 
 /**
  * FieldScout Mobile — the List view (lr-lists §2.7, states L8–L8h): a 200px
@@ -257,22 +276,32 @@ function PlayersTable({
   const display = useListDisplay(list.id)
   const stats = React.useMemo(() => resolveMobileStats(display.cols), [display.cols])
   const [tf, setTf] = useListTimeFrame(list.id)
+  // The scoring every points column follows, this session (gap list #19).
+  const [scoring, setScoring] = useListScoring(list.id)
   const openPlayerView = usePlayerModalStore((state) => state.openPlayerView)
   const hasStats = stats.length > 0
   const ids = list.players.map((entry) => entry.player_id)
 
-  // Each column source is its own read, made only when a chosen column needs it.
+  // Each column source is its own read, made only when a chosen column needs
+  // it (in this scoring: outside PPR the payload's points columns read the
+  // weekly rows too).
   const latest = useMobileListsLatestWeek(hasStats)
-  const frames = useMobileListsTimeframeStats(ids, latest.data, needsSource(stats, 'frames'))
+  const frames = useMobileListsTimeframeStats(
+    ids,
+    latest.data,
+    needsSource(stats, 'frames', scoring),
+    needsLastSeason(stats, scoring),
+  )
   const usage = useMobileListsUsage(ids, needsSource(stats, 'usage'))
-  const pool = useMobileListsPool(
+  const pool = useMobileListsPosRanks(
     rankPoolPositions(
       list.position_filter,
       list.players.map((entry) => entry.player.position),
     ),
     needsSource(stats, 'ranks'),
+    scoring,
   )
-  const ranks = React.useMemo(() => (pool.data ? posRanks(pool.data) : null), [pool.data])
+  const ranks = pool.data ?? null
 
   // A failed read is said out loud — its cells stay blank, never "–" (CLAUDE.md).
   const failed = [latest, frames, usage, pool].filter((query) => query.isError)
@@ -288,9 +317,16 @@ function PlayersTable({
 
   return (
     <>
-      <div className="flex items-center gap-2 px-4 pb-2 pt-[18px]">
-        <span className="flex-1 text-[16px] font-semibold text-m-t1">Players · {list.players.length}</span>
-        {hasStats && <TimeFrameControl value={tf} onChange={setTf} latestWeek={latestWeek} />}
+      {/* The controls wrap under the title when a phone is too narrow for
+          the scoring pill and the time frame beside it. */}
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 px-4 pb-2 pt-[18px]">
+        <span className="mr-auto whitespace-nowrap text-[16px] font-semibold text-m-t1">Players · {list.players.length}</span>
+        {hasStats && (
+          <span className="flex flex-none items-center gap-2">
+            {showsPoints(stats) && <ScoringControl value={scoring} onChange={setScoring} />}
+            <TimeFrameControl value={tf} onChange={setTf} latestWeek={latestWeek} />
+          </span>
+        )}
       </div>
 
       {failed.length > 0 && (
@@ -351,6 +387,7 @@ function PlayersTable({
                       ctx={{
                         frames: frames.data?.get(entry.player_id),
                         tf,
+                        scoring,
                         usage: usage.data?.get(entry.player_id),
                         posRank: ranks ? (ranks.get(entry.player_id) ?? null) : undefined,
                         ready,

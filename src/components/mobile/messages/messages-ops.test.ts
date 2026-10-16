@@ -1,9 +1,11 @@
 /**
  * messages-ops.test.ts — the pure rules of FieldScout Mobile › Messages
  * (docs/design/mobile/m-messages.md): times, previews, the bubble-run
- * geometry, search, the pending badge, thread ids, the Trades tab's league
- * offers, and the DM feed's view model (the same empty feed the desktop rail
- * renders).
+ * geometry, search, thread ids, the DM feed's view model (the same empty
+ * feed the desktop rail renders), and a league's trade offers as Home's
+ * league-card dot reads them (Messages itself shows no trades — ruling #22;
+ * the Trades tab's search, direction words and cross-league merge went with
+ * it).
  */
 import { describe, expect, it } from 'vitest'
 
@@ -18,17 +20,14 @@ import {
   MY_COLOR,
   bubbleRadius,
   dayLabel,
-  directionWords,
   senderHandle,
   initialOf,
   keyColor,
   leagueIdOfThread,
   leagueThreadId,
   matchesName,
-  matchesTrade,
   leagueTradeOffers,
   membersLine,
-  newestFirst,
   pendingCount,
   previewLine,
   previewText,
@@ -143,24 +142,6 @@ describe('search', () => {
     expect(matchesName('Marcus', ' ')).toBe(false)
     expect(matchesName('Sunday Funday League', ' ')).toBe(true)
   })
-  it('matches a trade by name, @handle, team or any asset — never across two fields', () => {
-    const t = { name: 'Marcus', handle: 'marcus', teamName: 'Gridiron Gurus', gets: ['Darnell Mooney', '$5 FAAB'], gives: ['James Conner'] }
-    expect(matchesTrade(t, 'mooney')).toBe(true)
-    expect(matchesTrade(t, '@marcus')).toBe(true)
-    expect(matchesTrade(t, 'gurus')).toBe(true)
-    expect(matchesTrade(t, 'conner')).toBe(true)
-    expect(matchesTrade(t, 'sdarn')).toBe(false)
-    expect(matchesTrade(t, 'marcus darnell')).toBe(false)
-    expect(matchesTrade(t, '')).toBe(true)
-  })
-  it('badges the offers waiting on my answer only', () => {
-    expect(pendingCount([{ awaitingMe: true }, { awaitingMe: false }, { awaitingMe: true }])).toBe(2)
-    expect(pendingCount([])).toBe(0)
-  })
-  it('words the direction', () => {
-    expect(directionWords('in')).toBe('Sent to you')
-    expect(directionWords('out')).toBe('You sent')
-  })
 })
 
 describe('bubble geometry', () => {
@@ -258,7 +239,7 @@ describe('DM feed view model', () => {
   })
 })
 
-describe('Trades tab — league offers', () => {
+describe('a league\'s trade offers (Home\'s league-card dot)', () => {
   const ME = 'team-me'
   const MARCUS = 'team-marcus'
   const NINA = 'team-nina'
@@ -301,7 +282,7 @@ describe('Trades tab — league offers', () => {
   const doc = (trades: TradeView[], me: string | null = ME) =>
     ({ trades, viewer: { team_id: me, is_commissioner: false }, evaluated_at: NOW.toISOString() }) as Pick<TradesDocument, 'trades' | 'viewer' | 'evaluated_at'>
 
-  it('turns an offer sent to me into the design\'s card: @marcus, Sent to you · 8m, Pending, You get / You give', () => {
+  it('reads an offer sent to me: @marcus, 8m, Pending, You get / You give, waiting on me', () => {
     const [o] = leagueTradeOffers(doc([trade({ id: 't1' })]), detail, 'lg')
     expect(o).toMatchObject({
       id: 't1',
@@ -320,7 +301,7 @@ describe('Trades tab — league offers', () => {
     })
   })
 
-  it('shows offers I sent as "You sent", still Pending but not waiting on me', () => {
+  it('reads an offer I sent as outgoing, still Pending but not waiting on me', () => {
     const [o] = leagueTradeOffers(
       doc([trade({ id: 't2', proposer: { team_id: ME, name: 'Touchdown Tacos' }, recipient: { team_id: NINA, name: 'Hail Marys' } })]),
       detail,
@@ -344,9 +325,15 @@ describe('Trades tab — league offers', () => {
     expect(declined!.awaitingMe).toBe(false)
   })
 
-  it('merges leagues newest first', () => {
-    const a = leagueTradeOffers(doc([trade({ id: 'old', created_at: ago(5 * HOUR) })]), detail, 'a')
-    const b = leagueTradeOffers(doc([trade({ id: 'new', created_at: ago(8 * MIN) })]), detail, 'b')
-    expect(newestFirst([...a, ...b]).map((o) => o.id)).toEqual(['new', 'old'])
+  it('counts only the offers waiting on my answer', () => {
+    expect(pendingCount([{ awaitingMe: true }, { awaitingMe: false }, { awaitingMe: true }])).toBe(2)
+    expect(pendingCount([])).toBe(0)
+    const mine = { proposer: { team_id: ME, name: 'Touchdown Tacos' }, recipient: { team_id: NINA, name: 'Hail Marys' } }
+    const offers = leagueTradeOffers(
+      doc([trade({ id: 'in' }), trade({ id: 'out', ...mine }), trade({ id: 'done', status: 'complete', in_flight: false })]),
+      detail,
+      'lg',
+    )
+    expect(pendingCount(offers)).toBe(1)
   })
 })

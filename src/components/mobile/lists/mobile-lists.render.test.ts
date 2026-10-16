@@ -17,8 +17,16 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ profile: { username: 'dalton', avatar_url: null }, user: { id: 'u1' } }),
 }))
+// The session scoring (a zustand store, whose server snapshot is always its
+// initial state under `renderToStaticMarkup`).
+let scoring: ListScoring = 'ppr'
+vi.mock('./lists-session-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./lists-session-store')>()),
+  useListScoring: () => [scoring, () => {}],
+}))
 
 import type { ListPlayerWithPlayer, ListWithDetails, ListWithTags } from '@/hooks/use-lists'
+import type { FrameTotals, ListScoring, PlayerFrames } from '@/hooks/use-mobile-lists-timeframe-stats'
 
 import { MobileLists } from './mobile-lists'
 
@@ -81,13 +89,14 @@ const DETAIL: ListWithDetails = {
   players: [entry(1, 'Josh Allen', 'QB', 'BUF', 'S'), entry(2, 'Lamar Jackson', 'QB', 'BAL', 'A')],
 } as unknown as ListWithDetails
 
-const render = () => {
+const render = (seed?: (qc: QueryClient) => void) => {
   const qc = new QueryClient()
   qc.setQueryData(['lists', 'collection', 1, 50], { lists: SUMMARY, pagination: { page: 1, pageSize: 50, total: 2, hasMore: false } })
   qc.setQueryData(['folders'], { folders: [] })
   qc.setQueryData(['lists', 'detail', 'l1'], DETAIL)
   qc.setQueryData(['mobile-lists', 'video-flags', 'l1,l4'], new Set(['l1']))
   qc.setQueryData(['mobile-lists', 'latest-week', 2026], 6)
+  seed?.(qc)
   return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(MobileLists)))
     .replace(/&#x27;/g, "'")
     .replace(/&amp;/g, '&')
@@ -141,6 +150,46 @@ describe('mobile List view', () => {
     // season's last completed week.
     expect(out).toContain('>Week 6<')
     expect(out).toContain('>Last 3<')
+    // #19: the points columns name their scoring — PPR until the user picks.
+    expect(out).toContain('aria-label="Scoring: PPR"')
+  })
+
+  it('points follow the session scoring (gap list #19)', () => {
+    search = new URLSearchParams('list=l1')
+    scoring = 'half'
+    const frame = (games: number, pts: FrameTotals['pts']): FrameTotals =>
+      ({ games, pts, receptions: 0 }) as unknown as FrameTotals
+    const frames = new Map<string, PlayerFrames>([
+      [
+        'p1',
+        {
+          week: null,
+          last3: null,
+          season: frame(4, { ppr: 100, half: 90, quarter: 85, standard: 80 }),
+          lastSeason: frame(17, { ppr: 400, half: 380, quarter: 370, standard: 360 }),
+        },
+      ],
+      ['p2', { week: null, last3: null, season: null, lastSeason: null }],
+    ])
+    try {
+      // Proj and 2025 pts (the default columns) read the weekly rows outside
+      // PPR — this season's and last season's.
+      const out = render((qc) =>
+        qc.setQueryData(['mobile-lists', 'timeframe-stats', 2026, 6, 'with-last', 'p1,p2'], frames),
+      )
+      expect(out).toContain('aria-label="Scoring: Half PPR"')
+      // Proj: 90 over 4 games, paced to 17 → 382.5; 2025 pts in Half PPR.
+      expect(out).toContain('>382.5<')
+      expect(out).toContain('>380.0<')
+      // The payload's PPR figures are not shown in Half PPR.
+      expect(out).not.toContain('>320.0<')
+      expect(out).not.toContain('>300.0<')
+      // No games yet this season or last: the stored Half PPR projection is
+      // missing, so "–"; last season scores 0.
+      expect(out).toContain('>0.0<')
+    } finally {
+      scoring = 'ppr'
+    }
   })
 })
 
@@ -148,7 +197,13 @@ describe('mobile List editor', () => {
   it('switches, stat chips, tools, tier lines and rows', () => {
     search = new URLSearchParams('list=l1&edit=1')
     const out = render()
-    expect(out).toContain('>Done<')
+    // Gap list #16 (Chris, 2026-10-15): edits are a draft written by
+    // "Update" (it was "Done" while every change saved at once), greyed out
+    // until something changes.
+    expect(out).toMatch(/<button type="button" disabled=""[^>]*bg-m-b2 text-m-t3">Update<\/button>/)
+    expect(out).not.toContain('>Done<')
+    // #19: the rows' points name their scoring.
+    expect(out).toContain('aria-label="Scoring: PPR"')
     expect(out).toContain('Ranked')
     expect(out).toContain('Tiers')
     expect(out).toContain('aria-checked="true"')

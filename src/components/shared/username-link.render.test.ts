@@ -315,8 +315,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/mobile/community/community-cards.tsx', contains: '@{item.author.username}', why: 'FieldScout Mobile Community card bylines (ranking row, updated-by row, list card): each card is one link that opens the list, so the handle sits inside it; the list detail’s author is a UsernameLink', lines: 3 },
   { file: 'src/components/mobile/community/community-detail.tsx', contains: 'const handle = `@${username}`', why: 'an AI persona’s handle — its page is /personas/… (linked when that flag is on), not a person’s profile' },
   { file: 'src/components/mobile/community/community-ops.ts', contains: '`@${item.author.username}`', why: 'the Community search text — matched against the query, never rendered' },
-  { file: 'src/components/mobile/messages/messages-ops.ts', contains: '`@${t.handle}`', why: 'the Trades search text — matched against the query, never rendered' },
-  { file: 'src/components/mobile/messages/messages-ops.ts', contains: 'return handle ? `@${handle}` : FORMER_MEMBER', why: 'the messages sender label: the conversation preview and the trade card name, each inside its row’s link; the thread’s sender line is a UsernameLink' },
+  { file: 'src/components/mobile/messages/messages-ops.ts', contains: 'return handle ? `@${handle}` : FORMER_MEMBER', why: 'the messages sender label: the conversation preview, inside its row’s link (and a league trade offer’s name, which nothing renders since Messages lost its Trades tab — ruling #22); the thread’s sender line is a UsernameLink' },
 ]
 
 function sourceFiles(dir: string): string[] {

@@ -1,8 +1,10 @@
 /**
  * FieldScout Mobile — Messages (docs/design/mobile/m-messages.md). The PURE
  * half: no React, no client. Times, previews, the bubble-run geometry, the
- * search filters, the avatar palette and the Trades tab's offers live here
- * so the screens stay thin and the rules are pinned by `messages-ops.test.ts`.
+ * search filter and the avatar palette live here so the screens stay thin
+ * and the rules are pinned by `messages-ops.test.ts`. So does the reading of
+ * a league's trade offers (`leagueTradeOffers`) — Messages itself no longer
+ * shows trades (ruling #22); Home's league-card red dot reads it.
  */
 import type { LeagueDetail } from '@/hooks/use-league'
 import type { TradeView, TradesDocument } from '@/lib/leagues/api/trades-service'
@@ -33,32 +35,32 @@ export interface MChatMessage {
   at: string | null
 }
 
-/** The card's status pill colours: Pending (orange), Accepted (green),
- *  Declined (red), plus a grey for the app's other endings. */
+/** An offer's status tone: Pending (orange), Accepted (green), Declined
+ *  (red), plus a grey for the app's other endings. */
 export type MTradeTone = 'pending' | 'accepted' | 'declined' | 'neutral'
 
-/** A league trade offer as the Trades tab card shows it (§2.1 F). */
+/** A league trade offer the viewer's team is in (§2.1 F's fields). */
 export interface MTradeOffer {
   /** The trade's id. */
   id: string
   leagueId: string
   /** The other manager's handle ("@marcus"), else their team's name. */
   name: string
-  /** Their @handle without the "@", when known — searched as well. */
+  /** Their @handle without the "@", when known. */
   handle: string | null
-  /** Their team's name — searched as well. */
+  /** Their team's name. */
   teamName: string | null
   avatarUrl: string | null
   colorClass: string
   dir: 'in' | 'out'
-  /** ISO instant the offer was made (the list is newest first). */
+  /** ISO instant the offer was made. */
   createdAt: string
   time: string
   gets: readonly string[]
   gives: readonly string[]
   status: { label: string; tone: MTradeTone }
-  /** Sent to me and still waiting on my answer: the Trades badge counts
-   *  these, and only these cards carry Decline / Counter / Accept (S2a). */
+  /** Sent to me and still waiting on my answer — what lights Home's league
+   *  card dot (`pendingCount`). */
   awaitingMe: boolean
 }
 
@@ -185,38 +187,18 @@ export function previewLine(preview: string, time: string | null): string {
 }
 
 /** Case-insensitive, untrimmed substring match on the display name (§3:
- *  the All tab searches names only). Empty query matches everything. */
+ *  the search matches conversation names only). Empty query matches
+ *  everything. */
 export function matchesName(name: string, query: string): boolean {
   if (!query) return true
   return name.toLowerCase().includes(query.toLowerCase())
 }
 
-/**
- * Trades search. The prototype concatenated name + gets + gives with no
- * separator and missed the @handle (a defect, gap analysis); here each part
- * is its own field, so "marcus darnell" doesn't straddle two and "@marcus"
- * finds Marcus's offers.
- */
-export function matchesTrade(
-  t: Pick<MTradeOffer, 'name' | 'handle' | 'gets' | 'gives'> & { teamName?: string | null },
-  query: string,
-): boolean {
-  if (!query) return true
-  const q = query.toLowerCase()
-  const fields = [t.name, ...(t.handle ? [t.handle, `@${t.handle}`] : []), ...(t.teamName ? [t.teamName] : []), ...t.gets, ...t.gives]
-  return fields.some((f) => f.toLowerCase().includes(q))
-}
-
-/** The Trades segment badge (S7): offers waiting on my answer — the gap
- *  analysis's "proposed, with the viewer's team as recipient". Ignores the
- *  search. */
+/** Offers waiting on my answer — the gap analysis's "proposed, with the
+ *  viewer's team as recipient". Home's league-card dot reads it (ruling
+ *  #14); nothing in Messages counts trades (ruling #22). */
 export function pendingCount(trades: readonly Pick<MTradeOffer, 'awaitingMe'>[]): number {
   return trades.filter((t) => t.awaitingMe).length
-}
-
-/** "Sent to you" / "You sent" — the card's direction words. */
-export function directionWords(dir: 'in' | 'out'): string {
-  return dir === 'in' ? 'Sent to you' : 'You sent'
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +292,9 @@ export function membersLine(count: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// The Trades tab — the leagues' real offers (§2.1 F, §5 "Trades")
+// A league's real offers (§2.1 F's fields). Not shown in Messages — trades
+// stay inside their league (Chris, ruling #22, 2026-10-15); Home's league
+// card dot reads `awaitingMe` from these.
 // ---------------------------------------------------------------------------
 
 const PILL_TONE: Record<ReturnType<typeof sidePill>['tone'], MTradeTone> = {
@@ -322,9 +306,9 @@ const PILL_TONE: Record<ReturnType<typeof sidePill>['tone'], MTradeTone> = {
 }
 
 /**
- * The card's one status pill. An offer still out is "Pending" whichever way
- * it went (the design's `t[4]`); every other state is the trade screens'
- * own word for it (Accepted, Declined, Under review, Withdrawn…).
+ * An offer's one status. An offer still out is "Pending" whichever way it
+ * went (the design's `t[4]`); every other state is the trade screens' own
+ * word for it (Accepted, Declined, Under review, Withdrawn…).
  */
 export function tradeOfferStatus(trade: Pick<TradeView, 'status' | 'status_reason' | 'proposer'>, myTeamId: string): MTradeOffer['status'] {
   if (trade.status === 'proposed') return { label: 'Pending', tone: 'pending' }
@@ -333,11 +317,10 @@ export function tradeOfferStatus(trade: Pick<TradeView, 'status' | 'status_reaso
 }
 
 /**
- * One league's trades as Trades-tab cards: only the trades the viewer's team
- * is in (sent to me / I sent), with the other manager's name, handle, photo
- * and team colour (the same colour the trade screens and the Team view give
- * that team), "You get" / "You give", and the time against the read's own
- * clock.
+ * One league's offers: only the trades the viewer's team is in (sent to me /
+ * I sent), with the other manager's name, handle, photo and team colour (the
+ * same colour the trade screens and the Team view give that team), "You get"
+ * / "You give", and the time against the read's own clock.
  */
 export function leagueTradeOffers(
   doc: Pick<TradesDocument, 'trades' | 'viewer' | 'evaluated_at'>,
@@ -373,10 +356,4 @@ export function leagueTradeOffers(
         awaitingMe: incoming && t.status === 'proposed',
       }
     })
-}
-
-/** Every league's offers in one list, newest first. */
-export function newestFirst(offers: readonly MTradeOffer[]): MTradeOffer[] {
-  const at = (o: MTradeOffer) => Date.parse(o.createdAt) || 0
-  return [...offers].sort((a, b) => at(b) - at(a))
 }

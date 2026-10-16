@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * The mobile Match tab's matchup swipe (FieldScout Mobile handoff,
- * `m-match.md` §3.2 — the prototype's `mx`):
+ * `m-match.md` §3.2 — the prototype's `mx`). Swiping is how you move
+ * between matchups: the pager dots only show where you are (Chris, ruling
+ * #23, 2026-10-15 — "no tapping, just swiping").
  *
  * - **Axis lock.** Once the finger has moved more than 8px either way, the
  *   gesture is horizontal if |dx| > |dy| and stays so; a vertical gesture is

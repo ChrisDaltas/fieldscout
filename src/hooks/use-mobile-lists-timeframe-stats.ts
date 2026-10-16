@@ -1,9 +1,17 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
-import { calculateFantasyPoints, PPR_SCORING, type StatRow } from '@/lib/scoring/default'
-import { CURRENT_SEASON } from '@/lib/stats/aggregate-fantasy'
+import {
+  calculateFantasyPoints,
+  HALF_PPR_SCORING,
+  PPR_SCORING,
+  QUARTER_PPR_SCORING,
+  STANDARD_SCORING,
+  type ScoringRules,
+  type StatRow,
+} from '@/lib/scoring/default'
+import { CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
 import { createBrowserClient } from '@/lib/supabase/client'
 
@@ -24,14 +32,36 @@ import { createBrowserClient } from '@/lib/supabase/client'
  *
  * Mock rows (`source = 'mock'`) are excluded, as the projection rule in
  * `aggregate-fantasy.ts` excludes them.
+ *
+ * Points are summed under each of the four scorings the phone's list stats
+ * offer (Chris, 2026-10-15, gap list #19), so switching the scoring is a
+ * lookup, not a new read. Last season's games are read only when a column
+ * needs them (`withLastSeason`: the 2025 pts column in a non-PPR scoring —
+ * in PPR it is the list payload's own value).
  */
 
 export type TimeFrame = 'week' | 'last3' | 'season'
 
+/**
+ * The scoring a phone list's points follow (gap list #19): PPR (1 point a
+ * catch), Half PPR (0.5), Quarter PPR (0.25) or Standard. The four differ
+ * only in the reception value. Session-only, like the time frame.
+ */
+export type ListScoring = 'ppr' | 'half' | 'quarter' | 'standard'
+
+export const LIST_SCORINGS: readonly ListScoring[] = ['ppr', 'half', 'quarter', 'standard']
+
+export const LIST_SCORING_RULES: Readonly<Record<ListScoring, ScoringRules>> = {
+  ppr: PPR_SCORING,
+  half: HALF_PPR_SCORING,
+  quarter: QUARTER_PPR_SCORING,
+  standard: STANDARD_SCORING,
+}
+
 export interface FrameTotals {
   games: number
-  /** PPR fantasy points. */
-  pts: number
+  /** Fantasy points under each list scoring, to one decimal. */
+  pts: Readonly<Record<ListScoring, number>>
   targets: number
   receptions: number
   receiving_yards: number
@@ -49,6 +79,9 @@ export interface PlayerFrames {
   week: FrameTotals | null
   last3: FrameTotals | null
   season: FrameTotals | null
+  /** Last season's games: `undefined` when not read (`withLastSeason`
+   *  off), `null` when he played none. */
+  lastSeason?: FrameTotals | null
 }
 
 /**
@@ -89,7 +122,12 @@ const SELECT =
   'def_sacks, def_interceptions, def_fumble_recoveries, def_tds, def_safeties, ' +
   'two_point_conversions'
 
-type Row = Record<string, unknown> & { player_id: string; week: number | null; source: string | null }
+type Row = Record<string, unknown> & {
+  player_id: string
+  season: number | null
+  week: number | null
+  source: string | null
+}
 
 const COUNTED = [
   'targets',
@@ -104,7 +142,8 @@ const COUNTED = [
   'pass_completions',
 ] as const
 
-function total(rows: readonly Row[]): FrameTotals | null {
+/** One frame's totals over its game rows; `null` for no games. */
+export function frameTotals(rows: readonly Row[]): FrameTotals | null {
   if (rows.length === 0) return null
   const sum: Record<string, number> = {}
   for (const row of rows) {
@@ -113,9 +152,13 @@ function total(rows: readonly Row[]): FrameTotals | null {
       sum[key] = (sum[key] ?? 0) + Number(value ?? 0)
     }
   }
+  const pts = {} as Record<ListScoring, number>
+  for (const key of LIST_SCORINGS) {
+    pts[key] = Math.round(calculateFantasyPoints(sum as StatRow, LIST_SCORING_RULES[key]) * 10) / 10
+  }
   const out: FrameTotals = {
     games: rows.length,
-    pts: Math.round(calculateFantasyPoints(sum as StatRow, PPR_SCORING) * 10) / 10,
+    pts,
     targets: 0,
     receptions: 0,
     receiving_yards: 0,
@@ -133,39 +176,61 @@ function total(rows: readonly Row[]): FrameTotals | null {
 
 /**
  * Per-player frame totals. `latestWeek` is `useMobileListsLatestWeek`'s value
- * (`undefined` while it loads — the read waits for it).
+ * (`undefined` while it loads — the read waits for it). `withLastSeason` also
+ * reads last season's games (`PlayerFrames.lastSeason`).
+ *
+ * `keepPrevious` keeps the last map on screen while a new set of players
+ * loads. The caller must then treat a player missing from the map as still
+ * loading (blank), not as "no games" — the map is the previous set's.
  */
 export function useMobileListsTimeframeStats(
   playerIds: readonly string[],
   latestWeek: number | null | undefined,
   enabled: boolean,
+  withLastSeason = false,
+  { keepPrevious = false }: { keepPrevious?: boolean } = {},
 ) {
   const ids = [...new Set(playerIds)].sort()
   return useQuery({
-    queryKey: ['mobile-lists', 'timeframe-stats', CURRENT_SEASON, latestWeek ?? null, ids.join(',')],
+    placeholderData: keepPrevious ? keepPreviousData : undefined,
+    queryKey: [
+      'mobile-lists',
+      'timeframe-stats',
+      CURRENT_SEASON,
+      latestWeek ?? null,
+      withLastSeason ? 'with-last' : 'current',
+      ids.join(','),
+    ],
     enabled: enabled && ids.length > 0 && latestWeek !== undefined,
     staleTime: 5 * 60 * 1000,
     queryFn: async (): Promise<Map<string, PlayerFrames>> => {
       const rows = await fetchWeeklyStatsForPlayers<Row>({
         supabase: createBrowserClient(),
         playerIds: ids,
-        seasons: [CURRENT_SEASON],
+        seasons: withLastSeason ? [CURRENT_SEASON, LAST_SEASON] : [CURRENT_SEASON],
         select: SELECT,
       })
       const played = rows.filter((row) => row.source !== 'mock' && typeof row.week === 'number')
-      const byId = new Map<string, Row[]>()
-      for (const row of played) {
-        const list = byId.get(row.player_id)
-        if (list) list.push(row)
-        else byId.set(row.player_id, [row])
+      const group = (season: number) => {
+        const byId = new Map<string, Row[]>()
+        for (const row of played) {
+          if (row.season !== season) continue
+          const list = byId.get(row.player_id)
+          if (list) list.push(row)
+          else byId.set(row.player_id, [row])
+        }
+        return byId
       }
+      const current = group(CURRENT_SEASON)
+      const last = withLastSeason ? group(LAST_SEASON) : null
       const byPlayer = new Map<string, PlayerFrames>()
       for (const id of ids) {
-        const games = (byId.get(id) ?? []).sort((a, b) => (b.week as number) - (a.week as number))
+        const games = (current.get(id) ?? []).sort((a, b) => (b.week as number) - (a.week as number))
         byPlayer.set(id, {
-          week: latestWeek == null ? null : total(games.filter((row) => row.week === latestWeek)),
-          last3: total(games.slice(0, 3)),
-          season: total(games),
+          week: latestWeek == null ? null : frameTotals(games.filter((row) => row.week === latestWeek)),
+          last3: frameTotals(games.slice(0, 3)),
+          season: frameTotals(games),
+          ...(last ? { lastSeason: frameTotals(last.get(id) ?? []) } : {}),
         })
       }
       return byPlayer

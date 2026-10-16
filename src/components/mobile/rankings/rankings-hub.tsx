@@ -657,7 +657,7 @@ function AuthorBody({
         open={confirm}
         onOpenChange={setConfirm}
         title={`You already have a ${label} · ${posLabel} ranking`}
-        subtitle={`Starting from ${board.persona.display_name}'s replaces its order when you save.`}
+        subtitle={`Starting from ${board.persona.display_name}'s replaces its order when you publish.`}
         footer={
           <div className="flex flex-col gap-2 px-4 pb-[30px] pt-1">
             <button
