@@ -1,5 +1,5 @@
 -- ============================================================================
--- 187 — the operator's every-league table (M8 follow-up, Chris 2026-10-15:
+-- 193 — the operator's every-league table (M8 follow-up, Chris 2026-10-15:
 --       "in admin i should have a table of all leagues, their members, their
 --       settings etc"; discharges F599; PROGRESS D521; read-only, writes
 --       nothing)
@@ -40,7 +40,7 @@
 -- search_path '' + in-body gate, EXECUTE authenticated only; internals PLAIN,
 -- search_path '', REVOKEd from PUBLIC / anon / authenticated. No R6 / D38
 -- waiver needed. DEPLOY BEFORE PUSH (TD9): the GET routes answer a named 503
--- (PGRST202) until this is pushed. pgTAP 135_operator_league_table.sql.
+-- (PGRST202) until this is pushed. pgTAP 141_operator_league_table.sql.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ $$;
 REVOKE ALL ON FUNCTION op_list_leagues(TEXT, TEXT, BOOLEAN, INTEGER, INTEGER, BOOLEAN) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION op_list_leagues(TEXT, TEXT, BOOLEAN, INTEGER, INTEGER, BOOLEAN) TO authenticated;
 COMMENT ON FUNCTION op_list_leagues(TEXT, TEXT, BOOLEAN, INTEGER, INTEGER, BOOLEAN) IS
-  'M8 admin league table (migration 187, F599): every league on the platform (deleted only when asked), searched by name or commissioner, sorted, one page of at most 100 with the true total. Read-only; operators only (in-body gate).';
+  'M8 admin league table (migration 193, F599): every league on the platform (deleted only when asked), searched by name or commissioner, sorted, one page of at most 100 with the true total. Read-only; operators only (in-body gate).';
 
 -- ---------------------------------------------------------------------------
 -- op_league_detail
@@ -331,4 +331,4 @@ $$;
 REVOKE ALL ON FUNCTION op_league_detail(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION op_league_detail(UUID) TO authenticated;
 COMMENT ON FUNCTION op_league_detail(UUID) IS
-  'M8 admin league table (migration 187): one league (deleted too) — its row, full settings, and every seat with manager, role, joined date, autopilot, vacancy and record. Read-only; operators only (in-body gate); P0002 for an unknown league.';
+  'M8 admin league table (migration 193): one league (deleted too) — its row, full settings, and every seat with manager, role, joined date, autopilot, vacancy and record. Read-only; operators only (in-body gate); P0002 for an unknown league.';

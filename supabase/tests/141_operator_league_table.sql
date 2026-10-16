@@ -1,5 +1,5 @@
 -- ============================================================================
--- 135 — the operator's every-league table (migration 187; M8 follow-up;
+-- 141 — the operator's every-league table (migration 193; M8 follow-up;
 --       F599; PROGRESS D521)
 -- ============================================================================
 -- What this file proves, in one rolled-back transaction:
@@ -13,9 +13,10 @@
 --       is cut; paging walks every league exactly once; sort + search; the
 --       plain-words row (golden); bad paging is 22023 by name.
 --   §D  DETAIL — every seat with role / vacancy / autopilot / record, full
---       settings; a deleted league opens with its record_error stated;
+--       settings; a deleted league opens with its record_error stated, and
+--       a standings read that THROWS is a stated record_error (R1565);
 --       an unknown league is P0002.
--- Break probe (§4.3): drop the in-body gate from op_list_leagues ⇒ K2/K3
+-- Break probe (§4.3): drop the in-body gate from op_list_leagues ⇒ A3/K2/K3
 -- red (shown in the PR, reverted).
 -- World (season 2098): u1 commissioner of L1, u2 manager of L1, u3 commissioner
 -- of L2, u4 OPERATOR (in no league), u5 plain user. Names prefixed x135 so the
@@ -26,7 +27,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(29);
+select plan(30);
 
 create or replace function pg_temp.err(p_sql text) returns text language plpgsql as $$
 begin
@@ -110,6 +111,10 @@ insert into league_weeks (league_id, season, week, status) values
  ('b1350000-0000-4000-8000-000000000001', 2098, 1, 'final'),
  ('b1350000-0000-4000-8000-000000000001', 2098, 2, 'live');
 
+-- R1565: L2's stored schedule_mode is one league_standings_internal refuses,
+-- so its standings read throws inside op_league_detail.
+update leagues set settings = '{"schedule_mode": "x135_bogus"}' where id = 'b1350000-0000-4000-8000-000000000002';
+
 create temp table r135 (tag text primary key, r jsonb);
 grant all on r135 to anon, authenticated, service_role;
 
@@ -146,7 +151,8 @@ insert into r135 values
   ('who',   op_list_leagues('x135_user1', 'name', false, 100, 0, false)),
   ('pct',   op_list_leagues('x135%', 'name', false, 100, 0, false)),
   ('D',     op_league_detail('b1350000-0000-4000-8000-000000000001')),
-  ('DD',    op_league_detail('b1350000-0000-4000-8000-0000000000dd'));
+  ('DD',    op_league_detail('b1350000-0000-4000-8000-0000000000dd')),
+  ('DE',    op_league_detail('b1350000-0000-4000-8000-000000000002'));
 select alike(pg_temp.err($$select op_league_detail('b1350000-0000-4000-8000-0000000000ee')$$), 'P0002:%no such league%', 'D0 an unknown league is P0002, never an empty answer');
 select alike(pg_temp.err($$select op_list_leagues('', 'owner')$$), '22023:%sort must be%', 'L0 an unknown sort is refused by name');
 select alike(pg_temp.err($$select op_list_leagues('', 'name', true, 101)$$), '22023:%1 to 100%', 'L0b a page over 100 is refused (boundary 101)');
@@ -209,6 +215,10 @@ select is((select r -> 'settings' ->> 'waiver_type' || ':' || (r -> 'settings' -
   'faab:4:x135 Alpha', 'D3 the full settings ride beside the row');
 select is((select (r ->> 'record_error') || ' | ' || (r -> 'league' ->> 'deleted_at') from r135 where tag = 'DD'),
   'The league is deleted, so it has no standings. | 2098-02-01T00:00:00+00:00', 'D4 a deleted league opens, its missing record stated');
+
+select is((select (r ->> 'record_error' like 'Standings could not be read: %') || ':' || jsonb_array_length(r -> 'members') || ':' || coalesce(r -> 'members' -> 0 ->> 'record', 'null')
+           from r135 where tag = 'DE'),
+  'true:1:null', 'D5 R1565: a standings read that throws is a stated record_error (its words kept), the seats still listed, no fake record');
 
 select * from finish();
 rollback;

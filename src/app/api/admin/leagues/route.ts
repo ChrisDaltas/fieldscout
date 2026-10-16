@@ -7,7 +7,7 @@ import { LEAGUE_SORTS, LEAGUE_TABLE_UNAVAILABLE } from '@/lib/admin/league-table
 
 /**
  * GET /api/admin/leagues — EVERY league on the platform, one page at a time
- * (M8 follow-up, Chris 2026-10-15; migration 187 `op_list_leagues`; F599).
+ * (M8 follow-up, Chris 2026-10-15; migration 193 `op_list_leagues`; F599).
  *
  * The admin gate (404 to everyone else), Zod, then ONE RPC through the
  * operator's OWN session client — the RPC re-checks the operator gate
@@ -17,7 +17,7 @@ import { LEAGUE_SORTS, LEAGUE_TABLE_UNAVAILABLE } from '@/lib/admin/league-table
  * (name | created | season | status | members | commissioner), `dir`
  * (asc | desc), `offset`, `limit` (1–100), `deleted` (1 = include deleted).
  * The answer carries the TRUE `total` and `more` — never a silent cap.
- * Before 187 is pushed this is a named 503 (TD9).
+ * Before 193 is pushed this is a named 503 (TD9).
  */
 const querySchema = z.object({
   q: z.string().trim().max(80, 'Search is at most 80 characters').default(''),

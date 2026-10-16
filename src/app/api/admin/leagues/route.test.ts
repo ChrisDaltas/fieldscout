@@ -1,9 +1,9 @@
 /**
  * GET /api/admin/leagues and GET /api/admin/leagues/[id]/detail (migration
- * 187; F599) — gate first (404, RPC never called), Zod before the RPC, one
+ * 193; F599) — gate first (404, RPC never called), Zod before the RPC, one
  * RPC through the operator's own client, and every failure loud: the named
  * 503 before the push, 404 / 400 / 500, a payload without its list is 500
- * (never an empty table). The RPCs' behaviour is pgTAP 135's.
+ * (never an empty table). The RPCs' behaviour is pgTAP 141's.
  */
 import { NextResponse } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

@@ -1,6 +1,6 @@
 /**
  * The admin all-leagues table and the league page's Members / Settings
- * sections (migration 187; F599) over real payload shapes — the table with
+ * sections (migration 193; F599) over real payload shapes — the table with
  * its true total, sort marks, usernames as profile links, deleted badge,
  * overflow paging; empty; the detail's vacant / autopilot / record and the
  * stated record error; loading and the named pre-push 503. Plus the pure
@@ -96,7 +96,7 @@ describe('All-leagues table', () => {
     expect(html(createElement(AdminLoading, { rows: 6, label: 'league-table' }))).toContain('data-admin-loading="league-table"')
     const out = html(createElement(AdminError, { error: new AdminApiError(503, LEAGUE_TABLE_UNAVAILABLE), what: 'the leagues', onRetry: noop }))
     expect(out).toContain('data-admin-error="unavailable"')
-    expect(out).toContain('migration 187 is not pushed')
+    expect(out).toContain('migration 193 is not pushed')
     expect(out).not.toContain('Retry')
   })
 })

@@ -62,5 +62,5 @@ describe('GET /api/admin/actions', () => {
   })
 })
 
-// GET /api/admin/leagues is now the all-leagues RPC read (187, F599): its
+// GET /api/admin/leagues is now the all-leagues RPC read (193, F599): its
 // behaviour is pinned in ../leagues/route.test.ts.

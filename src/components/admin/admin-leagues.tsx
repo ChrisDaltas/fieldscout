@@ -28,7 +28,7 @@ import { leagueIdFromInput, verbWords, type OpLeagueState } from './admin-consol
 export const LEAGUE_FINDER_HINT =
   'Search every league by name or commissioner, or paste a league link or id.'
 
-/** A league finder: a search over EVERY league (187 `op_list_leagues`, F599), or a pasted link / id. */
+/** A league finder: a search over EVERY league (193 `op_list_leagues`, F599), or a pasted link / id. */
 export function LeagueFinder({ onPick }: { onPick: (league: { id: string; name: string | null }) => void }) {
   const [text, setText] = useState('')
   const q = useDeferredValue(text.trim())

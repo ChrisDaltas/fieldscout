@@ -1,13 +1,13 @@
 /**
- * The admin all-leagues table (M8 follow-up, Chris 2026-10-15; migration 187
+ * The admin all-leagues table (M8 follow-up, Chris 2026-10-15; migration 193
  * `op_list_leagues` / `op_league_detail`; F599) — the payload shapes, the
  * named pre-push 503 words, and the query-string builder shared by the route,
  * the hook and the page.
  */
 
-export const LEAGUE_TABLE_UNAVAILABLE = 'The all-leagues table is not available yet (migration 187 is not pushed).'
+export const LEAGUE_TABLE_UNAVAILABLE = 'The all-leagues table is not available yet (migration 193 is not pushed).'
 export const LEAGUE_DETAIL_UNAVAILABLE =
-  'League members and settings are not available yet (migration 187 is not pushed).'
+  'League members and settings are not available yet (migration 193 is not pushed).'
 
 export const LEAGUE_SORTS = ['name', 'created', 'season', 'status', 'members', 'commissioner'] as const
 export type LeagueSort = (typeof LEAGUE_SORTS)[number]

@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils'
 import { AdminEmpty, AdminError, AdminHeader, AdminLoading, AdminSection, when } from './admin-parts'
 
 // ---------------------------------------------------------------------------
-// /app/admin/leagues — every league on the platform (187 `op_list_leagues`).
+// /app/admin/leagues — every league on the platform (193 `op_list_leagues`).
 // ---------------------------------------------------------------------------
 
 function day(iso: string | null | undefined): string {
@@ -272,7 +272,7 @@ function LeagueTableRow({ league: l, onOpen }: { league: OpLeagueRow; onOpen: (i
 }
 
 // ---------------------------------------------------------------------------
-// The admin league page's Members + Settings sections (187 `op_league_detail`).
+// The admin league page's Members + Settings sections (193 `op_league_detail`).
 // ---------------------------------------------------------------------------
 
 export function AdminLeagueDetailSections({ leagueId }: { leagueId: string }) {

@@ -15,10 +15,10 @@ export function opReadResponse(
 ): NextResponse {
   if (error) {
     if (error.code === 'PGRST202') {
-      // TD9 deploy-before-push: the RPC's migration (186 / 187) is not on this database yet.
+      // TD9 deploy-before-push: the RPC's migration (186 / 193) is not on this database yet.
       return NextResponse.json({ error: unavailable }, { status: 503 })
     }
-    // A refused argument (187's sort / page bounds) — the RPC's own words.
+    // A refused argument (193's sort / page bounds) — the RPC's own words.
     if (error.code === '22023') return NextResponse.json({ error: error.message }, { status: 400 })
     // TD8 / F581: the RPC's own gate refusing is answered like the route gate — 404.
     if (error.code === '42501') return NextResponse.json(ADMIN_NOT_FOUND_BODY, { status: 404 })

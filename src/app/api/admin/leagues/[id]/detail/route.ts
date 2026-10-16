@@ -7,9 +7,9 @@ import { LEAGUE_DETAIL_UNAVAILABLE } from '@/lib/admin/league-table'
 
 /**
  * GET /api/admin/leagues/[id]/detail — one league's members and full settings
- * (M8 follow-up, Chris 2026-10-15; migration 187 `op_league_detail`). The
+ * (M8 follow-up, Chris 2026-10-15; migration 193 `op_league_detail`). The
  * admin gate, then ONE RPC through the operator's own session client (the RPC
- * re-checks the operator gate in-body). Unknown league → 404; before 187 is
+ * re-checks the operator gate in-body). Unknown league → 404; before 193 is
  * pushed → a named 503 (TD9).
  */
 const idSchema = z.uuid()
