@@ -4,6 +4,9 @@
  * belt, big-board dedupe), the §8.9 best-available-from-board helper, and
  * the load-into-queue toast lines.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import type { LeagueListWithList } from '@/lib/leagues/api/league-lists-service'
@@ -12,6 +15,7 @@ import {
   bestAvailableFromBoard,
   deriveListsPanelRows,
   fromListToastLine,
+  standaloneListRows,
 } from './my-lists-panel-ops'
 
 const ME = 'user-me'
@@ -100,6 +104,57 @@ describe('deriveListsPanelRows (§8.9 panel contents)', () => {
       USERNAMES,
     )
     expect(rows[0]?.ownerLabel).toBe('League member')
+  })
+})
+
+/**
+ * The room follows a list's Ranked and Tiers switches like every list screen
+ * (Chris 2026-10-16, "just make sure they work consistently"; spec v2.16.93):
+ * each row carries the list's `ranking_mode` to the cheat sheet and the pool
+ * overlay, which show numbers only on a numbered list and tiers only on a
+ * tiered one.
+ */
+describe('each row carries its list’s Ranked / Tiers switches', () => {
+  it('from the attachment’s embed, the Big Board row, and a standalone room’s own lists', () => {
+    const plain = attachment({ id: 'a1', list_id: 'list-a', owner_id: ME })
+    plain.lists!.ranking_mode = 'unranked'
+    const tiers = attachment({ id: 'a2', list_id: 'list-b', owner_id: OTHER, shared_with_league: true })
+    tiers.lists!.ranking_mode = 'tier_only'
+    const rows = deriveListsPanelRows([plain, tiers], ME, { ...BOARD, ranking_mode: 'ranked' }, USERNAMES)
+    expect(rows.map((r) => [r.key, r.rankingMode])).toEqual([
+      ['a1', 'unranked'],
+      ['a2', 'tier_only'],
+      ['big-board', 'ranked'],
+    ])
+
+    const standalone = standaloneListRows([
+      { id: 'l-1', title: 'Sleepers', player_count: 30, is_big_board: false, ranking_mode: 'rank_and_tier' },
+    ])
+    expect(standalone[0]?.rankingMode).toBe('rank_and_tier')
+  })
+
+  it('unknown (a dangling row, a board read without it) is null — numbered, no tiers', () => {
+    const gone = attachment({ id: 'a3', list_id: 'list-gone', owner_id: ME })
+    gone.lists = null
+    expect(deriveListsPanelRows([gone], ME, BOARD, USERNAMES).map((r) => r.rankingMode)).toEqual([null, null])
+  })
+
+  it('the cheat sheet and the pool overlay read them through isNumbered / hasTiers', () => {
+    const panel = readFileSync(path.resolve(process.cwd(), 'src/components/draft/my-lists-panel.tsx'), 'utf8')
+    expect(panel).toContain('showRank={numbered}')
+    expect(panel).toContain('{tiered && row.tier && <TierBadge')
+    expect(panel).toContain('rankingMode: row.rankingMode')
+
+    const pool = readFileSync(path.resolve(process.cwd(), 'src/components/draft/available-players.tsx'), 'utf8')
+    expect(pool).toContain('isNumbered(overlay?.rankingMode)')
+    expect(pool).toContain('hasTiers(overlay?.rankingMode)')
+    expect(pool).toContain('overlayActive && overlayTiered && listTier')
+    expect(pool).toContain("overlayNumbered ? `#${listRank}` : '✓'")
+
+    const embed = readFileSync(path.resolve(process.cwd(), 'src/lib/leagues/api/league-lists-service.ts'), 'utf8')
+    expect(embed).toMatch(/lists!league_lists_list_id_fkey \([^)]*\branking_mode\b/)
+    const hook = readFileSync(path.resolve(process.cwd(), 'src/hooks/use-league-lists.ts'), 'utf8')
+    expect(hook).toMatch(/'id, title, [^']*\branking_mode\b/)
   })
 })
 

@@ -26,6 +26,7 @@ import { useMobileListsCommit } from '@/hooks/use-mobile-lists-commit'
 import { rankPoolPositions, useMobileListsPosRanks, type PoolPlayer } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { toast } from '@/hooks/use-toast'
+import { hasTiers, isNumbered, withNumbers, withTiers } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { useListDisplay, useListDisplayStore } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
@@ -109,9 +110,13 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  * - **Touch drag works**: a long press (220ms) lifts a row, a 2px blue line
  *   shows where it will land — above the target moving up, below it moving
  *   down — and the edges auto-scroll (gaps 17, 18).
- * - **Ranked off + Tiers on can't be stored** (`ranking_mode` has three
- *   values), so turning Tiers on turns Ranked on, and Ranked off turns Tiers
- *   off. A list holds at most six tiers (S–F), so Add tier line stops there.
+ * - **Ranked and Tiers are independent switches** (Chris, 2026-10-15:
+ *   "allow tiers without numbers"): Ranked is the 1-2-3 numbers, Tiers the
+ *   Tier 1, Tier 2… lines, and either can be on without the other — Tiers
+ *   with Ranked off is `tier_only` (migration 191). Until 191 is pushed the
+ *   server answers that save with a 409 ("coming in the next update"), and
+ *   Update's failure note says so and keeps the draft. A list holds at most
+ *   six tiers (S–F), so Add tier line stops there.
  * - **A tap on a player opens their profile**, with "Remove from list"
  *   (Chris, 2026-10-15): inside the editor it takes him out of the draft —
  *   gone from the list at once, saved by Update, undone by Back — like the
@@ -320,8 +325,8 @@ function EditorBody({
   }, [promptSeq, saving])
 
   const mode = draft.mode
-  const tiersOn = mode === 'rank_and_tier'
-  const ranked = mode !== 'unranked'
+  const tiersOn = hasTiers(mode)
+  const ranked = isNumbered(mode)
 
   const items = React.useMemo(() => draftItems(draft), [draft])
   const players = items.filter((item): item is Extract<EdItem, { t: 'p' }> => item.t === 'p')
@@ -499,13 +504,13 @@ function EditorBody({
             label="Ranked"
             on={ranked}
             disabled={bigBoard || saving}
-            onClick={() => setMode(ranked ? 'unranked' : 'ranked')}
+            onClick={() => setMode(withNumbers(mode, !ranked))}
           />
           <ToggleCard
             label="Tiers"
             on={tiersOn}
             disabled={bigBoard || saving}
-            onClick={() => setMode(tiersOn ? 'ranked' : 'rank_and_tier')}
+            onClick={() => setMode(withTiers(mode, !tiersOn))}
           />
         </div>
         <div className="flex flex-col gap-1.5">

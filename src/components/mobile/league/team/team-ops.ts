@@ -147,27 +147,6 @@ export function summaryLine(rows: readonly StandingsRow[], teamId: string): stri
   return parts.join(' · ')
 }
 
-/** "W3" / "L2" / "T1" from the decided weeks, newest first — null before
- *  any result. `result` is the stored `home` / `away` / `tie`. */
-export function streakOf(
-  matchups: ReadonlyArray<{ week: number; home_team_id: string; away_team_id: string | null; result: string | null }>,
-  teamId: string,
-): { text: string; kind: 'W' | 'L' | 'T' } | null {
-  const mine = matchups
-    .filter((m) => m.away_team_id !== null && (m.home_team_id === teamId || m.away_team_id === teamId) && (m.result === 'home' || m.result === 'away' || m.result === 'tie'))
-    .sort((a, b) => b.week - a.week)
-  const outcome = (m: (typeof mine)[number]): 'W' | 'L' | 'T' =>
-    m.result === 'tie' ? 'T' : (m.result === 'home') === (m.home_team_id === teamId) ? 'W' : 'L'
-  if (mine.length === 0) return null
-  const first = outcome(mine[0])
-  let n = 0
-  for (const m of mine) {
-    if (outcome(m) !== first) break
-    n += 1
-  }
-  return { text: `${first}${n}`, kind: first }
-}
-
 // ---------------------------------------------------------------------------
 // The game line — "Sun 1:00 PM vs DET", "Q4 6:50 @ DEN", "Final W 31-20 @ GB"
 // ---------------------------------------------------------------------------

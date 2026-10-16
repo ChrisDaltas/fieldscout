@@ -51,6 +51,7 @@ import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
+import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/components/mobile/league/streak-ops'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -120,10 +121,13 @@ import { useMatchStore } from './match-store'
  * Home restores it, and only a re-tap of Match while it is showing goes
  * back to your matchup and the current week (§3.2 item 7).
  *
+ * Each side's meta is "@manager · record streak" (mirrored on the right),
+ * the streak ("▼2L" / "▲8W") the one shared count (`streak-ops`, gap list
+ * #39) over the schedule's stored final results.
+ *
  * Not built because the app has no data for them (each is a reported gap):
  * the win-probability bars and "% win" (no model — the slot carries the
- * stored W/L once decided), the streak, and the live-play row (no
- * play-by-play feed). The app-only states and variants are kept in the
+ * stored W/L once decided) and the live-play row (no play-by-play feed). The app-only states and variants are kept in the
  * mobile language: degraded / reconnecting / delayed banners, box errors,
  * no-lineup, bye, playoffs, ✸ Adjusted, League Median / 2nd-opponent
  * results, the box's own Total, the commissioner's override panel,
@@ -340,6 +344,8 @@ function HeadToHead({
   const values = useLeaguePlayerValues(leagueId, doc.season, doc.week)
   const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
   const standings = useStandings(leagueId)
+  // The schedule read the tab already holds (one cache entry) — the streaks.
+  const schedule = useSchedule(leagueId)
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const overrideOn = useOverrideMode(leagueId) && isCommish
 
@@ -367,6 +373,7 @@ function HeadToHead({
     const r = standings.data?.standings.find((s) => s.team_id === teamId)
     return r ? formatRecord(r) : null
   }
+  const streakOf = (teamId: string) => (schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null)
 
   return (
     <>
@@ -400,10 +407,14 @@ function HeadToHead({
               projB={boxProjection(boxB.data, projOf)}
               recordOf={recordOf}
               recordsPending={standings.isPending}
+              streakOf={streakOf}
+              streaksPending={schedule.isPending}
             />
             <ReadProblems
               items={[
                 standings.isError && !standings.data ? { key: 'records', text: 'Couldn’t load the records.', retry: () => void standings.refetch() } : null,
+                // A failed schedule read must not pass for "no streak" (CLAUDE.md).
+                schedule.isError && !schedule.data ? { key: 'streaks', text: 'Couldn’t load the streaks.', retry: () => void schedule.refetch() } : null,
                 values.isError && !values.data ? { key: 'projections', text: 'Couldn’t load the projections.', retry: () => void values.refetch() } : null,
               ]}
             />
@@ -553,6 +564,8 @@ function MatchCard({
   projB,
   recordOf,
   recordsPending,
+  streakOf,
+  streaksPending,
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -568,6 +581,10 @@ function MatchCard({
   /** The standings read has not answered yet — the record slot holds a
    *  placeholder instead of silently missing. */
   recordsPending: boolean
+  /** The team's current streak (`streak-ops`); null before a decided game. */
+  streakOf: (teamId: string) => Streak | null
+  /** The schedule read (the streaks' source) has not answered yet. */
+  streaksPending: boolean
 }) {
   const managers = useMemo(() => managersByTeam(detail.members), [detail.members])
   const playoff = row.round_type === 'playoff'
@@ -585,6 +602,8 @@ function MatchCard({
       manager={managers.get(teamId) ?? null}
       record={recordOf(teamId)}
       recordPending={recordsPending}
+      streak={streakOf(teamId)}
+      streakPending={streaksPending}
       avatarClass={teamAvatarClass(teamIds, teamId, myTeamId)}
       mirror={mirror}
     />
@@ -642,6 +661,8 @@ function CardSide({
   manager,
   record,
   recordPending,
+  streak,
+  streakPending,
   avatarClass,
   mirror,
 }: {
@@ -654,6 +675,8 @@ function CardSide({
   manager: string | null
   record: string | null
   recordPending: boolean
+  streak: Streak | null
+  streakPending: boolean
   avatarClass: string
   mirror: boolean
 }) {
@@ -682,7 +705,25 @@ function CardSide({
     </span>
   )
   const mgr = manager ? <UsernameLink username={manager} /> : null
-  const rec = record ?? (recordPending ? <span className="inline-block h-2 w-6 rounded-[3px] bg-m-b3 align-middle" aria-hidden data-record="loading" /> : null)
+  const recOnly = record ?? (recordPending ? <span className="inline-block h-2 w-6 rounded-[3px] bg-m-b3 align-middle" aria-hidden data-record="loading" /> : null)
+  // "2-6 ▼2L" (m-match §2.2: the streak in its own coloured span after the
+  // record). While the schedule read is out, the record's placeholder holds
+  // the streak's slot too (one bar beside a known record).
+  const stk = streak ? (
+    <span className={streakToneClass(streak, 'text-m-t3')} data-streak={streakArrowText(streak)}>
+      {streakArrowText(streak)}
+    </span>
+  ) : streakPending && record !== null ? (
+    <span className="inline-block h-2 w-5 rounded-[3px] bg-m-b3 align-middle" aria-hidden data-streak="loading" />
+  ) : null
+  const rec =
+    recOnly || stk ? (
+      <>
+        {recOnly}
+        {recOnly && stk && ' '}
+        {stk}
+      </>
+    ) : null
   const meta = mirror ? (
     <>
       {rec}

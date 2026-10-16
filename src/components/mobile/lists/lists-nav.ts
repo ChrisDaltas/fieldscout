@@ -3,6 +3,8 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMemo } from 'react'
 
+import { appEntryBehind, useGoBack } from '@/components/mobile/ui/back-nav'
+
 /**
  * FieldScout Mobile — Lists routes (lr-lists §4; the prototype has none, so
  * these are the app's own URLs):
@@ -17,20 +19,21 @@ import { useMemo } from 'react'
  *
  * ## Back
  *
- * Each screen's on-screen back goes to its parent (view → grid, editor and
- * Edit details → view, New list → grid, grid → Profile, lr-frame §2.4). When
- * the parent is the history entry right behind, back *is* history back, so
- * the on-screen control and the OS gesture agree and history never grows a
- * loop. Otherwise the screen is **replaced** by its parent, so the OS back
- * from there doesn't return to the screen just left.
+ * "Back always goes to where you came from. Period." (Chris, 2026-10-15,
+ * gap list #27.) The grid, the List view and New list go back through
+ * history to whatever screen opened them — the grid, Profile, Home's
+ * recently viewed, Community, a player — via `useGoBack`. Only when nothing
+ * in the app is behind (a shared or deep link) do they go to their parent
+ * (view and New list → grid, grid → Profile, lr-frame §2.4), replacing the
+ * screen so the OS back from there doesn't return to it.
  *
- * Which parent is behind is carried in the entry's own URL (`from=grid` /
- * `from=view`, or `from=back` for New list opened from Profile or
- * Community), set by the tap that pushed it. It survives a reload (the
- * history behind survives too) and never goes stale the way in-memory flags
- * do when a screen is left by the OS gesture; a shared or deep link has none,
- * so it navigates to the parent instead of leaving the app (and a copied URL
- * that does carry one, opened in a fresh tab, is caught by `appEntryBehind`).
+ * The editor and Edit details hand back to their List view. When they were
+ * pushed from it (`from=view` in their own URL, set by the tap that pushed
+ * them) that *is* history back; otherwise (New list → Next, which replaces
+ * New list; a deep link) the screen is replaced by the view. The marker
+ * lives in the entry's URL so it survives a reload and never goes stale the
+ * way in-memory flags do when a screen is left by the OS gesture. `from=grid`
+ * is handed on to a view that replaces an editor.
  */
 
 type From = 'grid' | 'view'
@@ -43,29 +46,13 @@ export const detailsHref = (id: string, from?: From) =>
   `/app/lists?list=${encodeURIComponent(id)}&details=1${from ? `&from=${from}` : ''}`
 const newHref = (from?: From) => `/app/lists/new${from ? `?from=${from}` : ''}`
 /** New list opened from outside Lists (Profile's "New list", Community's
- *  Create sheet): its back returns to that screen when it is behind. */
+ *  Create sheet). Its back returns there as every Back does (#27); the
+ *  marker only keeps it from reading as opened from the grid. */
 export const NEW_LIST_FROM_ELSEWHERE_HREF = '/app/lists/new?from=back'
-
-/**
- * Whether the entry behind this one belongs to the app. The Navigation API
- * lists only same-origin entries, so a current index above 0 means the
- * previous entry is ours; without the API, fall back to a same-origin
- * referrer (a page opened from another site, or in a fresh tab, has none).
- */
-export function appEntryBehind(): boolean {
-  if (typeof window === 'undefined') return false
-  const nav = (window as Window & { navigation?: { currentEntry?: { index: number } | null } }).navigation
-  if (nav?.currentEntry) return nav.currentEntry.index > 0
-  if (window.history.length <= 1) return false
-  try {
-    return Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin
-  } catch {
-    return false
-  }
-}
 
 export function useListsNav() {
   const router = useRouter()
+  const goBack = useGoBack()
   const params = useSearchParams()
   const from = params.get('from')
   return useMemo(
@@ -73,10 +60,9 @@ export function useListsNav() {
       openList(id: string) {
         router.push(listHref(id, 'grid'))
       },
-      /** The List view's back → the grid. */
+      /** The List view's back: where you came from, else the grid (#27). */
       closeList() {
-        if (from === 'grid' && appEntryBehind()) router.back()
-        else router.replace('/app/lists')
+        goBack('/app/lists')
       },
       openEditor(id: string, addPlayers = false) {
         router.push(editorHref(id, addPlayers, 'view'))
@@ -93,25 +79,24 @@ export function useListsNav() {
       openNew() {
         router.push(newHref('grid'))
       },
+      /** New list's back: where you came from, else the grid (#27). */
       closeNew() {
-        if ((from === 'grid' || from === 'back') && appEntryBehind()) router.back()
-        else router.replace('/app/lists')
+        goBack('/app/lists')
       },
       /** A just-created list: the New list entry is replaced by its editor,
        *  which inherits what was behind New list. */
       createdList(id: string) {
         router.replace(editorHref(id, true, from === 'grid' ? 'grid' : undefined))
       },
-      /** The grid's back: Profile, Lists' parent (history back when the
-       *  entry behind is in the app — normally Profile itself). */
+      /** The grid's back: where you came from (normally Profile), else
+       *  Profile, Lists' parent (#27). */
       leaveLists() {
-        if (appEntryBehind()) router.back()
-        else router.replace('/app/profile')
+        goBack('/app/profile')
       },
       setTab(tab: 'mine' | 'saved') {
         router.replace(tab === 'saved' ? '/app/lists?tab=saved' : '/app/lists', { scroll: false })
       },
     }),
-    [router, from],
+    [router, goBack, from],
   )
 }

@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import {
+  publishPositionsSchema,
+  rpcPositions,
+  saveScoringFormat,
+  scoringFormatSchema,
+  type PublishPosition,
+  type ScoringSave,
+} from '@/lib/lists/ranking-publish'
 import { createServerClient } from '@/lib/supabase/server'
 
 /**
@@ -15,18 +23,21 @@ import { createServerClient } from '@/lib/supabase/server'
  * useful for "add via search" / "smart order" flows where the working state
  * has rows not yet persisted, or fewer rows than what's on the server. When
  * playerIds is omitted we just reorder what's already there.
+ *
+ * A save is a publish of the board (migration 190, Chris 2026-10-15): the
+ * RPC records each sent row's previous position for the movement arrows.
+ * Players this save ADDS have none — the phone flags the ones its publish
+ * bulk-added (`isNew`), and the `playerIds` path flags the ones it inserts.
+ * `scoringFormat` (the scoring the ranking was made for, phone #36) is saved
+ * on the board; before 190 is pushed that is reported as `unsupported` and
+ * the save still succeeds. A save that sends none (desktop) leaves the
+ * board's scoring as it is — Half PPR if one was never chosen, which the
+ * RPC fills (Chris, 2026-10-16).
  */
 const saveSchema = z.object({
-  positions: z
-    .array(
-      z.object({
-        playerId: z.string().min(1),
-        position: z.number().int().positive(),
-      }),
-    )
-    .min(1)
-    .optional(),
+  positions: publishPositionsSchema.optional(),
   playerIds: z.array(z.string().min(1)).optional(),
+  scoringFormat: scoringFormatSchema.optional(),
 }).refine((v) => v.positions || v.playerIds, {
   message: 'Provide positions or playerIds',
 })
@@ -66,7 +77,7 @@ export async function POST(request: Request) {
   }
 
   // Fully replace the working set if playerIds was provided.
-  let positions = parsed.data.positions
+  let positions: PublishPosition[] | undefined = parsed.data.positions
   if (parsed.data.playerIds) {
     const ids = parsed.data.playerIds
     const { data: existing } = await supabase
@@ -103,20 +114,18 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: insErr.message }, { status: 500 })
       }
     }
-    positions = ids.map((playerId, i) => ({ playerId, position: i + 1 }))
+    // The players this save inserted have no previous position.
+    const added = new Set(toAdd)
+    positions = ids.map((playerId, i) => ({ playerId, position: i + 1, isNew: added.has(playerId) }))
   }
 
   if (!positions) {
     return NextResponse.json({ error: 'No positions resolved' }, { status: 400 })
   }
 
-  const payload = positions.map(({ playerId, position }) => ({
-    player_id: playerId,
-    position,
-  }))
   const { error: rpcError } = await supabase.rpc('reorder_list_players', {
     p_list_id: list.id,
-    p_positions: payload,
+    p_positions: rpcPositions(positions),
   })
   if (rpcError) {
     const status = rpcError.message.includes('Unauthorized')
@@ -127,6 +136,18 @@ export async function POST(request: Request) {
           ? 404
           : 500
     return NextResponse.json({ error: rpcError.message }, { status })
+  }
+
+  // The order is saved. Its scoring is reported, never a failed save: the
+  // phone tells the user if it didn't stick.
+  let scoring: ScoringSave | undefined
+  let scoringError: string | undefined
+  if (parsed.data.scoringFormat) {
+    try {
+      scoring = await saveScoringFormat(supabase, list.id, parsed.data.scoringFormat)
+    } catch (err) {
+      scoringError = err instanceof Error ? err.message : String(err)
+    }
   }
 
   // Re-read the saved board so the snapshot has full denormalized data.
@@ -179,8 +200,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       snapshotError: snapshotError.message,
+      scoring,
+      scoringError,
     })
   }
 
-  return NextResponse.json({ ok: true, snapshot })
+  return NextResponse.json({ ok: true, snapshot, scoring, scoringError })
 }

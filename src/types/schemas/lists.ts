@@ -2,7 +2,15 @@ import { z } from 'zod'
 
 export const POSITION_FILTERS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'FLEX'] as const
 export const TIER_VALUES = ['S', 'A', 'B', 'C', 'D', 'F'] as const
-export const RANKING_MODES = ['unranked', 'ranked', 'rank_and_tier'] as const
+/**
+ * `lists.ranking_mode` — the list's Ranked and Tiers switches, which are
+ * independent (Chris, 2026-10-15: "allow tiers without numbers"):
+ * `unranked` (neither), `ranked` (numbers), `rank_and_tier` (numbers, in
+ * tiers), `tier_only` (tiers, no numbers — migration 191). Read them through
+ * `@/lib/lists/ranking-mode` (`isNumbered`, `hasTiers`), never by comparing
+ * to one value.
+ */
+export const RANKING_MODES = ['unranked', 'ranked', 'rank_and_tier', 'tier_only'] as const
 
 // =============================================================================
 // Bucket keys — the vocabulary of `list_players.tier` (LV.1.5)
@@ -209,8 +217,11 @@ export const updateFolderSchema = z.object({
   name: folderNameSchema.optional(),
 })
 
-// Maps the 3-way ranking_mode to the legacy boolean pair so the API can
-// dual-write during the transition. Keeps the database internally consistent.
+// Maps ranking_mode to the legacy boolean pair so the API can dual-write
+// during the transition. Keeps the database internally consistent. Since
+// migration 191 the four modes are exactly the four combinations:
+// hide_order = no numbers, tiers_enabled = tiers (`duplicate_list` derives
+// the same pair in SQL).
 export function rankingModeToLegacyFlags(mode: RankingMode): {
   hide_order: boolean
   tiers_enabled: boolean
@@ -222,7 +233,16 @@ export function rankingModeToLegacyFlags(mode: RankingMode): {
       return { hide_order: false, tiers_enabled: false }
     case 'rank_and_tier':
       return { hide_order: false, tiers_enabled: true }
+    case 'tier_only':
+      return { hide_order: true, tiers_enabled: true }
   }
+}
+
+/** The inverse of {@link rankingModeToLegacyFlags}, for a legacy client that
+ *  sends only the boolean pair. */
+export function legacyFlagsToRankingMode(flags: { hide_order: boolean; tiers_enabled: boolean }): RankingMode {
+  if (flags.hide_order) return flags.tiers_enabled ? 'tier_only' : 'unranked'
+  return flags.tiers_enabled ? 'rank_and_tier' : 'ranked'
 }
 
 export const addPlayerSchema = z.object({

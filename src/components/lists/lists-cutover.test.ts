@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { featureFlags } from '@/lib/feature-flags'
+import { groupingWrite, withTiers } from '@/lib/lists/ranking-mode'
 
 /**
  * LV.7 — the Lists v2 cutover, pinned.
@@ -185,15 +186,90 @@ describe('the four ported capabilities are mounted (LV.7)', () => {
 describe('a list can still become tiered (LV.7)', () => {
   it('choosing the Tier grouping persists rank_and_tier', () => {
     const source = read(PANEL)
-    expect(source).toContain("'rank_and_tier'")
+    // Since 191 the Tiers switch is independent of Ranked: the panel flips
+    // only the tiers half (`groupingWrite` → `withTiers`), which on a ranked
+    // list is rank_and_tier — and on a Basic list, tiers without numbers.
+    expect(source).toContain('groupingWrite(list.ranking_mode, next, { tierOnlyUnavailable })')
+    expect(groupingWrite('ranked', 'tier')).toBe('rank_and_tier')
+    expect(withTiers('ranked', true)).toBe('rank_and_tier')
+    expect(groupingWrite('unranked', 'tier')).toBe('tier_only')
     expect(source).toContain('updateList.mutate(')
     expect(source).toContain('onOrgChange={chooseOrg}')
+  })
+
+  it('before 191 is pushed, a Tier pick on a Basic list gets one neutral note, not a red error', () => {
+    const source = read(PANEL)
+    const onError = source.slice(source.indexOf('onError: (error) => {'))
+    // The "coming in the next update" answer is caught first …
+    expect(onError.indexOf('isTierOnlyUnavailableResponse(error)')).toBeGreaterThan(0)
+    expect(onError.indexOf('isTierOnlyUnavailableResponse(error)')).toBeLessThan(
+      onError.indexOf("variant: 'destructive'"),
+    )
+    // … said once per page load, and later picks stop asking.
+    expect(source).toContain('if (tierOnlyUnavailable) return')
+    expect(source).toContain('tierOnlyUnavailable = true')
+    expect(source).toContain("title: 'Tiers without numbers is coming in the next update'")
   })
 
   it('the create dialog still promises it', () => {
     // If this copy ever changes, the guarantee above is what it is promising.
     expect(read('src/components/lists/list-form-dialog.tsx')).toContain(
       'Flip on the tiers view any time.',
+    )
+  })
+})
+
+/**
+ * One numbering rule, phone and desktop (Chris, 2026-10-16: "just make sure
+ * they work consistently"). Every surface that draws a list's rows decides
+ * its 1-2-3 numbers with `isNumbered(ranking_mode)` — there is no
+ * desktop-only exception that kept a plain list numbered. The renders that
+ * prove the result are `v2/tier-only.render.test.ts` (desktop) and
+ * `mobile/lists/tier-only.render.test.ts` (phone); this pins that no surface
+ * decides it some other way.
+ */
+describe('one numbering rule on every list surface', () => {
+  const NUMBERED_BY_MODE = [
+    PANEL,
+    'src/components/lists/public-list-view.tsx',
+    'src/components/lists/v2/list-window.tsx',
+    'src/components/lists/v2/side-by-side-columns.tsx',
+    'src/components/mobile/lists/list-view.tsx',
+    'src/components/mobile/lists/list-editor.tsx',
+    'src/components/mobile/community/community-detail.tsx',
+    // The draft room's cheat sheet and pool overlay (spec v2.16.93, §8.9).
+    'src/components/draft/my-lists-panel.tsx',
+    'src/components/draft/available-players.tsx',
+  ] as const
+
+  it.each(NUMBERED_BY_MODE)('%s reads isNumbered(…)', (file) => {
+    const source = code(file)
+    expect(source).toMatch(/\bisNumbered\(/)
+    expect(source).not.toContain('showsNumbersOnDesktop')
+  })
+  /**
+   * Keep the expected control: a Basic list lost its desktop numbers with the
+   * ruling, so the desktop list menu carries the Ranked switch the phone
+   * editor has — Numbers → Ranked / Unranked — for the owner, never on the
+   * Big Board. (The menu is a Radix portal that doesn't render statically;
+   * `numbersWrite` in `ranking-mode.test.ts` pins what it saves.)
+   */
+  it('the desktop owner can turn a list’s numbers on and off after create', () => {
+    const hero = code(HERO)
+    expect(hero).toContain('onSetNumbered(true)')
+    expect(hero).toContain('onSetNumbered(false)')
+    expect(hero).toMatch(/\{onSetNumbered && \(/)
+    for (const label of ['Numbers', 'Ranked', 'Unranked']) expect(hero).toMatch(new RegExp(`^\\s+${label}$`, 'm'))
+
+    const panel = code(PANEL)
+    expect(panel).toContain('onSetNumbered={canEdit && !list.is_big_board ? setNumbered : undefined}')
+    expect(panel).toContain('numbersWrite(list.ranking_mode, numbered)')
+    // Before 191: turning numbers off a tiered list gets the neutral note,
+    // caught before the red error.
+    const handler = panel.slice(panel.indexOf('const setNumbered'))
+    expect(handler.indexOf('isTierOnlyUnavailableResponse(error)')).toBeGreaterThan(0)
+    expect(handler.indexOf('isTierOnlyUnavailableResponse(error)')).toBeLessThan(
+      handler.indexOf("variant: 'destructive'"),
     )
   })
 })

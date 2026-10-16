@@ -145,7 +145,7 @@ describe('scoring (gap list #19)', () => {
     expect(['ppr', 'half', 'quarter', 'standard'].map((s) => scoringLabel(s as never))).toEqual([
       'PPR',
       'Half PPR',
-      'Quarter PPR',
+      '0.25 PPR',
       'Standard',
     ])
   })

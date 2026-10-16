@@ -10,10 +10,12 @@ import { UsernameLink } from '@/components/shared/username-link'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useAuth } from '@/hooks/use-auth'
 import { useList, useLists, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
+import { useMobileListsCoverPassed } from '@/hooks/use-mobile-lists-cover-passed'
 import { useMobileListsOwner } from '@/hooks/use-mobile-lists-owner'
 import { rankPoolPositions, useMobileListsPosRanks } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { useMobileListsUsage } from '@/hooks/use-mobile-lists-usage'
+import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListDisplay } from '@/stores/list-display-store'
@@ -45,6 +47,7 @@ import {
   type MStat,
   type ValueCtx,
 } from './lists-stats'
+import { createSidewaysSync } from './sideways-sync'
 
 /**
  * FieldScout Mobile — the List view (lr-lists §2.7, states L8–L8h): a 200px
@@ -57,6 +60,12 @@ import {
  * table's divider runs the full height and its rows run to the scroll end
  * (lr-lists gap 30), a 0-player list says so (L8g), and the cover carries a
  * "⋯" for the list features the design lacks (List options sheet).
+ *
+ * On a long list (Chris, 2026-10-15, gap list #25) the cover's controls don't
+ * leave with it: once the cover scrolls off, a slim bar holds Back, the
+ * title, ⋯ and Edit at the top, and the column names (Player · the stat
+ * columns) stay pinned under it. The bar floats over the page rather than
+ * taking a place in it, so nothing moves when it appears.
  */
 export function ListView({ listId }: { listId: string }) {
   const nav = useListsNav()
@@ -66,6 +75,8 @@ export function ListView({ listId }: { listId: string }) {
   const aiBuild = useAiListBuild(listId)
   const pushHistory = useHistoryStore((state) => state.push)
   const [optionsOpen, setOptionsOpen] = React.useState(false)
+  const coverRef = React.useRef<HTMLDivElement>(null)
+  const barRef = React.useRef<HTMLDivElement>(null)
 
   const list = detail.data
   const summary = lists.data?.lists.find((l) => l.id === listId)
@@ -74,6 +85,8 @@ export function ListView({ listId }: { listId: string }) {
     ? (profile?.username ?? null)
     : (summary?.owner?.username ?? owner.data ?? null)
   const canEdit = Boolean(list?.is_owner) && !aiBuild.building
+  const loaded = Boolean(list) && !detail.isError
+  const coverOff = useMobileListsCoverPassed(coverRef, barRef, loaded)
 
   // "Recently viewed" on Home — the desktop panel records the same entry.
   React.useEffect(() => {
@@ -117,15 +130,24 @@ export function ListView({ listId }: { listId: string }) {
     )
   }
 
-  const tiersOn = list.ranking_mode === 'rank_and_tier'
-  const ranked = list.ranking_mode !== 'unranked'
+  // Independent switches: a tier-only list has tier lines and no numbers.
+  const tiersOn = hasTiers(list.ranking_mode)
+  const ranked = isNumbered(list.ranking_mode)
   const count = list.players.length
   const videos = list.links.filter((link) => link.kind === 'video')
   const articles = list.links.filter((link) => link.kind === 'article')
 
   return (
     <MobileScreen className="leading-[normal] tabular-nums">
-      <div className={cn('relative h-[200px] overflow-hidden', coverClass(list))}>
+      <SlimBar
+        barRef={barRef}
+        shown={coverOff}
+        title={list.title}
+        onBack={back}
+        onOptions={() => setOptionsOpen(true)}
+        onEdit={canEdit ? () => nav.openEditor(list.id) : undefined}
+      />
+      <div ref={coverRef} className={cn('relative h-[200px] overflow-hidden', coverClass(list))}>
         {list.thumbnail_url ? (
           <CoverImage src={list.thumbnail_url} />
         ) : (
@@ -163,7 +185,7 @@ export function ListView({ listId }: { listId: string }) {
               <UsernameLink username={ownerUsername} className="text-m-t3" /> ·{' '}
             </>
           ) : null}
-          {playersLabel(count)} · {ranked ? 'Ranked' : 'Unranked'}
+          {playersLabel(count)} · {ranked ? 'Ranked' : tiersOn ? 'Tiers' : 'Unranked'}
           {list.is_owner && list.is_private ? ' · Private' : ''} · Updated {updatedLabel(list.updated_at)}
         </p>
         {list.description ? (
@@ -258,6 +280,83 @@ function CoverButton({
 }
 
 // =============================================================================
+// The slim bar (gap list #25)
+// =============================================================================
+
+/** Where the pinned column names stick: just under the slim bar (the safe
+ *  area plus its 48px row, hairline included). */
+const PINNED_UNDER_BAR = 'top-[calc(env(safe-area-inset-top)+48px)]'
+
+/**
+ * Back · the title · ⋯ · Edit, once the cover has scrolled off (#25). The
+ * design has no such bar, so it extends the editor's header: a 48px b0 row
+ * with a hairline under it, 36px round Back and ⋯, a 32px Edit pill.
+ *
+ * It hangs from a zero-height sticky anchor at the top of the screen, so it
+ * covers the page without taking room in it: nothing below moves when it
+ * fades in. Hidden, it is `inert` — out of the tab order and the screen
+ * reader's view — while staying laid out, so its edge can be measured.
+ */
+function SlimBar({
+  barRef,
+  shown,
+  title,
+  onBack,
+  onOptions,
+  onEdit,
+}: {
+  barRef: React.RefObject<HTMLDivElement | null>
+  shown: boolean
+  title: string
+  onBack: () => void
+  onOptions: () => void
+  /** Absent when the viewer can't edit (as the cover's Edit). */
+  onEdit?: () => void
+}) {
+  return (
+    <div className="sticky top-0 z-20 h-0" data-list-slim-bar>
+      <div
+        ref={barRef}
+        inert={shown ? undefined : true}
+        className={cn(
+          'absolute inset-x-0 top-0 bg-m-b0 pt-[env(safe-area-inset-top)] transition-[opacity,visibility] duration-150 ease-out',
+          shown ? 'visible opacity-100' : 'invisible opacity-0',
+        )}
+      >
+        <div className="flex h-12 items-center gap-1 border-b border-m-b2 pl-2 pr-3">
+          <button
+            type="button"
+            aria-label="Back"
+            onClick={onBack}
+            className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
+          >
+            <MIcon name="back" size={16} stroke={2} />
+          </button>
+          <span className="min-w-0 flex-1 truncate pl-0.5 text-[16px] font-semibold text-m-t1">{title}</span>
+          <button
+            type="button"
+            aria-label="List options"
+            onClick={onOptions}
+            className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
+          >
+            <LIcon name="dots" size={16} stroke={2.6} />
+          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="ml-1 flex h-8 flex-none items-center whitespace-nowrap rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
 // "Players · n" + the table (lr-lists §2.7 items 3–4)
 // =============================================================================
 
@@ -314,6 +413,20 @@ function PlayersTable({
   const open = (entry: ListPlayerWithPlayer) =>
     openPlayerView(entry.player_id, null, list.is_owner ? { listId: list.id, listTitle: list.title } : null)
 
+  // The pinned column names and the table scroll sideways together (#25).
+  // Whichever one moves on its own, by a swipe or a fling still coasting,
+  // drags the other. The copy's own scroll event is recognised and not
+  // written back, so a fling never stutters (sideways-sync.ts).
+  const headRef = React.useRef<HTMLDivElement>(null)
+  const bodyRef = React.useRef<HTMLDivElement>(null)
+  const [sideways] = React.useState(() =>
+    createSidewaysSync((side) => (side === 'head' ? headRef.current : bodyRef.current)),
+  )
+  // A change of columns can move the table's scroll without a swipe.
+  React.useEffect(() => {
+    sideways.copy('body')
+  }, [sideways, stats])
+
   let n = 0
 
   return (
@@ -346,61 +459,80 @@ function PlayersTable({
           action={canEdit ? <PillButton onClick={onAddPlayers}>Add players</PillButton> : undefined}
         />
       ) : (
-        <div className="overflow-x-auto pb-6 scrollbar-none">
-          <div className="inline-flex min-w-full flex-col">
-            {hasStats && (
-              <div className="flex h-7 items-center border-b border-m-b3">
-                <div
-                  className={cn(
-                    'sticky left-0 z-[2] flex h-full flex-none items-center border-r border-m-b3 bg-m-b0 pl-4 text-[10px] font-semibold text-m-t3',
-                    lead,
-                  )}
-                >
-                  Player
-                </div>
-                {stats.map((stat) => (
+        <div>
+          {/* The column names stay pinned under the slim bar (#25). A sticky
+              row can't pin inside the table's sideways scroller (that makes
+              it its own vertical scroller too), so the names sit just above
+              it in a strip of their own that follows its sideways scroll —
+              and drives it when the swipe starts on the names. */}
+          {hasStats && (
+            <div className={cn('sticky z-10 bg-m-b0', PINNED_UNDER_BAR)} data-list-column-names>
+              <div
+                ref={headRef}
+                onScroll={() => sideways.scrolled('head')}
+                className="overflow-x-auto scrollbar-none"
+              >
+                <div className="flex h-7 w-max min-w-full items-center border-b border-m-b3">
                   <div
-                    key={stat.id}
-                    className="flex w-[58px] flex-none items-center justify-center whitespace-nowrap text-[10px] font-semibold text-m-t3"
+                    className={cn(
+                      'sticky left-0 z-[2] flex h-full flex-none items-center border-r border-m-b3 bg-m-b0 pl-4 text-[10px] font-semibold text-m-t3',
+                      lead,
+                    )}
                   >
-                    {stat.label}
+                    Player
                   </div>
-                ))}
-                <span className="w-3 flex-none" />
+                  {stats.map((stat) => (
+                    <div
+                      key={stat.id}
+                      className="flex w-[58px] flex-none items-center justify-center whitespace-nowrap text-[10px] font-semibold text-m-t3"
+                    >
+                      {stat.label}
+                    </div>
+                  ))}
+                  <span className="w-3 flex-none" />
+                </div>
               </div>
-            )}
-            {sections.map((section, sectionIndex) => (
-              <React.Fragment key={section.label ?? sectionIndex}>
-                {section.label !== null && (
-                  <div className={cn('sticky left-0 pb-1 pl-4 pt-3', hasStats && 'border-r border-m-b3', lead)}>
-                    {/* Desktop's tier palette, as desktop's chip (gap list #10). */}
-                    <span className={tierChipClass(section.tierIndex)}>{section.label}</span>
-                  </div>
-                )}
-                {section.entries.map((entry) => {
-                  n += 1
-                  return (
-                    <PlayerRow
-                      key={entry.id}
-                      entry={entry}
-                      rank={ranked ? n : null}
-                      stats={stats}
-                      ctx={{
-                        frames: frames.data?.get(entry.player_id),
-                        tf,
-                        scoring,
-                        usage: usage.data?.get(entry.player_id),
-                        posRank: ranks ? (ranks.get(entry.player_id) ?? null) : undefined,
-                        ready,
-                      }}
-                      lead={lead}
-                      hasStats={hasStats}
-                      onOpen={() => open(entry)}
-                    />
-                  )
-                })}
-              </React.Fragment>
-            ))}
+            </div>
+          )}
+          <div
+            ref={bodyRef}
+            onScroll={() => sideways.scrolled('body')}
+            className="overflow-x-auto pb-6 scrollbar-none"
+          >
+            <div className="inline-flex min-w-full flex-col">
+              {sections.map((section, sectionIndex) => (
+                <React.Fragment key={section.label ?? sectionIndex}>
+                  {section.label !== null && (
+                    <div className={cn('sticky left-0 pb-1 pl-4 pt-3', hasStats && 'border-r border-m-b3', lead)}>
+                      {/* Desktop's tier palette, as desktop's chip (gap list #10). */}
+                      <span className={tierChipClass(section.tierIndex)}>{section.label}</span>
+                    </div>
+                  )}
+                  {section.entries.map((entry) => {
+                    n += 1
+                    return (
+                      <PlayerRow
+                        key={entry.id}
+                        entry={entry}
+                        rank={ranked ? n : null}
+                        stats={stats}
+                        ctx={{
+                          frames: frames.data?.get(entry.player_id),
+                          tf,
+                          scoring,
+                          usage: usage.data?.get(entry.player_id),
+                          posRank: ranks ? (ranks.get(entry.player_id) ?? null) : undefined,
+                          ready,
+                        }}
+                        lead={lead}
+                        hasStats={hasStats}
+                        onOpen={() => open(entry)}
+                      />
+                    )
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
           </div>
         </div>
       )}

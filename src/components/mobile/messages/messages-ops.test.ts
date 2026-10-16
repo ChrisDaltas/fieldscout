@@ -20,6 +20,10 @@ import {
   MY_COLOR,
   bubbleRadius,
   dayLabel,
+  followsNewMessage,
+  isNearBottom,
+  lastMessageOf,
+  PIN_SLACK_PX,
   senderHandle,
   initialOf,
   keyColor,
@@ -180,6 +184,32 @@ describe('bubble geometry', () => {
     expect(a.lastOfRun).toBe(true)
     expect(b.firstOfRun).toBe(true)
     expect(b.showName).toBe(true)
+  })
+})
+
+describe('following the conversation (#47)', () => {
+  it('at the bottom, or within a finger’s rest of it, is pinned', () => {
+    expect(isNearBottom({ scrollTop: 600, scrollHeight: 1000, clientHeight: 400 })).toBe(true)
+    expect(isNearBottom({ scrollTop: 600 - PIN_SLACK_PX, scrollHeight: 1000, clientHeight: 400 })).toBe(true)
+    expect(isNearBottom({ scrollTop: 600 - PIN_SLACK_PX - 1, scrollHeight: 1000, clientHeight: 400 })).toBe(false)
+    // Scrolled up to read.
+    expect(isNearBottom({ scrollTop: 0, scrollHeight: 1000, clientHeight: 400 })).toBe(false)
+    // Nothing to scroll: at the bottom.
+    expect(isNearBottom({ scrollTop: 0, scrollHeight: 300, clientHeight: 400 })).toBe(true)
+  })
+
+  it('a newcomer is followed only while pinned — except the reader’s own message', () => {
+    expect(followsNewMessage({ pinned: true, fromMe: false })).toBe(true)
+    expect(followsNewMessage({ pinned: false, fromMe: false })).toBe(false)
+    expect(followsNewMessage({ pinned: false, fromMe: true })).toBe(true)
+  })
+
+  it('the newest message skips the day separators', () => {
+    const t = ago(HOUR)
+    const items = threadItems([msg('a', 'leo', t), msg('b', 'me', t)], true, NOW)
+    expect(lastMessageOf(items)).toEqual({ key: items[items.length - 1]!.key, fromMe: true })
+    expect(lastMessageOf([{ kind: 'day', key: 'd', label: 'Today' }])).toBeNull()
+    expect(lastMessageOf([])).toBeNull()
   })
 })
 

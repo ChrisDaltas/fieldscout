@@ -19,7 +19,7 @@ import {
 } from '@/components/mobile/player/profile-ops'
 import { GameLogTab, HistoryTab, TeamTab } from '@/components/mobile/player/profile-stats-tabs'
 import { SummaryTab } from '@/components/mobile/player/profile-summary'
-import { useProfileUiStore, type ProfileDraftContext } from '@/components/mobile/player/profile-ui-store'
+import { trailBackTo, useProfileUiStore, type ProfileDraftContext } from '@/components/mobile/player/profile-ui-store'
 import { poolOf, useProfileLeague, useProfileScoring } from '@/components/mobile/player/use-profile-context'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -35,7 +35,7 @@ import { usePlayerStats, type PlayerStatsPlayer, type PlayerStatsResponse } from
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
-import type { PlayerModalTarget } from '@/stores/player-modal-store'
+import { usePlayerModalStore, type PlayerModalTarget } from '@/stores/player-modal-store'
 
 /** What Escape closes while something sits on top of the profile that is
  *  not a Radix layer (the trade builder) — set by that layer, read by the
@@ -58,15 +58,52 @@ const ProfileEscape = createContext<MutableRefObject<(() => void) | null> | null
  * focus trapped back into the profile). The profile covers the whole screen
  * anyway, says `aria-modal`, Tab still loops inside it, and an outside
  * interaction never dismisses it.
+ *
+ * Stack-aware (Chris, #45 + #27, 2026-10-15): a depth-chart name opens that
+ * player's profile in place, and the header's Back (where Close was) returns
+ * to the profile it was opened from, on the tab it was left on — the
+ * profile's own small stack (`useProfileUiStore().trail`). No history entry
+ * is pushed: the page under the profile is never navigated, so the stack
+ * ends when the profile closes.
  */
 export function MobilePlayerProfile({ target, onClose }: { target: PlayerModalTarget | null; onClose: () => void }) {
   const escape = useRef<(() => void) | null>(null)
-  // A draft seat belongs to the profile it was opened with — drop it on close.
+  const trail = useProfileUiStore((s) => s.trail)
+  const backTo = trailBackTo(trail, target?.playerId ?? null)
+  // A draft seat belongs to the profile it was opened with — drop it on
+  // close. The stack ends with the profile too, and is dropped when another
+  // surface opens a player it did not open (Back would lie).
   useEffect(() => {
-    if (!target) useProfileUiStore.getState().setDraft(null)
+    const ui = useProfileUiStore.getState()
+    if (!target) {
+      ui.setDraft(null)
+      ui.clearTrail()
+    } else if (ui.trail.length > 0 && !trailBackTo(ui.trail, target.playerId)) {
+      ui.clearTrail()
+    }
   }, [target])
+
+  // Back down the stack: the profile it was opened from, on its tab.
+  const back = () => {
+    const ui = useProfileUiStore.getState()
+    const step = ui.popTrail()
+    if (!step) {
+      onClose()
+      return
+    }
+    ui.setRestore({ playerId: step.from.playerId, tab: step.fromTab })
+    usePlayerModalStore.getState().openPlayerView(step.from.playerId, step.from.leagueId, step.from.listContext)
+  }
+  // A teammate from the depth chart: opened in place, in the same league.
+  const openPlayer = (playerId: string, from: { name: string; tab: string }) => {
+    if (!target || playerId === target.playerId) return
+    useProfileUiStore.getState().pushTrail({ from: target, fromName: from.name, fromTab: from.tab, to: playerId })
+    usePlayerModalStore.getState().openPlayerView(playerId, target.leagueId, null)
+  }
+  const nav: ProfileNav = backTo ? { kind: 'back', label: `Back to ${backTo.fromName}`, run: back } : { kind: 'close', run: onClose }
+
   return (
-    <DialogPrimitive.Root modal={false} open={target !== null} onOpenChange={(open) => !open && onClose()}>
+    <DialogPrimitive.Root modal={false} open={target !== null} onOpenChange={(open) => !open && nav.run()}>
       <DialogPrimitive.Portal>
         {target && (
           <DialogPrimitive.Content
@@ -87,7 +124,7 @@ export function MobilePlayerProfile({ target, onClose }: { target: PlayerModalTa
             data-player-profile={target.playerId}
           >
             <ProfileEscape.Provider value={escape}>
-              <ProfileBody key={`${target.playerId}:${target.leagueId ?? ''}`} target={target} onClose={onClose} />
+              <ProfileBody key={`${target.playerId}:${target.leagueId ?? ''}`} target={target} onClose={onClose} nav={nav} onOpenPlayer={openPlayer} />
             </ProfileEscape.Provider>
           </DialogPrimitive.Content>
         )}
@@ -100,7 +137,36 @@ type Tab = 'summary' | 'log' | 'leagues' | 'tx' | 'team' | 'history'
 type Sheet = { kind: 'list' } | { kind: MoveSheetKind; leagueId: string } | null
 type Builder = { leagueId: string; teamId: string } | null
 
-function ProfileBody({ target, onClose }: { target: PlayerModalTarget; onClose: () => void }) {
+/** The header's left button: Close (×), or Back (‹) to the profile this one
+ *  was opened from (#45). */
+export type ProfileNav = { kind: 'close'; run: () => void } | { kind: 'back'; label: string; run: () => void }
+
+/** Opens another player's profile in place, remembering where it was left. */
+type OpenPlayer = (playerId: string, from: { name: string; tab: Tab }) => void
+
+const TABS: readonly Tab[] = ['summary', 'log', 'leagues', 'tx', 'team', 'history']
+
+/** The tab a profile opens on: the one Back returns it to, else Summary. */
+function openingTab(playerId: string, hasTeam: boolean): Tab {
+  const r = useProfileUiStore.getState().restore
+  const tab = r && r.playerId === playerId ? (TABS.find((t) => t === r.tab) ?? null) : null
+  if (!tab) return 'summary'
+  if (tab === 'team' && !hasTeam) return 'summary'
+  if ((tab === 'leagues' || tab === 'tx') && !featureFlags.leagues) return 'summary'
+  return tab
+}
+
+function ProfileBody({
+  target,
+  onClose,
+  nav,
+  onOpenPlayer,
+}: {
+  target: PlayerModalTarget
+  onClose: () => void
+  nav: ProfileNav
+  onOpenPlayer: OpenPlayer
+}) {
   const { data, isLoading, error, refetch, isFetching } = usePlayerStats(target.playerId)
   // Leaving the page under it (a trade, a team, a username link) closes it.
   const pathname = usePathname()
@@ -109,14 +175,14 @@ function ProfileBody({ target, onClose }: { target: PlayerModalTarget; onClose: 
     if (pathname !== origin) onClose()
   }, [pathname, origin, onClose])
 
-  if (isLoading) return <ProfileLoading onClose={onClose} />
+  if (isLoading) return <ProfileLoading nav={nav} />
   if (error || !data) {
     // The stats route's 404 reads "Player not found"; anything else is a
     // failed read — said in plain words (never the raw error), with a retry.
     const notFound = !error || error.message === 'Player not found'
     return (
       <>
-        <PlainHeader onClose={onClose} title="Player" />
+        <PlainHeader nav={nav} title="Player" />
         <div className="flex flex-col items-center gap-1 px-8 py-16 text-center" role="alert">
           <p className="text-[15px] font-semibold">{notFound ? 'Player not found' : 'Couldn’t load this player'}</p>
           <p className="text-[13px] font-medium text-m-t3">
@@ -136,38 +202,41 @@ function ProfileBody({ target, onClose }: { target: PlayerModalTarget; onClose: 
       </>
     )
   }
-  return <ProfileLoaded data={data} target={target} onClose={onClose} />
+  return <ProfileLoaded data={data} target={target} onClose={onClose} nav={nav} onOpenPlayer={onOpenPlayer} />
 }
 
-function PlainHeader({ onClose, title }: { onClose: () => void; title: string }) {
+function PlainHeader({ nav, title }: { nav: ProfileNav; title: string }) {
   return (
     <div className="flex flex-none items-center gap-1.5 bg-m-b1 px-4 pb-3 pt-2">
       <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
-      <CloseButton onClose={onClose} className="bg-m-b2 text-m-t1" />
+      <NavButton nav={nav} className="bg-m-b2 text-m-t1" />
     </div>
   )
 }
 
-function CloseButton({ onClose, className }: { onClose: () => void; className: string }) {
+/** Close (×) — or, one profile down the stack, Back (‹) to the last one. */
+function NavButton({ nav, className }: { nav: ProfileNav; className: string }) {
+  const isBack = nav.kind === 'back'
   return (
     <button
       type="button"
-      onClick={onClose}
-      aria-label="Close"
+      onClick={nav.run}
+      aria-label={nav.kind === 'back' ? nav.label : 'Close'}
       className={cn('flex size-[30px] flex-none items-center justify-center rounded-full', className)}
-      data-profile-close
+      data-profile-close={isBack ? undefined : ''}
+      data-profile-back={isBack ? '' : undefined}
     >
-      <MIcon name="close" size={14} stroke={2.2} />
+      {isBack ? <MIcon name="back" size={14} stroke={2.4} /> : <MIcon name="close" size={14} stroke={2.2} />}
     </button>
   )
 }
 
-function ProfileLoading({ onClose }: { onClose: () => void }) {
+function ProfileLoading({ nav }: { nav: ProfileNav }) {
   return (
     <div aria-busy="true" className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-none flex-col gap-2.5 bg-m-b1 px-4 pb-3 pt-2">
         <DialogPrimitive.Title className="sr-only">Loading player</DialogPrimitive.Title>
-        <CloseButton onClose={onClose} className="bg-m-b2 text-m-t1" />
+        <NavButton nav={nav} className="bg-m-b2 text-m-t1" />
         <div className="flex items-center gap-3">
           <span className="size-16 flex-none animate-pulse rounded-full bg-m-b2" />
           <span className="flex flex-1 flex-col gap-2">
@@ -185,7 +254,22 @@ function ProfileLoading({ onClose }: { onClose: () => void }) {
   )
 }
 
-export function ProfileLoaded({ data, target, onClose }: { data: PlayerStatsResponse; target: PlayerModalTarget; onClose: () => void }) {
+export function ProfileLoaded({
+  data,
+  target,
+  onClose,
+  nav = { kind: 'close', run: onClose },
+  onOpenPlayer,
+}: {
+  data: PlayerStatsResponse
+  target: PlayerModalTarget
+  /** Closes the profile (and its whole stack). */
+  onClose: () => void
+  /** The header's left button (Close unless this profile was opened from another). */
+  nav?: ProfileNav
+  /** Opens a depth-chart teammate's profile in place (#45). */
+  onOpenPlayer?: OpenPlayer
+}) {
   const { player } = data
   const season = data.seasons.current.season
   const ctx = useProfileLeague(featureFlags.leagues ? target.leagueId : null)
@@ -207,7 +291,12 @@ export function ProfileLoaded({ data, target, onClose }: { data: PlayerStatsResp
   const draftSeat = useProfileUiStore((s) => s.draft)
   const draft = draftSeat && draftSeat.playerId === player.id ? draftSeat : null
 
-  const [tab, setTab] = useState<Tab>('summary')
+  // Summary — or, back from a teammate's profile, the tab it was left on.
+  const [tab, setTab] = useState<Tab>(() => openingTab(player.id, !!player.team))
+  useEffect(() => {
+    const ui = useProfileUiStore.getState()
+    if (ui.restore?.playerId === player.id) ui.setRestore(null)
+  }, [player.id])
   const [sheet, setSheet] = useState<Sheet>(null)
   // Opened from your list (its view, or the editor's draft): a visible
   // "Remove" beside "+ List" (Chris, 2026-10-15).
@@ -261,7 +350,7 @@ export function ProfileLoaded({ data, target, onClose }: { data: PlayerStatsResp
         leagueId={ctx.leagueId}
         draft={draft}
         draftLeagueName={draft?.leagueId ? (ctx.leagues.find((l) => l.id === draft.leagueId)?.name ?? null) : null}
-        onClose={onClose}
+        nav={nav}
         onList={() => setSheet({ kind: 'list' })}
         removal={removal}
         onMove={openMove}
@@ -346,7 +435,9 @@ export function ProfileLoaded({ data, target, onClose }: { data: PlayerStatsResp
           />
         )}
         {tab === 'tx' && <TransactionsTab playerId={player.id} leagues={ctx.leagues} pending={ctx.leaguesPending} error={ctx.leaguesError} />}
-        {tab === 'team' && player.team && <TeamTab player={player} />}
+        {tab === 'team' && player.team && (
+          <TeamTab player={player} onOpenPlayer={onOpenPlayer ? (id) => onOpenPlayer(id, { name: player.full_name, tab: 'team' }) : undefined} />
+        )}
         {tab === 'history' && (
           <HistoryTab
             player={player}
@@ -476,7 +567,7 @@ function ProfileHeader({
   leagueId,
   draft,
   draftLeagueName,
-  onClose,
+  nav,
   onList,
   removal,
   onMove,
@@ -488,7 +579,7 @@ function ProfileHeader({
   /** Opened from a draft seat: the action is the draft card's Queue. */
   draft: ProfileDraftContext | null
   draftLeagueName: string | null
-  onClose: () => void
+  nav: ProfileNav
   onList: () => void
   /** "Remove from list" when the profile was opened from the viewer's list. */
   removal: ReturnType<typeof useListRemoval>
@@ -507,7 +598,7 @@ function ProfileHeader({
       data-profile-header
     >
       <div className="flex items-center gap-1.5">
-        <CloseButton onClose={onClose} className={light ? 'bg-black/[.08]' : 'bg-white/[.16]'} />
+        <NavButton nav={nav} className={light ? 'bg-black/[.08]' : 'bg-white/[.16]'} />
         {draft ? (
           <QueueButton
             variant="header"

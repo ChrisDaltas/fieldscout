@@ -481,3 +481,16 @@ export const ORG_OPTIONS: ReadonlyArray<{ id: ListOrg; label: string }> = [
   { id: 'cost', label: 'Avg cost' },
   { id: 'budget', label: 'Budget %' },
 ]
+
+/**
+ * {@link ORG_OPTIONS} for one list. `numbered` is whether the list's rows are
+ * drawn numbered (`isNumbered`): off — a plain (`unranked`) list, or
+ * `tier_only`, tiers without numbers (migration 191) — the rows carry no
+ * numbers, so the flat grouping is named "Unranked" rather than claiming a
+ * ranking the list doesn't have. One rule, phone and desktop (Chris,
+ * 2026-10-16).
+ */
+export function orgOptionsFor(numbered: boolean): ReadonlyArray<{ id: ListOrg; label: string }> {
+  if (numbered) return ORG_OPTIONS
+  return ORG_OPTIONS.map((option) => (option.id === 'rank' ? { ...option, label: 'Unranked' } : option))
+}

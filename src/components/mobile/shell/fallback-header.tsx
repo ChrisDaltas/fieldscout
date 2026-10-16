@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 
 import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
-import { appEntryBehind } from '@/components/mobile/lists/lists-nav'
+import { appEntryBehind } from '@/components/mobile/ui/back-nav'
 import { leagueTabHref, mobileFallback } from '@/components/mobile/shell/mobile-nav'
 import { RoundNavButton } from '@/components/mobile/ui/mobile-header'
 import { useLeagues } from '@/hooks/use-leagues'

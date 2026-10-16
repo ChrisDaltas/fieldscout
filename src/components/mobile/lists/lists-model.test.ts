@@ -312,3 +312,58 @@ describe('the editor draft', () => {
     expect(saveFailureNote('Could not save the order: no.', plan, null)).toContain('couldn’t be checked')
   })
 })
+
+/**
+ * Tiers without numbers (Chris, 2026-10-15; migration 191): Ranked and Tiers
+ * are independent, so a draft can be tiered with Ranked off (`tier_only`).
+ */
+describe('the editor draft: tiers without numbers', () => {
+  it('a tier-only list draws its tier lines in the editor', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'S'), entry(3, 'A')], 'tier_only')
+    expect(ids(draftItems(draftOf(list)))).toEqual(['p1', 'p2', 'tier', 'p3'])
+  })
+
+  it('a drag re-letters tiers on a tier-only list, as on a numbered one', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'S'), entry(3, 'A')], 'tier_only')
+    const draft = draftOf(list)
+    const next = arrangeDraft(draft, moveItem(draftItems(draft), 0, 3)) // p1 below p3 → Tier 2
+    const plan = planSave(next, list)
+    expect(plan.order).toEqual(['p2', 'p3', 'p1'])
+    expect(plan.tiers).toEqual([{ playerId: 'p1', tier: 'A' }])
+  })
+
+  it('players added to a tier-only list join its last tier', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'A')], 'tier_only')
+    expect(addToDraft(draftOf(list), pool(9), 'l1').entries.at(-1)).toMatchObject({ tier: 'A' })
+  })
+
+  it('turning Ranked off keeps the tiers (and any pending tier line); it saves as tier_only', () => {
+    const list = stored([entry(1, 'S')], 'rank_and_tier')
+    const draft = setDraftMode({ ...draftOf(list), pending: 1 }, 'tier_only')
+    expect(draft.pending).toBe(1)
+    expect(ids(draftItems(draft))).toEqual(['p1', 'tier'])
+    expect(planSave(draft, list).fields).toEqual({ ranking_mode: 'tier_only' })
+    expect(planParts(planSave(draft, list))).toEqual(['Ranked / Tiers'])
+  })
+
+  it('turning Tiers off a tier-only list leaves a plain list and drops pending lines', () => {
+    const list = stored([entry(1, 'S')], 'tier_only')
+    const draft = setDraftMode({ ...draftOf(list), pending: 2 }, 'unranked')
+    expect(draft.pending).toBe(0)
+    expect(planSave(draft, list).fields).toEqual({ ranking_mode: 'unranked' })
+  })
+
+  it('a refused tier-only save is reported as not saved, with the server’s reason', () => {
+    const list = stored([entry(1, 'S')], 'rank_and_tier')
+    const plan = planSave(setDraftMode(draftOf(list), 'tier_only'), list)
+    expect(
+      saveFailureNote(
+        'Could not save the name or Ranked / Tiers: Tiers without numbers is coming in the next update.',
+        plan,
+        plan,
+      ),
+    ).toBe(
+      'Could not save the name or Ranked / Tiers: Tiers without numbers is coming in the next update. Nothing was saved. Not saved: Ranked / Tiers.',
+    )
+  })
+})

@@ -365,7 +365,7 @@ export function showsPoints(stats: readonly MStat[]): boolean {
 export const SCORING_OPTIONS: ReadonlyArray<{ value: ListScoring; label: string; sub: string }> = [
   { value: 'ppr', label: 'PPR', sub: '1 point per catch' },
   { value: 'half', label: 'Half PPR', sub: '0.5 points per catch' },
-  { value: 'quarter', label: 'Quarter PPR', sub: '0.25 points per catch' },
+  { value: 'quarter', label: '0.25 PPR', sub: '0.25 points per catch' },
   { value: 'standard', label: 'Standard', sub: 'No points for a catch' },
 ]
 

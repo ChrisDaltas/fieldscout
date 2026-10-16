@@ -10,6 +10,8 @@ import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { teamAvatarClass as matchTeamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import { feedLines, groupFeedLines, transactionText } from '@/components/leagues/activity-feed-ops'
+import { formatRecord, renderedChain } from '@/components/leagues/standings-table-ops'
+import { TIEBREAKERS } from '@/lib/leagues/settings/league-settings'
 
 // ---------------------------------------------------------------------------
 // Segments (spec §2.1) — Matchups / Standings / Activity
@@ -452,43 +454,83 @@ export function waiverCell(row: Pick<StandingsRow, 'faab_balance' | 'waiver_prio
   return prio !== null ? `#${prio}` : '—'
 }
 
-export interface Streak {
-  text: string
-  tone: 'win' | 'loss' | 'tie'
+/** ["vs median 4-4", "2nd opp 3-5"] — the extra records under a team's
+ *  name, each only where the league plays that game (`recordColumns` — the
+ *  league's settings, or records already on the table); empty when neither.
+ *  Separate parts so the row can wrap between them on a narrow phone
+ *  instead of cutting the second one away. */
+export function extraRecords(
+  row: Pick<StandingsRow, 'median_record' | 'second_record'>,
+  shown: { median: boolean; second: boolean },
+): string[] {
+  const parts: string[] = []
+  if (shown.median) parts.push(`vs median ${formatRecord(row.median_record)}`)
+  if (shown.second) parts.push(`2nd opp ${formatRecord(row.second_record)}`)
+  return parts
+}
+
+/** Each tiebreaker in plain words. Divisions are left out — they are off in
+ *  v1, so that entry never separates anyone (117 marks it inert). */
+const TIEBREAK_WORDS: Record<string, string> = {
+  win_pct: 'best record',
+  points_for: 'most points for',
+  head_to_head: 'head-to-head (two-team ties)',
+  points_against: 'most points against',
+  coin_flip: 'a coin flip',
 }
 
 /**
- * "▲3W" / "▼2L" (spec §5): the run of equal results at the end of a team's
- * FINAL head-to-head games, oldest to newest — read from each stored
- * result, never from a score. Null before a team has a final result.
+ * The chain 117 would return for a league, built from its stored setting —
+ * used only when the read carries no chain. Mirrors 117 exactly: the stored
+ * entries in their order, then every catalog entry the stored list leaves
+ * out, in the catalog's default order (so the chain is always total);
+ * divisions are inert; head-to-head is skipped unless the league plays
+ * head-to-head games (`schedule_mode = 'h2h'`).
  */
-export function streakOf(
-  teamId: string,
-  matchups: ReadonlyArray<{ week: number; round_type: string; status: string; home_team_id: string; away_team_id: string | null; result: string | null }>,
-): Streak | null {
-  const results = matchups
-    .filter(
-      (m) =>
-        m.round_type === 'regular' &&
-        m.status === 'final' &&
-        m.away_team_id !== null &&
-        m.result !== null &&
-        (m.home_team_id === teamId || m.away_team_id === teamId),
-    )
-    .sort((a, b) => a.week - b.week)
-    .map((m): 'W' | 'L' | 'T' | null => {
-      if (m.result === 'tie') return 'T'
-      if (m.result === 'home') return m.home_team_id === teamId ? 'W' : 'L'
-      if (m.result === 'away') return m.away_team_id === teamId ? 'W' : 'L'
-      return null
-    })
-    .filter((r): r is 'W' | 'L' | 'T' => r !== null)
-  const last = results[results.length - 1]
-  if (!last) return null
-  let n = 0
-  for (let i = results.length - 1; i >= 0 && results[i] === last; i--) n++
-  if (last === 'T') return { text: `${n}T`, tone: 'tie' }
-  return { text: `${last === 'W' ? '▲' : '▼'}${n}${last}`, tone: last === 'W' ? 'win' : 'loss' }
+function storedChain(stored: readonly string[], scheduleMode: string): Array<{ entry: string; status: 'applied' | 'skipped' | 'inert' }> {
+  const order: string[] = []
+  for (const e of [...stored, ...TIEBREAKERS]) if (!order.includes(e)) order.push(e)
+  return order.map((entry) => ({
+    entry,
+    status: entry === 'division_record' ? 'inert' : entry === 'head_to_head' && scheduleMode !== 'h2h' ? 'skipped' : 'applied',
+  }))
+}
+
+/**
+ * How the table breaks ties, in one plain sentence (gap list #40), from the
+ * league's own tiebreak order. The standings read returns it as `chain` —
+ * the stored `settings.tiebreakers` in order, the rest appended, each entry
+ * marked applied / skipped / inert — and that chain always wins. Only the
+ * read's own chain is the truth; when it carries none, the same chain is
+ * rebuilt from the stored setting (`storedChain`). Only applied entries are
+ * named: a total-points league skips head-to-head (no head-to-head games),
+ * divisions are inert. The coin flip ends every tie (117: "coin_flip ends
+ * every tie"), so the sentence stops there — nothing after it can separate
+ * anyone.
+ *
+ * Record comes first by default, so the sentence says what breaks a tied
+ * record: "Ties go to most points for, then head-to-head (two-team ties),
+ * then most points against, then a coin flip." A league whose order puts
+ * something else first says what it ranks by: "Ranked by most points for,
+ * then best record, …". Higher points against wins a tie on purpose (the
+ * team that allowed more had the harder schedule — §7.3.7).
+ */
+export function tiebreakNote(chain: unknown, stored: readonly string[], scheduleMode: string): string | null {
+  const rendered = renderedChain(chain)
+  const order = rendered.length > 0 ? rendered : storedChain(stored, scheduleMode)
+  const entries: string[] = []
+  for (const e of order) {
+    if (e.status !== 'applied' || !TIEBREAK_WORDS[e.entry]) continue
+    entries.push(e.entry)
+    if (e.entry === 'coin_flip') break
+  }
+  if (entries.length === 0) return null
+  const words = entries.map((e) => TIEBREAK_WORDS[e])
+  if (entries[0] === 'win_pct') {
+    const rest = words.slice(1)
+    return rest.length > 0 ? `Ties go to ${rest.join(', then ')}.` : null
+  }
+  return `Ranked by ${words.join(', then ')}.`
 }
 
 /** "Top 6 make the playoffs. Line marks the cutoff." — N from the

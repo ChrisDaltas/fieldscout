@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils'
 import { AddDraftListCta } from './attach-list-modal'
 import { InvitePanel } from './invite-panel'
 import { SeasonHero } from './league-home-season'
+import { LeagueNoteCard } from './league-note-card'
 import {
   autoStartPollMs,
   deriveSetupChecklist,
@@ -117,6 +118,9 @@ function LeagueHomeContent({ leagueId, data }: { leagueId: string; data: LeagueD
     <div className="flex flex-col gap-4">
       {/* The league's name, crest, team count and status live in the league
           header (league-shell.tsx) — this page renders no header of its own. */}
+      {/* Gap list #13 (Chris 2026-10-15): the commissioner note, pinned at
+          the top of the league home in every status. */}
+      <LeagueNoteCard leagueId={leagueId} canEdit={isCommish} />
       {state === 'setup' && (
         <SetupHero
           leagueId={leagueId}

@@ -11,6 +11,9 @@ import { create } from 'zustand'
  * the DM backend that doesn't exist yet, exactly as the desktop rail panel
  * keeps its composer local (`rail/messages-panel.tsx`). They never reach
  * the server.
+ *
+ * (Which screen a thread was opened from is not kept: its Back goes back
+ * through history to wherever that was — Chris, #27, 2026-10-15.)
  */
 interface MessagesStore {
   query: string
@@ -18,23 +21,18 @@ interface MessagesStore {
   read: Record<string, true>
   /** Messages sent this session, per DM thread (local only, as the rail). */
   sent: Record<string, string[]>
-  /** The thread opened from the list — its Back returns there by history. */
-  openedFromList: string | null
 
   setQuery: (query: string) => void
   markRead: (threadId: string) => void
   addSent: (threadId: string, text: string) => void
-  setOpenedFromList: (threadId: string | null) => void
 }
 
 export const useMessagesStore = create<MessagesStore>()((set) => ({
   query: '',
   read: {},
   sent: {},
-  openedFromList: null,
 
   setQuery: (query) => set({ query }),
   markRead: (threadId) => set((s) => (s.read[threadId] ? s : { read: { ...s.read, [threadId]: true } })),
   addSent: (threadId, text) => set((s) => ({ sent: { ...s.sent, [threadId]: [...(s.sent[threadId] ?? []), text] } })),
-  setOpenedFromList: (threadId) => set({ openedFromList: threadId }),
 }))

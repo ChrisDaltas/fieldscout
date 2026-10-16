@@ -223,6 +223,15 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // reason: a reading page. Gated on `featureFlags.leagues` by
   // `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/stats',
+  // M8 L.G1.6 — the platform operator console (spec §24.4, Q96 / TD8): home,
+  // league finder, one league's live state, notify, operator log. In `(shell)`
+  // beside the persona-post review tab; "page not found" to every non-admin
+  // by `(shell)/admin/layout.tsx`. Permanent.
+  '/app/admin',
+  '/app/admin/leagues',
+  '/app/admin/leagues/[id]',
+  '/app/admin/log',
+  '/app/admin/notify',
   // FieldScout Mobile — the league's TRANSACTIONS, COMMISSIONER LOG and STAT
   // CORRECTIONS as full screens (m-league §2.5: the Team tab's Moves tile and
   // a team's "See all" land on Transactions). The mobile layout's screens;
@@ -236,6 +245,11 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // screens; a desktop visit goes Home.
   '/app/messages',
   '/app/messages/[threadId]',
+  // FieldScout Mobile — Community's LATEST page (For you's "Latest" shelf →
+  // See all, Chris 2026-10-16): every public list and ranking, newest first.
+  // Gated with the rest of Community by `(shell)/explore/layout.tsx`; a
+  // desktop visit is sent to `/app/explore`.
+  '/app/explore/latest',
 ]
 
 describe('route groups are invisible to the URL space', () => {

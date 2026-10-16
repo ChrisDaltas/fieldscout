@@ -3,16 +3,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
-import { poolRows } from '@/components/leagues/players-page-ops'
+import { holdersOf } from '@/components/leagues/players-page-ops'
 import {
-  availableSummary,
-  countsAsAvailable,
   gameCards,
   initialCardIndex,
   keyStatTrends,
-  movesOpenStatus,
+  leagueOwnership,
+  ownershipNeedsRosters,
+  ownershipSummary,
   preDraftFor,
   type GameCard,
+  type LeagueOwnership,
 } from '@/components/mobile/player/profile-ops'
 import { useProfileUiStore, type ProfileSection } from '@/components/mobile/player/profile-ui-store'
 import type { useProfileLeague } from '@/components/mobile/player/use-profile-context'
@@ -21,7 +22,6 @@ import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { useCardLeagueView } from '@/components/players/player-card-actions'
 import type { ScheduleRow, TeamGame } from '@/components/players/player-page-ops'
 import { useLeague } from '@/hooks/use-league'
-import { useLeaguePool } from '@/hooks/use-league-pool'
 import type { MyLeagueRow } from '@/hooks/use-leagues'
 import type { ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
@@ -110,9 +110,12 @@ export function SummaryTab({
                       {t.label}
                     </span>
                     {trend && (
+                      // The arrow is the direction; the colour is better or
+                      // worse for him (#43 — fewer interceptions is green).
                       <span
-                        className={cn('whitespace-nowrap text-[10px] font-semibold', trend.up ? 'text-positive-strong' : 'text-negative-strong')}
+                        className={cn('whitespace-nowrap text-[10px] font-semibold', trend.good ? 'text-positive-strong' : 'text-negative-strong')}
                         data-key-trend={trend.up ? 'up' : 'down'}
+                        data-key-trend-tone={trend.good ? 'good' : 'bad'}
                       >
                         {trend.text}
                       </span>
@@ -170,16 +173,11 @@ function SectionHead({
 // Ownership row (§2.5a)
 // ---------------------------------------------------------------------------
 
-type Probe = 'loading' | 'error' | 'available' | 'other'
+type Probe = LeagueOwnership | 'loading' | 'error'
 
 function OwnershipRow({ pool, ctx, onOpen }: { pool: PoolPlayer; ctx: ReturnType<typeof useProfileLeague>; onOpen: () => void }) {
   const [probes, setProbes] = useState<Record<string, Probe>>({})
-  const states = ctx.leagues.map((l) => probes[l.id] ?? 'loading')
-  const summary = states.some((s) => s === 'loading')
-    ? 'Checking…'
-    : states.some((s) => s === 'error')
-      ? 'Couldn’t check every league'
-      : availableSummary(states.filter((s) => s === 'available').length)
+  const summary = ownershipSummary(ctx.leagues.map((l) => probes[l.id] ?? 'loading'))
   return (
     <>
       {ctx.leagues.map((l) => (
@@ -199,7 +197,12 @@ function OwnershipRow({ pool, ctx, onOpen }: { pool: PoolPlayer; ctx: ReturnType
             <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">Your leagues</span>
           </>
         )}
-        <span className="flex-none whitespace-nowrap text-[12px] font-medium text-m-t3">{summary}</span>
+        {/* A mixed summary ("Rostered in 1 · Pre-draft in 1 · Season over in
+            1") can outrun a phone's row: it truncates, capped so the left
+            label always keeps room, and the row never scrolls sideways. */}
+        <span className="min-w-0 max-w-[60%] truncate text-[12px] font-medium text-m-t3" data-profile-ownership-summary>
+          {summary}
+        </span>
         <MIcon name="chevronRight" size={11} stroke={2} className="text-m-t5" />
       </button>
     </>
@@ -207,26 +210,21 @@ function OwnershipRow({ pool, ctx, onOpen }: { pool: PoolPlayer; ctx: ReturnType
 }
 
 /**
- * Where he is in one league, reported up for the "Available in N" count: a
- * league counts when he is unrostered there, the viewer has a team, and
- * roster moves are open (a pre-draft league's door is the draft queue).
- * Light on purpose — it runs for every league on every profile open: only
- * the two halves of the availability truth (rosters + pool, the players
- * page's own derivation, `poolRows`), and nothing at all for a league whose
- * moves are closed or where the viewer has no team.
+ * Where he stands in one league (`leagueOwnership`), reported up for the
+ * row's summary (#44). Light on purpose — it runs for every league on every
+ * profile open: one read, the rosters (the holder of record — the players
+ * page's own `holdersOf`), and none at all for a league that has not
+ * drafted. Whether he is on a roster is all the summary needs: unrostered
+ * where moves are open is available to the viewer's team, waivers or not.
  */
 function AvailabilityProbe({ pool, league, report }: { pool: PoolPlayer; league: MyLeagueRow; report: (p: Probe) => void }) {
-  const read = movesOpenStatus(league.status) && league.my_team_id !== null
+  const read = ownershipNeedsRosters(league.status)
   const rosters = useRosters(read ? league.id : undefined)
-  const leaguePool = useLeaguePool(read ? league.id : undefined)
   let probe: Probe
-  if (!read) probe = 'other'
-  else if (rosters.isError || leaguePool.isError) probe = 'error'
-  else if (!rosters.data || !leaguePool.data) probe = 'loading'
-  else {
-    const [row] = poolRows([pool], rosters.data, leaguePool.data, league.my_team_id, 'all')
-    probe = row && countsAsAvailable(league.status, row.availability.kind === 'rostered' ? 'rostered' : 'available') ? 'available' : 'other'
-  }
+  if (!read) probe = leagueOwnership(league.status, league.my_team_id, null)
+  else if (rosters.isError) probe = 'error'
+  else if (!rosters.data) probe = 'loading'
+  else probe = leagueOwnership(league.status, league.my_team_id, holdersOf(rosters.data).has(pool.id))
   useEffect(() => report(probe), [probe, report])
   return null
 }

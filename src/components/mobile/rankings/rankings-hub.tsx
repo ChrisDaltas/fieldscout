@@ -1,47 +1,68 @@
 'use client'
 
 import Link from 'next/link'
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
+import { readLastRankPos } from '@/components/mobile/rankings/last-position'
+import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { MyRankingsBody, type MyRankFilter } from '@/components/mobile/rankings/my-rankings'
-import { RkIcon, RK_ICON, StatCells, statCells } from '@/components/mobile/rankings/rank-parts'
 import {
-  RANK_POSITIONS,
+  MovementMark,
+  MovementSwitch,
+  RkIcon,
+  RK_ICON,
+  StatCells,
+  statCells,
+  type StatCell,
+} from '@/components/mobile/rankings/rank-parts'
+import {
+  HUB_POSITIONS,
+  RANK_SCORINGS,
   activeWeekOf,
   agreementNote,
   cmpToneClass,
-  dbPos,
   expertSpread,
+  fmt1,
   fromDbPos,
+  hubPosLabel,
+  inHubPos,
+  isChipSource,
   plural,
   rankPosLabel,
+  rankPosOr,
   relativeAgo,
+  scoringLabel,
   seasonLabel,
   seasonSub,
   shortName,
   tierBreaks,
   tierChipClassFor,
   updatedLabel,
+  type HubPos,
+  type Movement,
   type RankOverlay,
   type RankPos,
   type RankingsUrlState,
-  type Scoring,
   type SourceKey,
 } from '@/components/mobile/rankings/rankings-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
-import { usePersonaBoardPlayers } from '@/hooks/use-board-sources'
 import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import {
   HUB_CAP,
+  boardMovement,
+  useAuthorBoard,
   useExpertBoards,
   useExpertsSource,
-  usePositionPool,
+  useHubPool,
+  useMarketSource,
   useUsersSource,
   type ExpertBoard,
   type HubPlayer,
   type HubRow,
+  type MarketKey,
   type PoolStat,
 } from '@/hooks/use-mobile-rankings-sources'
 import { featureFlags } from '@/lib/feature-flags'
@@ -51,14 +72,27 @@ import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { computeInitials } from '@/utils/initials'
 
 /**
- * Rankings hub (lr-hub.md) on the app's real sources:
+ * The ONE Rankings screen (lr-hub.md; Chris, 2026-10-15, gap list #28) on
+ * the app's real sources:
  *   - Experts  → the consensus of the app's AI expert boards (labelled as AI),
  *   - Scout AI → no ranking exists yet: the tab is there with an empty state,
  *   - Users    → the cred-weighted average of users' rankings,
+ *   - ADP, Auction → desktop Big Board's market boards: average draft
+ *                position and average auction price (#29),
  *   - an AI expert's own board as the author view (S4, `?src=p:<listId>`),
- *   - Mine     → My rankings.
+ *   - Mine     → your rankings: the filters and period cards that used to be
+ *                the separate "My rankings" screen. `?view=mine` (Profile's
+ *                and Home's link) opens this screen on this tab.
  * Every source is season-long, so the type menu offers the one season type.
+ * The position chips add FLEX (RB, WR and TE in overall order, #29).
  * A row tap expands "Compare sources" (S9); the headshot opens the player.
+ *
+ * Movement (#33): on someone else's ranking — the experts' consensus, an AI
+ * expert's board — each row shows how far the player moved since that
+ * ranking's previous update (▲3 / ▼2, "New"), under the rank. On by
+ * default; the "Show movement" switch (remembered on this device) appears
+ * wherever there is a previous update to compare with. Users, ADP and
+ * Auction keep no previous version, so they have none.
  */
 
 export interface RankingsNav {
@@ -68,17 +102,20 @@ export interface RankingsNav {
   open: (overlay: RankOverlay, mode?: 'push' | 'replace') => void
 }
 
-/** Root header (lr-frame §2.4): 34px back → Profile, 34px blue Create. */
+/** Root header (lr-frame §2.4): 34px back, 34px blue Create. Back goes to
+ *  where you came from, else Profile (Chris, 2026-10-15, gap list #27). */
 function RootHeader({ onCreate }: { onCreate: () => void }) {
+  const goBack = useGoBack()
   return (
     <div className="flex items-center gap-2.5 px-4 pt-[2px]">
-      <Link
-        href="/app/profile"
-        aria-label="Back to profile"
+      <button
+        type="button"
+        onClick={() => goBack('/app/profile')}
+        aria-label="Back"
         className="flex size-[34px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1"
       >
         <RkIcon d={RK_ICON.back} size={16} stroke={2} />
-      </Link>
+      </button>
       <span className="flex-1" />
       <button
         type="button"
@@ -110,10 +147,11 @@ function useAuthor(src: SourceKey, fallbackPos: RankPos) {
 
 export function RankingsHub({ nav }: { nav: RankingsNav }) {
   const { state, currentWeek } = nav
-  const myOnly = state.view === 'mine'
   const isMine = state.src === 'mine'
-  const author = useAuthor(state.src, state.pos)
-  // The My rankings filter lasts the session (lr-myrank §3): this screen
+  // An AI expert's overall board is shown at one position: the chip's, RB
+  // for FLEX.
+  const author = useAuthor(state.src, rankPosOr(state.pos, 'RB'))
+  // The Mine tab's filter lasts the session (lr-myrank §3): this screen
   // stays mounted under the wizard and editor, so plain state carries it.
   const [filter, setFilter] = useState<MyRankFilter>('all')
   // One expanded row at a time (lr-hub S9); any tab, chip or menu pick
@@ -128,10 +166,13 @@ export function RankingsHub({ nav }: { nav: RankingsNav }) {
 
   const onCreate = () => {
     const active = activeWeekOf(currentWeek)
+    // New ranking starts on the position last used on this device (gap list
+    // #32) — an AI expert's board keeps its own.
+    const pos = author.id ? author.pos : (readLastRankPos() ?? rankPosOr(state.pos, 'RB'))
     nav.open(
       isMine
-        ? { kind: 'new', step: 1, type: active <= 18 ? `w${active}` : 'season', pos: 'RB' }
-        : { kind: 'new', step: 1, type: 'season', pos: author.id ? author.pos : state.pos },
+        ? { kind: 'new', step: 1, type: active <= 18 ? `w${active}` : 'season', pos }
+        : { kind: 'new', step: 1, type: 'season', pos },
       'push',
     )
   }
@@ -139,17 +180,24 @@ export function RankingsHub({ nav }: { nav: RankingsNav }) {
   const pickTab = (key: SourceKey) => {
     setOpenRow(null)
     // Leaving an author's ranking carries its position over (lr-hub §3.2).
-    nav.setHub(author.id && key !== state.src ? { src: key, pos: author.pos } : { src: key })
+    if (author.id && key !== state.src) nav.setHub({ src: key, pos: author.pos })
+    // A tab with position chips opens on the position last used (gap list
+    // #32) — the same one it showed, unless Mine's editor or New ranking
+    // used another since. FLEX stays FLEX from one chip tab to the next.
+    else if (isChipSource(key)) {
+      const keepFlex = state.pos === 'FLEX' && isChipSource(state.src)
+      nav.setHub({ src: key, pos: keepFlex ? 'FLEX' : (readLastRankPos() ?? state.pos) })
+    } else nav.setHub({ src: key })
   }
 
   return (
     <MobileScreen header={<RootHeader onCreate={onCreate} />}>
       <div className="px-4 pt-3">
         <div role="heading" aria-level={1} className="text-[26px] font-bold tracking-[-0.03em] text-m-t1">
-          {myOnly ? 'My rankings' : 'Rankings'}
+          Rankings
         </div>
       </div>
-      {!myOnly && <SourceTabs active={state.src} author={author.board} authorId={author.id} onPick={pickTab} />}
+      <SourceTabs active={state.src} author={author.board} authorId={author.id} onPick={pickTab} />
       {isMine ? (
         <MyRankingsBody nav={nav} filter={filter} setFilter={setFilter} />
       ) : author.id ? (
@@ -183,10 +231,19 @@ function SourceTabs({
     { key: 'experts', label: 'Experts' },
     { key: 'ai', label: 'Scout AI' },
     { key: 'users', label: 'Users' },
+    // Desktop Big Board's market boards, after Users (#29).
+    { key: 'adp', label: 'ADP' },
+    { key: 'auction', label: 'Auction' },
     // The author tab exists only while their ranking is open (lr-hub S4).
     ...(authorId ? [{ key: `p:${authorId}` as SourceKey, label: author?.persona.display_name ?? 'Ranking' }] : []),
     { key: 'mine', label: 'Mine' },
   ]
+  // The row scrolls on a narrow phone: keep the open tab in view (Profile's
+  // link opens Mine, the last one).
+  const activeRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [active])
   return (
     <div
       role="tablist"
@@ -198,6 +255,7 @@ function SourceTabs({
         return (
           <button
             key={t.key}
+            ref={on ? activeRef : undefined}
             type="button"
             role="tab"
             aria-selected={on}
@@ -208,7 +266,9 @@ function SourceTabs({
             )}
           >
             {t.label}
-            {on && <span aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] bg-m-ink" />}
+            {/* t1, not ink: the same ink in light mode, white in dark mode,
+                where ink is a dim grey (gap list #34). */}
+            {on && <span aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] bg-m-t1" />}
           </button>
         )
       })}
@@ -242,20 +302,39 @@ interface Breakdown {
   mine: RankMap | null
 }
 
-/** The user's season ranking at a position (the hub's one type), for the
- *  breakdown's "Your rank" cell. */
-function useMySeasonRanks(pos: RankPos): RankMap | null {
+/** The user's season ranking at a chip (the hub's one type), for the
+ *  breakdown's "Your rank" cell — FLEX in the board's overall order. */
+function useMySeasonRanks(pos: HubPos): RankMap | null {
   const boards = useMyRankingBoards()
   return useMemo(() => {
     const ids = (boards.data?.season?.players ?? [])
-      .filter((r) => fromDbPos(r.player.position) === pos)
+      .filter((r) => inHubPos(r.player.position, pos))
       .map((r) => r.player_id)
     return ids.length > 0 ? new Map(ids.map((id, i) => [id, i + 1])) : null
   }, [boards.data, pos])
 }
 
+/** Whether a source's movement has a previous update to show (the switch
+ *  appears only then), and the marks to show when it's on. */
+function useMovementView(movement: ReadonlyMap<string, Movement> | undefined) {
+  const [on, setOn] = useShowMovement('others')
+  const available = (movement?.size ?? 0) > 0
+  return {
+    available,
+    on,
+    setOn,
+    marks: available && on ? movement : undefined,
+  }
+}
+
+/** What an ADP / Auction row shows beside the stats: the market value. */
+function marketCell(key: MarketKey, value: number | undefined): StatCell {
+  if (value === undefined) return { v: '–', l: key === 'adp' ? 'ADP' : 'Auction' }
+  return key === 'adp' ? { v: fmt1(value), l: 'ADP' } : { v: `$${Math.round(value)}`, l: 'Auction' }
+}
+
 // ---------------------------------------------------------------------------
-// Source body (Experts / Users): sticky filter bar · info line · rows
+// Source body (Experts / Users / ADP / Auction): info line · rows
 // ---------------------------------------------------------------------------
 
 function SourceBody({
@@ -269,11 +348,12 @@ function SourceBody({
 }) {
   const { state, currentWeek } = nav
   const isExperts = state.src === 'experts'
+  const market: MarketKey | null = state.src === 'adp' || state.src === 'auction' ? state.src : null
   const experts = useExpertsSource(state.pos)
-  const users = useUsersSource(dbPos(state.pos))
-  const pool = usePositionPool(dbPos(state.pos), state.scoring)
+  const users = useUsersSource(state.pos)
+  const markets = useMarketSource(market, state.pos)
+  const pool = useHubPool(state.pos, state.scoring)
   const mine = useMySeasonRanks(state.pos)
-  const active = isExperts ? experts : users
   const isPre = currentWeek === 0
 
   const expertRanks = useMemo(() => rankMap(experts.data?.rows), [experts.data])
@@ -281,14 +361,17 @@ function SourceBody({
   const hasExperts = expertRanks.size > 0
   const hasUsers = userRanks.size > 0
 
-  // The other sources with a ranking at this position (Scout AI has none).
-  const cmp: CmpSource[] = isExperts
-    ? hasUsers
-      ? [{ short: 'Users', full: 'Users', ranks: userRanks }]
-      : []
-    : hasExperts
-      ? [{ short: 'Experts', full: 'Experts', ranks: expertRanks }]
-      : []
+  // The other source with a ranking at this chip (Scout AI has none). ADP
+  // and Auction show their market value instead of a comparison column.
+  const cmp: CmpSource[] = market
+    ? []
+    : isExperts
+      ? hasUsers
+        ? [{ short: 'Users', full: 'Users', ranks: userRanks }]
+        : []
+      : hasExperts
+        ? [{ short: 'Experts', full: 'Experts', ranks: expertRanks }]
+        : []
   const breakdown: Breakdown = {
     sources: [
       ...(hasExperts ? [{ label: 'Experts', ranks: expertRanks }] : []),
@@ -298,29 +381,51 @@ function SourceBody({
     mine,
   }
 
-  const rows = (isExperts ? experts.data?.rows : users.data) ?? []
+  const active = market
+    ? { isPending: markets.isPending, isError: markets.isError, refetch: markets.refetch }
+    : isExperts
+      ? experts
+      : users
+  const rows = (market ? markets.data?.rows : isExperts ? experts.data?.rows : users.data) ?? []
   const upd = isExperts ? updatedLabel(experts.data?.updatedAt) : null
-  const line = isExperts
-    ? `Consensus of ${plural(experts.data?.experts ?? 0, 'AI expert')}${upd ? ` · ${upd}` : ''}`
-    : 'Average of user rankings'
+  const line =
+    market === 'adp'
+      ? 'Average draft position'
+      : market === 'auction'
+        ? 'Average auction price'
+        : isExperts
+          ? `Consensus of ${plural(experts.data?.experts ?? 0, 'AI expert')}${upd ? ` · ${upd}` : ''}`
+          : 'Average of user rankings'
+  // Movement: only the experts' consensus keeps a previous version here.
+  const move = useMovementView(isExperts ? experts.data?.movement : undefined)
+  const extra = market
+    ? (id: string) => marketCell(market, markets.data?.values.get(id))
+    : undefined
 
   return (
     <>
       {(active.isPending || rows.length > 0) && (
-        <InfoLine dot={isPre ? 'pre' : 'plain'} text={active.isPending ? '' : line} cmp={active.isPending ? [] : cmp} />
+        <InfoLine
+          dot={isPre ? 'pre' : 'plain'}
+          text={active.isPending ? '' : line}
+          cmp={active.isPending ? [] : cmp}
+          movement={move.available ? { on: move.on, onChange: move.setOn } : null}
+        />
       )}
       <div className="px-4 pb-6">
         <RowsState
           isPending={active.isPending}
           isError={active.isError}
           refetch={() => void active.refetch()}
-          empty={rows.length === 0 ? `No ${rankPosLabel(state.pos)} players in this ranking yet` : null}
+          empty={rows.length === 0 ? `No ${hubPosLabel(state.pos)} players in this ranking yet` : null}
         >
           <TieredRows
             rows={rows.slice(0, HUB_CAP)}
             pool={pool.data}
             cmp={cmp}
             breakdown={breakdown}
+            movement={move.marks}
+            extra={extra}
             openRow={openRow}
             setOpenRow={setOpenRow}
           />
@@ -330,11 +435,23 @@ function SourceBody({
   )
 }
 
-function InfoLine({ dot, text, cmp }: { dot: 'pre' | 'plain'; text: string; cmp: readonly CmpSource[] }) {
+function InfoLine({
+  dot,
+  text,
+  cmp,
+  movement = null,
+}: {
+  dot: 'pre' | 'plain'
+  text: string
+  cmp: readonly CmpSource[]
+  /** The "Show movement" switch, when the ranking has a previous update. */
+  movement?: { on: boolean; onChange: (on: boolean) => void } | null
+}) {
   return (
     <div className="flex items-center gap-2 px-4 pb-1 pt-2.5">
       <span className={cn('size-1.5 flex-none rounded-full', dot === 'pre' ? 'bg-brand' : 'bg-m-t5')} />
       <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-m-t3">{text}</span>
+      {movement && <MovementSwitch variant="inline" on={movement.on} onChange={movement.onChange} />}
       {cmp.length > 0 && (
         <span className="flex-none whitespace-nowrap text-[10px] font-semibold text-m-t3">
           {cmp.map((c) => c.full).join(' · ')}
@@ -385,6 +502,8 @@ function TieredRows({
   pool,
   cmp,
   breakdown,
+  movement,
+  extra,
   openRow,
   setOpenRow,
 }: {
@@ -392,6 +511,10 @@ function TieredRows({
   pool: Map<string, PoolStat> | undefined
   cmp: readonly CmpSource[]
   breakdown: Breakdown
+  /** Each player's movement since the previous update, when shown. */
+  movement?: ReadonlyMap<string, Movement>
+  /** A fourth stat cell (ADP / Auction's market value). */
+  extra?: (id: string) => StatCell
   openRow: string | null
   setOpenRow: (id: string | null) => void
 }) {
@@ -421,6 +544,8 @@ function TieredRows({
                   player={r.player}
                   stat={pool?.get(r.player.id)}
                   cmp={cmp}
+                  movement={movement?.get(r.player.id)}
+                  extra={extra?.(r.player.id)}
                   open={open}
                   onToggle={() => setOpenRow(open ? null : r.player.id)}
                   onOpenPlayer={() => openPlayer(r.player.id)}
@@ -440,6 +565,8 @@ function HubPlayerRow({
   player,
   stat,
   cmp,
+  movement,
+  extra,
   open,
   onToggle,
   onOpenPlayer,
@@ -448,6 +575,8 @@ function HubPlayerRow({
   player: HubPlayer
   stat: PoolStat | undefined
   cmp: readonly CmpSource[]
+  movement: Movement | undefined
+  extra: StatCell | undefined
   open: boolean
   onToggle: () => void
   onOpenPlayer: () => void
@@ -464,8 +593,10 @@ function HubPlayerRow({
         aria-label={`${short}, compare sources`}
         className="absolute inset-0"
       />
+      {/* Rank over its movement (lr-frame §2.13.5): 9.5px, only when moved. */}
       <span className="flex w-[26px] flex-none flex-col items-center gap-px">
         <span className="text-[14px] font-bold text-m-t1">{rank}</span>
+        <MovementMark m={movement} className="text-[9.5px]" />
       </span>
       <button
         type="button"
@@ -481,7 +612,7 @@ function HubPlayerRow({
           {seasonSub(player.team, player.bye_week)}
         </span>
       </span>
-      <StatCells cells={statCells(stat, player.position)} />
+      <StatCells cells={extra ? [...statCells(stat, player.position), extra] : statCells(stat, player.position)} />
       {cmp.length > 0 && (
         <>
           <span aria-hidden className="my-1.5 w-px flex-none self-stretch bg-m-b3" />
@@ -562,20 +693,23 @@ function AuthorBody({
 }) {
   const { state, currentWeek } = nav
   const pos = author.pos
-  const playersQ = usePersonaBoardPlayers(author.board ? author.board.id : null)
+  const playersQ = useAuthorBoard(author.board ? author.board.id : null)
   const experts = useExpertsSource(pos, author.board !== null)
-  const pool = usePositionPool(dbPos(pos), state.scoring)
+  const pool = useHubPool(pos, state.scoring)
   const mine = useMySeasonRanks(pos)
   const [confirm, setConfirm] = useState(false)
 
   const rows = useMemo<HubRow[]>(() => {
     const out: HubRow[] = []
-    ;(playersQ.data ?? []).forEach((p, i) => {
+    ;(playersQ.data?.players ?? []).forEach((p, i) => {
       // The board is in the expert's order; its overall spots cut the tiers.
-      if (out.length < HUB_CAP && fromDbPos(p.position) === pos) out.push({ player: p as HubPlayer, score: -i })
+      if (out.length < HUB_CAP && fromDbPos(p.position) === pos) out.push({ player: p, score: -i })
     })
     return out
   }, [playersQ.data, pos])
+  // The board's movement since its previous update, over its whole slice at
+  // this position (the rows shown look themselves up).
+  const move = useMovementView(useMemo(() => boardMovement(playersQ.data, pos), [playersQ.data, pos]))
 
   const expertRanks = useMemo(() => rankMap(experts.data?.rows), [experts.data])
   const authorRanks = useMemo(() => rankMap(rows), [rows])
@@ -632,6 +766,7 @@ function AuthorBody({
         dot={currentWeek === 0 ? 'pre' : 'plain'}
         text={cmp.length > 0 ? 'Compared with Experts · tap a player for detail' : 'Tap a player for detail'}
         cmp={cmp}
+        movement={move.available ? { on: move.on, onChange: move.setOn } : null}
       />
       <div className="px-4 pb-6">
         <RowsState
@@ -645,6 +780,7 @@ function AuthorBody({
             pool={pool.data}
             cmp={cmp}
             breakdown={breakdown}
+            movement={move.marks}
             openRow={openRow}
             setOpenRow={setOpenRow}
           />
@@ -753,7 +889,6 @@ function FilterBar({ nav, onPick }: { nav: RankingsNav; onPick: () => void }) {
   const { state, currentWeek } = nav
   const [menu, setMenu] = useState<null | 'type' | 'scoring'>(null)
   const typeLabel = seasonLabel(currentWeek)
-  const scoringLabel = state.scoring === 'ppr' ? 'PPR' : 'Standard'
 
   useEffect(() => {
     if (!menu) return
@@ -777,19 +912,15 @@ function FilterBar({ nav, onPick }: { nav: RankingsNav; onPick: () => void }) {
     </button>
   )
 
+  // Scoring: PPR · Half PPR · 0.25 PPR · Standard (gap list #30), a 2×2 grid.
   const opts: ReadonlyArray<{ key: string; label: string; on: boolean; pick: () => void }> =
     menu === 'type'
       ? [{ key: 'season', label: typeLabel, on: true, pick: () => undefined }]
-      : (
-          [
-            ['ppr', 'PPR'],
-            ['std', 'Standard'],
-          ] as const
-        ).map(([k, l]) => ({
-          key: k,
-          label: l,
-          on: state.scoring === k,
-          pick: () => nav.setHub({ scoring: k as Scoring }),
+      : RANK_SCORINGS.map((s) => ({
+          key: s.key,
+          label: s.label,
+          on: state.scoring === s.key,
+          pick: () => nav.setHub({ scoring: s.key }),
         }))
 
   return (
@@ -803,9 +934,10 @@ function FilterBar({ nav, onPick }: { nav: RankingsNav; onPick: () => void }) {
     >
       <div className="flex gap-1.5 overflow-x-auto px-4 scrollbar-none">
         {pill('type', typeLabel)}
-        {pill('scoring', scoringLabel)}
+        {pill('scoring', scoringLabel(state.scoring))}
         <span aria-hidden className="mx-0.5 my-1 w-px flex-none bg-m-b3s" />
-        {RANK_POSITIONS.map((p) => {
+        {/* QB · RB · WR · TE · FLEX · K · D/ST — FLEX is RB/WR/TE overall (#29). */}
+        {HUB_POSITIONS.map((p) => {
           const on = state.pos === p
           return (
             <button
@@ -821,7 +953,7 @@ function FilterBar({ nav, onPick }: { nav: RankingsNav; onPick: () => void }) {
                 on ? 'bg-accent text-white' : 'bg-m-b2 text-m-t1',
               )}
             >
-              {rankPosLabel(p)}
+              {hubPosLabel(p)}
             </button>
           )
         })}

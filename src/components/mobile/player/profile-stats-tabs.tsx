@@ -261,9 +261,11 @@ const SLOT_TEXT: Record<string, string> = {
 /**
  * The team's depth chart from the roster sync's depth order. The
  * prototype's "Team rank" tiles (offense ranks) are left out — no team
- * offense stats are stored (a gap). Depth cells are not tappable (§3).
+ * offense stats are stored (a gap). Each teammate's name opens his profile
+ * in place (Chris, #45, 2026-10-15 — the design had them inert); Back there
+ * returns here. His own name (blue) is not a link — it is this profile.
  */
-export function TeamTab({ player }: { player: PlayerStatsPlayer }) {
+export function TeamTab({ player, onOpenPlayer }: { player: PlayerStatsPlayer; onOpenPlayer?: (playerId: string) => void }) {
   const depth = useMobileProfileDepthChart(player.team)
   const rows = useMemo(() => depthChart(depth.data ?? [], player.id, new Date()), [depth.data, player.id])
   const grid = { gridTemplateColumns: '40px repeat(3, minmax(0, 1fr))' }
@@ -289,7 +291,19 @@ export function TeamTab({ player }: { player: PlayerStatsPlayer }) {
               <div key={r.slot} className="grid items-center gap-2 border-t border-m-b2 px-3 py-2" style={grid} data-depth-slot={r.slot}>
                 <span className={cn('text-[12px] font-bold', SLOT_TEXT[r.pos] ?? 'text-m-t1')}>{r.slot}</span>
                 {r.cells.map((c, j) =>
-                  c ? (
+                  c && !c.self && onOpenPlayer ? (
+                    <button
+                      key={c.playerId}
+                      type="button"
+                      onClick={() => onOpenPlayer(c.playerId)}
+                      aria-label={`Open ${c.name}`}
+                      className="-mx-1 -my-0.5 flex min-w-0 flex-col rounded-[6px] px-1 py-0.5 text-left active:bg-m-b2"
+                      data-depth-player={c.playerId}
+                    >
+                      <span className="w-full truncate text-[10px] font-medium leading-3 text-m-t3">{c.first}</span>
+                      <span className="w-full truncate text-[13px] font-semibold leading-4 text-m-t1">{c.last}</span>
+                    </button>
+                  ) : c ? (
                     <div key={c.playerId} className="flex min-w-0 flex-col">
                       <span className="truncate text-[10px] font-medium leading-3 text-m-t3">{c.first}</span>
                       <span className={cn('truncate text-[13px] font-semibold leading-4', c.self ? 'text-accent' : 'text-m-t1')}>{c.last}</span>

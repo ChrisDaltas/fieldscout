@@ -19,6 +19,7 @@ import { HeaderActions } from '@/components/mobile/ui/mobile-header'
 import { ConversationRow, boardSender } from './conversation-row'
 import { MessagesEmpty } from './messages-empty'
 import { MESSAGES_EMPTY_TITLE, MobileMessagesList } from './messages-list-screen'
+import { MobileThreadScreen } from './thread-screen'
 
 const flags = vi.hoisted(() => ({ leagues: true, messages: true }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
@@ -105,6 +106,36 @@ describe('Messages list — conversations only (ruling #22)', () => {
     expect(empty).toContain(MESSAGES_EMPTY_TITLE)
     expect(empty).toContain('Your leagues’ message boards and direct messages will show up here.')
     expect(list(null)).toContain('data-skeleton="conversation"')
+  })
+})
+
+describe('a league board thread', () => {
+  it('lists the posts oldest → newest (it opens scrolled to the newest, #47) under a plain Back (#27)', () => {
+    const qc = client([LEAGUE])
+    qc.setQueryData(leagueChatKeys.board('L1'), [
+      { id: 'c1', user_id: 'user-priya', message: 'Who needs a kicker?', context: 'league', is_system: false, created_at: '2026-10-15T10:00:00Z' },
+      { id: 'c2', user_id: 'user-me', message: 'Waiver wire is thin', context: 'league', is_system: false, created_at: '2026-10-15T11:00:00Z' },
+    ])
+    qc.setQueryData(leaguesKeys.detail('L1'), {
+      league: { id: 'L1', name: 'Sunday Funday League' },
+      teams: [],
+      members: [
+        { user_id: 'user-me', team_id: null, profiles: { username: 'me', avatar_url: null } },
+        { user_id: 'user-priya', team_id: null, profiles: { username: 'priya', avatar_url: null } },
+      ],
+    })
+    const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(MobileThreadScreen, { threadId: 'league-L1' })))
+    expect(html).toMatch(/<button type="button" aria-label="Back"/)
+    expect(html).not.toContain('Back to Messages')
+    expect(html).toMatch(/role="log"[\s\S]*Who needs a kicker\?[\s\S]*Waiver wire is thin/)
+    expect(html).toContain('data-composer')
+  })
+
+  it('a dead thread’s way out is the header’s Back (#27), never a push to the list that leaves it behind', () => {
+    const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: client([LEAGUE]) }, createElement(MobileThreadScreen, { threadId: 'dm-gone' })))
+    expect(html).toContain('Conversation not found')
+    expect(html).toMatch(/<button type="button"[^>]*data-thread-go-back[^>]*>Go back<\/button>/)
+    expect(html).not.toContain('href="/app/messages"')
   })
 })
 

@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import {
@@ -19,6 +18,7 @@ import {
   type SsFilter,
   type SsQuestion,
 } from '@/components/mobile/profile/profile-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -38,9 +38,13 @@ import { cn } from '@/lib/utils'
  * so "Your calls right" is the design's "–". The "+" (Ask a question) is left
  * out: the composer it opens doesn't exist. The header scrolls with the
  * content.
+ *
+ * Back goes to where you came from — normally Profile — and to Profile when
+ * nothing in the app is behind (Chris, 2026-10-15, gap list #26/#27; the
+ * handoff's `goHome` is overruled).
  */
 export function MyStartSitScreen() {
-  const router = useRouter()
+  const goBack = useGoBack()
   const { user } = useAuth()
   const [filter, setFilter] = useState<SsFilter>('all')
   const { data, isLoading, isError, refetch } = useMobileProfileStartSit(user?.id)
@@ -55,11 +59,10 @@ export function MyStartSitScreen() {
     <MobileScreen>
       <div className="px-4 pb-6">
         <div className="flex h-[52px] items-center gap-2.5">
-          {/* Back goes Home, as the handoff's `goHome` does (OQ 3). */}
           <button
             type="button"
-            onClick={() => router.push('/app')}
-            aria-label="Back to Home"
+            onClick={() => goBack('/app/profile')}
+            aria-label="Back"
             className="flex size-[34px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1"
           >
             <MIcon name="back" size={16} stroke={2} />

@@ -6,7 +6,6 @@ import { RkIcon, RK_ICON } from '@/components/mobile/rankings/rank-parts'
 import {
   RANK_POSITIONS,
   activeWeekOf,
-  dbPos,
   formatSaved,
   fromDbPos,
   plural,
@@ -28,8 +27,9 @@ import { cn } from '@/lib/utils'
 /**
  * New ranking (lr-myrank §2.2) for the types the app supports: a weekly
  * board — this week or one of the next three (Chris, 2026-10-15) — and the
- * season board (Rest of season / Pre-draft). Scoring isn't a ranking
- * dimension in the app, so step 1 has no Scoring block.
+ * season board (Rest of season / Pre-draft). Step 1 has no Scoring block:
+ * a ranking's scoring is picked in the editor (its Scoring pill) and is Half
+ * PPR until one is picked (Chris, 2026-10-16).
  *
  * A ranking "exists" when that board already holds players at the position
  * — then step 1 opens it. Otherwise step 2 picks where it starts: your
@@ -100,7 +100,7 @@ export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, on
   // ---- step 2 sources --------------------------------------------------------
   const onStep2 = step === 2
   const experts = useExpertsSource(pos, onStep2)
-  const users = useUsersSource(dbPos(pos), onStep2)
+  const users = useUsersSource(pos, onStep2)
   const games = useNflWeekGames(onStep2 && weekly ? NFL_SEASON : undefined, onStep2 && weekly ? week : undefined)
   const sourcesPending = onStep2 && (experts.isPending || users.isPending || (weekly && games.isPending))
   const sourcesFailed = onStep2 && (experts.isError || users.isError)

@@ -12,6 +12,8 @@ describe('mobile Notifications row look (m-home §2B)', () => {
     expect(notificationVisual({ type: 'list_updated', data: null })).toEqual({ path: NOTIF_PATH.lists, tone: 'purple' })
     expect(notificationVisual({ type: 'stat_correction_result', data: null }).tone).toBe('orange')
     expect(notificationVisual({ type: 'something_new', data: null }).tone).toBe('neutral')
+    // Gap list #13 (192): a commissioner-note change — the note glyph, blue.
+    expect(notificationVisual({ type: 'league_commissioner_note', data: null })).toEqual({ path: NOTIF_PATH.note, tone: 'blue' })
   })
 
   it('short relative times', () => {

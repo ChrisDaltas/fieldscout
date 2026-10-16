@@ -14,6 +14,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ListWithTags } from '@/hooks/use-lists'
+import { listKindOf } from '@/lib/lists/ranking-mode'
 import type { ListFolder } from '@/types/database'
 
 import { ListCoverBand } from './cover-tile'
@@ -82,7 +83,8 @@ export function ListGalleryCard({
 
       <div className="flex flex-1 flex-col gap-2.5 p-[14px]">
         <div className="flex items-center gap-1.5">
-          <Chip>{list.ranking_mode === 'unranked' ? 'List' : 'Ranking'}</Chip>
+          {/* Ranking (numbered) · Tiers (tiers without numbers) · List. */}
+          <Chip>{listKindOf(list.ranking_mode)}</Chip>
           <Chip>{list.is_private ? 'Private' : 'Public'}</Chip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

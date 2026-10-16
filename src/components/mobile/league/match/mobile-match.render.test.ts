@@ -199,6 +199,8 @@ function render(
     values?: 'error'
     corrections?: 'error'
     lockEditable?: boolean
+    schedule?: LeagueSchedule | 'error' | 'pending'
+    weekParam?: number
   } = {},
 ): string {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
@@ -208,7 +210,8 @@ function render(
   } else {
     qc.setQueryData(leaguesKeys.detail(LEAGUE), seed.detail ?? detail())
   }
-  qc.setQueryData(scheduleKeys.all(LEAGUE), SCHEDULE)
+  if (seed.schedule === 'error') errored(qc, scheduleKeys.all(LEAGUE), 'schedule down')
+  else if (seed.schedule !== 'pending') qc.setQueryData(scheduleKeys.all(LEAGUE), seed.schedule ?? SCHEDULE)
   const week = seed.week ?? weekDoc()
   qc.setQueryData(leagueMatchupKeys.week(LEAGUE, week.week), week)
   for (const [team, b] of Object.entries(seed.boxes ?? { [ME]: MY_BOX, [OPP]: OPP_BOX })) qc.setQueryData(leagueBoxKeys.team(LEAGUE, week.week, team), b)
@@ -243,7 +246,7 @@ function render(
     }
   }
   const html = renderToStaticMarkup(
-    createElement(QueryClientProvider, { client: qc }, createElement(MobileMatch, { leagueId: LEAGUE, matchupId: seed.matchupId ?? null })),
+    createElement(QueryClientProvider, { client: qc }, createElement(MobileMatch, { leagueId: LEAGUE, matchupId: seed.matchupId ?? null, weekParam: seed.weekParam ?? null })),
   )
   return html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 }
@@ -280,10 +283,53 @@ describe('mobile Match — header and card', () => {
     expect(html.match(/data-proj-total/g)?.length).toBe(1)
   })
 
-  it('invents nothing: no win probability, no streak, no live-play row', () => {
+  it('invents nothing: no win probability, no live-play row — and no streak before a week is final', () => {
     expect(html).not.toMatch(/% win/)
     expect(html).not.toMatch(/[▲▼]/)
+    expect(html).not.toContain('data-streak')
     expect(html).not.toContain('yd catch')
+  })
+
+  // Gap list #39 (Chris, 2026-10-15): the streak by the record, counted the
+  // one way (`streak-ops`) — every decided result (Chris, 2026-10-16).
+  const final = (id: string, week: number, home: string, away: string, result: string) => ({
+    id, season: 2099, week, round_type: 'regular', status: 'final', home_team_id: home, away_team_id: away, home_score: 1, away_score: 0, result, is_overridden: false,
+  })
+  it('shows each side’s streak by its record: "@dalton · 2-6 ▼2L" and "8-0 ▲3W · @marcus"', () => {
+    const withStreaks = render({
+      schedule: {
+        ...SCHEDULE,
+        matchups: [
+          final('w0a', 0, ME, T3, 'home'),
+          final('w0b', 0, OPP, T4, 'home'),
+          final('w1a', 1, T3, ME, 'home'),
+          final('w1b', 1, OPP, T4, 'home'),
+          final('w1c', 2, ME, T4, 'away'),
+          // Not a result yet: a live week.
+          { ...final('w2', 2, OPP, ME, 'away'), status: 'live' },
+          // A playoff game is a game: it extends the run.
+          { ...final('p1', 15, T3, OPP, 'away'), round_type: 'playoff' },
+        ],
+      },
+    })
+    const me = withStreaks.slice(withStreaks.indexOf(`data-side="${ME}"`))
+    expect(me).toMatch(/@dalton<\/a> · 2-6 <span class="text-negative-strong" data-streak="▼2L">▼2L<\/span>/)
+    const opp = withStreaks.slice(withStreaks.indexOf(`data-side="${OPP}"`))
+    expect(opp).toMatch(/8-0 <span class="text-positive-strong" data-streak="▲3W">▲3W<\/span> · <a [^>]*>@marcus</)
+  })
+
+  it('a median league counts the result against the League Median last in its week: won the game, lost to the median → "▼1L"', () => {
+    const median = (week: number, team: string, result: string) => ({ season: 2099, week, team_id: team, median_result: result, is_final: true })
+    const html = render({
+      schedule: {
+        ...SCHEDULE,
+        matchups: [final('w1a', 1, ME, T3, 'home'), final('w1b', 1, OPP, T4, 'away')],
+        median_results: [median(1, ME, 'loss'), median(1, OPP, 'win'), median(1, T3, 'loss'), median(1, T4, 'win')],
+      },
+    })
+    expect(html.slice(html.indexOf(`data-side="${ME}"`))).toMatch(/data-streak="▼1L">▼1L</)
+    // Lost the game, beat the median: the week ends on the win.
+    expect(html.slice(html.indexOf(`data-side="${OPP}"`))).toMatch(/data-streak="▲1W">▲1W</)
   })
 
   // Ruling #23 (2026-10-15): the dots are a position indicator — no tapping,
@@ -521,6 +567,23 @@ describe('mobile Match — reads that fail are said, never silently missing', ()
     expect(html).toContain('data-read-problem="records"')
     expect(html).toContain('Couldn’t load the records.')
     expect(html).not.toContain('2-6')
+  })
+
+  // Gap list #39 review: the streaks come from the schedule read; when it
+  // fails the card says so rather than looking like a team with no streak.
+  it('a failed schedule read (the week from the URL) says the streaks could not load, with a retry', () => {
+    const html = render({ schedule: 'error', weekParam: 2 })
+    expect(html).toContain('data-side=')
+    expect(html).toContain('data-read-problem="streaks"')
+    expect(html).toContain('Couldn’t load the streaks.')
+    expect(html).not.toMatch(/data-streak="[▲▼]/)
+  })
+
+  it('streaks still loading hold a placeholder by the record', () => {
+    const html = render({ schedule: 'pending', weekParam: 2 })
+    expect(html).toContain('data-side=')
+    expect(html).toContain('data-streak="loading"')
+    expect(html).not.toContain('data-read-problem="streaks"')
   })
 
   it('a failed projections read says so instead of dropping the projections', () => {

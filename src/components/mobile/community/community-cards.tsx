@@ -1,10 +1,14 @@
 'use client'
 
+import Link from 'next/link'
+
 import {
+  COMMUNITY_HREF,
   authorBgClass,
   authorInitials,
   coverHeight,
   formatFollows,
+  postedAgo,
   topLine,
   updatedAgo,
   videoCount,
@@ -26,23 +30,25 @@ import { cn } from '@/lib/utils'
  * where it renders, so the username census (L.E1.41) sees every one.
  */
 
-/** The Community detail URL — the feed stays mounted underneath. A mobile
- *  URL: the desktop Community page ignores `?list=`. */
-export function communityDetailHref(id: string): string {
-  return `/app/explore?list=${encodeURIComponent(id)}`
+/** The Community detail URL — the screen it opens from (`from`: the feed,
+ *  or the Latest page) stays mounted underneath. A mobile URL: the desktop
+ *  Community page ignores `?list=`. */
+export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): string {
+  return `${from}?list=${encodeURIComponent(id)}`
 }
 
 /**
- * Opens the detail over the feed at once (handoff §2.14 mounts it
- * instantly): a history entry, not a router navigation, so there's no server
- * round trip — Next's `useSearchParams` follows `pushState`. Back pops it.
- * A modified click (new tab / window) is left to the browser.
+ * Opens the detail over the screen at once (handoff §2.14 mounts it
+ * instantly): a history entry on the SAME page, not a router navigation, so
+ * there's no server round trip — Next's `useSearchParams` follows
+ * `pushState`. Back pops it. A modified click (new tab / window) is left to
+ * the browser.
  */
-function openDetail(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
+function openDetail(e: React.MouseEvent<HTMLAnchorElement>, id: string, from: string) {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
   e.preventDefault()
   useCommunityStore.getState().setDetailFromFeed(true)
-  window.history.pushState(null, '', communityDetailHref(id))
+  window.history.pushState(null, '', communityDetailHref(id, from))
 }
 
 const AVATAR_SIZE: Record<16 | 26 | 34, { box: string; text: string }> = {
@@ -86,22 +92,33 @@ const COVER_H: Record<110 | 150 | 180 | 205, string> = {
   205: 'h-[205px]',
 }
 
-/** Shelf header: 18/700 title + "See all" (handoff §2.7). */
+/** Shelf header: 18/700 title + "See all" (handoff §2.7) — a button that
+ *  switches tab (`onSeeAll`), or a link to a page of its own
+ *  (`seeAllHref`: For you's "Latest"). Neither: no "See all". */
 export function ShelfHeader({
   title,
   onSeeAll,
+  seeAllHref,
   className,
 }: {
   title: string
-  onSeeAll: () => void
+  onSeeAll?: () => void
+  seeAllHref?: string
   className?: string
 }) {
+  const seeAll = 'text-[13px] font-semibold text-accent'
   return (
     <div className={cn('flex items-baseline justify-between', className)}>
       <h2 className="whitespace-nowrap text-[18px] font-bold tracking-[-0.02em]">{title}</h2>
-      <button type="button" onClick={onSeeAll} className="text-[13px] font-semibold text-accent">
-        See all
-      </button>
+      {seeAllHref ? (
+        <Link href={seeAllHref} className={seeAll}>
+          See all
+        </Link>
+      ) : onSeeAll ? (
+        <button type="button" onClick={onSeeAll} className={seeAll}>
+          See all
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -111,22 +128,47 @@ function authorSeed(author: CommunityAuthor): string {
   return author.profileId ?? author.username
 }
 
-/** Ranking row (handoff §2.10): 60px tile on the author's colour with the #1
- *  player, title, "@handle · N follows" and the top-three line. */
-export function RankingRow({ item }: { item: CommunityItem }) {
+/**
+ * Ranking row (handoff §2.10): 60px tile on the author's colour with the #1
+ * player, title, "@handle · N follows" and the top-three line.
+ *
+ * With `postedNow` it's a row of the Latest page (gap list #35, Chris
+ * 2026-10-16), which mixes lists and rankings: the second line says what it
+ * is and when it was posted ("@handle · List · 25m", the handoff's
+ * "@jordan · 25m" idiom), and a list's tile takes the list's cover colour,
+ * as its card would. `from`: the screen the detail opens over.
+ */
+export function RankingRow({
+  item,
+  postedNow,
+  from = COMMUNITY_HREF,
+}: {
+  item: CommunityItem
+  postedNow?: number
+  from?: string
+}) {
   const lead = item.heads[0]
-  const top = topLine(item.heads)
+  const top = topLine(item.heads, item.numbered ?? true)
   const followers = item.author.followers
+  const latest = postedNow !== undefined
+  const posted = latest ? postedAgo(item.createdAt, postedNow) : ''
+  const meta = latest
+    ? ` · ${item.kind === 'rank' ? 'Ranking' : 'List'}${posted ? ` · ${posted}` : ''}`
+    : followers !== null
+      ? ` · ${formatFollows(followers)}`
+      : ''
   return (
     <a
-      href={communityDetailHref(item.id)}
-      onClick={(e) => openDetail(e, item.id)}
+      href={communityDetailHref(item.id, from)}
+      onClick={(e) => openDetail(e, item.id, from)}
       className="flex items-center gap-3 py-2"
     >
       <span
         className={cn(
           'relative flex h-[60px] w-[60px] flex-none items-center justify-center overflow-hidden rounded-[10px]',
-          authorBgClass(authorSeed(item.author)),
+          latest && item.kind === 'list'
+            ? coverBgClass(item.positionFilter, item.coverColor)
+            : authorBgClass(authorSeed(item.author)),
         )}
       >
         {lead && <MHeadshot player={lead} size={40} />}
@@ -135,7 +177,7 @@ export function RankingRow({ item }: { item: CommunityItem }) {
         <span className="truncate text-[14px] font-semibold">{item.title}</span>
         <span className="truncate text-[12px] font-medium text-m-t3">
           @{item.author.username}
-          {followers !== null && ` · ${formatFollows(followers)}`}
+          {meta}
         </span>
         {top && <span className="truncate text-[11px] font-medium text-m-t3">{top}</span>}
       </span>
@@ -150,7 +192,7 @@ export function UpdatedRow({ item, now }: { item: CommunityItem; now: number }) 
   return (
     <a
       href={communityDetailHref(item.id)}
-      onClick={(e) => openDetail(e, item.id)}
+      onClick={(e) => openDetail(e, item.id, COMMUNITY_HREF)}
       className="flex items-center gap-[10px] rounded-[14px] bg-m-b1 px-3 py-[10px]"
     >
       <AuthorAvatar author={item.author} size={34} />
@@ -181,6 +223,9 @@ export function PlayGlyph({ size }: { size: number }) {
  * 188, Chris 2026-10-15), else its position group, as the Lists screens draw
  * it (`lists-model` coverBgClass, Chris's 2026-08-11 ruling). `coverColor` is
  * optional: rows that don't carry it fall back to the position colour.
+ *
+ * `card` is the masonry card (its height varies); `shelf` is the same card
+ * cover at one fixed size, for a horizontal shelf; `detail` tops the detail.
  */
 export function ListCover({
   item,
@@ -189,14 +234,19 @@ export function ListCover({
   item: Pick<CommunityItem, 'id' | 'heads' | 'videos' | 'thumbnailUrl' | 'positionFilter'> & {
     coverColor?: string | null
   }
-  variant: 'card' | 'detail'
+  variant: 'card' | 'shelf' | 'detail'
 }) {
   const yt = firstYouTube(item.videos)
   const image = item.thumbnailUrl ?? (yt ? youTubeThumb(yt) : null)
   const placeholder = !image && item.videos.length > 0 && item.heads.length === 0
   const collage = !image && !placeholder
-  const card = variant === 'card'
-  const height = card ? COVER_H[!item.thumbnailUrl && yt ? 110 : coverHeight(item.id)] : 'h-[230px]'
+  const card = variant !== 'detail'
+  const height =
+    variant === 'shelf'
+      ? 'h-[150px]'
+      : card
+        ? COVER_H[!item.thumbnailUrl && yt ? 110 : coverHeight(item.id)]
+        : 'h-[230px]'
   const headSize = card ? 44 : 64
   return (
     <span
@@ -242,7 +292,7 @@ export function ListCard({ item }: { item: CommunityItem }) {
   return (
     <a
       href={communityDetailHref(item.id)}
-      onClick={(e) => openDetail(e, item.id)}
+      onClick={(e) => openDetail(e, item.id, COMMUNITY_HREF)}
       className="mb-[14px] flex break-inside-avoid flex-col gap-[6px]"
     >
       <ListCover item={item} variant="card" />
@@ -264,6 +314,70 @@ export function ListMasonry({ items }: { items: CommunityItem[] }) {
       {items.map((item) => (
         <ListCard key={item.id} item={item} />
       ))}
+    </div>
+  )
+}
+
+/**
+ * A card of For you's "Latest" shelf (Chris, 2026-10-16): a fixed 150px
+ * card — the cover the detail opens with (a ranking's is always the collage,
+ * as on the detail), the title, the author, and what it is and when it was
+ * posted ("List · 25m").
+ */
+export function LatestCard({ item, now }: { item: CommunityItem; now: number }) {
+  const rank = item.kind === 'rank'
+  const posted = postedAgo(item.createdAt, now)
+  return (
+    <a
+      href={communityDetailHref(item.id)}
+      onClick={(e) => openDetail(e, item.id, COMMUNITY_HREF)}
+      className="flex w-[150px] flex-none snap-start flex-col gap-[6px]"
+      data-latest-card
+    >
+      <ListCover
+        item={rank ? { ...item, videos: [], thumbnailUrl: null } : item}
+        variant="shelf"
+      />
+      <span className="line-clamp-2 text-pretty text-[13px] font-semibold leading-[1.25]">{item.title}</span>
+      <span className="flex min-w-0 items-center gap-[5px] text-[11px] font-medium text-m-t3">
+        <AuthorAvatar author={item.author} size={16} />
+        <span className="truncate">@{item.author.username}</span>
+      </span>
+      <span className="truncate text-[11px] font-medium text-m-t3">
+        {rank ? 'Ranking' : 'List'}
+        {posted ? ` · ${posted}` : ''}
+      </span>
+    </a>
+  )
+}
+
+/**
+ * For you's "Latest" shelf: one row that scrolls sideways, snapping card by
+ * card, edge to edge with the 16px gutter kept at both ends (handoff
+ * horizontal shelves: `margin 0 -16px; padding 0 16px; gap 10px`). Only the
+ * shelf scrolls sideways, never the page.
+ */
+export function LatestShelf({ items, now }: { items: readonly CommunityItem[]; now: number }) {
+  return (
+    <div
+      className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-[10px] overflow-x-auto px-4 scrollbar-none"
+      data-latest-shelf
+    >
+      {items.map((item) => (
+        <LatestCard key={item.id} item={item} now={now} />
+      ))}
+    </div>
+  )
+}
+
+/** Empty / error state (handoff §2.12): centred t3 message + a blue action. */
+export function EmptyBlock({ message, action, onAction }: { message: string; action: string; onAction: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-[10px] px-4 py-12 text-center">
+      <p className="text-pretty text-[14px] font-medium leading-[1.4] text-m-t3">{message}</p>
+      <button type="button" onClick={onAction} className="text-[14px] font-semibold text-accent">
+        {action}
+      </button>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { buildBuckets } from '@/components/lists/v2/list-buckets'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import type { PoolPlayer } from '@/hooks/use-mobile-lists-pool'
 import { COVER_COLOR_LABEL, coverColorOf, type CoverColor } from '@/lib/lists/cover-color'
+import { hasTiers } from '@/lib/lists/ranking-mode'
 import { DEFAULT_BUDGET } from '@/stores/list-display-store'
 import {
   POSITION_FILTERS,
@@ -349,7 +350,7 @@ export function draftOf(list: StoredList): ListDraft {
 }
 
 export function draftItems(draft: ListDraft): EdItem[] {
-  const tiersOn = draft.mode === 'rank_and_tier'
+  const tiersOn = hasTiers(draft.mode)
   return editorItems(draft.entries, tiersOn, tiersOn ? draft.pending : 0)
 }
 
@@ -361,7 +362,7 @@ export function draftItems(draft: ListDraft): EdItem[] {
  * the last player stay as pending ones.
  */
 export function arrangeDraft(draft: ListDraft, items: readonly EdItem[]): ListDraft {
-  const tiersOn = draft.mode === 'rank_and_tier'
+  const tiersOn = hasTiers(draft.mode)
   const plan = planCommit(items, draft.entries, tiersOn)
   const tierBy = new Map(plan.tiers.map((change) => [change.playerId, change.tier]))
   const players = items.filter((item): item is Extract<EdItem, { t: 'p' }> => item.t === 'p')
@@ -373,9 +374,11 @@ export function arrangeDraft(draft: ListDraft, items: readonly EdItem[]): ListDr
   return { ...draft, entries, pending: tiersOn ? trailingMarkers(items) : 0 }
 }
 
-/** Ranked / Tiers. Leaving tiers drops the pending tier lines. */
+/** Ranked / Tiers (independent switches — `withNumbers` / `withTiers` in
+ *  `@/lib/lists/ranking-mode` pick the mode). Leaving tiers drops the pending
+ *  tier lines; flipping Ranked alone keeps them. */
 export function setDraftMode(draft: ListDraft, mode: RankingMode): ListDraft {
-  return { ...draft, mode, pending: mode === 'rank_and_tier' ? draft.pending : 0 }
+  return { ...draft, mode, pending: hasTiers(mode) ? draft.pending : 0 }
 }
 
 /**
@@ -396,7 +399,7 @@ export function addToDraft(draft: ListDraft, player: PoolPlayer, listId: string)
     player_id: player.id,
     position,
     overall_rank: position,
-    tier: draft.mode === 'rank_and_tier' ? lastTierLetter(draft.entries) : null,
+    tier: hasTiers(draft.mode) ? lastTierLetter(draft.entries) : null,
     rank_in_tier: null,
     notes: null,
     slot: null,

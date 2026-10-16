@@ -12,6 +12,7 @@ import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { useDraftPool, useMyBigBoardRanks } from '@/hooks/use-draft-pool'
 import { useLeagueListPlayers } from '@/hooks/use-league-lists'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
+import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 
 import {
@@ -50,8 +51,10 @@ interface AvailablePlayersProps {
   onDraft: (playerId: string) => void
   onQueue: (playerId: string) => void
   /** §8.9 list overlay (L.B4.2) — set from the My Lists panel; the room
-   *  owns the selection so panel and pool can never disagree. */
-  overlay?: { listId: string; title: string } | null
+   *  owns the selection so panel and pool can never disagree. Its numbers
+   *  and tiers show only when the list's Ranked / Tiers switches are on
+   *  (`rankingMode`; v2.16.93). */
+  overlay?: { listId: string; title: string; rankingMode?: string | null } | null
   onClearOverlay?: () => void
   className?: string
 }
@@ -118,6 +121,8 @@ export function AvailablePlayers({
     ),
   )
   const overlayActive = Boolean(overlay)
+  const overlayNumbered = isNumbered(overlay?.rankingMode)
+  const overlayTiered = hasTiers(overlay?.rankingMode)
   const onlyMode = overlayActive && onlyOnList
 
   const rows = useMemo<Array<PoolRow | OverlayPoolRow>>(() => {
@@ -256,13 +261,17 @@ export function AvailablePlayers({
         <div className="max-h-[420px] divide-y divide-n-4 overflow-y-auto">
           {rows.map((player, i) => {
             // Overlay decoration is additive (§8.9): rank/tier from the
-            // overlaid list when one is active, else nulls.
+            // overlaid list when one is active, else nulls. A plain list has
+            // no numbers to show (v2.16.93), so its column marks the players
+            // on it instead.
             const listRank = 'listRank' in player ? player.listRank : null
+            const listValue =
+              listRank == null ? '—' : overlayNumbered ? `#${listRank}` : '✓'
             const listTier = 'listTier' in player ? player.listTier : null
             const metaParts = [
               player.team,
               player.bigBoardRank != null ? `Board #${player.bigBoardRank}` : null,
-              overlayActive && listTier ? `Tier ${listTier}` : null,
+              overlayActive && overlayTiered && listTier ? `Tier ${listTier}` : null,
               // With the overlay the single stat column shows the LIST rank
               // (D118(5): one stat column at rail width — clarity over
               // density); ADP stays readable on the meta line.
@@ -281,7 +290,7 @@ export function AvailablePlayers({
               meta={metaParts.length > 0 ? metaParts.join(' · ') : undefined}
               stats={
                 overlayActive
-                  ? [{ label: 'List', value: listRank != null ? `#${listRank}` : '—' }]
+                  ? [{ label: 'List', value: listValue }]
                   : [
                       {
                         label: 'ADP',
