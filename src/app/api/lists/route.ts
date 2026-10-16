@@ -3,8 +3,11 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
+  FREE_TEAM_LIST_LIMIT,
   isPrivateListCapError,
+  isTeamListCapError,
   PRIVATE_LIMIT_BODY,
+  TEAM_LIMIT_BODY,
   generateUniqueSlug,
   replaceTagsForList,
   resolveTagIds,
@@ -235,8 +238,8 @@ export async function POST(request: Request) {
     }
   }
 
-  // Free-tier team cap (business rule: free users get one team).
-  if (input.is_team) {
+  // Free-tier team cap (suspended while FREE_TEAM_LIST_LIMIT is null)
+  if (input.is_team && FREE_TEAM_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')
@@ -249,15 +252,8 @@ export async function POST(request: Request) {
         .eq('owner_id', user.id)
         .eq('is_team', true)
         .is('deleted_at', null)
-      if ((count ?? 0) >= 1) {
-        return NextResponse.json(
-          {
-            error:
-              'Free accounts can have one team. Upgrade to Pro for unlimited teams.',
-            code: 'TEAM_LIMIT_REACHED',
-          },
-          { status: 403 },
-        )
+      if ((count ?? 0) >= FREE_TEAM_LIST_LIMIT) {
+        return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
       }
     }
   }
@@ -308,9 +304,13 @@ export async function POST(request: Request) {
     .single()
 
   if (insertError || !created) {
-    // Before migration 187 is pushed the database still caps private lists.
+    // Before migration 187 is pushed the database still caps private lists
+    // and teams.
     if (isPrivateListCapError(insertError)) {
       return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    if (isTeamListCapError(insertError)) {
+      return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
     }
     // A colour sent before migration 188 is pushed: a clear 409, not a 500.
     if (isMissingCoverColorColumn(insertError)) {

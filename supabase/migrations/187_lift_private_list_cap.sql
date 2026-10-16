@@ -1,18 +1,20 @@
 -- ============================================================================
--- Migration 187: lift the free-tier one-private-list cap
+-- Migration 187: lift the free-tier list caps (one private list, one team)
 --
 -- Chris, 2026-10-15 (mobile gap list, decision 5): the Pro rules are
 -- suspended for the free-only launch, so private lists are unlimited for
--- everyone. The API dropped its pre-check (FREE_PRIVATE_LIST_LIMIT = null);
--- this switches off the same cap in the database trigger, which otherwise
--- still refuses a free account's second private list.
+-- everyone. Chris, 2026-10-16: "remove the list caps for non-Pro, Pro logic
+-- on hold" — the one-team cap goes too. The API dropped its pre-checks
+-- (FREE_PRIVATE_LIST_LIMIT = FREE_TEAM_LIST_LIMIT = null); this switches off
+-- the same caps in the database trigger, which otherwise still refuses a free
+-- account's second private list or second team.
 --
--- Authored against the HEAD body (028), not the deployed one. Only the
--- private-list branch changes, and it is switched off behind a constant
--- rather than removed (CLAUDE.md: keep the is_pro checks in place). Kept
--- verbatim: the trigger itself, the Favorites exemption, the per-owner
--- advisory lock, SECURITY DEFINER with the search_path pin
--- (supabase/tests/004 counts this function), and the one-team cap.
+-- Authored against the HEAD body (028), not the deployed one. Both caps are
+-- switched off behind constants rather than removed (CLAUDE.md: keep the
+-- is_pro checks in place) — a Pro tier brings either back by putting a
+-- number in. Kept verbatim: the trigger itself, the Favorites exemption, the
+-- per-owner advisory lock, the refusal messages, and SECURITY DEFINER with
+-- the search_path pin (supabase/tests/004 counts this function).
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION enforce_free_list_caps()
@@ -22,9 +24,11 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  -- Free accounts' private-list cap. SUSPENDED (2026-10-15): NULL = off.
-  -- A Pro tier brings it back by putting a number here (it was 1).
+  -- Free accounts' caps. SUSPENDED (private 2026-10-15, team 2026-10-16):
+  -- NULL = off. A Pro tier brings one back by putting a number here (each
+  -- was 1).
   c_private_cap CONSTANT integer := NULL;
+  c_team_cap CONSTANT integer := NULL;
   v_is_pro boolean;
   v_count integer;
 BEGIN
@@ -36,7 +40,7 @@ BEGIN
     RETURN NEW;
   END IF;
   IF NOT ((c_private_cap IS NOT NULL AND COALESCE(NEW.is_private, false))
-          OR COALESCE(NEW.is_team, false)) THEN
+          OR (c_team_cap IS NOT NULL AND COALESCE(NEW.is_team, false))) THEN
     RETURN NEW;
   END IF;
 
@@ -61,14 +65,14 @@ BEGIN
     END IF;
   END IF;
 
-  IF COALESCE(NEW.is_team, false) THEN
+  IF c_team_cap IS NOT NULL AND COALESCE(NEW.is_team, false) THEN
     SELECT count(*) INTO v_count
     FROM lists
     WHERE owner_id = NEW.owner_id
       AND is_team = true
       AND deleted_at IS NULL
       AND id <> NEW.id;
-    IF v_count >= 1 THEN
+    IF v_count >= c_team_cap THEN
       RAISE EXCEPTION 'Free accounts can have one team.'
         USING errcode = 'check_violation';
     END IF;
