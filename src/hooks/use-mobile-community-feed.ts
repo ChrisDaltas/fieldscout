@@ -15,6 +15,7 @@ import {
 } from '@/components/mobile/community/community-ops'
 import { INJURY_STATUSES } from '@/components/mobile/home/home-ops'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { firstEmbed } from '@/utils/supabase-embed'
 
 /**
@@ -156,6 +157,10 @@ export interface CommunityItem {
   author: CommunityAuthor
   /** First four players in list order. */
   heads: CommunityPlayer[]
+  /** Does it show 1-2-3 numbers — a ranking always; a list only when its
+   *  Ranked switch is on (`isNumbered(ranking_mode)`, Chris 2026-10-16: one
+   *  numbering rule everywhere). Missing reads as numbered. */
+  numbered?: boolean
   tags: { id: string; name: string; slug: string }[]
   videos: CommunityVideo[]
 }
@@ -179,6 +184,8 @@ export interface CommunityRow {
   updated_at: string | null
   thumbnail_url: string | null
   ai_persona_id: string | null
+  /** `lists.ranking_mode` (since 012; `*` reads it). */
+  ranking_mode?: string | null
   owner: OwnerRow | OwnerRow[] | null
   persona: PersonaRow | PersonaRow[] | null
   tag_links: { tag: TagRow | TagRow[] | null }[] | null
@@ -271,6 +278,7 @@ export function mapCommunityRows(rows: CommunityRow[], recentLikes: ReadonlyMap<
               isPersona: false,
             },
         heads,
+        numbered: kind === 'rank' || isNumbered(row.ranking_mode),
         tags: (row.tag_links ?? []).flatMap((t) => {
           const tag = firstEmbed(t.tag)
           return tag ? [tag] : []

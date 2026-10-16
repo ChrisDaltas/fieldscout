@@ -113,6 +113,14 @@ describe('Community cards', () => {
     expect(out).toContain('title="Bijan Robinson"')
   })
 
+  it('a list without numbers previews its players unnumbered; a numbered one keeps 1-2-3 (2026-10-16)', () => {
+    const plain = html(createElement(RankingRow, { item: { ...base, numbered: false } }))
+    expect(plain).toContain('T. Allgeier · J. Mason · J. Hill')
+    expect(plain).not.toMatch(/1\. T\. Allgeier/)
+    const ranked = html(createElement(RankingRow, { item: { ...base, numbered: true } }))
+    expect(ranked).toContain('1. T. Allgeier 2. J. Mason 3. J. Hill')
+  })
+
   it('an AI expert has no follow count', () => {
     const out = html(
       createElement(RankingRow, {

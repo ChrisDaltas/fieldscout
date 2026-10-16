@@ -116,6 +116,11 @@ describe('formats', () => {
       '1. B. Robinson 2. J. Taylor 3. K. Williams',
     )
   })
+  it('a list without numbers names the same players in order, unnumbered (one numbering rule, 2026-10-16)', () => {
+    const heads = [player('1', 'Bijan Robinson'), player('2', 'Jonathan Taylor'), player('3', 'Kyren Williams'), player('4', 'X Y')]
+    expect(topLine(heads, false)).toBe('B. Robinson · J. Taylor · K. Williams')
+    expect(topLine(heads, true)).toBe('1. B. Robinson 2. J. Taylor 3. K. Williams')
+  })
   it('meta reads POS · TEAM with D/ST', () => {
     expect(playerMeta({ position: 'RB', team: 'ATL' })).toBe('RB · ATL')
     expect(playerMeta({ position: 'DEF', team: 'PIT' })).toBe('D/ST · PIT')

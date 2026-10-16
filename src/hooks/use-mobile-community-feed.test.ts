@@ -142,6 +142,31 @@ describe('readCommunityFeed', () => {
     expect(POOL_SELECT).not.toMatch(/scoring_systems/)
   })
 
+  it('numbers follow the list’s Ranked switch; a ranking is always numbered (2026-10-16)', async () => {
+    answer = (call) =>
+      call.table === 'lists'
+        ? isLatest(call)
+          ? { data: [], error: null }
+          : {
+              data: [
+                row('plain', { is_big_board: false, ranking_mode: 'unranked' }),
+                row('tiers', { is_big_board: false, ranking_mode: 'tier_only' }),
+                row('ranked', { is_big_board: false, ranking_mode: 'ranked' }),
+                row('both', { is_big_board: false, ranking_mode: 'rank_and_tier' }),
+                row('board', { ranking_mode: 'unranked' }),
+              ],
+              error: null,
+            }
+        : { data: [], error: null }
+    const feed = await readCommunityFeed(NOW)
+    const by = Object.fromEntries(feed.items.map((i) => [i.id, i]))
+    expect(by.plain?.numbered).toBe(false)
+    expect(by.tiers?.numbered).toBe(false)
+    expect(by.ranked?.numbered).toBe(true)
+    expect(by.both?.numbered).toBe(true)
+    expect(by.board).toMatchObject({ kind: 'rank', numbered: true })
+  })
+
   it('an AI expert’s board with no saved scoring counts as its persona’s usual scoring — what 190 saves', async () => {
     answer = (call) =>
       call.table === 'lists' && !isLatest(call)

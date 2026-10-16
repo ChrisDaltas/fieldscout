@@ -148,7 +148,7 @@ export function RankingRow({
   from?: string
 }) {
   const lead = item.heads[0]
-  const top = topLine(item.heads)
+  const top = topLine(item.heads, item.numbered ?? true)
   const followers = item.author.followers
   const latest = postedNow !== undefined
   const posted = latest ? postedAgo(item.createdAt, postedNow) : ''

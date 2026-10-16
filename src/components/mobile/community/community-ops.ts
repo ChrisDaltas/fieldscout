@@ -209,12 +209,14 @@ export function playerMeta(p: Pick<CommunityPlayer, 'position' | 'team'>): strin
 }
 
 /** Ranking top line, single-spaced as the prototype renders it:
- *  "1. B. Robinson 2. J. Taylor 3. K. Williams". */
-export function topLine(heads: CommunityPlayer[]): string {
-  return heads
-    .slice(0, 3)
-    .map((p, i) => `${i + 1}. ${shortName(p.full_name, p.position)}`)
-    .join(' ')
+ *  "1. B. Robinson 2. J. Taylor 3. K. Williams". A list without numbers
+ *  (its Ranked switch off — Chris 2026-10-16, one numbering rule) names the
+ *  same players in its order with no numbers: "B. Robinson · J. Taylor ·
+ *  K. Williams". */
+export function topLine(heads: CommunityPlayer[], numbered = true): string {
+  const top = heads.slice(0, 3)
+  if (!numbered) return top.map((p) => shortName(p.full_name, p.position)).join(' · ')
+  return top.map((p, i) => `${i + 1}. ${shortName(p.full_name, p.position)}`).join(' ')
 }
 
 /** "12k follows", "8.4k follows", "640 follows", "1 follow". */
