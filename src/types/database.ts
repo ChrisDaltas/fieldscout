@@ -6487,13 +6487,45 @@ export type Database = {
         Returns: undefined
       }
       op_job_words_internal: { Args: { p_job: string }; Returns: string }
+      op_league_detail: { Args: { p_league_id: string }; Returns: Json }
+      op_league_detail_internal: {
+        Args: { p_at: string; p_league_id: string }
+        Returns: Json
+      }
       op_league_line_internal: {
         Args: { p_league_id: string; p_text: string }
         Returns: undefined
       }
+      op_league_row_internal: {
+        Args: { l: Database["public"]["Tables"]["leagues"]["Row"] }
+        Returns: Json
+      }
       op_league_state: { Args: { p_league_id: string }; Returns: Json }
       op_league_state_internal: {
         Args: { p_at: string; p_league_id: string }
+        Returns: Json
+      }
+      op_list_leagues: {
+        Args: {
+          p_desc?: boolean
+          p_include_deleted?: boolean
+          p_limit?: number
+          p_offset?: number
+          p_q?: string
+          p_sort?: string
+        }
+        Returns: Json
+      }
+      op_list_leagues_internal: {
+        Args: {
+          p_at: string
+          p_desc: boolean
+          p_include_deleted: boolean
+          p_limit: number
+          p_offset: number
+          p_q: string
+          p_sort: string
+        }
         Returns: Json
       }
       op_notice_recipients_internal: {

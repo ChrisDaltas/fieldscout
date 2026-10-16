@@ -62,22 +62,5 @@ describe('GET /api/admin/actions', () => {
   })
 })
 
-describe('GET /api/admin/leagues', () => {
-  it('searches by name (wildcards literal) and states when the list was cut', async () => {
-    const rows = Array.from({ length: 26 }, (_, i) => ({ id: `${i}`, name: `L${i}`, season: 2026, status: 'in_season' }))
-    const { b, calls } = builder({ data: rows, error: null })
-    from.mockReturnValue(b)
-    const res = await leaguesGET(new Request('http://localhost/api/admin/leagues?q=50%25_off'))
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.leagues).toHaveLength(25)
-    expect(body.more).toBe(true)
-    expect(calls).toContainEqual(['ilike', ['name', '%50\\%\\_off%']])
-    expect(calls).toContainEqual(['is', ['deleted_at', null]])
-  })
-
-  it('a database error is a 500, not "no leagues"', async () => {
-    from.mockReturnValue(builder({ data: null, error: { message: 'boom' } }).b)
-    expect((await leaguesGET(new Request('http://localhost/api/admin/leagues?q=x'))).status).toBe(500)
-  })
-})
+// GET /api/admin/leagues is now the all-leagues RPC read (187, F599): its
+// behaviour is pinned in ../leagues/route.test.ts.

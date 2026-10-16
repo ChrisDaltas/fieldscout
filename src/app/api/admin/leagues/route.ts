@@ -2,45 +2,53 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { requireAdminUser } from '@/lib/auth/require-admin'
+import { opReadResponse } from '@/lib/admin/op-read-response'
+import { LEAGUE_SORTS, LEAGUE_TABLE_UNAVAILABLE } from '@/lib/admin/league-table'
 
 /**
- * GET /api/admin/leagues?q= — the console's league finder (M8 L.G1.6).
+ * GET /api/admin/leagues — EVERY league on the platform, one page at a time
+ * (M8 follow-up, Chris 2026-10-15; migration 187 `op_list_leagues`; F599).
  *
- * Name search runs through the operator's OWN session client, so it is bounded
- * by `leagues` RLS (members / owner — 052): it finds the leagues the operator
- * belongs to. Any other league is opened by pasting its link or id — the
- * live-state read (`op_league_state`, 186) takes any league id. A platform-wide
- * name search needs an operator RPC that does not exist yet (F-row filed by
- * L.G1.6); the service role is not used to fake one.
+ * The admin gate (404 to everyone else), Zod, then ONE RPC through the
+ * operator's OWN session client — the RPC re-checks the operator gate
+ * in-body and reads past `leagues` RLS as its definer. No service role.
  *
- * `limit` rows at most, with `more` saying the list was cut — never a silent cap.
+ * Query: `q` (name or commissioner, literal), `sort`
+ * (name | created | season | status | members | commissioner), `dir`
+ * (asc | desc), `offset`, `limit` (1–100), `deleted` (1 = include deleted).
+ * The answer carries the TRUE `total` and `more` — never a silent cap.
+ * Before 187 is pushed this is a named 503 (TD9).
  */
-const SEARCH_LIMIT = 25
-const qSchema = z.string().trim().max(80)
+const querySchema = z.object({
+  q: z.string().trim().max(80, 'Search is at most 80 characters').default(''),
+  sort: z.enum(LEAGUE_SORTS).default('created'),
+  dir: z.enum(['asc', 'desc']).default('desc'),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  deleted: z.enum(['0', '1']).default('0'),
+})
 
 export async function GET(request: Request) {
   const gate = await requireAdminUser()
   if (!gate.ok) return gate.response
 
-  const parsed = qSchema.safeParse(new URL(request.url).searchParams.get('q') ?? '')
-  if (!parsed.success) return NextResponse.json({ error: 'Search is at most 80 characters' }, { status: 400 })
-  // ilike wildcards in the user's text are matched literally.
-  const q = parsed.data.replace(/[\\%_]/g, (c) => `\\${c}`)
-
-  let query = gate.supabase
-    .from('leagues')
-    .select('id, name, season, status')
-    .is('deleted_at', null)
-    .order('name', { ascending: true })
-    .limit(SEARCH_LIMIT + 1)
-  if (q !== '') query = query.ilike('name', `%${q}%`)
-
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!Array.isArray(data)) return NextResponse.json({ error: 'The league search returned nothing.' }, { status: 500 })
-
-  return NextResponse.json(
-    { leagues: data.slice(0, SEARCH_LIMIT), more: data.length > SEARCH_LIMIT, limit: SEARCH_LIMIT },
-    { status: 200 },
+  const params = Object.fromEntries(
+    [...new URL(request.url).searchParams.entries()].filter(([, v]) => v !== ''),
   )
+  const parsed = querySchema.safeParse(params)
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+  const p = parsed.data
+
+  const { data, error } = await gate.supabase.rpc('op_list_leagues', {
+    p_q: p.q,
+    p_sort: p.sort,
+    p_desc: p.dir === 'desc',
+    p_limit: p.limit,
+    p_offset: p.offset,
+    p_include_deleted: p.deleted === '1',
+  })
+  if (!error && data && typeof data === 'object' && !Array.isArray(data) && !Array.isArray((data as { leagues?: unknown }).leagues)) {
+    return NextResponse.json({ error: 'The league table came back without its leagues.' }, { status: 500 })
+  }
+  return opReadResponse(data, error, LEAGUE_TABLE_UNAVAILABLE)
 }

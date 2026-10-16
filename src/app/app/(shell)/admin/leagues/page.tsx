@@ -1,5 +1,5 @@
-import { AdminLeagueSearchPage } from '@/components/admin/admin-leagues'
+import { AdminLeagueTablePage } from '@/components/admin/admin-league-table'
 
 export default function AdminLeaguesPage() {
-  return <AdminLeagueSearchPage />
+  return <AdminLeagueTablePage />
 }

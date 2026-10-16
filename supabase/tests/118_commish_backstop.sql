@@ -1079,8 +1079,8 @@ select is((select count(*)::int from _allow where length(why) < 60), 0,
 -- C8: gated functions that write nothing are outside the census, named.
 select is(
   (select string_agg(c.fn, ' ' order by c.fn) from _census c where c.writes is null),
-  'commish_matchup_edit_lock draft_queue_for_team is_league_commish schedule_preview',
-  'C8 the four gated functions that write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview) are outside the census, by name');
+  'commish_matchup_edit_lock draft_queue_for_team is_league_commish op_league_row_internal op_list_leagues_internal schedule_preview',
+  'C8 the six functions that match the gate shape and write no table (the edit-lock read, the commissioner''s Targets read — 178 / F524, the gate itself, the Remix preview, and 187''s two operator reads that look UP who the commissioner is — re-pinned additively, D521) are outside the census, by name');
 
 -- C9 / C10: POSITIVE CONTROLS — the census catches a planted offender, and
 -- a helper named only in its comment and a string does not save it.
@@ -1123,6 +1123,7 @@ drop function public.zz_x118_census_control(uuid);
 create temp table _literal (fn text primary key, why text not null);
 insert into _literal values
   ('commish_setting_canon_internal', 'commissioner is a value of the trade_review setting (none / commissioner / league_vote), not a role'),
+  ('op_league_detail_internal',      '187: sorts the operator''s member table commissioner-first (CASE lm.role WHEN ''commissioner'') — a read-only display order, not a gate (D521)'),
   ('create_league',                  'seats the creator AS the commissioner (a role written, not checked) — there is no commissioner yet (F515(b))'),
   ('trade_tick',                     'commissioner is the trade_review default value the tick reads, not a role'),
   ('trade_vote_veto_internal',       'commissioner is the trade_review default value, not a role'),
@@ -1143,9 +1144,9 @@ select is(
 select is(
   (select string_agg(x.fn || ':' || coalesce((l.has_literal and not l.gated)::text, 'absent'), ' ' order by x.fn)
    from _literal x left join _litscan l on l.fn = x.fn),
-  'commish_setting_canon_internal:true create_league:true trade_tick:true '
+  'commish_setting_canon_internal:true create_league:true op_league_detail_internal:true trade_tick:true '
   || 'trade_vote_veto_internal:true trade_vote_view_internal:true',
-  'C12 the literal-not-a-gate list is five entries (174 dropped commish_trade_reverse_internal), each still carrying the literal and still ungated — none stale');
+  'C12 the literal-not-a-gate list is six entries (174 dropped commish_trade_reverse_internal; 187 added op_league_detail_internal, D521), each still carrying the literal and still ungated — none stale');
 
 -- ---------------------------------------------------------------------------
 -- M. TD10 (ii) — THE BEHAVIOURAL MATRIX, read back. One row per verb (the
