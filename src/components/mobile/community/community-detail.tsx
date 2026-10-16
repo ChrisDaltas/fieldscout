@@ -22,12 +22,11 @@ import { useAuth } from '@/hooks/use-auth'
 import { useFollowingIds, useToggleFollow } from '@/hooks/use-follows'
 import { useList, useToggleFavorite, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
-import type { CommunityPlayer } from '@/hooks/use-mobile-community-feed'
+import type { CommunityPlayer, CommunityVideo } from '@/hooks/use-mobile-community-feed'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
-import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 /**
  * FieldScout Mobile — Community list detail (handoff m-community §2.14, D).
@@ -403,7 +402,13 @@ function DetailBody({
   )
 }
 
-function VideoCard({ video }: { video: { url: string; title: string; duration: string | null; source: string | null } }) {
+/**
+ * A video on the community detail. `title` is YouTube's real one or null —
+ * then no title line shows (Chris, 2026-10-15: "the actual YouTube titles or
+ * nothing"); the thumbnail, duration and source still identify it, and the
+ * link is named by its action for assistive tech.
+ */
+export function VideoCard({ video }: { video: CommunityVideo }) {
   const yt = youTubeId(video.url)
   let source = video.source
   if (yt) source = 'YouTube'
@@ -419,6 +424,7 @@ function VideoCard({ video }: { video: { url: string; title: string; duration: s
       href={video.url}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label={video.title ? undefined : source ? `Watch on ${source}` : 'Watch video'}
       className="flex w-[220px] flex-none flex-col gap-[6px]"
     >
       <span className="relative block h-[124px] w-[220px] overflow-hidden rounded-[12px] bg-m-ink">
@@ -435,7 +441,7 @@ function VideoCard({ video }: { video: { url: string; title: string; duration: s
           </span>
         )}
       </span>
-      <span className="text-pretty text-[12px] font-semibold leading-[1.3]">{video.title || VIDEO_TITLE_FALLBACK}</span>
+      {video.title ? <span className="text-pretty text-[12px] font-semibold leading-[1.3]">{video.title}</span> : null}
       {source && <span className="text-[11px] font-medium text-m-t3">{source}</span>}
     </a>
   )

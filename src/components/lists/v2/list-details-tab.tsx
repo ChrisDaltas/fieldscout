@@ -361,46 +361,65 @@ function LinksSection({
 
       {list.links.length > 0 && (
         <ul className="flex flex-col gap-1.5">
-          {list.links.map((link) => (
-            <li key={link.id} className="flex items-center gap-2.5 rounded-xl border border-n-4 bg-white p-2">
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-md text-ink',
-                  link.kind === 'video' ? 'bg-tier-2/50' : 'bg-tier-4/50',
-                )}
-              >
-                <Icon name={link.kind === 'video' ? 'arrow-next' : 'document'} size={13} />
-              </span>
-
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <a
-                  href={link.url}
-                  target="_blank"
-                  rel="ugc nofollow noopener noreferrer"
-                  className="truncate text-[12px] font-semibold text-ink underline-offset-2 transition-colors hover:text-accent-strong hover:underline"
+          {list.links.map((link) => {
+            // The second line's facts — real data, never a stand-in title.
+            const meta = [link.source_label, link.duration_label].filter(Boolean).join(' · ') || link.url
+            return (
+              <li key={link.id} className="flex items-center gap-2.5 rounded-xl border border-n-4 bg-white p-2">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-md text-ink',
+                    link.kind === 'video' ? 'bg-tier-2/50' : 'bg-tier-4/50',
+                  )}
                 >
-                  {link.title}
-                </a>
-                <span className="truncate text-[10px] font-medium text-n-6">
-                  {[link.source_label, link.duration_label].filter(Boolean).join(' · ') || link.url}
+                  <Icon name={link.kind === 'video' ? 'arrow-next' : 'document'} size={13} />
                 </span>
-              </span>
 
-              {canEdit && onRemove && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  title={`Remove “${link.title}”`}
-                  aria-label={`Remove ${link.title}`}
-                  onClick={() => onRemove(link.id)}
-                  className="ml-auto inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-pill text-n-6 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-45"
-                >
-                  <Icon name="close" size={11} />
-                </button>
-              )}
-            </li>
-          ))}
+                {/* A video YouTube would not name has NO title (Chris,
+                    2026-10-15: "the actual YouTube titles or nothing") — then
+                    its one line is the source/duration or the address itself,
+                    and that line is the link. */}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  {link.title ? (
+                    <>
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="ugc nofollow noopener noreferrer"
+                        className="truncate text-[12px] font-semibold text-ink underline-offset-2 transition-colors hover:text-accent-strong hover:underline"
+                      >
+                        {link.title}
+                      </a>
+                      <span className="truncate text-[10px] font-medium text-n-6">{meta}</span>
+                    </>
+                  ) : (
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="ugc nofollow noopener noreferrer"
+                      className="truncate text-[11px] font-medium text-n-6 underline-offset-2 transition-colors hover:text-accent-strong hover:underline"
+                    >
+                      {meta}
+                    </a>
+                  )}
+                </span>
+
+                {canEdit && onRemove && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    title={`Remove “${link.title ?? meta}”`}
+                    aria-label={`Remove ${link.title ?? meta}`}
+                    onClick={() => onRemove(link.id)}
+                    className="ml-auto inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-pill text-n-6 transition-colors hover:bg-surface-hover hover:text-ink disabled:opacity-45"
+                  >
+                    <Icon name="close" size={11} />
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
 
@@ -429,7 +448,9 @@ function LinksSection({
 /**
  * The inline attach form. Kind is a two-way segmented choice because 080's
  * `kind` is a closed set of exactly those two values; URL and title are
- * required (both are NOT NULL); source and duration are optional, because with
+ * required here (only a phone-attached YouTube video may be stored untitled —
+ * 189 — and this form names its links itself); source and duration are
+ * optional, because with
  * nothing scraping them a card with a bare title is a legitimate card.
  *
  * The duration placeholder shows the shape the CHECK accepts (`18:42`) rather

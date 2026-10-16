@@ -249,13 +249,18 @@ export function coverClass(list: {
 // Video card (lr-lists §2.7): 112×63 thumbnail, red play badge, title, source
 // =============================================================================
 
+/**
+ * `title` is YouTube's real title, or null when YouTube would not give one —
+ * then the card shows NO title line (Chris, 2026-10-15: "the actual YouTube
+ * titles or nothing"); the thumbnail and the source line carry it.
+ */
 export function VideoCard({
   url,
   title,
   sub = 'Watch on YouTube',
 }: {
   url: string
-  title: string
+  title: string | null
   sub?: string
 }) {
   const id = youTubeId(url)
@@ -273,7 +278,7 @@ export function VideoCard({
         </span>
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[13px] font-semibold leading-[1.3] [text-wrap:pretty]">{title}</span>
+        {title ? <span className="text-[13px] font-semibold leading-[1.3] [text-wrap:pretty]">{title}</span> : null}
         <span className="text-[11px] font-medium text-m-t3">{sub}</span>
       </span>
     </a>

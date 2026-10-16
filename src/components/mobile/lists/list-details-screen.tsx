@@ -12,7 +12,6 @@ import { toast } from '@/hooks/use-toast'
 import { coverColorOf, hasCoverColorColumn, type CoverColor } from '@/lib/lists/cover-color'
 import { cn } from '@/lib/utils'
 import { MAX_DESCRIPTION_LEN, MAX_TAGS_PER_LIST, MAX_TITLE_LEN, listTitleSchema, tagNameSchema } from '@/types/schemas/lists'
-import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 import { detailsCreateInput, detailsPatch } from './details-payload'
 import {
@@ -60,8 +59,9 @@ interface VideoDraft {
   /** The attached link's id, in Edit details. */
   linkId?: string
   /** The stored title (YouTube's own, looked up when it was attached), in
-   *  Edit details. A video pasted here has none until it is saved. */
-  title?: string
+   *  Edit details. A video pasted here has none until it is saved, and one
+   *  YouTube would not name has none at all — then no title line shows. */
+  title?: string | null
 }
 
 export function NewListScreen() {
@@ -383,7 +383,9 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
                 {video.yt ? <CoverImage src={youTubeThumb(video.yt)} /> : null}
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-px">
-                <span className="truncate text-[13px] font-semibold text-m-t1">{video.title || VIDEO_TITLE_FALLBACK}</span>
+                {video.title ? (
+                  <span className="truncate text-[13px] font-semibold text-m-t1">{video.title}</span>
+                ) : null}
                 <span className="truncate text-[11px] font-medium text-m-t3">{video.url}</span>
               </span>
               <button

@@ -89,11 +89,15 @@ const DETAIL: ListWithDetails = {
   players: [entry(1, 'Josh Allen', 'QB', 'BUF', 'S'), entry(2, 'Lamar Jackson', 'QB', 'BAL', 'A')],
 } as unknown as ListWithDetails
 
-const render = (seed?: (qc: QueryClient) => void) => {
+// Takes a different list detail (the titles cases) or extra cache seeding
+// (the editor cases).
+const render = (arg?: ListWithDetails | ((qc: QueryClient) => void)) => {
+  const detail = typeof arg === 'object' && arg !== null ? arg : DETAIL
+  const seed = typeof arg === 'function' ? arg : undefined
   const qc = new QueryClient()
   qc.setQueryData(['lists', 'collection', 1, 50], { lists: SUMMARY, pagination: { page: 1, pageSize: 50, total: 2, hasMore: false } })
   qc.setQueryData(['folders'], { folders: [] })
-  qc.setQueryData(['lists', 'detail', 'l1'], DETAIL)
+  qc.setQueryData(['lists', 'detail', 'l1'], detail)
   qc.setQueryData(['mobile-lists', 'video-flags', 'l1,l4'], new Set(['l1']))
   qc.setQueryData(['mobile-lists', 'latest-week', 2026], 6)
   seed?.(qc)
@@ -216,5 +220,56 @@ describe('mobile List editor', () => {
     expect(out).toContain('Merge tiers')
     expect(out).toContain('BUF · Bye 7')
     expect(out).toContain('95.5')
+  })
+})
+
+/**
+ * Chris, 2026-10-15: "we need the actual YouTube titles or nothing." A video
+ * YouTube would not name is stored with title NULL (migration 189) — every
+ * phone surface shows NO title line for it, never a placeholder, and the card
+ * keeps its thumbnail and source line.
+ */
+describe('a video with no title (YouTube would not name it)', () => {
+  const UNTITLED = {
+    ...DETAIL,
+    links: [{ id: 'k1', list_id: 'l1', kind: 'video', url: 'https://youtu.be/dQw4w9WgXcQ', title: null, source_label: null, duration_label: null, position: 1 }],
+  } as unknown as ListWithDetails
+
+  /** The markup between `from` and the next `to` — one card. */
+  const slice = (out: string, from: string, to: string) => {
+    const at = out.indexOf(from)
+    expect(at, from).toBeGreaterThan(-1)
+    return out.slice(at, out.indexOf(to, at) + to.length)
+  }
+
+  it('List view: thumbnail and "Watch on YouTube", no title line, no placeholder', () => {
+    search = new URLSearchParams('list=l1')
+    const out = render(UNTITLED)
+    expect(out).not.toMatch(/youtube video/i)
+    const card = slice(out, 'href="https://youtu.be/dQw4w9WgXcQ"', '</a>')
+    expect(card).toContain('i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg')
+    expect(card).toContain('>Watch on YouTube<')
+    // One text line (the source), and no empty title line left behind.
+    expect(card.match(/text-\[11px\] font-medium text-m-t3/g)).toHaveLength(1)
+    expect(card).not.toContain('text-[13px] font-semibold')
+    expect(card).not.toMatch(/<span[^>]*><\/span>/)
+  })
+
+  it('Edit details: the attached video shows its address only — no title, no placeholder', () => {
+    search = new URLSearchParams('list=l1&details=1')
+    const out = render(UNTITLED)
+    expect(out).not.toMatch(/youtube video/i)
+    const card = slice(out, '>Video<', 'aria-label="Remove video"')
+    expect(card).toContain('i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg')
+    expect(card).toContain('>https://youtu.be/dQw4w9WgXcQ<')
+    expect(card).not.toContain('text-[13px] font-semibold text-m-t1')
+    expect(card).not.toMatch(/<span[^>]*><\/span>/)
+  })
+
+  it('a titled video still shows YouTube\u2019s title in both places', () => {
+    search = new URLSearchParams('list=l1')
+    expect(render()).toContain('Why I’m fading these five')
+    search = new URLSearchParams('list=l1&details=1')
+    expect(render()).toContain('>Why I’m fading these five<')
   })
 })

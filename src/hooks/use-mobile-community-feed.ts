@@ -57,7 +57,8 @@ export interface CommunityPlayer {
 
 export interface CommunityVideo {
   url: string
-  title: string
+  /** YouTube's real title, or null when it would not give one — never a placeholder. */
+  title: string | null
   duration: string | null
   source: string | null
 }
@@ -142,7 +143,7 @@ interface TagRow {
 interface LinkRow {
   kind: string
   url: string
-  title: string
+  title: string | null
   duration_label: string | null
   source_label: string | null
   position: number

@@ -10,14 +10,16 @@
  * scraping service" rule (CLAUDE.md / memory). Nothing else on the page is
  * read.
  *
- * ## Never the reason an attach fails
+ * ## Never throws — a failure is `{ title: null, reason }`
  *
- * The lookup is a nicety on top of attaching a video, so every failure —
- * not a YouTube link, a non-200 (private, deleted or embed-disabled videos
- * answer 401/403/404), a timeout, a network error, a body that is not the
- * documented shape — resolves to `{ title: null, reason }` rather than
- * throwing. The REASON is kept (CLAUDE.md: "nothing happened" must carry
- * its why) so the caller can log it instead of silently falling back.
+ * Every failure — not a YouTube link, a non-200 (private, deleted or
+ * embed-disabled videos answer 401/403/404), a timeout, a network error, a
+ * body that is not the documented shape — resolves to `{ title: null,
+ * reason }` rather than throwing. The REASON is kept (CLAUDE.md: "nothing
+ * happened" must carry its why) so the caller can log it. What the caller
+ * does with a null is "the real title or nothing" (Chris, 2026-10-15): the
+ * video is stored with NO title — never under a placeholder
+ * (`links-service.ts`, migration 189).
  *
  * Only the video id leaves the server: the request names the canonical
  * `https://www.youtube.com/watch?v=<id>`, never the user's raw URL.
