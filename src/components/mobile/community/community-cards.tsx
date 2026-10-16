@@ -16,7 +16,6 @@ import { MIcon } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { CommunityAuthor, CommunityItem, CommunityVideo } from '@/hooks/use-mobile-community-feed'
 import { cn } from '@/lib/utils'
-import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 /**
  * FieldScout Mobile — Community cards (handoff m-community §2.6, §2.10,
@@ -221,9 +220,11 @@ export function ListCover({
           </span>
         </span>
       )}
-      {placeholder && card && (
+      {/* The first video's real title, or nothing (Chris, 2026-10-15) — the
+          ink block and the video badge still say what this cover is. */}
+      {placeholder && card && item.videos[0]!.title && (
         <span className="absolute inset-0 flex flex-col justify-end gap-1 p-[10px] text-white">
-          <span className="text-pretty text-[12px] font-semibold leading-[1.25]">{item.videos[0]!.title || VIDEO_TITLE_FALLBACK}</span>
+          <span className="text-pretty text-[12px] font-semibold leading-[1.25]">{item.videos[0]!.title}</span>
         </span>
       )}
       {card && item.videos.length > 0 && (

@@ -5,11 +5,19 @@
  * real-PostgREST behaviour of `addLink` stays pinned by `links-api-db.test.ts`
  * (every one of its attaches sends a title, so it never looks one up).
  *
+ * Chris's rule (2026-10-15, correcting the first build): "we need the actual
+ * YouTube titles or nothing. Having a bunch of videos with the same title is
+ * useless." So a title is YouTube's real one or NULL — never a placeholder.
+ *
  * Pinned:
  *   - the wire schema admits a missing title ONLY for a YouTube video;
  *   - a looked-up title is what gets stored;
- *   - a failed lookup still attaches, under the neutral fallback (080 makes
- *     `title` NOT NULL), and says why in the log;
+ *   - a failed (or throwing) lookup stores NULL — migration 189 — and says
+ *     why in the log;
+ *   - on the OLD schema (before 189 is pushed: `title` NOT NULL, simulated
+ *     by the fake answering 23502) that attach is refused with a retryable
+ *     503 and NOTHING is written — no stand-in title, ever;
+ *   - a successful lookup attaches on the old schema too;
  *   - a caller's own title (desktop's attach form) is never looked up;
  *   - a refused request (not the owner) never reaches YouTube.
  */
@@ -18,7 +26,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Database } from '@/types/database'
 
-import { addLink, addLinkInputSchema, TITLE_REQUIRED_MESSAGE, VIDEO_TITLE_FALLBACK } from './links-service'
+import { addLink, addLinkInputSchema, TITLE_REQUIRED_MESSAGE, VIDEO_TITLE_UNAVAILABLE_MESSAGE } from './links-service'
 import type { YouTubeTitleResult } from './youtube-title'
 
 const OWNER = '11111111-1111-4111-8111-111111111111'
@@ -28,9 +36,12 @@ const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
 
 /**
  * Just enough of the PostgREST builder for `addLink`: the owner probe on
- * `lists`, the link reads, and the insert — which is recorded.
+ * `lists`, the link reads, and the insert — which is recorded only when it
+ * lands. `schema: 'pre-189'` answers a NULL title the way the old schema
+ * does: `23502`, nothing stored.
  */
-function fakeSupabase() {
+function fakeSupabase({ schema = '189' }: { schema?: '189' | 'pre-189' } = {}) {
+  const attempted: Array<Record<string, unknown>> = []
   const inserted: Array<Record<string, unknown>> = []
   const stored: Array<Record<string, unknown>> = []
 
@@ -47,6 +58,16 @@ function fakeSupabase() {
       maybeSingle: async () =>
         table === 'lists' ? { data: { id: LIST, owner_id: OWNER }, error: null } : { data: null, error: null },
       single: async () => {
+        attempted.push(pendingInsert!)
+        if (schema === 'pre-189' && pendingInsert?.title == null) {
+          return {
+            data: null,
+            error: {
+              code: '23502',
+              message: 'null value in column "title" of relation "list_links" violates not-null constraint',
+            },
+          }
+        }
         const row = {
           id: `44444444-4444-4444-8444-44444444444${stored.length}`,
           created_at: '2026-10-15T00:00:00Z',
@@ -65,7 +86,7 @@ function fakeSupabase() {
   }
 
   const client = { from: (table: string) => builder(table) } as unknown as SupabaseClient<Database>
-  return { client, inserted }
+  return { client, inserted, attempted }
 }
 
 function lookup(result: YouTubeTitleResult) {
@@ -111,17 +132,20 @@ describe('addLink — the oEmbed title', () => {
     expect(result.body).toMatchObject({ link: { title: 'Week 6 RB tiers' } })
   })
 
-  it('a failed lookup never fails the attach: stored under the fallback, reason logged', async () => {
+  it('a failed lookup stores NO title (NULL), never a placeholder, and logs why', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { client, inserted } = fakeSupabase()
     const lookUpTitle = lookup({ title: null, reason: 'timeout', detail: 'no answer within 3000ms' })
     const result = await addLink(client, LIST, OWNER, { kind: 'video', url: VIDEO }, { lookUpTitle })
     expect(result.status).toBe(201)
-    expect(inserted[0]).toMatchObject({ title: VIDEO_TITLE_FALLBACK })
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]!.title).toBeNull()
+    expect(result.body).toMatchObject({ link: { url: VIDEO, title: null } })
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('timeout'))
+    expect(JSON.stringify(result.body)).not.toMatch(/youtube video/i)
   })
 
-  it('even a lookup that throws still attaches', async () => {
+  it('a lookup that throws stores NULL too', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { client, inserted } = fakeSupabase()
     const lookUpTitle = vi.fn(async () => {
@@ -129,7 +153,53 @@ describe('addLink — the oEmbed title', () => {
     })
     const result = await addLink(client, LIST, OWNER, { kind: 'video', url: VIDEO }, { lookUpTitle })
     expect(result.status).toBe(201)
-    expect(inserted[0]).toMatchObject({ title: VIDEO_TITLE_FALLBACK })
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]!.title).toBeNull()
+  })
+
+  it('before 189 is pushed (title NOT NULL → 23502): a failed lookup is a retryable 503 and nothing is written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { client, inserted, attempted } = fakeSupabase({ schema: 'pre-189' })
+    const lookUpTitle = lookup({ title: null, reason: 'http-error', detail: 'HTTP 404' })
+    const result = await addLink(client, LIST, OWNER, { kind: 'video', url: VIDEO }, { lookUpTitle })
+    expect(result).toEqual({ status: 503, body: { error: VIDEO_TITLE_UNAVAILABLE_MESSAGE } })
+    expect(VIDEO_TITLE_UNAVAILABLE_MESSAGE).toBe("Couldn't get this video's title from YouTube. Try again in a moment.")
+    expect(inserted).toHaveLength(0)
+    // Exactly one insert attempt, with NO title — the refusal is not a retry
+    // under a stand-in.
+    expect(attempted).toHaveLength(1)
+    expect(attempted[0]!.title).toBeNull()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('HTTP 404'))
+  })
+
+  it('before 189 is pushed, a lookup that succeeds still attaches with the real title', async () => {
+    const { client, inserted } = fakeSupabase({ schema: 'pre-189' })
+    const lookUpTitle = lookup({ title: 'Week 6 RB tiers', reason: null })
+    const result = await addLink(client, LIST, OWNER, { kind: 'video', url: VIDEO }, { lookUpTitle })
+    expect(result.status).toBe(201)
+    expect(inserted[0]).toMatchObject({ title: 'Week 6 RB tiers' })
+  })
+
+  it('a 23502 is only read as "no title yet" when the title really was empty', async () => {
+    // A not-null violation on an insert that CARRIED a title is some other
+    // column — reported as the 500 it is, never as the title refusal.
+    const client = {
+      from: (table: string) => {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          is: () => chain,
+          insert: () => chain,
+          maybeSingle: async () =>
+            table === 'lists' ? { data: { id: LIST, owner_id: OWNER }, error: null } : { data: null, error: null },
+          single: async () => ({ data: null, error: { code: '23502', message: 'null value in column "kind"' } }),
+          then: (resolve: (value: { data: unknown[]; error: null }) => unknown) => resolve({ data: [], error: null }),
+        }
+        return chain
+      },
+    } as unknown as SupabaseClient<Database>
+    const result = await addLink(client, LIST, OWNER, { kind: 'video', url: VIDEO, title: 'Mine' })
+    expect(result.status).toBe(500)
   })
 
   it('a title the caller sends is stored as sent and never looked up (desktop’s attach form)', async () => {

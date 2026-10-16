@@ -34,9 +34,3 @@ export function youTubeThumb(id: string): string {
 export function youTubeWatchUrl(id: string): string {
   return `https://www.youtube.com/watch?v=${id}`
 }
-
-/**
- * What a video with no stored title is CALLED on screen. Display only — the
- * real title comes from YouTube's oEmbed at attach time.
- */
-export const VIDEO_TITLE_FALLBACK = 'YouTube video'

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 
 import { ListCard, RankingRow, UpdatedRow, communityDetailHref } from './community-cards'
+import { VideoCard } from './community-detail'
 import { authorBgClass } from './community-ops'
 
 const html = (el: ReturnType<typeof createElement>) =>
@@ -115,5 +116,59 @@ describe('Community cards', () => {
     expect(out).toContain('@fieldfilm · Week 5 · RB · PPR')
     expect(out).toContain('Updated 40m ago')
     expect(out).toContain('bg-m-b1')
+  })
+})
+
+/**
+ * Chris, 2026-10-15: "we need the actual YouTube titles or nothing." A video
+ * YouTube would not name carries title NULL (migration 189) — no surface
+ * shows a placeholder for it, and none leaves an empty title line.
+ */
+describe('Community — a video with no title', () => {
+  it('a list card with an untitled YouTube video keeps its thumbnail cover and badge, no placeholder', () => {
+    const out = html(
+      createElement(ListCard, {
+        item: { ...base, videos: [{ url: 'https://youtu.be/dQw4w9WgXcQ', title: null, duration: null, source: null }] },
+      }),
+    )
+    expect(out).toContain('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg')
+    expect(out).toContain('1 video')
+    expect(out).not.toMatch(/youtube video/i)
+  })
+
+  it('the video placeholder cover with an untitled first video shows no caption, only the ink block and badge', () => {
+    const out = html(
+      createElement(ListCard, {
+        item: { ...base, heads: [], videos: [{ url: 'https://vimeo.com/1', title: null, duration: null, source: null }] },
+      }),
+    )
+    expect(out).toContain('bg-m-ink')
+    expect(out).toContain('1 video')
+    expect(out).not.toContain('justify-end gap-1 p-[10px]')
+    expect(out).not.toMatch(/youtube video/i)
+  })
+
+  it('the detail’s video card: thumbnail, duration and "YouTube", named by its action — no title line', () => {
+    const out = html(
+      createElement(VideoCard, {
+        video: { url: 'https://youtu.be/dQw4w9WgXcQ', title: null, duration: '14:02', source: null },
+      }),
+    )
+    expect(out).toContain('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg')
+    expect(out).toContain('>14:02<')
+    expect(out).toContain('>YouTube<')
+    expect(out).toContain('aria-label="Watch on YouTube"')
+    expect(out).not.toContain('text-[12px] font-semibold leading-[1.3]')
+    expect(out).not.toMatch(/youtube video/i)
+  })
+
+  it('a titled video on the detail shows YouTube’s title and needs no extra label', () => {
+    const out = html(
+      createElement(VideoCard, {
+        video: { url: 'https://youtu.be/dQw4w9WgXcQ', title: 'Week 5 waivers', duration: null, source: null },
+      }),
+    )
+    expect(out).toContain('>Week 5 waivers<')
+    expect(out).not.toContain('aria-label=')
   })
 })

@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListDisplay } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
-import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 import { AiBuildStrip } from './ai-build-strip'
 import { ListActionsSheet } from './list-actions-sheet'
@@ -161,7 +160,7 @@ export function ListView({ listId }: { listId: string }) {
           </div>
         )}
         {videos.map((link) => (
-          <VideoCard key={link.id} url={link.url} title={link.title || VIDEO_TITLE_FALLBACK} sub={link.source_label ?? 'Watch on YouTube'} />
+          <VideoCard key={link.id} url={link.url} title={link.title} sub={link.source_label ?? 'Watch on YouTube'} />
         ))}
         {articles.map((link) => (
           <a
@@ -175,7 +174,9 @@ export function ListView({ listId }: { listId: string }) {
               <LIcon name="share" size={15} />
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-[13px] font-semibold text-m-t1">{link.title}</span>
+              {/* 189 holds an article to a title; guarded anyway so an untitled
+                  row could never leave an empty line. */}
+              {link.title ? <span className="truncate text-[13px] font-semibold text-m-t1">{link.title}</span> : null}
               <span className="truncate text-[11px] font-medium text-m-t3">{link.source_label ?? hostOf(link.url)}</span>
             </span>
           </a>

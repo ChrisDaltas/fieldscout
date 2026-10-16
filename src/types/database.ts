@@ -2647,7 +2647,7 @@ export type Database = {
           list_id: string
           position: number
           source_label: string | null
-          title: string
+          title: string | null
           updated_at: string
           url: string
         }
@@ -2659,7 +2659,7 @@ export type Database = {
           list_id: string
           position?: number
           source_label?: string | null
-          title: string
+          title?: string | null
           updated_at?: string
           url: string
         }
@@ -2671,7 +2671,7 @@ export type Database = {
           list_id?: string
           position?: number
           source_label?: string | null
-          title?: string
+          title?: string | null
           updated_at?: string
           url?: string
         }
@@ -6422,6 +6422,10 @@ export type Database = {
           p_week: number
         }
         Returns: Json
+      }
+      list_link_title_is_placeholder_internal: {
+        Args: { p_kind: string; p_title: string }
+        Returns: boolean
       }
       log_commissioner_action_internal: {
         Args: {
