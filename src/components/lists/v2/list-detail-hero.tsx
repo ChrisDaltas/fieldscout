@@ -18,6 +18,7 @@ import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { ListWithDetails } from '@/hooks/use-lists'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import type { ListFolder } from '@/types/database'
 
 import { ListCoverTile } from './cover-tile'
@@ -194,6 +195,14 @@ interface HeroProps {
   onShare: () => void
   onDuplicate: () => void
   onSetPrivate: (isPrivate: boolean) => void
+  /**
+   * The Ranked switch — **Numbers → Ranked / Unranked** (one numbering rule,
+   * Chris 2026-10-16: a Basic list shows no 1-2-3 on desktop either, so the
+   * owner needs a way to turn them back on after create, as the phone
+   * editor's Ranked switch does). Handler-gated: the panel passes it only to
+   * an owner, and never for the Big Board, which is always ranked.
+   */
+  onSetNumbered?: (numbered: boolean) => void
   onClearDrafted: () => void
   onDelete: () => void
   /**
@@ -234,6 +243,7 @@ export function ListDetailHero({
   onShare,
   onDuplicate,
   onSetPrivate,
+  onSetNumbered,
   onClearDrafted,
   onDelete,
   onTogglePin,
@@ -241,6 +251,7 @@ export function ListDetailHero({
   onMoveToFolder,
   onAttachToLeague,
 }: HeroProps) {
+  const numbered = isNumbered(list.ranking_mode)
   return (
     <ListHeroShell
       list={list}
@@ -274,6 +285,27 @@ export function ListDetailHero({
                   <DropdownMenuItem onSelect={() => onSetPrivate(false)}>
                     <Icon name={list.is_private ? 'team' : 'check'} size={13} />
                     Public
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            {onSetNumbered && (
+              // Ranked = the 1-2-3 numbers; Unranked = the same order without
+              // them. Tiers are their own switch (the grouping control) and
+              // stay as they are.
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Icon name="level" size={13} />
+                  Numbers
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onSelect={() => onSetNumbered(true)}>
+                    <Icon name={numbered ? 'check' : 'level'} size={13} />
+                    Ranked
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onSetNumbered(false)}>
+                    <Icon name={numbered ? 'list' : 'check'} size={13} />
+                    Unranked
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

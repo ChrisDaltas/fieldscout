@@ -4,12 +4,11 @@ import { useQuery } from '@tanstack/react-query'
 
 import {
   classifyCommunityList,
+  effectiveScoringFormat,
   hottestLikedOutside,
-  personaScoring,
   POPULAR,
   SCORING_FORMAT_LABEL,
   scoringFormatOf,
-  scoringLabel,
   type CommunityScoring,
   type RankType,
   type ScoringFormat,
@@ -59,13 +58,18 @@ import { firstEmbed } from '@/utils/supabase-embed'
  * reaches production before Chris pushes a migration, and a read naming a
  * missing column fails outright (HTTP 400). Until 190 is pushed the rows
  * simply have no `scoring_format` and every ranking reads as "no saved
- * scoring".
+ * scoring" — which counts as Half PPR (Chris, 2026-10-16), or on an AI
+ * expert's board as its persona's usual scoring: the value 190 then saves
+ * (`effectiveScoringFormat`).
+ *
+ * The Latest page (For you's "Latest" → See all) reads the same rows, newest
+ * posted first, a page at a time — `use-community-latest.ts`.
  */
 
 /** How many lists the feed holds. A cap on the pool, not a page size. */
 export const COMMUNITY_POOL_SIZE = 100
-/** How many newest-posted rows the Latest read takes — more than the section
- *  shows, so it stays full while rankings are switched off. */
+/** How many newest-posted rows the Latest read takes — more than the shelf
+ *  shows (LATEST_SIZE), so it stays full while rankings are switched off. */
 export const LATEST_READ_SIZE = 20
 /** At most this many recently liked lists outside the pool join For you —
  *  the hottest ones (`hottestLikedOutside`). A bound on a ranking's
@@ -129,14 +133,14 @@ export interface CommunityItem {
   /** The owner's chosen cover colour key (migration 188), else null — the
    *  cover then follows the position colour. */
   coverColor?: string | null
-  /** The label to show: the scoring saved with the ranking, else its
-   *  scoring system's, else an AI expert's default; null when none is known
-   *  (or the scoring system isn't readable). */
-  scoring: CommunityScoring | null
-  /** The scoring SAVED with the ranking (`lists.scoring_format`, migration
-   *  190) — what the Rankings scoring chips filter on. Null for rankings
-   *  published before it, and for every row until 190 is pushed. */
-  scoringFormat: ScoringFormat | null
+  /** `scoringFormat`'s label. */
+  scoring: CommunityScoring
+  /** The scoring the ranking counts as (`effectiveScoringFormat`) — what the
+   *  Rankings scoring chips filter on: the one saved with it
+   *  (`lists.scoring_format`, migration 190); else, none saved (published
+   *  before 190, or 190 not pushed), an AI expert's usual scoring or Half
+   *  PPR — the value 190 saves for it. */
+  scoringFormat: ScoringFormat
   playerCount: number
   /** Likes, all time (`lists.like_count`). */
   likeCount: number
@@ -156,7 +160,9 @@ export interface CommunityItem {
   videos: CommunityVideo[]
 }
 
-interface Row {
+/** A `lists` row as POOL_SELECT reads it (cast — the select is a plain
+ *  string). */
+export interface CommunityRow {
   id: string
   title: string
   /** Present only once migration 188 is pushed (`*` reads what exists). */
@@ -175,7 +181,6 @@ interface Row {
   ai_persona_id: string | null
   owner: OwnerRow | OwnerRow[] | null
   persona: PersonaRow | PersonaRow[] | null
-  scoring: { rules: unknown } | { rules: unknown }[] | null
   tag_links: { tag: TagRow | TagRow[] | null }[] | null
   links: LinkRow[] | null
   heads: { position: number; player: CommunityPlayer | CommunityPlayer[] | null }[] | null
@@ -189,6 +194,7 @@ interface OwnerRow {
 interface PersonaRow {
   username: string
   avatar_url: string | null
+  /** `style_profile.scoring_default` ("PPR", "Half-PPR", "Standard"…). */
   scoring: string | null
 }
 interface TagRow {
@@ -211,14 +217,13 @@ interface LinkRow {
 export const POOL_SELECT: string = `*,
   owner:profiles!lists_owner_id_fkey(id, username, avatar_url, follower_count),
   persona:ai_personas!lists_ai_persona_id_fkey(username, avatar_url, scoring:style_profile->>scoring_default),
-  scoring:scoring_systems!lists_scoring_system_id_fkey(rules),
   tag_links:list_tags(tag:tags(id, name, slug)),
   links:list_links(kind, url, title, duration_label, source_label, position),
   heads:list_players(position, player:players(id, full_name, position, team, headshot_url))`
 
 /** Rows → items. `recentLikes`: the likes read for these rows
  *  (`readRecentLikes`) — a list absent from it had no recent likes. */
-export function mapCommunityRows(rows: Row[], recentLikes: ReadonlyMap<string, number[]>): CommunityItem[] {
+export function mapCommunityRows(rows: CommunityRow[], recentLikes: ReadonlyMap<string, number[]>): CommunityItem[] {
   return rows.flatMap((row) => {
     const owner = firstEmbed(row.owner)
     if (!owner) return []
@@ -236,7 +241,7 @@ export function mapCommunityRows(rows: Row[], recentLikes: ReadonlyMap<string, n
       .sort((a, b) => a.position - b.position)
       .map((l) => ({ url: l.url, title: l.title, duration: l.duration_label, source: l.source_label }))
     const { kind, rankType } = classifyCommunityList(row)
-    const scoringFormat = scoringFormatOf(row)
+    const scoringFormat = effectiveScoringFormat(scoringFormatOf(row), persona?.scoring)
     return [
       {
         id: row.id,
@@ -247,9 +252,7 @@ export function mapCommunityRows(rows: Row[], recentLikes: ReadonlyMap<string, n
         rankType,
         positionFilter: row.position_filter,
         coverColor: row.cover_color ?? null,
-        scoring: scoringFormat
-          ? SCORING_FORMAT_LABEL[scoringFormat]
-          : (scoringLabel(firstEmbed(row.scoring)?.rules ?? null) ?? personaScoring(persona?.scoring ?? null)),
+        scoring: SCORING_FORMAT_LABEL[scoringFormat],
         scoringFormat,
         playerCount: row.player_count ?? 0,
         likeCount: row.like_count ?? 0,
@@ -281,12 +284,30 @@ export function mapCommunityRows(rows: Row[], recentLikes: ReadonlyMap<string, n
 export const mobileCommunityKeys = {
   all: ['mobile-community'] as const,
   pool: () => ['mobile-community', 'pool'] as const,
+  /** The Latest page's pages (`use-community-latest.ts`). */
+  latestPages: () => ['mobile-community', 'latest-pages'] as const,
   playerMatch: (poolIds: string[], playerId: string | null, query: string) =>
     ['mobile-community', 'player-match', playerId ?? '', query, poolIds] as const,
   injuryMatch: (poolIds: string[]) => ['mobile-community', 'injury-match', poolIds] as const,
 }
 
 type Supabase = ReturnType<typeof createBrowserClient>
+
+/**
+ * The lists Community shows: public, not deleted, with players — and the
+ * per-list caps on the embeds (PostgREST applies these per parent). Callers
+ * add the order and the size.
+ */
+export function publicListsQuery(supabase: Supabase) {
+  return supabase
+    .from('lists')
+    .select(POOL_SELECT)
+    .eq('is_private', false)
+    .is('deleted_at', null)
+    .gt('player_count', 0)
+    .order('position', { referencedTable: 'heads', ascending: true })
+    .limit(4, { referencedTable: 'heads' })
+}
 
 /**
  * Every like given in the last POPULAR.LIKE_WINDOW_DAYS days, by list:
@@ -329,17 +350,7 @@ export async function readRecentLikes(supabase: Supabase, now: number): Promise<
  *  the pool left out, and their likes. */
 export async function readCommunityFeed(now: number = Date.now()): Promise<CommunityPool> {
   const supabase = createBrowserClient()
-  // Public, not deleted, with players — and the per-list caps on the embeds
-  // (PostgREST applies these per parent).
-  const publicLists = () =>
-    supabase
-      .from('lists')
-      .select(POOL_SELECT)
-      .eq('is_private', false)
-      .is('deleted_at', null)
-      .gt('player_count', 0)
-      .order('position', { referencedTable: 'heads', ascending: true })
-      .limit(4, { referencedTable: 'heads' })
+  const publicLists = () => publicListsQuery(supabase)
   const [pool, latest, likes] = await Promise.all([
     publicLists().order('updated_at', { ascending: false, nullsFirst: false }).limit(COMMUNITY_POOL_SIZE),
     publicLists().order('created_at', { ascending: false, nullsFirst: false }).limit(LATEST_READ_SIZE),
@@ -347,8 +358,8 @@ export async function readCommunityFeed(now: number = Date.now()): Promise<Commu
   ])
   if (pool.error) throw pool.error
   if (latest.error) throw latest.error
-  const poolRows = (pool.data ?? []) as unknown as Row[]
-  const latestRows = (latest.data ?? []) as unknown as Row[]
+  const poolRows = (pool.data ?? []) as unknown as CommunityRow[]
+  const latestRows = (latest.data ?? []) as unknown as CommunityRow[]
 
   // The hottest lists liked lately that the pool doesn't hold. Rows the
   // Latest read already holds are reused; the rest are read by id, through
@@ -357,11 +368,11 @@ export async function readCommunityFeed(now: number = Date.now()): Promise<Commu
   const extraIds = hottestLikedOutside(likes, new Set(poolRows.map((r) => r.id)), now, LIKED_EXTRA_SIZE)
   const latestById = new Map(latestRows.map((r) => [r.id, r]))
   const toRead = extraIds.filter((id) => !latestById.has(id))
-  let readRows: Row[] = []
+  let readRows: CommunityRow[] = []
   if (toRead.length > 0) {
     const extra = await publicLists().in('id', toRead)
     if (extra.error) throw extra.error
-    readRows = (extra.data ?? []) as unknown as Row[]
+    readRows = (extra.data ?? []) as unknown as CommunityRow[]
   }
   const extraRows = [...extraIds.flatMap((id) => latestById.get(id) ?? []), ...readRows]
 

@@ -1395,6 +1395,17 @@ describe('LV.16 — the rows are the LAW’s, converted ×0.8', () => {
     expect(code(WINDOW)).not.toContain('PlayerMeta')
     expect(code(WINDOW)).toContain('<PositionBadge')
   })
+
+  it('#N only on a numbered list, and the # caption goes with it (one rule, 2026-10-16)', () => {
+    const source = code(WINDOW)
+    expect(source).toContain('const numbered = isNumbered(list?.ranking_mode)')
+    expect(source).toContain('ranks={numbered ? ranks : null}')
+    // A plain or tier-only list draws no number cell, so no caption over it.
+    expect(declarationSource(WINDOW, 'ListWindowRows')).toContain(
+      '{ranks !== null && <span className="w-[21px] shrink-0">#</span>}',
+    )
+    expect(declarationSource(WINDOW, 'ListWindowRow')).toContain('{rank !== null && <span')
+  })
 })
 
 /**

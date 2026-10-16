@@ -1,13 +1,14 @@
 /**
  * Desktop — tiers without numbers (Chris, 2026-10-15; migration 191,
- * `ranking_mode = 'tier_only'`).
+ * `ranking_mode = 'tier_only'`), and one numbering rule for phone and desktop
+ * (Chris, 2026-10-16: "just make sure they work consistently").
  *
  * The shared list body (the app's detail panel and the public share page
  * `/u/[username]/lists/[slug]` both mount it) draws a tier-only list with
- * its tier sections and NO `#N` — in all three view styles — and the grouping
- * control names the flat mode "Unranked" there. A Basic (`unranked`) list
- * keeps the desktop numbers it always had (`showsNumbersOnDesktop`) until
- * Chris rules on dropping them — that was not part of the ask. Every "no
+ * its tier sections and NO `#N` — in all three view styles — and a plain
+ * (`unranked`) list with neither numbers nor tiers, exactly as the phone
+ * does (`isNumbered`). Both keep the players in their saved order, and the
+ * grouping control names the flat mode "Unranked" on either. Every "no
  * number" case is paired with the same render numbered, so a pass can't come
  * from rows that never rendered.
  */
@@ -16,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
-import { showsNumbersOnDesktop } from '@/lib/lists/ranking-mode'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { DEFAULT_BUDGET, resolveOrg, type ListView } from '@/stores/list-display-store'
 
 import { ListBody, type RowHandlers } from './list-body'
@@ -56,7 +57,7 @@ function body(mode: string, view: ListView): string {
       stats: [],
       view,
       org,
-      numbered: showsNumbersOnDesktop(mode),
+      numbered: isNumbered(mode),
       showBudgetShare: false,
       budget: DEFAULT_BUDGET,
       handlers: READ_ONLY,
@@ -91,15 +92,34 @@ describe('ListBody: a tier-only list has tiers and no numbers', () => {
     expect(body('rank_and_tier', 'card')).toContain('1st')
     expect(body('tier_only', 'card')).not.toContain('1st')
   })
+})
 
-  it.each(VIEWS)(
-    '%s view — a Basic (unranked) list keeps its desktop numbers, as before 191 (pending Chris)',
-    (view) => {
-      const out = body('unranked', view)
-      for (const n of [1, 2, 3]) expect(out).toContain(`#${n}<`)
-      expect(body('tier_only', view)).not.toMatch(/#\d+</)
-    },
-  )
+describe('ListBody: a plain (unranked) list has no numbers on desktop either', () => {
+  it.each(VIEWS)('%s view — positive control: a ranked list is numbered #1–#3', (view) => {
+    const out = body('ranked', view)
+    for (const n of [1, 2, 3]) expect(out).toContain(`#${n}<`)
+  })
+
+  it.each(VIEWS)('%s view — unranked: every player, in the saved order, no #N and no tiers', (view) => {
+    const out = body('unranked', view)
+    const at = [1, 2, 3].map((n) => out.indexOf(`Player ${n}`))
+    for (const i of at) expect(i).toBeGreaterThan(-1)
+    expect(at).toEqual([...at].sort((a, b) => a - b))
+    expect(out).not.toMatch(/#\d+</)
+    // One flat section: the stored S / A keys draw no tier headings.
+    expect(out).not.toMatch(/>S</)
+    expect(out).not.toMatch(/>A</)
+  })
+
+  it('table view drops the # column header on a plain list', () => {
+    expect(body('ranked', 'table')).toContain('>#</span>')
+    expect(body('unranked', 'table')).not.toContain('>#</span>')
+  })
+
+  it('cards drop the ordinal (1st, 2nd…) on a plain list', () => {
+    expect(body('ranked', 'card')).toContain('1st')
+    expect(body('unranked', 'card')).not.toContain('1st')
+  })
 })
 
 describe('the grouping control', () => {
@@ -125,11 +145,14 @@ describe('the grouping control', () => {
     expect(toolbar(false, 'tier')).toContain('Tiers')
   })
 
-  it('the flat mode reads "Unranked" on a tier-only list, "Ranked" on a numbered or Basic one', () => {
-    expect(orgOptionsFor(showsNumbersOnDesktop('tier_only'))[0].label).toBe('Unranked')
-    for (const mode of ['unranked', 'ranked', 'rank_and_tier']) {
-      expect(orgOptionsFor(showsNumbersOnDesktop(mode))[0].label, mode).toBe('Ranked')
+  it('the flat mode reads "Unranked" on a plain or tier-only list, "Ranked" on a numbered one', () => {
+    for (const mode of ['unranked', 'tier_only']) {
+      expect(orgOptionsFor(isNumbered(mode))[0].label, mode).toBe('Unranked')
     }
+    for (const mode of ['ranked', 'rank_and_tier']) {
+      expect(orgOptionsFor(isNumbered(mode))[0].label, mode).toBe('Ranked')
+    }
+    expect(resolveOrg(null, 'unranked')).toBe('rank')
     expect(toolbar(false, 'rank')).toContain('Unranked')
     expect(toolbar(true, 'rank')).toContain('Ranked')
     expect(toolbar(true, 'rank')).not.toContain('Unranked')

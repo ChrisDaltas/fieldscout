@@ -13,7 +13,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { useDraftMode } from '@/hooks/use-draft-mode'
 import { useList, type ListPlayerWithPlayer, type ListWithTags } from '@/hooks/use-lists'
-import { showsNumbersOnDesktop } from '@/lib/lists/ranking-mode'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import {
   resolveOrg,
@@ -199,9 +199,9 @@ function ComparisonColumn({
   const entries = list?.players
   const rankingMode = list?.ranking_mode ?? summary?.ranking_mode
   const org: ListOrg = resolveOrg(display.org, rankingMode)
-  // No `#N` on a tier-only list (tiers without numbers); a Basic list keeps
-  // its desktop numbers pending Chris (`showsNumbersOnDesktop`).
-  const numbered = showsNumbersOnDesktop(rankingMode)
+  // `#N` only on a numbered list — the one rule, phone and desktop (Chris,
+  // 2026-10-16): a plain or tier-only list keeps its order, without numbers.
+  const numbered = isNumbered(rankingMode)
 
   const buckets = React.useMemo(
     () =>

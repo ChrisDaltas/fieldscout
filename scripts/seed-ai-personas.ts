@@ -262,9 +262,10 @@ async function seedListsForPersona(
     const title = `Top ${players.length} ${position} — ${scoring}`
 
     // The board is made for the persona's scoring: saved as its
-    // `scoring_format` (migration 190), dropped — not failed — where 190
-    // isn't pushed yet. A new board has no previous version, so its players
-    // carry no previous position.
+    // `scoring_format` (migration 190), Half PPR when the persona has none we
+    // know (Chris, 2026-10-16), dropped — not failed — where 190 isn't
+    // pushed yet. A new board has no previous version, so its players carry
+    // no previous position.
     const { data: list, error: listError } = await insertListWithScoring(
       (row) => supabase.from('lists').insert(row).select('id').single(),
       {

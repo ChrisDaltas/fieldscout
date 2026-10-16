@@ -15,9 +15,14 @@ import { RANKING_MODES, type RankingMode } from '@/types/schemas/lists'
  * Every surface reads the switches through {@link isNumbered} and
  * {@link hasTiers} and writes them through {@link withNumbers} /
  * {@link withTiers}, so no screen compares the column to a single value and
- * misses the fourth. (The desktop's row numbers read
- * {@link showsNumbersOnDesktop} — a Basic list keeps them there, pending a
- * ruling.)
+ * misses the fourth.
+ *
+ * **One rule, phone and desktop** (Chris, 2026-10-16: "just make sure they
+ * work consistently"). A list's 1-2-3 numbers — a row's `#N`, a card's
+ * ordinals, any mention of a player's place in the list — show only where
+ * {@link isNumbered} says so, and tier headings only where {@link hasTiers}
+ * does. A plain (`unranked`) list shows neither, on every surface. The
+ * players keep their saved order everywhere; only the numbers go.
  */
 
 export function isRankingMode(value: unknown): value is RankingMode {
@@ -25,9 +30,13 @@ export function isRankingMode(value: unknown): value is RankingMode {
 }
 
 /**
- * The Ranked switch: does the list show 1-2-3 numbers? A row without a mode
- * (a summary that never selected it) reads as numbered — the column's own
- * default is `ranked`.
+ * The Ranked switch: does the list show 1-2-3 numbers? On every surface —
+ * the desktop detail panel, share page, pop-out window and side-by-side
+ * columns read this too (the desktop-only exception that kept a Basic list's
+ * numbers is gone, 2026-10-16). It also names the desktop's flat grouping
+ * "Ranked" or "Unranked" (`orgOptionsFor`). A row without a mode (a summary
+ * that never selected it) reads as numbered — the column's own default is
+ * `ranked`.
  */
 export function isNumbered(mode: string | null | undefined): boolean {
   return mode !== 'unranked' && mode !== 'tier_only'
@@ -55,23 +64,6 @@ export function withTiers(mode: string | null | undefined, tiers: boolean): Rank
 }
 
 /**
- * Does the DESKTOP list surface draw `#N` (and card ordinals) on this list's
- * rows — the detail panel, the share page, the pop-out window and the
- * side-by-side columns? It also decides whether the flat grouping is named
- * "Ranked" or "Unranked" there (`orgOptionsFor`).
- *
- * Only a tier-only list drops them: that is what was asked (Chris,
- * 2026-10-15, "allow tiers without numbers"). A Basic (`unranked`) list keeps
- * the desktop numbering it has always had — the phone already draws it
- * without numbers — until Chris rules on dropping them on desktop too (open
- * question for him; it was not part of the ask). On his yes this becomes
- * `isNumbered(mode)`, one line, and every desktop surface follows.
- */
-export function showsNumbersOnDesktop(mode: string | null | undefined): boolean {
-  return mode !== 'tier_only'
-}
-
-/**
  * What the desktop grouping control writes when an owner picks a grouping
  * (`list-detail-panel.tsx`, `chooseOrg`). It is the Tiers switch and nothing
  * else: `'tier'` turns tiers on, `'rank'` turns them off, and the list's
@@ -96,6 +88,23 @@ export function groupingWrite(
         : null
   if (persisted === 'tier_only' && opts.tierOnlyUnavailable) return null
   return persisted
+}
+
+/**
+ * What the desktop list menu's **Numbers** choice writes (`list-detail-hero.tsx`
+ * → `list-detail-panel.tsx`, `setNumbered`). It is the Ranked switch and
+ * nothing else, like the phone editor's: `withNumbers`, tiers left where they
+ * are — so a tiered list turned Unranked becomes `tier_only`, and a
+ * `tier_only` one turned Ranked becomes `rank_and_tier`. A pick that changes
+ * nothing writes nothing.
+ *
+ * Since the 2026-10-16 ruling a Basic list shows no numbers on desktop either,
+ * so this is the desktop owner's way to turn them back on (or off) after
+ * create.
+ */
+export function numbersWrite(current: string | null | undefined, numbered: boolean): RankingMode | null {
+  if (isNumbered(current) === numbered) return null
+  return withNumbers(current, numbered)
 }
 
 /**

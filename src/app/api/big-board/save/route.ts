@@ -30,7 +30,9 @@ import { createServerClient } from '@/lib/supabase/server'
  * bulk-added (`isNew`), and the `playerIds` path flags the ones it inserts.
  * `scoringFormat` (the scoring the ranking was made for, phone #36) is saved
  * on the board; before 190 is pushed that is reported as `unsupported` and
- * the save still succeeds.
+ * the save still succeeds. A save that sends none (desktop) leaves the
+ * board's scoring as it is — Half PPR if one was never chosen, which the
+ * RPC fills (Chris, 2026-10-16).
  */
 const saveSchema = z.object({
   positions: publishPositionsSchema.optional(),

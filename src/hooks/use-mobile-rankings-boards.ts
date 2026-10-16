@@ -54,8 +54,9 @@ export interface MyBoard {
   week: number
   players: BoardPlayerLite[]
   /** The scoring the board was last published for (`lists.scoring_format`);
-   *  null when none is saved; absent (undefined) before migration 190 is
-   *  pushed — nothing can save one yet. */
+   *  null when none is saved (the editor reads that as Half PPR —
+   *  `rankingScoring`); absent (undefined) before migration 190 is pushed —
+   *  nothing can save one yet. */
   scoringFormat?: ScoringFormat | null
 }
 

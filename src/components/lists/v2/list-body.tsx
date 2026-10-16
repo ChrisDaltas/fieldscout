@@ -88,9 +88,9 @@ interface BodyProps {
   org: ListOrg
   /**
    * Whether the rows carry `#N` and the cards their ordinals
-   * (`showsNumbersOnDesktop(ranking_mode)`). Off on a tier-only list — tiers
-   * without numbers (migration 191): the order is still the owner's, but it
-   * is not a ranking. A Basic list keeps its numbers here pending Chris.
+   * (`isNumbered(ranking_mode)` — one rule, phone and desktop, Chris
+   * 2026-10-16). Off on a plain list and a tier-only one (migration 191): the
+   * order is still the owner's, but it is not a ranking.
    */
   numbered: boolean
   /** Budget grouping adds a share-of-budget column (`screens/detail-grouping-budget-pct.png`). */

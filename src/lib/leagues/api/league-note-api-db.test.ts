@@ -10,8 +10,9 @@
  *   - the commissioner's set: 200, the member's bell row
  *     (`league_commissioner_note`, carrying the league id the link opens), the
  *     receipt in the commissioner log a member reads (League activity);
- *   - the clear: 200, no note, and the member's unread bell row replaced by
- *     "The commissioner cleared the note." (a clear is a change).
+ *   - the clear (Chris 2026-10-16 — a clear notifies nobody): 200, no note,
+ *     a receipt, no new bell row, and the member's UNREAD note row withdrawn;
+ *     a row the member has already READ survives a later clear.
  *
  * Requires the local stack — FAILS loudly when it is down, never skips.
  * Determinism: fixed emails / usernames / league name + cleanup-first.
@@ -160,16 +161,32 @@ describe('the commissioner note through the real door', () => {
     expect(await memberNoteRows()).toHaveLength(1)
   })
 
-  it('clearing it: no note, a receipt, and the member is told — the unread bell row now says it was cleared (replaced, not stacked)', async () => {
+  it('clearing it: no note and a receipt, but nobody is notified — the member’s unread bell row is withdrawn', async () => {
     const res = await setLeagueNote(commishClient, leagueId, { note: '' })
     expect(res.status).toBe(200)
-    expect(res.body as unknown as SetLeagueNoteResult).toMatchObject({ cleared: true, notified: 1 })
+    expect(res.body as unknown as SetLeagueNoteResult).toMatchObject({ cleared: true, notified: 0, withdrawn: 1 })
     expect((await readLeagueNote(memberClient, leagueId)).body).toEqual({ available: true, note: null })
-    const rows = await memberNoteRows()
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ title: 'Commissioner note updated', body: 'The commissioner cleared the note.', read: false })
-    expect(rows[0].data as { league_id?: string; cleared?: boolean }).toMatchObject({ league_id: leagueId, cleared: true })
+    expect(await memberNoteRows()).toHaveLength(0)
     const log = (await readCommishLog(memberClient, leagueId, {})).body as unknown as CommishLogPage
     expect(log.items.filter((i) => i.action_type === 'set_league_note')).toHaveLength(2)
+  })
+
+  it('a bell row the member has already READ survives a later clear — only unread ones are withdrawn', async () => {
+    const pinned = await setLeagueNote(commishClient, leagueId, { note: 'Dues by Friday' })
+    expect(pinned.body as unknown as SetLeagueNoteResult).toMatchObject({ cleared: false, notified: 1 })
+    // The member opens the bell (the app's own path: UPDATE of `read` on their own row).
+    const { data: marked, error: markError } = await memberClient
+      .from('notifications')
+      .update({ read: true })
+      .eq('type', 'league_commissioner_note')
+      .select('id')
+    if (markError) throw new Error(`mark read: ${markError.message}`)
+    expect(marked).toHaveLength(1)
+
+    const cleared = await setLeagueNote(commishClient, leagueId, { note: '' })
+    expect(cleared.body as unknown as SetLeagueNoteResult).toMatchObject({ cleared: true, notified: 0, withdrawn: 0 })
+    const rows = await memberNoteRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ body: 'Dues by Friday', read: true })
   })
 })

@@ -672,14 +672,26 @@ export function scoringFromFormat(v: unknown): Scoring | null {
   return v === 'ppr' || v === 'half' || v === 'quarter' ? v : null
 }
 
+/** A ranking's scoring when none is chosen: Half PPR (Chris, 2026-10-16 —
+ *  "if no scoring type is selected, default to half point ppr"). */
+export const DEFAULT_RANK_SCORING: Scoring = 'half'
+
+/** The scoring a ranking is made for in the editor: the one picked there,
+ *  else the board's saved one, else Half PPR. The Rankings screen's own
+ *  scoring filter is for reading others' rankings — it never picks yours. */
+export function rankingScoring(picked: Scoring | null, saved: Scoring | null): Scoring {
+  return picked ?? saved ?? DEFAULT_RANK_SCORING
+}
+
 /**
  * Is the scoring picked in the editor a change to publish on its own? Only
  * on a ranking that is already published (a new one carries its scoring in
  * its first publish), only where the board can keep one (`savable`: the
  * board is known and migration 190 is pushed), and only when the user
- * picked one that differs from the saved one — the scoring shown by default
- * never is. So an untagged ranking can be tagged (or a wrong tag fixed)
- * without moving a player.
+ * picked one that differs from the ranking's — the saved one, or Half PPR
+ * when none is saved (that is what it already is). The scoring shown by
+ * default never is a change. So a wrong tag can be fixed without moving a
+ * player.
  */
 export function scoringChanged(s: {
   picked: Scoring | null
@@ -687,7 +699,7 @@ export function scoringChanged(s: {
   savable: boolean
   hasRanking: boolean
 }): boolean {
-  return s.hasRanking && s.savable && s.picked !== null && s.picked !== s.saved
+  return s.hasRanking && s.savable && s.picked !== null && s.picked !== (s.saved ?? DEFAULT_RANK_SCORING)
 }
 
 /** Where a new (unsaved) ranking starts from (lr-myrank §2.2 step 2). */

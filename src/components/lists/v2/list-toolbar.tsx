@@ -49,9 +49,8 @@ interface ListToolbarProps {
   org: ListOrg
   onOrgChange: (org: ListOrg) => void
   /**
-   * Whether the list's rows are drawn numbered
-   * (`showsNumbersOnDesktop(ranking_mode)`). Off — a tier-only list — names
-   * the flat grouping "Unranked".
+   * Whether the list's rows are drawn numbered (`isNumbered(ranking_mode)`).
+   * Off — a plain or tier-only list — names the flat grouping "Unranked".
    */
   numbered: boolean
   view: ListView

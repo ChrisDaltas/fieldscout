@@ -152,7 +152,7 @@ describe('setLeagueNoteInputSchema — 192’s text rules', () => {
 })
 
 describe('setLeagueNote — POST …/commish/note', () => {
-  const ok = { verb: 'commish_set_league_note', league_id: LEAGUE, note: 'Dues by Friday', no_changes: false, notified: 3 }
+  const ok = { verb: 'commish_set_league_note', league_id: LEAGUE, note: 'Dues by Friday', no_changes: false, notified: 3, withdrawn: 0 }
 
   it('calls 192’s door with (league, trimmed note) — an absent reason omitted — and returns its document whole', async () => {
     const f = fakeClient({ rpc: { data: ok, error: null } })
@@ -162,7 +162,7 @@ describe('setLeagueNote — POST …/commish/note', () => {
   })
 
   it('passes a given reason; a blank note goes through as the clear', async () => {
-    const f = fakeClient({ rpc: { data: { ...ok, note: null, cleared: true }, error: null } })
+    const f = fakeClient({ rpc: { data: { ...ok, note: null, cleared: true, notified: 0, withdrawn: 1 }, error: null } })
     await setLeagueNote(f.client, LEAGUE, { note: '\n', reason: 'old news' })
     expect(f.rpc).toHaveBeenCalledWith('commish_set_league_note', { p_league_id: LEAGUE, p_note: '', p_reason: 'old news' })
   })

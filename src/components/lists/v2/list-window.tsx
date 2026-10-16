@@ -24,7 +24,7 @@ import {
   type ListWithTags,
 } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
-import { showsNumbersOnDesktop } from '@/lib/lists/ranking-mode'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import {
   resolveOrg,
@@ -574,9 +574,9 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   const { drafted, toggleDrafted } = useDraftMode(listId)
 
   const org: ListOrg = resolveOrg(display.org, list?.ranking_mode)
-  // No `#N` on a tier-only list (tiers without numbers); a Basic list keeps
-  // its desktop numbers pending Chris (`showsNumbersOnDesktop`).
-  const numbered = showsNumbersOnDesktop(list?.ranking_mode)
+  // `#N` only on a numbered list — the one rule, phone and desktop (Chris,
+  // 2026-10-16): a plain or tier-only list keeps its order, without numbers.
+  const numbered = isNumbered(list?.ranking_mode)
   const entries = list?.players
   // Every chosen stat, as the list and table views do — card view is the one
   // that truncates to three. Widening the window reveals more of them.
@@ -1248,7 +1248,7 @@ function WindowMenu({
   onChooseStats: () => void
   onToggleMinimized: () => void
   setOrg: (listId: string, org: ListOrg) => void
-  /** `showsNumbersOnDesktop` — off (tier-only) names the flat grouping "Unranked". */
+  /** `isNumbered` — off (a plain or tier-only list) names the flat grouping "Unranked". */
   numbered: boolean
 }) {
   return (
@@ -1394,7 +1394,8 @@ function ListWindowRows({
       {/* 28 × 0.8, sticky, over the 7% wash the prototype gives it. */}
       <div className="sticky top-0 z-[3] flex h-[22px] items-center gap-1.5 border-b border-n-4 bg-white/[0.07] px-2 text-[9px] font-semibold text-n-3">
         <span className="w-[14px] shrink-0" />
-        <span className="w-[21px] shrink-0">#</span>
+        {/* The `#` caption goes with the rows' numbers, or it labels nothing. */}
+        {ranks !== null && <span className="w-[21px] shrink-0">#</span>}
         <span className="min-w-0 flex-1">Player</span>
         {stats.map((stat) => (
           <span key={stat.id} title={stat.full} className="w-[48px] shrink-0 text-right">

@@ -149,5 +149,15 @@ describe('List editor: Ranked and Tiers are independent switches', () => {
     expect(switchState(out, 'Ranked')).toBe('true')
     expect(switchState(out, 'Tiers')).toBe('false')
     expect(out).not.toContain('Add tier line')
+    expect(out).toMatch(editorNumber(1))
+  })
+
+  it('a plain list: both switches off — no numbers, no tier lines (one rule with desktop, 2026-10-16)', () => {
+    const out = render('unranked', 'list=l1&edit=1')
+    expect(switchState(out, 'Ranked')).toBe('false')
+    expect(switchState(out, 'Tiers')).toBe('false')
+    expect(out).toContain('3 players · drag to reorder')
+    expect(out).not.toContain('Tier 1')
+    for (const n of [1, 2, 3]) expect(out).not.toMatch(editorNumber(n))
   })
 })

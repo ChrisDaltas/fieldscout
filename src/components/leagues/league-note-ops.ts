@@ -19,7 +19,13 @@ export const LEAGUE_NOTE_HINT = 'Trade deadline is Nov 24. Dues by Friday.'
 
 /** What a commissioner sees where no note is pinned. */
 export const LEAGUE_NOTE_EMPTY_COMMISH =
-  'Pin a short note for the whole league — the trade deadline, when dues are due. Everyone gets a notification when you change it.'
+  'Pin a short note for the whole league — the trade deadline, when dues are due. Members get a notification when you pin or edit it.'
+
+/** The editor's line on who hears about it — the same words on desktop and
+ *  the phone. A pin or an edit notifies the league; a clear notifies nobody
+ *  (Chris 2026-10-16; 192 step 8). */
+export const LEAGUE_NOTE_EDITOR_HELP =
+  'Everyone in the league sees it. Members get a notification when you pin or edit it, not when you clear it.'
 
 /** What a member sees in the Menu's note screen when none is pinned. */
 export const LEAGUE_NOTE_EMPTY_MEMBER = 'Your commissioner hasn’t pinned a note.'
@@ -72,10 +78,12 @@ export function noteEditorState(draft: string, current: string | null) {
 /** The toast after a save, from the server's own document. */
 export function noteSavedToast(result: Pick<SetLeagueNoteResult, 'no_changes' | 'cleared' | 'notified'>): { title: string; description?: string } {
   if (result.no_changes) return { title: 'No changes', description: 'The note already says that.' }
-  // A clear is a change too — members are told (192 step 8).
+  // A clear notifies nobody (192 step 8; Chris 2026-10-16), so it claims no
+  // count.
+  if (result.cleared) return { title: 'Note cleared' }
   const n = result.notified
   return {
-    title: result.cleared ? 'Note cleared' : 'Note pinned',
+    title: 'Note pinned',
     description: n > 0 ? `${n} ${n === 1 ? 'member was' : 'members were'} notified.` : undefined,
   }
 }

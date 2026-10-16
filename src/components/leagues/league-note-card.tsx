@@ -11,6 +11,7 @@ import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 import {
+  LEAGUE_NOTE_EDITOR_HELP,
   LEAGUE_NOTE_EMPTY_COMMISH,
   LEAGUE_NOTE_ERROR,
   LEAGUE_NOTE_HINT,
@@ -192,8 +193,8 @@ function LeagueNoteEditor({ leagueId, current, onDone }: { leagueId: string; cur
             'placeholder:text-n-6',
           )}
         />
-        <p className="text-[10px] font-medium text-n-6">
-          Everyone in the league sees it here, and members get a notification when you pin or change it. Up to {LEAGUE_NOTE_MAX} characters.
+        <p className="text-[10px] font-medium text-n-6" data-league-note-help>
+          {LEAGUE_NOTE_EDITOR_HELP} Up to {LEAGUE_NOTE_MAX} characters.
         </p>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {current !== null && (

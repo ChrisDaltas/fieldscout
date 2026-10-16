@@ -9,6 +9,10 @@
  *      the save route's own `playerIds` path flags the players IT inserts.
  *   2. A plain reorder (no flags, no scoring) sends what it always sent and
  *      never touches `lists` — it must keep working on the older schema.
+ *      The same holds for a ranking published with no scoring (desktop's
+ *      Big Board and Weekly ranks saves): the route writes none, so a scoring
+ *      already chosen stays; one never chosen is Half PPR, which the reorder
+ *      RPC fills on the database side (Chris, 2026-10-16; pgTAP 138).
  *   3. The scoring is saved on the board after the order. Before 190 is
  *      pushed (PGRST204) the publish still succeeds (`unsupported`); any
  *      other failure is reported in the body, never as a failed publish —
@@ -140,7 +144,7 @@ describe('PATCH …/players/reorder — a weekly ranking publish', () => {
     expect(h.state.listUpdates).toEqual([{ scoring_format: 'half' }])
   })
 
-  it('a plain reorder sends what it always sent and never touches lists', async () => {
+  it('a plain reorder — or a weekly publish with no scoring — sends what it always sent and never touches lists', async () => {
     const res = await reorder({ positions: [{ playerId: 'a', position: 1 }] })
     expect(await res.json()).toEqual({ ok: true })
     expect(h.state.rpcCalls[0]!.args.p_positions).toEqual([{ player_id: 'a', position: 1 }])
@@ -196,7 +200,20 @@ describe('POST /api/big-board/save — a season ranking publish', () => {
       { player_id: 'a', position: 2 },
       { player_id: 'b', position: 3 },
     ])
-    // No scoring sent → lists untouched.
+    // No scoring sent → lists untouched: a chosen scoring is never
+    // overwritten, and one never chosen is Half PPR (the RPC fills it).
+    expect(h.state.listUpdates).toEqual([])
+  })
+
+  it('a desktop save with no scoring writes none — the board keeps its own, or the RPC’s Half PPR', async () => {
+    const res = await save({ positions: [{ playerId: 'a', position: 1 }] })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true })
+    expect(body.scoring).toBeUndefined()
+    expect(h.state.rpcCalls).toEqual([
+      { fn: 'reorder_list_players', args: { p_list_id: h.BOARD, p_positions: [{ player_id: 'a', position: 1 }] } },
+    ])
     expect(h.state.listUpdates).toEqual([])
   })
 

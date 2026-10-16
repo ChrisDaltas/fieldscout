@@ -4,9 +4,12 @@ import { parseRankingsParams } from '@/components/mobile/rankings/rankings-ops'
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 
 import {
+  COMMUNITY_HREF,
   CREATE_LIST_HREF,
   CREATE_RANKING_HREF,
+  DEFAULT_SCORING_FORMAT,
   INJURIES_TOPIC,
+  LATEST_HREF,
   LATEST_SIZE,
   POPULAR,
   RANK_FILTERS_ALL,
@@ -18,10 +21,12 @@ import {
   communityView,
   coverHeight,
   deriveTopics,
+  effectiveScoringFormat,
   emptyCopy,
   filterItems,
   formatFollows,
   hottestLikedOutside,
+  latestPageItems,
   normQuery,
   personaScoring,
   pickLatest,
@@ -56,8 +61,8 @@ function item(over: Partial<CommunityItem> & { id: string }): CommunityItem {
     kind: 'list',
     rankType: null,
     positionFilter: null,
-    scoring: null,
-    scoringFormat: null,
+    scoring: 'Half PPR',
+    scoringFormat: 'half',
     playerCount: 3,
     likeCount: 0,
     recentLikes: [],
@@ -220,21 +225,43 @@ describe('filters', () => {
     expect(RANK_POS_CHIPS.map((c) => c.label)).toEqual(['All positions', 'QB', 'RB', 'WR', 'TE', 'K', 'D/ST'])
   })
 
-  it('scoring chips (#36): Any scoring + the four saved scorings; only the SAVED scoring filters', () => {
+  it('scoring chips (#36): Any scoring + the four scorings; the saved scoring filters', () => {
     expect(RANK_SCORING_CHIPS.map((c) => c.label)).toEqual(['Any scoring', 'PPR', 'Half PPR', '0.25 PPR', 'Standard'])
     expect(RANK_SCORING_CHIPS.map((c) => c.value)).toEqual(['all', 'ppr', 'half', 'quarter', 'standard'])
     const quarter = item({ id: 'q', kind: 'rank', scoring: '0.25 PPR', scoringFormat: 'quarter' })
     expect(rankFilterOk(quarter, { ...RANK_FILTERS_ALL, scoring: 'quarter' })).toBe(true)
     expect(rankFilterOk(quarter, { ...RANK_FILTERS_ALL, scoring: 'half' })).toBe(false)
     expect(rankFilterOk(r1, { ...RANK_FILTERS_ALL, scoring: 'ppr' })).toBe(true)
-    // No saved scoring (published before migration 190, or 190 not pushed):
-    // "Any scoring" only — even when its label is known from a scoring
-    // system or an AI expert's default.
-    expect(ai.scoringFormat).toBeNull()
-    for (const scoring of ['ppr', 'half', 'quarter', 'standard'] as const) {
+  })
+
+  it('no saved scoring counts as Half PPR (Chris, 2026-10-16), an AI expert’s as its usual scoring — 190’s rule', () => {
+    // Published before migration 190, or 190 not pushed: no saved scoring.
+    expect(DEFAULT_SCORING_FORMAT).toBe('half')
+    expect(effectiveScoringFormat(null)).toBe('half')
+    expect(effectiveScoringFormat(null, null)).toBe('half')
+    // An AI expert's board: its persona's `scoring_default`, as 190 saves it;
+    // one outside the vocabulary (or none) is Half PPR.
+    expect(effectiveScoringFormat(null, 'PPR')).toBe('ppr')
+    expect(effectiveScoringFormat(null, 'Half-PPR')).toBe('half')
+    expect(effectiveScoringFormat(null, 'Standard')).toBe('standard')
+    expect(effectiveScoringFormat(null, 'Superflex')).toBe('half')
+    // A saved scoring is never overridden.
+    expect(effectiveScoringFormat('ppr')).toBe('ppr')
+    expect(effectiveScoringFormat('quarter', 'PPR')).toBe('quarter')
+  })
+
+  it('the scoring chips filter on what a ranking counts as: Half takes the no-saved-scoring ones, the others don’t', () => {
+    // `ai` (and every fixture without a saved scoring) counts as Half PPR.
+    expect(rankFilterOk(ai, { ...RANK_FILTERS_ALL, scoring: 'half' })).toBe(true)
+    expect(rankFilterOk(ai, RANK_FILTERS_ALL)).toBe(true)
+    for (const scoring of ['ppr', 'quarter', 'standard'] as const) {
       expect(rankFilterOk(ai, { ...RANK_FILTERS_ALL, scoring })).toBe(false)
     }
-    expect(rankFilterOk(ai, RANK_FILTERS_ALL)).toBe(true)
+    expect(rankFilterOk(r1, { ...RANK_FILTERS_ALL, scoring: 'half' })).toBe(false)
+    // A PPR expert's board with none saved files under PPR, not Half.
+    const pprExpert = item({ id: 'x', kind: 'rank', scoring: 'PPR', scoringFormat: effectiveScoringFormat(null, 'PPR') })
+    expect(rankFilterOk(pprExpert, { ...RANK_FILTERS_ALL, scoring: 'ppr' })).toBe(true)
+    expect(rankFilterOk(pprExpert, { ...RANK_FILTERS_ALL, scoring: 'half' })).toBe(false)
   })
 
   it('the saved scoring is read tolerantly (no column before 190; unknown values)', () => {
@@ -348,7 +375,9 @@ describe('For you order (#35)', () => {
     expect(pickLatest([old, mid, rank, fresh], true).map((i) => i.id)).toEqual(['fresh', 'rank', 'mid', 'old'])
     // Rankings switched off: rankings leave Latest.
     expect(pickLatest([old, mid, rank, fresh], false).map((i) => i.id)).toEqual(['fresh', 'mid', 'old'])
-    // Capped at LATEST_SIZE; an unreadable time sorts last; same instant → by id.
+    // Capped at LATEST_SIZE (about ten — a shelf; See all has the rest);
+    // an unreadable time sorts last; same instant → by id.
+    expect(LATEST_SIZE).toBe(10)
     const many = Array.from({ length: LATEST_SIZE + 3 }, (_, i) => item({ id: `n${i}`, createdAt: daysAgo(i) }))
     expect(pickLatest(many, true)).toHaveLength(LATEST_SIZE)
     expect(pickLatest(many, true)[0]!.id).toBe('n0')
@@ -538,5 +567,32 @@ describe('what the screen shows (#35, #27)', () => {
     closeCommunityDetail(true, nav)
     closeCommunityDetail(false, nav)
     expect(calls).toEqual(['pop', 'goBack /app/explore'])
+    // Over the Latest page, its parent is the Latest page.
+    closeCommunityDetail(false, nav, LATEST_HREF)
+    expect(calls.at(-1)).toBe('goBack /app/explore/latest')
+    expect(COMMUNITY_HREF).toBe('/app/explore')
+  })
+})
+
+describe('the Latest page (Chris, 2026-10-16)', () => {
+  const a = item({ id: 'a', createdAt: '2026-10-15T10:00:00Z' })
+  const b = item({ id: 'b', kind: 'rank', createdAt: '2026-10-15T09:00:00Z' })
+  const c = item({ id: 'c', createdAt: '2026-10-15T08:00:00Z' })
+  const d = item({ id: 'd', createdAt: '2026-10-15T07:00:00Z' })
+
+  it('its pages in order, each list or ranking once', () => {
+    // A post between two reads pushes `c` onto page 2 as well: shown once.
+    const pages = [{ items: [a, b, c] }, { items: [c, d] }]
+    expect(latestPageItems(pages, true).map((i) => i.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(latestPageItems([], true)).toEqual([])
+  })
+
+  it('rankings stay out while their switch is off', () => {
+    expect(latestPageItems([{ items: [a, b, c] }], false).map((i) => i.id)).toEqual(['a', 'c'])
+    expect(latestPageItems([{ items: [b] }], false)).toEqual([])
+  })
+
+  it('lives under Community', () => {
+    expect(LATEST_HREF).toBe('/app/explore/latest')
   })
 })

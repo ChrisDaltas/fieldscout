@@ -9,7 +9,15 @@ import { LEAGUE_NOTE_MAX, noteDraft, noteLength, trimNote } from '@/lib/leagues/
 
 import { commishLogLines } from './activity-feed-ops'
 import { actionWords } from './commish-log-copy'
-import { canEditLeagueNote, noteByline, noteEditorState, noteSavedToast, noteWhen } from './league-note-ops'
+import {
+  LEAGUE_NOTE_EDITOR_HELP,
+  LEAGUE_NOTE_EMPTY_COMMISH,
+  canEditLeagueNote,
+  noteByline,
+  noteEditorState,
+  noteSavedToast,
+  noteWhen,
+} from './league-note-ops'
 
 describe('the note’s text rules (192’s, mirrored)', () => {
   it('trims only spaces, tabs and newlines — not other whitespace', () => {
@@ -68,14 +76,25 @@ describe('the editor', () => {
   })
 })
 
+describe('what the commissioner is told about notifications', () => {
+  it('a pin or an edit notifies members; a clear does not — and no copy promises otherwise', () => {
+    expect(LEAGUE_NOTE_EDITOR_HELP).toBe('Everyone in the league sees it. Members get a notification when you pin or edit it, not when you clear it.')
+    expect(LEAGUE_NOTE_EMPTY_COMMISH).toContain('when you pin or edit it')
+    for (const copy of [LEAGUE_NOTE_EDITOR_HELP, LEAGUE_NOTE_EMPTY_COMMISH]) expect(copy).not.toMatch(/when you change it/)
+  })
+})
+
 describe('the toast after a save — from the server’s document', () => {
-  it('pinned or cleared (with how many were told — a clear is a change too), unchanged', () => {
+  it('pinned (with how many were told) or unchanged', () => {
     expect(noteSavedToast({ no_changes: false, cleared: false, notified: 3 })).toEqual({ title: 'Note pinned', description: '3 members were notified.' })
     expect(noteSavedToast({ no_changes: false, cleared: false, notified: 1 })).toEqual({ title: 'Note pinned', description: '1 member was notified.' })
     expect(noteSavedToast({ no_changes: false, cleared: false, notified: 0 })).toEqual({ title: 'Note pinned', description: undefined })
-    expect(noteSavedToast({ no_changes: false, cleared: true, notified: 3 })).toEqual({ title: 'Note cleared', description: '3 members were notified.' })
-    expect(noteSavedToast({ no_changes: false, cleared: true, notified: 0 })).toEqual({ title: 'Note cleared', description: undefined })
     expect(noteSavedToast({ no_changes: true, cleared: false, notified: 0 }).title).toBe('No changes')
+  })
+  it('cleared: no claim that anyone was told — a clear notifies nobody (Chris 2026-10-16)', () => {
+    expect(noteSavedToast({ no_changes: false, cleared: true, notified: 0 })).toStrictEqual({ title: 'Note cleared' })
+    // Even a document that somehow counted recipients never makes the toast say so.
+    expect(noteSavedToast({ no_changes: false, cleared: true, notified: 3 })).toStrictEqual({ title: 'Note cleared' })
   })
 })
 

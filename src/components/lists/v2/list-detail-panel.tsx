@@ -28,8 +28,9 @@ import {
 import { featureFlags } from '@/lib/feature-flags'
 import {
   groupingWrite,
+  isNumbered,
   isTierOnlyUnavailableResponse,
-  showsNumbersOnDesktop,
+  numbersWrite,
 } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
@@ -260,8 +261,9 @@ export function ListDetailPanel({
    *   is no `ranking_mode` value that means either.
    *
    * (`groupingWrite` in `@/lib/lists/ranking-mode` is that table.) Numbering
-   * is the Ranked switch: chosen at create (Basic / Ranked) on desktop, and
-   * flippable in the phone editor.
+   * is the Ranked switch: chosen at create (Basic / Ranked), and flippable
+   * from the list menu's Numbers choice (`setNumbered`, below) and the phone
+   * editor.
    *
    * **Before 191 is pushed** a `tier_only` save answers 409 ("Tiers without
    * numbers is coming in the next update"). That is not a failure to shout
@@ -304,6 +306,55 @@ export function ListDetailPanel({
       )
     },
     [canEdit, list, listId, setOrg, toast, updateList],
+  )
+
+  /**
+   * The list menu's **Numbers → Ranked / Unranked** — the Ranked switch, the
+   * same one the phone editor carries. Since the one numbering rule (Chris,
+   * 2026-10-16) a Basic list shows no 1-2-3 on desktop either, so this is how
+   * a desktop owner turns them back on (or off) after create. It flips only
+   * the numbers (`numbersWrite` → `withNumbers`); tiers stay as they are.
+   *
+   * Unranked on a tiered list is tiers without numbers (`tier_only`), so
+   * **before 191 is pushed** that save answers 409. Nothing changed, and the
+   * owner asked for it outright, so every such pick gets the same neutral
+   * "coming in the next update" note as the grouping control — never the red
+   * "Could not save" — and once this page load has heard it, the server isn't
+   * asked again (`tierOnlyUnavailable`).
+   */
+  const setNumbered = React.useCallback(
+    (numbered: boolean) => {
+      if (!canEdit || !list || list.is_big_board) return
+      const next = numbersWrite(list.ranking_mode, numbered)
+      if (!next) return
+      const comingSoon = () =>
+        toast({
+          title: 'Tiers without numbers is coming in the next update',
+          description: 'This list keeps its numbers for now.',
+        })
+      if (next === 'tier_only' && tierOnlyUnavailable) {
+        comingSoon()
+        return
+      }
+      updateList.mutate(
+        { ranking_mode: next },
+        {
+          onError: (error) => {
+            if (isTierOnlyUnavailableResponse(error)) {
+              tierOnlyUnavailable = true
+              comingSoon()
+              return
+            }
+            toast({
+              title: 'Could not save the numbers',
+              description: error.message,
+              variant: 'destructive',
+            })
+          },
+        },
+      )
+    },
+    [canEdit, list, toast, updateList],
   )
 
   const aiBanner = aiBuild.job ? (
@@ -400,6 +451,8 @@ export function ListDetailPanel({
           })
         }
         onSetPrivate={(isPrivate) => updateList.mutate({ is_private: isPrivate })}
+        // The Ranked switch — owner only, and never the Big Board (always ranked).
+        onSetNumbered={canEdit && !list.is_big_board ? setNumbered : undefined}
         onTogglePin={() =>
           toggleFavorite.mutate(list.id, {
             onSuccess: (result) =>
@@ -494,7 +547,7 @@ export function ListDetailPanel({
           <ListToolbar
             org={org}
             onOrgChange={chooseOrg}
-            numbered={showsNumbersOnDesktop(list.ranking_mode)}
+            numbered={isNumbered(list.ranking_mode)}
             view={display.view}
             onViewChange={(next) => setView(listId, next)}
             cols={display.cols}
@@ -522,7 +575,7 @@ export function ListDetailPanel({
               stats={stats}
               view={display.view}
               org={org}
-              numbered={showsNumbersOnDesktop(list.ranking_mode)}
+              numbered={isNumbered(list.ranking_mode)}
               showBudgetShare={org === 'budget'}
               budget={display.budget}
               handlers={handlers}

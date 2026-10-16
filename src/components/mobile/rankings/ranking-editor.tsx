@@ -42,6 +42,7 @@ import {
   publishButtonLabel,
   rankPosLabel,
   rankingExists,
+  rankingScoring,
   rankingTitle,
   scoringChanged,
   scoringFromFormat,
@@ -100,11 +101,13 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  *
  * Scoring (#36): the pill on the tool row picks the scoring the stats show
  * and the ranking is published for — the board's saved one when it has one,
- * else the Rankings screen's. It is saved by Publish. On a published ranking
- * a picked scoring that differs from the saved one is itself a change to
- * publish ("Publish updates", and Back asks first), so an untagged ranking
- * can be tagged without moving a player; with the order unchanged, Publish
- * saves only the scoring and leaves the order — and its movement — alone.
+ * else Half PPR (Chris, 2026-10-16: "if no scoring type is selected, default
+ * to half point ppr"); the Rankings screen's scoring filter never picks it.
+ * It is saved by Publish. On a published ranking a picked scoring that
+ * differs from the ranking's is itself a change to publish ("Publish
+ * updates", and Back asks first), so a wrong tag can be fixed without
+ * moving a player; with the order unchanged, Publish saves only the scoring
+ * and leaves the order — and its movement — alone.
  *
  * "Publish" vs "Publish updates" is about whether a ranking already exists
  * at the position, not where the draft started: starting from the experts
@@ -164,7 +167,6 @@ export interface RankingEditorProps {
   pos: RankPos
   /** Where a new (unpublished) ranking starts from; null = the published one. */
   from: RankFrom | null
-  scoring: Scoring
   currentWeek: number
   /** Bumped when browser / OS Back tried to leave with unpublished changes. */
   promptSeq: number
@@ -178,7 +180,6 @@ export function RankingEditor({
   type,
   pos,
   from,
-  scoring: hubScoring,
   currentWeek,
   promptSeq,
   onDirtyChange,
@@ -203,13 +204,13 @@ export function RankingEditor({
     from ?? (known && !exists && (status === 'current' || status === 'upcoming') ? 'carry' : null)
 
   // The scoring this ranking is made for: picked here, else the board's
-  // saved one, else the Rankings screen's.
+  // saved one, else Half PPR.
   const myBoard = boardFor(boards.data, type)
   const [pickedScoring, setPickedScoring] = useState<Scoring | null>(null)
   /** The scoring this session's publish saved (until the boards refetch). */
   const [publishedScoring, setPublishedScoring] = useState<Scoring | null>(null)
   const savedScoring = publishedScoring ?? scoringFromFormat(myBoard?.scoringFormat)
-  const scoring: Scoring = pickedScoring ?? savedScoring ?? hubScoring
+  const scoring: Scoring = rankingScoring(pickedScoring, savedScoring)
 
   const seasonQ = useSeasonBoard(isSeason && !locked)
   const weeklyQ = useWeeklyBigBoard(!isSeason && !locked && known && exists ? week : -1)

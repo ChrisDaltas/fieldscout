@@ -11,7 +11,8 @@
  * commissioner or a co-commissioner sets (or, with an empty note, clears) it.
  * The whole verb is the RPC's — the gate, the trim and the cap, the no-op by
  * value, the receipt League Home's activity shows, the members'
- * notifications — in one transaction under the league row lock.
+ * notifications (a set or an edit; a clear notifies nobody and withdraws the
+ * unread ones) — in one transaction under the league row lock.
  *
  * DEPLOY BEFORE PUSH. Merged code reaches fieldscout.gg before Chris pushes
  * 192, so the read answers `available: false` (200) when the columns do not
@@ -74,9 +75,14 @@ export interface SetLeagueNoteResult {
   no_changes_why: string | null
   /** The receipt; null exactly when `no_changes`. */
   commissioner_action_id: string | null
-  /** Members notified — on a set, an edit or a clear; 0 for a no-op. */
+  /** Members notified — on a set or an edit; 0 for a clear (Chris
+   *  2026-10-16: a clear notifies nobody) and for a no-op. */
   notified: number
   notified_why?: string | null
+  /** A clear's withdrawn notifications — the league's still-unread note
+   *  notifications, deleted (their text is a note that no longer exists);
+   *  0 otherwise. */
+  withdrawn: number
   reason: string | null
   evaluated_at: string
 }

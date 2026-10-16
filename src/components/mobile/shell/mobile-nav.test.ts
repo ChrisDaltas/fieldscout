@@ -25,6 +25,8 @@ describe('mobileRoute — which bar and which lit tab (navigation §(c))', () =>
   it('lights the account tabs, with Lists and Rankings under Profile', () => {
     expect(mobileRoute('/app', null).accountTab).toBe('home')
     expect(mobileRoute('/app/explore', null).accountTab).toBe('community')
+    // Community's Latest page (For you's "Latest" → See all) keeps Community lit.
+    expect(mobileRoute('/app/explore/latest', null)).toEqual({ leagueId: null, leagueTab: null, accountTab: 'community' })
     expect(mobileRoute('/app/research', null).accountTab).toBe('players')
     expect(mobileRoute('/app/players', null).accountTab).toBe('players')
     for (const path of ['/app/profile', '/app/stats', '/app/lists', '/app/lists/new', '/app/lists/abc', '/app/weekly-ranks', '/app/big-board', '/app/big-board/week/3', '/app/start-or-sit']) {
@@ -33,7 +35,7 @@ describe('mobileRoute — which bar and which lit tab (navigation §(c))', () =>
   })
 
   it('leaves the bar alone on screens that keep the league context', () => {
-    for (const path of ['/app/notifications', '/app/messages', '/app/messages/league-lg1', '/app/listsx', '/app/start-or-sit/new', '/app/start-or-sit/q1']) {
+    for (const path of ['/app/notifications', '/app/messages', '/app/messages/league-lg1', '/app/listsx', '/app/explorex', '/app/start-or-sit/new', '/app/start-or-sit/q1']) {
       expect(mobileRoute(path, null), path).toEqual({ leagueId: null, leagueTab: null, accountTab: null })
     }
   })
@@ -77,7 +79,7 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
     expect(mobileFallback('/app/weekly-ranks/history')?.title).toBe('Ranking history')
   })
   it('leaves screens with their own mobile header alone', () => {
-    for (const path of ['/app', '/app/profile', '/app/lists', '/app/lists/new', '/app/weekly-ranks', '/app/start-or-sit', '/app/research', '/app/messages', '/app/notifications', '/app/mocks/m1']) {
+    for (const path of ['/app', '/app/profile', '/app/lists', '/app/lists/new', '/app/weekly-ranks', '/app/start-or-sit', '/app/research', '/app/messages', '/app/notifications', '/app/mocks/m1', '/app/explore', '/app/explore/latest']) {
       expect(mobileFallback(path), path).toBeNull()
     }
   })

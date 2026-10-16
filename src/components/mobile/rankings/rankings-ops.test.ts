@@ -5,6 +5,7 @@ import {
   agreementNote,
   backAction,
   cmpToneClass,
+  DEFAULT_RANK_SCORING,
   consensusMovement,
   editorMovement,
   editorMovementAvailable,
@@ -36,6 +37,7 @@ import {
   rankMap,
   rankableWeeks,
   rankingExists,
+  rankingScoring,
   scoringChanged,
   scoringLabel,
   shortName,
@@ -44,6 +46,7 @@ import {
   weekStatus,
   weeklySub,
 } from '@/components/mobile/rankings/rankings-ops'
+import { DEFAULT_RANKING_SCORING } from '@/lib/lists/ranking-publish'
 
 describe('tierBreaks (handoff breaks, lr-frame §2.13.8)', () => {
   it('breaks where a gap beats 1.55 × the mean, keeping ≥ 2 per tier', () => {
@@ -452,15 +455,30 @@ describe('ADP, Auction and FLEX (Chris, 2026-10-15, gap list #29)', () => {
 })
 
 describe('saved scoring (Chris, 2026-10-15, gap list #36)', () => {
+  it('no scoring chosen is Half PPR (Chris, 2026-10-16) — the same default the server saves', () => {
+    expect(DEFAULT_RANK_SCORING).toBe('half')
+    expect(scoringFormatOf(DEFAULT_RANK_SCORING)).toBe(DEFAULT_RANKING_SCORING)
+    expect(scoringLabel(DEFAULT_RANK_SCORING)).toBe('Half PPR')
+  })
+
+  it('the editor’s scoring: picked, else saved, else Half PPR', () => {
+    expect(rankingScoring(null, null)).toBe('half')
+    expect(rankingScoring(null, 'std')).toBe('std')
+    expect(rankingScoring('ppr', 'std')).toBe('ppr')
+    expect(rankingScoring('quarter', null)).toBe('quarter')
+  })
+
   it('a picked scoring that differs from the saved one is a change to publish on its own', () => {
-    const base = { picked: 'half' as const, saved: null, savable: true, hasRanking: true }
-    // An untagged ranking can be tagged without moving a player; a wrong
-    // tag can be fixed.
+    const base = { picked: 'ppr' as const, saved: null, savable: true, hasRanking: true }
+    // A ranking with none saved (Half PPR) can be tagged without moving a
+    // player; a wrong tag can be fixed.
     expect(scoringChanged(base)).toBe(true)
-    expect(scoringChanged({ ...base, saved: 'ppr' })).toBe(true)
+    expect(scoringChanged({ ...base, picked: 'std', saved: 'ppr' })).toBe(true)
     // Nothing picked (the default shown), or the saved one picked again.
     expect(scoringChanged({ ...base, picked: null })).toBe(false)
-    expect(scoringChanged({ ...base, saved: 'half' })).toBe(false)
+    expect(scoringChanged({ ...base, saved: 'ppr' })).toBe(false)
+    // None saved already reads Half PPR: picking Half changes nothing.
+    expect(scoringChanged({ ...base, picked: 'half' })).toBe(false)
     // A new ranking carries its scoring in its first publish; before 190
     // is pushed (or the board unknown) there is nowhere to keep it.
     expect(scoringChanged({ ...base, hasRanking: false })).toBe(false)

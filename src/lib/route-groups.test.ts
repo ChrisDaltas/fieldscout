@@ -236,6 +236,11 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // screens; a desktop visit goes Home.
   '/app/messages',
   '/app/messages/[threadId]',
+  // FieldScout Mobile — Community's LATEST page (For you's "Latest" shelf →
+  // See all, Chris 2026-10-16): every public list and ranking, newest first.
+  // Gated with the rest of Community by `(shell)/explore/layout.tsx`; a
+  // desktop visit is sent to `/app/explore`.
+  '/app/explore/latest',
 ]
 
 describe('route groups are invisible to the URL space', () => {

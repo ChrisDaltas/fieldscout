@@ -179,7 +179,7 @@ export function StandingsSegment({
           <ol aria-label="Standings">
             {doc.standings.map((row, i) => {
               const manager = managers.get(row.team_id) ?? null
-              const streak = schedule.data ? teamStreak(row.team_id, schedule.data.matchups, doc.season) : null
+              const streak = schedule.data ? teamStreak(row.team_id, schedule.data, doc.season) : null
               const extraParts = extraRecords(row, extras)
               const cutoff = playoffTeams > 0 && i + 1 === playoffTeams
               const adjustedWeeks = overridden?.get(row.team_id) ?? null

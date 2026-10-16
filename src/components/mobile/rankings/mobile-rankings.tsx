@@ -263,7 +263,6 @@ export function MobileRankings({
           type={edit.type}
           pos={edit.pos}
           from={edit.from}
-          scoring={state.scoring}
           currentWeek={currentWeek}
           promptSeq={promptSeq}
           onDirtyChange={setEditorDirty}

@@ -355,6 +355,16 @@ describe('League › Standings', () => {
     const t4 = html.slice(html.indexOf(`data-standings-row="${T4}"`))
     expect(t4).toMatch(/text-positive-strong" data-streak="▲1W">▲1W</)
   })
+
+  it('in a median league the result against the League Median counts too, last in its week (Chris, 2026-10-16)', () => {
+    const median = (team: string, result: string) => ({ season: 2099, week: 1, team_id: team, median_result: result, is_final: true })
+    const withMedian = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }), {}, (qc) =>
+      qc.setQueryData(scheduleKeys.all(LEAGUE), { ...SCHEDULE, median_results: [median(T3, 'win'), median(T4, 'loss')] } satisfies LeagueSchedule),
+    )
+    // T3 lost the game and beat the median; T4 won the game and lost to it.
+    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T3}"`))).toMatch(/text-positive-strong" data-streak="▲1W">▲1W</)
+    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T4}"`))).toMatch(/text-negative-strong" data-streak="▼1L">▼1L</)
+  })
 })
 
 describe('League › Activity and Transactions', () => {

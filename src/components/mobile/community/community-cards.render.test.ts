@@ -4,9 +4,17 @@ import { describe, expect, it } from 'vitest'
 
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 
-import { ListCard, RankingRow, ShelfHeader, UpdatedRow, communityDetailHref } from './community-cards'
+import {
+  LatestCard,
+  LatestShelf,
+  ListCard,
+  RankingRow,
+  ShelfHeader,
+  UpdatedRow,
+  communityDetailHref,
+} from './community-cards'
 import { VideoCard } from './community-detail'
-import { authorBgClass } from './community-ops'
+import { LATEST_HREF, authorBgClass } from './community-ops'
 
 const html = (el: ReturnType<typeof createElement>) =>
   renderToStaticMarkup(el).replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
@@ -27,8 +35,8 @@ const base: CommunityItem = {
   kind: 'list',
   rankType: null,
   positionFilter: 'RB',
-  scoring: null,
-  scoringFormat: null,
+  scoring: 'Half PPR',
+  scoringFormat: 'half',
   playerCount: 5,
   likeCount: 0,
   recentLikes: [],
@@ -131,8 +139,14 @@ describe('Community cards', () => {
   })
 
   it('a shelf with no fuller view has no "See all"', () => {
-    expect(html(createElement(ShelfHeader, { title: 'Latest' }))).not.toContain('See all')
+    expect(html(createElement(ShelfHeader, { title: 'Rankings' }))).not.toContain('See all')
     expect(html(createElement(ShelfHeader, { title: 'Lists for you', onSeeAll: () => {} }))).toContain('See all')
+  })
+
+  it('"See all" to a page of its own is a link (Latest → the Latest page)', () => {
+    const out = html(createElement(ShelfHeader, { title: 'Latest', seeAllHref: LATEST_HREF }))
+    expect(out).toMatch(/<a [^>]*href="\/app\/explore\/latest"[^>]*>See all<\/a>/)
+    expect(out).not.toContain('<button')
   })
 
   it('an updated-by row: handle · title over the update time', () => {
@@ -194,5 +208,67 @@ describe('Community — a video with no title', () => {
     )
     expect(out).toContain('>Week 5 waivers<')
     expect(out).not.toContain('aria-label=')
+  })
+})
+
+/**
+ * For you's "Latest" (Chris, 2026-10-16): "a horizontal scroll section with a
+ * see all latest" — about ten fixed-width cards that snap, edge to edge with
+ * the 16px gutter, scrolling on their own (never the page).
+ */
+describe('Community — the Latest shelf', () => {
+  const now = Date.parse('2026-10-15T12:00:00Z')
+  const items: CommunityItem[] = [
+    { ...base, id: 'l1', createdAt: '2026-10-15T11:35:00Z' },
+    { ...base, id: 'r1', kind: 'rank', title: 'Week 6 RB', createdAt: '2026-10-13T12:00:00Z' },
+  ]
+
+  it('one row that scrolls sideways and snaps, bleeding to the edge with the gutter kept', () => {
+    const out = html(createElement(LatestShelf, { items, now }))
+    const shelf = /<div class="([^"]*)" data-latest-shelf/.exec(out)
+    expect(shelf).not.toBeNull()
+    for (const cls of ['-mx-4', 'px-4', 'flex', 'overflow-x-auto', 'snap-x', 'snap-mandatory', 'scroll-px-4', 'scrollbar-none']) {
+      expect(shelf![1]!.split(' '), cls).toContain(cls)
+    }
+    expect(shelf![1]).not.toContain('flex-col')
+    // Fixed-width cards, each a snap point, in the order given (newest first).
+    const cards = [...out.matchAll(/<a href="([^"]*)" class="([^"]*)" data-latest-card/g)]
+    expect(cards.map((m) => m[1])).toEqual([communityDetailHref('l1'), communityDetailHref('r1')])
+    for (const m of cards) {
+      expect(m[2]!.split(' ')).toEqual(expect.arrayContaining(['w-[150px]', 'flex-none', 'snap-start']))
+    }
+  })
+
+  it('a card: the fixed cover, title, author, and what it is and when it was posted', () => {
+    const list = html(createElement(LatestCard, { item: items[0]!, now }))
+    expect(list).toContain('h-[150px]')
+    expect(list).toContain('bg-pos-rb')
+    expect(list).toContain('line-clamp-2')
+    expect(list).toContain('Backs one injury away from 15 touches')
+    expect(list).toContain('>@fieldfilm<')
+    expect(list).toContain('List · 25m')
+    const rank = html(createElement(LatestCard, { item: items[1]!, now }))
+    expect(rank).toContain('Ranking · 2d')
+  })
+
+  it('a ranking’s card is always the collage, as its detail is — never a video thumbnail', () => {
+    const out = html(
+      createElement(LatestCard, {
+        item: {
+          ...items[1]!,
+          videos: [{ url: 'https://youtu.be/dQw4w9WgXcQ', title: 'Week 5 waivers', duration: null, source: null }],
+        },
+        now,
+      }),
+    )
+    expect(out).toContain('grid-cols-[repeat(2,44px)]')
+    expect(out).not.toContain('i.ytimg.com')
+    expect(out).toContain('h-[150px]')
+  })
+
+  it('a Latest page row opens its detail over the Latest page', () => {
+    const out = html(createElement(RankingRow, { item: items[0]!, postedNow: now, from: LATEST_HREF }))
+    expect(out).toContain('href="/app/explore/latest?list=l1"')
+    expect(communityDetailHref('l1', LATEST_HREF)).toBe('/app/explore/latest?list=l1')
   })
 })

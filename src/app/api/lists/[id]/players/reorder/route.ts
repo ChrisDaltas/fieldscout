@@ -19,7 +19,9 @@ interface RouteParams {
  * Chris 2026-10-15): per entry, whether this publish added the player (he
  * then has no previous position — the RPC records everyone else's on a
  * ranking board), and the scoring the ranking was made for. Plain list
- * reorders send neither and behave as before.
+ * reorders send neither and behave as before. A ranking published with no
+ * scoring (desktop's Weekly ranks) keeps the one it has — Half PPR if one
+ * was never chosen, which the RPC fills (Chris, 2026-10-16).
  */
 const publishSchema = reorderPlayersSchema.extend({
   positions: publishPositionsSchema,

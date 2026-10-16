@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  DEFAULT_RANKING_SCORING,
   SCORING_FORMATS,
   insertListWithScoring,
   isMissingColumn,
@@ -45,15 +46,13 @@ describe('the scoring vocabulary (the contract Community filters on)', () => {
   it('is exactly the four values the CHECK in 190 allows', () => {
     expect(SCORING_FORMATS).toEqual(['ppr', 'half', 'quarter', 'standard'])
   })
-  it('maps an AI persona’s default scoring', () => {
-    expect(['PPR', 'Half-PPR', 'Half PPR', 'Standard', 'Superflex', null].map(personaScoringFormat)).toEqual([
-      'ppr',
-      'half',
-      'half',
-      'standard',
-      null,
-      null,
-    ])
+  it('no scoring chosen is Half PPR (Chris, 2026-10-16)', () => {
+    expect(DEFAULT_RANKING_SCORING).toBe('half')
+  })
+  it('maps an AI persona’s default scoring — none, or one outside the vocabulary, is Half PPR', () => {
+    expect(
+      ['PPR', 'Half-PPR', 'Half PPR', 'Standard', 'Superflex', '', null, undefined].map(personaScoringFormat),
+    ).toEqual(['ppr', 'half', 'half', 'standard', 'half', 'half', 'half', 'half'])
   })
 })
 

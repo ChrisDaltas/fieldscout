@@ -205,7 +205,6 @@ describe('Ranking editor — Publish and the week rules', () => {
         type,
         pos,
         from,
-        scoring: 'ppr',
         currentWeek: CURRENT_WEEK,
         promptSeq: 0,
         onDirtyChange: () => {},
@@ -385,7 +384,6 @@ describe('movement arrows (Chris, 2026-10-15, #33)', () => {
         type: 'season',
         pos: 'RB',
         from: null,
-        scoring: 'ppr',
         currentWeek: CURRENT_WEEK,
         promptSeq: 0,
         onDirtyChange: () => {},
@@ -405,7 +403,6 @@ describe('movement arrows (Chris, 2026-10-15, #33)', () => {
         type: 'w6',
         pos: 'WR',
         from: null,
-        scoring: 'ppr',
         currentWeek: CURRENT_WEEK,
         promptSeq: 0,
         onDirtyChange: () => {},
@@ -413,7 +410,7 @@ describe('movement arrows (Chris, 2026-10-15, #33)', () => {
         onPublished: () => {},
       }),
     )
-    expect(html).toContain('Scoring: PPR')
+    expect(html).toContain('Scoring: Half PPR')
     expect(html).not.toContain('Show movement')
   })
 
@@ -423,7 +420,6 @@ describe('movement arrows (Chris, 2026-10-15, #33)', () => {
         type: 'w8',
         pos: 'RB',
         from: null,
-        scoring: 'ppr',
         currentWeek: CURRENT_WEEK,
         promptSeq: 0,
         onDirtyChange: () => {},
@@ -436,7 +432,7 @@ describe('movement arrows (Chris, 2026-10-15, #33)', () => {
 })
 
 describe('the scoring a ranking is published for (Chris, 2026-10-15, #36)', () => {
-  const editor = (boards: MyRankingBoards, scoring: 'ppr' | 'std' = 'ppr') => {
+  const editor = (boards: MyRankingBoards) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     qc.setQueryData(mobileRankingBoardsKey('u1'), boards)
     return render(
@@ -444,7 +440,6 @@ describe('the scoring a ranking is published for (Chris, 2026-10-15, #36)', () =
         type: 'w6',
         pos: 'WR',
         from: null,
-        scoring,
         currentWeek: CURRENT_WEEK,
         promptSeq: 0,
         onDirtyChange: () => {},
@@ -463,7 +458,26 @@ describe('the scoring a ranking is published for (Chris, 2026-10-15, #36)', () =
     expect(editor(boards)).toMatch(/aria-label="Scoring: 0\.25 PPR"/)
   })
 
-  it('with none saved, the Rankings screen’s scoring', () => {
-    expect(editor(BOARDS, 'std')).toMatch(/aria-label="Scoring: Standard"/)
+  it('with none saved, Half PPR (Chris, 2026-10-16)', () => {
+    expect(editor(BOARDS)).toMatch(/aria-label="Scoring: Half PPR"/)
+  })
+
+  it('a week with no board yet starts as Half PPR too', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    qc.setQueryData(mobileRankingBoardsKey('u1'), BOARDS)
+    const html = render(
+      createElement(RankingEditor, {
+        type: 'w8',
+        pos: 'RB',
+        from: null,
+        currentWeek: CURRENT_WEEK,
+        promptSeq: 0,
+        onDirtyChange: () => {},
+        onBack: () => {},
+        onPublished: () => {},
+      }),
+      qc,
+    )
+    expect(html).toMatch(/aria-label="Scoring: Half PPR"/)
   })
 })

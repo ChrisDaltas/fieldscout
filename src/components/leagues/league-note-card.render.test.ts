@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { leagueNoteKeys, type LeagueNoteView } from '@/hooks/use-league-note'
 
 import { LeagueNoteCard, LeagueNoteCardView } from './league-note-card'
-import { LEAGUE_NOTE_EMPTY_COMMISH, LEAGUE_NOTE_ERROR } from './league-note-ops'
+import { LEAGUE_NOTE_EDITOR_HELP, LEAGUE_NOTE_EMPTY_COMMISH, LEAGUE_NOTE_ERROR } from './league-note-ops'
 
 const LEAGUE = 'e9200000-0000-4000-8000-000000000001'
 
@@ -107,6 +107,13 @@ describe('League Home — the commissioner note', () => {
     const html = renderEditing({ available: true, note: null })
     expect(html).toMatch(/<textarea[^>]*aria-label="Commissioner note"[^>]*><\/textarea>/)
     expect(html).toMatch(/data-league-note-save[^>]*>Pin note</)
+  })
+
+  it('the editor says who is told: members on a pin or an edit, nobody on a clear (Chris 2026-10-16) — the phone’s words', () => {
+    const html = renderEditing(NOTE)
+    expect(html).toContain(`data-league-note-help="true">${LEAGUE_NOTE_EDITOR_HELP} Up to 500 characters.<`)
+    expect(html).toContain('data-league-note-clear')
+    expect(html).not.toContain('when you change it')
   })
 
   it('a note whose author account is gone still shows, without a name', () => {

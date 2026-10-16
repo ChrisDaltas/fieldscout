@@ -62,7 +62,7 @@ const LIST_TYPE_OPTIONS: ListTypeOption[] = [
   {
     value: 'basic',
     label: 'Basic',
-    description: 'Just a collection, no order.',
+    description: 'Just a collection, no numbers.',
   },
   {
     value: 'ranked',

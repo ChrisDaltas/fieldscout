@@ -50,10 +50,12 @@ const uuid = z.uuid()
  *  attach panel + My Lists panel; L.B4.2 extends the UI, not this shape).
  *  The embed is FK-HINTED: league_lists carries TWO relationships to lists
  *  (the printed list_id FK + the D106 composite ownership FK), so a bare
- *  `lists(...)` is PGRST201-ambiguous. The response key stays `lists`. */
+ *  `lists(...)` is PGRST201-ambiguous. The response key stays `lists`.
+ *  `ranking_mode` (since 012) lets the room's cheat sheet and pool overlay
+ *  follow the list's Ranked and Tiers switches (spec v2.16.93, §8.9). */
 export const LEAGUE_LIST_EMBED =
   'id, league_id, list_id, owner_id, is_primary_board, shared_with_league, created_at, ' +
-  'lists!league_lists_list_id_fkey (id, owner_id, title, description, position_filter, player_count, is_private, is_big_board, updated_at)'
+  'lists!league_lists_list_id_fkey (id, owner_id, title, description, position_filter, player_count, is_private, is_big_board, ranking_mode, updated_at)'
 
 export type LeagueListWithList = LeagueList & {
   lists: Pick<
@@ -66,6 +68,7 @@ export type LeagueListWithList = LeagueList & {
     | 'player_count'
     | 'is_private'
     | 'is_big_board'
+    | 'ranking_mode'
     | 'updated_at'
   > | null
 }

@@ -14,9 +14,10 @@ import { leagueActivityKeys } from './use-league-activity'
  *
  * The read is any member's; the write is the commissioner's (or a
  * co-commissioner's) and is NOT optimistic and NOT retried: the server trims,
- * caps, writes the receipt and notifies the league, so the note shown after
- * a save is always the server's. Success and failure both re-read the note,
- * the commissioner log and the activity feed (the change is listed there).
+ * caps, writes the receipt and notifies the league (on a pin or an edit — a
+ * clear notifies nobody), so the note shown after a save is always the
+ * server's. Success and failure both re-read the note, the commissioner log
+ * and the activity feed (the change is listed there).
  */
 
 export const leagueNoteKeys = {

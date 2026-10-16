@@ -4,7 +4,9 @@
 -- Chris, 2026-10-15: one short note the commissioner pins for the whole
 -- league — ESPN's "LM Note" ("Trade deadline is Nov 24", "Dues by Friday").
 -- It shows on the LEAGUE home (not the app Home), and members get a
--- notification when it changes. Not chat — the league board is chat.
+-- notification when it is set or edited — not when it is cleared (Chris,
+-- 2026-10-16: "no notification in that case"). Not chat — the league board
+-- is chat.
 --
 -- 1. THREE COLUMNS ON `leagues`, not a reuse of `leagues.description`.
 --    `description` is 001's column, listed by spec §12.1 among the existing
@@ -41,17 +43,17 @@
 --      (7) ONE commissioner_actions row through the shared helper — action
 --          `set_league_note`, target `league`, before/after `{note}` — the
 --          receipt League Home's activity shows (Q66); its absence raises;
---      (8) on EVERY real change — a set, an edit or a clear (the ruling:
---          "members get a notification when it changes"; a clear is a
---          change): every member with a user (not the author, not a
---          placeholder seat) gets ONE unread `league_commissioner_note`
---          notification — "Commissioner note updated", the note as the body
---          (a clear: "The commissioner cleared the note."), `data.league_id`
---          for the league-home link, `data.cleared`. A member who already
+--      (8) on a SET or an EDIT: every member with a user (not the author,
+--          not a placeholder seat) gets ONE unread `league_commissioner_note`
+--          notification — "Commissioner note updated", the note as the body,
+--          `data.league_id` for the league-home link. A member who already
 --          has an UNREAD one for this league gets it REPLACED (new text, new
---          time) rather than a second row, so three quick edits are one ping
---          and a clear never leaves a stale note in the bell.
---          Counts asserted: every recipient got exactly one.
+--          time) rather than a second row, so three quick edits are one
+--          ping. Counts asserted: every recipient got exactly one.
+--          A CLEAR notifies nobody (Chris 2026-10-16) — it WITHDRAWS every
+--          still-UNREAD note notification for this league instead (deleted:
+--          its text is a note that no longer exists); a READ one is history
+--          and stays. The number withdrawn is returned (`withdrawn`).
 --    No action_id / replay ledger: setting a note to a value is idempotent
 --    by value (the 128 `rename_own_team` argument) — a retry of the same
 --    text is step (5)'s no-op.
@@ -122,6 +124,7 @@ DECLARE
   v_recipients UUID[] := '{}';
   v_replaced   INTEGER := 0;
   v_inserted   INTEGER := 0;
+  v_withdrawn  INTEGER := 0;
   v_body       TEXT;
   v_data       JSONB;
 BEGIN
@@ -173,6 +176,7 @@ BEGIN
                                   ELSE 'the note already says exactly this' END,
       'commissioner_action_id', NULL,
       'notified',               0,
+      'withdrawn',              0,
       'reason',                 v_reason,
       'evaluated_at',           p_at);
   END IF;
@@ -204,61 +208,67 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- (8) THE NOTIFICATION — on every real change (a set, an edit or a clear:
-  --     "when it changes"); every member with a user except the author; one
-  --     unread row per member per league.
-  v_recipients := ARRAY(
-    SELECT DISTINCT m.user_id
-    FROM public.league_members m
-    WHERE m.league_id = p_league_id
-      AND m.user_id IS NOT NULL
-      AND m.user_id <> v_actor
-    ORDER BY m.user_id);
-
+  -- (8) THE NOTIFICATION — on a set or an edit only (Chris 2026-10-16: a
+  --     clear notifies nobody). A clear instead WITHDRAWS every still-unread
+  --     note notification for this league — its text is a note that no
+  --     longer exists; a read one is history and is left alone.
   IF v_note IS NULL THEN
-    v_body := 'The commissioner cleared the note.';
+    DELETE FROM public.notifications n
+    WHERE n.type = 'league_commissioner_note'
+      AND n.read = FALSE
+      AND n.data ->> 'league_id' = p_league_id::text;
+    GET DIAGNOSTICS v_withdrawn = ROW_COUNT;
   ELSE
+    -- Every member with a user except the author; one unread row per
+    -- member per league.
+    v_recipients := ARRAY(
+      SELECT DISTINCT m.user_id
+      FROM public.league_members m
+      WHERE m.league_id = p_league_id
+        AND m.user_id IS NOT NULL
+        AND m.user_id <> v_actor
+      ORDER BY m.user_id);
+
     v_body := regexp_replace(v_note, E'[\\r\\n\\t ]+', ' ', 'g');
     IF char_length(v_body) > 160 THEN
       v_body := rtrim(left(v_body, 159)) || '…';
     END IF;
-  END IF;
-  v_data := jsonb_build_object(
-    'league_id', p_league_id,
-    'actor_id',  v_actor,
-    'cleared',   v_note IS NULL,
-    'commissioner_action_id', v_audit_id);
+    v_data := jsonb_build_object(
+      'league_id', p_league_id,
+      'actor_id',  v_actor,
+      'commissioner_action_id', v_audit_id);
 
-  IF cardinality(v_recipients) > 0 THEN
-    WITH replaced AS (
-      UPDATE public.notifications n
-      SET title = 'Commissioner note updated',
-          body = v_body,
-          data = v_data,
-          created_at = p_at
-      WHERE n.user_id = ANY (v_recipients)
-        AND n.type = 'league_commissioner_note'
-        AND n.read = FALSE
-        AND n.data ->> 'league_id' = p_league_id::text
-      RETURNING n.user_id
-    )
-    SELECT count(DISTINCT r.user_id)::int INTO v_replaced FROM replaced r;
+    IF cardinality(v_recipients) > 0 THEN
+      WITH replaced AS (
+        UPDATE public.notifications n
+        SET title = 'Commissioner note updated',
+            body = v_body,
+            data = v_data,
+            created_at = p_at
+        WHERE n.user_id = ANY (v_recipients)
+          AND n.type = 'league_commissioner_note'
+          AND n.read = FALSE
+          AND n.data ->> 'league_id' = p_league_id::text
+        RETURNING n.user_id
+      )
+      SELECT count(DISTINCT r.user_id)::int INTO v_replaced FROM replaced r;
 
-    INSERT INTO public.notifications (user_id, type, title, body, data, read, created_at)
-    SELECT u, 'league_commissioner_note', 'Commissioner note updated', v_body, v_data, FALSE, p_at
-    FROM unnest(v_recipients) u
-    WHERE NOT EXISTS (
-      SELECT 1 FROM public.notifications n
-      WHERE n.user_id = u
-        AND n.type = 'league_commissioner_note'
-        AND n.read = FALSE
-        AND n.data ->> 'league_id' = p_league_id::text);
-    GET DIAGNOSTICS v_inserted = ROW_COUNT;
+      INSERT INTO public.notifications (user_id, type, title, body, data, read, created_at)
+      SELECT u, 'league_commissioner_note', 'Commissioner note updated', v_body, v_data, FALSE, p_at
+      FROM unnest(v_recipients) u
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.notifications n
+        WHERE n.user_id = u
+          AND n.type = 'league_commissioner_note'
+          AND n.read = FALSE
+          AND n.data ->> 'league_id' = p_league_id::text);
+      GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
-    IF v_replaced + v_inserted <> cardinality(v_recipients) THEN
-      RAISE EXCEPTION 'commish_set_league_note: notified % of % members (% replaced, % new)',
-        v_replaced + v_inserted, cardinality(v_recipients), v_replaced, v_inserted
-        USING ERRCODE = 'P0001';
+      IF v_replaced + v_inserted <> cardinality(v_recipients) THEN
+        RAISE EXCEPTION 'commish_set_league_note: notified % of % members (% replaced, % new)',
+          v_replaced + v_inserted, cardinality(v_recipients), v_replaced, v_inserted
+          USING ERRCODE = 'P0001';
+      END IF;
     END IF;
   END IF;
 
@@ -276,8 +286,10 @@ BEGIN
     'commissioner_action_id', v_audit_id,
     'notified',               v_replaced + v_inserted,
     'notified_why',           CASE
+                                WHEN v_note IS NULL THEN 'clearing the note notifies nobody'
                                 WHEN cardinality(v_recipients) = 0 THEN 'no other member with an account to notify'
                                 ELSE NULL END,
+    'withdrawn',              v_withdrawn,
     'reason',                 v_reason,
     'evaluated_at',           p_at);
 END;
@@ -307,4 +319,4 @@ $$;
 -- authorization (112:1237's posture).
 REVOKE EXECUTE ON FUNCTION commish_set_league_note(UUID, TEXT, TEXT) FROM PUBLIC, anon;
 COMMENT ON FUNCTION commish_set_league_note(UUID, TEXT, TEXT) IS
-  'Migration 192 (gap list #13, Chris 2026-10-15): set or clear the league''s commissioner note. Commissioner or co-commissioner; trimmed, ≤ 500 chars, empty clears; no-op by value; one commissioner_actions row (set_league_note, {note} before/after); on every real change (set, edit or clear), one unread league_commissioner_note notification per other member (an unread one is replaced); reason optional (Q66).';
+  'Migration 192 (gap list #13, Chris 2026-10-15): set or clear the league''s commissioner note. Commissioner or co-commissioner; trimmed, ≤ 500 chars, empty clears; no-op by value; one commissioner_actions row (set_league_note, {note} before/after); on a set or an edit, one unread league_commissioner_note notification per other member (an unread one is replaced); a clear notifies nobody and withdraws the league''s unread note notifications (Chris 2026-10-16); reason optional (Q66).';

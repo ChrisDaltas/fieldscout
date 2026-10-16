@@ -27,8 +27,9 @@ import { cn } from '@/lib/utils'
 /**
  * New ranking (lr-myrank §2.2) for the types the app supports: a weekly
  * board — this week or one of the next three (Chris, 2026-10-15) — and the
- * season board (Rest of season / Pre-draft). Scoring isn't a ranking
- * dimension in the app, so step 1 has no Scoring block.
+ * season board (Rest of season / Pre-draft). Step 1 has no Scoring block:
+ * a ranking's scoring is picked in the editor (its Scoring pill) and is Half
+ * PPR until one is picked (Chris, 2026-10-16).
  *
  * A ranking "exists" when that board already holds players at the position
  * — then step 1 opens it. Otherwise step 2 picks where it starts: your

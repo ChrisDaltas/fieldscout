@@ -22,6 +22,7 @@ function list(overrides: Partial<MyDraftList> & { id: string }): MyDraftList {
     player_count: 10,
     is_private: true,
     is_big_board: false,
+    ranking_mode: 'ranked',
     scoring_system_id: null,
     updated_at: '2026-08-01T00:00:00+00:00',
     ...overrides,

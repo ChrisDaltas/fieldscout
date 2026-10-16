@@ -1,5 +1,6 @@
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
+import { DEFAULT_RANKING_SCORING, personaScoringFormat } from '@/lib/lists/ranking-publish'
 import { handleInitials } from '@/utils/initials'
 
 /**
@@ -68,10 +69,29 @@ export function scoringFormatOf(row: { scoring_format?: unknown } | null | undef
   return typeof value === 'string' && (SCORING_FORMATS as readonly string[]).includes(value) ? (value as ScoringFormat) : null
 }
 
+/**
+ * A ranking with no saved scoring is Half PPR (Chris, 2026-10-16: "if no
+ * scoring type is selected, default to half point ppr") — rankings published
+ * before migration 190, and every ranking until 190 is pushed.
+ */
+export const DEFAULT_SCORING_FORMAT: ScoringFormat = DEFAULT_RANKING_SCORING
+
+/**
+ * The scoring a ranking counts as — the rule migration 190 saves
+ * (`fill_ranking_scoring_internal`), so a ranking reads the same before and
+ * after the push: its saved scoring; else, on an AI expert's board, its
+ * persona's usual scoring (`style_profile.scoring_default`, passed as
+ * `personaDefault`); else Half PPR. What its label says and what the
+ * Rankings scoring chips filter on — one answer.
+ */
+export function effectiveScoringFormat(saved: ScoringFormat | null, personaDefault?: string | null): ScoringFormat {
+  return saved ?? personaScoringFormat(personaDefault)
+}
+
 export type RankTypeFilter = 'all' | RankType
 export type RankPosFilter = 'all' | 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DST'
-/** Any scoring, or one saved scoring. A ranking with no saved scoring (one
- *  published before migration 190) shows under "Any scoring" only. */
+/** Any scoring, or one scoring. A ranking with no saved scoring counts as
+ *  Half PPR, an AI expert's as its usual scoring (`effectiveScoringFormat`). */
 export type RankScoringFilter = 'all' | ScoringFormat
 export interface RankFilters {
   type: RankTypeFilter
@@ -134,8 +154,8 @@ export function posFilterValue(positionFilter: string | null): RankPosFilter | n
 export function rankFilterOk(item: CommunityItem, rk: RankFilters): boolean {
   if (rk.type !== 'all' && item.rankType !== rk.type) return false
   if (rk.pos !== 'all' && posFilterValue(item.positionFilter) !== rk.pos) return false
-  // Only the scoring saved with the ranking counts — never a guess from its
-  // scoring system or an AI expert's default (those still label the card).
+  // The scoring the ranking counts as (`effectiveScoringFormat`) — never a
+  // guess from its scoring system.
   if (rk.scoring !== 'all' && item.scoringFormat !== rk.scoring) return false
   return true
 }
@@ -436,8 +456,9 @@ export function emptyCopy(
 // For you order (Chris, 2026-10-15, gap list #35)
 // =============================================================================
 
-/** How many lists and rankings the For you "Latest" section shows. */
-export const LATEST_SIZE = 5
+/** How many lists and rankings the For you "Latest" shelf shows (Chris,
+ *  2026-10-16: a horizontal shelf; "See all" opens the Latest page). */
+export const LATEST_SIZE = 10
 
 /**
  * "Latest": STRICTLY newest-first — by when each list or ranking was posted
@@ -657,18 +678,36 @@ export function topicAwaitingServer(
 
 /** Community's own address — the parent the detail's Back falls back to. */
 export const COMMUNITY_HREF = '/app/explore'
+/** The Latest page (For you's "Latest" shelf → See all): everything the shelf
+ *  draws from, simply newest first. */
+export const LATEST_HREF = '/app/explore/latest'
 
 /**
  * The detail's Back / Close (Chris, gap list #27: "Back always goes to where
- * you came from"). Opened from a card (a `history.pushState`), the feed is
- * the entry behind it — known for certain, so pop it. Reached any other way
- * (a link from another screen, a reload, a shared link), `goBack` returns to
- * the app screen behind it, else replaces the URL with Community's.
+ * you came from"). Opened from a card (a `history.pushState`), the screen
+ * under it is the entry behind it — known for certain, so pop it. Reached any
+ * other way (a link from another screen, a reload, a shared link), `goBack`
+ * returns to the app screen behind it, else replaces the URL with the screen
+ * the detail sits on (`parentHref`: Community, or the Latest page).
  */
 export function closeCommunityDetail(
   openedFromFeed: boolean,
   nav: { popFeed: () => void; goBack: (parentHref: string) => void },
+  parentHref: string = COMMUNITY_HREF,
 ): void {
   if (openedFromFeed) nav.popFeed()
-  else nav.goBack(COMMUNITY_HREF)
+  else nav.goBack(parentHref)
+}
+
+/**
+ * The Latest page's rows: its pages in order (each newest posted first),
+ * each list or ranking once — the pages are read by offset, so a post made
+ * between two reads pushes a row already shown onto the next page — and
+ * rankings left out while their switch is off.
+ */
+export function latestPageItems(
+  pages: readonly { items: readonly CommunityItem[] }[],
+  ranksOn: boolean,
+): CommunityItem[] {
+  return withoutRepeats(pages.flatMap((p) => p.items)).filter((i) => ranksOn || i.kind !== 'rank')
 }

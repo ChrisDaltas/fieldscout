@@ -4,7 +4,9 @@
  *    (migration 188) or `scoring_format` (migration 190) — main deploys
  *    before the push, and naming a missing column fails the whole read;
  *  - a ranking's saved scoring is read from the row when it's there, and is
- *    "none" (never an error) before 190;
+ *    "none" (never an error) before 190 — which counts as Half PPR (Chris,
+ *    2026-10-16), or on an AI expert's board as its persona's usual scoring
+ *    (what 190 saves), never a guess from a scoring system;
  *  - Latest is its own read, by `created_at` (the pool is by update time);
  *  - recent likes are read for the whole window (not just the lists read),
  *    paged past PostgREST's 1000-row cap, and a likes error fails the read
@@ -49,6 +51,7 @@ vi.mock('@/lib/supabase/client', () => ({
 }))
 
 import { INJURY_STATUSES } from '@/components/mobile/home/home-ops'
+import { RANK_FILTERS_ALL, rankFilterOk } from '@/components/mobile/community/community-ops'
 
 import {
   LATEST_READ_SIZE,
@@ -82,7 +85,6 @@ function row(id: string, over: Record<string, unknown> = {}) {
     ai_persona_id: null,
     owner: { id: `u-${id}`, username: `user${id}`, avatar_url: null, follower_count: 1 },
     persona: null,
-    scoring: { rules: { receptions: 1 } },
     tag_links: [],
     links: [],
     heads: [],
@@ -128,10 +130,56 @@ describe('readCommunityFeed', () => {
     const feed = await readCommunityFeed(NOW)
     const by = Object.fromEntries(feed.items.map((i) => [i.id, i]))
     expect(by.a).toMatchObject({ scoringFormat: 'quarter', scoring: '0.25 PPR' })
-    // Before 190 (no key): no saved scoring; the label still comes from the
-    // scoring system, as before.
-    expect(by.b).toMatchObject({ scoringFormat: null, scoring: 'PPR' })
-    expect(by.c!.scoringFormat).toBeNull()
+    // Before 190 (no key) or an unknown value: no saved scoring, which
+    // counts as Half PPR — and the Half chip takes it, the others don't.
+    expect(by.b).toMatchObject({ scoringFormat: 'half', scoring: 'Half PPR' })
+    expect(by.c).toMatchObject({ scoringFormat: 'half', scoring: 'Half PPR' })
+    expect(rankFilterOk(by.b!, { ...RANK_FILTERS_ALL, scoring: 'half' })).toBe(true)
+    for (const scoring of ['ppr', 'quarter', 'standard'] as const) {
+      expect(rankFilterOk(by.b!, { ...RANK_FILTERS_ALL, scoring })).toBe(false)
+    }
+    // Never a guess from a scoring system: it isn't read.
+    expect(POOL_SELECT).not.toMatch(/scoring_systems/)
+  })
+
+  it('an AI expert’s board with no saved scoring counts as its persona’s usual scoring — what 190 saves', async () => {
+    answer = (call) =>
+      call.table === 'lists' && !isLatest(call)
+        ? {
+            data: [
+              row('ai', {
+                is_big_board: false,
+                ai_persona_id: 'p1',
+                persona: { username: 'bathew-merry-ai', avatar_url: null, scoring: 'PPR' },
+              }),
+              row('ai-odd', {
+                is_big_board: false,
+                ai_persona_id: 'p2',
+                persona: { username: 'wike-mright-ai', avatar_url: null, scoring: 'Superflex' },
+              }),
+              row('ai-saved', {
+                is_big_board: false,
+                ai_persona_id: 'p1',
+                persona: { username: 'bathew-merry-ai', avatar_url: null, scoring: 'PPR' },
+                scoring_format: 'standard',
+              }),
+              row('person', { scoring_format: 'ppr' }),
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    const feed = await readCommunityFeed(NOW)
+    const by = Object.fromEntries(feed.items.map((i) => [i.id, i]))
+    expect(POOL_SELECT).toMatch(/persona:ai_personas[^)]*scoring:style_profile->>scoring_default/)
+    expect(by.ai).toMatchObject({ kind: 'rank', scoringFormat: 'ppr', scoring: 'PPR' })
+    expect(by.ai!.author.isPersona).toBe(true)
+    expect(rankFilterOk(by.ai!, { ...RANK_FILTERS_ALL, scoring: 'ppr' })).toBe(true)
+    expect(rankFilterOk(by.ai!, { ...RANK_FILTERS_ALL, scoring: 'half' })).toBe(false)
+    // A persona scoring outside the vocabulary: Half PPR, as 190 falls back.
+    expect(by['ai-odd']).toMatchObject({ scoringFormat: 'half', scoring: 'Half PPR' })
+    // A saved scoring always wins.
+    expect(by['ai-saved']).toMatchObject({ scoringFormat: 'standard', scoring: 'Standard' })
+    expect(by.person).toMatchObject({ scoringFormat: 'ppr', scoring: 'PPR' })
   })
 
   it('likes: the whole last 14 days, paged past the 1000-row cap', async () => {

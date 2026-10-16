@@ -1,7 +1,8 @@
 -- ============================================================================
 -- Migration 190: ranking movement and a ranking's saved scoring
 --
--- Chris, 2026-10-15 (mobile rulings #33 and #36).
+-- Chris, 2026-10-15 (mobile rulings #33 and #36), and 2026-10-16 (a ranking
+-- with no scoring chosen is Half PPR).
 --
 -- 1. list_players.previous_position — MOVEMENT ARROWS (#33). A ranking shows
 --    how far each player moved between its CURRENT version and its PREVIOUS
@@ -28,6 +29,8 @@
 --        slot that must not count as "where he was".
 --    The old body ignores keys it doesn't read, so callers send `is_new`
 --    before this migration is pushed with no effect and no error.
+--    On a ranking board the door also fills a scoring that was never chosen
+--    (2. below).
 --
 --    Authored against the HEAD body — 048 (the search_path pin; body
 --    verbatim from 004). Kept verbatim: the signature, SECURITY DEFINER, the
@@ -39,15 +42,28 @@
 -- 2. lists.scoring_format — the SCORING a ranking was made for (#36), set on
 --    publish from the scoring chosen in the phone's ranking editor. Community
 --    filters rankings on it: this name and these four values are the
---    contract. NULL = not known (published before this, or by a path that
---    doesn't pick a scoring). A CHECK closes the vocabulary on every write
---    path, the way 188 closes `cover_color`.
+--    contract. A CHECK closes the vocabulary on every write path, the way
+--    188 closes `cover_color`.
 --
---    AI experts' boards are made for their persona's default scoring
---    (`style_profile.scoring_default`, which the generators pass to the
---    player packet), so existing ones are backfilled from it; the writers
---    set it on new boards. Values outside PPR / Half-PPR / Standard stay
---    NULL.
+--    A ranking whose scoring was never chosen is HALF PPR (Chris,
+--    2026-10-16: "if no scoring type is selected, default to half point
+--    ppr"). A ranking is what Community lists as one: a season big board
+--    (`is_big_board`), a weekly board (`big_board_weekly` points at it, and
+--    Community also knows it by its `week-N-big-board` slug) or an AI
+--    expert's board (`ai_persona_id`). An AI expert's board is made for its
+--    persona's usual scoring (`style_profile.scoring_default`, which the
+--    generators pass to the player packet) when that is PPR, Half-PPR or
+--    Standard, else it is Half PPR too.
+--
+--    `fill_ranking_scoring_internal` is that one rule. It only ever fills a
+--    NULL — a chosen scoring is never overwritten — and it runs:
+--      * once here, over every existing ranking (the backfill);
+--      * at every publish, inside the door below: a publish that picks no
+--        scoring (desktop's Big Board and Weekly ranks saves) leaves the
+--        ranking Half PPR, and a scoring the phone picked is saved after it.
+--    Only rankings are tagged. A plain list has no scoring, so the column
+--    has NO default: a new list stays NULL. (So does a big board or week
+--    until its first publish; every reader takes NULL as Half PPR.)
 --
 -- RLS: nothing to add — both tables' policies are row-level and already
 -- govern every column.
@@ -72,25 +88,63 @@ ALTER TABLE lists
   CHECK (scoring_format IN ('ppr', 'half', 'quarter', 'standard'));
 
 COMMENT ON COLUMN lists.scoring_format IS
-  'Scoring a ranking was published for: ppr, half, quarter (0.25 PPR) or standard. NULL = not known.';
+  'Scoring a ranking is for: ppr, half, quarter (0.25 PPR) or standard. A ranking with none chosen is half (fill_ranking_scoring_internal, migration 190). NULL on a plain list (it has no scoring), and on a ranking not yet published, which reads as half.';
 
 -- ---------------------------------------------------------------------------
--- 2. AI experts' boards: their persona's default scoring
+-- 2. A ranking with no scoring chosen: Half PPR — an AI expert's board, its
+--    persona's usual scoring when we know it. Fills NULLs only, on one
+--    ranking (the publish door, 3.) or, with no argument, on every one (the
+--    backfill below). Returns how many it filled.
+--
+--    The one UPDATE fires the two lists row triggers, both inert here:
+--    `guard_lists_ai_persona` acts only on a changed ai_persona_id, and
+--    `enforce_free_list_caps` only on a team or a capped private list (the
+--    private cap is off since 187; a ranking is never a team).
+--
+--    Internal: this migration and the door call it, never a client.
 -- ---------------------------------------------------------------------------
-UPDATE lists AS l
-SET scoring_format = CASE p.style_profile->>'scoring_default'
-    WHEN 'PPR' THEN 'ppr'
-    WHEN 'Half-PPR' THEN 'half'
-    WHEN 'Half PPR' THEN 'half'
-    WHEN 'Standard' THEN 'standard'
-  END
-FROM ai_personas AS p
-WHERE l.ai_persona_id = p.id
-  AND l.scoring_format IS NULL
-  AND p.style_profile->>'scoring_default' IN ('PPR', 'Half-PPR', 'Half PPR', 'Standard');
+CREATE OR REPLACE FUNCTION fill_ranking_scoring_internal(p_list_id UUID DEFAULT NULL)
+RETURNS INTEGER
+LANGUAGE sql
+SET search_path = public, pg_temp
+AS $$
+  WITH filled AS (
+    UPDATE lists AS l
+    SET scoring_format = COALESCE(
+      (SELECT CASE p.style_profile->>'scoring_default'
+                WHEN 'PPR' THEN 'ppr'
+                WHEN 'Half-PPR' THEN 'half'
+                WHEN 'Half PPR' THEN 'half'
+                WHEN 'Standard' THEN 'standard'
+              END
+         FROM ai_personas AS p
+        WHERE p.id = l.ai_persona_id),
+      'half')
+    WHERE l.scoring_format IS NULL
+      AND (p_list_id IS NULL OR l.id = p_list_id)
+      AND (COALESCE(l.is_big_board, false)
+           OR l.ai_persona_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM big_board_weekly AS w WHERE w.list_id = l.id)
+           OR l.slug ~ '^week-[0-9]+-big-board(-|$)')
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM filled;
+$$;
+
+REVOKE EXECUTE ON FUNCTION fill_ranking_scoring_internal(UUID) FROM PUBLIC, anon, authenticated;
+
+DO $$
+DECLARE
+  v_filled integer;
+BEGIN
+  SELECT fill_ranking_scoring_internal() INTO v_filled;
+  RAISE NOTICE '190: gave % ranking(s) their scoring', v_filled;
+END;
+$$;
 
 -- ---------------------------------------------------------------------------
--- 3. reorder_list_players — HEAD body (048) + previous_position on rankings
+-- 3. reorder_list_players — HEAD body (048) + previous_position on rankings,
+--    and a ranking's scoring filled when none was ever chosen (2.)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION reorder_list_players(
   p_list_id UUID,
@@ -139,5 +193,11 @@ BEGIN
   FROM jsonb_array_elements(p_positions) AS entry
   WHERE lp.list_id = p_list_id
     AND lp.player_id = entry->>'player_id';
+
+  -- A ranking published with no scoring ever chosen is Half PPR. A scoring
+  -- the caller picked is saved after this, over it (the publish routes).
+  IF is_ranking THEN
+    PERFORM fill_ranking_scoring_internal(p_list_id);
+  END IF;
 END;
 $$;

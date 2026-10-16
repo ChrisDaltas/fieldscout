@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CommunityDetail } from '@/components/mobile/community/community-detail'
 import {
+  EmptyBlock,
+  LatestShelf,
   ListMasonry,
   RankingRow,
   ShelfHeader,
@@ -13,6 +15,7 @@ import {
 import {
   COMMUNITY_TABS,
   CREATE_LIST_HREF,
+  LATEST_HREF,
   RANK_POS_CHIPS,
   RANK_SCORING_CHIPS,
   RANK_TYPE_CHIPS,
@@ -52,6 +55,8 @@ import { cn } from '@/lib/utils'
  * strictly newest-first, then everything else "popular + recent"
  * (`sortPopular` — lists getting likes lately rise, older posts fade). What
  * shows where is `communityView` (community-ops), kept pure and tested.
+ * "Latest" is a horizontal shelf whose "See all" opens the Latest page
+ * (`/app/explore/latest`, Chris 2026-10-16).
  *
  * `currentWeek` is the app's NFL week (0 = offseason) — the Start or sit
  * shelf is titled with the week it's about.
@@ -288,12 +293,8 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                 )}
                 {latest.length > 0 && (
                   <>
-                    <ShelfHeader title="Latest" className="mb-[6px] mt-[22px]" />
-                    <div className="flex flex-col">
-                      {latest.map((item) => (
-                        <RankingRow key={item.id} item={item} postedNow={now} />
-                      ))}
-                    </div>
+                    <ShelfHeader title="Latest" seeAllHref={LATEST_HREF} className="mb-[10px] mt-[22px]" />
+                    <LatestShelf items={latest} now={now} />
                   </>
                 )}
                 {shelfRanks.length > 0 && (
@@ -478,31 +479,20 @@ function ChipRow<V extends string>({
   )
 }
 
-/** Empty state (handoff §2.12): centred t3 message + a blue action. */
-function EmptyBlock({ message, action, onAction }: { message: string; action: string; onAction: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-[10px] px-4 py-12 text-center">
-      <p className="text-pretty text-[14px] font-medium leading-[1.4] text-m-t3">{message}</p>
-      <button type="button" onClick={onAction} className="text-[14px] font-semibold text-accent">
-        {action}
-      </button>
-    </div>
-  )
-}
-
 function FeedSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading Community">
-      <span className="mb-[6px] mt-[22px] block h-[22px] w-44 animate-pulse rounded-[14px] bg-m-b1" />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-3 py-2">
-          <span className="h-[60px] w-[60px] flex-none animate-pulse rounded-[10px] bg-m-b1" />
-          <span className="flex flex-1 flex-col gap-2">
-            <span className="h-3.5 w-3/4 animate-pulse rounded-[14px] bg-m-b1" />
+      <span className="mb-[10px] mt-[22px] block h-[22px] w-28 animate-pulse rounded-[14px] bg-m-b1" />
+      {/* The Latest shelf: cards running off the right edge. */}
+      <div className="-mx-4 flex gap-[10px] overflow-hidden px-4">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="flex w-[150px] flex-none flex-col gap-2">
+            <span className="h-[150px] animate-pulse rounded-[14px] bg-m-b1" />
+            <span className="h-3.5 w-4/5 animate-pulse rounded-[14px] bg-m-b1" />
             <span className="h-3 w-1/2 animate-pulse rounded-[14px] bg-m-b1" />
           </span>
-        </div>
-      ))}
+        ))}
+      </div>
       <span className="mb-[10px] mt-[22px] block h-[22px] w-32 animate-pulse rounded-[14px] bg-m-b1" />
       <div className="grid grid-cols-2 gap-[10px]">
         <span className="h-[180px] animate-pulse rounded-[14px] bg-m-b1" />

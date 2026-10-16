@@ -21,6 +21,11 @@ import { reorderPlayersSchema } from '@/types/schemas/lists'
  * ppr, half, quarter (0.25 PPR) or standard. Before 190 is pushed the column
  * doesn't exist: the write reports `unsupported` and the publish goes on —
  * a publish is never failed for it.
+ *
+ * A ranking with no scoring chosen is Half PPR (Chris, 2026-10-16). The
+ * reorder RPC fills it on a publish that picks none (desktop's Big Board and
+ * Weekly ranks saves) and 190 backfilled the rest; the AI expert writers
+ * below save the expert's usual scoring, else Half PPR.
  */
 
 export const SCORING_FORMATS = ['ppr', 'half', 'quarter', 'standard'] as const
@@ -31,13 +36,18 @@ export function isScoringFormat(value: unknown): value is ScoringFormat {
   return typeof value === 'string' && (SCORING_FORMATS as readonly string[]).includes(value)
 }
 
-/** An AI persona's `style_profile.scoring_default` ("PPR", "Half-PPR",
- *  "Standard") as a saved scoring; anything else is not known (null). */
-export function personaScoringFormat(value: string | null | undefined): ScoringFormat | null {
+/** A ranking's scoring when none was chosen: Half PPR (Chris, 2026-10-16 —
+ *  "if no scoring type is selected, default to half point ppr"). */
+export const DEFAULT_RANKING_SCORING: ScoringFormat = 'half'
+
+/** The scoring an AI expert's board is saved with: its persona's
+ *  `style_profile.scoring_default` ("PPR", "Half-PPR", "Standard"), else —
+ *  none, or one outside the vocabulary — Half PPR. */
+export function personaScoringFormat(value: string | null | undefined): ScoringFormat {
   if (value === 'PPR') return 'ppr'
   if (value === 'Half-PPR' || value === 'Half PPR') return 'half'
   if (value === 'Standard') return 'standard'
-  return null
+  return DEFAULT_RANKING_SCORING
 }
 
 /** One entry of a publish: the reorder body's entry plus whether this
@@ -90,13 +100,14 @@ export async function saveScoringFormat(
 }
 
 /**
- * Insert a `lists` row that carries `scoring_format`, retrying once without
- * it when the column isn't there yet (migration 190 not pushed) — so a
- * writer never fails for it. Any other error is returned as is.
+ * Insert a ranking's `lists` row with its `scoring_format` (always one: a
+ * ranking has a scoring), retrying once without it when the column isn't
+ * there yet (migration 190 not pushed) — so a writer never fails for it.
+ * Any other error is returned as is.
  */
 export async function insertListWithScoring<R extends { error: PostgrestErrorLike | null }>(
   insert: (row: ListInsertRow) => PromiseLike<R>,
-  row: ListInsertRow & { scoring_format: ScoringFormat | null },
+  row: ListInsertRow & { scoring_format: ScoringFormat },
 ): Promise<R> {
   const first = await insert(row)
   if (!isMissingColumn(first.error, 'scoring_format')) return first

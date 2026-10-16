@@ -8,13 +8,14 @@ import { useEffect, useRef, useState } from 'react'
 import { AuthorAvatar, ListCover, PlayGlyph } from '@/components/mobile/community/community-cards'
 import {
   classifyCommunityList,
+  effectiveScoringFormat,
   formatFollows,
   playerMeta,
   SCORING_FORMAT_LABEL,
   scoringFormatOf,
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
-import { youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
+import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
@@ -27,6 +28,7 @@ import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
 import type { CommunityPlayer, CommunityVideo } from '@/hooks/use-mobile-community-feed'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
+import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
@@ -37,7 +39,10 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  * away with it — then kind pill, title, author + Follow, description, Save /
  * Share, the Videos shelf and the players. A ranking (big board, weekly
  * board, AI expert's board) is the handoff's ranking variant ("Ranking ·
- * PPR", "Ranked players · N", always the collage cover).
+ * PPR", "Ranked players · N", always the collage cover). The players carry
+ * 1-2-3 numbers only when the list is numbered (`isNumbered` — not a Basic
+ * or tier-only list), and sit under "Tier N" headings when it has tiers
+ * (`hasTiers`) — as the phone's own List view draws them.
  *
  * A modal dialog (Radix): it's named by the list, Escape goes Back, focus is
  * trapped inside — the feed and the dock under it are hidden from keyboards
@@ -169,6 +174,7 @@ function asCommunityPlayer(row: ListPlayerWithPlayer): CommunityPlayer {
 }
 
 function projectionFor(row: ListPlayerWithPlayer, scoring: CommunityScoring | null): number | null {
+  if (!scoring) return null
   const p = row.player
   // 0.25 PPR has no stored projection: halfway between Standard and Half
   // PPR, the app's rule (`projectionIn`, mobile lists).
@@ -196,7 +202,14 @@ function DetailBody({
 }) {
   const router = useRouter()
   const { user } = useAuth()
-  const meta = useMobileCommunityListMeta(list)
+  // The kind pill never reads a scoring system (migration 190 doesn't), so
+  // none is asked for: the meta's scoring is then just an AI expert's usual
+  // one — what 190 saves on its board.
+  const meta = useMobileCommunityListMeta({
+    owner_id: list.owner_id,
+    ai_persona_id: list.ai_persona_id,
+    scoring_system_id: null,
+  })
   const following = useFollowingIds()
   const toggleFollow = useToggleFollow()
   const toggleSave = useToggleFavorite()
@@ -206,11 +219,25 @@ function DetailBody({
   // Rankings vs lists as the feed draws them (big boards, weekly boards and
   // AI experts' boards are rankings).
   const isRank = classifyCommunityList(list).kind === 'rank'
-  // The scoring saved with the ranking (migration 190; absent from the
-  // `select('*')` row until it's pushed), else the older guess.
+  // The scoring the ranking counts as — the feed's label and the scoring
+  // chips' answer (`effectiveScoringFormat`): the one saved with it
+  // (migration 190; absent from the `select('*')` row until it's pushed);
+  // else an AI expert's usual scoring — not known (null) until the meta
+  // reads it, when the pill says just "Ranking" — else Half PPR. The meta's
+  // label ("PPR", "Half PPR", "Standard") is in the persona vocabulary.
   const savedScoring = scoringFormatOf(list as { scoring_format?: unknown })
-  const scoring = savedScoring ? SCORING_FORMAT_LABEL[savedScoring] : (meta.data?.scoring ?? null)
+  const scoring: CommunityScoring | null =
+    savedScoring === null && list.ai_persona_id && !meta.data
+      ? null
+      : SCORING_FORMAT_LABEL[effectiveScoringFormat(savedScoring, meta.data?.scoring)]
+  const numbered = isNumbered(list.ranking_mode)
+  // A plain list is in no order worth announcing: a bulleted list to a screen reader.
+  const ListTag = numbered ? 'ol' : 'ul'
   const players = list.players.filter((r) => r.player)
+  // One section with no heading, or one per tier (and "Ungrouped"). The
+  // numbers run on through the tiers, as on the List view.
+  const sections = viewSections(players, hasTiers(list.ranking_mode))
+  const sectionStart = sections.map((_, i) => sections.slice(0, i).reduce((sum, s) => sum + s.entries.length, 0))
   const heads = players.slice(0, 4).map(asCommunityPlayer)
   const videos = list.links
     .filter((l) => l.kind === 'video')
@@ -386,33 +413,47 @@ function DetailBody({
       <h2 className="px-4 pb-1 pt-3 text-[16px] font-semibold">
         {isRank ? 'Ranked players' : 'Players'} · {players.length}
       </h2>
-      <ol className="px-4">
-        {players.map((row, i) => {
-          const p = asCommunityPlayer(row)
-          const proj = projectionFor(row, scoring)
-          return (
-            <li key={row.id}>
-              <button
-                type="button"
-                onClick={() =>
-                  openPlayerView(p.id, null, list.is_owner ? { listId: list.id, listTitle: list.title } : null)
-                }
-                className="flex w-full items-center gap-[10px] border-b border-m-b2 py-2 text-left"
-              >
-                <span className="min-w-[20px] flex-none text-[13px] font-semibold tabular-nums text-m-t3">{i + 1}</span>
-                <MHeadshot player={p} size={36} />
-                <span className="flex min-w-0 flex-1 flex-col gap-px">
-                  <span className="truncate text-[14px] font-semibold">{p.full_name}</span>
-                  <span className={cn('text-[11px] font-semibold', posTextClass((p.position ?? '').toUpperCase()))}>
-                    {playerMeta(p)}
-                  </span>
-                </span>
-                {proj !== null && <span className="flex-none text-[13px] font-semibold tabular-nums">{proj.toFixed(1)}</span>}
-              </button>
-            </li>
-          )
-        })}
-      </ol>
+      {sections.map((section, si) => (
+        <div key={section.label ?? si}>
+          {section.label !== null && (
+            <h3 className="px-4 pb-1 pt-3">
+              {/* Desktop's tier palette, as the List view's chip (gap list #10). */}
+              <span className={tierChipClass(section.tierIndex)}>{section.label}</span>
+            </h3>
+          )}
+          <ListTag className="px-4">
+            {section.entries.map((row, i) => {
+              const p = asCommunityPlayer(row)
+              const proj = projectionFor(row, scoring)
+              return (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openPlayerView(p.id, null, list.is_owner ? { listId: list.id, listTitle: list.title } : null)
+                    }
+                    className="flex w-full items-center gap-[10px] border-b border-m-b2 py-2 text-left"
+                  >
+                    {numbered && (
+                      <span className="min-w-[20px] flex-none text-[13px] font-semibold tabular-nums text-m-t3">
+                        {sectionStart[si]! + i + 1}
+                      </span>
+                    )}
+                    <MHeadshot player={p} size={36} />
+                    <span className="flex min-w-0 flex-1 flex-col gap-px">
+                      <span className="truncate text-[14px] font-semibold">{p.full_name}</span>
+                      <span className={cn('text-[11px] font-semibold', posTextClass((p.position ?? '').toUpperCase()))}>
+                        {playerMeta(p)}
+                      </span>
+                    </span>
+                    {proj !== null && <span className="flex-none text-[13px] font-semibold tabular-nums">{proj.toFixed(1)}</span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ListTag>
+        </div>
+      ))}
     </>
   )
 }

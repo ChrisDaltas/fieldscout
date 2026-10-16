@@ -3,6 +3,7 @@
 import { useState } from 'react'
 
 import {
+  LEAGUE_NOTE_EDITOR_HELP,
   LEAGUE_NOTE_EMPTY_COMMISH,
   LEAGUE_NOTE_EMPTY_MEMBER,
   LEAGUE_NOTE_ERROR,
@@ -215,7 +216,7 @@ export function LeagueNoteEditSheet({
       open={open}
       onOpenChange={onOpenChange}
       title="Commissioner note"
-      subtitle="Everyone in the league sees it, and gets a notification when you change it."
+      subtitle={LEAGUE_NOTE_EDITOR_HELP}
       showClose
       footer={
         <div className="flex flex-col gap-1 px-4 pt-2.5">

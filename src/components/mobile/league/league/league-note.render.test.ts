@@ -8,18 +8,26 @@ import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-import { LEAGUE_NOTE_EMPTY_COMMISH, LEAGUE_NOTE_EMPTY_MEMBER, LEAGUE_NOTE_ERROR, LEAGUE_NOTE_UNAVAILABLE } from '@/components/leagues/league-note-ops'
+import {
+  LEAGUE_NOTE_EDITOR_HELP,
+  LEAGUE_NOTE_EMPTY_COMMISH,
+  LEAGUE_NOTE_EMPTY_MEMBER,
+  LEAGUE_NOTE_ERROR,
+  LEAGUE_NOTE_UNAVAILABLE,
+} from '@/components/leagues/league-note-ops'
 import { leagueNoteKeys, type LeagueNoteView } from '@/hooks/use-league-note'
 
 import { LeagueNoteCard, LeagueNoteEditSheet, LeagueNoteSheets } from './league-note'
 
 // The sheet portals (Radix) — a static render shows nothing; render its
-// body in place so it can be read. A CLOSED sheet leaves an empty marker so a
+// subtitle and body in place so they can be read. A CLOSED sheet leaves an empty marker so a
 // pin can tell "mounted but closed" (its state — an open editor's draft —
 // alive) from "unmounted"; `visible()` drops the markers.
 vi.mock('@/components/mobile/ui/mobile-sheet', () => ({
-  MobileSheet: ({ open, title, children, footer }: { open: boolean; title: string; children: ReactNode; footer?: ReactNode }) =>
-    open ? createElement('div', { 'data-sheet': title }, children, footer) : createElement('template', { 'data-sheet-closed': title }),
+  MobileSheet: ({ open, title, subtitle, children, footer }: { open: boolean; title: string; subtitle?: string; children: ReactNode; footer?: ReactNode }) =>
+    open
+      ? createElement('div', { 'data-sheet': title }, subtitle ? createElement('p', { 'data-sheet-subtitle': '' }, subtitle) : null, children, footer)
+      : createElement('template', { 'data-sheet-closed': title }),
 }))
 
 const LEAGUE = 'e9200000-0000-4000-8000-000000000001'
@@ -144,6 +152,14 @@ describe('the commissioner’s edit sheet', () => {
     expect(html).toContain('data-league-note-clear')
     // Unchanged → Save is not offered yet.
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-league-note-save[^>]*>Save</)
+  })
+
+  it('says who is told: members on a pin or an edit, nobody on a clear (Chris 2026-10-16) — desktop’s words', () => {
+    for (const current of ['Dues by Friday', null]) {
+      const html = edit(current)
+      expect(html).toContain(`<p data-sheet-subtitle="">${LEAGUE_NOTE_EDITOR_HELP}</p>`)
+      expect(html).not.toContain('when you change it')
+    }
   })
 
   it('a new note: an empty field, "Pin note", no Clear', () => {

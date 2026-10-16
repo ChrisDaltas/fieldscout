@@ -10,12 +10,13 @@
 --      manager, a non-member, another league's commissioner and anon may not
 --      (42501, nothing written).
 --   C–F. set / update / same-again / clear — the stored row, ONE receipt per
---      real change (set_league_note, {note} before/after), none for a no-op;
---      the notification: every OTHER member with an account gets exactly one
---      unread `league_commissioner_note` (an unread one is replaced, a read
---      one is not touched), the author and placeholder seats get none; a
---      clear is a change too, so it notifies ("The commissioner cleared the
---      note.") — the ruling's "when it changes".
+--      real change (set_league_note, {note} before/after — a clear included),
+--      none for a no-op; on a set or an edit, every OTHER member with an
+--      account gets exactly one unread `league_commissioner_note` (an unread
+--      one is replaced, a read one is not touched), the author and
+--      placeholder seats get none. A clear notifies NOBODY (Chris
+--      2026-10-16) and withdraws the league's still-unread note
+--      notifications; read ones, and another league's, are left alone.
 --   G. the length cap — 500 after trimming (501 → 22023), and the reason's.
 --   H. reads — a member reads the note, a non-member and anon read no row;
 --      nobody (the commissioner included) can write the columns directly.
@@ -29,7 +30,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(62);
+select plan(64);
 
 -- ---------------------------------------------------------------------------
 -- A. Form
@@ -238,42 +239,60 @@ select is((select commissioner_note_updated_by::text from leagues where id = 'e9
   'd9200000-0000-4000-8000-000000000002', 'E4 …and the note still reads as the co-commissioner''s');
 
 -- ---------------------------------------------------------------------------
--- F. Clearing it
+-- F. Clearing it — a receipt, no notification, the unread ones withdrawn
 -- ---------------------------------------------------------------------------
+-- Rows going in (D): n1, n2, n3 each one unread; n4 one read + one unread.
+-- And n3 holds an unread note notification from ANOTHER league, which a
+-- clear here must not touch.
+insert into notifications (user_id, type, title, body, data, read)
+values ('d9200000-0000-4000-8000-000000000003', 'league_commissioner_note', 'Commissioner note updated', 'Other league note',
+  '{"league_id": "e9200000-0000-4000-8000-000000000002"}', false);
+
 select set_config('request.jwt.claims', '{"sub": "d9200000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 create temp table cn_f as
   select commish_set_league_note('e9200000-0000-4000-8000-000000000001', E' \t\n ') as r;
 select set_config('request.jwt.claims', '', true);
-select is((select format('%s|%s|%s', coalesce(r ->> 'note', 'none'), r ->> 'cleared', r ->> 'notified') from cn_f),
-  'none|true|3', 'F1 a blank note CLEARS it — a change, so the three other members are notified (n2, n3, n4)');
+select is((select format('%s|%s|%s|%s|%s', coalesce(r ->> 'note', 'none'), r ->> 'cleared', r ->> 'notified', r ->> 'notified_why', r ->> 'withdrawn') from cn_f),
+  'none|true|0|clearing the note notifies nobody|4',
+  'F1 a blank note CLEARS it — and notifies NOBODY (Chris 2026-10-16); the league''s four unread note notifications are withdrawn');
 select is(
   (select format('%s|%s', coalesce(commissioner_note, 'none'), commissioner_note_updated_by) from leagues where id = 'e9200000-0000-4000-8000-000000000001'),
   'none|d9200000-0000-4000-8000-000000000001', 'F2 stored: no note, cleared by the commissioner');
-select is(pg_temp.receipts(), 3, 'F3 a clear is a real change — one receipt');
+select is(pg_temp.receipts(), 3, 'F3 a clear is still a real change — one receipt');
 select is(
   (select format('%s|%s|%s', before ->> 'note', coalesce(after ->> 'note', 'null'), metadata ->> 'cleared') from commissioner_actions
    where league_id = 'e9200000-0000-4000-8000-000000000001' and action_type = 'set_league_note' and metadata ->> 'cleared' = 'true'),
   E'Dues by Friday.\nVenmo @chris|null|true', 'F4 …recording what was cleared');
 select is(
-  (select string_agg(format('%s:%s/%s:%s', u.raw_user_meta_data ->> 'username', pg_temp.note_rows(u.id),
-     (select count(*) from notifications n where n.user_id = u.id and n.type = 'league_commissioner_note' and not n.read),
-     (select n.body from notifications n where n.user_id = u.id and n.type = 'league_commissioner_note' and not n.read)), ' | ' order by u.id)
+  (select string_agg(format('%s:%s/%s', u.raw_user_meta_data ->> 'username', pg_temp.note_rows(u.id),
+     (select count(*) from notifications n where n.user_id = u.id and n.type = 'league_commissioner_note' and not n.read
+        and n.data ->> 'league_id' = 'e9200000-0000-4000-8000-000000000001')), ' ' order by u.id)
    from auth.users u where u.id::text like 'd9200000-%' and u.id::text < 'd9200000-0000-4000-8000-000000000005'),
-  'cnote_user1:1/1:Dues by Friday. Venmo @chris | cnote_user2:1/1:The commissioner cleared the note. | cnote_user3:1/1:The commissioner cleared the note. | cnote_user4:2/1:The commissioner cleared the note.',
-  'F5 …each OTHER member''s unread note notification now says it was cleared (replaced, not stacked; n4''s read one untouched); the author n1''s is left alone');
+  'cnote_user1:0/0 cnote_user2:0/0 cnote_user3:0/0 cnote_user4:1/0',
+  'F5 rows/unread: no new row for anyone, and every still-UNREAD note notification for the league is gone (the author n1''s too) — only n4''s READ one is left');
+select is(
+  (select format('%s|%s|%s', title, body, read) from notifications
+   where user_id = 'd9200000-0000-4000-8000-000000000004' and type = 'league_commissioner_note'
+     and data ->> 'league_id' = 'e9200000-0000-4000-8000-000000000001'),
+  'Commissioner note updated|Trade deadline is Nov 24|t',
+  'F6 n4''s READ row is untouched — a read notification is history');
+select is(
+  (select format('%s|%s', body, read) from notifications
+   where user_id = 'd9200000-0000-4000-8000-000000000003' and type = 'league_commissioner_note'
+     and data ->> 'league_id' = 'e9200000-0000-4000-8000-000000000002'),
+  'Other league note|f',
+  'F7 n3''s unread note notification from ANOTHER league is untouched — the withdrawal is this league''s only');
 select set_config('request.jwt.claims', '{"sub": "d9200000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select is(
-  (select format('%s|%s', r ->> 'no_changes', r ->> 'no_changes_why') from (select commish_set_league_note('e9200000-0000-4000-8000-000000000001', null) r) x),
-  'true|there was no note to clear', 'F6 clearing an empty note is a no-op, and says why');
+  (select format('%s|%s|%s|%s', r ->> 'no_changes', r ->> 'no_changes_why', r ->> 'notified', r ->> 'withdrawn')
+   from (select commish_set_league_note('e9200000-0000-4000-8000-000000000001', null) r) x),
+  'true|there was no note to clear|0|0', 'F8 clearing an empty note is a no-op, and says why');
 select set_config('request.jwt.claims', '', true);
-select is(pg_temp.receipts(), 3, 'F7 …no receipt');
+select is(pg_temp.receipts(), 3, 'F9 …no receipt');
 select is(
-  (select format('%s|%s|%s|%s', title, read, data ->> 'cleared',
-     data ->> 'commissioner_action_id' = (select id::text from commissioner_actions
-       where league_id = 'e9200000-0000-4000-8000-000000000001' and action_type = 'set_league_note' and metadata ->> 'cleared' = 'true'))
-   from notifications where user_id = 'd9200000-0000-4000-8000-000000000003' and type = 'league_commissioner_note'),
-  'Commissioner note updated|f|true|t',
-  'F8 the clear''s row: "Commissioner note updated", unread, marked cleared, naming the clear''s receipt — and the no-op clear (F6) touched nothing');
+  (select count(*)::int from notifications where type = 'league_commissioner_note'
+     and data ->> 'league_id' = 'e9200000-0000-4000-8000-000000000001'),
+  1, 'F10 …and no notification — the league still holds only n4''s read row');
 
 -- ---------------------------------------------------------------------------
 -- G. The length cap
@@ -292,7 +311,8 @@ select set_config('request.jwt.claims', '', true);
 select is((select char_length(commissioner_note) from leagues where id = 'e9200000-0000-4000-8000-000000000001'), 500,
   'G5 …and stored at 500');
 select is(
-  (select body from notifications where user_id = 'd9200000-0000-4000-8000-000000000003' and type = 'league_commissioner_note' and not read),
+  (select body from notifications where user_id = 'd9200000-0000-4000-8000-000000000003' and type = 'league_commissioner_note' and not read
+     and data ->> 'league_id' = 'e9200000-0000-4000-8000-000000000001'),
   repeat('y', 159) || '…', 'G6 the bell shows the first 159 characters and an ellipsis');
 select throws_ok($$ update leagues set commissioner_note = ' padded' where id = 'e9200000-0000-4000-8000-000000000002' $$,
   '23514', null, 'G7 the CHECK refuses an untrimmed note on any path (even the table owner)');

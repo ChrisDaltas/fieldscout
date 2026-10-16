@@ -373,7 +373,7 @@ function HeadToHead({
     const r = standings.data?.standings.find((s) => s.team_id === teamId)
     return r ? formatRecord(r) : null
   }
-  const streakOf = (teamId: string) => (schedule.data ? teamStreak(teamId, schedule.data.matchups, detail.league.season) : null)
+  const streakOf = (teamId: string) => (schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null)
 
   return (
     <>

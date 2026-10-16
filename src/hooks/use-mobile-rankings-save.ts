@@ -81,7 +81,8 @@ export interface SaveSliceArgs {
   /** No ranking existed at this position before: the confirmation toast,
    *  and nobody in this first version has a previous position. */
   isNew: boolean
-  /** The scoring chosen in the editor — saved with the ranking. */
+  /** The ranking's scoring in the editor — picked there, else its saved
+   *  one, else Half PPR (`rankingScoring`) — saved with the ranking. */
   scoring: Scoring
   /** The order is unchanged: save only the scoring, on this board. */
   scoringOnly?: { listId: string }

@@ -11,6 +11,7 @@ import {
   updateListSchema,
 } from '@/types/schemas/lists'
 
+import * as rankingMode from './ranking-mode'
 import {
   groupingWrite,
   hasTiers,
@@ -19,8 +20,8 @@ import {
   isTierOnlyUnavailable,
   isTierOnlyUnavailableResponse,
   listKindOf,
+  numbersWrite,
   rankingModeOf,
-  showsNumbersOnDesktop,
   TIER_ONLY_UNAVAILABLE_BODY,
   TIER_ONLY_UNAVAILABLE_STATUS,
   withNumbers,
@@ -94,13 +95,16 @@ describe('the switches', () => {
   })
 })
 
-describe('desktop row numbers', () => {
-  it('only a tier-only list drops them; a Basic list keeps them, as before 191 (pending Chris)', () => {
-    expect(showsNumbersOnDesktop('tier_only')).toBe(false)
-    expect(showsNumbersOnDesktop('unranked')).toBe(true)
-    expect(showsNumbersOnDesktop('ranked')).toBe(true)
-    expect(showsNumbersOnDesktop('rank_and_tier')).toBe(true)
-    expect(showsNumbersOnDesktop(undefined)).toBe(true)
+describe('one numbering rule, phone and desktop (Chris, 2026-10-16)', () => {
+  it('numbers only on a numbered list — a plain list has none, on desktop too', () => {
+    expect(isNumbered('unranked')).toBe(false)
+    expect(isNumbered('tier_only')).toBe(false)
+    expect(isNumbered('ranked')).toBe(true)
+    expect(isNumbered('rank_and_tier')).toBe(true)
+  })
+
+  it('there is no desktop-only exception left to drift from it', () => {
+    expect(Object.keys(rankingMode)).not.toContain('showsNumbersOnDesktop')
   })
 })
 
@@ -130,6 +134,27 @@ describe('the desktop grouping control writes only the Tiers switch', () => {
     expect(groupingWrite('ranked', 'tier', unavailable)).toBe('rank_and_tier')
     expect(groupingWrite('rank_and_tier', 'rank', unavailable)).toBe('ranked')
     expect(groupingWrite('tier_only', 'rank', unavailable)).toBe('unranked')
+  })
+})
+
+/**
+ * A Basic list lost its desktop numbers with the ruling, so the desktop list
+ * menu carries the Ranked switch the phone editor has (Numbers → Ranked /
+ * Unranked): the owner can still turn them back on after create.
+ */
+describe('the desktop Numbers choice writes only the Ranked switch', () => {
+  it('Ranked turns numbers on, Unranked turns them off, tiers stay', () => {
+    expect(numbersWrite('unranked', true)).toBe('ranked')
+    expect(numbersWrite('tier_only', true)).toBe('rank_and_tier')
+    expect(numbersWrite('ranked', false)).toBe('unranked')
+    expect(numbersWrite('rank_and_tier', false)).toBe('tier_only')
+  })
+
+  it('a pick that changes nothing writes nothing', () => {
+    expect(numbersWrite('ranked', true)).toBeNull()
+    expect(numbersWrite('rank_and_tier', true)).toBeNull()
+    expect(numbersWrite('unranked', false)).toBeNull()
+    expect(numbersWrite('tier_only', false)).toBeNull()
   })
 })
 

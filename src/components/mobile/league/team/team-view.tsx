@@ -38,7 +38,7 @@ import { useRowStats } from './use-row-stats'
  * Rank / Points for / Streak; Message and Propose trade; this week's
  * starters and bench with projections; Recent moves with See all.
  *
- * Real reads: standings (record, rank, PF), the schedule's decided weeks
+ * Real reads: standings (record, rank, PF), the schedule read's results
  * (streak — the one shared count, `streak-ops`), the rosters + this week's
  * stored lineup, projections, the activity feed (moves). Propose trade opens the builder over this view —
  * only toward a team with a manager, in season, before the deadline (the
@@ -101,7 +101,7 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
 
   const mgr = managerOf(detail, teamId)
   const row = standings.data?.standings.find((r) => r.team_id === teamId) ?? null
-  const streak = schedule.data ? teamStreak(teamId, schedule.data.matchups, detail.league.season) : null
+  const streak = schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null
   const canPropose = myTeamId !== null && myTeamId !== teamId && inSeason && !tradesClosed && rosterTeam !== null && rosterTeam.status !== 'retired' && rosterTeam.manager_user_id !== null
   const editability = weekEditability(weeks, week, currentWeek)
   // The handoff's team view shows this week only; a commissioner in override

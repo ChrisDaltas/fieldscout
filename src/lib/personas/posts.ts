@@ -225,9 +225,10 @@ Instructions:
   const listTitle = post.title.slice(0, 100)
   const listSlug = await generateUniqueSlug(supabase, ownerId, `${persona.username}-${theme.key}-${CURRENT_SEASON}`)
   // The board is made for the persona's scoring (the packet above used it):
-  // saved as its `scoring_format` (migration 190) — dropped, not failed,
-  // where 190 isn't pushed yet. A new board has no previous version, so its
-  // players carry no previous position.
+  // saved as its `scoring_format` (migration 190), Half PPR when the persona
+  // has none we know (Chris, 2026-10-16) — dropped, not failed, where 190
+  // isn't pushed yet. A new board has no previous version, so its players
+  // carry no previous position.
   const { data: list, error: listError } = await insertListWithScoring(
     (row) => supabase.from('lists').insert(row).select('id').single(),
     {

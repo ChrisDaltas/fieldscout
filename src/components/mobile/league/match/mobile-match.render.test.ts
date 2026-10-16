@@ -291,11 +291,11 @@ describe('mobile Match — header and card', () => {
   })
 
   // Gap list #39 (Chris, 2026-10-15): the streak by the record, counted the
-  // one way (`streak-ops`) — the stored result of each final week.
-  it('shows each side’s streak by its record: "@dalton · 2-6 ▼2L" and "8-0 ▲2W · @marcus"', () => {
-    const final = (id: string, week: number, home: string, away: string, result: string) => ({
-      id, season: 2099, week, round_type: 'regular', status: 'final', home_team_id: home, away_team_id: away, home_score: 1, away_score: 0, result, is_overridden: false,
-    })
+  // one way (`streak-ops`) — every decided result (Chris, 2026-10-16).
+  const final = (id: string, week: number, home: string, away: string, result: string) => ({
+    id, season: 2099, week, round_type: 'regular', status: 'final', home_team_id: home, away_team_id: away, home_score: 1, away_score: 0, result, is_overridden: false,
+  })
+  it('shows each side’s streak by its record: "@dalton · 2-6 ▼2L" and "8-0 ▲3W · @marcus"', () => {
     const withStreaks = render({
       schedule: {
         ...SCHEDULE,
@@ -305,16 +305,31 @@ describe('mobile Match — header and card', () => {
           final('w1a', 1, T3, ME, 'home'),
           final('w1b', 1, OPP, T4, 'home'),
           final('w1c', 2, ME, T4, 'away'),
-          // Not results yet / not in the run: a live week, a playoff game.
+          // Not a result yet: a live week.
           { ...final('w2', 2, OPP, ME, 'away'), status: 'live' },
-          { ...final('p1', 15, T3, OPP, 'home'), round_type: 'playoff' },
+          // A playoff game is a game: it extends the run.
+          { ...final('p1', 15, T3, OPP, 'away'), round_type: 'playoff' },
         ],
       },
     })
     const me = withStreaks.slice(withStreaks.indexOf(`data-side="${ME}"`))
     expect(me).toMatch(/@dalton<\/a> · 2-6 <span class="text-negative-strong" data-streak="▼2L">▼2L<\/span>/)
     const opp = withStreaks.slice(withStreaks.indexOf(`data-side="${OPP}"`))
-    expect(opp).toMatch(/8-0 <span class="text-positive-strong" data-streak="▲2W">▲2W<\/span> · <a [^>]*>@marcus</)
+    expect(opp).toMatch(/8-0 <span class="text-positive-strong" data-streak="▲3W">▲3W<\/span> · <a [^>]*>@marcus</)
+  })
+
+  it('a median league counts the result against the League Median last in its week: won the game, lost to the median → "▼1L"', () => {
+    const median = (week: number, team: string, result: string) => ({ season: 2099, week, team_id: team, median_result: result, is_final: true })
+    const html = render({
+      schedule: {
+        ...SCHEDULE,
+        matchups: [final('w1a', 1, ME, T3, 'home'), final('w1b', 1, OPP, T4, 'away')],
+        median_results: [median(1, ME, 'loss'), median(1, OPP, 'win'), median(1, T3, 'loss'), median(1, T4, 'win')],
+      },
+    })
+    expect(html.slice(html.indexOf(`data-side="${ME}"`))).toMatch(/data-streak="▼1L">▼1L</)
+    // Lost the game, beat the median: the week ends on the win.
+    expect(html.slice(html.indexOf(`data-side="${OPP}"`))).toMatch(/data-streak="▲1W">▲1W</)
   })
 
   // Ruling #23 (2026-10-15): the dots are a position indicator — no tapping,
