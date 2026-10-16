@@ -15,6 +15,29 @@ export const PRIVATE_LIMIT_BODY = {
 } as const
 
 /**
+ * Free accounts' one-team cap — SUSPENDED (Chris, 2026-10-16: "remove the
+ * list caps for non-Pro, Pro logic on hold"). Team lists are unlimited for
+ * everyone; the checks stay in place and a Pro tier brings the cap back by
+ * putting a number here (it was 1).
+ */
+export const FREE_TEAM_LIST_LIMIT: number | null = null
+
+/** The free-tier team refusal, as the API has always worded it. */
+export const TEAM_LIMIT_BODY = {
+  error: 'Free accounts can have one team. Upgrade to Pro for unlimited teams.',
+  code: 'TEAM_LIMIT_REACHED',
+} as const
+
+/**
+ * The DATABASE's own one-team refusal (the same trigger). Migration 187
+ * switches it off too; until it is pushed, the routes answer the friendly
+ * 403 instead of a 500.
+ */
+export function isTeamListCapError(error: { code?: string; message?: string } | null | undefined): boolean {
+  return error?.code === '23514' && /one team/i.test(error.message ?? '')
+}
+
+/**
  * The DATABASE's own private-list refusal (the `enforce_free_list_caps`
  * trigger, 018/028). Migration 187 switches it off; until that migration is
  * pushed to an environment, the routes turn this refusal back into the
