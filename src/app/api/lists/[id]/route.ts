@@ -4,7 +4,9 @@ import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
   isPrivateListCapError,
+  isTeamListCapError,
   PRIVATE_LIMIT_BODY,
+  TEAM_LIMIT_BODY,
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
@@ -289,9 +291,13 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     .single()
 
   if (updateError) {
-    // Before migration 187 is pushed the database still caps private lists.
+    // Before migration 187 is pushed the database still caps private lists
+    // and teams.
     if (isPrivateListCapError(updateError)) {
       return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    if (isTeamListCapError(updateError)) {
+      return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
     }
     // A colour sent before migration 188 is pushed: a clear 409, not a 500.
     if (isMissingCoverColorColumn(updateError)) {

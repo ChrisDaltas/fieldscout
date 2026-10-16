@@ -1,13 +1,14 @@
 -- ============================================================================
--- Migration 187 — the free-tier one-private-list cap is lifted (Chris,
--- 2026-10-15: the Pro rules are suspended for the free-only launch).
+-- Migration 187 — the free-tier list caps are lifted (Chris: one private
+-- list 2026-10-15, one team 2026-10-16 — the Pro rules are on hold for the
+-- free-only launch).
 --
 -- A FREE account (is_pro = false) can hold several private lists by every
 -- path that makes a list private: insert, update to private, and restoring a
--- soft-deleted private list. The one-TEAM cap is not part of the ruling and
--- still refuses a free account's second team (positive control: the trigger
--- still runs). SECURITY DEFINER + the search_path pin are kept (004 counts
--- this function).
+-- soft-deleted private list — and several teams by insert and by restore.
+-- The trigger stays attached (switched off behind constants, not dropped),
+-- and SECURITY DEFINER + the search_path pin are kept (004 counts this
+-- function).
 --
 -- Determinism: fixed UUIDs and literals, privileged fixture work only.
 -- ============================================================================
@@ -16,7 +17,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(8);
+select plan(12);
 
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -61,14 +62,26 @@ select is(
     where owner_id = '87000000-0000-4000-8000-000000000001' and is_private and deleted_at is null),
   5, 'five live private lists on one free account');
 
--- 4. Positive control: the trigger still runs — the one-team cap holds.
+-- 4. Teams: a second and third team, and a soft-deleted team restored.
 insert into lists (id, owner_id, title, slug, is_team) values
   ('97000000-0000-4000-8000-000000000006', '87000000-0000-4000-8000-000000000001', 'cap t1', 'cap-t1', true);
-select throws_ok(
+select lives_ok(
   $$ insert into lists (id, owner_id, title, slug, is_team) values
      ('97000000-0000-4000-8000-000000000007', '87000000-0000-4000-8000-000000000001', 'cap t2', 'cap-t2', true) $$,
-  '23514', 'Free accounts can have one team.',
-  'the one-team cap still refuses a free account''s second team');
+  'a free account can insert a second team');
+select lives_ok(
+  $$ insert into lists (id, owner_id, title, slug, is_team) values
+     ('97000000-0000-4000-8000-000000000008', '87000000-0000-4000-8000-000000000001', 'cap t3', 'cap-t3', true) $$,
+  'and a third');
+insert into lists (id, owner_id, title, slug, is_team, deleted_at) values
+  ('97000000-0000-4000-8000-000000000009', '87000000-0000-4000-8000-000000000001', 'cap tdel', 'cap-tdel', true, now());
+select lives_ok(
+  $$ update lists set deleted_at = null where id = '97000000-0000-4000-8000-000000000009' $$,
+  'a free account can restore a team while others are live');
+select is(
+  (select count(*)::int from lists
+    where owner_id = '87000000-0000-4000-8000-000000000001' and is_team and deleted_at is null),
+  4, 'four live teams on one free account');
 
 -- 5. The function keeps its SECURITY DEFINER + search_path pin.
 select ok(
@@ -76,6 +89,10 @@ select ok(
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'enforce_free_list_caps'),
   'enforce_free_list_caps stays SECURITY DEFINER with its search_path pin');
+
+-- 6. Switched off, not dropped: the trigger is still attached to lists.
+select trigger_is('lists', 'trg_enforce_free_list_caps', 'enforce_free_list_caps',
+  'the caps trigger stays attached (switched off behind constants)');
 
 select * from finish();
 rollback;
