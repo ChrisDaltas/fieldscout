@@ -46,23 +46,10 @@ const newHref = (from?: From) => `/app/lists/new${from ? `?from=${from}` : ''}`
  *  Create sheet): its back returns to that screen when it is behind. */
 export const NEW_LIST_FROM_ELSEWHERE_HREF = '/app/lists/new?from=back'
 
-/**
- * Whether the entry behind this one belongs to the app. The Navigation API
- * lists only same-origin entries, so a current index above 0 means the
- * previous entry is ours; without the API, fall back to a same-origin
- * referrer (a page opened from another site, or in a fresh tab, has none).
- */
-export function appEntryBehind(): boolean {
-  if (typeof window === 'undefined') return false
-  const nav = (window as Window & { navigation?: { currentEntry?: { index: number } | null } }).navigation
-  if (nav?.currentEntry) return nav.currentEntry.index > 0
-  if (window.history.length <= 1) return false
-  try {
-    return Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin
-  } catch {
-    return false
-  }
-}
+// The app-wide Back rule lives in `mobile/ui/back-nav` (#27); Lists keeps
+// its own `from=` handoffs on top of it.
+export { appEntryBehind } from '@/components/mobile/ui/back-nav'
+import { appEntryBehind } from '@/components/mobile/ui/back-nav'
 
 export function useListsNav() {
   const router = useRouter()
