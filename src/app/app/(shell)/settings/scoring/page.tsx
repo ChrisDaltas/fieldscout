@@ -29,6 +29,7 @@ import {
   type ScoringPresetId,
   type ScoringRules,
 } from '@/lib/scoring/default'
+import { canCustomizeScoring } from '@/lib/scoring/custom-scoring-access'
 import { readPersonalScoringSystem } from '@/lib/scoring/personal-scoring-system'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -180,8 +181,9 @@ function deriveInsight(rules: ScoringRules): { heading: string; body: string } {
  * the left, Scout AI read + per-phase scoring groups on the right.
  *
  * System defaults (lib/scoring presets) are visible and selectable for
- * everyone; editing values and saving a custom system is Pro-only
- * (business rule 6). Custom systems persist to `scoring_systems`
+ * everyone, and so is editing values and saving a custom system while the
+ * Pro rules are on hold (Chris, 2026-10-16 — `canCustomizeScoring`; it was
+ * Pro-only, business rule 6). Custom systems persist to `scoring_systems`
  * (RLS: owners manage their own rows).
  */
 export default function ScoringSettingsPage() {
@@ -192,6 +194,9 @@ export default function ScoringSettingsPage() {
   const queryClient = useQueryClient()
 
   const isPro = Boolean(profile?.is_pro)
+  // Everyone while the Pro rules are on hold; Pro-only again if the switch
+  // in custom-scoring-access.ts is flipped back.
+  const canCustomize = canCustomizeScoring(isPro)
 
   // The user's saved custom system (one per user on this surface).
   const { data: savedSystem, isLoading: isSystemLoading } = useQuery({
@@ -234,8 +239,8 @@ export default function ScoringSettingsPage() {
     setRules({ ...preset.rules })
   }
 
-  // Any value edit forks a preset into the custom system (Pro-only path —
-  // the controls are disabled for free users).
+  // Any value edit forks a preset into the custom system (the controls are
+  // disabled only for an account that can't customize — see canCustomize).
   const applyRuleChange = (key: keyof ScoringRules, value: number) => {
     setRules((prev) => ({ ...prev, [key]: Math.round(value * 100) / 100 }))
     if (mode !== 'custom') {
@@ -247,8 +252,8 @@ export default function ScoringSettingsPage() {
   const saveMutation = useMutation({
     mutationFn: async (): Promise<ScoringSystemRow> => {
       if (!user) throw new Error('You need to be signed in')
-      // Pro gate + write live in the route handler — custom scoring is
-      // Pro-only (business rule 6) and can't be gated by the client alone.
+      // The gate + write live in the route handler, which reads the same
+      // switch — access can't be enforced by the client alone.
       const res = await fetch('/api/scoring-systems', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -290,7 +295,7 @@ export default function ScoringSettingsPage() {
 
   const insight = deriveInsight(rules)
   const isFullPpr = rules.receptions === 1
-  const showCustomOption = isPro || Boolean(savedSystem) || mode === 'custom'
+  const showCustomOption = canCustomize || Boolean(savedSystem) || mode === 'custom'
   const isPageLoading = isAuthLoading || !profile || isSystemLoading
 
   return (
@@ -321,7 +326,7 @@ export default function ScoringSettingsPage() {
                     value={mode === 'custom' ? name : getScoringPreset(mode).label}
                     onChange={(e) => setName(e.target.value)}
                     maxLength={60}
-                    disabled={!isPro || mode !== 'custom'}
+                    disabled={!canCustomize || mode !== 'custom'}
                   />
                   <p className="text-[10px] font-medium text-n-6">
                     {mode === 'custom'
@@ -370,13 +375,13 @@ export default function ScoringSettingsPage() {
                   onCheckedChange={(checked) =>
                     applyRuleChange('receptions', checked ? 1 : 0)
                   }
-                  disabled={!isPro}
+                  disabled={!canCustomize}
                   aria-label="Full PPR"
                 />
               </div>
             </ScoringSection>
 
-            {!isPro && (
+            {!canCustomize && (
               <AIInsight heading="Custom scoring is a Pro tool.">
                 <p>
                   Every platform preset is yours to use — Pro lets you tune
@@ -409,14 +414,14 @@ export default function ScoringSettingsPage() {
                     key={field.key}
                     field={field}
                     value={rules[field.key]}
-                    disabled={!isPro}
+                    disabled={!canCustomize}
                     onChange={(value) => applyRuleChange(field.key, value)}
                   />
                 ))}
               </ScoringSection>
             ))}
 
-            {isPro && (
+            {canCustomize && (
               <div className="flex justify-end gap-[5px]">
                 <Button variant="stroke" size="md" onClick={handleReset}>
                   <Icon name="reset" size={13} />
