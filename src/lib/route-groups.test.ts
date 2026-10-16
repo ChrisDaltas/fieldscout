@@ -223,6 +223,15 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // reason: a reading page. Gated on `featureFlags.leagues` by
   // `(shell)/leagues/layout.tsx`. Permanent.
   '/app/leagues/[leagueId]/stats',
+  // M8 L.G1.6 — the platform operator console (spec §24.4, Q96 / TD8): home,
+  // league finder, one league's live state, notify, operator log. In `(shell)`
+  // beside the persona-post review tab; "page not found" to every non-admin
+  // by `(shell)/admin/layout.tsx`. Permanent.
+  '/app/admin',
+  '/app/admin/leagues',
+  '/app/admin/leagues/[id]',
+  '/app/admin/log',
+  '/app/admin/notify',
 ]
 
 describe('route groups are invisible to the URL space', () => {

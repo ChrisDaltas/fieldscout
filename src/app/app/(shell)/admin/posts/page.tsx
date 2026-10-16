@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { PageHeader } from '@/components/layout/app-header'
+import { AdminHeader } from '@/components/admin/admin-parts'
 import { PersonaBadge } from '@/components/personas/persona-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,8 @@ import { cn } from '@/lib/utils'
 
 /**
  * Editorial review queue for AI persona posts (spec-ai-content-engine.md
- * review gate). Server routes enforce is_admin; this page just renders 403s
- * honestly if a non-admin wanders in.
+ * review gate). The `/app/admin` layout 404s non-admins (TD8) and the server
+ * routes enforce is_admin; this page renders a refusal honestly if one slips.
  */
 
 interface AdminPost {
@@ -56,7 +56,7 @@ export default function AdminPostsPage() {
     queryKey: ['admin-posts'],
     queryFn: async (): Promise<{ posts: AdminPost[] }> => {
       const res = await fetch('/api/admin/posts')
-      if (res.status === 403 || res.status === 401) {
+      if (res.status === 404 || res.status === 403 || res.status === 401) {
         throw new Error('You need admin access to review posts.')
       }
       if (!res.ok) throw new Error('Could not load posts.')
@@ -101,7 +101,7 @@ export default function AdminPostsPage() {
   return (
     <div className="max-w-3xl space-y-[19px]">
       {/* The app's standard header (D486(12) audit) — not a page-level h1. */}
-      <PageHeader title="Persona posts" />
+      <AdminHeader title="Admin" subtitle="Persona posts" />
       <p className="text-[11px] font-medium leading-[1.5] text-n-3">
         Review queue for the content engine. Publishing makes a post public
         and SEO-indexable; takedown removes it everywhere immediately.

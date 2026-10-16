@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { ADMIN_NOT_FOUND_BODY } from '@/lib/admin/not-found'
 import { requireAdminUser } from '@/lib/auth/require-admin'
 
 /**
@@ -45,7 +46,8 @@ function mapRpcError(error: { code?: string; message: string }): NextResponse {
     return NextResponse.json({ error: 'Sending notices is not available yet.' }, { status: 503 })
   }
   if (error.code === '42501') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // TD8 / F581: answered like the route gate — 404, never 403.
+    return NextResponse.json(ADMIN_NOT_FOUND_BODY, { status: 404 })
   }
   if (error.code === 'P0002') {
     const status = error.message.includes('no recipients') ? 422 : 404
