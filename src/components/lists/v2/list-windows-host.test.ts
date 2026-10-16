@@ -1151,6 +1151,9 @@ const INSIDE_THE_WRAPPER: { file: string; declaration: string; why: string }[] =
   { file: COVER_TILE, declaration: 'ListCoverTile', why: 'the header cover' },
   { file: THUMBNAIL, declaration: 'ListThumbnail', why: 'what ListCoverTile renders' },
   { file: THUMBNAIL, declaration: 'POS_TINTS', why: 'the label quadrant’s fill, applied by ListThumbnail' },
+  // Migration 188 (Chris, 2026-10-15): a chosen cover colour replaces the
+  // position tint on that same quadrant, so its six fills paint in here too.
+  { file: THUMBNAIL, declaration: 'COVER_COLOR_TINTS', why: 'the chosen cover colour’s fill, applied by ListThumbnail' },
   { file: THUMBNAIL, declaration: 'PlayerQuadrant', why: 'the cover’s three headshot cells' },
   { file: BADGE, declaration: 'PositionBadge', why: 'the row’s position badge' },
   { file: BADGE, declaration: 'STYLES', why: 'that badge’s per-position fill' },
@@ -1191,6 +1194,8 @@ const LEGIBLE_ON_DARK: Record<string, string> = {
   'bg-pos-def': 'position identity — a saturated fill with white text, legible on any surface',
   'bg-pos-flex': 'position identity — a saturated fill with white text, legible on any surface',
   'bg-positive': 'the ticked checkbox’s fill, with `text-ink` on top of it — a light fill either way',
+  'bg-accent':
+    'a chosen “blue” cover colour (migration 188) — a saturated fill with white text, legible on any surface, like the position fills',
   'bg-transparent': 'no colour at all',
   // Near-black, and deliberately so — ruled by Chris 2026-08-11 for the cover's
   // `AP`/`TM` label ("if it's all players, it'll be the black"), which carries

@@ -43,8 +43,8 @@ import {
   playersLabel,
   shortName,
   tierCount,
+  tierChipClass,
   tierFillClass,
-  tierTextClass,
   trailingMarkers,
   type EdItem,
 } from './lists-model'
@@ -439,7 +439,7 @@ function EditorBody({
           <>
             {tiersOn && (
               <div className="flex items-center gap-2 px-1 pb-1 pt-2.5">
-                <span className={cn('text-[12px] font-bold', tierTextClass(0))}>Tier 1</span>
+                <span className={tierChipClass(0)}>Tier 1</span>
                 <span className="h-px flex-1 bg-m-b3" />
               </div>
             )}
@@ -727,7 +727,7 @@ function TierLineBody({ number, onMerge }: { number: number; onMerge: () => void
   return (
     <div className="flex items-center gap-2 px-1 pb-1 pt-3">
       <GripIcon className="text-m-t5" />
-      <span className={cn('text-[12px] font-bold', tierTextClass(index))}>Tier {number}</span>
+      <span className={tierChipClass(index)}>Tier {number}</span>
       <span className={cn('h-px flex-1 opacity-35', tierFillClass(index))} />
       <button
         type="button"

@@ -1,5 +1,6 @@
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
+import { handleInitials } from '@/utils/initials'
 
 /**
  * FieldScout Mobile — Community, the pure half (handoff m-community). Tabs,
@@ -200,9 +201,11 @@ export function authorBgClass(seed: string): string {
   return authorAvatarClass(seed)
 }
 
-/** The avatar letter: the handle's first character (prototype `by[1]`). */
-export function authorInitial(username: string): string {
-  return (username.replace(/^@/, '')[0] ?? '?').toUpperCase()
+/** The avatar letters when the author has no photo: the app-wide two-letter
+ *  rule ("chrisdaltas" → "CH"), not the prototype's one (`by[1]`) — Chris,
+ *  2026-10-15, gap list #8. */
+export function authorInitials(username: string): string {
+  return handleInitials(username)
 }
 
 /** "1 video" / "3 videos". */

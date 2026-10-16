@@ -14,6 +14,7 @@
  * Users = the cred-weighted average of users' rankings (`consensus_rankings`),
  * Scout AI = no ranking exists yet.
  */
+import { tierChipClass } from '@/components/mobile/ui/tier-colors'
 
 export const RANK_POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'] as const
 export type RankPos = (typeof RANK_POSITIONS)[number]
@@ -105,18 +106,10 @@ export function tierBreaks(scores: readonly number[]): number[] {
   return out
 }
 
-/** Tier label colours (TIERC): 1–6 cycle, 7+ in t3. Full class strings for JIT. */
-const TIER_TEXT = [
-  'text-m-pos-rb',
-  'text-m-pos-wr',
-  'text-positive-strong',
-  'text-m-gold',
-  'text-m-pos-qb',
-  'text-m-pos-k',
-] as const
-
-export function tierTextClass(tier: number): string {
-  return TIER_TEXT[tier - 1] ?? 'text-m-t3'
+/** The "Tier N" chip for a 1-based tier — desktop's palette, the same colour
+ *  for the same tier number as Lists and desktop (gap list #10). */
+export function tierChipClassFor(tier: number): string {
+  return tierChipClass(tier - 1)
 }
 
 // ---------------------------------------------------------------------------

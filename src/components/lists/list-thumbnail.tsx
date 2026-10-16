@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon } from '@/components/ui/icon'
+import { coverColorOf, type CoverColor } from '@/lib/lists/cover-color'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 
@@ -39,6 +40,34 @@ export const POS_TINTS: Record<ListThumbnailLabel, { bg: string; fg: string }> =
   TM: { bg: 'bg-ink', fg: 'text-white' },
 }
 
+/**
+ * The owner's chosen cover colour (`lists.cover_color`, migration 188 —
+ * Chris, 2026-10-15), which wins over {@link POS_TINTS}; with none chosen the
+ * position-group fill above still applies, so existing lists don't change.
+ *
+ * The same solid fills the position tints use (this tile has no pale tints to
+ * map onto), on the v7 tokens matching the design's six swatches: accent
+ * #0088FF, ink #1D1D1F, pos-qb #F75252, pos-wr #9D70E9, pos-rb #5C7CE5,
+ * confirm #07B85A — each dark enough for the white label.
+ */
+export const COVER_COLOR_TINTS: Record<CoverColor, { bg: string; fg: string }> = {
+  blue: { bg: 'bg-accent', fg: 'text-white' },
+  ink: { bg: 'bg-ink', fg: 'text-white' },
+  red: { bg: 'bg-pos-qb', fg: 'text-white' },
+  purple: { bg: 'bg-pos-wr', fg: 'text-white' },
+  indigo: { bg: 'bg-pos-rb', fg: 'text-white' },
+  green: { bg: 'bg-confirm', fg: 'text-white' },
+}
+
+/** A list's cover fill: the chosen colour, else its position group's tint. */
+export function coverTint(
+  label: ListThumbnailLabel,
+  coverColor: string | null | undefined,
+): { bg: string; fg: string } {
+  const chosen = coverColorOf({ cover_color: coverColor })
+  return chosen ? COVER_COLOR_TINTS[chosen] : POS_TINTS[label]
+}
+
 interface ListThumbnailProps {
   /** The list's position_filter value, or null when no position is set. */
   positionFilter: string | null | undefined
@@ -49,6 +78,11 @@ interface ListThumbnailProps {
   isTeam?: boolean
   /** Optional uploaded cover image — overrides the 4-quadrant default. */
   imageUrl?: string | null
+  /**
+   * The list's chosen cover colour key (`lists.cover_color`). Wins over the
+   * position tint; absent/null = the position tint, as before.
+   */
+  coverColor?: string | null
   /**
    * The list's first players, in list order. Only the first three are drawn —
    * one per quadrant after Q1 — so callers may hand over more (`/api/lists`
@@ -148,6 +182,7 @@ export function ListThumbnail({
   positionFilter,
   isTeam = false,
   imageUrl,
+  coverColor,
   players,
   size = 'md',
   className,
@@ -182,7 +217,7 @@ export function ListThumbnail({
   }
 
   const top3 = (players ?? []).slice(0, 3)
-  const tint = POS_TINTS[label]
+  const tint = coverTint(label, coverColor)
   const isEmpty = top3.length === 0
 
   return (

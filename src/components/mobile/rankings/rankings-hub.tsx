@@ -20,7 +20,7 @@ import {
   seasonSub,
   shortName,
   tierBreaks,
-  tierTextClass,
+  tierChipClassFor,
   updatedLabel,
   type RankOverlay,
   type RankPos,
@@ -48,6 +48,7 @@ import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
+import { computeInitials } from '@/utils/initials'
 
 /**
  * Rankings hub (lr-hub.md) on the app's real sources:
@@ -406,7 +407,7 @@ function TieredRows({
       {tiers.map((t) => (
         <div key={t.tier}>
           <div className="flex items-center gap-2 pb-1 pt-3.5">
-            <span className={cn('text-[12px] font-bold', tierTextClass(t.tier))}>Tier {t.tier}</span>
+            <span className={tierChipClassFor(t.tier)}>Tier {t.tier}</span>
             <span aria-hidden className="h-px flex-1 bg-m-b3" />
             <span className="text-[10px] font-medium text-m-t3">{plural(t.end - t.start, 'player')}</span>
           </div>
@@ -711,7 +712,8 @@ function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: strin
             // eslint-disable-next-line @next/next/no-img-element -- small avatar
             <img src={board.persona.avatar_url} alt="" className="absolute inset-0 size-full object-cover" />
           ) : (
-            name.charAt(0).toUpperCase()
+            // No photo: the app-wide two-letter rule (gap list #8).
+            computeInitials(name)
           )}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-px">

@@ -12,6 +12,7 @@ import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-ca
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
+import { useMobileHomeAlert } from '@/hooks/use-mobile-home-alerts'
 import { useMobileHomeMatchup } from '@/hooks/use-mobile-home-matchup'
 import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { useSchedule } from '@/hooks/use-schedule'
@@ -27,7 +28,10 @@ import { HomeNote, HomeSectionTitle } from './home-section'
  * draft room while the draft is live, the League tab's draft home before
  * it. The week beside the title is the current week of the user's first
  * league with a season in play (shown only when one exists — a list of
- * pre-draft leagues has no week to name).
+ * pre-draft leagues has no week to name). A card in season carries the red
+ * alert dot when something in its league needs the user — a trade offer
+ * waiting on their answer, or a starter out / on IR / on bye or an empty
+ * starting slot this week (ruling #14, `useMobileHomeAlert`).
  */
 export function HomeMatchups() {
   const leagues = useLeagues()
@@ -68,6 +72,7 @@ function WeekLabel({ leagues }: { leagues: readonly MyLeagueRow[] }) {
 
 function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
   const card = useMobileHomeMatchup(league)
+  const alert = useMobileHomeAlert(league)
   const roomEntry = useRoomEntryTarget()
   const setSegment = useLeagueTabStore((s) => s.setSegment)
   const live = card.live
@@ -97,6 +102,15 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
           <span className="flex h-6 flex-none items-center gap-[5px] whitespace-nowrap rounded-pill bg-m-gg px-[10px] text-[11px] font-semibold text-m-tg">
             <span className="size-1.5 rounded-full bg-current motion-safe:animate-pulse" aria-hidden />
             Draft live
+          </span>
+        )}
+        {/* The alert dot (m-home §2A.5 `hasDot`: 8×8, Danger red — the
+            notification badge's fixed red, the same in both themes): on
+            when something in this league needs you (ruling #14). */}
+        {alert.label && (
+          <span className="flex-none" data-league-alert>
+            <span className="block size-2 rounded-full bg-negative-strong" aria-hidden />
+            <span className="sr-only">{alert.label}</span>
           </span>
         )}
       </span>

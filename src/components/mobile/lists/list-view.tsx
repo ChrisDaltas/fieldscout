@@ -18,10 +18,11 @@ import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListDisplay } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 import { AiBuildStrip } from './ai-build-strip'
 import { ListActionsSheet } from './list-actions-sheet'
-import { playersLabel, shortName, tierTextClass, updatedLabel, viewSections } from './lists-model'
+import { playersLabel, shortName, tierChipClass, updatedLabel, viewSections } from './lists-model'
 import { useListsNav } from './lists-nav'
 import { CenterNote, CoverCollage, CoverImage, InlineError, LIcon, PillButton, TimeFrameControl, VideoCard, coverClass } from './lists-parts'
 import { useListTimeFrame } from './lists-session-store'
@@ -160,7 +161,7 @@ export function ListView({ listId }: { listId: string }) {
           </div>
         )}
         {videos.map((link) => (
-          <VideoCard key={link.id} url={link.url} title={link.title} sub={link.source_label ?? 'Watch on YouTube'} />
+          <VideoCard key={link.id} url={link.url} title={link.title || VIDEO_TITLE_FALLBACK} sub={link.source_label ?? 'Watch on YouTube'} />
         ))}
         {articles.map((link) => (
           <a
@@ -334,15 +335,9 @@ function PlayersTable({
             {sections.map((section, sectionIndex) => (
               <React.Fragment key={section.label ?? sectionIndex}>
                 {section.label !== null && (
-                  <div
-                    className={cn(
-                      'sticky left-0 pb-1 pl-4 pt-3 text-[12px] font-bold',
-                      hasStats && 'border-r border-m-b3',
-                      lead,
-                      tierTextClass(section.tierIndex),
-                    )}
-                  >
-                    {section.label}
+                  <div className={cn('sticky left-0 pb-1 pl-4 pt-3', hasStats && 'border-r border-m-b3', lead)}>
+                    {/* Desktop's tier palette, as desktop's chip (gap list #10). */}
+                    <span className={tierChipClass(section.tierIndex)}>{section.label}</span>
                   </div>
                 )}
                 {section.entries.map((entry) => {

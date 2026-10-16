@@ -4,7 +4,7 @@ import Image from 'next/image'
 
 import {
   ListThumbnail,
-  POS_TINTS,
+  coverTint,
   listThumbnailLabel,
   type ListThumbnailSize,
 } from '@/components/lists/list-thumbnail'
@@ -52,25 +52,29 @@ import type { List } from '@/types/database'
  * | rail row (24px), hero (51px) | the square {@link ListThumbnail} — position-tinted label quadrant + the first three headshots, exactly as before |
  * | gallery card | a wide colour band with the top four headshots stacked in the bottom-right |
  *
- * Both take their colour from {@link POS_TINTS}, which is `ListThumbnail`'s own
- * map, so the small tile and the wide band can never drift apart.
+ * Both take their colour from `coverTint`, which is `ListThumbnail`'s own
+ * rule, so the small tile and the wide band can never drift apart: the owner's
+ * chosen cover colour (`lists.cover_color`, migration 188 — Chris,
+ * 2026-10-15) when there is one, else the position-group fill above.
  *
  * An uploaded `thumbnail_url` still wins over both, as it did before.
  */
 
 type CoverList = Pick<List, 'id' | 'title' | 'thumbnail_url'> &
-  Partial<Pick<List, 'is_favorites' | 'is_big_board' | 'position_filter' | 'ranking_mode'>>
+  Partial<Pick<List, 'is_favorites' | 'is_big_board' | 'position_filter' | 'ranking_mode' | 'cover_color'>>
 
 /**
- * The list's position-group background class.
+ * The list's cover background class: its chosen cover colour, else its
+ * position group's.
  *
- * `position_filter` is the source, per the ruling above — **not** `is_favorites`
- * and not a hash of the id. Favorites carries no position filter, so it lands
- * on ink like any other all-players list; the lime cover in the prototype went
- * with the glyph treatment.
+ * `position_filter` is the default source, per the ruling above — **not**
+ * `is_favorites` and not a hash of the id. Favorites carries no position
+ * filter, so it lands on ink like any other all-players list; the lime cover in
+ * the prototype went with the glyph treatment. `cover_color` is absent on a row
+ * read before migration 188 is pushed, which reads as "no colour chosen".
  */
 export function coverBg(list: CoverList): string {
-  return POS_TINTS[listThumbnailLabel(list.position_filter)].bg
+  return coverTint(listThumbnailLabel(list.position_filter), list.cover_color).bg
 }
 
 export function coverIcon(list: CoverList): IconName {
@@ -96,6 +100,7 @@ export function ListCoverTile({ list, players, size = 24, className }: ListCover
     <ListThumbnail
       positionFilter={list.position_filter}
       imageUrl={list.thumbnail_url}
+      coverColor={list.cover_color}
       players={players}
       size={size}
       className={className}

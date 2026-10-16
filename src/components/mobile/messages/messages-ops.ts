@@ -9,6 +9,7 @@ import type { TradeView, TradesDocument } from '@/lib/leagues/api/trades-service
 import { teamAvClass, teamOrder } from '@/components/mobile/league/team/team-ops'
 import { assetsOf, managerOf, sidePill } from '@/components/mobile/trades/trades-mobile-ops'
 import { MY_TEAM_FILL, TEAM_FILLS } from '@/components/mobile/ui/avatar-colors'
+import { handleInitials } from '@/utils/initials'
 
 // ---------------------------------------------------------------------------
 // Shapes the screens render
@@ -20,7 +21,7 @@ export interface MChatMessage {
   fromMe: boolean
   /** Stable sender identity — runs group by it (the prototype's `m[0]`). */
   senderKey: string
-  /** The sender's handle ("@marcus") — the sender label and the avatar initial. */
+  /** The sender's handle ("@marcus") — the sender label and the avatar letters. */
   senderName: string
   /** The sender's username when they have one (the label is a profile link). */
   senderUsername: string | null
@@ -76,10 +77,10 @@ export function senderHandle(username: string | null | undefined): string {
   return handle ? `@${handle}` : FORMER_MEMBER
 }
 
-/** One-letter avatar initial ("@marcus" → "M"). */
+/** A person's avatar letters when they have no photo — the app-wide two-letter
+ *  rule ("@marcus" → "MA"; Chris, 2026-10-15, gap list #8). */
 export function initialOf(name: string): string {
-  const c = name.trim().replace(/^@/, '')[0]
-  return c ? c.toUpperCase() : '?'
+  return handleInitials(name)
 }
 
 // ---------------------------------------------------------------------------

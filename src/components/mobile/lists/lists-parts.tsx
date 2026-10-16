@@ -169,8 +169,13 @@ export function CoverImage({ src }: { src: string }) {
   )
 }
 
-export function coverClass(list: { thumbnail_url: string | null; position_filter: string | null }): string {
-  return list.thumbnail_url ? 'bg-m-ink' : coverBgClass(list.position_filter)
+/** `cover_color` is optional: a row read before migration 188 has no key. */
+export function coverClass(list: {
+  thumbnail_url: string | null
+  position_filter: string | null
+  cover_color?: string | null
+}): string {
+  return list.thumbnail_url ? 'bg-m-ink' : coverBgClass(list.position_filter, list.cover_color)
 }
 
 // =============================================================================

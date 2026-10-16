@@ -9,12 +9,14 @@ import {
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
-import { createServerClient } from '@/lib/supabase/server'
 import {
-  createListSchema,
-  listsQuerySchema,
-  rankingModeToLegacyFlags,
-} from '@/types/schemas/lists'
+  COVER_COLOR_UNAVAILABLE_BODY,
+  COVER_COLOR_UNAVAILABLE_STATUS,
+  createListWithCoverSchema,
+  isMissingCoverColorColumn,
+} from '@/lib/lists/cover-color'
+import { createServerClient } from '@/lib/supabase/server'
+import { listsQuerySchema, rankingModeToLegacyFlags } from '@/types/schemas/lists'
 
 /** How many players each list carries for its cover. See the GET body. */
 const COVER_PLAYERS = 4
@@ -203,7 +205,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const parsed = createListSchema.safeParse(body)
+  const parsed = createListWithCoverSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
@@ -297,6 +299,10 @@ export async function POST(request: Request) {
       // non-team creation working before migration 015 is applied.
       ...(input.is_team ? { roster_settings: input.roster_settings } : {}),
       comments_enabled: input.comments_enabled ?? true,
+      // Only named when a colour was chosen (migration 188): a create with no
+      // colour — or an explicit null, which is the column's default anyway —
+      // never references the column, so it works before 188 is pushed.
+      ...(input.cover_color ? { cover_color: input.cover_color } : {}),
     })
     .select()
     .single()
@@ -305,6 +311,10 @@ export async function POST(request: Request) {
     // Before migration 187 is pushed the database still caps private lists.
     if (isPrivateListCapError(insertError)) {
       return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    // A colour sent before migration 188 is pushed: a clear 409, not a 500.
+    if (isMissingCoverColorColumn(insertError)) {
+      return NextResponse.json(COVER_COLOR_UNAVAILABLE_BODY, { status: COVER_COLOR_UNAVAILABLE_STATUS })
     }
     return NextResponse.json(
       { error: insertError?.message ?? 'Could not create list' },

@@ -2815,6 +2815,7 @@ export type Database = {
         Row: {
           ai_persona_id: string | null
           comments_enabled: boolean | null
+          cover_color: string | null
           created_at: string | null
           deleted_at: string | null
           description: string | null
@@ -2843,6 +2844,7 @@ export type Database = {
         Insert: {
           ai_persona_id?: string | null
           comments_enabled?: boolean | null
+          cover_color?: string | null
           created_at?: string | null
           deleted_at?: string | null
           description?: string | null
@@ -2871,6 +2873,7 @@ export type Database = {
         Update: {
           ai_persona_id?: string | null
           comments_enabled?: boolean | null
+          cover_color?: string | null
           created_at?: string | null
           deleted_at?: string | null
           description?: string | null
@@ -6182,6 +6185,7 @@ export type Database = {
         Returns: {
           ai_persona_id: string | null
           comments_enabled: boolean | null
+          cover_color: string | null
           created_at: string | null
           deleted_at: string | null
           description: string | null

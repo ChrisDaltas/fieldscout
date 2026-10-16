@@ -3,7 +3,20 @@
  * No time, DOM or fetch here — callers pass `now` where a clock matters.
  */
 import type { ScoringFamily } from '@/components/draft/auction-player-table-ops'
+import {
+  buildEditorModel,
+  currentWeekOf,
+  keptStarters,
+  lockedPlayerIds,
+  placementFromStored,
+  weekEditability,
+} from '@/components/leagues/lineup-editor-ops'
+import { lineupChecks, statusTag, type WeekGame } from '@/components/leagues/my-team-ops'
+import { pendingCount, type MTradeOffer } from '@/components/mobile/messages/messages-ops'
+import type { ScheduleMatchup, ScheduleWeek } from '@/hooks/use-schedule'
+import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
+import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 
 /**
  * The league Trending "See all" opens (m-home §3 `homeTrendAll`: League ›
@@ -177,4 +190,114 @@ export function ageText(iso: string, now: number): string {
   if (days < 7) return `${days}d ago`
   if (days < 30) return `${Math.floor(days / 7)}w ago`
   return `${Math.floor(days / 30)}mo ago`
+}
+
+// ---------------------------------------------------------------------------
+// The league card's red dot — "something needs you" (Chris, ruling #14,
+// 2026-10-15; m-home §2A.5 `hasDot`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a league card carries the red dot, in the order the label names them:
+ *  - `trade`: a trade offer sent to the user's team is still waiting on
+ *    their answer (Messages › Trades' `awaitingMe`);
+ *  - `out` / `ir`: one of this week's starters is listed Out / on IR;
+ *  - `bye`: one of this week's starters is on bye;
+ *  - `empty`: a starting slot this week is empty.
+ * Chat never lights it — the app keeps no "last read" mark.
+ */
+export type HomeAlertReason = 'trade' | 'out' | 'ir' | 'bye' | 'empty'
+
+export interface HomeAlertInput {
+  /** `leagues.status` — only a season being played can need you. */
+  status: string
+  myTeamId: string | null
+  /** The league's schedule read (week ladder + every pairing); undefined while unread. */
+  schedule: { weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]; matchups: readonly Pick<ScheduleMatchup, 'week' | 'home_team_id' | 'away_team_id'>[] } | undefined
+  /** This league's offers as Messages › Trades reads them
+   *  (`leagueTradeOffers`); undefined while unread, failed, or trades off. */
+  offers: readonly Pick<MTradeOffer, 'awaitingMe'>[] | undefined
+  /** The user's roster, the week's stored `slot_map` (null = no row yet —
+   *  every slot open, as the Team tab shows it), the league's slots and the
+   *  week's NFL games; undefined while any of them is unread. */
+  lineup:
+    | {
+        roster: readonly RosterPlayer[]
+        slotMap: Record<string, string> | null
+        settings: RosterSettings
+        games: readonly WeekGame[]
+      }
+    | undefined
+}
+
+/**
+ * The reasons a league card's dot is on — empty when nothing needs you.
+ * Every rule is the league screens' own:
+ *  - the week is the current one (`currentWeekOf`, the Home card's and the
+ *    Team tab's) and only while its lineup can still change
+ *    (`weekEditability` — a finished week has nothing to fix);
+ *  - in the playoffs only a team still playing this week (a pairing with an
+ *    opponent on the schedule) — a knocked-out team's lineup, or one on a
+ *    first-round bye, doesn't count;
+ *  - the starters are the Team tab's model of the stored lineup
+ *    (`buildEditorModel` over `placementFromStored`); a seat kept for a
+ *    dropped starter who already played is filled, not empty (`keptStarters`);
+ *  - a starter whose game has kicked off is locked (`lockedPlayerIds`) —
+ *    nothing can be done about him, so he doesn't light the dot;
+ *  - Out / IR is the status tag beside his name (`statusTag` — Questionable
+ *    and Doubtful don't count); bye and empty are the desktop Lineup check's
+ *    rules (`lineupChecks`).
+ * A read that hasn't landed asserts nothing (no dot from it).
+ */
+export function homeAlertReasons(input: HomeAlertInput): HomeAlertReason[] {
+  const { status, myTeamId, schedule, offers, lineup } = input
+  if (!seasonInPlay(status) || !myTeamId) return []
+  const reasons: HomeAlertReason[] = []
+  if (offers && pendingCount(offers) > 0) reasons.push('trade')
+
+  const week = schedule ? currentWeekOf(schedule.weeks) : null
+  if (!schedule || week === null || !lineup) return reasons
+  if (weekEditability(schedule.weeks, week, week).state !== 'open') return reasons
+  if (status === 'playoffs') {
+    // A real opponent: a first-round bye is stored as a row with no away
+    // team (migration 118), and that week's lineup doesn't count — the Team
+    // tab's pairing rule.
+    const playing = schedule.matchups.some(
+      (m) => m.week === week && m.away_team_id !== null && (m.home_team_id === myTeamId || m.away_team_id === myTeamId),
+    )
+    if (!playing) return reasons
+  }
+
+  const { roster, slotMap, settings, games } = lineup
+  const model = buildEditorModel(placementFromStored(slotMap, roster), roster, settings)
+  const kept = keptStarters(slotMap, roster)
+  const locked = lockedPlayerIds(roster, true)
+  // The seats the user can still act on: open ones, and filled ones whose
+  // player hasn't kicked off.
+  const seats = model.starters.filter((r) => !kept.has(r.slot.key) && !(r.player && locked.has(r.player.player_id)))
+  const tags = seats.map((r) => (r.player ? statusTag(r.player.status) : null))
+  if (tags.includes('O')) reasons.push('out')
+  if (tags.includes('IR')) reasons.push('ir')
+  const checks = lineupChecks({ starters: seats, week, games, mine: null, opponent: null })
+  const flagged = (id: 'bye' | 'starters') => checks.find((c) => c.id === id)?.tone === 'caution'
+  if (flagged('bye')) reasons.push('bye')
+  if (flagged('starters')) reasons.push('empty')
+  return reasons
+}
+
+const ALERT_WORDS: Record<HomeAlertReason, string> = {
+  trade: 'a trade offer is waiting for your answer',
+  out: 'a starter is out',
+  ir: 'a starter is on IR',
+  bye: 'a starter is on bye',
+  empty: 'a starting slot is empty',
+}
+
+/** The dot's screen-reader label — "Needs your attention: a trade offer is
+ *  waiting for your answer and a starter is on bye". Null with no reason. */
+export function homeAlertLabel(reasons: readonly HomeAlertReason[]): string | null {
+  if (reasons.length === 0) return null
+  const words = reasons.map((r) => ALERT_WORDS[r])
+  const list = words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
+  return `Needs your attention: ${list}`
 }

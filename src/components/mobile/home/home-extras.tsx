@@ -19,10 +19,10 @@ import { HomeNote, HomeSectionTitle } from './home-section'
  * AI features are never dropped; "delete nothing") and set in the mobile
  * language below the designed sections: Recently viewed and the AI experts.
  *
- * The desktop Home's Scout AI card and Top waiver adds are NOT here: both
- * are hard-coded samples (`TODO(live-draft)` — no insights source, no
- * waiver feed), and mobile shows no sample data. They come back when a
- * real source exists.
+ * The Scout AI card and Top waiver adds are NOT here, nor on desktop Home:
+ * both were hard-coded samples (no insights source, no waiver feed), and
+ * Chris removed them from phone and desktop Home (2026-10-15, gap list #15).
+ * They come back only when a real source exists.
  */
 
 const RECENT_ROWS = 6
@@ -48,6 +48,7 @@ export function HomeRecentlyViewed() {
                 {list ? (
                   <ListThumbnail
                     positionFilter={list.position_filter}
+                    coverColor={list.cover_color}
                     isTeam={list.is_team ?? false}
                     imageUrl={list.thumbnail_url}
                     players={list.first_players}

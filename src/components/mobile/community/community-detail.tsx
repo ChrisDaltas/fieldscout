@@ -27,6 +27,7 @@ import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 /**
  * FieldScout Mobile — Community list detail (handoff m-community §2.14, D).
@@ -253,6 +254,8 @@ function DetailBody({
             videos: isRank ? [] : videos,
             thumbnailUrl: isRank ? null : list.thumbnail_url,
             positionFilter: list.position_filter,
+            // Absent until migration 188 is pushed (`select('*')`): then null.
+            coverColor: list.cover_color ?? null,
           }}
           variant="detail"
         />
@@ -432,7 +435,7 @@ function VideoCard({ video }: { video: { url: string; title: string; duration: s
           </span>
         )}
       </span>
-      <span className="text-pretty text-[12px] font-semibold leading-[1.3]">{video.title}</span>
+      <span className="text-pretty text-[12px] font-semibold leading-[1.3]">{video.title || VIDEO_TITLE_FALLBACK}</span>
       {source && <span className="text-[11px] font-medium text-m-t3">{source}</span>}
     </a>
   )

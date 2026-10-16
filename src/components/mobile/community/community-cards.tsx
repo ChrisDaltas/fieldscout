@@ -2,7 +2,7 @@
 
 import {
   authorBgClass,
-  authorInitial,
+  authorInitials,
   coverHeight,
   formatFollows,
   topLine,
@@ -16,6 +16,7 @@ import { MIcon } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { CommunityAuthor, CommunityItem, CommunityVideo } from '@/hooks/use-mobile-community-feed'
 import { cn } from '@/lib/utils'
+import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
 /**
  * FieldScout Mobile — Community cards (handoff m-community §2.6, §2.10,
@@ -46,14 +47,16 @@ function openDetail(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
 }
 
 const AVATAR_SIZE: Record<16 | 26 | 34, { box: string; text: string }> = {
-  16: { box: 'h-4 w-4', text: 'text-[8px]' },
+  // 7px, not 8: two letters must clear the 16px circle (gap list #8).
+  16: { box: 'h-4 w-4', text: 'text-[7px]' },
   26: { box: 'h-[26px] w-[26px]', text: 'text-[10px]' },
   34: { box: 'h-[34px] w-[34px]', text: 'text-[13px]' },
 }
 
 /**
  * Author avatar: the person's photo when they have one, otherwise the
- * handoff's colour circle with the handle's first letter (white, 600).
+ * handoff's colour circle with the handle's first two letters (white, 600 —
+ * the app-wide rule, gap list #8).
  */
 export function AuthorAvatar({ author, size }: { author: CommunityAuthor; size: 16 | 26 | 34 }) {
   const s = AVATAR_SIZE[size]
@@ -61,7 +64,7 @@ export function AuthorAvatar({ author, size }: { author: CommunityAuthor; size: 
     <UserAvatar
       src={author.avatarUrl}
       name={author.username}
-      initials={authorInitial(author.username)}
+      initials={authorInitials(author.username)}
       className={cn('flex-none', s.box)}
       fallbackClassName={cn(authorBgClass(authorSeed(author)), s.text, 'font-semibold text-white')}
     />
@@ -175,14 +178,18 @@ export function PlayGlyph({ size }: { size: number }) {
 /**
  * A list's cover (handoff §2.11 / §2.14): an uploaded image, a YouTube
  * thumbnail, a video placeholder (videos but no players), or the headshot
- * collage on the list's colour — its position group, as the Lists screens
- * draw it (`lists-model` coverBgClass, Chris's 2026-08-11 ruling).
+ * collage on the list's colour — the owner's chosen cover colour (migration
+ * 188, Chris 2026-10-15), else its position group, as the Lists screens draw
+ * it (`lists-model` coverBgClass, Chris's 2026-08-11 ruling). `coverColor` is
+ * optional: rows that don't carry it fall back to the position colour.
  */
 export function ListCover({
   item,
   variant,
 }: {
-  item: Pick<CommunityItem, 'id' | 'heads' | 'videos' | 'thumbnailUrl' | 'positionFilter'>
+  item: Pick<CommunityItem, 'id' | 'heads' | 'videos' | 'thumbnailUrl' | 'positionFilter'> & {
+    coverColor?: string | null
+  }
   variant: 'card' | 'detail'
 }) {
   const yt = firstYouTube(item.videos)
@@ -198,7 +205,7 @@ export function ListCover({
         'relative block overflow-hidden',
         height,
         card && 'rounded-[14px]',
-        collage ? coverBgClass(item.positionFilter) : 'bg-m-ink',
+        collage ? coverBgClass(item.positionFilter, item.coverColor) : 'bg-m-ink',
       )}
     >
       {image && (
@@ -216,7 +223,7 @@ export function ListCover({
       )}
       {placeholder && card && (
         <span className="absolute inset-0 flex flex-col justify-end gap-1 p-[10px] text-white">
-          <span className="text-pretty text-[12px] font-semibold leading-[1.25]">{item.videos[0]!.title}</span>
+          <span className="text-pretty text-[12px] font-semibold leading-[1.25]">{item.videos[0]!.title || VIDEO_TITLE_FALLBACK}</span>
         </span>
       )}
       {card && item.videos.length > 0 && (

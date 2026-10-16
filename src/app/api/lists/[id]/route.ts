@@ -8,10 +8,16 @@ import {
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
+import {
+  COVER_COLOR_UNAVAILABLE_BODY,
+  COVER_COLOR_UNAVAILABLE_STATUS,
+  isMissingCoverColorColumn,
+  updateListWithCoverSchema,
+} from '@/lib/lists/cover-color'
 import { fetchListLinks, type ListLink } from '@/lib/lists/links-service'
 import { aggregateFantasyStats } from '@/lib/stats/aggregate-fantasy'
 import { createServerClient } from '@/lib/supabase/server'
-import { rankingModeToLegacyFlags, updateListSchema } from '@/types/schemas/lists'
+import { rankingModeToLegacyFlags } from '@/types/schemas/lists'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -156,7 +162,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const parsed = updateListSchema.safeParse(body)
+  const parsed = updateListWithCoverSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
@@ -233,6 +239,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
   if (input.description !== undefined) updates.description = input.description
   if (input.position_filter !== undefined) updates.position_filter = input.position_filter
+  // Migration 188. Only named when sent (null = back to the position colour),
+  // so every other edit keeps working before 188 is pushed.
+  if (input.cover_color !== undefined) updates.cover_color = input.cover_color
   if (input.is_private !== undefined && !isBigBoard) updates.is_private = input.is_private
 
   // ranking_mode is the source of truth — if the client sent it, derive the
@@ -276,6 +285,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     // Before migration 187 is pushed the database still caps private lists.
     if (isPrivateListCapError(updateError)) {
       return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    // A colour sent before migration 188 is pushed: a clear 409, not a 500.
+    if (isMissingCoverColorColumn(updateError)) {
+      return NextResponse.json(COVER_COLOR_UNAVAILABLE_BODY, { status: COVER_COLOR_UNAVAILABLE_STATUS })
     }
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }

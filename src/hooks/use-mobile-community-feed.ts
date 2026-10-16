@@ -11,6 +11,7 @@ import {
 } from '@/components/mobile/community/community-ops'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { firstEmbed } from '@/utils/supabase-embed'
+import { useListCoverColorSupport } from '@/hooks/use-list-cover-color-support'
 
 /**
  * FieldScout Mobile — Community (handoff m-community). One pool of the most
@@ -81,6 +82,9 @@ export interface CommunityItem {
   /** Weekly board / pre-draft big board; null for other rankings. */
   rankType: RankType | null
   positionFilter: string | null
+  /** The owner's chosen cover colour key (migration 188), else null — the
+   *  cover then follows the position colour. */
+  coverColor?: string | null
   /** From the list's scoring system, else an AI expert's default; null when
    *  neither is known (or the scoring system isn't readable). */
   scoring: CommunityScoring | null
@@ -101,6 +105,8 @@ export interface CommunityItem {
 interface Row {
   id: string
   title: string
+  /** Present only once migration 188 is pushed (selected conditionally). */
+  cover_color?: string | null
   slug: string
   description: string | null
   is_big_board: boolean | null
@@ -178,6 +184,7 @@ export function mapCommunityRows(rows: Row[]): CommunityItem[] {
         kind,
         rankType,
         positionFilter: row.position_filter,
+        coverColor: row.cover_color ?? null,
         scoring: scoringLabel(firstEmbed(row.scoring)?.rules ?? null) ?? personaScoring(persona?.scoring ?? null),
         playerCount: row.player_count ?? 0,
         createdAt: row.created_at ?? '',
@@ -213,14 +220,19 @@ export const mobileCommunityKeys = {
 
 /** The Community pool: most recently active public lists and rankings. */
 export function useMobileCommunityFeed() {
+  // The cover colour column (migration 188) is named only once it exists —
+  // naming it before the push would fail the whole read.
+  const colours = useListCoverColorSupport()
+  const withColour = colours.data === true
   return useQuery({
-    queryKey: mobileCommunityKeys.pool(),
+    queryKey: [...mobileCommunityKeys.pool(), withColour ? 'colour' : 'plain'],
+    enabled: !colours.isPending,
     staleTime: 60 * 1000,
     queryFn: async (): Promise<CommunityPool> => {
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('lists')
-        .select(POOL_SELECT)
+        .select(withColour ? `${POOL_SELECT}, cover_color` : POOL_SELECT)
         .eq('is_private', false)
         .is('deleted_at', null)
         .gt('player_count', 0)

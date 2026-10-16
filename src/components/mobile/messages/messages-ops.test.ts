@@ -67,10 +67,15 @@ describe('names', () => {
     expect(senderHandle(null)).toBe(FORMER_MEMBER)
     expect(senderHandle('')).toBe(FORMER_MEMBER)
   })
-  it('takes one initial', () => {
-    expect(initialOf('Marcus')).toBe('M')
-    expect(initialOf(' nina')).toBe('N')
+  // Ruling #8 (2026-10-15): a photoless person shows TWO letters, the
+  // app-wide rule — never the "@", never one letter.
+  it('takes two letters, the app-wide avatar rule', () => {
+    expect(initialOf('Marcus')).toBe('MA')
+    expect(initialOf(' nina')).toBe('NI')
+    expect(initialOf('@marcus')).toBe('MA')
+    expect(initialOf('Former member')).toBe('FM')
     expect(initialOf('')).toBe('?')
+    expect(initialOf('@')).toBe('?')
   })
 })
 
@@ -237,7 +242,7 @@ describe('DM feed view model', () => {
     expect(conversations[0]).toMatchObject({
       id: 'marcus',
       name: 'Marcus',
-      initial: 'M',
+      initial: 'MA',
       unread: true,
       preview: 'Sent it over, check your trades',
       time: '8m',

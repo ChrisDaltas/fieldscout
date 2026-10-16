@@ -4,13 +4,25 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
 import { MIcon } from '@/components/mobile/ui/m-icon'
+import { MSegmented } from '@/components/mobile/ui/m-segmented'
+import { useListCoverColorSupport } from '@/hooks/use-list-cover-color-support'
 import { listsKeys, useCreateList, useList, useUpdateList, type ListWithDetails } from '@/hooks/use-lists'
 import { thumbnailProblem, useMobileListsThumbnail } from '@/hooks/use-mobile-lists-thumbnail'
 import { toast } from '@/hooks/use-toast'
+import { coverColorOf, hasCoverColorColumn, type CoverColor } from '@/lib/lists/cover-color'
 import { cn } from '@/lib/utils'
 import { MAX_DESCRIPTION_LEN, MAX_TAGS_PER_LIST, MAX_TITLE_LEN, listTitleSchema, tagNameSchema } from '@/types/schemas/lists'
+import { VIDEO_TITLE_FALLBACK } from '@/utils/youtube'
 
-import { coverBgClass, youTubeId, youTubeThumb } from './lists-model'
+import { detailsCreateInput, detailsPatch } from './details-payload'
+import {
+  COVER_SWATCHES,
+  POSITION_GROUP_OPTIONS,
+  coverBgClass,
+  positionGroupValue,
+  youTubeId,
+  youTubeThumb,
+} from './lists-model'
 import { useListsNav } from './lists-nav'
 import { CenterNote, CoverImage, LIcon, PillButton, YouTubeBadge, type LIconName } from './lists-parts'
 
@@ -22,14 +34,24 @@ import { CenterNote, CoverImage, LIcon, PillButton, YouTubeBadge, type LIconName
  * Name, description, thumbnail and video, then "Next: add players" creates
  * the list (the app needs it to exist before a player can be added) and opens
  * the editor with Add players up. Carried from the app: the cover upload goes
- * to the list's real storage with its size and type rules, and Edit details
- * also edits tags.
+ * to the list's real storage with its size and type rules, Edit details also
+ * edits tags, and both carry desktop's **position group** (Chris, 2026-10-15)
+ * — an `MSegmented` row (exactly one choice is always on, "All" = no filter),
+ * hidden for a team list as on desktop.
  *
- * Left out, each a lr-lists gap: the six colour swatches (no colour column —
- * a cover takes its colour from the list's position group) and the "Video
- * frame" thumbnail (only an uploaded image can be stored as a cover). The
- * Next button is disabled until the list has a name rather than tappable with
- * a toast ("prevent, don't refuse").
+ * **Colour swatches** (Chris, 2026-10-15, `lists.cover_color`, migration 188):
+ * the design's six, shown only for the Player collage cover. No colour chosen
+ * = the cover follows the position group, so existing lists keep their colour;
+ * tapping the chosen swatch again goes back to that (a team list has no
+ * position group, so its line says "the default colour" instead). They show
+ * only once the column exists — Edit details checks the loaded row, New list
+ * asks the database (`useListCoverColorSupport`) — so nothing offers a colour
+ * before Chris pushes 188. What each screen sends is built by
+ * `details-payload.ts` (and tested there).
+ *
+ * Left out, a lr-lists gap: the "Video frame" thumbnail (only an uploaded
+ * image can be stored as a cover). The Next button is disabled until the list
+ * has a name rather than tappable with a toast ("prevent, don't refuse").
  */
 
 interface VideoDraft {
@@ -37,6 +59,8 @@ interface VideoDraft {
   yt: string
   /** The attached link's id, in Edit details. */
   linkId?: string
+  /** The stored title (YouTube's own, looked up when it was attached), in
+   *  Edit details. A video pasted here has none until it is saved. */
   title?: string
 }
 
@@ -125,6 +149,8 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
   const [link, setLink] = React.useState('')
   const [linkErr, setLinkErr] = React.useState(false)
   const [tags, setTags] = React.useState<string[]>(list?.tags.map((t) => t.name) ?? [])
+  const [position, setPosition] = React.useState(positionGroupValue(list?.position_filter))
+  const [coverColor, setCoverColor] = React.useState<CoverColor | null>(coverColorOf(list))
   const [tagText, setTagText] = React.useState('')
   const [busy, setBusy] = React.useState(false)
 
@@ -136,6 +162,12 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
   )
 
   const valid = listTitleSchema.safeParse(title).success
+  // Swatches only once `lists.cover_color` exists (main deploys before the
+  // migration is pushed): a loaded row proves it; a new list asks.
+  const colourProbe = useListCoverColorSupport(mode === 'new')
+  const coloursReady = mode === 'edit' ? hasCoverColorColumn(list) : colourProbe.data === true
+  const positionFilter = position === 'ALL' ? null : position
+  const showPosition = !list?.is_team
   const close = () => (mode === 'new' ? nav.closeNew() : nav.closeEdit(list!.id))
 
   const attach = () => {
@@ -180,7 +212,9 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     fetch(`/api/lists/${listId}/links`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kind: 'video', url: draft.url, title: draft.title ?? 'YouTube video' }),
+      // No placeholder title: the server looks the video's real title up on
+      // YouTube (oEmbed) when none is sent (gap list #11).
+      body: JSON.stringify({ kind: 'video', url: draft.url, ...(draft.title ? { title: draft.title } : {}) }),
     }).then(async (res) => {
       if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Could not attach the video.')
     })
@@ -190,12 +224,9 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     if (!parsed.success || busy) return
     setBusy(true)
     try {
+      const draft = { title: parsed.data, desc, position, coverColor, coloursReady }
       if (mode === 'new') {
-        const created = await createList.mutateAsync({
-          title: parsed.data,
-          description: desc.trim() || undefined,
-          ranking_mode: 'ranked',
-        })
+        const created = await createList.mutateAsync(detailsCreateInput(draft))
         if (file && thumb === 'upload') {
           await thumbnail.mutateAsync({ listId: created.id, file }).catch((error: Error) =>
             toast({ title: 'The cover image didn’t upload', description: error.message }),
@@ -212,12 +243,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
       }
 
       const current = list!
-      const patch: Parameters<typeof updateList.mutateAsync>[0] = {}
-      if (parsed.data !== current.title) patch.title = parsed.data
-      const nextDesc = desc.trim()
-      if (nextDesc !== (current.description ?? '')) patch.description = nextDesc || null
-      const prevTags = current.tags.map((t) => t.name)
-      if (prevTags.join('\n') !== tags.join('\n')) patch.tags = tags
+      const patch = detailsPatch(current, { ...draft, tags })
       if (Object.keys(patch).length > 0) await updateList.mutateAsync(patch)
       if (file && thumb === 'upload') await thumbnail.mutateAsync({ listId: current.id, file })
       const changedVideo = (video?.url ?? null) !== (originalVideo?.url ?? null)
@@ -291,6 +317,19 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
           className="resize-none rounded-xl bg-m-b1 p-3 text-[14px] font-medium leading-[1.4] text-m-t1 outline-none placeholder:text-m-t3"
         />
 
+        {showPosition && (
+          <div className="flex flex-col gap-2">
+            <span className="text-[13px] font-semibold text-m-t3">Position group</span>
+            <MSegmented
+              label="Position group"
+              options={POSITION_GROUP_OPTIONS}
+              value={position}
+              onChange={setPosition}
+              itemClassName="px-0 text-[12px]"
+            />
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <span className="text-[13px] font-semibold text-m-t3">Thumbnail</span>
           <div className="grid grid-cols-3 gap-2">
@@ -309,7 +348,9 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
                   <span
                     className={cn(
                       'relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl',
-                      tile.id === 'collage' ? cn(coverBgClass(list?.position_filter), 'text-white') : 'bg-m-b2 text-m-t3',
+                      tile.id === 'collage'
+                        ? cn(coverBgClass(positionFilter, coloursReady ? coverColor : null), 'text-white')
+                        : 'bg-m-b2 text-m-t3',
                       on && 'ring-2 ring-accent ring-offset-2 ring-offset-m-b0',
                     )}
                   >
@@ -320,6 +361,9 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
               )
             })}
           </div>
+          {coloursReady && thumb === 'collage' && (
+            <CoverSwatches value={coverColor} onChange={setCoverColor} isTeam={Boolean(list?.is_team)} />
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -339,7 +383,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
                 {video.yt ? <CoverImage src={youTubeThumb(video.yt)} /> : null}
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-px">
-                <span className="truncate text-[13px] font-semibold text-m-t1">{video.title ?? 'YouTube video'}</span>
+                <span className="truncate text-[13px] font-semibold text-m-t1">{video.title || VIDEO_TITLE_FALLBACK}</span>
                 <span className="truncate text-[11px] font-medium text-m-t3">{video.url}</span>
               </span>
               <button
@@ -445,4 +489,55 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
       </div>
     </Frame>
   )
+}
+
+/**
+ * The six cover colours (lr-lists §2.2 "Colour swatches"): 24px circles, gap
+ * 8, padding-top 2; the chosen one ringed `0 0 0 2px <page>, 0 0 0 3.5px
+ * <its colour>` (a 2px page-colour offset plus a 1.5px ring). The tap area
+ * reaches the README's 30px without growing the circle (as lr-lists gap 32).
+ * Tapping the chosen colour again clears it — the cover then follows the
+ * position group, which the line underneath says. A team list has no position
+ * group (its control is hidden), so for one the line says "the default
+ * colour" — the accent its cover falls back to.
+ */
+function CoverSwatches({
+  value,
+  onChange,
+  isTeam,
+}: {
+  value: CoverColor | null
+  onChange: (next: CoverColor | null) => void
+  isTeam: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 pt-0.5">
+      <div role="group" aria-label="Cover colour" className="flex gap-2">
+        {COVER_SWATCHES.map((swatch) => {
+          const on = value === swatch.key
+          return (
+            <button
+              key={swatch.key}
+              type="button"
+              aria-pressed={on}
+              aria-label={swatch.label}
+              onClick={() => onChange(on ? null : swatch.key)}
+              className={cn(
+                "relative size-6 flex-none rounded-full after:absolute after:-inset-[3px] after:content-['']",
+                swatch.bg,
+                on && cn('ring-[1.5px] ring-offset-2 ring-offset-m-b0', swatch.ring),
+              )}
+            />
+          )
+        })}
+      </div>
+      <span className="text-[11px] font-medium text-m-t3">{coverSwatchHint(value !== null, isTeam)}</span>
+    </div>
+  )
+}
+
+/** The line under the swatches: what "no colour" means for this list. */
+function coverSwatchHint(chosen: boolean, isTeam: boolean): string {
+  if (isTeam) return chosen ? 'Tap it again to go back to the default colour' : 'Uses the default colour until you pick one'
+  return chosen ? 'Tap it again to follow the position group' : 'Follows the position group until you pick one'
 }

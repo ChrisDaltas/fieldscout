@@ -16,13 +16,17 @@
  * with real signed-in users. 080's RLS is the ENFORCEMENT backstop; this
  * layer's job is friendly, SPECIFIC 4xxs.
  *
- * ## Nothing is fetched. Nothing is scraped.
+ * ## Nothing is scraped. One official lookup.
  *
- * `title`, `source_label` and `duration_label` are typed by the person
- * attaching the link. There is a standing rule against reintroducing a
- * scraping service (CLAUDE.md — ingestion is plain fetch of RSS/YouTube feeds
- * only), and this file makes no network call of any kind. Auto-filling a
- * YouTube title/duration from its URL is a follow-up to PROPOSE, not to build.
+ * `source_label` and `duration_label` are typed by the person attaching the
+ * link, and so is `title` — with ONE exception (Chris, 2026-10-15, mobile gap
+ * list #11): a YouTube **video** attached with no title gets its real title
+ * from YouTube's official oEmbed endpoint (`youtube-title.ts` — a plain
+ * server-side fetch of the JSON YouTube publishes for this, inside the
+ * standing "RSS + YouTube only, no scraping service" rule). The lookup can
+ * never fail the attach: on any failure the video is stored under the
+ * neutral {@link VIDEO_TITLE_FALLBACK}, because 080 makes `title` NOT NULL.
+ * A caller that sends a title (desktop's attach form) is never looked up.
  *
  * ## Every "nothing happened" answer carries its reason
  *
@@ -69,7 +73,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
+import { lookUpYouTubeTitle, type YouTubeTitleResult } from '@/lib/lists/youtube-title'
 import type { Database, Json } from '@/types/database'
+import { VIDEO_TITLE_FALLBACK, youTubeId } from '@/utils/youtube'
+
+export { VIDEO_TITLE_FALLBACK }
 
 type Supabase = SupabaseClient<Database>
 
@@ -111,6 +119,7 @@ export const URL_SCHEME_MESSAGE =
   'Links must start with http:// or https://.'
 export const URL_INVALID_MESSAGE = 'That does not look like a web address.'
 export const URL_TOO_LONG_MESSAGE = `A link must be under ${MAX_URL_LENGTH} characters.`
+export const TITLE_REQUIRED_MESSAGE = 'Add a title for this link.'
 export const REORDER_SET_MISMATCH_MESSAGE =
   'The new order must list every attached link exactly once.'
 
@@ -229,18 +238,33 @@ export function normalizeLinkUrl(
  * `duration_label` is a CLOCK duration (`18:42`, `1:02:33`) and not free text,
  * because the screenshot renders it as a bare figure beside the source; an
  * unbounded string there would be a second caption on a public page.
+ *
+ * `title` may be left out ONLY for a YouTube video — the server looks that
+ * title up (gap list #11). Every other link still needs one; a title that IS
+ * sent is held to 080's bounds exactly as before (blank is still refused).
  */
-export const addLinkInputSchema = z.object({
-  kind: z.enum(['video', 'article']),
-  url: z.string().min(1).max(MAX_URL_LENGTH),
-  title: z.string().trim().min(1).max(200),
-  source_label: z.string().trim().min(1).max(80).nullish(),
-  duration_label: z
-    .string()
-    .trim()
-    .regex(/^[0-9]{1,3}:[0-5][0-9](:[0-5][0-9])?$/, 'Use a clock duration, like 18:42.')
-    .nullish(),
-})
+export const addLinkInputSchema = z
+  .object({
+    kind: z.enum(['video', 'article']),
+    url: z.string().min(1).max(MAX_URL_LENGTH),
+    title: z.string().trim().min(1).max(200).nullish(),
+    source_label: z.string().trim().min(1).max(80).nullish(),
+    duration_label: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{1,3}:[0-5][0-9](:[0-5][0-9])?$/, 'Use a clock duration, like 18:42.')
+      .nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.title == null && !(value.kind === 'video' && youTubeId(value.url))) {
+      ctx.addIssue({ code: 'custom', path: ['title'], message: TITLE_REQUIRED_MESSAGE })
+    }
+  })
+
+/** Dependencies `addLink` reaches outside the database for (tests inject). */
+export interface AddLinkDeps {
+  lookUpTitle?: (url: string) => Promise<YouTubeTitleResult>
+}
 
 export const reorderLinksInputSchema = z.object({
   link_ids: z.array(z.uuid()).min(1).max(MAX_LINKS_PER_LIST),
@@ -323,12 +347,39 @@ export async function listLinks(supabase: Supabase, listId: string): Promise<Ser
   return { status: 200, body: linksBody(listId, result.links) }
 }
 
+/**
+ * The title a link is stored under: the caller's own, else (a YouTube video
+ * sent without one — the schema admits no other case) YouTube's real title
+ * via oEmbed, else {@link VIDEO_TITLE_FALLBACK}. Never throws, never fails
+ * the attach; a failed lookup is LOGGED with its reason rather than passed
+ * off as a title nobody looked for.
+ */
+async function storedTitle(
+  given: string | null | undefined,
+  url: string,
+  lookUpTitle: (url: string) => Promise<YouTubeTitleResult>,
+): Promise<string> {
+  if (given) return given
+  let result: YouTubeTitleResult
+  try {
+    result = await lookUpTitle(url)
+  } catch (error) {
+    result = { title: null, reason: 'network', detail: error instanceof Error ? error.message : String(error) }
+  }
+  if (result.title !== null) return result.title
+  console.warn(
+    `[list-links] YouTube title lookup failed (${result.reason}${result.detail ? `: ${result.detail}` : ''}); stored "${VIDEO_TITLE_FALLBACK}"`,
+  )
+  return VIDEO_TITLE_FALLBACK
+}
+
 /** POST — attach a link. Owner-only. */
 export async function addLink(
   supabase: Supabase,
   listId: string,
   userId: string,
   rawBody: unknown,
+  { lookUpTitle = lookUpYouTubeTitle }: AddLinkDeps = {},
 ): Promise<ServiceResult> {
   if (!idSchema.safeParse(listId).success) return notFound()
 
@@ -356,13 +407,17 @@ export async function addLink(
   // `length` keeps it correct even if a row was removed out from under us.
   const nextPosition = existing.links.reduce((max, link) => Math.max(max, link.position + 1), 0)
 
+  // Looked up only now — after the owner and cap checks — so a refused
+  // request never reaches YouTube.
+  const title = await storedTitle(parsed.data.title, normalized.url, lookUpTitle)
+
   const { data, error } = await supabase
     .from('list_links')
     .insert({
       list_id: listId,
       kind: parsed.data.kind,
       url: normalized.url,
-      title: parsed.data.title,
+      title,
       source_label: parsed.data.source_label ?? null,
       duration_label: parsed.data.duration_label ?? null,
       position: nextPosition,

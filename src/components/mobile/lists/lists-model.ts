@@ -1,7 +1,10 @@
 import { buildBuckets } from '@/components/lists/v2/list-buckets'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
+import { COVER_COLOR_LABEL, coverColorOf, type CoverColor } from '@/lib/lists/cover-color'
 import { DEFAULT_BUDGET } from '@/stores/list-display-store'
-import { TIER_VALUES, isTierKey, type ListBucketKey } from '@/types/schemas/lists'
+import { POSITION_FILTERS, TIER_VALUES, isTierKey, type ListBucketKey } from '@/types/schemas/lists'
+
+type PositionFilter = (typeof POSITION_FILTERS)[number]
 
 /**
  * FieldScout Mobile — Lists (lr-lists.md). Pure helpers: copy formats, tier
@@ -55,9 +58,11 @@ export function updatedLabel(iso: string | null | undefined, now: number = Date.
 }
 
 // =============================================================================
-// Cover colour (lr-lists §2.1 — the design's colour swatches have no column in
-// the app; a list's colour follows its position group, the 2026-08-11 ruling,
-// in the design's own palette: QB red, RB blue, WR purple, default accent)
+// Cover colour (lr-lists §2.1/§2.2). The owner's chosen swatch wins
+// (`lists.cover_color`, migration 188 — Chris, 2026-10-15); with none chosen
+// the colour follows the list's position group (the 2026-08-11 ruling, in the
+// design's own palette: QB red, RB blue, WR purple, default accent), so lists
+// made before the swatches keep their colour.
 // =============================================================================
 
 const COVER_BG: Record<string, string> = {
@@ -70,31 +75,59 @@ const COVER_BG: Record<string, string> = {
   FLEX: 'bg-pos-flex',
 }
 
-export function coverBgClass(positionFilter: string | null | undefined): string {
+/**
+ * The six swatches, in the design's order (lr-lists §2.2): #0088FF accent,
+ * #1D1D1F ink, #F75252 red (= pos-qb), #9D70E9 purple (= pos-wr), #5C7CE5
+ * indigo (= pos-rb), #07B85A green (= confirm). Ink is the themed `m-ink`, as
+ * the uploaded-image cover already is, so a black cover stays visible on the
+ * dark page. `ring` is the selected swatch's outer ring in its own colour.
+ */
+export const COVER_SWATCHES: ReadonlyArray<{ key: CoverColor; label: string; bg: string; ring: string }> = [
+  { key: 'blue', label: COVER_COLOR_LABEL.blue, bg: 'bg-accent', ring: 'ring-accent' },
+  { key: 'ink', label: COVER_COLOR_LABEL.ink, bg: 'bg-m-ink', ring: 'ring-m-ink' },
+  { key: 'red', label: COVER_COLOR_LABEL.red, bg: 'bg-pos-qb', ring: 'ring-pos-qb' },
+  { key: 'purple', label: COVER_COLOR_LABEL.purple, bg: 'bg-pos-wr', ring: 'ring-pos-wr' },
+  { key: 'indigo', label: COVER_COLOR_LABEL.indigo, bg: 'bg-pos-rb', ring: 'ring-pos-rb' },
+  { key: 'green', label: COVER_COLOR_LABEL.green, bg: 'bg-confirm', ring: 'ring-confirm' },
+]
+
+const COVER_COLOR_BG = Object.fromEntries(COVER_SWATCHES.map((s) => [s.key, s.bg])) as Record<CoverColor, string>
+
+/** A collage cover's fill: the chosen colour, else the position group's. */
+export function coverBgClass(positionFilter: string | null | undefined, coverColor?: string | null): string {
+  const chosen = coverColorOf({ cover_color: coverColor })
+  if (chosen) return COVER_COLOR_BG[chosen]
   return (positionFilter && COVER_BG[positionFilter.toUpperCase()]) || 'bg-accent'
 }
 
+/**
+ * The position group choice on New list / Edit details, in desktop's order
+ * (list-form-dialog): "All" (no filter) first. Labels are the mobile ones
+ * (`posLabel`: D/ST for a defence).
+ */
+export const POSITION_GROUP_OPTIONS: ReadonlyArray<{ value: PositionFilter | 'ALL'; label: string }> = [
+  { value: 'ALL', label: 'All' },
+  { value: 'QB', label: 'QB' },
+  { value: 'RB', label: 'RB' },
+  { value: 'WR', label: 'WR' },
+  { value: 'FLEX', label: 'FLEX' },
+  { value: 'TE', label: 'TE' },
+  { value: 'DEF', label: 'D/ST' },
+  { value: 'K', label: 'K' },
+]
+
+/** A stored `position_filter` as the choice's value ('ALL' = none). */
+export function positionGroupValue(positionFilter: string | null | undefined): PositionFilter | 'ALL' {
+  const upper = positionFilter?.toUpperCase()
+  return (POSITION_FILTERS as readonly string[]).includes(upper ?? '') ? (upper as PositionFilter) : 'ALL'
+}
+
 // =============================================================================
-// Tier colours (TIERC): blue, purple, green, gold, red, teal; Tier 7+ grey
+// Tier colours — desktop's palette, one definition for every mobile tier
+// (gap list #10): `mobile/ui/tier-colors.ts`. `index` is 0-based (Tier 1 = 0).
 // =============================================================================
 
-const TIER_TEXT = [
-  'text-m-pos-rb',
-  'text-m-pos-wr',
-  'text-positive-strong',
-  'text-m-pos-te',
-  'text-m-pos-qb',
-  'text-m-pos-k',
-] as const
-const TIER_FILL = ['bg-m-pos-rb', 'bg-m-pos-wr', 'bg-positive-strong', 'bg-m-pos-te', 'bg-m-pos-qb', 'bg-m-pos-k'] as const
-
-/** `index` is 0-based (Tier 1 = 0). */
-export function tierTextClass(index: number): string {
-  return TIER_TEXT[index] ?? 'text-m-t3'
-}
-export function tierFillClass(index: number): string {
-  return TIER_FILL[index] ?? 'bg-m-t3'
-}
+export { tierChipClass, tierFillClass } from '@/components/mobile/ui/tier-colors'
 
 /** Most tiers a list can store (`TIER_VALUES`, S–F). */
 export const MAX_TIERS = TIER_VALUES.length
@@ -336,27 +369,6 @@ export function autoTierItems(items: readonly EdItem[]): EdItem[] | null {
 // YouTube (lr-lists §3 "Link input")
 // =============================================================================
 
-const YT_HOST = /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i
-
-/**
- * The 11-character video id of a YouTube link, or null. The design's regex
- * (`youtu.be/`, `?v=`/`&v=`, `/shorts/`, `/embed/`), tightened to YouTube's
- * own hosts and widened to `/live/` (lr-lists gap 21).
- */
-export function youTubeId(input: string): string | null {
-  const raw = input.trim()
-  if (!raw) return null
-  let url: URL
-  try {
-    url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
-  } catch {
-    return null
-  }
-  if (!YT_HOST.test(url.hostname)) return null
-  const match = /(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([\w-]{11})/.exec(url.href)
-  return match ? match[1] : null
-}
-
-export function youTubeThumb(id: string): string {
-  return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
-}
+// One definition, shared with the server's attach route (its oEmbed title
+// lookup), so both agree on what a YouTube video link is.
+export { youTubeId, youTubeThumb } from '@/utils/youtube'
