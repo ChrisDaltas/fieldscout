@@ -134,6 +134,8 @@ describe('list display store — session state (LV.1.4)', () => {
     // …and with no override, a tiered list opens tiered rather than being
     // silently flattened to plain rank by a hard-coded default.
     expect(resolveOrg(null, 'rank_and_tier')).toBe('tier')
+    // Tiers without numbers (migration 191) opens tiered too.
+    expect(resolveOrg(null, 'tier_only')).toBe('tier')
     expect(resolveOrg(null, 'ranked')).toBe('rank')
     expect(resolveOrg(null, 'unranked')).toBe('rank')
     expect(resolveOrg(undefined, null)).toBe('rank')

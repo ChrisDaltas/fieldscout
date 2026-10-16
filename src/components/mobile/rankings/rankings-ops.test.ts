@@ -5,7 +5,20 @@ import {
   agreementNote,
   backAction,
   cmpToneClass,
+  consensusMovement,
+  editorMovement,
+  editorMovementAvailable,
   expertConsensus,
+  hubDbPositions,
+  hubPosLabel,
+  inHubPos,
+  movementBetween,
+  movementText,
+  previousOrder,
+  rankPosOr,
+  scoringFormatOf,
+  scoringFromFormat,
+  storedMovement,
   expertSpread,
   formatSaved,
   moveItem,
@@ -14,12 +27,17 @@ import {
   orderChanged,
   parseRankingsParams,
   planSliceSave,
+  positionInUse,
   publishButtonLabel,
+  publishEntries,
   publishedToast,
+  RANK_SCORINGS,
   rankDelta,
   rankMap,
   rankableWeeks,
   rankingExists,
+  scoringChanged,
+  scoringLabel,
   shortName,
   tierBreaks,
   toRankingsSearch,
@@ -84,6 +102,32 @@ describe('planSliceSave writes only the edited position', () => {
     expect(planSliceSave([], 'K', ['k1', 'k2']).positions).toEqual([
       { playerId: 'k1', position: 1 },
       { playerId: 'k2', position: 2 },
+    ])
+  })
+})
+
+describe('publishEntries: who has no previous position (#33)', () => {
+  // A new week's board, seeded on its first read from last week's RB A(2),
+  // B(5), C(9); the user's new RB ranking from Experts is [C, A, D].
+  const rows = [
+    { playerId: 'A', slot: 2, pos: 'RB' as const },
+    { playerId: 'B', slot: 5, pos: 'RB' as const },
+    { playerId: 'C', slot: 9, pos: 'RB' as const },
+  ]
+  const plan = planSliceSave(rows, 'RB', ['C', 'A', 'D'])
+
+  it('a ranking’s first publish flags EVERY entry — the seeded slots are not a previous version', () => {
+    expect(publishEntries(plan.positions, new Set(plan.add), true)).toEqual([
+      { playerId: 'C', position: 2, isNew: true },
+      { playerId: 'A', position: 5, isNew: true },
+      { playerId: 'D', position: 9, isNew: true },
+    ])
+  })
+  it('an update flags only the players it added', () => {
+    expect(publishEntries(plan.positions, new Set(plan.add), false)).toEqual([
+      { playerId: 'C', position: 2 },
+      { playerId: 'A', position: 5 },
+      { playerId: 'D', position: 9, isNew: true },
     ])
   })
 })
@@ -242,24 +286,21 @@ describe('publishing (Chris, 2026-10-15: one commit button, no save-without-publ
     expect(rankingExists([], 'RB', true)).toBe(true)
   })
 
-  it('after a publish: nothing unpublished, the +/– markers reset to it', () => {
+  it('after a publish: nothing unpublished', () => {
     // Opened at A B C D; the draft moved D to the top.
-    const start = rankMap(['A', 'B', 'C', 'D'])
     const next = ['D', 'A', 'B', 'C']
-    expect(next.map((id, i) => rankDelta(start, id, i + 1))).toEqual([3, -1, -1, -1])
     expect(orderChanged(next, ['A', 'B', 'C', 'D'])).toBe(true)
 
     const after = afterPublish(next)
     expect(after.savedSeq).toEqual(next)
     expect(orderChanged(next, after.savedSeq)).toBe(false)
-    expect(next.map((id, i) => rankDelta(after.start, id, i + 1))).toEqual([0, 0, 0, 0])
     expect(after.hasRanking).toBe(true)
     // A copy, not the draft array itself.
     expect(after.savedSeq).not.toBe(next)
   })
 
   it('publishing an emptied position leaves no ranking there', () => {
-    expect(afterPublish([])).toEqual({ savedSeq: [], start: new Map(), hasRanking: false })
+    expect(afterPublish([])).toEqual({ savedSeq: [], hasRanking: false })
   })
 
   it('a draft started from somewhere is publishable once it has players', () => {
@@ -290,20 +331,250 @@ describe('url state', () => {
     expect(toRankingsSearch(s)).toBe('?src=users&scoring=std&pos=WR&edit=w6&ep=QB&from=experts')
   })
   it('Experts is the default source; unknown sources and starts fall back', () => {
-    const s = parseRankingsParams(new URLSearchParams('src=adp&edit=season&from=nope'), { type: 'season' })
+    const s = parseRankingsParams(new URLSearchParams('src=nope&edit=season&from=nope'), { type: 'season' })
     expect(s.src).toBe('experts')
     expect(s.overlay).toEqual({ kind: 'edit', type: 'season', pos: 'RB', from: null })
-    expect(toRankingsSearch({ ...s, overlay: null })).toBe('')
+    expect(toRankingsSearch({ ...s, overlay: null })).toBe('?pos=RB')
     expect(parseRankingsParams(new URLSearchParams('src=p:abc-123'), { type: 'season' }).src).toBe('p:abc-123')
   })
-  it('view=mine forces the Mine source; bad values fall back', () => {
+  it('view=mine opens the Mine tab; bad values fall back', () => {
     const s = parseRankingsParams(new URLSearchParams('view=mine&src=users&pos=XX&new=2&nt=w99'), { type: 'season' })
     expect(s.src).toBe('mine')
     expect(s.pos).toBe('RB')
     expect(s.overlay).toEqual({ kind: 'new', step: 2, type: 'season', pos: 'RB' })
-    expect(toRankingsSearch({ ...s, overlay: null })).toBe('?view=mine')
+    expect(toRankingsSearch({ ...s, overlay: null })).toBe('?view=mine&pos=RB')
   })
-  it('the desktop ?tab=pre link opens My rankings', () => {
+  it('the desktop ?tab=pre link opens the Mine tab', () => {
     expect(parseRankingsParams(new URLSearchParams('tab=pre'), { type: 'season' }).view).toBe('mine')
+  })
+})
+
+describe('one Rankings screen (gap list #28)', () => {
+  it('`?view=mine` — the link Profile and Home use — is the Mine tab of the one screen', () => {
+    const s = parseRankingsParams(new URLSearchParams('view=mine'), { type: 'season' })
+    expect(s).toMatchObject({ view: 'mine', src: 'mine', overlay: null })
+  })
+  it('leaving Mine for another tab drops view=mine; coming back writes it again', () => {
+    const mine = parseRankingsParams(new URLSearchParams('view=mine&pos=WR'), { type: 'season' })
+    const users = parseRankingsParams(new URLSearchParams(toRankingsSearch({ ...mine, src: 'users' }).slice(1)), {
+      type: 'season',
+    })
+    expect(users).toMatchObject({ view: 'hub', src: 'users', pos: 'WR' })
+    expect(toRankingsSearch({ ...users, src: 'mine' })).toBe('?view=mine&pos=WR')
+    // `src=mine` (hand-made) is the same tab.
+    expect(parseRankingsParams(new URLSearchParams('src=mine'), { type: 'season' }).view).toBe('mine')
+  })
+})
+
+describe('scoring (gap list #30)', () => {
+  it('reads and writes PPR, Half PPR, 0.25 PPR and Standard; anything else is PPR', () => {
+    for (const k of ['half', 'quarter', 'std'] as const) {
+      const s = parseRankingsParams(new URLSearchParams(`scoring=${k}`), { type: 'season' })
+      expect(s.scoring).toBe(k)
+      expect(toRankingsSearch(s)).toBe(`?scoring=${k}&pos=RB`)
+    }
+    expect(parseRankingsParams(new URLSearchParams('scoring=ppr'), { type: 'season' }).scoring).toBe('ppr')
+    expect(parseRankingsParams(new URLSearchParams('scoring=half_ppr'), { type: 'season' }).scoring).toBe('ppr')
+    expect(toRankingsSearch(parseRankingsParams(new URLSearchParams(''), { type: 'season' }))).toBe('?pos=RB')
+  })
+  it('labels the four in menu order', () => {
+    expect(RANK_SCORINGS.map((s) => s.label)).toEqual(['PPR', 'Half PPR', '0.25 PPR', 'Standard'])
+    expect(scoringLabel('quarter')).toBe('0.25 PPR')
+    expect(scoringLabel('std')).toBe('Standard')
+  })
+})
+
+describe('the remembered position (gap list #32)', () => {
+  it('a URL naming no position opens the hub and New ranking on the remembered one', () => {
+    const hub = parseRankingsParams(new URLSearchParams(''), { type: 'season', pos: 'TE' })
+    expect(hub.pos).toBe('TE')
+    const wizard = parseRankingsParams(new URLSearchParams('new=1'), { type: 'w6', pos: 'TE' })
+    expect(wizard.overlay).toEqual({ kind: 'new', step: 1, type: 'w6', pos: 'TE' })
+    // A position the URL names wins.
+    expect(parseRankingsParams(new URLSearchParams('pos=QB&new=1&np=K'), { type: 'w6', pos: 'TE' })).toMatchObject({
+      pos: 'QB',
+      overlay: { pos: 'K' },
+    })
+  })
+  it('RB only when nothing is remembered', () => {
+    expect(parseRankingsParams(new URLSearchParams('new=1'), { type: 'season' }).overlay).toMatchObject({ pos: 'RB' })
+  })
+  it('every written URL names its position, so the remembered one never overrides it', () => {
+    const s = parseRankingsParams(new URLSearchParams('pos=RB'), { type: 'season', pos: 'WR' })
+    expect(s.pos).toBe('RB')
+    expect(parseRankingsParams(new URLSearchParams(toRankingsSearch(s).slice(1)), { type: 'season', pos: 'WR' }).pos).toBe(
+      'RB',
+    )
+  })
+  it('the position in use: the overlay’s, else the chips on Experts / Scout AI / Users', () => {
+    const base = { src: 'experts' as const, pos: 'WR' as const, overlay: null }
+    expect(positionInUse(base)).toBe('WR')
+    expect(positionInUse({ ...base, src: 'ai' })).toBe('WR')
+    expect(positionInUse({ ...base, src: 'users' })).toBe('WR')
+    expect(positionInUse({ ...base, src: 'mine' })).toBeNull()
+    expect(positionInUse({ ...base, src: 'p:abc' })).toBeNull()
+    expect(positionInUse({ ...base, src: 'mine', overlay: { kind: 'new', step: 1, type: 'w6', pos: 'K' } })).toBe('K')
+    expect(positionInUse({ ...base, overlay: { kind: 'edit', type: 'season', pos: 'QB', from: null } })).toBe('QB')
+  })
+})
+
+describe('ADP, Auction and FLEX (Chris, 2026-10-15, gap list #29)', () => {
+  it('ADP and Auction are tabs with the position chips', () => {
+    for (const src of ['adp', 'auction'] as const) {
+      const s = parseRankingsParams(new URLSearchParams(`src=${src}&pos=WR`), { type: 'season' })
+      expect(s).toMatchObject({ view: 'hub', src, pos: 'WR' })
+      expect(toRankingsSearch(s)).toBe(`?src=${src}&pos=WR`)
+      expect(positionInUse(s)).toBe('WR')
+    }
+  })
+  it('FLEX is a hub chip — RB, WR and TE overall — that no ranking starts on', () => {
+    const s = parseRankingsParams(new URLSearchParams('src=users&pos=FLEX&new=1'), { type: 'w6', pos: 'TE' })
+    expect(s.pos).toBe('FLEX')
+    expect(toRankingsSearch({ ...s, overlay: null })).toBe('?src=users&pos=FLEX')
+    // New ranking (and the editor) take a ranked position: the remembered one.
+    expect(s.overlay).toEqual({ kind: 'new', step: 1, type: 'w6', pos: 'TE' })
+    const ed = parseRankingsParams(new URLSearchParams('pos=FLEX&edit=season'), { type: 'season' })
+    expect(ed.overlay).toEqual({ kind: 'edit', type: 'season', pos: 'RB', from: null })
+    // FLEX is never remembered as "the position last used".
+    expect(positionInUse({ src: 'experts', pos: 'FLEX', overlay: null })).toBeNull()
+    expect(rankPosOr('FLEX', 'QB')).toBe('QB')
+    expect(rankPosOr('K', 'QB')).toBe('K')
+  })
+  it('FLEX covers RB / WR / TE; D/ST keeps its app code', () => {
+    expect(hubDbPositions('FLEX')).toEqual(['RB', 'WR', 'TE'])
+    expect(hubDbPositions('DST')).toEqual(['DEF'])
+    expect(['RB', 'WR', 'TE', 'QB', 'K', 'DEF'].filter((p) => inHubPos(p, 'FLEX'))).toEqual(['RB', 'WR', 'TE'])
+    expect(inHubPos('DEF', 'DST')).toBe(true)
+    expect(inHubPos(null, 'FLEX')).toBe(false)
+    expect(hubPosLabel('FLEX')).toBe('FLEX')
+    expect(hubPosLabel('DST')).toBe('D/ST')
+  })
+})
+
+describe('saved scoring (Chris, 2026-10-15, gap list #36)', () => {
+  it('a picked scoring that differs from the saved one is a change to publish on its own', () => {
+    const base = { picked: 'half' as const, saved: null, savable: true, hasRanking: true }
+    // An untagged ranking can be tagged without moving a player; a wrong
+    // tag can be fixed.
+    expect(scoringChanged(base)).toBe(true)
+    expect(scoringChanged({ ...base, saved: 'ppr' })).toBe(true)
+    // Nothing picked (the default shown), or the saved one picked again.
+    expect(scoringChanged({ ...base, picked: null })).toBe(false)
+    expect(scoringChanged({ ...base, saved: 'half' })).toBe(false)
+    // A new ranking carries its scoring in its first publish; before 190
+    // is pushed (or the board unknown) there is nowhere to keep it.
+    expect(scoringChanged({ ...base, hasRanking: false })).toBe(false)
+    expect(scoringChanged({ ...base, savable: false })).toBe(false)
+  })
+
+  it('maps the phone’s scorings onto the saved vocabulary and back', () => {
+    expect(RANK_SCORINGS.map((o) => scoringFormatOf(o.key))).toEqual(['ppr', 'half', 'quarter', 'standard'])
+    expect(['ppr', 'half', 'quarter', 'standard'].map(scoringFromFormat)).toEqual(['ppr', 'half', 'quarter', 'std'])
+    // Nothing saved, not pushed yet (undefined), or outside the vocabulary.
+    expect([null, undefined, 'std', 'half_ppr', 3].map(scoringFromFormat)).toEqual([null, null, null, null, null])
+  })
+})
+
+describe('movement (Chris, 2026-10-15, gap list #33)', () => {
+  it('counts among the players in both versions; a new one is New', () => {
+    const m = movementBetween(['A', 'B', 'C', 'D'], ['D', 'A', 'X', 'B', 'C'])
+    expect([...m]).toEqual([
+      ['D', 3],
+      ['A', -1],
+      ['X', 'new'],
+      ['B', -1],
+      ['C', -1],
+    ])
+  })
+  it('adding or dropping a player puts no arrow on the players below him', () => {
+    expect([...movementBetween(['A', 'B', 'C'], ['B', 'C'])]).toEqual([
+      ['B', 0],
+      ['C', 0],
+    ])
+    expect([...movementBetween(['A', 'B'], ['N', 'A', 'B'])]).toEqual([
+      ['N', 'new'],
+      ['A', 0],
+      ['B', 0],
+    ])
+  })
+  it('no previous version: no movement at all, not New on everyone', () => {
+    expect(movementBetween([], ['A', 'B']).size).toBe(0)
+  })
+  it('rebuilds the previous order from stored positions (board slots, gaps and all)', () => {
+    // An RB slice of a cross-position board: slots 2, 5, 9 last time.
+    const rows = [
+      { id: 'C', prev: 9 },
+      { id: 'A', prev: 2 },
+      { id: 'N', prev: null },
+      { id: 'B', prev: 5 },
+    ]
+    expect(previousOrder(rows)).toEqual(['A', 'B', 'C'])
+    expect([...storedMovement(rows)]).toEqual([
+      ['C', 2],
+      ['A', -1],
+      ['N', 'new'],
+      ['B', -1],
+    ])
+  })
+  it('nothing stored (not updated since, or the column not pushed yet) → nothing to show', () => {
+    expect(previousOrder([{ id: 'A', prev: null }])).toBeNull()
+    expect(storedMovement([{ id: 'A', prev: undefined }, { id: 'B', prev: undefined }]).size).toBe(0)
+  })
+  it('the editor: the published ranking’s own movement until you change it, then draft vs published', () => {
+    const published = [
+      { id: 'B', prev: 2 },
+      { id: 'A', prev: 1 },
+    ]
+    // Nothing unpublished → what everyone else sees (B passed A last time).
+    expect([...editorMovement(['B', 'A'], published)]).toEqual([
+      ['B', 1],
+      ['A', -1],
+    ])
+    // A draft → against what's published (what Publish will record).
+    expect([...editorMovement(['A', 'B', 'N'], published)]).toEqual([
+      ['A', 1],
+      ['B', -1],
+      ['N', 'new'],
+    ])
+    // Not published yet → nothing to compare with.
+    expect(editorMovement(['A'], []).size).toBe(0)
+  })
+  it('the editor’s switch only where there is a version to compare with', () => {
+    const stored = [
+      { id: 'B', prev: 2 },
+      { id: 'A', prev: 1 },
+    ]
+    const none = [
+      { id: 'B', prev: null },
+      { id: 'A', prev: undefined },
+    ]
+    expect(editorMovementAvailable(stored, false)).toBe(true)
+    // Never republished since movement was recorded (or 190 not pushed),
+    // and nothing reordered → nothing to show, so no switch.
+    expect(editorMovementAvailable(none, false)).toBe(false)
+    // A reordering draft compares with what's published.
+    expect(editorMovementAvailable(none, true)).toBe(true)
+    // Nothing published at the position.
+    expect(editorMovementAvailable([], true)).toBe(false)
+  })
+  it('the Experts consensus moves when an expert’s board does; untouched boards count as unchanged', () => {
+    const m = consensusMovement([
+      // Expert 1 moved C from 3rd to 1st in its last update.
+      { expert: 'e1', players: ['C', 'A', 'B'], prev: [3, 1, 2] },
+      // Expert 2 hasn't been updated since movement was recorded.
+      { expert: 'e2', players: ['A', 'B', 'C'], prev: [null, null, null] },
+    ])
+    // Before: A (1,1) B (2,2) C (3,3). Now: A (2,1)=1.5, C (1,3)=2, B (3,2)=2.5.
+    expect([...m]).toEqual([
+      ['A', 0],
+      ['C', 1],
+      ['B', -1],
+    ])
+    expect(
+      consensusMovement([{ expert: 'e1', players: ['A', 'B'], prev: [undefined, undefined] }]).size,
+    ).toBe(0)
+  })
+  it('reads ▲ / ▼ / New, nothing when unmoved', () => {
+    expect([3, -2, 0, 'new' as const, undefined].map(movementText)).toEqual(['▲3', '▼2', '', 'New', ''])
   })
 })

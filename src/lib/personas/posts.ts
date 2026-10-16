@@ -10,6 +10,7 @@ import { structuredClaudeCall } from '@/lib/claude/structured'
 import { renderStyleDescription } from '@/lib/claude/styles'
 import { logAiCall } from '@/lib/claude/telemetry'
 import { generateUniqueSlug, replaceTagsForList, resolveTagIds, slugify } from '@/lib/lists/helpers'
+import { insertListWithScoring, personaScoringFormat } from '@/lib/lists/ranking-publish'
 import { assertNoRealAnalystNames } from '@/lib/personas/blocklist'
 import {
   getPersonaContext,
@@ -223,9 +224,13 @@ Instructions:
   // Backing list (persona-owned, tagged so it joins the /tag/{slug} feeds).
   const listTitle = post.title.slice(0, 100)
   const listSlug = await generateUniqueSlug(supabase, ownerId, `${persona.username}-${theme.key}-${CURRENT_SEASON}`)
-  const { data: list, error: listError } = await supabase
-    .from('lists')
-    .insert({
+  // The board is made for the persona's scoring (the packet above used it):
+  // saved as its `scoring_format` (migration 190) — dropped, not failed,
+  // where 190 isn't pushed yet. A new board has no previous version, so its
+  // players carry no previous position.
+  const { data: list, error: listError } = await insertListWithScoring(
+    (row) => supabase.from('lists').insert(row).select('id').single(),
+    {
       owner_id: ownerId,
       ai_persona_id: persona.id,
       title: listTitle,
@@ -238,10 +243,11 @@ Instructions:
       // Otherwise the draft's title/dek/rationales leak to the home shelf,
       // profile, and tag feeds before any human review (M5 review finding).
       is_private: true,
-    })
-    .select('id')
-    .single()
+      scoring_format: personaScoringFormat(scoring),
+    },
+  )
   if (listError) throw listError
+  if (!list) throw new Error(`[posts] ${persona.username}/${theme.key}: the backing list was not created`)
   const listId = list.id as string
 
   try {

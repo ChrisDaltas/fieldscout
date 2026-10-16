@@ -1,0 +1,254 @@
+/**
+ * The Community reads (gap list #35–#37). Pinned:
+ *  - the lists reads use `select('*')` + embeds and never NAME `cover_color`
+ *    (migration 188) or `scoring_format` (migration 190) — main deploys
+ *    before the push, and naming a missing column fails the whole read;
+ *  - a ranking's saved scoring is read from the row when it's there, and is
+ *    "none" (never an error) before 190;
+ *  - Latest is its own read, by `created_at` (the pool is by update time);
+ *  - recent likes are read for the whole window (not just the lists read),
+ *    paged past PostgREST's 1000-row cap, and a likes error fails the read
+ *    (no silent "no likes");
+ *  - a list liked lately that the update-ordered pool left out is read too
+ *    (`popularExtra`, For you's candidates) — a like doesn't update a list;
+ *  - Injuries asks the server with the Home injury report's statuses.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+type Op = [string, unknown[]]
+interface Call {
+  table: string
+  ops: Op[]
+}
+const calls: Call[] = []
+let answer: (call: Call) => { data: unknown; error: unknown } = () => ({ data: [], error: null })
+
+vi.mock('@/lib/supabase/client', () => ({
+  createBrowserClient: () => ({
+    from: (table: string) => {
+      const call: Call = { table, ops: [] }
+      calls.push(call)
+      const builder: object = new Proxy(
+        {},
+        {
+          get(_target, prop) {
+            if (prop === 'then') {
+              return (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+                Promise.resolve(answer(call)).then(resolve, reject)
+            }
+            return (...args: unknown[]) => {
+              call.ops.push([String(prop), args])
+              return builder
+            }
+          },
+        },
+      )
+      return builder
+    },
+  }),
+}))
+
+import { INJURY_STATUSES } from '@/components/mobile/home/home-ops'
+
+import {
+  LATEST_READ_SIZE,
+  LIKED_EXTRA_SIZE,
+  POOL_SELECT,
+  readCommunityFeed,
+  readInjuryMatches,
+} from './use-mobile-community-feed'
+
+const NOW = Date.parse('2026-10-15T12:00:00Z')
+
+const op = (call: Call, name: string) => call.ops.filter(([n]) => n === name).map(([, args]) => args)
+const isLatest = (call: Call) => op(call, 'order').some(([col]) => col === 'created_at')
+/** The read of recently liked lists outside the pool (by id). */
+const isExtra = (call: Call) => op(call, 'in').some(([col]) => col === 'id')
+const mainOrder = (call: Call) => op(call, 'order').find(([, o]) => !(o as { referencedTable?: string }).referencedTable)
+
+function row(id: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    title: `List ${id}`,
+    slug: id,
+    description: null,
+    is_big_board: true,
+    position_filter: null,
+    player_count: 3,
+    like_count: 2,
+    created_at: '2026-10-10T00:00:00Z',
+    updated_at: '2026-10-14T00:00:00Z',
+    thumbnail_url: null,
+    ai_persona_id: null,
+    owner: { id: `u-${id}`, username: `user${id}`, avatar_url: null, follower_count: 1 },
+    persona: null,
+    scoring: { rules: { receptions: 1 } },
+    tag_links: [],
+    links: [],
+    heads: [],
+    ...over,
+  }
+}
+
+beforeEach(() => {
+  calls.length = 0
+  answer = () => ({ data: [], error: null })
+})
+
+describe('readCommunityFeed', () => {
+  it('reads lists with * — never naming cover_color or scoring_format', async () => {
+    await readCommunityFeed(NOW)
+    expect(POOL_SELECT.trim().startsWith('*,')).toBe(true)
+    expect(POOL_SELECT).not.toMatch(/cover_color|scoring_format/)
+    const lists = calls.filter((c) => c.table === 'lists')
+    expect(lists).toHaveLength(2)
+    for (const c of lists) {
+      expect(op(c, 'select')).toEqual([[POOL_SELECT]])
+      expect(op(c, 'eq')).toContainEqual(['is_private', false])
+    }
+  })
+
+  it('Latest is its own read, newest POSTED first; the pool is by last update', async () => {
+    await readCommunityFeed(NOW)
+    const lists = calls.filter((c) => c.table === 'lists')
+    const latest = lists.find(isLatest)!
+    const pool = lists.find((c) => !isLatest(c))!
+    expect(mainOrder(latest)).toEqual(['created_at', { ascending: false, nullsFirst: false }])
+    expect(op(latest, 'limit')).toContainEqual([LATEST_READ_SIZE])
+    expect(mainOrder(pool)).toEqual(['updated_at', { ascending: false, nullsFirst: false }])
+  })
+
+  it('the saved scoring: from the row once 190 is pushed; none (no error) before', async () => {
+    answer = (call) =>
+      call.table === 'lists'
+        ? isLatest(call)
+          ? { data: [], error: null }
+          : { data: [row('a', { scoring_format: 'quarter' }), row('b'), row('c', { scoring_format: 'bogus' })], error: null }
+        : { data: [], error: null }
+    const feed = await readCommunityFeed(NOW)
+    const by = Object.fromEntries(feed.items.map((i) => [i.id, i]))
+    expect(by.a).toMatchObject({ scoringFormat: 'quarter', scoring: '0.25 PPR' })
+    // Before 190 (no key): no saved scoring; the label still comes from the
+    // scoring system, as before.
+    expect(by.b).toMatchObject({ scoringFormat: null, scoring: 'PPR' })
+    expect(by.c!.scoringFormat).toBeNull()
+  })
+
+  it('likes: the whole last 14 days, paged past the 1000-row cap', async () => {
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({
+      list_id: 'a',
+      user_id: `u${i}`,
+      created_at: '2026-10-15T11:00:00Z',
+    }))
+    const page2 = [
+      { list_id: 'z', user_id: 'x', created_at: '2026-10-14T12:00:00Z' },
+      { list_id: 'a', user_id: 'y', created_at: null },
+    ]
+    answer = (call) => {
+      if (call.table === 'lists') return { data: isLatest(call) ? [row('z')] : [row('a'), row('b')], error: null }
+      const [from] = op(call, 'range')[0] as [number, number]
+      return { data: from === 0 ? page1 : page2, error: null }
+    }
+    const feed = await readCommunityFeed(NOW)
+    const likes = calls.filter((c) => c.table === 'list_likes')
+    expect(likes).toHaveLength(2)
+    expect(op(likes[0]!, 'range')).toEqual([[0, 999]])
+    expect(op(likes[1]!, 'range')).toEqual([[1000, 1999]])
+    // Not narrowed to the lists read: it's also how liked lists outside the pool are found.
+    expect(op(likes[0]!, 'in')).toEqual([])
+    expect(op(likes[0]!, 'gte')).toEqual([['created_at', '2026-10-01T12:00:00.000Z']])
+    const a = feed.items.find((i) => i.id === 'a')!
+    expect(a.recentLikes).toHaveLength(1000) // the untimed like is left to the count
+    expect(a.likeCount).toBe(2)
+    expect(feed.items.find((i) => i.id === 'b')!.recentLikes).toEqual([])
+    expect(feed.latest.map((i) => i.id)).toEqual(['z'])
+    expect(feed.latest[0]!.recentLikes).toEqual([Date.parse('2026-10-14T12:00:00Z')])
+    // z is liked and outside the pool: a For you candidate — its Latest row
+    // reused, not read again.
+    expect(feed.popularExtra.map((i) => i.id)).toEqual(['z'])
+    expect(calls.filter(isExtra)).toHaveLength(0)
+  })
+
+  it('a list liked lately but edited long ago (outside the pool) is read for For you', async () => {
+    // `old` was last edited weeks ago — the update-ordered pool doesn't hold
+    // it — but it was liked today, more than anything in the pool.
+    const likes = [
+      ...['u1', 'u2', 'u3'].map((u) => ({ list_id: 'old', user_id: u, created_at: '2026-10-15T10:00:00Z' })),
+      { list_id: 'a', user_id: 'u1', created_at: '2026-10-15T09:00:00Z' },
+      { list_id: 'gone', user_id: 'u1', created_at: '2026-10-15T08:00:00Z' },
+    ]
+    answer = (call) => {
+      if (call.table === 'list_likes') return { data: likes, error: null }
+      if (isExtra(call)) return { data: [row('old', { updated_at: '2026-09-20T00:00:00Z', like_count: 3 })], error: null }
+      return { data: isLatest(call) ? [] : [row('a')], error: null }
+    }
+    const feed = await readCommunityFeed(NOW)
+    const [extra, ...more] = calls.filter(isExtra)
+    expect(more).toHaveLength(0)
+    // Hottest first, the pool's own `a` left out; `gone` (private, deleted or
+    // empty) simply doesn't come back through the public filter.
+    expect(op(extra!, 'in')).toEqual([['id', ['old', 'gone']]])
+    expect(op(extra!, 'select')).toEqual([[POOL_SELECT]])
+    expect(op(extra!, 'eq')).toContainEqual(['is_private', false])
+    expect(op(extra!, 'is')).toContainEqual(['deleted_at', null])
+    expect(op(extra!, 'gt')).toContainEqual(['player_count', 0])
+    expect(op(extra!, 'limit')).toContainEqual([4, { referencedTable: 'heads' }])
+    expect(feed.items.map((i) => i.id)).toEqual(['a'])
+    expect(feed.popularExtra.map((i) => i.id)).toEqual(['old'])
+    expect(feed.popularExtra[0]!.recentLikes).toHaveLength(3)
+  })
+
+  it('at most LIKED_EXTRA_SIZE liked lists outside the pool are read; a failed read fails the feed', async () => {
+    const likes = Array.from({ length: LIKED_EXTRA_SIZE + 5 }, (_, i) => ({
+      list_id: `l${i}`,
+      user_id: 'u1',
+      created_at: '2026-10-15T10:00:00Z',
+    }))
+    answer = (call) =>
+      call.table === 'list_likes'
+        ? { data: likes, error: null }
+        : isExtra(call)
+          ? { data: null, error: { message: 'extra boom' } }
+          : { data: [], error: null }
+    await expect(readCommunityFeed(NOW)).rejects.toMatchObject({ message: 'extra boom' })
+    const [extra] = calls.filter(isExtra)
+    expect((op(extra!, 'in')[0] as [string, string[]])[1]).toHaveLength(LIKED_EXTRA_SIZE)
+  })
+
+  it('a likes read that fails fails the feed — never a quiet "no likes" order', async () => {
+    answer = (call) =>
+      call.table === 'list_likes'
+        ? { data: null, error: { message: 'boom' } }
+        : { data: isLatest(call) ? [] : [row('a')], error: null }
+    await expect(readCommunityFeed(NOW)).rejects.toMatchObject({ message: 'boom' })
+  })
+
+  it('no recent likes: one likes read, no extra lists read', async () => {
+    const feed = await readCommunityFeed(NOW)
+    expect(calls.filter((c) => c.table === 'list_likes')).toHaveLength(1)
+    expect(calls.filter(isExtra)).toHaveLength(0)
+    expect(feed.popularExtra).toEqual([])
+  })
+})
+
+describe('readInjuryMatches', () => {
+  it('asks for pool lists with a player on the injury report (Home’s statuses, on an NFL team), one row each', async () => {
+    answer = () => ({ data: [{ id: 'l1', lp: [{}] }, { id: 'l3', lp: [{}] }], error: null })
+    const ids = await readInjuryMatches(['l1', 'l2', 'l3'])
+    expect([...ids]).toEqual(['l1', 'l3'])
+    const [call] = calls
+    expect(call!.table).toBe('lists')
+    expect(op(call!, 'select')[0]![0]).toMatch(/lp:list_players!inner\(player:players!inner\(status, team\)\)/)
+    expect(op(call!, 'in')).toEqual([
+      ['id', ['l1', 'l2', 'l3']],
+      ['lp.player.status', [...INJURY_STATUSES]],
+    ])
+    expect(op(call!, 'not')).toEqual([['lp.player.team', 'is', null]])
+    expect(op(call!, 'limit')).toEqual([[1, { referencedTable: 'lp' }]])
+  })
+
+  it('an error is thrown, not an empty set', async () => {
+    answer = () => ({ data: null, error: { message: 'nope' } })
+    await expect(readInjuryMatches(['l1'])).rejects.toMatchObject({ message: 'nope' })
+  })
+})

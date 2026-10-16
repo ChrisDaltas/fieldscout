@@ -6,7 +6,6 @@ import { RkIcon, RK_ICON } from '@/components/mobile/rankings/rank-parts'
 import {
   RANK_POSITIONS,
   activeWeekOf,
-  dbPos,
   formatSaved,
   fromDbPos,
   plural,
@@ -100,7 +99,7 @@ export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, on
   // ---- step 2 sources --------------------------------------------------------
   const onStep2 = step === 2
   const experts = useExpertsSource(pos, onStep2)
-  const users = useUsersSource(dbPos(pos), onStep2)
+  const users = useUsersSource(pos, onStep2)
   const games = useNflWeekGames(onStep2 && weekly ? NFL_SEASON : undefined, onStep2 && weekly ? week : undefined)
   const sourcesPending = onStep2 && (experts.isPending || users.isPending || (weekly && games.isPending))
   const sourcesFailed = onStep2 && (experts.isError || users.isError)

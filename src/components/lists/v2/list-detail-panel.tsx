@@ -26,6 +26,11 @@ import {
   type ListWithTags,
 } from '@/hooks/use-lists'
 import { featureFlags } from '@/lib/feature-flags'
+import {
+  groupingWrite,
+  isTierOnlyUnavailableResponse,
+  showsNumbersOnDesktop,
+} from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListWindowsStore } from '@/stores/list-windows-store'
@@ -85,6 +90,15 @@ import { AddPlayersPopover, ListToolbar } from './list-toolbar'
  */
 
 type DetailTab = 'list' | 'details' | 'comments'
+
+/**
+ * Set the first time this page load hears the server answer a tier-only save
+ * with "Tiers without numbers is coming in the next update" (409
+ * `TIER_ONLY_UNAVAILABLE` — migration 191 not pushed yet). From then on a Tier
+ * pick on a Basic list stays session-only and the note is not repeated; it
+ * lives for the page load, across lists, and a reload asks again.
+ */
+let tierOnlyUnavailable = false
 
 interface DetailPanelProps {
   listId: string
@@ -230,17 +244,32 @@ export function ListDetailPanel({
    * create dialog goes on promising *"Numbered 1–N. Flip on the tiers view any
    * time."* (PROGRESS §3 Q3.)
    *
-   * So the grouping control inherits that one write, and nothing more:
+   * So the grouping control inherits that one write, and nothing more. Since
+   * Chris's 2026-10-15 ruling ("allow tiers without numbers", migration 191)
+   * the Tiers switch is independent of Ranked, so the write flips **only the
+   * Tiers half** and keeps the list's numbering as it is (`withTiers`):
    *
-   * * **Tier** persists `rank_and_tier` — this is "flip tiers on".
-   * * **Rank** persists `ranked` **only when the list is currently
-   *   `rank_and_tier`** — this is "flip tiers off", the other half of the same
-   *   control. An `unranked` list stays `unranked`: the retired control was
-   *   hidden entirely on `hide_order` lists, so silently promoting one to
-   *   `ranked` would be a behaviour this task invented rather than carried.
+   * * **Tier** turns tiers on — `ranked` → `rank_and_tier`, and a Basic
+   *   (`unranked`) list → `tier_only`, tiers without numbers. (Before 191 a
+   *   Basic list was written `rank_and_tier` here — Tiers turned Ranked on,
+   *   the rule Chris's ruling removes.)
+   * * **Rank** turns tiers off — `rank_and_tier` → `ranked`, `tier_only` →
+   *   `unranked`. Nothing is ever numbered or un-numbered by this control.
    * * **Round / cost / budget** persist nothing. D4 makes them label sets over
    *   the same bucket mechanism, and cost/budget membership is computed — there
    *   is no `ranking_mode` value that means either.
+   *
+   * (`groupingWrite` in `@/lib/lists/ranking-mode` is that table.) Numbering
+   * is the Ranked switch: chosen at create (Basic / Ranked) on desktop, and
+   * flippable in the phone editor.
+   *
+   * **Before 191 is pushed** a `tier_only` save answers 409 ("Tiers without
+   * numbers is coming in the next update"). That is not a failure to shout
+   * about: the grouping still shows as picked for the session, so it gets one
+   * neutral note per page load — never the red "Could not save" — and later
+   * Tier picks on a Basic list stay session-only without asking the server
+   * again (`tierOnlyUnavailable`). A reload asks once more, which is how the
+   * first pick after the push saves.
    *
    * The display store still never writes (its own header says a persist is "a
    * route call it makes *alongside* `setOrg`" — this is that call).
@@ -249,23 +278,28 @@ export function ListDetailPanel({
     (next: ListOrg) => {
       setOrg(listId, next)
       if (!canEdit || !list || list.is_big_board) return
-      const current = list.ranking_mode
-      const persisted =
-        next === 'tier' && current !== 'rank_and_tier'
-          ? 'rank_and_tier'
-          : next === 'rank' && current === 'rank_and_tier'
-            ? 'ranked'
-            : null
+      const persisted = groupingWrite(list.ranking_mode, next, { tierOnlyUnavailable })
       if (!persisted) return
       updateList.mutate(
         { ranking_mode: persisted },
         {
-          onError: (error) =>
+          onError: (error) => {
+            if (isTierOnlyUnavailableResponse(error)) {
+              // 191 isn't pushed yet: say so once, plainly, and stop asking.
+              if (tierOnlyUnavailable) return
+              tierOnlyUnavailable = true
+              toast({
+                title: 'Tiers without numbers is coming in the next update',
+                description: 'This list shows in tiers for now. It isn’t saved that way yet.',
+              })
+              return
+            }
             toast({
               title: 'Could not save the grouping',
               description: error.message,
               variant: 'destructive',
-            }),
+            })
+          },
         },
       )
     },
@@ -460,6 +494,7 @@ export function ListDetailPanel({
           <ListToolbar
             org={org}
             onOrgChange={chooseOrg}
+            numbered={showsNumbersOnDesktop(list.ranking_mode)}
             view={display.view}
             onViewChange={(next) => setView(listId, next)}
             cols={display.cols}
@@ -487,6 +522,7 @@ export function ListDetailPanel({
               stats={stats}
               view={display.view}
               org={org}
+              numbered={showsNumbersOnDesktop(list.ranking_mode)}
               showBudgetShare={org === 'budget'}
               budget={display.budget}
               handlers={handlers}

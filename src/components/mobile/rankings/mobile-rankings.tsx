@@ -1,9 +1,9 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { readLastRankPos, rememberRankPos } from '@/components/mobile/rankings/last-position'
 import { NewRanking } from '@/components/mobile/rankings/new-ranking'
 import { RkIcon, RK_ICON } from '@/components/mobile/rankings/rank-parts'
 import { RankingEditor } from '@/components/mobile/rankings/ranking-editor'
@@ -11,12 +11,16 @@ import { RankingsHub, type RankingsNav } from '@/components/mobile/rankings/rank
 import {
   activeWeekOf,
   parseRankingsParams,
+  positionInUse,
+  rankPosOr,
   toRankingsSearch,
   type RankFrom,
   type RankOverlay,
+  type RankPos,
   type RankingsUrlState,
   type RankType,
 } from '@/components/mobile/rankings/rankings-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 
 type EditOverlay = Extract<RankOverlay, { kind: 'edit' }>
@@ -46,19 +50,22 @@ export function MobileRankingsRedirect() {
 }
 
 /** `/app/big-board/week/<not a week>` on a phone (desktop shows the same
- *  "That week doesn't exist"). */
+ *  "That week doesn't exist"). Back goes to where you came from, else the
+ *  Rankings Mine tab (gap list #27). */
 export function MobileInvalidWeek() {
+  const goBack = useGoBack()
   return (
     <MobileScreen
       header={
         <div className="flex items-center gap-2.5 px-4 pt-[2px]">
-          <Link
-            href="/app/weekly-ranks?view=mine"
-            aria-label="Back to my rankings"
+          <button
+            type="button"
+            onClick={() => goBack('/app/weekly-ranks?view=mine')}
+            aria-label="Back"
             className="flex size-[34px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1"
           >
             <RkIcon d={RK_ICON.back} size={16} stroke={2} />
-          </Link>
+          </button>
         </div>
       }
     >
@@ -71,16 +78,25 @@ export function MobileInvalidWeek() {
 }
 
 /**
- * The mobile Rankings area (FieldScout Mobile "Lists and Rankings"): the
- * hub (with Mine / My rankings) and, over it, the New ranking wizard and the
- * ranking editor as full-screen layers that hide the dock (lr-frame §1.1).
+ * The mobile Rankings area (FieldScout Mobile "Lists and Rankings"): ONE
+ * Rankings screen — tabs Experts · Scout AI · Users · Mine, where Mine is
+ * what used to be the separate My rankings (gap list #28) — and, over it,
+ * the New ranking wizard and the ranking editor as full-screen layers that
+ * hide the dock (lr-frame §1.1).
  *
- * Every screen and filter lives in the URL — `?view=mine`, `?src=`,
- * `?scoring=`, `?pos=`, `?new=1|2&nt=&np=`, `?edit=&ep=&from=` — so browser
- * / OS Back steps through them and a link can open any of them. Updates go
- * through the native History API, which Next keeps in sync with
+ * Every screen and filter lives in the URL — `?view=mine` (the Mine tab),
+ * `?src=`, `?scoring=`, `?pos=`, `?new=1|2&nt=&np=`, `?edit=&ep=&from=` — so
+ * browser / OS Back steps through them and a link can open any of them.
+ * Updates go through the native History API, which Next keeps in sync with
  * `useSearchParams` without a server round trip. The hub stays mounted under
  * the overlays, so its scroll position and filters survive them.
+ *
+ * A URL that names no position opens on the one last used on this device
+ * (gap list #32); the position in use is remembered as it changes.
+ *
+ * Back and Close go to where you came from (gap list #27): an overlay the
+ * hub opened pops back to the hub as it was; one a link opened (Profile's
+ * New ranking, Community's Create) goes back to that screen.
  *
  * Unpublished edits are guarded on every way out of the editor (Back
  * discards them, Chris 2026-10-15 — but asks first): its own back asks,
@@ -99,15 +115,27 @@ export function MobileRankings({
 }) {
   const pathname = usePathname()
   const params = useSearchParams()
+  const goBack = useGoBack()
+  // Where a URL with no position opens: the last one used on this device.
+  // Read once — every URL the hub writes names its position, so only links
+  // from outside fall back to it.
+  const [startPos] = useState<RankPos>(() => readLastRankPos() ?? 'RB')
   const state = useMemo<RankingsUrlState>(() => {
     // `?new=1` with no type opens on this week, like the handoff's #new-ranking.
     const active = activeWeekOf(currentWeek)
-    const s = parseRankingsParams(params, { type: active <= 18 ? `w${active}` : 'season' })
+    const s = parseRankingsParams(params, { type: active <= 18 ? `w${active}` : 'season', pos: startPos })
     if (!s.overlay && initialEdit && !params.has('closed')) {
-      return { ...s, overlay: { kind: 'edit', type: initialEdit, pos: s.pos, from: null } }
+      return { ...s, overlay: { kind: 'edit', type: initialEdit, pos: rankPosOr(s.pos, startPos), from: null } }
     }
     return s
-  }, [params, initialEdit, currentWeek])
+  }, [params, initialEdit, currentWeek, startPos])
+
+  // Remember the position in use — the hub's chips, New ranking's, the
+  // editor's — so Rankings starts there next time (gap list #32).
+  const usedPos = positionInUse(state)
+  useEffect(() => {
+    if (usedPos) rememberRankPos(usedPos)
+  }, [usedPos])
 
   // Was the open overlay pushed by us (so Back can simply pop it)?
   const pushedOverlay = useRef(false)
@@ -115,20 +143,27 @@ export function MobileRankings({
     if (!state.overlay) pushedOverlay.current = false
   }, [state.overlay])
 
-  const write = useCallback(
-    (next: RankingsUrlState, mode: 'push' | 'replace') => {
+  const hrefOf = useCallback(
+    (next: RankingsUrlState) => {
       let search = toRankingsSearch(next)
       // The week route opens its editor by default; once closed, say so.
       if (initialEdit && !next.overlay) search += search ? '&closed=1' : '?closed=1'
-      const url = `${pathname}${search}`
-      if (mode === 'push') window.history.pushState(null, '', url)
-      else window.history.replaceState(null, '', url)
+      return `${pathname}${search}`
     },
     [pathname, initialEdit],
   )
 
+  const write = useCallback(
+    (next: RankingsUrlState, mode: 'push' | 'replace') => {
+      const url = hrefOf(next)
+      if (mode === 'push') window.history.pushState(null, '', url)
+      else window.history.replaceState(null, '', url)
+    },
+    [hrefOf],
+  )
+
   // An editor the page OPENED on (a `?edit=` link, or the week route) gets
-  // its own history entry over My rankings, so browser / OS Back from it
+  // its own history entry over the Mine tab, so browser / OS Back from it
   // lands where the editor's own back does — inside the unpublished-changes
   // guard below — instead of leaving the page with the edits.
   const mounted = useRef(false)
@@ -182,18 +217,21 @@ export function MobileRankings({
     },
   }
 
-  /** Wizard X: back to the hub exactly as it was (lr-frame §3.1 `go("rk")`). */
+  /** Wizard X — to where you came from (gap list #27): the hub exactly as it
+   *  was (lr-frame §3.1 `go("rk")`) when the hub opened it, the screen that
+   *  linked here (Profile's New ranking, Community's Create), else the hub. */
   const closeOverlay = () => {
     if (pushedOverlay.current) window.history.back()
-    else write({ ...state, overlay: null }, 'replace')
+    else goBack(hrefOf({ ...state, overlay: null }))
   }
 
-  /** Editor back → My rankings (the standalone one if that's where we are). */
+  /** Editor back — to where you came from (gap list #27): the tab (or the
+   *  AI expert's board) it was opened over, the screen that linked to New
+   *  ranking, else the Mine tab. */
   const editorBack = () => {
     setLeaving(true)
-    const toMine = { ...state, src: 'mine' as const, overlay: null }
-    if (pushedOverlay.current && state.src === 'mine') window.history.back()
-    else write(toMine, 'replace')
+    if (pushedOverlay.current) window.history.back()
+    else goBack(hrefOf({ ...state, src: 'mine', overlay: null }))
   }
 
   const ov = state.overlay

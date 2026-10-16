@@ -5,6 +5,7 @@ import {
   authorInitials,
   coverHeight,
   formatFollows,
+  postedAgo,
   topLine,
   updatedAgo,
   videoCount,
@@ -86,22 +87,25 @@ const COVER_H: Record<110 | 150 | 180 | 205, string> = {
   205: 'h-[205px]',
 }
 
-/** Shelf header: 18/700 title + "See all" (handoff §2.7). */
+/** Shelf header: 18/700 title + "See all" (handoff §2.7). A shelf with no
+ *  fuller view (For you's "Latest") leaves "See all" out. */
 export function ShelfHeader({
   title,
   onSeeAll,
   className,
 }: {
   title: string
-  onSeeAll: () => void
+  onSeeAll?: () => void
   className?: string
 }) {
   return (
     <div className={cn('flex items-baseline justify-between', className)}>
       <h2 className="whitespace-nowrap text-[18px] font-bold tracking-[-0.02em]">{title}</h2>
-      <button type="button" onClick={onSeeAll} className="text-[13px] font-semibold text-accent">
-        See all
-      </button>
+      {onSeeAll && (
+        <button type="button" onClick={onSeeAll} className="text-[13px] font-semibold text-accent">
+          See all
+        </button>
+      )}
     </div>
   )
 }
@@ -111,12 +115,26 @@ function authorSeed(author: CommunityAuthor): string {
   return author.profileId ?? author.username
 }
 
-/** Ranking row (handoff §2.10): 60px tile on the author's colour with the #1
- *  player, title, "@handle · N follows" and the top-three line. */
-export function RankingRow({ item }: { item: CommunityItem }) {
+/**
+ * Ranking row (handoff §2.10): 60px tile on the author's colour with the #1
+ * player, title, "@handle · N follows" and the top-three line.
+ *
+ * With `postedNow` it's a row of For you's "Latest" (gap list #35), which
+ * mixes lists and rankings: the second line says what it is and when it was
+ * posted ("@handle · List · 25m", the handoff's "@jordan · 25m" idiom), and
+ * a list's tile takes the list's cover colour, as its card would.
+ */
+export function RankingRow({ item, postedNow }: { item: CommunityItem; postedNow?: number }) {
   const lead = item.heads[0]
   const top = topLine(item.heads)
   const followers = item.author.followers
+  const latest = postedNow !== undefined
+  const posted = latest ? postedAgo(item.createdAt, postedNow) : ''
+  const meta = latest
+    ? ` · ${item.kind === 'rank' ? 'Ranking' : 'List'}${posted ? ` · ${posted}` : ''}`
+    : followers !== null
+      ? ` · ${formatFollows(followers)}`
+      : ''
   return (
     <a
       href={communityDetailHref(item.id)}
@@ -126,7 +144,9 @@ export function RankingRow({ item }: { item: CommunityItem }) {
       <span
         className={cn(
           'relative flex h-[60px] w-[60px] flex-none items-center justify-center overflow-hidden rounded-[10px]',
-          authorBgClass(authorSeed(item.author)),
+          latest && item.kind === 'list'
+            ? coverBgClass(item.positionFilter, item.coverColor)
+            : authorBgClass(authorSeed(item.author)),
         )}
       >
         {lead && <MHeadshot player={lead} size={40} />}
@@ -135,7 +155,7 @@ export function RankingRow({ item }: { item: CommunityItem }) {
         <span className="truncate text-[14px] font-semibold">{item.title}</span>
         <span className="truncate text-[12px] font-medium text-m-t3">
           @{item.author.username}
-          {followers !== null && ` · ${formatFollows(followers)}`}
+          {meta}
         </span>
         {top && <span className="truncate text-[11px] font-medium text-m-t3">{top}</span>}
       </span>

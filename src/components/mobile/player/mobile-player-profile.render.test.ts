@@ -33,6 +33,7 @@ import { draftQueueKeys } from '@/hooks/use-draft-queue'
 import type { CoreStatsPayload } from '@/lib/players/core-stats-ops'
 
 import { ProfileLoaded } from './mobile-player-profile'
+import { useProfileUiStore } from './profile-ui-store'
 import { HistoryTab, GameLogTab, TeamTab } from './profile-stats-tabs'
 import { LeaguesTab, QueueButton } from './profile-leagues'
 
@@ -209,6 +210,83 @@ describe('mobile player profile — leagues gated off', () => {
     expect(team).toContain('data-depth-slot="RB"')
     expect(team).toMatch(/text-accent[^>]*>Robinson</)
   })
+
+  it('team tab (#45): each teammate’s name opens his profile; his own name is not a link', () => {
+    const qc = seeded()
+    qc.setQueryData(['mobile-pprofile-depth-chart', 'ATL'], [
+      { id: 'p1', full_name: 'Bijan Robinson', first_name: 'Bijan', last_name: 'Robinson', position: 'RB', birth_date: '2002-01-30', depth_chart_position: 'RB', depth_chart_order: 1 },
+      { id: 'p2', full_name: 'Tyler Allgeier', first_name: 'Tyler', last_name: 'Allgeier', position: 'RB', birth_date: '2000-04-15', depth_chart_position: 'RB', depth_chart_order: 2 },
+    ])
+    const team = html(createElement(TeamTab, { player, onOpenPlayer: () => {} }), qc)
+    expect(team).toMatch(/<button type="button" aria-label="Open Tyler Allgeier"[^>]*data-depth-player="p2"[\s\S]*?>Allgeier</)
+    expect(team).not.toContain('data-depth-player="p1"')
+    expect(team).toMatch(/text-accent[^>]*>Robinson</)
+    // Without a way to open a profile (outside the mobile profile), nothing is a button.
+    expect(html(createElement(TeamTab, { player }), qc)).not.toContain('data-depth-player')
+  })
+
+  it('opened from a teammate (#45): the header’s Close is a Back to the first player, on its Team tab', () => {
+    const nav = { kind: 'back' as const, label: 'Back to Drake London', run: () => {} }
+    const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {}, nav }), seeded())
+    expect(out).toMatch(/aria-label="Back to Drake London"[^>]*data-profile-back/)
+    expect(out).not.toContain('data-profile-close')
+    // Back returns to the first player on the tab he was left on.
+    useProfileUiStore.getState().setRestore({ playerId: 'p1', tab: 'team' })
+    const back = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())
+    expect(back).toMatch(/aria-selected="true"[^>]*data-profile-tab="team"/)
+    expect(back).toContain('data-profile-team')
+    useProfileUiStore.getState().setRestore(null)
+    // A restore for another player is not his.
+    useProfileUiStore.getState().setRestore({ playerId: 'p9', tab: 'team' })
+    expect(html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())).toMatch(/aria-selected="true"[^>]*data-profile-tab="summary"/)
+    useProfileUiStore.getState().setRestore(null)
+  })
+
+  it('key stats trends (#43): the arrow is the direction, the colour better or worse', () => {
+    const qc = seeded()
+    const wk = (week: number, rush_yards: number): ProfileStatLine => ({ season: 2026, week, is_live: false, rush_attempts: 10, rush_yards, rush_tds: 0, targets: 2, receptions: 1 })
+    qc.setQueryData(['mobile-pprofile-stat-lines', 'p1', 2026], [wk(1, 120), wk(2, 120), wk(3, 40), wk(4, 40)])
+    qc.setQueryData(['player-core-stats', 'p1', 'espn_standard'], {
+      ...core,
+      weekly: [1, 2, 3, 4].map((week) => ({ week, points: 10, proj: null })),
+      box: { games: 4, totals: { rush_attempts: 40, rush_yards: 320, rush_tds: 0, targets: 8, receptions: 4 } },
+    })
+    const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), qc)
+    // Rush yds per game fell (80 → 66.7): ▼ and red.
+    expect(out).toMatch(/data-key-stat="rush_yds"[\s\S]*?text-negative-strong[^>]*data-key-trend="down" data-key-trend-tone="bad"[^>]*>▼ last 3 13\.3</)
+  })
+
+  it('key stats trends (#43): a QB throwing fewer interceptions lately is ▼ and GREEN — the colour follows better, not the arrow', () => {
+    const qb: PlayerStatsResponse = { ...data, player: { ...player, position: 'QB' } }
+    const qc = seeded()
+    const wk = (week: number, interceptions: number): ProfileStatLine => ({
+      season: 2026,
+      week,
+      is_live: false,
+      pass_attempts: 30,
+      pass_completions: 20,
+      pass_yards: 250,
+      pass_tds: 2,
+      interceptions,
+      rush_attempts: 3,
+      rush_yards: 10,
+      rush_tds: 0,
+    })
+    // 3 INT in week 1, then none: season 0.75 / gm, last 3 0.0 / gm.
+    qc.setQueryData(['mobile-pprofile-stat-lines', 'p1', 2026], [wk(1, 3), wk(2, 0), wk(3, 0), wk(4, 0)])
+    qc.setQueryData(['player-core-stats', 'p1', 'espn_standard'], {
+      ...core,
+      weekly: [1, 2, 3, 4].map((week) => ({ week, points: 10, proj: null })),
+      box: {
+        games: 4,
+        totals: { pass_attempts: 120, pass_completions: 80, pass_yards: 1000, pass_tds: 8, interceptions: 3, rush_attempts: 12, rush_yards: 40, rush_tds: 0 },
+      },
+    })
+    const out = html(createElement(ProfileLoaded, { data: qb, target, onClose: () => {} }), qc)
+    const tile = out.match(/data-key-stat="int"[\s\S]*?<\/div>/)?.[0] ?? ''
+    expect(tile).toMatch(/class="[^"]*text-positive-strong[^"]*" data-key-trend="down" data-key-trend-tone="good"[^>]*>▼ last 3 0\.8</)
+    expect(tile).not.toContain('text-negative-strong')
+  })
 })
 
 describe('mobile player profile — leagues on', () => {
@@ -275,6 +353,9 @@ describe('mobile player profile — leagues on', () => {
     expect(out).toMatch(/data-profile-action="mine"[^>]*>Drop</)
     expect(out).toContain('data-profile-ownership')
     expect(out).toContain('Touchdown Tacos · your team')
+    // A long mixed summary truncates rather than pushing the row (and the
+    // profile) into a sideways scroll on a phone.
+    expect(out).toMatch(/class="min-w-0 max-w-\[60%\] truncate[^"]*"[^>]*data-profile-ownership-summary/)
     const tabs = [...out.matchAll(/data-profile-tab="(\w+)"/g)].map((m) => m[1])
     expect(tabs).toEqual(['summary', 'log', 'leagues', 'tx', 'team', 'history'])
   })

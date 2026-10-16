@@ -15,8 +15,17 @@ import {
   createListWithCoverSchema,
   isMissingCoverColorColumn,
 } from '@/lib/lists/cover-color'
+import {
+  isTierOnlyUnavailable,
+  TIER_ONLY_UNAVAILABLE_BODY,
+  TIER_ONLY_UNAVAILABLE_STATUS,
+} from '@/lib/lists/ranking-mode'
 import { createServerClient } from '@/lib/supabase/server'
-import { listsQuerySchema, rankingModeToLegacyFlags } from '@/types/schemas/lists'
+import {
+  legacyFlagsToRankingMode,
+  listsQuerySchema,
+  rankingModeToLegacyFlags,
+} from '@/types/schemas/lists'
 
 /** How many players each list carries for its cover. See the GET body. */
 const COVER_PLAYERS = 4
@@ -266,7 +275,8 @@ export async function POST(request: Request) {
 
   // ranking_mode is the source of truth. If the client sent it, derive the
   // legacy boolean pair from it. Otherwise fall back to whatever booleans the
-  // legacy client sent (defaulting to a numbered/ranked list).
+  // legacy client sent (defaulting to a numbered/ranked list); since 191 all
+  // four combinations name a mode (both = tiers without numbers).
   const rankingMode = input.ranking_mode
   const legacyFlags = rankingMode
     ? rankingModeToLegacyFlags(rankingMode)
@@ -274,13 +284,7 @@ export async function POST(request: Request) {
         hide_order: input.hide_order ?? false,
         tiers_enabled: input.tiers_enabled ?? false,
       }
-  const resolvedRankingMode =
-    rankingMode ??
-    (legacyFlags.hide_order
-      ? 'unranked'
-      : legacyFlags.tiers_enabled
-        ? 'rank_and_tier'
-        : 'ranked')
+  const resolvedRankingMode = rankingMode ?? legacyFlagsToRankingMode(legacyFlags)
 
   const { data: created, error: insertError } = await supabase
     .from('lists')
@@ -315,6 +319,11 @@ export async function POST(request: Request) {
     // A colour sent before migration 188 is pushed: a clear 409, not a 500.
     if (isMissingCoverColorColumn(insertError)) {
       return NextResponse.json(COVER_COLOR_UNAVAILABLE_BODY, { status: COVER_COLOR_UNAVAILABLE_STATUS })
+    }
+    // Tiers without numbers before migration 191 is pushed: the older CHECK
+    // refuses `tier_only` — a clear 409, not a 500, and no list is made.
+    if (resolvedRankingMode === 'tier_only' && isTierOnlyUnavailable(insertError)) {
+      return NextResponse.json(TIER_ONLY_UNAVAILABLE_BODY, { status: TIER_ONLY_UNAVAILABLE_STATUS })
     }
     return NextResponse.json(
       { error: insertError?.message ?? 'Could not create list' },

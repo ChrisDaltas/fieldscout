@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
@@ -21,6 +20,7 @@ import {
 import { problemCopy } from '@/components/leagues/team-page'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { useAuth } from '@/hooks/use-auth'
@@ -46,6 +46,10 @@ import { assetsOf, rowPill } from './trades-mobile-ops'
  * full-screen overlays over it. `?with=&player=` (the doors from a team page,
  * a player) opens the builder; `?trade=` opens one trade — closing either
  * goes back to where the door was.
+ *
+ * Back goes back to where you came from (Chris #27, `useGoBack`) — or,
+ * opened fresh from a link, to the League tab. Closing a door's builder or
+ * trade opened fresh from a link leaves you on this Trades list instead.
  */
 export function MobileTradesScreen({
   leagueId,
@@ -58,13 +62,11 @@ export function MobileTradesScreen({
   initialPlayer: string | null
   initialTrade: string | null
 }) {
-  const router = useRouter()
   const league = useLeague(leagueId)
   const { user, isLoading: authLoading } = useAuth()
-  const back = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
-    else router.push(`/app/leagues/${leagueId}`)
-  }
+  const goBack = useGoBack()
+  const back = () => goBack(`/app/leagues/${leagueId}`)
+  const doorClose = () => goBack(`/app/leagues/${leagueId}/trades`)
   const header = (
     <>
       <div className="flex h-[52px] items-center px-3">
@@ -103,7 +105,7 @@ export function MobileTradesScreen({
   }
   return (
     <MobileScreen header={header}>
-      <TradesBody leagueId={leagueId} detail={league.data} initialWith={initialWith} initialPlayer={initialPlayer} initialTrade={initialTrade} onDoorClose={back} />
+      <TradesBody leagueId={leagueId} detail={league.data} initialWith={initialWith} initialPlayer={initialPlayer} initialTrade={initialTrade} onDoorClose={doorClose} />
     </MobileScreen>
   )
 }

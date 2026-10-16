@@ -27,13 +27,13 @@ describe('mobileRoute — which bar and which lit tab (navigation §(c))', () =>
     expect(mobileRoute('/app/explore', null).accountTab).toBe('community')
     expect(mobileRoute('/app/research', null).accountTab).toBe('players')
     expect(mobileRoute('/app/players', null).accountTab).toBe('players')
-    for (const path of ['/app/profile', '/app/stats', '/app/lists', '/app/lists/new', '/app/lists/abc', '/app/weekly-ranks', '/app/big-board', '/app/big-board/week/3']) {
+    for (const path of ['/app/profile', '/app/stats', '/app/lists', '/app/lists/new', '/app/lists/abc', '/app/weekly-ranks', '/app/big-board', '/app/big-board/week/3', '/app/start-or-sit']) {
       expect(mobileRoute(path, null).accountTab, path).toBe('profile')
     }
   })
 
   it('leaves the bar alone on screens that keep the league context', () => {
-    for (const path of ['/app/notifications', '/app/messages', '/app/messages/league-lg1', '/app/listsx']) {
+    for (const path of ['/app/notifications', '/app/messages', '/app/messages/league-lg1', '/app/listsx', '/app/start-or-sit/new', '/app/start-or-sit/q1']) {
       expect(mobileRoute(path, null), path).toEqual({ leagueId: null, leagueTab: null, accountTab: null })
     }
   })

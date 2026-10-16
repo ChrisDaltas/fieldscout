@@ -202,6 +202,42 @@ export function pendingCount(trades: readonly Pick<MTradeOffer, 'awaitingMe'>[])
 }
 
 // ---------------------------------------------------------------------------
+// Following the conversation (Chris, #47, 2026-10-15)
+// ---------------------------------------------------------------------------
+
+/** How close to the bottom still counts as "at the newest message": a
+ *  finger's rest, so a nudge of a few pixels doesn't stop the follow. */
+export const PIN_SLACK_PX = 48
+
+/** Whether a scroller sits at (or within `slack` of) its bottom. A scroller
+ *  with nothing to scroll is at its bottom. */
+export function isNearBottom(
+  m: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  slack: number = PIN_SLACK_PX,
+): boolean {
+  return m.scrollHeight - m.scrollTop - m.clientHeight <= slack
+}
+
+/**
+ * A conversation opens at its newest message and follows new ones as they
+ * arrive — while the reader is at the bottom. Scrolled up to read, a
+ * newcomer leaves them where they are; their OWN message (they just sent
+ * it) brings them down to it, as every messaging app does.
+ */
+export function followsNewMessage(args: { pinned: boolean; fromMe: boolean }): boolean {
+  return args.pinned || args.fromMe
+}
+
+/** The newest message in a laid-out thread (separators skipped). */
+export function lastMessageOf(items: readonly ThreadItem[]): { key: string; fromMe: boolean } | null {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i]!
+    if (item.kind === 'msg') return { key: item.key, fromMe: item.message.fromMe }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Thread geometry (§2.2 B)
 // ---------------------------------------------------------------------------
 

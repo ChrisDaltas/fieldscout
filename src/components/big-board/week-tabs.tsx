@@ -3,6 +3,7 @@
 import Link from 'next/link'
 
 import { cn } from '@/lib/utils'
+import { isWeekLocked } from '@/lib/rankings/week-window'
 
 const WEEK_COUNT = 18
 
@@ -54,8 +55,8 @@ export function WeekTabs({
   onSelectPre,
   className,
 }: WeekTabsProps) {
-  const isLocked = (week: number) =>
-    currentWeek === 0 ? week > 1 : week > currentWeek
+  // This week and the next three can be ranked (the phone's rule too).
+  const isLocked = (week: number) => isWeekLocked(week, currentWeek)
 
   return (
     <div

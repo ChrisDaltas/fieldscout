@@ -13,6 +13,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { useDraftMode } from '@/hooks/use-draft-mode'
 import { useList, type ListPlayerWithPlayer, type ListWithTags } from '@/hooks/use-lists'
+import { showsNumbersOnDesktop } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import {
   resolveOrg,
@@ -30,7 +31,7 @@ import {
   type ColumnMembership,
   type DraftedFanOut,
 } from './drafted-fan-out'
-import { bucketHeading, buildBuckets, ORG_OPTIONS, rankMap } from './list-buckets'
+import { bucketHeading, buildBuckets, orgOptionsFor, rankMap } from './list-buckets'
 import {
   DraftedCheckbox,
   EmptyListState,
@@ -196,7 +197,11 @@ function ComparisonColumn({
 
   const list = detail.data
   const entries = list?.players
-  const org: ListOrg = resolveOrg(display.org, list?.ranking_mode ?? summary?.ranking_mode)
+  const rankingMode = list?.ranking_mode ?? summary?.ranking_mode
+  const org: ListOrg = resolveOrg(display.org, rankingMode)
+  // No `#N` on a tier-only list (tiers without numbers); a Basic list keeps
+  // its desktop numbers pending Chris (`showsNumbersOnDesktop`).
+  const numbered = showsNumbersOnDesktop(rankingMode)
 
   const buckets = React.useMemo(
     () =>
@@ -322,9 +327,9 @@ function ComparisonColumn({
               It is the width `RowMenu` already uses for the same reason. */}
           <DropdownMenuContent align="end" className="w-[168px]">
             {/* The five grouping modes, from the one list every grouping surface
-                reads (`ORG_OPTIONS`), and keyed to THIS list's id — which is
+                reads (`orgOptionsFor`), and keyed to THIS list's id — which is
                 what makes the columns group independently. */}
-            {ORG_OPTIONS.map((option) => (
+            {orgOptionsFor(numbered).map((option) => (
               <DropdownMenuItem key={option.id} onSelect={() => setOrg(listId, option.id)}>
                 {option.label}
               </DropdownMenuItem>
@@ -388,7 +393,7 @@ function ComparisonColumn({
                   <ComparisonRow
                     key={entry.id}
                     entry={entry}
-                    rank={ranks.get(entry.id) ?? 0}
+                    rank={numbered ? (ranks.get(entry.id) ?? 0) : null}
                     drafted={drafted.has(entry.player_id)}
                     onToggleDrafted={() =>
                       fanOut.tick(listId, entry.player_id, entry.player.full_name)
@@ -413,7 +418,8 @@ function ComparisonRow({
   onOpenPlayer,
 }: {
   entry: ListPlayerWithPlayer
-  rank: number
+  /** `null` on a list without numbers: no `#N` cell. */
+  rank: number | null
   drafted: boolean
   onToggleDrafted: () => void
   onOpenPlayer: () => void
@@ -432,7 +438,7 @@ function ComparisonRow({
           D12): every column on screen that holds this player, none that does
           not, and no list you did not pick. See `drafted-fan-out.ts`. */}
       <DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} />
-      <span className="fs-num w-[21px] shrink-0 text-[10px] font-bold text-n-6">#{rank}</span>
+      {rank !== null && <span className="fs-num w-[21px] shrink-0 text-[10px] font-bold text-n-6">#{rank}</span>}
       <PlayerName
         name={entry.player.full_name}
         drafted={drafted}

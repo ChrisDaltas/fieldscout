@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
+import { listKindOf } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import type { AddLinkInput, ListWithDetails } from '@/hooks/use-lists'
 import { MAX_TAGS_PER_LIST } from '@/types/schemas/lists'
@@ -123,7 +124,8 @@ function TagsSection({
 
   const editable = canEdit && Boolean(onSaveTags)
   const names = list.tags.map((tag) => tag.name)
-  const kind = list.ranking_mode === 'unranked' ? 'List' : 'Ranking'
+  // Ranking (numbered) · Tiers (tiers without numbers, 191) · List.
+  const kind = listKindOf(list.ranking_mode)
   const visibility = list.is_private ? 'Private' : 'Public'
 
   const commit = () => {

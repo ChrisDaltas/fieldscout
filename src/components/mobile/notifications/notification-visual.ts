@@ -21,6 +21,7 @@ export const NOTIF_PATH = {
   person: M_ICON.players,
   corrections: M_ICON.corrections,
   bell: M_ICON.bell,
+  note: M_ICON.news,
 } as const
 
 export type NotifTone = 'blue' | 'purple' | 'green' | 'red' | 'orange' | 'neutral'
@@ -66,6 +67,8 @@ export function notificationVisual(n: Pick<NotificationItem, 'type' | 'data'>): 
   if (type.includes('vote')) return { path: NOTIF_PATH.check, tone: 'blue' }
   if (type === 'league_member') return { path: NOTIF_PATH.person, tone: 'neutral' }
   if (type === 'operator_notice') return { path: NOTIF_PATH.bell, tone: 'blue' }
+  // Gap list #13 (192): the commissioner changed the league's note.
+  if (type === 'league_commissioner_note') return { path: NOTIF_PATH.note, tone: 'blue' }
   return { path: NOTIF_PATH.bell, tone: 'neutral' }
 }
 

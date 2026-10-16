@@ -86,6 +86,13 @@ interface BodyProps {
   view: ListView
   /** Decides both the label set and whether a section can be rearranged. */
   org: ListOrg
+  /**
+   * Whether the rows carry `#N` and the cards their ordinals
+   * (`showsNumbersOnDesktop(ranking_mode)`). Off on a tier-only list — tiers
+   * without numbers (migration 191): the order is still the owner's, but it
+   * is not a ranking. A Basic list keeps its numbers here pending Chris.
+   */
+  numbered: boolean
   /** Budget grouping adds a share-of-budget column (`screens/detail-grouping-budget-pct.png`). */
   showBudgetShare: boolean
   budget: number
@@ -328,7 +335,9 @@ function ListRow({
       {view.showGrip && (
         <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
       )}
-      <span className="fs-num w-6 shrink-0 text-[10px] font-semibold text-n-6">#{rank}</span>
+      {view.numbered && (
+        <span className="fs-num w-6 shrink-0 text-[10px] font-semibold text-n-6">#{rank}</span>
+      )}
       <PlayerFace entry={entry} size={24} />
       <span className="flex min-w-0 flex-1 items-center gap-[9px]">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -390,7 +399,7 @@ function TableBody(props: ViewProps) {
       <div style={{ minWidth }}>
         <div className="flex h-[24px] items-center gap-2.5 bg-white px-[7px]">
           {props.showGrip && <span className="w-[9px]" />}
-          <span className="w-6 text-[10px] font-semibold text-n-6">#</span>
+          {props.numbered && <span className="w-6 text-[10px] font-semibold text-n-6">#</span>}
           <span className="w-[21px]" />
           <span className="flex-1 text-[10px] font-semibold text-n-6">Player</span>
           {showBudgetShare && (
@@ -511,7 +520,9 @@ function TableRow({
       {view.showGrip && (
         <Grip draggable={view.canDrag} reason={view.dragReason ?? undefined} />
       )}
-      <span className="fs-num w-6 shrink-0 text-[10px] font-semibold text-n-6">#{rank}</span>
+      {view.numbered && (
+        <span className="fs-num w-6 shrink-0 text-[10px] font-semibold text-n-6">#{rank}</span>
+      )}
       <PlayerFace entry={entry} size={21} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <PlayerName
@@ -761,21 +772,27 @@ function PlayerTile({
       )}
     >
       <div className="relative flex flex-col items-center gap-1 px-1.5 pb-1.5 pt-1.5">
-        {/* Corner cells sit flush to the corner, closed by an inner rule. */}
-        <span
-          className={cn(
-            'fs-num absolute left-1.5 top-1.5 inline-flex h-[17px] items-center rounded-sm px-1 text-[9px] font-bold leading-none',
-            bandClassName ?? 'bg-surface-control text-n-2',
-          )}
-        >
-          #{rank}
-        </span>
-        <span
-          title={`${ordinal(positionRank)} ${entry.player.position ?? ''} on this list`}
-          className="fs-num absolute right-1.5 top-1.5 inline-flex h-[17px] items-center px-0.5 text-[9px] font-semibold leading-none text-n-6"
-        >
-          {ordinal(positionRank)}
-        </span>
+        {/* Corner cells sit flush to the corner, closed by an inner rule.
+            Both are list-order numbers, so a list drawn without numbers
+            (tier-only) has neither — its tier rail already says where he sits. */}
+        {view.numbered && (
+          <>
+            <span
+              className={cn(
+                'fs-num absolute left-1.5 top-1.5 inline-flex h-[17px] items-center rounded-sm px-1 text-[9px] font-bold leading-none',
+                bandClassName ?? 'bg-surface-control text-n-2',
+              )}
+            >
+              #{rank}
+            </span>
+            <span
+              title={`${ordinal(positionRank)} ${entry.player.position ?? ''} on this list`}
+              className="fs-num absolute right-1.5 top-1.5 inline-flex h-[17px] items-center px-0.5 text-[9px] font-semibold leading-none text-n-6"
+            >
+              {ordinal(positionRank)}
+            </span>
+          </>
+        )}
         <PlayerFace entry={entry} size={30} round />
         <PlayerName
           name={entry.player.full_name}

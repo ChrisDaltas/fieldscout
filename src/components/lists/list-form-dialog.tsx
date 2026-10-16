@@ -32,6 +32,7 @@ import {
   hasCoverColorColumn,
   type CoverColor,
 } from '@/lib/lists/cover-color'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import type { List, ListRosterSettings } from '@/types/database'
 
@@ -124,9 +125,10 @@ interface ListFormDialogProps {
 }
 
 function initialFormState(list: List | undefined): ListFormState {
+  // Basic = no numbers: a plain list, or tiers without numbers (191).
   const listType: ListType = list?.is_team
     ? 'team'
-    : list?.ranking_mode === 'unranked'
+    : !isNumbered(list?.ranking_mode)
       ? 'basic'
       : 'ranked'
   return {
@@ -175,12 +177,13 @@ export function ListFormDialog({
     e.preventDefault()
     if (!canSubmit) return
 
-    // The body (cover colour included) is built and tested in list-form-payload.
-    const payload = listFormPayload(form, { mode, list, coloursReady })
-
+    // The body (cover colour, "All players" → no position) is built and
+    // tested in list-form-payload — per mode, since create and edit differ.
     try {
       if (mode === 'create') {
-        const created = await createList.mutateAsync(payload)
+        const created = await createList.mutateAsync(
+          listFormPayload(form, { mode: 'create', coloursReady }),
+        )
         if (seedPlayerId) {
           await fetch(`/api/lists/${created.id}/players`, {
             method: 'POST',
@@ -192,7 +195,7 @@ export function ListFormDialog({
         onOpenChange(false)
         router.push(`/app/lists/${created.id}`)
       } else if (list) {
-        await updateList.mutateAsync(payload)
+        await updateList.mutateAsync(listFormPayload(form, { mode: 'edit', list, coloursReady }))
         toast({ title: 'List updated', description: form.title.trim() })
         onOpenChange(false)
       }

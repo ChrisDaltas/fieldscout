@@ -1360,7 +1360,7 @@ describe('LV.16 — the scaffold is gone and the header is complete (F-LV15.1, F
     // — asked separately, rather than by pinning the multi-line import block
     // Prettier owns (**R241**; the same call :534 already makes one describe up).
     expect(source).toContain("from './list-buckets'")
-    expect(source).toContain('ORG_OPTIONS.map((option)')
+    expect(source).toContain('orgOptionsFor(numbered).map((option)')
     expect(source).toContain('setOrg(listId, option.id)')
     // Keyed by list id — a window and a column showing the same list agree,
     // and neither moves the other's grouping.
@@ -2042,7 +2042,7 @@ describe('Ruling 2 — the mobile variant, and the desktop window it does not to
     expect(menu).toContain('onSelect={onChooseStats}')
     expect(menu).toContain('onSelect={onToggleMinimized}')
     // The grouping options are the middle of it either way — one menu, not two.
-    expect(menu).toContain('ORG_OPTIONS.map((option)')
+    expect(menu).toContain('orgOptionsFor(numbered).map((option)')
     expect(menu).toContain('setOrg(listId, option.id)')
     // Both extra items are behind `mobile`, which is what keeps the desktop
     // menu byte-for-byte the five options LV.16 shipped.

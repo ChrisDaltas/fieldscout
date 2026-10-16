@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { featureFlags } from '@/lib/feature-flags'
+import { groupingWrite, withTiers } from '@/lib/lists/ranking-mode'
 
 /**
  * LV.7 — the Lists v2 cutover, pinned.
@@ -185,9 +186,29 @@ describe('the four ported capabilities are mounted (LV.7)', () => {
 describe('a list can still become tiered (LV.7)', () => {
   it('choosing the Tier grouping persists rank_and_tier', () => {
     const source = read(PANEL)
-    expect(source).toContain("'rank_and_tier'")
+    // Since 191 the Tiers switch is independent of Ranked: the panel flips
+    // only the tiers half (`groupingWrite` → `withTiers`), which on a ranked
+    // list is rank_and_tier — and on a Basic list, tiers without numbers.
+    expect(source).toContain('groupingWrite(list.ranking_mode, next, { tierOnlyUnavailable })')
+    expect(groupingWrite('ranked', 'tier')).toBe('rank_and_tier')
+    expect(withTiers('ranked', true)).toBe('rank_and_tier')
+    expect(groupingWrite('unranked', 'tier')).toBe('tier_only')
     expect(source).toContain('updateList.mutate(')
     expect(source).toContain('onOrgChange={chooseOrg}')
+  })
+
+  it('before 191 is pushed, a Tier pick on a Basic list gets one neutral note, not a red error', () => {
+    const source = read(PANEL)
+    const onError = source.slice(source.indexOf('onError: (error) => {'))
+    // The "coming in the next update" answer is caught first …
+    expect(onError.indexOf('isTierOnlyUnavailableResponse(error)')).toBeGreaterThan(0)
+    expect(onError.indexOf('isTierOnlyUnavailableResponse(error)')).toBeLessThan(
+      onError.indexOf("variant: 'destructive'"),
+    )
+    // … said once per page load, and later picks stop asking.
+    expect(source).toContain('if (tierOnlyUnavailable) return')
+    expect(source).toContain('tierOnlyUnavailable = true')
+    expect(source).toContain("title: 'Tiers without numbers is coming in the next update'")
   })
 
   it('the create dialog still promises it', () => {

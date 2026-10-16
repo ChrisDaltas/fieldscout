@@ -1,9 +1,9 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
 import { leagueTabHref } from '@/components/mobile/shell/mobile-nav'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MobileScreen, RoundNavButton } from '@/components/mobile/ui/mobile-header'
 import { useAuth } from '@/hooks/use-auth'
@@ -27,15 +27,18 @@ import { TxFeed } from './tx-feed'
  * the list. "League transactions" league-wide, "My moves" for your own team
  * (the Team tab's Moves tile — no Teams filter), or pre-filtered to one
  * team (a team view's "See all"). Every entry resets the type to All types;
- * the close × always lands on your Team tab; the filters are kept after
- * leaving. No league header and no switcher; the league tab bar stays.
+ * the close × goes back to where you came from — the League tab's Activity,
+ * your Team tab, a team view (gap list #41, Chris #27) — and only when
+ * nothing in the app is behind (a link opened fresh) to your Team tab; the
+ * filters are kept after leaving. No league header and no switcher; the
+ * league tab bar stays.
  *
  * My moves also lists your PENDING waiver claims above the moves, each with
  * Cancel (the app's own team moves panel does — kept; bids are blind, so
  * this is your own team's read only).
  */
 export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string; mine: boolean; team: string | null }) {
-  const router = useRouter()
+  const goBack = useGoBack()
   const league = useLeague(leagueId)
   const { user, isLoading: authLoading } = useAuth()
   const [stored, setFilter] = useTxFilter(leagueId)
@@ -59,7 +62,7 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
   const header = (
     <>
       <div className="flex h-[52px] items-center gap-2 px-3">
-        <RoundNavButton kind="close" label="Close" onClick={() => router.push(leagueTabHref(leagueId, 'team', myTeamId))} />
+        <RoundNavButton kind="close" label="Close" onClick={() => goBack(leagueTabHref(leagueId, 'team', myTeamId))} />
         <h2 className="flex-1 text-center text-[16px] font-semibold text-m-t1">{mine ? 'My moves' : 'League transactions'}</h2>
         <span className="w-9 flex-none" />
       </div>

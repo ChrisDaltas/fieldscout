@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 
-import { ListCard, RankingRow, UpdatedRow, communityDetailHref } from './community-cards'
+import { ListCard, RankingRow, ShelfHeader, UpdatedRow, communityDetailHref } from './community-cards'
 import { VideoCard } from './community-detail'
 import { authorBgClass } from './community-ops'
 
@@ -28,7 +28,10 @@ const base: CommunityItem = {
   rankType: null,
   positionFilter: 'RB',
   scoring: null,
+  scoringFormat: null,
   playerCount: 5,
+  likeCount: 0,
+  recentLikes: [],
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-15T11:20:00Z',
   thumbnailUrl: null,
@@ -109,6 +112,27 @@ describe('Community cards', () => {
       }),
     )
     expect(out).toContain('>@bathew-merry-ai<')
+  })
+
+  it('a Latest row (#35) says what it is and when it was posted; a list keeps its cover colour', () => {
+    const now = Date.parse('2026-10-15T12:00:00Z')
+    const list = html(createElement(RankingRow, { item: { ...base, createdAt: '2026-10-15T11:35:00Z' }, postedNow: now }))
+    expect(list).toContain('@fieldfilm · List · 25m')
+    expect(list).not.toContain('follows')
+    expect(list).toMatch(/h-\[60px\] w-\[60px\][^"]*bg-pos-rb/)
+    const rank = html(
+      createElement(RankingRow, {
+        item: { ...base, id: 'r9', kind: 'rank', createdAt: '2026-10-13T12:00:00Z' },
+        postedNow: now,
+      }),
+    )
+    expect(rank).toContain('@fieldfilm · Ranking · 2d')
+    expect(rank).toMatch(new RegExp(`h-\\[60px\\] w-\\[60px\\][^"]*${authorBgClass('u1')}`))
+  })
+
+  it('a shelf with no fuller view has no "See all"', () => {
+    expect(html(createElement(ShelfHeader, { title: 'Latest' }))).not.toContain('See all')
+    expect(html(createElement(ShelfHeader, { title: 'Lists for you', onSeeAll: () => {} }))).toContain('See all')
   })
 
   it('an updated-by row: handle · title over the update time', () => {

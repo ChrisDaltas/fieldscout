@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { BackPill, MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { toast } from '@/hooks/use-toast'
 import { useMarkNotificationsRead, useNotifications, type NotificationItem } from '@/hooks/use-notifications'
@@ -16,7 +16,8 @@ import { NOTIF_TONE_CLASS, notificationVisual, shortTime, subLine } from './noti
  * Notifications (FieldScout Mobile — m-home §2B, m-dock §2.10) over the real
  * `/api/notifications` feed (newest first, 50 at most).
  *
- * - Top bar (52px): "‹ Back" (to wherever you came from) and "Mark all read"
+ * - Top bar (52px): "‹ Back" (to wherever you came from, else Home — Chris,
+ *   #27, 2026-10-15) and "Mark all read"
  *   (always shown, as designed). The 28/600 title sits under it; both stay
  *   put while the list scrolls.
  * - Rows: unread rows are tinted (gb2), bold, with a 9px blue dot. Nothing is
@@ -27,7 +28,7 @@ import { NOTIF_TONE_CLASS, notificationVisual, shortTime, subLine } from './noti
  *   a type with no destination just reads.
  */
 export function MobileNotifications() {
-  const router = useRouter()
+  const goBack = useGoBack()
   const { data, isPending, isError, refetch } = useNotifications()
   const markRead = useMarkNotificationsRead()
   // Read locally the moment it is tapped (the design's change is instant);
@@ -36,10 +37,7 @@ export function MobileNotifications() {
   const notifications = data?.notifications ?? []
   const isRead = (n: NotificationItem) => n.read || readLocally.has(n.id)
 
-  const back = () => {
-    if (window.history.length > 1) router.back()
-    else router.push('/app')
-  }
+  const back = () => goBack('/app')
 
   const markIds = (ids: string[] | undefined, all: string[]) => {
     const prev = readLocally

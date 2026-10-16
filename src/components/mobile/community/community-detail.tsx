@@ -10,6 +10,8 @@ import {
   classifyCommunityList,
   formatFollows,
   playerMeta,
+  SCORING_FORMAT_LABEL,
+  scoringFormatOf,
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
 import { youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
@@ -40,6 +42,8 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  * A modal dialog (Radix): it's named by the list, Escape goes Back, focus is
  * trapped inside — the feed and the dock under it are hidden from keyboards
  * and screen readers — and on close focus returns to the card that opened it.
+ * `onBack` goes back to where you came from (gap list #27 — the feed, or the
+ * screen that linked here).
  */
 export function CommunityDetail({ listId, onBack }: { listId: string; onBack: () => void }) {
   const list = useList(listId)
@@ -95,12 +99,14 @@ export function CommunityDetail({ listId, onBack }: { listId: string; onBack: ()
                         ? 'This list isn’t available. It may have been deleted or made private.'
                         : 'Couldn’t load this list.'}
                     </p>
+                    {/* Back may lead somewhere other than Community (it goes
+                        where you came from), so the action says "Go back". */}
                     <button
                       type="button"
                       onClick={() => (status === 404 ? onBack() : void list.refetch())}
                       className="text-[14px] font-semibold text-accent"
                     >
-                      {status === 404 ? 'Back to Community' : 'Try again'}
+                      {status === 404 ? 'Go back' : 'Try again'}
                     </button>
                   </div>
                 ) : (
@@ -164,12 +170,18 @@ function asCommunityPlayer(row: ListPlayerWithPlayer): CommunityPlayer {
 
 function projectionFor(row: ListPlayerWithPlayer, scoring: CommunityScoring | null): number | null {
   const p = row.player
+  // 0.25 PPR has no stored projection: halfway between Standard and Half
+  // PPR, the app's rule (`projectionIn`, mobile lists).
   const v =
     scoring === 'Standard'
       ? p.projected_pts_standard
       : scoring === 'Half PPR'
         ? p.projected_pts_half_ppr
-        : p.projected_pts_ppr
+        : scoring === '0.25 PPR'
+          ? p.projected_pts_standard != null && p.projected_pts_half_ppr != null
+            ? (p.projected_pts_standard + p.projected_pts_half_ppr) / 2
+            : null
+          : p.projected_pts_ppr
   return typeof v === 'number' ? v : null
 }
 
@@ -194,7 +206,10 @@ function DetailBody({
   // Rankings vs lists as the feed draws them (big boards, weekly boards and
   // AI experts' boards are rankings).
   const isRank = classifyCommunityList(list).kind === 'rank'
-  const scoring = meta.data?.scoring ?? null
+  // The scoring saved with the ranking (migration 190; absent from the
+  // `select('*')` row until it's pushed), else the older guess.
+  const savedScoring = scoringFormatOf(list as { scoring_format?: unknown })
+  const scoring = savedScoring ? SCORING_FORMAT_LABEL[savedScoring] : (meta.data?.scoring ?? null)
   const players = list.players.filter((r) => r.player)
   const heads = players.slice(0, 4).map(asCommunityPlayer)
   const videos = list.links

@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { BackPill, MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeagues } from '@/hooks/use-leagues'
@@ -43,7 +43,7 @@ export function messagesEmptyBody(boards: boolean, dms: boolean): string {
  *     until a DM backend exists — `messages`.
  */
 export function MobileMessagesList() {
-  const router = useRouter()
+  const goBack = useGoBack()
   const { user } = useAuth()
   const dms = useMobileMessagesDms()
   const leaguesOn = featureFlags.leagues
@@ -55,17 +55,11 @@ export function MobileMessagesList() {
   const query = useMessagesStore((s) => s.query)
   const setQuery = useMessagesStore((s) => s.setQuery)
   const markRead = useMessagesStore((s) => s.markRead)
-  const setOpenedFromList = useMessagesStore((s) => s.setOpenedFromList)
 
-  const back = () => {
-    if (window.history.length > 1) router.back()
-    else router.replace('/app')
-  }
+  // Back to where you came from, else Home (Chris, #27, 2026-10-15).
+  const back = () => goBack('/app')
 
-  const open = (threadId: string) => {
-    markRead(threadId)
-    setOpenedFromList(threadId)
-  }
+  const open = (threadId: string) => markRead(threadId)
 
   // League boards, then direct messages.
   const people = dms.conversations
@@ -134,7 +128,6 @@ export function MobileMessagesList() {
               league={league}
               index={index}
               viewerId={user?.id ?? null}
-              onOpen={(id) => setOpenedFromList(id)}
             />
           ))
         )}

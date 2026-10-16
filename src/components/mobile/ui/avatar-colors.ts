@@ -81,7 +81,11 @@ export function authorAvatarClass(seed: string): string {
 // ---------------------------------------------------------------------------
 
 /** Ink, purple, blue, gold — cycled by the league's place in your list.
- *  Gold takes ink text (handoff §2.2: avFg is #1D1D1F on #ECAD48). */
+ *  Each fill carries its letter colour, and that is the ONE rule for a
+ *  league tile's letters everywhere (Home cards, the dock, the switcher,
+ *  Messages, a trade, a player's leagues): white, except dark on gold
+ *  (handoff §2.2: avFg is #1D1D1F on #ECAD48; ruling #38, 2026-10-15 —
+ *  Home's cards no longer force white). Callers never set the text colour. */
 const LEAGUE_FILLS = ['bg-m-ink text-white', 'bg-pos-wr text-white', 'bg-pos-rb text-white', 'bg-pos-te text-ink'] as const
 
 export function leagueAvClass(index: number): string {

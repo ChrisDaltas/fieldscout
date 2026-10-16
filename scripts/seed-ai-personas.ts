@@ -31,6 +31,7 @@ import {
 } from '../src/lib/claude/player-packet'
 import { logAiCall } from '../src/lib/claude/telemetry'
 import { generateUniqueSlug, slugify } from '../src/lib/lists/helpers'
+import { insertListWithScoring, personaScoringFormat } from '../src/lib/lists/ranking-publish'
 import { findRealAnalystNames } from '../src/lib/personas/blocklist'
 import { PERSONA_ROSTER, type PersonaSeed } from '../src/lib/personas/roster'
 import type { AiPosition } from '../src/types/schemas/ai'
@@ -260,9 +261,13 @@ async function seedListsForPersona(
     // Title reflects what was actually inserted, not the requested count.
     const title = `Top ${players.length} ${position} — ${scoring}`
 
-    const { data: list, error: listError } = await supabase
-      .from('lists')
-      .insert({
+    // The board is made for the persona's scoring: saved as its
+    // `scoring_format` (migration 190), dropped — not failed — where 190
+    // isn't pushed yet. A new board has no previous version, so its players
+    // carry no previous position.
+    const { data: list, error: listError } = await insertListWithScoring(
+      (row) => supabase.from('lists').insert(row).select('id').single(),
+      {
         owner_id: ownerId,
         ai_persona_id: personaId,
         title,
@@ -271,10 +276,11 @@ async function seedListsForPersona(
         position_filter: position === 'Overall' ? null : position,
         ranking_mode: 'ranked',
         is_private: false,
-      })
-      .select('id')
-      .single()
+        scoring_format: personaScoringFormat(scoring),
+      },
+    )
     if (listError) throw listError
+    if (!list) throw new Error(`${persona.username}/${position}: the list was not created`)
 
     const { error: playersError } = await supabase.from('list_players').insert(
       players.map((p) => ({

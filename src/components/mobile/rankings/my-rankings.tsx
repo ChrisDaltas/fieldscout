@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 
+import { readLastRankPos } from '@/components/mobile/rankings/last-position'
 import { StatusPill, type RankStatus } from '@/components/mobile/rankings/rank-parts'
 import type { RankingsNav } from '@/components/mobile/rankings/rankings-hub'
 import {
@@ -10,6 +11,7 @@ import {
   fromDbPos,
   opensInWeek,
   plural,
+  rankPosOr,
   rankingTitle,
   seasonLabel,
   weekStatus,
@@ -21,7 +23,8 @@ import { latestSaved, useMyRankingBoards, type BoardPlayerLite, type MyBoard } f
 import { cn } from '@/lib/utils'
 
 /**
- * My rankings (lr-myrank §2.1) over the user's real boards. A "ranking" is
+ * My rankings (lr-myrank §2.1) — the Rankings screen's Mine tab since the
+ * two became one screen (gap list #28) — over the user's real boards. A "ranking" is
  * one position's slice of a board, so each board shows a card per position
  * it holds. Statuses are the ones the app can express (Chris, 2026-10-15):
  * Published (a saved board — Publish is the only way to save, so every
@@ -160,7 +163,9 @@ export function MyRankingsBody({
     filter === 'all' ? [] : allCards.filter((c) => (filter === 'published' ? c.status === 'Published' : c.status === 'Finalized'))
 
   const openCard = (c: RankCard) => nav.open({ kind: 'edit', type: c.type, pos: c.pos, from: null }, 'push')
-  const startPeriod = (type: RankType) => nav.open({ kind: 'new', step: 1, type, pos: 'RB' }, 'push')
+  // New ranking starts on the position last used on this device (gap list #32).
+  const startPeriod = (type: RankType) =>
+    nav.open({ kind: 'new', step: 1, type, pos: readLastRankPos() ?? rankPosOr(nav.state.pos, 'RB') }, 'push')
 
   return (
     <div className="flex flex-col gap-2.5 px-4 pb-6 pt-3.5">

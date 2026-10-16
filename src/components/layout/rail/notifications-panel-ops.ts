@@ -27,6 +27,8 @@ export function notificationIcon(type: string): IconName {
   if (type.includes('injur')) return 'info-circle'
   if (type.includes('message') || type.includes('comment')) return 'comments'
   if (type.startsWith('list')) return 'document'
+  // Gap list #13 (192): the commissioner's pinned note — the pin glyph.
+  if (type === 'league_commissioner_note') return 'marker'
   return 'notification'
 }
 

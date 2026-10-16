@@ -91,6 +91,9 @@ describe('lists preview', () => {
   it('kind is one of Ranked | Video | Tiers, or nothing', () => {
     expect(listKindLabel('ranked', false)).toBe('Ranked')
     expect(listKindLabel('rank_and_tier', true)).toBe('Tiers')
+    // Tiers without numbers (migration 191) is still a tier list.
+    expect(listKindLabel('tier_only', false)).toBe('Tiers')
+    expect(listKindLabel('tier_only', true)).toBe('Tiers')
     expect(listKindLabel('unranked', true)).toBe('Video')
     expect(listKindLabel('unranked', false)).toBeNull()
   })

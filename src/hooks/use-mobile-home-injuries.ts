@@ -21,6 +21,10 @@ import { createBrowserClient } from '@/lib/supabase/client'
  * first order are not available; rows are ordered mine-first, then by
  * relevance. A roster read that fails is the section's error (with Try
  * again), never a list that silently drops "On your roster".
+ *
+ * Both layouts read it: the phone's Home (`mobile/home/home-injuries.tsx`)
+ * and the desktop Home's "Injury report" card (`home/injury-news-card.tsx`).
+ * The cache key doesn't carry `rows`, so every caller asks for the same five.
  */
 export interface HomeInjury {
   id: string

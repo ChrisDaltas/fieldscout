@@ -1,11 +1,10 @@
 'use client'
 
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 
 import { postErrorCopy } from '@/components/leagues/league-message-board'
 import { teamAvClass, teamOrder } from '@/components/mobile/league/team/team-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
@@ -15,6 +14,7 @@ import { useLeague } from '@/hooks/use-league'
 import { useLeagueChat, useSendLeagueChat } from '@/hooks/use-league-chat'
 import { useLeagues } from '@/hooks/use-leagues'
 import { useMobileMessagesDms } from '@/hooks/use-mobile-messages-dms'
+import { useMobileMessagesPinBottom } from '@/hooks/use-mobile-messages-pin-bottom'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
@@ -27,6 +27,7 @@ import {
   bubbleRadius,
   senderHandle,
   initialOf,
+  lastMessageOf,
   leagueIdOfThread,
   membersLine,
   seatColor,
@@ -51,17 +52,18 @@ const MAX_MESSAGE = 500
  * Each on its own release gate: the boards are the leagues' (`leagues`),
  * direct messages the DM feed's (`messages`).
  *
- * The thread is top-anchored and nothing auto-scrolls, as designed (§2.2 B)
- * — whether it should open on the newest message is an open question.
+ * It opens at the NEWEST message and follows new ones as they arrive,
+ * unless the reader has scrolled up to read (Chris, #47, 2026-10-15 — the
+ * design opened at the oldest; `useMobileMessagesPinBottom`).
  * There is no info (i) or "+" button: the design gives them no flow (it
  * only toasts "Not part of this prototype").
  */
 export function MobileThreadScreen({ threadId }: { threadId: string }) {
   const leagueId = leagueIdOfThread(threadId)
   if (leagueId) {
-    return featureFlags.leagues ? <LeagueBoardThread leagueId={leagueId} threadId={threadId} /> : <ThreadMissing threadId={threadId} />
+    return featureFlags.leagues ? <LeagueBoardThread leagueId={leagueId} /> : <ThreadMissing />
   }
-  return featureFlags.messages ? <DmThread threadId={threadId} /> : <ThreadMissing threadId={threadId} />
+  return featureFlags.messages ? <DmThread threadId={threadId} /> : <ThreadMissing />
 }
 
 // ---------------------------------------------------------------------------
@@ -69,29 +71,22 @@ export function MobileThreadScreen({ threadId }: { threadId: string }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Back always lands on the Messages list (§3 "Thread back"): by history when
- * the list opened this thread, else by replacing this entry with the list —
- * a real stack, never the prototype's stale `prevScr`.
+ * Back goes to where you came from (Chris, #27, 2026-10-15: "Back always
+ * goes to where you came from. Period.") — the Messages list, a league page,
+ * a notification — by history; only with nothing of the app's behind (a
+ * shared link opened fresh) does it replace this entry with the list.
  */
-function useThreadBack(threadId: string) {
-  const router = useRouter()
-  const [fromList] = useState(() => useMessagesStore.getState().openedFromList === threadId)
-  useEffect(
-    () => () => {
-      const store = useMessagesStore.getState()
-      if (store.openedFromList === threadId) store.setOpenedFromList(null)
-    },
-    [threadId],
-  )
-  return () => (fromList ? router.back() : router.replace('/app/messages'))
+function useThreadBack() {
+  const goBack = useGoBack()
+  return () => goBack('/app/messages')
 }
 
 // ---------------------------------------------------------------------------
 // Group thread — a league's message board
 // ---------------------------------------------------------------------------
 
-function LeagueBoardThread({ leagueId, threadId }: { leagueId: string; threadId: string }) {
-  const back = useThreadBack(threadId)
+function LeagueBoardThread({ leagueId }: { leagueId: string }) {
+  const back = useThreadBack()
   const { user } = useAuth()
   const viewerId = user?.id ?? null
   const leagues = useLeagues()
@@ -177,9 +172,7 @@ function LeagueBoardThread({ leagueId, threadId }: { leagueId: string; threadId:
         <button type="button" className={EMPTY_PILL} onClick={() => void detail.refetch()}>
           Retry
         </button>
-        <Link href="/app/messages" className={EMPTY_PILL}>
-          Back to Messages
-        </Link>
+        <GoBackPill onBack={back} />
       </MessagesEmpty>
     )
   } else if (!ready) {
@@ -216,14 +209,14 @@ function DmThread({ threadId }: { threadId: string }) {
   const markRead = useMessagesStore((s) => s.markRead)
   const addSent = useMessagesStore((s) => s.addSent)
   const [draft, setDraft] = useState('')
-  const back = useThreadBack(threadId)
+  const back = useThreadBack()
 
   const openId = c?.id ?? null
   useEffect(() => {
     if (openId) markRead(openId)
   }, [openId, markRead])
 
-  if (!c) return <ThreadMissing threadId={threadId} />
+  if (!c) return <ThreadMissing />
 
   const submit = () => {
     const text = draft.trim()
@@ -258,16 +251,28 @@ function DmThread({ threadId }: { threadId: string }) {
   )
 }
 
-function ThreadMissing({ threadId }: { threadId: string }) {
-  const back = useThreadBack(threadId)
+function ThreadMissing() {
+  const back = useThreadBack()
   return (
     <ThreadFrame header={<ThreadHeader onBack={back} name="" sub="" avatar={null} />}>
       <MessagesEmpty title={THREAD_MISSING_TITLE} body={THREAD_MISSING_BODY}>
-        <Link href="/app/messages" className={EMPTY_PILL}>
-          Back to Messages
-        </Link>
+        <GoBackPill onBack={back} />
       </MessagesEmpty>
     </ThreadFrame>
+  )
+}
+
+/**
+ * A dead or unreadable thread's way out: the header's own Back (#27), never
+ * a push to the list — a push would leave the dead thread behind it, so the
+ * list's Back would land on it again. It may lead somewhere other than
+ * Messages (a notification, a league page), so it says "Go back".
+ */
+function GoBackPill({ onBack }: { onBack: () => void }) {
+  return (
+    <button type="button" className={EMPTY_PILL} onClick={onBack} data-thread-go-back>
+      Go back
+    </button>
   )
 }
 
@@ -308,7 +313,7 @@ function ThreadHeader({
       <button
         type="button"
         onClick={onBack}
-        aria-label="Back to Messages"
+        aria-label="Back"
         className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
       >
         <MIcon name="back" size={20} stroke={2} />
@@ -322,10 +327,14 @@ function ThreadHeader({
   )
 }
 
-/** §2.2 B — day separators, runs of bubbles, avatars on their last bubble. */
+/** §2.2 B — day separators, runs of bubbles, avatars on their last bubble.
+ *  Opens at the newest and follows new ones while the reader is there (#47). */
 function MessageList({ items, group }: { items: ThreadItem[]; group: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const last = useMemo(() => lastMessageOf(items), [items])
+  useMobileMessagesPinBottom(ref, last)
   return (
-    <div className="flex flex-1 flex-col gap-1 px-3 py-4" role="log" aria-label="Messages" data-message-list={group ? 'group' : 'direct'}>
+    <div ref={ref} className="flex flex-1 flex-col gap-1 px-3 py-4" role="log" aria-label="Messages" data-message-list={group ? 'group' : 'direct'}>
       {items.map((item, i) =>
         item.kind === 'day' ? (
           <span key={item.key} className={cn('self-center pb-2 text-[11px] font-medium text-m-t3', i > 0 && 'mt-2')}>

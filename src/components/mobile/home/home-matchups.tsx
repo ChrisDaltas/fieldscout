@@ -80,9 +80,11 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
   const body = (
     <>
       <span className="flex items-center gap-[10px]">
-        {/* Home's avatar text is always white (m-home §2A.5). */}
+        {/* The tile's letters come with its fill (`leagueAvClass`): white,
+            except dark on the gold tile — the same everywhere (ruling #38;
+            the prototype's Home drew white on gold). */}
         <span
-          className={cn('flex size-9 flex-none items-center justify-center rounded-[10px] text-[13px] font-semibold leading-[16px]', leagueAvClass(index), 'text-white')}
+          className={cn('flex size-9 flex-none items-center justify-center rounded-[10px] text-[13px] font-semibold leading-[16px]', leagueAvClass(index))}
           aria-hidden
         >
           {initials(league.name)}

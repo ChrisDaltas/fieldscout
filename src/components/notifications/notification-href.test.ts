@@ -167,3 +167,11 @@ describe('FieldScout notices open in-app (M8 L.G1.2, 185)', () => {
     expect(notificationHref({ type: 'operator_notice', data: { from: 'fieldscout' } })).toBeNull()
   })
 })
+
+describe('the commissioner note (gap list #13, migration 192)', () => {
+  it('a note change opens the league home, where the note is pinned; no league id → inert', () => {
+    expect(notificationHref({ type: 'league_commissioner_note', data: { league_id: 'lg-1', actor_id: 'u1' } })).toBe('/app/leagues/lg-1')
+    expect(notificationHref({ type: 'league_commissioner_note', data: { actor_id: 'u1' } })).toBeNull()
+    expect(notificationHref({ type: 'league_commissioner_note', data: null })).toBeNull()
+  })
+})

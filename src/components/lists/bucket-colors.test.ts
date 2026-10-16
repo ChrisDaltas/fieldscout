@@ -9,6 +9,8 @@ import {
 } from './bucket-colors'
 import { BUCKET_KEYS, ROUND_VALUES, TIER_VALUES } from '@/types/schemas/lists'
 
+import tailwindConfig from '../../../tailwind.config'
+
 /**
  * LV.1.5 — **no bucket key renders uncoloured.**
  *
@@ -75,5 +77,90 @@ describe('bucket colouring is total', () => {
     expect(TIER_RAMP).toHaveLength(6)
     expect(BAND_RAMP).toHaveLength(7)
     expect(BAND_RAMP.slice(0, 6)).toEqual([...TIER_RAMP])
+  })
+})
+
+/**
+ * Tier chip contrast (Chris, 2026-10-15): every step's text on its own fill
+ * passes WCAG AA for small text — 4.5:1. The chips are 11–13px bold (mobile
+ * "Tier N" chip, desktop TierBadge, list bands, Big Board bands), well under
+ * AA's "large text" size, so the 3:1 large-text allowance never applies.
+ *
+ * Measured from the real sources: the recipe's `bg-tier-N` / `text-*` classes
+ * resolved through `tailwind.config.ts`, so a palette edit that drops a chip
+ * under AA fails here rather than on someone's screen. Before this ruling,
+ * white on tiers 1, 2, 5 and 6 measured ~4.0, 3.8, 3.3 and 3.4:1.
+ */
+describe('tier chip text passes WCAG AA (4.5:1) on every fill', () => {
+  const colors = (tailwindConfig.theme?.extend as { colors: Record<string, unknown> }).colors
+
+  /** A palette entry's hex: a plain string, or its `DEFAULT`. */
+  function hexOfEntry(entry: unknown): string {
+    const value = typeof entry === 'string' ? entry : (entry as { DEFAULT?: unknown } | undefined)?.DEFAULT
+    if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) {
+      throw new Error(`not a 6-digit hex: ${String(value)}`)
+    }
+    return value
+  }
+
+  /** `tier-3` → the tier group's `3`; `ink` → ink's DEFAULT; `white` → #ffffff. */
+  function hexOfToken(token: string): string {
+    if (token === 'white') return '#ffffff'
+    if (token in colors) return hexOfEntry(colors[token])
+    const [group, ...rest] = token.split('-')
+    return hexOfEntry((colors[group] as Record<string, unknown> | undefined)?.[rest.join('-')])
+  }
+
+  /** WCAG 2.x relative luminance of a `#rrggbb`. */
+  function luminance(hex: string): number {
+    const n = parseInt(hex.slice(1), 16)
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+      const s = c / 255
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+
+  function contrast(a: string, b: string): number {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  /** A recipe's fill and text tokens (`bg-tier-1 text-white` → tier-1, white). */
+  function pairOf(recipe: string): { fill: string; text: string } {
+    const fill = /(?:^|\s)bg-(\S+)/.exec(recipe)?.[1]
+    const text = /(?:^|\s)text-(\S+)/.exec(recipe)?.[1]
+    if (!fill || !text) throw new Error(`recipe without a fill and a text colour: ${recipe}`)
+    return { fill, text }
+  }
+
+  it('sanity: the measure matches known WCAG values', () => {
+    expect(contrast('#000000', '#ffffff')).toBeCloseTo(21, 5)
+    expect(contrast('#ffffff', '#ffffff')).toBeCloseTo(1, 5)
+    // #767676 on white is the classic "just passes AA" grey (4.54:1).
+    expect(contrast('#767676', '#ffffff')).toBeCloseTo(4.54, 2)
+  })
+
+  it.each(BAND_RAMP.map((recipe, i) => [i + 1, recipe] as const))('tier %i (%s)', (_tier, recipe) => {
+    const { fill, text } = pairOf(recipe)
+    const ratio = contrast(hexOfToken(fill), hexOfToken(text))
+    expect(ratio, `${text} on ${fill} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('the unknown-bucket fallback passes too', () => {
+    const { fill, text } = pairOf(UNKNOWN_BUCKET_STYLE)
+    expect(contrast(hexOfToken(fill), hexOfToken(text))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('keeps the ruled text colours: tiers 3–4 ink, the rest white', () => {
+    expect(BAND_RAMP.map((recipe) => pairOf(recipe).text)).toEqual([
+      'white',
+      'white',
+      'ink',
+      'ink',
+      'white',
+      'white',
+      'white',
+    ])
   })
 })

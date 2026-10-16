@@ -120,13 +120,11 @@ export function LeagueBoardRow({
   league,
   index,
   viewerId,
-  onOpen,
 }: {
   league: MyLeagueRow
   /** The league's place in your list — its mark colour (as the dock). */
   index: number
   viewerId: string | null
-  onOpen: (threadId: string) => void
 }) {
   const chat = useLeagueChat(league.id)
   const detail = useLeague(league.id)
@@ -152,7 +150,6 @@ export function LeagueBoardRow({
   return (
     <ConversationRow
       href={threadHref(id)}
-      onOpen={() => onOpen(id)}
       name={league.name}
       loading={loading}
       preview={preview}

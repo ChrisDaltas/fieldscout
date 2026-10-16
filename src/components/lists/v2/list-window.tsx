@@ -24,6 +24,7 @@ import {
   type ListWithTags,
 } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
+import { showsNumbersOnDesktop } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import {
   resolveOrg,
@@ -47,7 +48,7 @@ import {
   bucketHeading,
   buildBuckets,
   canReorder,
-  ORG_OPTIONS,
+  orgOptionsFor,
   rankMap,
   type Bucket,
 } from './list-buckets'
@@ -242,7 +243,7 @@ import { useListDropCommit } from './use-list-drop'
  *
  * | Piece | Comes from |
  * | --- | --- |
- * | grouping / bucketing / band colour | `list-buckets.ts` (`buildBuckets`, `bucketHeading`, `rankMap`, `ORG_OPTIONS`, `canReorder`) |
+ * | grouping / bucketing / band colour | `list-buckets.ts` (`buildBuckets`, `bucketHeading`, `rankMap`, `orgOptionsFor`, `canReorder`) |
  * | checkbox, name, drop gap, empty state | `list-row-parts.tsx` |
  * | position badge | `players/position-badge.tsx` |
  * | drag gesture and the gap model | `use-list-drag.tsx` (LV.4, D5) |
@@ -573,6 +574,9 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   const { drafted, toggleDrafted } = useDraftMode(listId)
 
   const org: ListOrg = resolveOrg(display.org, list?.ranking_mode)
+  // No `#N` on a tier-only list (tiers without numbers); a Basic list keeps
+  // its desktop numbers pending Chris (`showsNumbersOnDesktop`).
+  const numbered = showsNumbersOnDesktop(list?.ranking_mode)
   const entries = list?.players
   // Every chosen stat, as the list and table views do — card view is the one
   // that truncates to three. Widening the window reveals more of them.
@@ -1065,6 +1069,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
             onChooseStats={() => setStatsOpen(true)}
             onToggleMinimized={() => setMinimized(listId, !minimized)}
             setOrg={setOrg}
+            numbered={numbered}
           />
 
           {!mobile && (
@@ -1092,7 +1097,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
               error={detail.isError ? detail.error : null}
               stats={stats}
               org={org}
-              ranks={ranks}
+              ranks={numbered ? ranks : null}
               drafted={drafted}
               onToggleDrafted={toggleDrafted}
               onOpenPlayer={openPlayer}
@@ -1235,6 +1240,7 @@ function WindowMenu({
   onChooseStats,
   onToggleMinimized,
   setOrg,
+  numbered,
 }: {
   listId: string
   mobile: boolean
@@ -1242,6 +1248,8 @@ function WindowMenu({
   onChooseStats: () => void
   onToggleMinimized: () => void
   setOrg: (listId: string, org: ListOrg) => void
+  /** `showsNumbersOnDesktop` — off (tier-only) names the flat grouping "Unranked". */
+  numbered: boolean
 }) {
   return (
     <DropdownMenu>
@@ -1266,7 +1274,7 @@ function WindowMenu({
             <DropdownMenuSeparator />
           </>
         )}
-        {ORG_OPTIONS.map((option) => (
+        {orgOptionsFor(numbered).map((option) => (
           <DropdownMenuItem key={option.id} onSelect={() => setOrg(listId, option.id)}>
             {option.label}
           </DropdownMenuItem>
@@ -1355,7 +1363,8 @@ function ListWindowRows({
   error: Error | null
   stats: StatDef[]
   org: ListOrg
-  ranks: Map<string, number>
+  /** Each row's `#N`; `null` on a list without numbers (Ranked off). */
+  ranks: Map<string, number> | null
   drafted: ReadonlySet<string>
   onToggleDrafted: (playerId: string) => void
   onOpenPlayer: (entry: ListPlayerWithPlayer) => void
@@ -1433,7 +1442,7 @@ function ListWindowRows({
                 )}
                 <ListWindowRow
                   entry={entry}
-                  rank={ranks.get(entry.id) ?? 0}
+                  rank={ranks ? (ranks.get(entry.id) ?? 0) : null}
                   stats={stats}
                   drafted={drafted.has(entry.player_id)}
                   onToggleDrafted={() => onToggleDrafted(entry.player_id)}
@@ -1490,7 +1499,8 @@ function ListWindowRow({
   dragging,
 }: {
   entry: ListPlayerWithPlayer
-  rank: number
+  /** `null` on a list without numbers: no `#N` cell. */
+  rank: number | null
   stats: StatDef[]
   drafted: boolean
   onToggleDrafted: () => void
@@ -1524,7 +1534,7 @@ function ListWindowRow({
           and stops there (D12). `border-white/75` is the LAW's stroke for this
           surface, and the only per-instance class the inversion needs. */}
       <DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} className="border-white/75" />
-      <span className="fs-num w-[21px] shrink-0 text-[9px] font-semibold text-n-3">#{rank}</span>
+      {rank !== null && <span className="fs-num w-[21px] shrink-0 text-[9px] font-semibold text-n-3">#{rank}</span>}
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <PlayerName
           name={entry.player.full_name}

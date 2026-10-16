@@ -47,7 +47,9 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
   else if (
     ['/app/profile', '/app/stats', '/app/lists', '/app/weekly-ranks', '/app/big-board'].some(
       (root) => pathname === root || pathname.startsWith(`${root}/`) || pathname.startsWith(`${root}?`),
-    )
+    ) ||
+    // My start/sit opens from Profile (#26); its question pages don't.
+    pathname === '/app/start-or-sit'
   )
     accountTab = 'profile'
   return { leagueId: null, leagueTab: null, accountTab }

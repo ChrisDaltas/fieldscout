@@ -12,7 +12,10 @@
  *    `status` won / lost / failed), which the shared helper leaves inert →
  *    the league's Transactions screen: "My moves" for a won claim (the add
  *    is there); league-wide otherwise, where the claim's winner shows.
- *  - Everything else: the shared target, or none.
+ *  - Everything else: the shared target, or none — including a commissioner
+ *    note change (`league_commissioner_note`, migration 192), whose shared
+ *    target is the league home: on the phone, the League tab with the note
+ *    pinned at the top.
  */
 import { transactionsHref } from '@/components/mobile/league/league/league-tab-ops'
 import { notificationHref } from '@/components/notifications/notification-href'
