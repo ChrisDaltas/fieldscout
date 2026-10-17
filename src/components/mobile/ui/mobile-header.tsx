@@ -2,14 +2,15 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 import { LogoTile } from '@/components/landing/fieldscout-logo'
+import { MobileSearch } from '@/components/mobile/search/mobile-search'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { dmUnreadCount } from '@/components/layout/rail/messages-panel'
 import { useNotifications } from '@/hooks/use-notifications'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
-import { useUIStore } from '@/stores/ui-store'
 
 /**
  * FieldScout Mobile header parts (handoff navigation "Headers by screen").
@@ -81,21 +82,23 @@ export function HeaderIconButton({
 }
 
 /** Search · Notifications · Messages — the right group on Home and League.
+ *  Search opens the full-screen search (gap list §3 #1), fresh each time.
  *  Messages holds direct messages and league boards, so it shows while
  *  either switch is on. The chat badge counts unread direct messages only —
  *  never trade offers, which stay inside their league (ruling #22). */
 export function HeaderActions() {
-  const openSearch = useUIStore((s) => s.setCommandPaletteOpen)
+  const [searching, setSearching] = useState(false)
   const { data } = useNotifications()
   const unread = data?.unreadCount ?? 0
   const dms = featureFlags.messages ? dmUnreadCount() : 0
   return (
     <div className="flex flex-none items-center gap-0.5">
-      <HeaderIconButton icon="search" label="Search" onClick={() => openSearch(true)} />
+      <HeaderIconButton icon="search" label="Search" onClick={() => setSearching(true)} />
       <HeaderIconButton icon="bell" label={unread ? `Notifications (${unread} unread)` : 'Notifications'} href="/app/notifications" badge={unread} />
       {(featureFlags.messages || featureFlags.leagues) && (
         <HeaderIconButton icon="chat" label="Messages" href="/app/messages" badge={dms} badgeTone="blue" />
       )}
+      {searching && <MobileSearch onClose={() => setSearching(false)} />}
     </div>
   )
 }

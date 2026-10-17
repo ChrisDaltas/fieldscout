@@ -5,7 +5,8 @@ import { createServerClient } from '@/lib/supabase/server'
 
 const querySchema = z.object({
   q: z.string().trim().min(1).max(60),
-  limit: z.coerce.number().int().min(1).max(20).default(8),
+  // 30: the phone search's single-scope page (People, Posts).
+  limit: z.coerce.number().int().min(1).max(30).default(8),
 })
 
 interface CommunityUserHit {
@@ -13,6 +14,8 @@ interface CommunityUserHit {
   id: string
   username: string
   avatar_url: string | null
+  /** The phone search's "12k follows" line. */
+  follower_count: number
 }
 
 interface CommunityListHit {
@@ -63,7 +66,7 @@ export async function GET(request: Request) {
   // (ruling 2026-08-05), so the handle is the only thing there is to match.
   const usersQuery = supabase
     .from('profiles')
-    .select('id, username, avatar_url')
+    .select('id, username, avatar_url, follower_count')
     .ilike('username', pattern)
     .order('cred_score', { ascending: false })
     .limit(limit)
@@ -102,6 +105,7 @@ export async function GET(request: Request) {
     id: row.id,
     username: row.username,
     avatar_url: row.avatar_url,
+    follower_count: row.follower_count ?? 0,
   }))
 
   return NextResponse.json({ lists, users })

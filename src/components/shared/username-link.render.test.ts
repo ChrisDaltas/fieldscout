@@ -315,6 +315,10 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/mobile/community/community-cards.tsx', contains: '@{item.author.username}', why: 'FieldScout Mobile Community card bylines (ranking row, updated-by row, list card, Latest shelf card): each card is one link that opens the list, so the handle sits inside it; the list detail’s author is a UsernameLink', lines: 4 },
   { file: 'src/components/mobile/community/community-detail.tsx', contains: 'const handle = `@${username}`', why: 'an AI persona’s handle — its page is /personas/… (linked when that flag is on), not a person’s profile' },
   { file: 'src/components/mobile/community/community-ops.ts', contains: '`@${item.author.username}`', why: 'the Community search text — matched against the query, never rendered' },
+  { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${user.username}`', why: 'phone search People row: the whole row is the link to that person’s profile (userProfileHref), so the handle sits inside it' },
+  { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${manager.username}`', why: 'phone search People row for a league manager: the row opens their team (gap list §3 #1 — "finds managers (opens their team)"), so the handle sits inside that link' },
+  { file: 'src/components/mobile/search/mobile-search.tsx', contains: '`@${list.owner_username}`', why: 'phone search Posts row byline: the row is one link that opens the list (as the Community cards), so the handle sits inside it' },
+  { file: 'src/components/mobile/search/search-ops.ts', contains: '`@${m.username} ${managerSub(m.teamName)}`', why: 'the search match text for a league manager — matched against the query, never rendered' },
   { file: 'src/components/mobile/messages/messages-ops.ts', contains: 'return handle ? `@${handle}` : FORMER_MEMBER', why: 'the messages sender label: the conversation preview, inside its row’s link (and a league trade offer’s name, which nothing renders since Messages lost its Trades tab — ruling #22); the thread’s sender line is a UsernameLink' },
 ]
 

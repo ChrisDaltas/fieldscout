@@ -680,6 +680,13 @@ export function topicAwaitingServer(
 
 /** Community's own address — the parent the detail's Back falls back to. */
 export const COMMUNITY_HREF = '/app/explore'
+
+/** The Community detail URL — the screen it opens from (`from`: the feed,
+ *  or the Latest page) stays mounted underneath. A mobile URL: the desktop
+ *  Community page ignores `?list=`. */
+export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): string {
+  return `${from}?list=${encodeURIComponent(id)}`
+}
 /** The Latest page (For you's "Latest" shelf → See all): everything the shelf
  *  draws from, simply newest first. */
 export const LATEST_HREF = '/app/explore/latest'
