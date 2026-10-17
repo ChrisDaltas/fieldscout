@@ -466,6 +466,12 @@ describe('winChance (F566)', () => {
     // home 50, away 30, R 20 → 0.5 + 20/40 = 1.0 exactly
     expect(lock).toEqual({ home: 100, away: 0, homeFinal: 50, awayFinal: 30 })
   })
+  it('R1570: short of certainty the display stays within 1–99%', () => {
+    // home 199.2 vs away 0 + 100 left: 0.5 + 99.2/200 = 0.996 → would round to 100 → shown as 99
+    const near = winChance('live', { points: 199.2, starters: [st('a', 'done'), st('a2', 'up_next')] }, { points: 0, starters: [st('b', 'done'), st('b2', 'up_next')] }, proj({ a2: 0, b2: 100 }))
+    expect(near).toMatchObject({ home: 99, away: 1 })
+  })
+
   it('never a guess: a missing projection, a pending started total, nothing left, a finished week, an empty lineup', () => {
     const a = { points: 10, starters: [st('a', 'up_next')] }
     const b = { points: 10, starters: [st('b', 'up_next')] }

@@ -676,7 +676,9 @@ export function winChance(
   const homeFinal = h.now + h.left
   const awayFinal = a.now + a.left
   const p = Math.min(1, Math.max(0, 0.5 + (homeFinal - awayFinal) / (2 * remaining)))
-  const homePct = Math.round(p * 100)
+  // R1570: a rounded 0% / 100% is shown only when it is certain (p exactly
+  // 0 or 1); otherwise the display stays within 1–99%.
+  const homePct = p === 0 || p === 1 ? p * 100 : Math.min(99, Math.max(1, Math.round(p * 100)))
   const r2 = (n: number) => Math.round(n * 100) / 100
   return { home: homePct, away: 100 - homePct, homeFinal: r2(homeFinal), awayFinal: r2(awayFinal) }
 }

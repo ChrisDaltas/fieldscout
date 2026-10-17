@@ -239,7 +239,10 @@ type BenchSource = { kind: 'roster' } | { kind: 'stored'; ids: string[]; ir: Rea
 
 /** F567: a scored week's bench as its stored lineup row recorded it — the
  *  row's `bench` ids plus its IR-slot players. No row, or a row without a
- *  bench array, is `not_recorded` (never a guess from today's roster). */
+ *  bench array, is `not_recorded` (never a guess from today's roster).
+ *  R1571: an EMPTY stored array is genuine — the team really had nobody on
+ *  the bench that week (every rostered player started) — so it is `stored`
+ *  with no lines, not `not_recorded`. */
 export function storedBenchOf(row: { slot_map: unknown; bench?: unknown } | null | undefined, irKeys: ReadonlySet<string>): BenchSource {
   if (!row || !Array.isArray(row.bench)) return { kind: 'not_recorded' }
   const ids = row.bench.filter((v): v is string => typeof v === 'string' && v.length > 0)
