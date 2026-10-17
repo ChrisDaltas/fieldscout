@@ -3802,6 +3802,7 @@ export type Database = {
           espn_id: string | null
           experience_years: number | null
           first_name: string | null
+          forty_time: number | null
           full_name: string
           headshot_url: string | null
           height: string | null
@@ -3843,6 +3844,7 @@ export type Database = {
           espn_id?: string | null
           experience_years?: number | null
           first_name?: string | null
+          forty_time?: number | null
           full_name: string
           headshot_url?: string | null
           height?: string | null
@@ -3884,6 +3886,7 @@ export type Database = {
           espn_id?: string | null
           experience_years?: number | null
           first_name?: string | null
+          forty_time?: number | null
           full_name?: string
           headshot_url?: string | null
           height?: string | null

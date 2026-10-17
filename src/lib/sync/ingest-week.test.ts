@@ -71,8 +71,8 @@ describe('column surfaces (derived from the registry — D33 one namespace)', ()
     expect([...STAT_COLUMN_SURFACE]).toEqual([...new Set(STAT_COLUMN_SURFACE)].sort())
   })
 
-  it('ADVANCED_KEYS is exactly the D15 placeholder pair today (§23.5 storage rule; C59)', () => {
-    expect([...ADVANCED_KEYS].sort()).toEqual(['example_charted_yards', 'example_tracking_yards'])
+  it('ADVANCED_KEYS is the D15 placeholder pair plus the F578 usage keys (§23.5 storage rule; C59; D539)', () => {
+    expect([...ADVANCED_KEYS].sort()).toEqual(['example_charted_yards', 'example_tracking_yards', 'fg_long', 'off_snaps', 'pass_rz_att', 'rec_rz_tgt', 'rush_rz_att'])
   })
 })
 

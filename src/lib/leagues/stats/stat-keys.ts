@@ -32,8 +32,9 @@ export type StatTier = 'core_box' | 'tracking' | 'charted'
  * Where a canonical key's value lives today:
  * - 'column'   — a typed player_stats column exists now (named in `column`).
  * - 'advanced' — the §23.5 player_stats.advanced JSONB home for
- *   tracking/charted stats. The column itself deliberately does NOT exist in
- *   M0 (D8) — it lands with the first milestone that persists advanced stats.
+ *   tracking/charted stats and, per §23.5's storage rule, every future stat
+ *   (F578's core_box usage keys are the first real ones, D539). An absent
+ *   key is not reported, never 0.
  * - 'derived'  — never persisted: the value is computed at scoring time by a
  *   pure helper from a raw column-stored key (D44 — the def_pa / def_ya
  *   one-hot tier indicators, from def_points_allowed/def_yards_allowed).
@@ -210,6 +211,20 @@ export const STAT_KEYS: readonly StatKeyDef[] = [
   // 143 drops the column's DEFAULT and NULLs the never-ingested zeros, so a
   // week with no yards-allowed value scores the def_ya_* family PENDING.
   { key: 'def_yards_allowed', label: 'Yards Allowed (Raw)', tier: 'core_box', storage: 'column', column: 'def_yards_allowed', scoring_surface: 'context', null_is_pending: true },
+
+  // ── core_box · usage keys (F578, PROGRESS D539) ────────────────────────────
+  // The first REAL keys in `player_stats.advanced` — §23.5's storage rule
+  // ("every future stat … live in advanced JSONB … new stats require no
+  // migration; a missing key means not-yet-reported"). Box-score tier (the
+  // Sleeper actuals line carries them: `SLEEPER_USAGE_KEY_MAP`), shown on the
+  // player view, never scorable: `context`, like `targets`. Sleeper omits a
+  // zero, so on a delivered line an absent red-zone key is a 0 to a reader
+  // that knows the line was delivered (the player view's rule).
+  { key: 'off_snaps', label: 'Offensive Snaps', tier: 'core_box', storage: 'advanced', scoring_surface: 'context' },
+  { key: 'pass_rz_att', label: 'Red-Zone Pass Attempts', tier: 'core_box', storage: 'advanced', scoring_surface: 'context' },
+  { key: 'rush_rz_att', label: 'Red-Zone Rush Attempts', tier: 'core_box', storage: 'advanced', scoring_surface: 'context' },
+  { key: 'rec_rz_tgt', label: 'Red-Zone Targets', tier: 'core_box', storage: 'advanced', scoring_surface: 'context' },
+  { key: 'fg_long', label: 'Longest FG Made', tier: 'core_box', storage: 'advanced', scoring_surface: 'context' },
 
   // ── D15 placeholders — tier-machinery proof only, never product stats ─────
   { key: 'example_tracking_yards', label: 'Example Tracking Yards (placeholder)', tier: 'tracking', storage: 'advanced', placeholder: true, scoring_surface: 'reserved' },

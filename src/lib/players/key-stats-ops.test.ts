@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { sumBox } from './core-stats-ops'
+import { sumBox, sumUsage } from './core-stats-ops'
 import { completionPct, keyStats, passerRating, perGame, yardsPerTarget, type KeyStatsInput } from './key-stats-ops'
 
 const keysOf = (tiles: Array<{ key: string }>) => tiles.map((t) => t.key)
@@ -95,5 +95,32 @@ describe('key stats — per position', () => {
     expect(keyStats('RB', { ...RB, games: 0 })).toEqual({ primary: [], more: [] })
     expect(keyStats('RB', null)).toEqual({ primary: [], more: [] })
     expect(keyStats('LS', RB)).toEqual({ primary: [], more: [] })
+  })
+})
+
+describe('F578 — snaps, red zone, FG long, the 40 (D539 / D540)', () => {
+  const line = (advanced: Record<string, number>, fg_made = 0) => ({ advanced, fg_made })
+  it('sumUsage: snaps and RZ only when every line carries off_snaps; an absent RZ key on such a line is 0', () => {
+    expect(sumUsage([line({ off_snaps: 50, rec_rz_tgt: 2 }), line({ off_snaps: 45 })])).toEqual({ off_snaps: 95, pass_rz_att: 0, rush_rz_att: 0, rec_rz_tgt: 2 })
+    // A line from before the usage-aware sync: the season total is unknown — omitted, never undercounted.
+    expect(sumUsage([line({ off_snaps: 50 }), line({})])).toEqual({})
+    expect(sumUsage([])).toEqual({})
+  })
+  it('sumUsage: FG long is the longest make, only when every line with a make carries one', () => {
+    expect(sumUsage([line({ fg_long: 41 }, 2), line({ fg_long: 55 }, 1), line({}, 0)])).toEqual({ fg_long: 55 })
+    expect(sumUsage([line({ fg_long: 41 }, 2), line({}, 1)])).toEqual({})
+  })
+  it('the tiles: present values shown, absent ones omitted', () => {
+    const base = { games: 2, totals: { receiving_yards: 200, targets: 14, receptions: 9, receiving_tds: 2 }, usage: null }
+    const wr = keyStats('WR', { ...base, extra: { off_snaps: 95, rec_rz_tgt: 2, forty_time: 4.4 } })
+    expect(val(wr.more, 'snaps')).toBe('95')
+    expect(val(wr.more, 'rz_tgt')).toBe('2')
+    expect(val(wr.more, 'forty')).toBe('4.40s')
+    expect(keysOf(keyStats('WR', base).more)).not.toContain('snaps')
+    expect(keysOf(keyStats('WR', base).more)).not.toContain('forty')
+    const k = keyStats('K', { games: 1, totals: { fg_made: 2, fg_attempted: 2 }, usage: null, extra: { fg_long: 55 } })
+    expect(val(k.primary, 'fg_long')).toBe('55')
+    const qb = keyStats('QB', { games: 1, totals: { pass_attempts: 30 }, usage: null, extra: { off_snaps: 60, pass_rz_att: 6, rush_rz_att: 1 } })
+    expect([val(qb.more, 'snaps'), val(qb.more, 'rz_pass'), val(qb.more, 'rz_rush')]).toEqual(['60', '6', '1'])
   })
 })
