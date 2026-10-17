@@ -54,10 +54,14 @@ export function buildFortyMap(playerIdsCsv: string, combineCsv: string): FortyMa
     pfrBySleeper.set(r.sleeper_id, prior === undefined || prior === r.pfr_id ? r.pfr_id : 'conflict')
   }
 
+  // R1583: one PFR id claimed by two Sleeper ids is ambiguous for both.
+  const sleepersPerPfr = new Map<string, number>()
+  for (const pfr of pfrBySleeper.values()) if (pfr !== 'conflict') sleepersPerPfr.set(pfr, (sleepersPerPfr.get(pfr) ?? 0) + 1)
+
   const bySleeperId = new Map<string, number>()
   const ambiguous: string[] = []
   for (const [sleeperId, pfr] of pfrBySleeper) {
-    if (pfr === 'conflict') {
+    if (pfr === 'conflict' || (sleepersPerPfr.get(pfr) ?? 0) > 1) {
       ambiguous.push(sleeperId)
       continue
     }

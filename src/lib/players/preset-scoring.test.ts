@@ -37,6 +37,27 @@ describe('F576 — one preset scorer for the Stats Center and the player page', 
     expect(PRESET_BY_BUILDER_KEY).toEqual({ standard: 'espn_standard', half_ppr: 'half_ppr', ppr: 'ppr' })
   })
 
+  it('R1580 parity against STORED literals — the Stats Center number per preset × position, hand-checked from the templates', () => {
+    // WR: see the golden pin below. K (ESPN): 0-39 3 + 40-49 4 + 50+ 5 + PAT 2 − missed FG 1 = 13 (receptions irrelevant).
+    // DST (ESPN): 3 sacks × 1 + 1 INT × 2 + PA 10 → def_pa_7_13 = 3 + YA 290 → def_ya_200_299 = 2 = 10.
+    const expected: Record<string, Record<string, number>> = {
+      standard: { WR: 16.5, K: 13, DEF: 10 },
+      half_ppr: { WR: 21.5, K: 13, DEF: 10 },
+      ppr: { WR: 26.5, K: 13, DEF: 10 },
+    }
+    const rows: Record<string, [string, StatLineRow[]]> = { WR: ['wr', WR], K: ['k', K], DEF: ['dst', DEF] }
+    for (const [builderKey, preset] of Object.entries(PRESET_BY_BUILDER_KEY)) {
+      for (const [pos, [id, r]] of Object.entries(rows)) {
+        expect(builderSeasonPoints(preset, id, pos, r), `${builderKey} ${pos}`).toBe(expected[builderKey][pos])
+      }
+    }
+  })
+
+  it('R1580: the legacy calculator disagreed on D/ST too — no points- or yards-allowed tiers (5 vs ESPN 10)', () => {
+    expect(calculateFantasyPoints(sumStatRows(DEF as never), STANDARD_SCORING)).toBe(5)
+    expect(presetSeasonPoints('espn_standard', 'dst', 'DEF', DEF).points).toBe(10)
+  })
+
   it('parity: the Stats Center number equals the core-stats engine path, every preset × position', () => {
     const cases: Array<[string, string, StatLineRow[]]> = [
       ['wr', 'WR', WR],

@@ -14,6 +14,8 @@ import { VirtualClock } from '@/lib/leagues/time/virtual-clock'
 
 import {
   ADVANCED_KEYS,
+  CONTEXT_ADVANCED_KEYS,
+  movedStatKeys,
   classifyCorrectionsWithSettle,
   diffGames,
   diffStats,
@@ -417,6 +419,23 @@ describe('diffStats (§23.2: only real deltas enqueue)', () => {
     expect(diff).toEqual({ inserts: [], updates: [], metaOnly: [final], unchanged: 0 })
     expect(diffStats([resourced], existing).metaOnly).toEqual([resourced])
     expect(diffStats([regamed], existing).metaOnly).toEqual([regamed])
+  })
+
+  it('R1581: usage keys (snaps, red zone, FG long) arriving or moving are metadata — written, never enqueued, never a correction', () => {
+    const existing = new Map([['syn-g1-qb', statRow()]])
+    const arrived = statRow({ advanced: { example_tracking_yards: 40, off_snaps: 61, pass_rz_att: 4 } })
+    expect(diffStats([arrived], existing)).toEqual({ inserts: [], updates: [], metaOnly: [arrived], unchanged: 0 })
+    const moved = statRow({ advanced: { example_tracking_yards: 40, off_snaps: 63, fg_long: 50 } })
+    expect(diffStats([moved], new Map([['syn-g1-qb', arrived]])).metaOnly).toEqual([moved])
+    expect(movedStatKeys(arrived, moved)).toEqual([])
+    // A late-filled line (no prior): its usage keys are never correction keys either.
+    const lateKeys = movedStatKeys(undefined, arrived).map((k) => k.stat_key)
+    for (const k of CONTEXT_ADVANCED_KEYS) expect(lateKeys).not.toContain(k)
+    expect(lateKeys).toContain('example_tracking_yards')
+    // …while a scoring advanced key still moves the line (the placeholder tier).
+    expect(diffStats([statRow({ advanced: { off_snaps: 61, example_tracking_yards: 9 } })], existing).updates).toHaveLength(1)
+    expect(movedStatKeys(arrived, statRow({ advanced: { off_snaps: 99, example_tracking_yards: 9 } })).map((k) => k.stat_key)).toEqual(["example_tracking_yards"])
+    expect(CONTEXT_ADVANCED_KEYS).toEqual(new Set(['off_snaps', 'pass_rz_att', 'rush_rz_att', 'rec_rz_tgt', 'fg_long']))
   })
 
   it('a scoring delta that also flips metadata is ONE update (never double-counted)', () => {

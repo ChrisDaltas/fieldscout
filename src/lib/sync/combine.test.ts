@@ -16,6 +16,8 @@ const IDS = [
   '6,NA,555,NoSlee00,No sleeper id',
   '7,9000,666,TwoFor00,Two forties', // pfr id with two different Combine times → ambiguous
   '8,9100,777,NoRun00,Did not run',
+  '9,9200,888,ShareP00,Shared pfr one', // R1583: one pfr id, two Sleeper ids → ambiguous for both
+  '10,9201,889,ShareP00,Shared pfr two',
 ].join('\n')
 
 const COMBINE = [
@@ -26,6 +28,7 @@ const COMBINE = [
   '2017,2017,TwoFor00,Two Forties,WR,4.52',
   '2020,2020,NoRun00,Did Not Run,TE,',
   '2019,2019,Typo00,Typo,WR,44.5',
+  '2021,2021,ShareP00,Shared,RB,4.50',
 ].join('\n')
 
 describe('buildFortyMap — matched through the id crosswalk only, never by name', () => {
@@ -35,7 +38,8 @@ describe('buildFortyMap — matched through the id crosswalk only, never by name
   })
   it('names the ambiguous ids and leaves them without a time; blanks and NA are no match', () => {
     const m = buildFortyMap(IDS, COMBINE)
-    expect(m.ambiguous).toEqual(['7000', '9000'])
+    expect(m.ambiguous).toEqual(['7000', '9000', '9200', '9201'])
+    expect(m.bySleeperId.has('9200')).toBe(false)
     expect(m.bySleeperId.has('8000')).toBe(false)
     expect(m.bySleeperId.has('9100')).toBe(false)
   })

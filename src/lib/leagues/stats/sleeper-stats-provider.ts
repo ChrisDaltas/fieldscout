@@ -189,9 +189,6 @@ async function fetchSleeperWeekStats(
   return (await res.json()) as SleeperWeeklyStatsRow[]
 }
 
-/** Sleeper stat object → canonical keys (finite numbers only). Exported for
- *  the weekly projections sync (L.E1.19, D373(2)): a projected line takes the
- *  SAME map as the actuals, so the two are commensurable key for key. */
 /**
  * F578 (PROGRESS D539) — usage stats the player view shows, mapped from the
  * SAME actuals endpoint into canonical keys stored in `player_stats.advanced`
@@ -223,6 +220,9 @@ export function mapUsageKeys(stats: Record<string, number | null> | null): Recor
   return out
 }
 
+/** Sleeper stat object → canonical keys (finite numbers only). Exported for
+ *  the weekly projections sync (L.E1.19, D373(2)): a projected line takes the
+ *  SAME map as the actuals, so the two are commensurable key for key. */
 export function mapToCanonicalKeys(
   stats: Record<string, number | null> | null,
 ): Partial<Record<string, number>> {
