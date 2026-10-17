@@ -4,9 +4,10 @@
  * starting slots; PROGRESS D321(4)). The read itself is driven on the stack
  * by `box-score-api-db.test.ts`.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { BOX_LINE_COLUMNS, slotInstanceKeys, starterPhase, startingSlotDefs, type BoxGame } from './box-score-service'
+import { DB_FAILURE_COPY } from './db-failure'
+import { BOX_LINE_COLUMNS, heldFilter, slotInstanceKeys, starterPhase, startingSlotDefs, type BoxGame } from './box-score-service'
 import { STAT_LINE_COLUMNS } from '../scoring/score-week-worker'
 
 const game = (over: Partial<BoxGame> & Pick<BoxGame, 'id' | 'home_team' | 'away_team'>): BoxGame => ({
@@ -93,5 +94,45 @@ describe('R1469 — a bench-only read failure never fails the box', () => {
     expect(src).not.toMatch(/if \('status' in bench\) return bench/)
     expect(src.match(/if \(!\('status' in bench\)\) payload\.bench = bench\.lines/g)).toHaveLength(2)
     expect(src).toContain("('status' in bench ? empty : { ...empty, bench: bench.lines })")
+  })
+})
+
+describe('heldFilter — a failed read of the operator marks is a named 500 (F594, R1556)', () => {
+  const failing = (table: string) =>
+    ({
+      from: (t: string) => {
+        const q = {
+          select: () => q,
+          eq: () => q,
+          is: () => q,
+          order: () => q,
+          range: () => q,
+          then: (resolve: (v: unknown) => void) =>
+            resolve(
+              t === table
+                ? { data: null, error: { message: 'connection reset' } }
+                : { data: [{ id: 'g1', home_team: 'KC', away_team: 'BUF', operator_hold: 'cancelled' }], error: null },
+            ),
+        }
+        return q
+      },
+    }) as unknown as Parameters<typeof heldFilter>[0]
+
+  it('the marks read fails ⇒ 500 with the house copy, logged against nfl_games — never the unfiltered lines', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const out = await heldFilter(failing('nfl_games'), 2026, 7, new Map(), () => 'KC')
+    expect(out).toEqual({ status: 500, body: { error: DB_FAILURE_COPY } })
+    expect(err).toHaveBeenCalledWith(
+      expect.stringMatching(/^league read failed — nfl_games: nfl_games read \(held games, 2026 week 7\) failed: connection reset/),
+    )
+    err.mockRestore()
+  })
+
+  it('the line-team read (F589) fails ⇒ the same 500, logged against player_stats', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const out = await heldFilter(failing('player_stats'), 2026, 7, new Map(), () => 'KC')
+    expect(out).toEqual({ status: 500, body: { error: DB_FAILURE_COPY } })
+    expect(err).toHaveBeenCalledWith(expect.stringMatching(/^league read failed — player_stats: player_stats read \(line teams/))
+    err.mockRestore()
   })
 })
