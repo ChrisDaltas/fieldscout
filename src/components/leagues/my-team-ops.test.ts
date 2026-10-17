@@ -20,6 +20,8 @@ import {
   weekTabsLockedReason,
   lineupChecks,
   moveOptions,
+  railDropTarget,
+  railDropTargets,
   moveToastCopy,
   opponentOf,
   oprkOf,
@@ -217,6 +219,34 @@ describe('the Move menu’s entries', () => {
     const seated = moveOptions({ player: qb, placement, slots, players, locked, lockExempt: false })
     expect(seated.at(-1)).toEqual({ target: { kind: 'bench' }, label: 'To bench — leave QB empty', disabledReason: null })
     expect(moveOptions({ player: wrOut, placement, slots, players, locked, lockExempt: false }).some((o) => o.label.startsWith('IR'))).toBe(true)
+  })
+
+  // F570 — a rail drag onto the lineup: the open Move-menu targets only.
+  it('F570: a rostered player takes exactly his open Move entries; a locked one none; a free agent the bench only, own team only', () => {
+    const base = { leagueId: 'L', teamId: 'T', readOnly: false, ownTeam: true, placement, slots, players, locked, lockExempt: false }
+    const drag = (playerId: string, availability: 'free_agent' | 'rostered' = 'rostered') => ({ leagueId: 'L', playerId, availability, teamId: availability === 'rostered' ? 'T' : null })
+    const wr = railDropTargets({ ...base, drag: drag('wr1') })
+    // Eligible WR / flex seats, never QB, never the locked W Two's seat, no IR (not designated), no bench (already there).
+    expect(wr.has('slot:wr:0')).toBe(false)
+    expect([...wr].some((id) => id.startsWith('slot:qb'))).toBe(false)
+    expect([...wr].some((id) => id.startsWith('slot:ir'))).toBe(false)
+    expect(wr.has('bench')).toBe(false)
+    expect([...wr].some((id) => id.startsWith('slot:wr:'))).toBe(true)
+    expect(railDropTargets({ ...base, drag: drag('qb') }).has('bench')).toBe(true)
+    // His own game locks him → nothing accepts him (lock-exempt override does).
+    expect(railDropTargets({ ...base, drag: drag('wr2') }).size).toBe(0)
+    expect(railDropTargets({ ...base, lockExempt: true, drag: drag('wr2') }).size).toBeGreaterThan(0)
+    // A free agent: the bench, through the add's confirm — on the viewer's own team only.
+    expect([...railDropTargets({ ...base, drag: drag('fa', 'free_agent') })]).toEqual(['bench'])
+    expect(railDropTargets({ ...base, ownTeam: false, drag: drag('fa', 'free_agent') }).size).toBe(0)
+    // Another team's player, another league's drag, a read-only lineup, no drag: nothing.
+    expect(railDropTargets({ ...base, drag: { ...drag('x'), teamId: 'OTHER' } }).size).toBe(0)
+    expect(railDropTargets({ ...base, drag: { ...drag('qb'), leagueId: 'L2' } }).size).toBe(0)
+    expect(railDropTargets({ ...base, readOnly: true, drag: drag('qb') }).size).toBe(0)
+    expect(railDropTargets({ ...base, drag: null }).size).toBe(0)
+    expect(railDropTarget('slot:wr:1')).toEqual({ kind: 'slot', key: 'wr:1' })
+    expect(railDropTarget('bench')).toEqual({ kind: 'bench' })
+    expect(railDropTarget('list-drop:x')).toBeNull()
   })
 
   it('two empty seats sharing a label read apart — "RB 1 — Empty" / "RB 2 — Empty"', () => {

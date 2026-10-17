@@ -15,6 +15,12 @@ import type { BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, TeamWeekResultRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 
 import {
+  BENCH_NOT_RECORDED_COPY,
+  BENCH_TODAY_COPY,
+  benchNote,
+  benchRows,
+  benchUnrecorded,
+  winChance,
   pairSlots,
   BYE_TITLE,
   NO_MATCHUPS_COPY,
@@ -432,5 +438,61 @@ describe('pairSlots — pairs by slot key, never by lineup index (R1493)', () =>
     const rows = pairSlots([seat('qb:0')], null)
     expect(rows).toHaveLength(1)
     expect(rows[0].away).toBeNull()
+  })
+})
+
+// F566 — the win chance: the plain rule, golden values as stored literals.
+describe('winChance (F566)', () => {
+  const st = (id: string | null, phase: BoxStarter['phase']) => ({ player: id ? { id, full_name: id, position: 'WR', nfl_team: 'AAA', headshot_url: null } : null, phase })
+  const proj = (m: Record<string, number | null>) => (id: string) => m[id]
+  it('before kickoff it is each side’s share of the two projected totals', () => {
+    // 120 vs 80 → 0.5 + 40 / 400 = 0.60
+    const got = winChance('upcoming', { points: null, starters: [st('a', 'up_next')] }, { points: null, starters: [st('b', 'up_next')] }, proj({ a: 120, b: 80 }))
+    expect(got).toEqual({ home: 60, away: 40, homeFinal: 120, awayFinal: 80 })
+  })
+  it('live: points so far + projections of starters yet to play; the lead weighed against what is left', () => {
+    // home 20 + 10 left = 30; away 15 + 5 left = 20; R = 15 → 0.5 + 10/30 = 0.8333 → 83
+    const got = winChance('live', { points: 20, starters: [st('a1', 'done'), st('a2', 'up_next')] }, { points: 15, starters: [st('b1', 'now_playing'), st('b2', 'up_next')] }, proj({ a2: 10, b2: 5, a1: 99, b1: 99 }))
+    expect(got).toEqual({ home: 83, away: 17, homeFinal: 30, awayFinal: 20 })
+  })
+  it('level is 50%; a lead equal to everything left is exactly 100% (the boundary)', () => {
+    const exact = winChance('live', { points: 30, starters: [st('a', 'done'), st('a2', 'up_next')] }, { points: 10, starters: [st('b', 'done'), st('b2', 'up_next')] }, proj({ a2: 0, b2: 20 }))
+    // home 30 + 0, away 10 + 20 → level → 50
+    expect(exact?.home).toBe(50)
+    const over = winChance('live', { points: 41, starters: [st('a', 'done'), st('a2', 'up_next')] }, { points: 10, starters: [st('b', 'done'), st('b2', 'up_next')] }, proj({ a2: 0, b2: 20 }))
+    // home 41, away 30, R 20 → 0.5 + 11/40 = 0.775 → 78
+    expect(over?.home).toBe(78)
+    const lock = winChance('live', { points: 50, starters: [st('a', 'done'), st('a2', 'up_next')] }, { points: 10, starters: [st('b', 'done'), st('b2', 'up_next')] }, proj({ a2: 0, b2: 20 }))
+    // home 50, away 30, R 20 → 0.5 + 20/40 = 1.0 exactly
+    expect(lock).toEqual({ home: 100, away: 0, homeFinal: 50, awayFinal: 30 })
+  })
+  it('never a guess: a missing projection, a pending started total, nothing left, a finished week, an empty lineup', () => {
+    const a = { points: 10, starters: [st('a', 'up_next')] }
+    const b = { points: 10, starters: [st('b', 'up_next')] }
+    expect(winChance('live', a, b, proj({ a: 10 }))).toBeNull()
+    expect(winChance('live', { points: null, starters: [st('a', 'done'), st('a2', 'up_next')] }, b, proj({ a2: 1, b: 1 }))).toBeNull()
+    expect(winChance('live', { points: 10, starters: [st('a', 'done')] }, { points: 5, starters: [st('b', 'done')] }, proj({}))).toBeNull()
+    expect(winChance('final', a, b, proj({ a: 1, b: 1 }))).toBeNull()
+    expect(winChance('correction_window', a, b, proj({ a: 1, b: 1 }))).toBeNull()
+    expect(winChance('live', { points: 0, starters: [st(null, 'up_next')] }, b, proj({ b: 1 }))).toBeNull()
+    expect(winChance('live', a, null, proj({ a: 1 }))).toBeNull()
+  })
+})
+
+// F567 — the bench note and the stored bench's own names.
+describe('benchNote / benchRows (F567)', () => {
+  it('a stored past-week bench needs no note; an unrecorded one is said; a pre-F567 read keeps the today note', () => {
+    expect(benchNote('final', [{ source: 'stored', team: 'A' }, { source: 'stored', team: 'B' }])).toBeNull()
+    expect(benchNote('final', [{ source: 'not_recorded', team: 'A' }, { source: 'not_recorded', team: 'B' }])).toBe(BENCH_NOT_RECORDED_COPY)
+    expect(benchNote('final', [{ source: 'stored', team: 'A' }, { source: 'not_recorded', team: 'Bravo' }])).toBe('Bravo’s bench wasn’t recorded for this week.')
+    expect(benchNote('final', [{ source: undefined, team: 'A' }])).toBe(BENCH_TODAY_COPY)
+    expect(benchNote('live', [{ source: 'roster', team: 'A' }])).toBeNull()
+    expect(benchUnrecorded([{ source: 'not_recorded' }, { source: 'not_recorded' }])).toBe(true)
+    expect(benchUnrecorded([{ source: 'not_recorded' }, { source: 'stored' }])).toBe(false)
+  })
+  it('a bench player no longer rostered is named from the box line, with that week’s IR flag', () => {
+    const rows = benchRows([{ player_id: 'gone', phase: 'done', game: null, points: 4, pending: [], reason: 'scored', ir: true, player: { full_name: 'Gone Guy', position: 'RB', nfl_team: 'AAA', headshot_url: null } }], [])
+    expect(rows[0].player?.full_name).toBe('Gone Guy')
+    expect(rows[0].ir).toBe(true)
   })
 })

@@ -34,7 +34,7 @@ import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-serv
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 import { useOverrideMode } from '@/stores/commish-override-store'
 
-import { LineupEditor, type LineupStats } from './lineup-editor'
+import { LineupEditor, railTargetProps, type LineupStats } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
@@ -510,6 +510,18 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
       ),
     )
   }
+
+  // F570 — the rail-drag marks. (A server render reads the store's initial
+  // snapshot, so the marks themselves are pinned on `railTargetProps`, and
+  // which targets accept whom on `railDropTargets` in my-team-ops.test.ts.)
+  it('F570: no rail drag → the lineup carries no rail marks; during one, only an accepting target carries its drop id, the rest dim', () => {
+    expect(renderEditor({ ownTeam: true })).not.toContain('data-rail-drop')
+    const ctx = { railDragging: true, railTargets: new Set(['bench']), railHover: 'bench' }
+    expect(railTargetProps(ctx, 'bench')).toEqual({ attrs: { 'data-rail-drop': 'bench' }, className: 'bg-accent-soft hover:bg-accent-soft' })
+    expect(railTargetProps({ ...ctx, railHover: null }, 'bench')).toEqual({ attrs: { 'data-rail-drop': 'bench' }, className: false })
+    expect(railTargetProps(ctx, 'slot:qb:0')).toEqual({ attrs: {}, className: 'opacity-50' })
+    expect(railTargetProps({ ...ctx, railDragging: false }, 'slot:qb:0')).toEqual({ attrs: {}, className: false })
+  })
 
   it('NO SWITCH ON THE TEAM PAGE (League UX batch 1, Chris 2026-10-03): override mode is turned on in League settings / the console, so the editor carries no toggle in any week state — for a commissioner or a manager', () => {
     // The lock wall still holds with the mode off: the locked RB is not

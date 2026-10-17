@@ -337,7 +337,9 @@ describe('trade card — waiting, closed, and the commissioner’s answer', () =
     const result = { outcome: 'forced', bypassed: ['review_period', 'game_day_lock:p-a1'], no_changes_why: null, score_stale: false } as unknown as CommishTradeResult
     const html = card({ trade: trade({ status: 'complete', in_flight: false }), commishResult: result })
     expect(html).toContain('data-commish-trade-outcome="forced"')
-    expect(html).toContain('Forced through — past the rest of the review period and Andy One’s game-day lock.')
+    expect(html.replace(/<[^>]+>/g, '')).toContain('Forced through — past the rest of the review period and Andy One’s game-day lock.')
+    // F563: the name the sentence interpolates is a door to his card.
+    expect(html).toMatch(/data-commish-trade-outcome="forced">[^]*data-player-link="p-a1"[^>]*>Andy One<\/button>/)
   })
 })
 

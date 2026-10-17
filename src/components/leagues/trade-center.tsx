@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { leagueCardContext } from '@/components/players/player-card-context'
-import { PlayerLink } from '@/components/players/player-link'
+import { PlayerLink, TextWithPlayers } from '@/components/players/player-link'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +50,7 @@ import {
   COMMISH_CONFIRM_TITLE,
   commishConfirmLines,
   commishOutcomeCopy,
+  tradeNamedPlayers,
   counterSeed,
   deadlinePassedCopy,
   dropsNeeded,
@@ -607,6 +608,10 @@ export function TradeCard({
   const giving = new Set(trade.items.filter((i) => i.from_team_id === trade.recipient.team_id && i.player).map((i) => i.player!.player_id))
   const tally = trade.status === 'in_review' && trade.tally ? tallyWords(trade.tally) : null
   const playerName = (id: string) => trade.items.find((i) => i.player?.player_id === id)?.player?.full_name ?? null
+  // F563: the outcome sentence names players from this trade's items — each
+  // name is a door to his card (the ids come with the names, never a guess).
+  const outcomeText = commishResult ? commishOutcomeCopy(commishResult, playerName) : null
+  const outcomePlayers = tradeNamedPlayers(trade)
 
   return (
     <Card data-trade={trade.id} data-trade-status={trade.status}>
@@ -700,7 +705,9 @@ export function TradeCard({
 
         {commishResult && (
           <StatusBanner tone="accent">
-            <span data-commish-trade-outcome={commishResult.outcome}>{commishOutcomeCopy(commishResult, playerName)}</span>
+            <span data-commish-trade-outcome={commishResult.outcome}>
+              <TextWithPlayers text={outcomeText ?? ''} players={outcomePlayers} context={leagueCardContext(leagueId)} />
+            </span>
           </StatusBanner>
         )}
 

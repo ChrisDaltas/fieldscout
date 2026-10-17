@@ -293,6 +293,10 @@ export interface CommishLogLine {
   /** The reason AS GIVEN, or null when none was (rendered as absent). */
   reason: string | null
   createdAt: string
+  /** F563: the players the sentence names, with their ids (127's roster
+   *  receipt: `target_id` IS the named player — `COALESCE(gain, lose)` on
+   *  both, 127:1403/1421 and every later body) — each name a door. */
+  players: NamedPlayer[]
 }
 
 type Doc = Record<string, unknown>
@@ -319,6 +323,7 @@ function actText(
   item: Pick<CommishLogItem, 'action_type' | 'target_type' | 'target_id' | 'before' | 'after' | 'metadata'>,
   names: LineNames,
   named: Set<string>,
+  players: NamedPlayer[] = [],
 ): string {
   const before = asDoc(item.before)
   const after = asDoc(item.after)
@@ -415,6 +420,9 @@ function actText(
   // sides and names the player and the teams in metadata.
   if ('acquisition_type' in after || 'acquisition_type' in before) {
     const player = text(metadata.player_name) ?? 'a player'
+    if (item.target_type === 'player' && item.target_id && text(metadata.player_name)) {
+      players.push({ playerId: item.target_id, name: player })
+    }
     const from = text(metadata.from_team_name)
     const to = text(metadata.to_team_name)
     if (from) named.add(from)
@@ -469,11 +477,12 @@ export function commishLogLines(
       metadata: unmarked(raw.metadata) as CommishLogItem['metadata'],
     }
     const named = new Set<string>()
+    const players: NamedPlayer[] = []
     // F549: the people this receipt names, as the log's own read resolved
     // them (a removed manager is no longer in the league's member list),
     // under the member list (the league detail's current usernames).
     const people = item.usernames ? new Map([...Object.entries(item.usernames), ...memberNames]) : memberNames
-    const sentence = actText(item, { teamNames, memberNames: people }, named)
+    const sentence = actText(item, { teamNames, memberNames: people }, named, players)
     const actingFor = item.acting_as_team_id ? teamNames.get(item.acting_as_team_id) : undefined
     const marked = actingFor && !named.has(actingFor) ? `${sentence} (for ${actingFor})` : sentence
     const actorUsername = text(item.actor.username)
@@ -485,6 +494,7 @@ export function commishLogLines(
       marked,
       reason: text(item.reason)?.trim() ?? null,
       createdAt: item.created_at,
+      players,
     }
   })
 }

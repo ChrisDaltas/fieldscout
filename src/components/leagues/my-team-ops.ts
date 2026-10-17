@@ -355,6 +355,58 @@ export function moveOptions(args: {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// F570 — a rail player dragged onto the lineup
+// ---------------------------------------------------------------------------
+
+/** The drop id of a move target: `slot:<key>` or `bench`. */
+export function railDropId(target: MoveTarget): string {
+  return target.kind === 'slot' ? `slot:${target.key}` : 'bench'
+}
+
+/** A drop id back to its move target (null = not a lineup target). */
+export function railDropTarget(id: string): MoveTarget | null {
+  if (id === 'bench') return { kind: 'bench' }
+  if (id.startsWith('slot:') && id.length > 5) return { kind: 'slot', key: id.slice(5) }
+  return null
+}
+
+/**
+ * The lineup targets that ACCEPT a rail drag (prevent, don't refuse — the
+ * rest are never offered). A player already on this team takes exactly the
+ * Move menu's open entries (`moveOptions`: slot eligibility, the IR rule, a
+ * locked occupant's seat excluded) — none at all while his own game locks
+ * him. A free agent goes to the BENCH only, through the add's confirm step
+ * (the card's + flow), and only on the viewer's own team. A player on
+ * another team, another league's drag, or a read-only lineup: nothing.
+ */
+export function railDropTargets(args: {
+  drag: { leagueId: string; playerId: string; availability: 'free_agent' | 'rostered'; teamId: string | null } | null
+  leagueId: string
+  teamId: string
+  readOnly: boolean
+  ownTeam: boolean
+  placement: Placement
+  slots: readonly SlotInstance[]
+  players: ReadonlyMap<string, RosterPlayer>
+  locked: ReadonlySet<string>
+  lockExempt: boolean
+}): Set<string> {
+  const { drag } = args
+  if (!drag || drag.leagueId !== args.leagueId || args.readOnly) return new Set()
+  const player = args.players.get(drag.playerId)
+  if (player) {
+    if (args.locked.has(player.player_id) && !args.lockExempt) return new Set()
+    return new Set(
+      moveOptions({ player, placement: args.placement, slots: args.slots, players: args.players, locked: args.locked, lockExempt: args.lockExempt })
+        .filter((o) => o.disabledReason === null)
+        .map((o) => railDropId(o.target)),
+    )
+  }
+  if (drag.availability === 'free_agent' && args.ownTeam) return new Set(['bench'])
+  return new Set()
+}
+
 /** The toast after a move lands — plain words. */
 export function moveToastCopy(args: {
   player: string

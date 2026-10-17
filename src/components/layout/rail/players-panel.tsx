@@ -30,6 +30,7 @@ import { useSchedule } from '@/hooks/use-schedule'
 import { addDropKeys, type AddDropResult } from '@/hooks/use-transactions'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
+import type { RailDrag } from '@/stores/rail-lineup-drag-store'
 
 import type { PlayerSearchResult } from '@/components/players/player-search'
 
@@ -66,14 +67,16 @@ function RailSkeleton() {
 
 /**
  * One rail row's draggable shell — the app-wide `kind: 'players'` payload,
- * so a row still drops onto sidebar lists / tier zones (AppDndContext). The
- * My Team lineup runs its own nested DndContext, so a rail row cannot drop
- * there (D483 — skipped, the + is the way to add).
+ * so a row still drops onto sidebar lists / tier zones (AppDndContext). In a
+ * league it also carries `rail` (F570): who the player is and whether he is
+ * a free agent, so the My Team lineup (its own nested DndContext) can take
+ * the drop through the bridge (`rail-lineup-drag-store`).
  */
-function DraggableRow({ player, children }: { player: PoolPlayer; children: React.ReactNode }) {
+function DraggableRow({ player, rail, children }: { player: PoolPlayer; rail?: Omit<RailDrag, 'player' | 'playerId'>; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `rail-player:${player.id}`,
     data: {
+      ...(rail ? { rail: { ...rail, playerId: player.id, player } satisfies RailDrag } : {}),
       kind: 'players',
       playerIds: [player.id],
       label: player.full_name,
@@ -205,7 +208,7 @@ export function LeaguePlayersList({
           const manager = managerOf.get(a.teamId) ?? null
           const crest = rosters.data?.teams.find((t) => t.team_id === a.teamId)
           return (
-            <DraggableRow key={row.player.id} player={row.player}>
+            <DraggableRow key={row.player.id} player={row.player} rail={{ leagueId, availability: 'rostered', teamId: a.teamId }}>
               <RowIdentity player={row.player} meta={railMetaLine(row.player.team, v, { season: false })} context={context} />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -219,7 +222,7 @@ export function LeaguePlayersList({
           )
         }
         return (
-          <DraggableRow key={row.player.id} player={row.player}>
+          <DraggableRow key={row.player.id} player={row.player} rail={{ leagueId, availability: 'free_agent', teamId: null }}>
             <RowIdentity player={row.player} meta={railMetaLine(row.player.team, v)} context={context} />
             {/* The card's own + flow (D481 / D483) — buttons never start a drag. */}
             <span className="contents" onPointerDown={(e) => e.stopPropagation()}>
