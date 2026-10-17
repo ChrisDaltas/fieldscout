@@ -64,6 +64,7 @@ export function CreateAccountButton({
   return (
     <Link
       href="/signup"
+      scroll={false} // opens a modal over the page — keep the page where it is
       className={cn(
         'inline-flex flex-none items-center whitespace-nowrap rounded-pill bg-fs-blue font-semibold text-white transition-colors hover:bg-fs-blue-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fs-blue',
         CTA_SIZES[size],
