@@ -55,6 +55,7 @@ import type { ListPlayerWithPlayer, ListWithDetails, ListWithTags } from '@/hook
 
 import { ListActionsSheet, type ListToolsProps } from './list-actions-sheet'
 import { NewListScreen } from './list-details-screen'
+import { ComparePickSheet } from './list-tools-sheets'
 import { MobileLists } from './mobile-lists'
 
 const NOW = new Date(Date.now() - 2 * 86_400_000).toISOString()
@@ -257,6 +258,42 @@ describe('Side by side', () => {
     const columns = out.split('data-compare-column=')
     expect(tick(columns[1]!, 'Puka Nacua')).toBe('true')
     expect(tick(columns[2]!, 'Puka Nacua')).toBe('false')
+  })
+
+  it('Change keeps a column that isn’t among your lists, ticked, so nothing drops out unseen', () => {
+    // A Community list (not yours, not saved) is column 1; Draft board is column 2.
+    const community = detail('c1', 'Community board', [entry('c1', 5, 'Amon-Ra St. Brown')], {
+      is_owner: false,
+      owner_id: 'u2',
+    })
+    const qc = new QueryClient()
+    qc.setQueryData(['lists', 'collection', 1, 50], {
+      lists: [L1, L2].map((l) => ({ ...l, first_players: [] })) as unknown as ListWithTags[],
+      pagination: { page: 1, pageSize: 50, total: 2, hasMore: false },
+    })
+    for (const list of [community, L1, L2]) qc.setQueryData(['lists', 'detail', list.id], list)
+    // Exactly what the comparison's Change opens: its columns, no anchor.
+    const sheet = (initial: string[]) =>
+      html(
+        createElement(
+          QueryClientProvider,
+          { client: qc },
+          createElement(ComparePickSheet, { open: true, onOpenChange: () => {}, initial, onShow: () => {} }),
+        ),
+      )
+    const out = sheet(['c1', 'l1'])
+    expect(out).toContain('Show 2 lists side by side')
+    expect(out).toMatch(/aria-pressed="true"(?:(?!<button).)*>Community board</)
+    expect(out).toMatch(/aria-pressed="true"(?:(?!<button).)*>Draft board</)
+    expect(out).toMatch(/aria-pressed="false"(?:(?!<button).)*>Sleepers</)
+    // It sits ahead of your lists, in column order.
+    expect(out.indexOf('Community board')).toBeLessThan(out.indexOf('Draft board'))
+    expect(out).not.toContain('No other lists yet')
+
+    // Paired control: a list that was never a column and isn't yours gets no row.
+    const plain = sheet(['l1', 'l2'])
+    expect(plain).not.toContain('Community board')
+    expect(plain).toContain('Show 2 lists side by side')
   })
 })
 

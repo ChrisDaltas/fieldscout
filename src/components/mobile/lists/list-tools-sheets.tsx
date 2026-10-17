@@ -5,7 +5,7 @@ import * as React from 'react'
 import { ListThumbnail } from '@/components/lists/list-thumbnail'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
-import { useLists, type ListWithTags } from '@/hooks/use-lists'
+import { useList, useLists, type ListWithTags } from '@/hooks/use-lists'
 import { cn } from '@/lib/utils'
 import { MAX_BUDGET, MIN_BUDGET, useListDisplay, useListDisplayStore, type ListOrg } from '@/stores/list-display-store'
 
@@ -150,9 +150,11 @@ function BudgetField({ listId }: { listId: string }) {
  * Side by side, step one — desktop's picker (`side-by-side-picker.tsx`) as a
  * sheet: every list you have, your own first, then saved. Opened from a
  * list's options, that list is the first column and stays (`anchorId`);
- * opened from the comparison ("Change"), any two or more will do. The button
- * names what it will open and is off until it would open a comparison
- * ("prevent, don't refuse").
+ * opened from the comparison ("Change"), any two or more will do, and every
+ * column already on screen keeps its row — one that isn't among your lists
+ * (opened from Community) too, so Change never drops a column you didn't
+ * untick. The button names what it will open and is off until it would
+ * open a comparison ("prevent, don't refuse").
  */
 export function ComparePickSheet({
   open,
@@ -187,9 +189,13 @@ export function ComparePickSheet({
   }, [all])
   const anchor = anchorList ? (ordered.find((list) => list.id === anchorList.id) ?? anchorList) : null
   const others = ordered.filter((list) => list.id !== anchorId)
-  // Only lists that still exist count (one deleted elsewhere drops out).
-  const available = new Set(ordered.map((list) => list.id))
-  const chosen = picked.filter((id) => available.has(id) || id === anchorId)
+  const yours = new Set(ordered.map((list) => list.id))
+  // Columns on screen that aren't among your lists: each keeps a row, in
+  // column order, ahead of your lists.
+  const columns = initial.filter((id) => id !== anchorId && !yours.has(id))
+  // A list ticked here counts while it has a row (one of yours deleted
+  // elsewhere, and never a column, drops out with its row).
+  const chosen = picked.filter((id) => yours.has(id) || id === anchorId || columns.includes(id))
   const full = chosen.length >= MAX_COMPARE
 
   const toggle = (id: string) =>
@@ -238,7 +244,11 @@ export function ComparePickSheet({
         ) : (
           <>
             {anchor && <PickRow list={anchor} on locked />}
-            {others.length === 0 ? (
+            {columns.map((id) => {
+              const on = chosen.includes(id)
+              return <ColumnPickRow key={id} id={id} on={on} disabled={!on && full} onToggle={() => toggle(id)} />
+            })}
+            {others.length === 0 && columns.length === 0 ? (
               <CenterNote
                 className="py-8"
                 title="No other lists yet"
@@ -271,12 +281,51 @@ type PickList = Pick<
   'id' | 'title' | 'player_count' | 'position_filter' | 'cover_color' | 'is_team' | 'thumbnail_url' | 'first_players' | 'owner'
 >
 
+/**
+ * A column that isn't among your lists, drawn from its own loaded list (the
+ * column's cache entry, so nothing extra is fetched). Until that's in, it
+ * reads "List", and a list that can't be loaded says so — still ticked,
+ * still yours to untick.
+ */
+function ColumnPickRow({
+  id,
+  on,
+  disabled,
+  onToggle,
+}: {
+  id: string
+  on: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  const detail = useList(id)
+  const list: PickList = detail.data ?? {
+    id,
+    title: 'List',
+    player_count: null,
+    position_filter: null,
+    cover_color: null,
+    is_team: false,
+    thumbnail_url: null,
+  }
+  return (
+    <PickRow
+      list={list}
+      on={on}
+      disabled={disabled}
+      onToggle={onToggle}
+      sub={detail.isError ? 'Could not load' : undefined}
+    />
+  )
+}
+
 function PickRow({
   list,
   on,
   locked = false,
   disabled = false,
   onToggle,
+  sub: subOverride,
 }: {
   list: PickList
   on: boolean
@@ -284,8 +333,10 @@ function PickRow({
   locked?: boolean
   disabled?: boolean
   onToggle?: () => void
+  /** Replaces the usual sub-line (a column that couldn't be loaded). */
+  sub?: string
 }) {
-  const sub = [
+  const sub = subOverride ?? [
     playersLabel(list.player_count ?? 0),
     // Inside a pick-list a name only ticks (ruling #42): plain text here.
     locked ? 'This list' : list.owner ? `@${list.owner.username}` : null,
