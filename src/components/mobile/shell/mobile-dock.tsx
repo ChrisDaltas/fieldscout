@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { LeagueMenuSheet } from '@/components/mobile/shell/league-menu-sheet'
 import { LeagueSwitchSheet } from '@/components/mobile/shell/league-switch-sheet'
-import { DOCK_LG, DOCK_SM, leagueTabHref, mobileRoute, type LeagueTab } from '@/components/mobile/shell/mobile-nav'
+import { DOCK_LG, DOCK_SM, leagueTabHref, mobileRoute, showsLeagueSwitcher, type LeagueTab } from '@/components/mobile/shell/mobile-nav'
 import { initials, leagueAvClass, useLeagueCard } from '@/components/mobile/shell/use-league-card'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
@@ -40,7 +40,7 @@ export function useMobileDock() {
 
   const leagueId = route.leagueId ?? (route.accountTab ? null : lastLeagueId)
   const inLeague = featureFlags.leagues && leagueId !== null
-  const showSwitcher = inLeague && route.leagueTab !== null
+  const showSwitcher = showsLeagueSwitcher(inLeague, route.leagueTab, leagues?.length ?? 0)
   return {
     route,
     leagueId: inLeague ? leagueId : null,
@@ -52,7 +52,8 @@ export function useMobileDock() {
 
 /**
  * The FieldScout Mobile bottom dock (handoff §2.1–2.3): the league switcher
- * strip (league tabs only) over the tab bar. Two translucent surfaces with
+ * strip (league tabs only, and only with more than one league) over the tab
+ * bar. Two translucent surfaces with
  * different alphas — the visible seam between them is in the design. Content
  * scrolls behind the dock.
  */
@@ -77,7 +78,11 @@ export function MobileDock() {
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col" data-mobile-dock>
+      {/* Frosted, like an iOS tab bar (Chris, 2026-10-17: "it's see through
+          without any blur so it's hard to see"): the bars keep their
+          translucent fills, and what scrolls under them is blurred instead
+          of showing through sharp. The landing header's recipe. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col backdrop-blur-xl backdrop-saturate-[1.8]" data-mobile-dock>
         {dock.showSwitcher && league && (
           <LeagueSwitcher league={league} leagues={dock.leagues} tab={dock.route.leagueTab!} onOpen={() => setSwitchOpen(true)} />
         )}
