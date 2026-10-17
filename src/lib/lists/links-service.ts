@@ -86,6 +86,7 @@ import { z } from 'zod'
 
 import { lookUpYouTubeTitle, type YouTubeTitleResult } from '@/lib/lists/youtube-title'
 import type { Database, Json } from '@/types/database'
+import { MAX_LINKS_PER_LIST } from '@/types/schemas/lists'
 import { youTubeId } from '@/utils/youtube'
 
 type Supabase = SupabaseClient<Database>
@@ -113,8 +114,10 @@ export interface ListLink {
  * cards, and this page is public — an unbounded list is a spam surface. Held
  * here rather than in a DB trigger: it is a product limit, not an invariant
  * anything else depends on, and a trigger would be a heavier thing to relax.
+ * Defined with the other list limits (`types/schemas/lists.ts`) so the phone's
+ * New list / Edit details can stop at the same number.
  */
-export const MAX_LINKS_PER_LIST = 10
+export { MAX_LINKS_PER_LIST }
 
 /** 080's `list_links_url_length_check` upper bound, mirrored. */
 export const MAX_URL_LENGTH = 2048
