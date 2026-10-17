@@ -41,6 +41,8 @@ import {
   NO_FREE_AGENTS_COPY,
   NO_MATCH_COPY,
   NO_SEAT_COPY,
+  filterPool,
+  poolCountCopy,
   poolRows,
   waiversAddTitle,
 } from './players-page-ops'
@@ -452,7 +454,7 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
   }
   const games = [{ id: 'g1', home_team: 'BBB', away_team: 'AAA', kickoff_at: '2099-09-20T17:00:00Z', status: 'scheduled' }]
 
-  function renderWithValues(withSchedule = true): string {
+  function renderWithValues(withSchedule = true, poolPlayers: PoolPlayer[] = players): string {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
     qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
     qc.setQueryData(leagueRosterKeys.all(LEAGUE), rosters)
@@ -460,7 +462,8 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
     qc.setQueryData(draftPoolKeys.pool('', ''), players)
     if (withSchedule) {
       qc.setQueryData(scheduleKeys.all(LEAGUE), schedule)
-      qc.setQueryData(poolValueKeys.window(LEAGUE, WEEK, [...players.map((p) => p.id)].sort().join(',')), values)
+      // F568: the whole-pool read — every active player with his values.
+      qc.setQueryData(poolValueKeys.whole(LEAGUE, WEEK), { ...values, players: poolPlayers, total: poolPlayers.length })
       qc.setQueryData(['nfl-week-games', 2099, WEEK], games)
     }
     vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
@@ -502,5 +505,42 @@ describe('the value columns: league-scored numbers from the server, sorted by pr
     const html = renderWithValues(false)
     expect(html).not.toContain('data-sort-col')
     expect(html).not.toContain('data-cell="proj"')
+  })
+
+  it('F568: the list is the WHOLE pool, paged — 350 free agents render 100 with a count and Show more, never a silent cut', () => {
+    const many = Array.from({ length: 350 }, (_, i) => pp(`bulk-${String(i).padStart(3, '0')}`, `Bulk ${i}`))
+    const html = renderWithValues(true, many)
+    expect([...html.matchAll(/data-pool-row="/g)].length).toBe(100)
+    expect(html).toContain('data-pool-count="100/350"')
+    expect(html).toContain('Showing 100 of 350 players')
+    expect(html).toContain('data-pool-more')
+  })
+
+  it('F568: a player far past the old 300 window is ranked by his value — sorted over the whole pool', () => {
+    const many = Array.from({ length: 400 }, (_, i) => pp(`bulk-${String(i).padStart(3, '0')}`, `Bulk ${i}`))
+    const qcValues = { ...values, values: [{ player_id: 'bulk-399', projected_points: 30, projected_missing: null, season_points: 10, season_games: 1 }] }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
+    qc.setQueryData(leagueRosterKeys.all(LEAGUE), rosters)
+    qc.setQueryData(leaguePoolKeys.all(LEAGUE), pool)
+    qc.setQueryData(scheduleKeys.all(LEAGUE), schedule)
+    qc.setQueryData(poolValueKeys.whole(LEAGUE, WEEK), { ...qcValues, players: many, total: many.length })
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    const html = render(qc, createElement(PlayersPage, { leagueId: LEAGUE }))
+    const order = [...html.matchAll(/data-pool-row="([^"]+)"/g)].map((m) => m[1])
+    expect(order[0]).toBe('bulk-399')
+  })
+})
+
+describe('F568 — the whole-pool helpers', () => {
+  it('filterPool narrows like the window query: exact position, case-insensitive name substring', () => {
+    expect(filterPool(players, 'RB', '').map((p) => p.id)).toEqual(['fa-locked', 'fa-waivers-lapsed'])
+    expect(filterPool(players, '', '  free l').map((p) => p.id)).toEqual(['fa-locked', 'fa-waivers-lapsed'])
+  })
+  it('poolCountCopy says how many — and names the ADP window when that is all there is', () => {
+    expect(poolCountCopy(100, 350, true, 300)).toBe('Showing 100 of 350 players')
+    expect(poolCountCopy(7, 7, true, 300)).toBe('7 players')
+    expect(poolCountCopy(1, 1, true, 300)).toBe('1 player')
+    expect(poolCountCopy(100, 300, false, 300)).toBe('Showing the top 300 by ADP — search to find any other player.')
   })
 })

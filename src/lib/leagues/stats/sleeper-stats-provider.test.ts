@@ -7,8 +7,10 @@ import type { TimeProvider } from '../time/time-provider'
 import {
   mapSleeperGameStatus,
   mapToCanonicalKeys,
+  mapUsageKeys,
   readZeroOmittedYardsAllowed,
   SLEEPER_STAT_KEY_MAP,
+  SLEEPER_USAGE_KEY_MAP,
   SleeperStatsProvider,
 } from './sleeper-stats-provider'
 import { STAT_KEYS } from './stat-keys'
@@ -393,5 +395,36 @@ describe('mapSleeperGameStatus', () => {
     expect(mapSleeperGameStatus('anything_else')).toBe('scheduled')
     expect(mapSleeperGameStatus(null)).toBe('scheduled')
     expect(mapSleeperGameStatus(undefined)).toBe('scheduled')
+  })
+})
+
+// F578 (D539): snaps, red zone and FG long, from the SAME actuals endpoint,
+// into `advanced` — recorded 2026-10-17 (fixture note carries the counts).
+describe('usage keys → advanced (F578)', () => {
+  const USAGE = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/sleeper-usage-keys-2026.json', import.meta.url)), 'utf8')) as {
+    rows: Array<{ player_id: string; stats: Record<string, number | null> }>
+  }
+  const row = (id: string) => USAGE.rows.find((r) => r.player_id === id)!.stats
+
+  it('pins the map and its registry entries: advanced, core_box, context (never paid)', () => {
+    expect(SLEEPER_USAGE_KEY_MAP).toEqual({ off_snp: 'off_snaps', pass_rz_att: 'pass_rz_att', rush_rz_att: 'rush_rz_att', rec_rz_tgt: 'rec_rz_tgt', fgm_lng: 'fg_long' })
+    for (const key of Object.values(SLEEPER_USAGE_KEY_MAP)) {
+      expect(STAT_KEYS.find((d) => d.key === key), key).toMatchObject({ tier: 'core_box', storage: 'advanced', scoring_surface: 'context' })
+    }
+  })
+
+  it('maps the recorded lines verbatim — present keys only (Sleeper omits a zero), stored literals', () => {
+    expect(mapUsageKeys(row('11566'))).toEqual({ off_snaps: 59, pass_rz_att: 6, rush_rz_att: 1 })
+    expect(mapUsageKeys(row('12514'))).toEqual({ off_snaps: 64, rush_rz_att: 1, rec_rz_tgt: 2 })
+    expect(mapUsageKeys(row('11533'))).toEqual({ fg_long: 41 })
+    expect(mapUsageKeys(null)).toEqual({})
+    expect(mapUsageKeys({ off_snp: Number.NaN, fgm_lng: null })).toEqual({})
+  })
+
+  it('the box map is untouched: no usage key leaks into `stats` (the projections path never sees them)', () => {
+    for (const r of USAGE.rows) {
+      const mapped = mapToCanonicalKeys(r.stats)
+      for (const key of Object.values(SLEEPER_USAGE_KEY_MAP)) expect(mapped[key], key).toBeUndefined()
+    }
   })
 })

@@ -40,7 +40,7 @@ import {
   type StatLineRow,
   weekScoringRules,
 } from '@/lib/leagues/scoring/score-week-worker'
-import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
+import { systemRules } from '@/lib/players/preset-scoring'
 import type { TimeProvider } from '@/lib/leagues/time/time-provider'
 import { valueWeekOf } from '@/lib/leagues/value-week'
 import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
@@ -56,6 +56,7 @@ import {
   type GameWeek,
   pointsWeeks,
   sumBox,
+  sumUsage,
   weeklyCells,
   type ScoringBasis,
   type ScoringChoice,
@@ -123,6 +124,26 @@ async function readUsage(supabase: Supabase, season: number, playerId: string): 
   return { snap_pct: n(data.snap_pct), target_share: n(data.target_share) }
 }
 
+/**
+ * F578 / D540: his Combine 40 (`players.forty_time`, migration 195). Merge
+ * deploys before `db push`, so on a database without 195 the column does not
+ * exist: THAT error (42703, undefined column) reads as "no time recorded";
+ * any other error is loud.
+ */
+async function readFortyTime(supabase: Supabase, playerId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('players')
+    .select('forty_time')
+    .eq('id', playerId)
+    .maybeSingle()
+  if (error) {
+    if (error.code === '42703') return null
+    throw new Error(`players.forty_time: ${error.message}`)
+  }
+  const v = data?.forty_time
+  return v === null || v === undefined ? null : Number(v)
+}
+
 async function readPositions(supabase: Supabase, ids: readonly string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   for (let i = 0; i < ids.length; i += IN_CHUNK) {
@@ -135,14 +156,9 @@ async function readPositions(supabase: Supabase, ids: readonly string[]): Promis
   return out
 }
 
-/** The preset systems' rules — the shipped ESPN templates (no new rows). */
-export function systemRules(system: ScoringSystemKey): ScoringRulesDoc {
-  const std = SCORING_TEMPLATES.find((t) => t.name === 'ESPN Standard')
-  const ppr = SCORING_TEMPLATES.find((t) => t.name === 'ESPN Full PPR')
-  if (!std || !ppr) throw new Error('scoring: the ESPN templates are missing')
-  const rules = system === 'espn_standard' ? std.rules : system === 'ppr' ? ppr.rules : { ...std.rules, receptions: 0.5 }
-  return rules as unknown as ScoringRulesDoc
-}
+/** The preset systems' rules — ONE definition, shared with the Stats Center
+ *  (F576 / D537): `preset-scoring.ts`. */
+export { systemRules }
 
 /** Any nonzero scoring stat on the line (R1506's appearance proxy). */
 function appeared(row: Line): boolean {
@@ -285,8 +301,9 @@ export async function readPlayerCoreStats(
   let ownRows: Line[]
   let ownProjections: Awaited<ReturnType<typeof readWeeklyLines>>
   let usage: CoreStatsPayload['usage']
+  let forty: number | null
   try {
-    ;[standings, lines, ownRows, ownProjections, usage] = await Promise.all([
+    ;[standings, lines, ownRows, ownProjections, usage, forty] = await Promise.all([
       choice.kind === 'system' && opts.poolCache
         ? opts.poolCache(choice.system, season, week)
         : computePoolStandings(supabase, snapshot, pastWeekRules, season, week),
@@ -294,6 +311,7 @@ export async function readPlayerCoreStats(
       readOwnSeason(supabase, season, playerId),
       readWeeklyLines(supabase, season, SEASON_WEEKS, [playerId]),
       readUsage(supabase, season, playerId),
+      readFortyTime(supabase, playerId),
     ])
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
@@ -350,7 +368,12 @@ export async function readPlayerCoreStats(
     pos_rank: own?.pos_rank ?? null,
     overall_rank: own?.overall_rank ?? null,
     weekly: weeklyCells(points, projections),
-    box: { games: completed.length, totals: sumBox(completedRows as unknown as Array<Record<string, unknown>>) },
+    box: {
+      games: completed.length,
+      totals: sumBox(completedRows as unknown as Array<Record<string, unknown>>),
+      // F578: snaps / red zone / FG long (advanced) and the Combine 40.
+      extra: { ...sumUsage(completedRows), ...(forty === null ? {} : { forty_time: forty }) },
+    },
     usage,
   }
   return { status: 200, body: body as unknown as Json }

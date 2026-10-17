@@ -25,6 +25,7 @@
  * inferred). A broken snapshot is a loud 500, never a quiet empty list.
  */
 import { dbFailure } from './db-failure'
+import { type PageResponse, pageAll } from '@/lib/supabase/page-all'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
@@ -74,6 +75,102 @@ export async function readPoolValues(supabase: Supabase, leagueId: string, rawQu
   if (!parsed.success) return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
   const { week, players: ids } = parsed.data
 
+  const ctx = await valuesContext(supabase, leagueId, week)
+  if ('status' in ctx) return ctx
+  const computed = await computeValues(supabase, ctx, week, ids, time)
+  if ('status' in computed) return computed
+  const body: PoolValues = { league_id: leagueId, season: ctx.season, week, values: computed.values, unknown_players: computed.unknown }
+  return { status: 200, body: body as unknown as Json }
+}
+
+// ── F568: the WHOLE pool ───────────────────────────────────────────────────
+
+/**
+ * GET /api/leagues/[id]/player-values?week=&pool=all — F568 (PROGRESS D538).
+ * The players page used to score only its 300-player ADP window, so a sort
+ * by projection or points re-ordered that window and a player outside it
+ * appeared only when searched. This read returns EVERY active player (the
+ * draft pool's own definition: a current team — `useDraftPool`) with his
+ * values, computed once per request through the same code as the window
+ * read; the page sorts, filters and pages the whole list. Every read is
+ * paged or chunked (the 1000-row cap); `total` is the count PostgREST
+ * reported, and a short read is a loud 500, never a silently short list.
+ */
+export const wholePoolQuerySchema = z.strictObject({
+  week: z.coerce.number().int().min(1).max(30),
+  pool: z.literal('all'),
+})
+
+export interface WholePoolValues {
+  league_id: string
+  season: number
+  week: number
+  /** Every active player, in ADP order (the window's own order). */
+  players: Array<{ id: string; full_name: string; position: string; team: string | null; adp: number | null; headshot_url: string | null; status: string | null }>
+  values: PoolPlayerValue[]
+  total: number
+}
+
+type ActivePlayer = WholePoolValues['players'][number]
+
+export async function readActivePool(supabase: Supabase): Promise<{ players: ActivePlayer[]; total: number }> {
+  let total: number | null = null
+  const players = await pageAll<ActivePlayer>(
+    (from, to) =>
+      supabase
+        .from('players')
+        .select('id, full_name, position, team, adp, headshot_url, status', { count: 'exact' })
+        .not('team', 'is', null)
+        .order('adp', { ascending: true, nullsFirst: false })
+        .order('full_name', { ascending: true })
+        .order('id', { ascending: true }) // unique tiebreak — stable pages
+        .range(from, to)
+        .then((res) => {
+          if (res.count !== null && res.count !== undefined) total = res.count
+          return res
+        }) as unknown as PageResponse<ActivePlayer>,
+  )
+  if (total === null) throw new Error('players: the active pool read returned no count')
+  if (players.length !== total) throw new Error(`players: read ${players.length} of ${total} active players`)
+  return { players, total }
+}
+
+export async function readWholePoolValues(supabase: Supabase, leagueId: string, rawQuery: unknown, time: TimeProvider): Promise<ServiceResult> {
+  const parsed = wholePoolQuerySchema.safeParse(rawQuery)
+  if (!parsed.success) return { status: 400, body: { error: z.flattenError(parsed.error) as unknown as Json } }
+  const { week } = parsed.data
+
+  const ctx = await valuesContext(supabase, leagueId, week)
+  if ('status' in ctx) return ctx
+  let pool: Awaited<ReturnType<typeof readActivePool>>
+  try {
+    pool = await readActivePool(supabase)
+  } catch (err) {
+    return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
+  }
+  const computed = await computeValues(
+    supabase,
+    ctx,
+    week,
+    pool.players.map((p) => p.id),
+    time,
+    new Map(pool.players.map((p) => [p.id, p.position])),
+  )
+  if ('status' in computed) return computed
+  const body: WholePoolValues = { league_id: leagueId, season: ctx.season, week, players: pool.players, values: computed.values, total: pool.total }
+  return { status: 200, body: body as unknown as Json }
+}
+
+// ── Shared: the league's rules, then the job's own computation ─────────────
+
+interface ValuesContext {
+  season: number
+  snapshot: ScoringRulesDoc
+  pastWeekRules: Map<number, ScoringRulesDoc>
+  leagueId: string
+}
+
+async function valuesContext(supabase: Supabase, leagueId: string, week: number): Promise<ValuesContext | ServiceResult> {
   const refused = await assertLeagueMember(supabase, leagueId)
   if (refused) return refused
 
@@ -100,35 +197,52 @@ export async function readPoolValues(supabase: Supabase, leagueId: string, rawQu
   } catch (err) {
     return { status: 500, body: { error: `scoring rules: ${err instanceof Error ? err.message : String(err)}` } }
   }
+  return { season: league.season, snapshot, pastWeekRules, leagueId }
+}
 
-  let playerRows: Awaited<ReturnType<typeof readPlayers>>
+/** Values for `ids` through the job's own readers and `computePlayerValue`.
+ *  `knownPositions` (the whole-pool read already has them) skips the
+ *  `players` re-read — its projections blob is not used by this surface. */
+async function computeValues(
+  supabase: Supabase,
+  ctx: ValuesContext,
+  week: number,
+  ids: readonly string[],
+  time: TimeProvider,
+  knownPositions?: ReadonlyMap<string, string>,
+): Promise<{ values: PoolPlayerValue[]; unknown: string[] } | ServiceResult> {
+  const { season, snapshot, pastWeekRules, leagueId } = ctx
+  let positions: ReadonlyMap<string, string>
   let lines: Awaited<ReturnType<typeof readWeeklyLines>>
   let seasonLines: Awaited<ReturnType<typeof readSeasonLines>>
   try {
-    ;[playerRows, lines, seasonLines] = await Promise.all([
-      readPlayers(supabase, ids),
-      readWeeklyLines(supabase, league.season, [week], ids),
-      readSeasonLines(supabase, league.season, week, ids),
+    const [playerRows, l, s] = await Promise.all([
+      knownPositions ? Promise.resolve(null) : readPlayers(supabase, ids),
+      readWeeklyLines(supabase, season, [week], ids),
+      readSeasonLines(supabase, season, week, ids),
     ])
+    positions = knownPositions ?? new Map([...playerRows!].map(([id, p]) => [id, p.position]))
+    lines = l
+    seasonLines = s
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } }
   }
 
   const now = time.now()
   const values: PoolPlayerValue[] = []
-  const unknown_players: string[] = []
+  const unknown: string[] = []
   for (const id of ids) {
-    const p = playerRows.get(id)
-    if (!p) {
-      unknown_players.push(id)
+    const position = positions.get(id)
+    if (position === undefined) {
+      unknown.push(id)
       continue
     }
     const row = computePlayerValue(
       snapshot,
-      { league_id: leagueId, season: league.season, week, now },
+      { league_id: leagueId, season, week, now },
       {
         player_id: id,
-        position: normalizePosition(p.position),
+        position: normalizePosition(position),
         weekly: lines.get(`${week}:${id}`) ?? null,
         seasonRows: (seasonLines.get(id) ?? []).filter((r) => r.week < week),
         // Preseason is not read by this surface; the job's own input shape.
@@ -144,6 +258,5 @@ export async function readPoolValues(supabase: Supabase, leagueId: string, rawQu
       season_games: row.season_games,
     })
   }
-  const body: PoolValues = { league_id: leagueId, season: league.season, week, values, unknown_players }
-  return { status: 200, body: body as unknown as Json }
+  return { values, unknown }
 }

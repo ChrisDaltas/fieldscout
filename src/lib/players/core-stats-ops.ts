@@ -162,7 +162,7 @@ export interface CoreStatsPayload {
   weekly: WeeklyCell[]
   /** D486(14) Key stats: box totals over his COMPLETED games (the same
    *  games the average divides by) and the season usage row, if any. */
-  box: { games: number; totals: BoxTotals }
+  box: { games: number; totals: BoxTotals; extra?: ExtraStats }
   usage: { snap_pct: number | null; target_share: number | null } | null
 }
 
@@ -205,6 +205,47 @@ export function sumBox(lines: ReadonlyArray<Partial<Record<BoxKey, unknown>>>): 
       const v = line[k]
       if (typeof v === 'number' && Number.isFinite(v)) out[k] = (out[k] ?? 0) + v
     }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// F578 (D539 / D540): the usage stats and the 40 time
+// ---------------------------------------------------------------------------
+
+/** The F578 usage keys summed over a season (`player_stats.advanced`). */
+export const USAGE_SUM_KEYS = ['off_snaps', 'pass_rz_att', 'rush_rz_att', 'rec_rz_tgt'] as const
+export type UsageSumKey = (typeof USAGE_SUM_KEYS)[number]
+
+/** Season usage totals, the longest field goal, and the Combine 40 time.
+ *  An absent field is NOT KNOWN — the tile is omitted, never a 0. */
+export type ExtraStats = Partial<Record<UsageSumKey | 'fg_long' | 'forty_time', number>>
+
+const advancedOf = (line: { advanced?: unknown }): Record<string, unknown> =>
+  line.advanced && typeof line.advanced === 'object' ? (line.advanced as Record<string, unknown>) : {}
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+
+/**
+ * The usage totals over his completed lines, honestly:
+ *  - snaps and the red-zone counts are reported only when EVERY line carries
+ *    `off_snaps` — the marker that the line came through the usage-aware
+ *    sync. Sleeper omits a zero, so on such a line an absent red-zone key is
+ *    a real 0; a line without the marker (stored before the sync carried
+ *    these, or a game with no offensive snap) makes the season total
+ *    unknown, so it is omitted rather than undercounted.
+ *  - FG long is the longest `fg_long` over his lines, reported only when
+ *    every line with a made field goal carries one (measured: every Sleeper
+ *    kicker line with a make does — fixture note).
+ */
+export function sumUsage(lines: ReadonlyArray<{ advanced?: unknown; fg_made?: unknown }>): ExtraStats {
+  const out: ExtraStats = {}
+  if (lines.length === 0) return out
+  if (lines.every((l) => num(advancedOf(l).off_snaps) !== undefined)) {
+    for (const k of USAGE_SUM_KEYS) out[k] = lines.reduce((s, l) => s + (num(advancedOf(l)[k]) ?? 0), 0)
+  }
+  const made = lines.filter((l) => (num(l.fg_made) ?? 0) > 0)
+  if (made.length > 0 && made.every((l) => num(advancedOf(l).fg_long) !== undefined)) {
+    out.fg_long = Math.max(...made.map((l) => num(advancedOf(l).fg_long)!))
   }
   return out
 }
