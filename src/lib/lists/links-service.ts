@@ -16,13 +16,28 @@
  * with real signed-in users. 080's RLS is the ENFORCEMENT backstop; this
  * layer's job is friendly, SPECIFIC 4xxs.
  *
- * ## Nothing is fetched. Nothing is scraped.
+ * ## Nothing is scraped. One official lookup.
  *
- * `title`, `source_label` and `duration_label` are typed by the person
- * attaching the link. There is a standing rule against reintroducing a
- * scraping service (CLAUDE.md — ingestion is plain fetch of RSS/YouTube feeds
- * only), and this file makes no network call of any kind. Auto-filling a
- * YouTube title/duration from its URL is a follow-up to PROPOSE, not to build.
+ * `source_label` and `duration_label` are typed by the person attaching the
+ * link, and so is `title` — with ONE exception (Chris, 2026-10-15, mobile gap
+ * list #11): a YouTube **video** attached with no title gets its real title
+ * from YouTube's official oEmbed endpoint (`youtube-title.ts` — a plain
+ * server-side fetch of the JSON YouTube publishes for this, inside the
+ * standing "RSS + YouTube only, no scraping service" rule). A caller that
+ * sends a title (desktop's attach form) is never looked up.
+ *
+ * ## The real title or nothing — never a placeholder
+ *
+ * Chris, correcting the first build: *"we need the actual YouTube titles or
+ * nothing. Having a bunch of videos with the same title is useless."* So a
+ * failed lookup (logged with its reason) stores `title = NULL`, which
+ * migration 189 allows for videos, and every screen shows no title text.
+ *
+ * **Before 189 is pushed** (main deploys first), `title` is still NOT NULL and
+ * that insert fails with `23502`. It is NOT retried with a stand-in: the
+ * attach is refused with a retryable 503
+ * ({@link VIDEO_TITLE_UNAVAILABLE_MESSAGE}) and nothing is written. A lookup
+ * that succeeds attaches on either schema.
  *
  * ## Every "nothing happened" answer carries its reason
  *
@@ -69,7 +84,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
+import { lookUpYouTubeTitle, type YouTubeTitleResult } from '@/lib/lists/youtube-title'
 import type { Database, Json } from '@/types/database'
+import { youTubeId } from '@/utils/youtube'
 
 type Supabase = SupabaseClient<Database>
 
@@ -84,7 +101,8 @@ export interface ListLink {
   list_id: string
   kind: 'video' | 'article'
   url: string
-  title: string
+  /** NULL only for a video whose real title YouTube would not give (189). */
+  title: string | null
   source_label: string | null
   duration_label: string | null
   position: number
@@ -111,6 +129,13 @@ export const URL_SCHEME_MESSAGE =
   'Links must start with http:// or https://.'
 export const URL_INVALID_MESSAGE = 'That does not look like a web address.'
 export const URL_TOO_LONG_MESSAGE = `A link must be under ${MAX_URL_LENGTH} characters.`
+export const TITLE_REQUIRED_MESSAGE = 'Add a title for this link.'
+/**
+ * The pre-189 refusal: YouTube gave no title and the schema cannot yet store
+ * "no title". Retryable — the lookup may well succeed a moment later.
+ */
+export const VIDEO_TITLE_UNAVAILABLE_MESSAGE =
+  "Couldn't get this video's title from YouTube. Try again in a moment."
 export const REORDER_SET_MISMATCH_MESSAGE =
   'The new order must list every attached link exactly once.'
 
@@ -141,7 +166,7 @@ interface LinkRow {
   list_id: string
   kind: string
   url: string
-  title: string
+  title: string | null
   source_label: string | null
   duration_label: string | null
   position: number
@@ -229,18 +254,33 @@ export function normalizeLinkUrl(
  * `duration_label` is a CLOCK duration (`18:42`, `1:02:33`) and not free text,
  * because the screenshot renders it as a bare figure beside the source; an
  * unbounded string there would be a second caption on a public page.
+ *
+ * `title` may be left out ONLY for a YouTube video — the server looks that
+ * title up (gap list #11). Every other link still needs one; a title that IS
+ * sent is held to 080's bounds exactly as before (blank is still refused).
  */
-export const addLinkInputSchema = z.object({
-  kind: z.enum(['video', 'article']),
-  url: z.string().min(1).max(MAX_URL_LENGTH),
-  title: z.string().trim().min(1).max(200),
-  source_label: z.string().trim().min(1).max(80).nullish(),
-  duration_label: z
-    .string()
-    .trim()
-    .regex(/^[0-9]{1,3}:[0-5][0-9](:[0-5][0-9])?$/, 'Use a clock duration, like 18:42.')
-    .nullish(),
-})
+export const addLinkInputSchema = z
+  .object({
+    kind: z.enum(['video', 'article']),
+    url: z.string().min(1).max(MAX_URL_LENGTH),
+    title: z.string().trim().min(1).max(200).nullish(),
+    source_label: z.string().trim().min(1).max(80).nullish(),
+    duration_label: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{1,3}:[0-5][0-9](:[0-5][0-9])?$/, 'Use a clock duration, like 18:42.')
+      .nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.title == null && !(value.kind === 'video' && youTubeId(value.url))) {
+      ctx.addIssue({ code: 'custom', path: ['title'], message: TITLE_REQUIRED_MESSAGE })
+    }
+  })
+
+/** Dependencies `addLink` reaches outside the database for (tests inject). */
+export interface AddLinkDeps {
+  lookUpTitle?: (url: string) => Promise<YouTubeTitleResult>
+}
 
 export const reorderLinksInputSchema = z.object({
   link_ids: z.array(z.uuid()).min(1).max(MAX_LINKS_PER_LIST),
@@ -323,12 +363,38 @@ export async function listLinks(supabase: Supabase, listId: string): Promise<Ser
   return { status: 200, body: linksBody(listId, result.links) }
 }
 
+/**
+ * The title a link is stored under: the caller's own, else (a YouTube video
+ * sent without one — the schema admits no other case) YouTube's real title
+ * via oEmbed, else NULL — "the actual title or nothing". Never throws; a
+ * failed lookup is LOGGED with its reason, so a NULL title always has a why.
+ */
+async function storedTitle(
+  given: string | null | undefined,
+  url: string,
+  lookUpTitle: (url: string) => Promise<YouTubeTitleResult>,
+): Promise<string | null> {
+  if (given) return given
+  let result: YouTubeTitleResult
+  try {
+    result = await lookUpTitle(url)
+  } catch (error) {
+    result = { title: null, reason: 'network', detail: error instanceof Error ? error.message : String(error) }
+  }
+  if (result.title !== null) return result.title
+  console.warn(
+    `[list-links] YouTube title lookup failed (${result.reason}${result.detail ? `: ${result.detail}` : ''}); attaching with no title`,
+  )
+  return null
+}
+
 /** POST — attach a link. Owner-only. */
 export async function addLink(
   supabase: Supabase,
   listId: string,
   userId: string,
   rawBody: unknown,
+  { lookUpTitle = lookUpYouTubeTitle }: AddLinkDeps = {},
 ): Promise<ServiceResult> {
   if (!idSchema.safeParse(listId).success) return notFound()
 
@@ -356,13 +422,17 @@ export async function addLink(
   // `length` keeps it correct even if a row was removed out from under us.
   const nextPosition = existing.links.reduce((max, link) => Math.max(max, link.position + 1), 0)
 
+  // Looked up only now — after the owner and cap checks — so a refused
+  // request never reaches YouTube.
+  const title = await storedTitle(parsed.data.title, normalized.url, lookUpTitle)
+
   const { data, error } = await supabase
     .from('list_links')
     .insert({
       list_id: listId,
       kind: parsed.data.kind,
       url: normalized.url,
-      title: parsed.data.title,
+      title,
       source_label: parsed.data.source_label ?? null,
       duration_label: parsed.data.duration_label ?? null,
       position: nextPosition,
@@ -381,7 +451,16 @@ export async function addLink(
     if (error.code === '42501') {
       return { status: 403, body: { error: NOT_OWNER_MESSAGE } }
     }
-    // A CHECK rejected it — 080's url/title/duration guards. Reachable only if
+    // The old schema (before 189 is pushed) cannot store "no title". The only
+    // NOT NULL column this insert can leave empty is `title`, and only when
+    // the lookup failed — so this is exactly that case. Refused, retryably,
+    // rather than written under a stand-in title.
+    if (error.code === '23502' && title === null) {
+      console.warn('[list-links] title is still NOT NULL (migration 189 not applied); refused the untitled video')
+      return { status: 503, body: { error: VIDEO_TITLE_UNAVAILABLE_MESSAGE } }
+    }
+    // A CHECK rejected it — 080's url/title/duration guards, or 189's "only a
+    // video may go untitled". Reachable only if
     // this file's validation and the migration's constraints ever drift apart,
     // which is exactly when a raw 500 would be least useful.
     if (error.code === '23514') {

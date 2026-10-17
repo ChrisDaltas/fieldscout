@@ -1,0 +1,197 @@
+[
+ {
+  "feature": "League dock tab bar (Match/Team/Players/League/Menu)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Routes exist (league-shell-ops leagueTabs/leagueMoreItems). Mobile bottom-tabs.tsx is global (Home/Lists/Players/Search/More); the league sub-nav is a horizontal scroller at the top of the page."
+ },
+ {
+  "feature": "Swap global bottom tabs for league tabs inside a league",
+  "kind": "out-of-scope-or-question",
+  "detail": "IA ruling needed on how the league dock coexists with the global mobile tabs, and what 'League' and 'Menu' map to (league home/standings; the More sheet)."
+ },
+ {
+  "feature": "Dock league switcher (swipe between leagues, swipe-up Switch league sheet, toast)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "use-leagues.ts lists the user's leagues and use-standings.ts gives the record. No switcher, gestures or sheet exist."
+ },
+ {
+  "feature": "League header Messages icon + DM badge",
+  "kind": "needs-new-backend",
+  "detail": "DMs are mock-only (rail/messages-panel.tsx, featureFlags.messages). No tables or API."
+ },
+ {
+  "feature": "Team summary PF rank / PA rank",
+  "kind": "new-ui-on-existing-data",
+  "detail": "standings-service has points_for/points_against. Compute the ranks client-side."
+ },
+ {
+  "feature": "Team summary win % + win bar",
+  "kind": "needs-new-backend",
+  "detail": "No win-probability model or data. WinProbMeter in league-cells.tsx is unused."
+ },
+ {
+  "feature": "Team summary card bound to real data (name, record, standing, Proj)",
+  "kind": "restyle-only",
+  "detail": "Data exists: team-page header, useIdentity standings, projectedTotal. The prototype card is literal text."
+ },
+ {
+  "feature": "Quick action tiles Schedule/Trade/Moves",
+  "kind": "restyle-only",
+  "detail": "The destinations exist: schedule page, tradesHref trade center, TeamTransactionsPanel. Only the tiles are new."
+ },
+ {
+  "feature": "Quick action News",
+  "kind": "needs-new-backend",
+  "detail": "No player/team news feed. home/injury-news-card.tsx is mock data."
+ },
+ {
+  "feature": "Row '% rostered \u00b7 % start' line",
+  "kind": "needs-new-backend",
+  "detail": "my-team-ops.ts: Rostered % has no source and always reads '\u2014'; no start % at all. Needs a cross-league aggregate. Also questionable for a small test cohort."
+ },
+ {
+  "feature": "Row game string with live/final score and clock (W 19-17, Q4 6:50, Final)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "nfl_games has home_score/away_score/quarter/game_clock/status, but use-nfl-week-games.ts selects only id/home/away/kickoff/status. Extend the select."
+ },
+ {
+  "feature": "Mobile stacked lineup rows (chip, headshot, name+meta with bye, OPRK, points, proj)",
+  "kind": "restyle-only",
+  "detail": "lineup-editor.tsx StarterRow/BenchRow table \u2192 stacked rows. PositionBadge, PlayerFace, bye_week, OprkChip, box score and league_player_values all exist."
+ },
+ {
+  "feature": "Empty bench seat rows",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The bench renders only rostered players. Derive empty seats from roster_settings bench size minus the roster count."
+ },
+ {
+  "feature": "Swap player bottom sheet (slot-centric eligible list, selected card, Bench section, empty copy, target ring)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The app uses a per-player Move dropdown + drag (lineup-editor MoveMenu, moveOptions/planMove with displacement, set_lineup autosave). Needs an inverse 'who can fill this slot' ops function over planMove plus a ui/sheet bottom variant. Locked players must stay unswappable."
+ },
+ {
+  "feature": "Bench-to-bench reorder / bench ordering",
+  "kind": "out-of-scope-or-question",
+  "detail": "The bench is an unordered set (slot_key 'bn'); no order is stored. Drop it or rule on it."
+ },
+ {
+  "feature": "Keep app-only team-page features (lineup check, matchup strip, columns, IR, drop, transactions, commissioner tools, week picker, states) in the mobile design",
+  "kind": "restyle-only",
+  "detail": "Not in the prototype. CLAUDE.md says keep and restyle."
+ },
+ {
+  "feature": "Team avatar colours (64px team-view avatar, builder chips/heads, trade detail avatars)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The teams table has no colour or avatar column; Crest shows initials on grey. Decide: derive a colour client-side, or let managers choose (new column)."
+ },
+ {
+  "feature": "Team view stat tiles Record/Rank/Points for",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useStandings has them. The team page doesn't read standings for other teams."
+ },
+ {
+  "feature": "Team view Streak tile",
+  "kind": "new-ui-on-existing-data",
+  "detail": "No streak field. Derive from use-schedule matchups (final weeks + scores)."
+ },
+ {
+  "feature": "Team view Message button",
+  "kind": "needs-new-backend",
+  "detail": "No DM backend (messages flag is mock)."
+ },
+ {
+  "feature": "Team view Recent moves + 'No moves this season'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The activity API supports team_id + type filters (api/leagues/[id]/activity). TeamTransactionsPanel is own-team only."
+ },
+ {
+  "feature": "'See all' \u2192 league transactions filtered to a team",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The activity page's Adds & drops tab has no team filter in the URL (only the Commissioner tab does). The API already supports team_id."
+ },
+ {
+  "feature": "Team view layout (identity, Propose trade, read-only rows)",
+  "kind": "restyle-only",
+  "detail": "team/[teamId] with canEdit=false. The Propose trade link exists, with the deadline/unmanaged/own-team gates. UsernameLink for @mgr."
+ },
+ {
+  "feature": "Full-screen single trade detail (league tag, title, sent time, side blocks, status pills, Receives/Sends grid)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The trades list read (TradeView) has everything. Today trades render as TradeCards in trade-center.tsx with no single-trade view. @handles come from the league detail's members (TradeTeamRef has only the team name)."
+ },
+ {
+  "feature": "Trade offer expiry ('expires in 2 days', 'Offer expires in' select)",
+  "kind": "needs-new-backend",
+  "detail": "No per-offer expiry. Offers expire only at the trade deadline (151 'expired'). Needs a column, RPC param and tick job."
+ },
+ {
+  "feature": "Draft-pick trade assets",
+  "kind": "out-of-scope-or-question",
+  "detail": "trade_items carries players + FAAB only (148). Redraft leagues have no future picks. Product call plus new backend if wanted."
+ },
+ {
+  "feature": "Hide usernames / Hide team names screenshot toggles",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Client-only display toggles. No backend needed."
+ },
+ {
+  "feature": "Trade 'Message @mgr' chip and 'Send a direct message' toggle",
+  "kind": "needs-new-backend",
+  "detail": "DMs don't exist. Propose already sends an in-app notification."
+ },
+ {
+  "feature": "Trade detail footers (Decline/Counter/Accept, Withdraw, finished text)",
+  "kind": "restyle-only",
+  "detail": "TradeButtons: Turn down / Counter / Accept (+ drops gate, 162 preview, deadline) and Call off offer (real 'cancelled' status). The status set is richer than the prototype's. Review tally and commissioner actions are app-only; keep them."
+ },
+ {
+  "feature": "Notification deep link to the specific trade detail",
+  "kind": "new-ui-on-existing-data",
+  "detail": "notification-href.ts routes league_trade_* to the trade center. The payload includes trade_id."
+ },
+ {
+  "feature": "Full-screen trade builder with opponent chip row and roster-grid tiles",
+  "kind": "restyle-only",
+  "detail": "trade-builder.tsx is an inline Card with a 'Trade with' Select and a checkbox list (PlayerPickRow). Partners = managed teams only. Keep the lock notes."
+ },
+ {
+  "feature": "Builder team heads with record \u00b7 rank",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Standings read exists; the builder doesn't use it."
+ },
+ {
+  "feature": "Builder tile player age",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players.birth_date exists but isn't in the rosters read. Fetch via usePlayersByIds or extend the read."
+ },
+ {
+  "feature": "Builder two-step pick \u2192 review flow with Receives/Sends chips and 'Edit players'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The app is single-step with live legality preview (162). builderLegs/tradeSides provide the data."
+ },
+ {
+  "feature": "Builder footer summary (count badge, 'N for M', View proposal)",
+  "kind": "restyle-only",
+  "detail": "Driven by builderProblem/builderGate. Keep the app's rules (one-sided offers allowed when allow_future_considerations is on). Disable the button for invalid offers instead of tapping through to a toast refusal."
+ },
+ {
+  "feature": "Keep app-only builder features (FAAB legs, drop picker, note, legality preview, deadline lock, no-partner state)",
+  "kind": "restyle-only",
+  "detail": "Not in the prototype. Keep and restyle per CLAUDE.md."
+ },
+ {
+  "feature": "Trades listed in Messages \u203a Trades with pending count and inline actions",
+  "kind": "out-of-scope-or-question",
+  "detail": "Trades live in league More \u203a Trades (trade-center Pending/History) and Messages is mock. IA ruling needed on whether trades also surface in DMs."
+ },
+ {
+  "feature": "Bottom sheet shell and toast styling/timing",
+  "kind": "restyle-only",
+  "detail": "ui/sheet.tsx side='bottom' (slides in; the spec doesn't animate). ui/toast.tsx is already an ink pill with TOAST_LIMIT=1; the toaster duration is 4500 vs the spec's ~1800 ms."
+ },
+ {
+  "feature": "Dark mode (.fs-dark variables)",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md rules a single theme with no dark/light toggle. Don't build."
+ }
+]

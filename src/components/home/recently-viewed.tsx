@@ -58,6 +58,7 @@ export function RecentlyViewed() {
                   {list ? (
                     <ListThumbnail
                       positionFilter={list.position_filter}
+                      coverColor={list.cover_color}
                       isTeam={list.is_team ?? false}
                       imageUrl={list.thumbnail_url}
                       players={list.first_players}

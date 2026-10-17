@@ -2310,6 +2310,9 @@ export type Database = {
         Row: {
           avatar_url: string | null
           champion_team_id: string | null
+          commissioner_note: string | null
+          commissioner_note_updated_at: string | null
+          commissioner_note_updated_by: string | null
           created_at: string | null
           creation_action_id: string | null
           deleted_at: string | null
@@ -2343,6 +2346,9 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           champion_team_id?: string | null
+          commissioner_note?: string | null
+          commissioner_note_updated_at?: string | null
+          commissioner_note_updated_by?: string | null
           created_at?: string | null
           creation_action_id?: string | null
           deleted_at?: string | null
@@ -2376,6 +2382,9 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           champion_team_id?: string | null
+          commissioner_note?: string | null
+          commissioner_note_updated_at?: string | null
+          commissioner_note_updated_by?: string | null
           created_at?: string | null
           creation_action_id?: string | null
           deleted_at?: string | null
@@ -2412,6 +2421,13 @@ export type Database = {
             columns: ["champion_team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leagues_commissioner_note_updated_by_fkey"
+            columns: ["commissioner_note_updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -2647,7 +2663,7 @@ export type Database = {
           list_id: string
           position: number
           source_label: string | null
-          title: string
+          title: string | null
           updated_at: string
           url: string
         }
@@ -2659,7 +2675,7 @@ export type Database = {
           list_id: string
           position?: number
           source_label?: string | null
-          title: string
+          title?: string | null
           updated_at?: string
           url: string
         }
@@ -2671,7 +2687,7 @@ export type Database = {
           list_id?: string
           position?: number
           source_label?: string | null
-          title?: string
+          title?: string | null
           updated_at?: string
           url?: string
         }
@@ -2730,6 +2746,7 @@ export type Database = {
           overall_rank: number | null
           player_id: string
           position: number
+          previous_position?: number | null
           rank_in_tier: number | null
           slot: string | null
           tier: string | null
@@ -2743,6 +2760,7 @@ export type Database = {
           overall_rank?: number | null
           player_id: string
           position: number
+          previous_position?: number | null
           rank_in_tier?: number | null
           slot?: string | null
           tier?: string | null
@@ -2756,6 +2774,7 @@ export type Database = {
           overall_rank?: number | null
           player_id?: string
           position?: number
+          previous_position?: number | null
           rank_in_tier?: number | null
           slot?: string | null
           tier?: string | null
@@ -2815,6 +2834,7 @@ export type Database = {
         Row: {
           ai_persona_id: string | null
           comments_enabled: boolean | null
+          cover_color: string | null
           created_at: string | null
           deleted_at: string | null
           description: string | null
@@ -2832,6 +2852,7 @@ export type Database = {
           position_filter: string | null
           ranking_mode: string
           roster_settings: Json | null
+          scoring_format: string | null
           scoring_system_id: string | null
           slug: string
           thumbnail_url: string | null
@@ -2843,6 +2864,7 @@ export type Database = {
         Insert: {
           ai_persona_id?: string | null
           comments_enabled?: boolean | null
+          cover_color?: string | null
           created_at?: string | null
           deleted_at?: string | null
           description?: string | null
@@ -2860,6 +2882,7 @@ export type Database = {
           position_filter?: string | null
           ranking_mode?: string
           roster_settings?: Json | null
+          scoring_format?: string | null
           scoring_system_id?: string | null
           slug: string
           thumbnail_url?: string | null
@@ -2871,6 +2894,7 @@ export type Database = {
         Update: {
           ai_persona_id?: string | null
           comments_enabled?: boolean | null
+          cover_color?: string | null
           created_at?: string | null
           deleted_at?: string | null
           description?: string | null
@@ -2888,6 +2912,7 @@ export type Database = {
           position_filter?: string | null
           ranking_mode?: string
           roster_settings?: Json | null
+          scoring_format?: string | null
           scoring_system_id?: string | null
           slug?: string
           thumbnail_url?: string | null
@@ -5697,6 +5722,19 @@ export type Database = {
         }
         Returns: Json
       }
+      commish_set_league_note: {
+        Args: { p_league_id: string; p_note?: string; p_reason?: string }
+        Returns: Json
+      }
+      commish_set_league_note_internal: {
+        Args: {
+          p_at: string
+          p_league_id: string
+          p_note: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       commish_set_result: {
         Args: {
           p_action_id?: string
@@ -6182,6 +6220,7 @@ export type Database = {
         Returns: {
           ai_persona_id: string | null
           comments_enabled: boolean | null
+          cover_color: string | null
           created_at: string | null
           deleted_at: string | null
           description: string | null
@@ -6418,6 +6457,10 @@ export type Database = {
           p_week: number
         }
         Returns: Json
+      }
+      list_link_title_is_placeholder_internal: {
+        Args: { p_kind: string; p_title: string }
+        Returns: boolean
       }
       log_commissioner_action_internal: {
         Args: {

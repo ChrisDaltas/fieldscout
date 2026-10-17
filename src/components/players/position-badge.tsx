@@ -5,6 +5,8 @@ export type PositionCode = 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DEF' | 'FLEX'
 interface PositionBadgeProps {
   position: string
   size?: 'sm' | 'md'
+  /** What the tag prints, when it isn't the code itself (mobile: "D/ST"). */
+  label?: string
   className?: string
 }
 
@@ -46,9 +48,16 @@ export const POSITION_TAB_ACTIVE: Record<string, string> = {
   DST: 'data-[state=active]:bg-pos-def data-[state=active]:text-pos-text-dark',
 }
 
+/** A position's fill + text colour, for a chip that can't be the badge
+ *  itself (a lineup slot chip sized to its row). Null for an unknown code. */
+export function positionFillClass(position: string): string | null {
+  return STYLES[position] ?? null
+}
+
 export function PositionBadge({
   position,
   size = 'sm',
+  label,
   className,
 }: PositionBadgeProps) {
   const style = STYLES[position] ?? STYLES.FLEX
@@ -61,7 +70,7 @@ export function PositionBadge({
         className,
       )}
     >
-      {position}
+      {label ?? position}
     </span>
   )
 }

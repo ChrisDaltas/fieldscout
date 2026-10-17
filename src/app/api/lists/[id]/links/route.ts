@@ -14,6 +14,12 @@
  *
  * Removal is `./[linkId]/route.ts`.
  *
+ * A YouTube video POSTed without a `title` gets its real one from YouTube's
+ * official oEmbed endpoint, server-side, with a 3s cap — or NO title when the
+ * lookup fails (migration 189), never a placeholder. Until 189 is pushed that
+ * case is a retryable 503 instead (`lib/lists/links-service.ts`,
+ * `lib/lists/youtube-title.ts`, gap list #11).
+ *
  * GET is deliberately open to signed-out callers: 080's SELECT policy defers
  * to `lists`'s own RLS, so an anonymous reader sees a public list's links and
  * nothing else — which is what the server-rendered share view (D7) needs.

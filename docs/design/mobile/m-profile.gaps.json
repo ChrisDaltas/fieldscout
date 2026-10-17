@@ -1,0 +1,177 @@
+[
+ {
+  "feature": "Theme pill: light/dark toggle on Profile",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme with no toggle. Worktree commit 27d455b says dark mode is mobile-only (Chris, 2026-10-15) and ships the --m-* light/dark tokens (globals.css), useThemeStore (key 'fieldscout-theme') and the head script. No UI calls toggle(). If CLAUDE.md is confirmed stale, this is only a UI binding."
+ },
+ {
+  "feature": "Profile mobile layout (Profile header, identity row, stat grid, scroll-away header)",
+  "kind": "restyle-only",
+  "detail": "/app/profile (profile/page.tsx, profile-header.tsx, profile-stats.tsx) has the data. Today it is the desktop v7 'My stats' layout with a PageHeader and Edit/View public profile buttons."
+ },
+ {
+  "feature": "Display name line ('Dalton')",
+  "kind": "out-of-scope-or-question",
+  "detail": "profiles has no name column, and ruling 2026-08-05 makes the handle the only name. Show the handle as the title or drop the line."
+ },
+ {
+  "feature": "Profile avatar source (team colour + hard-coded 'D' vs profile photo)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype reuses the league team avatar colour (OQ11). The app has profiles.avatar_url and initials via UserAvatar, which is the natural source."
+ },
+ {
+  "feature": "'\u00b7 N leagues' count under handle",
+  "kind": "new-ui-on-existing-data",
+  "detail": "use-leagues.ts provides the leagues. Gated by featureFlags.leagues (test cohort)."
+ },
+ {
+  "feature": "Stat tile 'Ranking accuracy #N'",
+  "kind": "needs-new-backend",
+  "detail": "profiles.cred_rank, weekly_rankings.accuracy_score and cred_scores.average_accuracy exist but nothing writes them. There is no grading cron, and the app shows '\u2014' placeholders."
+ },
+ {
+  "feature": "Stat tile 'Titles'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Derivable from leagues.champion_team_id joined to team_managers. Leagues are flag-gated."
+ },
+ {
+  "feature": "Fate of current Profile content not in the mobile spec (cred score, scout tier, following, cred progress, accuracy rows, ranking history, edit/public-profile links)",
+  "kind": "out-of-scope-or-question",
+  "detail": "profile-stats.tsx and RankingHistoryCard. Cred is a core business rule, so decide where it lives on mobile."
+ },
+ {
+  "feature": "'My stuff' section with Rankings/Lists/Start-Sit segmented control",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The Segment component exists in ui/tabs.tsx. The default segment is unresolved (OQ14). The Rankings and Start/Sit segments depend on the weeklyRanks/bigBoard and startOrSit flags, which are off at launch."
+ },
+ {
+  "feature": "Rankings preview rows with Submitted/Saved/Finalized and top-% grade",
+  "kind": "needs-new-backend",
+  "detail": "Weekly ranks are big_board_weekly lists per week. The weekly_rankings table (submitted_at, accuracy_score) is unused, and there is no submit or grading pipeline. A plain saved-boards list could come from big_board_weekly."
+ },
+ {
+  "feature": "Lists preview rows (players \u00b7 Ranked/Tiers/Video \u00b7 Updated)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useLists, plus lists.player_count, ranking_mode, tiers_enabled, updated_at and list_links for video."
+ },
+ {
+  "feature": "Profile row deep links and create buttons (New ranking / New list)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/app/lists, /app/lists/[listId], setCreateListOpen and /app/weekly-ranks exist. The app can deep-link to the exact list (OQ6)."
+ },
+ {
+  "feature": "Mobile tab bar Home \u00b7 Community \u00b7 Players \u00b7 Profile with avatar item",
+  "kind": "new-ui-on-existing-data",
+  "detail": "bottom-tabs.tsx is Home \u00b7 Lists \u00b7 Players \u00b7 Search \u00b7 More, with no Profile/avatar tab. Community is behind featureFlags.community. The IA change needs a ruling."
+ },
+ {
+  "feature": "My start/sit screen and Profile Start/Sit preview",
+  "kind": "needs-new-backend",
+  "detail": "The start-or-sit pages are PlaceholderPage and there is no API route or hook. start_sit_questions/start_sit_votes (migration 001) are unused and flag-gated (startOrSit)."
+ },
+ {
+  "feature": "Multi-option start/sit with Sit mode and pick-N ('Start 2 of 4')",
+  "kind": "needs-new-backend",
+  "detail": "The schema supports only player_a_id/player_b_id, start-only. Needs options[], a mode and a pick count."
+ },
+ {
+  "feature": "Trade questions (give/get, Accept/Decline, recorded decision)",
+  "kind": "needs-new-backend",
+  "detail": "No question type or trade fields in the schema."
+ },
+ {
+  "feature": "Roster attachment on questions ('roster attached')",
+  "kind": "needs-new-backend",
+  "detail": "No column links a question to a league roster. The default-attach behaviour is a question (OQ16)."
+ },
+ {
+  "feature": "Question resolution: actual points, 'you started him', verdict box, 'Your calls right'",
+  "kind": "needs-new-backend",
+  "detail": "correct_player and resolved_at exist but nothing resolves them, and no cron does. The user's actual start/sit decision is not stored (it could come from team_lineups if a roster is attached)."
+ },
+ {
+  "feature": "Questions / Votes received stats, All/Open/Closed chips, card list sort",
+  "kind": "needs-new-backend",
+  "detail": "Needs a 'my questions' read API. vote_count_a/b only cover 2 options. Sort by close time instead of week (OQ18)."
+ },
+ {
+  "feature": "Own-vote counting consistency in totals and percentages",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype counts your own vote in totals but not in percentages (OQ19). It also says '1 votes' (OQ9) and 'crowd leans A. ' (OQ8)."
+ },
+ {
+  "feature": "Start/sit composer ('Ask a question')",
+  "kind": "needs-new-backend",
+  "detail": "/app/start-or-sit/new is a placeholder. The chosen close time must be stored (OQ7)."
+ },
+ {
+  "feature": "Result-row headshot with team ring",
+  "kind": "restyle-only",
+  "detail": "PlayerAvatarImage (players/player-image.tsx) and getTeamColors (lib/nfl-team-colors.ts) exist."
+ },
+ {
+  "feature": "My start/sit back target and dock",
+  "kind": "out-of-scope-or-question",
+  "detail": "Back goes to Home rather than Profile (OQ3). The league tab bar shows on a non-league screen (OQ4)."
+ },
+ {
+  "feature": "League settings 13-tile grid overlay and its entry point",
+  "kind": "out-of-scope-or-question",
+  "detail": "Unreachable in the prototype (OQ1). The app has /app/leagues/[id]/settings with 6 index sections (settings-index-ops.ts) reached from league More. The tile-to-section mapping needs a ruling."
+ },
+ {
+  "feature": "Settings tiles General / Draft / Playoffs / Scoring / Draft results / Stat corrections",
+  "kind": "restyle-only",
+  "detail": "settings-panel sections, draft-config-fields, playoff bracket, scoring-editor, /draft/recap and /corrections all exist. Draft and Stat corrections are fully built although the prototype shows a 'coming next' toast."
+ },
+ {
+  "feature": "My team tile: rename team",
+  "kind": "new-ui-on-existing-data",
+  "detail": "use-rename-own-team \u2192 POST /api/leagues/[id]/teams/[tid]/name."
+ },
+ {
+  "feature": "My team tile: team avatar colour and player nicknames",
+  "kind": "needs-new-backend",
+  "detail": "teams has no avatar or colour column, and nothing stores nicknames."
+ },
+ {
+  "feature": "Notifications settings tile",
+  "kind": "needs-new-backend",
+  "detail": "Account NotificationsCard keeps toggles in local useState and never saves them. There is no league notification-prefs storage."
+ },
+ {
+  "feature": "Commissioner note tile",
+  "kind": "needs-new-backend",
+  "detail": "There is no note field. leagues.description and the league_chat message board exist and could be reused if Chris rules so."
+ },
+ {
+  "feature": "Co-owners tile",
+  "kind": "needs-new-backend",
+  "detail": "The team_managers role CHECK allows only 'manager' (063). 053 marks co_manager as reserved post-v1."
+ },
+ {
+  "feature": "League history and Previous seasons tiles",
+  "kind": "needs-new-backend",
+  "detail": "Leagues are single-season, with only the current champion_team_id. There is no season rollover or league lineage."
+ },
+ {
+  "feature": "League legend tile",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Static explanatory copy with no data dependency. The prototype shows a toast only, so the content needs writing."
+ },
+ {
+  "feature": "Mobile toast styling and duration",
+  "kind": "restyle-only",
+  "detail": "use-toast/toaster exist (TOAST_REMOVE_DELAY 1,000,000 ms). Duration is 1800 ms in code vs about 2.2 s in the README (OQ13)."
+ },
+ {
+  "feature": "Account settings on mobile",
+  "kind": "out-of-scope-or-question",
+  "detail": "/app/settings exists (avatar, password, notifications, scoring, sessions). The prototype's Menu \u203a Settings says 'Not part of this prototype' and no mobile design is given."
+ },
+ {
+  "feature": "Device chrome (status bar, notch, home indicator)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Prototype frame only. The home indicator paints under the tab bar (OQ20)."
+ }
+]

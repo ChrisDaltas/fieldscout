@@ -11,15 +11,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  listFormPayload,
+  rosterTotal,
+  type ListFormState,
+  type ListType,
+  type PositionFilter,
+  type RosterDraft,
+} from '@/components/lists/list-form-payload'
+import { COVER_COLOR_TINTS } from '@/components/lists/list-thumbnail'
 import { Input } from '@/components/ui/input'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
+import { useListCoverColorSupport } from '@/hooks/use-list-cover-color-support'
 import { useCreateList, useUpdateList } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
+import {
+  COVER_COLORS,
+  COVER_COLOR_LABEL,
+  coverColorOf,
+  hasCoverColorColumn,
+  type CoverColor,
+} from '@/lib/lists/cover-color'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import type { List, ListRosterSettings } from '@/types/database'
-import type { POSITION_FILTERS } from '@/types/schemas/lists'
-
-type PositionFilter = (typeof POSITION_FILTERS)[number]
 
 interface PositionOption {
   value: PositionFilter | ''
@@ -37,8 +52,6 @@ const POSITION_OPTIONS: PositionOption[] = [
   { value: 'K', label: 'K' },
 ]
 
-type ListType = 'basic' | 'ranked' | 'team'
-
 interface ListTypeOption {
   value: ListType
   label: string
@@ -49,7 +62,7 @@ const LIST_TYPE_OPTIONS: ListTypeOption[] = [
   {
     value: 'basic',
     label: 'Basic',
-    description: 'Just a collection, no order.',
+    description: 'Just a collection, no numbers.',
   },
   {
     value: 'ranked',
@@ -76,7 +89,7 @@ const ROSTER_FIELDS: { key: keyof Omit<ListRosterSettings, 'total'>; label: stri
   { key: 'ir', label: 'IR' },
 ]
 
-const DEFAULT_ROSTER: Omit<ListRosterSettings, 'total'> = {
+const DEFAULT_ROSTER: RosterDraft = {
   qb: 1,
   rb: 2,
   wr: 2,
@@ -88,8 +101,18 @@ const DEFAULT_ROSTER: Omit<ListRosterSettings, 'total'> = {
   ir: 2,
 }
 
-function rosterTotal(r: Omit<ListRosterSettings, 'total'>): number {
-  return r.qb + r.rb + r.wr + r.te + r.flex + r.dst + r.k + r.bench + r.ir
+/**
+ * The selected swatch's outer ring, in its own colour (lr-lists §2.2: a 2px
+ * page-colour gap, then the colour). The fills are `COVER_COLOR_TINTS`, the
+ * same map the list cover itself uses.
+ */
+export const COVER_RING: Record<CoverColor, string> = {
+  blue: 'ring-accent',
+  ink: 'ring-ink',
+  red: 'ring-pos-qb',
+  purple: 'ring-pos-wr',
+  indigo: 'ring-pos-rb',
+  green: 'ring-confirm',
 }
 
 interface ListFormDialogProps {
@@ -101,18 +124,11 @@ interface ListFormDialogProps {
   seedPlayerId?: string | null
 }
 
-interface FormState {
-  title: string
-  positionFilter: PositionFilter | ''
-  listType: ListType
-  roster: Omit<ListRosterSettings, 'total'>
-  isPrivate: boolean
-}
-
-function initialFormState(list: List | undefined): FormState {
+function initialFormState(list: List | undefined): ListFormState {
+  // Basic = no numbers: a plain list, or tiers without numbers (191).
   const listType: ListType = list?.is_team
     ? 'team'
-    : list?.ranking_mode === 'unranked'
+    : !isNumbered(list?.ranking_mode)
       ? 'basic'
       : 'ranked'
   return {
@@ -120,9 +136,10 @@ function initialFormState(list: List | undefined): FormState {
     positionFilter: (list?.position_filter as PositionFilter | null) ?? '',
     listType,
     roster:
-      (list?.roster_settings as Omit<ListRosterSettings, 'total'> | null) ??
+      (list?.roster_settings as RosterDraft | null) ??
       DEFAULT_ROSTER,
     isPrivate: list?.is_private ?? false,
+    coverColor: coverColorOf(list),
   }
 }
 
@@ -138,12 +155,18 @@ export function ListFormDialog({
   const createList = useCreateList()
   const updateList = useUpdateList(list?.id ?? '')
 
-  const [form, setForm] = useState<FormState>(() => initialFormState(list))
+  const [form, setForm] = useState<ListFormState>(() => initialFormState(list))
 
   // Reset whenever the modal opens — discards in-flight edits from a prior open.
   useEffect(() => {
     if (open) setForm(initialFormState(list))
   }, [open, list])
+
+  // Cover colours only once `lists.cover_color` exists (main deploys before
+  // migration 188 is pushed): an existing list proves it by carrying the key;
+  // a new one asks the database.
+  const colourProbe = useListCoverColorSupport(open && mode === 'create')
+  const coloursReady = mode === 'edit' ? hasCoverColorColumn(list) : colourProbe.data === true
 
   const submitting = createList.isPending || updateList.isPending
   const canSubmit = form.title.trim().length > 0 && !submitting
@@ -154,20 +177,13 @@ export function ListFormDialog({
     e.preventDefault()
     if (!canSubmit) return
 
-    const payload = {
-      title: form.title.trim(),
-      position_filter: form.positionFilter || undefined,
-      ranking_mode: (form.listType === 'basic' ? 'unranked' : 'ranked') as
-        | 'unranked'
-        | 'ranked',
-      is_team: isTeam,
-      roster_settings: isTeam ? { ...form.roster, total } : undefined,
-      is_private: form.isPrivate,
-    }
-
+    // The body (cover colour, "All players" → no position) is built and
+    // tested in list-form-payload — per mode, since create and edit differ.
     try {
       if (mode === 'create') {
-        const created = await createList.mutateAsync(payload)
+        const created = await createList.mutateAsync(
+          listFormPayload(form, { mode: 'create', coloursReady }),
+        )
         if (seedPlayerId) {
           await fetch(`/api/lists/${created.id}/players`, {
             method: 'POST',
@@ -179,7 +195,7 @@ export function ListFormDialog({
         onOpenChange(false)
         router.push(`/app/lists/${created.id}`)
       } else if (list) {
-        await updateList.mutateAsync(payload)
+        await updateList.mutateAsync(listFormPayload(form, { mode: 'edit', list, coloursReady }))
         toast({ title: 'List updated', description: form.title.trim() })
         onOpenChange(false)
       }
@@ -234,6 +250,16 @@ export function ListFormDialog({
                   </SegmentItem>
                 ))}
               </Segment>
+            </Field>
+          )}
+
+          {coloursReady && (
+            <Field label="Cover colour">
+              <CoverColorPicker
+                value={form.coverColor}
+                onChange={(coverColor) => setForm((s) => ({ ...s, coverColor }))}
+                isTeam={isTeam}
+              />
             </Field>
           )}
 
@@ -368,6 +394,60 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="space-y-1.5">
       <label className="block text-[11px] font-semibold text-ink">{label}</label>
       {children}
+    </div>
+  )
+}
+
+/**
+ * The six cover colours (Chris, 2026-10-15 — the mobile design's swatches,
+ * lr-lists §2.2, in this dialog's desktop scale): 20px circles, gap 8, the
+ * chosen one ringed in its own colour past a 2px white gap. No colour chosen
+ * = the cover follows the position group; clicking the chosen colour again
+ * goes back to that. A team list has no position group (its field is
+ * hidden), so for one the line says "the default colour" — the ink its tile
+ * falls back to. Selection is the ring, never a lift (CLAUDE.md →
+ * elevation).
+ */
+export function CoverColorPicker({
+  value,
+  onChange,
+  isTeam = false,
+}: {
+  value: CoverColor | null
+  onChange: (next: CoverColor | null) => void
+  isTeam?: boolean
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div role="group" aria-label="Cover colour" className="flex gap-2 py-0.5 pl-0.5">
+        {COVER_COLORS.map((key) => {
+          const on = value === key
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={on}
+              aria-label={COVER_COLOR_LABEL[key]}
+              title={COVER_COLOR_LABEL[key]}
+              onClick={() => onChange(on ? null : key)}
+              className={cn(
+                'size-5 shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent',
+                COVER_COLOR_TINTS[key].bg,
+                on && cn('ring-[1.5px] ring-offset-2 ring-offset-white', COVER_RING[key]),
+              )}
+            />
+          )
+        })}
+      </div>
+      <p className="text-[11px] font-medium text-n-6">
+        {isTeam
+          ? value
+            ? 'Click it again to go back to the default colour.'
+            : 'Uses the default colour until you pick one.'
+          : value
+            ? 'Click it again to follow the position group.'
+            : 'Follows the position group until you pick one.'}
+      </p>
     </div>
   )
 }

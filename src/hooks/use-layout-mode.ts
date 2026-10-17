@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
+import { THEME_STORAGE_KEY, useThemeStore } from '@/stores/theme-store'
 import { useUIStore } from '@/stores/ui-store'
 
 /**
@@ -24,12 +25,24 @@ const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)'
 
 export type LayoutMode = 'desktop' | 'mobile'
 
+// The attributes must be on <html> before the first paint: the head script
+// covers a full load of an app page, this covers arriving by client-side
+// navigation (signup → /app, a link from a public page).
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+/** The mode the head script would pick, for a client-side entry into the app
+ *  before `<html data-layout>` exists. */
+function detectMode(): LayoutMode {
+  if (useUIStore.getState().forceMobileLayout) return 'mobile'
+  return window.matchMedia(DESKTOP_POINTER).matches ? 'desktop' : 'mobile'
+}
+
 /**
  * Runs in <head> before first paint so the right layout renders immediately on
  * a full load of an app page. App routes only — the landing and auth pages
  * stay plain width-responsive.
  */
-export const LAYOUT_MODE_HEAD_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/app'||p.indexOf('/app/')===0){document.documentElement.setAttribute('data-layout',window.matchMedia('${DESKTOP_POINTER}').matches?'desktop':'mobile')}}catch(e){}})();`
+export const LAYOUT_MODE_HEAD_SCRIPT = `(function(){try{var p=location.pathname;if(p==='/app'||p.indexOf('/app/')===0){var h=document.documentElement,d=window.matchMedia('${DESKTOP_POINTER}').matches;h.setAttribute('data-layout',d?'desktop':'mobile');if(!d&&localStorage.getItem('${THEME_STORAGE_KEY}')==='dark')h.setAttribute('data-theme','dark')}}catch(e){}})();`
 
 function readViewport() {
   if (typeof window === 'undefined') return { desktopPointer: true, width: DESKTOP_MIN_WIDTH }
@@ -67,17 +80,61 @@ export function useLayoutMode() {
 
   const mode: LayoutMode = viewport.desktopPointer && !forced ? 'desktop' : 'mobile'
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     document.documentElement.setAttribute('data-layout', mode)
   }, [mode])
 
-  // Leaving the app (e.g. to the landing page) drops the attribute so public
-  // pages are plain width-responsive again.
-  useEffect(() => () => document.documentElement.removeAttribute('data-layout'), [])
+  // Dark mode is mobile-only (Chris, 2026-10-15): the theme attribute follows
+  // the stored preference in the mobile layout and is absent on desktop.
+  const dark = useThemeStore((t) => t.dark)
+  useIsomorphicLayoutEffect(() => {
+    const html = document.documentElement
+    if (mode === 'mobile' && dark) html.setAttribute('data-theme', 'dark')
+    else html.removeAttribute('data-theme')
+  }, [mode, dark])
+
+  // Leaving the app (e.g. to the landing page) drops both attributes so
+  // public pages are plain width-responsive and light again.
+  useEffect(
+    () => () => {
+      document.documentElement.removeAttribute('data-layout')
+      document.documentElement.removeAttribute('data-theme')
+    },
+    [],
+  )
 
   return {
     mode,
     showMobilePrompt: mounted && mode === 'desktop' && viewport.width < MOBILE_PROMPT_WIDTH,
     switchToMobile: () => setForced(true),
   }
+}
+
+function subscribeLayout(onChange: () => void) {
+  const observer = new MutationObserver(onChange)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout'] })
+  return () => observer.disconnect()
+}
+
+/**
+ * The current layout mode as read from `<html data-layout>`, for components
+ * that render a different TREE per mode (`ByLayout`). `null` on the server and
+ * during hydration — callers must render something that is correct for both
+ * until it resolves. On a client-side entry into the app (no attribute yet)
+ * it answers as the head script would.
+ */
+export function useLayoutModeValue(): LayoutMode | null {
+  return useSyncExternalStore(
+    subscribeLayout,
+    () => {
+      const v = document.documentElement.getAttribute('data-layout')
+      if (v === 'mobile' || v === 'desktop') return v
+      // A client-side entry into the app renders before the shell has set
+      // the attribute: answer as the head script would, so a phone never
+      // mounts (and paints) the desktop tree first.
+      const p = window.location.pathname
+      return p === '/app' || p.startsWith('/app/') ? detectMode() : null
+    },
+    () => null,
+  )
 }

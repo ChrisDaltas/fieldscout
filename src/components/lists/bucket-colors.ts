@@ -39,6 +39,13 @@ import { TIER_VALUES, isTierKey, roundNumberOf } from '@/types/schemas/lists'
  * `tailwind.config.ts` ships `tier-1..7` matching it (PROGRESS §7 gap 4). Six to
  * seven hues against up to 30 rounds, so **round mode cycles colours** rather
  * than assigning a unique one per bucket (plan D4).
+ *
+ * Every step's text passes WCAG AA (4.5:1) on its own fill (Chris,
+ * 2026-10-15): tiers 1, 2, 5 and 6 are darker shades of their hues so white
+ * reads on them; 3–4 keep ink text, 7 was already fine. The colours live in
+ * the `tier` tokens of `tailwind.config.ts` — change them there, once, and
+ * desktop and mobile (`mobile/ui/tier-colors.ts` reuses {@link BAND_RAMP})
+ * both follow; `bucket-colors.test.ts` measures every pair.
  */
 
 /**

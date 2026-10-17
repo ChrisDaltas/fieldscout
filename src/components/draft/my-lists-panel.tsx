@@ -34,6 +34,7 @@ import {
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
+import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useQueueFromList } from '@/hooks/use-draft-queue'
@@ -51,6 +52,9 @@ import {
 export interface PoolOverlaySelection {
   listId: string
   title: string
+  /** The list's Ranked and Tiers switches — the pool shows its numbers and
+   *  tiers only when the list does (§8.9, v2.16.93). */
+  rankingMode: string | null
 }
 
 interface MyListsPanelProps {
@@ -152,7 +156,7 @@ export function MyListsPanel({
   const detach = useDetachList(leagueId ?? '')
   const attach = useAttachList(leagueId ?? '')
   const fromList = useQueueFromList(leagueId, draftId, queueTeamId ?? '', queueForAnotherTeam)
-  const [cheatSheet, setCheatSheet] = useState<{ listId: string; title: string } | null>(null)
+  const [cheatSheet, setCheatSheet] = useState<PoolOverlaySelection | null>(null)
 
   const usernameByUserId = useMemo(
     () =>
@@ -167,7 +171,12 @@ export function MyListsPanel({
   const bigBoard = useMemo(() => {
     const board = (myLists.data ?? []).find((list) => list.is_big_board === true)
     return board
-      ? { id: board.id, title: board.title, player_count: board.player_count }
+      ? {
+          id: board.id,
+          title: board.title,
+          player_count: board.player_count,
+          ranking_mode: board.ranking_mode,
+        }
       : null
   }, [myLists.data])
 
@@ -316,6 +325,7 @@ export function MyListsPanel({
           </div>
           <CheatSheetBody
             listId={cheatSheet.listId}
+            rankingMode={cheatSheet.rankingMode}
             draftedIds={draftedIds}
             canQueue={Boolean(queueTeamId)}
             onQueue={onQueue}
@@ -382,7 +392,9 @@ export function MyListsPanel({
                     className="block max-w-full text-left"
                     title="Open cheat sheet"
                     onClick={() =>
-                      row.dangling ? undefined : setCheatSheet({ listId: row.listId, title: row.title })
+                      row.dangling
+                        ? undefined
+                        : setCheatSheet({ listId: row.listId, title: row.title, rankingMode: row.rankingMode })
                     }
                   >
                     <span
@@ -429,7 +441,7 @@ export function MyListsPanel({
                         onOverlayChange(
                           overlay?.listId === row.listId
                             ? null
-                            : { listId: row.listId, title: row.title },
+                            : { listId: row.listId, title: row.title, rankingMode: row.rankingMode },
                         )
                       }
                     >
@@ -506,6 +518,7 @@ export function MyListsPanel({
         <ListCheatSheet
           listId={cheatSheet.listId}
           title={cheatSheet.title}
+          rankingMode={cheatSheet.rankingMode}
           draftedIds={draftedIds}
           canQueue={Boolean(queueTeamId)}
           onQueue={onQueue}
@@ -524,6 +537,7 @@ export function MyListsPanel({
 function ListCheatSheet({
   listId,
   title,
+  rankingMode,
   draftedIds,
   canQueue,
   onQueue,
@@ -531,6 +545,7 @@ function ListCheatSheet({
 }: {
   listId: string
   title: string
+  rankingMode: string | null
   draftedIds: ReadonlySet<string>
   canQueue: boolean
   onQueue: (playerId: string) => void
@@ -549,6 +564,7 @@ function ListCheatSheet({
         </SheetHeader>
         <CheatSheetBody
           listId={listId}
+          rankingMode={rankingMode}
           draftedIds={draftedIds}
           canQueue={canQueue}
           onQueue={onQueue}
@@ -559,19 +575,26 @@ function ListCheatSheet({
 }
 
 /** The cheat-sheet rows — shared by the desktop side Sheet and the mobile
- *  in-panel drill-in (one implementation, two hosts). */
+ *  in-panel drill-in (one implementation, two hosts). The rows keep the
+ *  list's order; the 1-2-3 numbers show only on a numbered list and the tier
+ *  badges only on a tiered one, as on every list screen (Chris 2026-10-16;
+ *  spec v2.16.93). */
 function CheatSheetBody({
   listId,
+  rankingMode,
   draftedIds,
   canQueue,
   onQueue,
 }: {
   listId: string
+  rankingMode: string | null
   draftedIds: ReadonlySet<string>
   canQueue: boolean
   onQueue: (playerId: string) => void
 }) {
   const rows = useLeagueListPlayers(listId)
+  const numbered = isNumbered(rankingMode)
+  const tiered = hasTiers(rankingMode)
   const openPlayer = usePlayerWindowsStore((s) => s.open)
   const { playerById, isPending: identityPending } = usePlayersByIds(
     useMemo(() => (rows.data ?? []).map((row) => row.player_id), [rows.data]),
@@ -621,6 +644,7 @@ function CheatSheetBody({
           <li key={`${row.player_id}-${index}`} className={cn(drafted && 'opacity-50')}>
             <PlayerRow
               rank={index + 1}
+              showRank={numbered}
               player={player}
               density="compact"
               onOpen={() => openPlayer(player.id)}
@@ -633,7 +657,7 @@ function CheatSheetBody({
               }
               trailing={
                 <span className="ml-1 flex shrink-0 items-center gap-1">
-                  {row.tier && <TierBadge tier={row.tier} className="h-5 w-5 text-[10px]" />}
+                  {tiered && row.tier && <TierBadge tier={row.tier} className="h-5 w-5 text-[10px]" />}
                   {canQueue && !drafted && (
                     <Button
                       variant="stroke"

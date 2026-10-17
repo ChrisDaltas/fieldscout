@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import { BigBoardGrid } from '@/components/big-board/big-board-grid'
 import { WeekTabs } from '@/components/big-board/week-tabs'
 import { Icon } from '@/components/ui/icon'
+import { activeWeekOf, isWeekLocked, opensInWeek } from '@/lib/rankings/week-window'
 
 interface WeeklyBigBoardViewProps {
   weekNumber: number
@@ -27,13 +28,10 @@ export function WeeklyBigBoardView({
     if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > 18) {
       return 'invalid'
     }
-    if (currentWeek === 0) {
-      if (weekNumber === 1) return 'current'
-      return 'future'
-    }
-    if (weekNumber < currentWeek) return 'past'
-    if (weekNumber === currentWeek) return 'current'
-    return 'future'
+    // This week and the next three are editable (one rule with the phone).
+    if (isWeekLocked(weekNumber, currentWeek)) return 'future'
+    if (weekNumber < activeWeekOf(currentWeek)) return 'past'
+    return 'current'
   }, [weekNumber, currentWeek])
 
   if (status === 'invalid') {
@@ -59,8 +57,8 @@ export function WeeklyBigBoardView({
           <Icon name="clock" size={20} className="mx-auto text-n-6" />
           <h3 className="mt-2.5 text-h6">Week {weekNumber} is locked</h3>
           <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
-            You can only edit the current week&apos;s big board. This unlocks
-            once the prior week&apos;s board locks at first kickoff.
+            You can rank this week and the next three. Week {weekNumber} opens in
+            Week {opensInWeek(weekNumber)}.
           </p>
         </div>
       </section>

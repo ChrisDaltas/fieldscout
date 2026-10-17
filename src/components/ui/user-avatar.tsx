@@ -4,6 +4,7 @@ import * as React from 'react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { computeInitials } from '@/utils/initials'
 
 /** People are round; team & league crests are square tiles with an ink stroke. */
 type UserAvatarKind = 'user' | 'team' | 'league'
@@ -24,26 +25,9 @@ interface UserAvatarProps {
   fallbackClassName?: string
 }
 
-function computeInitials(name: string | null | undefined): string {
-  if (!name) return '?'
-  const trimmed = name.trim()
-  if (trimmed.length === 0) return '?'
-
-  const parts = trimmed.split(/\s+/).filter(Boolean)
-  if (parts.length > 1) {
-    // Two words -> one letter each (persona names like "FieldScout AI").
-    return parts
-      .slice(0, 2)
-      .map((p) => p[0])
-      .join('')
-      .toUpperCase()
-  }
-
-  // Single token — which every person is now, since identity is the @handle
-  // and handles contain no spaces. Take the first two characters rather than
-  // one, or every photoless avatar in the app collapses to a lone letter.
-  return parts[0].slice(0, 2).toUpperCase()
-}
+// The initials rule lives in a plain `.ts` module so pure, tested mobile
+// helpers can share it; re-exported here for component callers.
+export { computeInitials }
 
 /**
  * Identity avatar. The base `Avatar` is the square ink-stroked tile (player

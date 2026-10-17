@@ -11,8 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 
+// Private lists are unlimited for everyone (Chris, 2026-10-15 — Pro rules
+// suspended), so they are no longer listed as a Pro perk.
 const PRO_FEATURES = [
-  'Unlimited private lists',
   'Unlimited teams',
   'Rank every position, every week',
   'Leagues — create and join',
@@ -84,8 +85,8 @@ export default function BillingSettingsPage() {
         <PlanSection badge={<Badge variant="stroke">Free</Badge>}>
           <div className="px-3.5 py-3">
             <AIInsight heading="Go Pro — unlock the full scouting department.">
-              Private lists without limits, every weekly position, leagues, and
-              scoring built your way.
+              Unlimited teams, every weekly position, leagues, and scoring
+              built your way.
             </AIInsight>
 
             <ul className="mt-3 space-y-2">

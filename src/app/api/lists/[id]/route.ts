@@ -3,13 +3,29 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
+  isPrivateListCapError,
+  isTeamListCapError,
+  PRIVATE_LIMIT_BODY,
+  TEAM_LIMIT_BODY,
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
+import {
+  COVER_COLOR_UNAVAILABLE_BODY,
+  COVER_COLOR_UNAVAILABLE_STATUS,
+  isMissingCoverColorColumn,
+  updateListWithCoverSchema,
+} from '@/lib/lists/cover-color'
 import { fetchListLinks, type ListLink } from '@/lib/lists/links-service'
 import { aggregateFantasyStats } from '@/lib/stats/aggregate-fantasy'
+import {
+  isNumbered,
+  isTierOnlyUnavailable,
+  TIER_ONLY_UNAVAILABLE_BODY,
+  TIER_ONLY_UNAVAILABLE_STATUS,
+} from '@/lib/lists/ranking-mode'
 import { createServerClient } from '@/lib/supabase/server'
-import { rankingModeToLegacyFlags, updateListSchema } from '@/types/schemas/lists'
+import { rankingModeToLegacyFlags } from '@/types/schemas/lists'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -154,7 +170,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const parsed = updateListSchema.safeParse(body)
+  const parsed = updateListWithCoverSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
@@ -193,9 +209,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         { status: 400 },
       )
     }
+    // Numbers off — Basic, or tiers without numbers — is not a Big Board.
     if (
       input.hide_order === true ||
-      input.ranking_mode === 'unranked'
+      (input.ranking_mode !== undefined && !isNumbered(input.ranking_mode))
     ) {
       return NextResponse.json(
         { error: 'The Big Board is always ranked.' },
@@ -204,8 +221,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     }
   }
 
-  // Free tier: enforce 1-private-list cap on transitions to is_private=true
-  if (input.is_private === true && !existing.is_private) {
+  // Free tier: enforce the private-list cap on transitions to is_private=true
+  // (suspended while FREE_PRIVATE_LIST_LIMIT is null)
+  if (input.is_private === true && !existing.is_private && FREE_PRIVATE_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')
@@ -214,14 +232,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!profile?.is_pro) {
       const count = await countPrivateLists(supabase, user.id, id)
       if (count >= FREE_PRIVATE_LIST_LIMIT) {
-        return NextResponse.json(
-          {
-            error:
-              'Free accounts can have one private list. Upgrade to Pro for unlimited private lists.',
-            code: 'PRIVATE_LIMIT_REACHED',
-          },
-          { status: 403 },
-        )
+        return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
       }
     }
   }
@@ -237,6 +248,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
   if (input.description !== undefined) updates.description = input.description
   if (input.position_filter !== undefined) updates.position_filter = input.position_filter
+  // Migration 188. Only named when sent (null = back to the position colour),
+  // so every other edit keeps working before 188 is pushed.
+  if (input.cover_color !== undefined) updates.cover_color = input.cover_color
   if (input.is_private !== undefined && !isBigBoard) updates.is_private = input.is_private
 
   // ranking_mode is the source of truth — if the client sent it, derive the
@@ -277,6 +291,24 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     .single()
 
   if (updateError) {
+    // Before migration 187 is pushed the database still caps private lists
+    // and teams.
+    if (isPrivateListCapError(updateError)) {
+      return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    if (isTeamListCapError(updateError)) {
+      return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
+    }
+    // A colour sent before migration 188 is pushed: a clear 409, not a 500.
+    if (isMissingCoverColorColumn(updateError)) {
+      return NextResponse.json(COVER_COLOR_UNAVAILABLE_BODY, { status: COVER_COLOR_UNAVAILABLE_STATUS })
+    }
+    // Tiers without numbers before migration 191 is pushed: the older CHECK
+    // refuses `tier_only` — a clear 409, not a 500. The update is one
+    // statement, so nothing else in it was saved either.
+    if (updates.ranking_mode === 'tier_only' && isTierOnlyUnavailable(updateError)) {
+      return NextResponse.json(TIER_ONLY_UNAVAILABLE_BODY, { status: TIER_ONLY_UNAVAILABLE_STATUS })
+    }
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
 

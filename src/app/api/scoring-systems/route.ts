@@ -2,13 +2,17 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { requireProUser } from '@/lib/auth/require-pro'
+import { requireUser } from '@/lib/auth/require-user'
+import { CUSTOM_SCORING_PRO_ONLY } from '@/lib/scoring/custom-scoring-access'
 import { savePersonalScoringSystem } from '@/lib/scoring/personal-scoring-system'
 
-// Custom scoring systems are Pro-only (business rule 6). This route is the
-// enforcement point — the settings UI also disables the controls for free
-// users, but the write MUST be gated server-side (a client `disabled`
-// attribute can't stop a direct Supabase call). System-default presets live
-// in lib/scoring and are available to everyone without touching this route.
+// Custom scoring systems were Pro-only (business rule 6). That rule is on
+// hold (Chris, 2026-10-16), so every signed-in account may save one; the
+// Pro check stays behind CUSTOM_SCORING_PRO_ONLY. This route is the
+// enforcement point whichever way the switch sits — the settings UI reads
+// the same switch, but a client `disabled` attribute can't stop a direct
+// call. System-default presets live in lib/scoring and are available to
+// everyone without touching this route.
 
 const saveSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -17,9 +21,9 @@ const saveSchema = z.object({
   rules: z.record(z.string(), z.number().finite()),
 })
 
-/** Upsert the signed-in Pro user's single custom scoring system. */
+/** Upsert the signed-in user's single custom scoring system. */
 export async function PUT(request: Request) {
-  const gate = await requireProUser()
+  const gate = CUSTOM_SCORING_PRO_ONLY ? await requireProUser() : await requireUser()
   if (!gate.ok) return gate.response
   const { user, supabase } = gate
 

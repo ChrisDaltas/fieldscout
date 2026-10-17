@@ -125,7 +125,7 @@ describe('LV.13 — it composes Round 1 rather than re-solving it (D11)', () => 
     const source = code(COLUMNS)
     expect(source).toContain("import { ListCoverTile } from './cover-tile'")
     expect(source).toContain(
-      "import { bucketHeading, buildBuckets, ORG_OPTIONS, rankMap } from './list-buckets'",
+      "import { bucketHeading, buildBuckets, orgOptionsFor, rankMap } from './list-buckets'",
     )
     /**
      * The row parts, asked as *"is each of these still coming from the shared
@@ -196,8 +196,9 @@ describe('LV.13 — each column groups independently', () => {
     const source = code(COLUMNS)
     expect(source).toMatch(/onSelect=\{\(\) => setOrg\(listId, option\.id\)\}/)
     // From the shared option list, so all five modes are offered and a sixth
-    // added later shows up here for free.
-    expect(source).toMatch(/ORG_OPTIONS\.map\(\(option\) =>/)
+    // added later shows up here for free. (`orgOptionsFor` is `ORG_OPTIONS`
+    // with the flat mode named "Unranked" on a list without numbers — 191.)
+    expect(source).toMatch(/orgOptionsFor\(numbered\)\.map\(\(option\) =>/)
   })
 
   it('`Remove column` sits under a separator, as the LAW words it', () => {
@@ -208,7 +209,8 @@ describe('LV.13 — each column groups independently', () => {
     // adjacency that a third item breaks.
     const separator = source.indexOf('<DropdownMenuSeparator />')
     expect(separator).toBeGreaterThan(0)
-    expect(source.indexOf('ORG_OPTIONS.map((option)')).toBeLessThan(separator)
+    expect(source.indexOf('orgOptionsFor(numbered).map((option)')).toBeGreaterThan(0)
+    expect(source.indexOf('orgOptionsFor(numbered).map((option)')).toBeLessThan(separator)
     expect(source.indexOf('<DropdownMenuItem onSelect={() => popOut(listId)}>')).toBeGreaterThan(
       separator,
     )

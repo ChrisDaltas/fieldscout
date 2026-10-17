@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter, Silkscreen } from 'next/font/google'
 
 import './globals.css'
@@ -25,6 +25,14 @@ const inter = Inter({
   axes: ['opsz'],
   variable: '--font-inter',
 })
+
+// viewport-fit=cover is set only by the app shell's layout, where the mobile
+// screens pad for the notch and home indicator themselves; public pages and
+// the draft room keep Safari's own safe-area insets.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+}
 
 export const metadata: Metadata = {
   title: 'FieldScout',

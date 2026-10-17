@@ -75,6 +75,8 @@ async function testHelper() {
     unranked: { hide_order: true, tiers_enabled: false },
     ranked: { hide_order: false, tiers_enabled: false },
     rank_and_tier: { hide_order: false, tiers_enabled: true },
+    // Tiers without numbers (migration 191): the fourth combination.
+    tier_only: { hide_order: true, tiers_enabled: true },
   }
   for (const mode of RANKING_MODES) {
     const out = rankingModeToLegacyFlags(mode)
@@ -129,7 +131,9 @@ async function testBackfill() {
 
   const mismatches = data.filter((row) => {
     const expected = row.hide_order
-      ? 'unranked'
+      ? row.tiers_enabled
+        ? 'tier_only' // 191: tiers without numbers
+        : 'unranked'
       : row.tiers_enabled
         ? 'rank_and_tier'
         : 'ranked'

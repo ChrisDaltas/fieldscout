@@ -1,0 +1,192 @@
+[
+ {
+  "feature": "Create bottom sheet (mobile presentation of CreateMenu)",
+  "kind": "restyle-only",
+  "detail": "top-nav.tsx CreateMenu is a dropdown; ui/sheet.tsx has side=bottom but animates and draws its own X. Needs a variant with no X, no animation, a grab handle and a .32 backdrop."
+ },
+ {
+  "feature": "Create sheet option set (Start or sit / Ranking / List vs New list / League / Mock draft)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Decide whether the league and mock entries stay on mobile, and whether Start or sit and Ranking show while startOrSit and weeklyRanks are off."
+ },
+ {
+  "feature": "Create \u2192 Ranking navigation",
+  "kind": "out-of-scope-or-question",
+  "detail": "Owned by the Rankings spec. Map to the weekly-ranks or new-ranking route (flag off). Don't copy the prototype's full reload to League \u203a Match."
+ },
+ {
+  "feature": "Community header + button",
+  "kind": "new-ui-on-existing-data",
+  "detail": "explore/page.tsx PageHeader has no action; Community is behind the community flag (off)."
+ },
+ {
+  "feature": "My start/sit screen + header + button",
+  "kind": "needs-new-backend",
+  "detail": "/app/start-or-sit pages are PlaceholderPage; there is no poll storage or API."
+ },
+ {
+  "feature": "Profile My stuff tabs + create button",
+  "kind": "new-ui-on-existing-data",
+  "detail": "profile/page.tsx is 'My stats' with no My stuff tabs. The Lists tab can use existing lists data; the Start/Sit tab needs the polls backend. Which of the two list builders should mobile keep?"
+ },
+ {
+  "feature": "Full-screen composer shell (header X/back, centred title, action pill, persistent scroll body)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Today ListFormDialog is a centred Dialog and ListBuilder is a page. UI-only."
+ },
+ {
+  "feature": "Composer author row",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Use the useAuth profile username/avatar and the current week from nfl_weeks instead of the hard-coded @dalton / Week 5."
+ },
+ {
+  "feature": "Start/sit poll with 2\u20136 options, Start/Sit mode, pick-N, optional question title",
+  "kind": "needs-new-backend",
+  "detail": "start_sit_questions stores only player_a/player_b (CHECK a\u2260b), votes are 'a'|'b', and no route writes it. Needs an options model, mode, pick_n, title and a POST API."
+ },
+ {
+  "feature": "Trade question poll (You give / You get, Accept/Decline)",
+  "kind": "needs-new-backend",
+  "detail": "No community trade-poll table. trades/trade_votes are league trades under the leagues spec."
+ },
+ {
+  "feature": "Attach my roster + league chooser",
+  "kind": "needs-new-backend",
+  "detail": "useLeagues has league name, team_count and my_team_id (no team name). Needs a post\u2192team link and a snapshot-vs-live decision. Leagues are a flag-gated test cohort."
+ },
+ {
+  "feature": "Scoring chips on polls",
+  "kind": "new-ui-on-existing-data",
+  "detail": "start_sit_questions.scoring_system_id and SCORING_PRESETS exist; saving depends on the poll API."
+ },
+ {
+  "feature": "Voting closes chips",
+  "kind": "new-ui-on-existing-data",
+  "detail": "voting_closes_at and nfl_games kickoffs exist. The prototype never saves the choice. For multi-player polls, does 'At kickoff' mean the earliest kickoff?"
+ },
+ {
+  "feature": "Duplicate players across poll slots",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype allows the same player twice; the DB CHECK forbids a==b. Recommendation: prevent it in the picker."
+ },
+ {
+  "feature": "List composer step 1 (Name your list)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "POST /api/lists exists. The design's maxlength 40 conflicts with the API's MAX_TITLE_LEN 100."
+ },
+ {
+  "feature": "List cover colour swatches",
+  "kind": "out-of-scope-or-question",
+  "detail": "lists has no colour column, and Chris ruled on 2026-08-11 (recorded in cover-tile.tsx) that the cover background is the position group."
+ },
+ {
+  "feature": "List step 2 fields (name, description, Public switch)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "PATCH/POST /api/lists support these. POST still enforces FREE_PRIVATE_LIST_LIMIT (403 Upgrade to Pro) despite the Pro suspension, so a second private list fails. Needs a ruling."
+ },
+ {
+  "feature": "List videos (YouTube link add, thumbnail, remove, error)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list_links via /api/lists/[id]/links (kind video, title required, max 10 links, http/https only). Require a YouTube host (the prototype regex accepts any host). Use a plain img for i.ytimg.com (no remotePatterns)."
+ },
+ {
+  "feature": "List players section + empty Add players button",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Bulk add and per-player DELETE routes exist; ListBuilder already does create + bulk."
+ },
+ {
+  "feature": "Recommended players block",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Client-side filter over /api/players/builder sorted by projection. Prototype bug: a kicker first gives 0 rows under the heading."
+ },
+ {
+  "feature": "List Save flow + 'Posted to Community' toast + stay on origin",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Today the app toasts 'List created' and navigates to the list. The save is three non-atomic calls. Announcing a private list as 'Posted to Community' is a prototype bug."
+ },
+ {
+  "feature": "In-file ranking composer (New/Edit ranking, reorder, Publish)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Unreachable in the prototype, with title 'undefined' and missing-rk crash bugs. Belongs to the Rankings spec; weekly_rankings exists, flag off."
+ },
+ {
+  "feature": "Full-screen player picker (single + multi modes)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "PlayerSearch, AddPlayersPopover and PlayerSidebar cover search/add. Build it as a mobile variant, not a new component."
+ },
+ {
+  "feature": "Picker search by name or exact team code",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The builder route supports a teams filter; name search is client-side."
+ },
+ {
+  "feature": "Picker position chips incl. K and D/ST",
+  "kind": "restyle-only",
+  "detail": "PlayerSidebar POSITION_FILTERS has QB..K, DEF; relabel DEF as D/ST."
+ },
+ {
+  "feature": "Picker/composer player rows (headshot ring, POS\u00b7TEAM colour, Proj)",
+  "kind": "restyle-only",
+  "detail": "PlayerRow, PositionBadge, PlayerAvatarImage and getTeamColors exist; the initials rule differs."
+ },
+ {
+  "feature": "Current-week projection in selected scoring for picker sort/display",
+  "kind": "needs-new-backend",
+  "detail": "The builder route returns season projections. player_weekly_projections is scored per player only (core-stats-ops), so a bulk weekly read is needed. Also D497 says projected points are always fs-blue-deep, vs the design's grey."
+ },
+ {
+  "feature": "Picker 40-row cap",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app deliberately loads the whole pool (pageAll). The cap makes players unreachable; recommend a virtualised full list."
+ },
+ {
+  "feature": "Picker empty/error state",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The prototype shows a blank list. Add 'No players match' and a separate error state (CLAUDE.md: 'nothing happened' must not mean 'it worked')."
+ },
+ {
+  "feature": "Toast variant (bottom 100px, 1800ms, no animation)",
+  "kind": "restyle-only",
+  "detail": "ui/toast.tsx is already an ink pill; toaster uses 4500ms with slide/fade."
+ },
+ {
+  "feature": "Mobile Switch variant (44\u00d726, green)",
+  "kind": "restyle-only",
+  "detail": "ui/switch.tsx is 32\u00d719 with brand fill and a sliding knob."
+ },
+ {
+  "feature": "Chip styles (ink/b2, Start green, Sit red, circular how-many)",
+  "kind": "restyle-only",
+  "detail": "FilterChip in ui/badge.tsx."
+ },
+ {
+  "feature": "Inter Display cv11 feature setting",
+  "kind": "restyle-only",
+  "detail": "layout.tsx loads Inter (opsz 32); globals.css sets only tnum on .fs-num."
+ },
+ {
+  "feature": "Poll appears in Community Start-or-sit shelf",
+  "kind": "needs-new-backend",
+  "detail": "use-explore-feed reads public lists only; there is no poll feed."
+ },
+ {
+  "feature": "New list first in Community 'Lists for you'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The explore feed newest tab already reads recent public lists; Community flag is off."
+ },
+ {
+  "feature": "Community list cover uses YouTube thumbnail when list has videos",
+  "kind": "out-of-scope-or-question",
+  "detail": "Conflicts with the cover ruling (position-group fill + headshots)."
+ },
+ {
+  "feature": "My start/sit list rows (status, votes, roster attached, crowd leans)",
+  "kind": "needs-new-backend",
+  "detail": "No screen or data. Prototype bugs: 'crowd leans A. ' and the close choice is ignored."
+ },
+ {
+  "feature": "Dark mode for composer/picker/sheet",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme, but HEAD 27d455b adds m-* light/dark tokens and theme-store citing a Chris 2026-10-15 'mobile-only dark mode' ruling. Confirm. Prototype dark bugs: white List tile and white t1-swatch cover."
+ }
+]

@@ -1,0 +1,237 @@
+[
+ {
+  "feature": "Mobile Lists restyle bundle (grid, tabs, cards, sheet, toast, headshot ring, switch, table sticky column, tier labels, empty/loading/error states)",
+  "kind": "restyle-only",
+  "detail": "The data and behaviour exist in src/components/lists/v2/* (lists-page-v2.tsx, list-gallery-card.tsx, cover-tile.tsx, list-body.tsx, list-row-parts.tsx) and src/components/ui/{sheet,toast,switch,avatar}.tsx. These need mobile layouts on the m-* tokens. Fix the prototype bugs rather than copying them: 1 player singular (the card at list-gallery-card.tsx:186 also says '1 players'), collages with 1 or 3 heads drawn off-centre, the broken table divider."
+ },
+ {
+  "feature": "Dock (bottom tab bar) rebuild",
+  "kind": "restyle-only",
+  "detail": "src/components/layout/bottom-tabs.tsx is the legacy 64px ink bar (Home/Lists/Players/Search/More, lime active). Rebuild it in place to the 84px dark dock with a real active state."
+ },
+ {
+  "feature": "Dock items and Lists' place in the IA",
+  "kind": "out-of-scope-or-question",
+  "detail": "The spec dock is Home/Community/Leagues/Profile; the README says Players instead of Leagues. Community and Leagues are flag-off at launch (feature-flags.ts). The spec moves Lists under Profile \u203a My stuff, and the Lists back chevron currently lands on League \u203a Match. Needs an IA ruling."
+ },
+ {
+  "feature": "Tier colour rule (TIERC vs app BAND_RAMP)",
+  "kind": "out-of-scope-or-question",
+  "detail": "bucket-colors.ts BAND_RAMP runs red\u2192teal and cycles. The spec's TIERC is blue, purple, green, gold, red, teal, then grey from Tier 7. The README says tiers cycle. Pick one rule."
+ },
+ {
+  "feature": "Time-frame control (Week N / Last 3 / Season) with stat aggregation",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Weekly player_stats exist (fetch-weekly-stats.ts, aggregate-fantasy.ts), but /api/players/builder returns only season totals. Extend the endpoint for week and last-3 aggregation. Use the live current week from nfl-state, not the hard-coded 5."
+ },
+ {
+  "feature": "Cover colour swatches (6 user-chosen colours)",
+  "kind": "out-of-scope-or-question",
+  "detail": "lists has no colour column. cover-tile.tsx coverBg() derives the colour from position_filter, per Chris's 2026-08-11 ruling. Needs a ruling plus a lists.cover_color column. The black swatch turns white in dark mode."
+ },
+ {
+  "feature": "Save stat columns and time frame with the list",
+  "kind": "out-of-scope-or-question",
+  "detail": "The spec saves stats[] and tf per list as the viewer default. D3 (2026-08-09) makes cols session-only, and list-display-store.test.ts enforces that. Needs a ruling plus a column."
+ },
+ {
+  "feature": "Editor save model (draft + Save vs autosave)",
+  "kind": "out-of-scope-or-question",
+  "detail": "The spec edits a local draft, saves explicitly, and Back discards silently. The app writes every change immediately through use-lists.ts mutations. Recommend autosave with Save relabelled Done."
+ },
+ {
+  "feature": "Ranked off + Tiers on combination",
+  "kind": "out-of-scope-or-question",
+  "detail": "ranking_mode has only unranked/ranked/rank_and_tier (migration 012: hide_order wins). The spec's two toggles are independent. Needs an enum change or a ruling."
+ },
+ {
+  "feature": "More than 6 tiers",
+  "kind": "needs-new-backend",
+  "detail": "TIER_VALUES is S\u2013F (6) and list_players_tier_check (081) / BUCKET_KEY_PATTERN enforce it. Spec Auto tiers allows up to 7 breaks (8 tiers) and Add tier line is unlimited. Widen the vocabulary or cap the UI at 6."
+ },
+ {
+  "feature": "Full-screen New list step (name, description, thumbnail, video, pinned CTA)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Replaces the list-form-dialog.tsx modal on mobile. POST /api/lists already accepts description. The orphaned /app/lists/new legacy builder route is free to reuse."
+ },
+ {
+  "feature": "Description field at creation",
+  "kind": "new-ui-on-existing-data",
+  "detail": "lists.description (\u2264500) is accepted by createListSchema, but the create dialog has no field. It is editable later in list-details-tab.tsx."
+ },
+ {
+  "feature": "Thumbnail picker plus image upload",
+  "kind": "new-ui-on-existing-data",
+  "detail": "POST /api/lists/[id]/thumbnail exists (5MB; png/jpeg/webp/gif; list-thumbnails bucket) but has no UI. The old picker editable-thumbnail.tsx was deleted, and lists-cutover.test.ts keeps that filename deleted, so use a new name. Create the list first, then upload."
+ },
+ {
+  "feature": "Switch back to Collage after an upload / persisted cover mode",
+  "kind": "needs-new-backend",
+  "detail": "updateListSchema has no thumbnail_url and the thumbnail route has no DELETE. Needs a cover-mode field or PATCH support to clear or restore the image."
+ },
+ {
+  "feature": "Video-frame cover",
+  "kind": "needs-new-backend",
+  "detail": "thumbnail_url is only writable through upload. Needs PATCH to accept i.ytimg.com/vi/<id>/hqdefault.jpg (or a cover-mode column). next.config.mjs has no remotePatterns, so use <img> or add the host."
+ },
+ {
+  "feature": "YouTube video attach (link field, validation, attached card, video card in list view, Video badge on cards)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list_links (080) covers it: kind video, title NOT NULL, \u226410 per list, http/https only via links-service.ts. Parse the YouTube id client-side, tightened to YouTube hosts. The thumbnail is a fixed i.ytimg.com URL (no scraping). The card's Video badge needs has_video in the GET /api/lists payload. Auto-fetching the title via oEmbed needs Chris's OK."
+ },
+ {
+  "feature": "Edit details screen (rename, description, thumbnail, colour, video)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The spec's variant is unreachable. The app has form mode=edit, inline rename in the hero, and description and links in the details tab. Wire an entry from the List view or editor."
+ },
+ {
+  "feature": "Full-screen List editor screen",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The app edits inline in list-detail-panel.tsx and has no editor route. Mobile needs a dedicated screen covering title, Ranked/Tiers toggle cards, stat chips, the tools row and the 'n players \u00b7 drag to reorder' info line."
+ },
+ {
+  "feature": "Ranked toggle honoured in rows",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list-body.tsx always renders #rank, even when ranking_mode is 'unranked'. The data exists; the UI must hide the number column."
+ },
+ {
+  "feature": "Tier lines (add, drag, merge) relabelled Tier N",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The app stores a tier letter on each player (list_players.tier); the spec stores positional markers. Map a tier line to the point where the letter changes. Writes go through PATCH .../players/[playerId]/tier one at a time; a bulk tier route is advisable."
+ },
+ {
+  "feature": "Auto tiers",
+  "kind": "new-ui-on-existing-data",
+  "detail": "No auto-tier code exists. Use projections (players.projected_pts_*) instead of the spec's Scout AI score. Same per-player tier writes as tier lines. Don't toast success with \u22642 players."
+ },
+ {
+  "feature": "Editor row mini stats (season Pts / Avg / Pos rk)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Season points and the whole pool are available from /api/players/builder. The spec's own mismatch with the chosen stat columns (gap 13) is an open question."
+ },
+ {
+  "feature": "Add players bottom sheet (search name+team, position chips, full results, +/\u2713 toggle that removes)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list-toolbar.tsx AddPlayersPopover searches by name only, caps at 8 results and disables added rows. /api/players/builder supports positions; DELETE /api/lists/[id]/players/[playerId] exists."
+ },
+ {
+  "feature": "Scout AI overall rank (pick-sheet sort and 'Scout AI #N' sub line)",
+  "kind": "needs-new-backend",
+  "detail": "No stored Scout AI ranking exists; /api/lists/generate is on-demand only. /api/players/builder sorts by projection, then ADP. Interim: projection order."
+ },
+ {
+  "feature": "Add stats sheet with 6 grouped categories",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list-stats.ts STAT_CATALOG has 7 stats (ADP, Cost PPR, Proj, 2026 pts, 2025 pts, Bye, SOS). Grow it to the spec's groups using the available data (Proj, Pts, Avg pts, Tgt, Rec, Rec yds, Rush att, Rush yds, Pass yds, Pass TD, Int, Cmp %, Snap %, Tgt share, Users, Pos rk). Decide whether ADP, Cost, Bye and SOS stay."
+ },
+ {
+  "feature": "Stat: Users rank",
+  "kind": "new-ui-on-existing-data",
+  "detail": "consensus_rankings.consensus_position_rank exists but is season-wide, not per week or scoring. The consensus flag is off."
+ },
+ {
+  "feature": "Stat: Snap % and Tgt share",
+  "kind": "new-ui-on-existing-data",
+  "detail": "player_usage holds these as season-level values only (sync/usage.ts), so the time frame cannot apply."
+ },
+ {
+  "feature": "Stat: ECR (expert consensus rank)",
+  "kind": "needs-new-backend",
+  "detail": "No expert-consensus feed exists. persona_source_rankings is per persona and flag-gated."
+ },
+ {
+  "feature": "Stat: Scout AI rank",
+  "kind": "needs-new-backend",
+  "detail": "Needs a stored per-week AI ranking job."
+ },
+ {
+  "feature": "Stats: Route % and Rush share",
+  "kind": "needs-new-backend",
+  "detail": "player_usage has only snap_pct and target_share. Rush share needs a usage-sync extension plus a column. Route % needs a routes data source."
+ },
+ {
+  "feature": "Stats: YAC, aDOT, YPRR, YCO/att, RYOE",
+  "kind": "needs-new-backend",
+  "detail": "player_stats.advanced (migration 109) exists but nothing is ingested. stat-keys.ts lists only placeholder advanced keys."
+ },
+ {
+  "feature": "Scoring choice for list stats",
+  "kind": "out-of-scope-or-question",
+  "detail": "The spec hard-codes PPR. lists.scoring_system_id and /api/players/builder?scoring= exist (gap 15)."
+ },
+ {
+  "feature": "Import a ranking sheet (insert, dedupe, tier separator, force Ranked + Tiers)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "POST /api/lists/[id]/players/bulk (skips duplicates) plus tier PATCH cover it. Avoid the spec bugs: the 'Added 0' toast and the empty trailing tier."
+ },
+ {
+  "feature": "Import source: Scout AI \u00b7 Week N \u00b7 position",
+  "kind": "needs-new-backend",
+  "detail": "Needs a stored Scout AI weekly ranking with tiers."
+ },
+ {
+  "feature": "Import source: Experts \u00b7 Rest of season",
+  "kind": "needs-new-backend",
+  "detail": "Needs an expert-consensus ranking feed."
+ },
+ {
+  "feature": "Import source: Mine (Submitted / Saved / Finalized rankings)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Weekly boards exist (big_board_weekly, lists.is_big_board); the weekly_rankings table is unused; the bigBoard and weeklyRanks flags are off. Statuses and per-scoring rankings come from the Rankings section. Interim: import from any of the user's own lists."
+ },
+ {
+  "feature": "Full-screen List view screen and route",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/app/lists/[listId] is a redirect to ?list=, pinned by lists-cutover.test.ts. Render a full-screen view in mobile mode under ?list=, or change the route and the test."
+ },
+ {
+  "feature": "Save/unsave control on someone else's list",
+  "kind": "new-ui-on-existing-data",
+  "detail": "useToggleFavorite (favourite = Saved tab) and the hero pin action exist. The spec has no control (gap 11)."
+ },
+ {
+  "feature": "Real routes and history for grid tab, New list, editor, list view",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The spec uses setState only, with no pushState. Next.js routes (/app/lists, /app/lists/new, ?list=) give working back and reload."
+ },
+ {
+  "feature": "Profile \u203a My stuff \u203a Lists entry (preview rows + New list) and Home My stuff tile",
+  "kind": "new-ui-on-existing-data",
+  "detail": "profile/page.tsx is 'My stats' with no My stuff; Home shows only RecentlyViewed. The rows should be real lists from useLists, each opening that list."
+ },
+ {
+  "feature": "Create with AI entry point on mobile",
+  "kind": "new-ui-on-existing-data",
+  "detail": "generate-ai-button.tsx, generate-ai-modal.tsx and /api/lists/generate exist. CLAUDE.md says keep and restyle; ai-surfaces.test.ts pins it. The prototype has no slot for it."
+ },
+ {
+  "feature": "App list features absent from the mobile spec (delete/trash, duplicate, share, privacy, pin, folders, comments, likes, tags, view count, attach to league, drafted marks, rounds/cost/budget, List/Table/Cards views, Side by side, team lists, position group)",
+  "kind": "out-of-scope-or-question",
+  "detail": "All built (list-gallery-card.tsx, list-detail-hero.tsx, lists-folders.tsx, list-comments-tab.tsx, list-display-store.ts, side-by-side-*.tsx, list-form-dialog.tsx). Decide which survive on mobile and where. Soft delete must stay (business rule 8)."
+ },
+ {
+  "feature": "Rankings \u2194 Lists switch and Community composer duplication",
+  "kind": "out-of-scope-or-question",
+  "detail": "rootSeg is never rendered; Community \u203a Create \u203a List is a second composer. Rankings and Community are flag-off. Needs an IA ruling (gaps 2 and 8)."
+ },
+ {
+  "feature": "Dark-mode success/danger text and the in-phone theme toggle",
+  "kind": "out-of-scope-or-question",
+  "detail": "globals.css --m-tg/--m-tr define the README dark colours, which the spec ignores. theme-store.ts has no toggle UI rendered anywhere. Needs a placement."
+ },
+ {
+  "feature": "Hit targets under 30px",
+  "kind": "out-of-scope-or-question",
+  "detail": "Stat \u2715 20px, merge \u2715 24px, swatches 24px, segments 24px, chips 28px, against the README's 30px minimum. Recommend larger hit areas."
+ },
+ {
+  "feature": "Sheet swipe-to-dismiss and animations",
+  "kind": "out-of-scope-or-question",
+  "detail": "The spec has none (gap 20). sheet.tsx is Radix and tailwindcss-animate is available."
+ },
+ {
+  "feature": "Phone frame and status bar",
+  "kind": "out-of-scope-or-question",
+  "detail": "Prototype chrome. Implement only safe-area insets."
+ }
+]
