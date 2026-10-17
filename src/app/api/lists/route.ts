@@ -3,13 +3,29 @@ import { NextResponse } from 'next/server'
 import {
   countPrivateLists,
   FREE_PRIVATE_LIST_LIMIT,
+  FREE_TEAM_LIST_LIMIT,
+  isPrivateListCapError,
+  isTeamListCapError,
+  PRIVATE_LIMIT_BODY,
+  TEAM_LIMIT_BODY,
   generateUniqueSlug,
   replaceTagsForList,
   resolveTagIds,
 } from '@/lib/lists/helpers'
+import {
+  COVER_COLOR_UNAVAILABLE_BODY,
+  COVER_COLOR_UNAVAILABLE_STATUS,
+  createListWithCoverSchema,
+  isMissingCoverColorColumn,
+} from '@/lib/lists/cover-color'
+import {
+  isTierOnlyUnavailable,
+  TIER_ONLY_UNAVAILABLE_BODY,
+  TIER_ONLY_UNAVAILABLE_STATUS,
+} from '@/lib/lists/ranking-mode'
 import { createServerClient } from '@/lib/supabase/server'
 import {
-  createListSchema,
+  legacyFlagsToRankingMode,
   listsQuerySchema,
   rankingModeToLegacyFlags,
 } from '@/types/schemas/lists'
@@ -201,7 +217,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const parsed = createListSchema.safeParse(body)
+  const parsed = createListWithCoverSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
@@ -216,8 +232,8 @@ export async function POST(request: Request) {
     )
   }
 
-  // Free-tier private list cap
-  if (input.is_private) {
+  // Free-tier private list cap (suspended while FREE_PRIVATE_LIST_LIMIT is null)
+  if (input.is_private && FREE_PRIVATE_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')
@@ -226,20 +242,13 @@ export async function POST(request: Request) {
     if (!profile?.is_pro) {
       const existing = await countPrivateLists(supabase, user.id)
       if (existing >= FREE_PRIVATE_LIST_LIMIT) {
-        return NextResponse.json(
-          {
-            error:
-              'Free accounts can have one private list. Upgrade to Pro for unlimited private lists.',
-            code: 'PRIVATE_LIMIT_REACHED',
-          },
-          { status: 403 },
-        )
+        return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
       }
     }
   }
 
-  // Free-tier team cap (business rule: free users get one team).
-  if (input.is_team) {
+  // Free-tier team cap (suspended while FREE_TEAM_LIST_LIMIT is null)
+  if (input.is_team && FREE_TEAM_LIST_LIMIT !== null) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_pro')
@@ -252,15 +261,8 @@ export async function POST(request: Request) {
         .eq('owner_id', user.id)
         .eq('is_team', true)
         .is('deleted_at', null)
-      if ((count ?? 0) >= 1) {
-        return NextResponse.json(
-          {
-            error:
-              'Free accounts can have one team. Upgrade to Pro for unlimited teams.',
-            code: 'TEAM_LIMIT_REACHED',
-          },
-          { status: 403 },
-        )
+      if ((count ?? 0) >= FREE_TEAM_LIST_LIMIT) {
+        return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
       }
     }
   }
@@ -269,7 +271,8 @@ export async function POST(request: Request) {
 
   // ranking_mode is the source of truth. If the client sent it, derive the
   // legacy boolean pair from it. Otherwise fall back to whatever booleans the
-  // legacy client sent (defaulting to a numbered/ranked list).
+  // legacy client sent (defaulting to a numbered/ranked list); since 191 all
+  // four combinations name a mode (both = tiers without numbers).
   const rankingMode = input.ranking_mode
   const legacyFlags = rankingMode
     ? rankingModeToLegacyFlags(rankingMode)
@@ -277,13 +280,7 @@ export async function POST(request: Request) {
         hide_order: input.hide_order ?? false,
         tiers_enabled: input.tiers_enabled ?? false,
       }
-  const resolvedRankingMode =
-    rankingMode ??
-    (legacyFlags.hide_order
-      ? 'unranked'
-      : legacyFlags.tiers_enabled
-        ? 'rank_and_tier'
-        : 'ranked')
+  const resolvedRankingMode = rankingMode ?? legacyFlagsToRankingMode(legacyFlags)
 
   const { data: created, error: insertError } = await supabase
     .from('lists')
@@ -302,11 +299,32 @@ export async function POST(request: Request) {
       // non-team creation working before migration 015 is applied.
       ...(input.is_team ? { roster_settings: input.roster_settings } : {}),
       comments_enabled: input.comments_enabled ?? true,
+      // Only named when a colour was chosen (migration 188): a create with no
+      // colour — or an explicit null, which is the column's default anyway —
+      // never references the column, so it works before 188 is pushed.
+      ...(input.cover_color ? { cover_color: input.cover_color } : {}),
     })
     .select()
     .single()
 
   if (insertError || !created) {
+    // Before migration 187 is pushed the database still caps private lists
+    // and teams.
+    if (isPrivateListCapError(insertError)) {
+      return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    if (isTeamListCapError(insertError)) {
+      return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
+    }
+    // A colour sent before migration 188 is pushed: a clear 409, not a 500.
+    if (isMissingCoverColorColumn(insertError)) {
+      return NextResponse.json(COVER_COLOR_UNAVAILABLE_BODY, { status: COVER_COLOR_UNAVAILABLE_STATUS })
+    }
+    // Tiers without numbers before migration 191 is pushed: the older CHECK
+    // refuses `tier_only` — a clear 409, not a 500, and no list is made.
+    if (resolvedRankingMode === 'tier_only' && isTierOnlyUnavailable(insertError)) {
+      return NextResponse.json(TIER_ONLY_UNAVAILABLE_BODY, { status: TIER_ONLY_UNAVAILABLE_STATUS })
+    }
     return NextResponse.json(
       { error: insertError?.message ?? 'Could not create list' },
       { status: 500 },

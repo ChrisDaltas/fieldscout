@@ -1,4 +1,4 @@
-import { TeamPage } from '@/components/leagues/team-page'
+import { TeamRoute } from '@/components/mobile/league/team/team-route'
 
 export const metadata = { title: 'Team · FieldScout' }
 
@@ -17,5 +17,5 @@ interface TeamPageProps {
  */
 export default async function LeagueTeamPage({ params }: TeamPageProps) {
   const { leagueId, teamId } = await params
-  return <TeamPage leagueId={leagueId} teamId={teamId} />
+  return <TeamRoute leagueId={leagueId} teamId={teamId} />
 }

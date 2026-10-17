@@ -1,9 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
 import { TwoColumnLayout } from '@/components/layout/two-column-layout'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileProfile } from '@/components/mobile/profile/mobile-profile'
 import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { RankingHistoryCard } from '@/components/stats/ranking-history-card'
@@ -15,13 +18,31 @@ import { featureFlags } from '@/lib/feature-flags'
 import { userProfileHref } from '@/components/shared/username-link-ops'
 
 /**
+ * Desktop: My stats. Mobile: the FieldScout Mobile Profile screen (account
+ * root — Dark/Light pill, identity, "My stuff"; `?tab=` picks the segment).
+ * `MobileProfile` reads `useSearchParams`, hence its Suspense boundary.
+ */
+export default function ProfilePage() {
+  return (
+    <ByLayout
+      desktop={<DesktopProfilePage />}
+      mobile={
+        <Suspense>
+          <MobileProfile />
+        </Suspense>
+      }
+    />
+  )
+}
+
+/**
  * My stats — how the user's profile performs (package screen 09). The shell
  * PageHeader owns the page title; edit/share actions live there. Content:
  * profile header, real stat tiles (cred / tier / followers / following),
  * cred progress bar, accuracy placeholders, ranking history — in the v7
  * Profile language (grey tiles, plain sections, thin pill bars).
  */
-export default function ProfilePage() {
+function DesktopProfilePage() {
   const { profile, isLoading } = useAuth()
 
   if (isLoading) {

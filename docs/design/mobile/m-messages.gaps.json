@@ -1,0 +1,177 @@
+[
+ {
+  "feature": "Messages list screen (mobile route) with conversation rows, previews, unread dots",
+  "kind": "needs-new-backend",
+  "detail": "No DM/conversation/read-marker tables or API. Only a desktop rail scaffold exists (src/components/layout/rail/messages-panel.tsx, flag featureFlags.messages, always empty). Build behind the flag with clearly-marked mock data until a DM backend is specced."
+ },
+ {
+  "feature": "People row (horizontal avatars opening DM threads)",
+  "kind": "needs-new-backend",
+  "detail": "League members exist (use-league.ts members[].profiles), but tapping opens a 1:1 DM thread, which has no storage."
+ },
+ {
+  "feature": "Search field filtering conversations",
+  "kind": "needs-new-backend",
+  "detail": "Client-only filter, but no conversation data to filter until DMs exist."
+ },
+ {
+  "feature": "1:1 conversation thread (bubbles, composer, send)",
+  "kind": "needs-new-backend",
+  "detail": "No DM storage. ChatRun grouping and the local-only composer in messages-panel.tsx can be reused. Do not replicate the prototype's composer covered by the dock."
+ },
+ {
+  "feature": "Read receipts (\"Seen\") and unread state (header badge, row dot, group unread)",
+  "kind": "needs-new-backend",
+  "detail": "No per-user read markers for chat. Only notifications.read exists. dmUnreadCount() is stubbed to 0 in research-rail.tsx."
+ },
+ {
+  "feature": "Header chat icon with DM badge on mobile Home/League headers",
+  "kind": "needs-new-backend",
+  "detail": "No mobile header chat icon exists (bottom-tabs.tsx/more-sheet.tsx). The count needs DM unread data."
+ },
+ {
+  "feature": "Team page \"Message\" button and trade-detail \"Message @manager\" pill",
+  "kind": "needs-new-backend",
+  "detail": "team-page.tsx has only \"Propose trade\". Both actions open a DM thread, which has no backend."
+ },
+ {
+  "feature": "Trade builder \"Send a direct message / Notify @mgr\" toggle",
+  "kind": "needs-new-backend",
+  "detail": "Trade proposals already notify via notifications (trade_notify_team_internal, 148). Posting into a DM thread needs the DM backend."
+ },
+ {
+  "feature": "Offer expiry (\"expires in 2 days\")",
+  "kind": "needs-new-backend",
+  "detail": "trades has no per-offer expiry. Status 'expired' only fires at the trade deadline (148_trades_core.sql). Needs a column and a job, plus a product ruling."
+ },
+ {
+  "feature": "Group thread = league message board as a mobile chat thread",
+  "kind": "new-ui-on-existing-data",
+  "detail": "league_chat context='league' with live updates and send exist (use-league-chat.ts, league-message-board.tsx). The mobile bubble-thread UI and the group row in Messages are new. Unread for the group still needs a read marker."
+ },
+ {
+  "feature": "Online presence (\"Active now\", green dot)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Realtime presence policy on league:<id> exists (070_draft_realtime.sql:356), but only the draft room tracks presence (use-draft.ts). Needs app-wide client tracking."
+ },
+ {
+  "feature": "Date separators / timestamps in threads",
+  "kind": "new-ui-on-existing-data",
+  "detail": "league_chat.created_at exists. The design hard-codes \"Today\"; derive it from real timestamps instead."
+ },
+ {
+  "feature": "Trades tab: cross-league inbox of trade offers",
+  "kind": "new-ui-on-existing-data",
+  "detail": "GET /api/leagues/[id]/trades is per league (use-trades.ts). The inbox needs per-league fan-out or a thin aggregate read. Product question: all leagues or the selected league?"
+ },
+ {
+  "feature": "Trades segment pending-count badge",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Derivable from TradesDocument: proposed trades where the recipient is the viewer's team. Segment/SegmentItem already supports count."
+ },
+ {
+  "feature": "Trade search (manager + asset names)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Client filter over TradeView items and team names/handles. Use separators; the prototype's no-separator concatenation is a defect."
+ },
+ {
+  "feature": "Trade offer detail screen (title, per-side head rows with handle/team/status pill, Receives/Sends asset cards, footer)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "TradeView and the PATCH accept/reject/cancel/counter verbs exist (trades-service.ts, [tid]/route.ts). Today trades are only inline cards in trade-center.tsx; there is no per-trade detail screen."
+ },
+ {
+  "feature": "League chip on trade detail",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Use leagues.avatar_url, format and team_count of the trade's own league. The prototype wrongly follows the selected league."
+ },
+ {
+  "feature": "Hide usernames for screenshots toggle",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Pure client-side toggle with no backend. It should also hide the handle on the Message pill (the prototype leaks it)."
+ },
+ {
+  "feature": "Notification \"Trade offer from X\" opens that trade's detail",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Notification data carries trade_id (148:902), but notification-href.ts routes every league_trade_* to /app/leagues/[id]/trades. Needs a per-trade deep link."
+ },
+ {
+  "feature": "League tab dock (Match/Team/Players/League/Menu) on DM screens",
+  "kind": "new-ui-on-existing-data",
+  "detail": "No mobile league dock exists (bottom-tabs.tsx is app-level). Owned by the League section; the composer overlap and lack of a highlighted tab need resolving."
+ },
+ {
+  "feature": "Trade card with Accept/Decline/Counter actions (mobile restyle)",
+  "kind": "restyle-only",
+  "detail": "TradeCard in trade-center.tsx plus useTradeAction and acceptGate/drop picker exist. The mobile card must fit the required drop picker (E36) and the deadline gate, which the design omits."
+ },
+ {
+  "feature": "Trade detail footer: Accept/Decline/Counter, Withdraw, resolved copy",
+  "kind": "restyle-only",
+  "detail": "Verbs exist: Withdraw is op 'cancel' and yields status 'cancelled' (\"Called off\"), not Declined. tradeStatusView supplies the resolved sentences."
+ },
+ {
+  "feature": "Statuses absent from the design (under review with league-vote tally and veto/approve, deferred, completed, countered, called off, vetoed, invalid, expired, reversed)",
+  "kind": "restyle-only",
+  "detail": "All handled in trades-ops.ts (tradeStatusView, tallyWords) and trade-center.tsx. Extend the design's 4-pill vocabulary to cover them."
+ },
+ {
+  "feature": "Asset rows with headshot, team-colour ring, short name, POS \u00b7 TEAM",
+  "kind": "restyle-only",
+  "detail": "player-image.tsx, nfl-team-colors.ts, PositionBadge and PlayerLink exist. FAAB legs (trade_items.faab_amount) need a row the design lacks."
+ },
+ {
+  "feature": "Counter opens the builder pre-filled",
+  "kind": "restyle-only",
+  "detail": "counterSeed plus TradeBuilderView mode='counter' exist. The app always seeds; the design's empty builder from the card Counter is inconsistent."
+ },
+ {
+  "feature": "Tap other manager \u2192 team page; tap player \u2192 player card",
+  "kind": "restyle-only",
+  "detail": "TeamNameLink (league-cells.tsx) and PlayerLink with leagueCardContext (mini card, then full) exist. Don't replicate the prototype's z-index stacking bug."
+ },
+ {
+  "feature": "Segmented All/Trades control, toasts, bubble styling, avatars, tokens/fonts/scroll spacer",
+  "kind": "restyle-only",
+  "detail": "Segment (ui/tabs.tsx), toast/toaster, ChatRun, UserAvatar, and the m-* tokens plus font-inter (tailwind.config.ts, globals.css) exist. There are no team colour columns; use profile avatars or the initials fallback."
+ },
+ {
+  "feature": "Empty states for no conversations / no trades / no search matches",
+  "kind": "restyle-only",
+  "detail": "The design is blank. Extend the design language using the existing copy (messages-panel.tsx \"No messages yet\", TRADES_PENDING_EMPTY_COPY)."
+ },
+ {
+  "feature": "Compose new message (pencil) flow",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype only toasts \"Not part of this prototype\". There is no designed flow, and it would also need the DM backend."
+ },
+ {
+  "feature": "Thread info (i) button and \"+\" attachment button",
+  "kind": "out-of-scope-or-question",
+  "detail": "Both toast \"Not part of this prototype\"; there is no designed behaviour."
+ },
+ {
+  "feature": "Draft-pick trade assets (e.g. \"2026 3rd round pick\")",
+  "kind": "out-of-scope-or-question",
+  "detail": "spec-redraft-leagues.md line 402: \"no draft picks in redraft\". trade_items is player XOR FAAB. It would need a spec change and new schema."
+ },
+ {
+  "feature": "League chat bottom sheet (S5)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Unreachable in the prototype, and its send() writes to the last DM. The data exists (league_chat). Likely superseded by the group thread; needs a ruling."
+ },
+ {
+  "feature": "Per-league scoping of Messages and Trades",
+  "kind": "out-of-scope-or-question",
+  "detail": "README line 89 says DMs are per league member plus a board, but the prototype is single-league and static. Decide whether there is one group row per league and whether the inbox spans all leagues."
+ },
+ {
+  "feature": "Prototype behaviour defects",
+  "kind": "out-of-scope-or-question",
+  "detail": "Recommend not replicating: shared scroll offset across tabs, stale prevScr back target, composer hidden under the dock, profile hidden under the detail, Withdraw shown as Declined, Counter silently dropping picks, chip following the selected league, hard-coded \"Today\", \"Seen\" faked from the last sender."
+ },
+ {
+  "feature": "Dark mode (.fs-dark values for this area)",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme with no dark mode, but worktree HEAD 27d455b adds mobile-only dark m-* tokens and theme-store.ts citing \"Chris, 2026-10-15 \u2014 dark mode is mobile-only\". Confirm that this ruling supersedes CLAUDE.md before building dark values."
+ }
+]

@@ -4,6 +4,8 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { ResearchPlayersScreen, researchPosFromParam } from '@/components/mobile/players/research-players-screen'
 import { PlayersSpreadsheet } from '@/components/players/players-spreadsheet'
 
 const VALID_POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
@@ -11,16 +13,26 @@ const VALID_POSITIONS = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
 /**
  * Players browse — currently the same stat table as `/app/research` (which is
  * the canonical surface per decision D2). Kept as-is during the reskin;
- * consolidation is a post-reskin task.
+ * consolidation is a post-reskin task. On the mobile layout it is the
+ * FieldScout Mobile account Players tab, like `/app/research`.
  */
 export default function PlayersBrowserPage() {
   return (
-    <>
-      <PageHeader title="Players" />
-      <Suspense fallback={null}>
-        <Browser />
-      </Suspense>
-    </>
+    <ByLayout
+      desktop={
+        <>
+          <PageHeader title="Players" />
+          <Suspense fallback={null}>
+            <Browser />
+          </Suspense>
+        </>
+      }
+      mobile={
+        <Suspense fallback={null}>
+          <MobileBrowser />
+        </Suspense>
+      }
+    />
   )
 }
 
@@ -31,4 +43,9 @@ function Browser() {
     ? (param as (typeof VALID_POSITIONS)[number])
     : 'All'
   return <PlayersSpreadsheet initialPosition={position} />
+}
+
+function MobileBrowser() {
+  const searchParams = useSearchParams()
+  return <ResearchPlayersScreen initialPosition={researchPosFromParam(searchParams.get('position'))} />
 }

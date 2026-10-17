@@ -16,6 +16,7 @@ import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import type { ListWithDetails } from '@/hooks/use-lists'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import {
   colsForView,
   resolveOrg,
@@ -195,6 +196,7 @@ export function PublicListView({
           <ListToolbar
             org={org}
             onOrgChange={(next) => setOrg(list.id, next)}
+            numbered={isNumbered(list.ranking_mode)}
             view={display.view}
             onViewChange={(next) => setView(list.id, next)}
             cols={display.cols}
@@ -214,6 +216,7 @@ export function PublicListView({
               stats={stats}
               view={display.view}
               org={org}
+              numbered={isNumbered(list.ranking_mode)}
               showBudgetShare={org === 'budget'}
               budget={display.budget}
               handlers={handlers}

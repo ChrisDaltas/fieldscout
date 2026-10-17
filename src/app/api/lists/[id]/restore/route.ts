@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { isPrivateListCapError, isTeamListCapError, PRIVATE_LIMIT_BODY, TEAM_LIMIT_BODY } from '@/lib/lists/helpers'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface RouteParams {
@@ -39,6 +40,14 @@ export async function POST(_request: Request, { params }: RouteParams) {
     .update({ deleted_at: null, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (updateError) {
+    // Before migration 187 is pushed the database still caps private lists
+    // and teams.
+    if (isPrivateListCapError(updateError)) {
+      return NextResponse.json(PRIVATE_LIMIT_BODY, { status: 403 })
+    }
+    if (isTeamListCapError(updateError)) {
+      return NextResponse.json(TEAM_LIMIT_BODY, { status: 403 })
+    }
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
 

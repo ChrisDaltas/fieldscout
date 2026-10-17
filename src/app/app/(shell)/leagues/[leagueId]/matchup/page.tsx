@@ -1,5 +1,5 @@
-import { MatchupPage } from '@/components/leagues/matchup-view'
 import { weekFromParam } from '@/components/leagues/matchup-view-ops'
+import { MatchupRoute } from '@/components/mobile/league/match/matchup-route'
 
 export const metadata = { title: 'Matchups · FieldScout' }
 
@@ -22,5 +22,5 @@ interface MatchupRouteProps {
 export default async function LeagueMatchupRoute({ params, searchParams }: MatchupRouteProps) {
   const { leagueId } = await params
   const query = await searchParams
-  return <MatchupPage leagueId={leagueId} weekParam={weekFromParam(query.week)} />
+  return <MatchupRoute leagueId={leagueId} weekParam={weekFromParam(query.week)} />
 }

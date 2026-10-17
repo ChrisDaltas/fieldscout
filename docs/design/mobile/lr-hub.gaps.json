@@ -1,0 +1,222 @@
+[
+ {
+  "feature": "Experts source (consensus of N experts per type x scoring x position)",
+  "kind": "needs-new-backend",
+  "detail": "No expert feed exists. Big board's 'Expert consensus' (use-board-sources.ts useConsensusBoard) is actually the user cred-weighted consensus_rankings view. persona_source_rankings (021) is service-role only and its scraper (scripts/scrape-persona-sources.ts) has no sources, and the standing rule is RSS/YouTube only with no scraping. Needs a source plus ingestion, or a ruling to use AI personas."
+ },
+ {
+  "feature": "Per-expert ranks (Best expert, Worst expert, Std dev)",
+  "kind": "needs-new-backend",
+  "detail": "The breakdown cells and the agreement note need each expert's individual rank for every view. Nothing like this exists."
+ },
+ {
+  "feature": "Scout AI ranking per type x scoring x position",
+  "kind": "needs-new-backend",
+  "detail": "weekly-ranks-view.tsx handleResetToScoutAi is a 'coming soon' stub (TODO(scout-ai)). The AI generation pipeline (/api/lists/generate, lib/claude) and player_weekly_projections (136) could feed a generated and stored per-view ranking, but no job or table exists."
+ },
+ {
+  "feature": "Users source (average of N user rankings per type x scoring x position)",
+  "kind": "needs-new-backend",
+  "detail": "consensus_rankings (001:1020) is a materialized view with no REFRESH anywhere, so it is never refreshed. It averages overall_rank across all public lists of any type, with no week, position or scoring dimension and no total ranker count. Needs a new aggregate over typed ranking records."
+ },
+ {
+  "feature": "Typed user ranking record (Week N / ROS / Pre-draft x scoring x position, draft/saved/submitted)",
+  "kind": "needs-new-backend",
+  "detail": "Today: weekly_rankings table (001, unused by any code), big_board_weekly (cross-position, per week, no scoring) and the season big board (serving as both Pre draft and ROS). No ROS type, no scoring, no status. The Mine tab, Your rank, community rankings and Create all depend on it."
+ },
+ {
+  "feature": "Community ranking view (S4) with author card, title/meta and note",
+  "kind": "needs-new-backend",
+  "detail": "Depends on the typed ranking model. Public lists and their owners exist (use-explore-feed.ts), but not as type/position/scoring rankings with a submitted time."
+ },
+ {
+  "feature": "Author accuracy line ('#1 accuracy in 2025')",
+  "kind": "needs-new-backend",
+  "detail": "No accuracy grading job. The cred_scores and profiles.cred_rank columns and weekly_rankings.accuracy_score exist but stay empty (spec-submissions-cred.md)."
+ },
+ {
+  "feature": "Author follows count and Follow/Following pill",
+  "kind": "new-ui-on-existing-data",
+  "detail": "profiles.follower_count plus the follows table and useToggleFollow (use-follows.ts). Needs compact count formatting. Follows are keyed by author in the app."
+ },
+ {
+  "feature": "Author avatar (coloured circle with initial)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "profiles.avatar_url and ui/user-avatar.tsx exist; there is no avatar-colour field, so derive one or use the image."
+ },
+ {
+  "feature": "'Start my ranking from this' copy into the editor",
+  "kind": "needs-new-backend",
+  "detail": "Needs the ranking model plus a 'started from @x' field. The duplicate_list RPC exists only for lists. The prototype skips the existing-ranking check and saves a duplicate."
+ },
+ {
+  "feature": "Movement arrows (ROS/Pre-draft)",
+  "kind": "needs-new-backend",
+  "detail": "Needs a dated history for each source ranking. big_board_snapshots covers only the user's own board; ranking_history is never written. The prototype values are random."
+ },
+ {
+  "feature": "'Your rank' breakdown cell",
+  "kind": "needs-new-backend",
+  "detail": "Needs a lookup into the user's ranking with the same type, scoring and position; blocked by the ranking model."
+ },
+ {
+  "feature": "Info-line source details (expert count, user count, updated time)",
+  "kind": "needs-new-backend",
+  "detail": "Each source feed must expose a count and an updated-at time. None exist."
+ },
+ {
+  "feature": "Comparison columns and the \u00b13 red/green colour rule",
+  "kind": "needs-new-backend",
+  "detail": "The UI logic is trivial but blocked by the Experts, Scout AI and Users sources."
+ },
+ {
+  "feature": "Expanded breakdown panel (6 cells)",
+  "kind": "needs-new-backend",
+  "detail": "New UI that needs per-expert ranks and the user's ranking."
+ },
+ {
+  "feature": "Agreement note copy logic",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Pure copy rules on the breakdown data. Fix 'him' for K and D/ST."
+ },
+ {
+  "feature": "Pts / Avg / Pos rk to date",
+  "kind": "new-ui-on-existing-data",
+  "detail": "player_stats with lib/scoring/default; /api/players/builder already returns current_pts and current_games by scoring. Pos rk can be derived. DEF should display as 'D/ST'. The numbers should follow the selected scoring."
+ },
+ {
+  "feature": "Weekly opponent subline (TEAM vs/@ OPP)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "nfl_games schedule (lib/sync/schedule.ts, use-nfl-week-games.ts). The real schedule removes the prototype's DAL vs DAL and teammate-mismatch artefacts."
+ },
+ {
+  "feature": "ROS/Pre bye subline and weekly bye exclusion",
+  "kind": "new-ui-on-existing-data",
+  "detail": "players.bye_week (lib/sync/bye-weeks.ts)."
+ },
+ {
+  "feature": "36px headshot with team-colour ring and initials fallback",
+  "kind": "restyle-only",
+  "detail": "PlayerAvatarImage (players/player-image.tsx) and NFL_TEAM_COLORS already match the TC hexes. D/ST shows a team logo in the app, initials in the prototype."
+ },
+ {
+  "feature": "Short player names ('S. Barkley')",
+  "kind": "restyle-only",
+  "detail": "abbreviateName in draft/draft-board-ops.ts matches. About 17 of 54 names ellipsise in the 67px name column."
+ },
+ {
+  "feature": "Auto-tiering by score gaps",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Pure util (gap > 1.55 x mean, at least 2 per tier, at most 8 tiers), but each source must supply a numeric score. Big board's tierBands is a different, proportional algorithm."
+ },
+ {
+  "feature": "Tier header row (colour cycle, 'N players')",
+  "kind": "restyle-only",
+  "detail": "TIER_RAMP exists in lists/bucket-colors.ts. Use the hub's colour cycle and fix the '1 players' plural."
+ },
+ {
+  "feature": "Mobile root header (back circle + blue Create)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "app-shell.tsx renders TopNav plus BottomTabs on mobile; there is no per-screen root header. CreateMenu in top-nav.tsx covers only lists and leagues."
+ },
+ {
+  "feature": "Source tabs with underline and a dynamic @author tab",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Replaces big-board-dashboard's source Select. Hidden in the #mine view."
+ },
+ {
+  "feature": "Sticky filter bar (type pill, scoring pill, QB-D/ST chips, horizontal scroll)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Today: a Segment with QB/RB/WR/TE/FLEX plus WeekTabs (weekly-ranks), and big-board Selects. The hub's chip set adds K and D/ST and drops FLEX and ALL."
+ },
+ {
+  "feature": "Type and scoring menu popovers (above the dock, transparent backdrop)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "ui/popover.tsx. Weeks should come from getCurrentNflWeek. The menu layer must stack above the tab bar, and outside taps only close it."
+ },
+ {
+  "feature": "Info line (dot, source text, comparison header)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "New UI. The text depends on the source metadata; the Users and community lines truncate at 390px."
+ },
+ {
+  "feature": "Bottom tab bar rebuild (Home / Community / Leagues-or-Players / Profile avatar)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "bottom-tabs.tsx is the old 5-tab bar (Home/Lists/Players/Search/More, 64px, lime). Needs the 84px translucent dock, the content-behind overlay and the profile avatar. Community and Leagues are flag-gated."
+ },
+ {
+  "feature": "Dock overlay and scroll container (84px spacer, hidden scrollbar)",
+  "kind": "restyle-only",
+  "detail": "The m-bar-a token already landed at HEAD 27d455b."
+ },
+ {
+  "feature": "Dark mode tokens for the hub",
+  "kind": "restyle-only",
+  "detail": "The m-* tokens, theme-store and data-theme landed at HEAD. Open: the low-contrast #4D4D4D ink underline and pills, and the unused dark success/danger values."
+ },
+ {
+  "feature": "Toast (mobile position and style)",
+  "kind": "restyle-only",
+  "detail": "ui/toast.tsx exists; the hub never triggers a toast."
+ },
+ {
+  "feature": "Loading / empty / error / offline states",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Missing from the prototype. Extend the design language (CLAUDE.md) using ui/skeleton.tsx and the existing error patterns; copy is needed."
+ },
+ {
+  "feature": "Real routes for hub entry points (#view-, #mine, #new-ranking, #lists, #rankings) with browser history",
+  "kind": "new-ui-on-existing-data",
+  "detail": "No /app/rankings route exists. The prototype reads the hash once and keeps no history. Build real routes with query params and a store so Back and the Profile tab keep hub state."
+ },
+ {
+  "feature": "Create (+) to New ranking step 1, pre-filled from the hub",
+  "kind": "needs-new-backend",
+  "detail": "Needs the ranking model; New ranking is its own section."
+ },
+ {
+  "feature": "Mine tab (S5) and the #mine view (S6)",
+  "kind": "needs-new-backend",
+  "detail": "The body is the My rankings section, which needs the ranking model. profile/page.tsx has no 'My stuff' rankings rows."
+ },
+ {
+  "feature": "Entry points into a community ranking (Community card, followed-author updates, search, notifications, Profile My stuff)",
+  "kind": "needs-new-backend",
+  "detail": "api/search/community covers only users and lists; 019 list_updated notifications fire only for pins; the explore feed lists lists. Rankings must become entities."
+ },
+ {
+  "feature": "Row tap vs. the player mini-card rule",
+  "kind": "out-of-scope-or-question",
+  "detail": "A hub row tap expands the comparison and never reaches a player card, which conflicts with 'every player click opens the mini card first'. Suggest: row expands, photo or name opens the mini card."
+ },
+ {
+  "feature": "Back chevron destination and which tab bar wins",
+  "kind": "out-of-scope-or-question",
+  "detail": "In the prototype Back lands on League > Match (the handler is named goProfile; fromComm is unused). This file's bar shows Leagues, the main file's shows Players, and they differ in sizes and active state."
+ },
+ {
+  "feature": "Rankings in launch scope / relationship to the weekly-ranks, big-board and consensus surfaces",
+  "kind": "out-of-scope-or-question",
+  "detail": "All three are flag-gated off (feature-flags.ts). Does the hub replace them? It drops ADP, Auction, persona sources, draft labels and the public server-rendered /consensus page. Where do AI personas go (CLAUDE.md: keep them)?"
+ },
+ {
+  "feature": "Pre-draft offered in season; Half PPR; week range; 24-row cap",
+  "kind": "out-of-scope-or-question",
+  "detail": "The hub shows Pre-draft in season (the README hides it), has only PPR/Std (the app has Half), hard-codes W5/W6 (New ranking allows W5-8) and caps at 24 rows."
+ },
+ {
+  "feature": "Follow keyed by ranking vs. author; duplicate on copy; 'updated' vs. 'submitted' and the change list",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype keys follows by ranking id while the main app keys by author. Copying saves a duplicate ranking. Community update data (N changes, moves) isn't shown, and the arrows contradict the feed."
+ },
+ {
+  "feature": "Name and info-line truncation at 390px; author players on bye silently dropped",
+  "kind": "out-of-scope-or-question",
+  "detail": "About a third of short names ellipsise, and the Users ROS/Pre and community info lines truncate. A weekly community ranking would silently drop an author's player who is on bye."
+ },
+ {
+  "feature": "Status bar and jump panel",
+  "kind": "out-of-scope-or-question",
+  "detail": "Presentation chrome from the prototype; do not build."
+ }
+]

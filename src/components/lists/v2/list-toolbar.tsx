@@ -22,7 +22,7 @@ import {
   type ListView,
 } from '@/stores/list-display-store'
 
-import { ORG_OPTIONS } from './list-buckets'
+import { orgOptionsFor } from './list-buckets'
 import { STAT_CATALOG } from './list-stats'
 
 /**
@@ -48,6 +48,11 @@ const VIEW_META: Record<ListView, { label: string; icon: 'list' | 'table' | 'lay
 interface ListToolbarProps {
   org: ListOrg
   onOrgChange: (org: ListOrg) => void
+  /**
+   * Whether the list's rows are drawn numbered (`isNumbered(ranking_mode)`).
+   * Off — a plain or tier-only list — names the flat grouping "Unranked".
+   */
+  numbered: boolean
   view: ListView
   onViewChange: (view: ListView) => void
   cols: readonly string[]
@@ -69,6 +74,7 @@ interface ListToolbarProps {
 export function ListToolbar({
   org,
   onOrgChange,
+  numbered,
   view,
   onViewChange,
   cols,
@@ -79,7 +85,8 @@ export function ListToolbar({
   canEdit,
   onAddPlayers,
 }: ListToolbarProps) {
-  const activeOrg = ORG_OPTIONS.find((option) => option.id === org) ?? ORG_OPTIONS[0]
+  const orgOptions = orgOptionsFor(numbered)
+  const activeOrg = orgOptions.find((option) => option.id === org) ?? orgOptions[0]
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -94,7 +101,7 @@ export function ListToolbar({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[136px]">
-          {ORG_OPTIONS.map((option) => (
+          {orgOptions.map((option) => (
             <DropdownMenuItem key={option.id} onSelect={() => onOrgChange(option.id)}>
               {option.label}
             </DropdownMenuItem>

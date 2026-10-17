@@ -1,0 +1,217 @@
+[
+ {
+  "feature": "Mobile Community screen layout (in-scroller header/tabs/pills, 84px dock spacer)",
+  "kind": "restyle-only",
+  "detail": "/app/explore is a desktop TwoColumnLayout (explore/page.tsx). No mobile pass yet (app-shell.tsx: 'until the mobile pass'). Gated by featureFlags.community."
+ },
+ {
+  "feature": "Header A1: logo + wordmark, round Search, blue round Create (+)",
+  "kind": "restyle-only",
+  "detail": "Pieces exist in top-nav.tsx (LogoTile, Wordmark, CreateMenu). On mobile the search is hidden and Create is a stroke dropdown button."
+ },
+ {
+  "feature": "Inline feed search (A2) matching title, handle, description, tags and players",
+  "kind": "new-ui-on-existing-data",
+  "detail": "/api/search/community matches list title and username only. Widen to description, list_tags and list_players, and add an in-feed search state with Cancel."
+ },
+ {
+  "feature": "Tabs: For you / Following / Start or sit / Rankings / Lists",
+  "kind": "out-of-scope-or-question",
+  "detail": "App has Trending / Newest / Following. Need a ruling on dropping Trending/Newest and on how For you is ranked."
+ },
+ {
+  "feature": "Topic pills incl. player pills with headshots and the Injuries trend pill",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Tags exist (useTags trending). Filtering by player needs a list_players join. Who curates the topic list, and what Injuries means, are open."
+ },
+ {
+  "feature": "'Updated by people you follow' block with move summary and unread dot",
+  "kind": "needs-new-backend",
+  "detail": "follows + lists.updated_at exist, but ranking_history is never written (no app code or trigger), and there is no per-viewer read state. The list_updated notification goes to pinners, not author followers."
+ },
+ {
+  "feature": "Start/sit poll cards: Start/Sit N of M, multi-select, Vote, results bars/percentages, vote footer",
+  "kind": "needs-new-backend",
+  "detail": "start_sit_questions/start_sit_votes are 2-player A/B only, with no API routes. /app/start-or-sit/* are PlaceholderPage. Needs N-of-M options, sit mode, per-option aggregates and vote APIs."
+ },
+ {
+  "feature": "Trade polls (Gives/Gets, instant Accept/Decline vote, results)",
+  "kind": "needs-new-backend",
+  "detail": "No community trade-poll model. League trades/trade_votes are unrelated."
+ },
+ {
+  "feature": "Roster attached on polls (snapshot of poster's league roster, highlighted players)",
+  "kind": "needs-new-backend",
+  "detail": "No snapshot stored with a post. League rosters exist but are flag-gated."
+ },
+ {
+  "feature": "Start or sit carousel shelf (286px equal-height cards, See all)",
+  "kind": "needs-new-backend",
+  "detail": "Depends on the poll backend."
+ },
+ {
+  "feature": "Closed-poll exclusion and close-at-kickoff rule",
+  "kind": "needs-new-backend",
+  "detail": "Only voting_closes_at on the 2-player schema."
+ },
+ {
+  "feature": "Rankings this week shelf + ranking rows (lead-headshot tile, follows meta, top-3 line)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Rankings = lists with ranking_mode != 'unranked'. follower_count and list_players exist. The feed query needs top players."
+ },
+ {
+  "feature": "Rank filter rows: type (Weekly/ROS/Pre-draft) x position x scoring",
+  "kind": "needs-new-backend",
+  "detail": "position_filter and scoring_system_id exist. Weekly can come from big_board_weekly and pre-draft from is_big_board, but nothing marks a list Rest of season. Also show an empty state when the chips exclude everything (A8 quirk)."
+ },
+ {
+  "feature": "Lists for you masonry (2-column, variable cover heights, collage of 4 headshots, byline)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The feed query lacks players and links. cover-tile.tsx renders a wide band with stacked headshots, not a centred 2x2 collage."
+ },
+ {
+  "feature": "List card video badge and YouTube thumbnail covers",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list_links (080) has kind='video', url, title, duration_label. Loading i.ytimg.com thumbnails needs a ruling: list-details-tab.tsx deliberately shows a placeholder, and there are no image hosts in next.config."
+ },
+ {
+  "feature": "Grouped mode with section headings",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Feed is a flat row list. Polls section depends on the backend."
+ },
+ {
+  "feature": "Empty states A6/A7 copy and layout",
+  "kind": "restyle-only",
+  "detail": "explore-feed.tsx has following and topic empty states with different copy."
+ },
+ {
+  "feature": "Detail page cover (230px collage, floating back button) and mobile layout",
+  "kind": "restyle-only",
+  "detail": "Public list route /u/[username]/lists/[slug] and /app/lists/[id] exist (public-list-view.tsx)."
+ },
+ {
+  "feature": "Detail Follow pill and author follower count",
+  "kind": "new-ui-on-existing-data",
+  "detail": "FollowButton and follower_count exist but aren't on the list detail hero."
+ },
+ {
+  "feature": "Detail kind pill 'List' / 'Ranking \u00b7 PPR'",
+  "kind": "new-ui-on-existing-data",
+  "detail": "ranking_mode and scoring_system_id exist."
+ },
+ {
+  "feature": "Detail Save/Saved",
+  "kind": "restyle-only",
+  "detail": "Exists as Pin (pin-list-button.tsx, list_favorites). Renaming to Save is a copy call."
+ },
+ {
+  "feature": "Detail Videos shelf (220px cards, play badge, duration chip)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "list_links rendered as rows in the Details tab today. Thumbnail has the same ytimg question."
+ },
+ {
+  "feature": "Detail player rows with projection",
+  "kind": "restyle-only",
+  "detail": "Data exists. Conflict: D497 makes projections dark blue site-wide, but the design uses t1."
+ },
+ {
+  "feature": "Ranking detail move column (+4 / -3)",
+  "kind": "needs-new-backend",
+  "detail": "ranking_history exists but is never written."
+ },
+ {
+  "feature": "Create sheet (Start or sit / Ranking / List rows)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "CreateMenu offers List + league. A bottom Sheet primitive exists. List/Ranking creation exists via list-form-dialog; the Start or sit row needs the poll backend."
+ },
+ {
+  "feature": "Post-to-Community flow (prepend, reset filters, toast 'Posted to Community')",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Public lists appear in Newest automatically. Polls need the backend."
+ },
+ {
+  "feature": "List cover colour (author colour / composer swatch)",
+  "kind": "out-of-scope-or-question",
+  "detail": "lists has no colour column, and Chris's 2026-08-11 ruling (cover-tile.tsx) makes covers position-group coloured."
+ },
+ {
+  "feature": "Author identity colour avatars",
+  "kind": "out-of-scope-or-question",
+  "detail": "profiles has avatar_url only; UserAvatar shows photo/initials on grey. Should colour be stored or hashed?"
+ },
+ {
+  "feature": "Likes, comments, top scouts, trending tags absent from the design",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app has LikeButton, comment counts, TopScoutsCard, TrendingTagsCard and a comments tab. Keep or drop them on mobile?"
+ },
+ {
+  "feature": "FSHeadshot team-colour ring",
+  "kind": "restyle-only",
+  "detail": "PlayerAvatarImage has an initials fallback but no team ring. Team colours exist in lib/nfl-team-colors."
+ },
+ {
+  "feature": "Toast timing/position (1800ms, bottom 100, replace-on-new)",
+  "kind": "restyle-only",
+  "detail": "ui/toast.tsx is already an ink pill."
+ },
+ {
+  "feature": "Bottom tab bar Home / Community / Players / Profile-avatar",
+  "kind": "new-ui-on-existing-data",
+  "detail": "bottom-tabs.tsx is Home / Lists / Players / Search / More."
+ },
+ {
+  "feature": "Tab bar IA change (drop Lists/Search/More, add Community)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Community and start-or-sit are flag-gated off for the 2026 go-live."
+ },
+ {
+  "feature": "Global search: person result opens Community filtered by handle; poll results",
+  "kind": "out-of-scope-or-question",
+  "detail": "command-palette sends users to their profile (memory rule: usernames always link to profile). Poll results need the backend."
+ },
+ {
+  "feature": "Device chrome: status bar, notch, home indicator",
+  "kind": "out-of-scope-or-question",
+  "detail": "Prototype-only. Don't build."
+ },
+ {
+  "feature": "League sub-page overlay header + G2 settings read-only rows",
+  "kind": "restyle-only",
+  "detail": "settings-panel.tsx already renders read-only for non-commissioners. Leagues are flag-gated."
+ },
+ {
+  "feature": "G1 team rename with counter/dirty Save",
+  "kind": "restyle-only",
+  "detail": "POST /api/leagues/[id]/teams/[tid]/name + use-rename-own-team exist."
+ },
+ {
+  "feature": "G1 team avatar colour + Upload photo",
+  "kind": "needs-new-backend",
+  "detail": "teams has no avatar/colour column."
+ },
+ {
+  "feature": "G3 Draft results by round with owner",
+  "kind": "new-ui-on-existing-data",
+  "detail": "draft-recap.tsx + draft_picks. Per-round chip list is new. Add an empty-round state."
+ },
+ {
+  "feature": "G4 current-season H2H table + Record/PF/PA KPIs",
+  "kind": "new-ui-on-existing-data",
+  "detail": "stats-page.tsx has H2H W-L/PF/PA for the one season."
+ },
+ {
+  "feature": "G4 All-time/past-season chips and Start/sit accuracy (optimal lineup) KPI",
+  "kind": "needs-new-backend",
+  "detail": "One season per league. No optimal-lineup computation."
+ },
+ {
+  "feature": "G5 Previous seasons",
+  "kind": "needs-new-backend",
+  "detail": "No league renewal/archive; leagues.season is single."
+ },
+ {
+  "feature": "Dark mode tokens and the listed dark defects",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme, but worktree commit 27d455b adds mobile-only dark tokens (--m-*), theme-store and a switch (cites a Chris 2026-10-15 ruling). The defects (white check on dark, t1 swatch/cover turning white, t2/t3 avatars) need decisions."
+ }
+]

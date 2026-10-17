@@ -185,6 +185,9 @@ export interface MyDraftList {
   player_count: number | null
   is_private: boolean | null
   is_big_board: boolean | null
+  /** The list's Ranked and Tiers switches (`isNumbered` / `hasTiers`) —
+   *  the room's cheat sheet and pool overlay follow them (§8.9, v2.16.93). */
+  ranking_mode: string | null
   scoring_system_id: string | null
   updated_at: string | null
 }
@@ -205,7 +208,7 @@ export function useMyDraftLists(userId: string | undefined, enabled = true) {
       const { data, error } = await supabase
         .from('lists')
         .select(
-          'id, title, position_filter, player_count, is_private, is_big_board, scoring_system_id, updated_at',
+          'id, title, position_filter, player_count, is_private, is_big_board, ranking_mode, scoring_system_id, updated_at',
         )
         .eq('owner_id', userId!)
         .is('deleted_at', null)

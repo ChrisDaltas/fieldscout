@@ -21,6 +21,8 @@ const ALLOWED = new Map<string, string>([
   ['src/app/app/(shell)/styleguide/page.tsx', 'colour swatches on the styleguide'],
   ['src/components/landing/landing-bits.tsx', 'v13 landing PosTag — landing ships as designed (2026-10-02), already strokeless'],
   ['src/components/draft/draft-pick.tsx', 'draft board cells (CELL_FILL) — the whole made cell is position-filled (v7 Draft Room), not a tag'],
+  ['src/components/mobile/ui/avatar-colors.ts', 'mobile avatar fills (teams, managers, authors, leagues) — the handoff palettes borrow the position hues; an avatar circle, not a tag'],
+  ['src/components/mobile/lists/lists-model.ts', 'mobile list cover colour (COVER_BG) — a cover, not a tag (as list-thumbnail)'],
 ])
 
 function walk(dir: string, out: string[] = []): string[] {

@@ -24,6 +24,7 @@ import {
   type ListWithTags,
 } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import {
   resolveOrg,
@@ -47,7 +48,7 @@ import {
   bucketHeading,
   buildBuckets,
   canReorder,
-  ORG_OPTIONS,
+  orgOptionsFor,
   rankMap,
   type Bucket,
 } from './list-buckets'
@@ -242,7 +243,7 @@ import { useListDropCommit } from './use-list-drop'
  *
  * | Piece | Comes from |
  * | --- | --- |
- * | grouping / bucketing / band colour | `list-buckets.ts` (`buildBuckets`, `bucketHeading`, `rankMap`, `ORG_OPTIONS`, `canReorder`) |
+ * | grouping / bucketing / band colour | `list-buckets.ts` (`buildBuckets`, `bucketHeading`, `rankMap`, `orgOptionsFor`, `canReorder`) |
  * | checkbox, name, drop gap, empty state | `list-row-parts.tsx` |
  * | position badge | `players/position-badge.tsx` |
  * | drag gesture and the gap model | `use-list-drag.tsx` (LV.4, D5) |
@@ -573,6 +574,9 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
   const { drafted, toggleDrafted } = useDraftMode(listId)
 
   const org: ListOrg = resolveOrg(display.org, list?.ranking_mode)
+  // `#N` only on a numbered list — the one rule, phone and desktop (Chris,
+  // 2026-10-16): a plain or tier-only list keeps its order, without numbers.
+  const numbered = isNumbered(list?.ranking_mode)
   const entries = list?.players
   // Every chosen stat, as the list and table views do — card view is the one
   // that truncates to three. Widening the window reveals more of them.
@@ -1065,6 +1069,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
             onChooseStats={() => setStatsOpen(true)}
             onToggleMinimized={() => setMinimized(listId, !minimized)}
             setOrg={setOrg}
+            numbered={numbered}
           />
 
           {!mobile && (
@@ -1092,7 +1097,7 @@ export function ListWindow({ listId, stackIndex, zIndex, isTop }: ListWindowProp
               error={detail.isError ? detail.error : null}
               stats={stats}
               org={org}
-              ranks={ranks}
+              ranks={numbered ? ranks : null}
               drafted={drafted}
               onToggleDrafted={toggleDrafted}
               onOpenPlayer={openPlayer}
@@ -1235,6 +1240,7 @@ function WindowMenu({
   onChooseStats,
   onToggleMinimized,
   setOrg,
+  numbered,
 }: {
   listId: string
   mobile: boolean
@@ -1242,6 +1248,8 @@ function WindowMenu({
   onChooseStats: () => void
   onToggleMinimized: () => void
   setOrg: (listId: string, org: ListOrg) => void
+  /** `isNumbered` — off (a plain or tier-only list) names the flat grouping "Unranked". */
+  numbered: boolean
 }) {
   return (
     <DropdownMenu>
@@ -1266,7 +1274,7 @@ function WindowMenu({
             <DropdownMenuSeparator />
           </>
         )}
-        {ORG_OPTIONS.map((option) => (
+        {orgOptionsFor(numbered).map((option) => (
           <DropdownMenuItem key={option.id} onSelect={() => setOrg(listId, option.id)}>
             {option.label}
           </DropdownMenuItem>
@@ -1355,7 +1363,8 @@ function ListWindowRows({
   error: Error | null
   stats: StatDef[]
   org: ListOrg
-  ranks: Map<string, number>
+  /** Each row's `#N`; `null` on a list without numbers (Ranked off). */
+  ranks: Map<string, number> | null
   drafted: ReadonlySet<string>
   onToggleDrafted: (playerId: string) => void
   onOpenPlayer: (entry: ListPlayerWithPlayer) => void
@@ -1385,7 +1394,8 @@ function ListWindowRows({
       {/* 28 × 0.8, sticky, over the 7% wash the prototype gives it. */}
       <div className="sticky top-0 z-[3] flex h-[22px] items-center gap-1.5 border-b border-n-4 bg-white/[0.07] px-2 text-[9px] font-semibold text-n-3">
         <span className="w-[14px] shrink-0" />
-        <span className="w-[21px] shrink-0">#</span>
+        {/* The `#` caption goes with the rows' numbers, or it labels nothing. */}
+        {ranks !== null && <span className="w-[21px] shrink-0">#</span>}
         <span className="min-w-0 flex-1">Player</span>
         {stats.map((stat) => (
           <span key={stat.id} title={stat.full} className="w-[48px] shrink-0 text-right">
@@ -1433,7 +1443,7 @@ function ListWindowRows({
                 )}
                 <ListWindowRow
                   entry={entry}
-                  rank={ranks.get(entry.id) ?? 0}
+                  rank={ranks ? (ranks.get(entry.id) ?? 0) : null}
                   stats={stats}
                   drafted={drafted.has(entry.player_id)}
                   onToggleDrafted={() => onToggleDrafted(entry.player_id)}
@@ -1490,7 +1500,8 @@ function ListWindowRow({
   dragging,
 }: {
   entry: ListPlayerWithPlayer
-  rank: number
+  /** `null` on a list without numbers: no `#N` cell. */
+  rank: number | null
   stats: StatDef[]
   drafted: boolean
   onToggleDrafted: () => void
@@ -1524,7 +1535,7 @@ function ListWindowRow({
           and stops there (D12). `border-white/75` is the LAW's stroke for this
           surface, and the only per-instance class the inversion needs. */}
       <DraftedCheckbox drafted={drafted} onToggle={onToggleDrafted} className="border-white/75" />
-      <span className="fs-num w-[21px] shrink-0 text-[9px] font-semibold text-n-3">#{rank}</span>
+      {rank !== null && <span className="fs-num w-[21px] shrink-0 text-[9px] font-semibold text-n-3">#{rank}</span>}
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <PlayerName
           name={entry.player.full_name}

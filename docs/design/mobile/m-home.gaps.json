@@ -1,0 +1,157 @@
+[
+ {
+  "feature": "Dark mode for mobile Home and Notifications",
+  "kind": "out-of-scope-or-question",
+  "detail": "CLAUDE.md says single theme, no dark mode. Commit 27d455b in the worktree adds dark --m-* tokens, stores/theme-store.ts (localStorage 'fieldscout-theme') and a data-theme switch, with comments citing 'Chris, 2026-10-15 \u2014 dark mode is mobile-only'. CLAUDE.md needs reconciling, no toggle UI exists yet, and the dark IR pill renders white on white (Q6)."
+ },
+ {
+  "feature": "Status bar and home indicator phone chrome",
+  "kind": "out-of-scope-or-question",
+  "detail": "Presentation-only in the prototype, and the indicator is invisible there. The web build has no safe-area-inset handling anywhere in src."
+ },
+ {
+  "feature": "Pressed (:active) states on tiles, league cards and notification rows",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype declares pressed backgrounds but never renders them; the app uses hover states only (Q21)."
+ },
+ {
+  "feature": "Messages button and DM unread badge on the Home header",
+  "kind": "needs-new-backend",
+  "detail": "No DM schema or API exists. rail/messages-panel.tsx is mock data behind featureFlags.messages, and there is no mobile entry point."
+ },
+ {
+  "feature": "My stuff Lists tile with live count, opening a Profile Lists segment",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The lists count can be computed from the lists table. /app/profile is 'My stats' and has no Lists / Rankings / Start-Sit segments."
+ },
+ {
+  "feature": "My stuff Rankings and Start/Sit tiles",
+  "kind": "out-of-scope-or-question",
+  "detail": "Counts can be computed from weekly_rankings.submitted_at and start_sit_questions.voting_closes_at/resolved_at, but both routes redirect to /app while the weeklyRanks and startOrSit flags are off at launch."
+ },
+ {
+  "feature": "Matchups 'Week N' header",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The current week is available from nfl_weeks / use-schedule; the prototype has a literal."
+ },
+ {
+  "feature": "League matchup card header (avatar, 'N-team scoring \u00b7 Week N')",
+  "kind": "new-ui-on-existing-data",
+  "detail": "LeagueIndexCard shows name, season, team count, role and status. MyLeagueRow lacks scoring label, week, team name and record, which are in leagues, scoring_systems, teams and standings."
+ },
+ {
+  "feature": "League card live block (teams, records, live points, projections)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Comes from useMatchups scores, use-standings records, teams, and projectedTotal over league_player_values (matchup-view.tsx). A per-user summary endpoint over the existing tables would avoid N\u00d73 requests."
+ },
+ {
+  "feature": "Win probability bar and '% win' on league cards",
+  "kind": "needs-new-backend",
+  "detail": "No win-probability model exists. WinProbMeter in league-cells.tsx is unused, and matchup-view.render.test.ts pins 'no win probability'."
+ },
+ {
+  "feature": "Red alert dot on league card",
+  "kind": "out-of-scope-or-question",
+  "detail": "No trigger is defined (Q9)."
+ },
+ {
+  "feature": "League avatar colour assignment",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app crest is an ink tile or avatar_url. There is no rule for which colour a league gets, and Home (white text) and the switcher (dark text) conflict (Q12)."
+ },
+ {
+  "feature": "Trending players Adds/Drops with add/drop counts and % rostered",
+  "kind": "needs-new-backend",
+  "detail": "The current card shows Risers/Fallers from projection vs last season (TODO(data)). No add/drop or rostered-% source is synced, and players has no rostered column."
+ },
+ {
+  "feature": "Trending 'See all' to League Players with Available + Trending",
+  "kind": "needs-new-backend",
+  "detail": "leagues/players-page.tsx has a free_agents scope but no trending section, and it depends on trend data."
+ },
+ {
+  "feature": "Injury news feed with recency ('2h') and newest-first sort",
+  "kind": "needs-new-backend",
+  "detail": "injury-news-card.tsx is hard-coded mock data. players.status, injury_* and practice_participation exist (migration 034), but there is no status-change log or timestamp, and no news notes."
+ },
+ {
+  "feature": "'On your roster \u00b7 {team}' line on injury rows",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Overlap of league_rosters and teams across the user's leagues (leagues flag-gated)."
+ },
+ {
+  "feature": "Injury 'See all' destination",
+  "kind": "out-of-scope-or-question",
+  "detail": "The prototype toasts and no destination is defined."
+ },
+ {
+  "feature": "App-only Home content on mobile (Scout AI, Top waiver adds, Recently viewed, AI experts shelf)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Not in the design. CLAUDE.md requires keeping and restyling the AI and persona features, so where they sit on mobile Home needs a decision."
+ },
+ {
+  "feature": "Outside-league tab bar (Home / Community / Players / Profile)",
+  "kind": "out-of-scope-or-question",
+  "detail": "bottom-tabs.tsx has Home / Lists / Players / Search / More. Community is flag-off at launch and the Lists tab would be dropped."
+ },
+ {
+  "feature": "In-league tab bar shown on Notifications",
+  "kind": "out-of-scope-or-question",
+  "detail": "The app has no in-league bottom bar, and the spec shows it on Notifications with nothing active even when arriving from Home (Q3)."
+ },
+ {
+  "feature": "League Menu sheet (settings, scoring, playoffs, draft results, history, previous seasons)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "more-sheet.tsx is a generic More sheet. League settings, schedule, draft and standings routes exist; League history and Previous seasons have no route."
+ },
+ {
+  "feature": "Notifications 'Mark all read' button",
+  "kind": "new-ui-on-existing-data",
+  "detail": "POST /api/notifications/read already marks all read. The page currently auto-marks everything read on open, which contradicts the spec's unread state (Q2/Q18)."
+ },
+ {
+  "feature": "Tap a notification row to mark it read",
+  "kind": "new-ui-on-existing-data",
+  "detail": "The API accepts ids and the desktop rail panel already marks a row read on click; the mobile page doesn't."
+ },
+ {
+  "feature": "Trade-offer notification deep link to trade detail (Accept / Decline / Counter)",
+  "kind": "new-ui-on-existing-data",
+  "detail": "Trade notifications carry trade_id. notificationHref only goes to /app/leagues/[id]/trades (the list). TradeCard in trade-center.tsx holds the actions."
+ },
+ {
+  "feature": "'Message @user' from trade detail",
+  "kind": "needs-new-backend",
+  "detail": "Needs DMs, which have no backend."
+ },
+ {
+  "feature": "Followed user updated a ranking notification and deep link",
+  "kind": "needs-new-backend",
+  "detail": "Only list_updated (notify_list_followers, migrations 019/038) exists. There are no ranking-follow notifications, Rankings is flag-off, and the route and its Back are undefined (Q19)."
+ },
+ {
+  "feature": "Player scored a TD notification",
+  "kind": "needs-new-backend",
+  "detail": "No per-play live scoring notifications exist; score_fanout is an internal queue."
+ },
+ {
+  "feature": "Injury affecting your lineup notification",
+  "kind": "needs-new-backend",
+  "detail": "Needs a job that compares injury status changes with lineups."
+ },
+ {
+  "feature": "Lineup lock reminder notification",
+  "kind": "needs-new-backend",
+  "detail": "Needs a scheduled reminder job."
+ },
+ {
+  "feature": "Prototype edge cases (profile under trade detail, Message path exit, Home under Community overlay, toast-only rows)",
+  "kind": "out-of-scope-or-question",
+  "detail": "Prototype artefacts. Decide the intended behaviour (Q23, Q24)."
+ },
+ {
+  "feature": "Small hit targets ('Mark all read', 'See all')",
+  "kind": "out-of-scope-or-question",
+  "detail": "These are 16\u201317px tall, below the README's 30px minimum (Q22)."
+ }
+]

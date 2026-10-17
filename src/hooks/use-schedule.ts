@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { jsonInit, sendLeagueAction } from '@/lib/leagues/api/client-fetch'
+import { POSTGREST_ROW_CAP } from '@/lib/leagues/api/inseason-reads'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { mintScheduleSeed } from '@/lib/leagues/settings/league-settings'
@@ -60,9 +61,25 @@ export interface ScheduleWeek {
  *  one hand-typed row for the table, not two). */
 export type ScheduleMatchup = Omit<MatchupRow, 'updated_at'>
 
+/** A team's stored result against the League Median for one week
+ *  (`team_week_results`, 109) — written only when the week finalizes, and
+ *  only in a league that scores a median (117), so the read takes just the
+ *  rows that carry one. The streak counts it (`streak-ops`, Chris
+ *  2026-10-16). */
+export interface ScheduleMedianResult {
+  season: number
+  week: number
+  team_id: string
+  median_result: string | null
+  is_final: boolean
+}
+
 export interface LeagueSchedule {
   weeks: ScheduleWeek[]
   matchups: ScheduleMatchup[]
+  /** Always present from the read; optional only for fixtures that predate
+   *  it (`streak-ops` reads a missing list as no median results). */
+  median_results?: ScheduleMedianResult[]
 }
 
 /** The league's whole season: the week ladder + every pairing, member-RLS.
@@ -76,14 +93,21 @@ export interface LeagueSchedule {
  *  trip on the member path; a future consumer mounting it outside a league
  *  page inherits the hazard and F249's one-line cure (a browser-side
  *  `is_league_member` RPC before the read). A transport error THROWS rather
- *  than rendering as an empty season (CLAUDE.md's loud-emptiness rule). */
+ *  than rendering as an empty season (CLAUDE.md's loud-emptiness rule).
+ *
+ *  The third read is the league's stored median results (member-SELECT, 109) —
+ *  the streak's other half (`streak-ops`). No extra realtime carrier: a
+ *  median result is written in the same transaction that flips the week's
+ *  matchups (and `league_weeks`) to final, or re-scores them, and those
+ *  events already refetch this read; `team_week_results` also fires on
+ *  every provisional score write, which would double the refetches. */
 export function useSchedule(leagueId: string | undefined) {
   return useQuery({
     queryKey: scheduleKeys.all(leagueId ?? 'none'),
     enabled: Boolean(leagueId),
     queryFn: async (): Promise<LeagueSchedule> => {
       const supabase = createBrowserClient()
-      const [weeksRes, matchupsRes] = await Promise.all([
+      const [weeksRes, matchupsRes, medianRes] = await Promise.all([
         supabase
           .from('league_weeks')
           .select('id, season, week, status, finalized_at, median_score')
@@ -99,12 +123,28 @@ export function useSchedule(leagueId: string | undefined) {
           .order('week', { ascending: true })
           .order('round_type', { ascending: true })
           .order('id', { ascending: true }),
+        supabase
+          .from('team_week_results')
+          .select('season, week, team_id, median_result, is_final')
+          .eq('league_id', leagueId!)
+          .not('median_result', 'is', null)
+          .order('season', { ascending: true })
+          .order('week', { ascending: true })
+          .order('team_id', { ascending: true }),
       ])
       if (weeksRes.error) throw weeksRes.error
       if (matchupsRes.error) throw matchupsRes.error
+      if (medianRes.error) throw medianRes.error
+      const medianResults = (medianRes.data ?? []) as ScheduleMedianResult[]
+      // A full page is PostgREST's cap, not the whole season — a streak
+      // counted from it could be wrong, so say so (CLAUDE.md).
+      if (medianResults.length >= POSTGREST_ROW_CAP) {
+        throw new Error(`team_week_results: ${medianResults.length} median rows reached the PostgREST cap — the read cannot be trusted as complete`)
+      }
       return {
         weeks: (weeksRes.data ?? []) as ScheduleWeek[],
         matchups: (matchupsRes.data ?? []) as ScheduleMatchup[],
+        median_results: medianResults,
       }
     },
   })

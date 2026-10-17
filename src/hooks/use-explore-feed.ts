@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
+import { isNumbered } from '@/lib/lists/ranking-mode'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { userProfileHref } from '@/components/shared/username-link-ops'
 
@@ -17,7 +18,7 @@ export interface ExploreFeedItem {
   id: string
   title: string
   slug: string
-  /** ranking_mode !== 'unranked' → "Ranking" badge, else "List". */
+  /** Numbered (`isNumbered(ranking_mode)`) → "Ranking" badge, else "List". */
   is_ranking: boolean
   /** Persona-authored content keeps its AI badge treatment. */
   is_ai: boolean
@@ -100,7 +101,8 @@ function mapRows(rows: FeedRowShape[], likedIds: Set<string>): ExploreFeedItem[]
         id: row.id,
         title: row.title,
         slug: row.slug,
-        is_ranking: row.ranking_mode !== 'unranked',
+        // Numbered = a ranking; tiers without numbers (191) and plain lists are lists.
+        is_ranking: isNumbered(row.ranking_mode),
         is_ai: Boolean(persona),
         like_count: row.like_count ?? 0,
         comment_count: row.comments?.[0]?.count ?? 0,

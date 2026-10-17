@@ -1,3 +1,5 @@
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileRankingsScreen } from '@/components/mobile/rankings/mobile-rankings'
 import { WeeklyRanksView } from '@/components/weekly-ranks/weekly-ranks-view'
 import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
 
@@ -8,9 +10,14 @@ export default async function WeeklyRanksPage({
 }) {
   const [currentWeek, { tab }] = await Promise.all([getCurrentNflWeek(), searchParams])
   return (
-    <WeeklyRanksView
-      currentWeek={currentWeek}
-      initialTab={tab === 'pre' ? 'pre' : undefined}
+    <ByLayout
+      desktop={
+        <WeeklyRanksView
+          currentWeek={currentWeek}
+          initialTab={tab === 'pre' ? 'pre' : undefined}
+        />
+      }
+      mobile={<MobileRankingsScreen currentWeek={currentWeek} />}
     />
   )
 }

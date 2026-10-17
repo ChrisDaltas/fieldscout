@@ -28,6 +28,12 @@ export interface PanelListRow {
   isShared: boolean
   isBigBoard: boolean
   attached: boolean
+  /** The list's Ranked and Tiers switches (`lists.ranking_mode`) — the
+   *  cheat sheet and the pool overlay show its numbers only when
+   *  `isNumbered` and its tiers only when `hasTiers`, as every list screen
+   *  does (Chris 2026-10-16; spec v2.16.93). Null when unknown (a dangling
+   *  row), which reads as numbered with no tiers. */
+  rankingMode: string | null
   /** Embed null — the list is gone (soft-deleted). Owner-only by the R130
    *  GET filter; this arm is the belt: render an honest label + Detach,
    *  never a normal-looking list. */
@@ -44,7 +50,12 @@ export interface PanelListRow {
 export function deriveListsPanelRows(
   attached: readonly LeagueListWithList[],
   viewerId: string | null,
-  bigBoard: { id: string; title: string; player_count: number | null } | null,
+  bigBoard: {
+    id: string
+    title: string
+    player_count: number | null
+    ranking_mode?: string | null
+  } | null,
   usernameByUserId: ReadonlyMap<string, string>,
 ): PanelListRow[] {
   const toRow = (row: LeagueListWithList): PanelListRow => {
@@ -63,6 +74,7 @@ export function deriveListsPanelRows(
       isShared: row.shared_with_league === true,
       isBigBoard: bigBoard !== null && row.list_id === bigBoard.id,
       attached: true,
+      rankingMode: row.lists?.ranking_mode ?? null,
       dangling: row.lists === null,
     }
   }
@@ -89,6 +101,7 @@ export function deriveListsPanelRows(
       isShared: false,
       isBigBoard: true,
       attached: false,
+      rankingMode: bigBoard.ranking_mode ?? null,
       dangling: false,
     })
   }
@@ -126,6 +139,7 @@ export function standaloneListRows(
     title: string
     player_count: number | null
     is_big_board: boolean | null
+    ranking_mode?: string | null
   }>,
 ): PanelListRow[] {
   const rows = myLists.map((list) => ({
@@ -141,6 +155,7 @@ export function standaloneListRows(
     isShared: false,
     isBigBoard: list.is_big_board === true,
     attached: false,
+    rankingMode: list.ranking_mode ?? null,
     dangling: false,
   }))
   // The Big Board first: it is the one list §8.9 calls out by name, and the

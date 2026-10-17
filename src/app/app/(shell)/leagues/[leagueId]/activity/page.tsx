@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 
 import { ActivityPage } from '@/components/leagues/activity-page'
 import { parseActivityRoute } from '@/components/leagues/activity-page-ops'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileLeagueTab } from '@/components/mobile/league/league/league-tab'
 import { readActivityPageGate } from '@/lib/leagues/api/activity-page-gate'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -23,6 +25,9 @@ interface ActivityRouteProps {
  * `?tab=` / `?week=` / `?team=` / `?entry=` are read here and handed down —
  * the doors into the page (a ✸ badge, "See all activity", the console, the
  * matchup's correction note) link straight to a tab.
+ *
+ * Mobile (FieldScout Mobile handoff): League › Activity; the Commissioner and
+ * Stat corrections tabs open as their own pages.
  */
 export default async function LeagueActivityRoute({ params, searchParams }: ActivityRouteProps) {
   const { leagueId } = await params
@@ -30,5 +35,11 @@ export default async function LeagueActivityRoute({ params, searchParams }: Acti
   const supabase = await createServerClient()
   const gate = await readActivityPageGate(supabase, leagueId)
   if (gate !== 'page') redirect(`/app/leagues/${leagueId}`)
-  return <ActivityPage leagueId={leagueId} initial={parseActivityRoute(query)} />
+  const initial = parseActivityRoute(query)
+  return (
+    <ByLayout
+      desktop={<ActivityPage leagueId={leagueId} initial={initial} />}
+      mobile={<MobileLeagueTab leagueId={leagueId} segment="activity" activityInitial={initial} />}
+    />
+  )
 }

@@ -1,7 +1,9 @@
 'use client'
 
+import { MobilePlayerProfile } from '@/components/mobile/player/mobile-player-profile'
 import { PlayerView } from '@/components/players/player-detail-page-view'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { useLayoutModeValue } from '@/hooks/use-layout-mode'
 import { featureFlags } from '@/lib/feature-flags'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
@@ -11,10 +13,22 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  * sheet on a phone. ×, Esc or a click outside closes it; the page under it
  * is never navigated, so its scroll and state survive. Mounted once at the
  * root (beside the mini cards) so any surface can open it via the store.
+ *
+ * In the mobile layout the same store opens the FieldScout Mobile player
+ * profile instead (handoff m-pprofile) — the desktop branch is unchanged.
  */
 export function PlayerViewModal() {
+  const mode = useLayoutModeValue()
   const target = usePlayerModalStore((s) => s.target)
   const close = usePlayerModalStore((s) => s.closePlayerView)
+  if (mode === 'mobile') {
+    return (
+      <MobilePlayerProfile
+        target={target ? { ...target, leagueId: featureFlags.leagues ? target.leagueId : null } : null}
+        onClose={close}
+      />
+    )
+  }
   return (
     <Dialog open={target !== null} onOpenChange={(open) => !open && close()}>
       {target && (

@@ -1,18 +1,17 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
 
 import { AppDndContext } from '@/components/layout/app-dnd-context'
 import { AppHeader } from '@/components/layout/app-header'
-import { BottomTabs } from '@/components/layout/bottom-tabs'
 import { DraftBar } from '@/components/layout/draft-bar'
 import { LayoutModeFrame } from '@/components/layout/layout-mode-frame'
-import { MoreSheet } from '@/components/layout/more-sheet'
 import { ResearchRail, useActiveRailTool } from '@/components/layout/rail/research-rail'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopNav } from '@/components/layout/top-nav'
 import { ListFormDialog } from '@/components/lists/list-form-dialog'
+import { MobileFallbackHeader } from '@/components/mobile/shell/fallback-header'
+import { MobileDock, useMobileDock } from '@/components/mobile/shell/mobile-dock'
 import { ListWindowsHost } from '@/components/lists/v2/list-windows-host'
 import { CommandPalette } from '@/components/shared/command-palette'
 import { cn } from '@/lib/utils'
@@ -30,11 +29,10 @@ const FULL_BLEED_PREFIXES: readonly string[] = ['/app/lists/']
 
 /** v7 shell — the 48px top bar across the whole app, then a row of: left
  *  rail · content column (draft bar + page title band + scrolling main) ·
- *  right-side bar. Phones get the same top bar plus the bottom tabs until
- *  the mobile pass. */
+ *  right-side bar. The mobile layout drops the top bar, rails and page title
+ *  band for the FieldScout Mobile bottom dock. */
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
-  const [moreOpen, setMoreOpen] = useState(false)
   const createListOpen = useUIStore((s) => s.isCreateListOpen)
   const setCreateListOpen = useUIStore((s) => s.setCreateListOpen)
   const createListSeedPlayerId = useUIStore((s) => s.createListSeedPlayerId)
@@ -42,12 +40,10 @@ export function AppShell({ children }: AppShellProps) {
     (s) => s.setCreateListSeedPlayerId,
   )
 
-  // Close the More sheet on route change
-  useEffect(() => {
-    setMoreOpen(false)
-  }, [pathname])
-
   const railTool = useActiveRailTool()
+  // Mobile (FieldScout Mobile handoff): the bottom dock replaces the top
+  // bar, sidebar and right-side bar; content clears the dock by its height.
+  const dock = useMobileDock()
 
   const fullBleed =
     FULL_BLEED_ROUTES.has(pathname) ||
@@ -55,8 +51,10 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <AppDndContext>
-      <LayoutModeFrame className="flex flex-col bg-page">
-        <TopNav variant="app" />
+      <LayoutModeFrame className="flex flex-col bg-page mob:bg-m-b0">
+        <div className="contents mob:hidden">
+          <TopNav variant="app" />
+        </div>
 
         {/* The right-side bar sits at this row's right edge; clear it on
             desktop — and the open panel too, so it never covers the page
@@ -70,16 +68,28 @@ export function AppShell({ children }: AppShellProps) {
             <div className="hidden desk:block">
               <AppHeader />
             </div>
-            <main className="min-h-0 flex-1 overflow-y-auto">
+            <main
+              data-app-main
+              className="min-h-0 flex-1 overflow-y-auto"
+              style={{ '--m-dockpad': `${dock.clearance}px` } as React.CSSProperties}
+            >
               {/* Content fills the full width between the sidebar and rail
                   (matching the prototype's padded, un-capped main). Full-bleed
                   routes drop the horizontal padding for edge-to-edge tables. */}
               <div
                 className={cn(
-                  'w-full py-5 pb-20 lg:pb-[20vh]',
+                  'w-full py-5 pb-20 lg:pb-[20vh] mob:pb-[var(--m-dockpad)]',
                   !fullBleed && 'px-4 lg:px-7',
+                  // Mobile screens own their gutters (MobileScreen undoes
+                  // this one); unconverted pages keep a 16px gutter.
+                  'mob:px-4',
                 )}
               >
+                {/* A page with no mobile screen yet: the mobile close /
+                    back + title row over its own layout. */}
+                <div className="hidden mob:contents">
+                  <MobileFallbackHeader />
+                </div>
                 {children}
               </div>
             </main>
@@ -88,8 +98,9 @@ export function AppShell({ children }: AppShellProps) {
           <ResearchRail />
         </div>
 
-        <BottomTabs onMoreClick={() => setMoreOpen(true)} />
-        <MoreSheet open={moreOpen} onOpenChange={setMoreOpen} />
+        <div className="hidden mob:block">
+          <MobileDock />
+        </div>
         {/* Lists v2 pop-outs (LV.15, D13). Hosted here rather than on the Lists
             page so they survive navigation, and **renders nothing at all** when
             no window is open — this is the one Round 2 component that mounts on

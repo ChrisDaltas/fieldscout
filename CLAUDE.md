@@ -27,7 +27,7 @@ FieldScout is an all-in-one fantasy football community app for the NFL. Users cr
 A whole-app visual overhaul is underway. The **Claude Design prototype "FieldScout Next v7" is the design source of truth** (it replaced the earlier "Field Scout look" package) — the current UI (an early "make it look like Spotify" pass) carries no design value worth preserving. Rules for all redesign work:
 
 - **Re-skin in place.** Restyle the existing shadcn/Radix/CVA components in `src/components/ui/` via tokens and variant styles. Do not generate a replacement component library or parallel component tree.
-- **Single theme.** One mode blending dark and light. There is no dark/light toggle. Remove/ignore `next-themes` and `dark:` variants as screens are reskinned; never generate dual-theme tokens.
+- **Single theme on desktop.** One light mode; no dark/light toggle. Remove/ignore `next-themes` and `dark:` variants as screens are reskinned. **Mobile is the exception** (Chris, 2026-10-15): the mobile layout has a light/dark switch (Profile's Dark/Light pill) built on the `m-*` tokens, which flip under `html[data-theme='dark']` — set only in the mobile layout. Still never `dark:` variants.
 - **Design intent:** simpler and less pro-user-dense than the old UI. When a judgment call isn't covered by the design package, choose clarity over information density.
 - **New IA:** right-side context-aware bar (Account, Notifications, Direct Messages, Players quick-research panel). Social/user-generated content lives on the Community tab; Home is a jump-off hub (join a live draft, adjust a lineup, player research). Lists are a draft tool, not social-media content.
 - **Prototype gaps:** AI list generation and influencer personas/AI experts exist in the app but not the prototype. Keep them and restyle them in the new design language — never leave them in the old style, never remove them. Same for states the prototype doesn't show (loading, empty, error, overflow, free-vs-Pro gates): extend the new design language.
@@ -48,8 +48,9 @@ A whole-app visual overhaul is underway. The **Claude Design prototype "FieldSco
 - **shadcn/ui** as the component library base. Import from `@/components/ui/`.
 - Follow the existing Tailwind theme in `tailwind.config.ts`. Don't add arbitrary color values — use theme tokens.
 - **Tailwind v3.4** — tokens live in `tailwind.config.ts` theme extensions + CSS variables. Do not use Tailwind v4 conventions (`@theme` blocks).
-- **Responsive design:** Mobile-first. Use Tailwind breakpoints (`sm:`, `md:`, `lg:`).
-- **Theming: single blended mode.** No dark/light toggle. Legacy `next-themes` / `dark:` variants are being removed as part of the redesign — don't add new ones.
+- **Layout follows the device, not the window.** `<html data-layout="desktop|mobile">` (head script + `useLayoutMode`): touch devices, iPad included, get the mobile layout; desktop holds a 1024px minimum and scrolls sideways below it (a "Switch to mobile layout" pill appears under 768px). `sm:`/`md:`/`lg:` apply on desktop at any width; `desk:` / `mob:` target one layout.
+- **Mobile is its own design** (FieldScout Mobile handoff, `docs/design/mobile/`), not a squeezed desktop. A route with a mobile screen renders it with `ByLayout` (`@/components/mobile/by-layout`): `desktop={…unchanged…} mobile={…}`. Mobile screens live in `src/components/mobile/` and use the `m-*` tokens, `MobileScreen`, `MobileSheet` and the shell's dock — see `docs/design/mobile/gap-list.md` for what's still missing.
+- **Theming:** desktop is one light mode; mobile has light + dark via the `m-*` tokens (see Redesign above). Legacy `next-themes` / `dark:` variants are being removed — don't add new ones.
 
 #### Elevation is a hover state, never a resting one
 

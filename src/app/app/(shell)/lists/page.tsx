@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
 
 import { ListsPageV2 } from '@/components/lists/v2/lists-page-v2'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileLists } from '@/components/mobile/lists/mobile-lists'
 
 /**
  * Lists.
@@ -10,6 +12,10 @@ import { ListsPageV2 } from '@/components/lists/v2/lists-page-v2'
  * rebuilt page unconditionally, so there is no second Lists page to keep in
  * sync and no flag left to flip the wrong way.
  *
+ * The mobile layout (FieldScout Mobile, lr-lists) renders its own Lists screens
+ * — grid, List view, editor, Edit details — chosen by the same query string
+ * (`?list=` is shared with desktop). Desktop is untouched.
+ *
  * The `Suspense` boundary is required, not decorative: `ListsPageV2` reads
  * `?list=<id>` with `useSearchParams` — the deep link the retired
  * `/app/lists/[listId]` route now redirects into — and Next refuses to
@@ -18,7 +24,7 @@ import { ListsPageV2 } from '@/components/lists/v2/lists-page-v2'
 export default function ListsPage() {
   return (
     <Suspense>
-      <ListsPageV2 />
+      <ByLayout desktop={<ListsPageV2 />} mobile={<MobileLists />} />
     </Suspense>
   )
 }

@@ -49,6 +49,12 @@ export function notificationHref(n: Pick<NotificationItem, 'type' | 'data'>): st
   if (n.type === 'stat_correction_result' && typeof data?.league_id === 'string' && data.league_id !== '') {
     return `/app/leagues/${data.league_id}`
   }
+  // Gap list #13 (192): the commissioner changed the league's note
+  // (`league_commissioner_note`) → that league's home, where the note is
+  // pinned at the top (desktop League Home; the phone's League tab).
+  if (n.type === 'league_commissioner_note' && typeof data?.league_id === 'string' && data.league_id !== '') {
+    return `/app/leagues/${data.league_id}`
+  }
   // M8 L.G1.2 (185, D516): a hand-written FieldScout notice
   // (`operator_notice`) → its link, which is always a page INSIDE the app
   // (the verb refuses anything else; re-checked here so a bad row can never

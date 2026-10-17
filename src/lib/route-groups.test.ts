@@ -232,6 +232,24 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   '/app/admin/leagues/[id]',
   '/app/admin/log',
   '/app/admin/notify',
+  // FieldScout Mobile — the league's TRANSACTIONS, COMMISSIONER LOG and STAT
+  // CORRECTIONS as full screens (m-league §2.5: the Team tab's Moves tile and
+  // a team's "See all" land on Transactions). The mobile layout's screens;
+  // a desktop visit is sent to the Activity page on the matching tab. Same
+  // gates as `/activity` (leagues flag + members only, server-decided).
+  '/app/leagues/[leagueId]/activity/commissioner',
+  '/app/leagues/[leagueId]/activity/corrections',
+  '/app/leagues/[leagueId]/activity/transactions',
+  // FieldScout Mobile — MESSAGES (m-messages): the inbox and one thread
+  // (`league-<id>` = that league's board, else a direct message). Mobile
+  // screens; a desktop visit goes Home.
+  '/app/messages',
+  '/app/messages/[threadId]',
+  // FieldScout Mobile — Community's LATEST page (For you's "Latest" shelf →
+  // See all, Chris 2026-10-16): every public list and ranking, newest first.
+  // Gated with the rest of Community by `(shell)/explore/layout.tsx`; a
+  // desktop visit is sent to `/app/explore`.
+  '/app/explore/latest',
 ]
 
 describe('route groups are invisible to the URL space', () => {
