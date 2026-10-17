@@ -5,6 +5,8 @@ import { useMemo } from 'react'
 
 import { appEntryBehind, useGoBack } from '@/components/mobile/ui/back-nav'
 
+import { compareHref } from './list-tools'
+
 /**
  * FieldScout Mobile — Lists routes (lr-lists §4; the prototype has none, so
  * these are the app's own URLs):
@@ -16,6 +18,7 @@ import { appEntryBehind, useGoBack } from '@/components/mobile/ui/back-nav'
  * | List editor   | `/app/lists?list=<id>&edit=1` (`&add=1` opens Add players) |
  * | Edit details  | `/app/lists?list=<id>&details=1`      |
  * | New list      | `/app/lists/new`                      |
+ * | Side by side  | `/app/lists?compare=<id>,<id>`        |
  *
  * ## Back
  *
@@ -92,6 +95,23 @@ export function useListsNav() {
        *  Profile, Lists' parent (#27). */
       leaveLists() {
         goBack('/app/profile')
+      },
+      /** Side by side, from a list's options (gap list §3 #3). */
+      openCompare(ids: readonly string[]) {
+        router.push(compareHref(ids))
+      },
+      /** A changed comparison (Change, Remove column) replaces this one, so
+       *  Back still goes to where the comparison was opened from. */
+      changeCompare(ids: readonly string[]) {
+        router.replace(compareHref(ids))
+      },
+      /** The comparison's back: where you came from, else its first list. */
+      closeCompare(firstId: string | undefined) {
+        goBack(firstId ? listHref(firstId) : '/app/lists')
+      },
+      /** A column's "Open list" — Back from it returns to the comparison. */
+      openListFromCompare(id: string) {
+        router.push(listHref(id))
       },
       setTab(tab: 'mine' | 'saved') {
         router.replace(tab === 'saved' ? '/app/lists?tab=saved' : '/app/lists', { scroll: false })

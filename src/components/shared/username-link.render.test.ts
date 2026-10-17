@@ -319,6 +319,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: 'const handle = `@${manager.username}`', why: 'phone search People row for a league manager: the row opens their team (gap list §3 #1 — "finds managers (opens their team)"), so the handle sits inside that link' },
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: '`@${list.owner_username}`', why: 'phone search Posts row byline: the row is one link that opens the list (as the Community cards), so the handle sits inside it' },
   { file: 'src/components/mobile/search/search-ops.ts', contains: '`@${m.username} ${managerSub(m.teamName)}`', why: 'the search match text for a league manager — matched against the query, never rendered' },
+  { file: 'src/components/mobile/lists/list-tools-sheets.tsx', contains: "list.owner ? `@${list.owner.username}`", why: 'the Side by side picker’s saved-list byline: inside a pick-list a tap ticks the row (ruling #42), so the owner’s handle is plain text there' },
   { file: 'src/components/mobile/messages/messages-ops.ts', contains: 'return handle ? `@${handle}` : FORMER_MEMBER', why: 'the messages sender label: the conversation preview, inside its row’s link (and a league trade offer’s name, which nothing renders since Messages lost its Trades tab — ruling #22); the thread’s sender line is a UsernameLink' },
 ]
 

@@ -25,6 +25,7 @@ import { SCORING_OPTIONS, TIME_FRAMES, scoringLabel, timeFrameLabel } from './li
 
 export const L_ICON = {
   plus: 'M8 3v10M3 8h10',
+  minus: 'M3 8h10',
   play: 'M4.5 2.8v10.4L13 8z',
   collage: 'M2.5 2.5h5v5h-5zM8.5 2.5h5v5h-5zM2.5 8.5h5v5h-5zM8.5 8.5h5v5h-5z',
   upload: 'M8 10.5V3M5 5.5L8 2.5l3 3M2.5 10v3.5h11V10',
@@ -43,6 +44,13 @@ export const L_ICON = {
   sparkle: 'M8 2l1.3 3.7L13 7l-3.7 1.3L8 12l-1.3-3.7L3 7l3.7-1.3zM12.5 11.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z',
   league: 'M5 2.5h6v3a3 3 0 0 1-6 0zM5 3.5H3v1.2A2.3 2.3 0 0 0 5.2 7M11 3.5h2v1.2A2.3 2.3 0 0 1 10.8 7M8 8.5v2.5M5.5 13.5h5L10 11H6z',
   chevronDown: 'M4 6l4 4 4-4',
+  // List tools in the ⋯ sheet (gap list §3 #3) — the design has none.
+  group: 'M2.5 3.5h11M4.5 6.5h9M4.5 9.5h9M2.5 12.5h11',
+  checkOff: 'M3 3h10v10H3zM5.5 8.2l1.8 1.8 3.2-3.5',
+  clear: 'M4.5 6H10a3 3 0 0 1 0 6H6.5M6.5 3.5L4 6l2.5 2.5',
+  note: 'M3.5 2.5h6.5L12.5 5v8.5h-9zM6 7.5h4M6 10h2.5',
+  columns: 'M2.5 3h4.5v10H2.5zM9 3h4.5v10H9z',
+  team: 'M5.5 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM2 13c0-2 1.6-3.5 3.5-3.5S9 11 9 13M11 7a1.7 1.7 0 1 0 0-3.4M11.5 9.6c1.5.3 2.5 1.6 2.5 3.4',
 } as const
 
 export type LIconName = keyof typeof L_ICON
