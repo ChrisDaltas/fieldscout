@@ -51,6 +51,7 @@ import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
+import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/components/mobile/league/streak-ops'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -120,10 +121,13 @@ import { useMatchStore } from './match-store'
  * Home restores it, and only a re-tap of Match while it is showing goes
  * back to your matchup and the current week (§3.2 item 7).
  *
+ * Each side's meta is "@manager · record streak" (mirrored on the right),
+ * the streak ("▼2L" / "▲8W") the one shared count (`streak-ops`, gap list
+ * #39) over the schedule's stored final results.
+ *
  * Not built because the app has no data for them (each is a reported gap):
  * the win-probability bars and "% win" (no model — the slot carries the
- * stored W/L once decided), the streak, and the live-play row (no
- * play-by-play feed). The app-only states and variants are kept in the
+ * stored W/L once decided) and the live-play row (no play-by-play feed). The app-only states and variants are kept in the
  * mobile language: degraded / reconnecting / delayed banners, box errors,
  * no-lineup, bye, playoffs, ✸ Adjusted, League Median / 2nd-opponent
  * results, the box's own Total, the commissioner's override panel,
@@ -322,13 +326,13 @@ function HeadToHead({
     setSel(id)
     window.history.replaceState(null, '', matchupHref(leagueId, id))
   }
-  const swipe = useMobileMatchSwipe({
-    enabled: ordered.length > 1,
-    onStep: (d) => {
-      const next = ordered[wrapIndex(index, d, ordered.length)]
-      if (next) select(next.id)
-    },
-  })
+  // One step through the week's matchups, wrapping — a swipe, or the pager's
+  // keyboard / screen-reader buttons.
+  const stepBy = (d: 1 | -1) => {
+    const next = ordered[wrapIndex(index, d, ordered.length)]
+    if (next) select(next.id)
+  }
+  const swipe = useMobileMatchSwipe({ enabled: ordered.length > 1, onStep: stepBy })
 
   usePrefetchNeighbours(leagueId, doc.week, ordered, index)
 
@@ -340,6 +344,8 @@ function HeadToHead({
   const values = useLeaguePlayerValues(leagueId, doc.season, doc.week)
   const projOf = (id: string) => values.byPlayer.get(id)?.projected_points ?? null
   const standings = useStandings(leagueId)
+  // The schedule read the tab already holds (one cache entry) — the streaks.
+  const schedule = useSchedule(leagueId)
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const overrideOn = useOverrideMode(leagueId) && isCommish
 
@@ -367,6 +373,7 @@ function HeadToHead({
     const r = standings.data?.standings.find((s) => s.team_id === teamId)
     return r ? formatRecord(r) : null
   }
+  const streakOf = (teamId: string) => (schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null)
 
   return (
     <>
@@ -386,7 +393,7 @@ function HeadToHead({
       <div className="overflow-x-clip">
         <div {...swipe.handlers} style={swipe.style} className="touch-pan-y select-none" data-match-swipe={row.id}>
           <div className="px-3 pt-1.5">
-            {ordered.length > 1 && <Dots doc={doc} rows={ordered} index={index} onPick={select} />}
+            {ordered.length > 1 && <Dots doc={doc} rows={ordered} index={index} onStep={stepBy} />}
             <MatchCard
               leagueId={leagueId}
               doc={doc}
@@ -400,10 +407,14 @@ function HeadToHead({
               projB={boxProjection(boxB.data, projOf)}
               recordOf={recordOf}
               recordsPending={standings.isPending}
+              streakOf={streakOf}
+              streaksPending={schedule.isPending}
             />
             <ReadProblems
               items={[
                 standings.isError && !standings.data ? { key: 'records', text: 'Couldn’t load the records.', retry: () => void standings.refetch() } : null,
+                // A failed schedule read must not pass for "no streak" (CLAUDE.md).
+                schedule.isError && !schedule.data ? { key: 'streaks', text: 'Couldn’t load the streaks.', retry: () => void schedule.refetch() } : null,
                 values.isError && !values.data ? { key: 'projections', text: 'Couldn’t load the projections.', retry: () => void values.refetch() } : null,
               ]}
             />
@@ -459,43 +470,80 @@ function boxProjection(data: TeamBoxScore | undefined, projOf: (id: string) => n
 }
 
 // ---------------------------------------------------------------------------
-// Pager dots (§2.2 A.1) — no label, no arrows
+// Pager dots (§2.2 A.1) — no label, no arrows; a position indicator only
+// (Chris, ruling #23, 2026-10-15: "no tapping, just swiping")
 // ---------------------------------------------------------------------------
 
+/** "Matchup 2 of 6: Gridiron Gurus vs Touchdown Tacos" — the pager's
+ *  screen-reader status. */
+function pagerStatus(doc: Pick<WeekMatchups, 'teams'>, rows: readonly MatchupRow[], index: number): string {
+  const row = rows[index]
+  const pos = `Matchup ${index + 1} of ${rows.length}`
+  return row ? `${pos}: ${teamName(doc, row.home_team_id)} vs ${teamName(doc, row.away_team_id)}` : pos
+}
+
+/**
+ * Where you are among the week's matchups: one 6px dot each, the current
+ * one a 14px pill. The dots are not tappable — swiping the tab is how you
+ * move — and are hidden from assistive tech; a polite status names the
+ * matchup instead, and speaks again after each move.
+ *
+ * A swipe needs a pointer, and the tappable dots were the only other way to
+ * change matchup, so Previous / Next buttons stay for a keyboard or a screen
+ * reader: off screen (`sr-only`) and shown only while keyboard focus is on
+ * them — nothing new to see or tap on a phone.
+ */
 function Dots({
   doc,
   rows,
   index,
-  onPick,
+  onStep,
 }: {
   doc: WeekMatchups
   rows: readonly MatchupRow[]
   index: number
-  onPick: (id: string) => void
+  onStep: (d: 1 | -1) => void
 }) {
   return (
-    <div className="flex justify-center pb-2">
-      <div className="flex gap-1">
+    <div className="relative flex justify-center pb-2" data-match-pager>
+      <div className="flex gap-1" aria-hidden data-match-dots>
         {rows.map((r, k) => (
-          <button
+          <span
             key={r.id}
-            type="button"
-            onClick={() => onPick(r.id)}
-            aria-label={`${teamName(doc, r.home_team_id)} vs ${teamName(doc, r.away_team_id)}`}
-            aria-current={k === index ? 'true' : undefined}
-            // The 6px dot keeps its look; the hit area grows to 30px tall and
-            // takes the whole pitch (half the 4px gap each side) — any wider
-            // would cover the next dot. The active dot is t1, which is the
-            // design's #1D1D1F in light; in dark the design's ink #4D4D4D
-            // barely shows against the #575757 dots (§6 / Q8), t1 is white.
+            // The active dot is t1, which is the design's #1D1D1F in light;
+            // in dark the design's ink #4D4D4D barely shows against the
+            // #575757 dots (§6 / Q8), t1 is white.
             className={cn(
-              "relative h-1.5 rounded-pill transition-[width] duration-200 ease-linear before:absolute before:-inset-x-0.5 before:-inset-y-3 before:content-['']",
+              'h-1.5 rounded-pill transition-[width] duration-200 ease-linear',
               k === index ? 'w-3.5 bg-m-t1' : 'w-1.5 bg-m-b4',
             )}
+            data-dot-current={k === index ? 'true' : undefined}
           />
         ))}
       </div>
+      <span role="status" className="sr-only">
+        {pagerStatus(doc, rows, index)}
+      </span>
+      <PagerStep dir={-1} onStep={onStep} />
+      <PagerStep dir={1} onStep={onStep} />
     </div>
+  )
+}
+
+/** The pager's keyboard / screen-reader step (see `Dots`). */
+function PagerStep({ dir, onStep }: { dir: 1 | -1; onStep: (d: 1 | -1) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onStep(dir)}
+      className={cn(
+        'sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:-top-1.5 focus-visible:z-10 focus-visible:rounded-pill focus-visible:bg-m-b2 focus-visible:px-2.5 focus-visible:py-1 focus-visible:text-[11px] focus-visible:font-semibold focus-visible:text-m-t1',
+        dir < 0 ? 'focus-visible:left-0' : 'focus-visible:right-0',
+      )}
+      data-match-pager-step={dir < 0 ? 'prev' : 'next'}
+    >
+      {dir < 0 ? 'Previous matchup' : 'Next matchup'}
+    </button>
   )
 }
 
@@ -516,6 +564,8 @@ function MatchCard({
   projB,
   recordOf,
   recordsPending,
+  streakOf,
+  streaksPending,
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -531,6 +581,10 @@ function MatchCard({
   /** The standings read has not answered yet — the record slot holds a
    *  placeholder instead of silently missing. */
   recordsPending: boolean
+  /** The team's current streak (`streak-ops`); null before a decided game. */
+  streakOf: (teamId: string) => Streak | null
+  /** The schedule read (the streaks' source) has not answered yet. */
+  streaksPending: boolean
 }) {
   const managers = useMemo(() => managersByTeam(detail.members), [detail.members])
   const playoff = row.round_type === 'playoff'
@@ -548,6 +602,8 @@ function MatchCard({
       manager={managers.get(teamId) ?? null}
       record={recordOf(teamId)}
       recordPending={recordsPending}
+      streak={streakOf(teamId)}
+      streakPending={streaksPending}
       avatarClass={teamAvatarClass(teamIds, teamId, myTeamId)}
       mirror={mirror}
     />
@@ -605,6 +661,8 @@ function CardSide({
   manager,
   record,
   recordPending,
+  streak,
+  streakPending,
   avatarClass,
   mirror,
 }: {
@@ -617,6 +675,8 @@ function CardSide({
   manager: string | null
   record: string | null
   recordPending: boolean
+  streak: Streak | null
+  streakPending: boolean
   avatarClass: string
   mirror: boolean
 }) {
@@ -645,7 +705,25 @@ function CardSide({
     </span>
   )
   const mgr = manager ? <UsernameLink username={manager} /> : null
-  const rec = record ?? (recordPending ? <span className="inline-block h-2 w-6 rounded-[3px] bg-m-b3 align-middle" aria-hidden data-record="loading" /> : null)
+  const recOnly = record ?? (recordPending ? <span className="inline-block h-2 w-6 rounded-[3px] bg-m-b3 align-middle" aria-hidden data-record="loading" /> : null)
+  // "2-6 ▼2L" (m-match §2.2: the streak in its own coloured span after the
+  // record). While the schedule read is out, the record's placeholder holds
+  // the streak's slot too (one bar beside a known record).
+  const stk = streak ? (
+    <span className={streakToneClass(streak, 'text-m-t3')} data-streak={streakArrowText(streak)}>
+      {streakArrowText(streak)}
+    </span>
+  ) : streakPending && record !== null ? (
+    <span className="inline-block h-2 w-5 rounded-[3px] bg-m-b3 align-middle" aria-hidden data-streak="loading" />
+  ) : null
+  const rec =
+    recOnly || stk ? (
+      <>
+        {recOnly}
+        {recOnly && stk && ' '}
+        {stk}
+      </>
+    ) : null
   const meta = mirror ? (
     <>
       {rec}

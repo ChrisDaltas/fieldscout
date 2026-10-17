@@ -93,7 +93,8 @@ export function TradeDetailOverlay({
       <div className="flex h-[52px] flex-none items-center justify-between px-3">
         <CloseButton onClick={onClose} />
         <span className="flex items-center gap-1.5 text-[11px] font-semibold text-m-t3">
-          <span className={cn('flex size-5 items-center justify-center rounded text-[9px] font-semibold text-white', leagueAvClass(leagueIndex))}>
+          {/* The tile's letters come with its fill (`leagueAvClass` — dark on gold, ruling #38). */}
+          <span className={cn('flex size-5 items-center justify-center rounded text-[9px] font-semibold', leagueAvClass(leagueIndex))}>
             {initials(detail.league.name)}
           </span>
           {format}

@@ -19,6 +19,9 @@ export interface NotificationItem {
     // carries `from: 'fieldscout'` and an optional in-app `link`.
     from?: string
     link?: string
+    // Gap list #13 (192): a `league_commissioner_note` row carries
+    // `league_id`, `actor_id` (who changed the note) and its receipt.
+    commissioner_action_id?: string
   } | null
   read: boolean
   created_at: string

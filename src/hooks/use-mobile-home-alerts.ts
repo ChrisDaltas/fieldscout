@@ -26,12 +26,12 @@ import { featureFlags } from '@/lib/feature-flags'
  * is instant and Home's other sections share them:
  *  - the schedule (the card's week; the Team tab's ladder),
  *  - the league detail (the slots, the managers — the Team tab and
- *    Messages › Trades),
+ *    the league Trades screen),
  *  - every roster (Home's Injury news reads the same one),
  *  - the user's stored lineup for the week (the Team tab's),
  *  - the week's NFL games (the Team tab's game line — one read per week,
  *    shared by every league),
- *  - the trades (Messages › Trades and the league Trades page).
+ *  - the trades (the league Trades page).
  * Plain reads, not the live room: the dot refreshes when Home is opened
  * again, and a trade answered or a lineup saved anywhere in the app
  * invalidates the same keys.

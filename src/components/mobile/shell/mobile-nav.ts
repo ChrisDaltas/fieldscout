@@ -41,13 +41,16 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
   }
   let accountTab: AccountTab | null = null
   if (pathname === '/app') accountTab = 'home'
-  else if (pathname.startsWith('/app/explore')) accountTab = 'community'
+  // Community and its pages (the Latest page, `/app/explore/latest`).
+  else if (pathname === '/app/explore' || pathname.startsWith('/app/explore/')) accountTab = 'community'
   else if (pathname.startsWith('/app/research') || pathname.startsWith('/app/players')) accountTab = 'players'
   // Lists and Rankings open from Profile; the design lights Profile there.
   else if (
     ['/app/profile', '/app/stats', '/app/lists', '/app/weekly-ranks', '/app/big-board'].some(
       (root) => pathname === root || pathname.startsWith(`${root}/`) || pathname.startsWith(`${root}?`),
-    )
+    ) ||
+    // My start/sit opens from Profile (#26); its question pages don't.
+    pathname === '/app/start-or-sit'
   )
     accountTab = 'profile'
   return { leagueId: null, leagueTab: null, accountTab }

@@ -3,6 +3,8 @@
  * Mobile handoff, `m-profile.md`).
  */
 
+import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
+
 /** Profile › "My stuff" segment (the handoff's `meTab` keys). */
 export type MeTab = 'rankings' | 'lists' | 'ss'
 
@@ -93,12 +95,13 @@ export function countTitles(
 
 /**
  * The list's kind in the handoff's set — Ranked | Video | Tiers (§5): a tiered
- * list reads Tiers, a ranked one Ranked, an unranked one with a video Video.
- * An unranked list without a video has no word in that set, so it gets none.
+ * list reads Tiers (with numbers or without — tier_only, migration 191), a
+ * ranked one Ranked, an unranked one with a video Video. An unranked list
+ * without a video has no word in that set, so it gets none.
  */
 export function listKindLabel(rankingMode: string | null | undefined, hasVideo: boolean): string | null {
-  if (rankingMode === 'rank_and_tier') return 'Tiers'
-  if (rankingMode !== 'unranked') return 'Ranked'
+  if (hasTiers(rankingMode)) return 'Tiers'
+  if (isNumbered(rankingMode)) return 'Ranked'
   return hasVideo ? 'Video' : null
 }
 

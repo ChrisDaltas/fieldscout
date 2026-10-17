@@ -25,9 +25,9 @@ beforeEach(() => {
 
 describe('POST /api/admin/notifications', () => {
   it('a non-admin gets the gate response and the RPC is never called', async () => {
-    gate.mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) })
+    gate.mockResolvedValue({ ok: false, response: NextResponse.json({ error: 'Not found' }, { status: 404 }) })
     const res = await POST(req({ audience: 'all_users', title: 'Hi', action_id: ACTION }))
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -60,7 +60,7 @@ describe('POST /api/admin/notifications', () => {
   it('maps the verb\'s refusals loudly', async () => {
     const cases: [{ code: string; message: string }, number][] = [
       [{ code: 'PGRST202', message: 'Could not find the function' }, 503],
-      [{ code: '42501', message: 'only a platform operator' }, 403],
+      [{ code: '42501', message: 'only a platform operator' }, 404],
       [{ code: 'P0002', message: 'send_notification: this audience has no recipients — nothing was sent' }, 422],
       [{ code: 'P0002', message: 'send_notification: league x does not exist' }, 404],
       [{ code: '22023', message: 'a link must be a page inside FieldScout' }, 400],

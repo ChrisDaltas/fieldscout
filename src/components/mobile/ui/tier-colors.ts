@@ -15,12 +15,11 @@ import { BAND_RAMP } from '@/components/lists/bucket-colors'
  * desktop's chip — identical in light and dark mode, since the fill carries
  * its own text colour.
  *
- * Identical is not the same as AA-readable. The chip's 11px text on the fill
- * measures: tier 1 ~4.0:1, tier 2 ~3.8:1, tier 5 ~3.3:1, tier 6 ~3.4:1 (all
- * under AA's 4.5:1 for small text); tiers 3, 4 and 7 pass. Desktop's own
- * chips (Big Board, list bands) inherit the same numbers, so this is a token
- * question for Chris — darker fills, or ink text on 1/2/5/6 — answered once in
- * `TIER_RAMP`/`BAND_RAMP`, never with a mobile-only colour.
+ * And AA-readable: Chris (2026-10-15) took darker shades of the same hues
+ * for tiers 1, 2, 5 and 6, so the chip's 11px white text passes 4.5:1 on
+ * every fill (3–4 ink, 7 unchanged). That was answered once, in the `tier`
+ * tokens of `tailwind.config.ts`, never with a mobile-only colour —
+ * `lists/bucket-colors.test.ts` measures every pair.
  */
 
 /** Shape of the "Tier N" chip on mobile (the colour comes from the ramp). */

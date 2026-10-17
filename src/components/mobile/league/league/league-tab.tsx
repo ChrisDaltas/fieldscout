@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { activityRouteFrom, type ActivityRoute } from '@/components/leagues/activity-page-ops'
+import { canEditLeagueNote } from '@/components/leagues/league-note-ops'
 import { seasonStarted } from '@/components/leagues/league-shell-ops'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -13,6 +14,7 @@ import { useLeague } from '@/hooks/use-league'
 import { ActivitySegment } from './activity-segment'
 import { CenteredNote, SkeletonBlocks } from './league-bits'
 import { MobileLeagueHeader } from './league-header'
+import { LeagueNoteCard } from './league-note'
 import { SEGMENTS, commishLogHref, correctionsScreenHref, segmentAtPath, segmentHref, standingsHref, type LeagueSegment } from './league-tab-ops'
 import { useLeagueTabStore, useTxFilter } from './league-tab-store'
 import { MatchupsSegment } from './matchups-segment'
@@ -119,6 +121,9 @@ function LeagueTabScreen({
 
   return (
     <MobileScreen header={<MobileLeagueHeader leagueName={data?.league.name ?? ''} leagueId={leagueId} />}>
+      {/* Gap list #13 (Chris 2026-10-15): the commissioner note, at the top
+          of the League tab whichever segment is open. */}
+      <LeagueNoteCard leagueId={leagueId} canEdit={canEditLeagueNote(data?.my_role)} />
       <div className="px-4 pb-1 pt-3">
         <MSegmented
           options={SEGMENTS}

@@ -16,22 +16,44 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 
+import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { carryBoard, boardFor } from '@/components/mobile/rankings/new-ranking'
-import { RkIcon, RK_ICON, StatCells, statCells } from '@/components/mobile/rankings/rank-parts'
 import {
+  MovementMark,
+  MovementSwitch,
+  RkIcon,
+  RK_ICON,
+  StatCells,
+  statCells,
+} from '@/components/mobile/rankings/rank-parts'
+import {
+  RANK_SCORINGS,
+  afterPublish,
+  backAction,
   dbPos,
+  editorMovement,
+  editorMovementAvailable,
   formatSaved,
   fromDbPos,
   moveItem,
+  opensInWeek,
+  orderChanged,
   plural,
+  publishButtonLabel,
   rankPosLabel,
+  rankingExists,
+  rankingScoring,
   rankingTitle,
+  scoringChanged,
+  scoringFromFormat,
+  scoringLabel,
   seasonLabel,
   seasonSub,
   shortName,
   weekOf,
   weekStatus,
   weeklySub,
+  type Movement,
   type RankFrom,
   type RankPos,
   type RankType,
@@ -53,25 +75,52 @@ import {
   type PoolStat,
 } from '@/hooks/use-mobile-rankings-sources'
 import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
-import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 /**
  * Ranking editor (lr-myrank §2.3) on a real board: one position's slice of
- * the season board or a weekly board. Whole-row drag (long-press on touch),
- * Add players, and an explicit Save through the same routes desktop uses.
- * Past weeks open read-only (Finalized), future weeks are locked and never
- * fetched — the app's rules, not the prototype's.
+ * the season board or a weekly board. Whole-row drag (long-press on touch)
+ * and Add players. Past weeks open read-only (Finalized); this week and the
+ * next three are editable; later weeks are locked and never fetched.
+ *
+ * Publishing (Chris, 2026-10-15): the one commit button is "Publish" (a
+ * ranking that doesn't exist yet) or "Publish updates". Publish is the
+ * app's save — through the same routes desktop uses — and a saved ranking
+ * is the one that counts, so there is no "save without publishing". Back
+ * discards anything unpublished: with changes it asks first ("Discard
+ * changes?"). Leaving waits while a publish is running, so a publish never
+ * carries on behind a "Discard".
+ *
+ * Movement (Chris, 2026-10-15, gap list #33): ▲3 / ▼2 beside each player —
+ * OFF by default while you make or edit your own ranking, behind a "Show
+ * movement" switch remembered on this device. It measures the version on
+ * screen against the one before: with nothing unpublished, the published
+ * ranking against its previous update (what others see); with changes, the
+ * draft against what's published (what Publish will record).
+ *
+ * Scoring (#36): the pill on the tool row picks the scoring the stats show
+ * and the ranking is published for — the board's saved one when it has one,
+ * else Half PPR (Chris, 2026-10-16: "if no scoring type is selected, default
+ * to half point ppr"); the Rankings screen's scoring filter never picks it.
+ * It is saved by Publish. On a published ranking a picked scoring that
+ * differs from the ranking's is itself a change to publish ("Publish
+ * updates", and Back asks first), so a wrong tag can be fixed without
+ * moving a player; with the order unchanged, Publish saves only the scoring
+ * and leaves the order — and its movement — alone.
+ *
+ * "Publish" vs "Publish updates" is about whether a ranking already exists
+ * at the position, not where the draft started: starting from the experts
+ * (or an AI expert's board) over a ranking you have publishes updates to it.
  *
  * A NEW ranking (from New ranking step 2, "Start my ranking from this", or a
- * week that has no board yet) is a draft until Save (C1): nothing is
- * created by opening it, Save is blue from the start, and backing out
- * drops it. A week's board is only created by its first Save.
+ * week that has no board yet) exists only on the phone until Publish (C1):
+ * nothing is created by opening it, Publish is blue from the start, and
+ * backing out drops it. A week's board is only created by its first Publish.
  *
  * The app has nowhere to keep tier lines or a custom title, so the editor
  * offers neither (Auto tiers, Add tier line, tier lines and the title input
- * are design gaps) — it never shows an edit that Save would silently drop.
+ * are design gaps) — it never shows an edit that Publish would silently drop.
  */
 
 interface EditorPlayer {
@@ -116,28 +165,26 @@ function asEditorPlayer(p: {
 export interface RankingEditorProps {
   type: RankType
   pos: RankPos
-  /** Where a new (unsaved) ranking starts from; null = the saved ranking. */
+  /** Where a new (unpublished) ranking starts from; null = the published one. */
   from: RankFrom | null
-  scoring: Scoring
   currentWeek: number
-  /** Bumped when browser / OS Back tried to leave with unsaved changes. */
+  /** Bumped when browser / OS Back tried to leave with unpublished changes. */
   promptSeq: number
   onDirtyChange: (dirty: boolean) => void
   onBack: () => void
-  /** Called after a save, so the URL can drop `from`. */
-  onSaved: () => void
+  /** Called after a publish, so the URL can drop `from`. */
+  onPublished: () => void
 }
 
 export function RankingEditor({
   type,
   pos,
   from,
-  scoring,
   currentWeek,
   promptSeq,
   onDirtyChange,
   onBack,
-  onSaved,
+  onPublished,
 }: RankingEditorProps) {
   const status = weekStatus(type, currentWeek)
   const week = weekOf(type)
@@ -152,8 +199,18 @@ export function RankingEditor({
   const known = isSeason || boards.data !== undefined
   const exists = isSeason || boardFor(boards.data, type) !== null
   // A week with no board starts as a new ranking from what the app would
-  // seed it with — your latest ranking — until Save creates it.
-  const effFrom: RankFrom | null = from ?? (known && !exists && status === 'current' ? 'carry' : null)
+  // seed it with — your latest ranking — until Publish creates it.
+  const effFrom: RankFrom | null =
+    from ?? (known && !exists && (status === 'current' || status === 'upcoming') ? 'carry' : null)
+
+  // The scoring this ranking is made for: picked here, else the board's
+  // saved one, else Half PPR.
+  const myBoard = boardFor(boards.data, type)
+  const [pickedScoring, setPickedScoring] = useState<Scoring | null>(null)
+  /** The scoring this session's publish saved (until the boards refetch). */
+  const [publishedScoring, setPublishedScoring] = useState<Scoring | null>(null)
+  const savedScoring = publishedScoring ?? scoringFromFormat(myBoard?.scoringFormat)
+  const scoring: Scoring = rankingScoring(pickedScoring, savedScoring)
 
   const seasonQ = useSeasonBoard(isSeason && !locked)
   const weeklyQ = useWeeklyBigBoard(!isSeason && !locked && known && exists ? week : -1)
@@ -163,7 +220,7 @@ export function RankingEditor({
   const weeklyGames = !isSeason && !locked
   const games = useNflWeekGames(weeklyGames ? NFL_SEASON : undefined, weeklyGames ? week : undefined)
   const experts = useExpertsSource(pos, effFrom === 'experts')
-  const users = useUsersSource(dbPos(pos), effFrom === 'users')
+  const users = useUsersSource(pos, effFrom === 'users')
   const personaListId = effFrom?.startsWith('p:') ? effFrom.slice(2) : null
   const personaQ = usePersonaBoardPlayers(personaListId)
   const expertBoards = useExpertBoards()
@@ -182,11 +239,12 @@ export function RankingEditor({
 
   // ---- local draft --------------------------------------------------------
   const [items, setItems] = useState<string[] | null>(null)
-  const [start, setStart] = useState<Map<string, number>>(new Map())
+  /** The order the draft is measured against: the published slice, or
+   *  empty for a draft started from somewhere (any players = publishable). */
   const [savedSeq, setSavedSeq] = useState<string[]>([])
-  const [isNew, setIsNew] = useState(false)
   const [extra, setExtra] = useState<Map<string, EditorPlayer>>(new Map())
-  const [savedNow, setSavedNow] = useState(false)
+  /** null until a publish in this session; then whether a ranking exists. */
+  const [publishedHere, setPublishedHere] = useState<boolean | null>(null)
   const [startedFrom, setStartedFrom] = useState<string | null>(null)
   const initialized = useRef(false)
 
@@ -250,15 +308,36 @@ export function RankingEditor({
 
     setExtra(extras)
     setItems(seq)
-    setStart(new Map(seq.map((id, i) => [id, i + 1])))
     setSavedSeq(effFrom === null ? seq : [])
-    setIsNew(effFrom !== null)
     setStartedFrom(label)
   }, [ready, effFrom, boardEntries, boards.data, week, pos, type, currentWeek, isSeason, experts.data, users.data, games.data, personaQ.data, persona])
 
   const seq = useMemo(() => items ?? [], [items])
-  const changed = seq.length !== savedSeq.length || seq.some((id, i) => id !== savedSeq[i])
-  const dirty = !readOnly && items !== null && (isNew ? seq.length > 0 : changed)
+  const orderDirty = !readOnly && items !== null && orderChanged(seq, savedSeq)
+
+  // Is a ranking published at this position? Read from the server's boards
+  // (the season board's own read once it's in, since that GET seeds it),
+  // never from where the draft started. Until the boards are known, a
+  // ranking opened as-is is assumed to exist and one started from
+  // somewhere to be new — only the inert pill reads it in that moment.
+  const existsKnown = isSeason ? boardQ.data !== undefined || boards.data !== undefined : known
+  const serverRows = isSeason && boardQ.data ? boardEntries : (boardFor(boards.data, type)?.players ?? [])
+  const hasRanking = existsKnown
+    ? rankingExists(serverRows, pos, publishedHere)
+    : (publishedHere ?? effFrom === null)
+
+  // A changed scoring is a change to publish on its own (#36) — only where
+  // the board can keep one (its read carries the column: migration 190).
+  const scoringDirty =
+    !readOnly &&
+    items !== null &&
+    scoringChanged({
+      picked: pickedScoring,
+      saved: savedScoring,
+      savable: myBoard !== null && myBoard.scoringFormat !== undefined,
+      hasRanking,
+    })
+  const dirty = orderDirty || scoringDirty
 
   // The area's guard needs to know (browser / OS Back), and so does the
   // browser itself (reload, closing the tab).
@@ -286,11 +365,11 @@ export function RankingEditor({
   }
 
   // ---- actions --------------------------------------------------------------
-  const [sheet, setSheet] = useState<null | 'pos' | 'all'>(null)
+  const [sheet, setSheet] = useState<null | 'pos' | 'all' | 'scoring'>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
 
-  // Browser / OS Back left with unsaved changes: the area put the editor
-  // back — ask what to do.
+  // Browser / OS Back left with unpublished changes: the area put the
+  // editor back — ask what to do.
   const lastPrompt = useRef(promptSeq)
   useEffect(() => {
     if (promptSeq === lastPrompt.current) return
@@ -299,20 +378,32 @@ export function RankingEditor({
     setConfirmLeave(true)
   }, [promptSeq])
 
-  const save = () => {
+  // Publish = the app's save (there is no separate submit step). The hook
+  // reports the outcome (toast), even if the editor has closed by then.
+  const publish = () => {
     if (!dirty || saving) return
     const next = seq
+    // Only the scoring changed: save just that — re-sending the order would
+    // reset every previous position and wipe the movement arrows.
+    const scoringOnly = !orderDirty && myBoard ? { listId: myBoard.listId } : undefined
     saveSlice.mutate(
-      { week: isSeason ? 0 : week, pos, next },
+      { week: isSeason ? 0 : week, pos, next, isNew: !hasRanking, scoring, scoringOnly },
       {
-        onSuccess: () => {
-          setSavedSeq(next)
-          setIsNew(false)
-          setSavedNow(true)
-          onSaved()
-          toast({ title: 'Ranking saved' })
+        onSuccess: (data) => {
+          // Nothing unpublished now.
+          if (!scoringOnly) {
+            const after = afterPublish(next)
+            setSavedSeq(after.savedSeq)
+            setPublishedHere(after.hasRanking)
+          }
+          // A scoring the server failed to save stays a change to publish
+          // (the toast says so).
+          if (!data.scoringError) setPublishedScoring(scoring)
+          // A Back that came in mid-publish has nothing left to discard.
+          setConfirmLeave(false)
+          // Only an order publish publishes the draft (the URL drops `from`).
+          if (!scoringOnly) onPublished()
         },
-        onError: (err) => toast({ title: "Couldn't save", description: err.message, variant: 'destructive' }),
       },
     )
   }
@@ -324,8 +415,9 @@ export function RankingEditor({
     })
 
   const back = () => {
-    if (dirty) setConfirmLeave(true)
-    else onBack()
+    const action = backAction({ dirty, publishing: saving })
+    if (action === 'ask') setConfirmLeave(true)
+    else if (action === 'leave') onBack()
   }
 
   // ---- drag ---------------------------------------------------------------
@@ -364,12 +456,25 @@ export function RankingEditor({
     lastDragEnd.current = Date.now()
   }
 
+  // ---- movement (gap list #33) ---------------------------------------------
+  // Measured against the server's boards (one read for the order AND its
+  // previous positions, so the two never disagree mid-refetch).
+  const [showMovement, setShowMovement] = useShowMovement('own')
+  const published = useMemo(
+    () =>
+      (boardFor(boards.data, type)?.players ?? [])
+        .filter((r) => fromDbPos(r.player.position) === pos)
+        .map((r) => ({ id: r.player_id, prev: r.previous_position })),
+    [boards.data, type, pos],
+  )
+  const movement = useMemo(() => editorMovement(seq, published), [seq, published])
+  // The switch only where there's a version to compare with: a draft that
+  // reorders, or a previous update stored on the published ranking.
+  const movementAvailable = editorMovementAvailable(published, orderDirty)
+  const marks = movementAvailable && showMovement ? movement : undefined
+  const reserveMark = marks !== undefined && [...marks.values()].some((m) => m !== 0)
+
   // ---- derived rows -------------------------------------------------------
-  const deltaOf = (id: string, rank: number): number | null => {
-    const s = start.get(id)
-    return s === undefined ? null : s - rank
-  }
-  const anyDelta = seq.some((id, i) => (deltaOf(id, i + 1) ?? 0) !== 0)
   const fromIdx = dragId ? seq.indexOf(dragId) : -1
   const lineAt = dropAt !== null && dropAt !== fromIdx && dropAt !== fromIdx + 1 ? dropAt : null
 
@@ -394,17 +499,25 @@ export function RankingEditor({
       : readOnly
         ? { label: 'Finalized', cls: 'text-positive-strong', sub: `Week ${week} is over · can't be edited` }
         : saving
-          ? { label: 'Saving…', cls: 'text-m-t1', sub: 'Keeping your new order' }
+          ? {
+              label: 'Publishing…',
+              cls: 'text-m-t1',
+              sub: !hasRanking ? 'Publishing your ranking' : orderDirty ? 'Publishing your new order' : 'Publishing its scoring',
+            }
           : dirty
             ? {
-                label: 'Unsaved changes',
+                label: 'Unpublished changes',
                 cls: 'text-m-to',
-                sub: isNew ? 'Save to keep this ranking' : 'Save to keep your new order',
+                sub: hasRanking ? 'Publish updates to keep them' : 'Publish to keep this ranking',
               }
-            : isNew
-              ? { label: 'Not saved yet', cls: 'text-m-t1', sub: 'Add players to save this ranking' }
+            : !hasRanking
+              ? { label: 'Not published yet', cls: 'text-m-t1', sub: 'Add players to publish this ranking' }
               : {
-                  label: savedNow ? 'Saved just now' : savedStamp ? `Saved ${savedStamp === 'Just now' ? 'just now' : savedStamp}` : 'Saved',
+                  label: publishedHere !== null
+                    ? 'Published just now'
+                    : savedStamp
+                      ? `Published ${savedStamp === 'Just now' ? 'just now' : savedStamp}`
+                      : 'Published',
                   cls: 'text-m-t1',
                   sub: isSeason ? 'Your draft room uses this order' : `Locks once Week ${week} is played`,
                 }
@@ -423,7 +536,7 @@ export function RankingEditor({
   const loading = !locked && !missingPast && items === null
   const dragPlayer = dragId ? playerOf(dragId) : undefined
   const dragRank = dragId ? seq.indexOf(dragId) + 1 : 0
-  const pill = dirty ? 'Save' : isNew ? 'Save' : 'Saved'
+  const pill = publishButtonLabel({ readOnly, isNew: !hasRanking, dirty, publishing: saving })
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-m-b0 pt-[env(safe-area-inset-top)] text-m-t1" role="dialog" aria-label={title}>
@@ -431,8 +544,9 @@ export function RankingEditor({
         <button
           type="button"
           onClick={back}
+          disabled={saving}
           aria-label="Back"
-          className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1"
+          className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 disabled:text-m-t4"
         >
           <RkIcon d={RK_ICON.back} size={16} stroke={2} />
         </button>
@@ -442,23 +556,36 @@ export function RankingEditor({
         {!locked && !missingPast && (
           <button
             type="button"
-            onClick={save}
+            onClick={publish}
             disabled={!dirty || saving}
             className={cn(
-              'flex h-8 flex-none items-center rounded-pill px-3.5 text-[13px] font-semibold',
+              'flex h-8 flex-none items-center whitespace-nowrap rounded-pill px-3.5 text-[13px] font-semibold',
               dirty ? 'bg-accent text-white' : 'bg-m-b2 text-m-t3',
             )}
           >
-            {saving ? 'Saving…' : pill}
+            {pill}
           </button>
         )}
       </div>
 
       {!locked && !missingPast && (
         <div className="flex flex-none flex-col gap-2.5 border-b border-m-b3 px-4 pb-2.5">
-          {!readOnly && (
+          {(!readOnly || movementAvailable) && (
             <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
-              <ToolChip icon={RK_ICON.plus} label="Add players" onClick={() => setSheet('pos')} />
+              {!readOnly && <ToolChip icon={RK_ICON.plus} label="Add players" onClick={() => setSheet('pos')} />}
+              {!readOnly && (
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-label={`Scoring: ${scoringLabel(scoring)}`}
+                  onClick={() => setSheet('scoring')}
+                  className="flex h-[30px] flex-none items-center gap-[5px] whitespace-nowrap rounded-pill bg-m-b2 pl-3 pr-2.5 text-[12px] font-semibold text-m-t1"
+                >
+                  {scoringLabel(scoring)}
+                  <RkIcon d={RK_ICON.chevronDown} size={10} stroke={2.4} />
+                </button>
+              )}
+              {movementAvailable && <MovementSwitch on={showMovement} onChange={setShowMovement} />}
             </div>
           )}
           <span className="text-[11px] font-medium text-m-t3">{info}</span>
@@ -467,7 +594,10 @@ export function RankingEditor({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-1 scrollbar-none">
         {locked ? (
-          <Centered title={`Week ${week} isn't open yet`} sub={`You can rank the current week only. This one opens in Week ${week}.`} />
+          <Centered
+            title={`Week ${week} isn't open yet`}
+            sub={`You can rank this week and the next three. This one opens in Week ${opensInWeek(week)}.`}
+          />
         ) : missingPast ? (
           <Centered title={`No Week ${week} ranking`} sub={`Week ${week} is over, so it can't be started now.`} />
         ) : loadError && items === null ? (
@@ -529,8 +659,8 @@ export function RankingEditor({
                     player={p}
                     sub={sub(p)}
                     stat={pool.data?.get(p.id)}
-                    delta={deltaOf(p.id, rank)}
-                    reserveDelta={anyDelta}
+                    movement={marks?.get(p.id)}
+                    reserveMark={reserveMark}
                     grab={!readOnly}
                     onOpen={() => {
                       if (Date.now() - lastDragEnd.current > 400) openPlayer(p.id)
@@ -549,8 +679,8 @@ export function RankingEditor({
                     player={dragPlayer}
                     sub={sub(dragPlayer)}
                     stat={pool.data?.get(dragPlayer.id)}
-                    delta={deltaOf(dragPlayer.id, dragRank)}
-                    reserveDelta={anyDelta}
+                    movement={marks?.get(dragPlayer.id)}
+                    reserveMark={reserveMark}
                     grab
                   />
                 </div>
@@ -569,9 +699,39 @@ export function RankingEditor({
         </div>
       )}
 
+      <MobileSheet
+        open={sheet === 'scoring'}
+        onOpenChange={(o) => {
+          if (!o) setSheet(null)
+        }}
+        title="Scoring"
+        subtitle="The stats follow it, and Publish saves it with this ranking."
+        showClose
+      >
+        <div className="grid grid-cols-2 gap-1.5 px-4 pb-[30px]">
+          {RANK_SCORINGS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={scoring === o.key}
+              onClick={() => {
+                setPickedScoring(o.key)
+                setSheet(null)
+              }}
+              className={cn(
+                'flex h-[44px] items-center justify-center rounded-[12px] px-2.5 text-[14px] font-semibold',
+                scoring === o.key ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1',
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </MobileSheet>
+
       <AddPlayersSheet
-        open={sheet !== null}
-        initialChip={sheet ?? 'pos'}
+        open={sheet === 'pos' || sheet === 'all'}
+        initialChip={sheet === 'all' ? 'all' : 'pos'}
         onOpenChange={(o) => {
           if (!o) setSheet(null)
         }}
@@ -587,7 +747,13 @@ export function RankingEditor({
         open={confirmLeave}
         onOpenChange={setConfirmLeave}
         title="Discard changes?"
-        subtitle={isNew ? "This ranking hasn't been saved." : "Your new order hasn't been saved."}
+        subtitle={
+          saving
+            ? 'Publishing your changes…'
+            : hasRanking
+              ? "Your changes haven't been published."
+              : "This ranking hasn't been published."
+        }
         footer={
           <div className="flex flex-col gap-2 px-4 pb-[30px] pt-1">
             <button
@@ -597,20 +763,25 @@ export function RankingEditor({
             >
               Keep editing
             </button>
+            {/* Not mid-publish: a Discard then would close the editor while
+                the publish carries on. Browser / OS Back can open this
+                sheet during one; it closes itself once the publish lands. */}
             <button
               type="button"
+              disabled={saving}
               onClick={() => {
+                if (backAction({ dirty, publishing: saving }) === 'wait') return
                 setConfirmLeave(false)
                 onBack()
               }}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-negative-strong"
+              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-negative-strong disabled:text-m-t4"
             >
-              Discard changes
+              Discard
             </button>
           </div>
         }
       >
-        <span className="sr-only">Leaving now drops the changes you made to this ranking.</span>
+        <span className="sr-only">Leaving now drops the changes you haven&apos;t published.</span>
       </MobileSheet>
     </div>
   )
@@ -671,8 +842,8 @@ function PlayerLine({
   player,
   sub,
   stat,
-  delta,
-  reserveDelta,
+  movement,
+  reserveMark,
   grab,
   onOpen,
 }: {
@@ -680,8 +851,10 @@ function PlayerLine({
   player: EditorPlayer
   sub: string
   stat: PoolStat | undefined
-  delta: number | null
-  reserveDelta: boolean
+  /** Movement since the previous version, when "Show movement" is on. */
+  movement: Movement | undefined
+  /** Keep the movement column on every row so the stats line up. */
+  reserveMark: boolean
   grab: boolean
   onOpen?: () => void
 }) {
@@ -697,14 +870,9 @@ function PlayerLine({
         </span>
       </span>
       <StatCells cells={statCells(stat, player.position)} />
-      {(reserveDelta || (delta ?? 0) !== 0) && (
-        <span
-          className={cn(
-            'w-6 flex-none text-right text-[12px] font-semibold',
-            (delta ?? 0) > 0 ? 'text-positive-strong' : 'text-negative-strong',
-          )}
-        >
-          {delta ? (delta > 0 ? `+${delta}` : `${delta}`) : ''}
+      {(reserveMark || (movement !== undefined && movement !== 0)) && (
+        <span className="w-7 flex-none text-right text-[12px]">
+          <MovementMark m={movement} className={movement === 'new' ? 'text-[10px]' : undefined} />
         </span>
       )}
     </>

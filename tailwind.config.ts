@@ -130,13 +130,18 @@ const config: Config = {
           'text-dark': '#1D1D1F',
         },
         // Tier ramp, 1 = best. Tiers 3–4 take dark text, the rest white.
+        // 1, 2, 5 and 6 are darker shades of the original hues (same OKLCH
+        // hue + chroma, lower lightness) so their white chip text passes WCAG
+        // AA 4.5:1 (Chris, 2026-10-15; were #d64a95 / #df5551 / #3fa055 /
+        // #1f9aa6 at ~4.0 / 3.8 / 3.3 / 3.4:1). Pinned by
+        // `lists/bucket-colors.test.ts` — every step's fill/text pair ≥ 4.5.
         tier: {
-          1: '#d64a95',
-          2: '#df5551',
+          1: '#c93e8a',
+          2: '#ce4543',
           3: '#e58033',
           4: '#e6b422',
-          5: '#3fa055',
-          6: '#1f9aa6',
+          5: '#1f863c',
+          6: '#00818d',
           7: '#4a63c4',
           // Legacy S–F keys — still referenced by pre-reskin screens; remove in phase 7.
           s: '#FFD700',

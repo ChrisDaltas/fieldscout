@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, type FormEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 
 import { teamPageHref } from '@/components/leagues/league-cells'
 import {
@@ -21,6 +21,7 @@ import {
 } from '@/components/leagues/league-message-board'
 import { formatInstantWithDate, formatKickoff } from '@/components/leagues/lineup-editor-ops'
 import { tradesHref } from '@/components/leagues/trades-ops'
+import { followsNewMessage, isNearBottom } from '@/components/mobile/messages/messages-ops'
 import { leagueTabHref } from '@/components/mobile/shell/mobile-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { UsernameLink } from '@/components/shared/username-link'
@@ -103,6 +104,7 @@ export function MessageBoardCard({ leagueId, detail, viewerId }: { leagueId: str
   const tz = detail.settings.draft.time_zone ?? null
   const isMember = viewerId !== null && members.has(viewerId)
   const rows = chat.data ?? []
+  const listRef = useBoardPinBottom(rows, viewerId)
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -126,7 +128,7 @@ export function MessageBoardCard({ leagueId, detail, viewerId }: { leagueId: str
         ) : rows.length === 0 ? (
           <p className="py-2 text-center text-[13px] font-medium text-m-t3">{MESSAGE_BOARD_EMPTY_COPY}</p>
         ) : (
-          <ol className="flex max-h-80 flex-col gap-3 overflow-y-auto">
+          <ol ref={listRef} className="flex max-h-80 flex-col gap-3 overflow-y-auto" data-board-list>
             {rows.map((row) => {
               const profile = row.user_id ? (members.get(row.user_id) ?? null) : null
               const when = row.created_at ? formatInstantWithDate(row.created_at, tz) : null
@@ -217,4 +219,43 @@ export function ChampionCard({ detail }: { detail: LeagueDetail }) {
       )}
     </section>
   )
+}
+
+/**
+ * The board card scrolls in its own box, and opens at the NEWEST post,
+ * following new ones as they arrive (Chris, #47, 2026-10-15) — unless the
+ * reader has scrolled up to read; their own post always brings them down.
+ * Same rule as the Messages thread (`isNearBottom` / `followsNewMessage`),
+ * applied to the card's own scroller.
+ */
+function useBoardPinBottom(rows: ReadonlyArray<{ id: string; user_id: string | null }>, viewerId: string | null) {
+  const ref = useRef<HTMLOListElement | null>(null)
+  const pinned = useRef(true)
+  const placed = useRef<string | null>(null)
+  const last = rows.length ? rows[rows.length - 1]! : null
+  const hasRows = rows.length > 0
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onScroll = () => {
+      pinned.current = isNearBottom(el)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [hasRows])
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !last) return
+    const opening = placed.current === null
+    if (last.id === placed.current) return
+    placed.current = last.id
+    if (opening || followsNewMessage({ pinned: pinned.current, fromMe: last.user_id !== null && last.user_id === viewerId })) {
+      el.scrollTop = el.scrollHeight
+      pinned.current = true
+    }
+  }, [last, viewerId])
+
+  return ref
 }

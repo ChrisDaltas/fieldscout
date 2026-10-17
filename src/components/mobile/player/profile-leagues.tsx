@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import type { MoveSheetKind } from '@/components/mobile/player/player-move-sheet'
-import { clearsDay, preDraftFor, shortDate, type MoveKind, type ProfileMove } from '@/components/mobile/player/profile-ops'
+import { clearsDay, movesTimeline, preDraftFor, shortDate, type MoveKind, type ProfileMove } from '@/components/mobile/player/profile-ops'
 import { useProfileUiStore } from '@/components/mobile/player/profile-ui-store'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { useCardLeagueView } from '@/components/players/player-card-actions'
@@ -254,8 +254,14 @@ const KIND_PILL: Record<MoveKind, string> = {
   Traded: 'bg-m-b2 text-m-t1',
 }
 
-/** League filter chips, then his moves grouped by league (league order),
- *  newest first within each. The filter is remembered for the session. */
+/**
+ * League filter chips, then his moves as ONE timeline (Chris, #46,
+ * 2026-10-15): every shown league's moves merged newest first, each row
+ * naming its league — no per-league grouping. The filter is remembered for
+ * the session. The timeline waits until every shown league has answered,
+ * so rows never reshuffle as a slower league lands; a league whose read
+ * failed is named above the list (the timeline is missing its moves).
+ */
 export function TransactionsTab({
   playerId,
   leagues,
@@ -271,14 +277,30 @@ export function TransactionsTab({
   const setFilter = useProfileUiStore((s) => s.setTxFilter)
   const filter = stored === 'all' || leagues.some((l) => l.id === stored) ? stored : 'all'
   const shown = filter === 'all' ? leagues : leagues.filter((l) => l.id === filter)
-  const [counts, setCounts] = useState<Record<string, number | null>>({})
-  const known = shown.map((l) => counts[l.id])
-  const none = shown.length === 0 || (known.every((c) => c !== undefined && c !== null) && known.every((c) => c === 0))
+  const [reports, setReports] = useState<Record<string, MovesReport>>({})
+  const report = useCallback(
+    (leagueId: string, r: MovesReport) =>
+      setReports((cur) => {
+        const was = cur[leagueId]
+        return was && was.state === r.state && was.moves === r.moves && was.truncated === r.truncated ? cur : { ...cur, [leagueId]: r }
+      }),
+    [],
+  )
 
   if (pending) return <RowsSkeleton />
   if (error) return <Empty>Couldn’t load your leagues.</Empty>
+  const got = shown.map((l) => ({ league: l, r: reports[l.id] }))
+  const loading = got.some(({ r }) => !r || r.state === 'loading')
+  const failed = got.filter(({ r }) => r?.state === 'error').map(({ league }) => league)
+  const timeline = loading
+    ? []
+    : movesTimeline(got.filter(({ r }) => r?.state === 'ready').map(({ league, r }) => ({ leagueId: league.id, leagueName: league.name, moves: r!.moves })))
+  const truncated = got.filter(({ r }) => r?.state === 'ready' && r.truncated).map(({ league }) => league)
   return (
     <div data-profile-tx>
+      {shown.map((l) => (
+        <LeagueMovesReporter key={l.id} leagueId={l.id} playerId={playerId} report={report} />
+      ))}
       <div className="flex gap-1.5 overflow-x-auto px-4 pb-1.5 pt-3 scrollbar-none" role="group" aria-label="League">
         {[{ id: 'all', name: 'All leagues' }, ...leagues].map((c) => (
           <button
@@ -295,50 +317,64 @@ export function TransactionsTab({
           </button>
         ))}
       </div>
-      <div className="px-4">
-        {shown.map((l) => (
-          <LeagueMoveRows
-            key={l.id}
-            league={l}
-            playerId={playerId}
-            report={(n) => setCounts((cur) => (cur[l.id] === n ? cur : { ...cur, [l.id]: n }))}
-          />
-        ))}
-        {none && <p className="py-[30px] text-center text-[13px] font-medium text-m-t3">No transactions in this league</p>}
-      </div>
+      {loading ? (
+        <div className="flex flex-col gap-2 px-4 py-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-[44px] animate-pulse rounded-[12px] bg-m-b1" />
+          ))}
+        </div>
+      ) : (
+        <div className="px-4" data-profile-tx-timeline>
+          {failed.map((l) => (
+            <p key={l.id} className="border-b border-m-b2 py-3 text-[13px] font-medium text-negative-strong" role="alert">
+              Couldn’t read {l.name}’s moves.
+            </p>
+          ))}
+          {timeline.map((m) => (
+            <div key={m.key} className="flex items-center gap-2.5 border-b border-m-b2 py-3" data-profile-move={m.kind} data-move-league={m.leagueId}>
+              <span className={cn('flex h-[22px] min-w-[62px] flex-none items-center justify-center rounded-pill px-2 text-[11px] font-semibold', KIND_PILL[m.kind])}>
+                {m.kind}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-px">
+                <span className="truncate text-[13px] font-semibold">
+                  <MoveText move={m} />
+                </span>
+                <span className="truncate text-[11px] font-medium text-m-t3">{m.leagueName}</span>
+              </span>
+              <span className="flex-none whitespace-nowrap text-[11px] font-medium text-m-t3">{shortDate(m.at)}</span>
+            </div>
+          ))}
+          {truncated.map((l) => (
+            <p key={l.id} className="py-2 text-[11px] font-medium text-m-t3">
+              Older moves in {l.name} aren’t shown.
+            </p>
+          ))}
+          {timeline.length === 0 && failed.length === 0 && (
+            <p className="py-[30px] text-center text-[13px] font-medium text-m-t3">
+              {filter === 'all' && shown.length !== 1 ? 'No transactions in your leagues' : 'No transactions in this league'}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function LeagueMoveRows({ league, playerId, report }: { league: MyLeagueRow; playerId: string; report: (n: number | null) => void }) {
-  const moves = useMobileProfileLeagueMoves(league.id, playerId)
-  const count = moves.state === 'ready' ? moves.moves.length : null
-  useEffect(() => report(count), [count, report])
-  if (moves.state === 'loading') {
-    return <div className="my-2 h-[44px] animate-pulse rounded-[12px] bg-m-b1" />
-  }
-  if (moves.state === 'error') {
-    return <p className="border-b border-m-b2 py-3 text-[13px] font-medium text-negative-strong">Couldn’t read {league.name}’s moves.</p>
-  }
-  return (
-    <>
-      {moves.moves.map((m) => (
-        <div key={m.id} className="flex items-center gap-2.5 border-b border-m-b2 py-3" data-profile-move={m.kind}>
-          <span className={cn('flex h-[22px] min-w-[62px] flex-none items-center justify-center rounded-pill px-2 text-[11px] font-semibold', KIND_PILL[m.kind])}>
-            {m.kind}
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col gap-px">
-            <span className="truncate text-[13px] font-semibold">
-              <MoveText move={m} />
-            </span>
-            <span className="truncate text-[11px] font-medium text-m-t3">{league.name}</span>
-          </span>
-          <span className="flex-none whitespace-nowrap text-[11px] font-medium text-m-t3">{shortDate(m.at)}</span>
-        </div>
-      ))}
-      {moves.truncated && <p className="py-2 text-[11px] font-medium text-m-t3">Older moves in {league.name} aren’t shown.</p>}
-    </>
-  )
+type MovesReport = { state: 'loading' | 'error' | 'ready'; moves: ProfileMove[]; truncated: boolean }
+
+/** One league's moves of him, read and reported up to the timeline. */
+function LeagueMovesReporter({
+  leagueId,
+  playerId,
+  report,
+}: {
+  leagueId: string
+  playerId: string
+  report: (leagueId: string, r: MovesReport) => void
+}) {
+  const { state, moves, truncated } = useMobileProfileLeagueMoves(leagueId, playerId)
+  useEffect(() => report(leagueId, { state, moves, truncated }), [leagueId, state, moves, truncated, report])
+  return null
 }
 
 function MoveText({ move }: { move: ProfileMove }) {

@@ -126,7 +126,7 @@ function row(team: string, rank: number, w: number, l: number, faab: number, pri
     games: w + l,
     win_pct: w / Math.max(1, w + l),
     points_for: pf,
-    points_against: 0,
+    points_against: pf - 5,
     weeks: w + l,
     h2h_record: rec,
     median_record: rec,
@@ -137,13 +137,23 @@ function row(team: string, rank: number, w: number, l: number, faab: number, pri
   }
 }
 
+/** The chain 117 returns for the default tiebreak order in an h2h league. */
+const DEFAULT_CHAIN = [
+  { entry: 'win_pct', status: 'applied', reason: null },
+  { entry: 'points_for', status: 'applied', reason: null },
+  { entry: 'head_to_head', status: 'applied', reason: 'clean_two_team_ties_only' },
+  { entry: 'points_against', status: 'applied', reason: null },
+  { entry: 'division_record', status: 'inert', reason: 'divisions_pinned_at_1' },
+  { entry: 'coin_flip', status: 'applied', reason: null },
+]
+
 const STANDINGS: LeagueStandings = {
   league_id: LEAGUE,
   season: 2099,
   schedule_mode: 'h2h',
   regular_season: { first_week: 1, last_week: 3 },
   weeks_final: 1,
-  chain: [],
+  chain: DEFAULT_CHAIN,
   chain_appended: [],
   coin_flip_seed: '',
   coin_flip_seed_source: '',
@@ -260,7 +270,7 @@ describe('League › Standings', () => {
   const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }))
 
   it('the header row and the server’s order', () => {
-    expect(html).toMatch(/>Rank<.*>Team<.*>Waiver<.*>PF</)
+    expect(html).toMatch(/>Rank<.*>Team<.*>Waiver<.*>PF<.*>PA</)
     const order = [...html.matchAll(/data-standings-row="([^"]+)"/g)].map((m) => m[1])
     expect(order).toEqual([OPP, T4, T3, ME])
   })
@@ -282,6 +292,78 @@ describe('League › Standings', () => {
 
   it('every row opens the team', () => {
     expect(html).toContain(`href="/app/leagues/league-1/team/${OPP}"`)
+  })
+
+  // Gap list #40 (Chris, 2026-10-15).
+  it('Points Against on every row, under points for (one column — the team name keeps its width); no Win %', () => {
+    const opp = html.slice(html.indexOf(`data-standings-row="${OPP}"`))
+    expect(opp).toMatch(/data-pf="true">90\.00<\/span><span class="[^"]*" data-pa="true">85\.00</)
+    expect(html).toMatch(/>PF<\/span><span>PA<\/span>/)
+    expect(html).toContain('grid-cols-[30px_minmax(0,1fr)_64px_50px]')
+    expect(html).not.toMatch(/Win %|win_pct|\.500/)
+  })
+
+  it('the vs-median record shows in a league that plays the median game; the 2nd-opponent record only where that game is played', () => {
+    expect(html).toContain('data-extra-records')
+    expect(html).toContain('vs median 0-0')
+    expect(html).not.toContain('2nd opp')
+    const both = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }), { second_opponent: true })
+    // Each record its own unbreakable piece in a wrapping line — on a narrow
+    // phone the 2nd-opponent record drops under the median one, never cut.
+    const extras = both.match(/<span class="([^"]*)" data-extra-records="true">(.*?)<\/span><\/span><\/span>/)
+    expect(extras?.[1].split(' ')).toEqual(expect.arrayContaining(['flex', 'flex-wrap']))
+    expect(extras?.[1]).not.toMatch(/truncate|whitespace-nowrap/)
+    expect(extras?.[2]).toMatch(/<span class="whitespace-nowrap" data-extra-record="true">vs median 0-0<\/span><span class="whitespace-nowrap" data-extra-record="true">· 2nd opp 0-0/)
+    const neither = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }), { median_game: false })
+    expect(neither).not.toContain('data-extra-records')
+  })
+
+  it('one line says how ties are broken, from the league’s own order (the read’s chain)', () => {
+    expect(html).toContain('Ties go to most points for, then head-to-head (two-team ties), then most points against, then a coin flip.')
+    // The chain the read returns wins over the stored setting when they disagree.
+    const custom = render(
+      createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }),
+      { tiebreakers: ['win_pct', 'points_for', 'head_to_head', 'points_against', 'division_record', 'coin_flip'] },
+      (qc) =>
+        qc.setQueryData(leagueStandingsKeys.all(LEAGUE), {
+          ...STANDINGS,
+          chain: [
+            { entry: 'win_pct', status: 'applied', reason: null },
+            { entry: 'points_against', status: 'applied', reason: null },
+            { entry: 'coin_flip', status: 'applied', reason: null },
+            { entry: 'points_for', status: 'applied', reason: null },
+          ],
+        }),
+    )
+    expect(custom).toContain('data-tiebreak-note')
+    expect(custom).toContain('Ties go to most points against, then a coin flip.')
+    expect(custom).not.toContain('Ties go to most points for')
+  })
+
+  it('a read without a chain falls back to the stored setting, completed the way 117 completes it', () => {
+    const fallback = render(
+      createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }),
+      { tiebreakers: ['win_pct', 'points_against'] },
+      (qc) => qc.setQueryData(leagueStandingsKeys.all(LEAGUE), { ...STANDINGS, chain: [] }),
+    )
+    expect(fallback).toContain('Ties go to most points against, then most points for, then head-to-head (two-team ties), then a coin flip.')
+  })
+
+  it('the streak is the shared count (gap list #39): the stored final result of each week', () => {
+    const t3 = html.slice(html.indexOf(`data-standings-row="${T3}"`))
+    expect(t3).toMatch(/text-negative-strong" data-streak="▼1L">▼1L</)
+    const t4 = html.slice(html.indexOf(`data-standings-row="${T4}"`))
+    expect(t4).toMatch(/text-positive-strong" data-streak="▲1W">▲1W</)
+  })
+
+  it('in a median league the result against the League Median counts too, last in its week (Chris, 2026-10-16)', () => {
+    const median = (team: string, result: string) => ({ season: 2099, week: 1, team_id: team, median_result: result, is_final: true })
+    const withMedian = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }), {}, (qc) =>
+      qc.setQueryData(scheduleKeys.all(LEAGUE), { ...SCHEDULE, median_results: [median(T3, 'win'), median(T4, 'loss')] } satisfies LeagueSchedule),
+    )
+    // T3 lost the game and beat the median; T4 won the game and lost to it.
+    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T3}"`))).toMatch(/text-positive-strong" data-streak="▲1W">▲1W</)
+    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T4}"`))).toMatch(/text-negative-strong" data-streak="▼1L">▼1L</)
   })
 })
 
@@ -426,7 +508,9 @@ describe('Commissioner log and Stat corrections — their own full screens', () 
         }),
     )
     expect(html).toContain('>Stat corrections<')
-    expect(html).toContain('aria-label="Back to activity"')
+    // Back goes to where you came from (Chris #27) — a button, not a fixed link.
+    expect(html).toMatch(/<button type="button" aria-label="Back"[^>]*data-subscreen-back/)
+    expect(html).not.toContain('Back to activity')
     expect(html).toContain('data-mobile-corrections')
     expect(html).not.toContain('data-corrections-view')
     expect(html).toContain('No stat correction has changed a score in this league yet.')

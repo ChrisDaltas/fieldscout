@@ -11,6 +11,7 @@ import {
 import { PlayerAvatarImage } from '@/components/players/player-image'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Icon, type IconName } from '@/components/ui/icon'
+import { hasTiers } from '@/lib/lists/ranking-mode'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 
@@ -81,7 +82,8 @@ export function coverIcon(list: CoverList): IconName {
   if (list.is_favorites) return 'star'
   if (list.is_big_board) return 'cup'
   if (list.position_filter) return 'chart'
-  if (list.ranking_mode === 'rank_and_tier') return 'level'
+  // Tiered — with numbers or without (tier_only, migration 191).
+  if (hasTiers(list.ranking_mode)) return 'level'
   return 'list'
 }
 

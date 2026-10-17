@@ -1,7 +1,6 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -23,6 +22,7 @@ import {
   parseActivityRoute,
   type ActivityRoute,
 } from '@/components/leagues/activity-page-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
@@ -44,7 +44,9 @@ import { commishLogHref, correctionsScreenHref, formatTxDate } from './league-ta
  * (CLAUDE.md: delete nothing) as full screens in the Transactions screen's
  * frame — their own addresses under `/activity/…`, so, like Transactions,
  * the dock shows no switcher and lights no tab: a 52px bar with a back
- * chevron to League › Activity and a centred title.
+ * chevron and a centred title. Back goes back to where you came from — the
+ * Activity list, a ✸ on Standings or a Match card (Chris #27) — and to
+ * League › Activity only when the screen was opened fresh from a link.
  *  - Commissioner log (`/activity/commissioner`): every change a
  *    commissioner made, filterable by team and week, opened AT an entry by a
  *    ✸ door.
@@ -79,15 +81,18 @@ export function ActivitySubscreenRoute({ leagueId, initial }: { leagueId: string
   )
 }
 function SubscreenBar({ leagueId, title }: { leagueId: string; title: string }) {
+  const goBack = useGoBack()
   return (
     <div className="flex h-[52px] items-center gap-2 px-3">
-      <Link
-        href={activityHref(leagueId)}
-        aria-label="Back to activity"
+      <button
+        type="button"
+        onClick={() => goBack(activityHref(leagueId))}
+        aria-label="Back"
         className="flex size-9 flex-none items-center justify-center rounded-full text-m-t1 active:bg-m-b2"
+        data-subscreen-back
       >
         <MIcon name="back" size={18} stroke={2} />
-      </Link>
+      </button>
       <h2 className="flex-1 text-center text-[16px] font-semibold text-m-t1">{title}</h2>
       <span className="w-9 flex-none" />
     </div>

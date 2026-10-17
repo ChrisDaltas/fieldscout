@@ -85,6 +85,7 @@ describe('notifications — the filter strip', () => {
     expect(notificationLeagueId(N[2])).toBeNull()
     expect(notificationIcon('league_trade_executed')).toBe('transfer')
     expect(notificationIcon('league_waiver_claim')).toBe('repeat')
+    expect(notificationIcon('league_commissioner_note')).toBe('marker')
     expect(notificationIcon('league_draft')).toBe('list')
     expect(notificationIcon('player_injury')).toBe('info-circle')
     expect(notificationIcon('direct_message')).toBe('comments')

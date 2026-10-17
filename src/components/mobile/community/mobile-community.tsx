@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CommunityDetail } from '@/components/mobile/community/community-detail'
 import {
+  EmptyBlock,
+  LatestShelf,
   ListMasonry,
   RankingRow,
   ShelfHeader,
@@ -13,25 +15,28 @@ import {
 import {
   COMMUNITY_TABS,
   CREATE_LIST_HREF,
+  LATEST_HREF,
   RANK_POS_CHIPS,
   RANK_SCORING_CHIPS,
   RANK_TYPE_CHIPS,
+  closeCommunityDetail,
+  communityView,
   deriveTopics,
   emptyCopy,
-  filterItems,
   normQuery,
-  rankFilterOk,
-  recentUpdates,
+  topicAwaitingServer,
 } from '@/components/mobile/community/community-ops'
 import { useCommunityStore } from '@/components/mobile/community/community-store'
 import { CreateSheet } from '@/components/mobile/community/create-sheet'
 import { activeWeekOf } from '@/components/mobile/rankings/rankings-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { HeaderIconButton, LogoLockup, MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useFollowingIds } from '@/hooks/use-follows'
 import {
   COMMUNITY_POOL_SIZE,
+  useCommunityInjuryMatches,
   useCommunityPlayerMatches,
   useMobileCommunityFeed,
 } from '@/hooks/use-mobile-community-feed'
@@ -45,6 +50,13 @@ import { cn } from '@/lib/utils'
  * either the For you shelves or the grouped results — all scrolling
  * together (nothing is sticky). A list or ranking opens its detail over the
  * feed at `?list=<id>`, so Back returns to the feed exactly as it was.
+ *
+ * For you's order (Chris, 2026-10-15, gap list #35): a "Latest" section,
+ * strictly newest-first, then everything else "popular + recent"
+ * (`sortPopular` — lists getting likes lately rise, older posts fade). What
+ * shows where is `communityView` (community-ops), kept pure and tested.
+ * "Latest" is a horizontal shelf whose "See all" opens the Latest page
+ * (`/app/explore/latest`, Chris 2026-10-16).
  *
  * `currentWeek` is the app's NFL week (0 = offseason) — the Start or sit
  * shelf is titled with the week it's about.
@@ -70,6 +82,7 @@ function useDebounced<T>(value: T, ms: number): T {
 
 function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const router = useRouter()
+  const goBack = useGoBack()
   const params = useSearchParams()
   const openId = params.get('list')
 
@@ -92,72 +105,92 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const following = useFollowingIds()
   const items = useMemo(() => feed.data?.items ?? [], [feed.data])
   const capped = feed.data?.capped ?? false
-  const poolIds = useMemo(() => items.map((i) => i.id), [items])
+  // The lists the server-side matchers ask about: the pool, plus the
+  // recently liked lists For you weighs beside it.
+  const poolIds = useMemo(
+    () => [...new Set([...items, ...(feed.data?.popularExtra ?? [])].map((i) => i.id))],
+    [items, feed.data],
+  )
   const followingIds = following.data ?? NO_IDS
 
   const q = normQuery(query)
   const debouncedQ = useDebounced(q, 250)
   const playerTopic = topic?.kind === 'player' ? topic : null
+  const injuriesTopic = topic?.kind === 'injuries'
   const topicMatches = useCommunityPlayerMatches(poolIds, { playerId: playerTopic?.id ?? null })
+  const injuryMatches = useCommunityInjuryMatches(poolIds, injuriesTopic)
   const queryMatches = useCommunityPlayerMatches(poolIds, { query: debouncedQ })
-  // The server half of a player topic / player-name search failed: say so
-  // and offer a retry — never a quietly partial (cover players only) or
-  // empty ("Nothing matches") result.
+  // The server half of a player topic / the Injuries topic / a player-name
+  // search failed: say so and offer a retry — never a quietly partial (cover
+  // players only) or empty ("Nothing matches") result.
   const matchError =
     playerTopic && topicMatches.isError
       ? { message: `Couldn’t load the lists with ${playerTopic.label}.`, retry: () => void topicMatches.refetch() }
-      : q && debouncedQ === q && queryMatches.isError
-        ? { message: 'Couldn’t search player names.', retry: () => void queryMatches.refetch() }
-        : null
-  // A player topic waits for its server answer rather than showing the
-  // cover-players guess first.
-  const topicPending = Boolean(playerTopic) && topicMatches.isLoading
+      : injuriesTopic && injuryMatches.isError
+        ? { message: 'Couldn’t load the lists with injured players.', retry: () => void injuryMatches.refetch() }
+        : q && debouncedQ === q && queryMatches.isError
+          ? { message: 'Couldn’t search player names.', retry: () => void queryMatches.refetch() }
+          : null
+  const topicPending = topicAwaitingServer(topic, {
+    player: topicMatches.isLoading,
+    injuries: injuryMatches.isLoading,
+  })
 
   const topics = useMemo(() => deriveTopics(items, topic), [items, topic])
-  const filtered = filterItems(items, {
-    tab,
-    topic,
-    q,
-    followingIds,
-    topicListIds: topic?.kind === 'player' ? topicMatches.data : undefined,
-    // Player-name matches join once the debounced query catches up.
-    queryListIds: debouncedQ === q ? queryMatches.data : undefined,
-  })
-  // Rankings follow their own switch (launch scope), not just the tab bar.
-  const ranksAll = featureFlags.weeklyRanks ? filtered.filter((i) => i.kind === 'rank') : []
-  const ranks = tab === 'rank' ? ranksAll.filter((i) => rankFilterOk(i, rk)) : ranksAll
-  const lists = filtered.filter((i) => i.kind === 'list')
-  const shelves = tab === 'all' && !topic && !q
-  const mixed = tab === 'all' || tab === 'following'
-  // "Now" for the relative times is when the feed was read.
+  // "Now" for the relative times and the For you order is when the feed was
+  // read (the order holds still until the next read).
   const now = feed.dataUpdatedAt
-  const updates =
-    (tab === 'all' || tab === 'following' || tab === 'rank') && !topic && !q
-      ? recentUpdates(items, followingIds, now)
-      : []
+  const {
+    shelves,
+    latest,
+    updates,
+    ranks,
+    lists,
+    shelfRanks,
+    shelfLists,
+    anyList,
+    rankFilteredEmpty,
+    empty,
+  } = communityView({
+    pool: items,
+    popularExtra: feed.data?.popularExtra ?? [],
+    latestRows: feed.data?.latest ?? [],
+    filter: {
+      tab,
+      topic,
+      q,
+      followingIds,
+      topicListIds:
+        topic?.kind === 'player' ? topicMatches.data : topic?.kind === 'injuries' ? injuryMatches.data : undefined,
+      // Player-name matches join once the debounced query catches up.
+      queryListIds: debouncedQ === q ? queryMatches.data : undefined,
+    },
+    rk,
+    // Rankings follow their own switch (launch scope), not just the tab bar.
+    ranksOn: featureFlags.weeklyRanks,
+    now,
+  })
+  const mixed = tab === 'all' || tab === 'following'
 
   // The detail is open from the feed only while `?list=` is set.
   useEffect(() => {
     if (!openId) setDetailFromFeed(false)
   }, [openId, setDetailFromFeed])
 
-  // The cards open the detail with `history.pushState` (no server round
-  // trip); Back pops that entry. Reached any other way (a link, a reload),
-  // there's no feed entry behind it, so Back swaps the URL for the feed's.
-  const closeDetail = () => {
-    if (detailFromFeed) {
-      setDetailFromFeed(false)
-      window.history.back()
-    } else {
-      window.history.replaceState(null, '', '/app/explore')
-    }
-  }
+  // Back goes where you came from (Chris, gap list #27) — see
+  // `closeCommunityDetail`.
+  const closeDetail = () =>
+    closeCommunityDetail(detailFromFeed, {
+      popFeed: () => {
+        setDetailFromFeed(false)
+        window.history.back()
+      },
+      goBack,
+    })
 
   const followingPending = tab === 'following' && following.isLoading
   // Rankings tab: the chips can exclude every ranking — say so (the
   // prototype went blank here; its empty test ran before the chips).
-  const rankFilteredEmpty = tab === 'rank' && ranksAll.length > 0 && ranks.length === 0
-  const empty = filtered.length === 0 || rankFilteredEmpty
   const copy = emptyCopy(tab, topic, q, rankFilteredEmpty, { followsAnyone: followingIds.size > 0, capped })
   const onEmptyAction = () => {
     if (copy.kind === 'rank') resetRankFilters()
@@ -208,6 +241,8 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                   )}
                 >
                   {t.kind === 'player' && <MHeadshot player={t.player} size={24} />}
+                  {/* The handoff's trend pill: a 12px icon before "Injuries". */}
+                  {t.kind === 'injuries' && <MIcon name="trend" size={12} stroke={2} />}
                   {t.label}
                 </button>
               )
@@ -256,25 +291,40 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                     </p>
                   </>
                 )}
-                {ranks.length > 0 && (
+                {latest.length > 0 && (
+                  <>
+                    <ShelfHeader title="Latest" seeAllHref={LATEST_HREF} className="mb-[10px] mt-[22px]" />
+                    <LatestShelf items={latest} now={now} />
+                  </>
+                )}
+                {shelfRanks.length > 0 && (
                   <>
                     <ShelfHeader title="Rankings this week" onSeeAll={() => setTab('rank')} className="mb-[6px] mt-[22px]" />
                     <div className="flex flex-col">
-                      {ranks.map((item) => (
+                      {shelfRanks.map((item) => (
                         <RankingRow key={item.id} item={item} />
                       ))}
                     </div>
                   </>
                 )}
-                <ShelfHeader title="Lists for you" onSeeAll={() => setTab('list')} className="mb-[10px] mt-[22px]" />
-                {lists.length > 0 ? (
-                  <ListMasonry items={lists} />
+                {shelfLists.length > 0 ? (
+                  <>
+                    <ShelfHeader title="Lists for you" onSeeAll={() => setTab('list')} className="mb-[10px] mt-[22px]" />
+                    <ListMasonry items={shelfLists} />
+                  </>
                 ) : (
-                  <EmptyBlock
-                    message={ranks.length > 0 ? 'No lists yet' : 'No lists or rankings yet'}
-                    action="Create a list"
-                    onAction={() => router.push(CREATE_LIST_HREF)}
-                  />
+                  // Every list already shows under Latest: nothing more to
+                  // shelve. No list anywhere: the empty card.
+                  !anyList && (
+                    <>
+                      <ShelfHeader title="Lists for you" onSeeAll={() => setTab('list')} className="mb-[10px] mt-[22px]" />
+                      <EmptyBlock
+                        message={ranks.length > 0 ? 'No lists yet' : 'No lists or rankings yet'}
+                        action="Create a list"
+                        onAction={() => router.push(CREATE_LIST_HREF)}
+                      />
+                    </>
+                  )
                 )}
               </>
             ) : (
@@ -429,31 +479,20 @@ function ChipRow<V extends string>({
   )
 }
 
-/** Empty state (handoff §2.12): centred t3 message + a blue action. */
-function EmptyBlock({ message, action, onAction }: { message: string; action: string; onAction: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-[10px] px-4 py-12 text-center">
-      <p className="text-pretty text-[14px] font-medium leading-[1.4] text-m-t3">{message}</p>
-      <button type="button" onClick={onAction} className="text-[14px] font-semibold text-accent">
-        {action}
-      </button>
-    </div>
-  )
-}
-
 function FeedSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading Community">
-      <span className="mb-[6px] mt-[22px] block h-[22px] w-44 animate-pulse rounded-[14px] bg-m-b1" />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-3 py-2">
-          <span className="h-[60px] w-[60px] flex-none animate-pulse rounded-[10px] bg-m-b1" />
-          <span className="flex flex-1 flex-col gap-2">
-            <span className="h-3.5 w-3/4 animate-pulse rounded-[14px] bg-m-b1" />
+      <span className="mb-[10px] mt-[22px] block h-[22px] w-28 animate-pulse rounded-[14px] bg-m-b1" />
+      {/* The Latest shelf: cards running off the right edge. */}
+      <div className="-mx-4 flex gap-[10px] overflow-hidden px-4">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="flex w-[150px] flex-none flex-col gap-2">
+            <span className="h-[150px] animate-pulse rounded-[14px] bg-m-b1" />
+            <span className="h-3.5 w-4/5 animate-pulse rounded-[14px] bg-m-b1" />
             <span className="h-3 w-1/2 animate-pulse rounded-[14px] bg-m-b1" />
           </span>
-        </div>
-      ))}
+        ))}
+      </div>
       <span className="mb-[10px] mt-[22px] block h-[22px] w-32 animate-pulse rounded-[14px] bg-m-b1" />
       <div className="grid grid-cols-2 gap-[10px]">
         <span className="h-[180px] animate-pulse rounded-[14px] bg-m-b1" />

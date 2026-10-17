@@ -1,6 +1,7 @@
 'use client'
 
-import { fmt1 } from '@/components/mobile/rankings/rankings-ops'
+import { SwitchTrack } from '@/components/mobile/lists/lists-parts'
+import { fmt1, movementText, movementToneClass, type Movement } from '@/components/mobile/rankings/rankings-ops'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import type { PoolStat } from '@/hooks/use-mobile-rankings-sources'
 import { cn } from '@/lib/utils'
@@ -8,7 +9,7 @@ import { cn } from '@/lib/utils'
 /**
  * Small shared pieces of the mobile Rankings screens (lr-frame §2.13): the
  * icon paths the shared `MIcon` set lacks, the Pts / Avg / Pos rk stat
- * columns, and the status pill.
+ * columns, the status pill, and the movement mark and its switch.
  */
 
 /** 16×16 stroke icons used only in this area (lr-frame §2.13.12). */
@@ -80,13 +81,17 @@ export function statCells(stat: PoolStat | undefined, position: string): StatCel
   ]
 }
 
-export type RankStatus = 'Finalized' | 'Submitted' | 'Saved' | 'Draft'
+/**
+ * A ranking's status on the phone (Chris, 2026-10-15): Published — the
+ * app's one saved state, which is the ranking that counts — or Finalized, a
+ * played week. There is no "saved but not published" or draft state.
+ */
+export type RankStatus = 'Finalized' | 'Published'
 
 const STATUS_CLASS: Record<RankStatus, string> = {
   Finalized: 'bg-m-t1 text-m-b0',
-  Submitted: 'bg-m-gg text-m-tg',
-  Saved: 'bg-m-gb text-m-tb',
-  Draft: 'bg-m-b2 text-m-t2',
+  // Publish is "save and submit", so it wears the design's Submitted colours.
+  Published: 'bg-m-gg text-m-tg',
 }
 
 export function StatusPill({ status }: { status: RankStatus }) {
@@ -99,5 +104,51 @@ export function StatusPill({ status }: { status: RankStatus }) {
     >
       {status}
     </span>
+  )
+}
+
+/** A player's movement since the ranking's previous update (gap list #33):
+ *  "▲3" green, "▼2" red, "New" in the accent; nothing when unmoved. */
+export function MovementMark({ m, className }: { m: Movement | undefined; className?: string }) {
+  const t = movementText(m)
+  if (!t || m === undefined) return null
+  const said = m === 'new' ? 'new since the last update' : `${m > 0 ? 'up' : 'down'} ${Math.abs(m)} since the last update`
+  return (
+    <span className={cn('whitespace-nowrap font-semibold', movementToneClass(m), className)}>
+      <span aria-hidden="true">{t}</span>
+      <span className="sr-only">{said}</span>
+    </span>
+  )
+}
+
+/**
+ * The "Show movement" switch (gap list #33) — a pill on the editor's tool
+ * row, or inline at the end of the hub's info line. Uses Lists' switch track.
+ */
+export function MovementSwitch({
+  on,
+  onChange,
+  variant = 'chip',
+}: {
+  on: boolean
+  onChange: (on: boolean) => void
+  variant?: 'chip' | 'inline'
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className={cn(
+        'flex flex-none items-center whitespace-nowrap font-semibold',
+        variant === 'chip'
+          ? 'h-[30px] gap-2 rounded-pill bg-m-b2 pl-3 pr-1 text-[12px] text-m-t1'
+          : 'gap-1.5 text-[11px] text-m-t3',
+      )}
+    >
+      Show movement
+      <SwitchTrack on={on} />
+    </button>
   )
 }

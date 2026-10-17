@@ -54,6 +54,13 @@ export const HALF_PPR_SCORING: ScoringRules = {
   receptions: 0.5,
 }
 
+/** Quarter-point PPR (0.25 per catch) — the phone's list stat scoring choice
+ *  (Chris, 2026-10-15). Not a preset users pick for a list's own scoring. */
+export const QUARTER_PPR_SCORING: ScoringRules = {
+  ...STANDARD_SCORING,
+  receptions: 0.25,
+}
+
 export const PPR_SCORING: ScoringRules = {
   ...STANDARD_SCORING,
   receptions: 1,

@@ -6,20 +6,19 @@ import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
-import { useAddPlayer, useRemovePlayer, useSetPlayerTier, type ListWithDetails } from '@/hooks/use-lists'
 import { poolPositions, useMobileListsPool, type PoolPlayer } from '@/hooks/use-mobile-lists-pool'
-import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-import { lastTierLetter } from './lists-model'
 import { CenterNote, PillButton } from './lists-parts'
 
 /**
  * FieldScout Mobile — Add players (lr-lists §2.4, states L5/L5a): search, a
  * position chip row, and every player in the pool with a +/✓ circle. A tap
- * adds or removes at once (the app writes every change immediately); Done
- * only closes. Added players go to the end of the list — and, on a tiered
- * list, into its last tier, as the design's append does.
+ * adds or removes in the editor's draft — nothing is written until the
+ * editor's Update (Chris, 2026-10-15, gap list #16); Done only closes. Added
+ * players go to the end of the list — and, on a tiered list, into its last
+ * tier, as the design's append does (`addToDraft`). A player can't be added
+ * twice: a tap on one already in the draft takes him out.
  *
  * The pool is the desktop popover's (`/api/players/builder`, projection order);
  * the design's "Scout AI #N" has no source in the app and is left out. The
@@ -27,32 +26,27 @@ import { CenterNote, PillButton } from './lists-parts'
  */
 
 const ALL_CHIPS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const
-const passThrough = <T,>(write: Promise<T>): Promise<T> => write
 const PAGE = 40
 
 export function AddPlayersSheet({
   open,
   onOpenChange,
-  list,
-  tiersOn,
-  track = passThrough,
+  positionFilter,
+  inList,
+  onToggle,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  list: ListWithDetails
-  tiersOn: boolean
-  /** The editor's write tracker, so its Done waits for these writes too. */
-  track?: <T>(write: Promise<T>) => Promise<T>
+  positionFilter: string | null
+  /** The draft's players. */
+  inList: ReadonlySet<string>
+  onToggle: (player: PoolPlayer) => void
 }) {
-  const positions = poolPositions(list.position_filter)
+  const positions = poolPositions(positionFilter)
   const pool = useMobileListsPool(positions, true)
-  const add = useAddPlayer(list.id)
-  const remove = useRemovePlayer(list.id)
-  const setTier = useSetPlayerTier(list.id)
   const [q, setQ] = React.useState('')
   const [pos, setPos] = React.useState<string>('All')
   const [limit, setLimit] = React.useState(PAGE)
-  const [adding, setAdding] = React.useState<ReadonlySet<string>>(new Set())
   const sentinel = React.useRef<HTMLDivElement | null>(null)
 
   // The search and filter reset on every open (lr-lists §3).
@@ -63,7 +57,6 @@ export function AddPlayersSheet({
     setLimit(PAGE)
   }, [open])
 
-  const inList = React.useMemo(() => new Set(list.players.map((entry) => entry.player_id)), [list.players])
   const chips = positions ? positions : ALL_CHIPS
 
   const needle = q.trim().toLowerCase()
@@ -89,46 +82,7 @@ export function AddPlayersSheet({
     return () => io.disconnect()
   }, [open, rows.length, limit])
 
-  const toggle = (player: PoolPlayer) => {
-    if (inList.has(player.id)) {
-      track(remove.mutateAsync(player.id)).catch((error: Error) =>
-        toast({ title: 'Could not remove that player', description: error.message }),
-      )
-      return
-    }
-    if (adding.has(player.id)) return
-    setAdding((prev) => new Set(prev).add(player.id))
-    const letter = tiersOn ? lastTierLetter(list.players) : null
-    const write = add.mutateAsync(player.id).then(
-      async () => {
-        if (!letter) return
-        await setTier.mutateAsync({ playerId: player.id, tier: letter }).catch((error: Error) => {
-          toast({ title: `${player.full_name} was added but not placed in the last tier`, description: error.message })
-          throw error
-        })
-      },
-      (error: Error & { status?: number }) => {
-        // A 409 means he is already on the list — the toast, not a failure.
-        if (error.status === 409) {
-          toast({ title: `${player.full_name} is already on this list` })
-          return
-        }
-        toast({ title: 'Could not add that player', description: error.message })
-        throw error
-      },
-    )
-    track(write)
-      .catch(() => undefined)
-      .finally(() =>
-        setAdding((prev) => {
-          const next = new Set(prev)
-          next.delete(player.id)
-          return next
-        }),
-      )
-  }
-
-  const count = list.players.length + [...adding].filter((id) => !inList.has(id)).length
+  const count = inList.size
 
   return (
     <MobileSheet bodyClassName="leading-[normal] tabular-nums" open={open} onOpenChange={onOpenChange} title="Add players" subtitle={`${count} in your list`} showClose>
@@ -185,12 +139,12 @@ export function AddPlayersSheet({
         ) : (
           <>
             {rows.slice(0, limit).map((player) => {
-              const on = inList.has(player.id) || adding.has(player.id)
+              const on = inList.has(player.id)
               return (
                 <button
                   key={player.id}
                   type="button"
-                  onClick={() => toggle(player)}
+                  onClick={() => onToggle(player)}
                   aria-pressed={on}
                   aria-label={`${on ? 'Remove' : 'Add'} ${player.full_name}`}
                   className="flex w-full items-center gap-2.5 border-b border-m-b2 py-2 text-left"

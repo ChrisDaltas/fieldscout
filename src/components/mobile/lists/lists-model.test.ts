@@ -1,21 +1,35 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
+import type { PoolPlayer } from '@/hooks/use-mobile-lists-pool'
 
 import {
+  addToDraft,
+  arrangeDraft,
   autoTierItems,
   breaks,
+  draftChanged,
+  draftItems,
+  draftOf,
   editorItems,
   fillScores,
   lastTierLetter,
+  landedPlan,
   moveItem,
   planCommit,
+  planIsEmpty,
+  planParts,
+  planSave,
   playersLabel,
+  removeFromDraft,
+  saveFailureNote,
+  setDraftMode,
   shortName,
   trailingMarkers,
   updatedLabel,
   youTubeId,
   type EdItem,
+  type StoredList,
 } from './lists-model'
 
 function entry(n: number, tier: string | null = null, proj: number | null = null): ListPlayerWithPlayer {
@@ -159,5 +173,197 @@ describe('auto tiers', () => {
   it('new players join the last tier', () => {
     expect(lastTierLetter([entry(1, 'S'), entry(2, 'B')])).toBe('B')
     expect(lastTierLetter([entry(1)])).toBeNull()
+  })
+})
+
+// =============================================================================
+// The editor's draft (gap list #16, Chris 2026-10-15)
+// =============================================================================
+
+const stored = (players: ListPlayerWithPlayer[], ranking_mode = 'rank_and_tier', title = 'My list'): StoredList => ({
+  title,
+  ranking_mode,
+  players,
+})
+
+const pool = (n: number): PoolPlayer => ({
+  id: `p${n}`,
+  full_name: `Player ${n}`,
+  position: 'WR',
+  team: 'KC',
+  headshot_url: null,
+  status: null,
+  projected_pts: 150,
+  current_pts: 40,
+  current_games: 4,
+})
+
+describe('the editor draft', () => {
+  it('starts equal to the list: nothing to write', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'A'), entry(3, null)])
+    expect(planIsEmpty(planSave(draftOf(list), list))).toBe(true)
+  })
+
+  it('a drag changes the draft, not the list, and plans the order + tier writes', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'S'), entry(3, 'A')])
+    const draft = draftOf(list)
+    const items = draftItems(draft) // p1 p2 | p3
+    const next = arrangeDraft(draft, moveItem(items, 0, 3)) // p1 below p3 → Tier 2
+    expect(list.players.map((e) => e.tier)).toEqual(['S', 'S', 'A']) // untouched
+    expect(ids(draftItems(next))).toEqual(['p2', 'tier', 'p3', 'p1'])
+    const plan = planSave(next, list)
+    expect(plan.order).toEqual(['p2', 'p3', 'p1'])
+    expect(plan.tiers).toEqual([{ playerId: 'p1', tier: 'A' }])
+    expect(plan.add).toEqual([])
+    expect(plan.remove).toEqual([])
+  })
+
+  it('a pending tier line alone is nothing to save', () => {
+    const list = stored([entry(1), entry(2)])
+    const draft = { ...draftOf(list), pending: 1 }
+    expect(ids(draftItems(draft))).toEqual(['p1', 'p2', 'tier'])
+    expect(planIsEmpty(planSave(draft, list))).toBe(true)
+  })
+
+  it('adds go to the end, into the last tier; the bulk add appends so no reorder', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'A')])
+    const draft = addToDraft(draftOf(list), pool(9), 'l1')
+    expect(draft.entries.at(-1)).toMatchObject({ player_id: 'p9', tier: 'A', position: 3 })
+    expect(addToDraft(draft, pool(9), 'l1')).toBe(draft) // never twice
+    expect(planSave(draft, list)).toEqual({
+      fields: {},
+      remove: [],
+      add: ['p9'],
+      tiers: [{ playerId: 'p9', tier: 'A' }],
+      order: null,
+    })
+  })
+
+  it('an added player dragged up is ordered by the reorder after the add', () => {
+    const list = stored([entry(1), entry(2)], 'ranked')
+    const draft = addToDraft(draftOf(list), pool(9), 'l1')
+    const next = arrangeDraft(draft, moveItem(draftItems(draft), 2, 0))
+    const plan = planSave(next, list)
+    expect(plan.add).toEqual(['p9'])
+    expect(plan.order).toEqual(['p9', 'p1', 'p2'])
+    expect(plan.tiers).toEqual([])
+  })
+
+  it('removals keep the rest in order (no reorder)', () => {
+    const list = stored([entry(1), entry(2), entry(3)], 'ranked')
+    const draft = removeFromDraft(draftOf(list), 'p2')
+    expect(planSave(draft, list)).toEqual({ fields: {}, remove: ['p2'], add: [], tiers: [], order: null })
+  })
+
+  it('Ranked / Tiers and the name are list fields; leaving tiers drops pending lines', () => {
+    const list = stored([entry(1)], 'rank_and_tier')
+    const draft = setDraftMode({ ...draftOf(list), pending: 2, title: '  Renamed  ' }, 'ranked')
+    expect(draft.pending).toBe(0)
+    expect(planSave(draft, list).fields).toEqual({ title: 'Renamed', ranking_mode: 'ranked' })
+    // An empty name is not a change (the input puts the saved one back).
+    expect(planSave({ ...draft, title: '   ' }, list).fields).toEqual({ ranking_mode: 'ranked' })
+  })
+
+  it('a re-read after a partial save leaves only what is still unsaved', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'S')])
+    const added = addToDraft(draftOf(list), pool(9), 'l1')
+    // Add p9, then drop a tier line under p1: p1 | p2 p9.
+    const items = draftItems(added)
+    const draft = arrangeDraft(added, [items[0], { t: 'tier', id: 'pending-0', pending: true }, ...items.slice(1)])
+    const attempted = planSave(draft, list)
+    expect(attempted.add).toEqual(['p9'])
+    expect(attempted.tiers).toEqual([
+      { playerId: 'p2', tier: 'A' },
+      { playerId: 'p9', tier: 'A' },
+    ])
+    // The add landed (stored with no tier), the tier writes did not.
+    const after = stored([entry(1, 'S'), entry(2, 'S'), { ...entry(9), player_id: 'p9', position: 3 }])
+    const remaining = planSave(draft, after)
+    expect(remaining.add).toEqual([])
+    expect(remaining.tiers).toHaveLength(2)
+    expect(planParts(landedPlan(attempted, remaining))).toEqual(['1 added player'])
+    expect(saveFailureNote('Could not set a tier: boom', attempted, remaining)).toBe(
+      'Could not set a tier: boom Saved: 1 added player. Not saved: tiers for 2 players.',
+    )
+  })
+
+  it('plans only the user’s changes onto a list that changed elsewhere', () => {
+    const opened = stored([entry(1, 'S'), entry(2, 'S'), entry(3, 'S')])
+    const start = draftOf(opened)
+    // The user drops a tier line above p3: p1 p2 | p3 (p3 → A).
+    const items = draftItems(start)
+    const draft = arrangeDraft(start, [...items.slice(0, 2), { t: 'tier', id: 'pending-0', pending: true }, items[2]])
+    expect(draft.base).toBe(start.base) // edits keep the base
+    expect(draftChanged(draft)).toBe(true)
+    // Elsewhere: p3 removed, p4 added, the list renamed.
+    const now = stored([entry(1, 'S'), entry(2, 'S'), { ...entry(4, 'S'), position: 4 }], 'rank_and_tier', 'Renamed elsewhere')
+    expect(planSave(draft, now)).toEqual({ fields: {}, remove: [], add: [], tiers: [], order: null })
+    // With no edits, a changed list is not a change of the user's.
+    expect(draftChanged(start)).toBe(false)
+    expect(planIsEmpty(planSave(start, now))).toBe(true)
+  })
+
+  it('says so when nothing saved, or when what saved could not be checked', () => {
+    expect(saveFailureNote('Offline.', null, null)).toBe('Offline. Nothing was saved.')
+    const plan = planSave(removeFromDraft(draftOf(stored([entry(1)])), 'p1'), stored([entry(1)]))
+    expect(saveFailureNote('Could not remove a player: no.', plan, plan)).toBe(
+      'Could not remove a player: no. Nothing was saved. Not saved: 1 removed player.',
+    )
+    expect(saveFailureNote('Could not save the order: no.', plan, null)).toContain('couldn’t be checked')
+  })
+})
+
+/**
+ * Tiers without numbers (Chris, 2026-10-15; migration 191): Ranked and Tiers
+ * are independent, so a draft can be tiered with Ranked off (`tier_only`).
+ */
+describe('the editor draft: tiers without numbers', () => {
+  it('a tier-only list draws its tier lines in the editor', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'S'), entry(3, 'A')], 'tier_only')
+    expect(ids(draftItems(draftOf(list)))).toEqual(['p1', 'p2', 'tier', 'p3'])
+  })
+
+  it('a drag re-letters tiers on a tier-only list, as on a numbered one', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'S'), entry(3, 'A')], 'tier_only')
+    const draft = draftOf(list)
+    const next = arrangeDraft(draft, moveItem(draftItems(draft), 0, 3)) // p1 below p3 → Tier 2
+    const plan = planSave(next, list)
+    expect(plan.order).toEqual(['p2', 'p3', 'p1'])
+    expect(plan.tiers).toEqual([{ playerId: 'p1', tier: 'A' }])
+  })
+
+  it('players added to a tier-only list join its last tier', () => {
+    const list = stored([entry(1, 'S'), entry(2, 'A')], 'tier_only')
+    expect(addToDraft(draftOf(list), pool(9), 'l1').entries.at(-1)).toMatchObject({ tier: 'A' })
+  })
+
+  it('turning Ranked off keeps the tiers (and any pending tier line); it saves as tier_only', () => {
+    const list = stored([entry(1, 'S')], 'rank_and_tier')
+    const draft = setDraftMode({ ...draftOf(list), pending: 1 }, 'tier_only')
+    expect(draft.pending).toBe(1)
+    expect(ids(draftItems(draft))).toEqual(['p1', 'tier'])
+    expect(planSave(draft, list).fields).toEqual({ ranking_mode: 'tier_only' })
+    expect(planParts(planSave(draft, list))).toEqual(['Ranked / Tiers'])
+  })
+
+  it('turning Tiers off a tier-only list leaves a plain list and drops pending lines', () => {
+    const list = stored([entry(1, 'S')], 'tier_only')
+    const draft = setDraftMode({ ...draftOf(list), pending: 2 }, 'unranked')
+    expect(draft.pending).toBe(0)
+    expect(planSave(draft, list).fields).toEqual({ ranking_mode: 'unranked' })
+  })
+
+  it('a refused tier-only save is reported as not saved, with the server’s reason', () => {
+    const list = stored([entry(1, 'S')], 'rank_and_tier')
+    const plan = planSave(setDraftMode(draftOf(list), 'tier_only'), list)
+    expect(
+      saveFailureNote(
+        'Could not save the name or Ranked / Tiers: Tiers without numbers is coming in the next update.',
+        plan,
+        plan,
+      ),
+    ).toBe(
+      'Could not save the name or Ranked / Tiers: Tiers without numbers is coming in the next update. Nothing was saved. Not saved: Ranked / Tiers.',
+    )
   })
 })

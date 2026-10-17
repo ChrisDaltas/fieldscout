@@ -30,9 +30,11 @@ export interface MDmConversation {
  * the same release gate (`featureFlags.messages`). When the API lands, it
  * plugs in here and both surfaces fill together.
  *
- * Trade offers are NOT read from here: the Messages › Trades tab shows the
- * leagues' real offers (`leagueTradeOffers`). A thread's `trade` field is
- * the rail's mock shape with no server behind it.
+ * Trade offers are NOT read from here. Messages shows no trades (Chris,
+ * ruling #22, 2026-10-15: "only within a league or DM chat") — a league's
+ * offers live on its Trades screen. A thread's `trade` field is the rail's
+ * mock shape with no server behind it and is not rendered on mobile; a
+ * trade inside a DM chat is for when direct messages get a backend.
  */
 const DM_THREADS: readonly RailDmThread[] = []
 

@@ -14,7 +14,7 @@ import { swapIsEmpty, swapOptions, type SwapOptions, type SwapSelection } from '
 import { teamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 
-import { ageOn, gameLine, monthDay, ord, recentMoveRows, shortName, sinceText, streakOf, summaryLine, teamAvClass, teamOrder } from './team-ops'
+import { ageOn, gameLine, monthDay, ord, recentMoveRows, shortName, sinceText, summaryLine, teamAvClass, teamOrder } from './team-ops'
 
 const SETTINGS: RosterSettings = {
   starting_slots: [
@@ -236,11 +236,7 @@ describe('team-ops', () => {
     expect(summaryLine(rows, 'b')).toBe('2-6 · 2nd · PF 2nd · PA 1st')
   })
 
-  it('streakOf counts the newest decided weeks', () => {
-    const m = (week: number, result: string) => ({ week, home_team_id: 'me', away_team_id: 'x', result })
-    expect(streakOf([m(1, 'away'), m(2, 'home'), m(3, 'home')], 'me')).toEqual({ text: 'W2', kind: 'W' })
-    expect(streakOf([], 'me')).toBeNull()
-  })
+  // The Team view's streak is `streak-ops` (one count with Match and Standings — gap list #39).
 
   it('team colours: yours is always the accent; the rest follow league order without you (the Match tab’s rule)', () => {
     const teams = [{ id: 'a' }, { id: 'me' }, { id: 'b' }]

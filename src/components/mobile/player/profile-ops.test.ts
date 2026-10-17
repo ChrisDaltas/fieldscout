@@ -11,7 +11,6 @@ import type { CoreStatsPayload } from '@/lib/players/core-stats-ops'
 import { PPR_SCORING, STANDARD_SCORING } from '@/lib/scoring/default'
 
 import {
-  availableSummary,
   bioLine,
   careerTable,
   clearsDay,
@@ -25,6 +24,10 @@ import {
   initialCardIndex,
   isLightHex,
   keyStatTrends,
+  leagueOwnership,
+  movesTimeline,
+  ownershipNeedsRosters,
+  ownershipSummary,
   pastSeasonRules,
   playerMoves,
   rankTone,
@@ -32,6 +35,9 @@ import {
   statusPill,
   stripCells,
   teamLine,
+  TREND_BETTER,
+  trendIsGood,
+  type ProfileMove,
 } from './profile-ops'
 
 function player(over: Partial<PlayerStatsPlayer> = {}): PlayerStatsPlayer {
@@ -328,11 +334,11 @@ describe('key stats trend', () => {
   ]
   const completed = new Set([1, 2, 3, 4, 5])
 
-  it('last three completed games against the season, per game; ▲ green / ▼ red, one decimal', () => {
+  it('last three completed games against the season, per game, one decimal', () => {
     const t = keyStatTrends({ lines, season: 2026, completedWeeks: completed })
     // Rush yds/gm: season 76, last 3 100 → ▲ 24.0. Carries: 16 → 20 → ▲ 4.0.
-    expect(t.rush_yds).toEqual({ up: true, text: '▲ last 3 24.0' })
-    expect(t.carries_pg).toEqual({ up: true, text: '▲ last 3 4.0' })
+    expect(t.rush_yds).toEqual({ up: true, good: true, text: '▲ last 3 24.0' })
+    expect(t.carries_pg).toEqual({ up: true, good: true, text: '▲ last 3 4.0' })
     // Targets flat → no direction, no line.
     expect(t.targets).toBeUndefined()
     // No weekly source (season usage rows) → never a trend.
@@ -342,8 +348,47 @@ describe('key stats trend', () => {
   it('a percentage trends in whole points; three games or fewer is the whole season (no trend)', () => {
     const qb = [1, 2, 3, 4].map((w) => wk(w, w === 1 ? { pass_attempts: 30, pass_completions: 15 } : { pass_attempts: 30, pass_completions: 21 }))
     // Season 78/120 = 65%, last 3 63/90 = 70% → ▲ 5%.
-    expect(keyStatTrends({ lines: qb, season: 2026, completedWeeks: new Set([1, 2, 3, 4]) }).comp_pct).toEqual({ up: true, text: '▲ last 3 5%' })
+    expect(keyStatTrends({ lines: qb, season: 2026, completedWeeks: new Set([1, 2, 3, 4]) }).comp_pct).toEqual({ up: true, good: true, text: '▲ last 3 5%' })
     expect(keyStatTrends({ lines: qb, season: 2026, completedWeeks: new Set([1, 2, 3]) })).toEqual({})
+  })
+
+  it('coloured by better or worse (#43): fewer interceptions is ▼ green, more is ▲ red', () => {
+    const qb = (ints: number[]) => ints.map((n, i) => wk(i + 1, { pass_attempts: 30, pass_completions: 20, interceptions: n }))
+    const weeks = new Set([1, 2, 3, 4, 5])
+    // Season 6 INT / 5 = 1.2 per game, last 3 0 → ▼ 1.2, a GOOD trend.
+    expect(keyStatTrends({ lines: qb([3, 3, 0, 0, 0]), season: 2026, completedWeeks: weeks }).int).toEqual({ up: false, good: true, text: '▼ last 3 1.2' })
+    // Season 6 / 5 = 1.2, last 3 2.0 → ▲ 0.8, a BAD trend.
+    expect(keyStatTrends({ lines: qb([0, 0, 2, 2, 2]), season: 2026, completedWeeks: weeks }).int).toEqual({ up: true, good: false, text: '▲ last 3 0.8' })
+    // A production stat falling is ▼ red.
+    const rb = [40, 40, 10, 10, 10].map((y, i) => wk(i + 1, { rush_yards: y }))
+    expect(keyStatTrends({ lines: rb, season: 2026, completedWeeks: weeks }).rush_yds).toMatchObject({ up: false, good: false })
+  })
+
+  it('a defense: points / yards allowed falling is green; its own sacks and takeaways rising is green', () => {
+    const def = [
+      { def_points_allowed: 30, def_yards_allowed: 400, def_sacks: 1, def_interceptions: 0 },
+      { def_points_allowed: 30, def_yards_allowed: 400, def_sacks: 1, def_interceptions: 0 },
+      { def_points_allowed: 10, def_yards_allowed: 250, def_sacks: 4, def_interceptions: 2 },
+      { def_points_allowed: 10, def_yards_allowed: 250, def_sacks: 4, def_interceptions: 2 },
+      { def_points_allowed: 10, def_yards_allowed: 250, def_sacks: 4, def_interceptions: 2 },
+    ].map((l, i) => wk(i + 1, l))
+    const t = keyStatTrends({ lines: def, season: 2026, completedWeeks: new Set([1, 2, 3, 4, 5]) })
+    expect(t.pa_pg).toMatchObject({ up: false, good: true })
+    expect(t.ya_pg).toMatchObject({ up: false, good: true })
+    expect(t.sacks).toMatchObject({ up: true, good: true })
+    expect(t.def_int).toMatchObject({ up: true, good: true })
+  })
+
+  it('the better-or-worse map: lower is better only for interceptions thrown and yards / points allowed', () => {
+    const lower = Object.entries(TREND_BETTER)
+      .filter(([, b]) => b === 'lower')
+      .map(([k]) => k)
+      .sort()
+    expect(lower).toEqual(['int', 'pa_pg', 'ya_pg'])
+    expect(trendIsGood('int', false)).toBe(true)
+    expect(trendIsGood('int', true)).toBe(false)
+    expect(trendIsGood('rec_yds', true)).toBe(true)
+    expect(trendIsGood('rec_yds', false)).toBe(false)
   })
 })
 
@@ -374,7 +419,7 @@ describe('depth chart', () => {
       today,
     )
     expect(rows.map((r) => r.slot)).toEqual(['QB', 'RB', 'WR1', 'WR3', 'K'])
-    expect(rows[0]!.cells[0]).toMatchObject({ first: 'Michael · 26', last: 'Penix Jr.', self: false })
+    expect(rows[0]!.cells[0]).toMatchObject({ first: 'Michael · 26', last: 'Penix Jr.', name: 'Michael Penix Jr.', self: false, playerId: 'q1' })
     expect(rows[0]!.cells[2]).toBeNull()
     expect(rows[1]!.cells[0]!.self).toBe(true)
   })
@@ -449,13 +494,89 @@ describe('moves', () => {
   })
 })
 
-describe('league copy', () => {
-  it('available summary — none reads as not available, never "All leagues"', () => {
-    expect(availableSummary(0)).toBe('Not available')
-    expect(availableSummary(1)).toBe('Available in 1 league')
-    expect(availableSummary(3)).toBe('Available in 3 leagues')
+describe('transactions timeline (#46)', () => {
+  const mv = (id: string, at: string | null, kind: ProfileMove['kind'] = 'Added'): ProfileMove => ({
+    id,
+    kind,
+    lead: 'by ',
+    username: null,
+    team: 'Tacos',
+    detail: '',
+    at,
   })
 
+  it('one timeline across leagues, newest first, each move naming its league', () => {
+    const out = movesTimeline([
+      { leagueId: 'L1', leagueName: 'Sunday Funday', moves: [mv('a', '2026-10-11T00:00:00Z'), mv('b', '2026-09-01T00:00:00Z', 'Drafted')] },
+      { leagueId: 'L2', leagueName: 'Work League', moves: [mv('a', '2026-10-12T09:00:00+00:00', 'Dropped'), mv('c', '2026-09-20T00:00:00Z')] },
+    ])
+    expect(out.map((m) => [m.leagueName, m.id, m.kind])).toEqual([
+      ['Work League', 'a', 'Dropped'],
+      ['Sunday Funday', 'a', 'Added'],
+      ['Work League', 'c', 'Added'],
+      ['Sunday Funday', 'b', 'Drafted'],
+    ])
+    // The same move id in two leagues stays two rows.
+    expect(new Set(out.map((m) => m.key)).size).toBe(4)
+    expect(out[0]).toMatchObject({ key: 'L2:a', leagueId: 'L2' })
+  })
+
+  it('compares instants, not strings; a move with no instant goes last; ties keep league order', () => {
+    const out = movesTimeline([
+      { leagueId: 'L1', leagueName: 'One', moves: [mv('x', null), mv('t1', '2026-10-01T12:00:00Z')] },
+      // 08:00 at -05:00 is 13:00Z — later than 12:00Z although it sorts earlier as text.
+      { leagueId: 'L2', leagueName: 'Two', moves: [mv('t2', '2026-10-01T08:00:00-05:00'), mv('t3', '2026-10-01T12:00:00.000Z')] },
+    ])
+    expect(out.map((m) => m.key)).toEqual(['L2:t2', 'L1:t1', 'L2:t3', 'L1:x'])
+  })
+
+  it('no moves anywhere → an empty timeline', () => {
+    expect(movesTimeline([])).toEqual([])
+    expect(movesTimeline([{ leagueId: 'L1', leagueName: 'One', moves: [] }])).toEqual([])
+  })
+})
+
+describe('ownership row (#44)', () => {
+  it('per league: pre-draft until it drafts (and while his pick is still to come), then rostered or not', () => {
+    expect(leagueOwnership('setup', 't1', null)).toBe('pre_draft')
+    expect(leagueOwnership('scheduled', 't1', null)).toBe('pre_draft')
+    expect(leagueOwnership('drafting', 't1', false)).toBe('pre_draft')
+    expect(leagueOwnership('drafting', 't1', true)).toBe('rostered')
+    expect(leagueOwnership('in_season', 't1', true)).toBe('rostered')
+    expect(leagueOwnership('in_season', 't1', false)).toBe('available')
+    expect(leagueOwnership('playoffs', 't1', false)).toBe('available')
+    expect(leagueOwnership('playoffs', null, false)).toBe('no_team')
+    expect(leagueOwnership('complete', 't1', true)).toBe('rostered')
+    expect(leagueOwnership('complete', 't1', false)).toBe('season_over')
+  })
+
+  it('only a league that has not drafted skips the rosters read', () => {
+    expect(['setup', 'scheduled'].map(ownershipNeedsRosters)).toEqual([false, false])
+    expect(['drafting', 'in_season', 'playoffs', 'complete'].map(ownershipNeedsRosters)).toEqual([true, true, true, true])
+  })
+
+  it('the summary never says "Not available"', () => {
+    expect(ownershipSummary(['available'])).toBe('Available in 1 league')
+    expect(ownershipSummary(['available', 'rostered', 'available', 'pre_draft'])).toBe('Available in 2 leagues')
+    expect(ownershipSummary(['rostered'])).toBe('Rostered in all your leagues')
+    expect(ownershipSummary(['rostered', 'rostered', 'rostered'])).toBe('Rostered in all your leagues')
+    expect(ownershipSummary(['pre_draft', 'pre_draft'])).toBe('Pre-draft')
+    expect(ownershipSummary(['rostered', 'pre_draft', 'rostered'])).toBe('Rostered in 2 · Pre-draft in 1')
+    expect(ownershipSummary(['season_over', 'season_over'])).toBe('Season over')
+    expect(ownershipSummary(['rostered', 'season_over', 'no_team'])).toBe('Rostered in 1 · Season over in 1 · No team in 1')
+    for (const states of [['rostered'], ['pre_draft'], ['rostered', 'pre_draft'], ['season_over'], ['no_team']] as const) {
+      expect(ownershipSummary(states)).not.toMatch(/not available/i)
+    }
+  })
+
+  it('still reading, or a read failed: says so rather than a count', () => {
+    expect(ownershipSummary(['rostered', 'loading'])).toBe('Checking…')
+    expect(ownershipSummary(['available', 'error'])).toBe('Couldn’t check every league')
+    expect(ownershipSummary([])).toBe('')
+  })
+})
+
+describe('league copy', () => {
   it('waiver clear day', () => {
     expect(clearsDay('not a date')).toBeNull()
     expect(clearsDay('2026-10-14T16:00:00Z')).toMatch(/^clears (Mon|Tue|Wed|Thu)$/)

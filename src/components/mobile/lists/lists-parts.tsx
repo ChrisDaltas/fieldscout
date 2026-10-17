@@ -1,18 +1,22 @@
 'use client'
 
+import { useState } from 'react'
+
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
+import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
+import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import type { ThumbnailPlayer } from '@/hooks/use-lists'
-import type { TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
+import type { ListScoring, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { cn } from '@/lib/utils'
 
 import { coverBgClass, youTubeId, youTubeThumb } from './lists-model'
-import { TIME_FRAMES, timeFrameLabel } from './lists-stats'
+import { SCORING_OPTIONS, TIME_FRAMES, scoringLabel, timeFrameLabel } from './lists-stats'
 
 /**
  * FieldScout Mobile — Lists shared parts (lr-lists §2, lr-frame §2.13): the
- * prototype's inline icons, the Ranked / Tiers switch, the time-frame control,
- * covers and the video card.
+ * prototype's inline icons, the Ranked / Tiers switch, the time-frame and
+ * scoring controls, covers and the video card.
  */
 
 // =============================================================================
@@ -38,6 +42,7 @@ export const L_ICON = {
   edit: 'M11 2.5l2.5 2.5L6 12.5H3.5V10zM9.5 4l2.5 2.5',
   sparkle: 'M8 2l1.3 3.7L13 7l-3.7 1.3L8 12l-1.3-3.7L3 7l3.7-1.3zM12.5 11.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z',
   league: 'M5 2.5h6v3a3 3 0 0 1-6 0zM5 3.5H3v1.2A2.3 2.3 0 0 0 5.2 7M11 3.5h2v1.2A2.3 2.3 0 0 1 10.8 7M8 8.5v2.5M5.5 13.5h5L10 11H6z',
+  chevronDown: 'M4 6l4 4 4-4',
 } as const
 
 export type LIconName = keyof typeof L_ICON
@@ -129,6 +134,68 @@ export function TimeFrameControl({
       // minimum (lr-lists gap 32 — enlarge the hit area, not the visual).
       itemClassName="relative h-6 whitespace-nowrap rounded-pill px-2.5 text-[11px] after:absolute after:inset-x-0 after:-inset-y-[3px] after:content-['']"
     />
+  )
+}
+
+// =============================================================================
+// Scoring control (gap list #19, Chris 2026-10-15): which scoring the list's
+// points follow — PPR, Half PPR, Quarter PPR or Standard. The design has no
+// such control, so it extends the design language: a 24px pill beside the
+// time frame that names the active scoring, opening a bottom sheet of the
+// four choices.
+// =============================================================================
+
+export function ScoringControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: ListScoring
+  onChange: (scoring: ListScoring) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={`Scoring: ${scoringLabel(value)}`}
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        // 24px as the time frame's segments; the tap area reaches 30px
+        // (lr-lists gap 32).
+        className="relative flex h-6 flex-none items-center gap-1 whitespace-nowrap rounded-pill bg-m-b2 pl-2.5 pr-2 text-[11px] font-semibold text-m-t1 after:absolute after:inset-x-0 after:-inset-y-[3px] after:content-[''] active:bg-m-b2h disabled:opacity-40"
+      >
+        {scoringLabel(value)}
+        <LIcon name="chevronDown" size={9} stroke={2.4} />
+      </button>
+      <MobileSheet open={open} onOpenChange={setOpen} title="Scoring" subtitle="The points in this list’s stats" showClose>
+        <div className="flex flex-col px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+          {SCORING_OPTIONS.map((option) => {
+            const on = option.value === value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={on}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+                className="flex min-h-[52px] items-center gap-3 border-b border-m-b2 py-2 text-left last:border-b-0"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-px">
+                  <span className="text-[15px] font-semibold text-m-t1">{option.label}</span>
+                  <span className="text-[12px] font-medium text-m-t3">{option.sub}</span>
+                </span>
+                {on && <MIcon name="check" size={16} stroke={2.4} className="flex-none text-accent" />}
+              </button>
+            )
+          })}
+        </div>
+      </MobileSheet>
+    </>
   )
 }
 
@@ -257,20 +324,33 @@ export function InlineError({
   message,
   onRetry,
   className,
+  tone = 'quiet',
+  retryLabel = 'Try again',
 }: {
   message: string
   onRetry: () => void
   className?: string
+  /** `alert`: a failed write (the editor's Update) — the message in the
+   *  negative colour, not the quiet t3 a failed read uses. */
+  tone?: 'quiet' | 'alert'
+  retryLabel?: string
 }) {
   return (
     <div role="alert" className={cn('flex items-center gap-2 rounded-xl bg-m-b1 py-2 pl-3 pr-1.5', className)}>
-      <span className="min-w-0 flex-1 text-[12px] font-medium text-m-t3">{message}</span>
+      <span
+        className={cn(
+          'min-w-0 flex-1 text-[12px] font-medium leading-[1.4] [text-wrap:pretty]',
+          tone === 'alert' ? 'text-negative-strong' : 'text-m-t3',
+        )}
+      >
+        {message}
+      </span>
       <button
         type="button"
         onClick={onRetry}
-        className="flex h-[30px] flex-none items-center rounded-pill px-2.5 text-[12px] font-semibold text-accent active:bg-m-b2"
+        className="flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill px-2.5 text-[12px] font-semibold text-accent active:bg-m-b2"
       >
-        Try again
+        {retryLabel}
       </button>
     </div>
   )

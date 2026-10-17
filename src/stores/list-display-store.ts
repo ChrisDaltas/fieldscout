@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 
+import { hasTiers } from '@/lib/lists/ranking-mode'
 import type { RankingMode } from '@/types/schemas/lists'
 
 /**
@@ -342,8 +343,9 @@ export function useListDisplay(listId: string): ListDisplay {
  * The grouping to render: the session override if the user picked one, else the
  * list's own server-side answer (D4 — only the label set is local).
  *
- * `rank_and_tier` is today's "Tiers" setting, so it opens on tier labels;
- * `ranked` and `unranked` have no buckets and open on plain rank. Round, cost
+ * A list with its Tiers switch on (`rank_and_tier`, or `tier_only` — tiers
+ * without numbers, migration 191) opens on tier labels; `ranked` and
+ * `unranked` have no buckets and open on plain rank. Round, cost
  * and budget have no server-side representation by design — they are label sets
  * over the same buckets, so they can only ever be a session choice.
  */
@@ -351,7 +353,7 @@ export function resolveOrg(
   override: ListOrg | null | undefined,
   rankingMode: RankingMode | string | null | undefined,
 ): ListOrg {
-  return override ?? (rankingMode === 'rank_and_tier' ? 'tier' : 'rank')
+  return override ?? (hasTiers(rankingMode) ? 'tier' : 'rank')
 }
 
 /**

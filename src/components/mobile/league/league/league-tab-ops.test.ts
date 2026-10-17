@@ -7,6 +7,7 @@ import {
   commishLogHref,
   correctionsScreenHref,
   emptyFilterCopy,
+  extraRecords,
   feedRows,
   feedStreams,
   filterCount,
@@ -16,8 +17,8 @@ import {
   segmentHref,
   shortName,
   standingsHref,
-  streakOf,
   teamAvatarClass,
+  tiebreakNote,
   transactionRow,
   transactionsHref,
   waiverCell,
@@ -227,13 +228,49 @@ describe('cells', () => {
     expect(waiverCell({ faab_balance: null, waiver_priority: 3 }, 'rolling_priority')).toBe('#3')
     expect(waiverCell({ faab_balance: 50, waiver_priority: 3 }, 'none_fcfs')).toBe('—')
   })
-  it('the streak is the run of equal final head-to-head results', () => {
-    const m = (week: number, result: string | null, status = 'final') => ({ week, round_type: 'regular', status, home_team_id: 'a', away_team_id: 'b', result })
-    expect(streakOf('a', [m(1, 'away'), m(2, 'home'), m(3, 'home')])).toEqual({ text: '▲2W', tone: 'win' })
-    expect(streakOf('b', [m(1, 'away'), m(2, 'home'), m(3, 'home')])).toEqual({ text: '▼2L', tone: 'loss' })
-    // A live week is not a result yet.
-    expect(streakOf('a', [m(1, 'home'), m(2, 'away', 'live')])).toEqual({ text: '▲1W', tone: 'win' })
-    expect(streakOf('a', [])).toBeNull()
+  // The streak's count is `streak-ops` (one for Match, Team view, Standings — gap list #39).
+  it('the extra records show only for the games the league plays (gap list #40)', () => {
+    const row = { median_record: { wins: 4, losses: 4, ties: 0 }, second_record: { wins: 3, losses: 4, ties: 1 } }
+    expect(extraRecords(row, { median: true, second: true })).toEqual(['vs median 4-4', '2nd opp 3-4-1'])
+    expect(extraRecords(row, { median: true, second: false })).toEqual(['vs median 4-4'])
+    expect(extraRecords(row, { median: false, second: true })).toEqual(['2nd opp 3-4-1'])
+    expect(extraRecords(row, { median: false, second: false })).toEqual([])
+  })
+  it('the tiebreak line: the league’s own order in plain words (gap list #40)', () => {
+    const applied = (entry: string) => ({ entry, status: 'applied', reason: null })
+    // The default order, as the standings read returns it.
+    const chain = [
+      applied('win_pct'),
+      applied('points_for'),
+      applied('head_to_head'),
+      applied('points_against'),
+      { entry: 'division_record', status: 'inert', reason: 'divisions_pinned_at_1' },
+      applied('coin_flip'),
+    ]
+    expect(tiebreakNote(chain, [], 'h2h')).toBe('Ties go to most points for, then head-to-head (two-team ties), then most points against, then a coin flip.')
+    // A total-points league skips head-to-head.
+    const skipped = chain.map((e) => (e.entry === 'head_to_head' ? { ...e, status: 'skipped', reason: 'total_points' } : e))
+    expect(tiebreakNote(skipped, [], 'total_points')).toBe('Ties go to most points for, then most points against, then a coin flip.')
+    // A league that put points for first says what it ranks by.
+    expect(tiebreakNote([applied('points_for'), applied('win_pct'), applied('coin_flip')], [], 'h2h')).toBe('Ranked by most points for, then best record, then a coin flip.')
+    // The read's chain always wins over the stored setting.
+    expect(tiebreakNote(chain, ['points_against', 'win_pct'], 'h2h')).toBe(
+      'Ties go to most points for, then head-to-head (two-team ties), then most points against, then a coin flip.',
+    )
+    // The coin flip ends every tie — nothing after it is named.
+    expect(tiebreakNote([applied('win_pct'), applied('coin_flip'), applied('points_for')], [], 'h2h')).toBe('Ties go to a coin flip.')
+  })
+  it('no chain on the read: the chain 117 would build from the stored setting', () => {
+    // The stored order, then the catalog's remainder in default order.
+    expect(tiebreakNote(null, ['win_pct', 'points_against'], 'h2h')).toBe(
+      'Ties go to most points against, then most points for, then head-to-head (two-team ties), then a coin flip.',
+    )
+    // Same skips: divisions inert; head-to-head only in a head-to-head league.
+    expect(tiebreakNote(null, ['win_pct', 'head_to_head', 'division_record', 'coin_flip'], 'h2h')).toBe('Ties go to head-to-head (two-team ties), then a coin flip.')
+    expect(tiebreakNote([], ['win_pct', 'head_to_head', 'coin_flip'], 'total_points')).toBe('Ties go to a coin flip.')
+    expect(tiebreakNote([], ['points_for'], 'total_points')).toBe('Ranked by most points for, then best record, then most points against, then a coin flip.')
+    // Nothing stored: the whole catalog, as 117 completes it.
+    expect(tiebreakNote(null, [], 'h2h')).toBe('Ties go to most points for, then head-to-head (two-team ties), then most points against, then a coin flip.')
   })
   it('the playoff note follows the league’s own setting', () => {
     expect(playoffNote(6)).toBe('Top 6 make the playoffs. Line marks the cutoff.')

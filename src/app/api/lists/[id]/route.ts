@@ -18,6 +18,12 @@ import {
 } from '@/lib/lists/cover-color'
 import { fetchListLinks, type ListLink } from '@/lib/lists/links-service'
 import { aggregateFantasyStats } from '@/lib/stats/aggregate-fantasy'
+import {
+  isNumbered,
+  isTierOnlyUnavailable,
+  TIER_ONLY_UNAVAILABLE_BODY,
+  TIER_ONLY_UNAVAILABLE_STATUS,
+} from '@/lib/lists/ranking-mode'
 import { createServerClient } from '@/lib/supabase/server'
 import { rankingModeToLegacyFlags } from '@/types/schemas/lists'
 
@@ -203,9 +209,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         { status: 400 },
       )
     }
+    // Numbers off — Basic, or tiers without numbers — is not a Big Board.
     if (
       input.hide_order === true ||
-      input.ranking_mode === 'unranked'
+      (input.ranking_mode !== undefined && !isNumbered(input.ranking_mode))
     ) {
       return NextResponse.json(
         { error: 'The Big Board is always ranked.' },
@@ -295,6 +302,12 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     // A colour sent before migration 188 is pushed: a clear 409, not a 500.
     if (isMissingCoverColorColumn(updateError)) {
       return NextResponse.json(COVER_COLOR_UNAVAILABLE_BODY, { status: COVER_COLOR_UNAVAILABLE_STATUS })
+    }
+    // Tiers without numbers before migration 191 is pushed: the older CHECK
+    // refuses `tier_only` — a clear 409, not a 500. The update is one
+    // statement, so nothing else in it was saved either.
+    if (updates.ranking_mode === 'tier_only' && isTierOnlyUnavailable(updateError)) {
+      return NextResponse.json(TIER_ONLY_UNAVAILABLE_BODY, { status: TIER_ONLY_UNAVAILABLE_STATUS })
     }
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }

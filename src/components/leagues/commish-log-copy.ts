@@ -106,6 +106,7 @@ export const COMMISH_ACTION_WORDS: Readonly<Record<string, string>> = {
   edit_scoring: 'changed the scoring rules',
   fork_scoring: 'switched the league to custom scoring',
   edit_league_profile: 'changed the league’s name or picture',
+  set_league_note: 'changed the commissioner note', // 192 (gap list #13)
   lifecycle_change: 'moved the league to its next stage',
   delete_league: 'deleted the league',
 }
@@ -320,6 +321,13 @@ export interface ReceiptContext {
   member: (userId: unknown) => string | null
 }
 
+/** A note quoted in one log line: its lines joined, at most 80 characters. */
+function quoteNote(note: string): string {
+  const flat = note.replace(/\s+/g, ' ').trim()
+  const chars = Array.from(flat)
+  return chars.length > 80 ? `${chars.slice(0, 79).join('').trimEnd()}…` : flat
+}
+
 /** Several changed keys, at most three named, the rest counted. */
 function listChanges(changes: string[]): string {
   if (changes.length <= 3) return changes.join('; ')
@@ -487,6 +495,14 @@ const DETAIL: Readonly<Record<string, (c: ReceiptContext) => string | null>> = {
     if ('name' in after) parts.push(`renamed the league from ${str(before.name) ?? 'its old name'} to ${str(after.name) ?? 'a new name'}`)
     if ('avatar_url' in after) parts.push('changed the league picture')
     return parts.length > 0 ? parts.join(' and ') : null
+  },
+  // The commissioner note (192, gap list #13): {note} before / after — the
+  // note is member-visible, so the line quotes it (a long one shortened).
+  set_league_note: ({ before, after }) => {
+    if (!('note' in after)) return null
+    const now = str(after.note)
+    if (now === null) return 'cleared the commissioner note'
+    return `${str(before.note) === null ? 'pinned a commissioner note' : 'changed the commissioner note'}: “${quoteNote(now)}”`
   },
   lifecycle_change: ({ before, after }) => {
     const from = LEAGUE_STAGE_WORDS[str(before.status) ?? '']

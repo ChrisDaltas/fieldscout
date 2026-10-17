@@ -15,9 +15,11 @@ import {
   formatRecord,
   overriddenTitle,
   overriddenWeeksByTeam,
+  recordColumns,
   standingsEmptyCopy,
 } from '@/components/leagues/standings-table-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
+import { streakArrowText, streakToneClass, teamStreak } from '@/components/mobile/league/streak-ops'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { UsernameLink } from '@/components/shared/username-link'
 import type { LeagueDetail } from '@/hooks/use-league'
@@ -27,9 +29,13 @@ import { useProjectedStandingsLive, useStandingsLive } from '@/hooks/use-standin
 import { cn } from '@/lib/utils'
 
 import { CenteredNote, SkeletonBlocks, StatusLine, TeamAvatar } from './league-bits'
-import { commishLogHref, playoffNote, streakOf, teamAvatarClass, waiverCell } from './league-tab-ops'
+import { commishLogHref, extraRecords, playoffNote, teamAvatarClass, tiebreakNote, waiverCell } from './league-tab-ops'
 import { MobileBracket } from './mobile-bracket'
 
+// Rank · Team · Waiver · PF/PA — the handoff's four columns at 8px gaps.
+// Points Against (gap list #40) sits UNDER points for in the last column
+// rather than in a fifth one: a fifth track would take ~45px from the team
+// name on a 375px phone, cutting the @manager and the extra records.
 const GRID = 'grid grid-cols-[30px_minmax(0,1fr)_64px_50px] gap-2'
 
 type StandingsView = 'final' | 'projected'
@@ -39,14 +45,23 @@ const VIEWS: ReadonlyArray<{ value: StandingsView; label: string }> = [
 ]
 
 /**
- * League › Standings (handoff m-league §2.3): Rank · Team · Waiver · PF over
- * the server's ranked table (117) — the order, record, FAAB left, waiver
- * priority and points for are the read's. The streak is read from each
- * team's stored final results. A blue 2px rule sits under the last playoff
- * seed (the league's own playoff-team count) and the footer says so. The
- * whole row opens the team (your own: the Team tab); the @manager is the
- * door to that person's profile. Rank movement since last week is not
- * stored anywhere, so the line under the rank is left out.
+ * League › Standings (handoff m-league §2.3): Rank · Team · Waiver · PF · PA
+ * over the server's ranked table (117) — the order, record, FAAB left, waiver
+ * priority, points for and points against (PA under PF, one column) are
+ * the read's. The streak is the
+ * one shared count (`streak-ops`, gap list #39). A blue 2px rule sits under
+ * the last playoff seed (the league's own playoff-team count) and the footer
+ * says so. The whole row opens the team (your own: the Team tab); the
+ * @manager is the door to that person's profile. Rank movement since last
+ * week is not stored anywhere, so the line under the rank is left out.
+ *
+ * Gap list #40 (Chris, 2026-10-15) on what belongs on the phone: Points
+ * Against shows on every row; the vs-median and second-opponent records
+ * show under the team's name only in a league that plays those games (its
+ * settings — `recordColumns`, the desktop table's rule), each its own
+ * unbreakable piece so the line wraps between them rather than cutting one
+ * off; one line under the table says how ties are broken, from the
+ * league's own tiebreak order; no Win %.
  *
  * Kept from the app's standings page (CLAUDE.md — restyle, delete nothing),
  * in the mobile language: the Final | Projected switch (118's projected
@@ -85,6 +100,8 @@ export function StandingsSegment({
   const reconnecting = finalStandings.connection === 'reconnecting' || projected.connection === 'reconnecting'
   const anyOverridden = overridden !== null && (doc?.standings ?? []).some((row) => overridden.has(row.team_id))
   const overridesUnknown = schedule.isError && !schedule.data
+  const extras = doc ? recordColumns(doc.standings, detail.settings) : { median: false, second: false }
+  const tiebreaks = doc ? tiebreakNote(doc.chain, detail.settings.tiebreakers, doc.schedule_mode) : null
 
   return (
     <div className="flex flex-col px-3 pb-5 pt-2" data-standings-segment>
@@ -154,12 +171,16 @@ export function StandingsSegment({
             <span>Rank</span>
             <span>Team</span>
             <span className="text-right">Waiver</span>
-            <span className="text-right">PF</span>
+            <span className="flex flex-col items-end">
+              <span>PF</span>
+              <span>PA</span>
+            </span>
           </div>
           <ol aria-label="Standings">
             {doc.standings.map((row, i) => {
               const manager = managers.get(row.team_id) ?? null
-              const streak = schedule.data ? streakOf(row.team_id, schedule.data.matchups) : null
+              const streak = schedule.data ? teamStreak(row.team_id, schedule.data, doc.season) : null
+              const extraParts = extraRecords(row, extras)
               const cutoff = playoffTeams > 0 && i + 1 === playoffTeams
               const adjustedWeeks = overridden?.get(row.team_id) ?? null
               return (
@@ -198,12 +219,8 @@ export function StandingsSegment({
                         {streak && (
                           <>
                             {' · '}
-                            <span
-                              className={cn(
-                                streak.tone === 'win' ? 'text-positive-strong' : streak.tone === 'loss' ? 'text-negative-strong' : 'text-m-t3',
-                              )}
-                            >
-                              {streak.text}
+                            <span className={streakToneClass(streak, 'text-m-t3')} data-streak={streakArrowText(streak)}>
+                              {streakArrowText(streak)}
                             </span>
                           </>
                         )}
@@ -214,17 +231,39 @@ export function StandingsSegment({
                           </>
                         )}
                       </span>
+                      {extraParts.length > 0 && (
+                        <span className="flex flex-wrap gap-x-1 text-[11px] font-medium tabular-nums text-m-t3" data-extra-records>
+                          {extraParts.map((part, k) => (
+                            <span key={part} className="whitespace-nowrap" data-extra-record>
+                              {k > 0 && '· '}
+                              {part}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </span>
                   </span>
                   <span className="text-right text-[12px] font-medium tabular-nums text-m-t3">{waiverCell(row, detail.settings.waiver_type)}</span>
-                  <span className="text-right text-[12px] font-semibold tabular-nums text-m-t1">{formatPoints(row.points_for)}</span>
+                  <span className="flex flex-col items-end gap-px tabular-nums">
+                    <span className="text-[12px] font-semibold text-m-t1" data-pf>
+                      {formatPoints(row.points_for)}
+                    </span>
+                    <span className="text-[11px] font-medium text-m-t3" data-pa>
+                      {formatPoints(row.points_against)}
+                    </span>
+                  </span>
                 </li>
               )
             })}
           </ol>
-          <p className="px-1 py-2.5 text-[11px] font-medium text-m-t3">
+          <p className={cn('px-1 pt-2.5 text-[11px] font-medium text-m-t3', !tiebreaks && 'pb-2.5')}>
             {doc.schedule_mode === 'total_points' ? POINTS_RACE_COPY : playoffNote(playoffTeams)}
           </p>
+          {tiebreaks && (
+            <p className="px-1 pb-2.5 pt-1 text-[11px] font-medium leading-[1.35] text-m-t3" data-tiebreak-note>
+              {tiebreaks}
+            </p>
+          )}
           {overridesUnknown && (
             <p role="status" className="px-1 pb-2 text-[11px] font-semibold text-m-t1" data-overrides-unknown>
               {STANDINGS_OVERRIDES_UNKNOWN_COPY}

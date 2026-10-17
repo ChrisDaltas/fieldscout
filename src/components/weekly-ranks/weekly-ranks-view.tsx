@@ -32,6 +32,7 @@ import { useReorderPlayers } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { openPlayer } from '@/hooks/use-open-player'
 import { matchesPosition } from '@/utils/positions'
+import { isWeekLocked, opensInWeek } from '@/lib/rankings/week-window'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'FLEX'] as const
 type Position = (typeof POSITIONS)[number]
@@ -82,8 +83,9 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
   const isPre = tab === 'pre'
   const week = typeof tab === 'number' ? tab : activeWeek
 
+  // This week and the next three are editable (one rule with the phone).
   const status: 'past' | 'current' | 'future' =
-    week < activeWeek ? 'past' : week === activeWeek ? 'current' : 'future'
+    week < activeWeek ? 'past' : isWeekLocked(week, currentWeek) ? 'future' : 'current'
   // Fetching a future week would auto-create its board server-side — never
   // mount the query for locked weeks (mirrors WeeklyBigBoardView). The pre
   // tab doesn't need weekly data either.
@@ -291,8 +293,8 @@ export function WeeklyRanksView({ currentWeek, initialTab }: WeeklyRanksViewProp
               <Icon name="clock" size={20} className="mx-auto text-n-6" />
               <h3 className="mt-2.5 text-h6">Week {week} is locked</h3>
               <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-n-6">
-                You can rank the current week only. This board unlocks once the
-                prior week kicks off.
+                You can rank this week and the next three. Week {week} opens in
+                Week {opensInWeek(week)}.
               </p>
             </div>
           ) : isLoading ? (

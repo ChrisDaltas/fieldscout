@@ -1,16 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
 import { currentWeekOf, defaultLineupWeek, keptStarters, weekEditability } from '@/components/leagues/lineup-editor-ops'
 import { problemCopy } from '@/components/leagues/team-page'
 import { transactionsHref } from '@/components/mobile/league/league/league-tab-ops'
 import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
+import { streakTileText, streakToneClass, teamStreak } from '@/components/mobile/league/streak-ops'
 import { MOverlay, MOverlayScroll } from '@/components/mobile/trades/m-overlay'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
 import { managerOf } from '@/components/mobile/trades/trades-mobile-ops'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
@@ -28,7 +29,7 @@ import { CommishSection } from './commish-section'
 import { LineupSection } from './lineup-section'
 import { MoveRowView, useTeamMoves } from './moves'
 import { TeamAvatar } from './team-avatar'
-import { ord, recentMoveRows, recordText, streakOf, teamOrder } from './team-ops'
+import { ord, recentMoveRows, recordText, teamOrder } from './team-ops'
 import { useRowStats } from './use-row-stats'
 
 /**
@@ -37,23 +38,24 @@ import { useRowStats } from './use-row-stats'
  * Rank / Points for / Streak; Message and Propose trade; this week's
  * starters and bench with projections; Recent moves with See all.
  *
- * Real reads: standings (record, rank, PF), the schedule's decided weeks
- * (streak), the rosters + this week's stored lineup, projections, the
- * activity feed (moves). Propose trade opens the builder over this view —
+ * Real reads: standings (record, rank, PF), the schedule read's results
+ * (streak — the one shared count, `streak-ops`), the rosters + this week's
+ * stored lineup, projections, the activity feed (moves). Propose trade opens the builder over this view —
  * only toward a team with a manager, in season, before the deadline (the
  * desktop team page's door). See all opens the league's Transactions screen
  * filtered to this team. No Message button: direct messages have no backend,
  * so the app can't open a conversation with the manager. A commissioner
  * keeps his team tools here (override mode lets him set this lineup with
  * the same swap sheet).
+ *
+ * Back (and Escape) go back to where you came from — Standings, a Match
+ * card, a trade, a transaction (Chris #27) — or, opened fresh from a link,
+ * to the League tab.
  */
 export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamId: string; detail: LeagueDetail }) {
-  const router = useRouter()
   const { user } = useAuth()
-  const back = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
-    else router.push(`/app/leagues/${leagueId}`)
-  }
+  const goBack = useGoBack()
+  const back = () => goBack(`/app/leagues/${leagueId}`)
   const team = detail.teams.find((t) => t.id === teamId)!
   const order = useMemo(() => teamOrder(detail.teams), [detail.teams])
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
@@ -99,7 +101,7 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
 
   const mgr = managerOf(detail, teamId)
   const row = standings.data?.standings.find((r) => r.team_id === teamId) ?? null
-  const streak = streakOf(schedule.data?.matchups ?? [], teamId)
+  const streak = schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null
   const canPropose = myTeamId !== null && myTeamId !== teamId && inSeason && !tradesClosed && rosterTeam !== null && rosterTeam.status !== 'retired' && rosterTeam.manager_user_id !== null
   const editability = weekEditability(weeks, week, currentWeek)
   // The handoff's team view shows this week only; a commissioner in override
@@ -114,11 +116,7 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
     { label: 'Record', value: row ? recordText(row) : '–', cls: 'text-m-t1' },
     { label: 'Rank', value: row ? ord(row.rank) : '–', cls: 'text-m-t1' },
     { label: 'Points for', value: row ? row.points_for.toFixed(2) : '–', cls: 'text-m-t1' },
-    {
-      label: 'Streak',
-      value: streak?.text ?? '–',
-      cls: streak?.kind === 'W' ? 'text-positive-strong' : streak?.kind === 'L' ? 'text-negative-strong' : 'text-m-t1',
-    },
+    { label: 'Streak', value: streak ? streakTileText(streak) : '–', cls: streak ? streakToneClass(streak, 'text-m-t1') : 'text-m-t1' },
   ]
 
   return (

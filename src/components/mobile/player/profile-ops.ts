@@ -261,9 +261,13 @@ export function statLine(position: string, line: ProfileStatLine | undefined): s
 // ---------------------------------------------------------------------------
 
 export interface KeyStatTrend {
-  /** ▲ (green) when the last three games beat his season rate, ▼ (red)
-   *  when they fall short — never inverted, as the design draws it. */
+  /** The arrow: ▲ when the last three games ran above his season rate,
+   *  ▼ when below. */
   up: boolean
+  /** The colour: green when the change is GOOD for him, red when bad —
+   *  for a stat where lower is better (interceptions thrown, points
+   *  allowed) a drop is green and a rise red (Chris, #43, 2026-10-15). */
+  good: boolean
   text: string
 }
 
@@ -276,7 +280,7 @@ const perGameOf = (k: BoxKey): TrendMetric => ({ of: (t, g) => perGame(t[k], g) 
  *  trends as its per-game rate, a rate tile as itself. Snap % and target
  *  share are season-only rows (`player_usage`) — no weekly source, no
  *  trend. */
-const TREND_METRICS: Record<string, TrendMetric> = {
+const TREND_METRICS = {
   carries_pg: perGameOf('rush_attempts'),
   rush_yds: perGameOf('rush_yards'),
   rush_td: perGameOf('rush_tds'),
@@ -300,6 +304,54 @@ const TREND_METRICS: Record<string, TrendMetric> = {
   def_td: perGameOf('def_tds'),
   pa_pg: perGameOf('def_points_allowed'),
   ya_pg: perGameOf('def_yards_allowed'),
+} satisfies Record<string, TrendMetric>
+
+export type TrendKey = keyof typeof TREND_METRICS
+
+/**
+ * Which way is better for him, decided per trended stat (#43). Typed over
+ * every trended tile, so a new trend cannot ship without this call.
+ *
+ * Lower is better: interceptions THROWN (the QB tile `int`) and a defense's
+ * points / yards allowed. A defense's own sacks and interceptions (`sacks`,
+ * `def_int`) are takeaways — higher is better.
+ *
+ * Fumbles lost and sacks taken ARE stored per week (`player_stats` columns;
+ * the profile's stat-lines read already carries `fumbles_lost`), but neither
+ * has a Key stats tile (`key-stats-ops`), so neither trends yet. Drops are
+ * not stored at all. A tile added for any of them trends as its per-game
+ * rate and belongs here as 'lower'.
+ */
+export const TREND_BETTER: Record<TrendKey, 'higher' | 'lower'> = {
+  carries_pg: 'higher',
+  rush_yds: 'higher',
+  rush_td: 'higher',
+  targets: 'higher',
+  receptions: 'higher',
+  rec_yds: 'higher',
+  rec_td: 'higher',
+  ypt: 'higher',
+  comp_pct: 'higher',
+  pass_yds: 'higher',
+  pass_td: 'higher',
+  int: 'lower',
+  fg: 'higher',
+  fg_pct: 'higher',
+  fg_40: 'higher',
+  fg_50: 'higher',
+  xp: 'higher',
+  sacks: 'higher',
+  def_int: 'higher',
+  fum_rec: 'higher',
+  def_td: 'higher',
+  pa_pg: 'lower',
+  ya_pg: 'lower',
+}
+
+/** Whether a move in this stat is good for him: a rise where higher is
+ *  better, a drop where lower is better. */
+export function trendIsGood(key: TrendKey, up: boolean): boolean {
+  return TREND_BETTER[key] === 'higher' ? up : !up
 }
 
 /**
@@ -307,7 +359,8 @@ const TREND_METRICS: Record<string, TrendMetric> = {
  * season (the same completed games the tiles total — the core-stats read's
  * scored weeks). Δ is one decimal, or whole percentage points for a
  * percentage. Three games or fewer is the whole season, so no trend; a Δ
- * that rounds to nothing has no direction and is left off.
+ * that rounds to nothing has no direction and is left off. The arrow says
+ * which way it moved; the colour says whether that is good (`trendIsGood`).
  */
 export function keyStatTrends(args: {
   lines: readonly ProfileStatLine[]
@@ -321,14 +374,16 @@ export function keyStatTrends(args: {
   const season = sumBox(games)
   const last = sumBox(games.slice(-TREND_SPAN))
   const out: Record<string, KeyStatTrend> = {}
-  for (const [key, m] of Object.entries(TREND_METRICS)) {
+  for (const key of Object.keys(TREND_METRICS) as TrendKey[]) {
+    const m: TrendMetric = TREND_METRICS[key]
     const s = m.of(season, games.length)
     const l = m.of(last, TREND_SPAN)
     if (s === null || l === null) continue
     const d = l - s
     const mag = m.pct ? `${Math.round(Math.abs(d))}%` : Math.abs(d).toFixed(1)
     if (mag === '0%' || mag === '0.0') continue
-    out[key] = { up: d > 0, text: `${d > 0 ? '▲' : '▼'} last ${TREND_SPAN} ${mag}` }
+    const up = d > 0
+    out[key] = { up, good: trendIsGood(key, up), text: `${up ? '▲' : '▼'} last ${TREND_SPAN} ${mag}` }
   }
   return out
 }
@@ -600,6 +655,8 @@ export function careerTable(args: {
 export interface DepthCell {
   first: string
   last: string
+  /** His full name — what a tappable cell is called (#45). */
+  name: string
   /** The profiled player — his last name is blue. */
   self: boolean
   playerId: string
@@ -654,7 +711,7 @@ export function depthChart(players: readonly DepthChartPlayer[], selfId: string,
         if (!p) return null
         const { first, last } = splitName(p)
         const age = formatAge(p.birth_date, today)
-        return { first: age ? `${first} · ${age}` : first, last, self: p.id === selfId, playerId: p.id }
+        return { first: age ? `${first} · ${age}` : first, last, name: p.full_name, self: p.id === selfId, playerId: p.id }
       }),
     })
   }
@@ -738,6 +795,35 @@ export function playerMoves(args: {
   return out.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
 }
 
+/** A move on the Transactions timeline: which league it happened in. */
+export interface TimelineMove extends ProfileMove {
+  /** Unique across leagues (a move id is unique within its league only). */
+  key: string
+  leagueId: string
+  leagueName: string
+}
+
+/**
+ * Profile › Transactions as ONE timeline (Chris, #46, 2026-10-15): every
+ * league's moves of him merged, newest first, each naming its league — no
+ * per-league grouping. A move with no instant sorts last; ties keep league
+ * order, then each league's own (newest-first) order.
+ */
+export function movesTimeline(perLeague: ReadonlyArray<{ leagueId: string; leagueName: string; moves: readonly ProfileMove[] }>): TimelineMove[] {
+  const all = perLeague.flatMap((l) => l.moves.map((m): TimelineMove => ({ ...m, key: `${l.leagueId}:${m.id}`, leagueId: l.leagueId, leagueName: l.leagueName })))
+  // Instants, not strings: two feeds may print the same moment differently.
+  const when = (m: TimelineMove) => {
+    const t = m.at ? Date.parse(m.at) : Number.NaN
+    return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t
+  }
+  // Array.prototype.sort is stable: equal instants keep the order above.
+  return all.sort((x, y) => {
+    const a = when(x)
+    const b = when(y)
+    return a === b ? 0 : b > a ? 1 : -1
+  })
+}
+
 /** "Oct 11" in the viewer's own time. */
 export function shortDate(iso: string | null): string {
   if (!iso) return ''
@@ -766,19 +852,71 @@ export function movesOpenStatus(status: string): boolean {
   return status === 'in_season' || status === 'playoffs'
 }
 
-/** Counts toward "Available in N leagues": he is available to the viewer's
- *  team in a league whose roster moves are open (in season / playoffs). */
-export function countsAsAvailable(status: string, kind: string): boolean {
-  return kind === 'available' && movesOpenStatus(status)
+/**
+ * Where he stands in one of the viewer's leagues, for the ownership row's
+ * summary (§2.5a; Chris, #44, 2026-10-15):
+ *   - `pre_draft`   — the league has not drafted (setup / scheduled), or its
+ *                     draft is live and he has not been picked yet;
+ *   - `rostered`    — on a team's roster (anyone's, the viewer's included);
+ *   - `available`   — unrostered where roster moves are open (in season /
+ *                     playoffs) and the viewer has a team to add him to;
+ *   - `no_team`     — unrostered where moves are open but the viewer has no
+ *                     team there;
+ *   - `season_over` — unrostered in a finished league.
+ * `rostered` is null when the rosters were not read — only a league that has
+ * not drafted needs no read (`ownershipNeedsRosters`).
+ */
+export type LeagueOwnership = 'pre_draft' | 'rostered' | 'available' | 'no_team' | 'season_over'
+
+/** A league whose rosters say whether he is on one (it has drafted, or its
+ *  draft is under way). */
+export function ownershipNeedsRosters(status: string): boolean {
+  return !isPreDraft(status)
 }
 
-/** "Available in 1 league" / "Available in 3 leagues". None → "Not
- *  available": the design's string there is "All leagues", which the spec
- *  itself flags as reading the opposite (§2.5a, Open questions) — awaiting
- *  Chris's ruling on the wording. */
-export function availableSummary(count: number): string {
-  if (count <= 0) return 'Not available'
-  return `Available in ${count} ${count === 1 ? 'league' : 'leagues'}`
+export function leagueOwnership(status: string, myTeamId: string | null, rostered: boolean | null): LeagueOwnership {
+  if (isPreDraft(status)) return 'pre_draft'
+  if (rostered) return 'rostered'
+  if (status === 'drafting') return 'pre_draft'
+  if (movesOpenStatus(status)) return myTeamId ? 'available' : 'no_team'
+  return 'season_over'
+}
+
+const leagues = (n: number) => `${n} ${n === 1 ? 'league' : 'leagues'}`
+
+/**
+ * The ownership row's summary across every league (#44 — never the unclear
+ * "Not available"):
+ *   - any league still being read → "Checking…"; a failed read → says so;
+ *   - available anywhere → "Available in N leagues" (what he can act on);
+ *   - rostered everywhere → "Rostered in all your leagues";
+ *   - no league has drafted → "Pre-draft";
+ *   - otherwise each kind with its count: "Rostered in 2 · Pre-draft in 1".
+ */
+export function ownershipSummary(states: ReadonlyArray<LeagueOwnership | 'loading' | 'error'>): string {
+  if (states.some((s) => s === 'loading')) return 'Checking…'
+  if (states.some((s) => s === 'error')) return 'Couldn’t check every league'
+  const count = (k: LeagueOwnership) => states.filter((s) => s === k).length
+  const available = count('available')
+  if (available > 0) return `Available in ${leagues(available)}`
+  const total = states.length
+  if (total === 0) return ''
+  const rostered = count('rostered')
+  const preDraft = count('pre_draft')
+  const seasonOver = count('season_over')
+  const noTeam = count('no_team')
+  if (rostered === total) return 'Rostered in all your leagues'
+  if (preDraft === total) return 'Pre-draft'
+  if (seasonOver === total) return 'Season over'
+  if (noTeam === total) return 'No team in your leagues'
+  return [
+    rostered > 0 ? `Rostered in ${rostered}` : null,
+    preDraft > 0 ? `Pre-draft in ${preDraft}` : null,
+    seasonOver > 0 ? `Season over in ${seasonOver}` : null,
+    noTeam > 0 ? `No team in ${noTeam}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /** "clears Wed" — the weekday his waiver period ends, in the viewer's time. */

@@ -2,16 +2,30 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import { fromDbPos, planSliceSave, type RankPos } from '@/components/mobile/rankings/rankings-ops'
+import {
+  fromDbPos,
+  planSliceSave,
+  publishEntries,
+  publishedToast,
+  scoringFormatOf,
+  type RankPos,
+  type Scoring,
+} from '@/components/mobile/rankings/rankings-ops'
 import { bigBoardKeys } from '@/hooks/use-big-board'
 import { listsKeys } from '@/hooks/use-lists'
+import { toast } from '@/hooks/use-toast'
+import { saveScoringFormat } from '@/lib/lists/ranking-publish'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 /**
- * Save one position's slice of a board from the mobile ranking editor,
- * through the routes desktop uses:
+ * Publish one position's slice of a board from the mobile ranking editor.
+ * On the phone, Publish IS the save (Chris, 2026-10-15: no "save without
+ * publishing"; a saved ranking is the one that counts), through the routes
+ * desktop uses:
  *   1. read the board fresh — the weekly GET creates a week's board the
  *      first time (seeded from your latest ranking, as on desktop), so a new
- *      week only comes into being when the user saves it;
+ *      week — this one or one of the next three — only comes into being
+ *      when the user publishes it;
  *   2. drop removed players, bulk-add new ones;
  *   3. write the slice's order into its own slots — the season board through
  *      `/api/big-board/save` (which also records a history snapshot), a week
@@ -19,7 +33,23 @@ import { listsKeys } from '@/hooks/use-lists'
  *      every other position keeps its place and its saved date.
  *
  * Each step throws on a non-OK response — a failed step is never reported
- * as a save.
+ * as a publish.
+ *
+ * Step 3 also carries what migration 190 records at publish (Chris,
+ * 2026-10-15): the players with no previous position (`isNew` — the ones
+ * this publish ADDED, and everyone on a ranking's first publish; the server
+ * records everyone else's for the movement arrows, #33) and the scoring the
+ * ranking was made for (#36). Before 190 is pushed the server ignores the
+ * first and reports the second as `unsupported`; neither ever fails a
+ * publish. A scoring that the server tried and failed to save is said in the
+ * confirmation toast.
+ *
+ * A publish that changes ONLY the scoring (`scoringOnly`) saves just that,
+ * on the board (owner RLS, `saveScoringFormat`): it never re-sends the order,
+ * which would reset every player's previous position to his current slot and
+ * wipe the arrows. It can't happen before 190 is pushed (the editor offers
+ * it only where the board read carries the column); if the column is
+ * missing anyway, it fails loudly rather than reporting a publish.
  */
 
 async function ok(res: Response): Promise<void> {
@@ -48,12 +78,37 @@ export interface SaveSliceArgs {
   pos: RankPos
   /** The position's new order. */
   next: string[]
+  /** No ranking existed at this position before: the confirmation toast,
+   *  and nobody in this first version has a previous position. */
+  isNew: boolean
+  /** The ranking's scoring in the editor — picked there, else its saved
+   *  one, else Half PPR (`rankingScoring`) — saved with the ranking. */
+  scoring: Scoring
+  /** The order is unchanged: save only the scoring, on this board. */
+  scoringOnly?: { listId: string }
+}
+
+interface OrderWriteBody {
+  scoring?: 'saved' | 'unsupported'
+  scoringError?: string
 }
 
 export function useSaveRankingSlice() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ week, pos, next }: SaveSliceArgs): Promise<{ listId: string }> => {
+    mutationFn: async ({
+      week,
+      pos,
+      next,
+      isNew,
+      scoring,
+      scoringOnly,
+    }: SaveSliceArgs): Promise<{ listId: string; scoringError?: string }> => {
+      if (scoringOnly) {
+        const saved = await saveScoringFormat(createBrowserClient(), scoringOnly.listId, scoringFormatOf(scoring))
+        if (saved === 'unsupported') throw new Error("A ranking's scoring can't be saved yet")
+        return { listId: scoringOnly.listId }
+      }
       const board = await readBoard(week === 0 ? '/api/lists/big-board' : `/api/big-board/week/${week}`)
       const listId = board.list.id
       const plan = planSliceSave(
@@ -73,22 +128,36 @@ export function useSaveRankingSlice() {
           body: JSON.stringify({ player_ids: plan.add }),
         }).then(ok)
       }
-      if (plan.positions.length > 0) {
-        if (week === 0) {
-          await fetch('/api/big-board/save', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ positions: plan.positions }),
-          }).then(ok)
-        } else {
-          await fetch(`/api/lists/${listId}/players/reorder`, {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ positions: plan.positions }),
-          }).then(ok)
-        }
-      }
-      return { listId }
+      if (plan.positions.length === 0) return { listId }
+      const body = JSON.stringify({
+        positions: publishEntries(plan.positions, new Set(plan.add), isNew),
+        scoringFormat: scoringFormatOf(scoring),
+      })
+      const res =
+        week === 0
+          ? await fetch('/api/big-board/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+          : await fetch(`/api/lists/${listId}/players/reorder`, {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body,
+            })
+      await ok(res)
+      const saved = (await res.json().catch(() => ({}))) as OrderWriteBody
+      return { listId, scoringError: saved.scoringError }
+    },
+    // The outcome is reported here, not in the caller's `mutate` callbacks:
+    // these still run if the editor has unmounted by the time the steps
+    // finish, so a publish — or a failed step after a partial one — is
+    // never silent.
+    onSuccess: (data, vars) => {
+      toast(
+        data.scoringError
+          ? { title: publishedToast(vars.isNew), description: `Its scoring wasn't saved: ${data.scoringError}` }
+          : { title: publishedToast(vars.isNew) },
+      )
+    },
+    onError: (err) => {
+      toast({ title: "Couldn't publish", description: err.message, variant: 'destructive' })
     },
     onSettled: (data, _err, vars) => {
       if (vars.week === 0) {
