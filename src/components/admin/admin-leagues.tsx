@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useDeferredValue, useState } from 'react'
 
 import { UsernameLink } from '@/components/shared/username-link'
@@ -9,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAdminLeagueSearch } from '@/hooks/use-admin-league-search'
 import { useAdminLeagueState } from '@/hooks/use-admin-league-state'
+
+import { AdminLeagueDetailSections } from './admin-league-table'
 
 import {
   AdminEmpty,
@@ -25,9 +26,9 @@ import {
 import { leagueIdFromInput, verbWords, type OpLeagueState } from './admin-console-ops'
 
 export const LEAGUE_FINDER_HINT =
-  'Search finds leagues you are in. To open any other league, paste its link or id.'
+  'Search every league by name or commissioner, or paste a league link or id.'
 
-/** A league finder: a name search over the leagues the operator can see, or a pasted link / id. */
+/** A league finder: a search over EVERY league (193 `op_list_leagues`, F599), or a pasted link / id. */
 export function LeagueFinder({ onPick }: { onPick: (league: { id: string; name: string | null }) => void }) {
   const [text, setText] = useState('')
   const q = useDeferredValue(text.trim())
@@ -53,7 +54,7 @@ export function LeagueFinder({ onPick }: { onPick: (league: { id: string; name: 
       ) : search.error ? (
         <AdminError error={search.error} onRetry={() => search.refetch()} what="leagues" />
       ) : search.data && search.data.leagues.length === 0 ? (
-        <AdminEmpty label="league-search">{q ? `No league of yours matches “${q}”.` : 'You are not in any league.'}</AdminEmpty>
+        <AdminEmpty label="league-search">{q ? `No league or commissioner matches “${q}”.` : 'There are no leagues yet.'}</AdminEmpty>
       ) : search.data ? (
         <>
           <ol className="flex flex-col divide-y divide-n-4">
@@ -67,7 +68,7 @@ export function LeagueFinder({ onPick }: { onPick: (league: { id: string; name: 
                 >
                   <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">{l.name}</span>
                   <span className="text-[10px] font-medium text-n-6">
-                    <span className="fs-num">{l.season}</span> · {l.status}
+                    <span className="fs-num">{l.season}</span> · {l.phase}
                   </span>
                 </button>
               </li>
@@ -75,24 +76,11 @@ export function LeagueFinder({ onPick }: { onPick: (league: { id: string; name: 
           </ol>
           {search.data.more && (
             <p className="text-[10px] font-semibold text-caution-strong" data-overflow="league-search">
-              Showing the first {search.data.limit}. Type more of the name to narrow it.
+              Showing the first {search.data.limit} of {search.data.total}. Type more of the name to narrow it.
             </p>
           )}
         </>
       ) : null}
-    </div>
-  )
-}
-
-/** `/app/admin/leagues` — find a league. */
-export function AdminLeagueSearchPage() {
-  const router = useRouter()
-  return (
-    <div className="flex flex-col gap-5" data-admin-page="leagues">
-      <AdminHeader title="Admin" />
-      <AdminSection title="Find a league" data-admin-section="league-search">
-        <LeagueFinder onPick={(l) => router.push(`/app/admin/leagues/${l.id}`)} />
-      </AdminSection>
     </div>
   )
 }
@@ -107,6 +95,7 @@ export function AdminLeaguePage({ leagueId }: { leagueId: string }) {
       {q.isLoading && <AdminLoading rows={5} label="league" />}
       {q.error && <AdminError error={q.error} onRetry={() => q.refetch()} what="this league" />}
       {q.data && <AdminLeagueBody state={q.data} onConfirm={setConfirm} />}
+      <AdminLeagueDetailSections leagueId={leagueId} />
       <ConfirmActionDialog spec={confirm} onClose={() => setConfirm(null)} />
     </div>
   )

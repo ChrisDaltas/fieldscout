@@ -44,6 +44,8 @@ export const adminKeys = {
   league: (id: string) => ['admin', 'league-state', id] as const,
   log: () => ['admin', 'operator-log'] as const,
   leagueSearch: (q: string) => ['admin', 'league-search', q] as const,
+  leagueTable: (url: string) => ['admin', 'league-table', url] as const,
+  leagueDetail: (id: string) => ['admin', 'league-detail', id] as const,
 }
 
 /** A fresh retry key (TD3). One per confirm dialog / compose; reused on retry. */
