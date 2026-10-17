@@ -48,6 +48,27 @@ export interface SectionStatus {
   count: number
 }
 
+/** A read as the section sees it (a React Query result fits). */
+export interface SearchRead {
+  isError: boolean
+  /** The rows are an earlier query's, kept on screen while this one reads. */
+  isPlaceholderData: boolean
+  data: unknown
+}
+
+/**
+ * A section's state for the query on screen: pending until THIS query has
+ * answered — while the typing is a beat ahead of the reads (`current`
+ * false) and while the rows drawn are an earlier query's (kept so the list
+ * doesn't blink). An earlier query's empty answer is never this one's
+ * "No results".
+ */
+export function readState(current: boolean, read: SearchRead): SectionState {
+  if (!current || read.isPlaceholderData) return 'pending'
+  if (read.isError) return 'error'
+  return read.data !== undefined ? 'ready' : 'pending'
+}
+
 /**
  * What the body says when a query is typed:
  *  - `results` — at least one visible section has rows;

@@ -10,6 +10,7 @@ import {
   ownerLabel,
   postHref,
   readRecentSearches,
+  readState,
   sectionCap,
   showsSection,
   withRecent,
@@ -46,6 +47,22 @@ describe('what the body says', () => {
   it('No results only when every visible section answered with nothing — a hidden one doesn’t count', () => {
     expect(bodyState('all', { players: ready(0), people: ready(0), posts: ready(0) })).toBe('none')
     expect(bodyState('people', { players: ready(3), people: ready(0), posts: { state: 'error', count: 0 } })).toBe('none')
+  })
+})
+
+describe('a section’s read, for the query on screen', () => {
+  const read = (over: Partial<{ isError: boolean; isPlaceholderData: boolean; data: unknown }> = {}) => ({ isError: false, isPlaceholderData: false, data: [], ...over })
+  it('answered for this query: ready (even with nothing), or error', () => {
+    expect(readState(true, read())).toBe('ready')
+    expect(readState(true, read({ isError: true, data: undefined }))).toBe('error')
+    expect(readState(true, read({ data: undefined }))).toBe('pending')
+  })
+  it('an earlier query’s rows kept on screen are not this query’s answer', () => {
+    expect(readState(true, read({ isPlaceholderData: true }))).toBe('pending')
+  })
+  it('while the typing is ahead of the reads, nothing has answered it yet', () => {
+    expect(readState(false, read())).toBe('pending')
+    expect(readState(false, read({ isError: true, data: undefined }))).toBe('pending')
   })
 })
 

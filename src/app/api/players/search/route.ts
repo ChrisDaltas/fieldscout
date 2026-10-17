@@ -22,6 +22,15 @@ const querySchema = z.object({
  *  user typed reaches the filter string but A–Z. */
 const TEAM_CODE = /^[A-Za-z]{2,3}$/
 
+/** One value in a PostgREST `or=(…)` filter, double-quoted so a comma or
+ *  bracket the user typed ("Smith, J") stays inside the value instead of
+ *  splitting the filter (which PostgREST refuses, and this route would
+ *  answer 500 for good). Inside the quotes a backslash escapes the next
+ *  character, so `\` and `"` each get one. */
+function orValue(v: string): string {
+  return `"${v.replace(/[\\"]/g, (m) => `\\${m}`)}"`
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const parsed = querySchema.safeParse({
@@ -47,7 +56,7 @@ export async function GET(request: Request) {
   let query = supabase
     .from('players')
     .select('id, sleeper_id, full_name, position, team, headshot_url, status, adp')
-    .or(`full_name.ilike.%${escaped}%,search_name.ilike.%${collapsed}%${team}`)
+    .or(`full_name.ilike.${orValue(`%${escaped}%`)},search_name.ilike.${orValue(`%${collapsed}%`)}${team}`)
     .order('adp', { ascending: true, nullsFirst: false })
     .order('full_name', { ascending: true })
     .limit(limit)

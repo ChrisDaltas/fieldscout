@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { teamPageHref } from '@/components/leagues/league-cells'
@@ -38,6 +38,7 @@ import {
   ownerLabel,
   postHref,
   readRecentSearches,
+  readState,
   sectionCap,
   showsSection,
   withRecent,
@@ -106,10 +107,11 @@ export function SearchPanel({
     return () => clearTimeout(id)
   }, [q, term])
 
-  // The overlay focuses itself as it mounts; the field takes focus after it.
-  useEffect(() => {
-    const id = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
-    return () => cancelAnimationFrame(id)
+  // The field takes focus in the same commit as the tap that opened the
+  // search — iOS raises the keyboard only for a focus made while the tap is
+  // being handled (not a frame later). The overlay leaves focus where it is.
+  useLayoutEffect(() => {
+    inputRef.current?.focus({ preventScroll: true })
   }, [])
 
   // The OS back gesture moves the screen underneath: the search goes with it.
@@ -314,7 +316,9 @@ function useSearchLeague(leagueId: string | null): LeagueContext | null {
   }, [leagueId, detail, rosters, pool, myUserId])
 }
 
-function Results({
+/** A typed query's sections (exported for the render tests: `term` is the
+ *  query the reads answer for, a beat behind `raw` while typing). */
+export function Results({
   raw,
   term,
   scope,
@@ -346,9 +350,12 @@ function Results({
 
   const posts: SearchList[] = (asksCommunity ? (community.data?.lists ?? []) : []).slice(0, sectionCap('posts', scope))
 
-  const communityState: SectionStatus['state'] = !term ? 'pending' : !asksCommunity ? 'ready' : community.isError ? 'error' : community.data ? 'ready' : 'pending'
+  // Until the reads have caught up with the typing — and while the rows
+  // drawn are the last query's — nothing answers what's typed yet.
+  const current = term !== '' && term === raw.trim()
+  const communityState: SectionStatus['state'] = !current ? 'pending' : !asksCommunity ? 'ready' : readState(current, community)
   const sections: Record<'players' | 'people' | 'posts', SectionStatus> = {
-    players: { state: !term ? 'pending' : players.isError ? 'error' : players.data ? 'ready' : 'pending', count: playerRows.length },
+    players: { state: readState(current, players), count: playerRows.length },
     people: {
       state: communityState === 'ready' && league && !league.failed && league.status === null ? 'pending' : communityState,
       count: shownManagers.length + shownUsers.length,
@@ -410,7 +417,7 @@ function Results({
               </li>
             ))}
           </ul>
-          {community.isError && asksCommunity && <ProblemLine onRetry={() => void community.refetch()}>Couldn’t search people.</ProblemLine>}
+          {communityState === 'error' && <ProblemLine onRetry={() => void community.refetch()}>Couldn’t search people.</ProblemLine>}
         </section>
       )}
 

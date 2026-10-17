@@ -7,8 +7,10 @@
  *   - inside a league: its managers first (opening their team) and each
  *     player's place there — Your team / their team / Waivers / Free agent,
  *     Pre-draft before the league has drafted;
- *   - honest states: Searching… while a read is out, a failed read says so
- *     (never "No results"), and No results only when everything answered.
+ *   - honest states: Searching… while a read is out (or the typing is ahead
+ *     of the reads, or the last query's rows are still on screen), a failed
+ *     read says so (never "No results"), and No results only when this
+ *     query's every read answered.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
@@ -24,6 +26,20 @@ vi.mock('@/lib/supabase/client', () => ({ createBrowserClient: () => ({ from: ()
 vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: { id: 'u-me' }, profile: { username: 'dalton' }, isLoading: false }) }))
 const flags = vi.hoisted(() => ({ community: false, leagues: true, messages: false }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
+// An earlier query's answer kept on screen while the typed one reads (what
+// `keepPreviousData` does; a static render has no earlier observer to keep).
+const kept = vi.hoisted(() => ({ from: null as string | null }))
+vi.mock('@/hooks/use-mobile-search', async (importActual) => {
+  const actual = await importActual<typeof import('@/hooks/use-mobile-search')>()
+  return {
+    ...actual,
+    useMobileSearch: (term: string) => {
+      if (!kept.from) return actual.useMobileSearch(term)
+      const earlier = actual.useMobileSearch(kept.from)
+      return { players: { ...earlier.players, isPlaceholderData: true }, community: { ...earlier.community, isPlaceholderData: true } }
+    },
+  }
+})
 const stored = vi.hoisted(() => ({ recent: [] as string[] }))
 vi.mock('./search-ops', async (importActual) => ({
   ...(await importActual<typeof import('./search-ops')>()),
@@ -35,7 +51,7 @@ import { leaguePoolKeys } from '@/hooks/use-league-pool'
 import { mobileSearchKeys } from '@/hooks/use-mobile-search'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 
-import { SearchPanel } from './mobile-search'
+import { Results, SearchPanel } from './mobile-search'
 import type { SearchScope } from './search-ops'
 
 const P = (id: string, full_name: string, position: string, team: string, adp: number) => ({ id, full_name, position, team, adp, headshot_url: null, status: 'Active' })
@@ -179,6 +195,25 @@ describe('honest states', () => {
   it('Searching… while the people and posts read is still out — not "No results"', () => {
     nav.pathname = '/app'
     const out = html(seeded('zzz', { players: [], community: false }), { initialQuery: 'zzz' })
+    expect(out).toContain('Searching…')
+    expect(out).not.toContain('No results')
+  })
+  it('typing ahead of the reads: Searching… — the last query’s empty answer is not this one’s "No results"', () => {
+    nav.pathname = '/app'
+    // "zzzqqq" answered with nothing; "jalen" is typed and its reads haven't gone out yet.
+    const qc = seeded('zzzqqq', { players: [], users: [], lists: [] })
+    const out = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: qc }, createElement(Results, { raw: 'jalen', term: 'zzzqqq', scope: 'all', leagueId: null, remember: () => {}, onClose: () => {} })),
+    )
+    expect(out).toContain('Searching…')
+    expect(out).not.toContain('No results')
+  })
+  it('the last query’s empty answer kept on screen while this one reads: Searching…, not "No results"', () => {
+    nav.pathname = '/app'
+    const qc = seeded('zzzqqq', { players: [], users: [], lists: [] })
+    kept.from = 'zzzqqq'
+    const out = html(qc, { initialQuery: 'jalen' })
+    kept.from = null
     expect(out).toContain('Searching…')
     expect(out).not.toContain('No results')
   })
