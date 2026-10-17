@@ -6,7 +6,8 @@ import {
   type UpdateListWithCoverInput,
 } from '@/lib/lists/cover-color'
 import type { ListRosterSettings } from '@/types/database'
-import { rosterSettingsSchema, type POSITION_FILTERS } from '@/types/schemas/lists'
+import { MAX_LINKS_PER_LIST, rosterSettingsSchema, type POSITION_FILTERS } from '@/types/schemas/lists'
+import { youTubeId } from '@/utils/youtube'
 
 import { positionGroupValue } from './lists-model'
 
@@ -39,6 +40,12 @@ export interface DetailsDraft {
    */
   team?: boolean
   roster?: RosterDraft
+  /**
+   * The Public switch off (gap list §3 #4). New list always sends it, as
+   * desktop's form does; Edit details sends it only when it changed.
+   * Absent = leave visibility alone.
+   */
+  isPrivate?: boolean
 }
 
 /** Desktop's opening roster for a new team list (list-form-dialog). */
@@ -102,6 +109,7 @@ export interface DetailsCurrent {
   cover_color?: string | null
   /** JSON on the row; read with `rosterDraftOf`. */
   roster_settings?: unknown
+  is_private?: boolean | null
   tags: ReadonlyArray<{ name: string }>
 }
 
@@ -126,6 +134,7 @@ export function detailsCreateInput(draft: DetailsDraft): CreateListWithCoverInpu
     ...(positionFilter ? { position_filter: positionFilter } : {}),
     ...(draft.team ? { is_team: true, roster_settings: rosterSettings(draft.roster ?? DEFAULT_TEAM_ROSTER) } : {}),
     ...(draft.coloursReady && draft.coverColor ? { cover_color: draft.coverColor } : {}),
+    ...(draft.isPrivate !== undefined ? { is_private: draft.isPrivate } : {}),
   }
 }
 
@@ -152,6 +161,103 @@ export function detailsPatch(
     if (ROSTER_SLOTS.some(({ key }) => before[key] !== draft.roster![key])) patch.roster_settings = rosterSettings(draft.roster)
   }
   if (draft.coloursReady && draft.coverColor !== coverColorOf(current)) patch.cover_color = draft.coverColor
+  if (draft.isPrivate !== undefined && draft.isPrivate !== Boolean(current.is_private)) patch.is_private = draft.isPrivate
   if (current.tags.map((t) => t.name).join('\n') !== draft.tags.join('\n')) patch.tags = [...draft.tags]
   return patch
+}
+
+// =============================================================================
+// Videos (gap list §3 #4): up to 10 on New list and Edit details
+// =============================================================================
+
+/** A video on the New list / Edit details draft. */
+export interface VideoDraft {
+  url: string
+  /** YouTube's 11-character id; empty for a stored video link that isn't a
+   *  YouTube one (desktop can attach any web address as a video). */
+  yt: string
+  /** The attached link's id — a video already on the list (Edit details). */
+  linkId?: string
+  /**
+   * An attached video's stored title: YouTube's own, looked up when it was
+   * attached, or null when YouTube gave none (then no title line shows). A
+   * pasted video has none here — its row looks the title up
+   * (`useYouTubeTitle`).
+   */
+  title?: string | null
+}
+
+/** A stored link as the draft needs it. */
+export interface StoredLink {
+  id: string
+  kind: 'video' | 'article'
+  url: string
+  title: string | null
+}
+
+/** The list's attached videos, in order, as draft rows. */
+export function videoDraftsOf(links: readonly StoredLink[]): VideoDraft[] {
+  return links
+    .filter((link) => link.kind === 'video')
+    .map((link) => ({ url: link.url, yt: youTubeId(link.url) ?? '', linkId: link.id, title: link.title }))
+}
+
+/**
+ * How many videos the list can hold: the attach route's cap
+ * (`MAX_LINKS_PER_LIST`, 10) less any article links desktop attached — they
+ * share it.
+ */
+export function maxVideos(links: readonly StoredLink[]): number {
+  return Math.max(0, MAX_LINKS_PER_LIST - links.filter((link) => link.kind === 'article').length)
+}
+
+export type AddVideoProblem = 'invalid' | 'duplicate' | 'full'
+
+/**
+ * A pasted link added to the draft, or why it can't be: not a YouTube video
+ * link, a video the list already has (the same video under another address
+ * counts — it would be a second identical card), or no room left. The screen
+ * hides the link field once the list is full, so 'full' is a backstop.
+ */
+export function addVideo(
+  videos: readonly VideoDraft[],
+  link: string,
+  max: number,
+): { ok: true; videos: VideoDraft[] } | { ok: false; problem: AddVideoProblem } {
+  const yt = youTubeId(link)
+  if (!yt) return { ok: false, problem: 'invalid' }
+  if (videos.some((video) => video.yt === yt)) return { ok: false, problem: 'duplicate' }
+  if (videos.length >= max) return { ok: false, problem: 'full' }
+  return { ok: true, videos: [...videos, { url: link.trim(), yt }] }
+}
+
+/** The line under the link field for each problem (design copy for 'invalid'). */
+export const ADD_VIDEO_PROBLEM: Record<AddVideoProblem, string> = {
+  invalid: 'That doesn’t look like a YouTube link',
+  duplicate: 'That video is already on this list',
+  full: 'This list has no room for another video',
+}
+
+/**
+ * What Done has to do to the attached videos: the ones taken off the draft
+ * come off the list, the pasted ones go on, in the order they were added
+ * (each lands at the end). Removing goes first, so swapping a video on a
+ * full list never hits the cap.
+ */
+export function videoChanges(
+  stored: readonly StoredLink[],
+  draft: readonly VideoDraft[],
+): { remove: string[]; add: VideoDraft[] } {
+  const kept = new Set(draft.flatMap((video) => (video.linkId ? [video.linkId] : [])))
+  return {
+    remove: stored.filter((link) => link.kind === 'video' && !kept.has(link.id)).map((link) => link.id),
+    add: draft.filter((video) => !video.linkId),
+  }
+}
+
+/** What shows in place of the link field once the list holds all it can. */
+export function videosFullNote(max: number): string {
+  return max >= MAX_LINKS_PER_LIST
+    ? `That’s ${MAX_LINKS_PER_LIST} videos, the most a list can hold`
+    : `This list is full: videos and links share a limit of ${MAX_LINKS_PER_LIST}`
 }
