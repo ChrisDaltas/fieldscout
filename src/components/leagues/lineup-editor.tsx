@@ -39,6 +39,9 @@ import { toast } from '@/hooks/use-toast'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 import { useReportOverrideSaving } from '@/stores/commish-override-store'
+import { useRailLineupDragStore, type RailDrag } from '@/stores/rail-lineup-drag-store'
+import type { PoolPlayer } from '@/components/draft/available-players-ops'
+import { AddPlayerDialog } from './add-player-dialog'
 import { PROJ_TEXT } from '@/components/players/projected-points'
 import { cn } from '@/lib/utils'
 
@@ -74,6 +77,8 @@ import {
   weekTabsLockedReason,
   lineupChecks,
   moveOptions,
+  railDropTarget,
+  railDropTargets,
   moveToastCopy,
   opponentOf,
   oprkOf,
@@ -169,6 +174,9 @@ export interface LineupEditorProps {
   onOverrideMode: (next: boolean) => void
   /** The Move menu's Drop — the viewer's OWN team only. */
   onDrop?: (player: RosterPlayer) => void
+  /** F570: the viewer's own team — a free agent dragged from the rail may
+   *  be added here (to the bench, through the add's confirm step). */
+  ownTeam?: boolean
   dropClosedReason?: string | null
   /** Omitted = every stat cell reads "—" (nothing fetched). */
   stats?: LineupStats
@@ -199,6 +207,7 @@ export function LineupEditor({
   overrideMode,
   onOverrideMode,
   onDrop,
+  ownTeam = false,
   dropClosedReason = null,
   stats = EMPTY_STATS,
   weekTabs,
@@ -327,6 +336,34 @@ export function LineupEditor({
     else if (over.startsWith('slot:')) move(playerId, { kind: 'slot', key: over.slice(5) })
   }
 
+  // F570 — a rail player dragged onto this lineup (the bridge store: the
+  // app-level drag cannot reach this nested DndContext). Only the targets
+  // that accept him are marked droppable; the rest dim and take nothing.
+  const railDrag = useRailLineupDragStore((s) => s.drag)
+  const railHover = useRailLineupDragStore((s) => s.hover)
+  const [railAdd, setRailAdd] = useState<PoolPlayer | null>(null)
+  const railTargets = useMemo(
+    () => railDropTargets({ drag: railDrag, leagueId, teamId, readOnly, ownTeam, placement: shown, slots, players, locked, lockExempt }),
+    [railDrag, leagueId, teamId, readOnly, ownTeam, shown, slots, players, locked, lockExempt],
+  )
+  const railLive = useRef({ railTargets, players })
+  railLive.current = { railTargets, players }
+  const moveRef = useRef(move)
+  moveRef.current = move
+  useEffect(() => {
+    const handler = (drag: RailDrag, target: string) => {
+      if (!railLive.current.railTargets.has(target)) return
+      const to = railDropTarget(target)
+      if (!to) return
+      if (railLive.current.players.has(drag.playerId)) moveRef.current(drag.playerId, to)
+      else setRailAdd(drag.player)
+    }
+    useRailLineupDragStore.getState().register(handler)
+    return () => {
+      if (useRailLineupDragStore.getState().onDrop === handler) useRailLineupDragStore.getState().register(null)
+    }
+  }, [])
+
   function onToggleColumn(id: StatColumnId) {
     setColumns((cur) => {
       const next = toggleColumn(cur, id)
@@ -355,6 +392,9 @@ export function LineupEditor({
     onMove: move,
     onDrop,
     dropClosedReason,
+    railDragging: railDrag !== null && railDrag.leagueId === leagueId,
+    railTargets,
+    railHover,
   }
   const canOfferOverride = isCommish && !overrideMode
   // The server's refusal, VERBATIM (F224(e)) — the mutation's own error.
@@ -497,8 +537,18 @@ export function LineupEditor({
           </div>
         ) : null}
       </DragOverlay>
+      <AddPlayerDialog leagueId={leagueId} player={railAdd} onClose={() => setRailAdd(null)} />
     </DndContext>
   )
+}
+
+/** F570: a lineup target's attributes during a rail drag — the drop id only
+ *  where it accepts this player, a dim where it does not, the fill under
+ *  the pointer. Nothing while no rail drag is on. */
+export function railTargetProps(ctx: Pick<RowContext, 'railDragging' | 'railTargets' | 'railHover'>, id: string): { attrs: { 'data-rail-drop'?: string }; className: string | false } {
+  if (!ctx.railDragging) return { attrs: {}, className: false }
+  if (!ctx.railTargets.has(id)) return { attrs: {}, className: 'opacity-50' }
+  return { attrs: { 'data-rail-drop': id }, className: ctx.railHover === id && 'bg-accent-soft hover:bg-accent-soft' }
 }
 
 function safeStorage(): Storage | null {
@@ -682,6 +732,11 @@ interface RowContext {
   onMove: (playerId: string, target: MoveTarget) => void
   onDrop?: (player: RosterPlayer) => void
   dropClosedReason: string | null
+  /** F570: a rail drag of this league is on. */
+  railDragging: boolean
+  /** F570: the drop ids that accept the dragged player (`railDropTargets`). */
+  railTargets: ReadonlySet<string>
+  railHover: string | null
 }
 
 function StatCell({ column, player, ctx }: { column: StatColumnId; player: RosterPlayer | null; ctx: RowContext }) {
@@ -809,11 +864,13 @@ function StarterRow({
   const hint = player ? starterHint(player, ctx.week, ctx.allowIllegal) : null
   const flags = storedStarter && player && storedStarter.player_id === player.player_id ? starterFlagChips(storedStarter.flags, ctx.allowIllegal) : []
   const hints = [...(hint ? [hint] : []), ...flags]
+  const rail = railTargetProps(ctx, `slot:${slot.key}`)
   return (
     <tr
       ref={droppable.setNodeRef}
       data-slot={slot.key}
-      className={cn('border-b border-n-4 transition-colors hover:bg-surface-sunken', isLocked && 'bg-surface-sunken', droppable.isOver && !frozen && 'bg-accent-soft hover:bg-accent-soft')}
+      {...rail.attrs}
+      className={cn('border-b border-n-4 transition-colors hover:bg-surface-sunken', isLocked && 'bg-surface-sunken', droppable.isOver && !frozen && 'bg-accent-soft hover:bg-accent-soft', rail.className)}
     >
       <td className="w-12 px-[9px] py-1.5 align-middle text-[10px] font-bold text-n-6">{slot.label}</td>
       <td className="px-[9px] py-1.5 align-middle">
@@ -872,8 +929,9 @@ function BenchRow({ player, ctx, ir }: { player: RosterPlayer; ctx: RowContext; 
 function IrSeat({ row, ctx }: { row: SlotRow; ctx: RowContext }) {
   const frozen = Boolean(row.player && ctx.locked.has(row.player.player_id) && !ctx.lockExempt)
   const droppable = useDroppable({ id: `slot:${row.slot.key}`, disabled: ctx.readOnly || frozen })
+  const rail = railTargetProps(ctx, `slot:${row.slot.key}`)
   return (
-    <div ref={droppable.setNodeRef} data-slot={row.slot.key} className={cn(droppable.isOver && !frozen && 'bg-accent-soft')}>
+    <div ref={droppable.setNodeRef} data-slot={row.slot.key} {...rail.attrs} className={cn(droppable.isOver && !frozen && 'bg-accent-soft', rail.className)}>
       {row.player ? (
         <BenchRow player={row.player} ctx={ctx} ir />
       ) : (
@@ -890,8 +948,15 @@ function IrSeat({ row, ctx }: { row: SlotRow; ctx: RowContext }) {
 
 function BenchCard({ bench, ir, ctx, empty }: { bench: RosterPlayer[]; ir: SlotRow[]; ctx: RowContext; empty: boolean }) {
   const droppable = useDroppable({ id: 'bench', disabled: ctx.readOnly })
+  const rail = railTargetProps(ctx, 'bench')
+  const railOver = ctx.railDragging && ctx.railHover === 'bench' && ctx.railTargets.has('bench')
   return (
-    <Card ref={droppable.setNodeRef} className={cn('min-w-0 lg:sticky lg:top-4', droppable.isOver && 'border-accent bg-accent-soft')} data-bench>
+    <Card
+      ref={droppable.setNodeRef}
+      {...rail.attrs}
+      className={cn('min-w-0 lg:sticky lg:top-4', (droppable.isOver || railOver) && 'border-accent bg-accent-soft', !railOver && rail.className)}
+      data-bench
+    >
       <CardHeader>
         <CardTitle>Bench</CardTitle>
         <span className="text-[10px] font-semibold text-n-6">

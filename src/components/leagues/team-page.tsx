@@ -446,6 +446,7 @@ function TeamPageContent({
             // League UX batch 2: Drop from the Move menu — the viewer's OWN team
             // only (acting for another team stays in the commissioner tools).
             onDrop={isOwnTeam ? (p) => setDropping({ player_id: p.player_id, full_name: p.full_name }) : undefined}
+            ownTeam={isOwnTeam}
             dropClosedReason={movesClosed}
           />
           {isOwnTeam && (

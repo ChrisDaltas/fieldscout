@@ -26,9 +26,9 @@ const RAW_NAME = /(^|[^=\w$(])\{[^{}]*\b(full_name|playerName|player_name|add_pl
 const ALLOWED: Record<string, [number, string]> = {
   'src/components/leagues/claim-dialog.tsx': [3, 'the claim dialog’s subject, its result sentence, and a drop <option> — inside a modal form; the row that opened it is the door'],
   'src/components/leagues/drop-player-dialog.tsx': [1, 'the confirmation’s own title — the name it is asking about'],
+  'src/components/leagues/add-player-dialog.tsx': [1, 'the add confirmation’s own title (F570) — the name it is asking about'],
   'src/components/leagues/lineup-editor.tsx': [1, 'the drag ghost — it follows the pointer and cannot be clicked'],
   'src/components/leagues/players-page.tsx': [2, 'the move form’s echo of the picked add, and a drop <option> — the table row above is the door'],
-  'src/components/leagues/trade-center.tsx': [1, 'the commissioner’s outcome sentence, composed from the server’s answer'],
   'src/components/draft/auction-player-table.tsx': [1, 'already a button that opens the card (onOpenPlayer)'],
   'src/components/draft/draft-queue-card.tsx': [2, 'the avatar initials, and a name that is already a button opening the card'],
   'src/components/draft/commish-draft-panel.tsx': [3, 'the commissioner’s pick editor: a board pick and a search result are buttons that SELECT the pick to edit, and the edit dialog’s sentence'],

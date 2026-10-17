@@ -154,6 +154,16 @@ describe('commishLogLines — the act is read from before/after, the reason is o
   const names = new Map([['t1', 'Alpha'], ['t2', 'Bravo']])
   const line = (over: Partial<CommishLogItem>) => commishLogLines([{ ...base, ...over }], names)[0]
 
+  it('F563: a roster-move line names its player WITH his id (127: target_id is the named player)', () => {
+    const moved = line({ target_type: 'player', target_id: 'p-bijan', after: { team_id: 't2', slot_key: 'bn', acquisition_type: 'commissioner' }, before: { team_id: 't1', slot_key: 'bn', acquisition_type: 'draft' }, metadata: { player_name: 'Bijan Robinson', from_team_name: 'Alpha', to_team_name: 'Bravo' } })
+    expect(moved.text).toBe('moved Bijan Robinson from Alpha to Bravo')
+    expect(moved.players).toEqual([{ playerId: 'p-bijan', name: 'Bijan Robinson' }])
+    // No stored name → "a player", and nothing is linked (never a guess).
+    expect(line({ target_type: 'player', target_id: 'p-x', after: { acquisition_type: 'commissioner' }, before: { acquisition_type: null }, metadata: { to_team_name: 'Bravo' } }).players).toEqual([])
+    // A non-player receipt names no player.
+    expect(line({ after: { slot_map: {} }, before: { slot_map: {} }, metadata: { week: 3 } }).players).toEqual([])
+  })
+
   it('one sentence per verb’s receipt shape (131’s before/after documents)', () => {
     expect(line({ after: { slot_map: {} }, before: { slot_map: {} }, metadata: { week: 3 } }).text).toBe('set Alpha’s Week 3 lineup')
     expect(line({ action_type: 'reassign_team', before: { name: 'Old' }, after: { name: 'New' } }).text).toBe('renamed Old to New')
