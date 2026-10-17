@@ -4,7 +4,7 @@
  * screen draws; this pins what it SAVES — including that nothing about the
  * colour is sent before the column exists.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { MAX_LINKS_PER_LIST } from '@/types/schemas/lists'
 
@@ -12,12 +12,15 @@ import {
   ADD_VIDEO_PROBLEM,
   DEFAULT_TEAM_ROSTER,
   MAX_ROSTER,
+  VIDEO_ATTACH_FAILED,
+  VIDEO_REMOVE_FAILED,
   addVideo,
   detailsCreateInput,
   detailsPatch,
   maxVideos,
   rosterDraftOf,
   rosterValid,
+  saveVideoChanges,
   stepRoster,
   videoChanges,
   videoDraftsOf,
@@ -25,7 +28,9 @@ import {
   type DetailsCurrent,
   type DetailsDraft,
   type StoredLink,
+  type VideoAttachBody,
   type VideoDraft,
+  type VideoSaveIO,
 } from './details-payload'
 
 const draft = (extra: Partial<DetailsDraft> = {}): DetailsDraft => ({
@@ -242,5 +247,96 @@ describe('videos (gap list §3 #4) — up to 10, the same video once', () => {
     expect(videoChanges(stored, draft)).toEqual({ remove: ['a'], add: [{ url: ZOO, yt: 'jNQXAC9IVRw' }] })
     expect(videoChanges(stored, videoDraftsOf(stored))).toEqual({ remove: [], add: [] })
     expect(videoChanges(stored, [])).toEqual({ remove: ['a', 'c'], add: [] })
+  })
+})
+
+describe('saveVideoChanges — what Done does to the videos', () => {
+  const RICK: VideoDraft = { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', yt: 'dQw4w9WgXcQ' }
+  const ZOO: VideoDraft = { url: 'https://youtu.be/jNQXAC9IVRw', yt: 'jNQXAC9IVRw' }
+  const LUMA: VideoDraft = { url: 'https://youtu.be/9bZkp7q19f0', yt: '9bZkp7q19f0' }
+
+  /** Records every call in order; `failDel` / `failPost` pick which reject. */
+  const recorder = (
+    opts: {
+      failDel?: readonly string[]
+      failPost?: Record<string, Error | string>
+      titles?: Record<string, string | null>
+    } = {},
+  ) => {
+    const calls: string[] = []
+    const posted: VideoAttachBody[] = []
+    const io: VideoSaveIO = {
+      del: vi.fn(async (listId: string, linkId: string) => {
+        calls.push(`DELETE ${listId}/${linkId}`)
+        if (opts.failDel?.includes(linkId)) throw new Error('HTTP 500')
+      }),
+      post: vi.fn(async (listId: string, body: VideoAttachBody) => {
+        calls.push(`POST ${listId} ${body.url}`)
+        posted.push(body)
+        const fail = opts.failPost?.[body.url]
+        if (fail !== undefined) throw fail
+      }),
+      titleOf: (yt: string) => opts.titles?.[yt],
+    }
+    return { io, calls, posted }
+  }
+
+  it('every removal runs before any attach (a swap on a full list never hits the cap)', async () => {
+    const { io, calls } = recorder()
+    const failures = await saveVideoChanges('L1', { remove: ['a', 'b'], add: [RICK, ZOO] }, io)
+    expect(failures).toEqual([])
+    expect(calls).toEqual(['DELETE L1/a', 'DELETE L1/b', `POST L1 ${RICK.url}`, `POST L1 ${ZOO.url}`])
+  })
+
+  it('attaches one at a time, in the order they were added', async () => {
+    let inFlight = 0
+    let most = 0
+    const io: VideoSaveIO = {
+      del: async () => undefined,
+      post: async () => {
+        inFlight += 1
+        most = Math.max(most, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        inFlight -= 1
+      },
+      titleOf: () => undefined,
+    }
+    await saveVideoChanges('L1', { remove: [], add: [RICK, ZOO, LUMA] }, io)
+    expect(most).toBe(1)
+  })
+
+  it('a failed removal doesn’t stop the rest; every failure comes back, in order', async () => {
+    const { io, calls } = recorder({
+      failDel: ['a'],
+      failPost: { [ZOO.url]: new Error('That link is already attached to this list.') },
+    })
+    const failures = await saveVideoChanges('L1', { remove: ['a', 'b'], add: [RICK, ZOO, LUMA] }, io)
+    expect(calls).toEqual(['DELETE L1/a', 'DELETE L1/b', `POST L1 ${RICK.url}`, `POST L1 ${ZOO.url}`, `POST L1 ${LUMA.url}`])
+    expect(failures).toEqual([VIDEO_REMOVE_FAILED, 'That link is already attached to this list.'])
+  })
+
+  it('an attach that fails without a line gets the plain one', async () => {
+    const { io } = recorder({ failPost: { [RICK.url]: new Error(''), [ZOO.url]: 'not an Error' } })
+    expect(await saveVideoChanges('L1', { remove: [], add: [RICK, ZOO] }, io)).toEqual([VIDEO_ATTACH_FAILED, VIDEO_ATTACH_FAILED])
+    expect(VIDEO_REMOVE_FAILED).toBe('A video could not be removed.')
+    expect(VIDEO_ATTACH_FAILED).toBe('Could not attach the video.')
+  })
+
+  it('sends the title the row looked up; none while loading or when YouTube gave none (never a placeholder)', async () => {
+    const { io, posted } = recorder({ titles: { [RICK.yt]: 'Never Gonna Give You Up', [ZOO.yt]: null } })
+    await saveVideoChanges('L1', { remove: [], add: [RICK, ZOO, LUMA] }, io)
+    expect(posted).toEqual([
+      { kind: 'video', url: RICK.url, title: 'Never Gonna Give You Up' },
+      { kind: 'video', url: ZOO.url },
+      { kind: 'video', url: LUMA.url },
+    ])
+    expect(posted[1]).not.toHaveProperty('title')
+    expect(posted[2]).not.toHaveProperty('title')
+  })
+
+  it('nothing to do → no calls, no failures', async () => {
+    const { io, calls } = recorder()
+    expect(await saveVideoChanges('L1', { remove: [], add: [] }, io)).toEqual([])
+    expect(calls).toEqual([])
   })
 })

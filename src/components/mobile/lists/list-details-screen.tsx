@@ -22,18 +22,22 @@ import {
   MAX_ROSTER,
   MAX_SLOT,
   ROSTER_SLOTS,
+  VIDEO_ATTACH_FAILED,
+  VIDEO_REMOVE_FAILED,
   addVideo,
   detailsCreateInput,
   detailsPatch,
   maxVideos,
   rosterDraftOf,
   rosterValid,
+  saveVideoChanges,
   stepRoster,
   videoChanges,
   videoDraftsOf,
   videosFullNote,
   type AddVideoProblem,
   type VideoDraft,
+  type VideoSaveIO,
 } from './details-payload'
 import {
   COVER_SWATCHES,
@@ -239,36 +243,24 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     setTagText('')
   }
 
-  const postVideo = (listId: string, draft: VideoDraft) => {
-    // The title the row showed — YouTube's own, from the same lookup. None
-    // (still loading, or YouTube gave none) = none is sent: the server then
-    // looks it up itself, and stores no title rather than a placeholder
-    // (gap list #11).
-    const shown = qc.getQueryData<string | null>(youTubeTitleKey(draft.yt))
-    return fetch(`/api/lists/${listId}/links`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kind: 'video', url: draft.url, ...(shown ? { title: shown } : {}) }),
-    }).then(async (res) => {
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Could not attach the video.')
-    })
-  }
-
-  /**
-   * The video work: removals first, then the new ones in order (one at a
-   * time — each lands at the end). Every failure is kept and handed back to be
-   * reported, never swallowed; the rest still go ahead.
-   */
-  const saveVideos = async (listId: string, remove: readonly string[], add: readonly VideoDraft[]) => {
-    const failures: string[] = []
-    for (const linkId of remove) {
-      const res = await fetch(`/api/lists/${listId}/links/${linkId}`, { method: 'DELETE' }).catch(() => null)
-      if (!res?.ok) failures.push('A video could not be removed.')
-    }
-    for (const draft of add) {
-      await postVideo(listId, draft).catch((error: Error) => failures.push(error.message))
-    }
-    return failures
+  /** Done's video calls, for `saveVideoChanges` (which pins their order). */
+  const videoIO: VideoSaveIO = {
+    del: async (listId, linkId) => {
+      const res = await fetch(`/api/lists/${listId}/links/${linkId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(VIDEO_REMOVE_FAILED)
+    },
+    post: async (listId, body) => {
+      const res = await fetch(`/api/lists/${listId}/links`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => {
+        throw new Error(VIDEO_ATTACH_FAILED)
+      })
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? VIDEO_ATTACH_FAILED)
+    },
+    // The title the row showed, from the same lookup (`useYouTubeTitle`).
+    titleOf: (yt) => qc.getQueryData<string | null>(youTubeTitleKey(yt)),
   }
 
   /** One toast for what went wrong with the videos (only one shows at a time). */
@@ -291,7 +283,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
             toast({ title: 'The cover image didn’t upload', description: error.message }),
           )
         }
-        const failures = videos.length > 0 ? await saveVideos(created.id, [], videos) : []
+        const failures = videos.length > 0 ? await saveVideoChanges(created.id, { remove: [], add: videos }, videoIO) : []
         if (failures.length > 0) videoFailureToast(failures, 'List created')
         qc.invalidateQueries({ queryKey: listsKeys.detail(created.id) })
         nav.createdList(created.id)
@@ -306,7 +298,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
       let failures: string[] = []
       if (changes.remove.length > 0 || changes.add.length > 0) {
         try {
-          failures = await saveVideos(current.id, changes.remove, changes.add)
+          failures = await saveVideoChanges(current.id, changes, videoIO)
         } finally {
           qc.invalidateQueries({ queryKey: listsKeys.detail(current.id) })
         }

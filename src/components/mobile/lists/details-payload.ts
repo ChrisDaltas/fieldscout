@@ -241,8 +241,7 @@ export const ADD_VIDEO_PROBLEM: Record<AddVideoProblem, string> = {
 /**
  * What Done has to do to the attached videos: the ones taken off the draft
  * come off the list, the pasted ones go on, in the order they were added
- * (each lands at the end). Removing goes first, so swapping a video on a
- * full list never hits the cap.
+ * (each lands at the end). `saveVideoChanges` makes the calls.
  */
 export function videoChanges(
   stored: readonly StoredLink[],
@@ -253,6 +252,57 @@ export function videoChanges(
     remove: stored.filter((link) => link.kind === 'video' && !kept.has(link.id)).map((link) => link.id),
     add: draft.filter((video) => !video.linkId),
   }
+}
+
+/** `POST /api/lists/[id]/links` for one pasted video. */
+export interface VideoAttachBody {
+  kind: 'video'
+  url: string
+  /** YouTube's own title, when the row already looked it up. */
+  title?: string
+}
+
+/**
+ * The calls Done makes for the videos, injected so the order and the failure
+ * handling are pinned by `details-payload.test.ts`. `del` and `post` reject
+ * when the call didn't go through (a `post` rejection carries the line to
+ * show); `titleOf` is the title the row's lookup cached for a video id —
+ * `null` when YouTube gave none, `undefined` while it's still loading.
+ */
+export interface VideoSaveIO {
+  del: (listId: string, linkId: string) => Promise<void>
+  post: (listId: string, body: VideoAttachBody) => Promise<void>
+  titleOf: (yt: string) => string | null | undefined
+}
+
+/** The toast lines for a video call that didn't go through. */
+export const VIDEO_REMOVE_FAILED = 'A video could not be removed.'
+export const VIDEO_ATTACH_FAILED = 'Could not attach the video.'
+
+/**
+ * Done's video work: every removal first, so swapping a video on a full list
+ * never hits the cap, then the new ones in order, one at a time (each lands
+ * at the end). A video goes on with the title its row showed — YouTube's own
+ * — or with none, and the attach route looks it up itself and stores no
+ * title rather than a placeholder (gap list #11). A call that fails never
+ * stops the rest; every failure is handed back, in order, for one toast.
+ */
+export async function saveVideoChanges(
+  listId: string,
+  changes: { remove: readonly string[]; add: readonly VideoDraft[] },
+  io: VideoSaveIO,
+): Promise<string[]> {
+  const failures: string[] = []
+  for (const linkId of changes.remove) {
+    await io.del(listId, linkId).catch(() => failures.push(VIDEO_REMOVE_FAILED))
+  }
+  for (const video of changes.add) {
+    const title = io.titleOf(video.yt)
+    await io
+      .post(listId, { kind: 'video', url: video.url, ...(title ? { title } : {}) })
+      .catch((error: unknown) => failures.push(error instanceof Error && error.message ? error.message : VIDEO_ATTACH_FAILED))
+  }
+  return failures
 }
 
 /** What shows in place of the link field once the list holds all it can. */
