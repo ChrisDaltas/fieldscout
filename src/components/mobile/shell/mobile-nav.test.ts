@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { leagueFallbackTitle, leagueTabHref, mobileFallback, mobileRoute } from './mobile-nav'
+import { leagueFallbackTitle, leagueTabHref, mobileFallback, mobileRoute, showsLeagueSwitcher } from './mobile-nav'
 
 const L = '/app/leagues/lg1'
 
@@ -85,5 +85,18 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
   })
   it('names the league for a league page', () => {
     expect(mobileFallback('/app/leagues/lg1/members')).toEqual({ kind: 'league', title: 'Members', leagueId: 'lg1', heading: true })
+  })
+})
+
+describe('showsLeagueSwitcher — the strip above the tab bar (Chris, 2026-10-17)', () => {
+  it('shows on a league tab only when there is another league to switch to', () => {
+    expect(showsLeagueSwitcher(true, 'match', 2)).toBe(true)
+    expect(showsLeagueSwitcher(true, 'league', 5)).toBe(true)
+    expect(showsLeagueSwitcher(true, 'match', 1)).toBe(false)
+  })
+  it('never while the leagues are loading, off a league tab, or outside a league', () => {
+    expect(showsLeagueSwitcher(true, 'team', 0)).toBe(false)
+    expect(showsLeagueSwitcher(true, null, 3)).toBe(false)
+    expect(showsLeagueSwitcher(false, 'match', 3)).toBe(false)
   })
 })

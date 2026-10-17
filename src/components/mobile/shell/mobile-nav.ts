@@ -138,3 +138,15 @@ export function leagueTabHref(leagueId: string, tab: LeagueTab, myTeamId: string
  *  (68px) + tab bar. Scrollers clear the dock by these. */
 export const DOCK_SM = 84
 export const DOCK_LG = 150
+
+/**
+ * Does the league switcher strip show above the tab bar? On a league tab
+ * (not a league sub-screen), and only when there is another league to
+ * switch to — with one league it is just a card for the league you're
+ * already in (Chris, 2026-10-17: "only display if the user has multiple
+ * leagues"). While the leagues are still loading the count is 0: no strip
+ * yet, rather than one that might vanish.
+ */
+export function showsLeagueSwitcher(inLeague: boolean, leagueTab: LeagueTab | null, leagueCount: number): boolean {
+  return inLeague && leagueTab !== null && leagueCount > 1
+}
