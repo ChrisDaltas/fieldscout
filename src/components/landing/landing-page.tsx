@@ -73,7 +73,7 @@ export function LandingPage() {
             <Logo wordClassName="hidden min-[440px]:block" />
           </Link>
           <div className="ml-auto flex items-center gap-[22px]">
-            <Link href="/login" className="whitespace-nowrap text-[14px] font-medium text-fs-ink hover:text-fs-blue">
+            <Link href="/login" scroll={false} className="whitespace-nowrap text-[14px] font-medium text-fs-ink hover:text-fs-blue">
               Sign in
             </Link>
             <CreateAccountButton size="sm" />

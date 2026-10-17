@@ -58,8 +58,7 @@ Email and Google OAuth sign-up and login, username selection post-signup, and ba
 
 ## UI Components
 
-- `src/app/(auth)/signup/page.tsx`
-- `src/app/(auth)/login/page.tsx`
+- `src/components/landing/sign-up-modal.tsx`, `sign-in-modal.tsx` (+ `forgot-password-modal.tsx`, `reset-password-modal.tsx`) — modals over the landing page, rendered in `src/app/@modal/`; see `auth-modal.tsx`
 - `src/app/(auth)/username/page.tsx`
 - `src/app/(app)/u/[username]/page.tsx`
 - `src/app/(app)/settings/profile/page.tsx`
