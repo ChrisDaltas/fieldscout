@@ -26,6 +26,7 @@ import {
   toGameRow,
   toStatRow,
   weekBounds,
+  weekMatchupKeys,
   withoutHeldGames,
   type GameRow,
   type StatRow,
@@ -305,6 +306,35 @@ const QB_LINE: ProviderPlayerWeekStats = {
   stats: { pass_yards: 304, pass_tds: 3, qb_sack_taken: 2, pass_2pt: 1 },
   advanced: { example_tracking_yards: 120 },
 }
+
+describe('toStatRow — the line\'s own team (F589, 194)', () => {
+  const games: GameRow[] = [
+    { id: 'a', season: 2026, week: 2, home_team: 'PHI', away_team: 'DAL', kickoff_at: '2026-09-20T17:00:00.000Z', status: 'scheduled' },
+    { id: 'b', season: 2026, week: 3, home_team: 'KC', away_team: 'DAL', kickoff_at: '2026-09-27T17:00:00.000Z', status: 'scheduled' },
+  ]
+  const ctx: ToStatRowContext = { ...CTX, weekMatchups: weekMatchupKeys(games, 2026, 2) }
+  it('both orientations of only that week\'s games', () => {
+    expect([...weekMatchupKeys(games, 2026, 2)].sort()).toEqual(['DAL|PHI', 'PHI|DAL'])
+  })
+  it('kept when the provider\'s team / opponent pair is a game of the week (either side)', () => {
+    expect(toStatRow({ ...QB_LINE, team: 'DAL', opponent: 'PHI' }, ctx).row!.team).toBe('DAL')
+    expect(toStatRow({ ...QB_LINE, team: 'PHI', opponent: 'DAL' }, ctx).row!.team).toBe('PHI')
+  })
+  it('NULL when the pair is no game of the week, half missing, or the database has no column (no weekMatchups)', () => {
+    expect(toStatRow({ ...QB_LINE, team: 'DAL', opponent: 'KC' }, ctx).row!.team).toBeNull()
+    expect(toStatRow({ ...QB_LINE, team: 'DAL' }, ctx).row!.team).toBeNull()
+    expect(toStatRow({ ...QB_LINE, opponent: 'PHI' }, ctx).row!.team).toBeNull()
+    expect(toStatRow({ ...QB_LINE, team: 'DAL', opponent: 'PHI' }, CTX).row!.team).toBeNull()
+  })
+  it('a team-only change is a metadata write — never a scoring delta', () => {
+    const row = toStatRow({ ...QB_LINE, team: 'DAL', opponent: 'PHI' }, ctx).row!
+    const prior: StatRow = { ...row, team: null }
+    const d = diffStats([row], new Map([[row.player_id, prior]]))
+    expect([d.inserts.length, d.updates.length, d.metaOnly.length, d.unchanged]).toEqual([0, 0, 1, 0])
+    const same = diffStats([row], new Map([[row.player_id, { ...row }]]))
+    expect(same.unchanged).toBe(1)
+  })
+})
 
 describe('toStatRow (§23.5 advanced; F13 provenance; the whole column surface)', () => {
   it('writes every surface column (absent keys → 0, the DEFAULT), the canonical advanced keys, source = provider.name, is_live from the game', () => {

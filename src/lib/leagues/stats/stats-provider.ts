@@ -48,6 +48,12 @@ export interface ProviderPlayerWeekStats {
   season: number
   week: number
   gameId?: string
+  /** F589 (migration 194): the NFL team this line was played FOR, and its
+   *  opponent, as the provider's row names them (Sleeper's weekly row
+   *  carries both beside its own game id). The ingest keeps `team` only
+   *  when the pair is a game of that week. */
+  team?: string
+  opponent?: string
   /** core_box values, canonical STAT_KEYS keys. */
   stats: Partial<Record<string, number>>
   /** tracking/charted values, canonical keys. A missing key means

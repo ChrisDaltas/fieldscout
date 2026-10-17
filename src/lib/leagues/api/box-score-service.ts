@@ -592,7 +592,7 @@ export async function readBoxScore(supabase: Supabase, leagueId: string, rawQuer
  * rule — a line on a game marked out of the week / cancelled scores 0 (and
  * shows no line). A failed read of the marks is a named 500, never a guess.
  */
-async function heldFilter(
+export async function heldFilter(
   supabase: Supabase,
   season: number,
   week: number,
@@ -603,7 +603,9 @@ async function heldFilter(
     const held = await readHeldGames(supabase, season, week)
     return { kept: withoutHeldLines(stats, held, teamOf).kept }
   } catch (e) {
-    return dbFailure('nfl_games', { message: e instanceof Error ? e.message : String(e) })
+    const message = e instanceof Error ? e.message : String(e)
+    // F589: the marks read (nfl_games) or, when something is held, the line teams (player_stats).
+    return dbFailure(message.startsWith('player_stats') ? 'player_stats' : 'nfl_games', { message })
   }
 }
 

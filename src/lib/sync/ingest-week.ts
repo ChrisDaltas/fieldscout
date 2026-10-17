@@ -326,6 +326,10 @@ export interface WeekBounds {
 export interface StatRow {
   player_id: string
   game_id: string | null
+  /** F589 (194): the NFL team the line was played for — set only when the
+   *  provider's team / opponent pair is a game of the week; NULL otherwise
+   *  (and always NULL against a database without the column). */
+  team?: string | null
   is_live: boolean
   source: string
   /** The full STAT_COLUMN_SURFACE, every column present — NULL only for a
@@ -452,6 +456,20 @@ export interface ToStatRowContext {
   /** Fallback for rows without a game id (the sleeper tier): is any in-week
    *  game of this week still ahead or live? */
   anyGameOpen: boolean
+  /** F589: `${team}|${opponent}` for both sides of every game of this week;
+   *  a line's team is kept only when its pair is here. Absent ⇒ no team. */
+  weekMatchups?: ReadonlySet<string>
+}
+
+/** F589: both orientations of every game of (season, week). */
+export function weekMatchupKeys(games: Iterable<GameRow>, season: number, week: number): Set<string> {
+  const out = new Set<string>()
+  for (const g of games) {
+    if (g.season !== season || g.week !== week) continue
+    out.add(`${g.home_team}|${g.away_team}`)
+    out.add(`${g.away_team}|${g.home_team}`)
+  }
+  return out
 }
 
 export interface ToStatRowResult {
@@ -484,11 +502,16 @@ export function toStatRow(stats: ProviderPlayerWeekStats, ctx: ToStatRowContext)
   const gameId = stats.gameId ?? null
   const status = gameId === null ? undefined : ctx.gameStatus.get(gameId)
   const isLive = status === undefined ? ctx.anyGameOpen : isOpenStatus(status)
+  const team =
+    stats.team !== undefined && stats.opponent !== undefined && ctx.weekMatchups?.has(`${stats.team}|${stats.opponent}`)
+      ? stats.team
+      : null
 
   return {
     row: {
       player_id: stats.playerId,
       game_id: gameId,
+      team,
       is_live: isLive,
       source: ctx.providerName,
       columns,
@@ -547,7 +570,8 @@ export function diffStats(incoming: StatRow[], existing: ReadonlyMap<string, Sta
       continue
     }
     const metaMoved =
-      prior.is_live !== row.is_live || prior.game_id !== row.game_id || prior.source !== row.source
+      prior.is_live !== row.is_live || prior.game_id !== row.game_id || prior.source !== row.source ||
+      (prior.team ?? null) !== (row.team ?? null)
     if (metaMoved) out.metaOnly.push(row)
     else out.unchanged += 1
   }
@@ -858,13 +882,25 @@ async function readWeeks(db: SyncClient, season: number): Promise<Map<string, St
 type DbStatRow = {
   player_id: string
   game_id: string | null
+  team?: string | null
   is_live: boolean | null
   source: string | null
   advanced: Record<string, unknown> | null
 } & Record<string, unknown>
 
-async function readStats(db: SyncClient, season: number, week: number): Promise<Map<string, StatRow>> {
-  const select = ['player_id', 'game_id', 'is_live', 'source', 'advanced', ...STAT_COLUMN_SURFACE].join(', ')
+/**
+ * F589 / TD9 (deploy before push): does `player_stats.team` exist (194)?
+ * PostgREST answers 42703 for an unknown column; anything else is a failure.
+ */
+export async function statTeamColumn(db: SyncClient): Promise<boolean> {
+  const { error } = await db.from('player_stats').select('team').range(0, 0)
+  if (error === null) return true
+  if (error.code === '42703') return false
+  throw new Error(`player_stats.team probe failed: ${error.message}`)
+}
+
+async function readStats(db: SyncClient, season: number, week: number, teamColumn: boolean): Promise<Map<string, StatRow>> {
+  const select = ['player_id', 'game_id', ...(teamColumn ? ['team'] : []), 'is_live', 'source', 'advanced', ...STAT_COLUMN_SURFACE].join(', ')
   const rows = await pageAll<DbStatRow>(
     (from, to) =>
       db
@@ -889,6 +925,7 @@ async function readStats(db: SyncClient, season: number, week: number): Promise<
     out.set(row.player_id, {
       player_id: row.player_id,
       game_id: row.game_id,
+      team: row.team ?? null,
       is_live: row.is_live ?? false,
       source: row.source ?? '',
       columns,
@@ -963,13 +1000,15 @@ function emptyReport(provider: StatsProvider, io: IngestIo, polledAt: Date, degr
 }
 
 /** A line as the door writes it. */
-function statPayload(row: StatRow, season: number, week: number): Record<string, unknown> {
+function statPayload(row: StatRow, season: number, week: number, teamColumn: boolean): Record<string, unknown> {
   return {
     player_id: row.player_id,
     season,
     week,
     stat_type: 'weekly',
     game_id: row.game_id,
+    // F589: sent only to a database that has the column (the door refuses an unknown key).
+    ...(teamColumn ? { team: row.team ?? null } : {}),
     is_live: row.is_live,
     source: row.source, // provider.name — honest provenance (F13/D300)
     advanced: row.advanced,
@@ -1003,11 +1042,12 @@ async function writeThroughDoor(
   deltaIds: ReadonlySet<string>,
   corrections: ReadonlyMap<string, MovedKey[]>,
   report: IngestReport,
+  teamColumn: boolean,
 ): Promise<void> {
   for (let i = 0; i < statWrites.length; i += BATCH) {
     const batch = statWrites.slice(i, i + BATCH)
     const rows = batch.map((row) => ({
-      stat: statPayload(row, season, week),
+      stat: statPayload(row, season, week, teamColumn),
       enqueue: deltaIds.has(row.player_id),
       corrections: (corrections.get(row.player_id) ?? []).map((k) =>
         k.column === null ? { stat_key: k.stat_key, advanced: true } : { stat_key: k.stat_key, column: k.column },
@@ -1096,11 +1136,12 @@ export async function ingestWeek(
 
   const gamesObservedAt = new Map<string, string | null>()
   const heldIds = new Map<string, string>()
+  const teamColumn = await statTeamColumn(db)
   const [existingGames, existingWeeks, known, existingStats] = await Promise.all([
     readGames(db, season, gamesObservedAt, heldIds),
     readWeeks(db, season),
     fetchKnownPlayerIds(db),
-    readStats(db, season, week),
+    readStats(db, season, week, teamColumn),
   ])
   // M8 TD7 / Q100: an operator-marked game is never written by the sync.
   const { writable: gameRows, held: heldRows } = withoutHeldGames(providerRows, heldIds, existingGames)
@@ -1151,7 +1192,13 @@ export async function ingestWeek(
   const anyGameOpen = [...merged.values()].some(
     (g) => g.season === season && g.week === week && isOpenStatus(g.status),
   )
-  const ctx: ToStatRowContext = { providerName: provider.name, gameStatus, anyGameOpen }
+  const ctx: ToStatRowContext = {
+    providerName: provider.name,
+    gameStatus,
+    anyGameOpen,
+    // F589: against a database without the column no team is kept (nothing to diff or send).
+    weekMatchups: teamColumn ? weekMatchupKeys(merged.values(), season, week) : undefined,
+  }
 
   report.stats.seen = lines.length
   const statRows: StatRow[] = []
@@ -1220,7 +1267,7 @@ export async function ingestWeek(
   report.corrections.players = corrections.size
   report.corrections.keys = detected
   if (statWrites.length > 0) {
-    await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report)
+    await writeThroughDoor(db, door, season, week, stamp, statWrites, new Set(deltas.map((r) => r.player_id)), corrections, report, teamColumn)
     report.write.path = 'door'
   }
   report.corrections.reason = correctionsReason(report, deltas.length, statWrites.length)
