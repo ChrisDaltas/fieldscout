@@ -23,7 +23,10 @@ const SHELF_HEADER = 'mb-[6px] mt-[22px]'
 
 /**
  * "Top scouts": desktop's leaderboard (`useTopScouts` — the five highest cred
- * scores; there's no accuracy measure yet, so a row reads "N cred"). Each row
+ * scores; there's no accuracy measure yet, so a row reads "N cred"). Nothing
+ * writes cred yet, so today every row reads "0 cred" and the order is only the
+ * hook's fixed tiebreak, not merit — whether the shelf stays until cred exists
+ * is Chris's call (gap list §3 #26 review). Each row
  * opens that person's profile (the handle is the link, stretched over the
  * row); Follow sits above it, and your own row says "You" instead.
  */
