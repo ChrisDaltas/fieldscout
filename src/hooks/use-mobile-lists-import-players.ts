@@ -17,6 +17,12 @@ import { firstEmbed } from '@/utils/supabase-embed'
  * One paged read for every list (RLS: the owner reads their own rows), with
  * an exact count: a set of lists can pass PostgREST's 1000-row cap, and a
  * short page must never pass for "that's everyone" (CLAUDE.md).
+ *
+ * Re-read on every open of the sheet (`staleTime: 0`): the lists change
+ * from screens that don't know about this read, and a minute-old answer
+ * could hide a list that has since gained players, or mark it "All already
+ * in this list" and stop a valid import. It only runs while the sheet is
+ * open, so the re-read is cheap.
  */
 
 export interface ImportListPlayer {
@@ -34,11 +40,13 @@ interface Row {
   player: { position: string | null } | Array<{ position: string | null }> | null
 }
 
-export function useMobileListsImportPlayers(listIds: readonly string[], enabled: boolean) {
+/** The read's query options (exported for the re-read test). */
+export function importPlayersQueryOptions(listIds: readonly string[], enabled: boolean) {
   const ids = [...listIds].sort()
-  return useQuery({
+  return {
     queryKey: ['mobile-lists', 'import-players', ids.join(',')] as const,
     enabled: enabled && ids.length > 0,
+    staleTime: 0,
     queryFn: async (): Promise<Map<string, ImportListPlayer[]>> => {
       const supabase = createBrowserClient()
       const rows = await pageAll<Row>((from, to) =>
@@ -65,5 +73,9 @@ export function useMobileListsImportPlayers(listIds: readonly string[], enabled:
       }
       return byList
     },
-  })
+  }
+}
+
+export function useMobileListsImportPlayers(listIds: readonly string[], enabled: boolean) {
+  return useQuery(importPlayersQueryOptions(listIds, enabled))
 }
