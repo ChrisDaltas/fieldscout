@@ -26,10 +26,12 @@ export function LayoutModeFrame({
       <div className={cn('h-full desk:min-w-app', className)}>{children}</div>
       {showMobilePrompt && (
         // A true overlay pinned to the window (not the scrolled app), so it
-        // carries a resting shadow — CLAUDE.md → "Elevation".
+        // carries a resting shadow — CLAUDE.md → "Elevation". A system
+        // message, so a rounded rectangle, never pill-ended (its button stays
+        // a pill) — CLAUDE.md → "Bright red is ink, never paint".
         <div
           role="status"
-          className="fixed bottom-4 left-1/2 z-[90] flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-pill bg-ink py-1.5 pl-4 pr-1.5 text-[11px] font-semibold text-white shadow-hard-8"
+          className="fixed bottom-4 left-1/2 z-[90] flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-message bg-ink py-1.5 pl-4 pr-1.5 text-[11px] font-semibold text-white shadow-hard-8"
           data-mobile-layout-prompt
         >
           <span className="text-white/70">Window too narrow</span>

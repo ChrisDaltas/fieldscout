@@ -642,8 +642,10 @@ function ProfileHeader({
           <span
             title={player.injury_notes ?? player.injury_body_part ?? undefined}
             className={cn(
-              'flex h-[22px] flex-none items-center rounded-pill px-[9px] text-[11px] font-semibold text-white',
-              status.tone === 'warn' ? 'bg-warn' : 'bg-negative-strong',
+              'flex h-[22px] flex-none items-center rounded-pill px-[9px] text-[11px] font-semibold',
+              // Out / IR / PUP / Suspended: the red tint with red text — the
+              // bright red is for text and small icons, never a fill (2026-10-18).
+              status.tone === 'warn' ? 'bg-warn text-white' : 'bg-m-gr text-m-tr',
             )}
             data-profile-status
           >

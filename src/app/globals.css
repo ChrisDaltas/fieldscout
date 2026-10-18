@@ -48,7 +48,15 @@
     --secondary: 240 11% 96%;
     --secondary-foreground: 240 3% 12%;
 
-    /* Destructive = v7 alert red, white text */
+    /* Destructive = v7 alert red (#FF0028, = `negative-strong`). TEXT AND
+       SMALL ICONS ONLY (Chris, 2026-10-18: "That red is for text and small
+       icons not backgrounds") — never the fill of a toast, banner, button,
+       chip, row, sheet or clock. An error surface is the normal surface or the
+       soft tint (`negative-soft` here, `--m-gr` on the phone) with this red
+       carried by its text or a small icon. Pinned by
+       src/components/ui/system-message-rule.test.ts.
+       `--destructive-foreground` is shadcn's "text on a red fill"; there is
+       no red fill, so nothing uses it — kept for shadcn parity. */
     --destructive: 351 100% 50%; /* #FF0028 */
     --destructive-foreground: 0 0% 100%;
 
@@ -305,7 +313,14 @@
 
    Dark mode is MOBILE ONLY (Chris, 2026-10-15): `<html data-theme="dark">`
    is set only in the mobile layout (use-mobile-theme / the head script), so
-   the desktop app never sees it. */
+   the desktop app never sees it.
+
+   The phone's ERROR PAIR (Chris, 2026-10-18 — the bright red is for text and
+   small icons, never a background): `--m-gr` is the background-safe error
+   tint (pale pink on light, a dark maroon on dark) for refusal boxes,
+   destructive buttons and red chips; `--m-tr` is the red text/icon on it
+   (#C8001C light, #FF6B6B dark — both pass AA on their tint). The bright
+   `negative-strong` (#FF0028) stays a text/icon colour on the phone too. */
 @layer base {
   :root {
     --m-t1: 29 29 31;
@@ -327,8 +342,8 @@
     --m-mini: 58 58 60;
     --m-gg: 227 249 236;
     --m-tg: 6 122 62;
-    --m-gr: 255 233 236;
-    --m-tr: 200 0 28;
+    --m-gr: 255 233 236; /* error tint — background-safe */
+    --m-tr: 200 0 28; /* error text/icon on --m-gr */
     --m-gb: 230 242 255;
     --m-tb: 0 116 219;
     --m-go: 255 243 230;
@@ -358,8 +373,8 @@
     --m-mini: 9 9 9;
     --m-gg: 18 48 31;
     --m-tg: 30 215 96;
-    --m-gr: 58 26 29;
-    --m-tr: 255 107 107;
+    --m-gr: 58 26 29; /* error tint — background-safe */
+    --m-tr: 255 107 107; /* error text/icon on --m-gr */
     --m-gb: 18 38 63;
     --m-tb: 111 181 255;
     --m-go: 58 42 20;

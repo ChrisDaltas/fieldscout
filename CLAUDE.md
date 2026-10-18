@@ -64,6 +64,16 @@ A whole-app visual overhaul is underway. The **Claude Design prototype "FieldSco
 - Shadows come from the `boxShadow` tokens in `tailwind.config.ts` — never a literal `shadow-[…px…#hex]`.
 - `src/components/ui/elevation-rule.test.ts` pins this for the shared primitives, with the overlay allowlist and its reasons.
 
+#### Bright red is ink, never paint — and system messages are rounded rectangles
+
+*(Ruled by Chris 2026-10-18, looking at the phone's error toast — a bright-red pill: "we don't want the ends of a system message like this being rounded on the ends … or this bright of a red. That red is for text and small icons not backgrounds." Overrides the phone handoff's pill-shaped toast.)*
+
+- **The bright red (`negative-strong`, `--destructive`, `#FF0028`) is for text and small icons only.** An error's words, its alert glyph, a destructive label, and tiny indicators: a live dot, the "needs you" dot, a notification count badge. It is **never the fill of a surface**: no toast, banner, button, chip/tag/pill with text, row, sheet or clock is painted with it. A wall of red shouts louder than the problem it reports.
+- **An error surface is the normal surface or a soft tint, with the red carried by text or a small icon.** The error toast is the same ink toast as every other, with a small red alert glyph leading the title. Notices, refusal boxes, red chips and destructive buttons are a tint: `bg-negative-soft` with `text-negative-strong` on desktop (the stronger `bg-negative` tint takes ink text, never red); `bg-m-gr` with `text-m-tr` on the phone (that pair switches for phone dark mode).
+- **Every system message — toast, banner, inline notice/alert, refusal box, a pinned status bar like the settings save bar — is a rounded rectangle, never `rounded-pill` / `rounded-full`**, even for a one-line message. New or restyled messages use `rounded-message` (12px); older ones on another rectangle radius (`rounded-lg`, `rounded-xl`, …) already meet the rule. The pill is a control's shape; a pill-shaped message reads like something to press. Buttons and chips *inside* a message stay pills.
+- **The exception is a small indicator** — a dot, a count badge, a logo glyph (the YouTube play mark). Those may be filled with the bright red; anything carrying words may not.
+- `src/components/ui/system-message-rule.test.ts` pins both rules across `src/`. It fails on any bright-red fill (class, arbitrary value, inline style, SVG fill) outside its small-indicator allowlist — exact counts, a reason each; on the red's raw value (`#FF0028`, `255 0 40`, `351 100% 50%`, `var(--destructive)`) written anywhere but its token definitions, so an alias token or a string constant can't carry it; and on a pill-ended toast or any element whose `role` is, or can be, `alert` / `status` (literal or `role={…}`). A message with no role is invisible to it — reviewers check those by eye.
+
 ### Components
 - **No near-duplicate components.** Before creating any component, search `components/` for one that already does the job. Prefer adding a CVA variant or prop to an existing component over creating a new one. New shared components require explicit approval; small visual differences from a mock never justify forking a component.
 
