@@ -48,8 +48,8 @@ export function importToolLabel(): string {
  * Each option says how many players it would really bring in — anyone the
  * list already holds, or outside its position group, is skipped (each player
  * appears once per list) — and one that would bring in nobody can't be
- * tapped. The design's blue "Cancel" pill is the app sheet's ✕, as on Add
- * players and Add stats.
+ * tapped. The header carries the design's blue "Cancel" pill (Add players
+ * and Add stats carry "Done"; gap list §4 item 3).
  */
 export function ImportSheet({
   open,
@@ -187,7 +187,7 @@ export function ImportSheet({
       onOpenChange={onOpenChange}
       title={label}
       subtitle="Brings in players in order, with their tiers"
-      showClose
+      action={{ label: 'Cancel' }}
     >
       <div className="flex flex-col gap-3.5 px-4 pb-[30px]">
         {nothing ? (

@@ -35,7 +35,7 @@ export function AddStatsSheet({
       onOpenChange={onOpenChange}
       title="Add stats"
       subtitle={`${selected} selected · shown as columns in your list`}
-      showClose
+      action={{ label: 'Done' }}
     >
       <div className="flex flex-col gap-3.5 px-4 pb-2">
         {STAT_GROUPS.map((group) => (
