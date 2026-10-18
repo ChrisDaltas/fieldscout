@@ -13,7 +13,6 @@ import {
   formatPoints,
   leaderboardRows,
   scoreCell,
-  splitRows,
   teamName,
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
@@ -31,8 +30,8 @@ import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-servic
 import { cn } from '@/lib/utils'
 
 import { ChampionCard, DraftDoorsCard, MessageBoardCard, YourTeamCard } from './kept-cards'
-import { CenteredNote, SkeletonBlocks, StatusLine, TeamAvatar } from './league-bits'
-import { matchupsWeek, teamAvatarClass, weekToKeep } from './league-tab-ops'
+import { CenteredNote, SectionHeading, SkeletonBlocks, StatusLine, TeamAvatar } from './league-bits'
+import { SECOND_OPPONENTS_NOTE, SECOND_OPPONENTS_TITLE, matchupGroups, matchupsWeek, teamAvatarClass, weekToKeep } from './league-tab-ops'
 import { useKeptWeek } from './league-tab-store'
 import { MobileBracket } from './mobile-bracket'
 import { PreseasonContent } from './preseason'
@@ -44,9 +43,11 @@ import { PreseasonContent } from './preseason'
  * when the league plays the median game), then every matchup of that
  * week — yours first — as a b1 card: avatar and live score per side, the
  * team name and record, "vs" between. Tapping a card opens that matchup on
- * the Match tab. There is no win-probability source, so the win bar and %
- * are left out rather than invented. Once the playoffs start the bracket
- * sits at the top. Below: the league-home cards the design does not draw
+ * the Match tab. A second-opponent league's extra games follow in their own
+ * group (gap list §4 item 10), each side a door to that team. There is no
+ * win-probability source, so the win bar and % are left out rather than
+ * invented. Once the playoffs start the bracket sits at the top. Below:
+ * the league-home cards the design does not draw
  * (Your team, Message board, Draft), kept in the mobile language. Before
  * the draft this segment is the league's draft home.
  */
@@ -239,20 +240,34 @@ function WeekCards({
   online: Online
 }) {
   if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} av={av} online={online} />
-  const { primary } = splitRows(doc.matchups)
+  const { primary, secondary } = matchupGroups(doc.matchups, myTeamId)
   // The empty copy reads the week SHOWN, not the league's state: a playoff
   // week stepped to in the regular season says its pairings come later
   // (the Match tab's and the desktop matchup page's own helper).
   if (primary.length === 0) return <CenteredNote message={emptyWeekCopy(doc.week, weeks, regularSeasonWeeks)} />
-  const mine = (r: MatchupRow) => myTeamId !== null && (r.home_team_id === myTeamId || r.away_team_id === myTeamId)
-  const rows = [...primary].sort((a, b) => Number(mine(b)) - Number(mine(a)))
   const regular = primary.every((r) => r.round_type !== 'playoff')
+  const card = { leagueId, doc, records, av, online, myTeamId }
   return (
     <>
       {medianGame && regular && <MedianCard median={doc.league_week.median_score} />}
-      {rows.map((row) => (
-        <MatchupCard key={row.id} leagueId={leagueId} doc={doc} row={row} records={records} av={av} online={online} myTeamId={myTeamId} />
+      {primary.map((row) => (
+        <MatchupCard key={row.id} {...card} row={row} />
       ))}
+      {/* Gap list §4 item 10: a second-opponent league's extra games in their
+          own group under the matchups (the design draws none; the desktop
+          page's "Second opponents" list). The Match tab swipes the matchups
+          only, so these cards open each team instead. */}
+      {secondary.length > 0 && (
+        <section className="mt-1.5 flex flex-col gap-2.5" aria-label={SECOND_OPPONENTS_TITLE} data-second-opponents>
+          <div className="flex flex-col">
+            <SectionHeading>{SECOND_OPPONENTS_TITLE}</SectionHeading>
+            <p className="px-1 text-[12px] font-medium leading-[1.35] text-m-t3">{SECOND_OPPONENTS_NOTE}</p>
+          </div>
+          {secondary.map((row) => (
+            <MatchupCard key={row.id} {...card} row={row} door="teams" />
+          ))}
+        </section>
+      )}
     </>
   )
 }
@@ -283,6 +298,12 @@ function MedianCard({ median }: { median: number | null }) {
   )
 }
 
+/**
+ * One game of the week as the design's b1 card. `door` says where a tap
+ * goes: a matchup opens on the Match tab (the whole card is the link); a
+ * second-opponent game is not one of the Match tab's matchups, so each side
+ * opens that team (the desktop list's team-name doors) — never a dead tap.
+ */
 function MatchupCard({
   leagueId,
   doc,
@@ -291,6 +312,7 @@ function MatchupCard({
   av,
   online,
   myTeamId,
+  door = 'matchup',
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -299,18 +321,24 @@ function MatchupCard({
   av: Av
   online: Online
   myTeamId: string | null
+  door?: 'matchup' | 'teams'
 }) {
   // Your own matchup puts you on the left (the design's team A), home or away.
   const flip = myTeamId !== null && row.away_team_id === myTeamId
   const left = flip ? { id: row.away_team_id!, score: row.away_score } : { id: row.home_team_id, score: row.home_score }
   const right = flip ? { id: row.home_team_id, score: row.home_score } : row.away_team_id ? { id: row.away_team_id, score: row.away_score } : null
-  return (
-    <Link
-      href={`/app/leagues/${leagueId}/matchup/${row.id}`}
-      className="grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] bg-m-b1 p-3"
-      data-matchup={row.id}
-    >
-      <Side name={teamName(doc, left.id)} score={left.score} status={row.status} record={records.get(left.id) ?? null} avClass={av(left.id)} online={online(left.id)} />
+  const teamDoor = (id: string) => (door === 'teams' ? teamPageHref(leagueId, id) : undefined)
+  const body = (
+    <>
+      <Side
+        name={teamName(doc, left.id)}
+        score={left.score}
+        status={row.status}
+        record={records.get(left.id) ?? null}
+        avClass={av(left.id)}
+        online={online(left.id)}
+        href={teamDoor(left.id)}
+      />
       <span className="flex flex-col items-center gap-0.5 text-center text-[11px] font-semibold text-m-t4">
         vs
         {row.is_overridden && (
@@ -320,12 +348,34 @@ function MatchupCard({
         )}
       </span>
       {right ? (
-        <Side name={teamName(doc, right.id)} score={right.score} status={row.status} record={records.get(right.id) ?? null} avClass={av(right.id)} online={online(right.id)} end />
+        <Side
+          name={teamName(doc, right.id)}
+          score={right.score}
+          status={row.status}
+          record={records.get(right.id) ?? null}
+          avClass={av(right.id)}
+          online={online(right.id)}
+          href={teamDoor(right.id)}
+          end
+        />
       ) : (
         <div className="flex min-w-0 flex-col items-end gap-[5px] text-right">
           <span className="text-[13px] font-semibold text-m-t3">Bye</span>
         </div>
       )}
+    </>
+  )
+  const className = 'grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] bg-m-b1 p-3'
+  if (door === 'teams') {
+    return (
+      <div className={className} data-matchup={row.id}>
+        {body}
+      </div>
+    )
+  }
+  return (
+    <Link href={`/app/leagues/${leagueId}/matchup/${row.id}`} className={className} data-matchup={row.id}>
+      {body}
     </Link>
   )
 }
@@ -337,6 +387,7 @@ function Side({
   record,
   avClass,
   online,
+  href,
   end = false,
 }: {
   name: string
@@ -345,11 +396,15 @@ function Side({
   record: string | null
   avClass: string
   online: boolean
+  /** The side's own door (that team's page) — only on a card that is not
+   *  itself a link (an <a> inside an <a> is invalid HTML). */
+  href?: string
   end?: boolean
 }) {
   const cell = scoreCell(score, status)
-  return (
-    <div className={cn('flex min-w-0 flex-col gap-[5px]', end && 'text-right')}>
+  const className = cn('flex min-w-0 flex-col gap-[5px]', end && 'text-right')
+  const body = (
+    <>
       <div className={cn('flex items-center gap-2', end && 'flex-row-reverse')}>
         <TeamAvatar name={name} className={avClass} online={online} onlineRingClass="ring-m-b1" />
         <span className="flex-1" />
@@ -365,7 +420,14 @@ function Side({
       </div>
       <span className="truncate whitespace-nowrap text-[13px] font-semibold text-m-t1">{name}</span>
       {record && <span className="whitespace-nowrap text-[11px] font-medium tabular-nums text-m-t3">{record}</span>}
-    </div>
+    </>
+  )
+  return href ? (
+    <Link href={href} className={className} data-team-door>
+      {body}
+    </Link>
+  ) : (
+    <div className={className}>{body}</div>
   )
 }
 

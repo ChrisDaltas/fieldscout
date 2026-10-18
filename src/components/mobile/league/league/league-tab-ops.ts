@@ -7,11 +7,13 @@
  */
 import type { ScheduleWeek } from '@/hooks/use-schedule'
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
+import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
-import { teamAvatarClass as matchTeamAvatarClass } from '@/components/mobile/league/match/match-ops'
+import { teamAvatarClass as matchTeamAvatarClass, orderMatchups } from '@/components/mobile/league/match/match-ops'
 import { feedLines, groupFeedLines, transactionText } from '@/components/leagues/activity-feed-ops'
 import { heroWeek } from '@/components/leagues/league-home-season-ops'
+import { splitRows } from '@/components/leagues/matchup-view-ops'
 import { formatRecord, renderedChain } from '@/components/leagues/standings-table-ops'
 import { lostClaimWinner } from '@/components/leagues/team-transactions-ops'
 import { claimOutcome, claimReasonWords } from '@/components/leagues/waiver-claims-ops'
@@ -56,6 +58,24 @@ export function matchupsWeek(kept: number | undefined, weeks: readonly Pick<Sche
  *  kept (`null`), so the picker's default keeps following the season. */
 export function weekToKeep(week: number, weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]): number | null {
   return week === heroWeek(weeks) ? null : week
+}
+
+// ---------------------------------------------------------------------------
+// Matchups — the week's two groups (gap list §4 item 10)
+// ---------------------------------------------------------------------------
+
+/** The heading over a second-opponent league's extra games, and the line
+ *  under it (the desktop list's own title; the design draws neither). */
+export const SECOND_OPPONENTS_TITLE = 'Second opponents'
+export const SECOND_OPPONENTS_NOTE = 'Each team’s second game. It counts in the record too.'
+
+/** The week's cards in their two groups: the matchups (`regular` /
+ *  `playoff` rows) and the second-opponent games (the `secondary` rows a
+ *  `second_opponent` league stores, §11.7) — each with yours first, then the
+ *  rest in the server's order. A league without second opponents has none. */
+export function matchupGroups(matchups: readonly MatchupRow[], myTeamId: string | null): { primary: MatchupRow[]; secondary: MatchupRow[] } {
+  const { primary, secondary } = splitRows(matchups)
+  return { primary: orderMatchups(primary, myTeamId), secondary: orderMatchups(secondary, myTeamId) }
 }
 
 /** The Transactions screen (spec §2.5). `mine` = "My moves" (Team tab's
