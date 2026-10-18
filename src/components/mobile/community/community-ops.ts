@@ -14,7 +14,10 @@ import { handleInitials } from '@/utils/initials'
  * FieldScout Mobile — Community, the pure half (handoff m-community). Tabs,
  * topics, the inline search and the Rankings chips all filter one pool of
  * public lists on the client, exactly as the prototype's `cmVals()` does;
- * these are its rules, over the app's real fields.
+ * these are its rules, over the app's real fields. The pool holds the most
+ * recently updated lists; once it's full, the same filters run on the
+ * server for the older lists past it, page by page, so they cover every
+ * public list (gap list §3 #30 — `olderSpecs`, `withOlder`).
  */
 
 export type CommunityTab = 'all' | 'following' | 'poll' | 'rank' | 'list'
@@ -120,8 +123,11 @@ export const RANK_FILTERS_ALL: RankFilters = { type: 'all', pos: 'all', scoring:
 /** A weekly big board's permanent slug (`/api/big-board/week/[n]` writes
  *  `week-<n>-big-board-<ts>`; slugs are never regenerated). Who owns which
  *  week (`big_board_weekly`) is owner-only, so the slug is what a viewer
- *  can read. */
-const WEEKLY_BOARD_SLUG = /^week-(\d+)-big-board(?:-|$)/
+ *  can read. One pattern that JavaScript and Postgres read alike: the
+ *  server-side search (`use-community-older.ts`) sorts rankings from lists
+ *  with it too, so both sides always agree. Group 1 is the week. */
+export const WEEKLY_BOARD_PATTERN = '^week-([0-9]+)-big-board(-|$)'
+const WEEKLY_BOARD_SLUG = new RegExp(WEEKLY_BOARD_PATTERN)
 
 /**
  * Rankings vs lists. In the handoff a ranking is a ranking product — a week,
@@ -483,23 +489,23 @@ export function recentUpdates(items: CommunityItem[], followingIds: ReadonlySet<
 /**
  * The empty-state copy (handoff §2.12). The Following tab's "Follow people…"
  * is only true when the viewer follows nobody; someone who follows people
- * whose lists aren't in the pool gets a line that says so (and, when the pool
- * is capped, that it only holds the most recent lists).
+ * who haven't shared anything gets a line that says so. An empty state is
+ * only ever drawn once every public list has been searched (the pool, then
+ * the older lists past it — `withOlder`), so none of these is "nothing
+ * recent".
  */
 export function emptyCopy(
   tab: CommunityTab,
   topic: CommunityTopic | null,
   q: string,
   rankFiltered: boolean,
-  ctx: { followsAnyone: boolean; capped: boolean } = { followsAnyone: false, capped: false },
+  ctx: { followsAnyone: boolean } = { followsAnyone: false },
 ) {
   if (rankFiltered) return { message: 'Nothing matches these filters', action: 'Clear filters', kind: 'rank' as const }
   if (tab === 'following' && !q && !topic) {
     const message = !ctx.followsAnyone
       ? 'Follow people to see their lists, rankings and start/sit questions here'
-      : ctx.capped
-        ? 'Nothing recent from people you follow'
-        : 'People you follow haven’t shared lists or rankings yet'
+      : 'People you follow haven’t shared lists or rankings yet'
     return { message, action: 'Browse For you', kind: 'reset' as const }
   }
   if (!q && !topic) {
@@ -740,6 +746,134 @@ export function communityView(input: CommunityViewInput): CommunityView {
 function withoutRepeats(items: CommunityItem[]): CommunityItem[] {
   const seen = new Set<string>()
   return items.filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true)))
+}
+
+// =============================================================================
+// Past the pool (gap list §3 #30): search and filters cover every public list
+// =============================================================================
+
+/**
+ * One server read that carries a filtered view past the pool: the public
+ * lists older than the pool's last row (it holds the most recently updated
+ * ones) that match the tab, topic, search and Rankings chips — read page by
+ * page, newest updated first (`use-community-older.ts`). Rankings and lists
+ * are separate reads, as they are separate sections on the screen.
+ *
+ * The Rankings tab's scoring chip is not part of it: a ranking's scoring
+ * reads a column a migration adds (`scoring_format`, 190), and a read that
+ * names a column production doesn't have yet fails. The screen applies that
+ * chip to what comes back (`withOlder`), reading on while a page adds no row.
+ */
+export interface OlderSpec {
+  kind: 'rank' | 'list'
+  /** The Following tab: the people followed (their profile ids, sorted —
+   *  none followed means no read). Null on every other tab. */
+  following: string[] | null
+  topic: { kind: CommunityTopic['kind']; id: string } | null
+  /** Already normalised (`normQuery`). */
+  q: string
+  /** The Rankings tab's type and position chips ('all' anywhere else). */
+  rankType: RankTypeFilter
+  rankPos: RankPosFilter
+}
+
+/**
+ * The reads a view needs past the pool: none for For you's shelves or Start
+ * or sit; rankings (while they're switched on) and lists for For you and
+ * Following; one of them on the Rankings and Lists tabs.
+ */
+export function olderSpecs(input: {
+  tab: CommunityTab
+  topic: CommunityTopic | null
+  q: string
+  rk: RankFilters
+  ranksOn: boolean
+  followingIds: ReadonlySet<string>
+}): { rank: OlderSpec | null; list: OlderSpec | null } {
+  const { tab, topic, q, rk, ranksOn } = input
+  if (tab === 'poll' || (tab === 'all' && !topic && !q)) return { rank: null, list: null }
+  const base = {
+    following: tab === 'following' ? [...input.followingIds].sort() : null,
+    topic: topic ? { kind: topic.kind, id: topic.id } : null,
+    q,
+  }
+  const onRankTab = tab === 'rank'
+  return {
+    rank:
+      ranksOn && tab !== 'list'
+        ? { ...base, kind: 'rank', rankType: onRankTab ? rk.type : 'all', rankPos: onRankTab ? rk.pos : 'all' }
+        : null,
+    list: onRankTab ? null : { ...base, kind: 'list', rankType: 'all', rankPos: 'all' },
+  }
+}
+
+/** What one of those reads has brought back. */
+export interface OlderRead {
+  /** Each page read so far, in order. */
+  pages: readonly (readonly CommunityItem[])[]
+  /** Every match has been read — or there was nothing to read. */
+  done: boolean
+}
+
+/** No read past the pool: the pool holds every public list (it isn't full),
+ *  or the view doesn't need one. */
+export const OLDER_NONE: OlderRead = { pages: [], done: true }
+
+export interface CommunityResults {
+  /** The pool's matched rankings (in the view's order), then the older ones. */
+  ranks: CommunityItem[]
+  /** The lists, as blocks laid out one under another: the pool's matches,
+   *  then each older page's. The cards flow down one column then the other
+   *  (handoff §2.11), so one block growing would move cards already on
+   *  screen — a page arriving never does. */
+  listBlocks: CommunityItem[][]
+  /** Nothing shows yet, and a read is still going. */
+  loading: boolean
+  /** Nothing shows, and every public list has been searched. */
+  empty: boolean
+  /** Empty because of the Rankings chips — its own empty state. */
+  rankFilteredEmpty: boolean
+}
+
+/**
+ * The view (the pool, filtered as before) with the older matches after it.
+ * Each list or ranking shows once. Older rows are checked again for what they
+ * are (a ranking or a list) and, on the Rankings tab, against every chip —
+ * the scoring chip is applied only here. The empty state waits for every
+ * read to finish: a page still to come is never "Nothing matches".
+ */
+export function withOlder(
+  view: CommunityView,
+  older: { rank: OlderRead; list: OlderRead },
+  ctx: { tab: CommunityTab; rk: RankFilters },
+): CommunityResults {
+  const seen = new Set(view.filtered.map((i) => i.id))
+  const fresh = (items: readonly CommunityItem[], keep: (i: CommunityItem) => boolean) =>
+    items.filter((i) => keep(i) && !seen.has(i.id) && (seen.add(i.id), true))
+  const onRankTab = ctx.tab === 'rank'
+  const ranks = [
+    ...view.ranks,
+    ...older.rank.pages.flatMap((page) =>
+      fresh(page, (i) => i.kind === 'rank' && (!onRankTab || rankFilterOk(i, ctx.rk))),
+    ),
+  ]
+  const listBlocks = [view.lists, ...older.list.pages.map((page) => fresh(page, (i) => i.kind === 'list'))].filter(
+    (block) => block.length > 0,
+  )
+  const nothing = ranks.length === 0 && listBlocks.length === 0
+  const done = older.rank.done && older.list.done
+  const empty = nothing && done
+  const chipsOn = ctx.rk.type !== 'all' || ctx.rk.pos !== 'all' || ctx.rk.scoring !== 'all'
+  return {
+    ranks,
+    listBlocks,
+    loading: nothing && !done,
+    empty,
+    // The pool's rankings all excluded by the chips — or, read past the
+    // pool, chips that matched none of them (the read applies them, so
+    // what it left out isn't known: say the chips, not "No rankings yet").
+    rankFilteredEmpty: empty && (view.rankFilteredEmpty || (onRankTab && chipsOn && older.rank.pages.length > 0)),
+  }
 }
 
 /**

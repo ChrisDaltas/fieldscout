@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import type { ComponentPropsWithoutRef } from 'react'
+import { useEffect, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 
 import {
   COMMUNITY_HREF,
@@ -385,6 +385,122 @@ export function EmptyBlock({ message, action, onAction }: { message: string; act
       <button type="button" onClick={onAction} className="text-[14px] font-semibold text-accent">
         {action}
       </button>
+    </div>
+  )
+}
+
+/** The paging state a list read hands the footer — an infinite query's own. */
+export interface PagedRead {
+  /** Anything read yet (undefined until the first page is in). */
+  data?: unknown
+  isError: boolean
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+  isFetchNextPageError: boolean
+  fetchNextPage: () => unknown
+  refetch: () => unknown
+}
+
+/**
+ * The end of a paged list (the Latest page; Community's results past the
+ * pool — gap list §3 #30): nothing is cut off. While there's more, a button
+ * reads the next page (`label`); `auto` also reads it as the end comes
+ * near, again after each page while it still is (a page whose rows were all
+ * left out adds none) — for the last section on a screen. Reading shows
+ * `skeleton`; so does a page to come while nothing shows yet (`nothingShown`)
+ * rather than a button on a blank screen. A failed page says so, with Try
+ * again — never a quiet end.
+ */
+export function MoreFooter({
+  read,
+  auto,
+  label = 'Load more',
+  nothingShown = false,
+  skeleton,
+}: {
+  read: PagedRead
+  auto: boolean
+  label?: string
+  nothingShown?: boolean
+  skeleton: ReactNode
+}) {
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = read
+  const [endEl, setEndEl] = useState<HTMLDivElement | null>(null)
+  const [nearEnd, setNearEnd] = useState(false)
+  useEffect(() => {
+    if (!auto || !endEl || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => setNearEnd(entries.some((e) => e.isIntersecting)), {
+      rootMargin: '0px 0px 600px 0px',
+    })
+    observer.observe(endEl)
+    return () => {
+      observer.disconnect()
+      setNearEnd(false)
+    }
+  }, [auto, endEl])
+  useEffect(() => {
+    if (nearEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
+  }, [nearEnd, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
+
+  // The first page failing (nothing read) is retried as a whole; a later one
+  // on its own.
+  const firstFailed = read.isError && read.data === undefined
+  const reading = (read.data === undefined && !read.isError) || isFetchingNextPage
+  return (
+    <>
+      {auto && <div ref={setEndEl} />}
+      {firstFailed || isFetchNextPageError ? (
+        <div className="flex flex-col items-center gap-2 py-6 text-center" role="alert">
+          <p className="text-[13px] font-medium text-m-t3">Couldn’t load more.</p>
+          <button
+            type="button"
+            onClick={() => void (firstFailed ? read.refetch() : fetchNextPage())}
+            className="text-[13px] font-semibold text-accent"
+          >
+            Try again
+          </button>
+        </div>
+      ) : reading || (hasNextPage && nothingShown) ? (
+        skeleton
+      ) : hasNextPage ? (
+        <div className="flex justify-center py-4">
+          <button
+            type="button"
+            onClick={() => void fetchNextPage()}
+            className="flex h-9 items-center rounded-pill bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
+          >
+            {label}
+          </button>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+/** Ranking or Latest rows loading: the 60px tile and two lines. */
+export function RowsSkeleton({ count, label }: { count: number; label: string }) {
+  return (
+    <div aria-busy="true" aria-label={label}>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 py-2">
+          <span className="h-[60px] w-[60px] flex-none animate-pulse rounded-[10px] bg-m-b1" />
+          <span className="flex flex-1 flex-col gap-2">
+            <span className="h-3.5 w-3/4 animate-pulse rounded-[14px] bg-m-b1" />
+            <span className="h-3 w-1/2 animate-pulse rounded-[14px] bg-m-b1" />
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** List cards loading: two covers side by side, as the masonry starts —
+ *  spaced from the cards above as the masonry blocks are. */
+export function CardsSkeleton({ label }: { label: string }) {
+  return (
+    <div aria-busy="true" aria-label={label} className="mt-[14px] grid grid-cols-2 gap-[10px]">
+      <span className="h-[180px] animate-pulse rounded-[14px] bg-m-b1" />
+      <span className="h-[150px] animate-pulse rounded-[14px] bg-m-b1" />
     </div>
   )
 }

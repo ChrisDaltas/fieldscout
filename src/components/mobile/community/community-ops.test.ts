@@ -11,6 +11,7 @@ import {
   INJURIES_TOPIC,
   LATEST_HREF,
   LATEST_SIZE,
+  OLDER_NONE,
   POPULAR,
   RANK_FILTERS_ALL,
   RANK_POS_CHIPS,
@@ -29,6 +30,7 @@ import {
   latestPageItems,
   normQuery,
   nflSeasonOf,
+  olderSpecs,
   personaScoring,
   pickLatest,
   playerMeta,
@@ -48,6 +50,7 @@ import {
   TRENDING_TAGS_SIZE,
   trendingTagTopics,
   updatedAgo,
+  withOlder,
 } from './community-ops'
 
 const player = (id: string, full_name: string, position = 'WR', team = 'PHI'): CommunityPlayer => ({
@@ -421,12 +424,11 @@ describe('filters', () => {
       'Follow people to see their lists, rankings and start/sit questions here',
     )
     expect(emptyCopy('following', null, '', false).action).toBe('Browse For you')
-    // Following people whose lists aren't in the pool is not "follow people".
-    expect(emptyCopy('following', null, '', false, { followsAnyone: true, capped: false }).message).toBe(
+    // Following people who haven't shared anything is not "follow people" —
+    // and it's never "nothing recent": the empty state waits until every
+    // public list has been searched (#30).
+    expect(emptyCopy('following', null, '', false, { followsAnyone: true }).message).toBe(
       'People you follow haven’t shared lists or rankings yet',
-    )
-    expect(emptyCopy('following', null, '', false, { followsAnyone: true, capped: true }).message).toBe(
-      'Nothing recent from people you follow',
     )
     expect(emptyCopy('poll', null, '', false).message).toBe('No start or sit questions yet')
     expect(emptyCopy('all', { kind: 'tag', id: 't', label: 'Puka Nacua' }, 'x', false)).toMatchObject({
@@ -757,5 +759,121 @@ describe('For you’s Trending tags shelf (gap list §3 #26)', () => {
 
   it('none carried: an empty shelf (not drawn)', () => {
     expect(trendingTagTopics(trending, [item({ id: 'a' })])).toEqual([])
+  })
+})
+
+describe('past the pool: search and filters cover every public list (gap list §3 #30)', () => {
+  const ids = (items: readonly CommunityItem[]) => items.map((i) => i.id)
+  const now = Date.parse('2026-10-15T12:00:00Z')
+  const poolList = item({ id: 'poolList', title: 'Sleepers', updatedAt: '2026-10-14T00:00:00Z' })
+  const poolRank = item({ id: 'poolRank', kind: 'rank', rankType: 'season', title: 'Sleepers board', updatedAt: '2026-10-13T00:00:00Z' })
+  const filter = { tab: 'all' as const, topic: null, q: 'sleepers', followingIds: new Set<string>() }
+  const view = (over: Partial<Parameters<typeof communityView>[0]> = {}) =>
+    communityView({ pool: [poolList, poolRank], popularExtra: [], latestRows: [], filter, rk: RANK_FILTERS_ALL, ranksOn: true, currentWeek: 7, now, ...over })
+  const older = (...pages: CommunityItem[][]) => ({ pages, done: true })
+  const oldList = (id: string) => item({ id, updatedAt: '2026-08-01T00:00:00Z' })
+  const oldRank = (id: string, over: Partial<CommunityItem> = {}) =>
+    item({ id, kind: 'rank', rankType: 'weekly', scoringFormat: 'ppr', updatedAt: '2026-08-01T00:00:00Z', ...over })
+
+  describe('which reads a view needs', () => {
+    const base = { tab: 'all' as const, topic: null, q: '', rk: RANK_FILTERS_ALL, ranksOn: true, followingIds: new Set<string>() }
+
+    it('For you’s shelves and Start or sit: none — every other view: rankings and lists', () => {
+      expect(olderSpecs(base)).toEqual({ rank: null, list: null })
+      expect(olderSpecs({ ...base, tab: 'poll', q: 'x' })).toEqual({ rank: null, list: null })
+      const searched = olderSpecs({ ...base, q: 'kelce' })
+      expect(searched.rank).toMatchObject({ kind: 'rank', q: 'kelce', following: null, rankType: 'all', rankPos: 'all' })
+      expect(searched.list).toMatchObject({ kind: 'list', q: 'kelce' })
+      const topic = olderSpecs({ ...base, topic: INJURIES_TOPIC })
+      expect(topic.list?.topic).toEqual({ kind: 'injuries', id: 'injuries' })
+    })
+
+    it('a player topic is asked by id alone', () => {
+      const pl = { kind: 'player' as const, id: 'p-1', label: 'Puka Nacua', player: player('p-1', 'Puka Nacua') }
+      expect(olderSpecs({ ...base, topic: pl }).list?.topic).toEqual({ kind: 'player', id: 'p-1' })
+    })
+
+    it('Following: the people followed, sorted (a stable key)', () => {
+      const f = olderSpecs({ ...base, tab: 'following', followingIds: new Set(['u-b', 'u-a']) })
+      expect(f.rank?.following).toEqual(['u-a', 'u-b'])
+      expect(f.list?.following).toEqual(['u-a', 'u-b'])
+    })
+
+    it('Rankings: rankings only, with the type and position chips — the scoring chip stays on the client', () => {
+      const r = olderSpecs({ ...base, tab: 'rank', rk: { type: 'weekly', pos: 'QB', scoring: 'ppr' } })
+      expect(r.list).toBeNull()
+      expect(r.rank).toEqual({ kind: 'rank', following: null, topic: null, q: '', rankType: 'weekly', rankPos: 'QB' })
+    })
+
+    it('Lists: lists only; rankings switched off: never a rankings read', () => {
+      expect(olderSpecs({ ...base, tab: 'list' }).rank).toBeNull()
+      expect(olderSpecs({ ...base, tab: 'list' }).list).toMatchObject({ kind: 'list' })
+      expect(olderSpecs({ ...base, q: 'x', ranksOn: false }).rank).toBeNull()
+      expect(olderSpecs({ ...base, tab: 'rank', ranksOn: false })).toEqual({ rank: null, list: null })
+    })
+  })
+
+  describe('what shows', () => {
+    it('nothing past the pool (it holds every list): exactly the view, as before', () => {
+      const v = view()
+      const r = withOlder(v, { rank: OLDER_NONE, list: OLDER_NONE }, { tab: 'all', rk: RANK_FILTERS_ALL })
+      expect(ids(r.ranks)).toEqual(ids(v.ranks))
+      expect(r.listBlocks).toEqual([v.lists])
+      expect(r.loading).toBe(false)
+      expect(r.empty).toBe(v.empty)
+    })
+
+    it('the pool’s matches first (in the view’s order), then the older ones — each once', () => {
+      const r = withOlder(
+        view(),
+        { rank: older([oldRank('r1'), poolRank]), list: older([oldList('l1'), oldList('l2')], [oldList('l2'), oldList('l3')]) },
+        { tab: 'all', rk: RANK_FILTERS_ALL },
+      )
+      expect(ids(r.ranks)).toEqual(['poolRank', 'r1'])
+      // One block per page read, so a page arriving never reflows the cards above it.
+      expect(r.listBlocks.map(ids)).toEqual([['poolList'], ['l1', 'l2'], ['l3']])
+    })
+
+    it('an older row is checked for what it is: rankings above, lists below', () => {
+      const r = withOlder(view(), { rank: older([oldList('stray')]), list: older([oldRank('stray2')]) }, { tab: 'all', rk: RANK_FILTERS_ALL })
+      expect(ids(r.ranks)).toEqual(['poolRank'])
+      expect(r.listBlocks.map(ids)).toEqual([['poolList']])
+    })
+
+    it('Rankings: every chip applies to older rankings too — the scoring one only here', () => {
+      const rk = { ...RANK_FILTERS_ALL, scoring: 'ppr' as const }
+      const v = view({ filter: { ...filter, tab: 'rank', q: '' }, rk })
+      const r = withOlder(v, { rank: older([oldRank('ppr'), oldRank('half', { scoringFormat: 'half' })]), list: OLDER_NONE }, { tab: 'rank', rk })
+      expect(ids(r.ranks)).toEqual(['ppr'])
+    })
+
+    it('nothing yet but a read still going: loading — never "Nothing matches"', () => {
+      const v = view({ filter: { ...filter, q: 'zzz' } })
+      const r = withOlder(v, { rank: { pages: [], done: false }, list: older([]) }, { tab: 'all', rk: RANK_FILTERS_ALL })
+      expect(r.loading).toBe(true)
+      expect(r.empty).toBe(false)
+      // A page with nothing to show, and more to read: still loading.
+      const more = withOlder(v, { rank: OLDER_NONE, list: { pages: [[]], done: false } }, { tab: 'all', rk: RANK_FILTERS_ALL })
+      expect(more).toMatchObject({ loading: true, empty: false })
+    })
+
+    it('empty only once every list has been searched', () => {
+      const v = view({ filter: { ...filter, q: 'zzz' } })
+      const r = withOlder(v, { rank: older([]), list: older([], []) }, { tab: 'all', rk: RANK_FILTERS_ALL })
+      expect(r).toMatchObject({ loading: false, empty: true, rankFilteredEmpty: false })
+      expect(r.listBlocks).toEqual([])
+    })
+
+    it('the Rankings chips matching nothing anywhere: that empty state, even with no ranking in the pool', () => {
+      const rk = { ...RANK_FILTERS_ALL, pos: 'K' as const }
+      const v = view({ pool: [poolList], filter: { ...filter, tab: 'rank', q: '' }, rk })
+      expect(v.rankFilteredEmpty).toBe(false)
+      const r = withOlder(v, { rank: older([]), list: OLDER_NONE }, { tab: 'rank', rk })
+      expect(r).toMatchObject({ empty: true, rankFilteredEmpty: true })
+      expect(emptyCopy('rank', null, '', r.rankFilteredEmpty).message).toBe('Nothing matches these filters')
+      // No chips on and no ranking anywhere: "No rankings yet".
+      const none = withOlder(view({ pool: [poolList], filter: { ...filter, tab: 'rank', q: '' } }), { rank: older([]), list: OLDER_NONE }, { tab: 'rank', rk: RANK_FILTERS_ALL })
+      expect(none).toMatchObject({ empty: true, rankFilteredEmpty: false })
+    })
   })
 })
