@@ -148,8 +148,8 @@ describe('the League history screen', () => {
       // The live game isn't a result.
       ['Leo’s Lions', '0-0', '—', '—'],
     ])
-    expect(html).toMatch(/data-h2h-row="team-2">.*?text-positive-strong" data-h2h-record/)
-    expect(html).toMatch(/data-h2h-row="team-3">.*?text-negative-strong" data-h2h-record/)
+    expect(html).toMatch(/data-h2h-row="team-2">.*?text-m-green" data-h2h-record/)
+    expect(html).toMatch(/data-h2h-row="team-3">.*?text-m-red" data-h2h-record/)
     expect(html).toMatch(/data-h2h-row="team-4">.*?text-m-t1" data-h2h-record/)
   })
 

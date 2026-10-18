@@ -225,7 +225,7 @@ function PickerCard({ game, on, tz, onPick }: { game: MobileWeekGame; on: boolea
         <span className="whitespace-nowrap">{game.home_team}</span>
         <span>{scoreText(status, game.home_score)}</span>
       </span>
-      <span className={cn('truncate whitespace-nowrap text-[11px] font-medium', status.state === 'live' ? 'text-negative-strong' : 'text-m-t3')}>{status.text}</span>
+      <span className={cn('truncate whitespace-nowrap text-[11px] font-medium', status.state === 'live' ? 'text-m-red' : 'text-m-t3')}>{status.text}</span>
     </button>
   )
 }
@@ -259,7 +259,7 @@ function GameHeader({ game, status, tz }: { game: NflGameRow; status: GameStatus
           {away && <span className="text-[24px] font-semibold tracking-[-0.02em]">{away}</span>}
         </div>
         <span
-          className={cn('flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold', status.state === 'live' ? 'text-negative-strong' : 'text-m-t3')}
+          className={cn('flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold', status.state === 'live' ? 'text-m-red' : 'text-m-t3')}
           title={title}
           data-game-status
         >

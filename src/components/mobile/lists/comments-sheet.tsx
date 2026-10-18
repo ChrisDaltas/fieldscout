@@ -81,7 +81,7 @@ export function CommentsSheet({
               </button>
             </div>
             {add.isError && (
-              <p className="text-[12px] font-medium text-negative-strong">
+              <p className="text-[12px] font-medium text-m-red">
                 Could not post that comment. {add.error.message}
               </p>
             )}

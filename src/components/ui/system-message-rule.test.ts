@@ -23,9 +23,12 @@ import { describe, expect, it } from 'vitest'
  * 2. **The red's raw values live only in its tokens.** `#FF0028`, its rgb
  *    triple `255 0 40`, its hsl `351 100% 50%`, `var(--destructive)` and a
  *    `theme('colors.negative.strong')` lookup appear (outside comments) only
- *    where the tokens are defined — so a new alias token (`--m-red: 255 0 40`
- *    used as `bg-m-red`) or a string constant (`const RED = '#FF0028'` used in
- *    a `style`) cannot carry the red past pin 1's name-based patterns.
+ *    where the tokens are defined — so a new alias token (`--m-alarm: 255 0
+ *    40` used as `bg-m-alarm`) or a string constant (`const RED = '#FF0028'`
+ *    used in a `style`) cannot carry the red past pin 1's name-based
+ *    patterns. The one alias that exists, the phone's `m-red` (the bright red
+ *    text that brightens in phone dark mode, gap list §4 item 6), is a
+ *    registered home below AND a name pin 1 watches — `bg-m-red` fails.
  * 3. **No pill-ended system message.** The toast container and every element
  *    whose `role` is — or can be — `alert` / `status` (a literal
  *    `role="alert"` or an expression like `role={err ? 'alert' : undefined}`)
@@ -81,8 +84,9 @@ const SMALL_INDICATORS: Record<string, { count: number; why: string }> = {
   },
 }
 
-/** The bright red as a Tailwind fill: `bg-` and gradient stops, any prefix. */
-const RED_FILL_CLASS = /(?<![\w-])(?:bg|from|via|to)-(?:negative-strong|destructive)(?![\w-])/g
+/** The bright red as a Tailwind fill: `bg-` and gradient stops, any prefix.
+ *  `m-red` is the phone's themed name for the same red (text only). */
+const RED_FILL_CLASS = /(?<![\w-])(?:bg|from|via|to)-(?:negative-strong|destructive|m-red)(?![\w-])/g
 
 /** The bright red as an arbitrary-value fill: hex, rgb, its hsl or its var. */
 const RED_FILL_ARBITRARY =
@@ -183,8 +187,10 @@ const RED_VALUE_HOMES: Record<string, { count: number; why: string }> = {
     why: '`negative.strong`, the `ring-negative` shadow, and `destructive.DEFAULT` (its var)',
   },
   'src/app/globals.css': {
-    count: 1,
-    why: 'the `--destructive` definition',
+    count: 3,
+    why:
+      'the `--destructive` definition, and the phone\'s `--m-red` text token in the light palette and in ' +
+      'the light reset for pages with no phone screen (its dark value is #FF6B6B)',
   },
 }
 
@@ -212,6 +218,8 @@ describe('bright red is for text and small icons, never a background', () => {
       '<rect width="40" height="20" fill="#FF0028" />',
       '.x { background-color: rgba(255, 0, 40, 1); }',
       'className="bg-gradient-to-r from-negative-strong"',
+      'className="bg-m-red text-white"',
+      "cls = 'active:bg-m-red/90'",
     ]
     for (const sample of samples) expect(redFillsIn(sample), sample).toHaveLength(1)
 
@@ -222,6 +230,8 @@ describe('bright red is for text and small icons, never a background', () => {
       'className="border-negative-strong shadow-ring-negative"',
       'className="fill-negative-strong"', // an icon's glyph colour
       'className="bg-destructive-foreground"',
+      'className="text-m-red"', // the phone's bright red words
+      'className="bg-m-gr text-m-red"',
       '// bg-negative-strong in a comment',
       ' * bg-negative-strong in a block comment',
       '/* a block comment\n   whose next line names bg-negative-strong */',
@@ -303,7 +313,7 @@ describe('bright red is for text and small icons, never a background', () => {
         `${key} fills a surface with the bright red (${hits.join('; ')}). That red is for text ` +
           'and small icons: give the surface a soft tint (bg-negative-soft on desktop, bg-m-gr on the ' +
           'phone) or the normal surface, and carry the red with text-negative-strong / ' +
-          'text-m-tr or a small red icon. If it is genuinely a tiny dot, count badge or icon, add the ' +
+          'text-m-tr / text-m-red or a small red icon. If it is genuinely a tiny dot, count badge or icon, add the ' +
           'file to SMALL_INDICATORS with a reason.',
       ).toEqual([])
     })

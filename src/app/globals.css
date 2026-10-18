@@ -335,7 +335,14 @@
    tint (pale pink on light, a dark maroon on dark) for refusal boxes,
    destructive buttons and red chips; `--m-tr` is the red text/icon on it
    (#C8001C light, #FF6B6B dark — both pass AA on their tint). The bright
-   `negative-strong` (#FF0028) stays a text/icon colour on the phone too. */
+   `negative-strong` (#FF0028) stays a text/icon colour on the phone too.
+
+   The phone's BRIGHT TEXT PAIR (gap list §4 item 6): `--m-green` / `--m-red`
+   are the handoff's success #07A852 and danger #FF0028 in light (desktop's
+   `positive-strong` / `negative-strong`) and the README's dark values
+   (#1ED760 / #FF6B6B) in dark, so green and red words brighten on the dark
+   page instead of staying the light page's shade. Text and small icons only,
+   never a fill. */
 @layer base {
   :root {
     --m-t1: 29 29 31;
@@ -359,6 +366,8 @@
     --m-tg: 6 122 62;
     --m-gr: 255 233 236; /* error tint — background-safe */
     --m-tr: 200 0 28; /* error text/icon on --m-gr */
+    --m-green: 7 168 82; /* bright green text — #07A852 */
+    --m-red: 255 0 40; /* bright red text — #FF0028 */
     --m-gb: 230 242 255;
     --m-tb: 0 116 219;
     --m-go: 255 243 230;
@@ -390,6 +399,8 @@
     --m-tg: 30 215 96;
     --m-gr: 58 26 29; /* error tint — background-safe */
     --m-tr: 255 107 107; /* error text/icon on --m-gr */
+    --m-green: 30 215 96; /* README dark success — #1ED760 */
+    --m-red: 255 107 107; /* README dark danger text — #FF6B6B */
     --m-gb: 18 38 63;
     --m-tb: 111 181 255;
     --m-go: 58 42 20;
@@ -426,6 +437,8 @@
     --m-tg: 6 122 62;
     --m-gr: 255 233 236;
     --m-tr: 200 0 28;
+    --m-green: 7 168 82;
+    --m-red: 255 0 40;
     --m-gb: 230 242 255;
     --m-tb: 0 116 219;
     --m-go: 255 243 230;

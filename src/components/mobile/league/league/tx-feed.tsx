@@ -208,7 +208,7 @@ function RowSkeleton() {
 const PILL_TONE: Record<Pill['tone'], string> = {
   trade: 'bg-m-gb text-m-tb',
   waiver: 'bg-m-go text-m-gold',
-  free: 'bg-m-gg text-positive-strong',
+  free: 'bg-m-gg text-m-green',
   commish: 'bg-m-gp text-m-pos-wr',
   league: 'bg-m-b2 text-m-t3',
   correction: 'bg-m-go text-m-to',
@@ -295,7 +295,7 @@ function MoveLineView({ leagueId, move, player }: { leagueId: string; move: Move
   const position = move.position ?? player?.position ?? null
   const nflTeam = move.nflTeam ?? player?.team ?? null
   const sub = moveSub(position, nflTeam)
-  const tone = move.tone === 'add' ? 'text-positive-strong' : 'text-negative-strong'
+  const tone = move.tone === 'add' ? 'text-m-green' : 'text-m-red'
   // The whole line opens the player (a stretched button, painted last); a
   // manager named in the note sits above it as his own door.
   return (

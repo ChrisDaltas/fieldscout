@@ -104,7 +104,7 @@ export function ListPickerSheet({
             type="button"
             onClick={removal.remove}
             disabled={removal.pending}
-            className="flex min-h-[52px] items-center gap-3 rounded-[14px] px-2 text-left text-negative-strong active:bg-m-b2 disabled:opacity-40"
+            className="flex min-h-[52px] items-center gap-3 rounded-[14px] px-2 text-left text-m-red active:bg-m-b2 disabled:opacity-40"
           >
             <span className="flex size-8 flex-none items-center justify-center rounded-[9px] bg-m-gr">
               <MIcon name="drop" size={14} stroke={2.2} />

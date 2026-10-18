@@ -499,7 +499,7 @@ export function RankingEditor({
     locked || missingPast
       ? null
       : readOnly
-        ? { label: 'Finalized', cls: 'text-positive-strong', sub: `Week ${week} is over · can't be edited` }
+        ? { label: 'Finalized', cls: 'text-m-green', sub: `Week ${week} is over · can't be edited` }
         : saving
           ? {
               label: 'Publishing…',
@@ -776,7 +776,7 @@ export function RankingEditor({
                 setConfirmLeave(false)
                 onBack()
               }}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-negative-strong disabled:text-m-t4"
+              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-m-red disabled:text-m-t4"
             >
               Discard
             </button>

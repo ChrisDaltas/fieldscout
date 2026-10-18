@@ -631,7 +631,7 @@ function ProfileHeader({
             onClick={removal.remove}
             disabled={removal.pending}
             aria-label={`Remove ${player.full_name} from the list`}
-            className="flex h-[30px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-negative-strong disabled:opacity-40"
+            className="flex h-[30px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-m-red disabled:opacity-40"
             data-profile-remove
           >
             {removal.pending ? 'Removing…' : 'Remove'}

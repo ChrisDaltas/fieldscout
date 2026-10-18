@@ -103,7 +103,7 @@ function StatusTag({ status }: { status: string | null }) {
   const s = (status ?? '').trim().toLowerCase()
   const tag = s === 'questionable' ? 'Q' : s === 'doubtful' ? 'D' : s === 'out' ? 'O' : s === 'ir' ? 'IR' : null
   if (!tag) return null
-  return <span className="ml-1 text-[11px] font-semibold text-negative-strong">{tag}</span>
+  return <span className="ml-1 text-[11px] font-semibold text-m-red">{tag}</span>
 }
 
 /**

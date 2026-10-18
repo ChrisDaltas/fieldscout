@@ -172,7 +172,7 @@ export function MessageBoardCard({ leagueId, detail, viewerId }: { leagueId: str
           </form>
         )}
         {send.isError && (
-          <p role="alert" className="text-[12px] font-semibold text-negative-strong">
+          <p role="alert" className="text-[12px] font-semibold text-m-red">
             {postErrorCopy(send.error)}
           </p>
         )}

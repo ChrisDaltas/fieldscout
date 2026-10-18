@@ -116,7 +116,7 @@ export function perGameLine(points: number | null, games: number): string | null
 /** The record's colour: green when winning, red when losing, the text
  *  colour when even (the design's W-L rule). */
 export function recordToneClass(r: Pick<HistoryRow, 'wins' | 'losses'>): string {
-  return r.wins > r.losses ? 'text-positive-strong' : r.wins < r.losses ? 'text-negative-strong' : 'text-m-t1'
+  return r.wins > r.losses ? 'text-m-green' : r.wins < r.losses ? 'text-m-red' : 'text-m-t1'
 }
 
 /** "W-L", or "W-L-T" once any game was tied. */

@@ -230,6 +230,17 @@ const config: Config = {
           // `negative-strong` is never a phone surface fill either.
           'gr': 'rgb(var(--m-gr) / <alpha-value>)',
           'tr': 'rgb(var(--m-tr) / <alpha-value>)',
+          // The phone's bright green / red TEXT (gains and losses, wins and
+          // streaks, "Open", Receives / Sends, error words and destructive
+          // labels) and small icons. Light = the handoff's success #07A852
+          // and danger #FF0028 (desktop's `positive-strong` /
+          // `negative-strong`); dark = the README's #1ED760 / #FF6B6B, so
+          // they brighten on the dark page (gap list §4 item 6). Text and
+          // glyphs only: a green fill keeps `confirm` / `positive-strong`,
+          // and `bg-m-red` is no more a surface than the bright red ever is
+          // (ui/system-message-rule.test.ts).
+          'green': 'rgb(var(--m-green) / <alpha-value>)',
+          'red': 'rgb(var(--m-red) / <alpha-value>)',
           'gb': 'rgb(var(--m-gb) / <alpha-value>)',
           'tb': 'rgb(var(--m-tb) / <alpha-value>)',
           'go': 'rgb(var(--m-go) / <alpha-value>)',

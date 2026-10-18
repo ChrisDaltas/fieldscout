@@ -268,7 +268,7 @@ export function cmpToneClass(other: number | null | undefined, mine: number): st
   if (typeof other !== 'number') return 'text-m-t1'
   const d = other - mine
   if (Math.abs(d) < 3) return 'text-m-t1'
-  return d > 0 ? 'text-negative-strong' : 'text-positive-strong'
+  return d > 0 ? 'text-m-red' : 'text-m-green'
 }
 
 // ---------------------------------------------------------------------------
@@ -564,7 +564,7 @@ export function movementText(m: Movement | undefined): string {
 /** Arrows green up, red down (lr-hub §2.9); New in the accent. */
 export function movementToneClass(m: Movement | undefined): string {
   if (m === 'new') return 'text-accent'
-  return typeof m === 'number' && m > 0 ? 'text-positive-strong' : 'text-negative-strong'
+  return typeof m === 'number' && m > 0 ? 'text-m-green' : 'text-m-red'
 }
 
 // ---------------------------------------------------------------------------

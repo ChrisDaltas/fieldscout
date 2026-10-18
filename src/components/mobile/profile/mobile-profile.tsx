@@ -451,7 +451,7 @@ function StartSitPreview({ userId }: { userId: string | undefined }) {
           iconPath={START_SIT_PATH}
           title={ssTitle(q)}
           sub={ssPreviewSub(q, now)}
-          subClassName={ssIsOpen(q, now) ? 'text-positive-strong' : 'text-m-t3'}
+          subClassName={ssIsOpen(q, now) ? 'text-m-green' : 'text-m-t3'}
         />
       ))}
     </PreviewBody>

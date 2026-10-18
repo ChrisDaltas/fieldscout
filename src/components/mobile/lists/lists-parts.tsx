@@ -320,7 +320,7 @@ export function InlineError({
       <span
         className={cn(
           'min-w-0 flex-1 text-[12px] font-medium leading-[1.4] [text-wrap:pretty]',
-          tone === 'alert' ? 'text-negative-strong' : 'text-m-t3',
+          tone === 'alert' ? 'text-m-red' : 'text-m-t3',
         )}
       >
         {message}

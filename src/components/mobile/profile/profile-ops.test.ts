@@ -139,7 +139,7 @@ describe('rankings preview — one row per position ranking (gap list §3 #22)',
   })
 
   it('status colours: Published in the design’s Submitted green, Finalized in t4', () => {
-    expect(RANKING_SUB_CLASS).toEqual({ Published: 'text-positive-strong', Finalized: 'text-m-t4' })
+    expect(RANKING_SUB_CLASS).toEqual({ Published: 'text-m-green', Finalized: 'text-m-t4' })
   })
 
   it('a row opens that ranking’s editor over the Mine tab; See all opens Mine; the button opens New ranking', () => {

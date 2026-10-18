@@ -89,7 +89,7 @@ function TrendRow({ entry, onOpen }: { entry: TrendEntry<BuilderPlayer>; onOpen:
         <span className="truncate text-[14px] font-semibold leading-[17px] text-m-t1">{p.full_name}</span>
         <span className="truncate text-[11px] font-medium leading-[14px] text-m-t3 tabular-nums">{meta}</span>
       </span>
-      <span className={cn('flex-none text-[14px] font-semibold leading-[17px] tabular-nums', up ? 'text-positive-strong' : 'text-negative-strong')}>
+      <span className={cn('flex-none text-[14px] font-semibold leading-[17px] tabular-nums', up ? 'text-m-green' : 'text-m-red')}>
         {signedDelta(entry.delta)}
       </span>
     </button>

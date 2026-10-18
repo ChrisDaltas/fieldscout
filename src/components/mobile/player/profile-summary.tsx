@@ -114,7 +114,7 @@ export function SummaryTab({
                       // The arrow is the direction; the colour is better or
                       // worse for him (#43 — fewer interceptions is green).
                       <span
-                        className={cn('whitespace-nowrap text-[10px] font-semibold', trend.good ? 'text-positive-strong' : 'text-negative-strong')}
+                        className={cn('whitespace-nowrap text-[10px] font-semibold', trend.good ? 'text-m-green' : 'text-m-red')}
                         data-key-trend={trend.up ? 'up' : 'down'}
                         data-key-trend-tone={trend.good ? 'good' : 'bad'}
                       >
@@ -329,7 +329,7 @@ function GamesSection({
   )
 }
 
-const OPRK_TEXT = { positive: 'text-positive-strong', negative: 'text-negative-strong', caution: 'text-warn' } as const
+const OPRK_TEXT = { positive: 'text-m-green', negative: 'text-m-red', caution: 'text-warn' } as const
 
 function GameCardView({ card: c }: { card: GameCard }) {
   return (
@@ -363,7 +363,7 @@ function GameCardView({ card: c }: { card: GameCard }) {
               <span
                 className={cn(
                   'text-[22px] font-bold tracking-[-0.02em]',
-                  c.mainTone === 'up' ? 'text-positive-strong' : c.mainTone === 'down' ? 'text-negative-strong' : 'text-m-t1',
+                  c.mainTone === 'up' ? 'text-m-green' : c.mainTone === 'down' ? 'text-m-red' : 'text-m-t1',
                 )}
               >
                 {c.main}

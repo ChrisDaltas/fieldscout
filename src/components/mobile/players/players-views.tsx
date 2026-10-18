@@ -68,7 +68,7 @@ function NameLine({ row, onOpen, nameClass }: { row: ViewRow; onOpen: () => void
       </button>
       <span className={cn('flex-none text-[10px] font-semibold', posTextClass(row.player.position))}>{posLabel(row.player.position)}</span>
       {row.player.team && <span className="flex-none text-[10px] font-medium text-m-t3">{row.player.team}</span>}
-      {row.status && <span className="flex-none text-[10px] font-bold text-negative-strong">{row.status}</span>}
+      {row.status && <span className="flex-none text-[10px] font-bold text-m-red">{row.status}</span>}
     </span>
   )
 }

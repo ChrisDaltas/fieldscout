@@ -196,8 +196,14 @@ describe('streak text and colour', () => {
     expect(streakTileText({ kind: 'T', count: 1 })).toBe('T1')
   })
   it('green for W, red for L, the surrounding colour for a tie', () => {
-    expect(streakToneClass({ kind: 'W', count: 1 }, 'text-m-t3')).toBe('text-positive-strong')
-    expect(streakToneClass({ kind: 'L', count: 1 }, 'text-m-t3')).toBe('text-negative-strong')
+    expect(streakToneClass({ kind: 'W', count: 1 }, 'text-m-t3')).toBe('text-m-green')
+    expect(streakToneClass({ kind: 'L', count: 1 }, 'text-m-t3')).toBe('text-m-red')
     expect(streakToneClass({ kind: 'T', count: 1 }, 'text-m-t3')).toBe('text-m-t3')
+  })
+  it('a caller can pass its own pair — desktop keeps its fixed tokens (gap list §4 item 6)', () => {
+    const desk = { W: 'text-positive-strong', L: 'text-negative-strong' }
+    expect(streakToneClass({ kind: 'W', count: 1 }, 'text-n-6', desk)).toBe('text-positive-strong')
+    expect(streakToneClass({ kind: 'L', count: 1 }, 'text-n-6', desk)).toBe('text-negative-strong')
+    expect(streakToneClass({ kind: 'T', count: 1 }, 'text-n-6', desk)).toBe('text-n-6')
   })
 })
