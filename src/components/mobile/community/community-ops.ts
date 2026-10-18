@@ -1,5 +1,10 @@
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
-import { seasonLabel } from '@/components/mobile/rankings/rankings-ops'
+import {
+  fromDbPos,
+  scoringFromFormat,
+  seasonLabel,
+  toRankingsSearch,
+} from '@/components/mobile/rankings/rankings-ops'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { DEFAULT_RANKING_SCORING, personaScoringFormat } from '@/lib/lists/ranking-publish'
 import { activeWeekOf } from '@/lib/rankings/week-window'
@@ -759,6 +764,36 @@ export const COMMUNITY_HREF = '/app/explore'
  *  Community page ignores `?list=`. */
 export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): string {
   return `${from}?list=${encodeURIComponent(id)}`
+}
+
+/**
+ * Where an AI expert's ranking opens (gap list §3 #28): in Rankings, as that
+ * expert's ranking (lr-hub S4, `?src=p:<listId>`), with "Start my ranking
+ * from this" — the handoff sends a Community ranking there (m-community §3,
+ * "Ranking row" → `#view-<id>`). A person's ranking has no such view yet, so
+ * it keeps opening the Community detail (null) — as does a switched-off
+ * AI expert's.
+ *
+ * Rankings shows one position at a time: a position board opens at its own;
+ * an overall board at the position of the player it leads with — the one its
+ * row shows — and RB when it has none. The scoring is the ranking's, so the
+ * points beside each player are counted the way the expert ranked them.
+ */
+export function expertRankingHref(
+  item: Pick<CommunityItem, 'id' | 'author' | 'positionFilter' | 'heads' | 'scoringFormat'>,
+): string | null {
+  // Rankings opens only a switched-on expert's boards (`useExpertBoards`):
+  // a switched-off one's board, still in Community, keeps the detail rather
+  // than landing on "This ranking isn't available".
+  if (!item.author.isPersona || item.author.isActive !== true) return null
+  const pos = fromDbPos(item.positionFilter) ?? fromDbPos(item.heads[0]?.position) ?? 'RB'
+  const search = toRankingsSearch({
+    src: `p:${item.id}`,
+    scoring: scoringFromFormat(item.scoringFormat) ?? 'ppr',
+    pos,
+    overlay: null,
+  })
+  return `/app/weekly-ranks${search}`
 }
 /** The Latest page (For you's "Latest" shelf → See all): everything the shelf
  *  draws from, simply newest first. */

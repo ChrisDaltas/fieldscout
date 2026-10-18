@@ -1,11 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import type { ComponentPropsWithoutRef } from 'react'
 
 import {
   COMMUNITY_HREF,
   authorBgClass,
   communityDetailHref,
+  expertRankingHref,
   authorInitials,
   coverHeight,
   formatFollows,
@@ -20,12 +22,14 @@ import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import type { CommunityAuthor, CommunityItem, CommunityVideo } from '@/hooks/use-mobile-community-feed'
+import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
 /**
  * FieldScout Mobile — Community cards (handoff m-community §2.6, §2.10,
- * §2.11). Every card is one tap target that opens the list detail over the
- * feed (`?list=<id>`), so the author's handle inside it is plain text — it
+ * §2.11). Every card is one tap target (`CardLink`): it opens the list
+ * detail over the feed (`?list=<id>`), or an AI expert's ranking in
+ * Rankings. So the author's handle inside it is plain text — it
  * sits inside the card link's hit area (a profile link can't nest inside it;
  * the detail page's author is the profile link). Each such handle is written
  * where it renders, so the username census (L.E1.41) sees every one.
@@ -47,6 +51,23 @@ function openDetail(e: React.MouseEvent<HTMLAnchorElement>, id: string, from: st
   e.preventDefault()
   useCommunityStore.getState().setDetailFromFeed(true)
   window.history.pushState(null, '', communityDetailHref(id, from))
+}
+
+/**
+ * A card's one tap target. An AI expert's ranking opens in Rankings, with
+ * "Start my ranking from this" (gap list §3 #28; `expertRankingHref`) — a
+ * page of its own, whose Back returns here. Everything else opens the detail
+ * over this screen (`from`). Rankings exist only while their switch is on;
+ * with it off a ranking keeps the detail.
+ */
+function CardLink({
+  item,
+  from = COMMUNITY_HREF,
+  ...rest
+}: { item: CommunityItem; from?: string } & Omit<ComponentPropsWithoutRef<'a'>, 'href' | 'onClick'>) {
+  const rankings = featureFlags.weeklyRanks ? expertRankingHref(item) : null
+  if (rankings) return <Link href={rankings} {...rest} />
+  return <a href={communityDetailHref(item.id, from)} onClick={(e) => openDetail(e, item.id, from)} {...rest} />
 }
 
 const AVATAR_SIZE: Record<16 | 26 | 34, { box: string; text: string }> = {
@@ -161,11 +182,7 @@ export function RankingRow({
       ? ` · ${formatFollows(followers)}`
       : ''
   return (
-    <a
-      href={communityDetailHref(item.id, from)}
-      onClick={(e) => openDetail(e, item.id, from)}
-      className="flex items-center gap-3 py-2"
-    >
+    <CardLink item={item} from={from} className="flex items-center gap-3 py-2">
       <span
         className={cn(
           'relative flex h-[60px] w-[60px] flex-none items-center justify-center overflow-hidden rounded-[10px]',
@@ -185,7 +202,7 @@ export function RankingRow({
         {top && <span className="truncate text-[11px] font-medium text-m-t3">{top}</span>}
       </span>
       <MIcon name="chevronRight" size={12} stroke={2} className="text-m-t5" />
-    </a>
+    </CardLink>
   )
 }
 
@@ -193,11 +210,7 @@ export function RankingRow({
  *  and the unread dot have no data behind them, so they're left out. */
 export function UpdatedRow({ item, now }: { item: CommunityItem; now: number }) {
   return (
-    <a
-      href={communityDetailHref(item.id)}
-      onClick={(e) => openDetail(e, item.id, COMMUNITY_HREF)}
-      className="flex items-center gap-[10px] rounded-[14px] bg-m-b1 px-3 py-[10px]"
-    >
+    <CardLink item={item} className="flex items-center gap-[10px] rounded-[14px] bg-m-b1 px-3 py-[10px]">
       <AuthorAvatar author={item.author} size={34} />
       <span className="flex min-w-0 flex-1 flex-col gap-px">
         <span className="truncate text-[13px] font-semibold">
@@ -206,7 +219,7 @@ export function UpdatedRow({ item, now }: { item: CommunityItem; now: number }) 
         <span className="truncate text-[11px] font-medium text-m-t3">{updatedAgo(item.updatedAt, now)}</span>
       </span>
       <MIcon name="chevronRight" size={11} stroke={2} className="text-m-t5" />
-    </a>
+    </CardLink>
   )
 }
 
@@ -293,11 +306,7 @@ export function ListCover({
 /** Masonry list card (handoff §2.11). */
 export function ListCard({ item }: { item: CommunityItem }) {
   return (
-    <a
-      href={communityDetailHref(item.id)}
-      onClick={(e) => openDetail(e, item.id, COMMUNITY_HREF)}
-      className="mb-[14px] flex break-inside-avoid flex-col gap-[6px]"
-    >
+    <CardLink item={item} className="mb-[14px] flex break-inside-avoid flex-col gap-[6px]">
       <ListCover item={item} variant="card" />
       <span className="text-pretty text-[13px] font-semibold leading-[1.25]">{item.title}</span>
       <span className="flex items-center gap-[5px] text-[11px] font-medium text-m-t3">
@@ -306,7 +315,7 @@ export function ListCard({ item }: { item: CommunityItem }) {
           @{item.author.username} · {item.playerCount} {item.playerCount === 1 ? 'player' : 'players'}
         </span>
       </span>
-    </a>
+    </CardLink>
   )
 }
 
@@ -331,12 +340,7 @@ export function LatestCard({ item, now }: { item: CommunityItem; now: number }) 
   const rank = item.kind === 'rank'
   const posted = postedAgo(item.createdAt, now)
   return (
-    <a
-      href={communityDetailHref(item.id)}
-      onClick={(e) => openDetail(e, item.id, COMMUNITY_HREF)}
-      className="flex w-[150px] flex-none snap-start flex-col gap-[6px]"
-      data-latest-card
-    >
+    <CardLink item={item} className="flex w-[150px] flex-none snap-start flex-col gap-[6px]" data-latest-card>
       <ListCover
         item={rank ? { ...item, videos: [], thumbnailUrl: null } : item}
         variant="shelf"
@@ -350,7 +354,7 @@ export function LatestCard({ item, now }: { item: CommunityItem; now: number }) 
         {rank ? 'Ranking' : 'List'}
         {posted ? ` · ${posted}` : ''}
       </span>
-    </a>
+    </CardLink>
   )
 }
 

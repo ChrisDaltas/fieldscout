@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
+import { ListActions } from '@/components/mobile/community/list-actions'
 import { readLastRankPos } from '@/components/mobile/rankings/last-position'
 import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { MyRankingsBody, type MyRankFilter } from '@/components/mobile/rankings/my-rankings'
@@ -20,6 +21,7 @@ import {
   RANK_SCORINGS,
   activeWeekOf,
   agreementNote,
+  boardPositions,
   cmpToneClass,
   expertSpread,
   fmt1,
@@ -49,6 +51,7 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { useList } from '@/hooks/use-lists'
 import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import {
   HUB_CAP,
@@ -240,16 +243,19 @@ function SourceTabs({
     { key: 'mine', label: 'Mine' },
   ]
   // The row scrolls on a narrow phone: keep the open tab in view (Profile's
-  // link opens Mine, the last one).
+  // link opens Mine, the last one). An expert's tab grows from "Ranking" to
+  // their name once their boards load (Community opens it — gap list §3
+  // #28), so it is brought into view again then.
   const activeRef = useRef<HTMLButtonElement>(null)
+  const activeLabel = tabs.find((t) => t.key === active)?.label
   useEffect(() => {
     activeRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-  }, [active])
+  }, [active, activeLabel])
   return (
     <div
       role="tablist"
       aria-label="Ranking source"
-      className="mt-1.5 flex gap-[18px] overflow-x-auto border-b border-m-b3 px-4 scrollbar-none"
+      className="mt-1.5 flex scroll-px-4 gap-[18px] overflow-x-auto border-b border-m-b3 px-4 scrollbar-none"
     >
       {tabs.map((t) => {
         const on = active === t.key
@@ -752,6 +758,14 @@ function AuthorBody({
   const board = author.board
   const label = seasonLabel(currentWeek)
   const posLabel = rankPosLabel(pos)
+  // A ranking is one position (lr-hub S4 has no filter bar). An overall
+  // board ranks several, so it gets a chip for each position it ranks
+  // anyone at — it opens on the one asked for (Community: the position of
+  // the player it leads with), and the rest stay a tap away.
+  const overall = fromDbPos(board.position_filter) === null
+  const ranked = overall ? boardPositions(playersQ.data?.players ?? []) : []
+  // One chip that is already the one shown would be no choice at all.
+  const chips = ranked.length === 1 && ranked[0] === pos ? [] : ranked
   return (
     <>
       <AuthorCard
@@ -759,6 +773,21 @@ function AuthorBody({
         title={[label, posLabel, scoringName(board.persona.scoring)].filter(Boolean).join(' · ')}
         onCopy={() => (mine ? setConfirm(true) : startFrom())}
       />
+      {chips.length > 0 && (
+        <div role="group" aria-label="Position" className="mt-3 flex gap-1.5 overflow-x-auto px-4 scrollbar-none">
+          {chips.map((p) => (
+            <PosChip
+              key={p}
+              label={rankPosLabel(p)}
+              on={p === pos}
+              onClick={() => {
+                setOpenRow(null)
+                nav.setHub({ pos: p })
+              }}
+            />
+          ))}
+        </div>
+      )}
       <InfoLine
         dot={currentWeek === 0 ? 'pre' : 'plain'}
         text={cmp.length > 0 ? 'Compared with Experts · tap a player for detail' : 'Tap a player for detail'}
@@ -823,6 +852,10 @@ function AuthorBody({
 }
 
 function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: string; onCopy: () => void }) {
+  // The ranking's own read — the viewer's like and save, the counts — for
+  // its Like · Comments · Save · Share row: the Community detail's, so a
+  // ranking opened here from Community keeps them (gap list §3 #28).
+  const list = useList(board.id)
   const ago = relativeAgo(board.updated_at)
   const name = board.persona.display_name
   const nameEl = featureFlags.personas ? (
@@ -866,6 +899,19 @@ function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: strin
       {board.description ? (
         <p className="text-pretty text-[13px] font-medium leading-[1.4] text-m-t2">{board.description}</p>
       ) : null}
+      {list.data ? (
+        <ListActions list={list.data} />
+      ) : list.isError ? (
+        <button
+          type="button"
+          onClick={() => void list.refetch()}
+          className="self-start text-[12px] font-semibold text-accent"
+        >
+          Couldn’t load likes and comments · Try again
+        </button>
+      ) : (
+        <span aria-hidden className="h-9 w-3/4 animate-pulse rounded-pill bg-m-b2" />
+      )}
       <button
         type="button"
         onClick={onCopy}
@@ -881,6 +927,23 @@ function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: strin
 // ---------------------------------------------------------------------------
 // Sticky filter bar + menus (lr-hub §2.7)
 // ---------------------------------------------------------------------------
+
+/** A position chip (lr-hub §2.7): blue when it's the one shown. */
+function PosChip({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        'flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill px-3 text-[13px] font-semibold',
+        on ? 'bg-accent text-white' : 'bg-m-b2 text-m-t1',
+      )}
+    >
+      {label}
+    </button>
+  )
+}
 
 function FilterBar({ nav, onPick }: { nav: RankingsNav; onPick: () => void }) {
   const { state, currentWeek } = nav
@@ -934,26 +997,17 @@ function FilterBar({ nav, onPick }: { nav: RankingsNav; onPick: () => void }) {
         {pill('scoring', scoringLabel(state.scoring))}
         <span aria-hidden className="mx-0.5 my-1 w-px flex-none bg-m-b3s" />
         {/* QB · RB · WR · TE · FLEX · K · D/ST — FLEX is RB/WR/TE overall (#29). */}
-        {HUB_POSITIONS.map((p) => {
-          const on = state.pos === p
-          return (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={on}
-              onClick={() => {
-                onPick()
-                nav.setHub({ pos: p })
-              }}
-              className={cn(
-                'flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill px-3 text-[13px] font-semibold',
-                on ? 'bg-accent text-white' : 'bg-m-b2 text-m-t1',
-              )}
-            >
-              {hubPosLabel(p)}
-            </button>
-          )
-        })}
+        {HUB_POSITIONS.map((p) => (
+          <PosChip
+            key={p}
+            label={hubPosLabel(p)}
+            on={state.pos === p}
+            onClick={() => {
+              onPick()
+              nav.setHub({ pos: p })
+            }}
+          />
+        ))}
       </div>
       {menu && (
         <>

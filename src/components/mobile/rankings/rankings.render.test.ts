@@ -24,6 +24,7 @@ vi.mock('@/hooks/use-auth', () => ({
 }))
 
 import { bigBoardKeys } from '@/hooks/use-big-board'
+import { listsKeys } from '@/hooks/use-lists'
 import { mobileRankingBoardsKey, type BoardPlayerLite, type MyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 
 import type { BoardSourcePlayer } from '@/hooks/use-board-sources'
@@ -479,5 +480,119 @@ describe('the scoring a ranking is published for (Chris, 2026-10-15, #36)', () =
       qc,
     )
     expect(html).toMatch(/aria-label="Scoring: Half PPR"/)
+  })
+})
+
+/**
+ * Gap list §3 #28: Community opens an AI expert's ranking here — the author
+ * view (lr-hub S4) with "Start my ranking from this". A ranking is one
+ * position; an overall board ranks several, so it gets a chip per position
+ * it ranks anyone at.
+ */
+describe('an AI expert’s ranking opened from Community (gap list §3 #28)', () => {
+  const persona = { username: 'e1', display_name: 'Expert One', avatar_url: null, scoring: 'PPR' }
+  const overall: ExpertBoard = {
+    id: 'e1-all',
+    title: 'Top 25 Overall — PPR',
+    description: null,
+    position_filter: null,
+    player_count: 4,
+    updated_at: STAMP,
+    persona,
+  }
+  const rbBoard: ExpertBoard = { ...overall, id: 'e1-rb', title: 'Top 25 RB — PPR', position_filter: 'RB' }
+  const pl = (id: string, full_name: string, position: string) => ({
+    id,
+    full_name,
+    position,
+    team: 'KC',
+    headshot_url: null,
+    bye_week: 10,
+  })
+  const seeded = () => {
+    const qc = client()
+    qc.setQueryData(['mobile-rankings', 'expert-boards'], [overall, rbBoard])
+    qc.setQueryData(['mobile-rankings', 'author-board', 'e1-all'], {
+      players: [
+        pl('w1', "Ja'Marr Chase", 'WR'),
+        pl('r1', 'Bijan Robinson', 'RB'),
+        pl('w2', 'Justin Jefferson', 'WR'),
+        pl('q1', 'Josh Allen', 'QB'),
+      ],
+      prev: new Map(),
+    })
+    qc.setQueryData(['mobile-rankings', 'author-board', 'e1-rb'], {
+      players: [pl('r1', 'Bijan Robinson', 'RB'), pl('r2', 'Jahmyr Gibbs', 'RB')],
+      prev: new Map(),
+    })
+    return qc
+  }
+  const hub = (state: Partial<RankingsUrlState>) =>
+    render(createElement(RankingsHub, { nav: { ...nav, state: { ...nav.state, view: 'hub', ...state } } }), seeded())
+
+  it('shows the expert’s ranking with "Start my ranking from this"', () => {
+    const html = hub({ src: 'p:e1-rb', pos: 'RB' })
+    const t = text(html)
+    expect(html).toMatch(/aria-selected="true"[^>]*>Expert One/)
+    expect(t).toContain('Rest of season · RB · PPR')
+    expect(t).toContain('AI expert · 4 players')
+    expect(html).toMatch(/<button[^>]*>.*Start my ranking from this<\/button>/)
+  })
+
+  it('keeps the Community detail’s Like · Comments · Save · Share, above "Start my ranking from this"', () => {
+    const qc = seeded()
+    qc.setQueryData(listsKeys.detail('e1-rb'), {
+      id: 'e1-rb',
+      owner_id: 'u-ai',
+      ai_persona_id: 'p-e1',
+      slug: 'top-25-rb-ppr',
+      like_count: 3,
+      is_liked: true,
+      is_favorited: false,
+      comments_enabled: true,
+      is_owner: false,
+      players: [],
+      links: [],
+      tags: [],
+    })
+    const html = render(
+      createElement(RankingsHub, { nav: { ...nav, state: { ...nav.state, view: 'hub', src: 'p:e1-rb', pos: 'RB' } } }),
+      qc,
+    )
+    const row = /<div class="flex gap-2" data-list-actions[^>]*>(.*?)<\/div>/.exec(html)
+    expect(row).not.toBeNull()
+    const t = text(row![1]!)
+    expect(row![1]).toMatch(/aria-pressed="true" aria-label="Like · 3 likes"/)
+    expect(row![1]).toMatch(/aria-label="Comments"/)
+    expect(t).toContain('Save')
+    expect(t).toContain('Share')
+    expect(html.indexOf('data-list-actions')).toBeLessThan(html.indexOf('Start my ranking from this'))
+  })
+
+  it('while the ranking’s likes are read, a placeholder — never a guessed count', () => {
+    const html = hub({ src: 'p:e1-rb', pos: 'RB' })
+    expect(html).not.toContain('data-list-actions')
+    expect(html).toMatch(/aria-hidden="true" class="h-9 w-3\/4 animate-pulse rounded-pill bg-m-b2"/)
+  })
+
+  it('a position board is one position: no chips', () => {
+    expect(hub({ src: 'p:e1-rb', pos: 'RB' })).not.toContain('aria-label="Position"')
+  })
+
+  it('an overall board: a chip for each position it ranks, on the one Community asked for', () => {
+    const html = hub({ src: 'p:e1-all', pos: 'WR' })
+    const group = /<div role="group" aria-label="Position"[^>]*>(.*?)<\/div>/.exec(html)
+    expect(group).not.toBeNull()
+    const chips = [...group![1]!.matchAll(/aria-pressed="(true|false)"[^>]*>([^<]+)</g)].map((m) => [m[2], m[1]])
+    expect(chips).toEqual([
+      ['QB', 'false'],
+      ['RB', 'false'],
+      ['WR', 'true'],
+    ])
+    const t = text(html)
+    expect(t).toContain('Rest of season · WR · PPR')
+    expect(t).toContain('J. Chase')
+    expect(t).toContain('J. Jefferson')
+    expect(t).not.toContain('B. Robinson')
   })
 })

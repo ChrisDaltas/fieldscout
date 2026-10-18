@@ -70,6 +70,13 @@ export function inHubPos(position: string | null | undefined, pos: HubPos): bool
   return pos === 'FLEX' ? FLEX_POSITIONS.includes(p) : p === pos
 }
 
+/** The positions a board ranks anyone at, in chip order (QB · RB · WR · TE ·
+ *  K · D/ST) — an AI expert's overall board's position chips. */
+export function boardPositions(players: ReadonlyArray<{ position: string | null }>): RankPos[] {
+  const has = new Set(players.map((p) => fromDbPos(p.position)))
+  return RANK_POSITIONS.filter((p) => has.has(p))
+}
+
 /** A hub chip as a ranked position: itself, or `fallback` for FLEX. */
 export function rankPosOr(pos: HubPos, fallback: RankPos): RankPos {
   return pos === 'FLEX' ? fallback : pos

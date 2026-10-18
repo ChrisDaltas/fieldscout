@@ -1,6 +1,10 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Rankings switched on, as in dev (Community shows rankings only then).
+const flags = vi.hoisted(() => ({ weeklyRanks: true, personas: false }))
+vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
 
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
 
@@ -14,7 +18,7 @@ import {
   communityDetailHref,
 } from './community-cards'
 import { VideoCard } from './community-detail'
-import { LATEST_HREF, authorBgClass } from './community-ops'
+import { LATEST_HREF, authorBgClass, expertRankingHref } from './community-ops'
 
 const html = (el: ReturnType<typeof createElement>) =>
   renderToStaticMarkup(el).replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
@@ -278,5 +282,68 @@ describe('Community — the Latest shelf', () => {
     const out = html(createElement(RankingRow, { item: items[0]!, postedNow: now, from: LATEST_HREF }))
     expect(out).toContain('href="/app/explore/latest?list=l1"')
     expect(communityDetailHref('l1', LATEST_HREF)).toBe('/app/explore/latest?list=l1')
+  })
+})
+
+/**
+ * Gap list §3 #28: tapping an AI expert's ranking opens it in Rankings — that
+ * expert's ranking, with "Start my ranking from this" — the way the handoff
+ * sends every Community ranking (m-community §3 → `#view-<id>`). A person's
+ * ranking has no such view yet and keeps the detail.
+ */
+describe('Community — an AI expert’s ranking opens in Rankings', () => {
+  afterEach(() => {
+    flags.weeklyRanks = true
+  })
+  const now = Date.parse('2026-10-15T12:00:00Z')
+  const expert: CommunityItem = {
+    ...base,
+    id: 'b1a2c3d4-0000-4000-8000-000000000001',
+    kind: 'rank',
+    rankType: 'season',
+    title: 'Top 25 RB — PPR',
+    scoringFormat: 'ppr',
+    scoring: 'PPR',
+    author: { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true, isActive: true },
+  }
+  const rankingsHref = '/app/weekly-ranks?src=p%3Ab1a2c3d4-0000-4000-8000-000000000001&pos=RB'
+
+  it('its ranking row, Latest card and updated-by row all link to Rankings, not the detail', () => {
+    expect(expertRankingHref(expert)).toBe(rankingsHref)
+    for (const out of [
+      html(createElement(RankingRow, { item: expert })),
+      html(createElement(RankingRow, { item: expert, postedNow: now, from: LATEST_HREF })),
+      html(createElement(LatestCard, { item: expert, now })),
+      html(createElement(UpdatedRow, { item: expert, now })),
+    ]) {
+      expect(out).toContain(`href="${rankingsHref}"`)
+      expect(out).not.toContain('?list=')
+    }
+  })
+
+  it('the Latest shelf keeps its card markup for an expert’s card', () => {
+    const out = html(createElement(LatestShelf, { items: [expert], now }))
+    expect(out).toMatch(/<a [^>]*class="flex w-\[150px\] flex-none snap-start flex-col gap-\[6px\]"[^>]*data-latest-card/)
+  })
+
+  it('a person’s ranking keeps opening the Community detail', () => {
+    const person = { ...expert, id: 'r1', author: { ...base.author, isPersona: false } }
+    const out = html(createElement(RankingRow, { item: person }))
+    expect(out).toContain(`href="${communityDetailHref('r1')}"`)
+    expect(out).not.toContain('/app/weekly-ranks')
+  })
+
+  it('a switched-off AI expert’s ranking keeps the detail (Rankings shows only switched-on experts)', () => {
+    const off = { ...expert, author: { ...expert.author, isActive: false } }
+    const out = html(createElement(RankingRow, { item: off }))
+    expect(out).toContain(`href="${communityDetailHref(expert.id)}"`)
+    expect(out).not.toContain('/app/weekly-ranks')
+  })
+
+  it('with Rankings switched off, an expert’s ranking keeps the detail (that route goes home)', () => {
+    flags.weeklyRanks = false
+    const out = html(createElement(RankingRow, { item: expert }))
+    expect(out).toContain(`href="${communityDetailHref(expert.id)}"`)
+    expect(out).not.toContain('/app/weekly-ranks')
   })
 })
