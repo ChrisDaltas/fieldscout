@@ -73,6 +73,8 @@ import { cn } from '@/lib/utils'
 import { useOverrideMode } from '@/stores/commish-override-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
+import { nflGameHref } from '@/components/mobile/league/game/game-ops'
+
 import { MobileCorrectionNote } from './match-correction-note'
 import {
   BENCH_CHIP,
@@ -995,6 +997,7 @@ function Board({
         tz={tz}
         mirror={mirror}
         onOpen={p ? () => openPlayer(p.id, leagueId) : null}
+        gameHref={p?.game ? nflGameHref(leagueId, p.game.id) : null}
       />
     )
 
@@ -1138,7 +1141,8 @@ function TotalHalf({ data, mirror = false }: { data: TeamBoxScore | undefined; m
 }
 
 /** One player's half of a row (§2.2 C): short name, POS · TEAM (bye), points
- *  and projection, the game line. A tap opens the player profile. */
+ *  and projection, the game line. A tap opens the player profile; a tap on
+ *  the game line opens that NFL game's box score (gap list §3 #17). */
 function PlayerHalf({
   player,
   proj,
@@ -1146,6 +1150,7 @@ function PlayerHalf({
   tz,
   mirror,
   onOpen,
+  gameHref,
 }: {
   player: HalfPlayer | null
   proj: number | null
@@ -1153,6 +1158,7 @@ function PlayerHalf({
   tz: string | null
   mirror: boolean
   onOpen: (() => void) | null
+  gameHref: string | null
 }) {
   if (!player) {
     return (
@@ -1201,19 +1207,21 @@ function PlayerHalf({
       {proj !== null && <span className="text-[11px] font-medium text-m-t3">{proj.toFixed(2)}</span>}
     </span>
   )
+  const lineClass = 'block w-full truncate text-[11px] font-medium text-m-t3'
   return (
-    <button
-      type="button"
-      onClick={onOpen ?? undefined}
-      className={cn('flex w-full min-w-0 flex-col gap-[3px]', mirror ? 'text-right' : 'text-left')}
-      data-player={player.id}
-    >
-      <span className="flex w-full items-start gap-1.5">
+    <div className={cn('flex w-full min-w-0 flex-col gap-[3px]', mirror ? 'text-right' : 'text-left')}>
+      <button type="button" onClick={onOpen ?? undefined} className={cn('flex w-full items-start gap-1.5', mirror ? 'text-right' : 'text-left')} data-player={player.id}>
         {mirror ? pointsCol : nameCol}
         {mirror ? nameCol : pointsCol}
-      </span>
-      <span className="w-full truncate text-[11px] font-medium text-m-t3">{game || ' '}</span>
-    </button>
+      </button>
+      {game && gameHref ? (
+        <Link href={gameHref} className={cn(lineClass, 'active:text-m-t1')} data-game-line={player.game?.id}>
+          {game}
+        </Link>
+      ) : (
+        <span className={lineClass}>{game || '\u00a0'}</span>
+      )}
+    </div>
   )
 }
 

@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import type { SlotInstance } from '@/components/leagues/lineup-editor-ops'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
@@ -21,6 +23,9 @@ export interface RowStats {
   game: (nflTeam: string | null) => GameLine
   oprk: (line: GameLine, position: string) => { text: string; tone: keyof typeof TONE_TEXT } | null
   headshot: (playerId: string) => string | null
+  /** Where a tap on the game line goes — that NFL game's screen (gap list
+   *  §3 #17) — or null when there is no game to open (bye, unknown). */
+  gameHref: (line: GameLine) => string | null
 }
 
 export function SlotChip({
@@ -129,36 +134,46 @@ export function TabRow({
 }) {
   const pts = player ? stats.points(player.player_id) : null
   const proj = player ? stats.proj(player.player_id) : null
+  // The game line opens its NFL game; with no game to open it stays part of
+  // the player's button.
+  const gameHref = player ? stats.gameHref(stats.game(player.nfl_team)) : null
   return (
     <div className="flex items-center gap-[10px] border-b border-m-b2 px-1 py-[10px]" data-lineup-row={slot?.key ?? 'bn'}>
       <SlotChip slot={slot} size="tab" ring={ring} onClick={onChip} label={chipLabel} />
       {player ? <MHeadshot player={{ id: player.player_id, full_name: player.full_name, team: player.nfl_team, position: player.position, headshot_url: stats.headshot(player.player_id) }} size={38} /> : <EmptyAvatar size={38} />}
-      <button
-        type="button"
-        onClick={onText}
-        disabled={!onText}
-        className="flex min-w-0 flex-1 flex-col gap-0.5 text-left disabled:cursor-default"
-        // A filled or kept row is named by what it shows (name, meta, game
-        // line, opponent rank); only the bare "Empty" row needs the label.
-        aria-label={player || keptName ? undefined : chipLabel}
-      >
-        <span className={cn('truncate text-[14px] font-semibold', player || keptName ? 'text-m-t1' : 'text-m-t5')}>
-          {player ? player.full_name : keptName ? keptName : 'Empty'}
-          {player && <StatusTag status={player.status} />}
-          {player && <span className="text-[11px] font-medium text-m-t3"> {metaText(player)}</span>}
-        </span>
-        {player && (
-          <span className="truncate text-[11px] font-medium text-m-t3">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <button
+          type="button"
+          onClick={onText}
+          disabled={!onText}
+          className="flex w-full min-w-0 flex-col gap-0.5 text-left disabled:cursor-default"
+          // A filled or kept row is named by what it shows (name, meta, game
+          // line, opponent rank); only the bare "Empty" row needs the label.
+          aria-label={player || keptName ? undefined : chipLabel}
+        >
+          <span className={cn('w-full truncate text-[14px] font-semibold', player || keptName ? 'text-m-t1' : 'text-m-t5')}>
+            {player ? player.full_name : keptName ? keptName : 'Empty'}
+            {player && <StatusTag status={player.status} />}
+            {player && <span className="text-[11px] font-medium text-m-t3"> {metaText(player)}</span>}
+          </span>
+          {player && !gameHref && (
+            <span className="w-full truncate text-[11px] font-medium text-m-t3">
+              <GameAndRank player={player} stats={stats} locked={locked} />
+            </span>
+          )}
+          {!player && keptName && (
+            <span className="w-full truncate text-[11px] font-medium text-m-t3">
+              <LockGlyph />
+              Dropped after he played — the seat stays his this week
+            </span>
+          )}
+        </button>
+        {player && gameHref && (
+          <Link href={gameHref} className="block truncate text-[11px] font-medium text-m-t3 active:text-m-t1" data-game-line>
             <GameAndRank player={player} stats={stats} locked={locked} />
-          </span>
+          </Link>
         )}
-        {!player && keptName && (
-          <span className="truncate text-[11px] font-medium text-m-t3">
-            <LockGlyph />
-            Dropped after he played — the seat stays his this week
-          </span>
-        )}
-      </button>
+      </div>
       <span className="flex flex-none flex-col items-end gap-px tabular-nums">
         <span className="text-[15px] font-semibold">{player ? (pts ?? '–') : ''}</span>
         <span className="text-[11px] font-medium text-m-t3">{player && proj !== null ? proj.toFixed(2) : ''}</span>

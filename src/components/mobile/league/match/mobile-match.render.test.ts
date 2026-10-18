@@ -397,6 +397,14 @@ describe('mobile Match — starters', () => {
   it('player halves are buttons that open the profile', () => {
     expect(html).toMatch(/<button type="button" class="[^"]*" data-player="p-qb"/)
   })
+
+  it('a game line opens that NFL game’s box score (gap list §3 #17), outside the player’s button', () => {
+    expect(html).toMatch(/<a [^>]*href="\/app\/leagues\/league-1\/games\/g2"[^>]*>Final W 31-20 @ GB<\/a>/)
+    expect(html).toMatch(/<a [^>]*href="\/app\/leagues\/league-1\/games\/g1"[^>]*>Q4 6:50 vs DEN<\/a>/)
+    expect(html).toContain('href="/app/leagues/league-1/games/g3"')
+    // Never a link nested in the player's button.
+    expect(html).not.toMatch(/<button[^>]*data-player="[^"]*"[^>]*>(?:(?!<\/button>)[\s\S])*<a /)
+  })
 })
 
 describe('mobile Match — bench', () => {

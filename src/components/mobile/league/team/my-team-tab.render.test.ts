@@ -200,6 +200,14 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(html).toContain('16.03')
   })
 
+  it('a game line opens that NFL game’s box score (gap list §3 #17); a bye stays part of the player’s button', () => {
+    expect(html).toMatch(/<a [^>]*href="\/app\/leagues\/league-1\/games\/g1"[^>]*>[^<]*(?:<[^>]*>[^<]*)*?Final W 19-17 vs PHI/)
+    // Shedeur Sanders (CLE) has no game this week: his "BYE" opens nothing new.
+    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Shedeur Sanders(?:(?!<\/button>)[\s\S])*BYE(?:(?!<\/button>)[\s\S])*<\/button>/)
+    // Never a link nested in a player's button.
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*<a [^>]*games\//)
+  })
+
   it('lists the bench with its empty seats (bench size minus bench players)', () => {
     expect(html).toContain('Kendrick Bourne')
     const benchChips = html.match(/>BN</g) ?? []
