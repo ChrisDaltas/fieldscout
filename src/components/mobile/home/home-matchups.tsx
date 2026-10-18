@@ -190,7 +190,9 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
 
 /**
  * "Join or create a league" (m-home §2A.6): one outlined button that asks
- * which, then opens the app's own join-by-code and create-league flows.
+ * which, then opens the app's own join-by-code and create-league flows as
+ * phone sheets (`layout="mobile"`, gap list §4 item 2) — same requests as
+ * the desktop dialogs; creating a league stays free.
  */
 function JoinOrCreate() {
   const [chooser, setChooser] = useState(false)
@@ -219,8 +221,8 @@ function JoinOrCreate() {
           <ChooserRow title="Create a league" sub="Set it up and invite your friends — it’s free" onClick={() => pick('create')} />
         </div>
       </MobileSheet>
-      <JoinLeagueDialog open={joinOpen} onOpenChange={setJoinOpen} />
-      <LeagueCreateModal open={createOpen} onOpenChange={setCreateOpen} />
+      <JoinLeagueDialog open={joinOpen} onOpenChange={setJoinOpen} layout="mobile" />
+      <LeagueCreateModal open={createOpen} onOpenChange={setCreateOpen} layout="mobile" />
     </>
   )
 }

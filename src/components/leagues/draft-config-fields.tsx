@@ -1,5 +1,6 @@
 'use client'
 
+import { M_NUMBER_FIELD } from '@/components/mobile/ui/m-form'
 import { Input } from '@/components/ui/input'
 import type { FieldIssue, LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
@@ -13,6 +14,7 @@ import {
   FieldRow,
   InlineIssue,
   ToggleRow,
+  useSettingsSkin,
 } from './settings-form-controls'
 
 export { DRAFT_FIELD_BOUNDS, PICK_TIMER_LABELS, pickTimerOptions } from './draft-config-fields-ops'
@@ -110,6 +112,16 @@ export interface AuctionConfigFieldsProps extends DraftFieldsProps {
   issues?: FieldIssue[]
 }
 
+/**
+ * The auction knobs' number field: the v7 input on desktop; on the phone
+ * (`SettingsSkin` mobile) a plain field in the phone's fill and type with
+ * the number keypad.
+ */
+function NumberField(props: React.ComponentProps<'input'>) {
+  if (useSettingsSkin() === 'mobile') return <input {...props} inputMode="numeric" className={M_NUMBER_FIELD} />
+  return <Input {...props} className="w-24" />
+}
+
 /** The six §7.3.8 auction knobs. Mounted only when `draft_type === 'auction'`. */
 export function AuctionConfigFields({
   value,
@@ -126,7 +138,7 @@ export function AuctionConfigFields({
         htmlFor={`${idPrefix}-auction-budget`}
         hint="One-time draft budget."
       >
-        <Input
+        <NumberField
           id={`${idPrefix}-auction-budget`}
           type="number"
           min={b.auction_budget.min}
@@ -142,7 +154,6 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="w-24"
         />
       </FieldRow>
 
@@ -176,7 +187,7 @@ export function AuctionConfigFields({
         htmlFor={`${idPrefix}-auction-nom`}
         hint="Seconds to nominate."
       >
-        <Input
+        <NumberField
           id={`${idPrefix}-auction-nom`}
           type="number"
           min={b.auction_nomination_seconds.min}
@@ -192,7 +203,6 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="w-24"
         />
       </FieldRow>
 
@@ -201,7 +211,7 @@ export function AuctionConfigFields({
         htmlFor={`${idPrefix}-auction-bid`}
         hint="Seconds each bid resets the clock to."
       >
-        <Input
+        <NumberField
           id={`${idPrefix}-auction-bid`}
           type="number"
           min={b.auction_bid_seconds.min}
@@ -217,7 +227,6 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="w-24"
         />
       </FieldRow>
 
@@ -226,7 +235,7 @@ export function AuctionConfigFields({
         htmlFor={`${idPrefix}-auction-anti-snipe`}
         hint="A bid inside this many seconds resets the clock to it. 0 turns anti-snipe off."
       >
-        <Input
+        <NumberField
           id={`${idPrefix}-auction-anti-snipe`}
           type="number"
           min={b.auction_anti_snipe_seconds.min}
@@ -242,7 +251,6 @@ export function AuctionConfigFields({
               ),
             })
           }
-          className="w-24"
         />
       </FieldRow>
 

@@ -7,6 +7,7 @@ import { mockIdentityLabel, mockProgressLabel } from '@/components/draft/mock-la
 import { attachCandidates, attachSuggestion, attachedToastLine } from '@/components/leagues/attach-list-ops'
 import { buildJoinLink, deriveSeats, memberControls, membersPageHref, preferredShareCode, type Seat } from '@/components/leagues/invite-panel-ops'
 import { teamPageHref } from '@/components/leagues/league-cells'
+import { MCheck, MCheckRow } from '@/components/mobile/ui/m-form'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { UsernameLink } from '@/components/shared/username-link'
@@ -348,45 +349,22 @@ function DraftListSheet({
                         {[listMeta(c), c.is_big_board ? 'Big Board' : null, c.attached ? 'Attached' : null].filter(Boolean).join(' · ')}
                       </span>
                     </span>
-                    <Check on={on} />
+                    <MCheck on={on} />
                   </button>
                 )
               })}
             </div>
-            <Toggle
+            <MCheckRow
               on={primary}
               onChange={setPrimary}
               label="Set as my primary board"
               note="Feeds your draft Targets and autopick for this league (one per league)."
             />
-            <Toggle on={shared} onChange={setShared} label="Share with the league" note="Every member can open it. Off, it stays visible only to you." />
+            <MCheckRow on={shared} onChange={setShared} label="Share with the league" note="Every member can open it. Off, it stays visible only to you." />
           </>
         )}
       </div>
     </MobileSheet>
-  )
-}
-
-function Check({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn('flex size-[22px] flex-none items-center justify-center rounded-full', on ? 'bg-accent' : 'bg-m-b0 ring-[1.5px] ring-inset ring-m-b4m')}
-    >
-      {on && <MIcon name="check" size={11} stroke={3} className="text-white" />}
-    </span>
-  )
-}
-
-function Toggle({ on, onChange, label, note }: { on: boolean; onChange: (next: boolean) => void; label: string; note: string }) {
-  return (
-    <button type="button" role="checkbox" aria-checked={on} onClick={() => onChange(!on)} className="flex items-start gap-3 py-1 text-left">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[14px] font-semibold text-m-t1">{label}</span>
-        <span className={NOTE}>{note}</span>
-      </span>
-      <Check on={on} />
-    </button>
   )
 }
 

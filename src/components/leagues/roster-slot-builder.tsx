@@ -2,6 +2,16 @@
 
 import { useMemo, useState } from 'react'
 
+import {
+  M_TEXT_FIELD,
+  MNotice,
+  MStepper,
+  MToggleChip,
+  MToolChip,
+  SwitchTrack,
+} from '@/components/mobile/ui/m-form'
+import { MIcon } from '@/components/mobile/ui/m-icon'
+import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { PositionBadge } from '@/components/players/position-badge'
 import { Badge, FilterChip } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -45,6 +55,7 @@ import {
   suggestFlexLabel,
   updateIrSpot,
 } from './roster-slot-builder-ops'
+import { ChoiceSelect, useSettingsSkin } from './settings-form-controls'
 
 /**
  * Roster-slot-builder (M1 task L.A2.2; spec §7.3.2, §16.2, §16.4).
@@ -74,6 +85,10 @@ import {
  *   reimplemented here). States that the canonical schema cannot even
  *   represent (empty eligible set, zero designations) are prevented at the
  *   control instead: the last designation chip can't be untoggled.
+ * - On the phone (`SettingsSkin` mobile — the practice-draft sheet, gap list
+ *   §4 item 2) every piece below draws in the FieldScout Mobile language:
+ *   b1 tiles and rows, the phone stepper, switch, chips and notices. Same
+ *   values, ops and copy.
  */
 export interface RosterSlotBuilderProps {
   /** The canonical §7.3.2 roster_settings JSONB. */
@@ -93,6 +108,11 @@ export interface RosterSlotBuilderProps {
 const OFFENSE_SINGLES: readonly RosterPosition[] = ['QB', 'RB', 'WR', 'TE']
 const TAIL_SINGLES: readonly RosterPosition[] = ['K', 'DST']
 const IDP_SINGLES: readonly RosterPosition[] = ['DL', 'LB', 'DB']
+/** The IR spot type choice (the desktop Select's two items, as options). */
+const IR_TYPE_OPTIONS = [
+  { value: 'unrestricted', label: 'Unrestricted' },
+  { value: 'restricted', label: 'Restricted' },
+] as const
 
 export function RosterSlotBuilder({
   value,
@@ -117,18 +137,28 @@ export function RosterSlotBuilder({
   const flexSlots = value.starting_slots.filter(isFlexSlot)
 
   const errorsFor = (field: string) => errors.filter((e) => e.field === field)
+  const m = useSettingsSkin() === 'mobile'
 
   return (
     <div className={cn('flex flex-col gap-4', className)}>
       {/* Live derived roster size (§7.3.2: shown live in the wizard) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="black">
-          <span className="fs-num">{rosterSize}</span>&nbsp;roster spots
-        </Badge>
-        <span className="fs-num text-[11px] font-medium text-n-3">
-          {starterCount} starters · {value.bench} bench · {value.ir_slots.length} IR
-        </span>
-      </div>
+      {m ? (
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-[17px] font-semibold tracking-[-0.01em] tabular-nums text-m-t1">{rosterSize} roster spots</span>
+          <span className="text-[12px] font-medium tabular-nums text-m-t3">
+            {starterCount} starters · {value.bench} bench · {value.ir_slots.length} IR
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="black">
+            <span className="fs-num">{rosterSize}</span>&nbsp;roster spots
+          </Badge>
+          <span className="fs-num text-[11px] font-medium text-n-3">
+            {starterCount} starters · {value.bench} bench · {value.ir_slots.length} IR
+          </span>
+        </div>
+      )}
       {warnings.map((w) => (
         <InlineIssue key={w.field + w.message} tone="warning" message={w.message} />
       ))}
@@ -137,16 +167,20 @@ export function RosterSlotBuilder({
       <BuilderSection
         title="Starting lineup"
         badge={
-          <Badge variant="black">
-            <span className="fs-num">{starterCount}</span>&nbsp;starters
-          </Badge>
+          m ? (
+            `${starterCount} starters`
+          ) : (
+            <Badge variant="black">
+              <span className="fs-num">{starterCount}</span>&nbsp;starters
+            </Badge>
+          )
         }
       >
           <SingleRows positions={OFFENSE_SINGLES} value={value} onChange={onChange} />
 
           <SectionLabel>Flex</SectionLabel>
           {flexSlots.length === 0 && (
-            <p className="text-[11px] font-medium text-n-6">
+            <p className={m ? M_NOTE : 'text-[11px] font-medium text-n-6'}>
               No flex slots — add one below.
             </p>
           )}
@@ -172,13 +206,23 @@ export function RosterSlotBuilder({
       <BuilderSection
         title="Bench & injured reserve"
         badge={
-          <Badge variant="stroke">
-            <span className="fs-num">{value.bench + value.ir_slots.length}</span>&nbsp;reserve
-          </Badge>
+          m ? (
+            `${value.bench + value.ir_slots.length} reserve`
+          ) : (
+            <Badge variant="stroke">
+              <span className="fs-num">{value.bench + value.ir_slots.length}</span>&nbsp;reserve
+            </Badge>
+          )
         }
       >
-          <div className="flex min-h-[43px] items-center gap-3 rounded-xl border border-n-4 bg-white py-1.5 pl-3 pr-2">
-            <span className="flex-1 text-[11px] font-semibold">Bench (BN)</span>
+          <div
+            className={
+              m
+                ? 'flex min-h-12 items-center gap-3 rounded-[12px] bg-m-b1 py-1.5 pl-3.5 pr-2'
+                : 'flex min-h-[43px] items-center gap-3 rounded-xl border border-n-4 bg-white py-1.5 pl-3 pr-2'
+            }
+          >
+            <span className={m ? 'flex-1 text-[14px] font-semibold text-m-t1' : 'flex-1 text-[11px] font-semibold'}>Bench (BN)</span>
             <Stepper
               value={value.bench}
               min={0}
@@ -193,13 +237,24 @@ export function RosterSlotBuilder({
 
           <SectionLabel>Injured reserve · {value.ir_slots.length}/6 spots</SectionLabel>
           {value.ir_slots.length === 0 && (
-            <p className="text-[11px] font-medium text-n-6">
+            <p className={m ? M_NOTE : 'text-[11px] font-medium text-n-6'}>
               No IR spots — injured players would hold a bench spot all season.
             </p>
           )}
           {value.ir_slots.map((_, i) => (
             <IrSpotRow key={value.ir_slots[i].key} index={i} value={value} onChange={onChange} />
           ))}
+          {m ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <MToolChip plus disabled={value.ir_slots.length >= 6} onClick={() => onChange(addIrSpot(value))}>
+                Add IR spot
+              </MToolChip>
+              <MToolChip plus disabled={value.ir_slots.length >= 6} onClick={() => onChange(addDlSpot(value))}>
+                Add DL spot
+              </MToolChip>
+              <span className={M_NOTE}>{dlPresetHint()}</span>
+            </div>
+          ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -223,6 +278,7 @@ export function RosterSlotBuilder({
               {dlPresetHint()}
             </span>
           </div>
+          )}
           {errorsFor('roster_settings.ir_slots').map((e) => (
             <InlineIssue key={e.message} tone="error" message={e.message} />
           ))}
@@ -246,6 +302,19 @@ function BuilderSection({
   badge: React.ReactNode
   children: React.ReactNode
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <section className="flex flex-col gap-2.5 border-t border-m-b2 pt-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-m-t1">{title}</h3>
+          <span className="flex h-[22px] items-center rounded-pill bg-m-b2 px-2 text-[11px] font-semibold tabular-nums text-m-t3">
+            {badge}
+          </span>
+        </div>
+        {children}
+      </section>
+    )
+  }
   return (
     <section className="flex flex-col gap-2.5 border-t border-n-4 pt-3.5">
       <div className="flex items-center justify-between gap-2">
@@ -257,11 +326,18 @@ function BuilderSection({
   )
 }
 
+/** A phone note line (12/500 t3). */
+const M_NOTE = 'text-[12px] font-medium leading-[1.35] text-m-t3'
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
+  if (useSettingsSkin() === 'mobile') {
+    return <div className="pt-1.5 text-[13px] font-semibold text-m-t3">{children}</div>
+  }
   return <div className="px-[3px] pt-1.5 text-[10px] font-semibold text-n-6">{children}</div>
 }
 
 function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: string }) {
+  if (useSettingsSkin() === 'mobile') return <MNotice tone={tone}>{message}</MNotice>
   return (
     <p
       role={tone === 'error' ? 'alert' : 'status'}
@@ -295,6 +371,10 @@ function Stepper({
   ariaLabel: string
   appearance?: 'pill' | 'tile'
 }) {
+  const skin = useSettingsSkin()
+  if (skin === 'mobile') {
+    return <MStepper value={value} min={min} max={max} onStep={onStep} ariaLabel={ariaLabel} appearance={appearance} />
+  }
   const tile = appearance === 'tile'
   const step = cn('rounded-full text-n-2', tile ? 'hover:bg-surface-pressed' : 'hover:bg-white')
   return (
@@ -354,7 +434,8 @@ function SingleRows({
   onChange: (next: RosterSettings) => void
 }) {
   return (
-    // v7 roster grid: small grey tiles, as many per row as fit.
+    // v7 roster grid: small grey tiles, as many per row as fit (three across
+    // a phone).
     <div className="grid grid-cols-[repeat(auto-fill,minmax(102px,1fr))] gap-[7px]">
       {positions.map((position) => {
         const slots = value.starting_slots.filter(
@@ -403,6 +484,18 @@ function SlotRow({
   ghost?: boolean
   children: React.ReactNode
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <div className={cn('flex flex-col gap-1.5 rounded-[12px] bg-m-b1 p-2', ghost && 'opacity-60')}>
+        <div className="flex h-5 min-w-0 items-center gap-1.5">
+          <MPosChip pos={position} />
+          {/* The chip already names a preset slot; a renamed one keeps its label. */}
+          {label !== posLabel(position) && <span className="truncate text-[12px] font-semibold text-m-t3">{label}</span>}
+        </div>
+        {children}
+      </div>
+    )
+  }
   return (
     <div className={cn('flex flex-col gap-1 rounded-xl bg-surface-sunken p-1.5 pl-2', ghost && 'opacity-60')}>
       <div className="flex min-w-0 items-center gap-1.5 pt-0.5">
@@ -423,6 +516,32 @@ function FlexRow({
   value: RosterSettings
   onChange: (next: RosterSettings) => void
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <div className={cn('flex min-h-12 items-center gap-2.5 rounded-[12px] bg-m-b1 py-1.5 pl-2.5 pr-1.5', slot.count === 0 && 'opacity-60')}>
+        <MPosChip pos="FLEX" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[14px] font-semibold text-m-t1">{slot.label}</span>
+          <span className="truncate text-[12px] font-medium text-m-t3">{slot.eligible.join(' · ')}</span>
+        </div>
+        <MStepper
+          value={slot.count}
+          min={0}
+          max={10}
+          ariaLabel={`${slot.label} slots`}
+          onStep={(n) => onChange(setSlotCount(value, slot.key, n))}
+        />
+        <button
+          type="button"
+          className="flex size-8 flex-none items-center justify-center rounded-full text-m-t3 active:bg-m-b2"
+          aria-label={`Remove ${slot.label} flex slot`}
+          onClick={() => onChange(removeSlot(value, slot.key))}
+        >
+          <MIcon name="close" size={13} stroke={2.2} />
+        </button>
+      </div>
+    )
+  }
   return (
     <div className={cn('flex min-h-[43px] items-center gap-2.5 rounded-xl bg-surface-sunken py-1.5 pl-2.5 pr-1.5', slot.count === 0 && 'opacity-60')}>
       <PositionBadge position="FLEX" />
@@ -471,6 +590,68 @@ function AddCustomFlex({
     setOpen(false)
     setSelected([])
     setLabel('')
+  }
+  const m = useSettingsSkin() === 'mobile'
+
+  if (m) {
+    if (!open) {
+      return (
+        <div className="flex">
+          <MToolChip plus onClick={() => setOpen(true)}>
+            Add Custom Flex
+          </MToolChip>
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col gap-3 rounded-[14px] bg-m-b1 p-3">
+        <div className="text-[15px] font-semibold text-m-t1">New flex slot</div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Flex slot positions">
+          {ROSTER_POSITIONS.map((p) => (
+            <MToggleChip
+              key={p}
+              pressed={selected.includes(p)}
+              onPressedChange={(on) => setSelected((cur) => (on ? [...cur, p] : cur.filter((x) => x !== p)))}
+            >
+              {p === 'DST' ? 'D/ST' : p}
+            </MToggleChip>
+          ))}
+        </div>
+        {tooFew && (
+          <p className={M_NOTE}>
+            Pick at least 2 positions — a flex slot accepts multiple positions. One position is just that
+            position&apos;s own slot.
+          </p>
+        )}
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={suggestion || 'Label (e.g. W/R/T)'}
+          aria-label="Flex slot label"
+          maxLength={60}
+          className={M_TEXT_FIELD}
+        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={tooFew}
+            onClick={() => {
+              onChange(addCustomFlex(value, { eligible: selected, label }))
+              reset()
+            }}
+            className={cn(
+              'flex h-10 items-center rounded-pill px-[18px] text-[14px] font-semibold',
+              tooFew ? 'bg-m-b3s text-m-t3' : 'bg-accent text-white active:bg-accent-strong',
+            )}
+          >
+            Add flex
+          </button>
+          <button type="button" onClick={reset} className="flex h-10 items-center rounded-pill px-3 text-[14px] font-semibold text-m-t3 active:bg-m-b2">
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!open) {
@@ -541,6 +722,32 @@ function HotSwapRow({
   value: RosterSettings
   onChange: (next: RosterSettings) => void
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    const on = value.swap_spots === 1
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-[12px] bg-m-b1 px-3.5 py-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <label htmlFor="hot-swap-toggle" className="text-[14px] font-semibold text-m-t1">
+            Hot Swap
+          </label>
+          <p className={M_NOTE}>
+            One armed bench player auto-starts if the starter they protect is ruled out — before or during the
+            game. One Hot Swap per team.
+          </p>
+        </div>
+        <button
+          id="hot-swap-toggle"
+          type="button"
+          role="switch"
+          aria-checked={on}
+          onClick={() => onChange(setHotSwap(value, !on))}
+          className="flex-none"
+        >
+          <SwitchTrack on={on} />
+        </button>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-sunken px-3 py-2.5">
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -575,6 +782,86 @@ function IrSpotRow({
 }) {
   const spot = value.ir_slots[index]
   const restricted = spot.type === 'restricted'
+  if (useSettingsSkin() === 'mobile') {
+    const name = spot.label ?? `IR ${index + 1}`
+    return (
+      <div className="flex flex-col gap-2.5 rounded-[14px] bg-m-b1 p-3">
+        <div className="flex items-start gap-2">
+          <span
+            className={cn(
+              'flex h-[22px] flex-none items-center rounded-pill px-2 text-[11px] font-semibold',
+              restricted ? 'bg-m-go text-m-to' : 'bg-m-b0 text-m-t1',
+            )}
+          >
+            {name}
+          </span>
+          <span className={cn(M_NOTE, 'flex-1 pt-0.5')}>
+            {restricted
+              ? `Restricted — eligible players stay at least ${spot.min_weeks} week${spot.min_weeks === 1 ? '' : 's'}`
+              : 'Unrestricted — eligible players move in and out freely before lock'}
+          </span>
+          <button
+            type="button"
+            className="flex size-8 flex-none items-center justify-center rounded-full text-m-t3 active:bg-m-b2"
+            aria-label={`Remove IR spot ${spot.label ?? index + 1}`}
+            onClick={() => onChange(removeIrSpot(value, spot.key))}
+          >
+            <MIcon name="close" size={13} stroke={2.2} />
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ChoiceSelect
+            ariaLabel="IR spot type"
+            value={spot.type}
+            options={IR_TYPE_OPTIONS}
+            onValueChange={(type) =>
+              onChange(updateIrSpot(value, spot.key, { type: type as 'unrestricted' | 'restricted' }))
+            }
+          />
+          {restricted && (
+            <span className="flex items-center gap-1.5">
+              <span className="text-[12px] font-semibold text-m-t3">Min weeks</span>
+              <MStepper
+                value={spot.min_weeks}
+                min={1}
+                max={17}
+                ariaLabel={`Minimum stint for ${name}`}
+                onStep={(n) => onChange(updateIrSpot(value, spot.key, { min_weeks: n }))}
+              />
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-semibold text-m-t3">Eligible designations</span>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Eligible designations for ${name}`}>
+            {IR_DESIGNATIONS.map((d) => {
+              const on = spot.eligible_designations.includes(d)
+              const lastOne = on && spot.eligible_designations.length === 1
+              return (
+                <MToggleChip
+                  key={d}
+                  pressed={on}
+                  disabled={lastOne}
+                  title={lastOne ? 'An IR spot needs at least one eligible designation.' : undefined}
+                  onPressedChange={(next) =>
+                    onChange(
+                      updateIrSpot(value, spot.key, {
+                        eligible_designations: next
+                          ? [...spot.eligible_designations, d]
+                          : spot.eligible_designations.filter((x) => x !== d),
+                      }),
+                    )
+                  }
+                >
+                  {d}
+                </MToggleChip>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-n-4 bg-white p-3">
       <div className="flex items-center gap-2">

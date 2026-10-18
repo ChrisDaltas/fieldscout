@@ -3,6 +3,16 @@
 import { useRouter } from 'next/navigation'
 import { useMemo, useRef, useState } from 'react'
 
+import {
+  M_TEXT_FIELD,
+  MChoiceChip,
+  MField,
+  MRadioCard,
+  MStepProgress,
+  MWizardFooter,
+} from '@/components/mobile/ui/m-form'
+import { MIcon } from '@/components/mobile/ui/m-icon'
+import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,6 +24,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import type { LayoutMode } from '@/hooks/use-layout-mode'
 import { toast } from '@/hooks/use-toast'
 import { useLeagueLists } from '@/hooks/use-league-lists'
 import { useCreateLeague } from '@/hooks/use-leagues'
@@ -28,7 +39,7 @@ import {
   toCreateInput,
   type WizardDraft,
 } from './league-create-wizard-ops'
-import { ChoiceSelect, numOptions } from './settings-form-controls'
+import { ChoiceSelect, numOptions, SettingsSkin, useSettingsSkin } from './settings-form-controls'
 import { ScoringTemplatePicker } from './scoring-template-picker'
 import { WaiverScheduleFields } from './waiver-schedule-fields'
 import {
@@ -59,17 +70,31 @@ import {
  * sections; only Create validates). The avatar can't upload before the
  * league exists (the storage path is keyed by league id), so the file is
  * held locally and posted to /api/leagues/[id]/profile right after create.
+ *
+ * `layout="mobile"` (the phone's Home, gap list §4 item 2) renders the same
+ * draft, steps, create call and success step as a FieldScout Mobile bottom
+ * sheet: the step bodies draw in the phone language through `SettingsSkin`,
+ * Back / Continue replace the stepper, and the sheet follows the phone's
+ * light or dark theme. Creating a league stays free.
  */
 
 const STEPS = ['Basics', 'Draft & scoring', 'Scoring template'] as const
+/** The success step's offer line (desktop description, phone subtitle). */
+const CREATED_LINE =
+  'Invite your managers from the league home. Want your rankings along? Attach a list now — it’s one tap away in the draft room and can feed your autopick.'
+/** §7.3.1's offered league sizes (the Basics step's choice). */
+const TEAM_COUNTS = [8, 10, 12, 14, 16] as const
 
 export function LeagueCreateModal({
   open,
   onOpenChange,
+  layout = 'desktop',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  layout?: LayoutMode
 }) {
+  const mobile = layout === 'mobile'
   const router = useRouter()
   const [draft, setDraft] = useState<WizardDraft>(initialWizardDraft)
   const [step, setStep] = useState(0)
@@ -220,6 +245,145 @@ export function LeagueCreateModal({
     }
   }
 
+  // The step body — ONE body for both layouts; the desktop dialog and the
+  // phone sheet differ only in their chrome (header, stepper, footer).
+  const stepBody = (
+    <>
+      <ChangeLaterNote />
+
+      {step === 0 && (
+        <BasicsStep
+          draft={draft}
+          nameMissing={nameMissing}
+          avatarPreview={avatarPreview}
+          onName={(name) => setDraft((p) => ({ ...p, name }))}
+          onTeamCount={(team_count) => updateSettings({ team_count })}
+          onPickAvatar={() => fileRef.current?.click()}
+          onRemoveAvatar={() => {
+            setAvatarFile(null)
+            if (avatarPreview) URL.revokeObjectURL(avatarPreview)
+            setAvatarPreview(null)
+          }}
+        />
+      )}
+
+      {step === 1 && (
+        <StyleStep
+          draftType={draft.settings.draft.draft_type}
+          scoringStyle={scoringStyle}
+          onDraftType={(draft_type) =>
+            setDraft((prev) => ({
+              ...prev,
+              settings: reconcileDerived(prev.settings, {
+                ...prev.settings,
+                draft: { ...prev.settings.draft, draft_type },
+              }),
+            }))
+          }
+          onScoringStyle={handleScoringStyle}
+        />
+      )}
+      {step === 1 && (
+        // M5 L.D2.13: the waiver schedule's presets (Q70) — the pick only;
+        // the full schedule is editable in League settings afterwards.
+        <div className={mobile ? 'flex flex-col gap-1' : 'space-y-1.5'} data-wizard-waivers>
+          {mobile && <span className="text-[13px] font-semibold text-m-t3">Waivers</span>}
+          <WaiverScheduleFields s={draft.settings} onSettings={updateSettings} detail={false} idPrefix="create" />
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="flex flex-col gap-3">
+          <ScoringTemplatePicker
+            // SC.4: the EFFECTIVE selection — explicit pick, else the
+            // active family's own Scout preselection — so what renders
+            // selected is exactly what Create will submit.
+            value={effectiveScoringId}
+            styleFilter={scoringStyle}
+            onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
+          />
+          <p className={mobile ? 'text-[12px] font-medium text-m-t3' : 'text-[11px] font-medium text-n-6'}>
+            You can customize scoring once your league has been created.
+          </p>
+        </div>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={handleAvatarPick}
+      />
+    </>
+  )
+  const blockedLine =
+    step === STEPS.length - 1 && !canCreate && !submitting
+      ? nameMissing
+        ? 'Name your league on the Basics step, then pick a scoring template.'
+        : 'Pick a scoring template to create your league.'
+      : null
+
+  if (mobile) {
+    // The phone (gap list §4 item 2): the same steps in a FieldScout Mobile
+    // bottom sheet — the New ranking wizard's progress track and footer
+    // (lr-myrank §2.2), Back / Continue in place of the desktop stepper.
+    return (
+      <SettingsSkin layout="mobile">
+        {created ? (
+          // The success step, composed inline in the same sheet (D119(6)).
+          <MobileSheet
+            open={open}
+            onOpenChange={handleOpenChange}
+            title={`${created.name} is live`}
+            subtitle={CREATED_LINE}
+            showClose
+            size="tall"
+            footer={<MWizardFooter label="Go to league" onClick={() => handleOpenChange(false)} />}
+          >
+            <div className="px-5 pb-4">
+              <AttachListInline
+                leagueId={created.id}
+                leagueName={created.name}
+                scoringSystemId={created.scoringSystemId}
+                attachedListIds={createdAttachedIds}
+              />
+            </div>
+          </MobileSheet>
+        ) : (
+          <MobileSheet
+            open={open}
+            onOpenChange={handleOpenChange}
+            title="Create a league"
+            subtitle={`Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`}
+            showClose
+            size="tall"
+            scrollKey={step}
+            footer={
+              <MWizardFooter
+                onBack={step > 0 && !submitting ? () => setStep(step - 1) : undefined}
+                label={step < STEPS.length - 1 ? 'Continue' : submitting ? 'Creating…' : 'Create league'}
+                onClick={step < STEPS.length - 1 ? () => setStep(step + 1) : handleCreate}
+                disabled={step === STEPS.length - 1 && !canCreate}
+              >
+                {blockedLine && (
+                  <p className="text-center text-[12px] font-medium text-m-t3" role="status">
+                    {blockedLine}
+                  </p>
+                )}
+              </MWizardFooter>
+            }
+          >
+            <div className="sticky top-0 z-[2] bg-m-b0">
+              <MStepProgress step={step} total={STEPS.length} />
+            </div>
+            <div className="flex flex-col gap-5 px-5 pb-4 pt-4">{stepBody}</div>
+          </MobileSheet>
+        )}
+      </SettingsSkin>
+    )
+  }
+
   if (created) {
     // The success step (M2 L.B4.2): §7.4's create-flow offer, composed
     // INLINE (a Dialog inside a Dialog steals focus and closes both — the
@@ -232,11 +396,7 @@ export function LeagueCreateModal({
               <Icon name="check-circle" size={15} className="mr-1.5 inline align-[-2px] text-positive-strong" />
               {created.name} is live
             </DialogTitle>
-            <DialogDescription>
-              Invite your managers from the league home. Want your rankings
-              along? Attach a list now — it&rsquo;s one tap away in the draft
-              room and can feed your autopick.
-            </DialogDescription>
+            <DialogDescription>{CREATED_LINE}</DialogDescription>
           </DialogHeader>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
@@ -274,73 +434,7 @@ export function LeagueCreateModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pr-1">
-          <ChangeLaterNote />
-
-          {step === 0 && (
-            <BasicsStep
-              draft={draft}
-              nameMissing={nameMissing}
-              avatarPreview={avatarPreview}
-              onName={(name) => setDraft((p) => ({ ...p, name }))}
-              onTeamCount={(team_count) => updateSettings({ team_count })}
-              onPickAvatar={() => fileRef.current?.click()}
-              onRemoveAvatar={() => {
-                setAvatarFile(null)
-                if (avatarPreview) URL.revokeObjectURL(avatarPreview)
-                setAvatarPreview(null)
-              }}
-            />
-          )}
-
-          {step === 1 && (
-            <StyleStep
-              draftType={draft.settings.draft.draft_type}
-              scoringStyle={scoringStyle}
-              onDraftType={(draft_type) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  settings: reconcileDerived(prev.settings, {
-                    ...prev.settings,
-                    draft: { ...prev.settings.draft, draft_type },
-                  }),
-                }))
-              }
-              onScoringStyle={handleScoringStyle}
-            />
-          )}
-          {step === 1 && (
-            // M5 L.D2.13: the waiver schedule's presets (Q70) — the pick only;
-            // the full schedule is editable in League settings afterwards.
-            <div className="space-y-1.5" data-wizard-waivers>
-              <WaiverScheduleFields s={draft.settings} onSettings={updateSettings} detail={false} idPrefix="create" />
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="flex flex-col gap-3">
-              <ScoringTemplatePicker
-                // SC.4: the EFFECTIVE selection — explicit pick, else the
-                // active family's own Scout preselection — so what renders
-                // selected is exactly what Create will submit.
-                value={effectiveScoringId}
-                styleFilter={scoringStyle}
-                onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
-              />
-              <p className="text-[11px] font-medium text-n-6">
-                You can customize scoring once your league has been created.
-              </p>
-            </div>
-          )}
-
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            className="hidden"
-            onChange={handleAvatarPick}
-          />
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pr-1">{stepBody}</div>
 
         {/* Footer: free-moving stepper + forward action */}
         <div className="flex items-center gap-2.5 border-t border-n-4 pt-3">
@@ -374,23 +468,22 @@ export function LeagueCreateModal({
             )}
           </div>
         </div>
-        {step === STEPS.length - 1 && !canCreate && !submitting && (
-          <p className="text-[11px] font-medium text-n-6">
-            {nameMissing
-              ? 'Name your league on the Basics step, then pick a scoring template.'
-              : 'Pick a scoring template to create your league.'}
-          </p>
-        )}
+        {blockedLine && <p className="text-[11px] font-medium text-n-6">{blockedLine}</p>}
       </DialogContent>
     </Dialog>
   )
 }
 
 function ChangeLaterNote() {
+  const line = 'These settings can be changed later in League settings.'
+  if (useSettingsSkin() === 'mobile') {
+    // On the phone, the line under the step's title (the wizard's subtext).
+    return <p className="text-[13px] font-medium leading-[1.4] text-m-t3">{line}</p>
+  }
   return (
     <p className="flex items-center gap-1.5 rounded-xl bg-surface-sunken px-3.5 py-2.5 text-[11px] font-medium text-n-3">
       <Icon name="info-circle" size={13} className="shrink-0 text-n-6" />
-      These settings can be changed later in League settings.
+      {line}
     </p>
   )
 }
@@ -416,6 +509,58 @@ function BasicsStep({
   onPickAvatar: () => void
   onRemoveAvatar: () => void
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <div className="flex flex-col gap-5">
+        <MField label="League name" htmlFor="create-league-name">
+          <input
+            id="create-league-name"
+            value={draft.name}
+            onChange={(e) => onName(e.target.value)}
+            placeholder="Sunday Legends"
+            maxLength={100}
+            autoComplete="off"
+            enterKeyHint="next"
+            aria-invalid={nameMissing || undefined}
+            required
+            className={M_TEXT_FIELD}
+          />
+        </MField>
+        <MField label="League photo (optional)">
+          <div className="flex items-center gap-3">
+            {avatarPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element -- local object-URL preview
+              <img src={avatarPreview} alt="League photo preview" className="size-14 flex-none rounded-[14px] object-cover" />
+            ) : (
+              <span className="flex size-14 flex-none items-center justify-center rounded-[14px] bg-m-b2 text-m-t4" aria-hidden>
+                <MIcon name="plus" size={18} stroke={1.8} />
+              </span>
+            )}
+            {/* The handoff's "Upload photo" pill (My team page). */}
+            <button
+              type="button"
+              onClick={onPickAvatar}
+              className="flex h-8 items-center rounded-pill bg-m-gb px-3.5 text-[13px] font-semibold text-m-tb"
+            >
+              {avatarPreview ? 'Change photo' : 'Upload photo'}
+            </button>
+            {avatarPreview && (
+              <button type="button" onClick={onRemoveAvatar} className="flex h-8 items-center px-2 text-[13px] font-semibold text-m-t3">
+                Remove
+              </button>
+            )}
+          </div>
+        </MField>
+        <MField label="Number of teams">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Number of teams">
+            {TEAM_COUNTS.map((n) => (
+              <MChoiceChip key={n} label={String(n)} on={draft.settings.team_count === n} onPick={() => onTeamCount(n)} />
+            ))}
+          </div>
+        </MField>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-3.5">
       <div className="space-y-1.5">
@@ -470,7 +615,7 @@ function BasicsStep({
           id="create-league-teams"
           ariaLabel="Number of teams"
           value={String(draft.settings.team_count)}
-          options={numOptions([8, 10, 12, 14, 16])}
+          options={numOptions(TEAM_COUNTS)}
           onValueChange={(v) => onTeamCount(Number(v) as LeagueSettings['team_count'])}
           width="w-28"
         />
@@ -494,45 +639,67 @@ function StyleStep({
   onDraftType: (t: LeagueSettings['draft']['draft_type']) => void
   onScoringStyle: (s: 'ppr' | 'no_ppr') => void
 }) {
+  const draftCards = (
+    <>
+      <OptionCard
+        label="Snake"
+        hint="The order reverses every round."
+        selected={draftType === 'snake'}
+        onSelect={() => onDraftType('snake')}
+      />
+      <OptionCard
+        label="Auction"
+        hint="Every manager bids from a budget."
+        selected={draftType === 'auction'}
+        onSelect={() => onDraftType('auction')}
+      />
+    </>
+  )
+  const scoringCards = (
+    <>
+      <OptionCard
+        label="PPR"
+        hint="Points per reception (full or half)."
+        selected={scoringStyle === 'ppr'}
+        onSelect={() => onScoringStyle('ppr')}
+      />
+      <OptionCard
+        label="No PPR"
+        hint="Standard — receptions score nothing."
+        selected={scoringStyle === 'no_ppr'}
+        onSelect={() => onScoringStyle('no_ppr')}
+      />
+    </>
+  )
+  const narrows = 'This narrows the templates on the next step.'
+  if (useSettingsSkin() === 'mobile') {
+    // The phone stacks the same cards as the handoff's radio cards.
+    return (
+      <div className="flex flex-col gap-5">
+        <MField label="Draft type">
+          <div className="flex flex-col gap-2" role="radiogroup" aria-label="Draft type">
+            {draftCards}
+          </div>
+        </MField>
+        <MField label="Scoring type" hint={narrows}>
+          <div className="flex flex-col gap-2" role="radiogroup" aria-label="Scoring type">
+            {scoringCards}
+          </div>
+        </MField>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-3.5">
       <div className="space-y-1.5">
         <Label className="text-[12px] font-semibold text-ink">Draft type</Label>
-        <div className="grid grid-cols-2 gap-2.5">
-          <OptionCard
-            label="Snake"
-            hint="The order reverses every round."
-            selected={draftType === 'snake'}
-            onSelect={() => onDraftType('snake')}
-          />
-          <OptionCard
-            label="Auction"
-            hint="Every manager bids from a budget."
-            selected={draftType === 'auction'}
-            onSelect={() => onDraftType('auction')}
-          />
-        </div>
+        <div className="grid grid-cols-2 gap-2.5">{draftCards}</div>
       </div>
 
       <div className="space-y-1.5">
         <Label className="text-[12px] font-semibold text-ink">Scoring type</Label>
-        <div className="grid grid-cols-2 gap-2.5">
-          <OptionCard
-            label="PPR"
-            hint="Points per reception (full or half)."
-            selected={scoringStyle === 'ppr'}
-            onSelect={() => onScoringStyle('ppr')}
-          />
-          <OptionCard
-            label="No PPR"
-            hint="Standard — receptions score nothing."
-            selected={scoringStyle === 'no_ppr'}
-            onSelect={() => onScoringStyle('no_ppr')}
-          />
-        </div>
-        <p className="text-[11px] font-medium text-n-6">
-          This narrows the templates on the next step.
-        </p>
+        <div className="grid grid-cols-2 gap-2.5">{scoringCards}</div>
+        <p className="text-[11px] font-medium text-n-6">{narrows}</p>
       </div>
     </div>
   )
@@ -549,6 +716,7 @@ function OptionCard({
   selected: boolean
   onSelect: () => void
 }) {
+  if (useSettingsSkin() === 'mobile') return <MRadioCard label={label} sub={hint} on={selected} onPick={onSelect} />
   return (
     <button
       type="button"

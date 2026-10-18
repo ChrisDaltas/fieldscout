@@ -1,5 +1,8 @@
 'use client'
 
+import { createContext, useContext } from 'react'
+
+import { MNotice, MSelect, SwitchTrack } from '@/components/mobile/ui/m-form'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -9,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import type { LayoutMode } from '@/hooks/use-layout-mode'
 import { cn } from '@/lib/utils'
 
 /**
@@ -30,8 +34,39 @@ import { cn } from '@/lib/utils'
 const IN_GROUP_ROW =
   '[.settings-rows_&]:min-h-[43px] [.settings-rows_&]:border-t [.settings-rows_&]:border-n-4 [.settings-rows_&]:py-2'
 
+/**
+ * Which design language these controls draw in. Desktop everywhere by
+ * default; the phone's create-league and practice-draft sheets (gap list §4
+ * item 2) wrap their bodies in `<SettingsSkin layout="mobile">`, and every
+ * control here — and the shared fields built on them (`draft-config-fields`,
+ * `RosterSlotBuilder`, `ScoringTemplatePicker`, `AttachListInline`) — then
+ * draws in the FieldScout Mobile language (`m-*` tokens, so the phone's dark
+ * mode follows) with the SAME values, handlers and copy. One set of
+ * controls, two skins — never a forked phone editor.
+ */
+const SettingsSkinContext = createContext<LayoutMode>('desktop')
+
+export function SettingsSkin({ layout, children }: { layout: LayoutMode; children: React.ReactNode }) {
+  return <SettingsSkinContext.Provider value={layout}>{children}</SettingsSkinContext.Provider>
+}
+
+/** The layout the surrounding surface draws in (`desktop` unless a phone
+ *  sheet set `mobile`). */
+export function useSettingsSkin(): LayoutMode {
+  return useContext(SettingsSkinContext)
+}
+
+/** A phone settings row: 14/600 label over a 12/500 t3 hint, the control at
+ *  the end, rows split by a b2 hairline (the handoff's League settings
+ *  rows). A control too wide for the line wraps under its label. */
+const M_ROW = 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-m-b2 py-2.5 last:border-b-0'
+const M_ROW_LABEL = 'text-[14px] font-semibold text-m-t1'
+const M_ROW_HINT = 'text-[12px] font-medium leading-[1.35] text-m-t3'
+
 /** A validation/advisory message box (error = alert, warning = status). */
 export function InlineIssue({ tone, message }: { tone: 'error' | 'warning'; message: string }) {
+  const skin = useSettingsSkin()
+  if (skin === 'mobile') return <MNotice tone={tone}>{message}</MNotice>
   return (
     <p
       role={tone === 'error' ? 'alert' : 'status'}
@@ -57,6 +92,20 @@ export function FieldRow({
   hint?: string
   children: React.ReactNode
 }) {
+  const skin = useSettingsSkin()
+  if (skin === 'mobile') {
+    return (
+      <div className={M_ROW}>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <label htmlFor={htmlFor} className={M_ROW_LABEL}>
+            {label}
+          </label>
+          {hint && <p className={M_ROW_HINT}>{hint}</p>}
+        </div>
+        <div className="flex min-w-0 max-w-full shrink-0">{children}</div>
+      </div>
+    )
+  }
   return (
     <div className={cn('flex flex-wrap items-center justify-between gap-x-3.5 gap-y-2', IN_GROUP_ROW)}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -86,6 +135,32 @@ export function ToggleRow({
   onCheckedChange: (next: boolean) => void
   disabled?: boolean
 }) {
+  const skin = useSettingsSkin()
+  if (skin === 'mobile') {
+    // The phone switch (lr-frame §2.13.10) on a real `role="switch"` button
+    // the label points at, so tapping the words flips it too.
+    return (
+      <div className={cn(M_ROW, 'flex-nowrap')}>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <label htmlFor={id} className={M_ROW_LABEL}>
+            {label}
+          </label>
+          {hint && <p className={M_ROW_HINT}>{hint}</p>}
+        </div>
+        <button
+          id={id}
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          disabled={disabled}
+          onClick={() => onCheckedChange(!checked)}
+          className="flex-none disabled:opacity-40"
+        >
+          <SwitchTrack on={checked} />
+        </button>
+      </div>
+    )
+  }
   return (
     <div className={cn('flex items-center justify-between gap-3.5', IN_GROUP_ROW)}>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -121,6 +196,20 @@ export function ChoiceSelect({
   /** Trigger text while nothing is selected (pass value="" for that state). */
   placeholder?: string
 }) {
+  const skin = useSettingsSkin()
+  if (skin === 'mobile') {
+    return (
+      <MSelect
+        id={id}
+        ariaLabel={ariaLabel}
+        value={value}
+        options={options}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        placeholder={placeholder}
+      />
+    )
+  }
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger id={id} aria-label={ariaLabel} className={width}>

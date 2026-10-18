@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { M_TEXT_FIELD, MField, MWizardFooter } from '@/components/mobile/ui/m-form'
+import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -21,6 +23,7 @@ import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import type { LayoutMode } from '@/hooks/use-layout-mode'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 
 import { Crest } from './league-cells'
@@ -58,17 +61,25 @@ const ROLE_LABEL: Record<string, string> = {
  * custom `fieldscout.gg/join/<slug>` link; entering either here routes through
  * the SAME pre-auth preview page (`/join/[token]`). Joining is free (Q6). A
  * pasted link is normalised to its bare code via `extractJoinCode` (R114).
+ *
+ * `layout="mobile"` (the phone's Home, gap list §4 item 2) draws the same
+ * form as a FieldScout Mobile bottom sheet — the 48px field, the wizard's
+ * Continue button — in the phone's light or dark theme. Same code handling,
+ * same destination.
  */
 export function JoinLeagueDialog({
   open: openProp,
   onOpenChange,
+  layout = 'desktop',
 }: {
   /** Drive the dialog from elsewhere (Home's Join chip). When provided, the
    *  built-in trigger button is not rendered — the caller owns the affordance. */
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  layout?: LayoutMode
 } = {}) {
   const router = useRouter()
+  const formId = useId()
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const isControlled = openProp !== undefined
   const open = isControlled ? openProp : uncontrolledOpen
@@ -81,6 +92,38 @@ export function JoinLeagueDialog({
     e.preventDefault()
     if (!joinCode) return
     router.push(`/join/${encodeURIComponent(joinCode)}`)
+  }
+
+  if (layout === 'mobile') {
+    return (
+      <MobileSheet
+        open={open}
+        onOpenChange={setOpen}
+        title="Join a league"
+        subtitle="Enter the invite code your commissioner shared, or paste a fieldscout.gg/join/… link."
+        showClose
+        footer={<MWizardFooter type="submit" form={formId} label="Continue" disabled={!joinCode} />}
+      >
+        <form id={formId} onSubmit={handleSubmit} className="px-5 pb-4">
+          <MField label="Invite code or link" htmlFor={`${formId}-code`}>
+            <input
+              id={`${formId}-code`}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. a1b2c3d4e5"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="go"
+              autoFocus
+              className={M_TEXT_FIELD}
+              data-join-code
+            />
+          </MField>
+        </form>
+      </MobileSheet>
+    )
   }
 
   return (

@@ -13,8 +13,9 @@ import { HomeSectionTitle } from './home-section'
 /**
  * "Practice" (m-home §2A.12): the Mock draft card. The whole card opens the
  * app's one practice-draft launcher (`MockLaunchDialog`, as the desktop
- * Home's Mock chip does) and a launch lands in the room. Rendered only while
- * practice drafts are released (`featureFlags.mockDrafts`, by the caller).
+ * Home's Mock chip does) as a phone sheet (`layout="mobile"`, gap list §4
+ * item 2), and a launch lands in the room. Rendered only while practice
+ * drafts are released (`featureFlags.mockDrafts`, by the caller).
  *
  * "Your mocks" (gap list §3 #2) sits in the title row the way Trending's
  * "See all" does: it opens the practice home (`/app/mocks`), the one page
@@ -58,6 +59,7 @@ export function HomePractice() {
         </span>
       </button>
       <MockLaunchDialog
+        layout="mobile"
         open={open}
         onOpenChange={setOpen}
         onLaunched={(created) => {

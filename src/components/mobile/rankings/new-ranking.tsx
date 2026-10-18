@@ -19,6 +19,7 @@ import {
   type RankPos,
   type RankType,
 } from '@/components/mobile/rankings/rankings-ops'
+import { MChoiceChip, MRadioCard } from '@/components/mobile/ui/m-form'
 import { NFL_SEASON, latestSaved, useMyRankingBoards, type MyBoard } from '@/hooks/use-mobile-rankings-boards'
 import { sourceDraft, useExpertsSource, useUsersSource } from '@/hooks/use-mobile-rankings-sources'
 import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
@@ -207,7 +208,7 @@ export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, on
             </div>
             <div className="flex flex-col gap-2" role="radiogroup" aria-label="Ranking type">
               {typeOptions.map((o) => (
-                <RadioCard key={o.key} label={o.label} sub={o.sub} on={o.on} onPick={o.pick} />
+                <MRadioCard key={o.key} label={o.label} sub={o.sub} on={o.on} onPick={o.pick} />
               ))}
             </div>
             {weekly && (
@@ -215,7 +216,7 @@ export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, on
                 <span className="text-[13px] font-semibold text-m-t3">Week</span>
                 <div className="flex flex-wrap gap-1.5">
                   {weeks.map((w) => (
-                    <Chip
+                    <MChoiceChip
                       key={w}
                       label={`Week ${w}`}
                       note={w === active ? 'This week' : undefined}
@@ -268,7 +269,7 @@ export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, on
               {sourcesPending
                 ? Array.from({ length: 3 }, (_, i) => <div key={i} className="h-[78px] rounded-[14px] bg-m-b1" />)
                 : options.map((o) => (
-                    <RadioCard
+                    <MRadioCard
                       key={o.key}
                       label={o.label}
                       sub={o.sub}
@@ -308,67 +309,5 @@ export function NewRanking({ step, type: typeProp, pos, currentWeek, onClose, on
         </button>
       </div>
     </div>
-  )
-}
-
-function RadioCard({
-  label,
-  sub,
-  on,
-  onPick,
-  top,
-}: {
-  label: string
-  sub: string
-  on: boolean
-  onPick: () => void
-  top?: string | null
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={on}
-      onClick={onPick}
-      className={cn('flex flex-col gap-2 rounded-[14px] bg-m-b1 px-3.5 py-3 text-left', on && 'shadow-m-select')}
-    >
-      <span className="flex w-full items-center gap-3">
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="whitespace-nowrap text-[15px] font-semibold text-m-t1">{label}</span>
-          <span className="text-[12px] font-medium text-m-t3">{sub}</span>
-        </span>
-        <RadioDot on={on} />
-      </span>
-      {top ? <span className="w-full truncate whitespace-nowrap text-[11px] font-medium text-m-t3">{top}</span> : null}
-    </button>
-  )
-}
-
-/** 20px radio: a 6px blue annulus around the card colour when on, a 1.5px b4 ring when off. */
-function RadioDot({ on }: { on: boolean }) {
-  return on ? (
-    <span aria-hidden className="flex size-5 flex-none items-center justify-center rounded-full bg-accent">
-      <span className="size-2 rounded-full bg-m-b1" />
-    </span>
-  ) : (
-    <span aria-hidden className="size-5 flex-none rounded-full border-[1.5px] border-m-b4m" />
-  )
-}
-
-function Chip({ label, note, on, onPick }: { label: string; note?: string; on: boolean; onPick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onPick}
-      className={cn(
-        'flex h-[34px] items-center gap-[5px] rounded-pill px-3.5 text-[13px] font-semibold',
-        on ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1',
-      )}
-    >
-      {label}
-      {/* Marks this week among the open ones (My rankings' count style). */}
-      {note ? <span className="text-[11px] font-semibold opacity-60">· {note}</span> : null}
-    </button>
   )
 }

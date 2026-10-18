@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 
+import { MCheck, MCheckRow } from '@/components/mobile/ui/m-form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,6 +35,7 @@ import {
   attachedToastLine,
   leagueOptions,
 } from './attach-list-ops'
+import { useSettingsSkin } from './settings-form-controls'
 
 /**
  * attach-list-modal (§16.2; §7.4; M2 task L.B4.2 — PROGRESS D122). The list
@@ -127,7 +129,10 @@ interface AttachListInlineProps {
 }
 
 /** The league-side body: suggestion one-tap + list picker + toggles.
- *  Inline-safe (no Dialog) — the create-flow offer composes it directly. */
+ *  Inline-safe (no Dialog) — the create-flow offer composes it directly.
+ *  On the phone (`SettingsSkin` mobile — the create-league sheet's success
+ *  step) it draws as the League tab's "Add a draft list" sheet does: the
+ *  blue suggestion strip, tick rows and tick toggles. */
 export function AttachListInline({
   leagueId,
   leagueName,
@@ -136,6 +141,7 @@ export function AttachListInline({
   onAttached,
 }: AttachListInlineProps) {
   const { user } = useAuth()
+  const skin = useSettingsSkin()
   const myLists = useMyDraftLists(user?.id)
   const attach = useAttachList(leagueId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -177,7 +183,17 @@ export function AttachListInline({
     )
   }
 
+  const m = skin === 'mobile'
   if (myLists.isPending) {
+    if (m) {
+      return (
+        <div className="flex flex-col gap-2" aria-busy="true">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <span key={i} className="block h-12 rounded-[12px] bg-m-b1" />
+          ))}
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col gap-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -187,6 +203,22 @@ export function AttachListInline({
     )
   }
   if (myLists.isError) {
+    if (m) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <p role="alert" className="text-[13px] font-medium text-m-t3">
+            Your lists didn&rsquo;t load.
+          </p>
+          <button
+            type="button"
+            onClick={() => void myLists.refetch()}
+            className="flex h-9 items-center rounded-pill bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
+          >
+            Try again
+          </button>
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col items-start gap-2">
         <p className="text-[11px] font-medium text-n-3" role="alert">
@@ -200,7 +232,7 @@ export function AttachListInline({
   }
   if (candidates.length === 0) {
     return (
-      <p className="py-3 text-center text-[11px] font-medium text-n-6">
+      <p className={m ? 'py-6 text-center text-[13px] font-medium leading-[1.4] text-m-t3' : 'py-3 text-center text-[11px] font-medium text-n-6'}>
         You don&rsquo;t have any lists yet. Build one on the Lists page and it
         will show up here.
       </p>
@@ -208,6 +240,71 @@ export function AttachListInline({
   }
 
   const selected = candidates.find((c) => c.id === selectedId) ?? null
+
+  if (m) {
+    return (
+      <div className="flex flex-col gap-3">
+        {suggestion && (
+          <div className="flex items-center gap-3 rounded-[14px] bg-m-gb px-3 py-2.5">
+            <span className="min-w-0 flex-1 text-[12px] font-semibold text-m-tb">
+              {suggestion.is_big_board && !suggestion.scoring_system_id
+                ? 'Your Big Board fits any draft.'
+                : `“${suggestion.title}” matches this league’s scoring.`}
+            </span>
+            <button
+              type="button"
+              disabled={attach.isPending}
+              onClick={() => submit(suggestion)}
+              className="flex h-8 flex-none items-center rounded-pill bg-accent px-3.5 text-[13px] font-semibold text-white active:bg-accent-strong disabled:opacity-50"
+            >
+              Attach {suggestion.is_big_board ? 'Big Board' : 'it'}
+            </button>
+          </div>
+        )}
+        <div role="radiogroup" aria-label="Your lists" className="flex flex-col">
+          {candidates.map((candidate) => {
+            const on = selectedId === candidate.id
+            return (
+              <button
+                key={candidate.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={candidate.attached}
+                onClick={() => setSelectedId(candidate.id)}
+                className="flex min-h-[52px] items-center gap-3 border-b border-m-b2 py-2 text-left disabled:opacity-60"
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-px">
+                  <span className="truncate text-[14px] font-semibold text-m-t1">{candidate.title}</span>
+                  <span className="truncate text-[12px] font-medium text-m-t3">
+                    {[listMetaLine(candidate), candidate.is_big_board ? 'Big Board' : null, candidate.attached ? 'Attached' : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
+                <MCheck on={on} />
+              </button>
+            )
+          })}
+        </div>
+        <MCheckRow
+          on={primary}
+          onChange={setPrimary}
+          label="Set as my primary board"
+          note="Feeds your draft Targets and autopick for this league (one per league)."
+        />
+        <MCheckRow on={shared} onChange={setShared} label="Share with the league" note="Every member can open it. Off, it stays visible only to you." />
+        <button
+          type="button"
+          disabled={!selected || attach.isPending}
+          onClick={() => selected && submit(selected)}
+          className="flex h-10 w-fit items-center rounded-pill bg-accent px-[18px] text-[14px] font-semibold text-white active:bg-accent-strong disabled:bg-m-b3s disabled:text-m-t3"
+        >
+          {attach.isPending ? 'Attaching…' : 'Attach list'}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-3">

@@ -101,22 +101,11 @@ export function GripIcon({ className }: { className?: string }) {
 }
 
 // =============================================================================
-// Ranked / Tiers switch (lr-frame §2.13.10): 38×22 track, 18px knob
+// Ranked / Tiers switch (lr-frame §2.13.10): 38×22 track, 18px knob — the
+// phone's one switch, shared from the mobile form parts.
 // =============================================================================
 
-export function SwitchTrack({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        'flex h-[22px] w-[38px] flex-none rounded-pill p-0.5 transition-colors duration-200 ease-linear',
-        on ? 'justify-end bg-confirm' : 'justify-start bg-m-b3s',
-      )}
-    >
-      <span className="size-[18px] rounded-full bg-m-b0 shadow-m-knob" />
-    </span>
-  )
-}
+export { SwitchTrack } from '@/components/mobile/ui/m-form'
 
 // =============================================================================
 // Time-frame control (lr-frame §2.13.11 n): Week N | Last 3 | Season
