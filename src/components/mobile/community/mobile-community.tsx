@@ -14,6 +14,8 @@ import {
   RowsSkeleton,
   ShelfHeader,
   UpdatedRow,
+  pagedReadFailed,
+  retryFailedReads,
 } from '@/components/mobile/community/community-cards'
 import {
   COMMUNITY_TABS,
@@ -196,6 +198,16 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const ranksReading = rankRead !== OLDER_NONE
   const listsReading = listRead !== OLDER_NONE
   const mixed = tab === 'all' || tab === 'following'
+  // Nothing shows and a read past the pool failed: one message for the
+  // screen, with one Try again for every read that failed — not a "Couldn’t
+  // load more" per read (two stacked, and "more" with nothing loaded).
+  const failedReads = [ranksReading && olderRanks, listsReading && olderLists].filter(
+    (r): r is typeof olderRanks => r !== false && pagedReadFailed(r),
+  )
+  const olderFailedBlank = results.loading && failedReads.length > 0
+  const olderFailedCopy = q
+    ? 'Couldn’t finish the search.'
+    : `Couldn’t load the ${ranksReading && listsReading ? 'lists and rankings' : ranksReading ? 'rankings' : 'lists'}.`
   // What For you can show — the lists a Trending tag may filter to.
   const forYouShown = useMemo(
     () => [...items, ...(feed.data?.popularExtra ?? [])].filter((i) => featureFlags.weeklyRanks || i.kind !== 'rank'),
@@ -417,16 +429,20 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                 {/* Older rankings: on the Rankings tab they're the last
                     section, so they load as you scroll; above the lists,
                     by hand. Drawn with no ranking shown too while nothing
-                    shows at all, or when the read failed. */}
-                {ranksReading && (ranks.length > 0 || tab === 'rank' || results.loading || olderRanks.isError) && (
-                  <MoreFooter
-                    read={olderRanks}
-                    auto={tab === 'rank'}
-                    label="More rankings"
-                    nothingShown={ranks.length === 0}
-                    skeleton={<RowsSkeleton count={2} label="Loading more rankings" />}
-                  />
-                )}
+                    shows at all, or when the read failed — saying it was
+                    the rankings, above the Lists heading. */}
+                {ranksReading &&
+                  !olderFailedBlank &&
+                  (ranks.length > 0 || tab === 'rank' || results.loading || olderRanks.isError) && (
+                    <MoreFooter
+                      read={olderRanks}
+                      auto={tab === 'rank'}
+                      label="More rankings"
+                      errorLabel={ranks.length > 0 ? 'Couldn’t load more rankings.' : 'Couldn’t load the rankings.'}
+                      nothingShown={ranks.length === 0}
+                      skeleton={<RowsSkeleton count={2} label="Loading more rankings" />}
+                    />
+                  )}
                 {listBlocks.length > 0 && (
                   <>
                     {mixed && <h2 className="mb-[10px] mt-5 text-[15px] font-semibold">Lists</h2>}
@@ -441,15 +457,19 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                     </div>
                   </>
                 )}
-                {listsReading && (
+                {listsReading && !olderFailedBlank && (
                   <MoreFooter
                     read={olderLists}
                     auto
+                    errorLabel={listBlocks.length > 0 ? 'Couldn’t load more lists.' : 'Couldn’t load the lists.'}
                     nothingShown={results.loading}
                     skeleton={<CardsSkeleton label="Loading more lists" />}
                   />
                 )}
                 {results.empty && <EmptyBlock message={copy.message} action={copy.action} onAction={onEmptyAction} />}
+                {olderFailedBlank && (
+                  <EmptyBlock message={olderFailedCopy} action="Try again" onAction={() => retryFailedReads(failedReads)} />
+                )}
               </>
             )}
           </>

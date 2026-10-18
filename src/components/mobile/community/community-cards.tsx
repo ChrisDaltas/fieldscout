@@ -401,6 +401,26 @@ export interface PagedRead {
   refetch: () => unknown
 }
 
+/** A paged read's first page failed — nothing read, so it's retried whole. */
+function firstPageFailed(read: PagedRead): boolean {
+  return read.isError && read.data === undefined
+}
+
+/** A paged read has failed and is waiting on Try again: its first page, or
+ *  a later one (what was read stays shown). */
+export function pagedReadFailed(read: PagedRead): boolean {
+  return firstPageFailed(read) || read.isFetchNextPageError
+}
+
+/** One Try again for every read given that failed: a read whose first page
+ *  failed is read again whole; one whose later page failed, that page. */
+export function retryFailedReads(reads: readonly PagedRead[]): void {
+  for (const read of reads) {
+    if (firstPageFailed(read)) void read.refetch()
+    else if (read.isFetchNextPageError) void read.fetchNextPage()
+  }
+}
+
 /**
  * The end of a paged list (the Latest page; Community's results past the
  * pool — gap list §3 #30): nothing is cut off. While there's more, a button
@@ -408,19 +428,22 @@ export interface PagedRead {
  * near, again after each page while it still is (a page whose rows were all
  * left out adds none) — for the last section on a screen. Reading shows
  * `skeleton`; so does a page to come while nothing shows yet (`nothingShown`)
- * rather than a button on a blank screen. A failed page says so, with Try
+ * rather than a button on a blank screen. A failed page says so
+ * (`errorLabel` — a screen with two paged sections names which), with Try
  * again — never a quiet end.
  */
 export function MoreFooter({
   read,
   auto,
   label = 'Load more',
+  errorLabel = 'Couldn’t load more.',
   nothingShown = false,
   skeleton,
 }: {
   read: PagedRead
   auto: boolean
   label?: string
+  errorLabel?: string
   nothingShown?: boolean
   skeleton: ReactNode
 }) {
@@ -442,19 +465,16 @@ export function MoreFooter({
     if (nearEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
   }, [nearEnd, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
 
-  // The first page failing (nothing read) is retried as a whole; a later one
-  // on its own.
-  const firstFailed = read.isError && read.data === undefined
   const reading = (read.data === undefined && !read.isError) || isFetchingNextPage
   return (
     <>
       {auto && <div ref={setEndEl} />}
-      {firstFailed || isFetchNextPageError ? (
+      {pagedReadFailed(read) ? (
         <div className="flex flex-col items-center gap-2 py-6 text-center" role="alert">
-          <p className="text-[13px] font-medium text-m-t3">Couldn’t load more.</p>
+          <p className="text-[13px] font-medium text-m-t3">{errorLabel}</p>
           <button
             type="button"
-            onClick={() => void (firstFailed ? read.refetch() : fetchNextPage())}
+            onClick={() => retryFailedReads([read])}
             className="text-[13px] font-semibold text-accent"
           >
             Try again

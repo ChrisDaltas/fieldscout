@@ -9,8 +9,10 @@
  *  - the read past the pool is asked with the same tab / topic / search /
  *    chips;
  *  - nothing found yet but still reading: loading, never "Nothing matches";
- *    a failed read says so with Try again; the empty state only once every
- *    list has been searched.
+ *    a failed read says so with Try again — with nothing shown, one message
+ *    for the screen whose one Try again retries every failed read; else
+ *    under the section it belongs to, naming it; the empty state only once
+ *    every list has been searched.
  */
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -24,6 +26,7 @@ const h = vi.hoisted(() => ({
   feed: {} as Record<string, unknown>,
   older: {} as Record<'rank' | 'list', Record<string, unknown>>,
   olderArgs: [] as { spec: unknown; from: unknown; ready: unknown }[],
+  emptyActions: [] as { message: string; onAction: () => void }[],
 }))
 
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: h.flags }))
@@ -39,6 +42,17 @@ vi.mock('@/components/mobile/ui/mobile-header', () => ({
   LogoLockup: () => createElement('span', null, 'FieldScout'),
 }))
 vi.mock('@/components/mobile/community/create-sheet', () => ({ CreateSheet: () => null }))
+// The static render can't tap: keep each empty/error block's action to call.
+vi.mock('@/components/mobile/community/community-cards', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/components/mobile/community/community-cards')>()
+  return {
+    ...orig,
+    EmptyBlock: (props: Parameters<typeof orig.EmptyBlock>[0]) => {
+      h.emptyActions.push(props)
+      return orig.EmptyBlock(props)
+    },
+  }
+})
 vi.mock('@/components/mobile/community/community-detail', () => ({ CommunityDetail: () => null }))
 vi.mock('@/components/mobile/community/community-shelves', () => ({
   TopScoutsShelf: () => null,
@@ -142,6 +156,7 @@ const blocks = (out: string) =>
 beforeEach(() => {
   h.flags.weeklyRanks = true
   h.olderArgs.length = 0
+  h.emptyActions.length = 0
   h.older = { rank: read(), list: read() }
   useCommunityStore.setState({ tab: 'list', topic: null, query: '', searchOpen: false, rk: { type: 'all', pos: 'all', scoring: 'all' } })
   setFeed([item('p1'), item('p2')], FROM)
@@ -204,9 +219,62 @@ describe('Community past the pool (gap list §3 #30)', () => {
     useCommunityStore.setState({ tab: 'list', searchOpen: true, query: 'zzz' })
     h.older.list = read({ isError: true })
     const out = render()
-    expect(out).toContain('Couldn’t load more.')
+    expect(out).toContain('Couldn’t finish the search.')
     expect(out).toContain('Try again')
+    expect(out).not.toContain('Couldn’t load more')
     expect(out).not.toContain('Nothing matches')
+    // No search: it names what didn't load.
+    useCommunityStore.setState({ tab: 'list', searchOpen: false, query: '' })
+    setFeed([], FROM)
+    expect(render()).toContain('Couldn’t load the lists.')
+  })
+
+  it('both reads failed with nothing shown: one message, one Try again that retries both', () => {
+    useCommunityStore.setState({ tab: 'all', searchOpen: true, query: 'zzq' })
+    h.older.rank = read({ isError: true })
+    h.older.list = read({ isError: true })
+    const out = render()
+    expect(out.match(/Couldn’t finish the search\./g)).toHaveLength(1)
+    expect(out.match(/>Try again</g)).toHaveLength(1)
+    expect(out).not.toContain('Couldn’t load more')
+    expect(out).not.toContain('aria-busy')
+    const block = h.emptyActions.find((a) => a.message === 'Couldn’t finish the search.')
+    block!.onAction()
+    expect(h.older.rank.refetch).toHaveBeenCalledTimes(1)
+    expect(h.older.list.refetch).toHaveBeenCalledTimes(1)
+    // A later page that failed is read again on its own (not the whole read).
+    h.emptyActions.length = 0
+    h.older.rank = read({ isError: true })
+    h.older.list = read({ data: pages([]), hasNextPage: true, isError: true, isFetchNextPageError: true })
+    render()
+    h.emptyActions.find((a) => a.message === 'Couldn’t finish the search.')!.onAction()
+    expect(h.older.rank.refetch).toHaveBeenCalledTimes(1)
+    expect(h.older.list.fetchNextPage).toHaveBeenCalledTimes(1)
+    expect(h.older.list.refetch).not.toHaveBeenCalled()
+  })
+
+  it('something shown: a failed read says so under its own section, naming it', () => {
+    useCommunityStore.setState({ tab: 'all', searchOpen: true, query: 'title' })
+    // No ranking shown, the lists are: the rankings' failure, above the Lists heading.
+    h.older.rank = read({ isError: true })
+    h.older.list = read({ data: pages([item('ol')]) })
+    let out = render()
+    const failed = out.indexOf('Couldn’t load the rankings.')
+    expect(failed).toBeGreaterThan(-1)
+    expect(failed).toBeLessThan(out.indexOf('>Lists</h2>'))
+    expect(out).not.toContain('Couldn’t finish the search.')
+    expect(out).not.toContain('Couldn’t load more.')
+    // Rankings and lists shown, a later page of each failed: each says which.
+    setFeed([item('p1'), item('pr', { kind: 'rank', rankType: 'season' })], FROM)
+    const pageFailed = { hasNextPage: true, isError: true, isFetchNextPageError: true }
+    h.older.rank = read({ data: pages([]), ...pageFailed })
+    h.older.list = read({ data: pages([item('ol')]), ...pageFailed })
+    out = render()
+    const moreRanks = out.indexOf('Couldn’t load more rankings.')
+    const lists = out.indexOf('>Lists</h2>')
+    expect(moreRanks).toBeGreaterThan(out.indexOf('>Rankings</h2>'))
+    expect(moreRanks).toBeLessThan(lists)
+    expect(out.indexOf('Couldn’t load more lists.')).toBeGreaterThan(lists)
   })
 
   it('For you with a search: the older rankings after the pool’s, "More rankings" by hand above the lists', () => {
