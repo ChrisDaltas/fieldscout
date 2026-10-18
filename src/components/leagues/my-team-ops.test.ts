@@ -35,6 +35,10 @@ import {
   type AutosaveStatus,
   type QueuedMove,
   formatSnap,
+  injuredStarters,
+  injuryTag,
+  starterIdsOf,
+  startersOnBye,
 } from './my-team-ops'
 
 function player(over: Partial<RosterPlayer> & Pick<RosterPlayer, 'player_id' | 'position' | 'full_name'>): RosterPlayer {
@@ -191,6 +195,34 @@ describe('projected total + the Lineup check', () => {
     expect(lineupChecks({ ...base, mine: null, opponent: null }).map((c) => c.id)).toEqual(['starters', 'injury', 'bye'])
     expect(lineupChecks({ ...base, mine: { total: 1, missing: 1 }, opponent: { name: 'R', projected: { total: 1, missing: 0 } } }).some((c) => c.id === 'proj')).toBe(false)
     expect(lineupChecks({ ...base, mine: { total: 1, missing: 0 }, opponent: { name: 'R', projected: { total: 1, missing: 2 } } }).some((c) => c.id === 'proj')).toBe(false)
+  })
+})
+
+describe('the Lineup check’s shared rules (desktop check + the phone’s card)', () => {
+  it('injured: a status tag or an injury designation; named by the tag', () => {
+    const ps = [
+      player({ player_id: 'a', position: 'QB', full_name: 'A', status: 'Questionable' }),
+      player({ player_id: 'b', position: 'RB', full_name: 'B', status: 'PUP' }),
+      player({ player_id: 'c', position: 'WR', full_name: 'C', status: 'Active' }),
+    ]
+    expect(injuredStarters(ps).map((x) => x.player_id)).toEqual(['a', 'b'])
+    expect([injuryTag('Questionable'), injuryTag('out'), injuryTag('IR'), injuryTag('PUP'), injuryTag('Active')]).toEqual(['Q', 'O', 'IR', 'PUP', null])
+  })
+
+  it('on bye: his own bye week, or no game for his team in a week that has games', () => {
+    const ps = [
+      player({ player_id: 'a', position: 'QB', full_name: 'A', bye_week: 5 }),
+      player({ player_id: 'b', position: 'RB', full_name: 'B', nfl_team: 'DAL' }),
+      player({ player_id: 'c', position: 'WR', full_name: 'C' }),
+    ]
+    const games = [{ home_team: 'KC', away_team: 'BUF', kickoff_at: 'x' }]
+    expect(startersOnBye(ps, 5, games).map((x) => x.player_id)).toEqual(['a', 'b'])
+    expect(startersOnBye(ps, 5, []).map((x) => x.player_id)).toEqual(['a'])
+  })
+
+  it('a stored lineup’s starters leave out the IR seats', () => {
+    expect(starterIdsOf({ 'qb:0': 'q', 'ir1:0': 'hurt', 'rb:1': 'r' }, [{ key: 'ir1' }])).toEqual(['q', 'r'])
+    expect(starterIdsOf({}, [{ key: 'ir1' }])).toEqual([])
   })
 })
 
