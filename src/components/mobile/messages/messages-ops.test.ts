@@ -18,11 +18,16 @@ import {
   FORMER_MEMBER,
   MANAGER_COLORS,
   MY_COLOR,
+  NEAR_TOP_PX,
+  boardRows,
   bubbleRadius,
   dayLabel,
+  firstMessageOf,
   followsNewMessage,
   isNearBottom,
+  isNearTop,
   lastMessageOf,
+  olderState,
   PIN_SLACK_PX,
   senderHandle,
   initialOf,
@@ -210,6 +215,51 @@ describe('following the conversation (#47)', () => {
     expect(lastMessageOf(items)).toEqual({ key: items[items.length - 1]!.key, fromMe: true })
     expect(lastMessageOf([{ kind: 'day', key: 'd', label: 'Today' }])).toBeNull()
     expect(lastMessageOf([])).toBeNull()
+  })
+})
+
+describe('older posts as you scroll up (gap list §3 #23)', () => {
+  it('asks for more once the top of the list is within about a screen above the view', () => {
+    expect(isNearTop({ listTop: 100, viewTop: 0 })).toBe(true)
+    expect(isNearTop({ listTop: -NEAR_TOP_PX, viewTop: 0 })).toBe(true)
+    expect(isNearTop({ listTop: -NEAR_TOP_PX - 1, viewTop: 0 })).toBe(false)
+    // Measured against where the scroller's view starts, not the page's top.
+    expect(isNearTop({ listTop: 56 - NEAR_TOP_PX, viewTop: 56 })).toBe(true)
+    expect(isNearTop({ listTop: 55 - NEAR_TOP_PX, viewTop: 56 })).toBe(false)
+  })
+
+  it('the oldest message skips the day separators', () => {
+    const t = ago(HOUR)
+    const items = threadItems([msg('a', 'leo', t), msg('b', 'me', t)], true, NOW)
+    expect(items[0]!.kind).toBe('day')
+    expect(firstMessageOf(items)).toBe('a')
+    expect(firstMessageOf([{ kind: 'day', key: 'd', label: 'Today' }])).toBeNull()
+  })
+
+  const base = { paging: false, windowFull: false, pending: true, fetching: false, error: false, hasMore: false }
+
+  it('before paging: older posts may exist only when the first read came back full', () => {
+    expect(olderState(base)).toBe('none')
+    expect(olderState({ ...base, windowFull: true })).toBe('idle')
+  })
+
+  it('paging: loading while a page is on its way, Try again when it failed, idle while more remain, then the start', () => {
+    const paging = { ...base, paging: true }
+    expect(olderState({ ...paging, pending: true, fetching: true })).toBe('loading')
+    expect(olderState({ ...paging, pending: true })).toBe('loading')
+    expect(olderState({ ...paging, pending: false, error: true })).toBe('error')
+    // A retry in flight shows as loading again, not as the old error.
+    expect(olderState({ ...paging, pending: false, error: true, fetching: true })).toBe('loading')
+    expect(olderState({ ...paging, pending: false, hasMore: true })).toBe('idle')
+    expect(olderState({ ...paging, pending: false, hasMore: false })).toBe('start')
+  })
+
+  it('lays the older pages (newest page first) and the live read out oldest → newest, each post once', () => {
+    const r = (id: string) => ({ id })
+    const pages = [{ rows: [r('4'), r('5')] }, { rows: [r('1'), r('2'), r('3')] }]
+    expect(boardRows(pages, [r('5'), r('6'), r('7')])?.map((x) => x.id)).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+    expect(boardRows(undefined, [r('6')])?.map((x) => x.id)).toEqual(['6'])
+    expect(boardRows(pages, undefined)).toBeUndefined()
   })
 })
 

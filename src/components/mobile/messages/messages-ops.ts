@@ -237,6 +237,80 @@ export function lastMessageOf(items: readonly ThreadItem[]): { key: string; from
   return null
 }
 
+/** The oldest message in a laid-out thread (separators skipped). */
+export function firstMessageOf(items: readonly ThreadItem[]): string | null {
+  for (const item of items) if (item.kind === 'msg') return item.key
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Older posts as you scroll up (gap list §3 #23)
+// ---------------------------------------------------------------------------
+
+/** How far above the screen the oldest loaded post may still be when the
+ *  next older page is asked for — about a screen, so it is usually there
+ *  before the reader reaches the top. */
+export const NEAR_TOP_PX = 600
+
+/** Whether the top of the message list is within `slack` above what the
+ *  scroller shows (`listTop` / `viewTop` are on-screen y positions). */
+export function isNearTop(m: { listTop: number; viewTop: number }, slack: number = NEAR_TOP_PX): boolean {
+  return m.listTop >= m.viewTop - slack
+}
+
+/**
+ * The top of a board thread, above its oldest loaded post:
+ *  - `none`    — nothing older exists (the board fits in its first window): nothing shown;
+ *  - `idle`    — older posts exist and load when the reader scrolls near;
+ *  - `loading` — a page of them is on its way;
+ *  - `error`   — that read failed: a Try again (never an automatic loop);
+ *  - `start`   — scrolled back to the board's first post.
+ * Every state but `none` holds the same height, so a change between them
+ * never moves what the reader is looking at.
+ */
+export type OlderState = 'none' | 'idle' | 'loading' | 'error' | 'start'
+
+export function olderState(s: {
+  /** Older pages have been asked for (the board has a `from`). */
+  paging: boolean
+  /** Before paging: the latest window came back full, so there may be more. */
+  windowFull: boolean
+  /** The older pages: holding no page yet / reading / failed / another to read. */
+  pending: boolean
+  fetching: boolean
+  error: boolean
+  hasMore: boolean
+}): OlderState {
+  if (!s.paging) return s.windowFull ? 'idle' : 'none'
+  if (s.fetching) return 'loading'
+  if (s.error) return 'error'
+  if (s.pending) return 'loading'
+  return s.hasMore ? 'idle' : 'start'
+}
+
+/**
+ * A board thread's posts, oldest first: the older pages (newest page first,
+ * each oldest-first) and then the live read, each post once. Undefined until
+ * the live read has something to show.
+ */
+export function boardRows<T extends { id: string }>(
+  olderPages: readonly { rows: readonly T[] }[] | undefined,
+  live: readonly T[] | undefined,
+): T[] | undefined {
+  if (!live) return undefined
+  const seen = new Set<string>()
+  const out: T[] = []
+  const add = (row: T) => {
+    if (seen.has(row.id)) return
+    seen.add(row.id)
+    out.push(row)
+  }
+  const pages = olderPages ?? []
+  for (let i = pages.length - 1; i >= 0; i -= 1) pages[i]!.rows.forEach(add)
+  live.forEach(add)
+  return out
+}
+
 // ---------------------------------------------------------------------------
 // Thread geometry (§2.2 B)
 // ---------------------------------------------------------------------------

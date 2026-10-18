@@ -11,9 +11,11 @@ import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-ca
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeague } from '@/hooks/use-league'
-import { useLeagueChat, useSendLeagueChat } from '@/hooks/use-league-chat'
+import { useSendLeagueChat } from '@/hooks/use-league-chat'
 import { useLeagues } from '@/hooks/use-leagues'
+import { useMobileLeagueBoard } from '@/hooks/use-mobile-league-board'
 import { useMobileMessagesDms } from '@/hooks/use-mobile-messages-dms'
+import { useMobileMessagesOlder } from '@/hooks/use-mobile-messages-older'
 import { useMobileMessagesPinBottom } from '@/hooks/use-mobile-messages-pin-bottom'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
@@ -26,6 +28,7 @@ import {
   MY_COLOR,
   bubbleRadius,
   senderHandle,
+  firstMessageOf,
   initialOf,
   lastMessageOf,
   leagueIdOfThread,
@@ -33,6 +36,7 @@ import {
   seatColor,
   threadItems,
   type MChatMessage,
+  type OlderState,
   type ThreadItem,
 } from './messages-ops'
 import { useMessagesStore } from './messages-store'
@@ -42,6 +46,9 @@ export const THREAD_MISSING_BODY = 'It may have been removed, or it isn’t one 
 export const THREAD_ERROR_TITLE = 'Couldn’t load this conversation.'
 export const BOARD_EMPTY_TITLE = 'No messages yet'
 export const BOARD_EMPTY_BODY = 'Say something to the league.'
+export const OLDER_LOADING = 'Loading earlier messages…'
+export const OLDER_ERROR = 'Couldn’t load earlier messages — try again'
+export const OLDER_START = 'Start of the conversation'
 /** The league board's post limit (065's 1..500 chars). */
 const MAX_MESSAGE = 500
 
@@ -54,7 +61,10 @@ const MAX_MESSAGE = 500
  *
  * It opens at the NEWEST message and follows new ones as they arrive,
  * unless the reader has scrolled up to read (Chris, #47, 2026-10-15 — the
- * design opened at the oldest; `useMobileMessagesPinBottom`).
+ * design opened at the oldest; `useMobileMessagesPinBottom`). A board's
+ * older posts load as the reader scrolls up, and what they are reading
+ * stays put as they land (gap list §3 #23; `useMobileLeagueBoard`,
+ * `useMobileMessagesOlder`).
  * There is no info (i) or "+" button: the design gives them no flow (it
  * only toasts "Not part of this prototype").
  */
@@ -91,7 +101,7 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
   const viewerId = user?.id ?? null
   const leagues = useLeagues()
   const detail = useLeague(leagueId)
-  const chat = useLeagueChat(leagueId)
+  const chat = useMobileLeagueBoard(leagueId)
   const send = useSendLeagueChat(leagueId, viewerId)
   const [draft, setDraft] = useState('')
 
@@ -117,7 +127,7 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
 
   const messages = useMemo(
     () =>
-      (chat.data ?? []).map((row): MChatMessage => {
+      (chat.rows ?? []).map((row): MChatMessage => {
         const fromMe = viewerId !== null && row.user_id === viewerId
         const who = row.user_id ? people.get(row.user_id) : undefined
         return {
@@ -132,8 +142,9 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
           at: row.created_at,
         }
       }),
-    [chat.data, people, viewerId],
+    [chat.rows, people, viewerId],
   )
+  const items = useMemo(() => threadItems(messages, true), [messages])
 
   const ready = !chat.isPending && !detail.isPending
   const isMember = viewerId !== null && people.has(viewerId)
@@ -177,7 +188,7 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
     )
   } else if (!ready) {
     body = <BubblesSkeleton />
-  } else if (chat.isError && !chat.data) {
+  } else if (chat.isError && !chat.rows) {
     body = (
       <MessagesEmpty title={THREAD_ERROR_TITLE} role="alert">
         <button type="button" className={EMPTY_PILL} onClick={() => void chat.refetch()}>
@@ -188,7 +199,7 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
   } else if (messages.length === 0) {
     body = <MessagesEmpty title={BOARD_EMPTY_TITLE} body={isMember ? BOARD_EMPTY_BODY : undefined} />
   } else {
-    body = <MessageList items={threadItems(messages, true)} group />
+    body = <MessageList items={items} group older={chat.older} />
   }
 
   return (
@@ -283,12 +294,15 @@ function GoBackPill({ onBack }: { onBack: () => void }) {
 /**
  * The thread screen: sticky header, the messages in page flow, and the
  * composer pinned just above the dock. The prototype's tab bar covered the
- * composer (§2.2 C) — a defect; here it always sits clear of it.
+ * composer (§2.2 C) — a defect; here it always sits clear of it. The
+ * browser's own scroll anchoring is off here: the thread holds the reading
+ * position itself as older posts land (`useMobileMessagesOlder`), and two
+ * corrections would double the jump.
  */
 function ThreadFrame({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
   return (
     <MobileScreen header={header}>
-      <div className="flex min-h-[calc(100vh-var(--m-dockpad)-56px-env(safe-area-inset-top))] flex-col" data-thread>
+      <div className="flex min-h-[calc(100vh-var(--m-dockpad)-56px-env(safe-area-inset-top))] flex-col [overflow-anchor:none]" data-thread>
         {children}
       </div>
     </MobileScreen>
@@ -327,14 +341,31 @@ function ThreadHeader({
   )
 }
 
+const NO_OLDER = { state: 'none', load: () => {} } as const
+
 /** §2.2 B — day separators, runs of bubbles, avatars on their last bubble.
- *  Opens at the newest and follows new ones while the reader is there (#47). */
-function MessageList({ items, group }: { items: ThreadItem[]; group: boolean }) {
+ *  Opens at the newest and follows new ones while the reader is there (#47);
+ *  a board's older posts load as the reader scrolls up (§3 #23). */
+function MessageList({
+  items,
+  group,
+  older = NO_OLDER,
+}: {
+  items: ThreadItem[]
+  group: boolean
+  older?: { state: OlderState; load: () => void }
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const last = useMemo(() => lastMessageOf(items), [items])
   useMobileMessagesPinBottom(ref, last)
+  useMobileMessagesOlder(ref, {
+    canLoad: older.state === 'idle',
+    onLoad: older.load,
+    layout: `${firstMessageOf(items) ?? ''}|${items.length}|${older.state}`,
+  })
   return (
     <div ref={ref} className="flex flex-1 flex-col gap-1 px-3 py-4" role="log" aria-label="Messages" data-message-list={group ? 'group' : 'direct'}>
+      <OlderSlot state={older.state} onRetry={older.load} />
       {items.map((item, i) =>
         item.kind === 'day' ? (
           <span key={item.key} className={cn('self-center pb-2 text-[11px] font-medium text-m-t3', i > 0 && 'mt-2')}>
@@ -344,6 +375,33 @@ function MessageList({ items, group }: { items: ThreadItem[]; group: boolean }) 
           <MessageRow key={item.key} item={item} />
         ),
       )}
+    </div>
+  )
+}
+
+/**
+ * The top of a board thread (§3 #23 — the design shows none of it): one
+ * fixed-height line above the oldest loaded post, so moving between its
+ * states never moves the posts below. Blank while more can load (it loads
+ * as you near it), a quiet "Loading…", a Try again when a read failed, and
+ * "Start of the conversation" once scrolled back to the first post — never
+ * a silent stop. Nothing at all when the board fits its first read.
+ */
+export function OlderSlot({ state, onRetry }: { state: OlderState; onRetry: () => void }) {
+  if (state === 'none') return null
+  return (
+    <div className="flex h-8 flex-none items-center justify-center text-[11px] text-m-t3" data-older={state}>
+      {state === 'loading' && (
+        <span className="font-medium" role="status">
+          {OLDER_LOADING}
+        </span>
+      )}
+      {state === 'error' && (
+        <button type="button" onClick={onRetry} className="flex h-8 items-center px-2 font-semibold text-accent">
+          {OLDER_ERROR}
+        </button>
+      )}
+      {state === 'start' && <span className="font-medium">{OLDER_START}</span>}
     </div>
   )
 }
