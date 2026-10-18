@@ -3,8 +3,11 @@
  * abbreviation. Sourced from docs/nfl-team-colors.md.
  *
  * The color we expose is the team's "main identity" color (the one most
- * fans recognize the team by) — used in the player card to tint the
- * headshot circle with a subtle team-flavored background.
+ * fans recognize the team by). `primary` is what every headshot ring, team
+ * tile and player header paints, on desktop and phone alike, and it matches
+ * the design handoff's team colour map (`TC` in FSHeadshot) exactly — pinned
+ * by nfl-team-colors.test.ts. Seattle is College Navy there, not Action Green
+ * (gap list §4 item 5).
  */
 export interface NflTeamColors {
   primary: string
@@ -58,7 +61,7 @@ export const NFL_TEAM_COLORS: Record<string, NflTeamColors> = {
   ARI: { primary: '#97233F', secondary: '#000000' },
   LAR: { primary: '#003594', secondary: '#FFA300' },
   SF: { primary: '#AA0000', secondary: '#B3995D' },
-  SEA: { primary: '#69BE28', secondary: '#002244' },
+  SEA: { primary: '#002244', secondary: '#69BE28' },
 }
 
 const FALLBACK: NflTeamColors = {
