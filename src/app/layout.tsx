@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Silkscreen } from 'next/font/google'
+import localFont from 'next/font/local'
 
 import './globals.css'
 import { DevAuthBadge } from '@/components/dev/dev-auth-badge'
@@ -19,11 +20,31 @@ const silkscreen = Silkscreen({
 
 // All UI text and numerals (v7 look) — Inter with the optical-size axis,
 // pinned to its Display cut in globals.css. --font-sans and --font-mono both
-// alias it; .fs-num keeps tabular digits so stat columns stay aligned.
+// alias it; .fs-num keeps tabular digits so stat columns stay aligned (the
+// phone layout has them everywhere — see interPhone below).
 const inter = Inter({
   subsets: ['latin'],
   axes: ['opsz'],
   variable: '--font-inter',
+})
+
+// Phone layout only (gap list §4 item 4): the full Inter 4.1 build (rsms,
+// SIL OFL 1.1 — the licence text and copyright ship beside it in
+// fonts/LICENSE-inter.txt; converted TTF → WOFF2 with every table
+// unchanged). Google's copy above strips the
+// character variants, so it can't draw the design's single-storey "a"
+// (cv11). globals.css puts it first in the font stack for
+// `html[data-layout='mobile']` only, so desktop never downloads it (hence no
+// preload); until it arrives a phone shows the Google Inter behind it, which
+// has the same metrics.
+const interPhone = localFont({
+  src: './fonts/inter-variable.woff2',
+  weight: '100 900',
+  style: 'normal',
+  display: 'swap',
+  preload: false,
+  adjustFontFallback: false,
+  variable: '--font-inter-phone',
 })
 
 // viewport-fit=cover is set only by the app shell's layout, where the mobile
@@ -58,6 +79,7 @@ export default function RootLayout({
           'min-h-screen bg-background font-sans text-foreground antialiased',
           silkscreen.variable,
           inter.variable,
+          interPhone.variable,
         )}
       >
         <QueryProvider>
