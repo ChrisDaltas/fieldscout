@@ -115,6 +115,15 @@ export interface ScoringOption {
   label: string
 }
 
+/** The leagues a scoring picker can offer: a league's scoring is frozen at
+ *  draft start (spec §7.3.3), so before it (setup / scheduled) the league
+ *  has no scoring to read and the core-stats read refuses it. Feed this to
+ *  both the options and `resolveChoice`, so a remembered pre-draft league
+ *  falls back to the default too. */
+export function scoredLeagues<T extends { status: string }>(leagues: readonly T[]): T[] {
+  return leagues.filter((l) => l.status !== 'setup' && l.status !== 'scheduled')
+}
+
 /** The three presets, then one option per league the viewer is in. */
 export function scoringOptions(leagues: readonly { id: string; name: string }[]): ScoringOption[] {
   return [

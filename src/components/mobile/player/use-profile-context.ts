@@ -10,7 +10,7 @@ import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { usePlayerCoreStats } from '@/hooks/use-player-core-stats'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
-import { choiceValue, resolveChoice, SCORING_CHOICE_STORAGE_KEY } from '@/lib/players/core-stats-ops'
+import { choiceValue, resolveChoice, SCORING_CHOICE_STORAGE_KEY, scoredLeagues } from '@/lib/players/core-stats-ops'
 
 /**
  * The league the profile's header action, ownership row and History
@@ -65,13 +65,14 @@ function writeStoredChoice(v: string) {
  *  view (D486(11)): a pick in the strip's scoring chip (gap list §3 #18);
  *  else the league he was opened in; else the viewer's remembered pick
  *  (shared with desktop's dropdown); else ESPN Standard. The chip offers
- *  PPR / Half / 0.25 / Standard and the viewer's leagues; a pick is
- *  remembered for the next profile. */
+ *  PPR / Half / 0.25 / Standard and the viewer's drafted leagues; a pick
+ *  is remembered for the next profile. */
 export function useProfileScoring(playerId: string, leagueId: string | null) {
   const league = useLeague(featureFlags.leagues && leagueId ? leagueId : undefined)
   const leagueParam = featureFlags.leagues && leagueId && !league.isError ? leagueId : null
   const leagues = useLeagues({ enabled: featureFlags.leagues })
-  const myLeagues = featureFlags.leagues ? (leagues.isError ? [] : (leagues.data ?? null)) : []
+  // Only leagues whose scoring is set (drafted) — a pre-draft one can't be read.
+  const myLeagues = featureFlags.leagues ? (leagues.isError ? [] : leagues.data ? scoredLeagues(leagues.data) : null) : []
   const [picked, setPicked] = useState<string | null>(null)
   const [stored, setStored] = useState<string | null>(null)
   useEffect(() => setStored(readStoredChoice()), [])

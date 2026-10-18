@@ -15,6 +15,7 @@ import {
   resolveChoice,
   isScoringSystemKey,
   SCORING_SYSTEMS,
+  scoredLeagues,
   scoringOptions,
 } from './core-stats-ops'
 import { systemRules } from './core-stats-service'
@@ -139,6 +140,28 @@ describe('core stats — scoring dropdown (Chris 2026-10-04)', () => {
     expect(coreStatsQuery(before)).toBe('?league=L1')
     expect(coreStatsQuery(after)).toBe('?scoring=ppr')
     expect(coreStatsQuery(resolveChoice({ picked: 'half_ppr', leagueParam: null, stored: null, leagues }))).toBe('?scoring=half_ppr')
+  })
+})
+
+describe('core stats — a pre-draft league is not a scoring choice (spec §7.3.3)', () => {
+  const leagues = [
+    { id: 'L1', name: 'Hadouken Bowl', status: 'in_season' },
+    { id: 'L2', name: 'Practice Squad League', status: 'setup' },
+    { id: 'L3', name: 'Draft Night', status: 'scheduled' },
+    { id: 'L4', name: 'On the Clock', status: 'drafting' },
+    { id: 'L5', name: 'Last Year', status: 'complete' },
+  ]
+
+  it('only leagues past draft start (scoring frozen) are offered', () => {
+    expect(scoredLeagues(leagues).map((l) => l.id)).toEqual(['L1', 'L4', 'L5'])
+    expect(scoringOptions(scoredLeagues(leagues)).map((o) => o.value)).not.toContain('league:L2')
+  })
+
+  it('a remembered pre-draft league falls back to the default; a drafted one is kept', () => {
+    const scored = scoredLeagues(leagues)
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L2', leagues: scored })).toEqual({ kind: 'system', system: 'espn_standard' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L3', leagues: scored })).toEqual({ kind: 'system', system: 'espn_standard' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L4', leagues: scored })).toEqual({ kind: 'league', leagueId: 'L4' })
   })
 })
 
