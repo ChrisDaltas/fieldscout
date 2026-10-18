@@ -215,6 +215,64 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(html).toMatch(/aria-label="QB: Shedeur Sanders — swap"/)
   })
 
+  describe('the team card when the standings read fails (gap list §3 #14)', () => {
+    const failStandings = (data?: unknown) => (qc: QueryClient) => {
+      const q = qc.getQueryCache().find({ queryKey: leagueStandingsKeys.all(LEAGUE) })!
+      if (data === undefined) q.setState({ data: undefined, dataUpdatedAt: 0 })
+      q.setState({ status: 'error', error: new Error('standings read failed'), errorUpdatedAt: 1, fetchStatus: 'idle' })
+    }
+    // Try again on an errored query with no data: React Query v5 puts it
+    // back to `pending` (error cleared, errorUpdatedAt kept) while it runs.
+    const retryingStandings = (qc: QueryClient) => {
+      const q = qc.getQueryCache().find({ queryKey: leagueStandingsKeys.all(LEAGUE) })!
+      q.setState({ data: undefined, dataUpdatedAt: 0, status: 'pending', error: null, errorUpdatedAt: 1, fetchStatus: 'fetching' })
+    }
+    const firstLoad = (qc: QueryClient) => {
+      const q = qc.getQueryCache().find({ queryKey: leagueStandingsKeys.all(LEAGUE) })!
+      q.setState({ data: undefined, dataUpdatedAt: 0, status: 'pending', error: null, errorUpdatedAt: 0, fetchStatus: 'fetching' })
+    }
+    const card = (out: string) => out.slice(out.indexOf('data-team-card'), out.indexOf('data-quick-action'))
+
+    it('says "Couldn’t load the standings." with Try again — never "No games played yet"', () => {
+      const out = card(render(SCHEDULE, detail, failStandings()))
+      expect(out).toMatch(/role="alert"[^>]*data-standings-problem[\s\S]*?Couldn’t load the standings\.[\s\S]*?<button type="button"[^>]*>Try again<\/button>/)
+      expect(out).not.toContain('No games played yet')
+      expect(out).not.toContain('Season hasn’t started')
+    })
+
+    it('says the same before the season starts', () => {
+      const preseason: LeagueDetail = { ...detail, league: { ...detail.league, status: 'drafting' } }
+      const out = card(render(SCHEDULE, preseason, failStandings()))
+      expect(out).toContain('Couldn’t load the standings.')
+      expect(out).not.toContain('Season hasn’t started')
+    })
+
+    it('a failed refresh over a table already shown keeps the record line', () => {
+      const out = card(render(SCHEDULE, detail, failStandings('keep')))
+      expect(out).toContain('2-2 · 2nd · PF 2nd · PA 1st')
+      expect(out).not.toContain('data-standings-problem')
+    })
+
+    it('Try again keeps the problem line up, reading "Trying…" and disabled, until the retry lands', () => {
+      const out = card(render(SCHEDULE, detail, retryingStandings))
+      expect(out).toMatch(/data-standings-problem[\s\S]*?Couldn’t load the standings\.[\s\S]*?<button type="button" disabled=""[^>]*>Trying…<\/button>/)
+      expect(out).not.toContain('>Try again<')
+      expect(out).not.toContain('No games played yet')
+    })
+
+    it('the first load holds the record line with a no-break space (a plain one collapses the line)', () => {
+      const out = card(render(SCHEDULE, detail, firstLoad))
+      expect(out).not.toContain('data-standings-problem')
+      expect(out).toContain('tabular-nums">\u00a0</span>')
+      expect(out).not.toContain('No games played yet')
+    })
+
+    it('a table that has loaded never shows the problem line', () => {
+      expect(card(html)).not.toContain('data-standings-problem')
+      expect(card(html)).not.toContain('Couldn’t load the standings.')
+    })
+  })
+
   describe('the Lineup check card (gap list §3 #11)', () => {
     const starterCount = settings.roster_settings.starting_slots.reduce((n, sl) => n + sl.count, 0)
     const VS_THEM: LeagueSchedule = { ...SCHEDULE, matchups: [{ id: 'mu5', week: 5, home_team_id: ME, away_team_id: THEM } as LeagueSchedule['matchups'][number]] }
