@@ -22,6 +22,7 @@ import {
   deriveTopics,
   effectiveScoringFormat,
   emptyCopy,
+  expertRankingHref,
   filterItems,
   formatFollows,
   hottestLikedOutside,
@@ -173,6 +174,44 @@ describe('Create sheet destinations', () => {
   })
   it('List opens the mobile New list screen, marked as started from Community (gap list §3 #8)', () => {
     expect(CREATE_LIST_HREF).toBe('/app/lists/new?from=community')
+  })
+})
+
+describe('an AI expert’s ranking opens in Rankings (gap list §3 #28)', () => {
+  const expert = { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true }
+  const open = (over: Partial<CommunityItem>) => {
+    const href = expertRankingHref(item({ id: 'b1a2c3d4-0000-4000-8000-000000000001', kind: 'rank', author: expert, ...over }))
+    expect(href).not.toBeNull()
+    const url = new URL(href!, 'https://fieldscout.gg')
+    return { url, state: parseRankingsParams(url.searchParams, { type: 'season' }) }
+  }
+
+  it('opens that expert’s ranking on the Rankings screen — not the new-ranking wizard or an editor', () => {
+    const { url, state } = open({ positionFilter: 'WR', scoringFormat: 'ppr' })
+    expect(url.pathname).toBe('/app/weekly-ranks')
+    expect(state).toMatchObject({ view: 'hub', src: 'p:b1a2c3d4-0000-4000-8000-000000000001', pos: 'WR', overlay: null })
+  })
+
+  it('a position board opens at its position; D/ST boards read as D/ST', () => {
+    expect(open({ positionFilter: 'RB' }).state.pos).toBe('RB')
+    expect(open({ positionFilter: 'DEF' }).state.pos).toBe('DST')
+  })
+
+  it('an overall board opens at the position of the player its row leads with, else RB', () => {
+    const heads = [player('a', "Ja'Marr Chase", 'WR', 'CIN'), player('b', 'Bijan Robinson', 'RB', 'ATL')]
+    expect(open({ positionFilter: null, heads }).state.pos).toBe('WR')
+    expect(open({ positionFilter: null, heads: [] }).state.pos).toBe('RB')
+  })
+
+  it('carries the ranking’s scoring, so the points are counted the expert’s way', () => {
+    expect(open({ scoringFormat: 'half' }).state.scoring).toBe('half')
+    expect(open({ scoringFormat: 'standard' }).state.scoring).toBe('std')
+    expect(open({ scoringFormat: 'ppr' }).url.searchParams.has('scoring')).toBe(false)
+  })
+
+  it('a person’s ranking or list keeps the Community detail', () => {
+    expect(expertRankingHref(item({ id: 'r1', kind: 'rank' }))).toBeNull()
+    expect(expertRankingHref(item({ id: 'l1' }))).toBeNull()
   })
 })
 
