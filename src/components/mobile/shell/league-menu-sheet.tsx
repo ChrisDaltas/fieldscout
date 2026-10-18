@@ -6,6 +6,7 @@ import { useState } from 'react'
 
 import { canEditLeagueNote } from '@/components/leagues/league-note-ops'
 import { SCORING_FAMILY_LABEL } from '@/components/leagues/league-shell-ops'
+import { historyMenuSub } from '@/components/mobile/league/league/league-history-ops'
 import { LeagueNoteSheets } from '@/components/mobile/league/league/league-note'
 import { MyTeamPage } from '@/components/mobile/shell/my-team-page'
 import { initials, useLeagueCard } from '@/components/mobile/shell/use-league-card'
@@ -32,9 +33,11 @@ interface MenuRow {
  * then the FieldScout app grid. Rows the design lists but the app has no
  * screen for yet say so (the prototype's own "screen coming next" toast);
  * league pages the app has that the design's menu leaves out (Schedule,
- * Trades, Members, Stats, Commissioner tools) are kept — restyle everything,
- * delete nothing. "Commissioner note" (gap list #13) opens the league's note
- * in full — with the edit sheet behind it for a commissioner. The My team
+ * Trades, Members, Commissioner tools) are kept — restyle everything,
+ * delete nothing. The app's Stats page is the design's League history
+ * (gap list §3 #16), so it's that row. "Commissioner note" (gap list #13)
+ * opens the league's note in full — with the edit sheet behind it for a
+ * commissioner. The My team
  * card opens the My team page, where you rename your team (gap list #10).
  */
 export function LeagueMenuSheet({
@@ -69,8 +72,9 @@ export function LeagueMenuSheet({
     { label: 'Schedule', icon: 'sched', href: `${base}/schedule` },
     { label: 'Trades', icon: 'trade', href: `${base}/trades` },
     { label: 'Members', icon: 'coowners', href: `${base}/members` },
-    { label: 'League stats', icon: 'leaders', href: `${base}/stats` },
-    { label: 'League history', icon: 'history' },
+    // Gap list §3 #16: the desktop Stats page's head-to-head IS this
+    // season's league history — one row, the design's name.
+    { label: 'League history', sub: historyMenuSub(league.season), icon: 'history', href: `${base}/stats` },
     { label: 'Previous seasons', icon: 'sched' },
     { label: 'Notifications', icon: 'bell' },
     { label: 'Co-owners', sub: 'None', icon: 'coowners' },

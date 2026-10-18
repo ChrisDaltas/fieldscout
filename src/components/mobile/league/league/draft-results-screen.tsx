@@ -1,14 +1,11 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { parseDraftOrder } from '@/components/draft/draft-board-ops'
 import { recapVariant } from '@/components/draft/draft-recap-ops'
-import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
-import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
-import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -37,7 +34,7 @@ import {
   teamFromParam,
   type DraftResultRow,
 } from './draft-results-ops'
-import { CenteredNote } from './league-bits'
+import { CenteredNote, LeaguePageBar, PageChip, useChipRowInView } from './league-bits'
 
 /**
  * League Menu › Draft results (handoff m-community G3; gap list §3 #15) —
@@ -68,7 +65,7 @@ export function MobileDraftResults({ leagueId, draftIdParam }: { leagueId: strin
   const completedReal = useCompletedRealDraft(draftIdParam ? undefined : leagueId)
   const draftId = draftIdParam ?? completedReal.data?.id
   const room = useDraft(draftId)
-  const header = <DraftResultsBar leagueId={leagueId} />
+  const header = <LeaguePageBar leagueId={leagueId} title="Draft results" />
 
   if (detail.isPending || (!draftIdParam && completedReal.isPending) || (draftId && room.isPending)) {
     return (
@@ -110,29 +107,6 @@ export function MobileDraftResults({ leagueId, draftIdParam }: { leagueId: strin
     <MobileScreen header={header}>
       <DraftResultsBody leagueId={leagueId} detail={detail.data} draft={draft} picks={room.data?.picks ?? []} userId={user?.id ?? null} />
     </MobileScreen>
-  )
-}
-
-/** The G-page bar: back chevron in blue, the title centred, a spacer. */
-function DraftResultsBar({ leagueId }: { leagueId: string }) {
-  const goBack = useGoBack()
-  return (
-    <>
-      <div className="flex h-[52px] items-center gap-2 border-b border-m-b3 px-3">
-        <button
-          type="button"
-          onClick={() => goBack(`/app/leagues/${leagueId}`)}
-          aria-label="Back"
-          className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
-          data-draft-results-back
-        >
-          <MIcon name="back" size={18} stroke={2} />
-        </button>
-        <h1 className="flex-1 text-center text-[16px] font-semibold text-m-t1">Draft results</h1>
-        <span className="w-9 flex-none" aria-hidden />
-      </div>
-      <MobileOverrideStrip leagueId={leagueId} className="mb-1.5" />
-    </>
   )
 }
 
@@ -191,16 +165,7 @@ export function DraftResultsBody({
   // Opened at a later round or team: bring its chip into view in the scroller.
   // (The round and team scrollers are keyed apart, so neither inherits the
   // other's scroll position.)
-  const chips = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const row = chips.current
-    const on = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
-    if (!row || !on) return
-    const box = row.getBoundingClientRect()
-    const chip = on.getBoundingClientRect()
-    if (chip.left < box.left || chip.right > box.right) row.scrollLeft = Math.max(0, row.scrollLeft + chip.left - box.left - 16)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- on open and on a view switch only
-  }, [view])
+  const chips = useChipRowInView<HTMLDivElement>(view)
 
   const playerIds = useMemo(() => rows.map((r) => r.playerId), [rows])
   const players = usePlayersByIds(playerIds)
@@ -226,9 +191,9 @@ export function DraftResultsBody({
       {byTeam ? (
         <div key="teams" ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Teams" data-draft-teams>
           {teams.map((id) => (
-            <ResultsChip key={id} on={id === shownTeam} mine={id === myTeamId} onClick={() => chooseTeam(id)} className="max-w-[180px]">
+            <PageChip key={id} on={id === shownTeam} mine={id === myTeamId} onClick={() => chooseTeam(id)} className="max-w-[180px]">
               <span className="truncate">{teamNameById.get(id) ?? 'Team'}</span>
-            </ResultsChip>
+            </PageChip>
           ))}
         </div>
       ) : auction ? (
@@ -236,9 +201,9 @@ export function DraftResultsBody({
       ) : (
         <div key="rounds" ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Rounds" data-draft-rounds>
           {Array.from({ length: roundCount }, (_, i) => i + 1).map((r) => (
-            <ResultsChip key={r} on={r === shown} onClick={() => chooseRound(r)}>
+            <PageChip key={r} on={r === shown} onClick={() => chooseRound(r)}>
               Round {r}
-            </ResultsChip>
+            </PageChip>
           ))}
         </div>
       )}
@@ -288,38 +253,6 @@ const AUCTION_VIEWS: ReadonlyArray<{ value: ResultsView; label: string }> = [
   { value: 'round', label: 'All buys' },
   { value: 'team', label: 'By team' },
 ]
-
-/** A G3 chip — white on ink when on, t1 on b2 when off; your own team's
- *  chip reads blue when it's off, the way your picks do. */
-function ResultsChip({
-  on,
-  mine = false,
-  onClick,
-  className,
-  children,
-}: {
-  on: boolean
-  mine?: boolean
-  onClick: () => void
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      data-mine={mine || undefined}
-      className={cn(
-        'flex h-8 flex-none items-center whitespace-nowrap rounded-pill px-3.5 text-[12px] font-semibold',
-        on ? 'bg-m-ink text-white' : mine ? 'bg-m-b2 text-accent' : 'bg-m-b2 text-m-t1',
-        className,
-      )}
-    >
-      {children}
-    </button>
-  )
-}
 
 function PickRow({ row, player, owner, onOpen }: { row: DraftResultRow; player: PlayerIdentity | undefined; owner?: string; onOpen: () => void }) {
   const name = player?.full_name ?? 'Player'
