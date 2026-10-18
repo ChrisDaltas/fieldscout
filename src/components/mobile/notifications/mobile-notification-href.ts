@@ -8,11 +8,14 @@
  *    Trades page (`?trade=<id>` — Accept / Decline / Counter while it is
  *    pending), the design's row-0 door. A row without a trade id keeps the
  *    shared target (the Trades page).
- *  - Waiver results (`league_waiver_claim`, migration 150: `league_id` +
- *    `status` won / lost / invalid), which the shared helper leaves inert →
- *    the league's Transactions screen, "My moves", whatever the result: a
- *    won claim is there as the add, a lost or failed one as its own row
- *    with the reason (gap list §3 #12).
+ *  - Every waiver notification, which the shared helper leaves inert → the
+ *    league's Transactions screen, "My moves" (gap list §3 #12): a result
+ *    (`league_waiver_claim`, migration 150: `league_id` + `status` won /
+ *    lost / invalid) — a won claim is there as the add, a lost or failed
+ *    one as its own row with the reason — and the commissioner placing,
+ *    cancelling or reordering a claim on your team
+ *    (`league_waiver_claim_commissioner`, migration 145), whose pending
+ *    claims are listed there.
  *  - Everything else: the shared target, or none — including a commissioner
  *    note change (`league_commissioner_note`, migration 192), whose shared
  *    target is the league home: on the phone, the League tab with the note
@@ -33,7 +36,7 @@ export function mobileNotificationHref(n: Pick<NotificationItem, 'type' | 'data'
     const tradeId = str(data?.trade_id)
     if (tradeId) return `/app/leagues/${leagueId}/trades?trade=${encodeURIComponent(tradeId)}`
   }
-  if (leagueId && n.type === 'league_waiver_claim') {
+  if (leagueId && (n.type === 'league_waiver_claim' || n.type === 'league_waiver_claim_commissioner')) {
     return transactionsHref(leagueId, { mine: true })
   }
   return notificationHref(n)

@@ -26,7 +26,7 @@ import {
   waiverCell,
   withClaimResults,
   rowPlayerIds,
-  type ClaimResultRow,
+  type TxRow,
 } from './league-tab-ops'
 
 const L = 'league-1'
@@ -244,13 +244,22 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
       'faab',
       who,
     )
-    expect(row).toMatchObject({ kind: 'claim', id: 'claim:c1', status: 'lost', label: 'Lost', createdAt: '2026-10-14T07:00:05.000Z', bid: 9 })
+    // A transaction row (one row view draws both), the result after the Waiver pill.
+    expect(row).toMatchObject({
+      kind: 'transaction',
+      id: 'claim:c1',
+      pill: { label: 'Waiver', tone: 'waiver' },
+      result: { status: 'lost', label: 'Lost' },
+      createdAt: '2026-10-14T07:00:05.000Z',
+      bid: 9,
+      commishActionId: null,
+    })
     expect(row!.moves.map((m) => [m.playerId, m.tone, m.verb, m.muted])).toEqual([
       ['p-add', 'add', 'Claim', true],
       ['p-drop', 'drop', 'Drop', true],
     ])
     // The winner is his manager — a door to the profile.
-    expect(row!.reason).toEqual([{ username: 'marcus' }, ' won P. Nacua ($14). Your $9 claim was outbid.'])
+    expect(row!.text).toEqual([{ username: 'marcus' }, ' won P. Nacua ($14). Your $9 claim was outbid.'])
   })
 
   it('a lost claim on priority, or with no winner found, says so plainly; a priority league shows no bid', () => {
@@ -261,33 +270,33 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
     )
     expect(prio!.bid).toBeNull()
     // A team with no manager reads as its name.
-    expect(prio!.reason).toEqual(['Charlie', ' won P. Nacua. Your claim was out-prioritized.'])
+    expect(prio!.text).toEqual(['Charlie', ' won P. Nacua. Your claim was out-prioritized.'])
     const [unknown] = claimResultRows([claim({ result_reason: 'lost_on_priority' })], 'faab', who)
-    expect(unknown!.reason).toEqual(['Another team with higher waiver priority claimed him.'])
+    expect(unknown!.text).toEqual(['Another team with higher waiver priority claimed him.'])
     const [bid] = claimResultRows([claim({})], 'faab', who)
-    expect(bid!.reason).toEqual(['Another team bid more.'])
+    expect(bid!.text).toEqual(['Another team bid more.'])
   })
 
   it('a failed claim: "Didn’t go through" and every stored reason in plain words', () => {
     const reasonOf = (result_reason: string | null) =>
       claimResultRows([claim({ status: 'invalid', result_reason, drop: null })], 'faab', who)[0]!
     const row = reasonOf('roster_full')
-    expect(row.label).toBe('Didn’t go through')
+    expect(row.result).toEqual({ status: 'invalid', label: 'Didn’t go through' })
     expect(row.moves).toHaveLength(1)
-    expect(row.reason).toEqual(['Your roster was full — claim again with a player to drop.'])
-    expect(reasonOf('add_locked').reason).toEqual(['His game had already started.'])
-    expect(reasonOf('add_rostered').reason).toEqual(['He was already on a roster by then.'])
-    expect(reasonOf('drop_gone').reason).toEqual(['The player you’d drop was no longer on your roster.'])
-    expect(reasonOf('drop_locked').reason).toEqual(['The player you’d drop had already played this week.'])
-    expect(reasonOf('cap_reached').reason).toEqual(['You’d used all the adds the league allows.'])
-    expect(reasonOf('insufficient_faab').reason).toEqual(['The bid was more than your FAAB left by then.'])
-    expect(reasonOf('own_claim_won').reason).toEqual(['One of your other claims went through first and made this one impossible.'])
-    expect(reasonOf('no_waivers').reason).toEqual(['The league turned waivers off — he can be picked up directly now.'])
-    expect(reasonOf('team_retired').reason).toEqual(['This team was retired before the run.'])
+    expect(row.text).toEqual(['Your roster was full — claim again with a player to drop.'])
+    expect(reasonOf('add_locked').text).toEqual(['His game had already started.'])
+    expect(reasonOf('add_rostered').text).toEqual(['He was already on a roster by then.'])
+    expect(reasonOf('drop_gone').text).toEqual(['The player you’d drop was no longer on your roster.'])
+    expect(reasonOf('drop_locked').text).toEqual(['The player you’d drop had already played this week.'])
+    expect(reasonOf('cap_reached').text).toEqual(['You’d used all the adds the league allows.'])
+    expect(reasonOf('insufficient_faab').text).toEqual(['The bid was more than your FAAB left by then.'])
+    expect(reasonOf('own_claim_won').text).toEqual(['One of your other claims went through first and made this one impossible.'])
+    expect(reasonOf('no_waivers').text).toEqual(['The league turned waivers off — he can be picked up directly now.'])
+    expect(reasonOf('team_retired').text).toEqual(['This team was retired before the run.'])
     // A reason the app has no words for is still said, never dropped.
-    expect(reasonOf('something_new').reason).toEqual(['Didn’t go through (something new).'])
-    expect(reasonOf('constructor').reason).toEqual(['Didn’t go through (constructor).'])
-    expect(reasonOf(null).reason).toBeNull()
+    expect(reasonOf('something_new').text).toEqual(['Didn’t go through (something new).'])
+    expect(reasonOf('constructor').text).toEqual(['Didn’t go through (constructor).'])
+    expect(reasonOf(null).text).toBeNull()
   })
 
   it('won, pending and cancelled claims are not rows (a win is already a move)', () => {
@@ -300,7 +309,7 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
   })
 
   const post = (id: string, createdAt: string | null) => ({ kind: 'post' as const, id, pill: { label: 'League', tone: 'league' as const }, createdAt, text: id, actorUsername: null, commishActionId: null })
-  const result = (id: string, createdAt: string): ClaimResultRow => ({ ...claimResultRows([claim({ id })], 'faab', who)[0]!, createdAt })
+  const result = (id: string, createdAt: string): TxRow => ({ ...claimResultRows([claim({ id })], 'faab', who)[0]!, createdAt })
 
   it('slots each claim in by time, the feed’s own order kept; a claim at the same instant as a move goes first', () => {
     const rows = [post('a', '2026-10-14T09:00:00.000Z'), post('b', '2026-10-14T07:00:05.000Z'), post('c', '2026-10-10T07:00:00.000Z')]

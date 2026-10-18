@@ -16,7 +16,6 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { CenteredNote, StatusLine } from './league-bits'
 import {
-  TYPE_PILL,
   claimResultRows,
   commishLogHref,
   emptyFilterCopy,
@@ -27,7 +26,6 @@ import {
   rowPlayerIds,
   shortName,
   withClaimResults,
-  type ClaimResultRow,
   type MoveLine,
   type Pill,
   type PostRow,
@@ -75,6 +73,7 @@ export function TxFeed({
   myMoves,
   onClear,
   claimResults = null,
+  claimsPending = false,
 }: {
   leagueId: string
   detail: LeagueDetail
@@ -84,6 +83,9 @@ export function TxFeed({
   onClear: () => void
   /** My moves under All types / Waivers: your lost and failed claims. */
   claimResults?: TxClaimResults | null
+  /** Those claims are still being read (alongside the feed): hold the rows
+   *  so a claim never pops in among moves already shown. */
+  claimsPending?: boolean
 }) {
   const streams = useMemo(() => feedStreams(filter, myMoves, myTeamId), [filter, myMoves, myTeamId])
   const feed = useMobileLeagueActivity(leagueId, streams)
@@ -137,7 +139,7 @@ export function TxFeed({
   if (myMoves && !myTeamId) {
     return <CenteredNote message="You don’t manage a team in this league." />
   }
-  if (feed.isPending || (rows !== null && rows.length === 0 && filling)) return <RowSkeleton />
+  if (feed.isPending || claimsPending || (rows !== null && rows.length === 0 && filling)) return <RowSkeleton />
   if (!rows || !shown) {
     return <CenteredNote role="alert" message="Couldn’t load the activity." action="Try again" onAction={() => void feed.refetch()} />
   }
@@ -157,8 +159,6 @@ export function TxFeed({
       {shown.map((row) =>
         row.kind === 'transaction' ? (
           <TxRowView key={row.id} leagueId={leagueId} row={row} who={who} playerById={players.playerById} />
-        ) : row.kind === 'claim' ? (
-          <ClaimResultRowView key={row.id} leagueId={leagueId} row={row} who={who} playerById={players.playerById} />
         ) : (
           <PostRowView key={row.id} leagueId={leagueId} row={row} />
         ),
@@ -254,7 +254,7 @@ function TxRowView({
   const head = who(row.teamId)
   const entry = row.commishActionId ? commishLogHref(leagueId, { entry: row.commishActionId }) : null
   return (
-    <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-tx-row={row.id}>
+    <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-tx-row={row.id} data-claim-result={row.result?.status}>
       <div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
         {head && typeof head !== 'string' ? (
           <UsernameLink username={head.username} at={false} className="min-w-0 truncate font-semibold text-m-t1" />
@@ -262,6 +262,7 @@ function TxRowView({
           <span className="min-w-0 truncate font-semibold text-m-t1">{head ?? 'Commissioner'}</span>
         )}
         <TypePill pill={row.pill} href={row.pill.tone === 'commish' ? entry : null} />
+        {row.result && <span className="flex-none whitespace-nowrap font-semibold text-m-tr">{row.result.label}</span>}
         {entry && row.pill.tone !== 'commish' && (
           <Link href={entry} className="flex-none font-semibold text-m-pos-wr" title="Done by the commissioner — open the log entry">
             ✸
@@ -284,49 +285,6 @@ function TxRowView({
             <Parts parts={row.text} linkClassName="font-semibold" />
           </p>
         ))}
-    </div>
-  )
-}
-
-/** A claim of yours that didn't go through: the Waiver pill and the result
- *  in red, when the run settled it and your bid, the two players (grey —
- *  nothing moved), then why. */
-function ClaimResultRowView({
-  leagueId,
-  row,
-  who,
-  playerById,
-}: {
-  leagueId: string
-  row: ClaimResultRow
-  who: WhoOf
-  playerById: ReadonlyMap<string, PlayerIdentity>
-}) {
-  const head = who(row.teamId)
-  return (
-    <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-claim-result={row.status} data-claim-row={row.id}>
-      <div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
-        {head && typeof head !== 'string' ? (
-          <UsernameLink username={head.username} at={false} className="min-w-0 truncate font-semibold text-m-t1" />
-        ) : (
-          head && <span className="min-w-0 truncate font-semibold text-m-t1">{head}</span>
-        )}
-        <TypePill pill={TYPE_PILL.waiver_claim} />
-        <span className="flex-none whitespace-nowrap font-semibold text-m-tr" data-claim-result-label>
-          {row.label}
-        </span>
-        <span className="flex-none whitespace-nowrap">{formatTxDate(row.createdAt)}</span>
-        <span className="flex-1" />
-        {row.bid !== null && <span className="flex-none text-[13px] font-semibold tabular-nums text-m-t1">${row.bid} bid</span>}
-      </div>
-      {row.moves.map((m) => (
-        <MoveLineView key={m.key} leagueId={leagueId} move={m} player={m.playerId ? (playerById.get(m.playerId) ?? null) : null} />
-      ))}
-      {row.reason && (
-        <p className="text-[11.5px] font-medium text-m-t3" data-claim-reason>
-          <Parts parts={row.reason} linkClassName="font-semibold text-m-t1" />
-        </p>
-      )}
     </div>
   )
 }

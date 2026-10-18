@@ -38,7 +38,9 @@ import { TxFeed, type TxClaimResults } from './tx-feed'
  * this is your own team's read only), and — among the moves, by when the
  * waiver run settled them — the claims you LOST or that DIDN'T GO THROUGH,
  * each with the stored reason in plain words (gap list §3 #12; the desktop
- * panel's Chris 2026-10-05 rule). One read of your claims serves both.
+ * panel's Chris 2026-10-05 rule). One read of your claims serves both; it
+ * runs alongside the feed's, whose rows wait for it (never a claim popping
+ * in among moves already shown).
  */
 export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string; mine: boolean; team: string | null }) {
   const goBack = useGoBack()
@@ -93,7 +95,7 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
   return (
     <MobileScreen header={header}>
       <div className="px-3 pb-5" data-transactions-screen={mine ? 'mine' : 'league'}>
-        {league.isPending || authLoading || (claimsOn && claims.isPending) ? (
+        {league.isPending || authLoading ? (
           <div className="pt-3">
             <SkeletonBlocks count={5} className="h-[72px]" />
           </div>
@@ -120,6 +122,7 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
               myMoves={mine}
               onClear={() => setFilter(clearedFilter(filter, mine))}
               claimResults={claimResults}
+              claimsPending={claimsOn && withClaims && claims.isPending}
             />
           </>
         )}

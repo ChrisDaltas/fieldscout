@@ -554,15 +554,19 @@ describe('My moves — lost and failed waiver claims, with the reason (gap list 
         ]),
       ),
     )
-    const order = ['data-claim-row="claim:lost"', 'data-tx-row="tx1"', 'data-tx-row="trade1"', 'data-claim-row="claim:bad"'].map((m) => html.indexOf(m))
+    const order = ['data-tx-row="claim:lost"', 'data-tx-row="tx1"', 'data-tx-row="trade1"', 'data-tx-row="claim:bad"'].map((m) => html.indexOf(m))
     expect(order.every((i) => i >= 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
     // A won claim is already the move; a cancelled one isn't a result.
     expect(html).not.toContain('claim:won')
     expect(html).not.toContain('claim:gone')
 
-    const lost = html.slice(html.indexOf('data-claim-row="claim:lost"'), html.indexOf('data-tx-row="tx1"'))
-    expect(html).toContain('data-claim-result="lost" data-claim-row="claim:lost"')
+    const lost = html.slice(html.indexOf('data-tx-row="claim:lost"'), html.indexOf('data-tx-row="tx1"'))
+    // The transaction row itself, its claim's result as a data attribute.
+    expect(html).toContain('data-tx-row="claim:lost" data-claim-result="lost"')
+    expect(html).toContain('data-tx-row="claim:bad" data-claim-result="invalid"')
+    // A real move carries no result.
+    expect(html).not.toMatch(/data-tx-row="tx1" data-claim-result/)
     expect(lost).toContain('>Waiver<')
     expect(lost).toMatch(/text-m-tr[^>]*>Lost</)
     expect(lost).toContain('$7 bid')
@@ -577,7 +581,7 @@ describe('My moves — lost and failed waiver claims, with the reason (gap list 
     expect(lost).toContain('data-username-link="marcus"')
     expect(lost).toContain(' won R. Davis ($14). Your $7 claim was outbid.')
 
-    const bad = html.slice(html.indexOf('data-claim-row="claim:bad"'))
+    const bad = html.slice(html.indexOf('data-tx-row="claim:bad"'))
     expect(bad).toMatch(/>Didn’t go through</)
     expect(bad).toContain('$3 bid')
     expect(bad).toContain('Your roster was full — claim again with a player to drop.')
@@ -588,9 +592,30 @@ describe('My moves — lost and failed waiver claims, with the reason (gap list 
       seedFeed(MINE, [])(qc)
       qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'), doc([settled({ id: 'l', processed_at: '2099-10-11T19:06:00.000Z' })]))
     })
-    expect(html).toContain('data-claim-row="claim:l"')
+    expect(html).toContain('data-tx-row="claim:l"')
     expect(html).toContain('Another team bid more.')
     expect(html).not.toContain('No moves yet this season.')
+  })
+
+  it('while your claims are read the feed is already reading too; only its rows wait', () => {
+    let cache: QueryClient | null = null
+    const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      cache = qc
+      seedFeed(MINE, [FEED[0]!, TRADE])(qc)
+    })
+    // Not the whole screen held: the header and the feed's own row skeleton.
+    expect(html).toContain('>My moves<')
+    expect(html).not.toContain('h-[72px]')
+    expect(html).toContain('aria-label="Loading"')
+    // The moves wait for the claims, so none pops in among them.
+    expect(html).not.toContain('data-tx-row="tx1"')
+
+    // With nothing read yet, the feed's read is started alongside the claims'.
+    render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      cache = qc
+    })
+    expect(cache!.getQueryCache().find({ queryKey: [...leagueActivityKeys.all(LEAGUE), 'mobile', MINE], exact: true })).toBeDefined()
+    expect(cache!.getQueryCache().find({ queryKey: waiverClaimKeys.team(LEAGUE, null, 'all'), exact: true })).toBeDefined()
   })
 
   it('a failed claims read says so — never a quiet list without them', () => {
@@ -606,7 +631,7 @@ describe('My moves — lost and failed waiver claims, with the reason (gap list 
     const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: false, team: null }), {}, (qc) =>
       qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'), doc([settled({ id: 'l', processed_at: '2099-10-11T19:06:00.000Z' })])),
     )
-    expect(html).not.toContain('data-claim-row')
+    expect(html).not.toContain('data-claim-result')
     expect(html).not.toContain('data-pending-claims')
   })
 })
