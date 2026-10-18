@@ -1,7 +1,7 @@
 -- ============================================================================
 -- pgTAP 146 — migration 196: a team name is at most 24 characters, on every
 -- door that writes one (Chris 2026-10-18: "team names ≤ 24 everywhere";
--- spec v2.16.94 §7.2; PROGRESS D545).
+-- spec v2.16.97 §7.2; PROGRESS D545).
 --
 --   §A  FORM — the new helper is a PLAIN, REVOKEd internal; the four
 --       replaced functions keep their security context and search_path; no
@@ -10,7 +10,8 @@
 --       space-padded 24 lands trimmed.
 --   §D  THE AUTOMATIC NAME — "<username>'s Team" where it fits in 24 (a
 --       17-character username: exactly 24), the username alone past that
---       (18 and 20), 'My Team' with no profile.
+--       (18 and 20), 'My Team' with no profile. The username-alone arm is
+--       the Builder's call, PENDING CHRIS'S RULING (PROGRESS §3 Open, D545).
 --   §E  join_league_by_code — the joiner's team takes the same rule.
 --   §F  add_placeholder_seat — 25 refused, 24 lands, none → "Team N".
 --   §G  rename_own_team and §H commish_rename_team — 25 refused BY NAME,

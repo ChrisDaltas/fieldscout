@@ -1,6 +1,6 @@
 /**
  * Team names — ONE rule for the whole app (Chris, 2026-10-18: "team names
- * ≤ 24 everywhere"; spec v2.16.94, migration 196, PROGRESS D545). A fantasy
+ * ≤ 24 everywhere"; spec v2.16.97, migration 196, PROGRESS D545). A fantasy
  * team's name is at most 24 characters, the same on the phone, on desktop
  * and on the server:
  *

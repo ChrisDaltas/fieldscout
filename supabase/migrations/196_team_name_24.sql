@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 196 — a team name is at most 24 characters, everywhere (Chris 2026-10-18:
 --       "team names ≤ 24 everywhere" — the same on the phone, on desktop and
---       on the server; spec v2.16.94 §7.2; PROGRESS D545; settles F356)
+--       on the server; spec v2.16.97 §7.2; PROGRESS D545; settles F356)
 -- ============================================================================
 --
 -- BEFORE: the phone's My team page held a name to 24, but the server and
@@ -40,6 +40,9 @@
 --      (the human range is 5–20) would make 25–27, so the team is named after
 --      the username alone (Sleeper's default); 'My Team' only where even that
 --      cannot fit (no human username can reach it) or no profile exists.
+--      The username-alone fallback is the Builder's call, PENDING CHRIS'S
+--      RULING (PROGRESS §3 Open, D545); a different answer changes only
+--      this helper.
 --
 -- NO TABLE CHECK on `teams.name`, on purpose: a name set before the rule (up
 -- to 100) keeps reading and showing, and an UPDATE that does not write the
@@ -249,7 +252,7 @@ BEGIN
       USING ERRCODE = 'P0001';
   END IF;
 
-  -- 196 (Chris 2026-10-18: team names ≤ 24 everywhere; spec v2.16.94 §7.2)
+  -- 196 (Chris 2026-10-18: team names ≤ 24 everywhere; spec v2.16.97 §7.2)
   -- — the creator's team name, when one is given, is at most 24 characters,
   -- counted after the same btrim the INSERT below applies. AFTER the replay
   -- (a retry of a committed create still replays) and BEFORE any write.
