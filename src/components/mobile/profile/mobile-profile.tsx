@@ -8,6 +8,7 @@ import {
   ME_TABS,
   MY_RANKINGS_HREF,
   NEW_RANKING_HREF,
+  credCard,
   listRowSub,
   parseMeTab,
   plural,
@@ -26,6 +27,7 @@ import { M_ICON, MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { UsernameLink } from '@/components/shared/username-link'
+import { Progress } from '@/components/ui/progress'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
 import { useLeagues } from '@/hooks/use-leagues'
@@ -86,6 +88,7 @@ export function MobileProfile() {
           <Identity
             username={profile.username}
             avatarUrl={profile.avatar_url}
+            bio={profile.bio}
             credScore={profile.cred_score ?? 0}
             followers={profile.follower_count ?? 0}
             following={profile.following_count ?? 0}
@@ -118,28 +121,33 @@ function ThemePill() {
 }
 
 /**
- * Avatar, the handle and the stats (§2 P0.2–3). FieldScout keeps no display
- * name — the handle is the only name (ruling 2026-08-05) — so the handle
- * takes the 18/700 name line and the t3 line below keeps the rest of the
- * design's "@handle · N leagues": the league count, while leagues are on.
+ * Avatar, the handle, the bio and the stats (§2 P0.2–3). FieldScout keeps no
+ * display name — the handle is the only name (ruling 2026-08-05) — so the
+ * handle takes the 18/700 name line and the t3 line below keeps the rest of
+ * the design's "@handle · N leagues": the league count, while leagues are on.
  *
- * Stats, against the design's Ranking accuracy · Followers · Titles:
- *  - Ranking accuracy has no data (no grading job writes it), so the first
- *    card is the cred score — the app's real prediction-credibility number.
- *  - Followers as designed.
- *  - Titles = leagues won (champion = the team you manage). Leagues are a
- *    gated test cohort; while they're off there is nothing to count, and the
- *    card shows Following instead so the row keeps the design's three cards.
+ * Not in the handoff, kept from desktop's profile (gap list §3 #21):
+ *  - The bio, full width under the avatar row in the handoff's paragraph
+ *    style (13/500 t2, 1.45), as phone profiles put it. Nothing when empty.
+ *  - Following beside Followers. The design's first card, Ranking accuracy,
+ *    has no data (no grading job writes it); the cred score that stood in
+ *    for it moves into the Cred card, so the row is Followers · Following ·
+ *    Titles. Titles = leagues won (champion = the team you manage). Leagues
+ *    are a gated test cohort; while they're off there is nothing to count
+ *    and the two remaining cards share the row.
+ *  - A slim Cred card: Scout tier, cred and the bar to the next tier.
  */
 function Identity({
   username,
   avatarUrl,
+  bio,
   credScore,
   followers,
   following,
 }: {
   username: string
   avatarUrl: string | null
+  bio: string | null
   credScore: number
   followers: number
   following: number
@@ -148,6 +156,7 @@ function Identity({
   const leagues = useLeagues({ enabled: leaguesOn })
   const titles = useMobileProfileTitles(leagues.data, leaguesOn)
   const sub = leaguesOn && leagues.data ? plural(leagues.data.length, 'league', 'leagues') : null
+  const about = bio?.trim()
 
   return (
     <>
@@ -166,17 +175,61 @@ function Identity({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <StatCard value={credScore.toLocaleString('en-US')} label="Cred score" />
+      {about && (
+        <p
+          className="mt-3 whitespace-pre-line break-words text-[13px] font-medium leading-[1.45] text-m-t2 text-pretty"
+          data-profile-bio
+        >
+          {about}
+        </p>
+      )}
+
+      <div className={cn('mt-4 grid gap-2', leaguesOn ? 'grid-cols-3' : 'grid-cols-2')}>
         <StatCard value={followers.toLocaleString('en-US')} label="Followers" />
-        {leaguesOn ? (
+        <StatCard value={following.toLocaleString('en-US')} label="Following" />
+        {leaguesOn && (
           // "–" while loading or when the read fails — never a guessed 0.
           <StatCard value={titles.data !== undefined ? titles.data.toLocaleString('en-US') : '–'} label="Titles" />
-        ) : (
-          <StatCard value={following.toLocaleString('en-US')} label="Following" />
         )}
       </div>
+
+      <CredCardView credScore={credScore} />
     </>
+  )
+}
+
+/**
+ * The slim Cred card under the stats — not in the handoff, so it is drawn in
+ * the stat cards' language (b1, 14px radius, 10/12 padding) with the
+ * handoff's meter (4px pill, b3 track): tier dot + Scout tier name and the
+ * cred score, the bar, then "Scout tier N of 10" and what's left to the
+ * next tier. Read-only, like the stat cards.
+ */
+function CredCardView({ credScore }: { credScore: number }) {
+  const card = credCard(credScore)
+  return (
+    <div className="mt-2 flex flex-col rounded-[14px] bg-m-b1 px-3 py-2.5" data-profile-cred>
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-1.5">
+          {/* The tier's own colour, from the tier table (desktop's badge dot). */}
+          <span aria-hidden className="size-2 flex-none rounded-full" style={{ backgroundColor: card.accent }} />
+          <span className="truncate text-[15px] font-bold tracking-[-0.01em]">{card.tier}</span>
+        </span>
+        <span className="flex-none text-[12px] font-semibold tabular-nums text-m-t3">{card.score}</span>
+      </div>
+      <Progress
+        value={card.pct}
+        aria-label={card.barLabel}
+        className="mt-2 h-1 bg-m-b3"
+        indicatorClassName="bg-accent"
+      />
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] font-medium">
+        <span className="truncate text-m-t3">{card.level}</span>
+        <span className={cn('flex-none tabular-nums', card.top ? 'font-semibold text-m-tg' : 'text-m-t3')}>
+          {card.next}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -199,11 +252,13 @@ function IdentitySkeleton() {
           <span className="h-[13px] w-40 rounded-md bg-m-b1" />
         </span>
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        {[0, 1, 2].map((i) => (
+      <div className={cn('mt-4 grid gap-2', featureFlags.leagues ? 'grid-cols-3' : 'grid-cols-2')}>
+        {(featureFlags.leagues ? [0, 1, 2] : [0, 1]).map((i) => (
           <span key={i} className="h-[56px] rounded-[14px] bg-m-b1" />
         ))}
       </div>
+      {/* The Cred card's height. */}
+      <span className="mt-2 block h-[77px] rounded-[14px] bg-m-b1" />
     </div>
   )
 }
