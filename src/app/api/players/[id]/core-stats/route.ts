@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { systemTime } from '@/lib/leagues/time/time-provider'
-import { DEFAULT_SCORING_SYSTEM, type ScoringSystemKey } from '@/lib/players/core-stats-ops'
+import { DEFAULT_SCORING_SYSTEM, SCORING_SYSTEM_KEYS, type ScoringSystemKey } from '@/lib/players/core-stats-ops'
 import { computePoolStandings, type PoolCache, readPlayerCoreStats, systemRules } from '@/lib/players/core-stats-service'
 import { createServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
@@ -16,7 +16,7 @@ interface RouteParams {
 const querySchema = z
   .strictObject({
     league: z.uuid().optional(),
-    scoring: z.enum(['espn_standard', 'half_ppr', 'ppr']).optional(),
+    scoring: z.enum(SCORING_SYSTEM_KEYS).optional(),
   })
   .refine((q) => !(q.league && q.scoring), { message: 'league and scoring are exclusive' })
 

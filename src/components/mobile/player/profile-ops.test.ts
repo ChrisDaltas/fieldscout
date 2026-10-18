@@ -7,8 +7,8 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
-import type { CoreStatsPayload } from '@/lib/players/core-stats-ops'
-import { PPR_SCORING, STANDARD_SCORING } from '@/lib/scoring/default'
+import { resolveChoice, scoredLeagues, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
+import { PPR_SCORING, QUARTER_PPR_SCORING, STANDARD_SCORING } from '@/lib/scoring/default'
 
 import {
   bioLine,
@@ -30,7 +30,11 @@ import {
   ownershipSummary,
   pastSeasonRules,
   playerMoves,
+  PROFILE_SCORING_SYSTEMS,
+  profileScoringOptions,
   rankTone,
+  scoringChipLabel,
+  scoringChipName,
   statLine,
   statusPill,
   stripCells,
@@ -87,12 +91,13 @@ function core(over: Partial<CoreStatsPayload> = {}): CoreStatsPayload {
   }
 }
 
-const game = (week: number, home: string, away: string, status: string, kickoff = '2026-10-18T17:00:00Z'): TeamGame => ({
+const game = (week: number, home: string, away: string, status: string, kickoff = '2026-10-18T17:00:00Z', state: Partial<TeamGame> = {}): TeamGame => ({
   week,
   home_team: home,
   away_team: away,
   kickoff_at: kickoff,
   status,
+  ...state,
 })
 
 describe('header', () => {
@@ -146,6 +151,43 @@ describe('stat strip', () => {
   })
 })
 
+describe('scoring chip (gap list §3 #18)', () => {
+  const leagues = [{ id: 'L1', name: 'Sunday Funday League' }]
+
+  it('offers PPR · Half PPR · 0.25 PPR · Standard, then your leagues', () => {
+    expect(profileScoringOptions(leagues)).toEqual([
+      { value: 'ppr', label: 'PPR', sub: '1 point per catch' },
+      { value: 'half_ppr', label: 'Half PPR', sub: '0.5 points per catch' },
+      { value: 'quarter_ppr', label: '0.25 PPR', sub: '0.25 points per catch' },
+      { value: 'espn_standard', label: 'Standard', sub: 'No points for a catch' },
+      { value: 'league:L1', label: 'Sunday Funday League', sub: 'Your league’s scoring' },
+    ])
+    expect(PROFILE_SCORING_SYSTEMS).toEqual(['ppr', 'half_ppr', 'quarter_ppr', 'espn_standard'])
+  })
+
+  it('the chip says the preset’s short name, or "League"; its name says which', () => {
+    const options = profileScoringOptions(leagues)
+    expect(scoringChipLabel({ kind: 'system', system: 'espn_standard' })).toBe('Standard')
+    expect(scoringChipLabel({ kind: 'system', system: 'quarter_ppr' })).toBe('0.25 PPR')
+    expect(scoringChipLabel({ kind: 'league', leagueId: 'L1' })).toBe('League')
+    expect(scoringChipName({ kind: 'system', system: 'half_ppr' }, options)).toBe('Scoring: Half PPR')
+    expect(scoringChipName({ kind: 'league', leagueId: 'L1' }, options)).toBe('Scoring: Sunday Funday League')
+  })
+
+  it('a league still before its draft is not offered, and a remembered one falls back to Standard', () => {
+    const mine = [
+      { id: 'L1', name: 'Sunday Funday League', status: 'in_season' },
+      { id: 'L2', name: 'Practice Squad League', status: 'setup' },
+    ]
+    const scored = scoredLeagues(mine)
+    expect(profileScoringOptions(scored).map((o) => o.value)).toEqual(['ppr', 'half_ppr', 'quarter_ppr', 'espn_standard', 'league:L1'])
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L2', leagues: scored, systems: PROFILE_SCORING_SYSTEMS })).toEqual({
+      kind: 'system',
+      system: 'espn_standard',
+    })
+  })
+})
+
 describe('games and projections cards', () => {
   const games = [game(3, 'ATL', 'CAR', 'final'), game(4, 'LV', 'ATL', 'final'), game(6, 'ATL', 'PHI', 'scheduled'), game(7, 'TB', 'ATL', 'scheduled')]
   const splits = [
@@ -156,6 +198,7 @@ describe('games and projections cards', () => {
   const schedule = scheduleRows('ATL', 'RB', games, splits, 5)
   const lines: ProfileStatLine[] = [{ season: 2026, week: 4, is_live: false, rush_attempts: 16, rush_yards: 80, receptions: 3, receiving_yards: 17 }]
   const cards = gameCards({
+    team: 'ATL',
     schedule,
     games,
     weekly: [
@@ -201,13 +244,15 @@ describe('games and projections cards', () => {
 
     const sched = scheduleRows('ATL', 'RB', live, splits, 10)
     const liveLines: ProfileStatLine[] = [{ season: 2026, week: 5, is_live: true, rush_attempts: 9, rush_yards: 41, receptions: 1, receiving_yards: 6 }]
-    const c = gameCards({ schedule: sched, games: live, weekly: [{ week: 5, points: null, proj: 16.03 }], lines: liveLines, position: 'RB', currentWeek: 5 })
+    const c = gameCards({ team: 'ATL', schedule: sched, games: live, weekly: [{ week: 5, points: null, proj: 16.03 }], lines: liveLines, position: 'RB', currentWeek: 5 })
     const wk5 = c.find((x) => x.week === 5)!
+    // No clock or score on record: plain "Live", never an invented 0-0.
     expect(wk5).toMatchObject({ current: true, pill: 'current', mainLabel: 'Projected', main: '16.0', sub: { label: 'Game', value: 'Live' } })
     expect(wk5.line).toBe('9 car 41 yds · 1 rec 6 yds')
     expect(c.find((x) => x.week === 6)).toMatchObject({ current: false, pill: 'upcoming' })
     // His game is over but the week is not: still this week, no points yet under the scoring.
     const done = gameCards({
+      team: 'ATL',
       schedule: sched,
       games: [game(5, 'ATL', 'NO', 'final')],
       weekly: [],
@@ -216,6 +261,36 @@ describe('games and projections cards', () => {
       currentWeek: 5,
     }).find((x) => x.week === 5)!
     expect(done).toMatchObject({ pill: 'current', mainLabel: 'Projected', sub: { label: 'Game', value: 'Final' } })
+  })
+
+  it("this week's card says where his game stands: clock and score, then the result (gap list §3 #19)", () => {
+    const sched = scheduleRows('ATL', 'RB', [game(4, 'LV', 'ATL', 'final'), game(5, 'NO', 'ATL', 'live'), game(6, 'ATL', 'PHI', 'scheduled')], splits, 10)
+    const card = (g: TeamGame, week = 5) =>
+      gameCards({ team: 'ATL', schedule: sched, games: [g], weekly: [{ week: 5, points: null, proj: 16.03 }], lines: [], position: 'RB', currentWeek: week }).find(
+        (x) => x.week === 5,
+      )!
+    // Live, away at NO: his team's score first.
+    const live = game(5, 'NO', 'ATL', 'live', undefined, { quarter: 4, game_clock: '2:00', home_score: 7, away_score: 31 })
+    expect(card(live)).toMatchObject({ pill: 'current', mainLabel: 'Projected', main: '16.0', sub: { label: 'Game', value: 'Q4 2:00 · 31-7' } })
+    expect(card({ ...live, quarter: 5, game_clock: '8:41', home_score: 31 }).sub).toEqual({ label: 'Game', value: 'OT 8:41 · 31-31' })
+    // Over, the week not scored yet: the result.
+    const final = game(5, 'NO', 'ATL', 'final', undefined, { quarter: null, game_clock: null, home_score: 20, away_score: 31 })
+    expect(card(final).sub).toEqual({ label: 'Game', value: 'Final W 31-20' })
+    expect(card({ ...final, home_score: 34 }).sub).toEqual({ label: 'Game', value: 'Final L 31-34' })
+    // Not yet kicked off: the kickoff, as before.
+    expect(card(game(5, 'NO', 'ATL', 'scheduled'), 5).sub?.label).toBe('Kickoff')
+  })
+
+  it("this week's card on the row the sync writes: plain Live / Final, never the 0-0 default", () => {
+    const sched = scheduleRows('ATL', 'RB', [game(4, 'LV', 'ATL', 'final'), game(5, 'NO', 'ATL', 'live'), game(6, 'ATL', 'PHI', 'scheduled')], splits, 10)
+    const card = (g: TeamGame) =>
+      gameCards({ team: 'ATL', schedule: sched, games: [g], weekly: [{ week: 5, points: null, proj: 16.03 }], lines: [], position: 'RB', currentWeek: 5 }).find(
+        (x) => x.week === 5,
+      )!
+    // Status only; home_score/away_score at 001's 0 default; no quarter or clock.
+    const synced = { quarter: null, game_clock: null, home_score: 0, away_score: 0 }
+    expect(card(game(5, 'NO', 'ATL', 'live', undefined, synced))).toMatchObject({ pill: 'current', sub: { label: 'Game', value: 'Live' } })
+    expect(card(game(5, 'NO', 'ATL', 'final', undefined, synced))).toMatchObject({ pill: 'current', sub: { label: 'Game', value: 'Final' } })
   })
 
   it('opens with the week before the current one at the gutter', () => {
@@ -317,6 +392,7 @@ describe('game log + career tables', () => {
 
   it('past seasons score under the basis preset (league → standard)', () => {
     expect(pastSeasonRules({ kind: 'system', system: 'ppr' })).toBe(PPR_SCORING)
+    expect(pastSeasonRules({ kind: 'system', system: 'quarter_ppr' })).toBe(QUARTER_PPR_SCORING)
     expect(pastSeasonRules({ kind: 'league', leagueId: 'L' })).toBe(STANDARD_SCORING)
   })
 })

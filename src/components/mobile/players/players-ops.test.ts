@@ -5,8 +5,10 @@ import {
   catalogue,
   colNeeds,
   DEFAULT_COLS,
+  gameState,
   gameText,
   groupRuns,
+  isLiveStatus,
   ordinal,
   posMatches,
   shortName,
@@ -121,5 +123,43 @@ describe('players-ops — text', () => {
     expect(gameText('CIN', [{ ...base, status: 'final', home_score: 31, away_score: 7 }], kick)?.text).toBe('Final L 7-31 @ MIA')
     expect(gameText('KC', [{ ...base, status: 'scheduled' }], kick)).toEqual({ text: 'Bye', opp: null })
     expect(gameText('KC', [], kick)).toBeNull()
+  })
+
+  it('says where his game stands without the opponent (the profile card, gap list §3 #19)', () => {
+    const base = { home_team: 'ATL', away_team: 'NO', kickoff_at: '2026-10-18T17:00:00Z', quarter: null, game_clock: null, home_score: null, away_score: null }
+    const kick = () => 'Sun 1:00 PM'
+    // His team's score first, home or away.
+    const live = { ...base, status: 'live', quarter: 4, game_clock: '2:00', home_score: 31, away_score: 7 }
+    expect(gameState('ATL', live, kick)).toBe('Q4 2:00 · 31-7')
+    expect(gameState('NO', live, kick)).toBe('Q4 2:00 · 7-31')
+    expect(gameState('ATL', { ...live, status: 'in_progress' }, kick)).toBe('Q4 2:00 · 31-7')
+    expect(gameState('ATL', { ...live, quarter: 5, game_clock: '6:12', away_score: 31 }, kick)).toBe('OT 6:12 · 31-31')
+    // No clock or score on record: no invented 0-0.
+    expect(gameState('ATL', { ...base, status: 'live' }, kick)).toBe('Live')
+    // A score with no quarter or clock is not on record either.
+    expect(gameState('ATL', { ...base, status: 'live', home_score: 3, away_score: 0 }, kick)).toBe('Live')
+    // A real 0-0 beside a clock is a score.
+    expect(gameState('ATL', { ...base, status: 'live', quarter: 1, game_clock: '11:20', home_score: 0, away_score: 0 }, kick)).toBe('Q1 11:20 · 0-0')
+    const final = { ...base, status: 'final', home_score: 31, away_score: 20 }
+    expect(gameState('ATL', final, kick)).toBe('Final W 31-20')
+    expect(gameState('NO', final, kick)).toBe('Final L 20-31')
+    expect(gameState('ATL', { ...final, away_score: 31 }, kick)).toBe('Final T 31-31')
+    expect(gameState('ATL', { ...base, status: 'final' }, kick)).toBe('Final')
+    // The row the production sync writes: status only, the scores at 001's
+    // 0 default, no quarter or clock. Never "Live · 0-0" or "Final T 0-0".
+    const synced = { ...base, home_score: 0, away_score: 0, quarter: null, game_clock: null }
+    expect(gameState('ATL', { ...synced, status: 'live' }, kick)).toBe('Live')
+    expect(gameState('ATL', { ...synced, status: 'in_progress' }, kick)).toBe('Live')
+    expect(gameState('ATL', { ...synced, status: 'final' }, kick)).toBe('Final')
+    expect(gameText('ATL', [{ ...synced, status: 'live' }], kick)?.text).toBe('Live vs NO')
+    expect(gameText('NO', [{ ...synced, status: 'final' }], kick)?.text).toBe('Final @ ATL')
+    // A schedule-only row (no state columns selected) reads as unknown.
+    const scheduleOnly = { week: 6, home_team: 'ATL', away_team: 'NO', kickoff_at: base.kickoff_at, status: 'final' }
+    expect(gameState('ATL', scheduleOnly, kick)).toBe('Final')
+    expect(gameState('ATL', { ...base, status: 'scheduled' }, kick)).toBe('Sun 1:00 PM')
+    expect(isLiveStatus('live')).toBe(true)
+    expect(isLiveStatus('in_progress')).toBe(true)
+    expect(isLiveStatus('final')).toBe(false)
+    expect(isLiveStatus(null)).toBe(false)
   })
 })
