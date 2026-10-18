@@ -160,18 +160,12 @@ export const NO_SEAT_ROW_AUTOPILOT_COPY =
 
 export type RenameGate = { ok: true; name: string } | { ok: false; why: string }
 
-/** The server's bound on a team name (128: trimmed, non-empty, ≤ 100). */
-export const TEAM_NAME_MAX = 100
-
 /** Why Save is disabled, SAID (rule (h)). 128's bound: trimmed, non-empty,
- *  ≤ 100. An UNCHANGED name is NOT gated — the verb answers `no_changes`.
- *  `max` tightens the bound for a form drawn with a shorter field (the
- *  phone's My team page: 24); it never loosens 128's. */
-export function renameGate(draft: string, max: number = TEAM_NAME_MAX): RenameGate {
+ *  ≤ 100. An UNCHANGED name is NOT gated — the verb answers `no_changes`. */
+export function renameGate(draft: string): RenameGate {
   const name = draft.trim()
-  const limit = Math.min(max, TEAM_NAME_MAX)
   if (name === '') return { ok: false, why: 'Type a team name to save.' }
-  if (name.length > limit) return { ok: false, why: `A team name is at most ${limit} characters — this one is ${name.length}.` }
+  if (name.length > 100) return { ok: false, why: `A team name is at most 100 characters — this one is ${name.length}.` }
   return { ok: true, name }
 }
 

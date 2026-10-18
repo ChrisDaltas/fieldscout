@@ -14,20 +14,28 @@ import type { RenameOwnTeamResult } from '@/lib/leagues/api/team-rename-service'
 import { cn } from '@/lib/utils'
 
 /** The handoff's limit for a name typed here (G1 "My team": `maxlength=24`,
- *  the "n / 24" counter). Tighter than the server's 100, never looser. */
+ *  the "n / 24" counter). Desktop and the server allow 100 — which limit
+ *  applies on both is an open question for Chris; until then the phone
+ *  keeps the design's 24 for a name you change here. */
 export const MY_TEAM_NAME_MAX = 24
+
+/** Said when a changed name runs past 24. True for the phone only: it is not
+ *  a rule for team names (a longer name set on desktop is legal). */
+export const MY_TEAM_NAME_TOO_LONG = `Names on the phone can be up to ${MY_TEAM_NAME_MAX} characters — shorten it to save.`
 
 export type MyTeamSave = RenameGate | { ok: false; why: null }
 
 /**
  * Whether Save is on (G1's dirty check, without the prototype's bug of
  * enabling on added spaces): the trimmed name must be there, within the
- * limit, and differ from the team's name now. `why` says what is wrong;
- * null is "nothing changed yet" — the greyed Save says that on its own.
+ * phone's 24, and differ from the team's name now. `why` says what is wrong;
+ * null is "nothing changed yet" — the greyed Save says that on its own. An
+ * untouched name is never an error, even one longer than 24 set on desktop.
  */
 export function myTeamSave(draft: string, current: string): MyTeamSave {
-  const gate = renameGate(draft, MY_TEAM_NAME_MAX)
-  if (gate.ok && gate.name === current) return { ok: false, why: null }
+  if (draft.trim() === current) return { ok: false, why: null }
+  const gate = renameGate(draft)
+  if (gate.ok && gate.name.length > MY_TEAM_NAME_MAX) return { ok: false, why: MY_TEAM_NAME_TOO_LONG }
   return gate
 }
 
@@ -123,7 +131,8 @@ export function MyTeamForm({
   const why = save.ok ? null : save.why
   const pending = rename.isPending
   const refusal = rename.error?.message ?? null
-  const tooLong = draft.trim().length > MY_TEAM_NAME_MAX
+  // Red only once a changed name is over — never on the name as it opens.
+  const tooLong = why === MY_TEAM_NAME_TOO_LONG
 
   return (
     <form

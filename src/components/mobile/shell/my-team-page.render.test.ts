@@ -131,6 +131,16 @@ describe('the My team page', () => {
     expect(html).not.toContain('role="alert"')
   })
 
+  it('opens a longer name set on desktop without an error: no red counter, no line, Save greyed', () => {
+    const long = 'The Christian McCaffrey Fan Club'
+    const html = page({ ...detail, teams: detail.teams.map((t) => (t.id === ME ? { ...t, name: long } : t)) })
+    expect(html).toContain(`value="${long}"`)
+    expect(html).toMatch(/<span[^>]*class="[^"]*text-m-t3[^"]*"[^>]*data-my-team-count[^>]*>32 \/ 24</)
+    expect(html).not.toContain('text-m-tr')
+    expect(html).not.toContain('data-my-team-why')
+    expect(html).toMatch(/<button type="submit" disabled=""[^>]*data-my-team-save[^>]*>Save<\/button>/)
+  })
+
   it('leaves out what teams can’t have yet: no photo upload, no colour swatches', () => {
     const html = page(detail)
     expect(html).not.toContain('Upload photo')
@@ -176,15 +186,23 @@ describe('myTeamSave — when Save is on', () => {
     expect(myTeamSave('   ', 'Touchdown Tacos')).toEqual({ ok: false, why: 'Type a team name to save.' })
   })
 
-  it('holds to the page’s 24 characters (a longer name set on desktop must be shortened)', () => {
+  it('a name changed here holds to the phone’s 24 characters, and the line says it is the phone’s limit', () => {
     expect(MY_TEAM_NAME_MAX).toBe(24)
     expect(myTeamSave('x'.repeat(24), 'Touchdown Tacos')).toEqual({ ok: true, name: 'x'.repeat(24) })
-    expect(myTeamSave('x'.repeat(30), 'Touchdown Tacos')).toEqual({ ok: false, why: 'A team name is at most 24 characters — this one is 30.' })
+    expect(myTeamSave('x'.repeat(30), 'Touchdown Tacos')).toEqual({ ok: false, why: 'Names on the phone can be up to 24 characters — shorten it to save.' })
   })
 
-  it('the desktop gate is unchanged (100), and a tighter limit never loosens it', () => {
+  it('a longer name set on desktop is not an error until it is changed', () => {
+    const long = 'The Christian McCaffrey Fan Club'
+    expect(myTeamSave(long, long)).toEqual({ ok: false, why: null })
+    expect(myTeamSave(`${long} `, long)).toEqual({ ok: false, why: null })
+    expect(myTeamSave('The Christian McCaffrey Fan Clu', long)).toEqual({ ok: false, why: 'Names on the phone can be up to 24 characters — shorten it to save.' })
+    expect(myTeamSave('McCaffrey Fan Club', long)).toEqual({ ok: true, name: 'McCaffrey Fan Club' })
+  })
+
+  it('the desktop gate is unchanged (100)', () => {
     expect(renameGate('x'.repeat(100))).toEqual({ ok: true, name: 'x'.repeat(100) })
-    expect(renameGate('x'.repeat(101), 500)).toEqual({ ok: false, why: 'A team name is at most 100 characters — this one is 101.' })
+    expect(renameGate('x'.repeat(101))).toEqual({ ok: false, why: 'A team name is at most 100 characters — this one is 101.' })
   })
 })
 
