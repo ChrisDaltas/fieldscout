@@ -25,6 +25,7 @@ import {
   OVERRIDDEN_TITLE,
   SECOND_CHIP_LABEL,
   benchNote,
+  benchUnrecorded,
   benchRows,
   benchSlotLabel,
   boxSumCell,
@@ -72,6 +73,8 @@ import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-servic
 import { cn } from '@/lib/utils'
 import { useOverrideMode } from '@/stores/commish-override-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+
+import { nflGameHref } from '@/components/mobile/league/game/game-ops'
 
 import { MobileCorrectionNote } from './match-correction-note'
 import {
@@ -979,7 +982,13 @@ function Board({
   const benchA = rosters.data && dataA?.bench ? benchHalves(dataA.bench, rosterOf(a)) : null
   const benchB = rosters.data && bTeam && dataB?.bench ? benchHalves(dataB.bench, rosterOf(bTeam)) : null
   const benchPairs = pairBench(benchA ?? [], benchB ?? [])
-  const benchExtra = benchNote(doc.league_week.status)
+  // F567: a past week's bench is the stored one; an unrecorded one is said.
+  const benchSides = [
+    ...(dataA ? [{ source: dataA.bench_source, team: teamName(doc, a) }] : []),
+    ...(bTeam && dataB ? [{ source: dataB.bench_source, team: teamName(doc, bTeam) }] : []),
+  ]
+  const benchExtra = benchNote(doc.league_week.status, benchSides)
+  const noBenchRecorded = benchUnrecorded(benchSides)
 
   const grid = two ? 'grid grid-cols-[minmax(0,1fr)_38px_minmax(0,1fr)] items-center gap-2' : 'grid grid-cols-[38px_minmax(0,1fr)] items-center gap-2'
   const half = (p: HalfPlayer | null | 'gone', present: boolean, mirror = false) =>
@@ -995,6 +1004,7 @@ function Board({
         tz={tz}
         mirror={mirror}
         onOpen={p ? () => openPlayer(p.id, leagueId) : null}
+        gameHref={p?.game ? nflGameHref(leagueId, p.game.id) : null}
       />
     )
 
@@ -1054,7 +1064,7 @@ function Board({
                     Try again
                   </button>
                 </div>
-              ) : benchPairs.length === 0 ? (
+              ) : benchPairs.length === 0 && noBenchRecorded ? null : benchPairs.length === 0 ? (
                 <p className="py-4 text-center text-[13px] font-medium text-m-t3" data-empty="no-bench">
                   {EMPTY_BENCH_COPY}
                 </p>
@@ -1137,8 +1147,12 @@ function TotalHalf({ data, mirror = false }: { data: TeamBoxScore | undefined; m
   )
 }
 
+/** The game line's tap area (PlayerHalf): 3 + 14 + 13 = 30px, same layout. */
+const GAME_LINE_HIT = 'pt-[3px] -mt-[3px] pb-[13px] -mb-[13px]'
+
 /** One player's half of a row (§2.2 C): short name, POS · TEAM (bye), points
- *  and projection, the game line. A tap opens the player profile. */
+ *  and projection, the game line. A tap opens the player profile; a tap on
+ *  the game line opens that NFL game's box score (gap list §3 #17). */
 function PlayerHalf({
   player,
   proj,
@@ -1146,6 +1160,7 @@ function PlayerHalf({
   tz,
   mirror,
   onOpen,
+  gameHref,
 }: {
   player: HalfPlayer | null
   proj: number | null
@@ -1153,6 +1168,7 @@ function PlayerHalf({
   tz: string | null
   mirror: boolean
   onOpen: (() => void) | null
+  gameHref: string | null
 }) {
   if (!player) {
     return (
@@ -1201,19 +1217,24 @@ function PlayerHalf({
       {proj !== null && <span className="text-[11px] font-medium text-m-t3">{proj.toFixed(2)}</span>}
     </span>
   )
+  const lineClass = 'block w-full truncate text-[11px] font-medium text-m-t3'
   return (
-    <button
-      type="button"
-      onClick={onOpen ?? undefined}
-      className={cn('flex w-full min-w-0 flex-col gap-[3px]', mirror ? 'text-right' : 'text-left')}
-      data-player={player.id}
-    >
-      <span className="flex w-full items-start gap-1.5">
+    <div className={cn('flex w-full min-w-0 flex-col gap-[3px]', mirror ? 'text-right' : 'text-left')}>
+      <button type="button" onClick={onOpen ?? undefined} className={cn('flex w-full items-start gap-1.5', mirror ? 'text-right' : 'text-left')} data-player={player.id}>
         {mirror ? pointsCol : nameCol}
         {mirror ? nameCol : pointsCol}
-      </span>
-      <span className="w-full truncate text-[11px] font-medium text-m-t3">{game || ' '}</span>
-    </button>
+      </button>
+      {game && gameHref ? (
+        // The line is 14px tall; its tap area reaches 30px (the handoff's
+        // smallest hit target) without moving it — up over the 3px gap only,
+        // the rest down into the row's padding, never over the name button.
+        <Link href={gameHref} className={cn(lineClass, GAME_LINE_HIT, 'active:text-m-t1')} data-game-line={player.game?.id}>
+          {game}
+        </Link>
+      ) : (
+        <span className={lineClass}>{game || '\u00a0'}</span>
+      )}
+    </div>
   )
 }
 

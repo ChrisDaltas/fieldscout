@@ -15,6 +15,7 @@
  * receipt) is pgTAP 076 + the stack suite.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 
 import {
   COMMISH_TEAM_ACTION_ID_REUSED_MESSAGE,
@@ -49,10 +50,12 @@ describe('commishRenameTeamInputSchema — 128:637', () => {
     expect(commishRenameTeamInputSchema.safeParse(without).success).toBe(true)
   })
 
-  it('a blank / whitespace-only name and a 101-char name are field errors (128:365-369 mirrored); 100 passes', () => {
+  it('a blank / whitespace-only name and a 25-char name are field errors (the 24 rule, 196 mirrored); 24 passes', () => {
     expect(commishRenameTeamInputSchema.safeParse({ ...body, name: '   ' }).success).toBe(false)
-    expect(commishRenameTeamInputSchema.safeParse({ ...body, name: 'x'.repeat(101) }).success).toBe(false)
-    expect(commishRenameTeamInputSchema.safeParse({ ...body, name: 'x'.repeat(100) }).success).toBe(true)
+    const long = commishRenameTeamInputSchema.safeParse({ ...body, name: 'x'.repeat(25) })
+    expect(long.success).toBe(false)
+    expect(long.error && z.flattenError(long.error).fieldErrors.name).toEqual(['Team names can be up to 24 characters.'])
+    expect(commishRenameTeamInputSchema.safeParse({ ...body, name: 'x'.repeat(24) }).success).toBe(true)
   })
 
   it('501-char reasons, a null reason and unknown keys are refused', () => {
@@ -111,7 +114,7 @@ describe('commishRenameTeam — the RPC call, the mapper, the F65(b) guard', () 
     expect(await commishRenameTeam(rpcDouble({ data: null, error: { code: 'P0002', message: 'gone' } }).client, LEAGUE, body)).toStrictEqual({ status: 404, body: { error: 'gone' } })
     const sealed = 'commish_rename_team: franchise ce… is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b))'
     expect(await commishRenameTeam(rpcDouble({ data: null, error: { code: 'P0001', message: sealed } }).client, LEAGUE, body)).toStrictEqual({ status: 409, body: { error: sealed } })
-    const bound = 'commish_rename_team: the name is 101 characters — at most 100 (the league-rename bound, createLeagueInputSchema.name)'
+    const bound = 'commish_rename_team: the name is 25 characters — team names can be up to 24 characters'
     expect(await commishRenameTeam(rpcDouble({ data: null, error: { code: '22023', message: bound } }).client, LEAGUE, body)).toStrictEqual({ status: 400, body: { error: bound } })
   })
 

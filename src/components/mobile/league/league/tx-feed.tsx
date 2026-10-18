@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Fragment, useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
 
 import { memberNamesOf } from '@/components/leagues/activity-feed-ops'
 import { managersByTeam } from '@/components/leagues/league-home-season-ops'
@@ -10,11 +10,13 @@ import { TextWithActor, UsernameLink } from '@/components/shared/username-link'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useMobileLeagueActivity } from '@/hooks/use-mobile-league-activity'
 import { usePlayersByIds, type PlayerIdentity } from '@/hooks/use-players-by-ids'
+import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { CenteredNote, StatusLine } from './league-bits'
 import {
+  claimResultRows,
   commishLogHref,
   emptyFilterCopy,
   feedRows,
@@ -23,6 +25,7 @@ import {
   moveSub,
   rowPlayerIds,
   shortName,
+  withClaimResults,
   type MoveLine,
   type Pill,
   type PostRow,
@@ -36,6 +39,17 @@ import {
  *  keeps only part of a league-wide read), at most this many pages. */
 const FILL_ROWS = 12
 const FILL_PAGES = 8
+
+/** Your settled claims for My moves (the screen's `GET …/waivers?status=all`
+ *  read): the lost and failed ones join the list. `refresh` re-reads them —
+ *  claims are never broadcast, so a new move at the top of the feed (a
+ *  waiver run's wins arrive that way) is the cue that a run may have
+ *  settled yours too. */
+export interface TxClaimResults {
+  claims: readonly WaiverClaimView[]
+  waiverType: string | null
+  refresh: () => void
+}
 
 /**
  * The transaction list (handoff m-league §2.5 item 5): one row per act,
@@ -58,6 +72,8 @@ export function TxFeed({
   filter,
   myMoves,
   onClear,
+  claimResults = null,
+  claimsPending = false,
 }: {
   leagueId: string
   detail: LeagueDetail
@@ -65,6 +81,11 @@ export function TxFeed({
   filter: TxFilter
   myMoves: boolean
   onClear: () => void
+  /** My moves under All types / Waivers: your lost and failed claims. */
+  claimResults?: TxClaimResults | null
+  /** Those claims are still being read (alongside the feed): hold the rows
+   *  so a claim never pops in among moves already shown. */
+  claimsPending?: boolean
 }) {
   const streams = useMemo(() => feedStreams(filter, myMoves, myTeamId), [filter, myMoves, myTeamId])
   const feed = useMobileLeagueActivity(leagueId, streams)
@@ -84,7 +105,12 @@ export function TxFeed({
     () => (feed.items ? feedRows(feed.items, teamNames, memberNames, who, perspective) : null),
     [feed.items, teamNames, memberNames, who, perspective],
   )
-  const ids = useMemo(() => (rows ? rowPlayerIds(rows) : []), [rows])
+  const claimRows = useMemo(
+    () => (claimResults ? claimResultRows(claimResults.claims, claimResults.waiverType, who) : []),
+    [claimResults, who],
+  )
+  const shown = useMemo(() => (rows ? withClaimResults(rows, claimRows, !feed.hasNextPage) : null), [rows, claimRows, feed.hasNextPage])
+  const ids = useMemo(() => (shown ? rowPlayerIds(shown) : []), [shown])
   const players = usePlayersByIds(ids)
   const filtered = filter.type !== 'All' || (!myMoves && filter.teams.length > 0)
 
@@ -98,11 +124,23 @@ export function TxFeed({
     if (filling && !isFetchingNextPage) void fetchNextPage()
   }, [filling, isFetchingNextPage, fetchNextPage])
 
+  // A new move at the top of the same list (not its first read, not a new
+  // filter): re-read your claims.
+  const top = rows === null ? undefined : (rows[0]?.id ?? '')
+  const seenTop = useRef<{ streams: typeof streams; top: string } | null>(null)
+  const refreshClaims = claimResults?.refresh
+  useEffect(() => {
+    if (top === undefined) return
+    const seen = seenTop.current
+    if (seen && seen.streams === streams && seen.top !== top) refreshClaims?.()
+    seenTop.current = { streams, top }
+  }, [top, streams, refreshClaims])
+
   if (myMoves && !myTeamId) {
     return <CenteredNote message="You don’t manage a team in this league." />
   }
-  if (feed.isPending || (rows !== null && rows.length === 0 && filling)) return <RowSkeleton />
-  if (!rows) {
+  if (feed.isPending || claimsPending || (rows !== null && rows.length === 0 && filling)) return <RowSkeleton />
+  if (!rows || !shown) {
     return <CenteredNote role="alert" message="Couldn’t load the activity." action="Try again" onAction={() => void feed.refetch()} />
   }
 
@@ -118,21 +156,21 @@ export function TxFeed({
           <StatusLine>Activity isn’t refreshing — showing the last moves we read.</StatusLine>
         </div>
       )}
-      {rows.map((row) =>
+      {shown.map((row) =>
         row.kind === 'transaction' ? (
           <TxRowView key={row.id} leagueId={leagueId} row={row} who={who} playerById={players.playerById} />
         ) : (
           <PostRowView key={row.id} leagueId={leagueId} row={row} />
         ),
       )}
-      {rows.length === 0 &&
+      {shown.length === 0 &&
         !feed.hasNextPage &&
         (filtered ? (
           <CenteredNote message={emptyFilterCopy(myMoves)} action="Clear filter" onAction={onClear} />
         ) : (
           <CenteredNote message={myMoves ? 'No moves yet this season.' : 'Nothing has happened in this league yet.'} />
         ))}
-      {rows.length === 0 && feed.hasNextPage && (
+      {shown.length === 0 && feed.hasNextPage && (
         <CenteredNote message="Nothing matches in the newest moves." className="pb-0" />
       )}
       {feed.hasNextPage && (
@@ -216,7 +254,7 @@ function TxRowView({
   const head = who(row.teamId)
   const entry = row.commishActionId ? commishLogHref(leagueId, { entry: row.commishActionId }) : null
   return (
-    <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-tx-row={row.id}>
+    <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-tx-row={row.id} data-claim-result={row.result?.status}>
       <div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
         {head && typeof head !== 'string' ? (
           <UsernameLink username={head.username} at={false} className="min-w-0 truncate font-semibold text-m-t1" />
@@ -224,6 +262,7 @@ function TxRowView({
           <span className="min-w-0 truncate font-semibold text-m-t1">{head ?? 'Commissioner'}</span>
         )}
         <TypePill pill={row.pill} href={row.pill.tone === 'commish' ? entry : null} />
+        {row.result && <span className="flex-none whitespace-nowrap font-semibold text-m-tr">{row.result.label}</span>}
         {entry && row.pill.tone !== 'commish' && (
           <Link href={entry} className="flex-none font-semibold text-m-pos-wr" title="Done by the commissioner — open the log entry">
             ✸
@@ -262,7 +301,7 @@ function MoveLineView({ leagueId, move, player }: { leagueId: string; move: Move
   return (
     <div className="relative flex w-full items-center gap-2.5">
       <span className="flex w-4 flex-none justify-center">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden="true" className={tone}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden="true" className={move.muted ? 'text-m-t4' : tone}>
           <path d={move.tone === 'add' ? 'M8 3.5v9M3.5 8h9' : 'M3.5 8h9'} />
         </svg>
       </span>
@@ -280,7 +319,7 @@ function MoveLineView({ leagueId, move, player }: { leagueId: string; move: Move
           </span>
         )}
       </span>
-      <span className={cn('flex-none text-[11px] font-semibold', tone)}>{move.verb}</span>
+      <span className={cn('flex-none text-[11px] font-semibold', move.muted ? 'text-m-t3' : tone)}>{move.verb}</span>
       {move.playerId && (
         <button
           type="button"

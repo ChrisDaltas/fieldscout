@@ -224,7 +224,7 @@ beforeAll(async () => {
     client: SupabaseClient<Database>,
   ): Promise<string> => {
     const seat = await addPlaceholderSeat(commishClient, leagueId, {
-      team_name: `Seat for ${username}`,
+      team_name: `Seat ${username}`, // ≤ 24 — team names, migration 196
     })
     if (seat.status !== 201) throw new Error(`addPlaceholderSeat failed: ${JSON.stringify(seat.body)}`)
     const teamId = (seat.body as { team_id: string }).team_id

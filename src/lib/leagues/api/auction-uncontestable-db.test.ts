@@ -236,7 +236,7 @@ beforeAll(async () => {
     p_name: LEAGUE_NAME,
     p_season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     p_scoring_system_id: template?.id,
-    p_team_name: 'Auction Uncontestable Commish',
+    p_team_name: 'Uncontestable Commish', // ≤ 24 — team names, migration 196
     p_action_id: ACTION.create,
     p_settings: blob,
     ...columnArgs,

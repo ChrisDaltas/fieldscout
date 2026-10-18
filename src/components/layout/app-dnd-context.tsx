@@ -10,6 +10,7 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCallback, useState } from 'react'
@@ -19,6 +20,7 @@ import { foldersKeys } from '@/hooks/use-folders'
 import { listsKeys } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 import { useListOrderStore } from '@/stores/list-order-store'
+import { railDropTargetAt, useRailLineupDragStore, type RailDrag } from '@/stores/rail-lineup-drag-store'
 
 interface DragPlayer {
   id: string
@@ -66,6 +68,22 @@ export function AppDndContext({ children }: { children: React.ReactNode }) {
     setActiveKind(null)
     setActiveLabel(null)
     setActivePlayer(null)
+    useRailLineupDragStore.getState().end()
+  }, [])
+
+  // F570: the pointer's point now — where the drag started plus how far it moved.
+  const pointerAt = (event: DragMoveEvent | DragEndEvent): { x: number; y: number } | null => {
+    const start = event.activatorEvent as (Event & { clientX?: number; clientY?: number; touches?: TouchList }) | null
+    const touch = start?.touches?.[0]
+    const x = touch?.clientX ?? start?.clientX
+    const y = touch?.clientY ?? start?.clientY
+    return typeof x === 'number' && typeof y === 'number' ? { x: x + event.delta.x, y: y + event.delta.y } : null
+  }
+  const onDragMove = useCallback((event: DragMoveEvent) => {
+    const bridge = useRailLineupDragStore.getState()
+    if (!bridge.drag) return
+    const at = pointerAt(event)
+    bridge.setHover(at ? railDropTargetAt(at.x, at.y) : null)
   }, [])
 
   const onDragStart = useCallback((event: DragStartEvent) => {
@@ -77,11 +95,25 @@ export function AppDndContext({ children }: { children: React.ReactNode }) {
     setActiveLabel(count > 1 ? `${count} players` : (data?.label ?? null))
     // Single player drag → keep the player so the overlay shows a real card.
     setActivePlayer(count <= 1 ? (data?.player ?? null) : null)
+    // F570: a rail row says what it carries, so the lineup can mark the
+    // targets that accept it (its nested DndContext cannot see this drag).
+    const rail = (event.active.data.current as { rail?: RailDrag } | undefined)?.rail
+    if (rail) useRailLineupDragStore.getState().start(rail)
   }, [])
 
   const onDragEnd = useCallback(
     async (event: DragEndEvent) => {
+      // F570: a rail player let go over a lineup target — the lineup's own
+      // handler takes it (it only ever receives a target it marked as open).
+      const bridge = useRailLineupDragStore.getState()
+      const at = bridge.drag ? pointerAt(event) : null
+      const railTarget = at ? railDropTargetAt(at.x, at.y) : null
+      const railDrag = bridge.drag
       clearActive()
+      if (railDrag && railTarget && bridge.onDrop) {
+        bridge.onDrop(railDrag, railTarget)
+        return
+      }
       const { active, over } = event
       if (!over) return
 
@@ -229,6 +261,7 @@ export function AppDndContext({ children }: { children: React.ReactNode }) {
       sensors={sensors}
       collisionDetection={collisionDetection}
       onDragStart={onDragStart}
+      onDragMove={onDragMove}
       onDragEnd={onDragEnd}
       onDragCancel={clearActive}
     >

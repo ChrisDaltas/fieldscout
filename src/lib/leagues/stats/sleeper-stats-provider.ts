@@ -170,6 +170,10 @@ function sleeperGameId(season: number, game: SleeperScheduleGame): string {
 interface SleeperWeeklyStatsRow {
   player_id: string
   stats: Record<string, number | null> | null
+  /** The row's own team / opponent (the game it was played in — recorded
+   *  verbatim in fixtures/sleeper-def-yards-allowed-2026.json). F589. */
+  team?: unknown
+  opponent?: unknown
 }
 
 /** Per-position weekly actuals — migrated from live-stats.ts in L.A0.2b;
@@ -336,6 +340,8 @@ export class SleeperStatsProvider implements StatsProvider {
           season,
           week,
           stats: readZeroOmittedYardsAllowed(row.stats, mapped), // R1150 — actuals only
+          ...(typeof row.team === 'string' && row.team !== '' ? { team: row.team } : {}),
+          ...(typeof row.opponent === 'string' && row.opponent !== '' ? { opponent: row.opponent } : {}),
 
           // Box-score tier — tracking/charted never present here; the F578
           // usage keys (snaps, red zone, FG long) are the only advanced keys.

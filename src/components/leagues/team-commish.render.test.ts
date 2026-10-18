@@ -148,11 +148,11 @@ describe('renameArm — the manager’s arm is NOT inside override mode; the com
 })
 
 describe('renameGate / renameOutcome', () => {
-  it('why Save is disabled is SAID: blank, and 101 characters; the name sent is the TRIMMED one; an unchanged name is NOT gated here', () => {
+  it('why Save is disabled is SAID: blank, and past the 24-character rule (Chris 2026-10-18); 24 passes; the name sent is the TRIMMED one', () => {
     expect(renameGate('   ')).toEqual({ ok: false, why: 'Type a team name to save.' })
-    const long = renameGate('x'.repeat(101))
-    expect(long.ok).toBe(false)
-    expect(!long.ok && long.why).toContain('101')
+    expect(renameGate('x'.repeat(25))).toEqual({ ok: false, why: 'Team names can be up to 24 characters.' })
+    expect(renameGate('x'.repeat(24))).toEqual({ ok: true, name: 'x'.repeat(24) })
+    expect(renameGate(`  ${'x'.repeat(24)}  `)).toEqual({ ok: true, name: 'x'.repeat(24) })
     expect(renameGate('  New Name ')).toEqual({ ok: true, name: 'New Name' })
   })
 
@@ -313,6 +313,15 @@ describe('TeamRenameView — one form, two arms', () => {
     }
     expect(renderRename({ arm: 'commissioner' })).toContain('recorded and posted to the league')
     expect(renderRename({ arm: 'manager' })).not.toContain('recorded and posted')
+  })
+
+  it('the input stops at 24 characters in both arms (Chris 2026-10-18 — prevent, don’t refuse); a longer name set before the rule says the rule and disables Save', () => {
+    for (const arm of ['manager', 'commissioner'] as const) {
+      expect(renderRename({ arm })).toMatch(/<input[^>]*maxLength="24"/)
+    }
+    const legacy = renderRename({ draft: 'The Christian McCaffrey Fanboy' })
+    expect(legacy).toContain('Team names can be up to 24 characters.')
+    expect(legacy.slice(legacy.indexOf('data-rename-save') - 300, legacy.indexOf('data-rename-save'))).toContain('disabled=""')
   })
 
   it('a blank draft disables Save and SAYS why, wired by aria-describedby', () => {

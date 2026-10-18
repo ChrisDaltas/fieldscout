@@ -3,27 +3,40 @@
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { CompareScreen } from './compare-screen'
 import { ListDetailsScreen } from './list-details-screen'
 import { ListEditor } from './list-editor'
 import { ListView } from './list-view'
 import { ListsGrid } from './lists-grid'
-import { editorHref, listHref } from './lists-nav'
+import { compareIdsOf } from './list-tools'
+import { editorHref, listHref, returnToOf, type ReturnTo } from './lists-nav'
 
 /**
- * FieldScout Mobile — Lists (`/app/lists`). One route, four screens chosen by
+ * FieldScout Mobile — Lists (`/app/lists`). One route, five screens chosen by
  * the query string (see `lists-nav.ts` for the URL map). `?list=` is also the
  * desktop deep link (`/app/lists/<id>` redirects to it), so a shared or
  * recently-viewed list link opens the List view on a phone.
+ *
+ * `currentWeek` (the NFL week, 0 = offseason — the server's) names the
+ * rankings the editor's Import a ranking sheet offers ("Week 5 · RB",
+ * "Rest of season" or "Pre-draft").
  */
-export function MobileLists() {
+export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
   const params = useSearchParams()
   const pathname = usePathname()
   const listId = params.get('list')
   const urlEdit: EditTarget | null =
     listId && params.get('edit') === '1'
-      ? { listId, autoAdd: params.get('add') === '1', href: `${pathname}?${params.toString()}` }
+      ? {
+          listId,
+          autoAdd: params.get('add') === '1',
+          created: params.get('new') === '1',
+          returnTo: returnToOf(params.get('to')),
+          href: `${pathname}?${params.toString()}`,
+        }
       : null
   const guard = useEditorBackGuard(urlEdit, params.get('from'))
+  const compare = compareIdsOf(params.get('compare'))
 
   if (guard.editing) {
     const edit = guard.editing
@@ -32,12 +45,16 @@ export function MobileLists() {
         key={edit.listId}
         listId={edit.listId}
         autoAdd={edit.autoAdd}
+        created={edit.created}
+        returnTo={edit.returnTo}
+        currentWeek={currentWeek}
         promptSeq={guard.promptSeq}
         onDirtyChange={guard.setDirty}
         onLeave={guard.leave}
       />
     )
   }
+  if (compare.length > 0) return <CompareScreen ids={compare} />
   if (listId && params.get('details') === '1') return <ListDetailsScreen key={listId} listId={listId} />
   if (listId) return <ListView key={listId} listId={listId} />
   return <ListsGrid tab={params.get('tab') === 'saved' ? 'saved' : 'mine'} />
@@ -46,6 +63,10 @@ export function MobileLists() {
 interface EditTarget {
   listId: string
   autoAdd: boolean
+  /** Opened by New list's Next: the editor is step 2 of 2. */
+  created: boolean
+  /** Where Update returns it, when not the List view (gap list §3 #8). */
+  returnTo: ReturnTo | undefined
   /** The editor's own URL, to put back. */
   href: string
 }
@@ -111,7 +132,11 @@ function useEditorBackGuard(urlEdit: EditTarget | null, from: string | null) {
     rooted.current = true
     if (!urlEdit || from === 'view') return
     window.history.replaceState(null, '', listHref(urlEdit.listId, from === 'grid' ? 'grid' : undefined))
-    window.history.pushState(null, '', editorHref(urlEdit.listId, urlEdit.autoAdd, 'view'))
+    window.history.pushState(
+      null,
+      '',
+      editorHref(urlEdit.listId, { add: urlEdit.autoAdd, created: urlEdit.created, from: 'view', returnTo: urlEdit.returnTo }),
+    )
     // Mount only: this re-roots the entry the page loaded on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

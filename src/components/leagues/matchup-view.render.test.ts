@@ -43,6 +43,7 @@ import { MatchupPage } from './matchup-view'
 import {
   BENCH_NOT_COUNTED_COPY,
   BENCH_TODAY_COPY,
+  BENCH_NOT_RECORDED_COPY,
   NO_LINEUP_COPY,
   NO_WEEK_COPY,
   PENDING_SCORE_COPY,
@@ -789,6 +790,33 @@ describe('the bench: both teams, under the starters, with points — never in th
     })
     expect(done).toContain(BENCH_TODAY_COPY)
   })
+
+  it('F567: a finished week shows the STORED bench — a player dropped since is named from the box, no today’s-roster note', () => {
+    const FINAL = weekDoc({ league_week: { status: 'final', median_score: null, finalized_at: '2099-09-16T00:00:00Z' } })
+    const gone = { player_id: 'p-gone', phase: 'done' as const, game: GAME_FINAL, points: 9.5, pending: [], reason: 'scored' as const, ir: false, player: { full_name: 'Dropped Since', position: 'WR', nfl_team: 'AAA', headshot_url: null } }
+    const done = renderMatchups({
+      rosters: ROSTERS,
+      week: FINAL,
+      boxes: { [T1]: { ...SCORED_BOX(T1), bench: [gone], bench_source: 'stored' }, [T2]: { ...SCORED_BOX(T2), bench: BENCH_T2, bench_source: 'stored' } },
+    })
+    expect(done).toContain('Dropped Since')
+    expect(done).toContain('>9.50<')
+    expect(done).not.toContain(BENCH_TODAY_COPY)
+    expect(done).not.toContain(BENCH_NOT_RECORDED_COPY)
+  })
+
+  it('F567: a finished week with no stored bench says so — never today’s roster, never “Nobody on the bench”', () => {
+    const FINAL = weekDoc({ league_week: { status: 'final', median_score: null, finalized_at: '2099-09-16T00:00:00Z' } })
+    const done = renderMatchups({
+      rosters: ROSTERS,
+      week: FINAL,
+      boxes: { [T1]: { ...SCORED_BOX(T1), bench: [], bench_source: 'not_recorded' }, [T2]: { ...SCORED_BOX(T2), bench: [], bench_source: 'not_recorded' } },
+    })
+    expect(done).toContain(BENCH_NOT_RECORDED_COPY)
+    expect(done).not.toContain(BENCH_TODAY_COPY)
+    expect(done).not.toContain('data-empty="no-bench"')
+    expect(done).not.toContain('Bench Back')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -885,5 +913,51 @@ describe('the prototype layout: scoreboard header, slot-aligned board, totals, t
     for (const m of faces) expect(m[1]).toMatch(/(^| )hidden( |$)/)
     const src = readFileSync(path.resolve(process.cwd(), 'src/components/leagues/matchup-view.tsx'), 'utf8')
     expect(src).not.toMatch(/min-w-\[\d{3,}px\]|w-\[\d{3,}px\]|overflow-x-(auto|scroll)/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// F566 — the win-chance meter and each side's streak on the scoreboard
+// ---------------------------------------------------------------------------
+
+describe('F566 — win chance from the remaining projections, and the W/L streak', () => {
+  const vals = (rows: Array<[string, number]>) =>
+    rows.map(([player_id, projected_points]) => ({ player_id, projected_points, projected_missing: null, season_points: null, season_games: 0 }))
+  const box = (teamId: string, points: number, done: string, next: string) =>
+    boxFor(teamId, {
+      starters: [
+        starter({ slot: 'qb:0', phase: 'done', game: GAME_FINAL, points, player: { id: done, full_name: done, position: 'QB', nfl_team: 'CCC', headshot_url: null } }),
+        starter({ slot: 'wr:0', phase: 'up_next', game: GAME_NEXT, player: { id: next, full_name: next, position: 'WR', nfl_team: 'EEE', headshot_url: null } }),
+      ],
+      points,
+      pending: [],
+      no_stat_row: [],
+    })
+  const seeded = {
+    boxes: { [T1]: box(T1, 20, 'h-done', 'h-next'), [T2]: box(T2, 15, 'a-done', 'a-next') },
+    values: vals([['h-next', 10], ['a-next', 5]]),
+  }
+
+  it('live: 20 + 10 vs 15 + 5 with 15 left → 83% · 17%, the rule said in words', () => {
+    const html = renderMatchups(seeded)
+    expect(html).toContain('data-win-chance="83-17"')
+    expect(html).toContain('Proj 30.0 – 20.0')
+    expect(html).toContain('Win chance')
+  })
+
+  it('no meter without every projection, or once the week is final (never a guess)', () => {
+    expect(renderMatchups({ ...seeded, values: vals([['h-next', 10]]) })).not.toContain('data-win-chance')
+    const final = renderMatchups({ ...seeded, week: weekDoc({ league_week: { status: 'final', median_score: null, finalized_at: '2099-09-16T00:00:00Z' } }) })
+    expect(final).not.toContain('data-win-chance')
+  })
+
+  it('each side carries its current streak from the stored final results', () => {
+    const fin = (id: string, week: number, result: string) => ({ id, season: 2099, week, round_type: 'regular', status: 'final', home_team_id: T1, away_team_id: T2, home_score: 1, away_score: 0, result, is_overridden: false })
+    const html = renderMatchups({ schedule: { ...SCHEDULE, matchups: [fin('x1', 1, 'away'), fin('x2', 2, 'home'), fin('x3', 3, 'home')] } })
+    const head = html.slice(html.indexOf('data-matchup="m1"'), html.indexOf('data-board'))
+    expect(head).toContain('data-streak="▲2W"')
+    expect(head).toContain('data-streak="▼2L"')
+    // No decided game → no streak (the default schedule is all live).
+    expect(renderMatchups()).not.toContain('data-streak')
   })
 })

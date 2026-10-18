@@ -14,8 +14,10 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
+import { useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
+import { refreshCommunity } from '@/components/mobile/community/community-store'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
@@ -34,6 +36,7 @@ import { listTitleSchema, type RankingMode } from '@/types/schemas/lists'
 
 import { AddPlayersSheet } from './add-players-sheet'
 import { AddStatsSheet } from './add-stats-sheet'
+import { ImportSheet, importToolLabel, type ImportSource } from './import-sheet'
 import {
   MAX_TIERS,
   addToDraft,
@@ -43,6 +46,8 @@ import {
   draftItems,
   draftOf,
   fillScores,
+  importIntoDraft,
+  importToast,
   moveItem,
   playersLabel,
   removeFromDraft,
@@ -55,7 +60,7 @@ import {
   type EdItem,
   type ListDraft,
 } from './lists-model'
-import { useListsNav } from './lists-nav'
+import { savedToast, updateAction, useListsNav, type ReturnTo } from './lists-nav'
 import {
   CenterNote,
   GripIcon,
@@ -121,17 +126,39 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  *   (Chris, 2026-10-15): inside the editor it takes him out of the draft —
  *   gone from the list at once, saved by Update, undone by Back — like the
  *   ✓ in Add players. The List view's profile removes at once.
- * - Import a ranking is left out: the app has no rankings to import yet.
+ * - **Import a ranking** (gap list §3 #5) brings in the user's own rankings
+ *   or another of their lists, in order with its tiers, into the draft like
+ *   any other edit (`importIntoDraft`). Each player once: anyone already in
+ *   the list is skipped, and an option that would bring in nobody can't be
+ *   tapped. The design's Scout AI and Experts sources come later; while
+ *   rankings are switched off it reads "Import a list".
+ * - **A list started from Community goes back there** (gap list §3 #8):
+ *   the handoff's composer posts and stays on Community, so Update on that
+ *   list's step 2 of 2 returns to Community — refreshed, on For you — with
+ *   "List created", not to the List view. Like the composer's Save (a name
+ *   is enough, zero players allowed), that Update is live even with nothing
+ *   changed: it then writes nothing and just goes back (`updateAction`).
  */
 export function ListEditor({
   listId,
   autoAdd,
+  created = false,
+  returnTo,
+  currentWeek = 0,
   promptSeq = 0,
   onDirtyChange,
   onLeave,
 }: {
   listId: string
   autoAdd: boolean
+  /** A list New list has just made (its Next): the header counts this as
+   *  step "2 of 2" after New list's "1 of 2" (gap list §3 #7). */
+  created?: boolean
+  /** Where Update returns it, when not the List view: Community, for a list
+   *  started there (gap list §3 #8). */
+  returnTo?: ReturnTo
+  /** The NFL week (0 = offseason), for the import sheet's ranking names. */
+  currentWeek?: number
   /** Bumped when the OS back gesture tried to leave with changes. */
   promptSeq?: number
   /** Whether leaving now would drop changes (or a save in flight). */
@@ -140,12 +167,23 @@ export function ListEditor({
   onLeave?: () => void
 }) {
   const nav = useListsNav()
+  const qc = useQueryClient()
   const detail = useList(listId)
   const aiBuild = useAiListBuild(listId)
   const list = detail.data
+  const step = created ? '2 of 2' : null
   const close = () => {
     onLeave?.()
     nav.closeEdit(listId)
+  }
+  /** Update wrote the draft: say so, then the List view — or, for a list
+   *  Community started, Community, refreshed (gap list §3 #8). */
+  const saved = () => {
+    toast({ title: savedToast(returnTo) })
+    if (returnTo !== 'community') return close()
+    onLeave?.()
+    refreshCommunity(qc)
+    nav.returnToCommunity()
   }
 
   return (
@@ -154,7 +192,7 @@ export function ListEditor({
           only a list that never loaded is an error screen. */}
       {!list && detail.isError ? (
         <>
-          <EditorHeader title={null} onBack={close} />
+          <EditorHeader title={null} step={step} onBack={close} />
           <CenterNote
             title="This list could not be loaded."
             body={detail.error.message}
@@ -163,7 +201,7 @@ export function ListEditor({
         </>
       ) : !list ? (
         <>
-          <EditorHeader title={null} onBack={close} />
+          <EditorHeader title={null} step={step} onBack={close} />
           <div className="flex flex-col gap-2.5 px-4 pt-2" aria-busy="true" aria-label="Loading list">
             <div className="flex gap-2">
               <div className="h-10 flex-1 animate-pulse rounded-xl bg-m-b1" />
@@ -176,7 +214,7 @@ export function ListEditor({
         </>
       ) : !list.is_owner || aiBuild.building ? (
         <>
-          <EditorHeader title={list.title} onBack={close} />
+          <EditorHeader title={list.title} step={step} onBack={close} />
           <CenterNote
             title={aiBuild.building ? 'The AI is still building this list.' : 'Only the owner can edit this list.'}
             action={<PillButton onClick={close}>Back to the list</PillButton>}
@@ -186,9 +224,13 @@ export function ListEditor({
         <EditorBody
           list={list}
           autoAdd={autoAdd}
+          step={step}
+          currentWeek={currentWeek}
           promptSeq={promptSeq}
           onDirtyChange={onDirtyChange}
           onClose={close}
+          onSaved={saved}
+          returnTo={returnTo}
         />
       )}
     </div>
@@ -198,10 +240,14 @@ export function ListEditor({
 /**
  * The header: Back, the title, and Update — blue when the draft has changes,
  * greyed (the design's disabled pill, as the ranking editor's) when it has
- * none, "Saving…" while it writes.
+ * none (a list Community started keeps it blue, `updateAction`), "Saving…"
+ * while it writes. A list New list has just made also counts
+ * its step — "2 of 2", New list's 12/600 t3 label, beside Update (the design
+ * shows "1 of 2" and never "2 of 2", lr-lists gap 24).
  */
 function EditorHeader({
   title,
+  step = null,
   onBack,
   onUpdate,
   titleInput,
@@ -209,6 +255,7 @@ function EditorHeader({
   saving = false,
 }: {
   title: string | null
+  step?: string | null
   onBack: () => void
   onUpdate?: () => void
   titleInput?: React.ReactNode
@@ -230,6 +277,7 @@ function EditorHeader({
       {titleInput ?? (
         <span className="min-w-0 flex-1 truncate text-center text-[16px] font-semibold text-m-t1">{title ?? ''}</span>
       )}
+      {step && <span className="flex-none whitespace-nowrap text-[12px] font-semibold text-m-t3">{step}</span>}
       <button
         type="button"
         onClick={onUpdate}
@@ -250,15 +298,27 @@ function EditorHeader({
 function EditorBody({
   list,
   autoAdd,
+  step,
+  currentWeek,
   promptSeq,
   onDirtyChange,
   onClose,
+  onSaved,
+  returnTo,
 }: {
   list: ListWithDetails
   autoAdd: boolean
+  step: string | null
+  currentWeek: number
   promptSeq: number
   onDirtyChange?: (dirty: boolean) => void
+  /** Leave for the List view (Back, Discard). */
   onClose: () => void
+  /** Update wrote the whole draft (or, `updateAction`, had nothing to
+   *  write): confirm it and leave. */
+  onSaved: () => void
+  /** Where Update returns it, when not the List view (gap list §3 #8). */
+  returnTo?: ReturnTo
 }) {
   const commit = useMobileListsCommit(list.id)
   const display = useListDisplay(list.id)
@@ -278,6 +338,7 @@ function EditorBody({
   }
   const [addOpen, setAddOpen] = React.useState(false)
   const [statsOpen, setStatsOpen] = React.useState(false)
+  const [importOpen, setImportOpen] = React.useState(false)
   const [confirmLeave, setConfirmLeave] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
 
@@ -286,6 +347,7 @@ function EditorBody({
   // elsewhere is not the user's, and a save that landed without its
   // confirmation still leaves "Update again" able to confirm it.
   const dirty = React.useMemo(() => draftChanged(draft), [draft])
+  const updateKind = updateAction(dirty, returnTo)
 
   // The design opens Add players on its own after "Next: add players" (and
   // the List view's empty-state "Add players" lands here the same way).
@@ -321,6 +383,7 @@ function EditorBody({
     if (saving) return
     setAddOpen(false)
     setStatsOpen(false)
+    setImportOpen(false)
     setConfirmLeave(true)
   }, [promptSeq, saving])
 
@@ -394,6 +457,21 @@ function EditorBody({
         : addToDraft(current, player, list.id),
     )
 
+  // Import a ranking: the chosen source's players into the draft, each once.
+  const importSource = (source: ImportSource): boolean => {
+    if (saving) return false
+    const result = importIntoDraft(draft, source.entries, {
+      listId: list.id,
+      positionFilter: list.position_filter,
+      sourceTiers: source.sourceTiers,
+      lockMode: bigBoard,
+    })
+    toast(importToast(result.counts, source.kind, list.position_filter))
+    if (result.counts.fresh === 0) return false
+    edit(() => result.draft)
+    return true
+  }
+
   // A tap on a player opens his full profile (the phone has no mini card)
   // with "Remove from list" acting on this draft.
   const openPlayer = (playerId: string) =>
@@ -406,13 +484,15 @@ function EditorBody({
   // ------------------------------------------------------------- the exits --
 
   const update = () => {
-    if (!dirty || saving) return
+    if (!updateKind || saving) return
+    // A list Community started, unchanged: nothing to write, just back to
+    // Community (gap list §3 #8).
+    if (updateKind === 'leave') return onSaved()
     setSaveError(null)
     commit.mutate(draft, {
       onSuccess: (outcome) => {
         if (outcome.ok) {
-          toast({ title: 'List updated' })
-          onClose()
+          onSaved()
           return
         }
         const note = saveFailureNote(outcome.error, outcome.attempted, outcome.remaining)
@@ -440,6 +520,7 @@ function EditorBody({
 
   const tools: Array<{ label: string; icon: LIconName; onClick: () => void; disabled?: boolean }> = [
     { label: 'Add players', icon: 'plus', onClick: () => setAddOpen(true) },
+    { label: importToolLabel(), icon: 'import', onClick: () => setImportOpen(true) },
     ...(tiersOn
       ? [
           {
@@ -472,9 +553,10 @@ function EditorBody({
     <>
       <EditorHeader
         title={draft.title}
+        step={step}
         onBack={back}
         onUpdate={update}
-        canUpdate={dirty}
+        canUpdate={updateKind !== null}
         saving={saving}
         titleInput={
           <input
@@ -582,7 +664,7 @@ function EditorBody({
         {players.length === 0 ? (
           <CenterNote
             title="No players yet"
-            body="Add players to start building this list."
+            body={`Add players, or ${importToolLabel().toLowerCase()} to bring in players in order with tiers.`}
             action={<PillButton onClick={() => setAddOpen(true)}>Add players</PillButton>}
           />
         ) : (
@@ -623,6 +705,15 @@ function EditorBody({
         onToggle={togglePlayer}
       />
       <AddStatsSheet open={statsOpen} onOpenChange={setStatsOpen} listId={list.id} />
+      <ImportSheet
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        listId={list.id}
+        positionFilter={list.position_filter}
+        inList={inList}
+        currentWeek={currentWeek}
+        onImport={importSource}
+      />
 
       {/* Chris's default for Back with changes (2026-10-15): ask first. */}
       <MobileSheet

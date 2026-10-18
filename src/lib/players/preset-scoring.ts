@@ -23,7 +23,7 @@ import { normalizePosition, STAT_LINE_COLUMNS, type StatLineRow } from '@/lib/le
 import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
 
 /** The preset systems (the player page's dropdown keys). */
-export type PresetSystem = 'espn_standard' | 'half_ppr' | 'ppr'
+export type PresetSystem = 'espn_standard' | 'half_ppr' | 'quarter_ppr' | 'ppr'
 
 /** The Stats Center's `?scoring=` values → the preset they mean. */
 export const PRESET_BY_BUILDER_KEY = {
@@ -38,7 +38,12 @@ export function systemRules(system: PresetSystem): ScoringRulesDoc {
   const std = SCORING_TEMPLATES.find((t) => t.name === 'ESPN Standard')
   const ppr = SCORING_TEMPLATES.find((t) => t.name === 'ESPN Full PPR')
   if (!std || !ppr) throw new Error('scoring: the ESPN templates are missing')
-  const rules = system === 'espn_standard' ? std.rules : system === 'ppr' ? ppr.rules : { ...std.rules, receptions: 0.5 }
+  const rules =
+    system === 'espn_standard'
+      ? std.rules
+      : system === 'ppr'
+        ? ppr.rules
+        : { ...std.rules, receptions: system === 'quarter_ppr' ? 0.25 : 0.5 }
   return rules as unknown as ScoringRulesDoc
 }
 

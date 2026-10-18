@@ -7,6 +7,8 @@ import {
   gameBeforeAfter,
   gameStatusChoices,
   heldWeeks,
+  overdueWeeks,
+  overdueWords,
   jobBeforeAfter,
   jobKnobState,
   leagueIdFromInput,
@@ -57,6 +59,20 @@ describe('needs attention', () => {
     expect(markedGames(state).map((g) => g.game_id)).toEqual(['c'])
     expect(stalledJobs(state.cron).map((c) => c.job)).toEqual(['waivers', 'sync'])
     expect(attentionCount(state)).toBe(1 + 1 + 2 + 1)
+  })
+
+  it('F600: a pre-194 platform read has no overdue weeks; a 194 read counts and words each one', () => {
+    expect(overdueWeeks({})).toEqual([])
+    const w = { season: 2026, week: 7, ceiling_at: '2026-10-28T07:00:00Z', hours_past_ceiling: 27, holding_games: ['BUF @ KC'] }
+    expect(overdueWeeks({ overdue_weeks: [w] })).toEqual([w])
+    expect(attentionCount({ games: [], pauses: [], cron: [], overdue_weeks: [w] } as unknown as OpPlatformState)).toBe(1)
+    expect(overdueWords(w, 'Wed, Oct 28, 12:00 AM')).toBe(
+      '2026 week 7 should have finished by Wed, Oct 28, 12:00 AM and is 27 hours past it. It is still waiting on this game: BUF @ KC.',
+    )
+    expect(overdueWords({ ...w, hours_past_ceiling: 0, holding_games: ['A @ B', 'C @ D'] }, 'X')).toBe(
+      '2026 week 7 should have finished by X and is just past it. It is still waiting on these 2 games: A @ B, C @ D.',
+    )
+    expect(overdueWords({ ...w, hours_past_ceiling: 1 }, 'X')).toContain('is 1 hour past it')
   })
 })
 

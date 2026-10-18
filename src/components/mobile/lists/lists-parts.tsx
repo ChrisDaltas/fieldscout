@@ -3,9 +3,8 @@
 import { useState } from 'react'
 
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
-import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
-import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { ScoringSheet } from '@/components/mobile/ui/scoring-sheet'
 import type { ThumbnailPlayer } from '@/hooks/use-lists'
 import type { ListScoring, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { cn } from '@/lib/utils'
@@ -25,12 +24,15 @@ import { SCORING_OPTIONS, TIME_FRAMES, scoringLabel, timeFrameLabel } from './li
 
 export const L_ICON = {
   plus: 'M8 3v10M3 8h10',
+  minus: 'M3 8h10',
   play: 'M4.5 2.8v10.4L13 8z',
   collage: 'M2.5 2.5h5v5h-5zM8.5 2.5h5v5h-5zM2.5 8.5h5v5h-5zM8.5 8.5h5v5h-5z',
   upload: 'M8 10.5V3M5 5.5L8 2.5l3 3M2.5 10v3.5h11V10',
   videoFrame: 'M2.5 4h11v8h-11zM7 6.3v3.4L9.8 8z',
   autoTiers: 'M3 4h10M3 8h7M3 12h4',
   addTierLine: 'M2.5 8h11M8 5v6',
+  /** Import a ranking (lr-frame §2.13.12). */
+  import: 'M3 3.5h10M3 8h6M3 12.5h4M11 9v5M8.5 11.5L11 14l2.5-2.5',
   dots: 'M3.5 8h.01M8 8h.01M12.5 8h.01',
   folder: 'M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.5H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z',
   share: 'M8 10V2.5M5 5.5L8 2.5l3 3M3 9v4.5h10V9',
@@ -43,6 +45,12 @@ export const L_ICON = {
   sparkle: 'M8 2l1.3 3.7L13 7l-3.7 1.3L8 12l-1.3-3.7L3 7l3.7-1.3zM12.5 11.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z',
   league: 'M5 2.5h6v3a3 3 0 0 1-6 0zM5 3.5H3v1.2A2.3 2.3 0 0 0 5.2 7M11 3.5h2v1.2A2.3 2.3 0 0 1 10.8 7M8 8.5v2.5M5.5 13.5h5L10 11H6z',
   chevronDown: 'M4 6l4 4 4-4',
+  // List tools in the ⋯ sheet (gap list §3 #3) — the design has none.
+  group: 'M2.5 3.5h11M4.5 6.5h9M4.5 9.5h9M2.5 12.5h11',
+  checkOff: 'M3 3h10v10H3zM5.5 8.2l1.8 1.8 3.2-3.5',
+  clear: 'M4.5 6H10a3 3 0 0 1 0 6H6.5M6.5 3.5L4 6l2.5 2.5',
+  note: 'M3.5 2.5h6.5L12.5 5v8.5h-9zM6 7.5h4M6 10h2.5',
+  columns: 'M2.5 3h4.5v10H2.5zM9 3h4.5v10H9z',
 } as const
 
 export type LIconName = keyof typeof L_ICON
@@ -141,8 +149,8 @@ export function TimeFrameControl({
 // Scoring control (gap list #19, Chris 2026-10-15): which scoring the list's
 // points follow — PPR, Half PPR, Quarter PPR or Standard. The design has no
 // such control, so it extends the design language: a 24px pill beside the
-// time frame that names the active scoring, opening a bottom sheet of the
-// four choices.
+// time frame that names the active scoring, opening the shared scoring sheet
+// (`ScoringSheet` — the player profile's chip opens it too) of the four.
 // =============================================================================
 
 export function ScoringControl({
@@ -170,31 +178,14 @@ export function ScoringControl({
         {scoringLabel(value)}
         <LIcon name="chevronDown" size={9} stroke={2.4} />
       </button>
-      <MobileSheet open={open} onOpenChange={setOpen} title="Scoring" subtitle="The points in this list’s stats" showClose>
-        <div className="flex flex-col px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
-          {SCORING_OPTIONS.map((option) => {
-            const on = option.value === value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={on}
-                onClick={() => {
-                  onChange(option.value)
-                  setOpen(false)
-                }}
-                className="flex min-h-[52px] items-center gap-3 border-b border-m-b2 py-2 text-left last:border-b-0"
-              >
-                <span className="flex min-w-0 flex-1 flex-col gap-px">
-                  <span className="text-[15px] font-semibold text-m-t1">{option.label}</span>
-                  <span className="text-[12px] font-medium text-m-t3">{option.sub}</span>
-                </span>
-                {on && <MIcon name="check" size={16} stroke={2.4} className="flex-none text-accent" />}
-              </button>
-            )
-          })}
-        </div>
-      </MobileSheet>
+      <ScoringSheet
+        open={open}
+        onOpenChange={setOpen}
+        subtitle="The points in this list’s stats"
+        options={SCORING_OPTIONS}
+        value={value}
+        onPick={onChange}
+      />
     </>
   )
 }

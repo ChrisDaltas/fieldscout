@@ -102,6 +102,19 @@ function HeaderTitle({ page }: { page: PageHeaderContent }) {
   )
 }
 
+/** R1512: Enter keeps the edit; Escape closes AND puts back the value the
+ *  edit started from (standard text-field behaviour). Pure, so it is pinned
+ *  without a DOM. */
+export function editableTitleKey(
+  key: string,
+  value: string,
+  startValue: string,
+): { close: boolean; restore?: string } {
+  if (key === 'Escape') return value === startValue ? { close: true } : { close: true, restore: startValue }
+  if (key === 'Enter') return { close: true }
+  return { close: false }
+}
+
 /** The editable-title option: the standard `text-h3` heading as a button;
  *  click → an input of the same type size. */
 function EditableTitle({
@@ -113,6 +126,8 @@ function EditableTitle({
 }: { value: string } & NonNullable<PageHeaderContent['editableTitle']>) {
   const [editing, setEditing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // R1512: the value when editing began — Escape puts it back.
+  const startValue = useRef(value)
 
   useEffect(() => {
     if (editing) {
@@ -130,7 +145,9 @@ function EditableTitle({
         onChange={(e) => onChange(e.target.value)}
         onBlur={() => setEditing(false)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === 'Escape') setEditing(false)
+          const act = editableTitleKey(e.key, value, startValue.current)
+          if (act.restore !== undefined) onChange(act.restore)
+          if (act.close) setEditing(false)
         }}
         maxLength={maxLength}
         className="w-full max-w-md rounded-md bg-white px-1 text-h3 text-ink outline-none transition-shadow focus:shadow-field"
@@ -142,7 +159,10 @@ function EditableTitle({
       <button
         type="button"
         aria-label={`${label}: ${value || placeholder}`}
-        onClick={() => setEditing(true)}
+        onClick={() => {
+          startValue.current = value
+          setEditing(true)
+        }}
         className={cn(
           'max-w-full truncate rounded-md px-1 text-left transition-colors hover:bg-surface-hover',
           value ? 'text-ink' : 'text-n-3',

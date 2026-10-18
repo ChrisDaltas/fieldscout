@@ -13,8 +13,12 @@ import {
   pointsWeeks,
   weeklyCells,
   resolveChoice,
+  isScoringSystemKey,
+  SCORING_SYSTEMS,
+  scoredLeagues,
   scoringOptions,
 } from './core-stats-ops'
+import { systemRules } from './core-stats-service'
 
 const player = { position: 'WR' }
 
@@ -136,6 +140,60 @@ describe('core stats — scoring dropdown (Chris 2026-10-04)', () => {
     expect(coreStatsQuery(before)).toBe('?league=L1')
     expect(coreStatsQuery(after)).toBe('?scoring=ppr')
     expect(coreStatsQuery(resolveChoice({ picked: 'half_ppr', leagueParam: null, stored: null, leagues }))).toBe('?scoring=half_ppr')
+  })
+})
+
+describe('core stats — a pre-draft league is not a scoring choice (spec §7.3.3)', () => {
+  const leagues = [
+    { id: 'L1', name: 'Hadouken Bowl', status: 'in_season' },
+    { id: 'L2', name: 'Practice Squad League', status: 'setup' },
+    { id: 'L3', name: 'Draft Night', status: 'scheduled' },
+    { id: 'L4', name: 'On the Clock', status: 'drafting' },
+    { id: 'L5', name: 'Last Year', status: 'complete' },
+  ]
+
+  it('only leagues past draft start (scoring frozen) are offered', () => {
+    expect(scoredLeagues(leagues).map((l) => l.id)).toEqual(['L1', 'L4', 'L5'])
+    expect(scoringOptions(scoredLeagues(leagues)).map((o) => o.value)).not.toContain('league:L2')
+  })
+
+  it('a remembered pre-draft league falls back to the default; a drafted one is kept', () => {
+    const scored = scoredLeagues(leagues)
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L2', leagues: scored })).toEqual({ kind: 'system', system: 'espn_standard' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L3', leagues: scored })).toEqual({ kind: 'system', system: 'espn_standard' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L4', leagues: scored })).toEqual({ kind: 'league', leagueId: 'L4' })
+  })
+})
+
+describe('core stats — 0.25 PPR (gap list §3 #18: the phone chip)', () => {
+  const leagues = [{ id: 'L1', name: 'Hadouken Bowl' }]
+  const phone = ['ppr', 'half_ppr', 'quarter_ppr', 'espn_standard'] as const
+
+  it('is a preset the read scores, named "0.25 PPR"', () => {
+    expect(isScoringSystemKey('quarter_ppr')).toBe(true)
+    expect(basisLabel({ kind: 'system', system: 'quarter_ppr' })).toBe('0.25 PPR scoring')
+    expect(coreStatsQuery({ kind: 'system', system: 'quarter_ppr' })).toBe('?scoring=quarter_ppr')
+  })
+
+  it('the desktop dropdown is unchanged: three presets, and a remembered 0.25 PPR falls back to its default', () => {
+    expect(SCORING_SYSTEMS.map((s) => s.key)).toEqual(['espn_standard', 'half_ppr', 'ppr'])
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'quarter_ppr', leagues })).toEqual({ kind: 'system', system: 'espn_standard' })
+    expect(resolveChoice({ picked: 'quarter_ppr', leagueParam: 'L1', stored: null, leagues })).toEqual({ kind: 'league', leagueId: 'L1' })
+  })
+
+  it('a picker that offers it (the phone) picks and remembers it', () => {
+    expect(resolveChoice({ picked: 'quarter_ppr', leagueParam: 'L1', stored: null, leagues, systems: phone })).toEqual({ kind: 'system', system: 'quarter_ppr' })
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'quarter_ppr', leagues, systems: phone })).toEqual({ kind: 'system', system: 'quarter_ppr' })
+    // The league he was opened in still beats a remembered pick.
+    expect(resolveChoice({ picked: null, leagueParam: 'L1', stored: 'quarter_ppr', leagues, systems: phone })).toEqual({ kind: 'league', leagueId: 'L1' })
+  })
+
+  it('scored as ESPN Standard plus 0.25 a catch — between Standard and Half PPR', () => {
+    const std = systemRules('espn_standard') as unknown as Record<string, unknown>
+    const quarter = systemRules('quarter_ppr') as unknown as Record<string, unknown>
+    expect(quarter.receptions).toBe(0.25)
+    expect({ ...quarter, receptions: std.receptions }).toEqual(std)
+    expect((systemRules('half_ppr') as unknown as Record<string, unknown>).receptions).toBe(0.5)
   })
 })
 

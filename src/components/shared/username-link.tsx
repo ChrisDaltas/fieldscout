@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -60,16 +60,20 @@ export function TextWithUsernames({
   marked,
   newTab,
   linkClassName,
+  renderText,
 }: {
   marked: string
   newTab?: boolean
   linkClassName?: string
+  /** How a plain stretch renders (F563: the commissioner log passes its
+   *  player-name doors here); plain text when omitted. */
+  renderText?: (text: string) => ReactNode
 }) {
   return (
     <>
       {usernameParts(marked).map((part, i) =>
         typeof part === 'string' ? (
-          <Fragment key={i}>{part}</Fragment>
+          <Fragment key={i}>{renderText ? renderText(part) : part}</Fragment>
         ) : (
           <UsernameLink key={i} username={part.username} at={false} newTab={newTab} className={linkClassName} />
         ),

@@ -15,10 +15,28 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileBoxColumn, ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
-import { sumBox, type BoxKey, type BoxTotals, type CoreStatsPayload, type ScoringChoice } from '@/lib/players/core-stats-ops'
+import { SCORING_OPTIONS } from '@/components/mobile/lists/lists-stats'
+import { gameState, isLiveStatus } from '@/components/mobile/players/players-ops'
+import type { ListScoring } from '@/hooks/use-mobile-lists-timeframe-stats'
+import {
+  choiceValue,
+  sumBox,
+  type BoxKey,
+  type BoxTotals,
+  type CoreStatsPayload,
+  type ScoringChoice,
+  type ScoringSystemKey,
+} from '@/lib/players/core-stats-ops'
 import { completionPct, perGame, yardsPerTarget } from '@/lib/players/key-stats-ops'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
-import { calculateFantasyPoints, HALF_PPR_SCORING, PPR_SCORING, STANDARD_SCORING, type ScoringRules } from '@/lib/scoring/default'
+import {
+  calculateFantasyPoints,
+  HALF_PPR_SCORING,
+  PPR_SCORING,
+  QUARTER_PPR_SCORING,
+  STANDARD_SCORING,
+  type ScoringRules,
+} from '@/lib/scoring/default'
 
 export const DASH = '–'
 
@@ -125,6 +143,59 @@ export function stripCells(core: CoreStatsPayload | null, player: Pick<PlayerSta
 }
 
 // ---------------------------------------------------------------------------
+// Scoring chip (gap list §3 #18): the desktop view's scoring dropdown on the
+// phone. The same choice and read (`resolveChoice` → core-stats), with the
+// phone's four presets in its own order and words — PPR · Half PPR ·
+// 0.25 PPR · Standard, the list stats' table (rulings #19/#30) — then the
+// viewer's leagues, as the desktop dropdown lists them.
+// ---------------------------------------------------------------------------
+
+const PROFILE_SYSTEMS: ReadonlyArray<{ system: ScoringSystemKey; list: ListScoring }> = [
+  { system: 'ppr', list: 'ppr' },
+  { system: 'half_ppr', list: 'half' },
+  { system: 'quarter_ppr', list: 'quarter' },
+  // The core-stats Standard is ESPN Standard (no points for a catch).
+  { system: 'espn_standard', list: 'standard' },
+]
+
+/** The presets the phone chip offers (`resolveChoice`'s `systems`). */
+export const PROFILE_SCORING_SYSTEMS: readonly ScoringSystemKey[] = PROFILE_SYSTEMS.map((s) => s.system)
+
+export interface ProfileScoringOption {
+  /** `choiceValue`: a preset key, or `league:<id>`. */
+  value: string
+  label: string
+  sub: string
+}
+
+function listWords(list: ListScoring): { label: string; sub: string } {
+  const o = SCORING_OPTIONS.find((x) => x.value === list)
+  return { label: o?.label ?? list, sub: o?.sub ?? '' }
+}
+
+/** The four presets, then one per league the viewer is in. */
+export function profileScoringOptions(leagues: ReadonlyArray<{ id: string; name: string }>): ProfileScoringOption[] {
+  return [
+    ...PROFILE_SYSTEMS.map((s) => ({ value: s.system, ...listWords(s.list) })),
+    ...leagues.map((l) => ({ value: `league:${l.id}`, label: l.name, sub: 'Your league’s scoring' })),
+  ]
+}
+
+/** The chip's word: the preset's short name, or "League" — a league's name
+ *  does not fit a strip cell (the chip's label and the sheet name it). */
+export function scoringChipLabel(choice: ScoringChoice): string {
+  if (choice.kind === 'league') return 'League'
+  const s = PROFILE_SYSTEMS.find((x) => x.system === choice.system)
+  return s ? listWords(s.list).label : 'Standard'
+}
+
+/** "Scoring: PPR" / "Scoring: Sunday Funday League" — the chip's name. */
+export function scoringChipName(choice: ScoringChoice, options: readonly ProfileScoringOption[]): string {
+  const label = options.find((o) => o.value === choiceValue(choice))?.label ?? scoringChipLabel(choice)
+  return `Scoring: ${label}`
+}
+
+// ---------------------------------------------------------------------------
 // Games and projections cards (§2.5c)
 // ---------------------------------------------------------------------------
 
@@ -148,10 +219,6 @@ export interface GameCard {
   line: string | null
 }
 
-/** `nfl_games.status` while a game is on (the sync writes `live`; the
- *  provider's own word is `in_progress`). */
-const LIVE_STATUSES = new Set(['in_progress', 'live'])
-
 /**
  * The week the strip rings as "current" (§2.5c, P1h): a week whose game is
  * being played; else the NFL calendar's current week (the core-stats read's
@@ -160,7 +227,7 @@ const LIVE_STATUSES = new Set(['in_progress', 'live'])
  * still `scheduled` while this week's game is on — that is next week.
  */
 export function currentWeekOf(games: readonly TeamGame[], calendarWeek: number | null, scheduled: number | null): number | null {
-  const live = games.filter((g) => g.status !== null && LIVE_STATUSES.has(g.status)).map((g) => g.week)
+  const live = games.filter((g) => isLiveStatus(g.status)).map((g) => g.week)
   if (live.length > 0) return Math.max(...live)
   return calendarWeek ?? scheduled
 }
@@ -172,11 +239,16 @@ export function currentWeekOf(games: readonly TeamGame[], calendarWeek: number |
  * line from that week's box line.
  *
  * The current week before its points are known (P1h, "no points") shows
- * his projection and where his game stands — kickoff, live or final — with
- * the box line once he has one. The design's "Points so far" (live partial
- * points) has no source: the core-stats read scores completed weeks only.
+ * his projection and where his game stands — its kickoff, "Q4 2:00 · 31-7"
+ * while it is on, "Final W 31-20" once it is over (his team's score first;
+ * gap list §3 #19) — with the box line once he has one. Until the sync
+ * stores a game's clock and score (gap list §2) those read plain "Live" and
+ * "Final" (`gameState`). The design's "Points so far" (live partial points)
+ * has no source: the core-stats read scores completed weeks only.
  */
 export function gameCards(args: {
+  /** His NFL team — whose score a live or final game puts first. */
+  team: string | null
   schedule: readonly ScheduleRow[]
   games: readonly TeamGame[]
   weekly: ReadonlyArray<{ week: number; points: number | null; proj: number | null }>
@@ -198,7 +270,7 @@ export function gameCards(args: {
     const proj = cell?.proj ?? null
     const opp = r.opponent.kind === 'game' ? r.opponent.label : null
     const oprk = r.oprk !== null && r.oprk > 0 ? `(${ordinal(r.oprk)})` : null
-    const live = g?.status ? LIVE_STATUSES.has(g.status) : false
+    const live = isLiveStatus(g?.status)
     const final = g?.status === 'final'
     const played = points !== null || (!current && final)
     if (played) {
@@ -212,12 +284,16 @@ export function gameCards(args: {
       }
     }
     const kickoff = g && g.status === 'scheduled' ? shortKickoff(g.kickoff_at) : null
+    // Live or over: where it stands, from the stored row ("Live" / "Final"
+    // when the clock or score is not on record — the stored 0/0 default is
+    // not a score).
+    const state = g && (live || final) ? (args.team ? gameState(args.team, g, () => '') : live ? 'Live' : 'Final') : null
     return {
       week: r.week, bye: false, pill: current ? 'current' : 'upcoming', current, opp, oprk, tone: oprk ? r.tone : null,
       mainLabel: 'Projected',
       main: proj !== null ? proj.toFixed(1) : DASH,
       mainTone: null,
-      sub: live ? { label: 'Game', value: 'Live' } : final ? { label: 'Game', value: 'Final' } : kickoff ? { label: 'Kickoff', value: kickoff } : null,
+      sub: state ? { label: 'Game', value: state } : kickoff ? { label: 'Kickoff', value: kickoff } : null,
       line: current && (live || final) ? statLine(args.position, args.lines.find((l) => l.week === r.week)) : null,
     }
   })
@@ -484,6 +560,7 @@ export function pastSeasonRules(choice: ScoringChoice): ScoringRules {
   if (choice.kind === 'system') {
     if (choice.system === 'ppr') return PPR_SCORING
     if (choice.system === 'half_ppr') return HALF_PPR_SCORING
+    if (choice.system === 'quarter_ppr') return QUARTER_PPR_SCORING
   }
   return STANDARD_SCORING
 }

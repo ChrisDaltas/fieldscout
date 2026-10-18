@@ -44,12 +44,12 @@ function double(args: {
   return { client: { from, rpc } as never, from, eq, rpc }
 }
 
-describe('renameOwnTeamInputSchema — 128’s own bound (trimmed, non-empty, ≤ 100)', () => {
-  it('TRIMS the name; a blank, a 101-char name, a non-string and any extra key (a smuggled reason or action_id) are refused', () => {
+describe('renameOwnTeamInputSchema — the one team-name rule (trimmed, non-empty, ≤ 24; 196)', () => {
+  it('TRIMS the name; a blank, a 25-char name, a non-string and any extra key (a smuggled reason or action_id) are refused', () => {
     expect(renameOwnTeamInputSchema.parse({ name: '  Alpha Reborn \t' }).name).toBe('Alpha Reborn')
     expect(renameOwnTeamInputSchema.safeParse({ name: ' \t ' }).success).toBe(false)
-    expect(renameOwnTeamInputSchema.safeParse({ name: 'x'.repeat(101) }).success).toBe(false)
-    expect(renameOwnTeamInputSchema.safeParse({ name: 'x'.repeat(100) }).success).toBe(true)
+    expect(renameOwnTeamInputSchema.safeParse({ name: 'x'.repeat(25) }).success).toBe(false)
+    expect(renameOwnTeamInputSchema.safeParse({ name: 'x'.repeat(24) }).success).toBe(true)
     expect(renameOwnTeamInputSchema.safeParse({ name: 7 }).success).toBe(false)
     expect(renameOwnTeamInputSchema.safeParse({ name: 'A', reason: 'because' }).success).toBe(false)
     expect(renameOwnTeamInputSchema.safeParse({ name: 'A', action_id: TEAM }).success).toBe(false)

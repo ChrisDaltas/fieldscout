@@ -62,7 +62,9 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(URL)) {
   process.exit(2)
 }
 
-const LEAGUE_NAME = 'L.D5.1 dev fixture league'
+/** Kept in step with dev-seed-inseason-league.ts (its LEAGUE_NAME / DEV_TEAM_NAME). */
+const LEAGUE_NAME = 'Sunday Funday League'
+const DEV_TEAM_NAME = 'Fourth & Long'
 const WEEK = 1
 /** L.D5.5: one final game row per driven week, so §23.2's gate
  *  (`week_games_state_internal`: ≥ 1 in-week game, every one final) passes
@@ -92,7 +94,7 @@ function need<T>(res: { data: T; error: { message: string } | null }, what: stri
 async function fixture() {
   const league = must(await service.from('leagues').select('id, season').eq('name', LEAGUE_NAME).maybeSingle(), 'league read')
   if (!league) throw new Error(`no "${LEAGUE_NAME}" — run npx tsx scripts/dev-seed-inseason-league.ts first`)
-  const devTeam = must(await service.from('teams').select('id, owner_id').eq('league_id', league.id).eq('name', 'Dev Fixture FC').single(), 'dev team read')
+  const devTeam = must(await service.from('teams').select('id, owner_id').eq('league_id', league.id).eq('name', DEV_TEAM_NAME).single(), 'dev team read')
   const week = must(
     await service.from('nfl_weeks').select('starts_at, last_game_ends_at, correction_window_ends_at').eq('season', SYNTHETIC_SEASON).eq('week', WEEK).single(),
     'nfl_weeks read',

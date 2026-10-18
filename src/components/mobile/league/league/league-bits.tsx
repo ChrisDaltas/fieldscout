@@ -1,7 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useRef } from 'react'
 
+import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
+import { useGoBack } from '@/components/mobile/ui/back-nav'
+import { MIcon } from '@/components/mobile/ui/m-icon'
 import { cn } from '@/lib/utils'
 
 import { teamInitial } from './league-tab-ops'
@@ -10,8 +14,88 @@ import { teamInitial } from './league-tab-ops'
  * Small shared parts of the mobile League tab (handoff m-league): the team
  * avatar circle, the Filter pill, and the states the prototype does not
  * draw (loading / empty / error) in its own language — centred 13–15px t3
- * text, b1 skeleton blocks, a blue text action.
+ * text, b1 skeleton blocks, a blue text action. Plus the two parts every
+ * League Menu page shares (handoff m-community G): the page bar and the
+ * choice chip.
  */
+
+/**
+ * A League Menu page's bar (handoff G pages): a 52px row with the blue back
+ * chevron, the title centred and a spacer — then the commissioner-override
+ * strip when it's on. Back goes to where you came from, else the League tab.
+ */
+export function LeaguePageBar({ leagueId, title }: { leagueId: string; title: string }) {
+  const goBack = useGoBack()
+  return (
+    <>
+      <div className="flex h-[52px] items-center gap-2 border-b border-m-b3 px-3">
+        <button
+          type="button"
+          onClick={() => goBack(`/app/leagues/${leagueId}`)}
+          aria-label="Back"
+          className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
+          data-league-page-back
+        >
+          <MIcon name="back" size={18} stroke={2} />
+        </button>
+        <h1 className="flex-1 text-center text-[16px] font-semibold text-m-t1">{title}</h1>
+        <span className="w-9 flex-none" aria-hidden />
+      </div>
+      <MobileOverrideStrip leagueId={leagueId} className="mb-1.5" />
+    </>
+  )
+}
+
+/**
+ * A chip scroller that opens with its pressed chip in view — a page opened
+ * at a later round or team (from its address) shows that chip, not the
+ * first few. Runs on open and whenever `key` changes (a view switch).
+ */
+export function useChipRowInView<T extends HTMLElement>(key?: unknown) {
+  const ref = useRef<T | null>(null)
+  useEffect(() => {
+    const row = ref.current
+    const on = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!row || !on) return
+    const box = row.getBoundingClientRect()
+    const chip = on.getBoundingClientRect()
+    if (chip.left < box.left || chip.right > box.right) row.scrollLeft = Math.max(0, row.scrollLeft + chip.left - box.left - 16)
+  }, [key])
+  return ref
+}
+
+/** A League Menu page's chip (G3 rounds, G4 seasons) — white on ink when on,
+ *  t1 on b2 when off; your own team's chip reads blue when it's off, the way
+ *  your picks do. */
+export function PageChip({
+  on,
+  mine = false,
+  onClick,
+  className,
+  children,
+}: {
+  on: boolean
+  mine?: boolean
+  onClick: () => void
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      data-mine={mine || undefined}
+      className={cn(
+        'flex h-8 flex-none items-center whitespace-nowrap rounded-pill px-3.5 text-[12px] font-semibold',
+        on ? 'bg-m-ink text-white' : mine ? 'bg-m-b2 text-accent' : 'bg-m-b2 text-m-t1',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
 
 /** A team's avatar: a solid circle with the name's first letter, white. */
 export function TeamAvatar({ name, className, size = 28 }: { name: string; className: string; size?: 28 | 32 }) {

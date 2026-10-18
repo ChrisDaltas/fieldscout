@@ -236,6 +236,16 @@ export function projectedTotal(
   return { total: Math.round(total * 100) / 100, missing }
 }
 
+/** A stored lineup's starters — every seat of the slot map except the IR
+ *  ones (`roster_settings.ir_slots`): the opponent side of "Proj vs
+ *  opponent" on the desktop team page and the phone's Lineup check. */
+export function starterIdsOf(slotMap: Readonly<Record<string, string>>, irSlots: ReadonlyArray<{ key: string }>): string[] {
+  const irKeys = new Set(irSlots.map((s) => s.key))
+  return Object.entries(slotMap)
+    .filter(([key]) => !irKeys.has(key.split(':')[0]!))
+    .map(([, pid]) => pid)
+}
+
 export interface LineupCheck {
   id: 'starters' | 'injury' | 'bye' | 'proj'
   label: string
@@ -257,6 +267,24 @@ function names(players: readonly RosterPlayer[]): string {
   return players.map((p) => p.full_name).join(', ')
 }
 
+/** The Lineup check's injury rule: a starter carrying a status tag (Q / D /
+ *  O / IR) or an injury designation (PUP, NFI, Suspended…). One rule for the
+ *  desktop check and the phone's Lineup check card. */
+export function injuredStarters(players: readonly RosterPlayer[]): RosterPlayer[] {
+  return players.filter((p) => statusTag(p.status) !== null || designationOf(p.status) !== null)
+}
+
+/** The tag a flagged starter is named with: "Q", "O", "IR", "PUP"… */
+export function injuryTag(status: string | null | undefined): string | null {
+  return statusTag(status) ?? designationOf(status)
+}
+
+/** The Lineup check's bye rule: the player's own bye week, or no game for
+ *  his team in a week that has games. */
+export function startersOnBye(players: readonly RosterPlayer[], week: number, games: readonly WeekGame[]): RosterPlayer[] {
+  return players.filter((p) => (p.bye_week !== null && p.bye_week === week) || opponentOf(p.nfl_team, games).kind === 'bye')
+}
+
 export function lineupChecks({ starters, week, games, mine, opponent }: LineupCheckInput): LineupCheck[] {
   const out: LineupCheck[] = []
   const filled = starters.filter((r) => r.player)
@@ -268,7 +296,7 @@ export function lineupChecks({ starters, week, games, mine, opponent }: LineupCh
     note: empty > 0 ? 'Empty slots score zero — fill them before kickoff.' : 'Every starting slot is filled.',
     tone: empty > 0 ? 'caution' : 'positive',
   })
-  const hurt = filled.map((r) => r.player!).filter((p) => statusTag(p.status) !== null || designationOf(p.status) !== null)
+  const hurt = injuredStarters(filled.map((r) => r.player!))
   out.push({
     id: 'injury',
     label: 'Injury risk',
@@ -276,10 +304,7 @@ export function lineupChecks({ starters, week, games, mine, opponent }: LineupCh
     note: hurt.length === 0 ? 'No starter carries an injury designation.' : `${names(hurt)} — check before kickoff.`,
     tone: hurt.length === 0 ? 'positive' : 'caution',
   })
-  // Bye: the player's own bye week, or no game for his team in a week that has games.
-  const onBye = filled
-    .map((r) => r.player!)
-    .filter((p) => (p.bye_week !== null && p.bye_week === week) || opponentOf(p.nfl_team, games).kind === 'bye')
+  const onBye = startersOnBye(filled.map((r) => r.player!), week, games)
   out.push({
     id: 'bye',
     label: 'Players on bye',
@@ -353,6 +378,58 @@ export function moveOptions(args: {
     })
   }
   return out
+}
+
+// ---------------------------------------------------------------------------
+// F570 — a rail player dragged onto the lineup
+// ---------------------------------------------------------------------------
+
+/** The drop id of a move target: `slot:<key>` or `bench`. */
+export function railDropId(target: MoveTarget): string {
+  return target.kind === 'slot' ? `slot:${target.key}` : 'bench'
+}
+
+/** A drop id back to its move target (null = not a lineup target). */
+export function railDropTarget(id: string): MoveTarget | null {
+  if (id === 'bench') return { kind: 'bench' }
+  if (id.startsWith('slot:') && id.length > 5) return { kind: 'slot', key: id.slice(5) }
+  return null
+}
+
+/**
+ * The lineup targets that ACCEPT a rail drag (prevent, don't refuse — the
+ * rest are never offered). A player already on this team takes exactly the
+ * Move menu's open entries (`moveOptions`: slot eligibility, the IR rule, a
+ * locked occupant's seat excluded) — none at all while his own game locks
+ * him. A free agent goes to the BENCH only, through the add's confirm step
+ * (the card's + flow), and only on the viewer's own team. A player on
+ * another team, another league's drag, or a read-only lineup: nothing.
+ */
+export function railDropTargets(args: {
+  drag: { leagueId: string; playerId: string; availability: 'free_agent' | 'rostered'; teamId: string | null } | null
+  leagueId: string
+  teamId: string
+  readOnly: boolean
+  ownTeam: boolean
+  placement: Placement
+  slots: readonly SlotInstance[]
+  players: ReadonlyMap<string, RosterPlayer>
+  locked: ReadonlySet<string>
+  lockExempt: boolean
+}): Set<string> {
+  const { drag } = args
+  if (!drag || drag.leagueId !== args.leagueId || args.readOnly) return new Set()
+  const player = args.players.get(drag.playerId)
+  if (player) {
+    if (args.locked.has(player.player_id) && !args.lockExempt) return new Set()
+    return new Set(
+      moveOptions({ player, placement: args.placement, slots: args.slots, players: args.players, locked: args.locked, lockExempt: args.lockExempt })
+        .filter((o) => o.disabledReason === null)
+        .map((o) => railDropId(o.target)),
+    )
+  }
+  if (drag.availability === 'free_agent' && args.ownTeam) return new Set(['bench'])
+  return new Set()
 }
 
 /** The toast after a move lands — plain words. */

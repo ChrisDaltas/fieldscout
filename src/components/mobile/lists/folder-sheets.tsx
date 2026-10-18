@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import type { ListFolder } from '@/types/database'
 import { folderNameSchema } from '@/types/schemas/lists'
 
-import { LIcon } from './lists-parts'
+import { LIcon, SwitchTrack } from './lists-parts'
 
 /**
  * FieldScout Mobile — Lists folders. Folders are an app feature the design
@@ -207,7 +207,11 @@ export function FolderPickSheet({
   )
 }
 
-/** A 48px sheet row (the league Menu sheet's row language). */
+/**
+ * A 48px sheet row (the league Menu sheet's row language). With `switchOn`
+ * it is an on/off row instead: `role="switch"` and the lists' switch track at
+ * the end (the List options sheet's Check off drafted / Show notes).
+ */
 export function SheetRow({
   icon,
   label,
@@ -216,6 +220,7 @@ export function SheetRow({
   onClick,
   disabled,
   tone = 'default',
+  switchOn,
 }: {
   icon: React.ReactNode
   label: string
@@ -224,10 +229,14 @@ export function SheetRow({
   onClick: () => void
   disabled?: boolean
   tone?: 'default' | 'danger'
+  switchOn?: boolean
 }) {
+  const isSwitch = switchOn !== undefined
   return (
     <button
       type="button"
+      role={isSwitch ? 'switch' : undefined}
+      aria-checked={isSwitch ? switchOn : undefined}
       onClick={onClick}
       disabled={disabled}
       className="flex h-12 items-center gap-3 rounded-xl px-2 text-left active:bg-m-b2 disabled:opacity-60"
@@ -250,6 +259,7 @@ export function SheetRow({
       </span>
       {sub ? <span className="whitespace-nowrap text-[12px] font-medium text-m-t3">{sub}</span> : null}
       {trailing}
+      {isSwitch ? <SwitchTrack on={switchOn} /> : null}
     </button>
   )
 }
