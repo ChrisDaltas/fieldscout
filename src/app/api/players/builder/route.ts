@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import {
-  calculateFantasyPoints,
-  PPR_SCORING,
-  STANDARD_SCORING,
-  HALF_PPR_SCORING,
-  type StatRow,
-} from '@/lib/scoring/default'
+import { BUILDER_STATS_SELECT, BUILDER_TOTAL_COLUMNS, builderSeasonPoints, PRESET_BY_BUILDER_KEY } from '@/lib/players/preset-scoring'
+import type { StatLineRow } from '@/lib/leagues/scoring/score-week-worker'
 import { fetchWeeklyStatsForPlayers } from '@/lib/stats/fetch-weekly-stats'
 import { pageAll } from '@/lib/supabase/page-all'
 import { createServerClient } from '@/lib/supabase/server'
@@ -49,30 +44,14 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 })
 
-const STATS_SELECT =
-  'player_id, season, week, source, ' +
-  'pass_attempts, pass_completions, pass_yards, pass_tds, interceptions, sacks_taken, ' +
-  'rush_attempts, rush_yards, rush_tds, fumbles_lost, ' +
-  'targets, receptions, receiving_yards, receiving_tds, ' +
-  'fg_made, fg_attempted, fg_made_40_plus, fg_made_50_plus, xp_made, xp_attempted, ' +
-  'def_sacks, def_interceptions, def_fumble_recoveries, def_tds, def_safeties, ' +
-  'two_point_conversions'
-
-const SCORING_BY_KEY = {
-  ppr: PPR_SCORING,
-  standard: STANDARD_SCORING,
-  half_ppr: HALF_PPR_SCORING,
-} as const
-
 type SumAccumulator = Record<string, number> & {
   __games?: number
 }
 
+/** Raw totals only — points are NOT computed from these (F576: each week
+ *  is scored on its own by `builderSeasonPoints`). */
 function addRowToAccumulator(acc: SumAccumulator, row: Record<string, unknown>) {
-  for (const [k, v] of Object.entries(row)) {
-    if (k === 'player_id' || k === 'season' || k === 'week') continue
-    acc[k] = (acc[k] ?? 0) + Number(v ?? 0)
-  }
+  for (const k of BUILDER_TOTAL_COLUMNS) acc[k] = (acc[k] ?? 0) + Number(row[k] ?? 0)
   acc.__games = (acc.__games ?? 0) + 1
 }
 
@@ -97,7 +76,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
   const { positions, teams, scoring, limit } = parsed.data
-  const rules = SCORING_BY_KEY[scoring]
+  const preset = PRESET_BY_BUILDER_KEY[scoring]
 
   const supabase = await createServerClient()
 
@@ -170,7 +149,7 @@ export async function GET(request: Request) {
       supabase,
       playerIds,
       seasons: [CURRENT_SEASON, LAST_SEASON],
-      select: STATS_SELECT,
+      select: BUILDER_STATS_SELECT,
     })
   } catch (err) {
     return NextResponse.json(
@@ -186,9 +165,22 @@ export async function GET(request: Request) {
   const currentByPlayer = new Map<string, SumAccumulator>()
   const currentLiveByPlayer = new Map<string, SumAccumulator>()
   const lastByPlayer = new Map<string, SumAccumulator>()
+  // The weekly lines themselves, for the per-week scorer (F576).
+  const lines = { current: new Map<string, StatLineRow[]>(), live: new Map<string, StatLineRow[]>(), last: new Map<string, StatLineRow[]>() }
+  const pushLine = (m: Map<string, StatLineRow[]>, pid: string, row: Record<string, unknown>) => {
+    const list = m.get(pid) ?? []
+    list.push(row as StatLineRow)
+    m.set(pid, list)
+  }
   for (const row of stats) {
     const pid = row.player_id as string
     const isMock = row.source === 'mock'
+    if (row.season === CURRENT_SEASON) {
+      pushLine(lines.current, pid, row)
+      if (!isMock) pushLine(lines.live, pid, row)
+    } else {
+      pushLine(lines.last, pid, row)
+    }
 
     if (row.season === CURRENT_SEASON) {
       let acc = currentByPlayer.get(pid)
@@ -225,9 +217,13 @@ export async function GET(request: Request) {
     const liveGames = liveAcc.__games ?? 0
     const lastGames = lastAcc.__games ?? 0
 
-    const currentPts = calculateFantasyPoints(currentAcc as StatRow, rules)
-    const livePts = calculateFantasyPoints(liveAcc as StatRow, rules)
-    const lastPts = calculateFantasyPoints(lastAcc as StatRow, rules)
+    // F576: the player page's scorer — each week alone, canonical engine,
+    // the shipped ESPN template rules. No lines → 0 here (the games count
+    // beside it says "none"), the route's long-standing number contract.
+    const position = String(player.position ?? '')
+    const currentPts = builderSeasonPoints(preset, id, position, lines.current.get(id) ?? [])
+    const livePts = builderSeasonPoints(preset, id, position, lines.live.get(id) ?? [])
+    const lastPts = builderSeasonPoints(preset, id, position, lines.last.get(id) ?? [])
 
     // Projection rule (don't undo this — the comment is load-bearing):
     //   - Real (non-mock) current-season games → extrapolate live pace.

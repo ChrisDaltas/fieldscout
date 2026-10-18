@@ -153,10 +153,19 @@ const GOLDEN_KEY_LIST = [
   'pat_attempted',
   'def_points_allowed',
   'def_yards_allowed',
+  // F578 usage keys (advanced, context — D539)
+  'off_snaps',
+  'pass_rz_att',
+  'rush_rz_att',
+  'rec_rz_tgt',
+  'fg_long',
   // D15 placeholders
   'example_tracking_yards',
   'example_charted_yards',
 ]
+
+/** F578 (D539): the core_box usage keys stored in `advanced`, in registry order. */
+const USAGE_KEYS = ['off_snaps', 'pass_rz_att', 'rush_rz_att', 'rec_rz_tgt', 'fg_long']
 
 // R9: the `keyof Row` typing on `column` only rejects NON-EXISTENT columns —
 // a wrong-but-existing column (e.g. fg_40_49 → fg_made_50_plus, pat_made →
@@ -265,15 +274,17 @@ describe('STAT_KEYS registry', () => {
 
   it('keeps tier and storage consistent', () => {
     for (const def of STAT_KEYS) {
-      // core_box lives in typed columns, is derived at scoring time, or is
-      // genuinely deferred — never in the §23.5 advanced JSONB, which is the
-      // tracking/charted home.
-      if (def.tier === 'core_box') {
-        expect(def.storage, def.key).not.toBe('advanced')
-      } else {
+      // tracking/charted live only in the §23.5 advanced JSONB. A core_box
+      // key in advanced is exactly one of F578's usage keys (D539 — §23.5's
+      // "every future stat" storage rule), and each is context, never paid.
+      if (def.tier !== 'core_box') {
         expect(def.storage, def.key).toBe('advanced')
+      } else if (def.storage === 'advanced') {
+        expect(USAGE_KEYS, def.key).toContain(def.key)
+        expect(def.scoring_surface, def.key).toBe('context')
       }
     }
+    expect(STAT_KEYS.filter((d) => d.tier === 'core_box' && d.storage === 'advanced').map((d) => d.key)).toEqual(USAGE_KEYS)
   })
 
   it('names a player_stats column iff storage is "column"', () => {
@@ -391,6 +402,12 @@ const CONTEXT_KEYS = [
   'pass_completions',
   'rush_attempts',
   'targets',
+  // F578 (D539)
+  'off_snaps',
+  'pass_rz_att',
+  'rush_rz_att',
+  'rec_rz_tgt',
+  'fg_long',
 ]
 
 // §23.5's reserved surface: "deferred bonuses, placeholders, IDP" — the two
@@ -409,13 +426,13 @@ const surfaceKeys = (surface: string) =>
     .sort()
 
 describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable scope)', () => {
-  it('classifies the WHOLE registry — the three surfaces partition it, 48/9/4 = 61', () => {
+  it('classifies the WHOLE registry — the three surfaces partition it, 48/14/4 = 66', () => {
     const scorable = surfaceKeys('scorable')
     const context = surfaceKeys('context')
     const reserved = surfaceKeys('reserved')
 
     expect(scorable.length).toBe(48)
-    expect(context.length).toBe(9)
+    expect(context.length).toBe(14)
     expect(reserved.length).toBe(4)
     // Partition, not just counts: every key classified exactly once, and no
     // entry left with an unrecognised (or absent) surface. A required field
@@ -424,7 +441,7 @@ describe('STAT_KEYS scoring_surface (§23.5 v2.11 — the editor’s editable sc
     expect([...scorable, ...context, ...reserved].sort()).toEqual(
       STAT_KEYS.map((def) => def.key).sort(),
     )
-    expect(STAT_KEYS.length).toBe(61)
+    expect(STAT_KEYS.length).toBe(66)
   })
 
   it('THE SCORABLE SET ≡ the §7.3.3.1 section catalog ∪ the CUT-GENERATED tier keys (set equality, not a count)', () => {

@@ -8,10 +8,12 @@
  * invented. Totals and per-game values cover his completed games (the
  * average's games, D486(11)/R1506). No completed games → no tiles at all.
  *
- * Not stored anywhere today (filed, F578): snap COUNT, red-zone attempts /
- * targets, routes run, 40 time, FG long.
+ * F578 (D539 / D540): snap COUNT, red-zone attempts / targets and FG long
+ * come from `player_stats.advanced` (the Sleeper actuals line), the 40 time
+ * from `players.forty_time` (the nflverse Combine file) — `extra`, where an
+ * absent field omits its tile. Routes run has no free source: not shown.
  */
-import type { BoxTotals } from './core-stats-ops'
+import type { BoxTotals, ExtraStats } from './core-stats-ops'
 
 export interface KeyStatTile {
   key: string
@@ -23,6 +25,8 @@ export interface KeyStatsInput {
   games: number
   totals: BoxTotals
   usage: { snap_pct: number | null; target_share: number | null } | null
+  /** F578: usage totals, FG long, the 40 (absent = not known). */
+  extra?: ExtraStats
 }
 
 const one = (n: number) => n.toFixed(1)
@@ -79,6 +83,16 @@ const REC_YDS: Def = { key: 'rec_yds', label: 'Rec yds', value: total('receiving
 const REC_TD: Def = { key: 'rec_td', label: 'Rec TD', value: total('receiving_tds') }
 const RUSH_YDS: Def = { key: 'rush_yds', label: 'Rush yds', value: total('rush_yards') }
 const RUSH_TD: Def = { key: 'rush_td', label: 'Rush TD', value: total('rush_tds') }
+// F578 — absent in `extra` = not known = no tile.
+const extra = (k: keyof ExtraStats): ((i: KeyStatsInput) => string | null) => (i) =>
+  i.extra?.[k] === undefined ? null : int(i.extra[k]!)
+const SNAPS: Def = { key: 'snaps', label: 'Snaps', value: extra('off_snaps') }
+const RZ_RUSH: Def = { key: 'rz_rush', label: 'RZ carries', value: extra('rush_rz_att') }
+const RZ_TGT: Def = { key: 'rz_tgt', label: 'RZ targets', value: extra('rec_rz_tgt') }
+const RZ_PASS: Def = { key: 'rz_pass', label: 'RZ pass att', value: extra('pass_rz_att') }
+const FG_LONG: Def = { key: 'fg_long', label: 'FG long', value: extra('fg_long') }
+/** The Combine 40-yard dash, in seconds ("4.38s"). */
+const FORTY: Def = { key: 'forty', label: '40 time', value: (i) => (i.extra?.forty_time === undefined ? null : `${i.extra.forty_time.toFixed(2)}s`) }
 
 /** Default tiles + the rest (into Full stats), per position. */
 const BY_POSITION: Record<string, { primary: Def[]; more: Def[] }> = {
@@ -91,7 +105,7 @@ const BY_POSITION: Record<string, { primary: Def[]; more: Def[] }> = {
       TARGETS,
       RECEPTIONS,
     ],
-    more: [REC_YDS, REC_TD],
+    more: [REC_YDS, REC_TD, SNAPS, RZ_RUSH, RZ_TGT, FORTY],
   },
   WR: {
     primary: [
@@ -104,7 +118,7 @@ const BY_POSITION: Record<string, { primary: Def[]; more: Def[] }> = {
       { key: 'ypt', label: 'Yds / target', value: (i) => fmt(yardsPerTarget(i.totals.receiving_yards, i.totals.targets), one) },
       REC_TD,
     ],
-    more: [SNAP],
+    more: [SNAP, SNAPS, RZ_TGT, FORTY],
   },
   QB: {
     primary: [
@@ -118,6 +132,10 @@ const BY_POSITION: Record<string, { primary: Def[]; more: Def[] }> = {
     more: [
       { key: 'att', label: 'Attempts', value: total('pass_attempts') },
       { key: 'rating', label: 'Passer rating', value: (i) => fmt(passerRating(i.totals), one) },
+      SNAPS,
+      RZ_PASS,
+      RZ_RUSH,
+      FORTY,
     ],
   },
   K: {
@@ -137,6 +155,7 @@ const BY_POSITION: Record<string, { primary: Def[]; more: Def[] }> = {
         value: (i) =>
           i.totals.xp_made === undefined || i.totals.xp_attempted === undefined ? null : `${int(i.totals.xp_made)}/${int(i.totals.xp_attempted)}`,
       },
+      FG_LONG,
     ],
     more: [],
   },

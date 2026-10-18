@@ -35,10 +35,11 @@ export const draftPoolKeys = {
   bigBoard: (userId: string) => ['draft-big-board', userId] as const,
 }
 
-export function useDraftPool(search: string, position: string) {
+export function useDraftPool(search: string, position: string, enabled = true) {
   const normalizedSearch = search.trim()
   return useQuery({
     queryKey: draftPoolKeys.pool(normalizedSearch, position),
+    enabled,
     queryFn: async (): Promise<PoolPlayer[]> => {
       const supabase = createBrowserClient()
       let query = supabase
