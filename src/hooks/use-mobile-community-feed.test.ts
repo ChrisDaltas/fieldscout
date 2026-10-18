@@ -13,7 +13,10 @@
  *    (no silent "no likes");
  *  - a list liked lately that the update-ordered pool left out is read too
  *    (`popularExtra`, For you's candidates) — a like doesn't update a list;
- *  - Injuries asks the server with the Home injury report's statuses.
+ *  - Injuries asks the server with the Home injury report's statuses;
+ *  - the pool is read in a total order (last update, then the id), and a
+ *    full one says where the older lists start (`olderFrom`, gap list §3
+ *    #30) — a full read is never taken for every public list.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -54,6 +57,7 @@ import { INJURY_STATUSES } from '@/components/mobile/home/home-ops'
 import { RANK_FILTERS_ALL, rankFilterOk } from '@/components/mobile/community/community-ops'
 
 import {
+  COMMUNITY_POOL_SIZE,
   LATEST_READ_SIZE,
   LIKED_EXTRA_SIZE,
   POOL_SELECT,
@@ -118,6 +122,31 @@ describe('readCommunityFeed', () => {
     expect(mainOrder(latest)).toEqual(['created_at', { ascending: false, nullsFirst: false }])
     expect(op(latest, 'limit')).toContainEqual([LATEST_READ_SIZE])
     expect(mainOrder(pool)).toEqual(['updated_at', { ascending: false, nullsFirst: false }])
+    // Then the id: a total order, so "after the pool's last row" is exact.
+    const poolOrders = op(pool, 'order').filter(([, o]) => !(o as { referencedTable?: string }).referencedTable)
+    expect(poolOrders).toEqual([
+      ['updated_at', { ascending: false, nullsFirst: false }],
+      ['id', { ascending: false }],
+    ])
+    expect(op(pool, 'limit')).toContainEqual([COMMUNITY_POOL_SIZE])
+  })
+
+  it('a full pool says where the older lists start — its last row; one that isn’t full holds them all', async () => {
+    const full = Array.from({ length: COMMUNITY_POOL_SIZE }, (_, i) =>
+      row(`p${i}`, { updated_at: new Date(Date.parse('2026-10-14T00:00:00Z') - i * 60_000).toISOString() }),
+    )
+    // The last row counts even when the cards can't draw it (no owner).
+    full[COMMUNITY_POOL_SIZE - 1] = { ...full[COMMUNITY_POOL_SIZE - 1]!, owner: null as never }
+    answer = (call) => ({ data: call.table === 'lists' && !isLatest(call) ? full : [], error: null })
+    const capped = await readCommunityFeed(NOW)
+    expect(capped.capped).toBe(true)
+    expect(capped.items).toHaveLength(COMMUNITY_POOL_SIZE - 1)
+    expect(capped.olderFrom).toEqual({ updatedAt: full[COMMUNITY_POOL_SIZE - 1]!.updated_at, id: `p${COMMUNITY_POOL_SIZE - 1}` })
+
+    answer = (call) => ({ data: call.table === 'lists' && !isLatest(call) ? full.slice(0, 5) : [], error: null })
+    const all = await readCommunityFeed(NOW)
+    expect(all.capped).toBe(false)
+    expect(all.olderFrom).toBeNull()
   })
 
   it('the saved scoring: from the row once 190 is pushed; none (no error) before', async () => {

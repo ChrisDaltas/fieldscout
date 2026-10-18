@@ -39,8 +39,11 @@ import { firstEmbed } from '@/utils/supabase-embed'
  * on the injury report (only four players per list ride along with the pool).
  *
  * The pool is capped. When the read comes back full (`capped`), older public
- * lists are not in it, and the screen says so wherever it filters the pool —
- * a full read is never presented as the whole table.
+ * lists are not in it: wherever the screen filters the pool, the same filters
+ * then run on the server for the lists past its last row (`olderFrom`), page
+ * by page (`use-community-older.ts`, gap list §3 #30) — a full read is never
+ * presented as the whole table. The pool is read in a total order (last
+ * update, then the id), so "past its last row" is exact.
  *
  * For you (Chris, 2026-10-15, gap list #35) also needs, beside the pool:
  *  - `latest`: the newest POSTED lists and rankings, read by `created_at` on
@@ -83,6 +86,13 @@ const LIKES_PAGE = 1000
  *  count in the fading part through the list's like count. */
 const LIKES_MAX_PAGES = 10
 
+/** Where a read in the pool's order (last update, then the id — both
+ *  newest first, no update time last) stands: the row it ended on. */
+export interface PoolCursor {
+  updatedAt: string | null
+  id: string
+}
+
 export interface CommunityPool {
   items: CommunityItem[]
   /** The newest-posted public lists and rankings, newest first (the Latest
@@ -93,6 +103,9 @@ export interface CommunityPool {
   popularExtra: CommunityItem[]
   /** The read hit COMMUNITY_POOL_SIZE: there may be older public lists. */
   capped: boolean
+  /** Capped: the pool's last row, where the older lists start. Null when
+   *  the pool holds every public list. */
+  olderFrom: PoolCursor | null
 }
 
 export interface CommunityPlayer {
@@ -316,6 +329,8 @@ export const mobileCommunityKeys = {
   playerMatch: (poolIds: string[], playerId: string | null, query: string) =>
     ['mobile-community', 'player-match', playerId ?? '', query, poolIds] as const,
   injuryMatch: (poolIds: string[]) => ['mobile-community', 'injury-match', poolIds] as const,
+  /** A filtered view's lists past the pool (`use-community-older.ts`). */
+  older: (spec: unknown, from: PoolCursor | null) => ['mobile-community', 'older', spec, from] as const,
 }
 
 type Supabase = ReturnType<typeof createBrowserClient>
@@ -323,12 +338,13 @@ type Supabase = ReturnType<typeof createBrowserClient>
 /**
  * The lists Community shows: public, not deleted, with players — and the
  * per-list caps on the embeds (PostgREST applies these per parent). Callers
- * add the order and the size.
+ * add the order and the size. `select`: POOL_SELECT, or POOL_SELECT plus
+ * embeds that only filter (the reads past the pool — `use-community-older`).
  */
-export function publicListsQuery(supabase: Supabase) {
+export function publicListsQuery(supabase: Supabase, select: string = POOL_SELECT) {
   return supabase
     .from('lists')
-    .select(POOL_SELECT)
+    .select(select)
     .eq('is_private', false)
     .is('deleted_at', null)
     .gt('player_count', 0)
@@ -379,7 +395,10 @@ export async function readCommunityFeed(now: number = Date.now()): Promise<Commu
   const supabase = createBrowserClient()
   const publicLists = () => publicListsQuery(supabase)
   const [pool, latest, likes] = await Promise.all([
-    publicLists().order('updated_at', { ascending: false, nullsFirst: false }).limit(COMMUNITY_POOL_SIZE),
+    publicLists()
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: false })
+      .limit(COMMUNITY_POOL_SIZE),
     publicLists().order('created_at', { ascending: false, nullsFirst: false }).limit(LATEST_READ_SIZE),
     readRecentLikes(supabase, now),
   ])
@@ -387,6 +406,9 @@ export async function readCommunityFeed(now: number = Date.now()): Promise<Commu
   if (latest.error) throw latest.error
   const poolRows = (pool.data ?? []) as unknown as CommunityRow[]
   const latestRows = (latest.data ?? []) as unknown as CommunityRow[]
+  const capped = poolRows.length >= COMMUNITY_POOL_SIZE
+  // Its last row as read — even one the cards can't draw (no owner).
+  const last = poolRows[poolRows.length - 1]
 
   // The hottest lists liked lately that the pool doesn't hold. Rows the
   // Latest read already holds are reused; the rest are read by id, through
@@ -407,7 +429,8 @@ export async function readCommunityFeed(now: number = Date.now()): Promise<Commu
     items: mapCommunityRows(poolRows, likes),
     latest: mapCommunityRows(latestRows, likes),
     popularExtra: mapCommunityRows(extraRows, likes),
-    capped: poolRows.length >= COMMUNITY_POOL_SIZE,
+    capped,
+    olderFrom: capped && last ? { updatedAt: last.updated_at, id: last.id } : null,
   }
 }
 
@@ -454,8 +477,13 @@ export function useCommunityInjuryMatches(poolIds: string[], enabled: boolean) {
 }
 
 /** Escape LIKE wildcards so a typed "%" or "_" matches itself. */
-function likePattern(q: string): string {
-  return `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`
+export function likeEscape(q: string): string {
+  return q.replace(/[%_\\]/g, (m) => `\\${m}`)
+}
+
+/** The text anywhere: `%text%`, wildcards escaped. */
+export function likePattern(q: string): string {
+  return `%${likeEscape(q)}%`
 }
 
 /**

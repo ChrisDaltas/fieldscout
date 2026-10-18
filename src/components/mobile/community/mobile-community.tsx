@@ -5,17 +5,23 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CommunityDetail } from '@/components/mobile/community/community-detail'
 import {
+  CardsSkeleton,
   EmptyBlock,
   LatestShelf,
   ListMasonry,
+  MoreFooter,
   RankingRow,
+  RowsSkeleton,
   ShelfHeader,
   UpdatedRow,
+  pagedReadFailed,
+  retryFailedReads,
 } from '@/components/mobile/community/community-cards'
 import {
   COMMUNITY_TABS,
   CREATE_LIST_HREF,
   LATEST_HREF,
+  OLDER_NONE,
   RANK_POS_CHIPS,
   RANK_SCORING_CHIPS,
   closeCommunityDetail,
@@ -23,9 +29,13 @@ import {
   deriveTopics,
   emptyCopy,
   normQuery,
+  olderSpecs,
   rankTypeChips,
   topicAwaitingServer,
+  withOlder,
   type CommunityTopic,
+  type OlderRead,
+  type OlderSpec,
 } from '@/components/mobile/community/community-ops'
 import { useCommunityStore } from '@/components/mobile/community/community-store'
 import { TopScoutsShelf, TrendingTagsShelf } from '@/components/mobile/community/community-shelves'
@@ -35,9 +45,9 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { HeaderIconButton, LogoLockup, MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { useCommunityOlder } from '@/hooks/use-community-older'
 import { useFollowingIds } from '@/hooks/use-follows'
 import {
-  COMMUNITY_POOL_SIZE,
   useCommunityInjuryMatches,
   useCommunityPlayerMatches,
   useMobileCommunityFeed,
@@ -59,6 +69,13 @@ import { cn } from '@/lib/utils'
  * shows where is `communityView` (community-ops), kept pure and tested.
  * "Latest" is a horizontal shelf whose "See all" opens the Latest page
  * (`/app/explore/latest`, Chris 2026-10-16).
+ *
+ * Search and filters cover every public list (gap list §3 #30). The pool
+ * holds the most recently updated 100; once it's full, a filtered view goes
+ * on past it — the same filters, run on the server for the older lists
+ * (`useCommunityOlder`), shown after the pool's matches and read a page at a
+ * time: lists as the end comes near (or "Load more"), rankings above them
+ * by "More rankings". The empty state waits until every list is searched.
  *
  * `currentWeek` is the app's NFL week (0 = offseason) — the Start or sit
  * shelf is titled with the week it's about, "Rankings this week" holds that
@@ -108,7 +125,8 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const feed = useMobileCommunityFeed()
   const following = useFollowingIds()
   const items = useMemo(() => feed.data?.items ?? [], [feed.data])
-  const capped = feed.data?.capped ?? false
+  // Where the lists past the pool start — null while the pool holds them all.
+  const olderFrom = feed.data?.olderFrom ?? null
   // The lists the server-side matchers ask about: the pool, plus the
   // recently liked lists For you weighs beside it.
   const poolIds = useMemo(
@@ -144,18 +162,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   // "Now" for the relative times and the For you order is when the feed was
   // read (the order holds still until the next read).
   const now = feed.dataUpdatedAt
-  const {
-    shelves,
-    latest,
-    updates,
-    ranks,
-    lists,
-    shelfRanks,
-    shelfLists,
-    anyList,
-    rankFilteredEmpty,
-    empty,
-  } = communityView({
+  const view = communityView({
     pool: items,
     popularExtra: feed.data?.popularExtra ?? [],
     latestRows: feed.data?.latest ?? [],
@@ -176,7 +183,31 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     currentWeek,
     now,
   })
+  const { shelves, latest, updates, shelfRanks, shelfLists, anyList } = view
+
+  // Past the pool (gap list §3 #30): the same filters, on the server, for
+  // the older lists. A search is sent once typing settles; until then it
+  // shows as loading (never what was read for the last one).
+  const specs = olderSpecs({ tab, topic, q, rk, ranksOn: featureFlags.weeklyRanks, followingIds })
+  const olderRanks = useCommunityOlder(specs.rank, olderFrom, debouncedQ === q)
+  const olderLists = useCommunityOlder(specs.list, olderFrom, debouncedQ === q)
+  const rankRead = olderRead(specs.rank, olderFrom, olderRanks)
+  const listRead = olderRead(specs.list, olderFrom, olderLists)
+  const results = withOlder(view, { rank: rankRead, list: listRead }, { tab, rk })
+  const { ranks, listBlocks } = results
+  const ranksReading = rankRead !== OLDER_NONE
+  const listsReading = listRead !== OLDER_NONE
   const mixed = tab === 'all' || tab === 'following'
+  // Nothing shows and a read past the pool failed: one message for the
+  // screen, with one Try again for every read that failed — not a "Couldn’t
+  // load more" per read (two stacked, and "more" with nothing loaded).
+  const failedReads = [ranksReading && olderRanks, listsReading && olderLists].filter(
+    (r): r is typeof olderRanks => r !== false && pagedReadFailed(r),
+  )
+  const olderFailedBlank = results.loading && failedReads.length > 0
+  const olderFailedCopy = q
+    ? 'Couldn’t finish the search.'
+    : `Couldn’t load the ${ranksReading && listsReading ? 'lists and rankings' : ranksReading ? 'rankings' : 'lists'}.`
   // What For you can show — the lists a Trending tag may filter to.
   const forYouShown = useMemo(
     () => [...items, ...(feed.data?.popularExtra ?? [])].filter((i) => featureFlags.weeklyRanks || i.kind !== 'rank'),
@@ -221,7 +252,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const followingPending = tab === 'following' && following.isLoading
   // Rankings tab: the chips can exclude every ranking — say so (the
   // prototype went blank here; its empty test ran before the chips).
-  const copy = emptyCopy(tab, topic, q, rankFilteredEmpty, { followsAnyone: followingIds.size > 0, capped })
+  const copy = emptyCopy(tab, topic, q, results.rankFilteredEmpty, { followsAnyone: followingIds.size > 0 })
   const onEmptyAction = () => {
     if (copy.kind === 'rank') resetRankFilters()
     else if (copy.kind === 'create') router.push(CREATE_LIST_HREF)
@@ -395,21 +426,49 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                     </div>
                   </>
                 )}
-                {lists.length > 0 && (
+                {/* Older rankings: on the Rankings tab they're the last
+                    section, so they load as you scroll; above the lists,
+                    by hand. Drawn with no ranking shown too while nothing
+                    shows at all, or when the read failed — saying it was
+                    the rankings, above the Lists heading. */}
+                {ranksReading &&
+                  !olderFailedBlank &&
+                  (ranks.length > 0 || tab === 'rank' || results.loading || olderRanks.isError) && (
+                    <MoreFooter
+                      read={olderRanks}
+                      auto={tab === 'rank'}
+                      label="More rankings"
+                      errorLabel={ranks.length > 0 ? 'Couldn’t load more rankings.' : 'Couldn’t load the rankings.'}
+                      nothingShown={ranks.length === 0}
+                      skeleton={<RowsSkeleton count={2} label="Loading more rankings" />}
+                    />
+                  )}
+                {listBlocks.length > 0 && (
                   <>
                     {mixed && <h2 className="mb-[10px] mt-5 text-[15px] font-semibold">Lists</h2>}
-                    <div className="mt-3">
-                      <ListMasonry items={lists} />
+                    {/* One masonry per page read, so a page arriving never
+                        moves the cards above it (`withOlder`). A column's
+                        last card loses its bottom margin at the block's
+                        end, so the blocks are spaced by it instead. */}
+                    <div className="mt-3 flex flex-col gap-[14px]">
+                      {listBlocks.map((block) => (
+                        <ListMasonry key={block[0]!.id} items={block} />
+                      ))}
                     </div>
                   </>
                 )}
-                {empty && <EmptyBlock message={copy.message} action={copy.action} onAction={onEmptyAction} />}
-                {capped && (
-                  // The pool is a cap, not the whole table: filtering it
-                  // says what it searched.
-                  <p className="mt-2 text-center text-[12px] font-medium text-m-t3">
-                    Showing the {COMMUNITY_POOL_SIZE} most recently updated lists and rankings
-                  </p>
+                {listsReading && !olderFailedBlank && (
+                  <MoreFooter
+                    read={olderLists}
+                    auto
+                    errorLabel={listBlocks.length > 0 ? 'Couldn’t load more lists.' : 'Couldn’t load the lists.'}
+                    nothingShown={results.loading}
+                    skeleton={<CardsSkeleton label="Loading more lists" />}
+                  />
+                )}
+                {results.empty && <EmptyBlock message={copy.message} action={copy.action} onAction={onEmptyAction} />}
+                {olderFailedBlank && (
+                  <EmptyBlock message={olderFailedCopy} action="Try again" onAction={() => retryFailedReads(failedReads)} />
                 )}
               </>
             )}
@@ -552,4 +611,20 @@ function tabSwitchedOn(t: { value: string }): boolean {
   if (t.value === 'poll') return featureFlags.startOrSit
   if (t.value === 'rank') return featureFlags.weeklyRanks
   return true
+}
+
+/**
+ * What a read past the pool has brought back, for `withOlder`: nothing to
+ * read (the view needs none, the pool holds every public list, or Following
+ * follows no one); nothing yet (reading, or the search still being typed);
+ * else its pages, done once a page came back short.
+ */
+function olderRead(
+  spec: OlderSpec | null,
+  from: unknown,
+  read: { data?: { pages: { items: OlderRead['pages'][number] }[] }; hasNextPage: boolean },
+): OlderRead {
+  if (!spec || !from || spec.following?.length === 0) return OLDER_NONE
+  if (!read.data) return { pages: [], done: false }
+  return { pages: read.data.pages.map((p) => p.items), done: !read.hasNextPage }
 }

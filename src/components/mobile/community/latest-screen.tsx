@@ -1,9 +1,9 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo } from 'react'
 
-import { EmptyBlock, RankingRow } from '@/components/mobile/community/community-cards'
+import { EmptyBlock, MoreFooter, RankingRow, RowsSkeleton } from '@/components/mobile/community/community-cards'
 import { CommunityDetail } from '@/components/mobile/community/community-detail'
 import {
   COMMUNITY_HREF,
@@ -69,27 +69,6 @@ function LatestScreen() {
       LATEST_HREF,
     )
 
-  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = feed
-  // Load the next page while the end of the list is near — again after each
-  // read while it still is (a page of rankings, with rankings switched off,
-  // adds no rows). A failed read waits for "Try again".
-  const [endEl, setEndEl] = useState<HTMLDivElement | null>(null)
-  const [nearEnd, setNearEnd] = useState(false)
-  useEffect(() => {
-    if (!endEl || typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver((entries) => setNearEnd(entries.some((e) => e.isIntersecting)), {
-      rootMargin: '0px 0px 600px 0px',
-    })
-    observer.observe(endEl)
-    return () => {
-      observer.disconnect()
-      setNearEnd(false)
-    }
-  }, [endEl])
-  useEffect(() => {
-    if (nearEnd && hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
-  }, [nearEnd, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
-
   const header = (
     <div className="flex h-[52px] items-center px-3" inert={openId ? true : undefined}>
       <RoundNavButton kind="back" onClick={() => goBack(COMMUNITY_HREF)} />
@@ -113,7 +92,7 @@ function LatestScreen() {
           ) : (
             <RowsSkeleton count={6} label="Loading the latest lists" />
           )
-        ) : items.length === 0 && !hasNextPage ? (
+        ) : items.length === 0 && !feed.hasNextPage ? (
           <EmptyBlock
             message={ranksOn ? 'No lists or rankings yet' : 'No lists yet'}
             action="Create a list"
@@ -126,53 +105,18 @@ function LatestScreen() {
                 <RankingRow key={item.id} item={item} postedNow={now} from={LATEST_HREF} />
               ))}
             </div>
-            <div ref={setEndEl} />
-            {isFetchNextPageError ? (
-              <div className="flex flex-col items-center gap-2 py-6 text-center" role="alert">
-                <p className="text-[13px] font-medium text-m-t3">Couldn’t load more.</p>
-                <button
-                  type="button"
-                  onClick={() => void fetchNextPage()}
-                  className="text-[13px] font-semibold text-accent"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : isFetchingNextPage || (hasNextPage && items.length === 0) ? (
-              <RowsSkeleton count={2} label="Loading more" />
-            ) : hasNextPage ? (
-              <div className="flex justify-center py-4">
-                <button
-                  type="button"
-                  onClick={() => void fetchNextPage()}
-                  className="flex h-9 items-center rounded-pill bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
-                >
-                  Load more
-                </button>
-              </div>
-            ) : null}
+            {/* More load as the end comes near, or by hand. */}
+            <MoreFooter
+              read={feed}
+              auto
+              nothingShown={items.length === 0}
+              skeleton={<RowsSkeleton count={2} label="Loading more" />}
+            />
           </>
         )}
       </div>
 
       {openId && <CommunityDetail listId={openId} onBack={closeDetail} />}
     </MobileScreen>
-  )
-}
-
-/** Latest rows loading: the 60px tile and two lines. */
-function RowsSkeleton({ count, label }: { count: number; label: string }) {
-  return (
-    <div aria-busy="true" aria-label={label}>
-      {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="flex items-center gap-3 py-2">
-          <span className="h-[60px] w-[60px] flex-none animate-pulse rounded-[10px] bg-m-b1" />
-          <span className="flex flex-1 flex-col gap-2">
-            <span className="h-3.5 w-3/4 animate-pulse rounded-[14px] bg-m-b1" />
-            <span className="h-3 w-1/2 animate-pulse rounded-[14px] bg-m-b1" />
-          </span>
-        </div>
-      ))}
-    </div>
   )
 }
