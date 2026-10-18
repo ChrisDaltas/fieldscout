@@ -1,7 +1,13 @@
 'use client'
 
 import { SwitchTrack } from '@/components/mobile/lists/lists-parts'
-import { fmt1, movementText, movementToneClass, type Movement } from '@/components/mobile/rankings/rankings-ops'
+import {
+  fmt1,
+  movementText,
+  movementToneClass,
+  type Movement,
+  type RankStatus,
+} from '@/components/mobile/rankings/rankings-ops'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import type { PoolStat } from '@/hooks/use-mobile-rankings-sources'
 import { cn } from '@/lib/utils'
@@ -81,13 +87,7 @@ export function statCells(stat: PoolStat | undefined, position: string): StatCel
   ]
 }
 
-/**
- * A ranking's status on the phone (Chris, 2026-10-15): Published — the
- * app's one saved state, which is the ranking that counts — or Finalized, a
- * played week. There is no "saved but not published" or draft state.
- */
-export type RankStatus = 'Finalized' | 'Published'
-
+/** A ranking's status (`RankStatus`, rankings-ops): Published or Finalized. */
 const STATUS_CLASS: Record<RankStatus, string> = {
   Finalized: 'bg-m-t1 text-m-b0',
   // Publish is "save and submit", so it wears the design's Submitted colours.

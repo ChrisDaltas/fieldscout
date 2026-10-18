@@ -1,9 +1,10 @@
 'use client'
 
 import { ssCounts } from '@/components/mobile/profile/profile-ops'
+import { positionRankings } from '@/components/mobile/rankings/position-rankings'
 import { useAuth } from '@/hooks/use-auth'
 import { useLists } from '@/hooks/use-lists'
-import { useMobileProfileRankings } from '@/hooks/use-mobile-profile-rankings'
+import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import { useMobileProfileStartSit } from '@/hooks/use-mobile-profile-start-sit'
 import { featureFlags } from '@/lib/feature-flags'
 
@@ -13,10 +14,11 @@ import { featureFlags } from '@/lib/feature-flags'
  * segment it opens, so the number and the rows always agree:
  *  - Lists: the user's own lists (`GET /api/lists` total — the `useLists(1,
  *    100)` read Profile › Lists and the Recently viewed shelf make).
- *  - Rankings: Profile › Rankings' rows (`useMobileProfileRankings`) — this
- *    season's weekly boards whose list isn't deleted, plus the pre-draft big
- *    board. The app stores no "submitted" state, so that half of the
- *    design's "3 rankings · 2 submitted" is left out.
+ *  - Rankings: Profile › Rankings' rows — one per position ranking on the
+ *    user's boards (`positionRankings` over `useMyRankingBoards`, the read
+ *    Profile and the Rankings screen make; gap list §3 #22). The app stores
+ *    no "submitted" state, so that half of the design's "3 rankings · 2
+ *    submitted" is left out.
  *  - Start/Sit: Profile › Start/Sit's questions (`useMobileProfileStartSit`,
  *    voided ones left out), open vs closed by its own `ssCounts` rule.
  *
@@ -34,7 +36,7 @@ export interface StuffCount<T> {
 export function useMobileHomeStuff(now: number) {
   const { user } = useAuth()
   const lists = useLists(1, 100)
-  const rankings = useMobileProfileRankings(user?.id, featureFlags.weeklyRanks)
+  const rankings = useMyRankingBoards(featureFlags.weeklyRanks)
   const startSit = useMobileProfileStartSit(user?.id, featureFlags.startOrSit)
 
   const retry = () => {
@@ -46,7 +48,10 @@ export function useMobileHomeStuff(now: number) {
   return {
     lists: { value: lists.data?.pagination.total ?? null, error: lists.isError } satisfies StuffCount<number>,
     rankings: featureFlags.weeklyRanks
-      ? ({ value: rankings.data?.length ?? null, error: rankings.isError } satisfies StuffCount<number>)
+      ? ({
+          value: rankings.data ? positionRankings(rankings.data).length : null,
+          error: rankings.isError,
+        } satisfies StuffCount<number>)
       : null,
     startSit: featureFlags.startOrSit
       ? ({

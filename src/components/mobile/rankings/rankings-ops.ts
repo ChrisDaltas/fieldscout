@@ -140,6 +140,19 @@ export function weekStatus(
   return w <= Math.min(active + WEEKS_AHEAD, LAST_REGULAR_WEEK) ? 'upcoming' : 'future'
 }
 
+/**
+ * A ranking's status on the phone (Chris, 2026-10-15): Published — the
+ * app's one saved state, which is the ranking that counts — or Finalized, a
+ * played week. There is no "saved but not published" or draft state.
+ */
+export type RankStatus = 'Finalized' | 'Published'
+
+/** A stored ranking's status: Finalized once its week is played, else
+ *  Published (Publish is the only way to store one). */
+export function rankingStatus(type: RankType, currentWeek: number): RankStatus {
+  return weekStatus(type, currentWeek) === 'past' ? 'Finalized' : 'Published'
+}
+
 // ---------------------------------------------------------------------------
 // Tiers (handoff `breaks`, lr-frame §2.13.8) — ported as specified. The hub
 // cuts tiers from each source's scores; nothing stores them.

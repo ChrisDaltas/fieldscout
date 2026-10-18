@@ -3,6 +3,16 @@
  * Mobile handoff, `m-profile.md`).
  */
 
+import type { PositionRanking } from '@/components/mobile/rankings/position-rankings'
+import {
+  rankingStatus,
+  rankingTitle,
+  scoringLabel,
+  toRankingsSearch,
+  type RankPos,
+  type RankStatus,
+  type RankType,
+} from '@/components/mobile/rankings/rankings-ops'
 import { CRED_TIERS, computeCredRank } from '@/lib/cred-tiers'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 
@@ -160,43 +170,68 @@ export function listRowSub(
 }
 
 // ---------------------------------------------------------------------------
-// Rankings preview
+// Rankings preview — one row per position ranking (gap list §3 #22)
 // ---------------------------------------------------------------------------
 
 /**
- * Every Rankings row opens "My rankings" — the handoff's `#mine` (§3, "it does
- * not deep-link to the tapped ranking"): the mobile Rankings hub on the app's
- * Rankings route, `view=mine` (`parseRankingsParams`, the Rankings area's URL
- * contract).
+ * "See all" on the Rankings segment — the handoff's `#mine`: the mobile
+ * Rankings screen on its Mine tab (`?view=mine`, `parseRankingsParams`, the
+ * Rankings area's URL contract).
  */
 export const MY_RANKINGS_HREF = '/app/weekly-ranks?view=mine'
 
 /** "New ranking" — the handoff's `#new-ranking`: the hub's New ranking step 1. */
 export const NEW_RANKING_HREF = '/app/weekly-ranks?new=1'
 
-/** A saved ranking board: a week's board, or the pre-draft (season) board. */
-export interface RankingBoardRow {
-  listId: string
-  /** 1–18, or null for the pre-draft big board. */
-  week: number | null
-  updatedAt: string | null
+/**
+ * A row opens the ranking you tap — its editor, over the Mine tab (the
+ * handoff only opened `#mine`, OQ 6: "the app can deep-link to the exact
+ * ranking today"). The editor's Back returns to Profile.
+ */
+export function rankingEditHref(type: RankType, pos: RankPos): string {
+  return `/app/weekly-ranks${toRankingsSearch({
+    src: 'mine',
+    scoring: 'ppr',
+    pos,
+    overlay: { kind: 'edit', type, pos, from: null },
+  })}`
 }
 
-/** `<period> · <positions>` — the app's boards cover every position and
- *  carry no scoring setting, so the handoff's `· PPR` part has nothing to say. */
-export function rankingRowTitle(row: Pick<RankingBoardRow, 'week'>): string {
-  return `${row.week === null ? 'Pre-draft' : `Week ${row.week}`} · All positions`
+/** `<period> · <pos> · <scoring>` (§5): `Week 5 · RB · Half PPR`,
+ *  `Rest of season · D/ST · PPR` — the scoring the editor opens it on. */
+export function rankingRowTitle(r: Pick<PositionRanking, 'type' | 'pos' | 'scoring'>, currentWeek: number): string {
+  return `${rankingTitle(r.type, r.pos, currentWeek)} · ${scoringLabel(r.scoring)}`
 }
 
-/** `Saved · updated 2d ago` — the app has no submit / grade step yet. */
-export function rankingRowSub(row: Pick<RankingBoardRow, 'updatedAt'>, now: number = Date.now()): string {
-  const ago = relativeAgo(row.updatedAt, now)
-  return ago ? `Saved · updated ${ago}` : 'Saved'
+/**
+ * `Published · updated 2d ago` / `Finalized · updated Sep 28`. The app's own
+ * status words (Chris, 2026-10-15: Publish is the only commit), where the
+ * handoff had Submitted / Saved / Finalized: there is no saved-not-published
+ * state, and no grading yet for "top 18%".
+ */
+export function rankingRowSub(
+  r: Pick<PositionRanking, 'type' | 'savedAt'>,
+  currentWeek: number,
+  now: number = Date.now(),
+): string {
+  const status = rankingStatus(r.type, currentWeek)
+  const ago = relativeAgo(r.savedAt, now)
+  return ago ? `${status} · updated ${ago}` : status
 }
 
-/** Newest first, boards never touched last. */
-export function sortRankingRows<T extends Pick<RankingBoardRow, 'updatedAt'>>(rows: readonly T[]): T[] {
-  const t = (r: T) => (r.updatedAt ? new Date(r.updatedAt).getTime() || 0 : 0)
+/**
+ * The status colours (§5): Published wears the design's Submitted green —
+ * Publish is save-and-submit, as My rankings' status pill has it — and
+ * Finalized its t4.
+ */
+export const RANKING_SUB_CLASS: Record<RankStatus, string> = {
+  Published: 'text-positive-strong',
+  Finalized: 'text-m-t4',
+}
+
+/** Newest save first, never-saved last; ties keep their order. */
+export function sortRankingRows<T extends Pick<PositionRanking, 'savedAt'>>(rows: readonly T[]): T[] {
+  const t = (r: T) => (r.savedAt ? new Date(r.savedAt).getTime() || 0 : 0)
   return [...rows].sort((a, b) => t(b) - t(a))
 }
 

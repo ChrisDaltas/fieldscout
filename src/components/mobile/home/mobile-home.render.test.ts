@@ -29,6 +29,7 @@ import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys } from '@/hooks/use-schedule'
 import { auctionPoolKeys } from '@/hooks/use-draft-pool'
 import { listsKeys } from '@/hooks/use-lists'
+import { mobileRankingBoardsKey, type BoardPlayerLite } from '@/hooks/use-mobile-rankings-boards'
 
 import { MobileHome } from './mobile-home'
 
@@ -45,11 +46,20 @@ function seeded() {
   qc.setQueryData(auctionPoolKeys.scoring('A'), { receptions: 0 })
   qc.setQueryData(auctionPoolKeys.scoring('B'), { receptions: 1 })
   qc.setQueryData(auctionPoolKeys.scoring('C'), { receptions: 0.5 })
-  // Profile › Rankings' read (no signed-in user in this render → 'anon').
-  qc.setQueryData(['mobile-profile', 'rankings', 'anon', 2026], [
-    { listId: 'r1', week: 5, updatedAt: null },
-    { listId: 'r2', week: null, updatedAt: null },
-  ])
+  // Profile › Rankings' read (no signed-in user in this render → 'none'):
+  // two boards holding three position rankings.
+  const boardRow = (listId: string, pos: string): BoardPlayerLite => ({
+    list_id: listId,
+    player_id: `${listId}-${pos}`,
+    position: 1,
+    updated_at: null,
+    added_at: null,
+    player: { id: `${listId}-${pos}`, full_name: `${pos} One`, position: pos, team: 'KC', headshot_url: null },
+  })
+  qc.setQueryData(mobileRankingBoardsKey(null), {
+    season: { listId: 'r2', week: 0, players: [boardRow('r2', 'RB'), boardRow('r2', 'WR')] },
+    weeks: [{ listId: 'r1', week: 5, players: [boardRow('r1', 'QB')] }],
+  })
   qc.setQueryData(scheduleKeys.all('A'), {
     weeks: [
       { id: 'w4', season: 2026, week: 4, status: 'final', finalized_at: null, median_score: null },
@@ -122,8 +132,8 @@ describe('mobile Home', () => {
     expect(out).toContain('href="/app/profile?tab=lists"')
     expect(out).toContain('href="/app/profile?tab=ss"')
     expect(out).toContain('3 lists')
-    // The same rows Profile › Rankings lists (weekly boards + the big board).
-    expect(out).toContain('2 rankings')
+    // The same rows Profile › Rankings lists: one per position ranking.
+    expect(out).toContain('3 rankings')
   })
 
   it('Rankings and Start/Sit tiles appear only while those surfaces are released', () => {
