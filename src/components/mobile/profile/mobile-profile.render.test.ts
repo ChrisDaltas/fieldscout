@@ -1,18 +1,21 @@
 /**
- * Mobile Profile's identity block (gap list §3 #21) rendered over a seeded
- * query cache: the bio under the handle, Following beside Followers, and the
- * slim Cred card (Scout tier, cred and the bar to the next tier) from the
- * stored cred score.
+ * Mobile Profile rendered over a seeded query cache:
+ *  - the identity block (gap list §3 #21): the bio under the handle,
+ *    Following beside Followers, and the slim Cred card (Scout tier, cred
+ *    and the bar to the next tier) from the stored cred score;
+ *  - My stuff › Rankings (gap list §3 #22): one row per position ranking,
+ *    marked Published or Finalized, each opening that ranking.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const search = vi.hoisted(() => ({ query: '' }))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/profile',
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(search.query),
 }))
 vi.mock('@/lib/supabase/client', () => ({
   createBrowserClient: () => ({ from: () => ({}) }),
@@ -36,6 +39,7 @@ vi.mock('@/hooks/use-auth', () => ({
 }))
 
 import { leaguesKeys } from '@/hooks/use-leagues'
+import { mobileRankingBoardsKey, type BoardPlayerLite, type MyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 
 import { MobileProfile } from './mobile-profile'
 
@@ -43,6 +47,7 @@ const BASE = { ...me.profile }
 afterEach(() => {
   Object.assign(me.profile, BASE)
   flags.leagues = true
+  search.query = ''
 })
 
 const LEAGUES = [
@@ -50,11 +55,14 @@ const LEAGUES = [
   { id: 'B', name: 'Joy to Us', avatar_url: null, season: 2099, status: 'setup', team_count: 12, created_at: null, my_role: 'manager', my_team_id: 'u1' },
 ]
 
-function render() {
+function render(seed?: (qc: QueryClient) => void) {
   const qc = new QueryClient()
   qc.setQueryData(leaguesKeys.all, LEAGUES)
   qc.setQueryData(['mobile-profile', 'titles', ['A', 'B'], ['t1', 'u1']], 1)
-  return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(MobileProfile)))
+  seed?.(qc)
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client: qc }, createElement(MobileProfile, { currentWeek: 6 })),
+  )
     .replace(/&#x27;/g, "'")
     .replace(/&amp;/g, '&')
 }
@@ -148,5 +156,99 @@ describe('mobile Profile — bio, Following and the Cred card (gap list §3 #21)
     expect(textOf(out, 'data-profile-cred')).toBe('GOAT 9,400 cred Scout tier 10 of 10 Top tier')
     expect(bar(out)).toContain('aria-valuenow="100"')
     expect(bar(out)).toContain('aria-label="Top tier reached"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// My stuff › Rankings (gap list §3 #22)
+// ---------------------------------------------------------------------------
+
+const RECENT = Date.now()
+const at = (hoursAgo: number) => new Date(RECENT - hoursAgo * 3_600_000).toISOString()
+
+function boardRow(listId: string, n: number, pos: string, saved: string): BoardPlayerLite {
+  return {
+    list_id: listId,
+    player_id: `${listId}-${n}`,
+    position: n,
+    updated_at: saved,
+    added_at: saved,
+    player: { id: `${listId}-${n}`, full_name: `Player ${n}`, position: pos, team: 'KC', headshot_url: null },
+  }
+}
+
+/** Season board (WR + RB), a played Week 4 (QB) and this week's board (RB),
+ *  with Week 6 saved for PPR. Newest first: W6 RB, season WR, W4 QB, season RB. */
+const BOARDS: MyRankingBoards = {
+  season: {
+    listId: 'season',
+    week: 0,
+    players: [boardRow('season', 1, 'WR', at(5)), boardRow('season', 2, 'RB', at(24 * 4))],
+    scoringFormat: null,
+  },
+  weeks: [
+    { listId: 'w4', week: 4, players: [boardRow('w4', 1, 'QB', at(30))], scoringFormat: 'standard' },
+    { listId: 'w6', week: 6, players: [boardRow('w6', 1, 'RB', at(1)), boardRow('w6', 2, 'RB', at(2))], scoringFormat: 'ppr' },
+  ],
+}
+
+/** The Rankings segment's rows: [href, title, sub, sub classes]. */
+function rankingRows(html: string): Array<[string, string, string, string]> {
+  return [
+    ...html.matchAll(
+      /<a [^>]*href="([^"]+)"[^>]*>(?:(?!<a ).)*?<span class="truncate text-\[15px\] font-semibold">([^<]*)<\/span><span class="text-\[12px\] font-medium ([^"]*)">([^<]*)<\/span>/g,
+    ),
+  ].map((m) => [m[1]!, m[2]!, m[4]!, m[3]!])
+}
+
+describe('mobile Profile — My stuff › Rankings rows (gap list §3 #22)', () => {
+  const renderRankings = (boards: MyRankingBoards | null) => {
+    // Home's Rankings tile's link.
+    search.query = 'tab=rankings'
+    return render((qc) => {
+      if (boards) qc.setQueryData(mobileRankingBoardsKey('user-me'), boards)
+    })
+  }
+
+  it('one row per position ranking, newest save first, the first three', () => {
+    const rows = rankingRows(renderRankings(BOARDS))
+    expect(rows.map((r) => r[1])).toEqual([
+      'Week 6 · RB · PPR',
+      'Rest of season · WR · Half PPR',
+      'Week 4 · QB · Standard',
+    ])
+  })
+
+  it('each row is marked Published or Finalized — a played week is Finalized', () => {
+    const rows = rankingRows(renderRankings(BOARDS))
+    expect(rows.map((r) => r[2])).toEqual([
+      'Published · updated 1h ago',
+      'Published · updated 5h ago',
+      'Finalized · updated 1d ago',
+    ])
+    // The design's colours: Submitted green for Published, t4 for Finalized.
+    expect(rows.map((r) => r[3])).toEqual(['text-positive-strong', 'text-positive-strong', 'text-m-t4'])
+    const t = renderRankings(BOARDS)
+    expect(t).not.toMatch(/>Saved\b|Saved ·|Draft|Submitted/)
+  })
+
+  it('each row opens the ranking you tap — its editor, over the Mine tab', () => {
+    const rows = rankingRows(renderRankings(BOARDS))
+    expect(rows.map((r) => r[0])).toEqual([
+      '/app/weekly-ranks?view=mine&pos=RB&edit=w6&ep=RB',
+      '/app/weekly-ranks?view=mine&pos=WR&edit=season&ep=WR',
+      '/app/weekly-ranks?view=mine&pos=QB&edit=w4&ep=QB',
+    ])
+    // See all still opens the Mine tab; the button still opens New ranking.
+    const html = renderRankings(BOARDS)
+    expect(html).toMatch(/<a [^>]*data-my-stuff-see-all="true" href="\/app\/weekly-ranks\?view=mine">See all</)
+    expect(html).toContain('href="/app/weekly-ranks?new=1"')
+  })
+
+  it('no rankings yet says so; the read still loading shows the skeleton, not the empty copy', () => {
+    expect(renderRankings({ season: null, weeks: [] })).toContain('No rankings yet')
+    const loading = renderRankings(null)
+    expect(loading).toContain('aria-busy="true"')
+    expect(loading).not.toContain('No rankings yet')
   })
 })

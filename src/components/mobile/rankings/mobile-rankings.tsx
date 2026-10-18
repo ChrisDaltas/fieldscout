@@ -20,7 +20,7 @@ import {
   type RankingsUrlState,
   type RankType,
 } from '@/components/mobile/rankings/rankings-ops'
-import { useGoBack } from '@/components/mobile/ui/back-nav'
+import { appEntryBehind, useGoBack } from '@/components/mobile/ui/back-nav'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 
 type EditOverlay = Extract<RankOverlay, { kind: 'edit' }>
@@ -162,11 +162,14 @@ export function MobileRankings({
     [hrefOf],
   )
 
-  // An editor the page OPENED on (a `?edit=` link, or the week route) gets
-  // its own history entry over the Mine tab, so browser / OS Back from it
-  // lands where the editor's own back does — inside the unpublished-changes
-  // guard below — instead of leaving the page with the edits.
+  // An editor the page OPENED on (a `?edit=` link — Profile's ranking rows
+  // — or the week route) gets its own history entry over the Mine tab, so
+  // browser / OS Back from it lands on that tab — inside the
+  // unpublished-changes guard below — instead of leaving the page with the
+  // edits. The Mine entry is ours, not somewhere you came from, so the
+  // editor's own Back steps over it (`linkRooted`).
   const mounted = useRef(false)
+  const linkRooted = useRef(false)
   useEffect(() => {
     if (mounted.current) return
     mounted.current = true
@@ -174,6 +177,7 @@ export function MobileRankings({
     write({ ...state, src: 'mine', overlay: null }, 'replace')
     write({ ...state, src: 'mine' }, 'push')
     pushedOverlay.current = true
+    linkRooted.current = true
     // Mount only: this re-roots the entry the page loaded on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -206,6 +210,19 @@ export function MobileRankings({
   useEffect(() => {
     if (!urlEdit && !stuck && leaving) setLeaving(false)
   }, [urlEdit, stuck, leaving])
+  // Once the linked editor has closed for good, the next editor is one the
+  // hub opens — its Back is a plain pop. (A dirty editor put back on screen
+  // by the guard is still the linked one.) Browser / OS Back from a clean
+  // linked editor lands on the Mine entry we put under it, which is not
+  // where you came from: carry on back to the screen that linked here, as
+  // the editor's own Back does (gap list #27). Our own close (`leaving`)
+  // has already gone where it meant to.
+  useEffect(() => {
+    if (urlEdit || stuck) return
+    const linked = linkRooted.current
+    linkRooted.current = false
+    if (linked && !leaving && appEntryBehind()) window.history.back()
+  }, [urlEdit, stuck, leaving])
 
   const nav: RankingsNav = {
     state,
@@ -226,11 +243,14 @@ export function MobileRankings({
   }
 
   /** Editor back — to where you came from (gap list #27): the tab (or the
-   *  AI expert's board) it was opened over, the screen that linked to New
-   *  ranking, else the Mine tab. */
+   *  AI expert's board) it was opened over, the screen that linked to it
+   *  (Profile's ranking rows) or to New ranking, else the Mine tab. */
   const editorBack = () => {
     setLeaving(true)
-    if (pushedOverlay.current) window.history.back()
+    // A linked editor sits on the Mine entry we put under it: step over
+    // that too, back to the screen that linked here — when there is one.
+    if (linkRooted.current && appEntryBehind(2)) window.history.go(-2)
+    else if (pushedOverlay.current) window.history.back()
     else goBack(hrefOf({ ...state, src: 'mine', overlay: null }))
   }
 

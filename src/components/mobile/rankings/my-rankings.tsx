@@ -3,23 +3,24 @@
 import { useMemo } from 'react'
 
 import { readLastRankPos } from '@/components/mobile/rankings/last-position'
-import { StatusPill, type RankStatus } from '@/components/mobile/rankings/rank-parts'
+import { positionRankings, type PositionRanking } from '@/components/mobile/rankings/position-rankings'
+import { StatusPill } from '@/components/mobile/rankings/rank-parts'
 import type { RankingsNav } from '@/components/mobile/rankings/rankings-hub'
 import {
-  RANK_POSITIONS,
   formatSaved,
-  fromDbPos,
   opensInWeek,
   plural,
   rankPosOr,
+  rankingStatus,
   rankingTitle,
   seasonLabel,
   weekStatus,
   type RankPos,
+  type RankStatus,
   type RankType,
 } from '@/components/mobile/rankings/rankings-ops'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
-import { latestSaved, useMyRankingBoards, type BoardPlayerLite, type MyBoard } from '@/hooks/use-mobile-rankings-boards'
+import { useMyRankingBoards, type BoardPlayerLite } from '@/hooks/use-mobile-rankings-boards'
 import { cn } from '@/lib/utils'
 
 /**
@@ -57,38 +58,19 @@ interface Period {
   empty: null | { open: boolean; sub: string }
 }
 
-function cardsFor(
-  board: MyBoard,
-  type: RankType,
-  status: RankCard['status'],
-  currentWeek: number,
-  /** Leads the meta line — "This week" marks the current week's cards. */
-  lead?: string,
-): RankCard[] {
-  const byPos = new Map<RankPos, BoardPlayerLite[]>()
-  for (const r of board.players) {
-    const pos = fromDbPos(r.player.position)
-    if (!pos) continue
-    const arr = byPos.get(pos) ?? []
-    arr.push(r)
-    byPos.set(pos, arr)
+/** A ranking as its card: "This week" leads the meta line of the current
+ *  week's cards. */
+function cardOf(r: PositionRanking, currentWeek: number): RankCard {
+  const lead = weekStatus(r.type, currentWeek) === 'current' ? 'This week' : undefined
+  return {
+    key: r.key,
+    type: r.type,
+    pos: r.pos,
+    title: rankingTitle(r.type, r.pos, currentWeek),
+    status: rankingStatus(r.type, currentWeek),
+    meta: [lead, plural(r.rows.length, 'player'), formatSaved(r.savedAt)].filter(Boolean).join(' · '),
+    heads: r.rows.slice(0, 5).map((row) => row.player),
   }
-  return RANK_POSITIONS.flatMap((pos) => {
-    const rows = byPos.get(pos)
-    if (!rows || rows.length === 0) return []
-    const saved = formatSaved(latestSaved(rows))
-    return [
-      {
-        key: `${type}-${pos}`,
-        type,
-        pos,
-        title: rankingTitle(type, pos, currentWeek),
-        status,
-        meta: [lead, plural(rows.length, 'player'), saved].filter(Boolean).join(' · '),
-        heads: rows.slice(0, 5).map((r) => r.player),
-      },
-    ]
-  })
 }
 
 export function MyRankingsBody({
@@ -105,9 +87,15 @@ export function MyRankingsBody({
 
   const periods = useMemo<Period[]>(() => {
     if (!boards.data) return []
+    // One card per position ranking — the rows Profile lists too.
+    const byType = new Map<RankType, RankCard[]>()
+    for (const r of positionRankings(boards.data)) {
+      const arr = byType.get(r.type) ?? []
+      arr.push(cardOf(r, currentWeek))
+      byType.set(r.type, arr)
+    }
     const out: Period[] = []
-    const season = boards.data.season
-    const seasonCards = season ? cardsFor(season, 'season', 'Published', currentWeek) : []
+    const seasonCards = byType.get('season') ?? []
     out.push({
       key: 'season',
       label: seasonLabel(currentWeek),
@@ -115,20 +103,10 @@ export function MyRankingsBody({
       cards: seasonCards,
       empty: seasonCards.length === 0 ? { open: true, sub: 'Not started' } : null,
     })
-    const byWeek = new Map(boards.data.weeks.map((b) => [b.week, b]))
     for (let w = 1; w <= 18; w++) {
       const type: RankType = `w${w}`
       const status = weekStatus(type, currentWeek)
-      const board = byWeek.get(w)
-      const cards = board
-        ? cardsFor(
-            board,
-            type,
-            status === 'past' ? 'Finalized' : 'Published',
-            currentWeek,
-            status === 'current' ? 'This week' : undefined,
-          )
-        : []
+      const cards = byType.get(type) ?? []
       if (cards.length > 0) {
         out.push({ key: type, label: `Week ${w}`, type, cards, empty: null })
       } else if (status === 'current') {

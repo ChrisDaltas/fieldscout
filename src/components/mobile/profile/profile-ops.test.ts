@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   MY_RANKINGS_HREF,
   NEW_RANKING_HREF,
+  RANKING_SUB_CLASS,
   countTitles,
   credCard,
   filterSsQuestions,
   listKindLabel,
   listRowSub,
   parseMeTab,
+  rankingEditHref,
   rankingRowSub,
   rankingRowTitle,
   relativeAgo,
@@ -113,15 +115,39 @@ describe('lists preview', () => {
   })
 })
 
-describe('rankings preview', () => {
-  it('rows: period title, saved sub', () => {
-    expect(rankingRowTitle({ week: 5 })).toBe('Week 5 · All positions')
-    expect(rankingRowTitle({ week: null })).toBe('Pre-draft · All positions')
-    expect(rankingRowSub({ updatedAt: ago(40 * MIN) }, NOW)).toBe('Saved · updated 40m ago')
+describe('rankings preview — one row per position ranking (gap list §3 #22)', () => {
+  it('title: period · position · scoring', () => {
+    expect(rankingRowTitle({ type: 'w5', pos: 'RB', scoring: 'half' }, 6)).toBe('Week 5 · RB · Half PPR')
+    expect(rankingRowTitle({ type: 'season', pos: 'WR', scoring: 'ppr' }, 6)).toBe('Rest of season · WR · PPR')
+    expect(rankingRowTitle({ type: 'season', pos: 'DST', scoring: 'std' }, 0)).toBe('Pre-draft · D/ST · Standard')
+    expect(rankingRowTitle({ type: 'w7', pos: 'QB', scoring: 'quarter' }, 6)).toBe('Week 7 · QB · 0.25 PPR')
   })
 
-  it('rows open My rankings and the button opens New ranking (the Rankings URL contract)', () => {
+  it('sub: the app’s own status words — Published, or Finalized once the week is played', () => {
+    // This week, a week ahead and the season ranking are Published.
+    expect(rankingRowSub({ type: 'w6', savedAt: ago(40 * MIN) }, 6, NOW)).toBe('Published · updated 40m ago')
+    expect(rankingRowSub({ type: 'w8', savedAt: ago(2 * DAY) }, 6, NOW)).toBe('Published · updated 2d ago')
+    expect(rankingRowSub({ type: 'season', savedAt: ago(3 * HOUR) }, 6, NOW)).toBe('Published · updated 3h ago')
+    // A played week is Finalized.
+    expect(rankingRowSub({ type: 'w4', savedAt: '2026-09-28T12:00:00Z' }, 6, NOW)).toBe('Finalized · updated Sep 28')
+    // In the offseason Week 1 is this week — nothing is played yet.
+    expect(rankingRowSub({ type: 'w1', savedAt: null }, 0, NOW)).toBe('Published')
+    // Nothing reads Saved, Draft or Submitted.
+    for (const sub of [rankingRowSub({ type: 'w6', savedAt: null }, 6), rankingRowSub({ type: 'w2', savedAt: null }, 6)]) {
+      expect(sub).not.toMatch(/Saved|Draft|Submitted/)
+    }
+  })
+
+  it('status colours: Published in the design’s Submitted green, Finalized in t4', () => {
+    expect(RANKING_SUB_CLASS).toEqual({ Published: 'text-positive-strong', Finalized: 'text-m-t4' })
+  })
+
+  it('a row opens that ranking’s editor over the Mine tab; See all opens Mine; the button opens New ranking', () => {
     const query = (href: string) => new URLSearchParams(href.split('?')[1])
+    expect(rankingEditHref('w5', 'RB')).toBe('/app/weekly-ranks?view=mine&pos=RB&edit=w5&ep=RB')
+    const row = parseRankingsParams(query(rankingEditHref('season', 'DST')), { type: 'w6', pos: 'QB' })
+    expect(row.view).toBe('mine')
+    expect(row.overlay).toEqual({ kind: 'edit', type: 'season', pos: 'DST', from: null })
     const mine = parseRankingsParams(query(MY_RANKINGS_HREF), { type: 'season' })
     expect(mine.view).toBe('mine')
     expect(mine.overlay).toBeNull()
@@ -129,13 +155,14 @@ describe('rankings preview', () => {
     expect(create.overlay).toMatchObject({ kind: 'new', step: 1 })
   })
 
-  it('sort newest first, untouched last', () => {
+  it('sort newest save first, never saved last, ties keep their order', () => {
     const rows = [
-      { id: 'a', updatedAt: ago(3 * DAY) },
-      { id: 'b', updatedAt: null },
-      { id: 'c', updatedAt: ago(MIN) },
+      { id: 'a', savedAt: ago(3 * DAY) },
+      { id: 'b', savedAt: null },
+      { id: 'c', savedAt: ago(MIN) },
+      { id: 'd', savedAt: ago(3 * DAY) },
     ]
-    expect(sortRankingRows(rows).map((r) => r.id)).toEqual(['c', 'a', 'b'])
+    expect(sortRankingRows(rows).map((r) => r.id)).toEqual(['c', 'a', 'd', 'b'])
   })
 })
 

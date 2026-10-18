@@ -8,10 +8,12 @@ import {
   ME_TABS,
   MY_RANKINGS_HREF,
   NEW_RANKING_HREF,
+  RANKING_SUB_CLASS,
   credCard,
   listRowSub,
   parseMeTab,
   plural,
+  rankingEditHref,
   rankingRowSub,
   rankingRowTitle,
   resolveMeTab,
@@ -23,6 +25,8 @@ import {
   type MeTab,
 } from '@/components/mobile/profile/profile-ops'
 import { useProfileTabStore } from '@/components/mobile/profile/profile-tab-store'
+import { positionRankings } from '@/components/mobile/rankings/position-rankings'
+import { rankingStatus } from '@/components/mobile/rankings/rankings-ops'
 import { M_ICON, MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
@@ -33,7 +37,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useLeagues } from '@/hooks/use-leagues'
 import { useLists } from '@/hooks/use-lists'
 import { useMobileProfileListMeta } from '@/hooks/use-mobile-profile-list-meta'
-import { useMobileProfileRankings } from '@/hooks/use-mobile-profile-rankings'
+import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import { useMobileProfileStartSit } from '@/hooks/use-mobile-profile-start-sit'
 import { useMobileProfileTitles } from '@/hooks/use-mobile-profile-titles'
 import { featureFlags } from '@/lib/feature-flags'
@@ -52,8 +56,12 @@ const START_SIT_PATH = 'M5 3v10M2.5 10.5L5 13l2.5-2.5M11 13V3M8.5 5.5L11 3l2.5 2
  *
  * The header scrolls away with the content (it is inside the scroller in the
  * handoff, not sticky). The shell already clears the dock below.
+ *
+ * `currentWeek` is the NFL week (the route's server read, as Rankings has
+ * it): it names the season ranking (Pre-draft / Rest of season) and marks
+ * played weeks Finalized.
  */
-export function MobileProfile() {
+export function MobileProfile({ currentWeek }: { currentWeek: number }) {
   const { user, profile, isLoading } = useAuth()
 
   return (
@@ -95,7 +103,7 @@ export function MobileProfile() {
           />
         )}
 
-        <MyStuff userId={user?.id} />
+        <MyStuff userId={user?.id} currentWeek={currentWeek} />
       </div>
     </MobileScreen>
   )
@@ -276,7 +284,7 @@ const SEE_ALL_HREF: Record<MeTab, string> = {
   ss: '/app/start-or-sit',
 }
 
-function MyStuff({ userId }: { userId: string | undefined }) {
+function MyStuff({ userId, currentWeek }: { userId: string | undefined; currentWeek: number }) {
   const params = useSearchParams()
   const stored = useProfileTabStore((s) => s.tab)
   const setStored = useProfileTabStore((s) => s.setTab)
@@ -329,7 +337,7 @@ function MyStuff({ userId }: { userId: string | undefined }) {
         />
       )}
       {tab === 'rankings' ? (
-        <RankingsPreview userId={userId} />
+        <RankingsPreview currentWeek={currentWeek} />
       ) : tab === 'ss' ? (
         <StartSitPreview userId={userId} />
       ) : (
@@ -339,27 +347,31 @@ function MyStuff({ userId }: { userId: string | undefined }) {
   )
 }
 
-/** Every row opens My rankings, as the design's `#mine` does (§3). */
-function RankingsPreview({ userId }: { userId: string | undefined }) {
-  const { data, isLoading, isError, refetch } = useMobileProfileRankings(userId)
-  const rows = sortRankingRows(data ?? []).slice(0, 3)
+/**
+ * One row per position ranking — the cards My rankings shows — newest save
+ * first, each opening that ranking (gap list §3 #22). The same read as the
+ * Rankings screen, so the two share one cache entry.
+ */
+function RankingsPreview({ currentWeek }: { currentWeek: number }) {
+  const boards = useMyRankingBoards()
+  const rows = boards.data ? sortRankingRows(positionRankings(boards.data)).slice(0, 3) : []
 
   return (
     <>
       <PreviewBody
-        loading={isLoading || !userId}
-        error={isError ? { copy: 'Couldn’t load your rankings.', retry: () => void refetch() } : null}
+        loading={boards.isPending}
+        error={boards.isError ? { copy: 'Couldn’t load your rankings.', retry: () => void boards.refetch() } : null}
         emptyCopy="No rankings yet"
         count={rows.length}
       >
         {rows.map((r) => (
           <PreviewRow
-            key={r.listId}
-            href={MY_RANKINGS_HREF}
+            key={r.key}
+            href={rankingEditHref(r.type, r.pos)}
             iconPath={M_ICON.rank}
-            title={rankingRowTitle(r)}
-            sub={rankingRowSub(r)}
-            subClassName="text-m-tb"
+            title={rankingRowTitle(r, currentWeek)}
+            sub={rankingRowSub(r, currentWeek)}
+            subClassName={RANKING_SUB_CLASS[rankingStatus(r.type, currentWeek)]}
           />
         ))}
       </PreviewBody>
