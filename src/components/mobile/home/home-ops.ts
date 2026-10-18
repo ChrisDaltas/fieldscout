@@ -73,6 +73,14 @@ export function scoringWord(family: ScoringFamily | null): string | null {
   return null
 }
 
+/** A league's size and scoring ("12-team PPR", "10-team half PPR") — the
+ *  Home card sub's first part and the Switch league sheet's format. No
+ *  scoring word when the league's scoring can't be read ("8-team"). */
+export function leagueSize(teamCount: number, family: ScoringFamily | null): string {
+  const word = scoringWord(family)
+  return `${teamCount}-team${word ? ` ${word}` : ''}`
+}
+
 /**
  * League card sub (m-home §5): in season `{N}-team {scoring} · Week {wk}`;
  * before the season (pre-draft or drafting) `{N}-team {scoring} · {season}`.
@@ -85,10 +93,44 @@ export function leagueSub(input: {
   season: number
   week: number | null
 }): string {
-  const word = scoringWord(input.family)
-  const size = `${input.teamCount}-team${word ? ` ${word}` : ''}`
   const when = !input.beforeSeason && input.week !== null ? `Week ${input.week}` : String(input.season)
-  return `${size} · ${when}`
+  return `${leagueSize(input.teamCount, input.family)} · ${when}`
+}
+
+/** "Aug 28 · 7:00 PM" — a draft time in the viewer's own clock (the
+ *  League tab's "Your time"); null for an unreadable instant. `timeZone`
+ *  is for tests. */
+export function draftTimeText(iso: string, timeZone?: string): string | null {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  const day = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone }).format(at)
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone }).format(at)
+  return `${day} · ${time}`
+}
+
+/**
+ * What a league that hasn't started its season says about its draft — the
+ * Home card's pill and the switcher's record slot (gap list §3 #20; the
+ * handoff's LEAGUES gives "Draft Aug 28"):
+ *  - drafting: "Draft live";
+ *  - before the draft, with a draft time still ahead: "Draft Aug 28 · 7:00 PM";
+ *  - before the draft with no time set (or one that has gone by without
+ *    the draft starting): "Pre-draft";
+ *  - in season or later: null — the record and the matchup speak instead.
+ * `scheduledAt` is the league's saved draft time (settings
+ * `draft.draft_scheduled_at`); `now` is the caller's clock.
+ */
+export function draftLabel(
+  phase: LeaguePhase,
+  scheduledAt: string | null | undefined,
+  now: number,
+  timeZone?: string,
+): string | null {
+  if (phase === 'season') return null
+  if (phase === 'draft-live') return 'Draft live'
+  const at = scheduledAt ? Date.parse(scheduledAt) : Number.NaN
+  const when = scheduledAt && at > now ? draftTimeText(scheduledAt, timeZone) : null
+  return when ? `Draft ${when}` : 'Pre-draft'
 }
 
 /**

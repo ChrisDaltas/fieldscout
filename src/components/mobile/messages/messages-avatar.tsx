@@ -4,9 +4,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
 /**
- * A person's or a league's avatar in Messages: the profile photo when there
- * is one, else the design's initials on a colour (white 600 text). Shape,
- * size and type come from each spot's spec via classes.
+ * A person's or a league's avatar (Messages, and the league tiles on Home and
+ * in the switcher): the photo when there is one, else the design's initials
+ * on a colour (white 600 text). Shape, size and type come from each spot's
+ * spec via classes. A new photo — or none — starts the tile afresh: Radix
+ * remembers a loaded image, so a tile that swaps a league with a photo for
+ * one without (the switcher's swipe) would otherwise draw neither.
  *
  * The design's green "online" dot is not drawn: the app tracks presence only
  * inside the draft room, so there is nothing true to show (a gap, not a
@@ -33,7 +36,7 @@ export function MessagesAvatar({
   fgClass?: string
 }) {
   return (
-    <Avatar className={cn('flex-none', sizeClass, radiusClass, colorClass)} aria-hidden>
+    <Avatar key={src ?? ''} className={cn('flex-none', sizeClass, radiusClass, colorClass)} aria-hidden>
       {src ? <AvatarImage src={src} alt="" /> : null}
       <AvatarFallback className={cn('bg-transparent font-semibold', textClass, fgClass)}>{text}</AvatarFallback>
     </Avatar>

@@ -4,13 +4,15 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
+import { MessagesAvatar } from '@/components/mobile/messages/messages-avatar'
 import { LeagueMenuSheet } from '@/components/mobile/shell/league-menu-sheet'
 import { LeagueSwitchSheet } from '@/components/mobile/shell/league-switch-sheet'
 import { DOCK_LG, DOCK_SM, leagueTabHref, mobileRoute, showsLeagueSwitcher, type LeagueTab } from '@/components/mobile/shell/mobile-nav'
-import { initials, leagueAvClass, useLeagueCard } from '@/components/mobile/shell/use-league-card'
+import { initials, leagueAvClass, switchedToTitle, useLeagueCard } from '@/components/mobile/shell/use-league-card'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
+import { useLeague } from '@/hooks/use-league'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
@@ -217,7 +219,9 @@ function LeagueTabBar({
  * The floating league switcher card (handoff §2.2 + gesture spec): swipe left
  * or right to move to the next / previous league on the same tab, swipe up or
  * tap to open the Switch league sheet. The row slides out and in again
- * (140ms linear); the card and its grab pill stay put.
+ * (140ms linear); the card and its grab pill stay put. A swipe says
+ * "Switched to {your team there}" — both neighbours' details are read ahead
+ * so the name is ready (and warm for the screen the swipe opens).
  */
 function LeagueSwitcher({
   league,
@@ -233,6 +237,10 @@ function LeagueSwitcher({
   const router = useRouter()
   const index = Math.max(0, leagues.findIndex((l) => l.id === league.id))
   const card = useLeagueCard(league)
+  const after = leagues[(index + 1) % leagues.length] ?? league
+  const before = leagues[(index - 1 + leagues.length) % leagues.length] ?? league
+  const afterDetail = useLeague(after.id)
+  const beforeDetail = useLeague(before.id)
   const [dx, setDx] = useState(0)
   const [anim, setAnim] = useState(false)
   const start = useRef<{ x: number; y: number } | null>(null)
@@ -243,10 +251,10 @@ function LeagueSwitcher({
       setDx(0)
       return
     }
-    const next = leagues[(index + d + leagues.length) % leagues.length]!
+    const next = d > 0 ? after : before
     setAnim(true)
     setDx(d > 0 ? -120 : 120)
-    toast({ title: `Switched to ${next.name}` })
+    toast({ title: switchedToTitle(next, (d > 0 ? afterDetail : beforeDetail).data) })
     window.setTimeout(() => {
       setAnim(false)
       setDx(d > 0 ? 120 : -120)
@@ -321,14 +329,15 @@ function LeagueSwitcher({
             transition: anim ? 'transform .14s linear, opacity .14s linear' : 'none',
           }}
         >
-          <span
-            className={cn(
-              'flex size-[34px] flex-none items-center justify-center rounded-[10px] text-[12px] font-semibold',
-              leagueAvClass(index),
-            )}
-          >
-            {initials(league.name)}
-          </span>
+          <MessagesAvatar
+            text={initials(league.name)}
+            src={league.avatar_url}
+            sizeClass="size-[34px]"
+            radiusClass="rounded-[10px]"
+            colorClass={leagueAvClass(index)}
+            fgClass="text-inherit"
+            textClass="text-[12px]"
+          />
           <span className="flex min-w-0 flex-1 flex-col gap-px">
             <span className="truncate text-[14px] font-semibold">
               {card.teamName} <span className="text-[12px] font-medium text-white/[0.62]">{card.record}</span>

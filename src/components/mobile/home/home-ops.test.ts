@@ -5,6 +5,8 @@ import type { RosterSettings } from '@/lib/leagues/settings/league-settings'
 
 import {
   ageText,
+  draftLabel,
+  draftTimeText,
   hasCurrentRoster,
   homeAlertLabel,
   homeAlertReasons,
@@ -12,6 +14,7 @@ import {
   injuryNote,
   injuryPillClass,
   leaguePhase,
+  leagueSize,
   leagueSub,
   plural,
   projText,
@@ -55,6 +58,38 @@ describe('mobile Home ops (m-home §5)', () => {
     expect(leagueSub({ teamCount: 12, family: 'ppr', beforeSeason: true, season: 2026, week: null })).toBe('12-team PPR · 2026')
     expect(leagueSub({ teamCount: 10, family: 'half_ppr', beforeSeason: false, season: 2026, week: 3 })).toBe('10-team half PPR · Week 3')
     expect(leagueSub({ teamCount: 8, family: null, beforeSeason: false, season: 2026, week: null })).toBe('8-team · 2026')
+  })
+
+  it('league size and scoring, as the Switch league sheet names it (gap list §3 #20)', () => {
+    expect(leagueSize(12, 'ppr')).toBe('12-team PPR')
+    expect(leagueSize(12, 'standard')).toBe('12-team standard')
+    expect(leagueSize(10, 'half_ppr')).toBe('10-team half PPR')
+    // Unreadable scoring is left out, never guessed.
+    expect(leagueSize(8, null)).toBe('8-team')
+  })
+
+  it('a draft time reads "Aug 28 · 7:00 PM" in the viewer’s clock', () => {
+    // 23:00 UTC is 7:00 PM in New York (EDT) and 4:00 PM in Los Angeles.
+    expect(draftTimeText('2026-08-28T23:00:00Z', 'America/New_York')?.replace(/\u202f/g, ' ')).toBe('Aug 28 · 7:00 PM')
+    expect(draftTimeText('2026-08-28T23:00:00Z', 'America/Los_Angeles')?.replace(/\u202f/g, ' ')).toBe('Aug 28 · 4:00 PM')
+    expect(draftTimeText('not a time')).toBeNull()
+  })
+
+  it('the draft line: "Draft live", the draft time, "Pre-draft" without one, nothing in season (gap list §3 #20)', () => {
+    const now = Date.parse('2026-08-20T12:00:00Z')
+    const at = '2026-08-28T23:00:00Z'
+    const tz = 'America/New_York'
+    const plain = (s: string | null) => s?.replace(/\u202f/g, ' ') ?? null
+    expect(plain(draftLabel('pre-draft', at, now, tz))).toBe('Draft Aug 28 · 7:00 PM')
+    expect(draftLabel('pre-draft', null, now, tz)).toBe('Pre-draft')
+    expect(draftLabel('pre-draft', undefined, now, tz)).toBe('Pre-draft')
+    // A time that has gone by without the draft starting is no longer "when".
+    expect(draftLabel('pre-draft', at, Date.parse('2026-08-29T00:00:00Z'), tz)).toBe('Pre-draft')
+    expect(draftLabel('pre-draft', 'garbage', now, tz)).toBe('Pre-draft')
+    // During the draft — never "Pre-draft", whatever time was saved.
+    expect(draftLabel('draft-live', at, now, tz)).toBe('Draft live')
+    expect(draftLabel('draft-live', null, now, tz)).toBe('Draft live')
+    expect(draftLabel('season', at, now, tz)).toBeNull()
   })
 
   it('records come from the final standings; 0-0 only when nothing is final', () => {

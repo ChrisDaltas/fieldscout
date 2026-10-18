@@ -175,8 +175,10 @@ describe('Home league card red dot (ruling #14)', () => {
     render(qc)
     // The check sees a read: every key of in-season A was read…
     expect(alertKeys('A', 'a1').map((k) => wasRead(qc, k))).toEqual([true, true, true, true, true])
-    // …and none of pre-draft C's, though all of them sit in the cache.
-    expect(alertKeys('C', 'c1').map((k) => wasRead(qc, k))).toEqual([false, false, false, false, false])
+    // …and none of pre-draft C's, though all of them sit in the cache. The
+    // one exception is the league detail: the card itself reads it for the
+    // draft time on its pill (gap list §3 #20), not for the dot.
+    expect(alertKeys('C', 'c1').map((k) => wasRead(qc, k))).toEqual([false, true, false, false, false])
   })
 
   it('reads nothing while the leagues release is off', () => {

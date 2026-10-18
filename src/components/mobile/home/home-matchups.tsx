@@ -7,6 +7,7 @@ import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
 import { JoinLeagueDialog } from '@/components/leagues/leagues-index'
 import { LeagueCreateModal } from '@/components/leagues/league-create-modal'
 import { useLeagueTabStore } from '@/components/mobile/league/league/league-tab-store'
+import { MessagesAvatar } from '@/components/mobile/messages/messages-avatar'
 import { leagueTabHref } from '@/components/mobile/shell/mobile-nav'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -16,7 +17,6 @@ import { useMobileHomeAlert } from '@/hooks/use-mobile-home-alerts'
 import { useMobileHomeMatchup } from '@/hooks/use-mobile-home-matchup'
 import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { useSchedule } from '@/hooks/use-schedule'
-import { cn } from '@/lib/utils'
 
 import { seasonInPlay } from './home-ops'
 import { HomeNote, HomeSectionTitle } from './home-section'
@@ -80,22 +80,28 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
   const body = (
     <>
       <span className="flex items-center gap-[10px]">
-        {/* The tile's letters come with its fill (`leagueAvClass`): white,
-            except dark on the gold tile — the same everywhere (ruling #38;
-            the prototype's Home drew white on gold). */}
-        <span
-          className={cn('flex size-9 flex-none items-center justify-center rounded-[10px] text-[13px] font-semibold leading-[16px]', leagueAvClass(index))}
-          aria-hidden
-        >
-          {initials(league.name)}
-        </span>
+        {/* The league's photo when one is uploaded (gap list §3 #20), else
+            its letters on its fill (`leagueAvClass`): white, except dark on
+            the gold tile — the same everywhere (ruling #38; the
+            prototype's Home drew white on gold). */}
+        <MessagesAvatar
+          text={initials(league.name)}
+          src={league.avatar_url}
+          sizeClass="size-9"
+          radiusClass="rounded-[10px]"
+          colorClass={leagueAvClass(index)}
+          fgClass="text-inherit"
+          textClass="text-[13px] leading-[16px]"
+        />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[15px] font-semibold leading-[19px] text-m-t1">{league.name}</span>
           <span className="text-[12px] font-medium leading-[15px] text-m-t3">{card.sub}</span>
         </span>
+        {/* "Draft Aug 28 · 7:00 PM" once a draft time is set, else the
+            design's "Pre-draft" (gap list §3 #20). */}
         {card.phase === 'pre-draft' && (
           <span className="flex h-6 flex-none items-center whitespace-nowrap rounded-pill bg-m-go px-[10px] text-[11px] font-semibold text-m-to">
-            Pre-draft
+            {card.draft}
           </span>
         )}
         {/* Not in the design (its leagues are never mid-draft): the Pre-draft

@@ -1,13 +1,14 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
 import { scoreCell, splitRows, teamName } from '@/components/leagues/matchup-view-ops'
 import { projectedTotal } from '@/components/leagues/my-team-ops'
-import { leaguePhase, leagueSub, projText, recordText, teamWithRecord, type LeaguePhase } from '@/components/mobile/home/home-ops'
+import { draftLabel, leaguePhase, leagueSub, projText, recordText, teamWithRecord, type LeaguePhase } from '@/components/mobile/home/home-ops'
 import { useBoxScore } from '@/hooks/use-box-score'
 import { useLeagueScoringFamily } from '@/hooks/use-draft-pool'
+import { useLeague } from '@/hooks/use-league'
 import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
 import type { MyLeagueRow } from '@/hooks/use-leagues'
 import { useMatchups } from '@/hooks/use-matchups'
@@ -37,6 +38,10 @@ export interface HomeMatchupSide {
 export interface HomeMatchupCard {
   /** Pre-draft / draft live / season — the pill and where the card goes. */
   phase: LeaguePhase
+  /** The pill's words before the season: "Draft Aug 28 · 7:00 PM" when a
+   *  draft time is set, "Pre-draft" when not, "Draft live" while drafting
+   *  (`draftLabel`); null in season. */
+  draft: string | null
   sub: string
   week: number | null
   /** null before the season, while loading, or when the viewer has no game. */
@@ -61,6 +66,10 @@ export function useMobileHomeMatchup(league: MyLeagueRow): HomeMatchupCard {
   const week = useMemo(() => (schedule.data ? currentWeekOf(schedule.data.weeks) : null), [schedule.data])
   const matchups = useMatchups(activeId, week ?? undefined)
   const standings = useStandings(activeId)
+  // The saved draft time — only a league still waiting on its draft reads it.
+  const detail = useLeague(phase === 'pre-draft' ? league.id : undefined)
+  const [now] = useState(() => Date.now())
+  const draft = draftLabel(phase, detail.data?.settings.draft?.draft_scheduled_at, now)
 
   const myTeamId = league.my_team_id
   const doc = matchups.data
@@ -83,11 +92,11 @@ export function useMobileHomeMatchup(league: MyLeagueRow): HomeMatchupCard {
     week,
   })
 
-  if (phase !== 'season') return { phase, sub, week: null, live: null, loading: false, error: false }
+  if (phase !== 'season') return { phase, draft, sub, week: null, live: null, loading: false, error: false }
 
   const loading = schedule.isPending || (week !== null && matchups.isPending)
   const error = schedule.isError || (week !== null && matchups.isError && !doc)
-  if (!doc || !row || !myTeamId) return { phase, sub, week, live: null, loading: loading && !error, error }
+  if (!doc || !row || !myTeamId) return { phase, draft, sub, week, live: null, loading: loading && !error, error }
 
   const myHome = row.home_team_id === myTeamId
   const me: HomeMatchupSide = {
@@ -102,5 +111,5 @@ export function useMobileHomeMatchup(league: MyLeagueRow): HomeMatchupCard {
         proj: sideProj(oppBox.data, projOf),
       }
     : null
-  return { phase, sub, week, live: { me, opp }, loading: false, error: false }
+  return { phase, draft, sub, week, live: { me, opp }, loading: false, error: false }
 }
