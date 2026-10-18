@@ -266,3 +266,33 @@ export function mockLaunchBlockedReason(
   }
   return null
 }
+
+// ---------------------------------------------------------------------------
+// The steps — and which one owns each settings problem
+// ---------------------------------------------------------------------------
+
+/** The launcher's steps, in order (the desktop stepper; the phone's Back /
+ *  Continue walk the same list). */
+export const MOCK_LAUNCH_STEPS = ['Format', 'Clocks', 'Roster', 'Scoring'] as const
+
+/** The step whose controls fix an issue's field: the roster builder owns
+ *  `roster_settings.*`, the clocks step the `draft.*` knobs (the auction
+ *  budget), Format the team count. */
+export function mockIssueStep(field: string): number {
+  if (field.startsWith('roster_settings')) return MOCK_LAUNCH_STEPS.indexOf('Roster')
+  if (field.startsWith('draft')) return MOCK_LAUNCH_STEPS.indexOf('Clocks')
+  return MOCK_LAUNCH_STEPS.indexOf('Format')
+}
+
+/**
+ * Why the phone's Continue is off on `step`, or null — the first issue owned
+ * by this step or an earlier one, in the contract's own words. Prevent, don't
+ * refuse: a problem holds the step it is on, so it is never carried forward
+ * to a dead Start button (the phone has only Back, not the desktop's
+ * free-moving stepper). "Or an earlier one" keeps a problem a later control
+ * causes from slipping past (the auction budget's floor grows with the
+ * roster size, which is set a step after it).
+ */
+export function mockStepBlockedReason(draft: MockLaunchDraft, step: number): string | null {
+  return mockLaunchIssues(draft).find((issue) => mockIssueStep(issue.field) <= step)?.message ?? null
+}

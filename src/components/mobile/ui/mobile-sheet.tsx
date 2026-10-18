@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { cn } from '@/lib/utils'
@@ -11,6 +13,11 @@ import { cn } from '@/lib/utils'
  * scrolling body and an optional pinned footer. Built on the app's Radix
  * `Sheet` (variant `mobile`), so focus trap, Escape and outside-tap close
  * come with it.
+ *
+ * `size="tall"` holds the sheet at its full 86% instead of fitting its
+ * content — for step-by-step flows, so the sheet doesn't jump in height as
+ * the steps change. `scrollKey` (the step) returns the body to its top when
+ * it changes, so each step opens at its start.
  */
 export function MobileSheet({
   open,
@@ -21,6 +28,8 @@ export function MobileSheet({
   footer,
   children,
   bodyClassName,
+  size = 'fit',
+  scrollKey,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -30,12 +39,19 @@ export function MobileSheet({
   footer?: React.ReactNode
   children: React.ReactNode
   bodyClassName?: string
+  size?: 'fit' | 'tall'
+  scrollKey?: string | number
 }) {
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0 })
+  }, [scrollKey])
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="mobile"
         hideClose
+        className={size === 'tall' ? 'h-[86%]' : undefined}
         overlayClassName="bg-black/[0.32] data-[state=open]:animate-none data-[state=closed]:animate-none"
       >
         <div className="flex flex-none justify-center pb-2 pt-0.5" aria-hidden>
@@ -61,7 +77,9 @@ export function MobileSheet({
             </button>
           )}
         </div>
-        <div className={cn('min-h-0 flex-1 overflow-y-auto scrollbar-none', bodyClassName)}>{children}</div>
+        <div ref={bodyRef} className={cn('min-h-0 flex-1 overflow-y-auto scrollbar-none', bodyClassName)}>
+          {children}
+        </div>
         {footer ? <div className="flex-none">{footer}</div> : null}
       </SheetContent>
     </Sheet>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { MNotice, MRadioDot, MToolChip } from '@/components/mobile/ui/m-form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,6 +19,7 @@ import {
   type ScoringCustomizeContext,
   type TemplateCard,
 } from './scoring-template-picker-ops'
+import { useSettingsSkin } from './settings-form-controls'
 
 /**
  * Scoring-template-picker (M1 task L.A2.3; spec §7.3.3, §16.2, App B;
@@ -73,6 +75,12 @@ import {
  * §16.5.4 data states: skeleton grid while loading, designed empty copy,
  * error-with-retry. Degraded/last-good doesn't apply (seed data, no live
  * numbers).
+ *
+ * On the phone (`SettingsSkin` mobile — the create-league and practice-draft
+ * sheets, gap list §4 item 2) the same cards, states and compare view draw
+ * in the FieldScout Mobile language: one card per row as the handoff's radio
+ * card (b1, blue ring + dot when chosen), the markers as small tint pills,
+ * and the compare table scrolling sideways under a pinned category column.
  */
 export interface ScoringTemplatePickerProps {
   /** The league's chosen `scoring_system_id` (§12.1), or null before one
@@ -106,8 +114,18 @@ export function ScoringTemplatePicker({
   const { data, isPending, isError, refetch, isRefetching } =
     useScoringTemplates()
   const [compareOpen, setCompareOpen] = useState(false)
+  const m = useSettingsSkin() === 'mobile'
 
   if (isPending) {
+    if (m) {
+      return (
+        <div className={cn('flex flex-col gap-2', className)} aria-busy="true" aria-label="Loading scoring templates">
+          {Array.from({ length: TEMPLATE_DISPLAY_ORDER.length }, (_, i) => (
+            <span key={i} className="block h-[118px] rounded-[14px] bg-m-b1" />
+          ))}
+        </div>
+      )
+    }
     return (
       <div className={cn('grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3', className)}>
         {/* F193: one placeholder per KNOWN template, derived from the §7.3.3
@@ -121,6 +139,24 @@ export function ScoringTemplatePicker({
   }
 
   if (isError) {
+    if (m) {
+      return (
+        <div role="alert" className={cn('flex flex-col items-start gap-1 rounded-message bg-m-gr px-3.5 py-3', className)}>
+          <p className="text-[13px] font-semibold text-m-tr">Couldn&apos;t load the scoring templates.</p>
+          <p className="text-[12px] font-medium leading-[1.4] text-m-t2">
+            Check your connection and try again — nothing was changed.
+          </p>
+          <button
+            type="button"
+            disabled={isRefetching}
+            onClick={() => refetch()}
+            className="mt-1.5 flex h-8 items-center rounded-pill bg-m-b0 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2 disabled:opacity-50"
+          >
+            Try again
+          </button>
+        </div>
+      )
+    }
     return (
       <Card className={cn('border-0 bg-negative-soft', className)}>
         <CardContent className="flex flex-col items-start gap-1.5 p-4">
@@ -153,6 +189,17 @@ export function ScoringTemplatePicker({
   )
 
   if (cards.length === 0) {
+    if (m) {
+      return (
+        <div className={cn('flex flex-col gap-1 rounded-[14px] bg-m-b1 px-3.5 py-3', className)}>
+          <p className="text-[14px] font-semibold text-m-t1">No scoring templates yet.</p>
+          <p className="text-[12px] font-medium leading-[1.4] text-m-t3">
+            The {TEMPLATE_DISPLAY_ORDER.length} league scoring templates ship with the database seed — if you&apos;re
+            seeing this, the environment hasn&apos;t run its migrations. There&apos;s nothing to pick until they land.
+          </p>
+        </div>
+      )
+    }
     return (
       <Card className={className}>
         <CardContent className="flex flex-col gap-1 p-4">
@@ -173,6 +220,35 @@ export function ScoringTemplatePicker({
   // SE.9/D170: the Customize entry renders only with a league context whose
   // viewer is a commissioner and whose league is still in the §7.3 window.
   const customizeVisible = canCustomize(customize)
+
+  if (m) {
+    return (
+      <div className={cn('flex flex-col gap-3', className)}>
+        <div className="flex items-start justify-between gap-3">
+          <p className="min-w-0 flex-1 text-[12px] font-medium leading-[1.35] text-m-t3">
+            Pick one of the {cards.length} scoring templates — each matches that platform&apos;s published defaults, so a
+            migrating league&apos;s scores feel identical.
+          </p>
+          <MToolChip ariaExpanded={compareOpen} onClick={() => setCompareOpen((v) => !v)}>
+            {compareOpen ? 'Hide compare' : 'Compare'}
+          </MToolChip>
+        </div>
+        {customizeVisible && customize?.disabledReason && <MNotice tone="warning">{customize.disabledReason}</MNotice>}
+        {compareOpen && <CompareTable cards={cards} selectedId={value} />}
+        <div className="flex flex-col gap-2">
+          {cards.map((card) => (
+            <TemplateCardButton
+              key={card.id}
+              card={card}
+              selected={card.id === value}
+              onSelect={() => onChange(card.id)}
+              customize={customizeVisible && customize ? customize : undefined}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
@@ -239,6 +315,65 @@ function TemplateCardButton({
   const customizeDisabled =
     customize !== undefined &&
     (customize.pendingTemplateId != null || customize.disabledReason != null)
+  if (useSettingsSkin() === 'mobile') {
+    const value = 'flex h-[22px] items-center rounded-pill bg-m-b0 px-2 text-[11px] font-semibold tabular-nums text-m-t2'
+    const marker = 'flex h-[18px] items-center whitespace-nowrap rounded-pill px-1.5 text-[10px] font-semibold'
+    return (
+      // A div with the button role (as on desktop), so the Customize button
+      // can sit inside it without nesting a button in a button.
+      <div
+        role="button"
+        tabIndex={0}
+        aria-pressed={selected}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelect()
+          }
+        }}
+        className={cn('flex flex-col gap-2 rounded-[14px] bg-m-b1 px-3.5 py-3 text-left', selected && 'shadow-m-select')}
+        data-template-card={card.id}
+      >
+        <div className="flex w-full items-start gap-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span className="text-[15px] font-semibold text-m-t1">{card.name}</span>
+              {card.defaultMarker && <span className={cn(marker, 'bg-m-gb text-m-tb')}>{card.defaultMarker}</span>}
+              {card.platformDefaultMarker && (
+                <span className={cn(marker, 'bg-m-gg text-m-tg')}>{card.platformDefaultMarker}</span>
+              )}
+            </div>
+            <span className="text-[12px] font-medium text-m-t3">{card.oneLiner}</span>
+          </div>
+          <MRadioDot on={selected} />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <span className={value}>{formatPoints(summary.ppr)}&nbsp;PPR</span>
+          <span className={value}>INT&nbsp;{formatPoints(summary.int)}</span>
+          <span className={value}>D/ST {summary.dstModel === 'split' ? 'points + yards' : 'points allowed'}</span>
+        </div>
+        {/* Full description, untruncated (the ESPN parity line, v2.8.5). */}
+        {card.description && <p className="text-[12px] font-medium leading-[1.4] text-m-t3">{card.description}</p>}
+        {customize && (
+          <button
+            type="button"
+            aria-label={`Customize ${card.name}`}
+            disabled={customizeDisabled}
+            title={customize.disabledReason ?? undefined}
+            onClick={(e) => {
+              e.stopPropagation()
+              customize.onCustomize(card.id)
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="flex h-8 w-fit items-center rounded-pill bg-m-b0 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2 disabled:opacity-50"
+          >
+            {customizePending ? 'Customizing…' : 'Customize'}
+          </button>
+        )}
+      </div>
+    )
+  }
   return (
     <Card
       role="button"
@@ -377,6 +512,54 @@ function CompareTable({
   cards: TemplateCard[]
   selectedId: string | null
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    // Sideways scroll with the category column pinned (the Players sheet's
+    // locked-column pattern); the chosen template's column takes the blue tint.
+    const pin = 'sticky left-0 z-[1] bg-m-b1'
+    const sel = (card: TemplateCard) => card.id === selectedId && 'bg-m-gb'
+    return (
+      <div className="overflow-x-auto rounded-[14px] bg-m-b1 scrollbar-none" data-compare-table>
+        <table className="w-full border-collapse text-[12px] text-m-t1">
+          <thead>
+            <tr className="border-b border-m-b3">
+              <th className={cn(pin, 'min-w-[112px] px-3 py-2.5 text-left align-bottom text-[11px] font-semibold text-m-t3')}>
+                Category
+              </th>
+              {cards.map((card) => (
+                <th key={card.id} className={cn('min-w-[112px] px-3 py-2.5 text-left align-bottom text-[12px] font-semibold', sel(card))}>
+                  {card.name}
+                  {card.defaultMarker && <span className="block text-[11px] font-medium text-m-t3">{card.defaultMarker}</span>}
+                  {card.platformDefaultMarker && (
+                    <span className="block text-[11px] font-medium text-m-t3">{card.platformDefaultMarker}</span>
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {COMPARE_ROWS.map((row) => (
+              <tr key={row.label} className="border-b border-m-b3">
+                <td className={cn(pin, 'px-3 py-2 font-semibold')}>{row.label}</td>
+                {cards.map((card) => (
+                  <td key={card.id} className={cn('px-3 py-2 font-medium tabular-nums', sel(card))}>
+                    {row.value(card)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            <tr>
+              <td className={cn(pin, 'px-3 py-2 align-top font-semibold')}>Notes</td>
+              {cards.map((card) => (
+                <td key={card.id} className={cn('min-w-[200px] px-3 py-2 align-top text-[11px] font-medium leading-[1.4] text-m-t3', sel(card))}>
+                  {card.description || '—'}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    )
+  }
   return (
     <Card>
       <div className="overflow-x-auto">

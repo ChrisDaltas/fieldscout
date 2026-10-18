@@ -18,7 +18,18 @@ import {
   FieldRow,
   InlineIssue,
   numOptions,
+  SettingsSkin,
+  useSettingsSkin,
 } from '@/components/leagues/settings-form-controls'
+import {
+  MChoiceChip,
+  MField,
+  MRadioCard,
+  MStepProgress,
+  MWizardFooter,
+} from '@/components/mobile/ui/m-form'
+import { MSegmented } from '@/components/mobile/ui/m-segmented'
+import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -30,6 +41,7 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { Label } from '@/components/ui/label'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
+import type { LayoutMode } from '@/hooks/use-layout-mode'
 import { useLaunchStandaloneMock } from '@/hooks/use-mock-drafts'
 import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
@@ -42,11 +54,14 @@ import type { Draft } from '@/types/database'
 
 import {
   initialMockLaunchDraft,
+  MOCK_LAUNCH_STEPS,
   mockLaunchBlockedReason,
   mockLaunchIssues,
+  mockStepBlockedReason,
   patchMockDraftConfig,
   patchMockSettings,
   toMockLaunchInput,
+  type CpuSpeed,
   type MockLaunchDraft,
 } from './mock-launch-ops'
 import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launcher-ops'
@@ -89,9 +104,21 @@ import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launch
  * (they are the RPC's, written to be read by a launcher — the §22.5 caps,
  * the §8.6.8 solvency message, the range guard). No explanatory copy
  * (§4 rule 16): each label names its control.
+ *
+ * `layout="mobile"` (the phone's Home Practice card, gap list §4 item 2) is
+ * the SAME dialog — same draft, steps, controls and launch call — drawn as a
+ * FieldScout Mobile bottom sheet: the shared controls take the phone
+ * language through `SettingsSkin`, Back / Continue replace the stepper (a
+ * step with a settings problem holds Continue), and the sheet follows the
+ * phone's light or dark theme.
  */
 
-const STEPS = ['Format', 'Clocks', 'Roster', 'Scoring'] as const
+const STEPS = MOCK_LAUNCH_STEPS
+const CPU_SPEEDS: ReadonlyArray<{ value: CpuSpeed; label: string }> = [
+  { value: 'realistic', label: 'Realistic' },
+  { value: 'fast', label: 'Fast' },
+]
+const CPU_SPEED_HINT = 'Affects bot think-time only — your own clock always runs real.'
 
 
 export interface MockLaunchDialogProps {
@@ -100,9 +127,12 @@ export interface MockLaunchDialogProps {
   /** The created (or replayed — `created:false` is the same success,
    *  D110(11)) draft row. The mount decides where to send the launcher. */
   onLaunched: (draft: Draft) => void
+  /** `mobile` = the phone's bottom sheet (the mobile Home's Practice card). */
+  layout?: LayoutMode
 }
 
-export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchDialogProps) {
+export function MockLaunchDialog({ open, onOpenChange, onLaunched, layout = 'desktop' }: MockLaunchDialogProps) {
+  const mobile = layout === 'mobile'
   const [draft, setDraft] = useState<MockLaunchDraft>(initialMockLaunchDraft)
   const [step, setStep] = useState(0)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -176,6 +206,237 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
   const auction = d.draft_type === 'auction'
   const onDraftConfig = (patch: Partial<LeagueSettings['draft']>) =>
     setDraft((p) => patchMockDraftConfig(p, patch))
+  const setTeamCount = (v: string) =>
+    setDraft((p) =>
+      patchMockSettings(p, {
+        team_count: Number(v) as LeagueSettings['team_count'],
+      }),
+    )
+  const setCpuSpeed = (cpuSpeed: CpuSpeed) => setDraft((p) => ({ ...p, cpuSpeed }))
+
+  const typeCards = (
+    <>
+      <TypeCard
+        label="Snake"
+        hint="The order reverses every round."
+        selected={d.draft_type === 'snake'}
+        onSelect={() => setDraft((p) => patchMockDraftConfig(p, { draft_type: 'snake' }))}
+      />
+      <TypeCard
+        label="Auction"
+        hint="Every seat bids from a budget."
+        selected={auction}
+        onSelect={() => setDraft((p) => patchMockDraftConfig(p, { draft_type: 'auction' }))}
+      />
+      <TypeCard
+        label="Linear"
+        hint="The same order every round."
+        selected={d.draft_type === 'linear'}
+        onSelect={() => setDraft((p) => patchMockDraftConfig(p, { draft_type: 'linear' }))}
+      />
+    </>
+  )
+
+  // MS.8 (D223/E77): the ONE launch question the ruling added — your draft
+  // slot. A standalone practice has no stored order, so the picker is always
+  // live; Random (the default) sends no key and the server's seeded shuffle
+  // runs unchanged.
+  const slotSelect = (
+    <ChoiceSelect
+      id="mock-slot"
+      ariaLabel="Draft slot"
+      value={draft.slot === null ? RANDOM_SLOT : String(draft.slot)}
+      options={mockSlotOptions(draft.settings.team_count)}
+      width="w-28"
+      onValueChange={(v) =>
+        setDraft((p) => ({ ...p, slot: slotFromPickerValue(v) ?? null }))
+      }
+    />
+  )
+
+  // The step body — ONE body for both layouts; the desktop dialog and the
+  // phone sheet differ only in their chrome (header, stepper, footer), and
+  // the Format step in the phone's chips and segmented control.
+  const stepBody = (
+    <>
+      {step === 0 && mobile && (
+        <div className="flex flex-col gap-5">
+          <MField label="Draft type">
+            <div className="flex flex-col gap-2" role="radiogroup" aria-label="Draft type">
+              {typeCards}
+            </div>
+          </MField>
+          <MField label="Number of teams">
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Number of teams">
+              {V1_TEAM_COUNTS.map((n) => (
+                <MChoiceChip
+                  key={n}
+                  label={String(n)}
+                  on={draft.settings.team_count === n}
+                  onPick={() => setTeamCount(String(n))}
+                />
+              ))}
+            </div>
+          </MField>
+          <MField label="Draft slot" htmlFor="mock-slot">
+            <div className="flex">{slotSelect}</div>
+          </MField>
+          <MField label="CPU speed" hint={CPU_SPEED_HINT}>
+            <MSegmented
+              label="CPU speed"
+              options={CPU_SPEEDS}
+              value={draft.cpuSpeed}
+              onChange={setCpuSpeed}
+              className="h-[34px]"
+            />
+          </MField>
+        </div>
+      )}
+      {step === 0 && !mobile && (
+        <div className="flex flex-col gap-3.5">
+          <div className="space-y-1.5">
+            <Label className="text-[13px] font-bold">Draft type</Label>
+            <div className="grid gap-2.5 sm:grid-cols-3">{typeCards}</div>
+          </div>
+
+          <FieldRow label="Number of teams" htmlFor="mock-team-count">
+            <ChoiceSelect
+              id="mock-team-count"
+              ariaLabel="Number of teams"
+              value={String(draft.settings.team_count)}
+              options={numOptions([...V1_TEAM_COUNTS])}
+              width="w-28"
+              onValueChange={setTeamCount}
+            />
+          </FieldRow>
+
+          <FieldRow label="Draft slot" htmlFor="mock-slot">
+            {slotSelect}
+          </FieldRow>
+
+          <div className="space-y-1.5">
+            <Label className="text-[13px] font-bold">CPU speed</Label>
+            <Segment aria-label="CPU speed" className="w-fit">
+              <SegmentItem
+                active={draft.cpuSpeed === 'realistic'}
+                onClick={() => setCpuSpeed('realistic')}
+              >
+                Realistic
+              </SegmentItem>
+              <SegmentItem
+                active={draft.cpuSpeed === 'fast'}
+                onClick={() => setCpuSpeed('fast')}
+              >
+                Fast
+              </SegmentItem>
+            </Segment>
+            <p className="text-[10px] font-medium text-n-6">
+              {CPU_SPEED_HINT}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {step === 1 && (
+        <div className="flex flex-col gap-3">
+          {/* R505: these are the SHARED §7.3.8 fields — the same
+              components the league settings panel mounts, not a copy of
+              them. The pick clock offers the WHOLE `PICK_TIMER_SECONDS`
+              catalog (R506: D229(4) says let the launcher make the clocks
+              what they want, and a trim would be a product decision
+              living in a code comment). */}
+          {!auction && <PickClockField value={d} onChange={onDraftConfig} idPrefix="mock" />}
+          {d.draft_type === 'snake' && (
+            <SnakeReversalField value={d} onChange={onDraftConfig} idPrefix="mock" />
+          )}
+          {auction && (
+            <AuctionConfigFields
+              value={d}
+              onChange={onDraftConfig}
+              idPrefix="mock"
+              // `offerManual` is deliberately absent: a standalone
+              // practice draft has no league and no commissioner, and
+              // 095 refuses anything but same_as_draft_order/random by
+              // name (D110(1) — even now that the league panel offers
+              // `manual` for real, 098/AP.5).
+              issues={issues.filter((i) => i.field.startsWith('draft'))}
+            />
+          )}
+        </div>
+      )}
+
+      {step === 2 && (
+        <RosterSlotBuilder
+          value={draft.settings.roster_settings}
+          teamCount={draft.settings.team_count}
+          onChange={(roster_settings) =>
+            setDraft((p) => patchMockSettings(p, { roster_settings }))
+          }
+        />
+      )}
+
+      {step === 3 && (
+        <ScoringTemplatePicker
+          // SC.3: the EFFECTIVE selection (explicit pick ?? the Scout
+          // preselection) — what renders selected is exactly what the
+          // launch will submit.
+          value={effectiveScoringId}
+          onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
+        />
+      )}
+    </>
+  )
+
+  if (mobile) {
+    // The phone (gap list §4 item 2): the same steps in a FieldScout Mobile
+    // bottom sheet — the New ranking wizard's progress track and footer
+    // (lr-myrank §2.2), Back / Continue in place of the desktop stepper.
+    // The server's refusal and the reason Start is off sit above the
+    // buttons, as R509 places them on desktop. Prevent, don't refuse: the
+    // phone has only Back, so a step with a settings problem holds Continue
+    // and says why there (`mockStepBlockedReason`), instead of letting it
+    // reach a dead Start button; the last step's check stays as a backstop.
+    const last = step === STEPS.length - 1
+    const stepBlocked = last ? null : mockStepBlockedReason(draft, step)
+    return (
+      <SettingsSkin layout="mobile">
+        <MobileSheet
+          open={open}
+          onOpenChange={handleOpenChange}
+          title="Mock draft"
+          subtitle={`Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`}
+          showClose
+          size="tall"
+          scrollKey={step}
+          footer={
+            <MWizardFooter
+              onBack={step > 0 && !pending ? () => setStep(step - 1) : undefined}
+              label={!last ? 'Continue' : pending ? 'Setting up…' : 'Start mock draft'}
+              onClick={!last ? () => setStep(step + 1) : handleLaunch}
+              disabled={last ? input === null || pending : stepBlocked !== null}
+            >
+              {refusal && <InlineIssue tone="error" message={refusal} />}
+              {stepBlocked && (
+                <p className="text-center text-[12px] font-medium text-m-t3" role="status">
+                  {stepBlocked}
+                </p>
+              )}
+              {last && !pending && !refusal && blocked && (
+                <p className="text-center text-[12px] font-medium text-m-t3" role="status">
+                  {blocked}
+                </p>
+              )}
+            </MWizardFooter>
+          }
+        >
+          <div className="sticky top-0 z-[2] bg-m-b0">
+            <MStepProgress step={step} total={STEPS.length} />
+          </div>
+          <div className="flex flex-col gap-5 px-5 pb-4 pt-4">{stepBody}</div>
+        </MobileSheet>
+      </SettingsSkin>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -190,138 +451,7 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched }: MockLaunchD
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pr-1">
-          {step === 0 && (
-            <div className="flex flex-col gap-3.5">
-              <div className="space-y-1.5">
-                <Label className="text-[13px] font-bold">Draft type</Label>
-                <div className="grid gap-2.5 sm:grid-cols-3">
-                  <TypeCard
-                    label="Snake"
-                    hint="The order reverses every round."
-                    selected={d.draft_type === 'snake'}
-                    onSelect={() => setDraft((p) => patchMockDraftConfig(p, { draft_type: 'snake' }))}
-                  />
-                  <TypeCard
-                    label="Auction"
-                    hint="Every seat bids from a budget."
-                    selected={auction}
-                    onSelect={() => setDraft((p) => patchMockDraftConfig(p, { draft_type: 'auction' }))}
-                  />
-                  <TypeCard
-                    label="Linear"
-                    hint="The same order every round."
-                    selected={d.draft_type === 'linear'}
-                    onSelect={() => setDraft((p) => patchMockDraftConfig(p, { draft_type: 'linear' }))}
-                  />
-                </div>
-              </div>
-
-              <FieldRow label="Number of teams" htmlFor="mock-team-count">
-                <ChoiceSelect
-                  id="mock-team-count"
-                  ariaLabel="Number of teams"
-                  value={String(draft.settings.team_count)}
-                  options={numOptions([...V1_TEAM_COUNTS])}
-                  width="w-28"
-                  onValueChange={(v) =>
-                    setDraft((p) =>
-                      patchMockSettings(p, {
-                        team_count: Number(v) as LeagueSettings['team_count'],
-                      }),
-                    )
-                  }
-                />
-              </FieldRow>
-
-              {/* MS.8 (D223/E77): the ONE launch question the ruling added —
-                  your draft slot. A standalone practice has no stored order,
-                  so the picker is always live; Random (the default) sends no
-                  key and the server's seeded shuffle runs unchanged. */}
-              <FieldRow label="Draft slot" htmlFor="mock-slot">
-                <ChoiceSelect
-                  id="mock-slot"
-                  ariaLabel="Draft slot"
-                  value={draft.slot === null ? RANDOM_SLOT : String(draft.slot)}
-                  options={mockSlotOptions(draft.settings.team_count)}
-                  width="w-28"
-                  onValueChange={(v) =>
-                    setDraft((p) => ({ ...p, slot: slotFromPickerValue(v) ?? null }))
-                  }
-                />
-              </FieldRow>
-
-              <div className="space-y-1.5">
-                <Label className="text-[13px] font-bold">CPU speed</Label>
-                <Segment aria-label="CPU speed" className="w-fit">
-                  <SegmentItem
-                    active={draft.cpuSpeed === 'realistic'}
-                    onClick={() => setDraft((p) => ({ ...p, cpuSpeed: 'realistic' }))}
-                  >
-                    Realistic
-                  </SegmentItem>
-                  <SegmentItem
-                    active={draft.cpuSpeed === 'fast'}
-                    onClick={() => setDraft((p) => ({ ...p, cpuSpeed: 'fast' }))}
-                  >
-                    Fast
-                  </SegmentItem>
-                </Segment>
-                <p className="text-[10px] font-medium text-n-6">
-                  Affects bot think-time only — your own clock always runs real.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {step === 1 && (
-            <div className="flex flex-col gap-3">
-              {/* R505: these are the SHARED §7.3.8 fields — the same
-                  components the league settings panel mounts, not a copy of
-                  them. The pick clock offers the WHOLE `PICK_TIMER_SECONDS`
-                  catalog (R506: D229(4) says let the launcher make the clocks
-                  what they want, and a trim would be a product decision
-                  living in a code comment). */}
-              {!auction && <PickClockField value={d} onChange={onDraftConfig} idPrefix="mock" />}
-              {d.draft_type === 'snake' && (
-                <SnakeReversalField value={d} onChange={onDraftConfig} idPrefix="mock" />
-              )}
-              {auction && (
-                <AuctionConfigFields
-                  value={d}
-                  onChange={onDraftConfig}
-                  idPrefix="mock"
-                  // `offerManual` is deliberately absent: a standalone
-                  // practice draft has no league and no commissioner, and
-                  // 095 refuses anything but same_as_draft_order/random by
-                  // name (D110(1) — even now that the league panel offers
-                  // `manual` for real, 098/AP.5).
-                  issues={issues.filter((i) => i.field.startsWith('draft'))}
-                />
-              )}
-            </div>
-          )}
-
-          {step === 2 && (
-            <RosterSlotBuilder
-              value={draft.settings.roster_settings}
-              teamCount={draft.settings.team_count}
-              onChange={(roster_settings) =>
-                setDraft((p) => patchMockSettings(p, { roster_settings }))
-              }
-            />
-          )}
-
-          {step === 3 && (
-            <ScoringTemplatePicker
-              // SC.3: the EFFECTIVE selection (explicit pick ?? the Scout
-              // preselection) — what renders selected is exactly what the
-              // launch will submit.
-              value={effectiveScoringId}
-              onChange={(scoringSystemId) => setDraft((p) => ({ ...p, scoringSystemId }))}
-            />
-          )}
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pr-1">{stepBody}</div>
 
         {/* R509: a SETTINGS violation renders on the step that owns the
             field — the auction rows through `AuctionConfigFields`' own
@@ -393,6 +523,7 @@ function TypeCard({
   selected: boolean
   onSelect: () => void
 }) {
+  if (useSettingsSkin() === 'mobile') return <MRadioCard label={label} sub={hint} on={selected} onPick={onSelect} />
   return (
     <button
       type="button"

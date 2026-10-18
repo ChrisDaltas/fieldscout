@@ -4,16 +4,17 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { mockIdentityLabel, mockProgressLabel } from '@/components/draft/mock-launcher-ops'
-import { attachCandidates, attachSuggestion, attachedToastLine } from '@/components/leagues/attach-list-ops'
+import { AttachListInline } from '@/components/leagues/attach-list-modal'
 import { buildJoinLink, deriveSeats, memberControls, membersPageHref, preferredShareCode, type Seat } from '@/components/leagues/invite-panel-ops'
 import { teamPageHref } from '@/components/leagues/league-cells'
+import { SettingsSkin } from '@/components/leagues/settings-form-controls'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueInvites } from '@/hooks/use-league-invites'
-import { useAttachList, useLeagueLists, useMyDraftLists, type MyDraftList } from '@/hooks/use-league-lists'
+import { useLeagueLists } from '@/hooks/use-league-lists'
 import { useDeleteMockDraft, type MockDraftSummary } from '@/hooks/use-mock-drafts'
 import { useTeamOnline } from '@/hooks/use-online'
 import type { RoomEntryTargetProps } from '@/hooks/use-room-entry-target-ops'
@@ -21,7 +22,7 @@ import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { cn } from '@/lib/utils'
 
-import { CenteredNote, SkeletonBlocks, TeamAvatar } from './league-bits'
+import { TeamAvatar } from './league-bits'
 import { teamAvatarClass } from './league-tab-ops'
 
 /**
@@ -236,13 +237,10 @@ export function DraftListButton({
   )
 }
 
-function listMeta(list: MyDraftList): string {
-  return [`${list.player_count ?? 0} players`, list.position_filter ?? null, list.is_private === false ? 'Public' : 'Private']
-    .filter((p): p is string => p !== null)
-    .join(' · ')
-}
-
-/** Mounted only while open, so your lists are read only then. */
+/** Mounted only while open, so your lists are read only then. The body is
+ *  the ONE phone attach body (`AttachListInline` in the phone skin — the
+ *  create-league sheet's success step draws the same), with its Attach
+ *  button pinned in this sheet's footer. */
 function DraftListSheet({
   leagueId,
   leagueName,
@@ -256,137 +254,33 @@ function DraftListSheet({
 }) {
   const { user } = useAuth()
   const rows = useLeagueLists(leagueId)
-  const myLists = useMyDraftLists(user?.id)
-  const attach = useAttachList(leagueId)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [primary, setPrimary] = useState(true)
-  const [shared, setShared] = useState(false)
   // Your attached lists here (the read is yours + shared: keep yours).
   const attachedIds = useMemo(
     () => new Set((rows.data ?? []).filter((r) => r.owner_id === user?.id).map((r) => r.list_id)),
     [rows.data, user?.id],
   )
-  const candidates = useMemo(() => attachCandidates(myLists.data ?? [], attachedIds), [myLists.data, attachedIds])
-  const suggestion = useMemo(() => attachSuggestion(myLists.data ?? [], scoringSystemId, attachedIds), [myLists.data, scoringSystemId, attachedIds])
-  const selected = candidates.find((c) => c.id === selectedId) ?? null
-
-  const submit = (list: MyDraftList) => {
-    if (attach.isPending) return
-    attach.mutate(
-      { list_id: list.id, is_primary_board: primary, shared_with_league: shared },
-      {
-        onSuccess: () => {
-          toast({ title: attachedToastLine(list.title, leagueName, primary, shared) })
-          onClose()
-        },
-        onError: (error) => toast({ title: 'Attach failed', description: messageOf(error), variant: 'destructive' }),
-      },
-    )
-  }
 
   return (
-    <MobileSheet
-      open
-      onOpenChange={(next) => !next && onClose()}
-      title="Add a draft list"
-      subtitle={`Attach one of your ranking lists to ${leagueName} — it’s one tap away in the draft room and all season.`}
-      footer={
-        <div className="px-5 pt-3">
-          <button
-            type="button"
-            disabled={!selected || attach.isPending}
-            onClick={() => selected && submit(selected)}
-            className="flex h-[50px] w-full items-center justify-center rounded-pill bg-accent text-[16px] font-semibold text-white active:bg-accent-strong disabled:opacity-50"
+    <SettingsSkin layout="mobile">
+      <AttachListInline
+        leagueId={leagueId}
+        leagueName={leagueName}
+        scoringSystemId={scoringSystemId}
+        attachedListIds={attachedIds}
+        onAttached={onClose}
+        frame={({ body, attach }) => (
+          <MobileSheet
+            open
+            onOpenChange={(next) => !next && onClose()}
+            title="Add a draft list"
+            subtitle={`Attach one of your ranking lists to ${leagueName} — it’s one tap away in the draft room and all season.`}
+            footer={attach}
           >
-            {attach.isPending ? 'Attaching…' : 'Attach list'}
-          </button>
-        </div>
-      }
-    >
-      <div className="flex flex-col gap-3 px-5 pb-2">
-        {myLists.isPending ? (
-          <SkeletonBlocks count={3} className="h-12" />
-        ) : myLists.isError ? (
-          <CenteredNote role="alert" message="Your lists didn’t load." action="Try again" onAction={() => void myLists.refetch()} className="py-6" />
-        ) : candidates.length === 0 ? (
-          <CenteredNote message="You don’t have any lists yet. Build one on the Lists page and it will show up here." className="py-6" />
-        ) : (
-          <>
-            {suggestion && (
-              <div className="flex items-center gap-3 rounded-[14px] bg-m-gb px-3 py-2.5">
-                <span className="min-w-0 flex-1 text-[12px] font-semibold text-m-tb">
-                  {suggestion.is_big_board && !suggestion.scoring_system_id
-                    ? 'Your Big Board fits any draft.'
-                    : `“${suggestion.title}” matches this league’s scoring.`}
-                </span>
-                <button
-                  type="button"
-                  disabled={attach.isPending}
-                  onClick={() => submit(suggestion)}
-                  className={cn(PILL, 'h-8 bg-accent px-3.5 text-white active:bg-accent-strong disabled:opacity-50')}
-                >
-                  Attach {suggestion.is_big_board ? 'Big Board' : 'it'}
-                </button>
-              </div>
-            )}
-            <div role="radiogroup" aria-label="Your lists" className="flex flex-col">
-              {candidates.map((c) => {
-                const on = selectedId === c.id
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={on}
-                    disabled={c.attached}
-                    onClick={() => setSelectedId(c.id)}
-                    className="flex min-h-[52px] items-center gap-3 border-b border-m-b2 py-2 text-left disabled:opacity-60"
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col gap-px">
-                      <span className="truncate text-[14px] font-semibold text-m-t1">{c.title}</span>
-                      <span className="truncate text-[12px] font-medium text-m-t3">
-                        {[listMeta(c), c.is_big_board ? 'Big Board' : null, c.attached ? 'Attached' : null].filter(Boolean).join(' · ')}
-                      </span>
-                    </span>
-                    <Check on={on} />
-                  </button>
-                )
-              })}
-            </div>
-            <Toggle
-              on={primary}
-              onChange={setPrimary}
-              label="Set as my primary board"
-              note="Feeds your draft Targets and autopick for this league (one per league)."
-            />
-            <Toggle on={shared} onChange={setShared} label="Share with the league" note="Every member can open it. Off, it stays visible only to you." />
-          </>
+            <div className="px-5 pb-2">{body}</div>
+          </MobileSheet>
         )}
-      </div>
-    </MobileSheet>
-  )
-}
-
-function Check({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn('flex size-[22px] flex-none items-center justify-center rounded-full', on ? 'bg-accent' : 'bg-m-b0 ring-[1.5px] ring-inset ring-m-b4m')}
-    >
-      {on && <MIcon name="check" size={11} stroke={3} className="text-white" />}
-    </span>
-  )
-}
-
-function Toggle({ on, onChange, label, note }: { on: boolean; onChange: (next: boolean) => void; label: string; note: string }) {
-  return (
-    <button type="button" role="checkbox" aria-checked={on} onClick={() => onChange(!on)} className="flex items-start gap-3 py-1 text-left">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[14px] font-semibold text-m-t1">{label}</span>
-        <span className={NOTE}>{note}</span>
-      </span>
-      <Check on={on} />
-    </button>
+      />
+    </SettingsSkin>
   )
 }
 
