@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { canEditLeagueNote } from '@/components/leagues/league-note-ops'
 import { SCORING_FAMILY_LABEL } from '@/components/leagues/league-shell-ops'
 import { LeagueNoteSheets } from '@/components/mobile/league/league/league-note'
+import { MyTeamPage } from '@/components/mobile/shell/my-team-page'
 import { initials, useLeagueCard } from '@/components/mobile/shell/use-league-card'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
@@ -33,7 +34,8 @@ interface MenuRow {
  * league pages the app has that the design's menu leaves out (Schedule,
  * Trades, Members, Stats, Commissioner tools) are kept — restyle everything,
  * delete nothing. "Commissioner note" (gap list #13) opens the league's note
- * in full — with the edit sheet behind it for a commissioner.
+ * in full — with the edit sheet behind it for a commissioner. The My team
+ * card opens the My team page, where you rename your team (gap list #10).
  */
 export function LeagueMenuSheet({
   open,
@@ -53,6 +55,12 @@ export function LeagueMenuSheet({
   // Gap list #13: the commissioner note opens in full from its row.
   const [noteOpen, setNoteOpen] = useState(false)
   const note = useLeagueNote(open ? league.id : undefined)
+  // Gap list #10: the My team page, over the screen the Menu was opened on.
+  // It belongs to that screen — a route change underneath it (the OS back
+  // gesture) closes it rather than leaving it over another page.
+  const pathname = usePathname()
+  const [myTeamAt, setMyTeamAt] = useState<string | null>(null)
+  if (myTeamAt !== null && myTeamAt !== pathname) setMyTeamAt(null)
   const rows: MenuRow[] = [
     { label: 'League settings', sub: `${league.team_count} teams`, icon: 'leaders', href: `${base}/settings` },
     { label: 'Scoring', sub: family ? SCORING_FAMILY_LABEL[family] : undefined, icon: 'scoring', href: `${base}/settings?section=scoring` },
@@ -93,15 +101,19 @@ export function LeagueMenuSheet({
         {league.my_team_id && (
           <button
             type="button"
-            onClick={() => go(`${base}/team/${league.my_team_id}`)}
+            onClick={() => {
+              onOpenChange(false)
+              setMyTeamAt(pathname)
+            }}
             className="mx-3 mb-3.5 flex w-[calc(100%-24px)] items-center gap-3 rounded-2xl bg-m-b1 p-3 text-left active:bg-m-b2h"
+            data-menu-my-team
           >
             <span className="flex size-11 flex-none items-center justify-center rounded-full bg-accent text-[16px] font-semibold text-white">
               {initials(card.teamName).slice(0, 1)}
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-px">
               <span className="truncate text-[15px] font-semibold text-m-t1">{card.teamName}</span>
-              <span className="text-[12px] font-medium text-m-t3">My team · edit name and avatar</span>
+              <span className="text-[12px] font-medium text-m-t3">My team · edit name</span>
             </span>
             <MIcon name="chevronRight" size={12} stroke={2} className="text-m-t5" />
           </button>
@@ -146,6 +158,7 @@ export function LeagueMenuSheet({
         </div>
       </MobileSheet>
       <LeagueNoteSheets open={noteOpen} onOpenChange={setNoteOpen} leagueId={league.id} canEdit={canEditLeagueNote(league.my_role)} />
+      {myTeamAt !== null && league.my_team_id && <MyTeamPage leagueId={league.id} teamId={league.my_team_id} onClose={() => setMyTeamAt(null)} />}
     </>
   )
 }
