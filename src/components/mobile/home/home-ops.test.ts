@@ -131,9 +131,11 @@ describe('mobile Home ops (m-home §5)', () => {
   it('injury note and pill colour', () => {
     expect(injuryNote({ injury_body_part: 'Ankle', injury_notes: 'Sprain', practice_participation: 'Limited' })).toBe('Ankle · Sprain · limited practice')
     expect(injuryNote({ injury_body_part: null, injury_notes: null, practice_participation: null })).toBeNull()
-    expect(injuryPillClass('Questionable')).toBe('bg-warn')
-    expect(injuryPillClass('Out')).toBe('bg-negative-strong')
-    expect(injuryPillClass('IR')).toBe('bg-m-ink')
+    expect(injuryPillClass('Questionable')).toBe('bg-warn text-white')
+    // The bright red is text, never a fill (2026-10-18): Out is the red tint.
+    expect(injuryPillClass('Out')).toBe('bg-m-gr text-m-tr')
+    expect(injuryPillClass('Doubtful')).toBe('bg-m-gr text-m-tr')
+    expect(injuryPillClass('IR')).toBe('bg-m-ink text-white')
   })
 
   it('AI expert ages', () => {

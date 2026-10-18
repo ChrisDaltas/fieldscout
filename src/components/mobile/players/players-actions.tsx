@@ -17,11 +17,15 @@ import { PathIcon } from './players-chrome'
 
 export type ActionKind = 'add' | 'claim' | 'drop' | 'trade'
 
-const ACTION: Record<ActionKind, { bg: string; icon: string | null; tip: string; label: string }> = {
-  add: { bg: 'bg-confirm', icon: 'M8 3.5v9M3.5 8h9', tip: 'Add', label: 'Add' },
-  claim: { bg: 'bg-m-gold', icon: null, tip: 'Claim off waivers', label: 'Claim' },
-  drop: { bg: 'bg-negative-strong', icon: 'M3.5 8h9', tip: 'Drop', label: 'Drop' },
-  trade: { bg: 'bg-accent', icon: 'M3 5.5h9.5L10 3M13 10.5H3.5L6 13', tip: 'Propose trade', label: 'Trade' },
+// `fill` is the button's fill + glyph colour. Drop is the phone's red tint
+// with a red glyph — the bright red is for text and small icons, never a
+// button fill (Chris, 2026-10-18); the drop sheet's own Drop button already
+// reads this way.
+const ACTION: Record<ActionKind, { fill: string; icon: string | null; tip: string; label: string }> = {
+  add: { fill: 'bg-confirm text-white', icon: 'M8 3.5v9M3.5 8h9', tip: 'Add', label: 'Add' },
+  claim: { fill: 'bg-m-gold text-white', icon: null, tip: 'Claim off waivers', label: 'Claim' },
+  drop: { fill: 'bg-m-gr text-m-tr', icon: 'M3.5 8h9', tip: 'Drop', label: 'Drop' },
+  trade: { fill: 'bg-accent text-white', icon: 'M3 5.5h9.5L10 3M13 10.5H3.5L6 13', tip: 'Propose trade', label: 'Trade' },
 }
 
 export interface ActionDoor {
@@ -42,7 +46,7 @@ export function ActionCircle({ door, size }: { door: ActionDoor; size: 28 | 22 }
       title={a.tip}
       aria-label={door.label}
       aria-disabled={door.closed || undefined}
-      className={cn('flex flex-none items-center justify-center rounded-full text-white', a.bg, size === 28 ? 'size-7' : 'size-[22px]', door.closed && 'opacity-40')}
+      className={cn('flex flex-none items-center justify-center rounded-full', a.fill, size === 28 ? 'size-7' : 'size-[22px]', door.closed && 'opacity-40')}
       data-action={door.kind}
       data-closed={door.closed || undefined}
     >
@@ -56,7 +60,7 @@ export function ActionCircle({ door, size }: { door: ActionDoor; size: 28 | 22 }
 }
 
 /** The Trending tile's action pill (spec §2.2): 28px, 12/600, white on the
- *  verb's colour, labelled Add / Claim / Trade. */
+ *  verb's colour (Drop: red on the red tint), labelled Add / Claim / Trade. */
 export function ActionPill({ door }: { door: ActionDoor }) {
   const a = ACTION[door.kind]
   return (
@@ -66,7 +70,7 @@ export function ActionPill({ door }: { door: ActionDoor }) {
       title={a.tip}
       aria-label={door.label}
       aria-disabled={door.closed || undefined}
-      className={cn('flex h-7 flex-none items-center rounded-full px-3 text-[12px] font-semibold text-white', a.bg, door.closed && 'opacity-40')}
+      className={cn('flex h-7 flex-none items-center rounded-full px-3 text-[12px] font-semibold', a.fill, door.closed && 'opacity-40')}
       data-action={door.kind}
       data-closed={door.closed || undefined}
     >

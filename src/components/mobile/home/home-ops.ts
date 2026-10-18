@@ -204,11 +204,14 @@ export function trendLists<T extends { projected_pts: number | null; last_pts: n
 /** The injury designations Home's "Injury news" reports, most severe last. */
 export const INJURY_STATUSES = ['Questionable', 'Doubtful', 'Out', 'IR', 'PUP'] as const
 
-/** Status pill fill (m-home §5): Questionable orange, Out red, IR ink. */
+/** Status pill fill + text (m-home §5): Questionable orange, IR ink, both
+ *  with white text. Doubtful / Out is the phone's red TINT with red text —
+ *  the bright red is for text and small icons, never a fill (Chris,
+ *  2026-10-18; the desktop badge already reads this way). */
 export function injuryPillClass(status: string): string {
-  if (status === 'Questionable') return 'bg-warn'
-  if (status === 'Doubtful' || status === 'Out') return 'bg-negative-strong'
-  return 'bg-m-ink'
+  if (status === 'Questionable') return 'bg-warn text-white'
+  if (status === 'Doubtful' || status === 'Out') return 'bg-m-gr text-m-tr'
+  return 'bg-m-ink text-white'
 }
 
 /**

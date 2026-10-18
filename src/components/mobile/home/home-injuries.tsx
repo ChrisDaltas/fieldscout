@@ -56,7 +56,7 @@ function InjuryRow({ p, onOpen }: { p: HomeInjury; onOpen: () => void }) {
         )}
       </span>
       <span className="flex flex-none flex-col items-end gap-1">
-        <span className={cn('flex h-[22px] items-center whitespace-nowrap rounded-pill px-2 text-[11px] font-semibold text-white', injuryPillClass(p.status))}>
+        <span className={cn('flex h-[22px] items-center whitespace-nowrap rounded-pill px-2 text-[11px] font-semibold', injuryPillClass(p.status))}>
           {p.status}
         </span>
       </span>

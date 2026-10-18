@@ -133,6 +133,18 @@ describe('mobile player profile — leagues gated off', () => {
     expect(out).toMatch(/Age \d+ · 6'0" · 220 lb · 4th season/)
   })
 
+  it('an Out pill is the red tint with red text, never a bright-red fill (2026-10-18)', () => {
+    const out = html(
+      createElement(ProfileLoaded, { data: { ...data, player: { ...player, status: 'Out' } }, target, onClose: () => {} }),
+      seeded(),
+    )
+    const pill = out.match(/<span[^>]*data-profile-status[^>]*>Out</)?.[0] ?? ''
+    expect(pill).toContain('bg-m-gr')
+    expect(pill).toContain('text-m-tr')
+    expect(pill).not.toContain('bg-negative-strong')
+    expect(pill).not.toContain('text-white')
+  })
+
   it('strip: rank, avg, season pts, bye — and the tabs without the league ones', () => {
     const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())
     for (const s of ['#24', 'RB rank', '13.8', 'Avg pts', '55.0', '2026 pts', 'Bye week']) expect(out).toContain(s)
