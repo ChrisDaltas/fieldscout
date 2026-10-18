@@ -19,7 +19,7 @@ import { HeaderActions } from '@/components/mobile/ui/mobile-header'
 import { ConversationRow, boardSender } from './conversation-row'
 import { MessagesEmpty } from './messages-empty'
 import { MESSAGES_EMPTY_TITLE, MobileMessagesList } from './messages-list-screen'
-import { MobileThreadScreen } from './thread-screen'
+import { OLDER_ERROR, OLDER_LOADING, OLDER_START, MobileThreadScreen, OlderSlot } from './thread-screen'
 
 const flags = vi.hoisted(() => ({ leagues: true, messages: true }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
@@ -131,11 +131,72 @@ describe('a league board thread', () => {
     expect(html).toContain('data-composer')
   })
 
+  const board = (count: number) => {
+    const qc = client([LEAGUE])
+    qc.setQueryData(
+      leagueChatKeys.board('L1'),
+      Array.from({ length: count }, (_, i) => ({
+        id: `c${i + 1}`,
+        user_id: i % 2 ? 'user-me' : 'user-priya',
+        message: `Post ${i + 1}`,
+        context: 'league',
+        is_system: false,
+        created_at: new Date(Date.parse('2026-10-15T10:00:00Z') + i * 60_000).toISOString(),
+      })),
+    )
+    qc.setQueryData(leaguesKeys.detail('L1'), {
+      league: { id: 'L1', name: 'Sunday Funday League' },
+      teams: [],
+      members: [
+        { user_id: 'user-me', team_id: null, profiles: { username: 'me', avatar_url: null } },
+        { user_id: 'user-priya', team_id: null, profiles: { username: 'priya', avatar_url: null } },
+      ],
+    })
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(MobileThreadScreen, { threadId: 'league-L1' })))
+  }
+
+  it('a board that fills its first read keeps a line above it for older posts, which load as you scroll up (§3 #23)', () => {
+    const html = board(30)
+    expect(html).toMatch(/role="log"[^>]*>\s*<div[^>]*data-older="idle"/)
+    expect(html).not.toContain(OLDER_LOADING)
+    expect(html).toContain('Post 1<')
+    expect(html).toContain('Post 30<')
+  })
+
+  it('a board that fits its first read has nothing above its first post — the design’s thread', () => {
+    const html = board(29)
+    expect(html).not.toContain('data-older')
+    expect(html).not.toContain(OLDER_START)
+  })
+
+  it('the browser’s own scroll anchoring is off, so older posts landing above are corrected once, by the thread', () => {
+    expect(board(30)).toMatch(/\[overflow-anchor:none\][^>]*data-thread/)
+  })
+
   it('a dead thread’s way out is the header’s Back (#27), never a push to the list that leaves it behind', () => {
     const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: client([LEAGUE]) }, createElement(MobileThreadScreen, { threadId: 'dm-gone' })))
     expect(html).toContain('Conversation not found')
     expect(html).toMatch(/<button type="button"[^>]*data-thread-go-back[^>]*>Go back<\/button>/)
     expect(html).not.toContain('href="/app/messages"')
+  })
+})
+
+describe('OlderSlot — the top of a board thread (§3 #23)', () => {
+  const slot = (state: Parameters<typeof OlderSlot>[0]['state']) =>
+    renderToStaticMarkup(createElement(OlderSlot, { state, onRetry: () => {} }))
+
+  it('nothing when nothing older exists; one same-height line in every other state', () => {
+    expect(slot('none')).toBe('')
+    for (const state of ['idle', 'loading', 'error', 'start'] as const) {
+      expect(slot(state)).toMatch(new RegExp(`^<div class="[^"]*\\bh-8\\b[^"]*" data-older="${state}"`))
+    }
+  })
+
+  it('blank while more can load, a quiet loading line, a Try again button when a read failed, and the start — never a silent stop', () => {
+    expect(slot('idle')).not.toMatch(/<span|<button/)
+    expect(slot('loading')).toContain(`role="status">${OLDER_LOADING}<`)
+    expect(slot('error')).toMatch(new RegExp(`<button type="button"[^>]*>${OLDER_ERROR}</button>`))
+    expect(slot('start')).toContain(OLDER_START)
   })
 })
 

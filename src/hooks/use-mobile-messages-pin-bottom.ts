@@ -6,7 +6,7 @@ import { followsNewMessage, isNearBottom } from '@/components/mobile/messages/me
 
 /** The element that scrolls `el`: its nearest ancestor that scrolls
  *  vertically (the app's `main` on a phone), else the page itself. */
-function scrollerOf(el: HTMLElement): HTMLElement {
+export function scrollerOf(el: HTMLElement): HTMLElement {
   for (let p = el.parentElement; p; p = p.parentElement) {
     const overflowY = getComputedStyle(p).overflowY
     if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') return p
