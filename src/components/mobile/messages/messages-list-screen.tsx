@@ -14,7 +14,15 @@ import { featureFlags } from '@/lib/feature-flags'
 import { ConversationRow, ConversationRowSkeleton, LeagueBoardRow } from './conversation-row'
 import { MessagesAvatar } from './messages-avatar'
 import { EMPTY_PILL, MessagesEmpty } from './messages-empty'
-import { byLatest, latestPostAt, leagueThreadId, matchesName, previewLine, threadHref } from './messages-ops'
+import {
+  boardNeverRead,
+  byLatest,
+  latestPostAt,
+  leagueThreadId,
+  matchesName,
+  previewLine,
+  threadHref,
+} from './messages-ops'
 import { useMessagesStore } from './messages-store'
 
 export const MESSAGES_EMPTY_TITLE = 'No messages yet'
@@ -48,7 +56,8 @@ export function messagesEmptyBody(boards: boolean, dms: boolean): string {
  * together, ordered by when each one's latest message was sent, so a new
  * post moves its conversation to the top as it arrives. The people row
  * keeps the same order (§5). Nothing shows until every board has been read
- * once, so the rows never reshuffle as the reads land.
+ * once, so the rows never reshuffle as the reads land; a read that failed
+ * counts as read — that board goes last and says it couldn't load.
  */
 export function MobileMessagesList() {
   const goBack = useGoBack()
@@ -60,7 +69,9 @@ export function MobileMessagesList() {
   // Every board's latest window — the same reads (and cache) each board row
   // keeps live — for the time of its newest post.
   const boardReads = useQueries({ queries: myLeagues.map((l) => leagueBoardQuery(l.id)) })
-  const leaguesLoading = leaguesOn && (leagues.isPending || boardReads.some((r) => r.isPending))
+  // Wait only for boards never read yet: one whose read failed counts as
+  // read (it goes last, saying so), or a re-read would loop the list.
+  const leaguesLoading = leaguesOn && (leagues.isPending || boardReads.some(boardNeverRead))
   const leaguesError = leaguesOn && leagues.isError && !leagues.data
 
   const query = useMessagesStore((s) => s.query)

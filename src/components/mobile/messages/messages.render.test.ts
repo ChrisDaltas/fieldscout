@@ -17,7 +17,7 @@ import { tradeKeys } from '@/hooks/use-trades'
 import { leagueAvClass } from '@/components/mobile/ui/avatar-colors'
 import { HeaderActions } from '@/components/mobile/ui/mobile-header'
 
-import { ConversationRow, boardSender } from './conversation-row'
+import { BOARD_ERROR_PREVIEW, ConversationRow, boardSender } from './conversation-row'
 import { MessagesEmpty } from './messages-empty'
 import { MESSAGES_EMPTY_TITLE, MobileMessagesList } from './messages-list-screen'
 import { OLDER_ERROR, OLDER_LOADING, OLDER_START, MobileThreadScreen, OlderSlot } from './thread-screen'
@@ -193,6 +193,24 @@ describe('Messages list — newest first (gap list §3 #24)', () => {
     expect(html).toContain('data-skeleton="conversation"')
     expect(html).not.toContain('data-conversation-row')
     expect(html).not.toContain(MESSAGES_EMPTY_TITLE)
+  })
+
+  it('a board whose read failed still counts as read: the rows show, that board last saying it couldn’t load', () => {
+    const qc = seeded({
+      L2: [post('b1', 'Kickoff soon', '2026-10-15T10:00:00Z')],
+      L3: [post('c1', 'Draft recap', '2026-10-15T08:00:00Z')],
+    })
+    // L1's read failed with no posts. Mounting re-reads it, which puts it
+    // back to pending — the list must not drop back to loading rows.
+    qc.removeQueries({ queryKey: leagueChatKeys.board('L1') })
+    qc.getQueryCache()
+      .build(qc, { queryKey: leagueChatKeys.board('L1') })
+      .setState({ status: 'error', error: new Error('x'), errorUpdatedAt: Date.now() })
+    const html = render(qc)
+    expect(html).not.toContain('data-skeleton')
+    expect(order(html)).toEqual(['Dynasty Den', 'Quiet Corner', 'Bench Mob League'])
+    const rows = html.split('data-conversation-row').slice(1)
+    expect(rows[2]).toContain(BOARD_ERROR_PREVIEW)
   })
 })
 

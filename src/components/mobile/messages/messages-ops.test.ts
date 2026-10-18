@@ -19,6 +19,8 @@ import {
   MANAGER_COLORS,
   MY_COLOR,
   NEAR_TOP_PX,
+  boardNeverRead,
+  boardReadFailed,
   boardRows,
   bubbleRadius,
   byLatest,
@@ -197,6 +199,17 @@ describe('conversation order (gap list §3 #24)', () => {
     const input = [{ id: 'x', at: ago(HOUR) }, { id: 'y', at: ago(MIN) }]
     byLatest(input, at)
     expect(ids(input)).toEqual(['x', 'y'])
+  })
+
+  it('a board counts as read once its read came back — a failure included, even while it re-reads', () => {
+    expect(boardNeverRead({ isPending: true, errorUpdatedAt: 0 })).toBe(true)
+    expect(boardNeverRead({ isPending: false, errorUpdatedAt: 0 })).toBe(false)
+    // Failed, now re-reading with no posts: pending again, but read.
+    expect(boardNeverRead({ isPending: true, errorUpdatedAt: 1 })).toBe(false)
+    expect(boardReadFailed({ data: undefined, errorUpdatedAt: 1 })).toBe(true)
+    expect(boardReadFailed({ data: undefined, errorUpdatedAt: 0 })).toBe(false)
+    // Posts it holds still show, whatever a later read did.
+    expect(boardReadFailed({ data: [], errorUpdatedAt: 1 })).toBe(false)
   })
 
   it("a board's latest post is the newest timed post of its oldest-first read", () => {

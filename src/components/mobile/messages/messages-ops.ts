@@ -222,6 +222,26 @@ export function byLatest<T>(rows: readonly T[], latestAt: (row: T) => string | n
     .map((x) => x.row)
 }
 
+/**
+ * Whether a board's read has never come back yet — neither its posts nor a
+ * failure. Not `isPending` alone: re-reading a board whose read failed (and
+ * so holds no posts) puts it back to pending, and every board row re-reads
+ * on mount and on joining the league channel. A list that waited on
+ * `isPending` would drop back to loading rows, unmount the rows, and loop
+ * for as long as the read kept failing. The failure's time outlives that
+ * reset, so a board that has failed once counts as read.
+ */
+export function boardNeverRead(read: { isPending: boolean; errorUpdatedAt: number }): boolean {
+  return read.isPending && read.errorUpdatedAt === 0
+}
+
+/** Whether a board has no posts to show because its read failed — still
+ *  true while it re-reads, so the row keeps saying so instead of flashing
+ *  back to loading. */
+export function boardReadFailed(read: { data: unknown; errorUpdatedAt: number }): boolean {
+  return read.data === undefined && read.errorUpdatedAt > 0
+}
+
 /** When a board's latest post was made: the newest timed post of its
  *  (oldest-first) read, or null when it has none. */
 export function latestPostAt(rows: readonly { created_at: string | null }[] | undefined): string | null {
