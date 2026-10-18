@@ -15,7 +15,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => search,
 }))
 
-import { useListsNav } from './lists-nav'
+import { editorHref, useListsNav } from './lists-nav'
 
 type Nav = ReturnType<typeof useListsNav>
 
@@ -110,5 +110,34 @@ describe('the editor and Edit details hand back to their List view', () => {
     navOn('list=l1&edit=1&from=grid').closeEdit('l1')
     expect(router.back).not.toHaveBeenCalled()
     expect(router.replace).toHaveBeenCalledWith('/app/lists?list=l1&from=grid')
+  })
+})
+
+describe('New list’s Next: its editor is step 2 of 2 (gap list §3 #7)', () => {
+  it('replaces New list with the editor, Add players up and marked new, keeping the grid behind', () => {
+    behind(true)
+    navOn('from=grid').createdList('l1')
+    expect(router.replace).toHaveBeenCalledWith('/app/lists?list=l1&edit=1&add=1&new=1&from=grid')
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('opened from Profile or Community: the same, with no grid marker', () => {
+    behind(true)
+    navOn('from=back').createdList('l1')
+    expect(router.replace).toHaveBeenCalledWith('/app/lists?list=l1&edit=1&add=1&new=1')
+  })
+
+  it('the List view’s Edit and Add players are not new', () => {
+    behind(true)
+    const nav = navOn('list=l1&from=grid')
+    nav.openEditor('l1')
+    nav.openEditor('l1', true)
+    expect(router.push).toHaveBeenNthCalledWith(1, '/app/lists?list=l1&edit=1&from=view')
+    expect(router.push).toHaveBeenNthCalledWith(2, '/app/lists?list=l1&edit=1&add=1&from=view')
+  })
+
+  it('the marker survives the editor being re-rooted on the List view', () => {
+    expect(editorHref('l1', { add: true, created: true, from: 'view' })).toBe('/app/lists?list=l1&edit=1&add=1&new=1&from=view')
+    expect(editorHref('l1')).toBe('/app/lists?list=l1&edit=1')
   })
 })

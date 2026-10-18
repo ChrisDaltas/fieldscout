@@ -311,3 +311,22 @@ export function videosFullNote(max: number): string {
     ? `That’s ${MAX_LINKS_PER_LIST} videos, the most a list can hold`
     : `This list is full: videos and links share a limit of ${MAX_LINKS_PER_LIST}`
 }
+
+/** The bits of a keydown that decide whether it was Return. */
+export interface ReturnKeyEvent {
+  key: string
+  /** `KeyboardEvent.isComposing`: an IME (Japanese, Chinese…) is mid-word. */
+  isComposing: boolean
+  keyCode: number
+}
+
+/**
+ * Return in the name field (gap list §3 #7): it moves on — does what the
+ * footer button does (Next: add players, or Done in Edit details) — once the
+ * list has a name, `ready` being that button's own "on". Without a name it
+ * does nothing, as the button is off. The Enter that finishes an IME word is
+ * not a Return (Safari reports it as keyCode 229 with `isComposing` false).
+ */
+export function nameReturnMovesOn(event: ReturnKeyEvent, ready: boolean): boolean {
+  return ready && event.key === 'Enter' && !event.isComposing && event.keyCode !== 229
+}

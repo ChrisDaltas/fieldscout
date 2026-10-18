@@ -134,6 +134,7 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
 export function ListEditor({
   listId,
   autoAdd,
+  created = false,
   currentWeek = 0,
   promptSeq = 0,
   onDirtyChange,
@@ -141,6 +142,9 @@ export function ListEditor({
 }: {
   listId: string
   autoAdd: boolean
+  /** A list New list has just made (its Next): the header counts this as
+   *  step "2 of 2" after New list's "1 of 2" (gap list §3 #7). */
+  created?: boolean
   /** The NFL week (0 = offseason), for the import sheet's ranking names. */
   currentWeek?: number
   /** Bumped when the OS back gesture tried to leave with changes. */
@@ -154,6 +158,7 @@ export function ListEditor({
   const detail = useList(listId)
   const aiBuild = useAiListBuild(listId)
   const list = detail.data
+  const step = created ? '2 of 2' : null
   const close = () => {
     onLeave?.()
     nav.closeEdit(listId)
@@ -165,7 +170,7 @@ export function ListEditor({
           only a list that never loaded is an error screen. */}
       {!list && detail.isError ? (
         <>
-          <EditorHeader title={null} onBack={close} />
+          <EditorHeader title={null} step={step} onBack={close} />
           <CenterNote
             title="This list could not be loaded."
             body={detail.error.message}
@@ -174,7 +179,7 @@ export function ListEditor({
         </>
       ) : !list ? (
         <>
-          <EditorHeader title={null} onBack={close} />
+          <EditorHeader title={null} step={step} onBack={close} />
           <div className="flex flex-col gap-2.5 px-4 pt-2" aria-busy="true" aria-label="Loading list">
             <div className="flex gap-2">
               <div className="h-10 flex-1 animate-pulse rounded-xl bg-m-b1" />
@@ -187,7 +192,7 @@ export function ListEditor({
         </>
       ) : !list.is_owner || aiBuild.building ? (
         <>
-          <EditorHeader title={list.title} onBack={close} />
+          <EditorHeader title={list.title} step={step} onBack={close} />
           <CenterNote
             title={aiBuild.building ? 'The AI is still building this list.' : 'Only the owner can edit this list.'}
             action={<PillButton onClick={close}>Back to the list</PillButton>}
@@ -197,6 +202,7 @@ export function ListEditor({
         <EditorBody
           list={list}
           autoAdd={autoAdd}
+          step={step}
           currentWeek={currentWeek}
           promptSeq={promptSeq}
           onDirtyChange={onDirtyChange}
@@ -210,10 +216,13 @@ export function ListEditor({
 /**
  * The header: Back, the title, and Update — blue when the draft has changes,
  * greyed (the design's disabled pill, as the ranking editor's) when it has
- * none, "Saving…" while it writes.
+ * none, "Saving…" while it writes. A list New list has just made also counts
+ * its step — "2 of 2", New list's 12/600 t3 label, beside Update (the design
+ * shows "1 of 2" and never "2 of 2", lr-lists gap 24).
  */
 function EditorHeader({
   title,
+  step = null,
   onBack,
   onUpdate,
   titleInput,
@@ -221,6 +230,7 @@ function EditorHeader({
   saving = false,
 }: {
   title: string | null
+  step?: string | null
   onBack: () => void
   onUpdate?: () => void
   titleInput?: React.ReactNode
@@ -242,6 +252,7 @@ function EditorHeader({
       {titleInput ?? (
         <span className="min-w-0 flex-1 truncate text-center text-[16px] font-semibold text-m-t1">{title ?? ''}</span>
       )}
+      {step && <span className="flex-none whitespace-nowrap text-[12px] font-semibold text-m-t3">{step}</span>}
       <button
         type="button"
         onClick={onUpdate}
@@ -262,6 +273,7 @@ function EditorHeader({
 function EditorBody({
   list,
   autoAdd,
+  step,
   currentWeek,
   promptSeq,
   onDirtyChange,
@@ -269,6 +281,7 @@ function EditorBody({
 }: {
   list: ListWithDetails
   autoAdd: boolean
+  step: string | null
   currentWeek: number
   promptSeq: number
   onDirtyChange?: (dirty: boolean) => void
@@ -504,6 +517,7 @@ function EditorBody({
     <>
       <EditorHeader
         title={draft.title}
+        step={step}
         onBack={back}
         onUpdate={update}
         canUpdate={dirty}

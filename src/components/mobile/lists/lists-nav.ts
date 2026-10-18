@@ -15,7 +15,7 @@ import { compareHref } from './list-tools'
  * | ------------- | ------------------------------------- |
  * | Lists grid    | `/app/lists` (`?tab=saved` for Saved) |
  * | List view     | `/app/lists?list=<id>` (`/app/lists/<id>` redirects here) |
- * | List editor   | `/app/lists?list=<id>&edit=1` (`&add=1` opens Add players) |
+ * | List editor   | `/app/lists?list=<id>&edit=1` (`&add=1` opens Add players; `&new=1` is New list's step 2 of 2) |
  * | Edit details  | `/app/lists?list=<id>&details=1`      |
  * | New list      | `/app/lists/new`                      |
  * | Side by side  | `/app/lists?compare=<id>,<id>`        |
@@ -43,8 +43,17 @@ type From = 'grid' | 'view'
 
 export const listHref = (id: string, from?: From) =>
   `/app/lists?list=${encodeURIComponent(id)}${from ? `&from=${from}` : ''}`
-export const editorHref = (id: string, addPlayers = false, from?: From) =>
-  `/app/lists?list=${encodeURIComponent(id)}&edit=1${addPlayers ? '&add=1' : ''}${from ? `&from=${from}` : ''}`
+
+export interface EditorHrefOptions {
+  /** Open Add players on arrival (when the list has no players). */
+  add?: boolean
+  /** A list New list has just made: its editor is step "2 of 2" (gap list
+   *  §3 #7). In the URL, like `from`, so a reload keeps it. */
+  created?: boolean
+  from?: From
+}
+export const editorHref = (id: string, { add = false, created = false, from }: EditorHrefOptions = {}) =>
+  `/app/lists?list=${encodeURIComponent(id)}&edit=1${add ? '&add=1' : ''}${created ? '&new=1' : ''}${from ? `&from=${from}` : ''}`
 export const detailsHref = (id: string, from?: From) =>
   `/app/lists?list=${encodeURIComponent(id)}&details=1${from ? `&from=${from}` : ''}`
 const newHref = (from?: From) => `/app/lists/new${from ? `?from=${from}` : ''}`
@@ -68,7 +77,7 @@ export function useListsNav() {
         goBack('/app/lists')
       },
       openEditor(id: string, addPlayers = false) {
-        router.push(editorHref(id, addPlayers, 'view'))
+        router.push(editorHref(id, { add: addPlayers, from: 'view' }))
       },
       openDetails(id: string) {
         router.push(detailsHref(id, 'view'))
@@ -86,10 +95,11 @@ export function useListsNav() {
       closeNew() {
         goBack('/app/lists')
       },
-      /** A just-created list: the New list entry is replaced by its editor,
-       *  which inherits what was behind New list. */
+      /** A just-created list: the New list entry is replaced by its editor —
+       *  step 2 of 2, Add players up — which inherits what was behind New
+       *  list. */
       createdList(id: string) {
-        router.replace(editorHref(id, true, from === 'grid' ? 'grid' : undefined))
+        router.replace(editorHref(id, { add: true, created: true, from: from === 'grid' ? 'grid' : undefined }))
       },
       /** The grid's back: where you came from (normally Profile), else
        *  Profile, Lists' parent (#27). */
