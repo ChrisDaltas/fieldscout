@@ -494,6 +494,45 @@ describe('Transactions — trades, managers and My moves', () => {
     expect(html).toContain('data-pending-claims')
     expect(html).toContain('$7 bid')
     expect(html).toContain('>Cancel<')
+    // Gap list §3 #13: each pending claim can be edited; one claim has no order to set.
+    expect(html).toContain('aria-label="Edit the claim for Ray Davis"')
+    expect(html).not.toContain('data-claim-order-door')
+  })
+
+  it('two or more pending claims: the Claim order door, and the claims in the order the run tries them (gap list §3 #13)', () => {
+    const pendingClaim = (id: string, name: string, bid: number, order: number): WaiverClaimView => ({
+      id,
+      team_id: ME,
+      add: { player_id: `p-${id}`, full_name: name, position: 'RB', nfl_team: 'BUF' },
+      drop: null,
+      faab_bid: bid,
+      claim_order: order,
+      status: 'pending',
+      result_reason: null,
+      process_at: null,
+      processed_at: null,
+      created_at: '2099-10-10T19:06:00.000Z',
+      created_by: 'user-me',
+      cancelled_at: null,
+    })
+    const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      seedFeed([{ type: OWN, teamId: ME }, { type: SHARED, parties: [ME] }], [])(qc)
+      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'), {
+        league_id: LEAGUE,
+        team_id: ME,
+        status: 'all',
+        waiver_type: 'faab',
+        faab_budget: 100,
+        faab_min_bid: 0,
+        faab_balance: 60,
+        waiver_priority: 1,
+        // Stored order says Davis first, but the run tries the bigger bid first.
+        claims: [pendingClaim('low', 'Ray Davis', 3, 1), pendingClaim('high', 'Rashee Rice', 12, 2)],
+      })
+    })
+    expect(html).toContain('data-claim-order-door')
+    expect(html.indexOf('data-pending-claim="high"')).toBeLessThan(html.indexOf('data-pending-claim="low"'))
+    expect((html.match(/data-claim-edit-door/g) ?? []).length).toBe(2)
   })
 })
 

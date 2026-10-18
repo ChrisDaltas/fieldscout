@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
+import { claimsInRunOrder } from '@/components/leagues/waiver-claims-ops'
+import { EDIT_CLAIM_LABEL } from '@/components/mobile/league/team/claim-edit-ops'
+import { ClaimEditSheet, ClaimOrderDoor, ClaimOrderSheet } from '@/components/mobile/league/team/claim-sheets'
 import { leagueTabHref } from '@/components/mobile/shell/mobile-nav'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -33,9 +36,11 @@ import { TxFeed, type TxClaimResults } from './tx-feed'
  * filters are kept after leaving. No league header and no switcher; the
  * league tab bar stays.
  *
- * My moves also lists your PENDING waiver claims above the moves, each with
- * Cancel (the app's own team moves panel does — kept; bids are blind, so
- * this is your own team's read only), and — among the moves, by when the
+ * My moves also lists your PENDING waiver claims above the moves, in the
+ * order the run tries them, each with Edit (bid and drop) and Cancel, and
+ * a Claim order door with two or more (gap list §3 #13; the app's own team
+ * moves panel does — kept; bids are blind, so this is your own team's read
+ * only), and — among the moves, by when the
  * waiver run settled them — the claims you LOST or that DIDN'T GO THROUGH,
  * each with the stored reason in plain words (gap list §3 #12; the desktop
  * panel's Chris 2026-10-05 rule). One read of your claims serves both; it
@@ -142,18 +147,24 @@ function claimsLive(detail: LeagueDetail): boolean {
   return detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && detail.waiver_window?.waivers !== false
 }
 
-/** Your pending claims, in your own order as the read gives them, each
- *  with Cancel. Nothing at all when there are none. */
+/** Your pending claims in the order the waiver run tries them, each with
+ *  Edit (its bid and drop) and Cancel, and — with two or more — the Claim
+ *  order door (gap list §3 #13). Nothing at all when there are none. */
 function PendingClaims({ leagueId, doc }: { leagueId: string; doc: WaiverClaimsDocument }) {
   const cancel = useCancelClaim(leagueId)
-  const pending = useMemo(() => doc.claims.filter((c) => c.status === 'pending'), [doc])
+  const [editing, setEditing] = useState<string | null>(null)
+  const [ordering, setOrdering] = useState(false)
+  const pending = useMemo(() => claimsInRunOrder(doc.claims, doc.waiver_type), [doc])
   const ids = useMemo(() => pending.flatMap((c) => [c.add.player_id, ...(c.drop ? [c.drop.player_id] : [])]), [pending])
   const players = usePlayersByIds(ids)
   const faab = doc.waiver_type === 'faab'
   if (pending.length === 0) return null
   return (
     <section aria-label="Pending claims" className="pt-1" data-pending-claims>
-      <p className="px-1 pb-1 text-[12px] font-semibold text-m-t3">Pending claims</p>
+      <div className="flex items-center justify-between gap-2 px-1 pb-1">
+        <p className="text-[12px] font-semibold text-m-t3">Pending claims</p>
+        {pending.length >= 2 && <ClaimOrderDoor onClick={() => setOrdering(true)} />}
+      </div>
       {pending.map((c) => (
         <ClaimRow
           key={c.id}
@@ -162,6 +173,7 @@ function PendingClaims({ leagueId, doc }: { leagueId: string; doc: WaiverClaimsD
           faab={faab}
           playerById={players.playerById}
           cancelling={cancel.isPending && cancel.variables?.claim_id === c.id}
+          onEdit={() => setEditing(c.id)}
           onCancel={() =>
             cancel
               .cancelAsync(c.id)
@@ -172,6 +184,8 @@ function PendingClaims({ leagueId, doc }: { leagueId: string; doc: WaiverClaimsD
           }
         />
       ))}
+      <ClaimEditSheet leagueId={leagueId} doc={doc} claim={pending.find((c) => c.id === editing) ?? null} onClose={() => setEditing(null)} />
+      <ClaimOrderSheet leagueId={leagueId} doc={doc} open={ordering && pending.length >= 2} onOpenChange={setOrdering} />
     </section>
   )
 }
@@ -182,6 +196,7 @@ function ClaimRow({
   faab,
   playerById,
   cancelling,
+  onEdit,
   onCancel,
 }: {
   leagueId: string
@@ -189,8 +204,10 @@ function ClaimRow({
   faab: boolean
   playerById: ReadonlyMap<string, PlayerIdentity>
   cancelling: boolean
+  onEdit: () => void
   onCancel: () => void
 }) {
+  const name = claim.add.full_name ?? playerById.get(claim.add.player_id)?.full_name ?? 'this player'
   return (
     <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-pending-claim={claim.id}>
       <div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
@@ -200,9 +217,20 @@ function ClaimRow({
         {faab && <span className="flex-none text-[13px] font-semibold tabular-nums text-m-t1">${claim.faab_bid} bid</span>}
         <button
           type="button"
+          onClick={onEdit}
+          disabled={cancelling}
+          aria-label={`Edit the claim for ${name}`}
+          className="ml-1.5 flex h-[26px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[12px] font-semibold text-m-t1 active:bg-m-b2h disabled:opacity-50"
+          data-claim-edit-door
+        >
+          {EDIT_CLAIM_LABEL}
+        </button>
+        <button
+          type="button"
           onClick={onCancel}
           disabled={cancelling}
-          className="ml-1.5 flex h-[26px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[12px] font-semibold text-m-t1 active:bg-m-b2h disabled:opacity-50"
+          aria-label={`Cancel the claim for ${name}`}
+          className="flex h-[26px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[12px] font-semibold text-m-t1 active:bg-m-b2h disabled:opacity-50"
         >
           {cancelling ? 'Cancelling…' : 'Cancel'}
         </button>
