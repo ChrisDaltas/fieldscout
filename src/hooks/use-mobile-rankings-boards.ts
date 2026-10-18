@@ -79,12 +79,14 @@ interface PlayerRow {
   player: BoardPlayerLite['player'] | BoardPlayerLite['player'][] | null
 }
 
-export function useMyRankingBoards() {
+/** `enabled` lets a screen that only sometimes shows the boards (a list's
+ *  Import a ranking sheet) hold the read until it does. */
+export function useMyRankingBoards(enabled = true) {
   const { user } = useAuth()
   const userId = user?.id ?? null
   return useQuery({
     queryKey: mobileRankingBoardsKey(userId),
-    enabled: Boolean(userId),
+    enabled: Boolean(userId) && enabled,
     queryFn: async (): Promise<MyRankingBoards> => {
       const supabase = createBrowserClient()
       const [seasonRes, weeklyRes] = await Promise.all([

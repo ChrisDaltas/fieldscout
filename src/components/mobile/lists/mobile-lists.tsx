@@ -16,8 +16,12 @@ import { editorHref, listHref } from './lists-nav'
  * the query string (see `lists-nav.ts` for the URL map). `?list=` is also the
  * desktop deep link (`/app/lists/<id>` redirects to it), so a shared or
  * recently-viewed list link opens the List view on a phone.
+ *
+ * `currentWeek` (the NFL week, 0 = offseason — the server's) names the
+ * rankings the editor's Import a ranking sheet offers ("Week 5 · RB",
+ * "Rest of season" or "Pre-draft").
  */
-export function MobileLists() {
+export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
   const params = useSearchParams()
   const pathname = usePathname()
   const listId = params.get('list')
@@ -35,6 +39,7 @@ export function MobileLists() {
         key={edit.listId}
         listId={edit.listId}
         autoAdd={edit.autoAdd}
+        currentWeek={currentWeek}
         promptSeq={guard.promptSeq}
         onDirtyChange={guard.setDirty}
         onLeave={guard.leave}

@@ -34,6 +34,7 @@ import { listTitleSchema, type RankingMode } from '@/types/schemas/lists'
 
 import { AddPlayersSheet } from './add-players-sheet'
 import { AddStatsSheet } from './add-stats-sheet'
+import { ImportSheet, importToolLabel, type ImportSource } from './import-sheet'
 import {
   MAX_TIERS,
   addToDraft,
@@ -43,6 +44,8 @@ import {
   draftItems,
   draftOf,
   fillScores,
+  importIntoDraft,
+  importToast,
   moveItem,
   playersLabel,
   removeFromDraft,
@@ -121,17 +124,25 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  *   (Chris, 2026-10-15): inside the editor it takes him out of the draft —
  *   gone from the list at once, saved by Update, undone by Back — like the
  *   ✓ in Add players. The List view's profile removes at once.
- * - Import a ranking is left out: the app has no rankings to import yet.
+ * - **Import a ranking** (gap list §3 #5) brings in the user's own rankings
+ *   or another of their lists, in order with its tiers, into the draft like
+ *   any other edit (`importIntoDraft`). Each player once: anyone already in
+ *   the list is skipped, and an option that would bring in nobody can't be
+ *   tapped. The design's Scout AI and Experts sources come later; while
+ *   rankings are switched off it reads "Import a list".
  */
 export function ListEditor({
   listId,
   autoAdd,
+  currentWeek = 0,
   promptSeq = 0,
   onDirtyChange,
   onLeave,
 }: {
   listId: string
   autoAdd: boolean
+  /** The NFL week (0 = offseason), for the import sheet's ranking names. */
+  currentWeek?: number
   /** Bumped when the OS back gesture tried to leave with changes. */
   promptSeq?: number
   /** Whether leaving now would drop changes (or a save in flight). */
@@ -186,6 +197,7 @@ export function ListEditor({
         <EditorBody
           list={list}
           autoAdd={autoAdd}
+          currentWeek={currentWeek}
           promptSeq={promptSeq}
           onDirtyChange={onDirtyChange}
           onClose={close}
@@ -250,12 +262,14 @@ function EditorHeader({
 function EditorBody({
   list,
   autoAdd,
+  currentWeek,
   promptSeq,
   onDirtyChange,
   onClose,
 }: {
   list: ListWithDetails
   autoAdd: boolean
+  currentWeek: number
   promptSeq: number
   onDirtyChange?: (dirty: boolean) => void
   onClose: () => void
@@ -278,6 +292,7 @@ function EditorBody({
   }
   const [addOpen, setAddOpen] = React.useState(false)
   const [statsOpen, setStatsOpen] = React.useState(false)
+  const [importOpen, setImportOpen] = React.useState(false)
   const [confirmLeave, setConfirmLeave] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
 
@@ -321,6 +336,7 @@ function EditorBody({
     if (saving) return
     setAddOpen(false)
     setStatsOpen(false)
+    setImportOpen(false)
     setConfirmLeave(true)
   }, [promptSeq, saving])
 
@@ -394,6 +410,21 @@ function EditorBody({
         : addToDraft(current, player, list.id),
     )
 
+  // Import a ranking: the chosen source's players into the draft, each once.
+  const importSource = (source: ImportSource): boolean => {
+    if (saving) return false
+    const result = importIntoDraft(draft, source.entries, {
+      listId: list.id,
+      positionFilter: list.position_filter,
+      sourceTiers: source.sourceTiers,
+      lockMode: bigBoard,
+    })
+    toast(importToast(result.counts, source.kind, list.position_filter))
+    if (result.counts.fresh === 0) return false
+    edit(() => result.draft)
+    return true
+  }
+
   // A tap on a player opens his full profile (the phone has no mini card)
   // with "Remove from list" acting on this draft.
   const openPlayer = (playerId: string) =>
@@ -440,6 +471,7 @@ function EditorBody({
 
   const tools: Array<{ label: string; icon: LIconName; onClick: () => void; disabled?: boolean }> = [
     { label: 'Add players', icon: 'plus', onClick: () => setAddOpen(true) },
+    { label: importToolLabel(), icon: 'import', onClick: () => setImportOpen(true) },
     ...(tiersOn
       ? [
           {
@@ -582,7 +614,7 @@ function EditorBody({
         {players.length === 0 ? (
           <CenterNote
             title="No players yet"
-            body="Add players to start building this list."
+            body={`Add players, or ${importToolLabel().toLowerCase()} to bring in players in order with tiers.`}
             action={<PillButton onClick={() => setAddOpen(true)}>Add players</PillButton>}
           />
         ) : (
@@ -623,6 +655,15 @@ function EditorBody({
         onToggle={togglePlayer}
       />
       <AddStatsSheet open={statsOpen} onOpenChange={setStatsOpen} listId={list.id} />
+      <ImportSheet
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        listId={list.id}
+        positionFilter={list.position_filter}
+        inList={inList}
+        currentWeek={currentWeek}
+        onImport={importSource}
+      />
 
       {/* Chris's default for Back with changes (2026-10-15): ask first. */}
       <MobileSheet
