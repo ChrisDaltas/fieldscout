@@ -7,7 +7,10 @@ import { useCallback, useEffect, useRef } from 'react'
  * item 3). Every MobileSheet gets it: drag the sheet down and let go past a
  * quarter of its height (at most 120px), or flick it, and it closes the way
  * a backdrop tap does; let go short of that and it springs back. The sheet
- * follows the finger 1:1 and never moves up past its resting place.
+ * follows the finger 1:1 and never moves up past its resting place. Only a
+ * real change of mind keeps it open after a long pull — a quick flick back
+ * up, or the finger brought back up from its lowest point — never the
+ * pixel or two a fingertip shifts as it lifts off the glass.
  *
  * A touch anywhere on the sheet can pull it — unless it belongs to something
  * inside: a scroller that isn't at its top scrolls back up first (as iOS and
@@ -28,6 +31,12 @@ export const SWIPE_FLICK_SPEED = 0.5
 export const SWIPE_FLICK_MIN = 24
 /** Still for this long before letting go = not a flick. */
 export const SWIPE_HOLD_MS = 100
+/** The release speed is the finger's average over about its last this-many
+ *  ms, not one frame — a single frame is mostly lift-off noise. */
+export const SWIPE_SPEED_WINDOW_MS = 60
+/** Brought back up more than this (px) from its lowest point before letting
+ *  go = the user changed their mind; a fingertip lifting off moves less. */
+export const SWIPE_BACK_UP = 12
 /** The spring back (README: transitions are linear, about 200ms). */
 export const SWIPE_SETTLE_MS = 200
 
@@ -44,11 +53,34 @@ export function swipeStart(move: { dx: number; dy: number; kept: boolean }): 'wa
   return 'drag'
 }
 
-/** On release: close, or spring back? `vy` is the finger's speed (px/ms,
- *  down positive) as it let go. */
-export function swipeEnd(release: { dy: number; vy: number; height: number }): 'close' | 'stay' {
-  const { dy, vy, height } = release
-  if (vy < 0) return 'stay' // moving back up as it let go
+/** A finger position on the way down: `y` in px, `t` in ms. */
+export interface SwipeSample {
+  y: number
+  t: number
+}
+
+/** The finger's speed (px/ms, down positive) as it let go: the average over
+ *  its last SWIPE_SPEED_WINDOW_MS, and always over at least the last two
+ *  positions. */
+export function releaseSpeed(samples: readonly SwipeSample[]): number {
+  const n = samples.length
+  if (n < 2) return 0
+  const last = samples[n - 1]
+  let i = n - 2
+  while (i > 0 && last.t - samples[i - 1].t <= SWIPE_SPEED_WINDOW_MS) i--
+  const dt = last.t - samples[i].t
+  return dt > 0 ? (last.y - samples[i].y) / dt : 0
+}
+
+/** On release: close, or spring back? `dy` is how far down the sheet is,
+ *  `vy` the finger's speed as it let go (px/ms, down positive — see
+ *  releaseSpeed), and `backUp` how far the finger had come back up from its
+ *  lowest point. */
+export function swipeEnd(release: { dy: number; vy: number; height: number; backUp?: number }): 'close' | 'stay' {
+  const { dy, vy, height, backUp = 0 } = release
+  // A real change of mind: flicked back up, or brought back up. A small
+  // upward wobble as the finger lifts falls through to the distance check.
+  if (vy <= -SWIPE_FLICK_SPEED || backUp > SWIPE_BACK_UP) return 'stay'
   if (dy >= swipeCloseDistance(height)) return 'close'
   if (dy >= SWIPE_FLICK_MIN && vy >= SWIPE_FLICK_SPEED) return 'close'
   return 'stay'
@@ -79,10 +111,12 @@ function reducedMotion(): boolean {
 interface Drag {
   x: number
   y: number
-  lastY: number
+  /** Recent positions, trimmed to the speed window (plus one before it). */
+  samples: SwipeSample[]
   lastT: number
-  vy: number
   dy: number
+  /** The furthest down the sheet has been pulled this drag. */
+  maxDy: number
   kept: boolean
   live: boolean
 }
@@ -112,7 +146,7 @@ export function attachSheetSwipe(panel: HTMLElement, onClose: () => void): () =>
   }
 
   const begin = (x: number, y: number, t: number, kept: boolean) => {
-    drag = { x, y, lastY: y, lastT: t, vy: 0, dy: 0, kept, live: false }
+    drag = { x, y, samples: [{ y, t }], lastT: t, dy: 0, maxDy: 0, kept, live: false }
   }
   /** True once the move is pulling the sheet (the caller then stops the
    *  page from scrolling with it). */
@@ -127,11 +161,12 @@ export function attachSheetSwipe(panel: HTMLElement, onClose: () => void): () =>
       }
       drag.live = true
     }
-    const dt = t - drag.lastT
-    if (dt > 0) drag.vy = (y - drag.lastY) / dt
-    drag.lastY = y
+    const samples = drag.samples
+    samples.push({ y, t })
+    while (samples.length > 2 && t - samples[1].t > SWIPE_SPEED_WINDOW_MS) samples.shift()
     drag.lastT = t
     drag.dy = Math.max(0, y - drag.y)
+    drag.maxDy = Math.max(drag.maxDy, drag.dy)
     follow(drag.dy)
     return true
   }
@@ -139,8 +174,8 @@ export function attachSheetSwipe(panel: HTMLElement, onClose: () => void): () =>
     const d = drag
     drag = null
     if (!d?.live) return
-    const vy = t - d.lastT > SWIPE_HOLD_MS ? 0 : d.vy
-    if (swipeEnd({ dy: d.dy, vy, height: panel.offsetHeight }) === 'stay') {
+    const vy = t - d.lastT > SWIPE_HOLD_MS ? 0 : releaseSpeed(d.samples)
+    if (swipeEnd({ dy: d.dy, vy, height: panel.offsetHeight, backUp: d.maxDy - d.dy }) === 'stay') {
       settle()
       return
     }

@@ -3,17 +3,21 @@
  * item 3). The decisions are pinned as pure functions (when a touch starts
  * pulling, when a release closes), then the wiring is driven end to end on a
  * stand-in panel: a long pull closes, a short one springs back, a flick
- * closes, a sideways or upward move leaves the sheet alone, a sheet that
- * refuses to close springs back, and a detached panel stops listening. Each
- * "closes" case is paired with the "stays" case next to it.
+ * closes, a long pull with a lift-off wobble still closes while one flicked
+ * or brought back up stays, a sideways or upward move leaves the sheet alone,
+ * a sheet that refuses to close springs back, and a detached panel stops
+ * listening. Each "closes" case is paired with the "stays" case next to it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import {
+  SWIPE_BACK_UP,
   SWIPE_CLOSE_MAX,
+  SWIPE_FLICK_SPEED,
   SWIPE_SETTLE_MS,
   attachSheetSwipe,
   keepsGesture,
+  releaseSpeed,
   swipeCloseDistance,
   swipeEnd,
   swipeStart,
@@ -53,8 +57,46 @@ describe('swipeEnd — close, or spring back?', () => {
   it('a flick of a few pixels stays (that was a tap that wobbled)', () => {
     expect(swipeEnd({ dy: 10, vy: 2, height: 726 })).toBe('stay')
   })
-  it('moving back up as it lets go keeps the sheet, however far it was pulled', () => {
-    expect(swipeEnd({ dy: 300, vy: -0.2, height: 726 })).toBe('stay')
+  it('a long pull with a small upward wobble as the finger lifts still closes', () => {
+    expect(swipeEnd({ dy: 300, vy: -0.2, height: 726, backUp: 2 })).toBe('close')
+    expect(swipeEnd({ dy: 300, vy: -0.2, height: 726, backUp: SWIPE_BACK_UP })).toBe('close')
+  })
+  it('a long pull flicked back up, or brought back up, stays — however far it was pulled', () => {
+    expect(swipeEnd({ dy: 300, vy: -SWIPE_FLICK_SPEED, height: 726, backUp: 4 })).toBe('stay')
+    expect(swipeEnd({ dy: 300, vy: -0.05, height: 726, backUp: SWIPE_BACK_UP + 1 })).toBe('stay')
+  })
+})
+
+describe('releaseSpeed — how fast the finger was moving as it let go', () => {
+  /** Positions every `stepMs`, `dyPerStep` apart, then the `tail` frames. */
+  const track = (steps: number, stepMs: number, dyPerStep: number, tail: { dy: number; ms: number }[] = []) => {
+    const out = Array.from({ length: steps + 1 }, (_, i) => ({ y: i * dyPerStep, t: i * stepMs }))
+    for (const f of tail) {
+      const prev = out[out.length - 1]
+      out.push({ y: prev.y + f.dy, t: prev.t + f.ms })
+    }
+    return out
+  }
+
+  it('reads a steady pull at its speed', () => {
+    expect(releaseSpeed(track(20, 16, 8))).toBeCloseTo(0.5)
+  })
+  it('averages over the last few frames, so a one-frame wobble up does not read as moving up', () => {
+    const wobbled = track(20, 16, 15, [{ dy: -2, ms: 16 }])
+    expect(releaseSpeed(wobbled)).toBeGreaterThan(0)
+  })
+  it('a real flick back up reads as moving up', () => {
+    const flicked = track(20, 16, 15, [
+      { dy: -25, ms: 16 },
+      { dy: -25, ms: 16 },
+      { dy: -25, ms: 16 },
+      { dy: -25, ms: 16 },
+    ])
+    expect(releaseSpeed(flicked)).toBeLessThanOrEqual(-SWIPE_FLICK_SPEED)
+  })
+  it('after a pause, still uses the last two positions; nothing to go on reads as still', () => {
+    expect(releaseSpeed([{ y: 0, t: 0 }, { y: 300, t: 900 }, { y: 298, t: 990 }])).toBeCloseTo(-2 / 90)
+    expect(releaseSpeed([{ y: 0, t: 0 }])).toBe(0)
   })
 })
 
@@ -160,6 +202,33 @@ describe('attachSheetSwipe — the gesture on a panel', () => {
 
     onClose.mockClear()
     pull(panel, 60, { steps: 3, stepMs: 8, holdMs: 300 })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(panel.style.transform).toBe('')
+  })
+
+  it('a long pull whose last frame wobbles up a pixel or two still closes (a fingertip lifting off)', () => {
+    for (const back of [1, 2]) {
+      onClose.mockClear()
+      touch(panel, 'touchstart', 0, 100)
+      for (let i = 1; i <= 20; i++) touch(panel, 'touchmove', i * 16, 100 + 15 * i)
+      touch(panel, 'touchmove', 21 * 16, 400 - back)
+      touch(panel, 'touchend', 21 * 16 + 4)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('a long pull flicked back up, or brought slowly back up, springs back', () => {
+    touch(panel, 'touchstart', 0, 100)
+    for (let i = 1; i <= 20; i++) touch(panel, 'touchmove', i * 16, 100 + 15 * i)
+    for (let i = 1; i <= 4; i++) touch(panel, 'touchmove', 320 + i * 16, 400 - 25 * i)
+    touch(panel, 'touchend', 400)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(panel.style.transform).toBe('')
+
+    touch(panel, 'touchstart', 1000, 100)
+    for (let i = 1; i <= 20; i++) touch(panel, 'touchmove', 1000 + i * 16, 100 + 15 * i)
+    for (let i = 1; i <= 10; i++) touch(panel, 'touchmove', 1320 + i * 40, 400 - 3 * i)
+    touch(panel, 'touchend', 1730)
     expect(onClose).not.toHaveBeenCalled()
     expect(panel.style.transform).toBe('')
   })
