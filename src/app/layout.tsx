@@ -29,8 +29,9 @@ const inter = Inter({
 })
 
 // Phone layout only (gap list §4 item 4): the full Inter 4.1 build (rsms,
-// SIL OFL 1.1 — licence and copyright in the file's name table, converted
-// TTF → WOFF2 with every table unchanged). Google's copy above strips the
+// SIL OFL 1.1 — the licence text and copyright ship beside it in
+// fonts/LICENSE-inter.txt; converted TTF → WOFF2 with every table
+// unchanged). Google's copy above strips the
 // character variants, so it can't draw the design's single-storey "a"
 // (cv11). globals.css puts it first in the font stack for
 // `html[data-layout='mobile']` only, so desktop never downloads it (hence no

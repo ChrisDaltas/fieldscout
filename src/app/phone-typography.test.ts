@@ -89,9 +89,14 @@ describe('the phone font file', () => {
     expect(axes.wght).toEqual({ min: 100, max: 900 })
   })
 
-  it('carries its OFL licence in the name table (redistribution terms)', () => {
+  it('ships with its OFL licence and copyright (OFL 1.1 condition 2: every copy carries both)', () => {
     expect(nameRecord(font.get('name')!, 13)).toMatch(/SIL Open Font License/)
     expect(nameRecord(font.get('name')!, 0)).toMatch(/Inter Project Authors/)
+    // The name table only points at the licence, so its full text sits beside the font.
+    const licence = readFileSync(path.join(ROOT, 'src/app/fonts/LICENSE-inter.txt'), 'utf8')
+    expect(licence).toMatch(/^Copyright 2016 The Inter Project Authors \(https:\/\/github\.com\/rsms\/inter\)/)
+    expect(licence).toMatch(/SIL OPEN FONT LICENSE Version 1\.1 - 26 February 2007/)
+    expect(licence).toMatch(/PERMISSION & CONDITIONS[\s\S]*TERMINATION[\s\S]*DISCLAIMER/)
   })
 
   it('layout.tsx loads it as --font-inter-phone without a preload, so desktop never downloads it', () => {
