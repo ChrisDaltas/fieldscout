@@ -20,6 +20,7 @@ import { useRenameOwnTeam } from '@/hooks/use-rename-own-team'
 import type { CommishEditFaabResult } from '@/lib/leagues/api/commish-faab-service'
 import type { CommishRosterOverrideResult } from '@/lib/leagues/api/commish-roster-service'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
+import { TEAM_NAME_MAX } from '@/lib/leagues/team-name'
 import { cn } from '@/lib/utils'
 
 import {
@@ -457,7 +458,7 @@ export function TeamRenameView({
         <Input
           id={`${id}-name`}
           value={draft}
-          maxLength={120}
+          maxLength={TEAM_NAME_MAX}
           autoComplete="off"
           disabled={pending}
           aria-describedby={gate.ok ? undefined : gateId}
