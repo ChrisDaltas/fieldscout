@@ -30,8 +30,10 @@ import {
   leagueChannelRegistryTopic,
   leagueChannelTopic,
   playoffBracketEventInvalidates,
+  presenceUserIds,
   projectedStandingsEventInvalidates,
   reopenDelayMs,
+  shouldTrackPresence,
 } from './use-league-channel-ops'
 
 const SPINE = 'src/hooks/use-league-channel.ts'
@@ -185,7 +187,19 @@ describe('the spine keeps §9.3 doctrine', () => {
   it('opens exactly ONE channel, private, on the ops topic', () => {
     expect((source.match(/\.channel\(/g) ?? []).length).toBe(1)
     expect(source).toContain('supabase.channel(leagueChannelTopic(room.leagueId), {')
-    expect(source).toContain('config: { private: true }')
+    // Gap list §3 #25: the same channel carries Presence, keyed by the viewer.
+    expect(source).toContain("config: { private: true, presence: { key: room.userId ?? '' } }")
+  })
+
+  it('carries Presence on that same channel — tracked only when a subscriber asks (gap list §3 #25)', () => {
+    // Bound before the join (that is what turns Presence on), dispatched to
+    // every subscriber of the room.
+    expect(source).toContain("ch.on('presence', { event: 'sync' }, () => {")
+    expect(source.indexOf("ch.on('presence'")).toBeLessThan(source.indexOf('ch.subscribe('))
+    expect(source).toContain('setOnline(room, presenceUserIds(ch.presenceState()))')
+    // Tracked through the pure decision only — never on a bare join.
+    expect(source).toContain('wanted: [...room.subscribers].some((s) => s.tracksPresence === true),')
+    expect((source.match(/channel\.track\(/g) ?? []).length).toBe(1)
   })
 
   it('holds that channel in a MODULE-LEVEL refcounted room, not per hook instance (R769)', () => {
@@ -311,5 +325,40 @@ describe('the mutations stamp one action_id per submit and are never optimistic 
     for (const forbidden of ['proposed', 'diff', 'weeks_regenerable', 'matchups']) {
       expect(confirm, forbidden).not.toContain(`${forbidden}:`)
     }
+  })
+})
+
+describe("who's online — the presence half (gap list §3 #25)", () => {
+  it('reads the user ids out of a presence state: two tabs are one person', () => {
+    const state = {
+      'u-marcus': [
+        { presence_ref: 'a', user_id: 'u-marcus' },
+        { presence_ref: 'b', user_id: 'u-marcus' },
+      ],
+      'u-nina': [{ presence_ref: 'c', user_id: 'u-nina' }],
+    }
+    expect([...presenceUserIds(state)].sort()).toEqual(['u-marcus', 'u-nina'])
+  })
+
+  it('an odd payload lights nobody — no user id, a non-string or an empty one', () => {
+    const state = {
+      x: [{ presence_ref: 'a' }],
+      y: [{ presence_ref: 'b', user_id: 42 }],
+      z: [{ presence_ref: 'c', user_id: '' }],
+    }
+    expect(presenceUserIds(state).size).toBe(0)
+    expect(presenceUserIds({}).size).toBe(0)
+  })
+
+  it('tracks only on a live channel, signed in, asked for, with the page in front', () => {
+    const yes = { live: true, userId: 'u-me', wanted: true, visible: true }
+    expect(shouldTrackPresence(yes)).toBe(true)
+    // Each condition alone turns it off.
+    expect(shouldTrackPresence({ ...yes, live: false })).toBe(false)
+    expect(shouldTrackPresence({ ...yes, userId: null })).toBe(false)
+    // A league page alone (no presence host) never counts you as here.
+    expect(shouldTrackPresence({ ...yes, wanted: false })).toBe(false)
+    // A tab left in the background is not "Active now".
+    expect(shouldTrackPresence({ ...yes, visible: false })).toBe(false)
   })
 })

@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react'
 import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
+import { WithOnlineDot } from '@/components/mobile/ui/online-dot'
 import { cn } from '@/lib/utils'
 
 import { teamInitial } from './league-tab-ops'
@@ -97,9 +98,23 @@ export function PageChip({
   )
 }
 
-/** A team's avatar: a solid circle with the name's first letter, white. */
-export function TeamAvatar({ name, className, size = 28 }: { name: string; className: string; size?: 28 | 32 }) {
-  return (
+/** A team's avatar: a solid circle with the name's first letter, white.
+ *  With `online` passed, the manager's green dot when they're online (gap
+ *  list §3 #25); `onlineRingClass` matches the dot's ring to the surface. */
+export function TeamAvatar({
+  name,
+  className,
+  size = 28,
+  online,
+  onlineRingClass,
+}: {
+  name: string
+  className: string
+  size?: 28 | 32
+  online?: boolean
+  onlineRingClass?: string
+}) {
+  const avatar = (
     <span
       aria-hidden="true"
       className={cn(
@@ -110,6 +125,12 @@ export function TeamAvatar({ name, className, size = 28 }: { name: string; class
     >
       {teamInitial(name)}
     </span>
+  )
+  if (online === undefined) return avatar
+  return (
+    <WithOnlineDot online={online} size="sm" ringClass={onlineRingClass}>
+      {avatar}
+    </WithOnlineDot>
   )
 }
 

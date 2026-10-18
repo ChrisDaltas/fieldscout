@@ -25,6 +25,9 @@ export interface RailTradeProposal {
 export interface RailDmThread {
   id: string
   gmName: string
+  /** The other manager's user id, when the feed knows it — the phone's
+   *  "Active now" dot reads presence by it (gap list §3 #25). */
+  gmUserId?: string | null
   gmAvatarUrl: string | null
   teamName: string
   leagueName: string

@@ -426,3 +426,51 @@ export interface LeagueBroadcastEnvelope {
   operation?: string
   record?: Record<string, unknown> | null
 }
+
+// ---------------------------------------------------------------------------
+// Presence — who's online (gap list §3 #25)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a league room tracks over Presence: the signed-in viewer's user id,
+ * nothing else. Members only — 070's "members track presence on league
+ * topics" policy is the write gate, and its READ policy the read gate — so
+ * who's online is shared with league-mates and no one else. Ephemeral and
+ * non-authoritative (spec §9's Presence row): it lights a dot, never a rule.
+ */
+export interface LeaguePresenceMeta {
+  user_id: string
+}
+
+/**
+ * Pure: the user ids a room's presence state says are here. A user with two
+ * tabs (or a phone and a laptop) is one id; a meta without a string user id
+ * counts as nobody — an odd payload never lights a dot.
+ */
+export function presenceUserIds(
+  state: Readonly<Record<string, ReadonlyArray<Readonly<Record<string, unknown>>>>>,
+): Set<string> {
+  const ids = new Set<string>()
+  for (const metas of Object.values(state)) {
+    for (const meta of metas) {
+      const id = meta.user_id
+      if (typeof id === 'string' && id !== '') ids.add(id)
+    }
+  }
+  return ids
+}
+
+/**
+ * Pure: should this room count the viewer as here right now? Only on a live
+ * channel, signed in, while some subscriber asked for it (the session's
+ * presence host — a league page alone never tracks) and the page is in
+ * front: a tab left in the background is not "Active now".
+ */
+export function shouldTrackPresence(input: {
+  live: boolean
+  userId: string | null
+  wanted: boolean
+  visible: boolean
+}): boolean {
+  return input.live && input.userId !== null && input.wanted && input.visible
+}

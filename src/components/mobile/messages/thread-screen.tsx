@@ -7,6 +7,7 @@ import { teamAvClass, teamOrder } from '@/components/mobile/league/team/team-ops
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { activeNowLine } from '@/components/mobile/ui/online-dot'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
@@ -17,6 +18,7 @@ import { useMobileLeagueBoard } from '@/hooks/use-mobile-league-board'
 import { useMobileMessagesDms } from '@/hooks/use-mobile-messages-dms'
 import { useMobileMessagesOlder } from '@/hooks/use-mobile-messages-older'
 import { useMobileMessagesPinBottom } from '@/hooks/use-mobile-messages-pin-bottom'
+import { useIsOnline, useOnlineUserIds } from '@/hooks/use-online'
 import { toast } from '@/hooks/use-toast'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
@@ -32,7 +34,7 @@ import {
   initialOf,
   lastMessageOf,
   leagueIdOfThread,
-  membersLine,
+  membersOnlineLine,
   seatColor,
   threadItems,
   type MChatMessage,
@@ -148,6 +150,9 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
 
   const ready = !chat.isPending && !detail.isPending
   const isMember = viewerId !== null && people.has(viewerId)
+  // Who else is here (gap list §3 #25): the header counts them, you included.
+  const online = useOnlineUserIds()
+  const othersOnline = [...people.keys()].filter((id) => id !== viewerId && online.has(id)).length
 
   const submit = () => {
     const text = draft.trim()
@@ -162,7 +167,7 @@ function LeagueBoardThread({ leagueId }: { leagueId: string }) {
     <ThreadHeader
       onBack={back}
       name={name}
-      sub={detail.data ? membersLine(people.size) : ''}
+      sub={detail.data ? membersOnlineLine(people.size, isMember ? othersOnline : 0) : ''}
       avatar={
         <MessagesAvatar
           text={name ? initials(name) : ''}
@@ -226,6 +231,7 @@ function DmThread({ threadId }: { threadId: string }) {
   useEffect(() => {
     if (openId) markRead(openId)
   }, [openId, markRead])
+  const online = useIsOnline(c?.userId)
 
   if (!c) return <ThreadMissing />
 
@@ -243,7 +249,7 @@ function DmThread({ threadId }: { threadId: string }) {
         <ThreadHeader
           onBack={back}
           name={c.name}
-          sub={c.teamName}
+          sub={activeNowLine(online, c.teamName)}
           avatar={
             <MessagesAvatar
               text={c.initial}
@@ -251,6 +257,8 @@ function DmThread({ threadId }: { threadId: string }) {
               sizeClass="size-9"
               colorClass={c.colorClass}
               textClass="text-[13px]"
+              online={online}
+              onlineSize="md"
             />
           }
         />

@@ -1,3 +1,4 @@
+import { WithOnlineDot, type OnlineDotSize } from '@/components/mobile/ui/online-dot'
 import { cn } from '@/lib/utils'
 
 import { teamAvClass, teamInitial } from './team-ops'
@@ -7,7 +8,8 @@ import { teamAvClass, teamInitial } from './team-ops'
  * initial (or "1" / "2" when names are hidden for a screenshot). Your own
  * team is the accent blue; every other team takes the palette in league
  * order — the Match / League tabs' rule (`teamAvClass`), so a team keeps one
- * colour on every screen.
+ * colour on every screen. Pass `online` where presence applies and the
+ * manager's green dot shows when they're online (gap list §3 #25).
  */
 export function TeamAvatar({
   teamId,
@@ -18,6 +20,9 @@ export function TeamAvatar({
   fontSize,
   label,
   className,
+  online,
+  onlineSize = 'sm',
+  onlineRingClass,
 }: {
   teamId: string
   name: string | null | undefined
@@ -30,8 +35,13 @@ export function TeamAvatar({
   /** Replaces the initial (the hide-names toggles show "1" / "2"). */
   label?: string
   className?: string
+  /** The team's manager is online (presence applies when passed). */
+  online?: boolean
+  onlineSize?: OnlineDotSize
+  /** The surface under the avatar, for the dot's ring (default b0). */
+  onlineRingClass?: string
 }) {
-  return (
+  const avatar = (
     <span
       aria-hidden
       className={cn('inline-flex flex-none items-center justify-center rounded-full font-semibold text-white', teamAvClass(teamId, teamIds, myTeamId), className)}
@@ -40,5 +50,11 @@ export function TeamAvatar({
     >
       {label ?? teamInitial(name)}
     </span>
+  )
+  if (online === undefined) return avatar
+  return (
+    <WithOnlineDot online={online} size={onlineSize} ringClass={onlineRingClass}>
+      {avatar}
+    </WithOnlineDot>
   )
 }

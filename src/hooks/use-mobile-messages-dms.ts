@@ -11,6 +11,9 @@ import { featureFlags } from '@/lib/feature-flags'
 export interface MDmConversation {
   id: string
   name: string
+  /** The other person's user id, when known — their online dot and
+   *  "Active now" (gap list §3 #25). */
+  userId: string | null
   initial: string
   avatarUrl: string | null
   colorClass: string
@@ -85,6 +88,7 @@ export function dmViewModel(
     return {
       id: t.id,
       name: t.gmName,
+      userId: t.gmUserId ?? null,
       initial: initialOf(t.gmName),
       avatarUrl: t.gmAvatarUrl,
       colorClass: color,

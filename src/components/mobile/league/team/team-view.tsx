@@ -13,10 +13,12 @@ import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-ov
 import { managerOf } from '@/components/mobile/trades/trades-mobile-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
+import { ACTIVE_NOW } from '@/components/mobile/ui/online-dot'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLineup } from '@/hooks/use-lineup'
+import { useTeamOnline } from '@/hooks/use-online'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSchedule } from '@/hooks/use-schedule'
@@ -100,6 +102,8 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
   const [builder, setBuilder] = useState(false)
 
   const mgr = managerOf(detail, teamId)
+  // Who's online (gap list §3 #25): the manager's dot and "Active now".
+  const online = useTeamOnline(detail.members)(teamId)
   const row = standings.data?.standings.find((r) => r.team_id === teamId) ?? null
   const streak = schedule.data ? teamStreak(teamId, schedule.data, detail.league.season) : null
   const canPropose = myTeamId !== null && myTeamId !== teamId && inSeason && !tradesClosed && rosterTeam !== null && rosterTeam.status !== 'retired' && rosterTeam.manager_user_id !== null
@@ -129,10 +133,11 @@ export function TeamView({ leagueId, teamId, detail }: { leagueId: string; teamI
       <MobileOverrideStrip leagueId={leagueId} className="mb-1.5 flex-none" />
       <MOverlayScroll className="px-4 pb-7">
         <div className="flex items-center gap-[14px]">
-          <TeamAvatar teamId={teamId} name={team.name} teamIds={order} myTeamId={myTeamId} size={64} fontSize={24} />
+          <TeamAvatar teamId={teamId} name={team.name} teamIds={order} myTeamId={myTeamId} size={64} fontSize={24} online={online} onlineSize="xl" />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h1 className="truncate text-[22px] font-bold tracking-[-0.02em]">{team.name}</h1>
             <p className="truncate text-[13px] font-medium text-m-t3">
+              {online && <span data-active-now>{ACTIVE_NOW} · </span>}
               {mgr ? <UsernameLink username={mgr} className="font-medium" /> : 'No manager'} · {detail.league.name}
             </p>
           </div>

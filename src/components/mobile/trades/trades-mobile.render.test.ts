@@ -34,6 +34,21 @@ vi.mock('@/hooks/use-auth', () => ({
 vi.mock('@/hooks/use-league-channel', () => ({
   useLeagueChannel: vi.fn(() => ({ connection: 'live' })),
 }))
+// Who's online (gap list §3 #25): the presence store is filled by the
+// session's PresenceHost over a live socket, which a static render never has —
+// so the read is stubbed with a set the test controls; the team lookup is the
+// real one.
+const presence = vi.hoisted(() => ({ online: new Set<string>() }))
+vi.mock('@/hooks/use-online', async (importActual) => {
+  const actual = await importActual<typeof import('@/hooks/use-online')>()
+  return {
+    ...actual,
+    useIsOnline: (id: string | null | undefined) => !!id && presence.online.has(id),
+    useOnlineUserIds: () => presence.online,
+    useTeamOnline: (members: Parameters<typeof actual.teamOnlineLookup>[0] | null | undefined) =>
+      actual.teamOnlineLookup(members ?? [], presence.online),
+  }
+})
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: vi.fn(), push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/app/leagues/league-1/team/x',
@@ -219,6 +234,27 @@ describe('Team view (another team)', () => {
     expect(html).toContain('Bench')
     expect(html).toContain('Recent moves')
     expect(html).toContain('See all')
+  })
+})
+
+describe("Team view — who's online (gap list §3 #25)", () => {
+  it('the manager online: the green dot on the team avatar and "Active now · @marcus · league"', () => {
+    presence.online = new Set(['user-them'])
+    let html: string
+    try {
+      html = render(seeded(), createElement(TeamView, { leagueId: LEAGUE, teamId: THEM, detail }))
+    } finally {
+      presence.online = new Set()
+    }
+    expect(html).toMatch(/class="[^"]*\bsize-4\b[^"]*" data-online-dot/)
+    expect(html).toMatch(/<span data-active-now="true">Active now · <\/span>.*@marcus/)
+    expect(html).toContain('Sunday Funday League')
+  })
+
+  it('offline: no dot and no "Active now"', () => {
+    const html = render(seeded(), createElement(TeamView, { leagueId: LEAGUE, teamId: THEM, detail }))
+    expect(html).not.toContain('data-online-dot')
+    expect(html).not.toContain('Active now')
   })
 })
 

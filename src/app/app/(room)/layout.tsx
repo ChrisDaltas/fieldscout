@@ -1,4 +1,5 @@
 import { LayoutModeFrame } from '@/components/layout/layout-mode-frame'
+import { PresenceHost } from '@/components/layout/presence-host'
 
 /**
  * The draft room's own frame — full-viewport, chrome-free (DR.1; spec §16.1
@@ -39,6 +40,11 @@ export default function DraftRoomLayout({
           wrapper; what landed is the equivalent inside-out form — the bands
           are flex bands inside the room's non-scrolling root.) */}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {/* Who's online (gap list §3 #25): the shell's PresenceHost isn't
+          mounted here, so the room holds its own — the draft's league, beside
+          the draft's channel (§9.3) — and a manager who is drafting shows as
+          online on every other screen. Renders nothing. */}
+      <PresenceHost />
     </LayoutModeFrame>
   )
 }

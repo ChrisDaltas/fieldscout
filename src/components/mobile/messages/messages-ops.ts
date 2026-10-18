@@ -459,6 +459,16 @@ export function membersLine(count: number): string {
   return `${count} member${count === 1 ? '' : 's'}`
 }
 
+/**
+ * The board thread's sub-line with who's here (gap list §3 #25): "8 members
+ * · 3 online" — you plus the league-mates online now — once anyone besides
+ * you is; just "8 members" while it's only you (you being here says nothing).
+ */
+export function membersOnlineLine(count: number, othersOnline: number): string {
+  const members = membersLine(count)
+  return othersOnline > 0 ? `${members} · ${othersOnline + 1} online` : members
+}
+
 // ---------------------------------------------------------------------------
 // A league's real offers (§2.1 F's fields). Not shown in Messages — trades
 // stay inside their league (Chris, ruling #22, 2026-10-15); Home's league

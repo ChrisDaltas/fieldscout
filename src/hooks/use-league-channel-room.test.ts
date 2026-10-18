@@ -35,25 +35,43 @@ type Status = 'SUBSCRIBED' | 'CLOSED' | 'CHANNEL_ERROR' | 'TIMED_OUT'
 
 interface FakeChannel {
   topic: string
+  /** The options the channel was created with (presence key, private). */
+  opts: unknown
   bindings: Map<string, Array<(payload: { payload: unknown }) => void>>
   statusCallback: ((status: Status) => void) | null
   subscribed: boolean
   removed: boolean
+  /** What this client tracks over Presence (null = not tracked). */
+  tracked: unknown
+  trackCalls: number
+  untrackCalls: number
+  /** The server's presence state, as the next `presenceState()` returns it. */
+  presence: Record<string, Array<Record<string, unknown>>>
   on: (kind: string, filter: { event: string }, cb: (m: { payload: unknown }) => void) => FakeChannel
   subscribe: (cb: (status: Status) => void) => FakeChannel
   unsubscribe: () => Promise<'ok'>
+  track: (meta: unknown) => Promise<'ok'>
+  untrack: () => Promise<'ok'>
+  presenceState: () => Record<string, Array<Record<string, unknown>>>
 }
 
 const counters = { channelCalls: 0, removeCalls: 0, setAuthCalls: 0 }
 let registry: FakeChannel[] = []
+/** The signed-in user the fake session reports (null = no user on it). */
+let sessionUserId: string | null = null
 
-function makeChannel(topic: string): FakeChannel {
+function makeChannel(topic: string, opts: unknown): FakeChannel {
   const channel: FakeChannel = {
     topic: `realtime:${topic}`,
+    opts,
     bindings: new Map(),
     statusCallback: null,
     subscribed: false,
     removed: false,
+    tracked: null,
+    trackCalls: 0,
+    untrackCalls: 0,
+    presence: {},
     on(_kind, filter, cb) {
       const list = channel.bindings.get(filter.event) ?? []
       list.push(cb)
@@ -65,6 +83,17 @@ function makeChannel(topic: string): FakeChannel {
       return channel
     },
     unsubscribe: async () => 'ok',
+    track: async (meta) => {
+      channel.trackCalls += 1
+      channel.tracked = meta
+      return 'ok'
+    },
+    untrack: async () => {
+      channel.untrackCalls += 1
+      channel.tracked = null
+      return 'ok'
+    },
+    presenceState: () => channel.presence,
   }
   return channel
 }
@@ -80,15 +109,19 @@ const fakeClient = {
     channel.statusCallback?.('CLOSED')
     return 'ok'
   },
-  channel: (topic: string) => {
+  channel: (topic: string, opts?: unknown) => {
     counters.channelCalls += 1
     const existing = registry.find((held) => held.topic === `realtime:${topic}`)
     if (existing) return existing
-    const created = makeChannel(topic)
+    const created = makeChannel(topic, opts)
     registry.push(created)
     return created
   },
-  auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) },
+  auth: {
+    getSession: async () => ({
+      data: { session: { access_token: 'tok', user: sessionUserId ? { id: sessionUserId } : undefined } },
+    }),
+  },
   realtime: {
     setAuth: async () => {
       counters.setAuthCalls += 1
@@ -164,6 +197,7 @@ beforeEach(() => {
   counters.channelCalls = 0
   counters.removeCalls = 0
   counters.setAuthCalls = 0
+  sessionUserId = null
 })
 
 afterEach(() => {
@@ -310,5 +344,169 @@ describe('the league room is refcounted per topic (R769)', () => {
 
     releaseA()
     releaseB()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Who's online — Presence on the same room (gap list §3 #25)
+// ---------------------------------------------------------------------------
+
+/** A presence-aware subscriber: what the session's PresenceHost passes. */
+function presenceRecorder(tracksPresence: boolean) {
+  const seen: string[][] = []
+  return {
+    seen,
+    subscriber: {
+      handlers: { current: {} },
+      tracksPresence,
+      onPresence: (ids: ReadonlySet<string>) => {
+        seen.push([...ids].sort())
+      },
+    },
+  }
+}
+
+/** The server's presence sync: set the state, fire the bound handler. */
+function sync(channel: FakeChannel, state: FakeChannel['presence']) {
+  channel.presence = state
+  for (const cb of channel.bindings.get('sync') ?? []) cb({ payload: undefined })
+}
+
+function setVisibility(state: 'visible' | 'hidden') {
+  Object.defineProperty(globalThis.document, 'visibilityState', { configurable: true, get: () => state })
+  globalThis.document.dispatchEvent(new Event('visibilitychange'))
+}
+
+describe("who's online rides the league room (gap list §3 #25)", () => {
+  beforeEach(() => {
+    // A minimal document: the spine reads `visibilityState` and listens for
+    // `visibilitychange` (node has no DOM).
+    if (typeof globalThis.document === 'undefined') {
+      const target = new EventTarget()
+      Object.defineProperty(globalThis, 'document', { configurable: true, value: target })
+    }
+    setVisibility('visible')
+  })
+
+  it('keys presence by the signed-in viewer and tracks them once the host joins — still ONE channel', async () => {
+    sessionUserId = 'u-me'
+    const host = presenceRecorder(true)
+    const page = recorder()
+    const releaseHost = joinLeagueRoom(LEAGUE, host.subscriber as never)
+    await settle()
+    const releasePage = joinLeagueRoom(LEAGUE, page.subscriber as never)
+    await settle()
+    live()
+
+    expect(counters.channelCalls).toBe(1)
+    const channel = registry[0]
+    expect(channel.opts).toEqual({ config: { private: true, presence: { key: 'u-me' } } })
+    expect(channel.tracked).toEqual({ user_id: 'u-me' })
+    expect(channel.trackCalls).toBe(1)
+
+    releasePage()
+    releaseHost()
+  })
+
+  it('a league page alone hears presence but never counts you as here', async () => {
+    sessionUserId = 'u-me'
+    const page = presenceRecorder(false)
+    const release = joinLeagueRoom(LEAGUE, page.subscriber as never)
+    await settle()
+    live()
+    expect(registry[0].trackCalls).toBe(0)
+    sync(registry[0], { 'u-nina': [{ user_id: 'u-nina' }] })
+    expect(page.seen.at(-1)).toEqual(['u-nina'])
+    release()
+  })
+
+  it('hands every sync to every subscriber, and seeds a late joiner with who is here', async () => {
+    sessionUserId = 'u-me'
+    const host = presenceRecorder(true)
+    const releaseHost = joinLeagueRoom(LEAGUE, host.subscriber as never)
+    await settle()
+    live()
+    sync(registry[0], {
+      'u-me': [{ user_id: 'u-me' }],
+      'u-marcus': [{ user_id: 'u-marcus' }, { user_id: 'u-marcus' }],
+    })
+    expect(host.seen.at(-1)).toEqual(['u-marcus', 'u-me'])
+
+    const late = presenceRecorder(false)
+    const releaseLate = joinLeagueRoom(LEAGUE, late.subscriber as never)
+    expect(late.seen).toEqual([['u-marcus', 'u-me']])
+    expect(counters.channelCalls).toBe(1)
+
+    releaseLate()
+    releaseHost()
+  })
+
+  it('a dropped channel claims nobody, and the rejoin counts you again', async () => {
+    sessionUserId = 'u-me'
+    const host = presenceRecorder(true)
+    const release = joinLeagueRoom(LEAGUE, host.subscriber as never)
+    await settle()
+    live()
+    sync(registry[0], { 'u-nina': [{ user_id: 'u-nina' }] })
+
+    vi.useFakeTimers()
+    registry[0].statusCallback?.('CHANNEL_ERROR')
+    expect(host.seen.at(-1)).toEqual([])
+
+    // The reopen (1s backoff) sweeps the stale instance and joins afresh.
+    await vi.advanceTimersByTimeAsync(1_000)
+    await settle()
+    vi.useRealTimers()
+    const reopened = registry.find((held) => held.topic === TOPIC && !held.removed)!
+    reopened.statusCallback?.('SUBSCRIBED')
+    expect(reopened.tracked).toEqual({ user_id: 'u-me' })
+
+    release()
+  })
+
+  it('a tab sent to the background stops counting as here, and counts again in front', async () => {
+    sessionUserId = 'u-me'
+    const host = presenceRecorder(true)
+    const release = joinLeagueRoom(LEAGUE, host.subscriber as never)
+    await settle()
+    live()
+    const channel = registry[0]
+    expect(channel.tracked).toEqual({ user_id: 'u-me' })
+
+    setVisibility('hidden')
+    expect(channel.tracked).toBeNull()
+    expect(channel.untrackCalls).toBe(1)
+
+    setVisibility('visible')
+    expect(channel.tracked).toEqual({ user_id: 'u-me' })
+    expect(channel.trackCalls).toBe(2)
+
+    release()
+  })
+
+  it('stops counting you when the host leaves but a league page still holds the room', async () => {
+    sessionUserId = 'u-me'
+    const host = presenceRecorder(true)
+    const page = recorder()
+    const releaseHost = joinLeagueRoom(LEAGUE, host.subscriber as never)
+    const releasePage = joinLeagueRoom(LEAGUE, page.subscriber as never)
+    await settle()
+    live()
+    expect(registry[0].tracked).toEqual({ user_id: 'u-me' })
+
+    releaseHost()
+    expect(registry[0].removed).toBe(false)
+    expect(registry[0].tracked).toBeNull()
+
+    releasePage()
+  })
+
+  it('signed out (no user on the session) tracks nothing', async () => {
+    const host = presenceRecorder(true)
+    const release = joinLeagueRoom(LEAGUE, host.subscriber as never)
+    await settle()
+    live()
+    expect(registry[0].trackCalls).toBe(0)
+    release()
   })
 })

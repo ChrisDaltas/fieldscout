@@ -1,5 +1,6 @@
 'use client'
 
+import { WithOnlineDot, type OnlineDotSize } from '@/components/mobile/ui/online-dot'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
@@ -11,9 +12,9 @@ import { cn } from '@/lib/utils'
  * remembers a loaded image, so a tile that swaps a league with a photo for
  * one without (the switcher's swipe) would otherwise draw neither.
  *
- * The design's green "online" dot is not drawn: the app tracks presence only
- * inside the draft room, so there is nothing true to show (a gap, not a
- * decoration to fake).
+ * A person's avatar takes the design's green "online" dot (gap list §3 #25)
+ * when `online` is passed — real presence from your current league's room
+ * (`useIsOnline`), never decoration. A league's tile never has one.
  */
 export function MessagesAvatar({
   text,
@@ -23,6 +24,8 @@ export function MessagesAvatar({
   colorClass,
   textClass,
   fgClass = 'text-white',
+  online,
+  onlineSize = 'lg',
 }: {
   text: string
   src?: string | null
@@ -34,11 +37,22 @@ export function MessagesAvatar({
   /** Initials type, e.g. `text-[16px]`. */
   textClass: string
   fgClass?: string
+  /** Presence applies here (a person): true draws the green dot. Leave it
+   *  out where presence doesn't apply (a league's tile). */
+  online?: boolean
+  /** The dot's size for this avatar (`OnlineDotSize`; 52px → lg). */
+  onlineSize?: OnlineDotSize
 }) {
-  return (
+  const avatar = (
     <Avatar key={src ?? ''} className={cn('flex-none', sizeClass, radiusClass, colorClass)} aria-hidden>
       {src ? <AvatarImage src={src} alt="" /> : null}
       <AvatarFallback className={cn('bg-transparent font-semibold', textClass, fgClass)}>{text}</AvatarFallback>
     </Avatar>
+  )
+  if (online === undefined) return avatar
+  return (
+    <WithOnlineDot online={online} size={onlineSize}>
+      {avatar}
+    </WithOnlineDot>
   )
 }

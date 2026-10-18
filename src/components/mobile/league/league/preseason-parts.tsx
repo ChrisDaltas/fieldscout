@@ -15,6 +15,7 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueInvites } from '@/hooks/use-league-invites'
 import { useAttachList, useLeagueLists, useMyDraftLists, type MyDraftList } from '@/hooks/use-league-lists'
 import { useDeleteMockDraft, type MockDraftSummary } from '@/hooks/use-mock-drafts'
+import { useTeamOnline } from '@/hooks/use-online'
 import type { RoomEntryTargetProps } from '@/hooks/use-room-entry-target-ops'
 import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
@@ -80,6 +81,8 @@ export function ManagersCard({ leagueId, detail }: { leagueId: string; detail: L
   )
   const myTeamId = detail.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const teamIds = detail.teams.map((t) => t.id)
+  // Who's online (gap list §3 #25): a claimed seat lights up with its manager.
+  const teamOnline = useTeamOnline(detail.members)
 
   return (
     <section id="invites" className="flex flex-col gap-2" aria-label="Managers" data-managers-card>
@@ -101,7 +104,13 @@ export function ManagersCard({ leagueId, detail }: { leagueId: string; detail: L
                 •
               </span>
             ) : (
-              <TeamAvatar name={seat.teamName} size={32} className={teamAvatarClass(seat.teamId, teamIds, myTeamId)} />
+              <TeamAvatar
+                name={seat.teamName}
+                size={32}
+                className={teamAvatarClass(seat.teamId, teamIds, myTeamId)}
+                online={teamOnline(seat.teamId)}
+                onlineRingClass="ring-m-b1"
+              />
             )}
             <span className="flex min-w-0 flex-1 flex-col gap-px">
               {seat.teamId && seat.status !== 'open' ? (

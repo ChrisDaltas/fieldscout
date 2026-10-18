@@ -56,6 +56,7 @@ import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/com
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { WithOnlineDot } from '@/components/mobile/ui/online-dot'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import { leagueBoxKeys, useBoxScore } from '@/hooks/use-box-score'
@@ -63,6 +64,7 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { useMobileMatchSwipe } from '@/hooks/use-mobile-match-swipe'
+import { useTeamOnline } from '@/hooks/use-online'
 import { useRosters } from '@/hooks/use-rosters'
 import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { useStandings } from '@/hooks/use-standings'
@@ -590,6 +592,8 @@ function MatchCard({
   streaksPending: boolean
 }) {
   const managers = useMemo(() => managersByTeam(detail.members), [detail.members])
+  // Who's online (gap list §3 #25): each side's avatar lights up with its manager.
+  const teamOnline = useTeamOnline(detail.members)
   const playoff = row.round_type === 'playoff'
   const median = { a: medianRow(doc, a, detail.settings.median_game), b: b ? medianRow(doc, b, detail.settings.median_game) : null }
   const second = { a: secondChip(doc, a, detail.settings.second_opponent), b: b ? secondChip(doc, b, detail.settings.second_opponent) : null }
@@ -608,6 +612,7 @@ function MatchCard({
       streak={streakOf(teamId)}
       streakPending={streaksPending}
       avatarClass={teamAvatarClass(teamIds, teamId, myTeamId)}
+      online={teamOnline(teamId)}
       mirror={mirror}
     />
   )
@@ -667,6 +672,7 @@ function CardSide({
   streak,
   streakPending,
   avatarClass,
+  online,
   mirror,
 }: {
   leagueId: string
@@ -681,15 +687,19 @@ function CardSide({
   streak: Streak | null
   streakPending: boolean
   avatarClass: string
+  /** The team's manager is online (gap list §3 #25). */
+  online: boolean
   mirror: boolean
 }) {
   const avatar = (
-    <span
-      className={cn('flex size-[34px] flex-none items-center justify-center rounded-full text-[12px] font-semibold text-white', avatarClass)}
-      aria-hidden
-    >
-      {teamInitial(name)}
-    </span>
+    <WithOnlineDot online={online} size="md" ringClass="ring-m-b1">
+      <span
+        className={cn('flex size-[34px] flex-none items-center justify-center rounded-full text-[12px] font-semibold text-white', avatarClass)}
+        aria-hidden
+      >
+        {teamInitial(name)}
+      </span>
+    </WithOnlineDot>
   )
   const scoreCol = (
     <span className={cn('flex flex-col', mirror ? 'items-start' : 'items-end')}>

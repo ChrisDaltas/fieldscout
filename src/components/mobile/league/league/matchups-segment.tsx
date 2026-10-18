@@ -18,6 +18,7 @@ import {
 import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
 import type { LeagueDetail } from '@/hooks/use-league'
+import { useTeamOnline } from '@/hooks/use-online'
 import { useLineup } from '@/hooks/use-lineup'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
@@ -94,6 +95,8 @@ function SeasonMatchups({
   const reconnecting =
     matchups.connection === 'reconnecting' || standings.connection === 'reconnecting' || bracket.connection === 'reconnecting'
   const av = (id: string | null) => teamAvatarClass(id, teamIds, myTeamId)
+  // Who's online (gap list §3 #25): a team's avatar lights up with its manager.
+  const online = useTeamOnline(detail.members)
 
   return (
     <div className="flex flex-col gap-2.5 px-3 pb-5 pt-2.5" data-matchups-segment>
@@ -140,6 +143,7 @@ function SeasonMatchups({
           myTeamId={myTeamId}
           records={records}
           av={av}
+          online={online}
         />
       )}
 
@@ -161,6 +165,8 @@ function SeasonMatchups({
 }
 
 type Av = (id: string | null) => string
+/** Is this team's manager online (`useTeamOnline`)? */
+type Online = (id: string | null) => boolean
 
 function WeekCards({
   leagueId,
@@ -170,6 +176,7 @@ function WeekCards({
   myTeamId,
   records,
   av,
+  online,
 }: {
   leagueId: string
   doc: WeekMatchups
@@ -178,8 +185,9 @@ function WeekCards({
   myTeamId: string | null
   records: ReadonlyMap<string, string>
   av: Av
+  online: Online
 }) {
-  if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} av={av} />
+  if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} av={av} online={online} />
   const { primary } = splitRows(doc.matchups)
   if (primary.length === 0) return <CenteredNote message={playoffs ? PLAYOFF_NO_ROWS_COPY : NO_ROWS_COPY} />
   const mine = (r: MatchupRow) => myTeamId !== null && (r.home_team_id === myTeamId || r.away_team_id === myTeamId)
@@ -189,7 +197,7 @@ function WeekCards({
     <>
       {medianGame && regular && <MedianCard median={doc.league_week.median_score} />}
       {rows.map((row) => (
-        <MatchupCard key={row.id} leagueId={leagueId} doc={doc} row={row} records={records} av={av} myTeamId={myTeamId} />
+        <MatchupCard key={row.id} leagueId={leagueId} doc={doc} row={row} records={records} av={av} online={online} myTeamId={myTeamId} />
       ))}
     </>
   )
@@ -227,6 +235,7 @@ function MatchupCard({
   row,
   records,
   av,
+  online,
   myTeamId,
 }: {
   leagueId: string
@@ -234,6 +243,7 @@ function MatchupCard({
   row: MatchupRow
   records: ReadonlyMap<string, string>
   av: Av
+  online: Online
   myTeamId: string | null
 }) {
   // Your own matchup puts you on the left (the design's team A), home or away.
@@ -246,7 +256,7 @@ function MatchupCard({
       className="grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] bg-m-b1 p-3"
       data-matchup={row.id}
     >
-      <Side name={teamName(doc, left.id)} score={left.score} status={row.status} record={records.get(left.id) ?? null} avClass={av(left.id)} />
+      <Side name={teamName(doc, left.id)} score={left.score} status={row.status} record={records.get(left.id) ?? null} avClass={av(left.id)} online={online(left.id)} />
       <span className="flex flex-col items-center gap-0.5 text-center text-[11px] font-semibold text-m-t4">
         vs
         {row.is_overridden && (
@@ -256,7 +266,7 @@ function MatchupCard({
         )}
       </span>
       {right ? (
-        <Side name={teamName(doc, right.id)} score={right.score} status={row.status} record={records.get(right.id) ?? null} avClass={av(right.id)} end />
+        <Side name={teamName(doc, right.id)} score={right.score} status={row.status} record={records.get(right.id) ?? null} avClass={av(right.id)} online={online(right.id)} end />
       ) : (
         <div className="flex min-w-0 flex-col items-end gap-[5px] text-right">
           <span className="text-[13px] font-semibold text-m-t3">Bye</span>
@@ -272,6 +282,7 @@ function Side({
   status,
   record,
   avClass,
+  online,
   end = false,
 }: {
   name: string
@@ -279,13 +290,14 @@ function Side({
   status: string
   record: string | null
   avClass: string
+  online: boolean
   end?: boolean
 }) {
   const cell = scoreCell(score, status)
   return (
     <div className={cn('flex min-w-0 flex-col gap-[5px]', end && 'text-right')}>
       <div className={cn('flex items-center gap-2', end && 'flex-row-reverse')}>
-        <TeamAvatar name={name} className={avClass} />
+        <TeamAvatar name={name} className={avClass} online={online} onlineRingClass="ring-m-b1" />
         <span className="flex-1" />
         <span
           className={cn(
@@ -305,7 +317,7 @@ function Side({
 
 /** A total-points league's week: the stored leaderboard, ranked by the ops
  *  (absence is pending, never 0). */
-function Leaderboard({ leagueId, doc, av }: { leagueId: string; doc: WeekMatchups; av: Av }) {
+function Leaderboard({ leagueId, doc, av, online }: { leagueId: string; doc: WeekMatchups; av: Av; online: Online }) {
   const rows = leaderboardRows(doc)
   return (
     <section className="overflow-hidden rounded-[16px] bg-m-b1" aria-label={LEADERBOARD_TITLE}>
@@ -314,7 +326,7 @@ function Leaderboard({ leagueId, doc, av }: { leagueId: string; doc: WeekMatchup
       {rows.map((r) => (
         <Link key={r.team_id} href={teamPageHref(leagueId, r.team_id)} className="flex h-12 items-center gap-2.5 border-t border-m-b3 px-3">
           <span className="w-5 flex-none text-[13px] font-semibold tabular-nums text-m-t3">{r.rank ?? '—'}</span>
-          <TeamAvatar name={r.name} className={av(r.team_id)} />
+          <TeamAvatar name={r.name} className={av(r.team_id)} online={online(r.team_id)} onlineRingClass="ring-m-b1" />
           <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-m-t1">{r.name}</span>
           {r.points !== null ? (
             <span className="text-[14px] font-semibold tabular-nums text-m-t1">{formatPoints(r.points)}</span>
