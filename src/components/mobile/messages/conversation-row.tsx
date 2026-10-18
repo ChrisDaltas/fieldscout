@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 
 import { MessagesAvatar } from './messages-avatar'
 import {
+  boardReadFailed,
   FORMER_MEMBER,
   senderHandle,
   leagueThreadId,
@@ -134,9 +135,12 @@ export function LeagueBoardRow({
 
   // The sender's name needs the member list; wait for it rather than
   // flashing "Former member".
-  const loading = chat.isPending || (last?.user_id != null && detail.isPending)
+  // A failed read keeps saying so while it re-reads (on mount, on joining
+  // the league channel) rather than flashing back to loading.
+  const failed = boardReadFailed(chat)
+  const loading = (chat.isPending && !failed) || (last?.user_id != null && detail.isPending)
   let preview: string
-  if (chat.isError && !chat.data) preview = BOARD_ERROR_PREVIEW
+  if (failed) preview = BOARD_ERROR_PREVIEW
   else if (!last) preview = BOARD_EMPTY_PREVIEW
   else {
     const fromMe = viewerId !== null && last.user_id === viewerId

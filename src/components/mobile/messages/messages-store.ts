@@ -21,6 +21,9 @@ interface MessagesStore {
   read: Record<string, true>
   /** Messages sent this session, per DM thread (local only, as the rail). */
   sent: Record<string, string[]>
+  /** When this session last sent in each DM thread — it puts that
+   *  conversation first in the list (gap list §3 #24). */
+  sentAt: Record<string, string>
 
   setQuery: (query: string) => void
   markRead: (threadId: string) => void
@@ -31,8 +34,13 @@ export const useMessagesStore = create<MessagesStore>()((set) => ({
   query: '',
   read: {},
   sent: {},
+  sentAt: {},
 
   setQuery: (query) => set({ query }),
   markRead: (threadId) => set((s) => (s.read[threadId] ? s : { read: { ...s.read, [threadId]: true } })),
-  addSent: (threadId, text) => set((s) => ({ sent: { ...s.sent, [threadId]: [...(s.sent[threadId] ?? []), text] } })),
+  addSent: (threadId, text) =>
+    set((s) => ({
+      sent: { ...s.sent, [threadId]: [...(s.sent[threadId] ?? []), text] },
+      sentAt: { ...s.sentAt, [threadId]: new Date().toISOString() },
+    })),
 }))

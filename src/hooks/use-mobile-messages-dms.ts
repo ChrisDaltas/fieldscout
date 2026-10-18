@@ -20,6 +20,10 @@ export interface MDmConversation {
   messages: MChatMessage[]
   preview: string | null
   time: string | null
+  /** When its latest message was sent (ISO), when known — its place in the
+   *  newest-first list (gap list §3 #24). The rail's feed carries only a
+   *  display label, so this is known only for a send made this session. */
+  lastAt: string | null
 }
 
 /**
@@ -44,6 +48,7 @@ export function dmViewModel(
   local: {
     read: Record<string, true>
     sent: Record<string, string[]>
+    sentAt: Record<string, string>
   },
 ): { conversations: MDmConversation[] } {
   const conversations = threads.map((t): MDmConversation => {
@@ -88,8 +93,10 @@ export function dmViewModel(
       unread: t.unread > 0 && !local.read[t.id],
       messages,
       preview: last ? previewText(last, false) : null,
-      // A message sent this session makes the time "now" (§5).
+      // A message sent this session makes the time "now" (§5)…
       time: sent.length > 0 ? 'now' : t.lastActive || null,
+      // …and puts the conversation first (#24).
+      lastAt: local.sentAt[t.id] ?? last?.at ?? null,
     }
   })
 
@@ -102,7 +109,11 @@ export function useMobileMessagesDms(): {
 } {
   const read = useMessagesStore((s) => s.read)
   const sent = useMessagesStore((s) => s.sent)
+  const sentAt = useMessagesStore((s) => s.sentAt)
   const enabled = featureFlags.messages
-  const model = useMemo(() => dmViewModel(enabled ? DM_THREADS : [], { read, sent }), [enabled, read, sent])
+  const model = useMemo(
+    () => dmViewModel(enabled ? DM_THREADS : [], { read, sent, sentAt }),
+    [enabled, read, sent, sentAt],
+  )
   return { enabled, ...model }
 }
