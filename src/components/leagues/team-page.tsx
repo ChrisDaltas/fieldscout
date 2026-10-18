@@ -33,7 +33,7 @@ import { Crest, LeaguePageTitle } from './league-cells'
 import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
 import { LineupEditor, type LineupOpponent, type LineupStats } from './lineup-editor'
 import { currentWeekOf, defaultLineupWeek, formatInstantWithDate, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
-import { projectedTotal } from './my-team-ops'
+import { projectedTotal, starterIdsOf } from './my-team-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
 import {
   COMMISH_CHANGED_BADGE,
@@ -248,12 +248,7 @@ function TeamPageContent({
     if (!pairing) return null
     if (!oppTeamId) return { kind: 'bye' }
     const home = pairing.home_team_id === teamId
-    const irKeys = new Set(detail.settings.roster_settings.ir_slots.map((s) => s.key))
-    const oppStarters = oppLineup.data
-      ? Object.entries(oppLineup.data.slot_map)
-          .filter(([key]) => !irKeys.has(key.split(':')[0]))
-          .map(([, pid]) => pid)
-      : null
+    const oppStarters = oppLineup.data ? starterIdsOf(oppLineup.data.slot_map, detail.settings.roster_settings.ir_slots) : null
     return {
       kind: 'opponent',
       selfName: isOwnTeam ? 'You' : teamName,

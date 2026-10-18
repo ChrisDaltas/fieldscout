@@ -7,10 +7,20 @@
  * against an instant the caller passes (a read's own `evaluated_at`).
  */
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
-import type { SlotInstance } from '@/components/leagues/lineup-editor-ops'
+import type { SlotInstance, SlotRow } from '@/components/leagues/lineup-editor-ops'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
-import { oprkOf, oprkRankedCount, oprkTone, type Tone } from '@/components/leagues/my-team-ops'
-import { teamAvatarClass } from '@/components/mobile/league/match/match-ops'
+import {
+  injuredStarters,
+  injuryTag,
+  oprkOf,
+  oprkRankedCount,
+  oprkTone,
+  projectedTotal,
+  startersOnBye,
+  type Tone,
+  type WeekGame,
+} from '@/components/leagues/my-team-ops'
+import { cardProjection, teamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import { positionFillClass } from '@/components/players/position-badge'
 
 // ---------------------------------------------------------------------------
@@ -213,6 +223,137 @@ export const TONE_TEXT: Record<Tone, string> = {
   negative: 'text-negative-strong',
   caution: 'text-warn',
   positive: 'text-positive-strong',
+}
+
+// ---------------------------------------------------------------------------
+// Lineup check (gap list §3 #11) — the desktop Lineup check's rules
+// (`injuredStarters`, `startersOnBye`) on the phone's Team tab. Display-only:
+// the projected scores are sums of stored projections (`league_player_values`)
+// shown by the Match card's rule (`cardProjection` — no partial sums), never
+// a score.
+// ---------------------------------------------------------------------------
+
+export type CheckTone = 'positive' | 'caution' | 'neutral'
+
+export interface CheckPlayer {
+  id: string
+  name: string
+  /** "Q", "O", "IR", "PUP"… (injured starters only). */
+  tag: string | null
+}
+
+export interface CheckRow {
+  id: 'starters' | 'injury' | 'bye' | 'proj'
+  label: string
+  /** The right-hand value ("9/9", "None", "2", your projected score). */
+  value: string
+  /** The opponent's projected score under yours (the projection row). */
+  value2: string | null
+  /** One plain line under the label ("vs Dev Pro Rivals"). */
+  sub: string | null
+  /** Why a value reads "–" (a failed read, a missing projection). */
+  note: string | null
+  tone: CheckTone
+  /** The starters a row names (injured / on bye). */
+  players: CheckPlayer[]
+}
+
+export type CheckOpponent =
+  | { kind: 'opponent'; name: string; /** null = still loading */ starterIds: readonly string[] | null; error: boolean }
+  | { kind: 'bye' }
+  | null
+
+export interface MobileLineupCheckInput {
+  /** The saved lineup's starting seats (the team card's arrangement). */
+  starters: readonly SlotRow[]
+  /** Seats held by a dropped-after-he-played starter — filled, not empty. */
+  kept: ReadonlyMap<string, string>
+  week: number
+  games: readonly WeekGame[]
+  projOf: (playerId: string) => number | null
+  projections: 'pending' | 'error' | 'ready'
+  /** This week's opponent; null = no matchup this week (no projection row). */
+  opponent: CheckOpponent
+}
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
+
+export function lineupCheckRows(input: MobileLineupCheckInput): CheckRow[] {
+  const { starters, kept, week, games, projOf, projections, opponent } = input
+  const players = starters.flatMap((r) => (r.player ? [r.player] : []))
+  const filled = starters.filter((r) => r.player || kept.has(r.slot.key)).length
+  const empty = starters.length - filled
+  const rows: CheckRow[] = [
+    {
+      id: 'starters',
+      label: 'Starters set',
+      value: `${filled}/${starters.length}`,
+      value2: null,
+      sub: empty > 0 ? `${empty} ${plural(empty, 'empty slot scores', 'empty slots score')} zero` : null,
+      note: null,
+      tone: empty > 0 ? 'caution' : 'positive',
+      players: [],
+    },
+  ]
+  const hurt = injuredStarters(players)
+  rows.push({
+    id: 'injury',
+    label: 'Injured',
+    value: hurt.length === 0 ? 'None' : String(hurt.length),
+    value2: null,
+    sub: null,
+    note: null,
+    tone: hurt.length === 0 ? 'positive' : 'caution',
+    players: hurt.map((p) => ({ id: p.player_id, name: p.full_name, tag: injuryTag(p.status) })),
+  })
+  const bye = startersOnBye(players, week, games)
+  rows.push({
+    id: 'bye',
+    label: 'On bye',
+    value: bye.length === 0 ? 'None' : String(bye.length),
+    value2: null,
+    sub: null,
+    note: null,
+    tone: bye.length === 0 ? 'positive' : 'caution',
+    players: bye.map((p) => ({ id: p.player_id, name: p.full_name, tag: null })),
+  })
+
+  if (opponent) {
+    const ready = projections === 'ready'
+    const myIds = starters.map((r) => r.player?.player_id ?? null)
+    const myTotal = ready ? projectedTotal(myIds, projOf) : null
+    const mine = myTotal ? cardProjection(myTotal, players.length) : null
+    if (opponent.kind === 'bye') {
+      const why = projections === 'error' ? 'Couldn’t load the projections' : null
+      rows.push({ id: 'proj', label: 'Projected score', value: mine ?? '–', value2: null, sub: 'No opponent this week', note: why, tone: 'neutral', players: [] })
+    } else {
+      const theirIds = opponent.starterIds
+      const theirTotal = ready && theirIds ? projectedTotal(theirIds, projOf) : null
+      const theirs = theirTotal && theirIds ? cardProjection(theirTotal, theirIds.length) : null
+      // Why a side reads "–" — never a silent blank (CLAUDE.md).
+      const anyProjection = [...myIds, ...(theirIds ?? [])].some((id) => id !== null && projOf(id) !== null)
+      const why =
+        projections === 'error'
+          ? 'Couldn’t load the projections'
+          : opponent.error
+            ? 'Couldn’t load their lineup'
+            : !ready || !theirIds
+              ? null
+              : theirIds.length === 0
+                ? 'Their lineup isn’t set yet'
+                : (mine === null && players.length > 0) || theirs === null
+                ? anyProjection
+                  ? 'Not every starter has a projection yet'
+                  : 'No projections for this week yet'
+                : null
+      // Ahead (or level) reads green, behind reads orange — only when both
+      // sides have a whole projection to compare.
+      const tone: CheckTone =
+        mine !== null && theirs !== null && myTotal && theirTotal ? (myTotal.total >= theirTotal.total ? 'positive' : 'caution') : 'neutral'
+      rows.push({ id: 'proj', label: 'Projected score', value: mine ?? '–', value2: theirs ?? '–', sub: `vs ${opponent.name}`, note: why, tone, players: [] })
+    }
+  }
+  return rows
 }
 
 // ---------------------------------------------------------------------------
