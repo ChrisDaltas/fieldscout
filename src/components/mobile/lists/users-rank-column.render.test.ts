@@ -40,6 +40,7 @@ vi.mock('@/components/mobile/ui/mobile-sheet', () => ({
 }))
 
 import type { ListPlayerWithPlayer, ListWithDetails, ListWithTags } from '@/hooks/use-lists'
+import { usersSourceQuery, type HubRow } from '@/hooks/use-mobile-rankings-sources'
 
 import { AddStatsSheet } from './add-stats-sheet'
 import { MobileLists } from './mobile-lists'
@@ -91,14 +92,22 @@ const DETAIL = {
   players: [entry(1, "Ja'Marr Chase", 'CIN'), entry(2, 'Tee Higgins', 'CIN')],
 } as unknown as ListWithDetails
 
-const client = (users?: Map<string, number>) => {
+/** The Rankings hub's Users rows at WR (the read the column shares): J.
+ *  Chase is third; nobody ranked T. Higgins. */
+const consensusRow = (id: string, weightedRank: number): HubRow => ({
+  player: { id, full_name: `Player ${id}`, position: 'WR', team: 'MIN', headshot_url: null, bye_week: 6 },
+  score: -weightedRank,
+})
+const WR_USERS = [consensusRow('p8', 1.5), consensusRow('p9', 1.5), consensusRow('p1', 2.5)]
+
+const client = (users?: HubRow[]) => {
   const qc = new QueryClient()
   qc.setQueryData(['lists', 'collection', 1, 50], { lists: SUMMARY, pagination: { page: 1, pageSize: 50, total: 1, hasMore: false } })
   qc.setQueryData(['folders'], { folders: [] })
   qc.setQueryData(['lists', 'detail', 'l1'], DETAIL)
   qc.setQueryData(['mobile-lists', 'video-flags', 'l1'], new Set<string>())
   qc.setQueryData(['mobile-lists', 'latest-week', 2026], 6)
-  if (users) qc.setQueryData(['mobile-lists', 'users-ranks', 'p1,p2'], users)
+  if (users) qc.setQueryData(usersSourceQuery('WR').queryKey, users)
   return qc
 }
 
@@ -107,7 +116,7 @@ const html = (qc: QueryClient, node: ReturnType<typeof createElement>) =>
     .replace(/&#x27;/g, "'")
     .replace(/&amp;/g, '&')
 
-const listView = (users?: Map<string, number>) => {
+const listView = (users?: HubRow[]) => {
   search = new URLSearchParams('list=l1')
   return html(client(users), createElement(MobileLists))
 }
@@ -131,18 +140,19 @@ describe('List view: the Users rank column', () => {
   it('with community rankings on: a Users column of each player’s rank among users', () => {
     flags.consensus = true
     cols = ['users', 'adp']
-    const out = listView(new Map([['p1', 3]]))
+    const out = listView(WR_USERS)
     const names = columnNames(out)
     expect(names).toMatch(header('Users'))
     expect(names).toMatch(header('ADP'))
     expect(names.indexOf('>Users<')).toBeLessThan(names.indexOf('>ADP<'))
-    // J. Chase is WR3 among users; nobody ranked T. Higgins.
+    // J. Chase is WR3 among users (the hub's numbering: the two tied ahead
+    // of him are 1 and 2); nobody ranked T. Higgins.
     expect(out.match(cell('3'))).toHaveLength(1)
     expect(out).toMatch(/text-m-t5">–<\/div>/)
     expect(out.match(cell('12.4'))).toHaveLength(2)
     // Season-long with no scoring: Users alone brings no scoring control.
     cols = ['users']
-    expect(listView(new Map([['p1', 3]]))).not.toContain('aria-label="Scoring:')
+    expect(listView(WR_USERS)).not.toContain('aria-label="Scoring:')
   })
 
   it('blank (never "–") until the users’ read lands', () => {
@@ -156,7 +166,7 @@ describe('List view: the Users rank column', () => {
 
   it('with community rankings off: a chosen Users column isn’t drawn', () => {
     cols = ['users', 'adp']
-    const out = listView(new Map([['p1', 3]]))
+    const out = listView(WR_USERS)
     const names = columnNames(out)
     expect(names).toMatch(header('ADP'))
     expect(names).not.toContain('>Users<')

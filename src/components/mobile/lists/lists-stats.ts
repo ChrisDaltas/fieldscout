@@ -22,7 +22,8 @@ import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/ag
  * - Pos rk, the player's rank at his position by season points (the editor's
  *   "QB3" rule) over the Add players pool — `use-mobile-lists-pool`;
  * - Users, the player's rank at his position in the users' cred-weighted
- *   consensus (`consensus_rankings`, Rule 9) — `use-mobile-lists-users-ranks`.
+ *   consensus (`consensus_rankings`, Rule 9), read and numbered as the
+ *   Rankings hub's Users tab does — `use-mobile-lists-users-ranks`.
  *   It is offered only while community rankings are switched on (the
  *   `consensus` switch, gap list §3 #9); off, its chip isn't in Add stats and
  *   a chosen column isn't drawn.

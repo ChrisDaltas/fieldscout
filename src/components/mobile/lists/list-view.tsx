@@ -475,8 +475,12 @@ function PlayersTable({
     scoring,
   )
   const ranks = pool.data ?? null
-  // The users' consensus rank (gap list §3 #9), only while that column shows.
-  const users = useMobileListsUsersRanks(ids, needsSource(stats, 'users'))
+  // The users' consensus rank (gap list §3 #9), only while that column shows:
+  // the Rankings hub's Users read for each position on the list.
+  const users = useMobileListsUsersRanks(
+    list.players.map((entry) => entry.player.position),
+    needsSource(stats, 'users'),
+  )
 
   // A failed read is said out loud — its cells stay blank, never "–" (CLAUDE.md).
   const failed = [latest, frames, usage, pool, users].filter((query) => query.isError)
