@@ -52,16 +52,28 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'List not found' }, { status: 404 })
   }
 
-  // Per-viewer is_favorited from the junction; defaults to false for guests.
+  // Per-viewer is_favorited / is_liked from their junctions; false for guests.
   let viewerFavorited = false
+  let viewerLiked: boolean | null = false
   if (viewer) {
-    const { data: favRow } = await supabase
-      .from('list_favorites')
-      .select('user_id')
-      .eq('user_id', viewer.id)
-      .eq('list_id', id)
-      .maybeSingle()
+    const [{ data: favRow }, likeRes] = await Promise.all([
+      supabase
+        .from('list_favorites')
+        .select('user_id')
+        .eq('user_id', viewer.id)
+        .eq('list_id', id)
+        .maybeSingle(),
+      supabase
+        .from('list_likes')
+        .select('list_id')
+        .eq('user_id', viewer.id)
+        .eq('list_id', id)
+        .maybeSingle(),
+    ])
     viewerFavorited = Boolean(favRow)
+    // A failed read is "not known" (null), never a quiet "not liked": the
+    // phone's Like then waits for the toggle's answer instead of guessing.
+    viewerLiked = likeRes.error ? null : Boolean(likeRes.data)
   }
 
   // Attached links ride along with the list rather than costing a second
@@ -147,6 +159,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     // Delete action flicker/disappear while auth was still resolving).
     is_owner: Boolean(viewer && viewer.id === list.owner_id),
     is_favorited: viewerFavorited,
+    is_liked: viewerLiked,
     players: enrichedPlayers,
     tags: flatTags,
     links: linksResult.links,

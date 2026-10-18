@@ -98,16 +98,21 @@ export function ShelfHeader({
   onSeeAll,
   seeAllHref,
   className,
+  id,
 }: {
   title: string
   onSeeAll?: () => void
   seeAllHref?: string
   className?: string
+  /** The heading's id, for a shelf section that's labelled by it. */
+  id?: string
 }) {
   const seeAll = 'text-[13px] font-semibold text-accent'
   return (
     <div className={cn('flex items-baseline justify-between', className)}>
-      <h2 className="whitespace-nowrap text-[18px] font-bold tracking-[-0.02em]">{title}</h2>
+      <h2 id={id} className="whitespace-nowrap text-[18px] font-bold tracking-[-0.02em]">
+        {title}
+      </h2>
       {seeAllHref ? (
         <Link href={seeAllHref} className={seeAll}>
           See all

@@ -42,6 +42,8 @@ import {
   sortPopular,
   topLine,
   topicAwaitingServer,
+  TRENDING_TAGS_SIZE,
+  trendingTagTopics,
   updatedAgo,
 } from './community-ops'
 
@@ -599,5 +601,32 @@ describe('the Latest page (Chris, 2026-10-16)', () => {
 
   it('lives under Community', () => {
     expect(LATEST_HREF).toBe('/app/explore/latest')
+  })
+})
+
+describe('For you’s Trending tags shelf (gap list §3 #26)', () => {
+  const tag = (id: string, name = id) => ({ id, name, slug: id })
+  const trending = [tag('t-sleep', 'Sleepers'), tag('t-busts', 'Busts'), tag('t-rook', 'Rookies'), tag('t-dyn', 'Dynasty')]
+
+  it('offers only tags that a list showing on Community carries — a tap never finds nothing', () => {
+    const shown = [item({ id: 'a', tags: [tag('t-rook', 'Rookies')] }), item({ id: 'b', tags: [tag('t-sleep', 'Sleepers')] })]
+    expect(trendingTagTopics(trending, shown).map((t) => t.label)).toEqual(['Sleepers', 'Rookies'])
+  })
+
+  it('keeps the trending order (most used first), not the order lists carry them', () => {
+    const shown = [item({ id: 'a', tags: [tag('t-dyn', 'Dynasty'), tag('t-busts', 'Busts'), tag('t-sleep', 'Sleepers')] })]
+    expect(trendingTagTopics(trending, shown).map((t) => t.id)).toEqual(['t-sleep', 't-busts', 't-dyn'])
+  })
+
+  it('is topics Community filters by (kind "tag"), at most the shelf’s size', () => {
+    const many = Array.from({ length: TRENDING_TAGS_SIZE + 3 }, (_, i) => tag(`t${i}`, `Tag ${i}`))
+    const shown = [item({ id: 'a', tags: many })]
+    const topics = trendingTagTopics(many, shown)
+    expect(topics).toHaveLength(TRENDING_TAGS_SIZE)
+    expect(topics[0]).toEqual({ kind: 'tag', id: 't0', label: 'Tag 0' })
+  })
+
+  it('none carried: an empty shelf (not drawn)', () => {
+    expect(trendingTagTopics(trending, [item({ id: 'a' })])).toEqual([])
   })
 })
