@@ -27,6 +27,7 @@ import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
+import { NO_MATCHUPS_COPY, PLAYOFF_ROUND_PENDING_COPY } from '@/components/leagues/matchup-view-ops'
 import type { LiveScoringFlags } from '@/lib/sync/ingest-flags'
 
 import { ActivitySubscreenRoute } from './activity-subscreens'
@@ -339,6 +340,46 @@ describe('League › Matchups — the week picker', () => {
   it('a kept week the ladder does not have falls back to the current week', () => {
     kept.week = 9
     expect(strip(render(tab()))).toContain('data-week="2"')
+  })
+
+  // The empty copy reads the week shown, not the league's state (review fix):
+  // the regular season is 3 weeks here, so week 4 is a playoff week.
+  const LADDER_TO_4: LeagueSchedule = {
+    ...SCHEDULE,
+    weeks: [
+      ...SCHEDULE.weeks,
+      { id: 'w3', season: 2099, week: 3, status: 'upcoming', finalized_at: null, median_score: null },
+      { id: 'w4', season: 2099, week: 4, status: 'upcoming', finalized_at: null, median_score: null },
+    ],
+  }
+  const emptyWeek = (week: number): WeekMatchups => ({
+    ...WEEK,
+    week,
+    league_week: { status: 'upcoming', median_score: null, finalized_at: null },
+    matchups: [],
+  })
+
+  it('an in-season league stepped to a playoff week with no pairings yet says the playoff round comes later', () => {
+    kept.week = 4
+    const html = render(tab(), {}, (qc) => {
+      qc.setQueryData(scheduleKeys.all(LEAGUE), LADDER_TO_4)
+      qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 4), emptyWeek(4))
+    })
+    expect(strip(html)).toContain('data-week="4"')
+    expect(html).toContain(PLAYOFF_ROUND_PENDING_COPY)
+    expect(html).not.toContain(NO_MATCHUPS_COPY)
+    expect(html).not.toContain('data-median-card')
+  })
+
+  it('a regular-season week with no pairings says none are on record', () => {
+    kept.week = 3
+    const html = render(tab(), {}, (qc) => {
+      qc.setQueryData(scheduleKeys.all(LEAGUE), LADDER_TO_4)
+      qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 3), emptyWeek(3))
+    })
+    expect(strip(html)).toContain('data-week="3"')
+    expect(html).toContain(NO_MATCHUPS_COPY)
+    expect(html).not.toContain(PLAYOFF_ROUND_PENDING_COPY)
   })
 
   it('no ladder yet: no picker', () => {

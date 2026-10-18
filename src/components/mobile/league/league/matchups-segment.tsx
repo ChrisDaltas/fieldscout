@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { useMemo } from 'react'
 
 import { teamPageHref } from '@/components/leagues/league-cells'
-import { NO_LADDER_COPY, NO_ROWS_COPY, PLAYOFF_NO_ROWS_COPY, heroWeek, scoringLive } from '@/components/leagues/league-home-season-ops'
+import { NO_LADDER_COPY, heroWeek, scoringLive } from '@/components/leagues/league-home-season-ops'
 import { formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
 import {
   LEADERBOARD_TITLE,
   OVERRIDDEN_TITLE,
+  emptyWeekCopy,
   formatPoints,
   leaderboardRows,
   scoreCell,
@@ -156,8 +157,9 @@ function SeasonMatchups({
         <WeekCards
           leagueId={leagueId}
           doc={matchups.data}
+          weeks={schedule.data.weeks}
+          regularSeasonWeeks={detail.settings.regular_season_weeks}
           medianGame={detail.settings.median_game}
-          playoffs={state === 'playoffs'}
           myTeamId={myTeamId}
           records={records}
           av={av}
@@ -218,8 +220,9 @@ type Online = (id: string | null) => boolean
 function WeekCards({
   leagueId,
   doc,
+  weeks,
+  regularSeasonWeeks,
   medianGame,
-  playoffs,
   myTeamId,
   records,
   av,
@@ -227,8 +230,9 @@ function WeekCards({
 }: {
   leagueId: string
   doc: WeekMatchups
+  weeks: readonly Pick<ScheduleWeek, 'week'>[]
+  regularSeasonWeeks: number
   medianGame: boolean
-  playoffs: boolean
   myTeamId: string | null
   records: ReadonlyMap<string, string>
   av: Av
@@ -236,7 +240,10 @@ function WeekCards({
 }) {
   if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} av={av} online={online} />
   const { primary } = splitRows(doc.matchups)
-  if (primary.length === 0) return <CenteredNote message={playoffs ? PLAYOFF_NO_ROWS_COPY : NO_ROWS_COPY} />
+  // The empty copy reads the week SHOWN, not the league's state: a playoff
+  // week stepped to in the regular season says its pairings come later
+  // (the Match tab's and the desktop matchup page's own helper).
+  if (primary.length === 0) return <CenteredNote message={emptyWeekCopy(doc.week, weeks, regularSeasonWeeks)} />
   const mine = (r: MatchupRow) => myTeamId !== null && (r.home_team_id === myTeamId || r.away_team_id === myTeamId)
   const rows = [...primary].sort((a, b) => Number(mine(b)) - Number(mine(a)))
   const regular = primary.every((r) => r.round_type !== 'playoff')
