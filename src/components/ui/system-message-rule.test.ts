@@ -20,10 +20,19 @@ import { describe, expect, it } from 'vitest'
  *    each is a small indicator (a live dot, a count badge, a logo glyph).
  *    The count is exact on purpose: a new red fill in an allowlisted file
  *    fails, and so does a removed one, so the list cannot go stale.
- * 2. **No pill-ended system message.** The toast container and every
- *    `role="alert"` / `role="status"` container must not use `rounded-pill` /
- *    `rounded-full`; the toast uses `rounded-message`. Buttons and chips
- *    INSIDE a message stay pills — that is their shape, not the message's.
+ * 2. **The red's raw values live only in its tokens.** `#FF0028`, its rgb
+ *    triple `255 0 40`, its hsl `351 100% 50%`, `var(--destructive)` and a
+ *    `theme('colors.negative.strong')` lookup appear (outside comments) only
+ *    where the tokens are defined — so a new alias token (`--m-red: 255 0 40`
+ *    used as `bg-m-red`) or a string constant (`const RED = '#FF0028'` used in
+ *    a `style`) cannot carry the red past pin 1's name-based patterns.
+ * 3. **No pill-ended system message.** The toast container and every element
+ *    whose `role` is — or can be — `alert` / `status` (a literal
+ *    `role="alert"` or an expression like `role={err ? 'alert' : undefined}`)
+ *    must not use `rounded-pill` / `rounded-full`; the toast uses
+ *    `rounded-message`. Buttons and chips INSIDE a message stay pills — that
+ *    is their shape, not the message's. A message with no role at all is not
+ *    seen here; a reviewer catches those (CLAUDE.md names what to look for).
  */
 
 const ROOT = process.cwd()
@@ -57,13 +66,18 @@ const SMALL_INDICATORS: Record<string, { count: number; why: string }> = {
     count: 1,
     why: '6px live dot beside the game clock',
   },
+  // The YouTube play mark is a wordless logo glyph, not a surface. Two of the
+  // three are larger than the other indicators here (32×22, 40×28 — over a
+  // video thumbnail); whether they stay red is Chris's call (asked
+  // 2026-10-18). If not: a white play glyph on a `bg-black/75` scrim, or the
+  // mark shrunk to ≤20px.
   'src/components/mobile/lists/lists-parts.tsx': {
     count: 2,
-    why: 'the YouTube play mark — a logo glyph with no text (over a video thumbnail, and the 20×14 inline badge)',
+    why: 'the YouTube play mark — a wordless logo glyph: 32×22 over a video thumbnail, and the 20×14 inline badge',
   },
   'src/components/mobile/community/community-detail.tsx': {
     count: 1,
-    why: 'the YouTube play mark over a video thumbnail — a logo glyph with no text',
+    why: 'the YouTube play mark — a wordless logo glyph, 40×28 over a video thumbnail',
   },
 }
 
@@ -96,29 +110,86 @@ function sourceFiles(dir: string): string[] {
 /** `src/…` path with forward slashes — the allowlist's keys. */
 const rel = (file: string) => path.relative(ROOT, file).split(path.sep).join('/')
 
-/** True when the match sits on a comment line — prose may name the classes. */
-function inComment(source: string, index: number): boolean {
-  const line = source.slice(source.lastIndexOf('\n', index) + 1, index)
-  return /^\s*(\/\/|\*|\/\*|\{\/\*)/.test(line)
+/**
+ * Where a source's block comments are, as [start, end) ranges. An opener is
+ * `/*` followed by whitespace, `*` or `!`, as a real comment always is — so a
+ * glob's `/*.{ts,tsx}` opens nothing, and its `/**\/` closes at once.
+ */
+function blockComments(source: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const opener = /\/\*(?=[\s*!])/g
+  for (let m = opener.exec(source); m; m = opener.exec(source)) {
+    const close = source.indexOf('*/', m.index + 2)
+    const end = close === -1 ? source.length : close + 2
+    ranges.push([m.index, end])
+    opener.lastIndex = end
+  }
+  return ranges
 }
 
-/** Every bright-red fill in a source, as "line N: match". */
-function redFillsIn(source: string): string[] {
+/**
+ * True when the match is prose, not code — prose may name the classes and the
+ * red. Covers comment lines, a trailing `// …` (not a URL's `://`) and the
+ * inside of any block comment, including its continuation lines and a trailing
+ * `/* #FF0028 *\/` after a declaration.
+ */
+function inComment(source: string, index: number, ranges = blockComments(source)): boolean {
+  const line = source.slice(source.lastIndexOf('\n', index - 1) + 1, index)
+  if (/^\s*(\/\/|\*|\/\*|\{\/\*)/.test(line)) return true
+  if (/(?<![:'"(])\/\//.test(line)) return true
+  return ranges.some(([start, end]) => index >= start && index < end)
+}
+
+const lineOf = (source: string, index: number) => source.slice(0, index).split('\n').length
+
+/** Every match of `patterns` outside comments, as "line N: match". */
+function codeHits(source: string, patterns: RegExp[]): string[] {
+  const ranges = blockComments(source)
   const hits = new Map<number, string>()
-  for (const pattern of PATTERNS) {
+  for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) {
-      if (inComment(source, match.index)) continue
+      if (inComment(source, match.index, ranges)) continue
       // One hit per position, whichever pattern saw it first.
-      if (!hits.has(match.index)) {
-        const line = source.slice(0, match.index).split('\n').length
-        hits.set(match.index, `line ${line}: ${match[0]}`)
-      }
+      if (!hits.has(match.index)) hits.set(match.index, `line ${lineOf(source, match.index)}: ${match[0]}`)
     }
   }
   return [...hits.entries()].sort((a, b) => a[0] - b[0]).map(([, hit]) => hit)
 }
 
+/** Every bright-red fill in a source, as "line N: match". */
+const redFillsIn = (source: string) => codeHits(source, PATTERNS)
+
+/**
+ * The bright red's raw values, however spelled: the hex (with or without an
+ * alpha pair), the rgb triple, the hsl, its CSS variable, and a Tailwind
+ * `theme()` / resolved-config lookup of either token. `--destructive-foreground`
+ * is the white "text on red" var, not the red.
+ */
+const RED_VALUE =
+  /#ff0028|(?<![\d.])255[,_\s]+0[,_\s]+40(?![\d.])|(?<![\d.])351(?:deg)?[,_\s]+100%|var\(--destructive\)|colors\.(?:negative\.strong|destructive)(?![\w-])/gi
+
+/** Every raw value of the bright red in a source, as "line N: match". */
+const redValuesIn = (source: string) => codeHits(source, [RED_VALUE])
+
+/**
+ * The only places the red's raw value may be written: the token definitions.
+ * Everything else names a token (`text-negative-strong`, `text-destructive`,
+ * `shadow-ring-negative`), which pin 1 can see. Exact counts, like
+ * SMALL_INDICATORS.
+ */
+const RED_VALUE_HOMES: Record<string, { count: number; why: string }> = {
+  'tailwind.config.ts': {
+    count: 3,
+    why: '`negative.strong`, the `ring-negative` shadow, and `destructive.DEFAULT` (its var)',
+  },
+  'src/app/globals.css': {
+    count: 1,
+    why: 'the `--destructive` definition',
+  },
+}
+
 const files = sourceFiles(SRC)
+const CONFIG = path.join(ROOT, 'tailwind.config.ts')
 
 describe('bright red is for text and small icons, never a background', () => {
   it('finds the source files to check', () => {
@@ -153,8 +224,60 @@ describe('bright red is for text and small icons, never a background', () => {
       'className="bg-destructive-foreground"',
       '// bg-negative-strong in a comment',
       ' * bg-negative-strong in a block comment',
+      '/* a block comment\n   whose next line names bg-negative-strong */',
+      'const x = 1 // bg-negative-strong in a trailing comment',
     ]
     for (const sample of allowed) expect(redFillsIn(sample), sample).toEqual([])
+  })
+
+  it('the red-value pattern catches an alias token or a constant (self-check)', () => {
+    // Each of these dodges the name-based fill patterns above on its own.
+    const samples = [
+      "const RED = '#FF0028'", // then style={{ background: RED }}
+      "const RED = '#ff002880'",
+      '--m-red: 255 0 40;', // then bg-m-red
+      "alert: 'rgb(255, 0, 40)',",
+      "alarm: 'hsl(var(--destructive))',", // then bg-alarm
+      '--alarm: 351 100% 50%;',
+      "background: theme('colors.negative.strong');",
+      'const c = fullConfig.theme.colors.destructive',
+    ]
+    for (const sample of samples) expect(redValuesIn(sample), sample).toHaveLength(1)
+
+    const allowed = [
+      "className='text-negative-strong'",
+      "foreground: 'hsl(var(--destructive-foreground))',",
+      '--m-tr: 200 0 28;',
+      '--x: 255 0 400;',
+      '--shadow: 0 0 0 1px rgb(255 0 4);',
+      '--destructive-foreground: 0 0% 100%; /* white text on #FF0028 */',
+      "content: ['./src/**/*.{ts,tsx}'], // a glob is not a comment opener",
+    ]
+    for (const sample of allowed) expect(redValuesIn(sample), sample).toEqual([])
+    // ...and a glob's `/*` does not hide the code after it.
+    expect(redValuesIn("content: ['./src/**/*.tsx'],\nstrong: '#FF0028',")).toHaveLength(1)
+  })
+
+  for (const file of [...files, CONFIG]) {
+    const key = rel(file)
+    const home = RED_VALUE_HOMES[key]
+    const hits = redValuesIn(readFileSync(file, 'utf8'))
+    if (!home && hits.length === 0) continue
+    it(`${key} — the bright red's raw value only where a token defines it`, () => {
+      expect(
+        hits,
+        `${key} writes the bright red's raw value (${hits.join('; ')}). Outside its token ` +
+          'definitions that is an alias or a constant the fill guard cannot see. Name the token ' +
+          'instead (text-negative-strong / text-destructive / shadow-ring-negative)' +
+          (home ? `; this file's definitions are: ${home.why}.` : '.'),
+      ).toHaveLength(home ? home.count : 0)
+    })
+  }
+
+  it('every red-value home still exists', () => {
+    for (const key of Object.keys(RED_VALUE_HOMES)) {
+      expect(() => statSync(path.join(ROOT, key)), key).not.toThrow()
+    }
   })
 
   for (const file of files) {
@@ -178,8 +301,8 @@ describe('bright red is for text and small icons, never a background', () => {
       expect(
         hits,
         `${key} fills a surface with the bright red (${hits.join('; ')}). That red is for text ` +
-          'and small icons: give the surface a soft tint (bg-negative-soft / bg-negative on desktop, ' +
-          'bg-m-gr on the phone) or the normal surface, and carry the red with text-negative-strong / ' +
+          'and small icons: give the surface a soft tint (bg-negative-soft on desktop, bg-m-gr on the ' +
+          'phone) or the normal surface, and carry the red with text-negative-strong / ' +
           'text-m-tr or a small red icon. If it is genuinely a tiny dot, count badge or icon, add the ' +
           'file to SMALL_INDICATORS with a reason.',
       ).toEqual([])
@@ -197,6 +320,61 @@ describe('bright red is for text and small icons, never a background', () => {
 // ---------------------------------------------------------------------------
 
 const PILL = /(?<![\w-])(?:[\w-]+:)*rounded-(?:pill|full)(?![\w-])/
+
+/** A message role: `role="alert"`, or an expression that can yield one. */
+const MESSAGE_ROLE = /\brole=(?:["'](?:alert|status)["']|\{[^}]*?["'`](?:alert|status)["'`][^}]*\})/
+
+/** A JSX opening tag's `<Name` — not a generic (`useState<T>`) or a `<` comparison. */
+const TAG_OPEN = /(?<![\w$)\]])<([A-Za-z][\w.]*)(?=[\s/>])/g
+
+/**
+ * Index of the `>` that closes the opening tag whose attributes start at
+ * `from`, or -1. Brace- and quote-aware, so `onClick={() => …}`,
+ * `className="[&>svg]:…"` and nested `{cn(…)}` don't end the tag early.
+ */
+function tagEnd(source: string, from: number): number {
+  const stack: string[] = []
+  for (let i = from; i < source.length; i++) {
+    const c = source[i]
+    const top = stack[stack.length - 1]
+    if (top === '"' || top === "'" || top === '`') {
+      if (c === '\\') i++
+      else if (c === top) stack.pop()
+      else if (top === '`' && c === '$' && source[i + 1] === '{') {
+        stack.push('{')
+        i++
+      }
+      continue
+    }
+    if (top === '{' && c === '/' && (source[i + 1] === '*' || source[i + 1] === '/')) {
+      const close = source[i + 1] === '*' ? source.indexOf('*/', i + 2) + 1 : source.indexOf('\n', i)
+      if (close <= 0) return -1
+      i = close
+      continue
+    }
+    if (c === '"' || c === "'" || c === '`') stack.push(c)
+    else if (c === '{') stack.push('{')
+    else if (c === '}') stack.pop()
+    else if (stack.length === 0 && c === '>') return i
+    else if (stack.length === 0 && c === '<') return -1 // not a tag after all
+  }
+  return -1
+}
+
+/** Every pill-ended alert/status container in a source, as "line N". */
+function pillMessagesIn(source: string): string[] {
+  const ranges = blockComments(source)
+  const offenders: string[] = []
+  for (const match of source.matchAll(TAG_OPEN)) {
+    const end = tagEnd(source, match.index + match[0].length)
+    if (end === -1) continue
+    const tag = source.slice(match.index, end + 1)
+    if (!MESSAGE_ROLE.test(tag) || /animate-spin/.test(tag)) continue
+    if (inComment(source, match.index, ranges)) continue
+    if (PILL.test(tag)) offenders.push(`line ${lineOf(source, match.index)}`)
+  }
+  return offenders
+}
 
 describe('system messages are rounded rectangles, never pill-ended', () => {
   const toast = readFileSync(path.join(SRC, 'components/ui/toast.tsx'), 'utf8')
@@ -223,22 +401,44 @@ describe('system messages are rounded rectangles, never pill-ended', () => {
     expect(alert.slice(0, 900)).not.toContain('mob:hidden')
   })
 
-  // Every role="alert" / role="status" container — banners, inline notices,
-  // refusal boxes, the layout prompt. Spinners (animate-spin) are not messages.
+  it('the message-tag scan sees every way a message is written (self-check)', () => {
+    const pills = [
+      '<div role="alert" className="rounded-pill px-3">',
+      // A conditional role — InlineIssue, the phone Notice, refusal boxes.
+      "<div role={err ? 'alert' : undefined} className=\"rounded-pill px-3\">",
+      "<p role={tone === 'error' ? 'alert' : 'status'} className={cn('px-3', 'rounded-full')}>",
+      // A `>` before the className must not end the tag early.
+      '<div onClick={() => x()} role="alert" className="rounded-pill px-3">',
+      '<div role="status" className="[&>svg]:size-3 rounded-pill px-3">',
+      '<Notice\n  role="status"\n  className={cn(\n    "flex",\n    wide && "md:rounded-full",\n  )}\n>',
+    ]
+    for (const sample of pills) expect(pillMessagesIn(sample), sample).toHaveLength(1)
+
+    const fine = [
+      '<div role="alert" className="rounded-message px-3">',
+      '<div role="status" className="rounded-xl">',
+      // A pill INSIDE a message is a control, not the message.
+      '<div role="alert" className="rounded-message"><button className="rounded-pill">Undo</button></div>',
+      '<span role="status" className="animate-spin rounded-full" />', // a spinner
+      '<button className="rounded-pill" onClick={() => go()}>Save</button>', // no role
+      "<div role={open ? 'dialog' : undefined} className=\"rounded-full\">", // not a message role
+      '{/* <div role="alert" className="rounded-pill"> */}',
+      'const n = items.length<limit ? 1 : 2',
+    ]
+    for (const sample of fine) expect(pillMessagesIn(sample), sample).toEqual([])
+  })
+
+  // Every element whose role is (or can be) alert / status — banners, inline
+  // notices, refusal boxes, the layout prompt. Spinners are not messages.
   for (const file of files.filter((f) => f.endsWith('.tsx'))) {
     const source = readFileSync(file, 'utf8')
-    if (!/role="(?:alert|status)"/.test(source)) continue
-    const offenders: string[] = []
-    for (const match of source.matchAll(/<[A-Za-z][\w.]*\b[^<>]*?role="(?:alert|status)"[^<>]*?>/g)) {
-      const tag = match[0]
-      if (/animate-spin/.test(tag)) continue
-      if (PILL.test(tag)) offenders.push(`line ${source.slice(0, match.index).split('\n').length}`)
-    }
+    if (!/\brole=/.test(source)) continue
+    const offenders = pillMessagesIn(source)
     if (offenders.length === 0) continue
     it(`${rel(file)} — its system messages are not pill-ended`, () => {
       expect(
         offenders,
-        `${rel(file)}: a role="alert"/"status" container is rounded-pill/rounded-full ` +
+        `${rel(file)}: an alert/status container is rounded-pill/rounded-full ` +
           `(${offenders.join(', ')}). System messages are rounded rectangles — use rounded-message.`,
       ).toEqual([])
     })

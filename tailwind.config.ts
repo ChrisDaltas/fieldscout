@@ -109,7 +109,8 @@ const config: Config = {
         //   is `bg-negative-strong`. Pinned by ui/system-message-rule.test.ts.
         // - soft = the background-safe error surface (inline notices, refusal
         //   boxes, destructive hover washes) under `text-negative-strong`.
-        // - DEFAULT = the stronger background-safe tint (ink text).
+        // - DEFAULT = the stronger background-safe tint — INK text only; the
+        //   bright red on it is 2.95:1.
         // The phone's equivalents switch for its dark mode: `m-gr` (tint) and
         // `m-tr` (red text) below.
         negative: { DEFAULT: '#FFD3D9', soft: '#FFF0F2', strong: '#FF0028' },
@@ -333,11 +334,12 @@ const config: Config = {
         '2xl': '14px',
         '3xl': '18px',
         // Every system message — toast, banner, inline notice/alert, refusal
-        // box — is a rounded RECTANGLE at this radius, desktop and phone,
-        // however short it is (Chris, 2026-10-18: "we don't want the ends of
-        // a system message … being rounded on the ends"). Never `rounded-pill`
-        // / `rounded-full` for a message; buttons and chips inside one stay
-        // pills. Pinned by ui/system-message-rule.test.ts.
+        // box — is a rounded RECTANGLE, desktop and phone, however short it
+        // is (Chris, 2026-10-18: "we don't want the ends of a system message
+        // … being rounded on the ends"). New or restyled messages use this
+        // radius; older ones on another rectangle radius already comply.
+        // Never `rounded-pill` / `rounded-full` for a message; buttons and
+        // chips inside one stay pills. Pinned by ui/system-message-rule.test.ts.
         message: '12px',
         pill: '999px',
         // v13 look — soft rounded geometry (see colors.fs).
