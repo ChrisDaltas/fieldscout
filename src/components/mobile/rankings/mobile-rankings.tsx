@@ -210,12 +210,19 @@ export function MobileRankings({
   useEffect(() => {
     if (!urlEdit && !stuck && leaving) setLeaving(false)
   }, [urlEdit, stuck, leaving])
-  // Once the linked editor has closed for good (OS Back to the Mine tab),
-  // the next editor is one the hub opens — its Back is a plain pop. (A dirty
-  // editor put back on screen by the guard is still the linked one.)
+  // Once the linked editor has closed for good, the next editor is one the
+  // hub opens — its Back is a plain pop. (A dirty editor put back on screen
+  // by the guard is still the linked one.) Browser / OS Back from a clean
+  // linked editor lands on the Mine entry we put under it, which is not
+  // where you came from: carry on back to the screen that linked here, as
+  // the editor's own Back does (gap list #27). Our own close (`leaving`)
+  // has already gone where it meant to.
   useEffect(() => {
-    if (!urlEdit && !stuck) linkRooted.current = false
-  }, [urlEdit, stuck])
+    if (urlEdit || stuck) return
+    const linked = linkRooted.current
+    linkRooted.current = false
+    if (linked && !leaving && appEntryBehind()) window.history.back()
+  }, [urlEdit, stuck, leaving])
 
   const nav: RankingsNav = {
     state,

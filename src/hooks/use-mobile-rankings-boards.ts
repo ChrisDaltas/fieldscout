@@ -13,7 +13,7 @@ import { firstEmbed } from '@/utils/supabase-embed'
 /**
  * The signed-in user's ranking boards for the mobile My rankings screen:
  * the season board (the big board) and every weekly board that already
- * exists this season, each with a light player list (order, player card
+ * exists this season and isn't deleted, each with a light player list (order, player card
  * fields and the last time each row was saved).
  *
  * Read-only on purpose: the weekly-board GET route CREATES a board on first
@@ -108,19 +108,27 @@ export function useMyRankingBoards(enabled = true) {
       if (weeklyRes.error) throw new Error(weeklyRes.error.message)
 
       const seasonId = seasonRes.data?.id ?? null
-      const weekly = weeklyRes.data ?? []
-      const listIds = [...(seasonId ? [seasonId] : []), ...weekly.map((w) => w.list_id)]
-      if (listIds.length === 0) return { season: null, weeks: [] }
+      const allWeekly = weeklyRes.data ?? []
+      const boardIds = [...(seasonId ? [seasonId] : []), ...allWeekly.map((w) => w.list_id)]
+      if (boardIds.length === 0) return { season: null, weeks: [] }
 
-      // The boards' saved scorings (`*`: see the file comment).
-      const listsRes = await supabase.from('lists').select('*').in('id', listIds)
+      // The boards' saved scorings (`*`: see the file comment) — and which
+      // weekly boards are in the trash: a weekly board is an ordinary list
+      // ("Week N Big Board") that desktop My lists can delete, and owner RLS
+      // still returns it (and its players).
+      const listsRes = await supabase.from('lists').select('*').in('id', boardIds)
       if (listsRes.error) throw new Error(listsRes.error.message)
       // Only when the column was read (keeps "not pushed" — undefined —
       // distinguishable from "none saved").
       const scoringOf = new Map<string, ScoringFormat | null>()
-      for (const l of (listsRes.data ?? []) as Array<{ id: string; scoring_format?: unknown }>) {
+      const deleted = new Set<string>()
+      for (const l of (listsRes.data ?? []) as Array<{ id: string; deleted_at?: string | null; scoring_format?: unknown }>) {
+        if (l.deleted_at) deleted.add(l.id)
         if ('scoring_format' in l) scoringOf.set(l.id, isScoringFormat(l.scoring_format) ? l.scoring_format : null)
       }
+      const weekly = allWeekly.filter((w) => !deleted.has(w.list_id))
+      const listIds = [...(seasonId ? [seasonId] : []), ...weekly.map((w) => w.list_id)]
+      if (listIds.length === 0) return { season: null, weeks: [] }
 
       // pageAll + exact count: a board set can pass PostgREST's 1000-row cap,
       // and a short page must never pass for "that's everything".
