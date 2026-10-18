@@ -252,6 +252,67 @@ describe('the Community detail — scoring', () => {
   })
 })
 
+describe('the Community detail — "Season proj" (gap list §3 #29)', () => {
+  /** The column label on the players heading row. */
+  const label = (out: string) => out.match(/<span[^>]*data-proj-label[^>]*>([^<]*)<\/span>/)
+  /** Each row button's screen-reader label before its projection. */
+  const rowLabels = (out: string) =>
+    [...out.matchAll(/<span class="sr-only">([^<]*)<\/span><span class="[^"]*tabular-nums">\d+\.\d<\/span>/g)].map((m) => m[1])
+
+  it('the projections are labelled "Season proj" — once, on the players heading row', () => {
+    const out = render()
+    expect(label(out)?.[1]).toBe('Season proj')
+    expect(out.match(/data-proj-label/g)).toHaveLength(1)
+    // It sits beside "Ranked players · 3", after it, before the first row
+    // (the table, past the cover's heads).
+    const table = out.slice(out.indexOf('Ranked players'))
+    expect(table).toContain('data-proj-label')
+    expect(table.indexOf('data-proj-label')).toBeLessThan(table.indexOf('Player Number1'))
+  })
+
+  it('screen readers hear it on each row instead of the heading', () => {
+    const out = render()
+    expect(label(out)?.[0]).toContain('aria-hidden="true"')
+    expect(rowLabels(out)).toEqual(['Season proj', 'Season proj', 'Season proj'])
+  })
+
+  it('a plain list is labelled too (its numbers are the same season ones)', () => {
+    h.list = list({ is_big_board: false, slug: 'rb-targets', ranking_mode: 'unranked' })
+    const out = render()
+    expect(label(out)?.[1]).toBe('Season proj')
+    expect(projections(out)).toEqual(['16.0', '16.0', '16.0'])
+  })
+
+  it('no label over a column with no numbers: scoring not read yet, no projections, no players', () => {
+    h.list = list({ is_big_board: false, ai_persona_id: 'persona-1' })
+    h.meta = { data: undefined, isError: false }
+    expect(label(render())).toBeNull()
+
+    h.meta = { data: { ownerUsername: 'kelly', author: PERSON, scoring: null }, isError: false }
+    const none = entry(1)
+    Object.assign(none.player, { projected_pts_ppr: null, projected_pts_half_ppr: null, projected_pts_standard: null })
+    h.list = list({ players: [none] })
+    let out = render()
+    expect(label(out)).toBeNull()
+    expect(out).not.toContain('Season proj')
+
+    h.list = list({ players: [] })
+    out = render()
+    expect(out).toContain('Ranked players')
+    expect(label(out)).toBeNull()
+  })
+
+  it('one player with a projection is enough for the label; the others show none', () => {
+    const none = entry(2)
+    Object.assign(none.player, { projected_pts_ppr: null, projected_pts_half_ppr: null, projected_pts_standard: null })
+    h.list = list({ players: [entry(1), none] })
+    const out = render()
+    expect(label(out)?.[1]).toBe('Season proj')
+    expect(projections(out)).toEqual(['16.0'])
+    expect(rowLabels(out)).toEqual(['Season proj'])
+  })
+})
+
 describe('the Community detail — numbers and tiers (isNumbered / hasTiers)', () => {
   const tiered = [entry(1, 'S'), entry(2, 'S'), entry(3, 'A')]
 

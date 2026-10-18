@@ -170,6 +170,14 @@ function asCommunityPlayer(row: ListPlayerWithPlayer): CommunityPlayer {
   return { id: p.id, full_name: p.full_name, position: p.position, team: p.team, headshot_url: p.headshot_url }
 }
 
+/**
+ * What the rows' projection is. The design draws this week's ("6.8"); the
+ * app has only the season-long one for a whole list (`projected_pts_*`), so
+ * the column says so (gap list §3 #29). Change this one label when weekly
+ * projections arrive.
+ */
+const PROJ_LABEL = 'Season proj'
+
 function projectionFor(row: ListPlayerWithPlayer, scoring: CommunityScoring | null): number | null {
   if (!scoring) return null
   const p = row.player
@@ -229,6 +237,8 @@ function DetailBody({
   // numbers run on through the tiers, as on the List view.
   const sections = viewSections(players, hasTiers(list.ranking_mode))
   const sectionStart = sections.map((_, i) => sections.slice(0, i).reduce((sum, s) => sum + s.entries.length, 0))
+  // The column's label shows only over a column that has a number in it.
+  const anyProj = players.some((r) => projectionFor(r, scoring) !== null)
   const heads = players.slice(0, 4).map(asCommunityPlayer)
   const videos = list.links
     .filter((l) => l.kind === 'video')
@@ -308,9 +318,17 @@ function DetailBody({
         </>
       )}
 
-      <h2 className="px-4 pb-1 pt-3 text-[16px] font-semibold">
-        {isRank ? 'Ranked players' : 'Players'} · {players.length}
-      </h2>
+      <div className="flex items-baseline justify-between gap-3 px-4 pb-1 pt-3">
+        <h2 className="min-w-0 text-[16px] font-semibold">
+          {isRank ? 'Ranked players' : 'Players'} · {players.length}
+        </h2>
+        {/* Screen readers hear it on each row instead. */}
+        {anyProj && (
+          <span aria-hidden="true" data-proj-label className="flex-none text-[11px] font-medium text-m-t3">
+            {PROJ_LABEL}
+          </span>
+        )}
+      </div>
       {sections.map((section, si) => (
         <div key={section.label ?? si}>
           {section.label !== null && (
@@ -344,7 +362,12 @@ function DetailBody({
                         {playerMeta(p)}
                       </span>
                     </span>
-                    {proj !== null && <span className="flex-none text-[13px] font-semibold tabular-nums">{proj.toFixed(1)}</span>}
+                    {proj !== null && (
+                      <>
+                        <span className="sr-only">{PROJ_LABEL}</span>
+                        <span className="flex-none text-[13px] font-semibold tabular-nums">{proj.toFixed(1)}</span>
+                      </>
+                    )}
                   </button>
                 </li>
               )
