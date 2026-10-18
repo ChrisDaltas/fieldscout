@@ -181,6 +181,24 @@ describe('mobile player profile — leagues gated off', () => {
     expect(out).not.toContain('Recent news')
   })
 
+  it("this week's card shows the clock and score while his game is on, then the result (gap list §3 #19)", () => {
+    const wk6 = { week: 6, home_team: 'ATL', away_team: 'PHI', kickoff_at: '2026-10-18T17:00:00Z' }
+    const qc = seeded()
+    qc.setQueryData(['nfl-team-schedule', 2026, 'ATL'], [games[0], { ...wk6, status: 'live', quarter: 4, game_clock: '2:00', home_score: 31, away_score: 7 }])
+    const live = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), qc)
+    // The live game is this week; the score and clock sit where the kickoff was.
+    expect(live).toMatch(
+      /data-game-week="6" data-current="true"[\s\S]*?Projected[\s\S]*?15\.3[\s\S]*?>Game<\/span><span class="whitespace-nowrap[^"]*">Q4 2:00 · 31-7<\/span>/,
+    )
+
+    // Over, the calendar still on week 6, its points not scored yet: the result.
+    qc.setQueryData(['nfl-team-schedule', 2026, 'ATL'], [games[0], { ...wk6, status: 'final', quarter: null, game_clock: null, home_score: 31, away_score: 20 }])
+    qc.setQueryData(['player-core-stats', 'p1', 'espn_standard'], { ...core, week: 6 })
+    const final = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), qc)
+    expect(final).toMatch(/data-game-week="6" data-current="true"[\s\S]*?>Game<\/span><span class="whitespace-nowrap[^"]*">Final W 31-20<\/span>/)
+    expect(final).not.toMatch(/>(Live|Final)<\/span>/)
+  })
+
   it('game log: season chips and the grouped table', () => {
     const qc = seeded()
     const out = html(

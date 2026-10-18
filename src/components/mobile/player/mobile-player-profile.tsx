@@ -278,7 +278,7 @@ export function ProfileLoaded({
   const ctx = useProfileLeague(featureFlags.leagues ? target.leagueId : null)
   const scoring = useProfileScoring(player.id, ctx.explicit ? ctx.leagueId : null)
   const core = scoring.stats.data ?? null
-  const games = useNflTeamSchedule(season, player.team)
+  const games = useNflTeamSchedule(season, player.team, { pollWhileLive: true })
   const splits = useDefenseSplits(season)
   const lines = useMobileProfileStatLines(player.id, season)
   const schedule = useMemo(

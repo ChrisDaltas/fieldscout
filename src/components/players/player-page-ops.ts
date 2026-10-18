@@ -99,6 +99,12 @@ export interface TeamGame {
   away_team: string
   kickoff_at: string
   status: string | null
+  /** Where a game stands — the provider's stored score, quarter and clock
+   *  (the phone profile's this-week card, gap list §3 #19). */
+  home_score?: number | null
+  away_score?: number | null
+  quarter?: number | null
+  game_clock?: string | null
 }
 
 export interface DefenseSplitRow {
