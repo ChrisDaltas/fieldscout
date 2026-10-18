@@ -162,6 +162,8 @@ export function summaryLine(rows: readonly StandingsRow[], teamId: string): stri
 // ---------------------------------------------------------------------------
 
 export interface GameLineGame {
+  /** `nfl_games.id` — the game screen the line opens (gap list §3 #17). */
+  id?: string
   home_team: string
   away_team: string
   kickoff_at: string
@@ -173,7 +175,7 @@ export interface GameLineGame {
 }
 
 export type GameLine =
-  | { kind: 'game'; text: string; opp: string; started: boolean }
+  | { kind: 'game'; text: string; opp: string; started: boolean; gameId: string | null }
   | { kind: 'bye'; text: 'BYE' }
   | { kind: 'unknown' }
 
@@ -191,19 +193,20 @@ export function gameLine(nflTeam: string | null | undefined, games: readonly Gam
   const home = g.home_team === nflTeam
   const opp = home ? g.away_team : g.home_team
   const where = `${home ? 'vs' : '@'} ${opp}`
+  const gameId = g.id ?? null
   const mine = home ? g.home_score : g.away_score
   const theirs = home ? g.away_score : g.home_score
   if (g.status === 'final') {
-    if (mine === null || theirs === null) return { kind: 'game', text: `Final ${where}`, opp, started: true }
+    if (mine === null || theirs === null) return { kind: 'game', text: `Final ${where}`, opp, started: true, gameId }
     const wl = mine > theirs ? 'W' : mine < theirs ? 'L' : 'T'
-    return { kind: 'game', text: `Final ${wl} ${mine}-${theirs} ${where}`, opp, started: true }
+    return { kind: 'game', text: `Final ${wl} ${mine}-${theirs} ${where}`, opp, started: true, gameId }
   }
   if (g.status === 'live') {
     const clock = [g.quarter !== null ? `Q${g.quarter}` : null, g.game_clock].filter(Boolean).join(' ')
-    return { kind: 'game', text: `${clock || 'Live'} ${where}`, opp, started: true }
+    return { kind: 'game', text: `${clock || 'Live'} ${where}`, opp, started: true, gameId }
   }
   const k = kickoffText(g.kickoff_at)
-  return { kind: 'game', text: k ? `${k} ${where}` : where, opp, started: false }
+  return { kind: 'game', text: k ? `${k} ${where}` : where, opp, started: false, gameId }
 }
 
 /** OPRK as the rows print it: "(9th)" in the band colour (red = tough). */

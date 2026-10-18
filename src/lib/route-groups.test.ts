@@ -250,6 +250,12 @@ const APP_URLS_ADDED_SINCE_GOLDEN = [
   // Gated with the rest of Community by `(shell)/explore/layout.tsx`; a
   // desktop visit is sent to `/app/explore`.
   '/app/explore/latest',
+  // FieldScout Mobile — one NFL GAME's box score (gap list §3 #17; m-match
+  // §2.3), opened from a starter's game line. A mobile screen, rendered by
+  // `games/layout.tsx` so the game picker stays mounted across games; a
+  // desktop visit goes to the matchup. Gated on `featureFlags.leagues` by
+  // `(shell)/leagues/layout.tsx`.
+  '/app/leagues/[leagueId]/games/[gameId]',
 ]
 
 describe('route groups are invisible to the URL space', () => {
