@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 
 import { DraftRecap } from '@/components/draft/draft-recap'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileDraftResults } from '@/components/mobile/league/league/draft-results-screen'
 import type { MockDraftLists } from '@/hooks/use-mock-drafts'
 import { featureFlags } from '@/lib/feature-flags'
 import { listMyMockDrafts } from '@/lib/leagues/api/draft-service'
@@ -46,6 +48,9 @@ const UUID_RE =
  * launcher's mock goes to its report; with practice OFF, `/app/mocks/*`
  * redirects to `/app`, so redirecting into it would strand a user on a
  * recap that still works — this page keeps rendering it instead.
+ *
+ * On the phone the recap is League Menu › Draft results (gap list §3 #15):
+ * the same reads, one round at a time (`MobileDraftResults`).
  */
 export default async function DraftRecapPage({ params, searchParams }: DraftRecapPageProps) {
   const { leagueId } = await params
@@ -68,5 +73,10 @@ export default async function DraftRecapPage({ params, searchParams }: DraftReca
     }
   }
 
-  return <DraftRecap leagueId={leagueId} draftIdParam={draftIdParam} />
+  return (
+    <ByLayout
+      desktop={<DraftRecap leagueId={leagueId} draftIdParam={draftIdParam} />}
+      mobile={<MobileDraftResults leagueId={leagueId} draftIdParam={draftIdParam} />}
+    />
+  )
 }

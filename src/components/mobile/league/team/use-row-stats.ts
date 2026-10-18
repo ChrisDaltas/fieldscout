@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 
+import { nflGameHref } from '@/components/mobile/league/game/game-ops'
 import { useBoxScore } from '@/hooks/use-box-score'
 import { useDefenseSplits } from '@/hooks/use-defense-splits'
 import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
@@ -51,6 +52,7 @@ export function useRowStats(args: {
       game: (nflTeam) => gameLine(nflTeam, gameRows),
       oprk: (line, position) => oprkSpan(splitRows, line, position),
       headshot: (id) => identity.playerById.get(id)?.headshot_url ?? null,
+      gameHref: (line) => (line.kind === 'game' && line.gameId ? nflGameHref(leagueId, line.gameId) : null),
     }
-  }, [box.data, games.data, splits.data, values.byPlayer, identity.playerById])
+  }, [box.data, games.data, splits.data, values.byPlayer, identity.playerById, leagueId])
 }

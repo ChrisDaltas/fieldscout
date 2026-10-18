@@ -236,6 +236,16 @@ export function projectedTotal(
   return { total: Math.round(total * 100) / 100, missing }
 }
 
+/** A stored lineup's starters — every seat of the slot map except the IR
+ *  ones (`roster_settings.ir_slots`): the opponent side of "Proj vs
+ *  opponent" on the desktop team page and the phone's Lineup check. */
+export function starterIdsOf(slotMap: Readonly<Record<string, string>>, irSlots: ReadonlyArray<{ key: string }>): string[] {
+  const irKeys = new Set(irSlots.map((s) => s.key))
+  return Object.entries(slotMap)
+    .filter(([key]) => !irKeys.has(key.split(':')[0]!))
+    .map(([, pid]) => pid)
+}
+
 export interface LineupCheck {
   id: 'starters' | 'injury' | 'bye' | 'proj'
   label: string
@@ -257,6 +267,24 @@ function names(players: readonly RosterPlayer[]): string {
   return players.map((p) => p.full_name).join(', ')
 }
 
+/** The Lineup check's injury rule: a starter carrying a status tag (Q / D /
+ *  O / IR) or an injury designation (PUP, NFI, Suspended…). One rule for the
+ *  desktop check and the phone's Lineup check card. */
+export function injuredStarters(players: readonly RosterPlayer[]): RosterPlayer[] {
+  return players.filter((p) => statusTag(p.status) !== null || designationOf(p.status) !== null)
+}
+
+/** The tag a flagged starter is named with: "Q", "O", "IR", "PUP"… */
+export function injuryTag(status: string | null | undefined): string | null {
+  return statusTag(status) ?? designationOf(status)
+}
+
+/** The Lineup check's bye rule: the player's own bye week, or no game for
+ *  his team in a week that has games. */
+export function startersOnBye(players: readonly RosterPlayer[], week: number, games: readonly WeekGame[]): RosterPlayer[] {
+  return players.filter((p) => (p.bye_week !== null && p.bye_week === week) || opponentOf(p.nfl_team, games).kind === 'bye')
+}
+
 export function lineupChecks({ starters, week, games, mine, opponent }: LineupCheckInput): LineupCheck[] {
   const out: LineupCheck[] = []
   const filled = starters.filter((r) => r.player)
@@ -268,7 +296,7 @@ export function lineupChecks({ starters, week, games, mine, opponent }: LineupCh
     note: empty > 0 ? 'Empty slots score zero — fill them before kickoff.' : 'Every starting slot is filled.',
     tone: empty > 0 ? 'caution' : 'positive',
   })
-  const hurt = filled.map((r) => r.player!).filter((p) => statusTag(p.status) !== null || designationOf(p.status) !== null)
+  const hurt = injuredStarters(filled.map((r) => r.player!))
   out.push({
     id: 'injury',
     label: 'Injury risk',
@@ -276,10 +304,7 @@ export function lineupChecks({ starters, week, games, mine, opponent }: LineupCh
     note: hurt.length === 0 ? 'No starter carries an injury designation.' : `${names(hurt)} — check before kickoff.`,
     tone: hurt.length === 0 ? 'positive' : 'caution',
   })
-  // Bye: the player's own bye week, or no game for his team in a week that has games.
-  const onBye = filled
-    .map((r) => r.player!)
-    .filter((p) => (p.bye_week !== null && p.bye_week === week) || opponentOf(p.nfl_team, games).kind === 'bye')
+  const onBye = startersOnBye(filled.map((r) => r.player!), week, games)
   out.push({
     id: 'bye',
     label: 'Players on bye',

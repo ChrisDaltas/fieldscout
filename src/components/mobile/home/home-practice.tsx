@@ -1,10 +1,12 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { MockLaunchDialog } from '@/components/draft/mock-launch-dialog'
 import { mockRoomHref } from '@/components/draft/mock-launcher-entry'
+import { PRACTICE_HOME_HREF } from '@/components/draft/room-scope'
 
 import { HomeSectionTitle } from './home-section'
 
@@ -13,13 +15,29 @@ import { HomeSectionTitle } from './home-section'
  * app's one practice-draft launcher (`MockLaunchDialog`, as the desktop
  * Home's Mock chip does) and a launch lands in the room. Rendered only while
  * practice drafts are released (`featureFlags.mockDrafts`, by the caller).
+ *
+ * "Your mocks" (gap list §3 #2) sits in the title row the way Trending's
+ * "See all" does: it opens the practice home (`/app/mocks`), the one page
+ * listing every mock this user launched — in progress and finished — which
+ * a phone otherwise reaches only from a league's pre-draft screen. Shown
+ * always: with no mocks yet that page is the empty state plus Start.
  */
 export function HomePractice() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   return (
     <section>
-      <HomeSectionTitle title="Practice" className="mt-[22px]" />
+      <HomeSectionTitle
+        title="Practice"
+        align="center"
+        className="mt-[22px]"
+        right={
+          // 16px line box as Trending's "See all"; the padding grows the tap area to 30px without moving it.
+          <Link href={PRACTICE_HOME_HREF} className="-my-[7px] py-[7px] text-[13px] font-semibold leading-[16px] text-accent">
+            Your mocks
+          </Link>
+        }
+      />
       <button
         type="button"
         onClick={() => setOpen(true)}

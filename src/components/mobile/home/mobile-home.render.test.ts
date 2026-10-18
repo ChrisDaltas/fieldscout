@@ -190,6 +190,29 @@ describe('mobile Home', () => {
     expect(out).toMatch(/href="\/app\/leagues\/A\/players\?status=avail"[^>]*>See all</)
   })
 
+  it('Practice: the card starts a mock and "Your mocks" opens the practice home (gap list §3 #2)', () => {
+    const practice = out.slice(out.indexOf('>Practice</h2>'))
+    // The link sits in the Practice title row, before the card itself…
+    expect(practice).toMatch(/^>Practice<\/h2><a [^>]*href="\/app\/mocks"[^>]*>Your mocks<\/a>/)
+    expect(practice.indexOf('Your mocks')).toBeLessThan(practice.indexOf('Mock draft'))
+    // …and is its own anchor, never nested inside the card's button.
+    const card = practice.slice(practice.indexOf('<button'), practice.indexOf('</button>'))
+    expect(card).toContain('Practice against AI drafters')
+    expect(card).not.toContain('<a ')
+  })
+
+  it('with practice drafts switched off there is no Practice card and no "Your mocks"', () => {
+    flags.mockDrafts = false
+    try {
+      const off = render()
+      expect(off).not.toContain('>Practice</h2>')
+      expect(off).not.toContain('Your mocks')
+      expect(off).not.toContain('href="/app/mocks"')
+    } finally {
+      flags.mockDrafts = true
+    }
+  })
+
   it('a roster that fails to load is the injury section’s error, never a list missing "On your roster"', () => {
     const qc = seeded()
     qc.setDefaultOptions({ queries: { retryOnMount: false } })

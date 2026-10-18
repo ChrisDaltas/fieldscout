@@ -32,6 +32,8 @@ import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
+import { teamNameSchema } from '../team-name'
+
 import { optionalReason } from './commish-matchup-service'
 import type { ServiceResult } from './leagues-service'
 
@@ -63,9 +65,10 @@ function mapMemberRpcError(
 // ---------------------------------------------------------------------------
 
 /** §7.2 "Commissioner can create empty seats". `team_name` is optional — the
- *  RPC derives the deterministic "Team N" when it is absent (D74(5)). */
+ *  RPC derives the deterministic "Team N" when it is absent (D74(5)); a
+ *  given one takes the app's one team-name rule (≤ 24 — Chris 2026-10-18). */
 export const addPlaceholderSeatInputSchema = z.strictObject({
-  team_name: z.string().trim().min(1).max(60).nullish(),
+  team_name: teamNameSchema.nullish(),
 })
 
 export async function addPlaceholderSeat(

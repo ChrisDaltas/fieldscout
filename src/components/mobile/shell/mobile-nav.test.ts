@@ -45,14 +45,12 @@ describe('leagueFallbackTitle — league pages with no mobile screen yet', () =>
   it('names the pages the Menu opens', () => {
     expect(leagueFallbackTitle(`${L}/settings`)).toBe('League settings')
     expect(leagueFallbackTitle(`${L}/schedule`)).toBe('Schedule')
-    expect(leagueFallbackTitle(`${L}/draft/recap`)).toBe('Draft results')
     expect(leagueFallbackTitle(`${L}/members`)).toBe('Members')
     expect(leagueFallbackTitle(`${L}/commish`)).toBe('Commissioner tools')
-    expect(leagueFallbackTitle(`${L}/stats`)).toBe('League stats')
   })
 
   it('is null where the route draws its own mobile screen', () => {
-    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades']) {
+    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats']) {
       expect(leagueFallbackTitle(`${L}${rest}`), rest).toBeNull()
     }
     expect(leagueFallbackTitle('/app/settings')).toBeNull()

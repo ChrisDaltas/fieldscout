@@ -3,23 +3,48 @@
 import { useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
+import { rosterTotal, type RosterDraft } from '@/components/lists/list-form-payload'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
+import { MSwitch } from '@/components/mobile/trades/m-overlay'
 import { useListCoverColorSupport } from '@/hooks/use-list-cover-color-support'
 import { listsKeys, useCreateList, useList, useUpdateList, type ListWithDetails } from '@/hooks/use-lists'
 import { thumbnailProblem, useMobileListsThumbnail } from '@/hooks/use-mobile-lists-thumbnail'
 import { toast } from '@/hooks/use-toast'
+import { useYouTubeTitle, youTubeTitleKey } from '@/hooks/use-youtube-title'
 import { coverColorOf, hasCoverColorColumn, type CoverColor } from '@/lib/lists/cover-color'
 import { cn } from '@/lib/utils'
 import { MAX_DESCRIPTION_LEN, MAX_TAGS_PER_LIST, MAX_TITLE_LEN, listTitleSchema, tagNameSchema } from '@/types/schemas/lists'
 
-import { detailsCreateInput, detailsPatch } from './details-payload'
+import {
+  ADD_VIDEO_PROBLEM,
+  DEFAULT_TEAM_ROSTER,
+  MAX_ROSTER,
+  MAX_SLOT,
+  ROSTER_SLOTS,
+  VIDEO_ATTACH_FAILED,
+  VIDEO_REMOVE_FAILED,
+  addVideo,
+  detailsCreateInput,
+  detailsPatch,
+  maxVideos,
+  nameReturnMovesOn,
+  rosterDraftOf,
+  rosterValid,
+  saveVideoChanges,
+  stepRoster,
+  videoChanges,
+  videoDraftsOf,
+  videosFullNote,
+  type AddVideoProblem,
+  type VideoDraft,
+  type VideoSaveIO,
+} from './details-payload'
 import {
   COVER_SWATCHES,
   POSITION_GROUP_OPTIONS,
   coverBgClass,
   positionGroupValue,
-  youTubeId,
   youTubeThumb,
 } from './lists-model'
 import { useListsNav } from './lists-nav'
@@ -48,21 +73,32 @@ import { CenterNote, CoverImage, LIcon, PillButton, YouTubeBadge, type LIconName
  * before Chris pushes 188. What each screen sends is built by
  * `details-payload.ts` (and tested there).
  *
+ * **Team lists** (gap list §3 #3): New list carries desktop's Team type — a
+ * List / Team choice, and for a team its roster (starters, bench and IR
+ * slots, desktop's defaults, steppers that stay inside the API's bounds). As
+ * on desktop the type is fixed once the list exists, so Edit details shows a
+ * team's roster to change but no type choice; a team has no position group.
+ *
+ * **Public and videos** (gap list §3 #4, the Community composer's list step,
+ * m-composer §2.5): a Public switch (on by default, as there) and up to 10
+ * YouTube videos rather than one — the link field stays above the attached
+ * rows, and gives way to a line once the list is full (the attach route's
+ * cap, shared with desktop's article links), so an 11th can't be tried. The
+ * same video twice is refused at the field. Each row shows the video's real
+ * title (looked up as it is pasted, the attach route's oEmbed lookup) or no
+ * title at all — never a placeholder. Edit details carries both too: it
+ * shows every attached video, and Done takes off the removed ones before it
+ * attaches the new ones.
+ *
+ * **Return** (gap list §3 #7): in the name field it moves on once the list
+ * has a name — New list's Next (to the editor, which reads "2 of 2"), or Edit
+ * details' Done — as the composer's name step does; without a name it does
+ * nothing, like the button.
+ *
  * Left out, a lr-lists gap: the "Video frame" thumbnail (only an uploaded
  * image can be stored as a cover). The Next button is disabled until the list
  * has a name rather than tappable with a toast ("prevent, don't refuse").
  */
-
-interface VideoDraft {
-  url: string
-  yt: string
-  /** The attached link's id, in Edit details. */
-  linkId?: string
-  /** The stored title (YouTube's own, looked up when it was attached), in
-   *  Edit details. A video pasted here has none until it is saved, and one
-   *  YouTube would not name has none at all — then no title line shows. */
-  title?: string | null
-}
 
 export function NewListScreen() {
   return <DetailsForm mode="new" list={null} />
@@ -135,22 +171,26 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
   const thumbnail = useMobileListsThumbnail()
   const fileRef = React.useRef<HTMLInputElement | null>(null)
 
-  const originalVideo = list?.links.find((link) => link.kind === 'video') ?? null
+  // The links as the form opened: Done changes only what was changed HERE,
+  // so a video attached elsewhere meanwhile (a refetch) is never removed.
+  const [openedLinks] = React.useState(() => list?.links ?? [])
+  const videoMax = maxVideos(list?.links ?? openedLinks)
   const [title, setTitle] = React.useState(list?.title ?? '')
   const [desc, setDesc] = React.useState(list?.description ?? '')
   const [thumb, setThumb] = React.useState<'collage' | 'upload'>(list?.thumbnail_url ? 'upload' : 'collage')
   const [file, setFile] = React.useState<File | null>(null)
   const [preview, setPreview] = React.useState<string | null>(null)
-  const [video, setVideo] = React.useState<VideoDraft | null>(() => {
-    if (!originalVideo) return null
-    const yt = youTubeId(originalVideo.url)
-    return { url: originalVideo.url, yt: yt ?? '', linkId: originalVideo.id, title: originalVideo.title }
-  })
+  const [isPublic, setIsPublic] = React.useState(!list?.is_private)
+  const [videos, setVideos] = React.useState<VideoDraft[]>(() => videoDraftsOf(openedLinks))
   const [link, setLink] = React.useState('')
-  const [linkErr, setLinkErr] = React.useState(false)
+  const [linkProblem, setLinkProblem] = React.useState<AddVideoProblem | null>(null)
   const [tags, setTags] = React.useState<string[]>(list?.tags.map((t) => t.name) ?? [])
   const [position, setPosition] = React.useState(positionGroupValue(list?.position_filter))
   const [coverColor, setCoverColor] = React.useState<CoverColor | null>(coverColorOf(list))
+  const [team, setTeam] = React.useState(Boolean(list?.is_team))
+  const [roster, setRoster] = React.useState<RosterDraft>(() =>
+    list?.is_team ? rosterDraftOf(list.roster_settings) : DEFAULT_TEAM_ROSTER,
+  )
   const [tagText, setTagText] = React.useState('')
   const [busy, setBusy] = React.useState(false)
 
@@ -161,22 +201,23 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     [preview],
   )
 
-  const valid = listTitleSchema.safeParse(title).success
+  const valid = listTitleSchema.safeParse(title).success && (!team || rosterValid(roster))
   // Swatches only once `lists.cover_color` exists (main deploys before the
   // migration is pushed): a loaded row proves it; a new list asks.
   const colourProbe = useListCoverColorSupport(mode === 'new')
   const coloursReady = mode === 'edit' ? hasCoverColorColumn(list) : colourProbe.data === true
-  const positionFilter = position === 'ALL' ? null : position
-  const showPosition = !list?.is_team
+  // A team has no position group, so its cover shows the default colour.
+  const positionFilter = team || position === 'ALL' ? null : position
+  const showPosition = !team
   const close = () => (mode === 'new' ? nav.closeNew() : nav.closeEdit(list!.id))
 
   const attach = () => {
-    const yt = youTubeId(link)
-    if (!yt) {
-      setLinkErr(true)
+    const result = addVideo(videos, link, videoMax)
+    if (!result.ok) {
+      setLinkProblem(result.problem)
       return
     }
-    setVideo({ url: link.trim(), yt })
+    setVideos(result.videos)
     setLink('')
   }
 
@@ -208,23 +249,39 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
     setTagText('')
   }
 
-  const postVideo = (listId: string, draft: VideoDraft) =>
-    fetch(`/api/lists/${listId}/links`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      // No placeholder title: the server looks the video's real title up on
-      // YouTube (oEmbed) when none is sent (gap list #11).
-      body: JSON.stringify({ kind: 'video', url: draft.url, ...(draft.title ? { title: draft.title } : {}) }),
-    }).then(async (res) => {
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Could not attach the video.')
+  /** Done's video calls, for `saveVideoChanges` (which pins their order). */
+  const videoIO: VideoSaveIO = {
+    del: async (listId, linkId) => {
+      const res = await fetch(`/api/lists/${listId}/links/${linkId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(VIDEO_REMOVE_FAILED)
+    },
+    post: async (listId, body) => {
+      const res = await fetch(`/api/lists/${listId}/links`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => {
+        throw new Error(VIDEO_ATTACH_FAILED)
+      })
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? VIDEO_ATTACH_FAILED)
+    },
+    // The title the row showed, from the same lookup (`useYouTubeTitle`).
+    titleOf: (yt) => qc.getQueryData<string | null>(youTubeTitleKey(yt)),
+  }
+
+  /** One toast for what went wrong with the videos (only one shows at a time). */
+  const videoFailureToast = (failures: readonly string[], saved: string) =>
+    toast({
+      title: `${saved}, but ${failures.length === 1 ? 'a video' : `${failures.length} videos`} didn’t update`,
+      description: failures[0],
     })
 
   const submit = async () => {
     const parsed = listTitleSchema.safeParse(title)
-    if (!parsed.success || busy) return
+    if (!parsed.success || !valid || busy) return
     setBusy(true)
     try {
-      const draft = { title: parsed.data, desc, position, coverColor, coloursReady }
+      const draft = { title: parsed.data, desc, position, coverColor, coloursReady, team, roster, isPrivate: !isPublic }
       if (mode === 'new') {
         const created = await createList.mutateAsync(detailsCreateInput(draft))
         if (file && thumb === 'upload') {
@@ -232,11 +289,8 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
             toast({ title: 'The cover image didn’t upload', description: error.message }),
           )
         }
-        if (video) {
-          await postVideo(created.id, video).catch((error: Error) =>
-            toast({ title: 'The video didn’t attach', description: error.message }),
-          )
-        }
+        const failures = videos.length > 0 ? await saveVideoChanges(created.id, { remove: [], add: videos }, videoIO) : []
+        if (failures.length > 0) videoFailureToast(failures, 'List created')
         qc.invalidateQueries({ queryKey: listsKeys.detail(created.id) })
         nav.createdList(created.id)
         return
@@ -246,27 +300,17 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
       const patch = detailsPatch(current, { ...draft, tags })
       if (Object.keys(patch).length > 0) await updateList.mutateAsync(patch)
       if (file && thumb === 'upload') await thumbnail.mutateAsync({ listId: current.id, file })
-      const changedVideo = (video?.url ?? null) !== (originalVideo?.url ?? null)
-      if (changedVideo) {
-        // The new video goes on first and the old one comes off only after,
-        // so a failed attach leaves the list with the video it had.
+      const changes = videoChanges(openedLinks, videos)
+      let failures: string[] = []
+      if (changes.remove.length > 0 || changes.add.length > 0) {
         try {
-          if (video) await postVideo(current.id, video)
-          if (originalVideo) {
-            const res = await fetch(`/api/lists/${current.id}/links/${originalVideo.id}`, { method: 'DELETE' })
-            if (!res.ok) {
-              throw new Error(
-                video
-                  ? 'The new video was attached, but the old one could not be removed.'
-                  : 'Could not remove the video.',
-              )
-            }
-          }
+          failures = await saveVideoChanges(current.id, changes, videoIO)
         } finally {
           qc.invalidateQueries({ queryKey: listsKeys.detail(current.id) })
         }
       }
-      toast({ title: 'List saved' })
+      if (failures.length > 0) videoFailureToast(failures, 'List saved')
+      else toast({ title: 'List saved' })
       nav.closeEdit(current.id)
     } catch (error) {
       toast({
@@ -302,10 +346,19 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
         <input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
+          // Return moves on once the list has a name (gap list §3 #7): the
+          // keyboard's key reads Next on New list and Done in Edit details.
+          enterKeyHint={mode === 'new' ? 'next' : 'done'}
+          onKeyDown={(event) => {
+            const key = { key: event.key, isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode }
+            if (!nameReturnMovesOn(key, valid && !busy)) return
+            event.preventDefault()
+            void submit()
+          }}
           maxLength={MAX_TITLE_LEN}
           placeholder="List name, like My top 5 QBs for Week 6"
           aria-label="List name"
-          className="border-b-[1.5px] border-m-b3s bg-transparent pb-2.5 pt-1 text-[22px] font-bold tracking-[-0.02em] text-m-t1 outline-none placeholder:text-m-t3"
+          className="flex-none border-b-[1.5px] border-m-b3s bg-transparent pb-2.5 pt-1 text-[22px] font-bold tracking-[-0.02em] text-m-t1 outline-none placeholder:text-m-t3"
         />
         <textarea
           value={desc}
@@ -314,8 +367,30 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
           rows={3}
           placeholder="Add a description"
           aria-label="Description"
-          className="resize-none rounded-xl bg-m-b1 p-3 text-[14px] font-medium leading-[1.4] text-m-t1 outline-none placeholder:text-m-t3"
+          className="flex-none resize-none rounded-xl bg-m-b1 p-3 text-[14px] font-medium leading-[1.4] text-m-t1 outline-none placeholder:text-m-t3"
         />
+
+        <PublicRow on={isPublic} onToggle={() => setIsPublic(!isPublic)} />
+
+        {mode === 'new' && (
+          <div className="flex flex-col gap-2">
+            <span className="text-[13px] font-semibold text-m-t3">Type</span>
+            <MSegmented
+              label="Type"
+              options={[
+                { value: 'list', label: 'List' },
+                { value: 'team', label: 'Team' },
+              ]}
+              value={team ? 'team' : 'list'}
+              onChange={(next) => setTeam(next === 'team')}
+            />
+            {team && (
+              <span className="text-[11px] font-medium text-m-t3">A roster with starters, bench and IR slots.</span>
+            )}
+          </div>
+        )}
+
+        {team && <RosterSteppers roster={roster} onChange={setRoster} />}
 
         {showPosition && (
           <div className="flex flex-col gap-2">
@@ -362,7 +437,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
             })}
           </div>
           {coloursReady && thumb === 'collage' && (
-            <CoverSwatches value={coverColor} onChange={setCoverColor} isTeam={Boolean(list?.is_team)} />
+            <CoverSwatches value={coverColor} onChange={setCoverColor} isTeam={team} />
           )}
           <input
             ref={fileRef}
@@ -376,63 +451,53 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[13px] font-semibold text-m-t3">Video</span>
-          {video ? (
-            <div className="flex items-center gap-2.5 rounded-xl bg-m-b1 p-2">
-              <span className="relative h-[54px] w-24 flex-none overflow-hidden rounded-md bg-m-ink">
-                {video.yt ? <CoverImage src={youTubeThumb(video.yt)} /> : null}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-px">
-                {video.title ? (
-                  <span className="truncate text-[13px] font-semibold text-m-t1">{video.title}</span>
-                ) : null}
-                <span className="truncate text-[11px] font-medium text-m-t3">{video.url}</span>
-              </span>
+          <span className="text-[13px] font-semibold text-m-t3">Videos</span>
+          {videos.length < videoMax ? (
+            <div className="flex gap-2">
+              <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl bg-m-b2 px-3">
+                <YouTubeBadge />
+                <input
+                  value={link}
+                  onChange={(event) => {
+                    setLink(event.target.value)
+                    setLinkProblem(null)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') attach()
+                  }}
+                  inputMode="url"
+                  placeholder="Paste a YouTube link"
+                  aria-label="YouTube link"
+                  className="min-w-0 flex-1 bg-transparent text-[14px] font-medium text-m-t1 outline-none placeholder:text-m-t3"
+                />
+              </label>
               <button
                 type="button"
-                onClick={() => setVideo(null)}
-                aria-label="Remove video"
-                className="flex size-[30px] flex-none items-center justify-center rounded-full text-m-t3 active:bg-m-b2"
+                onClick={attach}
+                className={cn(
+                  'flex h-10 flex-none items-center rounded-xl px-3.5 text-[13px] font-semibold',
+                  link.trim() ? 'bg-m-ink text-white' : 'bg-m-b3s text-m-t3',
+                )}
               >
-                <MIcon name="close" size={12} stroke={2.2} />
+                Add
               </button>
             </div>
           ) : (
-            <>
-              <div className="flex gap-2">
-                <label className="flex h-[42px] min-w-0 flex-1 items-center gap-2 rounded-xl bg-m-b2 px-3">
-                  <YouTubeBadge />
-                  <input
-                    value={link}
-                    onChange={(event) => {
-                      setLink(event.target.value)
-                      setLinkErr(false)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') attach()
-                    }}
-                    inputMode="url"
-                    placeholder="Paste a YouTube link"
-                    aria-label="YouTube link"
-                    className="min-w-0 flex-1 bg-transparent text-[14px] font-medium text-m-t1 outline-none placeholder:text-m-t3"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={attach}
-                  className={cn(
-                    'flex h-[42px] flex-none items-center rounded-xl px-3.5 text-[13px] font-semibold',
-                    link.trim() ? 'bg-m-ink text-white' : 'bg-m-b3s text-m-t3',
-                  )}
-                >
-                  Attach
-                </button>
-              </div>
-              {linkErr && (
-                <span className="text-[11px] font-medium text-negative-strong">That doesn&apos;t look like a YouTube link</span>
-              )}
-            </>
+            <span className="text-[12px] font-medium text-m-t3">{videosFullNote(videoMax)}</span>
           )}
+          {linkProblem && (
+            <span className="text-[11px] font-medium text-negative-strong">{ADD_VIDEO_PROBLEM[linkProblem]}</span>
+          )}
+          {videos.map((video) => (
+            <VideoRow
+              key={video.linkId ?? video.yt}
+              video={video}
+              onRemove={() => {
+                setVideos(videos.filter((v) => v !== video))
+                setLinkProblem(null)
+              }}
+            />
+          ))}
         </div>
 
         {mode === 'edit' && (
@@ -490,6 +555,107 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
         </button>
       </div>
     </Frame>
+  )
+}
+
+/**
+ * The Public switch (m-composer §2.5 "Public row"): the whole row is the
+ * switch — "Public" 14/600 over its one-line meaning (11/500 t3), the 44×26
+ * switch at the end. "Follow" in the design's line became "save": a list can
+ * be saved, not followed.
+ */
+function PublicRow({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={onToggle} className="flex flex-none items-center gap-2.5 text-left">
+      <span className="flex min-w-0 flex-1 flex-col gap-px">
+        <span className="text-[14px] font-semibold text-m-t1">Public</span>
+        <span className="text-[11px] font-medium text-m-t3">
+          {on ? 'Anyone can find and save this list' : 'Only you can see this list'}
+        </span>
+      </span>
+      <MSwitch on={on} size="md" />
+    </button>
+  )
+}
+
+/**
+ * An attached video (m-composer §2.5 "Video rows"): the 96×54 YouTube
+ * thumbnail on ink, the title, the link (11/500 t3, one line), and a 32px
+ * remove. The title is the stored one for a video already on the list, or —
+ * for a pasted one — YouTube's own, looked up as it is pasted. No title =
+ * no title line (never a placeholder).
+ */
+function VideoRow({ video, onRemove }: { video: VideoDraft; onRemove: () => void }) {
+  const lookup = useYouTubeTitle(video.linkId || !video.yt ? null : video.yt)
+  const title = video.linkId ? (video.title ?? null) : (lookup.data ?? null)
+  return (
+    <div className="flex items-center gap-2.5" data-video-row>
+      <span className="relative h-[54px] w-24 flex-none overflow-hidden rounded-md bg-m-ink">
+        {video.yt ? <CoverImage src={youTubeThumb(video.yt)} /> : null}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-px">
+        {title ? <span className="truncate text-[13px] font-semibold text-m-t1">{title}</span> : null}
+        <span className="truncate text-[11px] font-medium text-m-t3">{video.url}</span>
+      </span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={title ? `Remove ${title}` : 'Remove video'}
+        className="flex size-8 flex-none items-center justify-center rounded-full text-m-t3 active:bg-m-b2"
+      >
+        <MIcon name="close" size={14} stroke={2} />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * A team list's roster (desktop's Roster fields, gap list §3 #3): a 3×3 grid
+ * of slot steppers on b1 cards, then the total. A stepper that would leave
+ * the API's bounds (0–20 a slot, 60 in all) is off, so the roster can't be
+ * pushed past what saves; an empty roster keeps the button off until a slot
+ * is filled.
+ */
+function RosterSteppers({ roster, onChange }: { roster: RosterDraft; onChange: (next: RosterDraft) => void }) {
+  const total = rosterTotal(roster)
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[13px] font-semibold text-m-t3">Roster</span>
+      <div className="grid grid-cols-3 gap-2">
+        {ROSTER_SLOTS.map(({ key, label }) => {
+          const n = roster[key]
+          return (
+            <div key={key} className="flex flex-col gap-1.5 rounded-xl bg-m-b1 px-2 pb-2 pt-1.5" data-roster-slot={key}>
+              <span className="text-[11px] font-semibold text-m-t3">{label}</span>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  aria-label={`Fewer ${label}`}
+                  disabled={n <= 0}
+                  onClick={() => onChange(stepRoster(roster, key, -1))}
+                  className="flex size-7 items-center justify-center rounded-full bg-m-b0 text-m-t1 active:bg-m-b2 disabled:opacity-40"
+                >
+                  <LIcon name="minus" size={12} stroke={2.2} />
+                </button>
+                <span className="text-[15px] font-semibold tabular-nums text-m-t1">{n}</span>
+                <button
+                  type="button"
+                  aria-label={`More ${label}`}
+                  disabled={n >= MAX_SLOT || total >= MAX_ROSTER}
+                  onClick={() => onChange(stepRoster(roster, key, 1))}
+                  className="flex size-7 items-center justify-center rounded-full bg-m-b0 text-m-t1 active:bg-m-b2 disabled:opacity-40"
+                >
+                  <LIcon name="plus" size={12} stroke={2.2} />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <span className="text-[12px] font-medium text-m-t3">
+        {total === 0 ? 'Add at least one slot' : `${total} ${total === 1 ? 'player' : 'players'} in all`}
+      </span>
+    </div>
   )
 }
 

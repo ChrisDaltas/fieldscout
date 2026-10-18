@@ -143,6 +143,13 @@ export const TEAM_SLOTS = [
 export type RankingMode = (typeof RANKING_MODES)[number]
 
 export const MAX_TAGS_PER_LIST = 5
+/**
+ * How many links (videos and articles together) one list may carry — the
+ * attach route's cap (`lib/lists/links-service.ts`). Here, beside the other
+ * list limits, so a phone screen can stop offering "Add" at the cap rather
+ * than send an attach the route would refuse.
+ */
+export const MAX_LINKS_PER_LIST = 10
 export const MAX_TITLE_LEN = 100
 export const MAX_DESCRIPTION_LEN = 500
 export const MAX_COMMENT_LEN = 1000

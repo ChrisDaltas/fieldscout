@@ -16,6 +16,7 @@
 import type { CommishRosterOverrideResult } from '@/lib/leagues/api/commish-roster-service'
 import type { CommishRenameTeamResult } from '@/lib/leagues/api/commish-team-service'
 import type { RenameOwnTeamResult } from '@/lib/leagues/api/team-rename-service'
+import { TEAM_NAME_MAX, TEAM_NAME_TOO_LONG } from '@/lib/leagues/team-name'
 
 export const TEAM_TOOLS_TITLE = 'Commissioner roster tools'
 export const TEAM_TOOLS_INTRO =
@@ -160,12 +161,15 @@ export const NO_SEAT_ROW_AUTOPILOT_COPY =
 
 export type RenameGate = { ok: true; name: string } | { ok: false; why: string }
 
-/** Why Save is disabled, SAID (rule (h)). 128's bound: trimmed, non-empty,
- *  ≤ 100. An UNCHANGED name is NOT gated — the verb answers `no_changes`. */
+/** Why Save is disabled, SAID (rule (h)). The one team-name rule (Chris
+ *  2026-10-18; `team-name.ts`, migration 196): trimmed, non-empty, ≤ 24 —
+ *  the input's `maxLength` already stops a 25th character, so this line
+ *  only shows for a name set before the rule. An unchanged name within the
+ *  limit is NOT gated — the verb answers `no_changes`. */
 export function renameGate(draft: string): RenameGate {
   const name = draft.trim()
   if (name === '') return { ok: false, why: 'Type a team name to save.' }
-  if (name.length > 100) return { ok: false, why: `A team name is at most 100 characters — this one is ${name.length}.` }
+  if (name.length > TEAM_NAME_MAX) return { ok: false, why: TEAM_NAME_TOO_LONG }
   return { ok: true, name }
 }
 

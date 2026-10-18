@@ -51,6 +51,8 @@ const EXCEPTIONS: Record<string, string> = {
     'A section header inside a card (13px h3), not a page header.',
   'src/components/mobile/community/community-detail.tsx':
     "FieldScout Mobile list detail — its title over the cover is the screen's h1 (mobile handoff; the shell's AppHeader is desktop-only).",
+  'src/components/mobile/league/league/league-bits.tsx':
+    "FieldScout Mobile league pages' 52px page bar (`LeaguePageBar`) — its title (“Draft results”, “League history”) is the screen's h1 (mobile handoff G3/G4; AppHeader is desktop-only). It replaces the fallback-header h1 these pages had on the phone.",
   'src/components/mobile/league/team/team-view.tsx':
     'FieldScout Mobile team view — a full-screen overlay whose team name is its h1 (mobile handoff; AppHeader is desktop-only).',
   'src/components/mobile/lists/list-view.tsx':

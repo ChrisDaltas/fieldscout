@@ -11,7 +11,7 @@ import {
   placementFromStored,
   weekEditability,
 } from '@/components/leagues/lineup-editor-ops'
-import { projectedTotal } from '@/components/leagues/my-team-ops'
+import { projectedTotal, starterIdsOf } from '@/components/leagues/my-team-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
 import { DEADLINE_PASSED_TITLE, NOT_IN_SEASON_TRADE_COPY } from '@/components/leagues/trades-ops'
@@ -23,7 +23,9 @@ import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-ov
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import type { LeagueDetail } from '@/hooks/use-league'
+import { useLeaguePlayerValues } from '@/hooks/use-league-player-values'
 import { useLineup } from '@/hooks/use-lineup'
+import { useMobileTeamGames } from '@/hooks/use-mobile-team-games'
 import { usePlayersByIds } from '@/hooks/use-players-by-ids'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSchedule } from '@/hooks/use-schedule'
@@ -32,12 +34,14 @@ import { toast } from '@/hooks/use-toast'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { CommishSection } from './commish-section'
+import { LineupCheckCard } from './lineup-check'
 import { LineupSection } from './lineup-section'
 import { PendingClaims } from './moves'
 import { TeamAvatar } from './team-avatar'
-import { summaryLine, teamOrder } from './team-ops'
+import { lineupCheckRows, summaryLine, teamOrder, type CheckOpponent } from './team-ops'
 import { useRowStats } from './use-row-stats'
 
 /**
@@ -55,6 +59,17 @@ import { useRowStats } from './use-row-stats'
  * waiver claims (desktop team page) sit under the lineup. Not shown (no data
  * in the app): the win-probability meter, rostered / start %, the News tile
  * (its grid cell stays empty).
+ *
+ * The Lineup check card (gap list §3 #11; not in the handoff — the desktop
+ * team page's check) sits above Starters while the week can still change:
+ * starters set N/N, injured and bye starters named (the desktop check's
+ * rules), and the projected score against this week's opponent — stored
+ * projections summed by the Match card's rule, display only.
+ *
+ * A failed standings read puts "Couldn’t load the standings." with Try
+ * again in the card's record line (gap list §3 #14) — a failed read never
+ * reads as "No games played yet". The line holds its height through the
+ * first load and through a retry ("Trying…").
  */
 export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; teamId: string; detail: LeagueDetail }) {
   const team = detail.teams.find((t) => t.id === teamId)!
@@ -77,7 +92,8 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   const roster = useMemo(() => rosterTeam?.roster ?? [], [rosterTeam])
   const lineup = useLineup(teamId, lineupWeek)
   const standings = useStandings(leagueId)
-  const keptIds = useMemo(() => [...keptStarters(lineup.data?.slot_map, roster).values()], [lineup.data, roster])
+  const kept = useMemo(() => keptStarters(lineup.data?.slot_map, roster), [lineup.data, roster])
+  const keptIds = useMemo(() => [...kept.values()], [kept])
   const keptIdentity = usePlayersByIds(keptIds)
   const stats = useRowStats({ leagueId, season: detail.league.season, week: lineupWeek, teamId, playerIds: roster.map((p) => p.player_id), withPoints: true })
   // The Trade tile's opponent: THIS week's (not the week being viewed).
@@ -98,8 +114,49 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
     [lineup.data, roster, detail.settings.roster_settings],
   )
   const proj = projectedTotal(saved.starters.map((r) => r.player?.player_id ?? null), stats.proj)
+
+  // The Lineup check: the viewed week's opponent and their stored lineup.
+  // The games and projections are the rows' own reads (same query keys).
+  const openPlayer = usePlayerModalStore((s) => s.openPlayerView)
+  const games = useMobileTeamGames(detail.league.season, lineupWeek)
+  const values = useLeaguePlayerValues(leagueId, detail.league.season, lineupWeek)
+  const weekPairing = (schedule.data?.matchups ?? []).find((m) => m.week === week && (m.home_team_id === teamId || m.away_team_id === teamId)) ?? null
+  const weekOppId = weekPairing && weekPairing.away_team_id !== null ? (weekPairing.home_team_id === teamId ? weekPairing.away_team_id : weekPairing.home_team_id) : null
+  const oppLineup = useLineup(weekOppId ?? undefined, weekOppId ? lineupWeek : undefined)
+  const checkOpponent: CheckOpponent = !weekPairing
+    ? null
+    : weekOppId === null
+      ? { kind: 'bye' }
+      : {
+          kind: 'opponent',
+          name: detail.teams.find((t) => t.id === weekOppId)?.name ?? 'Opponent',
+          starterIds: oppLineup.data === undefined ? null : oppLineup.data === null ? [] : starterIdsOf(oppLineup.data.slot_map, detail.settings.roster_settings.ir_slots),
+          error: oppLineup.isError && oppLineup.data === undefined,
+        }
+  // Only while the week can still change, and — in the playoffs — only for a
+  // team still playing this week (the Home alert dot's rule).
+  const showCheck = inSeason && editability.state === 'open' && !(detail.league.status === 'playoffs' && weekOppId === null)
+  const checkRows = showCheck
+    ? lineupCheckRows({
+        starters: saved.starters,
+        kept,
+        week,
+        games: games.data ?? [],
+        projOf: stats.proj,
+        projections: values.isError && !values.data ? 'error' : values.isPending ? 'pending' : 'ready',
+        opponent: checkOpponent,
+      })
+    : null
   const anyProj = saved.starters.some((r) => r.player && stats.proj(r.player.player_id) !== null)
   const summary = standings.data ? summaryLine(standings.data.standings, teamId) : null
+  // A failed standings read with nothing cached says so, with Try again —
+  // never "No games played yet" (gap list §3 #14). A failed refetch over a
+  // table already on screen keeps showing that table. Try again on an
+  // errored query with no data puts it back to `pending` (React Query v5),
+  // so the retry is read from `errorUpdatedAt`: the problem line stays up,
+  // reading "Trying…", until the retry lands — no blank line, no jump.
+  const standingsRetrying = !standings.data && standings.isPending && standings.errorUpdatedAt > 0
+  const standingsFailed = (standings.isError && !standings.data) || standingsRetrying
   const seat = rosterTeam ? waiverSeatCopy(detail.settings, rosterTeam, true) : null
 
   const sortedWeeks = useMemo(() => [...new Set(weeks.map((w) => w.week))].sort((a, b) => a - b), [weeks])
@@ -137,9 +194,25 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
             <TeamAvatar teamId={teamId} name={team.name} teamIds={order} myTeamId={teamId} size={44} fontSize={15} />
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[17px] font-semibold tracking-[-0.01em]">{team.name}</span>
-              <span className="truncate text-[12px] font-medium text-m-t3 tabular-nums">
-                {summary ?? (standings.isPending ? ' ' : inSeason ? 'No games played yet' : 'Season hasn’t started')}
-              </span>
+              {standingsFailed ? (
+                <span role="alert" className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-m-t3" data-standings-problem>
+                  <span className="truncate">Couldn’t load the standings.</span>
+                  <button
+                    type="button"
+                    onClick={() => void standings.refetch()}
+                    disabled={standingsRetrying}
+                    className="-my-1.5 flex-none py-1.5 font-semibold text-accent disabled:text-m-t3"
+                  >
+                    {standingsRetrying ? 'Trying…' : 'Try again'}
+                  </button>
+                </span>
+              ) : (
+                // The loading placeholder is a NO-BREAK space: a plain one
+                // collapses and the line (and the card under it) loses a row.
+                <span className="truncate text-[12px] font-medium text-m-t3 tabular-nums">
+                  {summary ?? (standings.isPending ? ' ' : inSeason ? 'No games played yet' : 'Season hasn’t started')}
+                </span>
+              )}
               {seat && <span className="truncate text-[11px] font-medium text-m-t3">{seat}</span>}
             </div>
             <div className="flex flex-none flex-col items-end">
@@ -187,6 +260,7 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
         <Problem title="This team has no roster on record." detail="Every team carries a roster once it is seated — none came back for this one." onRetry={() => void rosters.refetch()} />
       ) : (
         <>
+          {checkRows && <LineupCheckCard rows={checkRows} onPlayer={(id) => openPlayer(id, leagueId)} />}
           <LineupSection
             key={`${teamId}:${week}`}
             variant="tab"
