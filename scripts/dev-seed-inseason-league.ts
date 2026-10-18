@@ -86,7 +86,16 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(URL)) {
   process.exit(2)
 }
 
-const LEAGUE_NAME = 'L.D5.1 dev fixture league'
+/** What the league and its teams are called on screen — realistic, so the
+ *  phone and desktop screens read like a real league (Chris, 2026-10-18:
+ *  "use real player names and whatnot or at least fake human names"). The
+ *  ids (`dev-ld51-*`, the fake NFL codes, the 2099 season) are unchanged;
+ *  the old league name is still cleaned up so a stale fixture goes too. */
+const LEAGUE_NAME = 'Sunday Funday League'
+const LEGACY_LEAGUE_NAMES = ['L.D5.1 dev fixture league']
+const DEV_TEAM_NAME = 'Fourth & Long'
+const PRO_TEAM_NAME = 'Waiver Wire Wizards'
+const SEAT_TEAM_NAMES = ['Red Zone Raiders', 'Bye Week Blues', 'Hail Mary Heroes', 'Taco Tuesday', 'Goal Line Stand', 'Bench Mob']
 const DEV = { email: 'dev@fieldscout.local', password: 'dev-password-1234' }
 const DEV_PRO_EMAIL = 'dev-pro@fieldscout.local'
 const GAME_LOCKED_ID = 'dev-ld51-game-locked'
@@ -100,9 +109,9 @@ const GAME_FINAL_ID = 'dev-ld52-game-final'
  *  to `locked_in_game` off a 2001 kickoff on his own team, one `on_waivers`
  *  with a clearing instant — and the game row that locks the second. */
 const FREE_AGENTS = [
-  { id: 'dev-ld54-fa-wr', full_name: 'Dev FA Wideout', position: 'WR', team: 'LDK', status: 'Active' },
-  { id: 'dev-ld54-fa-rb-locked', full_name: 'Dev FA Back Locked', position: 'RB', team: 'LDL', status: 'Active' },
-  { id: 'dev-ld54-fa-te-waivers', full_name: 'Dev FA Tight End', position: 'TE', team: 'LDM', status: 'Active' },
+  { id: 'dev-ld54-fa-wr', full_name: 'Rashad Ellery', position: 'WR', team: 'LDK', status: 'Active' },
+  { id: 'dev-ld54-fa-rb-locked', full_name: 'Corey Vance', position: 'RB', team: 'LDL', status: 'Active' },
+  { id: 'dev-ld54-fa-te-waivers', full_name: 'Luke Brennan', position: 'TE', team: 'LDM', status: 'Active' },
 ] as const
 const GAME_FA_LOCKED_ID = 'dev-ld54-game-fa-locked'
 const WAIVERS_UNTIL = '2099-09-12T17:00:00.000Z'
@@ -111,22 +120,22 @@ const KICKOFF_FUTURE = '2099-09-13T17:00:00.000Z'
 const ACTION_LEAGUE = 'd5100000-0000-4000-8000-000000000001'
 
 const PLAYERS = [
-  { id: 'dev-ld51-qb', full_name: 'Dev QB Fixture', position: 'QB', team: 'LDA', status: 'Active' },
-  { id: 'dev-ld51-rb-locked', full_name: 'Dev RB Locked', position: 'RB', team: 'LDB', status: 'Active' },
-  { id: 'dev-ld51-rb-open', full_name: 'Dev RB Open', position: 'RB', team: 'LDC', status: 'Active' },
-  { id: 'dev-ld51-wr-a', full_name: 'Dev WR A', position: 'WR', team: 'LDD', status: 'Active' },
-  { id: 'dev-ld51-wr-b', full_name: 'Dev WR B', position: 'WR', team: 'LDE', status: 'Active' },
-  { id: 'dev-ld51-wr-c', full_name: 'Dev WR C', position: 'WR', team: 'LDF', status: 'Active' },
-  { id: 'dev-ld51-te', full_name: 'Dev TE Fixture', position: 'TE', team: 'LDG', status: 'Active' },
-  { id: 'dev-ld51-k', full_name: 'Dev K Fixture', position: 'K', team: 'LDH', status: 'Active' },
-  { id: 'dev-ld51-dst', full_name: 'Dev DST Fixture', position: 'DEF', team: 'LDI', status: 'Active' },
-  { id: 'dev-ld51-ir', full_name: 'Dev IR Fixture', position: 'RB', team: 'LDJ', status: 'IR' },
+  { id: 'dev-ld51-qb', full_name: 'Marcus Delaney', position: 'QB', team: 'LDA', status: 'Active' },
+  { id: 'dev-ld51-rb-locked', full_name: 'Tre Holloway', position: 'RB', team: 'LDB', status: 'Active' },
+  { id: 'dev-ld51-rb-open', full_name: 'Jalen Pritchard', position: 'RB', team: 'LDC', status: 'Active' },
+  { id: 'dev-ld51-wr-a', full_name: 'Darius Whitfield', position: 'WR', team: 'LDD', status: 'Active' },
+  { id: 'dev-ld51-wr-b', full_name: 'Camden Rhodes', position: 'WR', team: 'LDE', status: 'Active' },
+  { id: 'dev-ld51-wr-c', full_name: 'Nico Albright', position: 'WR', team: 'LDF', status: 'Active' },
+  { id: 'dev-ld51-te', full_name: 'Grant Kessler', position: 'TE', team: 'LDG', status: 'Active' },
+  { id: 'dev-ld51-k', full_name: 'Owen Lindqvist', position: 'K', team: 'LDH', status: 'Active' },
+  { id: 'dev-ld51-dst', full_name: 'Bay City D/ST', position: 'DEF', team: 'LDI', status: 'Active' },
+  { id: 'dev-ld51-ir', full_name: 'Malik Brandt', position: 'RB', team: 'LDJ', status: 'IR' },
 ] as const
 
 const service = createClient<Database>(URL, SERVICE_KEY, { auth: { persistSession: false } })
 
 async function cleanup(): Promise<void> {
-  const { data: stale } = await service.from('leagues').select('id').eq('name', LEAGUE_NAME)
+  const { data: stale } = await service.from('leagues').select('id').in('name', [LEAGUE_NAME, ...LEGACY_LEAGUE_NAMES])
   const ids = (stale ?? []).map((r) => r.id)
   if (ids.length > 0) {
     for (const table of ['lineup_actions', 'team_lineups'] as const) {
@@ -225,7 +234,7 @@ async function seed(): Promise<void> {
     p_name: LEAGUE_NAME,
     p_season: SYNTHETIC_SEASON,
     p_scoring_system_id: template?.id,
-    p_team_name: 'Dev Fixture FC',
+    p_team_name: DEV_TEAM_NAME,
     p_action_id: ACTION_LEAGUE,
     p_settings: blob,
     ...columnArgs,
@@ -237,7 +246,7 @@ async function seed(): Promise<void> {
 
   const { data: proTeam, error: proTeamError } = await service
     .from('teams')
-    .insert({ owner_id: proId, name: 'Dev Pro Rivals', league_id: leagueId })
+    .insert({ owner_id: proId, name: PRO_TEAM_NAME, league_id: leagueId })
     .select('id')
     .single()
   if (proTeamError) throw new Error(`teams insert: ${proTeamError.message}`)
@@ -245,7 +254,7 @@ async function seed(): Promise<void> {
   // check (110) passes and a real season can be generated. Unmanaged.
   const { error: seatsError } = await service
     .from('teams')
-    .insert(Array.from({ length: 6 }, (_, i) => ({ owner_id: proId, name: `Dev Seat ${i + 3}`, league_id: leagueId })))
+    .insert(SEAT_TEAM_NAMES.map((name) => ({ owner_id: proId, name, league_id: leagueId })))
   if (seatsError) throw new Error(`teams insert (seats): ${seatsError.message}`)
   const { error: memberError } = await service.from('league_members').insert([{ league_id: leagueId, user_id: proId, team_id: proTeam.id, role: 'manager' }])
   if (memberError) throw new Error(`league_members: ${memberError.message}`)
