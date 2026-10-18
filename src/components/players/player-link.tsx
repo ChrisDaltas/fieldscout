@@ -115,7 +115,7 @@ export function PlayerFace({ playerId, name, position, team, headshotUrl, contex
 
 /** A composed sentence whose named players (`playerParts`) are each a door
  *  to his card; the rest stays text. */
-export function TextWithPlayers({ text, players, context }: { text: string; players: readonly NamedPlayer[]; context: PlayerCardContext }) {
+export function TextWithPlayers({ text, players, context }: { text: string; players: readonly NamedPlayer[]; context?: PlayerCardContext }) {
   return (
     <>
       {playerParts(text, players).map((part, i) =>

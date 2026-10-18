@@ -217,7 +217,9 @@ beforeAll(async () => {
     season: SYNTHETIC_SEASON,
     week: 1,
     starters: [],
-    bench: [],
+    // F567 / R1572: the real-world shape — 116's auto-carry stores bench =
+    // roster − starters − IR, and a scored week's box reads THIS bench.
+    bench: [BENCH],
     slot_map: { 'qb:0': QB, 'wr:0': WR, 'wr:1': WR2, 'te:0': TE },
   })
   if (lineupError) throw new Error(`team_lineups insert: ${lineupError.message}`)
@@ -333,7 +335,21 @@ describe('the box — the worker’s function over the frozen snapshot, golden l
   })
 
   it('D478 — the BENCH: the rostered non-starter scored live by the same worker (40 × 0.1 = 4.00, Done), never counted in the team’s points', () => {
-    expect(doc.bench).toEqual([{ player_id: BENCH, phase: 'done', game: expect.objectContaining({ id: 'vitest-bx-game-final' }), points: 4, pending: [], reason: 'scored' }])
+    // A LIVE week: the bench is the current roster minus the starters (F567
+    // reads the stored bench only once the week is scored); each line now
+    // names its player (D530(2)).
+    expect(doc.bench_source).toBe('roster')
+    expect(doc.bench).toEqual([
+      {
+        player_id: BENCH,
+        phase: 'done',
+        game: expect.objectContaining({ id: 'vitest-bx-game-final' }),
+        points: 4,
+        pending: [],
+        reason: 'scored',
+        player: { full_name: 'Vitest BX Bench WR', position: 'WR', nfl_team: 'BXB', headshot_url: null },
+      },
+    ])
     // R1470: "never counted" — the team total is the starters' 31.60, not 35.60.
     expect(doc.points).toBe(31.6)
     expect(doc.points).toBeCloseTo(doc.starters.reduce((sum, s) => sum + (s.points ?? 0), 0), 6)
@@ -394,6 +410,37 @@ describe('the box — real states, not zeros', () => {
     } finally {
       const { error: restore } = await service.from('leagues').update({ deleted_at: null }).eq('id', leagueId)
       if (restore) throw new Error(`restore: ${restore.message}`)
+    }
+  })
+})
+
+describe('F567 — a SCORED week reads the bench stored with its lineup', () => {
+  const setWeek = async (status: string) => {
+    const { data, error } = await service.from('league_weeks').update({ status }).eq('league_id', leagueId).eq('week', 1).select('id')
+    if (error) throw new Error(`league_weeks status: ${error.message}`)
+    expect(data).toHaveLength(1)
+  }
+  const setBench = async (bench: string[] | null) => {
+    const { data, error } = await service.from('team_lineups').update({ bench: bench as never }).eq('team_id', commishTeamId).eq('week', 1).select('team_id')
+    if (error) throw new Error(`team_lineups bench: ${error.message}`)
+    expect(data).toHaveLength(1)
+  }
+  it('stored bench → that bench (not today’s roster); an EMPTY stored bench is a real empty bench', async () => {
+    // Walk the legal steps to a scored week (§12.17). The file's LAST block,
+    // so no earlier pin reads the moved week; afterAll removes the league.
+    await setWeek('live')
+    await setWeek('correction_window')
+    try {
+      const stored = box(await readBoxScore(commishClient, leagueId, { week: '1', team: commishTeamId }))
+      expect(stored.bench_source).toBe('stored')
+      expect(stored.bench?.map((l) => [l.player_id, l.points, l.ir])).toEqual([[BENCH, 4, false]])
+      // R1571: [] stored = nobody on the bench that week — stored, no lines.
+      await setBench([])
+      const empty = box(await readBoxScore(commishClient, leagueId, { week: '1', team: commishTeamId }))
+      expect(empty.bench_source).toBe('stored')
+      expect(empty.bench).toEqual([])
+    } finally {
+      await setBench([BENCH])
     }
   })
 })

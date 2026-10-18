@@ -437,7 +437,11 @@ export function CommishLogSection({
                     ) : (
                       <span className="font-bold text-ink">{line.actor}</span>
                     )}{' '}
-                    <TextWithUsernames marked={line.marked} />
+                    <TextWithUsernames
+                      marked={line.marked}
+                      // F563: the players the sentence names are doors too (the league shell's ambient card context).
+                      renderText={(t) => <TextWithPlayers text={t} players={line.players} />}
+                    />
                     {/* A NULL reason is ABSENT — no clause, no empty quote (§10.3). */}
                     {line.reason !== null && <span data-commish-log-reason>{` — reason: “${line.reason}”`}</span>}
                   </span>
