@@ -36,6 +36,7 @@ import {
   formatSaved,
   fromDbPos,
   moveItem,
+  onBye,
   opensInWeek,
   orderChanged,
   plural,
@@ -58,6 +59,7 @@ import {
   type RankPos,
   type RankType,
   type Scoring,
+  type WeekGameLite,
 } from '@/components/mobile/rankings/rankings-ops'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MPosChip, posTextClass } from '@/components/mobile/ui/m-pos-chip'
@@ -365,7 +367,7 @@ export function RankingEditor({
   }
 
   // ---- actions --------------------------------------------------------------
-  const [sheet, setSheet] = useState<null | 'pos' | 'all' | 'scoring'>(null)
+  const [sheet, setSheet] = useState<null | 'add' | 'scoring'>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
 
   // Browser / OS Back left with unpublished changes: the area put the
@@ -572,7 +574,7 @@ export function RankingEditor({
         <div className="flex flex-none flex-col gap-2.5 border-b border-m-b3 px-4 pb-2.5">
           {(!readOnly || movementAvailable) && (
             <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
-              {!readOnly && <ToolChip icon={RK_ICON.plus} label="Add players" onClick={() => setSheet('pos')} />}
+              {!readOnly && <ToolChip icon={RK_ICON.plus} label="Add players" onClick={() => setSheet('add')} />}
               {!readOnly && (
                 <button
                   type="button"
@@ -633,7 +635,7 @@ export function RankingEditor({
                 {!readOnly && (
                   <button
                     type="button"
-                    onClick={() => setSheet('all')}
+                    onClick={() => setSheet('add')}
                     className="flex h-10 items-center rounded-pill bg-accent px-[18px] text-[14px] font-semibold text-white"
                   >
                     Add players
@@ -730,12 +732,12 @@ export function RankingEditor({
       </MobileSheet>
 
       <AddPlayersSheet
-        open={sheet === 'pos' || sheet === 'all'}
-        initialChip={sheet === 'all' ? 'all' : 'pos'}
+        open={sheet === 'add'}
         onOpenChange={(o) => {
           if (!o) setSheet(null)
         }}
         pos={pos}
+        weekGames={isSeason ? undefined : games.data}
         pool={pool.data}
         poolPending={pool.isPending}
         inRanking={new Set(seq)}
@@ -906,13 +908,21 @@ function ToolChip({ icon, label, onClick }: { icon: string; label: string; onCli
 // ---------------------------------------------------------------------------
 // Add players sheet (lr-myrank §2.4) — the position's whole pool, in
 // projection order; a tap toggles the player in the draft.
+//
+// Gap list §3 #31: a ranking holds one position, so the design's "All" chip
+// listed exactly what the position chip did — it's gone, and the position
+// shows as the one (selected) chip. On a weekly ranking a player whose team
+// has no game that week is marked "Bye" from the real schedule, the same
+// test the editor's "KC · Bye" line uses; he can still be added (the mark
+// says why he'd score nothing). Season rankings span every week, so nothing
+// is marked, and neither is anyone while the week's schedule isn't on record.
 // ---------------------------------------------------------------------------
 
-function AddPlayersSheet({
+export function AddPlayersSheet({
   open,
-  initialChip,
   onOpenChange,
   pos,
+  weekGames,
   pool,
   poolPending,
   inRanking,
@@ -920,11 +930,10 @@ function AddPlayersSheet({
   onToggle,
 }: {
   open: boolean
-  /** The Add players tool opens on the ranking's position; the empty
-   *  state's button on All (lr-frame §2.10). */
-  initialChip: 'pos' | 'all'
   onOpenChange: (o: boolean) => void
   pos: RankPos
+  /** The ranking week's games (weekly rankings only) — marks the byes. */
+  weekGames: readonly WeekGameLite[] | undefined
   pool: Map<string, PoolStat> | undefined
   poolPending: boolean
   inRanking: Set<string>
@@ -932,15 +941,7 @@ function AddPlayersSheet({
   onToggle: (id: string) => void
 }) {
   const [q, setQ] = useState('')
-  const [chip, setChip] = useState<'pos' | 'all'>(initialChip)
-  const [wasOpen, setWasOpen] = useState(open)
-  if (open !== wasOpen) {
-    setWasOpen(open)
-    if (open) setChip(initialChip)
-  }
   const query = q.trim().toLowerCase()
-  // A ranking holds one position, so "All" and the position chip list the
-  // same players (lr-frame §2.10 "Pick-sheet rules").
   const list = useMemo(() => {
     const all = Array.from(pool?.values() ?? [])
     if (!query) return all
@@ -963,26 +964,10 @@ function AddPlayersSheet({
             className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-m-t1 outline-none placeholder:text-n-3"
           />
         </label>
-        <div className="flex gap-1.5 overflow-x-auto scrollbar-none" role="group" aria-label="Position">
-          {(
-            [
-              ['all', 'All'],
-              ['pos', rankPosLabel(pos)],
-            ] as const
-          ).map(([k, l]) => (
-            <button
-              key={k}
-              type="button"
-              aria-pressed={chip === k}
-              onClick={() => setChip(k)}
-              className={cn(
-                'flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill px-3 text-[12px] font-semibold',
-                chip === k ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1',
-              )}
-            >
-              {l}
-            </button>
-          ))}
+        <div className="flex gap-1.5">
+          <span className="flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill bg-m-ink px-3 text-[12px] font-semibold text-white">
+            {rankPosLabel(pos)}
+          </span>
         </div>
       </div>
       <div className="px-4 pb-[30px]">
@@ -995,6 +980,7 @@ function AddPlayersSheet({
         ) : (
           list.map((p) => {
             const on = inRanking.has(p.id)
+            const bye = onBye(p.team, weekGames)
             return (
               <button
                 key={p.id}
@@ -1006,10 +992,19 @@ function AddPlayersSheet({
                 <MHeadshot player={p} size={34} />
                 <span className="flex min-w-0 flex-1 flex-col gap-px">
                   <span className="truncate text-[14px] font-semibold text-m-t1">{p.full_name}</span>
-                  <span className={cn('text-[11px] font-semibold', posTextClass(p.position))}>
+                  <span className={cn('truncate text-[11px] font-semibold', posTextClass(p.position))}>
                     {rankPosLabel(fromDbPos(p.position) ?? pos)}{' '}
                     <span className="font-medium text-m-t3">
-                      {p.team ?? 'FA'} · Proj #{p.projRank}
+                      {p.team ?? 'FA'}
+                      {bye && (
+                        <>
+                          {' · '}
+                          <span data-bye className="font-semibold text-m-to">
+                            Bye
+                          </span>
+                        </>
+                      )}
+                      {' · '}Proj #{p.projRank}
                     </span>
                   </span>
                 </span>
