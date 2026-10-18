@@ -418,7 +418,7 @@ async function provisionLeagueWorld(zeroDollar: boolean, budget: number): Promis
     name,
     season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     scoring_system_id: scoringSystemId,
-    team_name: `${name} T1`,
+    team_name: `SP ${zeroDollar ? 'z' : 'r'}${worldCounter} T1`, // ≤ 24 — team names, migration 196
     action_id: mintActionId(),
     settings: configured,
   })
@@ -1195,7 +1195,7 @@ async function provisionMockHostLeague(): Promise<{ leagueId: string; commishTea
     name,
     season: SYNTHETIC_SEASON, // F215: the fixture owns its calendar (migration 110 maps completion onto nfl_weeks)
     scoring_system_id: scoringSystemId,
-    team_name: `${name} T1`,
+    team_name: `SP mock${worldCounter} T1`, // ≤ 24 — team names, migration 196
     action_id: mintActionId(),
     settings: {
       ...settings,

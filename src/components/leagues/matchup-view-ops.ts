@@ -14,7 +14,7 @@
  * No clock is read (§23.3; the F226 posture extends to the UI: render the
  * server's instants, compute nothing).
  */
-import type { BoxBenchLine, BoxStarter, StarterPhase, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
+import type { BenchSourceKind, BoxBenchLine, BoxStarter, StarterPhase, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, TeamWeekResultRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { ScheduleWeek } from '@/hooks/use-schedule'
@@ -454,10 +454,12 @@ export function emptyWeekCopy(week: number, weeks: readonly Pick<ScheduleWeek, '
 
 export const BENCH_LABEL = 'Bench'
 export const BENCH_NOT_COUNTED_COPY = 'Bench points don’t count toward the total.'
-/** The box's bench is the team's CURRENT roster minus the week's starters
- *  (the box read computes it live; no per-week bench is stored), so a past
- *  week says which roster it shows. */
+/** A box read that predates F567 (no `bench_source`) computes a past week's
+ *  bench from the CURRENT roster, so that week says which roster it shows. */
 export const BENCH_TODAY_COPY = 'This is the team’s bench today — a player moved since this week isn’t listed.'
+/** F567: a scored week with no bench stored with its lineup — said, never
+ *  filled in from today's roster. */
+export const BENCH_NOT_RECORDED_COPY = 'Bench not recorded for this week.'
 export const EMPTY_BENCH_COPY = 'Nobody on the bench.'
 
 export interface BenchRow {
@@ -481,10 +483,17 @@ export function benchRows(
   const byId = new Map((roster ?? []).map((p) => [p.player_id, p]))
   const rows = (bench ?? []).map((line): BenchRow => {
     const p = byId.get(line.player_id)
+    // F567: a stored past-week bench names its own players (one dropped
+    // since is not on today's roster) and says who sat on IR that week.
+    const own = line.player
     return {
       player_id: line.player_id,
-      player: p ? { id: p.player_id, full_name: p.full_name, position: p.position, nfl_team: p.nfl_team } : null,
-      ir: Boolean(p?.slot_key?.startsWith('ir')),
+      player: p
+        ? { id: p.player_id, full_name: p.full_name, position: p.position, nfl_team: p.nfl_team }
+        : own
+          ? { id: line.player_id, full_name: own.full_name, position: own.position, nfl_team: own.nfl_team, headshot_url: own.headshot_url }
+          : null,
+      ir: line.ir ?? Boolean(p?.slot_key?.startsWith('ir')),
       cell: starterCell(line),
     }
   })
@@ -500,9 +509,26 @@ export function benchRows(
   )
 }
 
-/** A week that is no longer upcoming or being played shows today's bench. */
-export function benchNote(weekStatus: string): string | null {
-  return weekStatus === 'upcoming' || weekStatus === 'live' ? null : BENCH_TODAY_COPY
+/** The bench's note (F567). Each side is `{ source, team }` from its box
+ *  read. A side whose bench was not recorded is named; when none was, one
+ *  line says so. A stored bench needs no note. A read without
+ *  `bench_source` (pre-F567) keeps the today's-roster note on a past week. */
+export function benchNote(
+  weekStatus: string,
+  sides: ReadonlyArray<{ source: BenchSourceKind | undefined; team: string }> = [],
+): string | null {
+  const missing = sides.filter((s) => s.source === 'not_recorded')
+  if (missing.length > 0) {
+    return missing.length === sides.length ? BENCH_NOT_RECORDED_COPY : `${missing.map((s) => s.team).join(' and ')}’s bench wasn’t recorded for this week.`
+  }
+  if (weekStatus === 'upcoming' || weekStatus === 'live') return null
+  return sides.length > 0 && sides.every((s) => s.source === 'stored') ? null : BENCH_TODAY_COPY
+}
+
+/** F567: every side's bench is unrecorded — the note says so, so the empty
+ *  bench is not also "Nobody on the bench". */
+export function benchUnrecorded(sides: ReadonlyArray<{ source: BenchSourceKind | undefined }>): boolean {
+  return sides.length > 0 && sides.every((s) => s.source === 'not_recorded')
 }
 
 // ---------------------------------------------------------------------------
@@ -583,4 +609,76 @@ export function projectedTotalText(total: { total: number; missing: number } | n
 export function benchSlotLabel(pair: { home: { ir: boolean } | null; away: { ir: boolean } | null }): string {
   const rows = [pair.home, pair.away].filter((r): r is { ir: boolean } => r !== null)
   return rows.length > 0 && rows.every((r) => r.ir) ? 'IR' : 'BN'
+}
+
+// ---------------------------------------------------------------------------
+// Win chance — F566 (Chris 2026-10-17: "a simple win probability from both
+// teams' remaining projections — plain, transparent, no invented models")
+// ---------------------------------------------------------------------------
+
+export const WIN_CHANCE_LABEL = 'Win chance'
+/** Says exactly how the number is worked out (the meter's note). */
+export const WIN_CHANCE_HOW =
+  'Projected final = points so far + projections of starters yet to play. 50% when level; 100% once a lead is bigger than all the points still to come.'
+
+export interface WinChanceSide {
+  /** The box's worker total so far; null = pending. */
+  points: number | null
+  starters: readonly Pick<BoxStarter, 'player' | 'phase'>[]
+}
+
+export interface WinChance {
+  /** Whole percent, the two sides adding to 100. */
+  home: number
+  away: number
+  homeFinal: number
+  awayFinal: number
+}
+
+/**
+ * The plain rule (F566). Per side: projected final = points so far + the
+ * stored projections of its starters still `up_next`. With R = both sides'
+ * projected points still to come, home's chance = 0.5 + (home final − away
+ * final) / 2R, held between 0 and 1. Before kickoff that is each side's share
+ * of the two projected totals; as games finish R shrinks and a lead counts
+ * for more. Null — no meter, never a guess — when the week is not upcoming /
+ * live, either side has no filled lineup, a side's total is pending once its
+ * games have started, a starter still to play has no stored projection, or
+ * nothing is left to play (the stored result decides then).
+ */
+export function winChance(
+  weekStatus: string,
+  home: WinChanceSide | null,
+  away: WinChanceSide | null,
+  projOf: (playerId: string) => number | null | undefined,
+): WinChance | null {
+  if (weekStatus !== 'upcoming' && weekStatus !== 'live') return null
+  if (!home || !away) return null
+  const side = (s: WinChanceSide): { now: number; left: number } | null => {
+    const filled = s.starters.filter((x) => x.player !== null)
+    if (filled.length === 0) return null
+    const started = filled.some((x) => x.phase !== 'up_next')
+    if (s.points === null && started) return null
+    let left = 0
+    for (const x of filled) {
+      if (x.phase !== 'up_next') continue
+      const p = projOf(x.player!.id)
+      if (p === null || p === undefined) return null
+      left += p
+    }
+    return { now: s.points ?? 0, left }
+  }
+  const h = side(home)
+  const a = side(away)
+  if (!h || !a) return null
+  const remaining = h.left + a.left
+  if (remaining <= 0) return null
+  const homeFinal = h.now + h.left
+  const awayFinal = a.now + a.left
+  const p = Math.min(1, Math.max(0, 0.5 + (homeFinal - awayFinal) / (2 * remaining)))
+  // R1570: a rounded 0% / 100% is shown only when it is certain (p exactly
+  // 0 or 1); otherwise the display stays within 1–99%.
+  const homePct = p === 0 || p === 1 ? p * 100 : Math.min(99, Math.max(1, Math.round(p * 100)))
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  return { home: homePct, away: 100 - homePct, homeFinal: r2(homeFinal), awayFinal: r2(awayFinal) }
 }

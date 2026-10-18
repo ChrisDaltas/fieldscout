@@ -25,6 +25,7 @@ import {
   OVERRIDDEN_TITLE,
   SECOND_CHIP_LABEL,
   benchNote,
+  benchUnrecorded,
   benchRows,
   benchSlotLabel,
   boxSumCell,
@@ -981,7 +982,13 @@ function Board({
   const benchA = rosters.data && dataA?.bench ? benchHalves(dataA.bench, rosterOf(a)) : null
   const benchB = rosters.data && bTeam && dataB?.bench ? benchHalves(dataB.bench, rosterOf(bTeam)) : null
   const benchPairs = pairBench(benchA ?? [], benchB ?? [])
-  const benchExtra = benchNote(doc.league_week.status)
+  // F567: a past week's bench is the stored one; an unrecorded one is said.
+  const benchSides = [
+    ...(dataA ? [{ source: dataA.bench_source, team: teamName(doc, a) }] : []),
+    ...(bTeam && dataB ? [{ source: dataB.bench_source, team: teamName(doc, bTeam) }] : []),
+  ]
+  const benchExtra = benchNote(doc.league_week.status, benchSides)
+  const noBenchRecorded = benchUnrecorded(benchSides)
 
   const grid = two ? 'grid grid-cols-[minmax(0,1fr)_38px_minmax(0,1fr)] items-center gap-2' : 'grid grid-cols-[38px_minmax(0,1fr)] items-center gap-2'
   const half = (p: HalfPlayer | null | 'gone', present: boolean, mirror = false) =>
@@ -1057,7 +1064,7 @@ function Board({
                     Try again
                   </button>
                 </div>
-              ) : benchPairs.length === 0 ? (
+              ) : benchPairs.length === 0 && noBenchRecorded ? null : benchPairs.length === 0 ? (
                 <p className="py-4 text-center text-[13px] font-medium text-m-t3" data-empty="no-bench">
                   {EMPTY_BENCH_COPY}
                 </p>

@@ -2,8 +2,8 @@
  * A team's win/loss streak — ONE count for every screen that shows one:
  * the Match card ("2-6 ▼2L"), the Team view's Streak tile ("L2") and
  * Standings ("2-6 · ▼2L"). Gap list #39 (Chris, 2026-10-15): the Match card
- * shows it too, and all three count it the same way. No desktop screen
- * shows a streak.
+ * shows it too, and all three count it the same way. The desktop Matchup
+ * page's scoreboard shows it the same way (F566, D530).
  *
  * THE RULE (Chris, 2026-10-16: "count everything if a league is using win
  * vs median, but not if not"): the run of identical results at the end of

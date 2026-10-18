@@ -616,7 +616,9 @@ describe('§16.5.4 — the required states', () => {
     expect(section).toContain('corrected a Week 2 score: 98.4–97.1 → 96.4–97.1')
     expect(section).toContain('renamed Old Name to New Name')
     expect(section).not.toContain('reassign')
-    expect(section).toContain('moved Moved Guy from Alpha to Bravo')
+    expect(section.replace(/<[^>]+>/g, '')).toContain('moved Moved Guy from Alpha to Bravo')
+    // F563: the moved player's name is a door to his card.
+    expect(section).toMatch(/data-player-link="[^"]+"[^>]*>Moved Guy<\/button>/)
     expect(section).toContain('changed the waiver period: 48 hours → 72 hours') // L.E1.34 (TD12 / R1395): the key in words, the value with its unit
     // L.E1.41: the actor is named — and his name opens his profile.
     expect(section).toMatch(/<a data-username-link="chris"[^>]*font-bold[^>]*href="\/u\/chris">chris<\/a>/)

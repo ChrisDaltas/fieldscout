@@ -788,6 +788,12 @@ function joinWords(parts: readonly string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
+/** F563: the trade's players with their ids — the doors for the names the
+ *  commissioner's answer interpolates (`commishOutcomeCopy`). */
+export function tradeNamedPlayers(trade: Pick<TradeView, 'items'>): Array<{ playerId: string; name: string }> {
+  return trade.items.flatMap((i) => (i.player?.full_name ? [{ playerId: i.player.player_id, name: i.player.full_name }] : []))
+}
+
 /** The commissioner's answer, in words. */
 export function commishOutcomeCopy(result: Pick<CommishTradeResult, 'outcome' | 'bypassed' | 'no_changes_why' | 'score_stale'>, playerName: (id: string) => string | null): string {
   switch (result.outcome) {

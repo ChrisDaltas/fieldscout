@@ -43,6 +43,8 @@ const EXCEPTIONS: Record<string, string> = {
     'An identity card in the page content, shared with the public /u/[username] page (where it is the SEO h1). On /app/profile the page title is the standard header ("My stats"); the card demotes to h2 there.',
   'src/app/app/(shell)/nfl/[team]/page.tsx':
     'The team identity card in the content (crest, division, bye); the page title + back action are already the standard header (D486(12)).',
+  'src/components/players/player-detail-header.tsx':
+    "The player identity hero in the page content (headshot, name, status) — found by R1511's dynamic-className scan; the page title + Back are already the standard header (D486).",
   'src/components/draft/draft-command-bar.tsx':
     'The full-screen draft room\'s command bar (D-room chrome, pinned over the board) — the room replaces the shell, it is not a page header.',
   'src/components/leagues/playoff-bracket.tsx':
@@ -99,7 +101,9 @@ const RULES: Rule[] = [
   {
     id: 'C page-size heading',
     pinnable: true,
-    test: (s) => /<(h[1-6]|Heading)\b[^>]*className="[^"]*\btext-h[1-4]\b/.test(s),
+    // R1511: a dynamic className (`{cn('…')}` / a template literal) counts too.
+    test: (s) =>
+      /<(h[1-6]|Heading)\b[^>]*?className=(?:"[^"]*|\{[^}]*?)\btext-h[1-4]\b/.test(s),
   },
   {
     id: 'D hand-rolled mobile title row',
@@ -150,6 +154,9 @@ describe('F577 / D487 — page headers are the standard PageHeader', () => {
     expect(hit('B', '<header className="flex">')).toBe(true)
     expect(hit('C', '<h2 className="text-h4">x</h2>')).toBe(true)
     expect(hit('C', '<h2 className="text-h5">x</h2>')).toBe(false)
+    expect(hit('C', "<h2 className={cn('min-w-0', 'text-h3')}>x</h2>")).toBe(true)
+    expect(hit('C', '<h2 className={`truncate text-h2 ${x}`}>x</h2>')).toBe(true)
+    expect(hit('C', "<h2 className={cn('text-h5', a)}>x</h2>")).toBe(false)
     expect(hit('D', '<div className="flex lg:hidden">\n  <h3 className="mr-auto text-h5">Lists</h3>')).toBe(true)
     expect(hit('D', '<h3 className="text-h5 lg:hidden">Report</h3>')).toBe(true)
     expect(hit('E', '<PageHeader\n  title={\n    <div>')).toBe(true)
