@@ -6,13 +6,14 @@ import { isOnlineIn, onlineUnion, usePresenceStore } from '@/stores/presence-sto
 
 /**
  * Who's online (gap list §3 #25) — read side. Each avatar asks the presence
- * store, which the session's one `PresenceHost` fills from your leagues'
- * rooms; nothing here opens a channel, so a list of a hundred rows costs a
- * hundred store reads and zero sockets.
+ * store, which the session's `PresenceHost` fills from your current
+ * league's room; nothing here opens a channel, so a list of a hundred rows
+ * costs a hundred store reads and zero sockets.
  *
- * Online means a league-mate has FieldScout open in front of them right now.
- * It is false for you, for someone you share no league with (nothing tells
- * us), and while presence is unknown (a dropped channel claims nobody).
+ * Online means a member of your current league has FieldScout open in front
+ * of them right now. It is false for you, for someone outside that league
+ * (one room per session — spec §9.3 — so nothing tells us), and while
+ * presence is unknown (a dropped channel claims nobody).
  */
 export function useIsOnline(userId: string | null | undefined): boolean {
   return usePresenceStore((s) => isOnlineIn(s.byLeague, userId))

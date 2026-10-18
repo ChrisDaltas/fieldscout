@@ -10,10 +10,17 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { teamOnlineLookup } from '@/hooks/use-online'
 
-import { isOnlineIn, onlineUnion, usePresenceStore } from './presence-store'
+import {
+  isOnlineIn,
+  isPresenceLeague,
+  leagueIdInPath,
+  onlineUnion,
+  presenceLeagueId,
+  usePresenceStore,
+} from './presence-store'
 
 afterEach(() => {
-  usePresenceStore.setState({ byLeague: {} })
+  usePresenceStore.setState({ byLeague: {}, recentLeagueId: null })
 })
 
 describe('the presence store', () => {
@@ -59,6 +66,89 @@ describe('the presence store', () => {
   })
 })
 
+describe('one league room per session — the current league (spec §9.3)', () => {
+  // GET /api/leagues order: newest first.
+  const leagues = [
+    { id: 'L-new', status: 'setup' },
+    { id: 'L-live', status: 'in_season' },
+    { id: 'L-old', status: 'complete' },
+  ]
+  const pick = (pathname: string, mode: 'desktop' | 'mobile' | null, recentLeagueId: string | null = null) =>
+    presenceLeagueId({ pathname, mode, recentLeagueId, leagues })
+
+  it('on a league’s pages it is that league, on either layout', () => {
+    for (const mode of ['desktop', 'mobile', null] as const) {
+      expect(pick('/app/leagues/L-live', mode)).toBe('L-live')
+      expect(pick('/app/leagues/L-live/team/t1', mode)).toBe('L-live')
+      expect(pick('/app/leagues/L-new/standings', mode, 'L-live')).toBe('L-new')
+    }
+  })
+
+  it('someone inside the draft room is counted on the draft’s league', () => {
+    // The (room) layout's host reads the same path: the drafter is "here"
+    // in the league beside the draft's own channel, so they are online on
+    // every other screen too.
+    expect(pick('/app/leagues/L-live/draft', 'desktop')).toBe('L-live')
+    expect(pick('/app/leagues/L-live/draft', 'mobile', 'L-new')).toBe('L-live')
+    expect(pick('/app/leagues/L-live/draft?draft=d1', 'mobile')).toBe('L-live')
+  })
+
+  it('off league pages a phone keeps the league you were last in', () => {
+    expect(pick('/app/messages', 'mobile', 'L-live')).toBe('L-live')
+    expect(pick('/app/lists', 'mobile', 'L-live')).toBe('L-live')
+    // …else your newest league still in play.
+    expect(pick('/app', 'mobile')).toBe('L-new')
+    expect(pick('/app/leagues', 'mobile')).toBe('L-new')
+  })
+
+  it('off league pages desktop holds no league room at all', () => {
+    expect(pick('/app', 'desktop', 'L-live')).toBeNull()
+    expect(pick('/app/lists', 'desktop', 'L-live')).toBeNull()
+    expect(pick('/app/mocks/m1', 'desktop', 'L-live')).toBeNull()
+    expect(pick('/app', null, 'L-live')).toBeNull()
+  })
+
+  it('a finished season is never held — its own pages hold none, and it is never a fallback', () => {
+    expect(isPresenceLeague('complete')).toBe(false)
+    for (const status of ['setup', 'scheduled', 'drafting', 'in_season', 'playoffs']) expect(isPresenceLeague(status)).toBe(true)
+    expect(pick('/app/leagues/L-old', 'mobile', 'L-live')).toBeNull()
+    expect(pick('/app/lists', 'mobile', 'L-old')).toBe('L-new')
+    expect(presenceLeagueId({ pathname: '/app', mode: 'mobile', recentLeagueId: null, leagues: [{ id: 'L-old', status: 'complete' }] })).toBeNull()
+  })
+
+  it('a remembered league you are no longer in (or another account’s) is ignored', () => {
+    expect(pick('/app/messages', 'mobile', 'L-gone')).toBe('L-new')
+  })
+
+  it('a /app/leagues path that is not one of your leagues is not a league page', () => {
+    expect(pick('/app/leagues/new', 'mobile', 'L-live')).toBe('L-live')
+    expect(pick('/app/leagues/new', 'desktop', 'L-live')).toBeNull()
+    expect(presenceLeagueId({ pathname: '/app/leagues/L-live', mode: 'mobile', recentLeagueId: null, leagues: [] })).toBeNull()
+  })
+
+  it('reads the league id out of a path', () => {
+    expect(leagueIdInPath('/app/leagues/abc')).toBe('abc')
+    expect(leagueIdInPath('/app/leagues/abc/draft')).toBe('abc')
+    expect(leagueIdInPath('/app/leagues')).toBeNull()
+    expect(leagueIdInPath('/app/messages')).toBeNull()
+  })
+
+  it('remembers the last league without re-rendering on a repeat', () => {
+    usePresenceStore.getState().setRecentLeague('L-live')
+    const before = usePresenceStore.getState()
+    usePresenceStore.getState().setRecentLeague('L-live')
+    expect(usePresenceStore.getState()).toBe(before)
+    expect(usePresenceStore.getState().recentLeagueId).toBe('L-live')
+  })
+
+  it('the host holds the one picked league, never a map over every league', () => {
+    const host = readFileSync(path.resolve(process.cwd(), 'src/components/layout/presence-host.tsx'), 'utf8')
+    expect(host).toContain('presenceLeagueId({')
+    expect(host).not.toMatch(/leagues\.data \?\? \[\]\)\.map/)
+    expect(host.match(/<LeaguePresence /g)).toHaveLength(1)
+  })
+})
+
 describe('a team is online through its manager', () => {
   const members = [
     { user_id: 'u-me', team_id: 'team-me' },
@@ -88,12 +178,15 @@ function sourceFiles(dir = 'src'): string[] {
   return out
 }
 
-describe('mounted once, in the app shell', () => {
-  it('the shell renders the one PresenceHost; no screen or row does', () => {
+describe('mounted once per frame — the app shell and the draft room', () => {
+  it('the shell and the (room) layout each render one PresenceHost; no screen or row does', () => {
+    // The two frames are sibling route groups, so exactly one is mounted at a
+    // time — and without the room's, a manager who is drafting reads offline.
     const hosts = sourceFiles().filter((rel) => readFileSync(path.resolve(process.cwd(), rel), 'utf8').includes('<PresenceHost'))
-    expect(hosts).toEqual(['src/components/layout/app-shell.tsx'])
-    const shell = readFileSync(path.resolve(process.cwd(), 'src/components/layout/app-shell.tsx'), 'utf8')
-    expect(shell.match(/<PresenceHost \/>/g)).toHaveLength(1)
+    expect(hosts.sort()).toEqual(['src/app/app/(room)/layout.tsx', 'src/components/layout/app-shell.tsx'])
+    for (const rel of hosts) {
+      expect(readFileSync(path.resolve(process.cwd(), rel), 'utf8').match(/<PresenceHost \/>/g), rel).toHaveLength(1)
+    }
   })
 
   it('nothing but the host asks to be counted as here', () => {

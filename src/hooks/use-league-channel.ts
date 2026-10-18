@@ -88,9 +88,9 @@ import {
  * (`tracksPresence` — the session's one `PresenceHost`, never a league page
  * or a row) and the page is in front. No second `.channel(` and no new
  * policy: 070 already lets members track presence on `league:<id>` and read
- * it, and nobody else. The cost is honest: the host holds one room per
- * league you're in for the whole session, so a league page adds nothing
- * (it joins the room the host already holds), and a dot never opens one.
+ * it, and nobody else. The cost stays inside §9.3's budget: the host holds
+ * ONE room, your current league's — on a league page that is the room the
+ * page already holds, so it adds nothing — and a dot never opens one.
  */
 
 export type LeagueChannelConnection = 'connecting' | 'live' | 'reconnecting'

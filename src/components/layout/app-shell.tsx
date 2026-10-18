@@ -107,8 +107,8 @@ export function AppShell({ children }: AppShellProps) {
             no window is open — this is the one Round 2 component that mounts on
             every route. */}
         <ListWindowsHost />
-        {/* Who's online (gap list §3 #25): one presence join per league for
-            the session — renders nothing; every green dot reads its store. */}
+        {/* Who's online (gap list §3 #25): one presence join, on your current
+            league — renders nothing; every green dot reads its store. */}
         <PresenceHost />
         <CommandPalette />
         <ListFormDialog

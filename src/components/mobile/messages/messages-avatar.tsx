@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
  * one without (the switcher's swipe) would otherwise draw neither.
  *
  * A person's avatar takes the design's green "online" dot (gap list §3 #25)
- * when `online` is passed — real presence from your leagues' rooms
+ * when `online` is passed — real presence from your current league's room
  * (`useIsOnline`), never decoration. A league's tile never has one.
  */
 export function MessagesAvatar({
