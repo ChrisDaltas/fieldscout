@@ -347,11 +347,14 @@ function LeagueSwitcher({
             </span>
             <span className="truncate text-[11px] font-medium text-white/[0.62]">{league.name}</span>
           </span>
+          {/* The "you are here" dash is plain white in both themes, like the
+              card's text: the handoff's var(--x-b0) turns #121212 in dark
+              mode and vanishes on the #090909 card (gap list §4 item 7). */}
           <span className="flex flex-none gap-1" aria-hidden>
             {leagues.map((l) => (
               <span
                 key={l.id}
-                className={cn('h-1.5 rounded-pill transition-[width] duration-200 ease-linear', l.id === league.id ? 'w-3.5 bg-m-b0' : 'w-1.5 bg-m-dot')}
+                className={cn('h-1.5 rounded-pill transition-[width] duration-200 ease-linear', l.id === league.id ? 'w-3.5 bg-white' : 'w-1.5 bg-m-dot')}
               />
             ))}
           </span>
