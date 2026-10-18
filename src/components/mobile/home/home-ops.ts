@@ -98,12 +98,13 @@ export function leagueSub(input: {
 }
 
 /** "Aug 28 · 7:00 PM" — a draft time in the viewer's own clock (the
- *  League tab's "Your time"); null for an unreadable instant. `timeZone`
- *  is for tests. */
-export function draftTimeText(iso: string, timeZone?: string): string | null {
+ *  League tab's "Your time"); "Aug 28" with `dayOnly`; null for an
+ *  unreadable instant. `timeZone` is for tests. */
+export function draftTimeText(iso: string, timeZone?: string, dayOnly = false): string | null {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return null
   const day = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone }).format(at)
+  if (dayOnly) return day
   const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone }).format(at)
   return `${day} · ${time}`
 }
@@ -118,18 +119,20 @@ export function draftTimeText(iso: string, timeZone?: string): string | null {
  *    the draft starting): "Pre-draft";
  *  - in season or later: null — the record and the matchup speak instead.
  * `scheduledAt` is the league's saved draft time (settings
- * `draft.draft_scheduled_at`); `now` is the caller's clock.
+ * `draft.draft_scheduled_at`); `now` is the caller's clock. `dayOnly` gives
+ * the handoff's short form, "Draft Aug 28", for the switcher strip, where a
+ * full time would crowd out your team's name. `timeZone` is for tests.
  */
 export function draftLabel(
   phase: LeaguePhase,
   scheduledAt: string | null | undefined,
   now: number,
-  timeZone?: string,
+  opts: { timeZone?: string; dayOnly?: boolean } = {},
 ): string | null {
   if (phase === 'season') return null
   if (phase === 'draft-live') return 'Draft live'
   const at = scheduledAt ? Date.parse(scheduledAt) : Number.NaN
-  const when = scheduledAt && at > now ? draftTimeText(scheduledAt, timeZone) : null
+  const when = scheduledAt && at > now ? draftTimeText(scheduledAt, opts.timeZone, opts.dayOnly) : null
   return when ? `Draft ${when}` : 'Pre-draft'
 }
 

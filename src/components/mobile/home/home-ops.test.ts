@@ -72,6 +72,7 @@ describe('mobile Home ops (m-home §5)', () => {
     // 23:00 UTC is 7:00 PM in New York (EDT) and 4:00 PM in Los Angeles.
     expect(draftTimeText('2026-08-28T23:00:00Z', 'America/New_York')?.replace(/\u202f/g, ' ')).toBe('Aug 28 · 7:00 PM')
     expect(draftTimeText('2026-08-28T23:00:00Z', 'America/Los_Angeles')?.replace(/\u202f/g, ' ')).toBe('Aug 28 · 4:00 PM')
+    expect(draftTimeText('2026-08-28T23:00:00Z', 'America/New_York', true)).toBe('Aug 28')
     expect(draftTimeText('not a time')).toBeNull()
   })
 
@@ -80,16 +81,20 @@ describe('mobile Home ops (m-home §5)', () => {
     const at = '2026-08-28T23:00:00Z'
     const tz = 'America/New_York'
     const plain = (s: string | null) => s?.replace(/\u202f/g, ' ') ?? null
-    expect(plain(draftLabel('pre-draft', at, now, tz))).toBe('Draft Aug 28 · 7:00 PM')
-    expect(draftLabel('pre-draft', null, now, tz)).toBe('Pre-draft')
-    expect(draftLabel('pre-draft', undefined, now, tz)).toBe('Pre-draft')
+    expect(plain(draftLabel('pre-draft', at, now, { timeZone: tz }))).toBe('Draft Aug 28 · 7:00 PM')
+    // The switcher strip's short form (handoff LEAGUES rec "Draft Aug 28").
+    expect(draftLabel('pre-draft', at, now, { timeZone: tz, dayOnly: true })).toBe('Draft Aug 28')
+    expect(draftLabel('draft-live', at, now, { timeZone: tz, dayOnly: true })).toBe('Draft live')
+    expect(draftLabel('pre-draft', null, now, { timeZone: tz, dayOnly: true })).toBe('Pre-draft')
+    expect(draftLabel('pre-draft', null, now, { timeZone: tz })).toBe('Pre-draft')
+    expect(draftLabel('pre-draft', undefined, now, { timeZone: tz })).toBe('Pre-draft')
     // A time that has gone by without the draft starting is no longer "when".
-    expect(draftLabel('pre-draft', at, Date.parse('2026-08-29T00:00:00Z'), tz)).toBe('Pre-draft')
-    expect(draftLabel('pre-draft', 'garbage', now, tz)).toBe('Pre-draft')
+    expect(draftLabel('pre-draft', at, Date.parse('2026-08-29T00:00:00Z'), { timeZone: tz })).toBe('Pre-draft')
+    expect(draftLabel('pre-draft', 'garbage', now, { timeZone: tz })).toBe('Pre-draft')
     // During the draft — never "Pre-draft", whatever time was saved.
-    expect(draftLabel('draft-live', at, now, tz)).toBe('Draft live')
-    expect(draftLabel('draft-live', null, now, tz)).toBe('Draft live')
-    expect(draftLabel('season', at, now, tz)).toBeNull()
+    expect(draftLabel('draft-live', at, now, { timeZone: tz })).toBe('Draft live')
+    expect(draftLabel('draft-live', null, now, { timeZone: tz })).toBe('Draft live')
+    expect(draftLabel('season', at, now, { timeZone: tz })).toBeNull()
   })
 
   it('records come from the final standings; 0-0 only when nothing is final', () => {

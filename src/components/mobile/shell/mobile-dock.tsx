@@ -339,8 +339,11 @@ function LeagueSwitcher({
             textClass="text-[12px]"
           />
           <span className="flex min-w-0 flex-1 flex-col gap-px">
-            <span className="truncate text-[14px] font-semibold">
-              {card.teamName} <span className="text-[12px] font-medium text-white/[0.62]">{card.record}</span>
+            <span className="flex min-w-0 items-baseline gap-1 text-[14px] font-semibold">
+              <span className="min-w-0 truncate">{card.teamName}</span>
+              {card.recordShort && (
+                <span className="flex-none whitespace-nowrap text-[12px] font-medium text-white/[0.62]">{card.recordShort}</span>
+              )}
             </span>
             <span className="truncate text-[11px] font-medium text-white/[0.62]">{league.name}</span>
           </span>

@@ -10,8 +10,9 @@ import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
+const nav = vi.hoisted(() => ({ pathname: '/app/leagues/A/matchup' }))
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/app/leagues/A/matchup',
+  usePathname: () => nav.pathname,
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
 }))
 vi.mock('@/lib/supabase/client', () => ({
@@ -95,6 +96,23 @@ describe('league switcher (gap list §3 #20)', () => {
     expect(card).toContain('data-photo="none"')
   })
 
+  it('the switcher card before the season: the draft day only ("Draft Aug 28"), in its own unshrinking span so a long team name truncates instead of it', () => {
+    try {
+      nav.pathname = '/app/leagues/B/matchup'
+      const b = block(html(createElement(MobileDock)), 'data-league-switcher', 'div')
+      expect(b).toMatch(/<span class="min-w-0 truncate">Taco Tuesday<\/span><span class="flex-none whitespace-nowrap[^"]*">Draft Aug 28<\/span>/)
+      expect(b).not.toMatch(DRAFT_TEXT)
+      expect(b).not.toContain('0-0')
+      expect(b).toContain('data-photo="https://img.test/joy.png"')
+
+      nav.pathname = '/app/leagues/C/matchup'
+      const c = block(html(createElement(MobileDock)), 'data-league-switcher', 'div')
+      expect(c).toMatch(/<span class="min-w-0 truncate">Spreadsheet Slingers<\/span><span class="flex-none whitespace-nowrap[^"]*">Draft live<\/span>/)
+    } finally {
+      nav.pathname = '/app/leagues/A/matchup'
+    }
+  })
+
   it('the Switch league sheet: the draft time or "Draft live" for a league not yet playing, size and scoring, the league photo', () => {
     const out = html(createElement(LeagueSwitchSheet, { open: true, onOpenChange: () => {}, current: LEAGUES[0]!, leagues: LEAGUES, tab: 'match' }))
     expect(out).toContain('data-sheet="Switch league"')
@@ -107,6 +125,8 @@ describe('league switcher (gap list §3 #20)', () => {
     const b = block(out, 'data-switch-league="B"')
     expect(b).toContain('Taco Tuesday')
     expect(b).toMatch(DRAFT_TEXT)
+    // The name truncates on its own; the draft line never does.
+    expect(b).toMatch(/<span class="min-w-0 truncate">Taco Tuesday<\/span><span class="flex-none whitespace-nowrap[^"]*">Draft Aug 28 · /)
     expect(b).not.toContain('0-0')
     expect(b).not.toContain('Pre-draft')
     expect(b).toContain('Joy to Us · 12-team PPR')

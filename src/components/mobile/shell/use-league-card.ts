@@ -40,9 +40,11 @@ export function switchedToTitle(league: Pick<MyLeagueRow, 'name' | 'my_team_id'>
  * (handoff §2.2 LEAGUES): your team's name; beside it your record in season
  * ("2-6", ties as "2-6-1"), else the draft — "Draft Aug 28 · 7:00 PM",
  * "Pre-draft" with no time set, "Draft live" while drafting (gap list §3
- * #20); and the league's size and scoring ("12-team PPR"). Standings are
- * read only for a league playing its season — before it every record is a
- * meaningless 0-0.
+ * #20); and the league's size and scoring ("12-team PPR"). `recordShort`
+ * is the switcher strip's form — the draft day only ("Draft Aug 28", the
+ * handoff's LEAGUES rec) so your team's name keeps its room; the sheet and
+ * Home keep the time. Standings are read only for a league playing its
+ * season — before it every record is a meaningless 0-0.
  */
 export function useLeagueCard(league: MyLeagueRow) {
   const phase = leaguePhase(league.status)
@@ -52,10 +54,12 @@ export function useLeagueCard(league: MyLeagueRow) {
   const [now] = useState(() => Date.now())
   const row = standings.data?.standings.find((r) => r.team_id === league.my_team_id)
   const teamName = row?.name ?? myTeamName(league, detail.data) ?? league.name
+  const scheduledAt = detail.data?.settings.draft?.draft_scheduled_at
   const record =
     phase === 'season'
       ? (league.my_team_id ? recordText(standings.data, league.my_team_id) : null) ?? ''
-      : (draftLabel(phase, detail.data?.settings.draft?.draft_scheduled_at, now) ?? '')
+      : (draftLabel(phase, scheduledAt, now) ?? '')
+  const recordShort = phase === 'season' ? record : (draftLabel(phase, scheduledAt, now, { dayOnly: true }) ?? '')
   const format = leagueSize(league.team_count, scoring.family)
-  return { teamName, record, format }
+  return { teamName, record, recordShort, format }
 }

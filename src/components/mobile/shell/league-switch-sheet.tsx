@@ -88,8 +88,9 @@ function SwitchRow({
         textClass="text-[13px]"
       />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[15px] font-semibold text-m-t1">
-          {card.teamName} <span className="text-[12px] font-medium text-m-t3">{card.record}</span>
+        <span className="flex min-w-0 items-baseline gap-1 text-[15px] font-semibold text-m-t1">
+          <span className="min-w-0 truncate">{card.teamName}</span>
+          {card.record && <span className="flex-none whitespace-nowrap text-[12px] font-medium text-m-t3">{card.record}</span>}
         </span>
         <span className="truncate text-[12px] font-medium text-m-t3">
           {league.name} · {card.format}
