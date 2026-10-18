@@ -335,6 +335,29 @@ export function deriveTopics(items: CommunityItem[], selected: CommunityTopic | 
   return out
 }
 
+/** How many tags For you's "Trending tags" shelf shows (desktop's card: 8). */
+export const TRENDING_TAGS_SIZE = 8
+
+/**
+ * For you's "Trending tags" shelf (gap list §3 #26 — desktop's Trending tags
+ * card, read the same way: `/api/tags?trending=true`, most used first). A tag
+ * on the shelf filters Community by that topic, so only tags that a list or
+ * ranking showing on Community carries are offered (`shown`: the For you
+ * candidates, rankings left out while their switch is off) — a tap never
+ * lands on "Nothing matches". Trending order kept.
+ */
+export function trendingTagTopics(
+  trending: readonly { id: string; name: string }[],
+  shown: readonly Pick<CommunityItem, 'tags'>[],
+  size: number = TRENDING_TAGS_SIZE,
+): CommunityTopic[] {
+  const carried = new Set(shown.flatMap((i) => i.tags.map((t) => t.id)))
+  return trending
+    .filter((t) => carried.has(t.id))
+    .slice(0, size)
+    .map((t) => ({ kind: 'tag', id: t.id, label: t.name }))
+}
+
 /** The trimmed, lower-cased query — whitespace-only counts as no query. */
 export function normQuery(query: string): string {
   return query.toLowerCase().trim()

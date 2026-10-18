@@ -1,5 +1,10 @@
 /**
  * The Community list detail's body. Pinned:
+ *  - Like (with its count) and Comments beside Save / Share (gap list §3
+ *    #26): the like pressed from the viewer's real `is_liked`; the comment
+ *    count only once it's read; the Comments sheet on the list's own switch;
+ *    Follow is the shared FollowButton's phone pill, never on your own list
+ *    or an AI expert's;
  *  - the kind pill and the projections follow the scoring the ranking counts
  *    as (Chris, 2026-10-16): its saved scoring; none saved is Half PPR; an AI
  *    expert's board with none saved is its persona's usual scoring (what
@@ -18,6 +23,8 @@ const h = vi.hoisted(() => ({
   list: null as unknown,
   meta: {} as Record<string, unknown>,
   metaArg: undefined as unknown,
+  comments: { data: undefined } as { data?: { pagination: { total: number } } },
+  sheet: null as Record<string, unknown> | null,
 }))
 
 // The detail is a Radix dialog in a portal, which renders nothing on the
@@ -39,7 +46,16 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: { personas: false } }))
-vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: null }) }))
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => ({ user: { id: 'u-me' }, profile: { username: 'me', avatar_url: null } }),
+}))
+vi.mock('@/hooks/use-comments', () => ({ useComments: () => h.comments }))
+vi.mock('@/components/mobile/lists/comments-sheet', () => ({
+  CommentsSheet: (props: Record<string, unknown>) => {
+    h.sheet = props
+    return null
+  },
+}))
 vi.mock('@/hooks/use-follows', () => ({
   useFollowingIds: () => ({ data: new Set<string>() }),
   useToggleFollow: () => ({ mutate: () => {}, isPending: false }),
@@ -47,6 +63,7 @@ vi.mock('@/hooks/use-follows', () => ({
 vi.mock('@/hooks/use-lists', () => ({
   useList: () => ({ data: h.list, isError: false, error: null, refetch: () => {} }),
   useToggleFavorite: () => ({ mutate: () => {}, isPending: false }),
+  useToggleLike: () => ({ mutate: () => {}, isPending: false }),
 }))
 vi.mock('@/hooks/use-mobile-community-detail', () => ({
   useMobileCommunityListMeta: (arg: unknown) => {
@@ -120,6 +137,80 @@ beforeEach(() => {
   h.list = list()
   h.meta = { data: { ownerUsername: 'kelly', author: PERSON, scoring: null }, isError: false }
   h.metaArg = undefined
+  h.comments = { data: undefined }
+  h.sheet = null
+})
+
+/** A pill's opening tag, found by its data attribute. */
+const pill = (out: string, attr: string) => out.match(new RegExp(`<button[^>]*${attr}[^>]*>`))?.[0] ?? ''
+/** A pill's whole markup. */
+const pillHtml = (out: string, attr: string) =>
+  out.match(new RegExp(`<button[^>]*${attr}[^>]*>.*?</button>`))?.[0] ?? ''
+
+describe('the Community detail — Like, Comments, Follow (gap list §3 #26)', () => {
+  it('Like shows the list’s count, pressed and filled once you’ve liked it', () => {
+    h.list = list({ like_count: 12, is_liked: false })
+    let out = render()
+    expect(pill(out, 'data-like')).toContain('aria-pressed="false"')
+    expect(pill(out, 'data-like')).toContain('aria-label="Like · 12 likes"')
+    expect(pillHtml(out, 'data-like')).toContain('>12</span>')
+    expect(pillHtml(out, 'data-like')).toContain('fill="none"')
+
+    h.list = list({ like_count: 1, is_liked: true })
+    out = render()
+    expect(pill(out, 'data-like')).toContain('aria-pressed="true"')
+    expect(pill(out, 'data-like')).toContain('text-accent')
+    expect(pill(out, 'data-like')).toContain('aria-label="Like · 1 like"')
+    expect(pillHtml(out, 'data-like')).toContain('fill="currentColor"')
+  })
+
+  it('an unknown liked state (or no count) reads as not liked, 0 — never a guess', () => {
+    h.list = list({ like_count: null, is_liked: null })
+    const out = render()
+    expect(pill(out, 'data-like')).toContain('aria-pressed="false"')
+    expect(pillHtml(out, 'data-like')).toContain('>0</span>')
+  })
+
+  it('big counts are compact (1.2k)', () => {
+    h.list = list({ like_count: 1234 })
+    expect(pillHtml(render(), 'data-like')).toContain('>1.2k</span>')
+  })
+
+  it('Comments: no number until the thread is read, then its total', () => {
+    let out = render()
+    expect(pill(out, 'data-comments')).toContain('aria-label="Comments"')
+    expect(pillHtml(out, 'data-comments')).not.toMatch(/tabular-nums">\d/)
+
+    h.comments = { data: { pagination: { total: 3 } } }
+    out = render()
+    expect(pill(out, 'data-comments')).toContain('aria-label="Comments · 3 comments"')
+    expect(pillHtml(out, 'data-comments')).toContain('>3</span>')
+  })
+
+  it('the Comments sheet is the list’s, on its own switch, with your name on the composer', () => {
+    render()
+    expect(h.sheet).toMatchObject({ open: false, listId: 'l1', enabled: true, viewer: { username: 'me', avatarUrl: null } })
+    h.list = list({ comments_enabled: false })
+    render()
+    expect(h.sheet).toMatchObject({ enabled: false })
+  })
+
+  it('the pills sit in one row: Like, Comments, Save, Share', () => {
+    const out = render()
+    const at = (needle: string) => out.indexOf(needle)
+    expect(at('data-like')).toBeLessThan(at('data-comments'))
+    expect(at('data-comments')).toBeLessThan(at('>Save<'))
+    expect(at('>Save<')).toBeLessThan(at('Share'))
+  })
+
+  it('Follow: the phone pill on someone else’s list; none on yours or an AI expert’s', () => {
+    expect(render()).toMatch(/<button[^>]*aria-pressed="false"[^>]*h-\[30px\][^>]*>Follow<\/button>/)
+    h.list = list({ is_owner: true })
+    expect(render()).not.toContain('>Follow<')
+    h.list = list({ ai_persona_id: 'persona-1' })
+    h.meta = { data: { ownerUsername: 'fieldscout', author: EXPERT, scoring: 'PPR' }, isError: false }
+    expect(render()).not.toContain('>Follow<')
+  })
 })
 
 describe('the Community detail — scoring', () => {

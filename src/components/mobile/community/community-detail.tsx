@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
+import { FollowButton } from '@/components/explore/follow-button'
+import { formatCount } from '@/components/lists/v2/list-stats'
 import { AuthorAvatar, ListCover, PlayGlyph } from '@/components/mobile/community/community-cards'
 import {
   classifyCommunityList,
@@ -15,6 +17,7 @@ import {
   scoringFormatOf,
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
+import { CommentsSheet } from '@/components/mobile/lists/comments-sheet'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -22,8 +25,14 @@ import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { UsernameLink } from '@/components/shared/username-link'
 import { userProfileHref } from '@/components/shared/username-link-ops'
 import { useAuth } from '@/hooks/use-auth'
-import { useFollowingIds, useToggleFollow } from '@/hooks/use-follows'
-import { useList, useToggleFavorite, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
+import { useComments } from '@/hooks/use-comments'
+import {
+  useList,
+  useToggleFavorite,
+  useToggleLike,
+  type ListPlayerWithPlayer,
+  type ListWithDetails,
+} from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
 import type { CommunityPlayer, CommunityVideo } from '@/hooks/use-mobile-community-feed'
 import { toast } from '@/hooks/use-toast'
@@ -201,7 +210,7 @@ function DetailBody({
   onBack: () => void
 }) {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   // The kind pill never reads a scoring system (migration 190 doesn't), so
   // none is asked for: the meta's scoring is then just an AI expert's usual
   // one — what 190 saves on its board.
@@ -210,9 +219,12 @@ function DetailBody({
     ai_persona_id: list.ai_persona_id,
     scoring_system_id: null,
   })
-  const following = useFollowingIds()
-  const toggleFollow = useToggleFollow()
   const toggleSave = useToggleFavorite()
+  const toggleLike = useToggleLike(list.id)
+  // The same read (and cache) the Comments sheet shows: the count is ready
+  // before it opens, and the sheet opens on the thread already loaded.
+  const comments = useComments(list.id)
+  const [commentsOpen, setCommentsOpen] = useState(false)
   const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
   const [savedOverride, setSavedOverride] = useState<boolean | null>(null)
 
@@ -244,9 +256,15 @@ function DetailBody({
     .map((l) => ({ url: l.url, title: l.title, duration: l.duration_label, source: l.source_label }))
 
   const author = meta.data?.author ?? null
-  const canFollow = Boolean(author?.profileId) && !list.is_owner && author?.profileId !== user?.id
-  const isFollowing = author?.profileId ? (following.data?.has(author.profileId) ?? false) : false
+  // A person's list that isn't yours (an AI expert has no follow graph);
+  // FollowButton itself hides on your own profile.
+  const followId = !list.is_owner && author?.profileId ? author.profileId : null
   const saved = savedOverride ?? Boolean(list.is_favorited)
+  // The like flips at once — `useToggleLike` is optimistic on this detail
+  // (it knows `is_liked`) and puts it back if the toggle fails.
+  const liked = list.is_liked === true
+  const likes = Math.max(0, list.like_count ?? 0)
+  const commentTotal = comments.data?.pagination.total
 
   const requireUser = () => {
     if (user) return true
@@ -254,9 +272,13 @@ function DetailBody({
     return false
   }
 
-  const onFollow = () => {
-    if (!author?.profileId || !requireUser()) return
-    toggleFollow.mutate({ targetId: author.profileId, isFollowing })
+  const onLike = () => {
+    // One toggle at a time: the server flips whatever it holds, so a second
+    // tap mid-flight would undo the first.
+    if (!requireUser() || toggleLike.isPending) return
+    toggleLike.mutate(undefined, {
+      onError: () => toast({ title: liked ? 'Couldn’t unlike this list' : 'Couldn’t like this list' }),
+    })
   }
 
   const onSave = () => {
@@ -326,20 +348,7 @@ function DetailBody({
                   <span className="font-medium text-m-t3">· {formatFollows(author.followers)}</span>
                 )}
               </span>
-              {canFollow && (
-                <button
-                  type="button"
-                  onClick={onFollow}
-                  disabled={toggleFollow.isPending}
-                  aria-pressed={isFollowing}
-                  className={cn(
-                    'flex h-[30px] flex-none items-center rounded-pill px-[14px] text-[12px] font-semibold',
-                    isFollowing ? 'bg-m-b3s text-m-t2' : 'bg-accent text-white',
-                  )}
-                >
-                  {isFollowing ? 'Following' : 'Follow'}
-                </button>
-              )}
+              {followId && <FollowButton userId={followId} look="phone" />}
             </>
           ) : meta.isError ? (
             <span className="text-[13px] font-medium text-m-t3">Couldn’t load the author</span>
@@ -353,6 +362,36 @@ function DetailBody({
         ) : null}
 
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onLike}
+            aria-pressed={liked}
+            aria-label={`Like · ${likes} ${likes === 1 ? 'like' : 'likes'}`}
+            className={cn(
+              'flex h-9 items-center gap-[6px] rounded-pill bg-m-b2 px-[14px] text-[13px] font-semibold',
+              liked ? 'text-accent' : 'text-m-t1',
+            )}
+            data-like
+          >
+            <HeartGlyph filled={liked} />
+            <span className="tabular-nums">{formatCount(likes)}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCommentsOpen(true)}
+            aria-haspopup="dialog"
+            aria-label={
+              commentTotal === undefined
+                ? 'Comments'
+                : `Comments · ${commentTotal} ${commentTotal === 1 ? 'comment' : 'comments'}`
+            }
+            className="flex h-9 items-center gap-[6px] rounded-pill bg-m-b2 px-[14px] text-[13px] font-semibold text-m-t1"
+            data-comments
+          >
+            <MIcon name="chat" size={14} stroke={1.6} />
+            {/* The count once it's read; never a guessed 0. */}
+            {commentTotal !== undefined && <span className="tabular-nums">{formatCount(commentTotal)}</span>}
+          </button>
           <button
             type="button"
             onClick={onSave}
@@ -454,7 +493,33 @@ function DetailBody({
           </ListTag>
         </div>
       ))}
+
+      <CommentsSheet
+        open={commentsOpen}
+        onOpenChange={setCommentsOpen}
+        listId={list.id}
+        enabled={list.comments_enabled ?? true}
+        viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
+      />
     </>
+  )
+}
+
+/** The Like pill's heart: an outline, filled once you've liked the list. */
+function HeartGlyph({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={14}
+      height={14}
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 13.6 2.9 8.7A3.1 3.1 0 0 1 8 4.6a3.1 3.1 0 0 1 5.1 4.1z" />
+    </svg>
   )
 }
 

@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
   keepPreviousData,
+  type QueryClient,
 } from '@tanstack/react-query'
 
 import type {
@@ -48,6 +49,10 @@ export interface ListWithDetails extends List {
   /** Server-computed: is the current viewer the owner? Use this instead of a
    *  client-side auth comparison, which races with session loading. */
   is_owner: boolean
+  /** Server-computed: has the viewer liked it? `null` when that couldn't be
+   *  read (the Like then waits for the toggle's answer); absent on a list
+   *  built somewhere other than `/api/lists/[id]` (the share page). */
+  is_liked?: boolean | null
   /** Attached links (migration 080), already in the owner's chosen order.
    *  Embedded by `/api/lists/[id]` rather than fetched separately — and a
    *  failed links query 500s that route, so `[]` here always means "none
@@ -443,23 +448,54 @@ export function useSetPlayerTier(listId: string) {
   })
 }
 
-export function useToggleLike(listId: string) {
-  const qc = useQueryClient()
-  return useMutation({
+/**
+ * The like toggle's options, on a given client — `useToggleLike` is this
+ * plus `useMutation`; tests drive it through a `MutationObserver`.
+ *
+ * Optimistic only where the viewer's liked state is known: the list's detail
+ * cache carrying `is_liked` (`/api/lists/[id]`) flips at once and its count
+ * moves by one (CLAUDE.md: like/unlike are optimistic), and a failure puts it
+ * back. Anywhere else — a feed row, a detail whose like couldn't be read —
+ * nothing is guessed: without the prior state the old code always did +1,
+ * then corrected by -2 on an unlike, a visible N → N+1 → N-1 flash. Either
+ * way the endpoint's answer (its liked state and authoritative count) is
+ * written last, to the detail and any collection caches.
+ */
+export function toggleLikeMutationOptions(qc: QueryClient, listId: string) {
+  const detailKey = listsKeys.detail(listId)
+  return {
     mutationFn: () =>
       fetch(`/api/lists/${listId}/like`, { method: 'POST' }).then(
         jsonOrThrow<{ liked: boolean; like_count: number }>,
       ),
 
-    // No optimistic guess: without the prior liked state on the client the old
-    // code always did +1, then corrected by -2 on an unlike — a visible
-    // N → N+1 → N-1 flash. The endpoint now returns the authoritative count, so
-    // we just write that exact value to the detail and any collection caches.
-    onSuccess: (data) => {
-      const cur = qc.getQueryData<ListWithDetails>(listsKeys.detail(listId))
+    onMutate: async (): Promise<{ prev: ListWithDetails | undefined }> => {
+      const known = qc.getQueryData<ListWithDetails>(detailKey)
+      if (typeof known?.is_liked !== 'boolean') return { prev: undefined }
+      // Only a loaded detail is cancelled (an in-flight refetch would land
+      // over the guess); its data is what's read back.
+      await qc.cancelQueries({ queryKey: detailKey })
+      const prev = qc.getQueryData<ListWithDetails>(detailKey)
+      if (!prev) return { prev: undefined }
+      const liked = !prev.is_liked
+      qc.setQueryData<ListWithDetails>(detailKey, {
+        ...prev,
+        is_liked: liked,
+        like_count: Math.max(0, (prev.like_count ?? 0) + (liked ? 1 : -1)),
+      })
+      return { prev }
+    },
+
+    onError: (_err: Error, _vars: void, ctx: { prev: ListWithDetails | undefined } | undefined) => {
+      if (ctx?.prev) qc.setQueryData<ListWithDetails>(detailKey, ctx.prev)
+    },
+
+    onSuccess: (data: { liked: boolean; like_count: number }) => {
+      const cur = qc.getQueryData<ListWithDetails>(detailKey)
       if (cur) {
-        qc.setQueryData<ListWithDetails>(listsKeys.detail(listId), {
+        qc.setQueryData<ListWithDetails>(detailKey, {
           ...cur,
+          is_liked: data.liked,
           like_count: data.like_count,
         })
       }
@@ -476,7 +512,12 @@ export function useToggleLike(listId: string) {
         })
       }
     },
-  })
+  }
+}
+
+export function useToggleLike(listId: string) {
+  const qc = useQueryClient()
+  return useMutation(toggleLikeMutationOptions(qc, listId))
 }
 
 // =============================================================================

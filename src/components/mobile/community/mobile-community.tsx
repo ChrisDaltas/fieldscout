@@ -25,8 +25,10 @@ import {
   emptyCopy,
   normQuery,
   topicAwaitingServer,
+  type CommunityTopic,
 } from '@/components/mobile/community/community-ops'
 import { useCommunityStore } from '@/components/mobile/community/community-store'
+import { TopScoutsShelf, TrendingTagsShelf } from '@/components/mobile/community/community-shelves'
 import { CreateSheet } from '@/components/mobile/community/create-sheet'
 import { activeWeekOf } from '@/components/mobile/rankings/rankings-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
@@ -171,6 +173,30 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     now,
   })
   const mixed = tab === 'all' || tab === 'following'
+  // What For you can show — the lists a Trending tag may filter to.
+  const forYouShown = useMemo(
+    () => [...items, ...(feed.data?.popularExtra ?? [])].filter((i) => featureFlags.weeklyRanks || i.kind !== 'rank'),
+    [items, feed.data],
+  )
+  const topRef = useRef<HTMLDivElement>(null)
+  const topicsRef = useRef<HTMLDivElement>(null)
+  const revealTopic = useRef(false)
+  // A Trending tag filters Community by that topic (the shelves only show
+  // with none picked, so a tap always picks it). Once it's drawn, the screen
+  // goes back to its top, where its lists start, with the picked pill in
+  // view in the sideways topic row.
+  const pickTag = (t: CommunityTopic) => {
+    revealTopic.current = true
+    toggleTopic(t)
+  }
+  useEffect(() => {
+    if (!revealTopic.current) return
+    revealTopic.current = false
+    topRef.current?.scrollIntoView?.({ block: 'start' })
+    topicsRef.current
+      ?.querySelector<HTMLElement>('[aria-pressed="true"]')
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [topic])
 
   // The detail is open from the feed only while `?list=` is set.
   useEffect(() => {
@@ -200,7 +226,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
 
   return (
     <MobileScreen>
-      <div className="px-4 pb-6" inert={openId ? true : undefined}>
+      <div ref={topRef} className="px-4 pb-6" inert={openId ? true : undefined}>
         {searchOpen ? <SearchRow /> : <HeaderRow onCreate={() => setCreateOpen(true)} />}
 
         <div className="-mx-4 mt-0.5 flex gap-[18px] overflow-x-auto border-b border-m-b3 px-4 scrollbar-none">
@@ -225,7 +251,11 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
         </div>
 
         {topics.length > 0 && (
-          <div className="-mx-4 mt-[10px] flex gap-[6px] overflow-x-auto px-4 scrollbar-none" aria-label="Topics">
+          <div
+            ref={topicsRef}
+            className="-mx-4 mt-[10px] flex scroll-px-4 gap-[6px] overflow-x-auto px-4 scrollbar-none"
+            aria-label="Topics"
+          >
             {topics.map((t) => {
               const on = topic?.kind === t.kind && topic.id === t.id
               return (
@@ -307,6 +337,11 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
                     </div>
                   </>
                 )}
+                {/* Desktop's right-hand cards as For you shelves (gap list
+                    §3 #26) — people, then topics, before the long Lists
+                    shelf. */}
+                <TopScoutsShelf />
+                <TrendingTagsShelf shown={forYouShown} onPick={pickTag} />
                 {shelfLists.length > 0 ? (
                   <>
                     <ShelfHeader title="Lists for you" onSeeAll={() => setTab('list')} className="mb-[10px] mt-[22px]" />
