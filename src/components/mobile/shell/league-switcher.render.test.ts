@@ -5,6 +5,9 @@
  * the Switch league sheet, "Switched to {your team}", and the league's
  * photo when one is uploaded.
  */
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -175,6 +178,34 @@ describe('league switcher dots (gap list §4 item 7)', () => {
         nav.pathname = '/app/leagues/A/matchup'
       }
     }
+  })
+})
+
+describe('league switcher swipes queue (gap list §4 item 8)', () => {
+  // The gesture needs a browser; pin the wiring the swipeLeague rule
+  // (mobile-nav.test.ts) depends on.
+  const dock = readFileSync(path.join(process.cwd(), 'src/components/mobile/shell/mobile-dock.tsx'), 'utf8')
+  const at = dock.indexOf('const step = ')
+  const step = dock.slice(at, dock.indexOf('\n  return (', at))
+
+  it('a swipe goes on from the league the last switch is heading to, and the queue ends once the route moves', () => {
+    expect(step).toMatch(/const next = swipeLeague\(leagues, league\.id, heading, d\)/)
+    expect(step).toContain('setHeading(next.id)')
+    expect(dock).toMatch(/if \(seenPath !== pathname\) \{\s*setSeenPath\(pathname\)\s*setHeading\(null\)/)
+  })
+
+  it('each swipe says its own league once and heads there at once, so the newest swipe’s route wins', () => {
+    expect(step.match(/\btoast\(/g)).toHaveLength(1)
+    expect(step).toMatch(/toast\(\{ title: switchedToTitle\(next, /)
+    const beforeSlideIn = step.slice(0, step.indexOf('setTimeout('))
+    expect(beforeSlideIn).toContain('router.push(leagueTabHref(next.id, tab, next.my_team_id))')
+    // A newer step cancels the older one's slide-in.
+    expect(beforeSlideIn).toContain('window.clearTimeout(timer.current)')
+  })
+
+  it('the card shows the league you are heading to', () => {
+    expect(dock).toMatch(/const shownId = leaving \?\? heading \?\? league\.id/)
+    expect(dock).toContain('useLeagueCard(shown)')
   })
 })
 

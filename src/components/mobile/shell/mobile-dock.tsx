@@ -1,5 +1,6 @@
 'use client'
 
+import { useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
@@ -7,13 +8,13 @@ import { useEffect, useRef, useState } from 'react'
 import { MessagesAvatar } from '@/components/mobile/messages/messages-avatar'
 import { LeagueMenuSheet } from '@/components/mobile/shell/league-menu-sheet'
 import { LeagueSwitchSheet } from '@/components/mobile/shell/league-switch-sheet'
-import { DOCK_LG, DOCK_SM, leagueTabHref, mobileRoute, showsLeagueSwitcher, type LeagueTab } from '@/components/mobile/shell/mobile-nav'
+import { DOCK_LG, DOCK_SM, leagueTabHref, mobileRoute, showsLeagueSwitcher, swipeLeague, type LeagueTab } from '@/components/mobile/shell/mobile-nav'
 import { initials, leagueAvClass, switchedToTitle, useLeagueCard } from '@/components/mobile/shell/use-league-card'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { UserAvatar } from '@/components/ui/user-avatar'
 import { useAuth } from '@/hooks/use-auth'
-import { useLeague } from '@/hooks/use-league'
-import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
+import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { leaguesKeys, useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useMobileNavStore } from '@/stores/mobile-nav-store'
@@ -220,8 +221,13 @@ function LeagueTabBar({
  * or right to move to the next / previous league on the same tab, swipe up or
  * tap to open the Switch league sheet. The row slides out and in again
  * (140ms linear); the card and its grab pill stay put. A swipe says
- * "Switched to {your team there}" — both neighbours' details are read ahead
+ * "Switched to {your team there}" — the next leagues' details are read ahead
  * so the name is ready (and warm for the screen the swipe opens).
+ *
+ * Swipes queue (gap list §4 item 8): a swipe made while the last switch is
+ * still on its way goes on from the league that switch is heading to, so two
+ * quick swipes move two leagues and each says its own league — the card shows
+ * where you're going, and the route follows the latest swipe.
  */
 function LeagueSwitcher({
   league,
@@ -235,32 +241,60 @@ function LeagueSwitcher({
   onOpen: () => void
 }) {
   const router = useRouter()
-  const index = Math.max(0, leagues.findIndex((l) => l.id === league.id))
-  const card = useLeagueCard(league)
-  const after = leagues[(index + 1) % leagues.length] ?? league
-  const before = leagues[(index - 1 + leagues.length) % leagues.length] ?? league
-  const afterDetail = useLeague(after.id)
-  const beforeDetail = useLeague(before.id)
+  const pathname = usePathname()
+  const qc = useQueryClient()
+  // The league the last swipe headed for, until the route moves (the switch
+  // landed, or something else navigated) — the queue is then done.
+  const [heading, setHeading] = useState<string | null>(null)
+  const [seenPath, setSeenPath] = useState(pathname)
+  if (seenPath !== pathname) {
+    setSeenPath(pathname)
+    setHeading(null)
+  }
+  // The league the row is sliding out — the first 140ms of a step.
+  const [leaving, setLeaving] = useState<string | null>(null)
+  const shownId = leaving ?? heading ?? league.id
+  const shown = leagues.find((l) => l.id === shownId) ?? league
+  const index = Math.max(0, leagues.findIndex((l) => l.id === shown.id))
+  const card = useLeagueCard(shown)
+  // Read the next swipe's leagues ahead, so its toast names your team there.
+  useLeague(swipeLeague(leagues, league.id, heading, 1)?.id)
+  useLeague(swipeLeague(leagues, league.id, heading, -1)?.id)
   const [dx, setDx] = useState(0)
   const [anim, setAnim] = useState(false)
   const start = useRef<{ x: number; y: number } | null>(null)
+  const timer = useRef<number | undefined>(undefined)
+  // Bumped by every step and touch, so an older step's slide-in never lands
+  // on top of a newer one (or of a finger on the card).
+  const seq = useRef(0)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const step = (d: 1 | -1) => {
-    if (leagues.length < 2) {
+    const next = swipeLeague(leagues, league.id, heading, d)
+    if (!next) {
       setAnim(true)
       setDx(0)
       return
     }
-    const next = d > 0 ? after : before
+    setHeading(next.id)
+    setLeaving((l) => l ?? shown.id)
     setAnim(true)
     setDx(d > 0 ? -120 : 120)
-    toast({ title: switchedToTitle(next, (d > 0 ? afterDetail : beforeDetail).data) })
-    window.setTimeout(() => {
+    toast({ title: switchedToTitle(next, qc.getQueryData<LeagueDetail>(leaguesKeys.detail(next.id))) })
+    // Straight away: a newer swipe's push supersedes this one if it hasn't
+    // landed yet, so the route ends on the last league swiped to.
+    router.push(leagueTabHref(next.id, tab, next.my_team_id))
+    const mine = ++seq.current
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      setLeaving(null)
+      // A finger already on the card carries the new row from here.
+      if (start.current || seq.current !== mine) return
       setAnim(false)
       setDx(d > 0 ? 120 : -120)
-      router.push(leagueTabHref(next.id, tab, next.my_team_id))
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
+          if (seq.current !== mine) return
           setAnim(true)
           setDx(0)
         }),
@@ -273,7 +307,7 @@ function LeagueSwitcher({
       <div
         role="button"
         tabIndex={0}
-        aria-label={`${card.teamName}, ${league.name}. Swipe to switch league, tap to see all leagues.`}
+        aria-label={`${card.teamName}, ${shown.name}. Swipe to switch league, tap to see all leagues.`}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') onOpen()
           if (e.key === 'ArrowLeft') step(-1)
@@ -281,6 +315,7 @@ function LeagueSwitcher({
         }}
         onPointerDown={(e) => {
           start.current = { x: e.clientX, y: e.clientY }
+          seq.current++
           e.currentTarget.setPointerCapture(e.pointerId)
           setAnim(false)
         }}
@@ -330,8 +365,8 @@ function LeagueSwitcher({
           }}
         >
           <MessagesAvatar
-            text={initials(league.name)}
-            src={league.avatar_url}
+            text={initials(shown.name)}
+            src={shown.avatar_url}
             sizeClass="size-[34px]"
             radiusClass="rounded-[10px]"
             colorClass={leagueAvClass(index)}
@@ -345,7 +380,7 @@ function LeagueSwitcher({
                 <span className="flex-none whitespace-nowrap text-[12px] font-medium text-white/[0.62]">{card.recordShort}</span>
               )}
             </span>
-            <span className="truncate text-[11px] font-medium text-white/[0.62]">{league.name}</span>
+            <span className="truncate text-[11px] font-medium text-white/[0.62]">{shown.name}</span>
           </span>
           {/* The "you are here" dash is plain white in both themes, like the
               card's text: the handoff's var(--x-b0) turns #121212 in dark
@@ -354,7 +389,7 @@ function LeagueSwitcher({
             {leagues.map((l) => (
               <span
                 key={l.id}
-                className={cn('h-1.5 rounded-pill transition-[width] duration-200 ease-linear', l.id === league.id ? 'w-3.5 bg-white' : 'w-1.5 bg-m-dot')}
+                className={cn('h-1.5 rounded-pill transition-[width] duration-200 ease-linear', l.id === shown.id ? 'w-3.5 bg-white' : 'w-1.5 bg-m-dot')}
               />
             ))}
           </span>

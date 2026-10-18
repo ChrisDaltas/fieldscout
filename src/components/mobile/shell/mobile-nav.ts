@@ -132,6 +132,26 @@ export function leagueTabHref(leagueId: string, tab: LeagueTab, myTeamId: string
   }
 }
 
+/**
+ * The league a swipe on the switcher lands on (handoff §2.2: left = next,
+ * right = previous, wrapping round your leagues). It goes on from the league
+ * a switch still on its way is heading to, else from the one on screen — so
+ * two quick swipes move two leagues instead of the same one twice (gap list
+ * §4 item 8). Null with no other league to move to.
+ */
+export function swipeLeague<T extends { id: string }>(
+  leagues: readonly T[],
+  onScreenId: string,
+  headingToId: string | null,
+  d: 1 | -1,
+): T | null {
+  const n = leagues.length
+  if (n < 2) return null
+  const heading = headingToId === null ? -1 : leagues.findIndex((l) => l.id === headingToId)
+  const from = heading >= 0 ? heading : Math.max(0, leagues.findIndex((l) => l.id === onScreenId))
+  return leagues[(from + d + n) % n] ?? null
+}
+
 /** Dock heights (handoff §2.1): small = tab bar only; large = switcher strip
  *  (68px) + tab bar. Scrollers clear the dock by these. */
 export const DOCK_SM = 84
