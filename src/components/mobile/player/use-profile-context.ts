@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
+import { PROFILE_SCORING_SYSTEMS, profileScoringOptions } from '@/components/mobile/player/profile-ops'
 import { useMobileDock } from '@/components/mobile/shell/mobile-dock'
 import { useLeague } from '@/hooks/use-league'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { usePlayerCoreStats } from '@/hooks/use-player-core-stats'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import { featureFlags } from '@/lib/feature-flags'
-import { resolveChoice, SCORING_CHOICE_STORAGE_KEY } from '@/lib/players/core-stats-ops'
+import { choiceValue, resolveChoice, SCORING_CHOICE_STORAGE_KEY } from '@/lib/players/core-stats-ops'
 
 /**
  * The league the profile's header action, ownership row and History
@@ -52,19 +53,40 @@ function readStoredChoice(): string | null {
   }
 }
 
+function writeStoredChoice(v: string) {
+  try {
+    window.localStorage.setItem(SCORING_CHOICE_STORAGE_KEY, v)
+  } catch {
+    // Private window / blocked storage — the choice just isn't remembered.
+  }
+}
+
 /** The core-stats read under the same scoring resolution as the desktop
- *  view (D486(11)): the league he was opened in, else the viewer's stored
- *  pick, else ESPN Standard. The mobile design has no picker. */
+ *  view (D486(11)): a pick in the strip's scoring chip (gap list §3 #18);
+ *  else the league he was opened in; else the viewer's remembered pick
+ *  (shared with desktop's dropdown); else ESPN Standard. The chip offers
+ *  PPR / Half / 0.25 / Standard and the viewer's leagues; a pick is
+ *  remembered for the next profile. */
 export function useProfileScoring(playerId: string, leagueId: string | null) {
   const league = useLeague(featureFlags.leagues && leagueId ? leagueId : undefined)
   const leagueParam = featureFlags.leagues && leagueId && !league.isError ? leagueId : null
   const leagues = useLeagues({ enabled: featureFlags.leagues })
   const myLeagues = featureFlags.leagues ? (leagues.isError ? [] : (leagues.data ?? null)) : []
+  const [picked, setPicked] = useState<string | null>(null)
   const [stored, setStored] = useState<string | null>(null)
   useEffect(() => setStored(readStoredChoice()), [])
-  const choice = resolveChoice({ picked: null, leagueParam, stored, leagues: myLeagues })
+  const choice = resolveChoice({ picked, leagueParam, stored, leagues: myLeagues, systems: PROFILE_SCORING_SYSTEMS })
+  const options = profileScoringOptions(myLeagues ?? [])
+  // The league he was opened in shows as a choice even before the list loads.
+  if (leagueParam && !options.some((o) => o.value === `league:${leagueParam}`)) {
+    options.push({ value: `league:${leagueParam}`, label: league.data?.league.name ?? 'This league', sub: 'Your league’s scoring' })
+  }
+  const onPick = (v: string) => {
+    setPicked(v)
+    writeStoredChoice(v)
+  }
   const stats = usePlayerCoreStats(playerId, choice)
-  return { choice, stats }
+  return { choice, value: choiceValue(choice), options, onPick, stats }
 }
 
 /** The pool shape the league card reads (the desktop view's `poolOf`). */

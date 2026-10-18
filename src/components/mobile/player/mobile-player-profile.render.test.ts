@@ -142,6 +142,22 @@ describe('mobile player profile — leagues gated off', () => {
     expect(out).toMatch(/aria-selected="true"[^>]*data-profile-tab="summary"/)
   })
 
+  it('scoring chip (gap list §3 #18): in the strip after the season points, named for the scoring it shows', () => {
+    const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())
+    const strip = [...out.matchAll(/data-strip="(\w+)"/g)].map((m) => m[1])
+    expect(strip).toEqual(['rank', 'avg', 'total', 'scoring', 'bye'])
+    // No pick, no league: ESPN Standard, said "Standard" as on the phone's other scoring pills.
+    expect(out).toMatch(/<button type="button" aria-haspopup="dialog" aria-label="Scoring: Standard"[^>]*data-strip="scoring" data-profile-scoring="espn_standard"><span[^>]*>Standard<svg/)
+    expect(out).toMatch(/data-profile-scoring[^]*?>Scoring<\/span><\/button>/)
+    // The chip column takes its own width; the numbers share the rest.
+    expect(out).toContain('grid-template-columns:minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto minmax(0, 1fr)')
+  })
+
+  it('scoring chip: a player with no bye on file still gets it, last', () => {
+    const out = html(createElement(ProfileLoaded, { data: { ...data, player: { ...player, bye_week: null } }, target, onClose: () => {} }), seeded())
+    expect([...out.matchAll(/data-strip="(\w+)"/g)].map((m) => m[1])).toEqual(['rank', 'avg', 'total', 'scoring'])
+  })
+
   it('tabs pattern: one tab stop, the selected tab controls the panel that names it', () => {
     const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), seeded())
     const selected = out.match(/role="tab" aria-selected="true" id="([^"]+)" aria-controls="([^"]+)" tabindex="0"/)
@@ -358,6 +374,12 @@ describe('mobile player profile — leagues on', () => {
     expect(out).toMatch(/class="min-w-0 max-w-\[60%\] truncate[^"]*"[^>]*data-profile-ownership-summary/)
     const tabs = [...out.matchAll(/data-profile-tab="(\w+)"/g)].map((m) => m[1])
     expect(tabs).toEqual(['summary', 'log', 'leagues', 'tx', 'team', 'history'])
+  })
+
+  it('scoring chip in his league: "League", named for that league, its scoring read', () => {
+    const out = html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), inLeague())
+    expect(out).toMatch(/aria-label="Scoring: Sunday Funday League"[^>]*data-profile-scoring="league:L1"><span[^>]*>League<svg/)
+    expect(out).toMatch(/data-strip="rank"[^>]*><span[^>]*>#24</)
   })
 
   it('leagues tab: his row in each league', () => {

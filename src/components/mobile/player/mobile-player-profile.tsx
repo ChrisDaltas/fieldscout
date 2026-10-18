@@ -13,6 +13,8 @@ import {
   bioLine,
   currentWeekOf,
   headerColors,
+  scoringChipLabel,
+  scoringChipName,
   statusPill,
   stripCells,
   teamLine,
@@ -25,6 +27,7 @@ import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-ov
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
+import { ScoringSheet } from '@/components/mobile/ui/scoring-sheet'
 import { useCardLeagueView } from '@/components/players/player-card-actions'
 import { scheduleRows, thisWeek } from '@/components/players/player-page-ops'
 import { useDefenseSplits } from '@/hooks/use-defense-splits'
@@ -356,7 +359,7 @@ export function ProfileLoaded({
         onMove={openMove}
         onTrade={openTrade}
       />
-      <StatStrip cells={stripCells(core, player, season, posLabel(player.position))} pending={scoring.stats.isPending} />
+      <StatStrip cells={stripCells(core, player, season, posLabel(player.position))} pending={scoring.stats.isPending} scoring={scoring} />
       <div
         role="tablist"
         aria-label="Player sections"
@@ -722,19 +725,77 @@ function HeaderAction({
 // Stat strip (§2.2)
 // ---------------------------------------------------------------------------
 
-function StatStrip({ cells, pending }: { cells: ReturnType<typeof stripCells>; pending: boolean }) {
+/**
+ * The design's five cells — position rank, Avg pts, season pts, (Rost %),
+ * Bye week — with the scoring chip (gap list §3 #18) in the Rost % cell,
+ * which has no source: right after the three numbers it scores. The chip
+ * names the scoring and opens the Scoring sheet; a pick re-reads every
+ * number on the profile under it (one core-stats read feeds the strip, the
+ * cards, the Game log and History). The design has no picker, so the chip
+ * extends its language: the list stats' scoring pill, sized to the strip's
+ * value line, over the strip's own "Scoring" label.
+ */
+function StatStrip({
+  cells,
+  pending,
+  scoring,
+}: {
+  cells: ReturnType<typeof stripCells>
+  pending: boolean
+  scoring: ReturnType<typeof useProfileScoring>
+}) {
+  const [open, setOpen] = useState(false)
+  const at = Math.min(3, cells.length)
+  const items: Array<{ kind: 'cell'; cell: (typeof cells)[number] } | { kind: 'chip' }> = [
+    ...cells.slice(0, at).map((cell) => ({ kind: 'cell' as const, cell })),
+    { kind: 'chip' as const },
+    ...cells.slice(at).map((cell) => ({ kind: 'cell' as const, cell })),
+  ]
   return (
-    <div
-      className="grid flex-none border-b border-m-b3 px-2 py-2.5"
-      style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}
-      data-profile-strip
-    >
-      {cells.map((c) => (
-        <div key={c.key} className="flex min-w-0 flex-col items-center gap-px text-center" data-strip={c.key}>
-          <span className={cn('whitespace-nowrap text-[15px] font-bold', c.missing && 'text-m-t4', pending && c.missing && 'animate-pulse')}>{c.value}</span>
-          <span className="whitespace-nowrap text-[9.5px] font-medium text-m-t3">{c.label}</span>
-        </div>
-      ))}
-    </div>
+    <>
+      <div
+        className="grid flex-none border-b border-m-b3 px-2 py-2.5"
+        // The chip takes the width it needs ("0.25 PPR"); the numbers share the rest.
+        style={{ gridTemplateColumns: items.map((i) => (i.kind === 'chip' ? 'auto' : 'minmax(0, 1fr)')).join(' ') }}
+        data-profile-strip
+      >
+        {items.map((i) =>
+          i.kind === 'chip' ? (
+            <button
+              key="scoring"
+              type="button"
+              aria-haspopup="dialog"
+              aria-label={scoringChipName(scoring.choice, scoring.options)}
+              onClick={() => setOpen(true)}
+              className="group flex min-w-0 flex-col items-center gap-px px-1 text-center"
+              data-strip="scoring"
+              data-profile-scoring={scoring.value}
+            >
+              {/* 20px drawn, 18px of layout: its label sits on the numbers' label line. */}
+              <span className="-my-px flex h-5 items-center gap-[3px] whitespace-nowrap rounded-pill bg-m-b2 pl-2 pr-1.5 text-[11px] font-semibold text-m-t1 group-active:bg-m-b2h">
+                {scoringChipLabel(scoring.choice)}
+                <MIcon name="chevronDown" size={8} stroke={2.4} />
+              </span>
+              <span className="whitespace-nowrap text-[9.5px] font-medium text-m-t3">Scoring</span>
+            </button>
+          ) : (
+            <div key={i.cell.key} className="flex min-w-0 flex-col items-center gap-px text-center" data-strip={i.cell.key}>
+              <span className={cn('whitespace-nowrap text-[15px] font-bold', i.cell.missing && 'text-m-t4', pending && i.cell.missing && 'animate-pulse')}>
+                {i.cell.value}
+              </span>
+              <span className="whitespace-nowrap text-[9.5px] font-medium text-m-t3">{i.cell.label}</span>
+            </div>
+          ),
+        )}
+      </div>
+      <ScoringSheet
+        open={open}
+        onOpenChange={setOpen}
+        subtitle="The points on this profile"
+        options={scoring.options}
+        value={scoring.value}
+        onPick={scoring.onPick}
+      />
+    </>
   )
 }

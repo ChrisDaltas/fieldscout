@@ -15,10 +15,27 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileBoxColumn, ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
-import { sumBox, type BoxKey, type BoxTotals, type CoreStatsPayload, type ScoringChoice } from '@/lib/players/core-stats-ops'
+import { SCORING_OPTIONS } from '@/components/mobile/lists/lists-stats'
+import type { ListScoring } from '@/hooks/use-mobile-lists-timeframe-stats'
+import {
+  choiceValue,
+  sumBox,
+  type BoxKey,
+  type BoxTotals,
+  type CoreStatsPayload,
+  type ScoringChoice,
+  type ScoringSystemKey,
+} from '@/lib/players/core-stats-ops'
 import { completionPct, perGame, yardsPerTarget } from '@/lib/players/key-stats-ops'
 import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
-import { calculateFantasyPoints, HALF_PPR_SCORING, PPR_SCORING, STANDARD_SCORING, type ScoringRules } from '@/lib/scoring/default'
+import {
+  calculateFantasyPoints,
+  HALF_PPR_SCORING,
+  PPR_SCORING,
+  QUARTER_PPR_SCORING,
+  STANDARD_SCORING,
+  type ScoringRules,
+} from '@/lib/scoring/default'
 
 export const DASH = '–'
 
@@ -122,6 +139,59 @@ export function stripCells(core: CoreStatsPayload | null, player: Pick<PlayerSta
   ]
   if (player.bye_week != null) cells.push({ key: 'bye', value: String(player.bye_week), label: 'Bye week', missing: false })
   return cells
+}
+
+// ---------------------------------------------------------------------------
+// Scoring chip (gap list §3 #18): the desktop view's scoring dropdown on the
+// phone. The same choice and read (`resolveChoice` → core-stats), with the
+// phone's four presets in its own order and words — PPR · Half PPR ·
+// 0.25 PPR · Standard, the list stats' table (rulings #19/#30) — then the
+// viewer's leagues, as the desktop dropdown lists them.
+// ---------------------------------------------------------------------------
+
+const PROFILE_SYSTEMS: ReadonlyArray<{ system: ScoringSystemKey; list: ListScoring }> = [
+  { system: 'ppr', list: 'ppr' },
+  { system: 'half_ppr', list: 'half' },
+  { system: 'quarter_ppr', list: 'quarter' },
+  // The core-stats Standard is ESPN Standard (no points for a catch).
+  { system: 'espn_standard', list: 'standard' },
+]
+
+/** The presets the phone chip offers (`resolveChoice`'s `systems`). */
+export const PROFILE_SCORING_SYSTEMS: readonly ScoringSystemKey[] = PROFILE_SYSTEMS.map((s) => s.system)
+
+export interface ProfileScoringOption {
+  /** `choiceValue`: a preset key, or `league:<id>`. */
+  value: string
+  label: string
+  sub: string
+}
+
+function listWords(list: ListScoring): { label: string; sub: string } {
+  const o = SCORING_OPTIONS.find((x) => x.value === list)
+  return { label: o?.label ?? list, sub: o?.sub ?? '' }
+}
+
+/** The four presets, then one per league the viewer is in. */
+export function profileScoringOptions(leagues: ReadonlyArray<{ id: string; name: string }>): ProfileScoringOption[] {
+  return [
+    ...PROFILE_SYSTEMS.map((s) => ({ value: s.system, ...listWords(s.list) })),
+    ...leagues.map((l) => ({ value: `league:${l.id}`, label: l.name, sub: 'Your league’s scoring' })),
+  ]
+}
+
+/** The chip's word: the preset's short name, or "League" — a league's name
+ *  does not fit a strip cell (the chip's label and the sheet name it). */
+export function scoringChipLabel(choice: ScoringChoice): string {
+  if (choice.kind === 'league') return 'League'
+  const s = PROFILE_SYSTEMS.find((x) => x.system === choice.system)
+  return s ? listWords(s.list).label : 'Standard'
+}
+
+/** "Scoring: PPR" / "Scoring: Sunday Funday League" — the chip's name. */
+export function scoringChipName(choice: ScoringChoice, options: readonly ProfileScoringOption[]): string {
+  const label = options.find((o) => o.value === choiceValue(choice))?.label ?? scoringChipLabel(choice)
+  return `Scoring: ${label}`
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +554,7 @@ export function pastSeasonRules(choice: ScoringChoice): ScoringRules {
   if (choice.kind === 'system') {
     if (choice.system === 'ppr') return PPR_SCORING
     if (choice.system === 'half_ppr') return HALF_PPR_SCORING
+    if (choice.system === 'quarter_ppr') return QUARTER_PPR_SCORING
   }
   return STANDARD_SCORING
 }

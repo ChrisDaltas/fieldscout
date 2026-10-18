@@ -67,21 +67,33 @@ export function avgPerGame(total: number | null, games: number): number | null {
 // the user can decide, by default i would do ESPN standard")
 // ---------------------------------------------------------------------------
 
-export const SCORING_SYSTEMS = [
+/** Every preset the core-stats read scores: ESPN Standard, Half PPR, Full
+ *  PPR and 0.25 PPR (0.25 a catch — the phone profile's scoring chip offers
+ *  PPR / Half / 0.25 / Standard, gap list §3 #18 after rulings #19/#30). */
+export const SCORING_SYSTEM_KEYS = ['espn_standard', 'half_ppr', 'ppr', 'quarter_ppr'] as const
+export type ScoringSystemKey = (typeof SCORING_SYSTEM_KEYS)[number]
+
+/** The desktop dropdown's presets (D486(11)) — 0.25 PPR is phone-only. */
+export const SCORING_SYSTEMS: ReadonlyArray<{ key: ScoringSystemKey; label: string }> = [
   { key: 'espn_standard', label: 'ESPN Standard' },
   { key: 'half_ppr', label: 'Half PPR' },
   { key: 'ppr', label: 'Full PPR' },
-] as const
-export type ScoringSystemKey = (typeof SCORING_SYSTEMS)[number]['key']
+]
+const SYSTEM_LABELS: Record<ScoringSystemKey, string> = {
+  espn_standard: 'ESPN Standard',
+  half_ppr: 'Half PPR',
+  ppr: 'Full PPR',
+  quarter_ppr: '0.25 PPR',
+}
 export const DEFAULT_SCORING_SYSTEM: ScoringSystemKey = 'espn_standard'
 export const SCORING_CHOICE_STORAGE_KEY = 'fs.player-core-stats.scoring'
 
 export function isScoringSystemKey(v: string): v is ScoringSystemKey {
-  return SCORING_SYSTEMS.some((s) => s.key === v)
+  return (SCORING_SYSTEM_KEYS as readonly string[]).includes(v)
 }
 
 export function systemLabel(key: ScoringSystemKey): string {
-  return SCORING_SYSTEMS.find((s) => s.key === key)!.label
+  return SYSTEM_LABELS[key]
 }
 
 /** A dropdown value: a preset system key, or `league:<id>`. */
@@ -116,18 +128,23 @@ export function scoringOptions(leagues: readonly { id: string; name: string }[])
  * `?league=` (when the viewer can read it); else the stored choice when it
  * is still valid (a league they have left is not); else ESPN Standard.
  * `leagues` null = not loaded yet — a stored league choice is held until
- * the list proves it valid or gone.
+ * the list proves it valid or gone. `systems` = the presets this picker
+ * offers (default the desktop dropdown's three): a remembered preset it
+ * doesn't offer is not a valid choice there.
  */
 export function resolveChoice(args: {
   picked: string | null
   leagueParam: string | null
   stored: string | null
   leagues: readonly { id: string }[] | null
+  systems?: readonly ScoringSystemKey[]
 }): ScoringChoice {
+  const systems = args.systems ?? SCORING_SYSTEMS.map((s) => s.key)
   const valid = (c: ScoringChoice | null): c is ScoringChoice =>
-    c !== null && (c.kind === 'system' || (args.leagues !== null && args.leagues.some((l) => l.id === c.leagueId)))
+    c !== null &&
+    (c.kind === 'system' ? systems.includes(c.system) : args.leagues !== null && args.leagues.some((l) => l.id === c.leagueId))
   const picked = parseChoice(args.picked)
-  if (picked && (picked.kind === 'system' || args.leagues === null || valid(picked))) return picked
+  if (picked && (picked.kind === 'system' ? systems.includes(picked.system) : args.leagues === null || valid(picked))) return picked
   if (args.leagueParam) return { kind: 'league', leagueId: args.leagueParam }
   const stored = parseChoice(args.stored)
   if (valid(stored)) return stored
