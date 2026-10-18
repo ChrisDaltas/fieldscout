@@ -103,6 +103,13 @@ const INVALID_WORDS: Record<string, string> = {
   manager_left: 'the team’s manager left the league, so its claims were cancelled.',
 }
 
+/** The plain words for a stored reason a claim didn't go through or was
+ *  closed (`roster_full` → "your roster was full — …"), lower-case to follow
+ *  a dash; null for a reason with no words (or none at all). */
+export function claimReasonWords(reason: string | null): string | null {
+  return reason && Object.hasOwn(INVALID_WORDS, reason) ? INVALID_WORDS[reason] : null
+}
+
 export function claimOutcome(claim: Pick<WaiverClaimView, 'status' | 'result_reason' | 'faab_bid'>, waiverType: WaiverType | string | null): ClaimOutcome {
   switch (claim.status) {
     case 'pending':
@@ -116,11 +123,11 @@ export function claimOutcome(claim: Pick<WaiverClaimView, 'status' | 'result_rea
         detail: claim.result_reason === 'lost_on_priority' ? 'Another team with higher waiver priority claimed him.' : 'Another team bid more.',
       }
     case 'cancelled': {
-      const words = claim.result_reason && claim.result_reason !== 'cancelled' ? INVALID_WORDS[claim.result_reason] : null
+      const words = claim.result_reason !== 'cancelled' ? claimReasonWords(claim.result_reason) : null
       return { label: 'Cancelled', tone: 'neutral', detail: words ? `Cancelled — ${words}` : null }
     }
     case 'invalid': {
-      const words = claim.result_reason ? INVALID_WORDS[claim.result_reason] : undefined
+      const words = claimReasonWords(claim.result_reason)
       return {
         label: 'Didn’t go through',
         tone: 'negative',

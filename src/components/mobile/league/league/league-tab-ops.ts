@@ -11,6 +11,9 @@ import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { teamAvatarClass as matchTeamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import { feedLines, groupFeedLines, transactionText } from '@/components/leagues/activity-feed-ops'
 import { formatRecord, renderedChain } from '@/components/leagues/standings-table-ops'
+import { lostClaimWinner } from '@/components/leagues/team-transactions-ops'
+import { claimOutcome, claimReasonWords } from '@/components/leagues/waiver-claims-ops'
+import type { WaiverClaimPlayer, WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import { TIEBREAKERS } from '@/lib/leagues/settings/league-settings'
 
 // ---------------------------------------------------------------------------
@@ -207,6 +210,9 @@ export interface MoveLine {
   verb: string
   /** Extra words after "pos · team" (a trade's roster drop, a move's from → to). */
   note: TextPart[] | null
+  /** Nothing happened to this player (a claim that didn't go through): the
+   *  + / − and the verb are drawn grey, not green / red. */
+  muted?: boolean
 }
 
 export interface TxRow {
@@ -220,9 +226,20 @@ export interface TxRow {
   bid: number | null
   moves: MoveLine[]
   /** A sentence when the payload names no players we can draw (a trade
-   *  reversal, a retirement), or the trade's tail ("Trade with @x · $5 FAAB sent"). */
+   *  reversal, a retirement), the trade's tail ("Trade with @x · $5 FAAB
+   *  sent"), or why a claim didn't go through. */
   text: TextPart[] | null
   commishActionId: string | null
+  /** A claim of yours that didn't go through (My moves): its result, drawn
+   *  in red after the pill — "Lost" / "Didn’t go through". */
+  result?: ClaimResult
+}
+
+/** The result of a claim a waiver run settled without giving you the player. */
+export interface ClaimResult {
+  status: 'lost' | 'invalid'
+  /** The claims panel's words. */
+  label: string
 }
 
 export interface PostRow {
@@ -408,6 +425,104 @@ export function feedRows(
       commishActionId: line.commishActionId,
     }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Waiver claims that didn't go through (gap list §3 #12) — My moves only
+// ---------------------------------------------------------------------------
+
+function claimLine(player: WaiverClaimPlayer, tone: 'add' | 'drop', key: string): MoveLine {
+  return {
+    key,
+    playerId: player.player_id,
+    name: player.full_name ?? '',
+    position: player.position,
+    nflTeam: player.nfl_team,
+    tone,
+    verb: tone === 'add' ? 'Claim' : 'Drop',
+    note: null,
+    muted: true,
+  }
+}
+
+/** Why, from the stored reason: a lost claim names who won him and what he
+ *  went for (the desktop panel's D495 words, the winner a door to his
+ *  manager's profile); a failed one the reason's own words. */
+function claimReason(claim: WaiverClaimView, waiverType: string | null, who: WhoOf): TextPart[] | null {
+  const winner = lostClaimWinner(claim, waiverType)
+  if (winner) {
+    const name = claim.add.full_name ? shortName(claim.add.full_name, claim.add.position) : 'him'
+    return [who(winner.winnerTeamId) ?? winner.winnerTeamName, ` won ${name}${winner.priceSuffix} ${winner.reason}`]
+  }
+  if (claim.status === 'invalid') {
+    const words = claimReasonWords(claim.result_reason)
+    if (words) return [capitalise(words)]
+  }
+  const detail = claimOutcome(claim, waiverType).detail
+  return detail ? [detail] : null
+}
+
+/**
+ * Your claims a waiver run settled without giving you the player, as
+ * transaction rows in the read's order (newest first): LOST (another team
+ * won him) or INVALID ("didn't go through" — the stored reason says why).
+ * Each is the Waiver pill with the result in red, when the run settled it
+ * (when it was made, if the run left no time) and your bid, the player you
+ * claimed and the one you'd have dropped (both grey — nothing moved), then
+ * the reason in plain words. A won claim is already a move in the feed; a
+ * cancelled one was your own doing — neither is a row (the desktop panel's
+ * rule).
+ */
+export function claimResultRows(claims: readonly WaiverClaimView[], waiverType: string | null, who: WhoOf): TxRow[] {
+  return claims.flatMap((claim): TxRow[] => {
+    if (claim.status !== 'lost' && claim.status !== 'invalid') return []
+    return [
+      {
+        kind: 'transaction',
+        id: `claim:${claim.id}`,
+        teamId: claim.team_id,
+        pill: TYPE_PILL.waiver_claim,
+        createdAt: claim.processed_at ?? claim.created_at,
+        bid: waiverType === 'faab' ? claim.faab_bid : null,
+        moves: [claimLine(claim.add, 'add', `${claim.id}:add`), ...(claim.drop ? [claimLine(claim.drop, 'drop', `${claim.id}:drop`)] : [])],
+        text: claimReason(claim, waiverType, who),
+        commishActionId: null,
+        result: { status: claim.status, label: claimOutcome(claim, waiverType).label },
+      },
+    ]
+  })
+}
+
+function instant(iso: string | null): number {
+  const ms = iso ? Date.parse(iso) : Number.NaN
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms
+}
+
+/**
+ * The feed's rows with your lost and failed claims slotted in by time,
+ * newest first. The feed's own order is kept; each claim goes above the
+ * first row older than it (a claim and a move at the same instant — one
+ * waiver run — put the claim first, as the desktop panel does). While older
+ * moves are still unread (`complete` false) a claim older than the oldest
+ * row shown waits for its page, so it never sits above moves made before it.
+ */
+export function withClaimResults(rows: readonly FeedRow[], claims: readonly TxRow[], complete: boolean): FeedRow[] {
+  if (claims.length === 0) return [...rows]
+  const timed = rows.map((r) => instant(r.createdAt)).filter((ms) => ms !== Number.NEGATIVE_INFINITY)
+  const floor = complete || timed.length === 0 ? Number.NEGATIVE_INFINITY : Math.min(...timed)
+  const waiting = claims
+    .map((row, index) => ({ row, index, ms: instant(row.createdAt) }))
+    .filter((c) => c.ms >= floor)
+    .sort((a, b) => (b.ms === a.ms ? a.index - b.index : b.ms - a.ms))
+  const out: FeedRow[] = []
+  let k = 0
+  for (const row of rows) {
+    const ms = instant(row.createdAt)
+    while (k < waiting.length && waiting[k]!.ms >= ms) out.push(waiting[k++]!.row)
+    out.push(row)
+  }
+  while (k < waiting.length) out.push(waiting[k++]!.row)
+  return out
 }
 
 /** Every player id a row draws, for one headshot / identity read. */

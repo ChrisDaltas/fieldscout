@@ -23,6 +23,7 @@ import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
 import { statsDegradedKeys } from '@/hooks/use-stats-degraded'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
+import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -455,10 +456,10 @@ describe('Transactions — trades, managers and My moves', () => {
     const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
       seedFeed([{ type: OWN, teamId: ME }, { type: SHARED, parties: [ME] }], [TRADE])(qc)
       qc.setQueryData(['players-by-ids', ['p7', 'p8']], [])
-      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'pending'), {
+      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'), {
         league_id: LEAGUE,
         team_id: ME,
-        status: 'pending',
+        status: 'all',
         waiver_type: 'faab',
         faab_budget: 100,
         faab_min_bid: 0,
@@ -493,6 +494,145 @@ describe('Transactions — trades, managers and My moves', () => {
     expect(html).toContain('data-pending-claims')
     expect(html).toContain('$7 bid')
     expect(html).toContain('>Cancel<')
+  })
+})
+
+describe('My moves — lost and failed waiver claims, with the reason (gap list §3 #12)', () => {
+  const MINE = [{ type: OWN, teamId: ME }, { type: SHARED, parties: [ME] }]
+  const settled = (over: Partial<WaiverClaimView>): WaiverClaimView => ({
+    id: 'c',
+    team_id: ME,
+    add: { player_id: 'p9', full_name: 'Ray Davis', position: 'RB', nfl_team: 'BUF' },
+    drop: null,
+    faab_bid: 7,
+    claim_order: 1,
+    status: 'lost',
+    result_reason: 'outbid',
+    process_at: null,
+    processed_at: null,
+    created_at: '2099-10-08T19:06:00.000Z',
+    created_by: 'user-me',
+    cancelled_at: null,
+    ...over,
+  })
+  const doc = (claims: WaiverClaimView[]) => ({
+    league_id: LEAGUE,
+    team_id: ME,
+    status: 'all',
+    waiver_type: 'faab',
+    faab_budget: 100,
+    faab_min_bid: 0,
+    faab_balance: 60,
+    waiver_priority: 1,
+    claims,
+  })
+  const screen = (seed: (qc: QueryClient) => void) =>
+    render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      seedFeed(MINE, [FEED[0]!, TRADE])(qc)
+      seed(qc)
+    })
+
+  it('each sits among your moves by when the run settled it, with the result, your bid, both players and why', () => {
+    const html = screen((qc) =>
+      qc.setQueryData(
+        waiverClaimKeys.team(LEAGUE, null, 'all'),
+        doc([
+          settled({ id: 'won', status: 'won', result_reason: 'won' }),
+          // The same run as the Bourne win (tx1): the claim shows first.
+          settled({
+            id: 'lost',
+            processed_at: '2099-10-11T19:06:00.000Z',
+            process_at: '2099-10-11T19:06:00.000Z',
+            drop: { player_id: 'p8', full_name: 'Jahan Dotson', position: 'WR', nfl_team: 'WAS' },
+            winner_team_id: OPP,
+            winner_team_name: 'Gridiron Gurus',
+            winning_bid: 14,
+          }),
+          // Older than the trade (Oct 10): below it.
+          settled({ id: 'bad', status: 'invalid', result_reason: 'roster_full', faab_bid: 3, processed_at: '2099-10-09T19:06:00.000Z' }),
+          settled({ id: 'gone', status: 'cancelled', result_reason: 'cancelled' }),
+        ]),
+      ),
+    )
+    const order = ['data-tx-row="claim:lost"', 'data-tx-row="tx1"', 'data-tx-row="trade1"', 'data-tx-row="claim:bad"'].map((m) => html.indexOf(m))
+    expect(order.every((i) => i >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+    // A won claim is already the move; a cancelled one isn't a result.
+    expect(html).not.toContain('claim:won')
+    expect(html).not.toContain('claim:gone')
+
+    const lost = html.slice(html.indexOf('data-tx-row="claim:lost"'), html.indexOf('data-tx-row="tx1"'))
+    // The transaction row itself, its claim's result as a data attribute.
+    expect(html).toContain('data-tx-row="claim:lost" data-claim-result="lost"')
+    expect(html).toContain('data-tx-row="claim:bad" data-claim-result="invalid"')
+    // A real move carries no result.
+    expect(html).not.toMatch(/data-tx-row="tx1" data-claim-result/)
+    expect(lost).toContain('>Waiver<')
+    expect(lost).toMatch(/text-m-tr[^>]*>Lost</)
+    expect(lost).toContain('$7 bid')
+    expect(lost).toContain('R. Davis')
+    expect(lost).toContain('>Claim<')
+    expect(lost).toContain('J. Dotson')
+    expect(lost).toContain('>Drop<')
+    // Nothing moved: grey, not green / red.
+    expect(lost).not.toContain('text-positive-strong')
+    expect(lost).not.toContain('text-negative-strong')
+    // Who won him is his manager — a door to the profile.
+    expect(lost).toContain('data-username-link="marcus"')
+    expect(lost).toContain(' won R. Davis ($14). Your $7 claim was outbid.')
+
+    const bad = html.slice(html.indexOf('data-tx-row="claim:bad"'))
+    expect(bad).toMatch(/>Didn’t go through</)
+    expect(bad).toContain('$3 bid')
+    expect(bad).toContain('Your roster was full — claim again with a player to drop.')
+  })
+
+  it('only claims that didn’t go through: no empty state over them when there are no moves', () => {
+    const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      seedFeed(MINE, [])(qc)
+      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'), doc([settled({ id: 'l', processed_at: '2099-10-11T19:06:00.000Z' })]))
+    })
+    expect(html).toContain('data-tx-row="claim:l"')
+    expect(html).toContain('Another team bid more.')
+    expect(html).not.toContain('No moves yet this season.')
+  })
+
+  it('while your claims are read the feed is already reading too; only its rows wait', () => {
+    let cache: QueryClient | null = null
+    const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      cache = qc
+      seedFeed(MINE, [FEED[0]!, TRADE])(qc)
+    })
+    // Not the whole screen held: the header and the feed's own row skeleton.
+    expect(html).toContain('>My moves<')
+    expect(html).not.toContain('h-[72px]')
+    expect(html).toContain('aria-label="Loading"')
+    // The moves wait for the claims, so none pops in among them.
+    expect(html).not.toContain('data-tx-row="tx1"')
+
+    // With nothing read yet, the feed's read is started alongside the claims'.
+    render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: true, team: null }), {}, (qc) => {
+      cache = qc
+    })
+    expect(cache!.getQueryCache().find({ queryKey: [...leagueActivityKeys.all(LEAGUE), 'mobile', MINE], exact: true })).toBeDefined()
+    expect(cache!.getQueryCache().find({ queryKey: waiverClaimKeys.team(LEAGUE, null, 'all'), exact: true })).toBeDefined()
+  })
+
+  it('a failed claims read says so — never a quiet list without them', () => {
+    const html = screen((qc) => {
+      const q = qc.getQueryCache().build(qc, { queryKey: waiverClaimKeys.team(LEAGUE, null, 'all') })
+      q.setState({ status: 'error', error: new Error('down'), fetchStatus: 'idle' })
+    })
+    expect(html).toContain('Couldn’t load your waiver claims.')
+    expect(html).toContain('data-tx-row="tx1"')
+  })
+
+  it('League transactions (not My moves) reads no claims and shows none', () => {
+    const html = render(createElement(TransactionsScreen, { leagueId: LEAGUE, mine: false, team: null }), {}, (qc) =>
+      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'all'), doc([settled({ id: 'l', processed_at: '2099-10-11T19:06:00.000Z' })])),
+    )
+    expect(html).not.toContain('data-claim-result')
+    expect(html).not.toContain('data-pending-claims')
   })
 })
 
