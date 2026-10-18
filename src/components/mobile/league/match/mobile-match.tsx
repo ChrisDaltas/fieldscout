@@ -1140,6 +1140,9 @@ function TotalHalf({ data, mirror = false }: { data: TeamBoxScore | undefined; m
   )
 }
 
+/** The game line's tap area (PlayerHalf): 3 + 14 + 13 = 30px, same layout. */
+const GAME_LINE_HIT = 'pt-[3px] -mt-[3px] pb-[13px] -mb-[13px]'
+
 /** One player's half of a row (§2.2 C): short name, POS · TEAM (bye), points
  *  and projection, the game line. A tap opens the player profile; a tap on
  *  the game line opens that NFL game's box score (gap list §3 #17). */
@@ -1215,7 +1218,10 @@ function PlayerHalf({
         {mirror ? nameCol : pointsCol}
       </button>
       {game && gameHref ? (
-        <Link href={gameHref} className={cn(lineClass, 'active:text-m-t1')} data-game-line={player.game?.id}>
+        // The line is 14px tall; its tap area reaches 30px (the handoff's
+        // smallest hit target) without moving it — up over the 3px gap only,
+        // the rest down into the row's padding, never over the name button.
+        <Link href={gameHref} className={cn(lineClass, GAME_LINE_HIT, 'active:text-m-t1')} data-game-line={player.game?.id}>
           {game}
         </Link>
       ) : (

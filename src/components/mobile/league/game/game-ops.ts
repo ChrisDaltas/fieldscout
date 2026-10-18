@@ -68,10 +68,26 @@ export function nflGameHref(leagueId: string, gameId: string): string {
   return `/app/leagues/${leagueId}/games/${encodeURIComponent(gameId)}`
 }
 
+/** The id as stored (`nfl_games.id`, e.g. "2026-wk01-BUF@KC") from its URL
+ *  segment, which arrives encoded or not depending on the link. */
+export function gameIdFromSegment(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 /** Does a stored line belong to this game? The held-games rule — one rule
  *  for "which game is this line": by `game_id` when the line names one,
- *  else his current NFL team plays in it (production's lines carry no
- *  game id, F468(a)). */
+ *  else his CURRENT NFL team plays in it. Production's lines carry no game
+ *  id (F468(a)) and no line carries the team it was earned for, so the
+ *  fallback is wrong for anyone who has changed NFL teams since that week —
+ *  not only a mid-week trade (F589): a past week's line shows under his new
+ *  team's game, and his old team's game misses him. Ingest writing
+ *  `game_id` (or the team at the time) on every line fixes it; until then
+ *  a final game says players are listed by their current team
+ *  (`listedByCurrentTeam`). */
 export function lineInGame(line: Pick<GameBoxLine, 'game_id'>, player: Pick<GameBoxPlayer, 'team'> | undefined, game: Pick<NflGameRow, 'id' | 'home_team' | 'away_team'>): boolean {
   if (line.game_id) return line.game_id === game.id
   const team = player?.team ?? null
@@ -216,6 +232,27 @@ const GROUPS: readonly GroupSpec[] = [
   },
 ]
 
+/** Each stored line of a player in this game (`lineInGame`), with him. */
+function linesInGame(game: NflGameRow, players: readonly GameBoxPlayer[], lines: readonly GameBoxLine[]): Array<{ line: GameBoxLine; p: GameBoxPlayer }> {
+  const byId = new Map(players.map((p) => [p.id, p]))
+  return lines.flatMap((line) => {
+    const p = byId.get(line.player_id)
+    return p && lineInGame(line, p, game) ? [{ line, p }] : []
+  })
+}
+
+/**
+ * Does a finished game's box need to say its players are listed by their
+ * current team? Only when some line in it was placed by his current team
+ * (it names no game — every production line today, F468(a)): a player who
+ * has changed teams since would show under the wrong game (`lineInGame`).
+ * Once every line names its game the note goes away by itself.
+ */
+export function listedByCurrentTeam(game: NflGameRow, status: GameStatus, players: readonly GameBoxPlayer[], lines: readonly GameBoxLine[]): boolean {
+  if (status.state !== 'final' || isZeroingHold(game.operator_hold)) return false
+  return linesInGame(game, players, lines).some(({ line }) => !line.game_id)
+}
+
 /**
  * The box's player groups for one game: each stored line of a player in
  * this game (`lineInGame`), in the group(s) his line has numbers for. The
@@ -226,11 +263,7 @@ const GROUPS: readonly GroupSpec[] = [
  */
 export function boxGroups(game: NflGameRow, players: readonly GameBoxPlayer[], lines: readonly GameBoxLine[]): BoxGroup[] {
   if (isZeroingHold(game.operator_hold)) return []
-  const byId = new Map(players.map((p) => [p.id, p]))
-  const mine = lines.flatMap((line) => {
-    const p = byId.get(line.player_id)
-    return p && lineInGame(line, p, game) ? [{ line, p }] : []
-  })
+  const mine = linesInGame(game, players, lines)
   const side = (p: GameBoxPlayer) => (p.team === game.away_team ? 0 : 1)
   const out: BoxGroup[] = []
   for (const g of GROUPS) {

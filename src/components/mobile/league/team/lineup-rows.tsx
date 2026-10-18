@@ -169,7 +169,10 @@ export function TabRow({
           )}
         </button>
         {player && gameHref && (
-          <Link href={gameHref} className="block truncate text-[11px] font-medium text-m-t3 active:text-m-t1" data-game-line>
+          // The line is ~16px tall; its tap area reaches 30px (the handoff's
+          // smallest hit target) without moving it — up over the 2px gap
+          // only, the rest down into the row's padding, never over the name.
+          <Link href={gameHref} className="-mb-3 -mt-0.5 block truncate pb-3 pt-0.5 text-[11px] font-medium text-m-t3 active:text-m-t1" data-game-line>
             <GameAndRank player={player} stats={stats} locked={locked} />
           </Link>
         )}

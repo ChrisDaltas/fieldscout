@@ -405,6 +405,11 @@ describe('mobile Match — starters', () => {
     // Never a link nested in the player's button.
     expect(html).not.toMatch(/<button[^>]*data-player="[^"]*"[^>]*>(?:(?!<\/button>)[\s\S])*<a /)
   })
+
+  it('the game line’s tap area reaches 30px without moving it — down into the row, not over the name', () => {
+    const link = /<a [^>]*href="\/app\/leagues\/league-1\/games\/g2"[^>]*>/.exec(html)?.[0] ?? ''
+    for (const c of ['pt-[3px]', '-mt-[3px]', 'pb-[13px]', '-mb-[13px]']) expect(link).toContain(c)
+  })
 })
 
 describe('mobile Match — bench', () => {

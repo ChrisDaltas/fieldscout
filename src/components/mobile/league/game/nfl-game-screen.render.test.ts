@@ -7,7 +7,7 @@
  * Pins what is left out for want of data (gap list §2): Play by play, the
  * Team stats table, the win bar.
  */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { keepPreviousData, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -16,15 +16,17 @@ import type { LeagueDetail } from '@/hooks/use-league'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { leagueMatchupKeys } from '@/hooks/use-matchups'
 import type { MobileWeekGame } from '@/hooks/use-mobile-team-games'
-import { nflGameBoxKeys, type NflGameBox } from '@/hooks/use-nfl-game-box'
+import { nflGameBoxKeys, nflGameBoxQuery, type NflGameBox } from '@/hooks/use-nfl-game-box'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
-import { NflGameScreen } from './nfl-game-screen'
+import { NflGameRouteScreen, NflGameScreen } from './nfl-game-screen'
 
+const route = vi.hoisted(() => ({ params: { gameId: 'g-cin-mia' } as Record<string, string> }))
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/leagues/league-1/games/g-cin-mia',
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
+  useParams: () => route.params,
 }))
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-me' }, profile: { username: 'dalton' } }),
@@ -32,6 +34,19 @@ vi.mock('@/hooks/use-auth', () => ({
 vi.mock('@/hooks/use-league-channel', () => ({
   useLeagueChannel: vi.fn(() => ({ connection: 'live' })),
 }))
+// The last game's answer kept on screen while the picked one reads (what
+// `keepPreviousData` does; a static render has no earlier observer to keep).
+const kept = vi.hoisted(() => ({ from: null as string | null }))
+vi.mock('@/hooks/use-nfl-game-box', async (importActual) => {
+  const actual = await importActual<typeof import('@/hooks/use-nfl-game-box')>()
+  return {
+    ...actual,
+    useNflGameBox: (gameId: string) => {
+      if (!kept.from) return actual.useNflGameBox(gameId)
+      return { ...actual.useNflGameBox(kept.from), isPlaceholderData: true }
+    },
+  }
+})
 
 const LEAGUE = 'league-1'
 const ME = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -118,7 +133,7 @@ const WEEK_GAMES: MobileWeekGame[] = [
 
 const unescape = (html: string) => html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 
-function render({ box = BOX as NflGameBox | 'error', weekGames = WEEK_GAMES, week = WEEK as WeekMatchups | null, detail = DETAIL } = {}): string {
+function render({ box = BOX as NflGameBox | 'error', weekGames = WEEK_GAMES, week = WEEK as WeekMatchups | null, detail = DETAIL, gameId = 'g-cin-mia' } = {}): string {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
   if (box === 'error') {
     const query = qc.getQueryCache().build(qc, { queryKey: nflGameBoxKeys.game('g-cin-mia') })
@@ -127,7 +142,7 @@ function render({ box = BOX as NflGameBox | 'error', weekGames = WEEK_GAMES, wee
   qc.setQueryData(['mobile-team-games', 2099, 5], weekGames)
   qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
   if (week) qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 5), week)
-  return unescape(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(NflGameScreen, { leagueId: LEAGUE, gameId: 'g-cin-mia' }))))
+  return unescape(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(NflGameScreen, { leagueId: LEAGUE, gameId }))))
 }
 
 /** The rows of one group as [name, …cells]. */
@@ -242,5 +257,81 @@ describe('the NFL game screen — other states', () => {
   it('one game in the week is no picker', () => {
     const html = render({ weekGames: [WEEK_GAMES[1]!] })
     expect(html).not.toContain('data-game-picker')
+  })
+
+  it('a final game whose lines name no game says players are listed by their current team', () => {
+    const final = render({ box: { ...BOX, game: { ...GAME, status: 'final' } } })
+    expect(final).toMatch(/data-box-note="current-team">Players are listed by their current team\.</)
+    // A live game, or lines that each name their game, need no note.
+    expect(render()).not.toContain('data-box-note')
+    const named = { ...BOX, game: { ...GAME, status: 'final' }, lines: BOX.lines.map((l) => ({ ...l, game_id: GAME.id })) }
+    expect(render({ box: named })).not.toContain('data-box-note')
+  })
+})
+
+describe('the route’s screen (rendered by games/layout.tsx, above [gameId])', () => {
+  const renderRoute = (params: Record<string, string>) => {
+    route.params = params
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
+    qc.setQueryData(nflGameBoxKeys.game('g-cin-mia'), BOX)
+    qc.setQueryData(['mobile-team-games', 2099, 5], WEEK_GAMES)
+    qc.setQueryData(leaguesKeys.detail(LEAGUE), DETAIL)
+    try {
+      return unescape(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(NflGameRouteScreen, { leagueId: LEAGUE }))))
+    } finally {
+      route.params = { gameId: 'g-cin-mia' }
+    }
+  }
+
+  it('reads the game id from the URL', () => {
+    const html = renderRoute({ leagueId: LEAGUE, gameId: 'g-cin-mia' })
+    expect(html).toContain('data-nfl-game="g-cin-mia"')
+    expect(html).toContain('data-box-row="burrow"')
+  })
+
+  it('renders nothing without one', () => {
+    expect(renderRoute({ leagueId: LEAGUE })).toBe('')
+  })
+})
+
+describe('the NFL game screen — picking another game', () => {
+  // The picker asked for CHI @ GB; CIN @ MIA's read is still what's kept.
+  const picked = () => {
+    kept.from = 'g-cin-mia'
+    try {
+      return render({ gameId: 'g-chi-gb' })
+    } finally {
+      kept.from = null
+    }
+  }
+
+  it('the read keeps the last game while the next one loads', () => {
+    expect(nflGameBoxQuery('g-chi-gb').placeholderData).toBe(keepPreviousData)
+  })
+
+  it('the bar and the picker stay on screen, the picked game ringed', () => {
+    const html = picked()
+    expect(html).toContain('data-match-strip="mB"')
+    expect([...html.matchAll(/data-picker-game="([^"]+)"/g)].map((m) => m[1])).toEqual(['g-min-no', 'g-cin-mia', 'g-chi-gb'])
+    expect(html).toMatch(/aria-pressed="true" class="[^"]*ring-accent[^"]*" data-picker-game="g-chi-gb"/)
+    expect(html).toMatch(/aria-pressed="false" class="[^"]*" data-picker-game="g-cin-mia"/)
+  })
+
+  it('only the body waits: no header or rows from the last game', () => {
+    const html = picked()
+    expect(html).toContain('data-skeleton="game"')
+    expect(html).not.toContain('data-game-header')
+    expect(html).not.toContain('data-box-row')
+  })
+
+  it('with no matchup to show, the bar doesn’t title the last game', () => {
+    kept.from = 'g-cin-mia'
+    try {
+      const html = render({ gameId: 'g-chi-gb', week: { ...WEEK, matchups: [] } })
+      expect(html).not.toContain('CIN @ MIA')
+      expect(html).toContain('data-game-picker')
+    } finally {
+      kept.from = null
+    }
   })
 })

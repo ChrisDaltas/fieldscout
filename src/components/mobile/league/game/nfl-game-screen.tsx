@@ -1,6 +1,7 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 import { formatKickoff } from '@/components/leagues/lineup-editor-ops'
 import { scoreCell, splitRows, teamName } from '@/components/leagues/matchup-view-ops'
@@ -17,7 +18,7 @@ import { NFL_TEAM_COLORS } from '@/lib/nfl-team-colors'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
-import { boxGroups, emptyBoxCopy, gameStatus, nflGameHref, scoreText, type BoxGroup, type GameStatus, type NflGameRow } from './game-ops'
+import { boxGroups, emptyBoxCopy, gameIdFromSegment, gameStatus, listedByCurrentTeam, nflGameHref, scoreText, type BoxGroup, type GameStatus, type NflGameRow } from './game-ops'
 
 /**
  * The NFL game screen (gap list §3 #17; handoff m-match §2.3 "Live game
@@ -36,12 +37,27 @@ import { boxGroups, emptyBoxCopy, gameStatus, nflGameHref, scoreText, type BoxGr
  * nothing sends them (gap list §2): Play by play (and so the Play by play /
  * Box score toggle and the My players card), the win bar, TV network,
  * records, possession, the field strip and the Team stats table.
+ *
+ * Switching games in the picker keeps the bar and the picker (and its
+ * scroll) on screen: the last game's data stays while the next one loads
+ * (`keepPreviousData`), the picker rings the game asked for, and only the
+ * body shows as loading. That needs the screen to stay mounted, which a
+ * page under `[gameId]` doesn't (Next remounts it per id) — so the route
+ * renders it from `games/layout.tsx`, through `NflGameRouteScreen`.
  */
 export function NflGameScreen({ leagueId, gameId }: { leagueId: string; gameId: string }) {
   const box = useNflGameBox(gameId)
   const league = useLeague(leagueId)
   const goBack = useGoBack()
+  // While the next game loads this is still the last one: the bar and the
+  // picker stay week-scoped and right; the body waits for the game asked for.
   const game = box.data?.game ?? null
+  // The game just tapped in the picker, until the URL catches up — so the
+  // ring moves and the body shows loading on the tap itself.
+  const [pick, setPick] = useState<{ from: string; to: string } | null>(null)
+  const picked = pick && pick.from === gameId && pick.to !== gameId ? pick.to : null
+  const switching = box.isPlaceholderData || picked !== null
+  const loading = box.isPending || switching
   const tz = league.data?.settings.draft.time_zone ?? null
   const status = game ? gameStatus(game, formatKickoff(game.kickoff_at, tz).local) : null
 
@@ -51,15 +67,15 @@ export function NflGameScreen({ leagueId, gameId }: { leagueId: string; gameId: 
         <div className="px-3">
           <div className="flex h-[52px] items-center gap-2">
             <RoundNavButton kind="back" onClick={() => goBack(`/app/leagues/${leagueId}/matchup`)} />
-            <div className="min-w-0 flex-1">{game && <TopStrip leagueId={leagueId} game={game} />}</div>
+            <div className="min-w-0 flex-1">{game && <TopStrip leagueId={leagueId} game={game} pending={switching} />}</div>
             <span className="w-9 flex-none" aria-hidden />
           </div>
-          {game && <GamePicker leagueId={leagueId} game={game} tz={tz} />}
+          {game && <GamePicker leagueId={leagueId} ringedId={picked ?? gameId} game={game} tz={tz} onPicked={(to) => setPick({ from: gameId, to })} />}
         </div>
       }
     >
       <div className="border-t border-m-b3 leading-[normal] tabular-nums" data-nfl-game={gameId}>
-        {box.isPending ? (
+        {loading ? (
           <div className="px-3.5 pt-3.5" data-skeleton="game">
             <SkeletonBlocks count={5} className="h-11" />
           </div>
@@ -76,7 +92,12 @@ export function NflGameScreen({ leagueId, gameId }: { leagueId: string; gameId: 
               </div>
             )}
             <GameHeader game={game} status={status} tz={tz} />
-            <BoxScore leagueId={leagueId} groups={boxGroups(game, box.data.players, box.data.lines)} status={status} />
+            <BoxScore
+              leagueId={leagueId}
+              groups={boxGroups(game, box.data.players, box.data.lines)}
+              status={status}
+              byCurrentTeam={listedByCurrentTeam(game, status, box.data.players, box.data.lines)}
+            />
           </>
         )}
       </div>
@@ -84,18 +105,28 @@ export function NflGameScreen({ leagueId, gameId }: { leagueId: string; gameId: 
   )
 }
 
+/** The route's screen: the game id from the URL (`[gameId]`), read here
+ *  because `games/layout.tsx` sits above that segment. */
+export function NflGameRouteScreen({ leagueId }: { leagueId: string }) {
+  const raw: unknown = useParams<{ gameId: string }>()?.gameId
+  if (typeof raw !== 'string' || raw === '') return null
+  return <NflGameScreen leagueId={leagueId} gameId={gameIdFromSegment(raw)} />
+}
+
 // ---------------------------------------------------------------------------
 // The bar — your matchup's stored scores (the handoff's strip), else the game
 // ---------------------------------------------------------------------------
 
-function TopStrip({ leagueId, game }: { leagueId: string; game: NflGameRow }) {
+function TopStrip({ leagueId, game, pending }: { leagueId: string; game: NflGameRow; pending: boolean }) {
   const { user } = useAuth()
   const league = useLeague(leagueId)
   const myTeamId = league.data?.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   // The league's week IS the NFL week (one season, one numbering) — only a
   // game of the league's own season has a matchup to show.
   const sameSeason = league.data?.league.season === game.season
-  const title = `${game.away_team} @ ${game.home_team}`
+  // The matchup strip is the week's, so it holds while the next game of
+  // that week loads; the game's own title waits for that game.
+  const title = pending ? '\u00a0' : `${game.away_team} @ ${game.home_team}`
   if (!myTeamId || !sameSeason) return <GameTitle title={title} />
   return <MatchStrip leagueId={leagueId} week={game.week} myTeamId={myTeamId} title={title} />
 }
@@ -135,12 +166,26 @@ function MatchStrip({ leagueId, week, myTeamId, title }: { leagueId: string; wee
 // The game picker — every game of the week, this one ringed
 // ---------------------------------------------------------------------------
 
-function GamePicker({ leagueId, game, tz }: { leagueId: string; game: NflGameRow; tz: string | null }) {
+/** `game` is the week's source (the last game while the next loads — same
+ *  week); `ringedId` is the game asked for, and the one ringed. */
+function GamePicker({
+  leagueId,
+  ringedId,
+  game,
+  tz,
+  onPicked,
+}: {
+  leagueId: string
+  ringedId: string
+  game: NflGameRow
+  tz: string | null
+  onPicked: (gameId: string) => void
+}) {
   const router = useRouter()
   const games = useMobileTeamGames(game.season, game.week)
   const rows = games.data ?? []
   // Re-run once the week's games arrive — the row isn't there before.
-  const ref = useChipRowInView<HTMLDivElement>(`${game.id}:${rows.length}`)
+  const ref = useChipRowInView<HTMLDivElement>(`${ringedId}:${rows.length}`)
   // One game is the header below — a picker of one picks nothing.
   if (rows.length < 2) return <div className="h-1" />
   return (
@@ -149,10 +194,13 @@ function GamePicker({ leagueId, game, tz }: { leagueId: string; game: NflGameRow
         <PickerCard
           key={g.id}
           game={g}
-          on={g.id === game.id}
+          on={g.id === ringedId}
           tz={tz}
           // Replace, not push: Back still goes to where the game was opened.
-          onPick={() => router.replace(nflGameHref(leagueId, g.id), { scroll: false })}
+          onPick={() => {
+            onPicked(g.id)
+            router.replace(nflGameHref(leagueId, g.id), { scroll: false })
+          }}
         />
       ))}
     </div>
@@ -238,7 +286,7 @@ const GRID: Record<number, string> = {
   4: 'grid-cols-[minmax(0,1fr)_repeat(4,44px)]',
 }
 
-function BoxScore({ leagueId, groups, status }: { leagueId: string; groups: BoxGroup[]; status: GameStatus }) {
+function BoxScore({ leagueId, groups, status, byCurrentTeam }: { leagueId: string; groups: BoxGroup[]; status: GameStatus; byCurrentTeam: boolean }) {
   const openPlayer = usePlayerModalStore((s) => s.openPlayerView)
   return (
     <section className="flex flex-col gap-[18px] px-3.5 pb-5 pt-3" aria-labelledby="nfl-game-box" data-box-score>
@@ -281,6 +329,13 @@ function BoxScore({ leagueId, groups, status }: { leagueId: string; groups: BoxG
             ))}
           </section>
         ))
+      )}
+      {/* The lines carry no team, so a player who has since changed teams
+          would show under the wrong game (`lineInGame`) — say how it's built. */}
+      {groups.length > 0 && byCurrentTeam && (
+        <p className="text-[11px] font-medium text-m-t3" data-box-note="current-team">
+          Players are listed by their current team.
+        </p>
       )}
     </section>
   )

@@ -5,7 +5,19 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { boxGroups, emptyBoxCopy, gameStatus, lineInGame, nflGameHref, scoreText, type GameBoxLine, type GameBoxPlayer, type NflGameRow } from './game-ops'
+import {
+  boxGroups,
+  emptyBoxCopy,
+  gameIdFromSegment,
+  gameStatus,
+  lineInGame,
+  listedByCurrentTeam,
+  nflGameHref,
+  scoreText,
+  type GameBoxLine,
+  type GameBoxPlayer,
+  type NflGameRow,
+} from './game-ops'
 
 const GAME: NflGameRow = {
   id: 'g-cin-mia',
@@ -132,6 +144,27 @@ describe('which line is this game’s (the held-games rule)', () => {
     const groups = boxGroups(GAME, PLAYERS, [L('chase', { game_id: 'g-other', receptions: 3, receiving_yards: 30 })])
     expect(groups).toEqual([])
   })
+
+  // No line carries the team it was earned for: a player who has changed
+  // teams since that week shows under his CURRENT team's game. Pinned so a
+  // fix to ingest (lines naming their game) is a visible change here.
+  it('a no-game-id line follows his current team, even for a past week', () => {
+    const moved = [P('wr', 'Moved Receiver', 'WR', 'BUF')] // played that week for CIN
+    expect(boxGroups(GAME, moved, [L('wr', { receptions: 4, receiving_yards: 40 })])).toEqual([])
+    expect(boxGroups({ ...GAME, away_team: 'BUF' }, moved, [L('wr', { receptions: 4, receiving_yards: 40 })]).map((g) => g.key)).toEqual(['receiving'])
+  })
+
+  it('a final game placed by current team says so; live, held, or every line naming its game don’t', () => {
+    const final = { ...GAME, status: 'final' }
+    const st = (g: NflGameRow) => gameStatus(g, '')
+    expect(listedByCurrentTeam(final, st(final), PLAYERS, LINES)).toBe(true)
+    expect(listedByCurrentTeam(GAME, st(GAME), PLAYERS, LINES)).toBe(false)
+    const named = LINES.map((l) => ({ ...l, game_id: GAME.id }))
+    expect(listedByCurrentTeam(final, st(final), PLAYERS, named)).toBe(false)
+    const held = { ...final, operator_hold: 'cancelled' }
+    expect(listedByCurrentTeam(held, st(held), PLAYERS, LINES)).toBe(false)
+    expect(listedByCurrentTeam(final, st(final), PLAYERS, [])).toBe(false)
+  })
 })
 
 describe('the game’s state, in the design’s words', () => {
@@ -164,6 +197,10 @@ describe('the game’s state, in the design’s words', () => {
   })
 })
 
-it('the game screen lives under the league, its id encoded', () => {
+it('the game screen lives under the league, its id encoded — and read back as stored', () => {
   expect(nflGameHref('league-1', '2026-wk01-BUF@KC')).toBe('/app/leagues/league-1/games/2026-wk01-BUF%40KC')
+  expect(gameIdFromSegment('2026-wk01-BUF%40KC')).toBe('2026-wk01-BUF@KC')
+  expect(gameIdFromSegment('2026-wk01-BUF@KC')).toBe('2026-wk01-BUF@KC')
+  // A stray "%" is not an encoding: the segment as it came.
+  expect(gameIdFromSegment('bad%E0id')).toBe('bad%E0id')
 })

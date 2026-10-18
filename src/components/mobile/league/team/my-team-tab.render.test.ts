@@ -208,6 +208,11 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*<a [^>]*games\//)
   })
 
+  it('the game line’s tap area reaches 30px without moving it — down into the row, not over the name', () => {
+    const link = /<a [^>]*href="\/app\/leagues\/league-1\/games\/g1"[^>]*>/.exec(html)?.[0] ?? ''
+    for (const c of ['pt-0.5', '-mt-0.5', 'pb-3', '-mb-3']) expect(link).toContain(c)
+  })
+
   it('lists the bench with its empty seats (bench size minus bench players)', () => {
     expect(html).toContain('Kendrick Bourne')
     const benchChips = html.match(/>BN</g) ?? []

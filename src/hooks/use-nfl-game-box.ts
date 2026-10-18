@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query'
 
 import { GAME_BOX_COLUMNS, type GameBoxLine, type GameBoxPlayer, type NflGameRow } from '@/components/mobile/league/game/game-ops'
 import { MOBILE_LIVE_GAMES_REFETCH_MS } from '@/hooks/use-mobile-team-games'
@@ -14,10 +14,21 @@ import { createBrowserClient } from '@/lib/supabase/client'
  * Which line belongs to the game is `lineInGame`'s rule (the held-games
  * one), applied by `boxGroups`.
  *
+ * The players are read by their CURRENT NFL team (`players.team` — no line
+ * carries the team it was earned for, and production's lines carry no game
+ * id, F468(a)). So for a past week the box is wrong for anyone who has
+ * changed NFL teams since that week, not only a mid-week trade (F589): his
+ * line from his old team's game shows under his new team's, and his old
+ * team's box misses him. Ingest writing `game_id` (or the team at the time)
+ * on every line fixes both — then read the lines by game here. Until then a
+ * final game says so (`listedByCurrentTeam`).
+ *
  * `game: null` is a real "no such game" (the id names no row). A transport
  * error THROWS, and a read AT PostgREST's 1000-row cap is refused rather
  * than shown short. While the game is live the read re-polls (a refresh
- * timer — no clock decides anything).
+ * timer — no clock decides anything). Switching games keeps the last one
+ * (`keepPreviousData`) so the screen's bar and picker stay put while the
+ * next loads; the screen shows its body as loading meanwhile.
  */
 export interface NflGameBox {
   game: NflGameRow | null
@@ -31,8 +42,8 @@ export const nflGameBoxKeys = {
 
 const CAP = 1000
 
-export function useNflGameBox(gameId: string) {
-  return useQuery({
+export function nflGameBoxQuery(gameId: string) {
+  return queryOptions({
     queryKey: nflGameBoxKeys.game(gameId),
     queryFn: async (): Promise<NflGameBox> => {
       const supabase = createBrowserClient()
@@ -64,6 +75,11 @@ export function useNflGameBox(gameId: string) {
       if (lines.length >= CAP) throw new Error(`player_stats: the game's line read hit the ${CAP}-row cap`)
       return { game, players, lines }
     },
+    placeholderData: keepPreviousData,
     refetchInterval: (query) => (query.state.data?.game?.status === 'live' ? MOBILE_LIVE_GAMES_REFETCH_MS : false),
   })
+}
+
+export function useNflGameBox(gameId: string) {
+  return useQuery(nflGameBoxQuery(gameId))
 }
