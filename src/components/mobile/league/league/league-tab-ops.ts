@@ -5,11 +5,13 @@
  * payloads, and the standings cells. Nothing here computes a score or a
  * rank: every number is the server's, only labelled.
  */
+import type { ScheduleWeek } from '@/hooks/use-schedule'
 import type { ActivityItem, TransactionActivityItem } from '@/lib/leagues/api/activity-service'
 import type { StandingsRow } from '@/lib/leagues/api/standings-service'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
 import { teamAvatarClass as matchTeamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import { feedLines, groupFeedLines, transactionText } from '@/components/leagues/activity-feed-ops'
+import { heroWeek } from '@/components/leagues/league-home-season-ops'
 import { formatRecord, renderedChain } from '@/components/leagues/standings-table-ops'
 import { lostClaimWinner } from '@/components/leagues/team-transactions-ops'
 import { claimOutcome, claimReasonWords } from '@/components/leagues/waiver-claims-ops'
@@ -34,6 +36,26 @@ export function segmentHref(leagueId: string, segment: LeagueSegment): string {
   if (segment === 'standings') return `${base}/standings`
   if (segment === 'activity') return `${base}/activity`
   return base
+}
+
+// ---------------------------------------------------------------------------
+// Matchups — which week shows (gap list §4 item 9: the week picker)
+// ---------------------------------------------------------------------------
+
+/** The week League › Matchups shows: the week it was stepped to while that
+ *  week is on the ladder, else the ladder's current week (`heroWeek` — the
+ *  greatest started week, else the first). `null` while the ladder is
+ *  unknown or empty. */
+export function matchupsWeek(kept: number | undefined, weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[] | undefined): number | null {
+  if (!weeks) return null
+  if (kept !== undefined && weeks.some((w) => w.week === kept)) return kept
+  return heroWeek(weeks)
+}
+
+/** What to keep when Matchups steps to `week`: the current week is not
+ *  kept (`null`), so the picker's default keeps following the season. */
+export function weekToKeep(week: number, weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[]): number | null {
+  return week === heroWeek(weeks) ? null : week
 }
 
 /** The Transactions screen (spec §2.5). `mine` = "My moves" (Team tab's

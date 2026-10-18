@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { useMemo } from 'react'
 
 import { teamPageHref } from '@/components/leagues/league-cells'
-import { NO_LADDER_COPY, NO_ROWS_COPY, PLAYOFF_NO_ROWS_COPY, heroWeek, scoringLive } from '@/components/leagues/league-home-season-ops'
+import { NO_LADDER_COPY, heroWeek, scoringLive } from '@/components/leagues/league-home-season-ops'
 import { formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
 import {
   LEADERBOARD_TITLE,
   OVERRIDDEN_TITLE,
+  emptyWeekCopy,
   formatPoints,
   leaderboardRows,
   scoreCell,
@@ -17,12 +18,13 @@ import {
 } from '@/components/leagues/matchup-view-ops'
 import { formatRecord } from '@/components/leagues/standings-table-ops'
 import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues/status-banners'
+import { WeekStatus, WeekStepper } from '@/components/mobile/league/week-stepper'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useTeamOnline } from '@/hooks/use-online'
 import { useLineup } from '@/hooks/use-lineup'
 import { useMatchupsLive } from '@/hooks/use-matchups'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
-import { useSchedule } from '@/hooks/use-schedule'
+import { useSchedule, type ScheduleWeek } from '@/hooks/use-schedule'
 import { useStandingsLive } from '@/hooks/use-standings'
 import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
@@ -30,13 +32,16 @@ import { cn } from '@/lib/utils'
 
 import { ChampionCard, DraftDoorsCard, MessageBoardCard, YourTeamCard } from './kept-cards'
 import { CenteredNote, SkeletonBlocks, StatusLine, TeamAvatar } from './league-bits'
-import { teamAvatarClass } from './league-tab-ops'
+import { matchupsWeek, teamAvatarClass, weekToKeep } from './league-tab-ops'
+import { useKeptWeek } from './league-tab-store'
 import { MobileBracket } from './mobile-bracket'
 import { PreseasonContent } from './preseason'
 
 /**
- * League › Matchups (handoff m-league §2.2): the league median card (only
- * when the league plays the median game), then every matchup of the current
+ * League › Matchups (handoff m-league §2.2): a week picker the design does
+ * not draw (gap list §4 item 9 — the week's Live / Final label and
+ * "‹ Week N ›", the current week by default), the league median card (only
+ * when the league plays the median game), then every matchup of that
  * week — yours first — as a b1 card: avatar and live score per side, the
  * team name and record, "vs" between. Tapping a card opens that matchup on
  * the Match tab. There is no win-probability source, so the win bar and %
@@ -78,10 +83,15 @@ function SeasonMatchups({
 }) {
   const inPlay = state !== 'complete'
   const schedule = useSchedule(leagueId)
-  const week = useMemo(() => heroWeek(schedule.data?.weeks), [schedule.data])
+  // The ladder's current week (the Your team card's), and the week the
+  // cards show: the one the picker was stepped to, kept per league.
+  const currentWeek = useMemo(() => heroWeek(schedule.data?.weeks), [schedule.data])
+  const [kept, keepWeek] = useKeptWeek(leagueId)
+  const week = useMemo(() => matchupsWeek(kept, schedule.data?.weeks), [kept, schedule.data])
+  const pickWeek = (next: number) => keepWeek(weekToKeep(next, schedule.data?.weeks ?? []))
   const matchups = useMatchupsLive(leagueId, week ?? undefined)
   const standings = useStandingsLive(leagueId)
-  const lineup = useLineup(myTeamId ?? undefined, inPlay && week !== null ? week : undefined)
+  const lineup = useLineup(myTeamId ?? undefined, inPlay && currentWeek !== null ? currentWeek : undefined)
   const degraded = useStatsDegraded({ enabled: inPlay && scoringLive(matchups.data?.league_week.status) })
   const delay = liveScoringDelay(degraded.data)
   const bracket = usePlayoffBracketLive(leagueId, state === 'playoffs')
@@ -126,6 +136,15 @@ function SeasonMatchups({
         </section>
       )}
 
+      {week !== null && schedule.data && (
+        <WeekPicker
+          week={week}
+          weeks={schedule.data.weeks}
+          status={matchups.data?.week === week ? matchups.data.league_week.status : weekStatusOf(schedule.data.weeks, week)}
+          onWeek={pickWeek}
+        />
+      )}
+
       {schedule.isPending || (week !== null && matchups.isPending) ? (
         <SkeletonBlocks count={3} className="h-[90px]" />
       ) : schedule.isError ? (
@@ -138,8 +157,9 @@ function SeasonMatchups({
         <WeekCards
           leagueId={leagueId}
           doc={matchups.data}
+          weeks={schedule.data.weeks}
+          regularSeasonWeeks={detail.settings.regular_season_weeks}
           medianGame={detail.settings.median_game}
-          playoffs={state === 'playoffs'}
           myTeamId={myTeamId}
           records={records}
           av={av}
@@ -153,8 +173,8 @@ function SeasonMatchups({
             leagueId={leagueId}
             detail={detail}
             myTeamId={myTeamId}
-            week={week}
-            lineup={week === null ? null : lineup.isPending ? undefined : lineup.data}
+            week={currentWeek}
+            lineup={currentWeek === null ? null : lineup.isPending ? undefined : lineup.data}
           />
         )}
         <MessageBoardCard leagueId={leagueId} detail={detail} viewerId={viewerId} />
@@ -164,6 +184,35 @@ function SeasonMatchups({
   )
 }
 
+/** The week picker over the cards (gap list §4 item 9 — the design draws
+ *  none): the week's Live / Final label on the left, "‹ Week N ›" on the
+ *  right — the Match tab's own pieces. Stepping swaps the cards in place
+ *  (no navigation); the picker stays while the new week loads. */
+function WeekPicker({
+  week,
+  weeks,
+  status,
+  onWeek,
+}: {
+  week: number
+  weeks: readonly Pick<ScheduleWeek, 'week'>[]
+  status: string | null
+  onWeek: (week: number) => void
+}) {
+  return (
+    <div className="-my-1 flex items-center justify-between gap-2 pl-1" data-week-strip>
+      <div className="flex min-w-0 items-center">{status && <WeekStatus status={status} />}</div>
+      <WeekStepper week={week} weeks={weeks} onWeek={onWeek} />
+    </div>
+  )
+}
+
+/** The ladder's stored status for a week (the picker's label while the
+ *  week's own read is still loading). */
+function weekStatusOf(weeks: readonly Pick<ScheduleWeek, 'week' | 'status'>[], week: number): string | null {
+  return weeks.find((w) => w.week === week)?.status ?? null
+}
+
 type Av = (id: string | null) => string
 /** Is this team's manager online (`useTeamOnline`)? */
 type Online = (id: string | null) => boolean
@@ -171,8 +220,9 @@ type Online = (id: string | null) => boolean
 function WeekCards({
   leagueId,
   doc,
+  weeks,
+  regularSeasonWeeks,
   medianGame,
-  playoffs,
   myTeamId,
   records,
   av,
@@ -180,8 +230,9 @@ function WeekCards({
 }: {
   leagueId: string
   doc: WeekMatchups
+  weeks: readonly Pick<ScheduleWeek, 'week'>[]
+  regularSeasonWeeks: number
   medianGame: boolean
-  playoffs: boolean
   myTeamId: string | null
   records: ReadonlyMap<string, string>
   av: Av
@@ -189,7 +240,10 @@ function WeekCards({
 }) {
   if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} av={av} online={online} />
   const { primary } = splitRows(doc.matchups)
-  if (primary.length === 0) return <CenteredNote message={playoffs ? PLAYOFF_NO_ROWS_COPY : NO_ROWS_COPY} />
+  // The empty copy reads the week SHOWN, not the league's state: a playoff
+  // week stepped to in the regular season says its pairings come later
+  // (the Match tab's and the desktop matchup page's own helper).
+  if (primary.length === 0) return <CenteredNote message={emptyWeekCopy(doc.week, weeks, regularSeasonWeeks)} />
   const mine = (r: MatchupRow) => myTeamId !== null && (r.home_team_id === myTeamId || r.away_team_id === myTeamId)
   const rows = [...primary].sort((a, b) => Number(mine(b)) - Number(mine(a)))
   const regular = primary.every((r) => r.round_type !== 'playoff')
