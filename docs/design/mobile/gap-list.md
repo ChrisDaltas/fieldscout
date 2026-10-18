@@ -113,6 +113,7 @@
 | Win probability ("66% win" and its bar) | Match card, Team card, Home league cards, League › Matchups | L | Needs a model built from projections and live scores. |
 | Live play-by-play: the latest play on the matchup card, a live feed with down & distance and points per play, and "your player scored a TD" alerts | Match, live feed, Notifications | L | Needs a play-by-play provider. |
 | A player's live "points so far" | Profile this-week card, Game log | M | Live stats are stored, but they aren't scored until the week is final. |
+| A live game's clock and score ("Q4 2:00 · 31-7") and its final score ("Final W 31-20") | Profile this-week card, League › Players, Team and Match game lines | M | The sync stores only whether a game is on or over, so phones show "Live" and "Final". Final scores can come from nflverse; a live clock needs a provider that sends one. The profile card is ready for both (Build now #19). |
 | Live and projected league median | League › Matchups | M | Today it appears only once every score is final. |
 | TV network, NFL team records and team stat totals | Game screen | M | Needs a provider that sends them. Records could come from final scores. |
 

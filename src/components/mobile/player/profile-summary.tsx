@@ -83,6 +83,7 @@ export function SummaryTab({
   const cards = useMemo(
     () =>
       gameCards({
+        team: player.team,
         schedule,
         games,
         weekly: core?.weekly ?? [],
@@ -90,7 +91,7 @@ export function SummaryTab({
         position: player.position,
         currentWeek,
       }),
-    [schedule, games, core, lines, season, player.position, currentWeek],
+    [player.team, schedule, games, core, lines, season, player.position, currentWeek],
   )
   return (
     <div className="flex flex-col gap-[18px] px-4 py-[14px]" data-profile-summary>
@@ -371,7 +372,7 @@ function GameCardView({ card: c }: { card: GameCard }) {
             {c.sub && (
               <div className="flex flex-col items-end gap-px">
                 <span className="text-[10px] font-medium text-m-t3">{c.sub.label}</span>
-                <span className="text-[14px] font-semibold text-m-t2">{c.sub.value}</span>
+                <span className="whitespace-nowrap text-[14px] font-semibold text-m-t2">{c.sub.value}</span>
               </div>
             )}
           </div>
