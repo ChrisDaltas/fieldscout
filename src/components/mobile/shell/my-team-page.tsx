@@ -11,32 +11,26 @@ import { useLeague } from '@/hooks/use-league'
 import { useRenameOwnTeam } from '@/hooks/use-rename-own-team'
 import { toast } from '@/hooks/use-toast'
 import type { RenameOwnTeamResult } from '@/lib/leagues/api/team-rename-service'
+import { TEAM_NAME_MAX, TEAM_NAME_TOO_LONG } from '@/lib/leagues/team-name'
 import { cn } from '@/lib/utils'
 
-/** The handoff's limit for a name typed here (G1 "My team": `maxlength=24`,
- *  the "n / 24" counter). Desktop and the server allow 100 — which limit
- *  applies on both is an open question for Chris; until then the phone
- *  keeps the design's 24 for a name you change here. */
-export const MY_TEAM_NAME_MAX = 24
-
-/** Said when a changed name runs past 24. True for the phone only: it is not
- *  a rule for team names (a longer name set on desktop is legal). */
-export const MY_TEAM_NAME_TOO_LONG = `Names on the phone can be up to ${MY_TEAM_NAME_MAX} characters — shorten it to save.`
+// The limit is the app's one team-name rule (Chris 2026-10-18: ≤ 24 on the
+// phone, on desktop and on the server — `team-name.ts`), which is also the
+// handoff's G1 "My team" `maxlength=24` and its "n / 24" counter.
 
 export type MyTeamSave = RenameGate | { ok: false; why: null }
 
 /**
  * Whether Save is on (G1's dirty check, without the prototype's bug of
  * enabling on added spaces): the trimmed name must be there, within the
- * phone's 24, and differ from the team's name now. `why` says what is wrong;
- * null is "nothing changed yet" — the greyed Save says that on its own. An
- * untouched name is never an error, even one longer than 24 set on desktop.
+ * 24-character rule (`renameGate`), and differ from the team's name now.
+ * `why` says what is wrong; null is "nothing changed yet" — the greyed Save
+ * says that on its own. An untouched name is never an error, even one
+ * longer than 24 set before the rule.
  */
 export function myTeamSave(draft: string, current: string): MyTeamSave {
   if (draft.trim() === current) return { ok: false, why: null }
-  const gate = renameGate(draft)
-  if (gate.ok && gate.name.length > MY_TEAM_NAME_MAX) return { ok: false, why: MY_TEAM_NAME_TOO_LONG }
-  return gate
+  return renameGate(draft)
 }
 
 /** The toast after a save: the design's "Team updated", plus a line when
@@ -132,7 +126,7 @@ export function MyTeamForm({
   const pending = rename.isPending
   const refusal = rename.error?.message ?? null
   // Red only once a changed name is over — never on the name as it opens.
-  const tooLong = why === MY_TEAM_NAME_TOO_LONG
+  const tooLong = why === TEAM_NAME_TOO_LONG
 
   return (
     <form
@@ -162,7 +156,7 @@ export function MyTeamForm({
         <input
           id={`${id}-name`}
           value={draft}
-          maxLength={MY_TEAM_NAME_MAX}
+          maxLength={TEAM_NAME_MAX}
           autoComplete="off"
           enterKeyHint="done"
           disabled={pending}
@@ -175,7 +169,7 @@ export function MyTeamForm({
           data-my-team-input
         />
         <span id={`${id}-count`} className={cn('text-[11px] font-medium', tooLong ? 'text-m-tr' : 'text-m-t3')} data-my-team-count>
-          {draft.length} / {MY_TEAM_NAME_MAX}
+          {draft.length} / {TEAM_NAME_MAX}
         </span>
         {why && (
           <span id={`${id}-why`} className="text-[12px] font-medium text-m-t3" data-my-team-why>

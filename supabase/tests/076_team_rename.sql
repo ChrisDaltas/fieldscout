@@ -35,7 +35,7 @@
 --       already-written chat post keep the OLD name (item 4).
 --   §D  the reason gate and the NAME gate, one unit either side (071 §D).
 --       It sits AFTER §E-§H, not before them, for a measured reason: D5 (the
---       100-character boundary that must LIVE) writes a real receipt, and
+--       24-character boundary that must LIVE — 100 before 196) writes a real receipt, and
 --       `commissioner_actions` is append-only — 123:339-410's ENABLE ALWAYS
 --       trigger refuses the DELETE that would have tidied it away (proven the
 --       hard way while writing this suite). So the gate cells run where their
@@ -537,17 +537,20 @@ select throws_like(
        '0f000000-0000-4000-8000-000000000003'::uuid) $$,
   '%a team name is required%whitespace%',
   'D3 THE NAME GATE, same class: a name of nothing but whitespace is refused BY NAME — a franchise called E''\t'' is what a naive NULLIF(btrim(x), '''') ships');
+-- D4/D5 RE-CUT BY MIGRATION 196 (Chris 2026-10-18: team names ≤ 24
+-- everywhere; PROGRESS D545): the shared gate's bound is 24, was 100.
+-- pgTAP 146 proves every door; these two keep the boundary pinned here.
 select throws_like(
   $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
-       'cf000000-0000-4000-8000-000000000002', repeat('N', 101), 'a real reason',
+       'cf000000-0000-4000-8000-000000000002', repeat('N', 25), 'a real reason',
        '0f000000-0000-4000-8000-000000000004'::uuid) $$,
-  '%is 101 characters — at most 100%',
-  'D4 …101 characters is refused, and the message SAYS 101 (the league-rename bound, createLeagueInputSchema.name)');
+  '%is 25 characters — team names can be up to 24 characters%',
+  'D4 …25 characters is refused, and the message SAYS 25 (196: the one team-name rule, 24)');
 select lives_ok(
   $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
-       'cf000000-0000-4000-8000-000000000003', repeat('N', 100), 'the boundary',
+       'cf000000-0000-4000-8000-000000000003', repeat('N', 24), 'the boundary',
        '0f000000-0000-4000-8000-000000000005'::uuid) $$,
-  'D5 …and 100 lives — the boundary, one unit either side');
+  'D5 …and 24 lives — the boundary, one unit either side');
 select throws_ok(
   $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
        'cf000000-0000-4000-8000-000000000002', 'No Key', 'a real reason', null) $$,

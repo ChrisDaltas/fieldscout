@@ -30,8 +30,10 @@
  * on that read is a 500 with the driver's message — never "team not found"
  * (CLAUDE.md: never let a failed read look like an empty one).
  *
- * The name bound is 128's own (`team_rename_normalize_internal`: trimmed,
- * non-empty, ≤ 100), mirrored as a field error so the form can route it; JS
+ * The name bound is the app's one team-name rule (`teamNameSchema`, 24 —
+ * Chris 2026-10-18; the server's `team_rename_normalize_internal`, re-cut by
+ * 196: trimmed, non-empty, ≤ 24), mirrored as a field error so the form can
+ * route it; JS
  * `trim()` strips a superset of 128's class, so the wire value is a fixed
  * point of 128's trim and `requested_name === name` on every landed call —
  * the identity line below (D364(4)'s argument, the manager's arm).
@@ -43,6 +45,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
+
+import { teamNameSchema } from '../team-name'
 
 import { mapInSeasonRpcError } from './inseason-errors'
 import type { ServiceResult } from './leagues-service'
@@ -61,7 +65,7 @@ export const RENAME_OWN_TEAM_UNCONFIRMED_MESSAGE =
   'That didn’t go through — we couldn’t confirm it as the rename you just submitted. Check the team’s name and try again.'
 
 export const renameOwnTeamInputSchema = z.strictObject({
-  name: z.string().trim().min(1).max(100),
+  name: teamNameSchema,
 })
 export type RenameOwnTeamInput = z.infer<typeof renameOwnTeamInputSchema>
 

@@ -31,6 +31,8 @@ import { z } from 'zod'
 
 import type { Database, Json } from '@/types/database'
 
+import { teamNameSchema } from '../team-name'
+
 import { optionalReason } from './commish-matchup-service'
 import { mapInSeasonRpcError } from './inseason-errors'
 import { normalizedUuid } from './inseason-ids'
@@ -48,14 +50,15 @@ export const COMMISH_TEAM_ACTION_ID_REUSED_MESSAGE =
   'That didn’t go through — we couldn’t confirm it as the rename you just submitted. Check the team’s name and try again.'
 
 /** `POST …/commish/team` — `commish_rename_team(team_id, name, reason)`
- *  (128:637-643's signature). The name bound is 128's own (100 — the
- *  league-rename bound, `128:365-369`), mirrored here as a field error so
+ *  (128:637-643's signature). The name bound is the app's one team-name
+ *  rule (`teamNameSchema`, 24 — Chris 2026-10-18; 196 re-cuts 128's
+ *  normalizer to the same 24), mirrored here as a field error so
  *  the form can route it; JS `trim()` strips a superset of 128's explicit
  *  class (` \t\r\n`), so what reaches the wire is already what 128 stores
  *  and echoes as `requested_name`. */
 export const commishRenameTeamInputSchema = z.strictObject({
   team_id: normalizedUuid,
-  name: z.string().trim().min(1).max(100),
+  name: teamNameSchema,
   action_id: normalizedUuid,
   reason: optionalReason,
 })
