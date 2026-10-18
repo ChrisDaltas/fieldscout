@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { leagueFallbackTitle, leagueTabHref, mobileFallback, mobileRoute, showsLeagueSwitcher } from './mobile-nav'
+import { leagueFallbackTitle, leagueTabHref, mobileFallback, mobileRoute, showsLeagueSwitcher, swipeLeague } from './mobile-nav'
 
 const L = '/app/leagues/lg1'
 
@@ -96,5 +96,39 @@ describe('showsLeagueSwitcher — the strip above the tab bar (Chris, 2026-10-17
     expect(showsLeagueSwitcher(true, 'team', 0)).toBe(false)
     expect(showsLeagueSwitcher(true, null, 3)).toBe(false)
     expect(showsLeagueSwitcher(false, 'match', 3)).toBe(false)
+  })
+})
+
+describe('swipeLeague — the switcher queues quick swipes (gap list §4 item 8)', () => {
+  const LEAGUES = [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }]
+
+  it('left is the next league, right the previous, wrapping round', () => {
+    expect(swipeLeague(LEAGUES, 'A', null, 1)?.id).toBe('B')
+    expect(swipeLeague(LEAGUES, 'A', null, -1)?.id).toBe('D')
+    expect(swipeLeague(LEAGUES, 'D', null, 1)?.id).toBe('A')
+  })
+
+  it('two quick swipes move two leagues: the second goes on from where the first is heading, not from the league still on screen', () => {
+    const first = swipeLeague(LEAGUES, 'A', null, 1)
+    const second = swipeLeague(LEAGUES, 'A', first!.id, 1)
+    expect([first?.id, second?.id]).toEqual(['B', 'C'])
+    // Each swipe has its own league to name — never the same one twice.
+    expect(second?.id).not.toBe(first?.id)
+    expect(swipeLeague(LEAGUES, 'A', second!.id, 1)?.id).toBe('D')
+  })
+
+  it('a quick swipe back returns to the league you started on; with two leagues, two swipes come home', () => {
+    expect(swipeLeague(LEAGUES, 'A', 'B', -1)?.id).toBe('A')
+    const two = [{ id: 'A' }, { id: 'B' }]
+    expect(swipeLeague(two, 'A', swipeLeague(two, 'A', null, 1)!.id, 1)?.id).toBe('A')
+  })
+
+  it('goes on from the league on screen when the switch it was heading for is no longer one of yours', () => {
+    expect(swipeLeague(LEAGUES, 'C', 'gone', 1)?.id).toBe('D')
+  })
+
+  it('nowhere to go with one league', () => {
+    expect(swipeLeague([{ id: 'A' }], 'A', null, 1)).toBeNull()
+    expect(swipeLeague([], 'A', null, -1)).toBeNull()
   })
 })
