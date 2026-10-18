@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TransactionActivityItem } from '@/lib/leagues/api/activity-service'
+import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 
 import {
@@ -14,6 +15,7 @@ import {
   feedStreams,
   filterCount,
   filterLabel,
+  matchupGroups,
   matchupsWeek,
   playoffNote,
   segmentAtPath,
@@ -433,5 +435,49 @@ describe('matchupsWeek / weekToKeep — which week League › Matchups shows', (
     expect(weekToKeep(3, ladder)).toBeNull()
     expect(weekToKeep(1, ladder)).toBe(1)
     expect(weekToKeep(4, ladder)).toBe(4)
+  })
+})
+
+// Gap list §4 item 10: second-opponent games in their own group.
+describe('matchupGroups — the week’s matchups and its second-opponent games', () => {
+  const game = (id: string, round_type: string, home: string, away: string | null): MatchupRow => ({
+    id,
+    season: 2099,
+    week: 2,
+    round_type,
+    status: 'live',
+    home_team_id: home,
+    away_team_id: away,
+    home_score: null,
+    away_score: null,
+    result: null,
+    is_overridden: false,
+    updated_at: null,
+  })
+  const week = [
+    game('p1', 'regular', 'a', 'b'),
+    game('s1', 'secondary', 'a', 'c'),
+    game('p2', 'regular', 'c', 'me'),
+    game('s2', 'secondary', 'b', 'd'),
+    game('s3', 'secondary', 'd', 'me'),
+    game('p3', 'regular', 'd', null),
+  ]
+
+  it('splits the secondary rows into their own group, every other row a matchup', () => {
+    const { primary, secondary } = matchupGroups(week, null)
+    expect(primary.map((m) => m.id)).toEqual(['p1', 'p2', 'p3'])
+    expect(secondary.map((m) => m.id)).toEqual(['s1', 's2', 's3'])
+  })
+
+  it('puts yours first in each group (home or away), the rest in the server’s order', () => {
+    const { primary, secondary } = matchupGroups(week, 'me')
+    expect(primary.map((m) => m.id)).toEqual(['p2', 'p1', 'p3'])
+    expect(secondary.map((m) => m.id)).toEqual(['s3', 's1', 's2'])
+  })
+
+  it('playoff rows are matchups; a league without second opponents has an empty second group', () => {
+    const { primary, secondary } = matchupGroups([game('q1', 'playoff', 'a', 'b'), game('q2', 'playoff', 'me', 'c')], 'me')
+    expect(primary.map((m) => m.id)).toEqual(['q2', 'q1'])
+    expect(secondary).toEqual([])
   })
 })

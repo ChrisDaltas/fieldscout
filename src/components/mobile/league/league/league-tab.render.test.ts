@@ -27,7 +27,7 @@ import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
-import { NO_MATCHUPS_COPY, PLAYOFF_ROUND_PENDING_COPY } from '@/components/leagues/matchup-view-ops'
+import { NO_MATCHUPS_COPY, OVERRIDDEN_TITLE, PLAYOFF_ROUND_PENDING_COPY } from '@/components/leagues/matchup-view-ops'
 import type { LiveScoringFlags } from '@/lib/sync/ingest-flags'
 
 import { ActivitySubscreenRoute } from './activity-subscreens'
@@ -385,6 +385,70 @@ describe('League › Matchups — the week picker', () => {
   it('no ladder yet: no picker', () => {
     const html = render(tab(), {}, (qc) => qc.setQueryData(scheduleKeys.all(LEAGUE), { weeks: [], matchups: [] } satisfies LeagueSchedule))
     expect(html).not.toContain('data-week-strip')
+  })
+})
+
+// Gap list §4 item 10: a second-opponent league's extra games in their own group.
+describe('League › Matchups — second-opponent games', () => {
+  const SECOND: WeekMatchups = {
+    ...WEEK,
+    matchups: [
+      ...WEEK.matchups,
+      { id: 'sA', season: 2099, week: 2, round_type: 'secondary', status: 'live', home_team_id: OPP, away_team_id: T3, home_score: 16.4, away_score: null, result: null, is_overridden: false, updated_at: null },
+      { id: 'sB', season: 2099, week: 2, round_type: 'secondary', status: 'live', home_team_id: T4, away_team_id: ME, home_score: 12.25, away_score: 39.7, result: null, is_overridden: true, updated_at: null },
+    ],
+  }
+  const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }), { second_opponent: true }, (qc) =>
+    qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 2), SECOND),
+  )
+  const group = html.slice(html.indexOf('data-second-opponents'), html.indexOf('data-your-team'))
+
+  it('their own group under the matchups: a heading and one plain line, then a card per game', () => {
+    expect(html).toContain('aria-label="Second opponents"')
+    expect(group).toMatch(/<h2 class="[^"]*text-\[17px\][^"]*">Second opponents<\/h2>/)
+    expect(group).toContain('Each team’s second game. It counts in the record too.')
+    expect(html.indexOf('data-matchup="mA"')).toBeLessThan(html.indexOf('data-second-opponents'))
+    expect(group).toContain('data-matchup="sA"')
+    expect(group).toContain('data-matchup="sB"')
+    // The matchups above stay out of the group, and the group's games out of the matchups.
+    expect(group).not.toContain('data-matchup="mA"')
+    expect(group).not.toContain('data-matchup="mB"')
+    expect(html.slice(0, html.indexOf('data-second-opponents'))).not.toMatch(/data-matchup="s[AB]"/)
+  })
+
+  it('yours first, you on the left (even as the away team); stored scores, pending never 0, the ✸ kept', () => {
+    expect(group.indexOf('data-matchup="sB"')).toBeLessThan(group.indexOf('data-matchup="sA"'))
+    const mine = group.slice(group.indexOf('data-matchup="sB"'), group.indexOf('data-matchup="sA"'))
+    expect(mine.indexOf('Touchdown Tacos')).toBeLessThan(mine.indexOf('Delta'))
+    expect(mine).toContain('39.70')
+    expect(mine).toContain('12.25')
+    expect(mine).toContain(`aria-label="${OVERRIDDEN_TITLE}"`)
+    const theirs = group.slice(group.indexOf('data-matchup="sA"'))
+    expect(theirs).toContain('16.40')
+    expect(theirs).toContain('pending')
+    expect(theirs).not.toMatch(/>0\.00</)
+  })
+
+  it('not one of the Match tab’s matchups: the card is no matchup link — each side opens its team', () => {
+    expect(html).not.toContain('/matchup/sA')
+    expect(html).not.toContain('/matchup/sB')
+    expect(group).toMatch(/<div class="[^"]*rounded-\[16px\] bg-m-b1[^"]*" data-matchup="sB">/)
+    const doors = [...group.matchAll(/<a ([^>]*)>/g)].map((m) => m[1]).filter((a) => a.includes('data-team-door="true"')).map((a) => a.match(/href="([^"]+)"/)?.[1])
+    expect(doors).toEqual([
+      `/app/leagues/league-1/team/${ME}`,
+      `/app/leagues/league-1/team/${T4}`,
+      `/app/leagues/league-1/team/${OPP}`,
+      `/app/leagues/league-1/team/${T3}`,
+    ])
+    // The matchup cards keep their one door each (no link inside a link).
+    expect(html).toContain('href="/app/leagues/league-1/matchup/mB"')
+    expect(html.slice(0, html.indexOf('data-second-opponents'))).not.toContain('data-team-door')
+  })
+
+  it('a league without second opponents shows no such group', () => {
+    const none = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }))
+    expect(none).not.toContain('data-second-opponents')
+    expect(none).not.toContain('Second opponents')
   })
 })
 
