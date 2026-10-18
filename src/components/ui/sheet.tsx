@@ -49,9 +49,10 @@ const sheetVariants = cva(
         // FieldScout Mobile handoff bottom sheet: full width, 24px top
         // corners, max 86% tall, no border or padding of its own (the
         // mobile sheet lays out its grab handle, header, body and footer).
-        // Mounts instantly — the handoff has no sheet animation.
+        // Slides up to open and down to close, 200ms linear (gap list §4
+        // item 3); no motion under reduced motion.
         mobile:
-          "inset-x-0 bottom-0 flex max-h-[86%] flex-col gap-0 rounded-t-[24px] border-0 bg-m-b0 px-0 pb-[max(30px,env(safe-area-inset-bottom))] pt-2 text-m-t1 shadow-none data-[state=closed]:animate-none data-[state=open]:animate-none",
+          "inset-x-0 bottom-0 flex max-h-[86%] flex-col gap-0 rounded-t-[24px] border-0 bg-m-b0 px-0 pb-[max(30px,env(safe-area-inset-bottom))] pt-2 text-m-t1 shadow-none data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom motion-reduce:!animate-none",
       },
     },
     defaultVariants: {

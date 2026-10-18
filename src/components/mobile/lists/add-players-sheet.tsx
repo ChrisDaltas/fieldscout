@@ -85,7 +85,7 @@ export function AddPlayersSheet({
   const count = inList.size
 
   return (
-    <MobileSheet bodyClassName="leading-[normal] tabular-nums" open={open} onOpenChange={onOpenChange} title="Add players" subtitle={`${count} in your list`} showClose>
+    <MobileSheet bodyClassName="leading-[normal] tabular-nums" open={open} onOpenChange={onOpenChange} title="Add players" subtitle={`${count} in your list`} action={{ label: 'Done' }}>
       <div className="sticky top-0 z-[1] flex flex-col gap-2 bg-m-b0 px-4 pb-2">
         <label className="flex h-10 items-center gap-2 rounded-xl bg-m-b2 px-3">
           <MIcon name="search" size={15} stroke={1.8} className="text-m-t4" />

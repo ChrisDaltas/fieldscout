@@ -949,7 +949,7 @@ export function AddPlayersSheet({
   }, [pool, query])
 
   return (
-    <MobileSheet open={open} onOpenChange={onOpenChange} title="Add players" subtitle={`${count} in your ranking`} showClose>
+    <MobileSheet open={open} onOpenChange={onOpenChange} title="Add players" subtitle={`${count} in your ranking`} action={{ label: 'Done' }}>
       <div className="sticky top-0 z-[1] flex flex-col gap-2 bg-m-b0 px-4 pb-2">
         <label className="flex h-10 items-center gap-2 rounded-[12px] bg-m-b2 px-3">
           <svg viewBox="0 0 16 16" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true" className="flex-none text-m-t4">
