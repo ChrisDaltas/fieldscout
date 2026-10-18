@@ -110,6 +110,21 @@
     font-optical-sizing: none;
     font-variation-settings: 'opsz' 32;
   }
+  /* Phone layout (gap list §4 item 4): the handoff sets
+     font-feature-settings:'tnum' 1,'cv11' 1 on the whole phone — even-width
+     digits so number columns line up, and Inter's single-storey "a". cv11
+     only exists in the full Inter build (--font-inter-phone, layout.tsx), so
+     it leads the stack here with Google's Inter behind it while it loads.
+     Desktop keeps proportional digits and the Google font. */
+  html[data-layout='mobile'] body {
+    --font-sans: var(--font-inter-phone), var(--font-inter);
+    --font-mono: var(--font-inter-phone), var(--font-inter);
+    font-feature-settings: 'tnum' 1, 'cv11' 1;
+  }
+  /* .fs-num sets its own features (below); on the phone it keeps the "a". */
+  html[data-layout='mobile'] .fs-num {
+    font-feature-settings: 'tnum' 1, 'cv11' 1;
+  }
   /* v7 headings: bold, tight tracking. Unitless 1.25 line-height so
      inline-sized headings keep their descenders. */
   h1,
