@@ -1,18 +1,20 @@
 'use client'
 
+import { useQueries } from '@tanstack/react-query'
 import Link from 'next/link'
 
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { BackPill, MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useAuth } from '@/hooks/use-auth'
-import { useLeagues } from '@/hooks/use-leagues'
+import { leagueBoardQuery } from '@/hooks/use-league-chat'
+import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { useMobileMessagesDms, type MDmConversation } from '@/hooks/use-mobile-messages-dms'
 import { featureFlags } from '@/lib/feature-flags'
 
 import { ConversationRow, ConversationRowSkeleton, LeagueBoardRow } from './conversation-row'
 import { MessagesAvatar } from './messages-avatar'
 import { EMPTY_PILL, MessagesEmpty } from './messages-empty'
-import { matchesName, previewLine, threadHref } from './messages-ops'
+import { byLatest, latestPostAt, leagueThreadId, matchesName, previewLine, threadHref } from './messages-ops'
 import { useMessagesStore } from './messages-store'
 
 export const MESSAGES_EMPTY_TITLE = 'No messages yet'
@@ -41,6 +43,12 @@ export function messagesEmptyBody(boards: boolean, dms: boolean): string {
  *     conversation (the design's "Sunday Funday League" row) — `leagues`;
  *   - direct messages come from the DM feed the desktop rail uses, empty
  *     until a DM backend exists — `messages`.
+ *
+ * One list, newest first (gap list §3 #24): boards and direct messages
+ * together, ordered by when each one's latest message was sent, so a new
+ * post moves its conversation to the top as it arrives. The people row
+ * keeps the same order (§5). Nothing shows until every board has been read
+ * once, so the rows never reshuffle as the reads land.
  */
 export function MobileMessagesList() {
   const goBack = useGoBack()
@@ -49,7 +57,10 @@ export function MobileMessagesList() {
   const leaguesOn = featureFlags.leagues
   const leagues = useLeagues({ enabled: leaguesOn })
   const myLeagues = leaguesOn ? (leagues.data ?? []) : []
-  const leaguesLoading = leaguesOn && leagues.isPending
+  // Every board's latest window — the same reads (and cache) each board row
+  // keeps live — for the time of its newest post.
+  const boardReads = useQueries({ queries: myLeagues.map((l) => leagueBoardQuery(l.id)) })
+  const leaguesLoading = leaguesOn && (leagues.isPending || boardReads.some((r) => r.isPending))
   const leaguesError = leaguesOn && leagues.isError && !leagues.data
 
   const query = useMessagesStore((s) => s.query)
@@ -61,11 +72,20 @@ export function MobileMessagesList() {
 
   const open = (threadId: string) => markRead(threadId)
 
-  // League boards, then direct messages.
-  const people = dms.conversations
-  const boards = myLeagues.map((l, i) => ({ league: l, index: i })).filter(({ league }) => matchesName(league.name, query))
-  const dmRows = dms.conversations.filter((c) => matchesName(c.name, query))
-  const nothing = !leaguesLoading && !leaguesError && boards.length === 0 && dmRows.length === 0
+  // Newest first (#24); with no time known, league boards (in your leagues'
+  // order), then direct messages (in the feed's).
+  const conversations = byLatest<Conversation>(
+    [
+      ...myLeagues.map(
+        (league, index): Conversation => ({ kind: 'board', league, index, at: latestPostAt(boardReads[index]?.data) }),
+      ),
+      ...dms.conversations.map((c): Conversation => ({ kind: 'dm', conversation: c, at: c.lastAt })),
+    ],
+    (c) => c.at,
+  )
+  const people = byLatest(dms.conversations, (c) => c.lastAt)
+  const rows = conversations.filter((c) => matchesName(c.kind === 'board' ? c.league.name : c.conversation.name, query))
+  const nothing = !leaguesLoading && !leaguesError && rows.length === 0
 
   const header = (
     <>
@@ -122,18 +142,19 @@ export function MobileMessagesList() {
             <ConversationRowSkeleton />
           </>
         ) : (
-          boards.map(({ league, index }) => (
-            <LeagueBoardRow
-              key={league.id}
-              league={league}
-              index={index}
-              viewerId={user?.id ?? null}
-            />
-          ))
+          rows.map((c) =>
+            c.kind === 'board' ? (
+              <LeagueBoardRow
+                key={leagueThreadId(c.league.id)}
+                league={c.league}
+                index={c.index}
+                viewerId={user?.id ?? null}
+              />
+            ) : (
+              <DmRow key={c.conversation.id} conversation={c.conversation} onOpen={open} />
+            ),
+          )
         )}
-        {dmRows.map((c) => (
-          <DmRow key={c.id} conversation={c} onOpen={open} />
-        ))}
         {nothing &&
           (query ? (
             <MessagesEmpty title={`No conversations match “${query}”`} />
@@ -144,6 +165,12 @@ export function MobileMessagesList() {
     </MobileScreen>
   )
 }
+
+/** One conversation in the list: a league's board or a direct message, with
+ *  when its latest message was sent (null when not known). */
+type Conversation =
+  | { kind: 'board'; league: MyLeagueRow; /** Its place in your leagues — the mark colour. */ index: number; at: string | null }
+  | { kind: 'dm'; conversation: MDmConversation; at: string | null }
 
 /** A direct-message conversation row (DM feed). */
 function DmRow({ conversation: c, onOpen }: { conversation: MDmConversation; onOpen: (id: string) => void }) {

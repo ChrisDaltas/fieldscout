@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { leagueChatKeys } from '@/hooks/use-league-chat'
 import { leaguesKeys, type MyLeagueRow } from '@/hooks/use-leagues'
 import { tradeKeys } from '@/hooks/use-trades'
+import { leagueAvClass } from '@/components/mobile/ui/avatar-colors'
 import { HeaderActions } from '@/components/mobile/ui/mobile-header'
 
 import { ConversationRow, boardSender } from './conversation-row'
@@ -106,6 +107,92 @@ describe('Messages list — conversations only (ruling #22)', () => {
     expect(empty).toContain(MESSAGES_EMPTY_TITLE)
     expect(empty).toContain('Your leagues’ message boards and direct messages will show up here.')
     expect(list(null)).toContain('data-skeleton="conversation"')
+  })
+})
+
+describe('Messages list — newest first (gap list §3 #24)', () => {
+  const league = (id: string, name: string): MyLeagueRow => ({ ...LEAGUE, id, name })
+  const post = (id: string, message: string, created_at: string) => ({
+    id,
+    user_id: 'user-me',
+    message,
+    context: 'league',
+    is_system: false,
+    created_at,
+  })
+  const BENCH = league('L1', 'Bench Mob League')
+  const DYNASTY = league('L2', 'Dynasty Den')
+  const QUIET = league('L3', 'Quiet Corner')
+
+  /** The conversation names, top to bottom. */
+  const order = (html: string) => [...html.matchAll(/data-conversation-row[^>]*>[\s\S]*?<span class="truncate text-\[15px\][^"]*">([^<]+)</g)].map((m) => m[1])
+
+  function seeded(boards: Record<string, ReturnType<typeof post>[]>): QueryClient {
+    const qc = client([BENCH, DYNASTY, QUIET])
+    for (const [id, rows] of Object.entries(boards)) qc.setQueryData(leagueChatKeys.board(id), rows)
+    return qc
+  }
+  const render = (qc: QueryClient) =>
+    renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(MobileMessagesList)))
+
+  it('puts the board with the newest post first, whatever order your leagues come in', () => {
+    const html = render(
+      seeded({
+        L1: [post('a1', 'Trade block is open', '2026-10-15T09:00:00Z')],
+        L2: [post('b1', 'Kickoff soon', '2026-10-14T20:00:00Z'), post('b2', 'Who has Bijan?', '2026-10-15T11:30:00Z')],
+        L3: [post('c1', 'Draft recap', '2026-10-15T10:00:00Z')],
+      }),
+    )
+    expect(order(html)).toEqual(['Dynasty Den', 'Quiet Corner', 'Bench Mob League'])
+  })
+
+  it('a new post moves its board to the top', () => {
+    const qc = seeded({
+      L1: [post('a1', 'Trade block is open', '2026-10-15T09:00:00Z')],
+      L2: [post('b1', 'Kickoff soon', '2026-10-15T10:00:00Z')],
+      L3: [post('c1', 'Draft recap', '2026-10-15T08:00:00Z')],
+    })
+    expect(order(render(qc))).toEqual(['Dynasty Den', 'Bench Mob League', 'Quiet Corner'])
+    qc.setQueryData(leagueChatKeys.board('L3'), [
+      post('c1', 'Draft recap', '2026-10-15T08:00:00Z'),
+      post('c2', 'Anyone up for a trade?', '2026-10-15T11:59:00Z'),
+    ])
+    expect(order(render(qc))).toEqual(['Quiet Corner', 'Dynasty Den', 'Bench Mob League'])
+  })
+
+  it('a board with no posts yet goes after those with posts', () => {
+    const html = render(
+      seeded({
+        L1: [],
+        L2: [post('b1', 'Kickoff soon', '2026-10-15T10:00:00Z')],
+        L3: [post('c1', 'Draft recap', '2026-10-15T08:00:00Z')],
+      }),
+    )
+    expect(order(html)).toEqual(['Dynasty Den', 'Quiet Corner', 'Bench Mob League'])
+  })
+
+  it('each league keeps its own mark colour wherever it lands', () => {
+    const html = render(
+      seeded({
+        L1: [post('a1', 'Trade block is open', '2026-10-15T09:00:00Z')],
+        L2: [post('b1', 'Kickoff soon', '2026-10-15T08:00:00Z')],
+        L3: [post('c1', 'Draft recap', '2026-10-15T11:00:00Z')],
+      }),
+    )
+    const rows = html.split('data-conversation-row').slice(1)
+    expect(rows[0]).toContain('Quiet Corner')
+    expect(rows[0]).toContain(leagueAvClass(2))
+    expect(rows[2]).toContain('Dynasty Den')
+    expect(rows[2]).toContain(leagueAvClass(1))
+  })
+
+  it('shows nothing but the loading rows until every board has been read, so nothing reshuffles', () => {
+    const qc = client([BENCH, DYNASTY])
+    qc.removeQueries({ queryKey: leagueChatKeys.board('L2') })
+    const html = render(qc)
+    expect(html).toContain('data-skeleton="conversation"')
+    expect(html).not.toContain('data-conversation-row')
+    expect(html).not.toContain(MESSAGES_EMPTY_TITLE)
   })
 })
 

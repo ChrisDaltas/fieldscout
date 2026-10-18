@@ -116,6 +116,20 @@ export async function readLeagueChat(leagueId: string, from: LeagueChatCursor | 
   return ((data ?? []) as DraftChatRow[]).reverse()
 }
 
+/**
+ * A board's latest window as a plain read — the very query `useLeagueChat`
+ * makes without a `from` (same key, same read), so the two share one cache
+ * entry and one fetch. Messages reads it for every league at once to put the
+ * conversations newest first (gap list §3 #24); each board row's own
+ * `useLeagueChat` keeps it live.
+ */
+export function leagueBoardQuery(leagueId: string) {
+  return {
+    queryKey: leagueChatKeys.board(leagueId),
+    queryFn: () => readLeagueChat(leagueId, null),
+  }
+}
+
 export function useLeagueChat(leagueId: string | undefined, options: { from?: LeagueChatCursor | null } = {}) {
   const from = options.from ?? null
   const queryClient = useQueryClient()

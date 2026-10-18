@@ -21,12 +21,14 @@ import {
   NEAR_TOP_PX,
   boardRows,
   bubbleRadius,
+  byLatest,
   dayLabel,
   firstMessageOf,
   followsNewMessage,
   isNearBottom,
   isNearTop,
   lastMessageOf,
+  latestPostAt,
   olderState,
   PIN_SLACK_PX,
   senderHandle,
@@ -150,6 +152,59 @@ describe('search', () => {
     expect(matchesName('Marcus', '')).toBe(true)
     expect(matchesName('Marcus', ' ')).toBe(false)
     expect(matchesName('Sunday Funday League', ' ')).toBe(true)
+  })
+})
+
+describe('conversation order (gap list §3 #24)', () => {
+  const at = (row: { at: string | null }) => row.at
+  const ids = (rows: readonly { id: string }[]) => rows.map((r) => r.id)
+
+  it('puts the conversation with the newest message first', () => {
+    const rows = [
+      { id: 'leo', at: ago(3 * HOUR) },
+      { id: 'board', at: ago(2 * MIN) },
+      { id: 'priya', at: ago(HOUR) },
+    ]
+    expect(ids(byLatest(rows, at))).toEqual(['board', 'priya', 'leo'])
+  })
+
+  it('reads the instants, not the strings — offsets and precision differ between feeds', () => {
+    const rows = [
+      { id: 'a', at: '2026-10-15T11:00:00+00:00' },
+      { id: 'b', at: '2026-10-15T07:30:00.123456-04:00' }, // 11:30 UTC — newer
+    ]
+    expect(ids(byLatest(rows, at))).toEqual(['b', 'a'])
+  })
+
+  it('puts the ones with no known time after the rest, keeping the order given among them', () => {
+    const rows = [
+      { id: 'empty-board', at: null },
+      { id: 'old', at: ago(2 * HOUR) },
+      { id: 'label-only', at: null },
+      { id: 'garbled', at: 'yesterday' },
+      { id: 'new', at: ago(MIN) },
+    ]
+    expect(ids(byLatest(rows, at))).toEqual(['new', 'old', 'empty-board', 'label-only', 'garbled'])
+  })
+
+  it('keeps ties in the order given and never reorders the input', () => {
+    const same = ago(5 * MIN)
+    const rows = [
+      { id: 'first', at: same },
+      { id: 'second', at: same },
+    ]
+    expect(ids(byLatest(rows, at))).toEqual(['first', 'second'])
+    const input = [{ id: 'x', at: ago(HOUR) }, { id: 'y', at: ago(MIN) }]
+    byLatest(input, at)
+    expect(ids(input)).toEqual(['x', 'y'])
+  })
+
+  it("a board's latest post is the newest timed post of its oldest-first read", () => {
+    expect(latestPostAt(undefined)).toBeNull()
+    expect(latestPostAt([])).toBeNull()
+    expect(latestPostAt([{ created_at: ago(HOUR) }, { created_at: ago(MIN) }])).toBe(ago(MIN))
+    expect(latestPostAt([{ created_at: ago(HOUR) }, { created_at: null }])).toBe(ago(HOUR))
+    expect(latestPostAt([{ created_at: null }])).toBeNull()
   })
 })
 
@@ -292,7 +347,7 @@ describe('DM feed view model', () => {
     ],
     trade: { give: ['James Conner'], get: ['Darnell Mooney'] },
   }
-  const none = { read: {}, sent: {} }
+  const none = { read: {}, sent: {}, sentAt: {} }
 
   it('is empty with an empty feed (no DM backend yet)', () => {
     expect(dmViewModel([], none)).toEqual({ conversations: [] })
@@ -312,10 +367,16 @@ describe('DM feed view model', () => {
   })
 
   it('appends this session’s sends and makes the time "now"', () => {
-    const c = dmViewModel([thread], { ...none, sent: { marcus: ['Deal'] } }).conversations[0]!
+    const c = dmViewModel([thread], { ...none, sent: { marcus: ['Deal'] }, sentAt: { marcus: NOW.toISOString() } }).conversations[0]!
     expect(c.preview).toBe('You: Deal')
     expect(c.time).toBe('now')
     expect(c.messages.at(-1)).toMatchObject({ fromMe: true, text: 'Deal' })
+  })
+
+  it('knows when its latest message was sent only for a send made this session — the feed carries labels (#24)', () => {
+    expect(dmViewModel([thread], none).conversations[0]!.lastAt).toBeNull()
+    const sent = { ...none, sent: { marcus: ['Deal'] }, sentAt: { marcus: NOW.toISOString() } }
+    expect(dmViewModel([thread], sent).conversations[0]!.lastAt).toBe(NOW.toISOString())
   })
 })
 

@@ -194,6 +194,44 @@ export function matchesName(name: string, query: string): boolean {
   return name.toLowerCase().includes(query.toLowerCase())
 }
 
+// ---------------------------------------------------------------------------
+// Order (gap list §3 #24)
+// ---------------------------------------------------------------------------
+
+/**
+ * Conversations newest first, by when each one's latest message was sent —
+ * the order every messaging app keeps its inbox in (the design's data is in
+ * that order too, §5). One whose latest message has no known time (a board
+ * with no posts yet, a read that failed, a feed that carries only a label)
+ * goes after those that have one. Ties, and the ones with no time among
+ * themselves, keep the order given.
+ */
+export function byLatest<T>(rows: readonly T[], latestAt: (row: T) => string | null): T[] {
+  return rows
+    .map((row, i) => {
+      const at = latestAt(row)
+      const ms = at ? Date.parse(at) : Number.NaN
+      return { row, i, ms: Number.isNaN(ms) ? null : ms }
+    })
+    .sort((a, b) => {
+      if (a.ms !== null && b.ms !== null) return b.ms - a.ms || a.i - b.i
+      if (a.ms !== null) return -1
+      if (b.ms !== null) return 1
+      return a.i - b.i
+    })
+    .map((x) => x.row)
+}
+
+/** When a board's latest post was made: the newest timed post of its
+ *  (oldest-first) read, or null when it has none. */
+export function latestPostAt(rows: readonly { created_at: string | null }[] | undefined): string | null {
+  for (let i = (rows?.length ?? 0) - 1; i >= 0; i -= 1) {
+    const at = rows![i]!.created_at
+    if (at) return at
+  }
+  return null
+}
+
 /** Offers waiting on my answer — the gap analysis's "proposed, with the
  *  viewer's team as recipient". Home's league-card dot reads it (ruling
  *  #14); nothing in Messages counts trades (ruling #22). */
