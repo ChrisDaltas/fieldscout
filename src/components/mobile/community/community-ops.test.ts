@@ -178,7 +178,7 @@ describe('Create sheet destinations', () => {
 })
 
 describe('an AI expert’s ranking opens in Rankings (gap list §3 #28)', () => {
-  const expert = { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true }
+  const expert = { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true, isActive: true }
   const open = (over: Partial<CommunityItem>) => {
     const href = expertRankingHref(item({ id: 'b1a2c3d4-0000-4000-8000-000000000001', kind: 'rank', author: expert, ...over }))
     expect(href).not.toBeNull()
@@ -212,6 +212,14 @@ describe('an AI expert’s ranking opens in Rankings (gap list §3 #28)', () => 
   it('a person’s ranking or list keeps the Community detail', () => {
     expect(expertRankingHref(item({ id: 'r1', kind: 'rank' }))).toBeNull()
     expect(expertRankingHref(item({ id: 'l1' }))).toBeNull()
+  })
+
+  it('a switched-off AI expert’s ranking keeps the Community detail — Rankings no longer has it', () => {
+    const rank = (author: CommunityItem['author']) => expertRankingHref(item({ id: 'b1', kind: 'rank', author }))
+    expect(rank({ ...expert, isActive: false })).toBeNull()
+    // Not read reads as off: the detail opens any board; Rankings would not.
+    expect(rank({ ...expert, isActive: undefined })).toBeNull()
+    expect(rank(expert)).not.toBeNull()
   })
 })
 

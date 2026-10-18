@@ -120,6 +120,11 @@ export interface CommunityAuthor {
   /** Followers of a person; null for a persona (no follow graph). */
   followers: number | null
   isPersona: boolean
+  /** An AI expert's switch (`ai_personas.is_active`): true while they're on.
+   *  Rankings shows only those experts' boards (`useExpertBoards`), so only
+   *  theirs open there (`expertRankingHref`). Read for an AI expert only;
+   *  missing reads as off (the Community detail, which opens any board). */
+  isActive?: boolean
 }
 
 export interface CommunityItem {
@@ -207,6 +212,8 @@ interface PersonaRow {
   avatar_url: string | null
   /** `style_profile.scoring_default` ("PPR", "Half-PPR", "Standard"…). */
   scoring: string | null
+  /** Nullable in the schema (default true); only `true` is on. */
+  is_active?: boolean | null
 }
 interface TagRow {
   id: string
@@ -227,7 +234,7 @@ interface LinkRow {
  *  so the client doesn't parse it at the type level (the rows are cast). */
 export const POOL_SELECT: string = `*,
   owner:profiles!lists_owner_id_fkey(id, username, avatar_url, follower_count),
-  persona:ai_personas!lists_ai_persona_id_fkey(username, avatar_url, scoring:style_profile->>scoring_default),
+  persona:ai_personas!lists_ai_persona_id_fkey(username, avatar_url, scoring:style_profile->>scoring_default, is_active),
   tag_links:list_tags(tag:tags(id, name, slug)),
   links:list_links(kind, url, title, duration_label, source_label, position),
   heads:list_players(position, player:players(id, full_name, position, team, headshot_url))`
@@ -274,7 +281,14 @@ export function mapCommunityRows(rows: CommunityRow[], recentLikes: ReadonlyMap<
         thumbnailUrl: row.thumbnail_url,
         ownerUsername: owner.username,
         author: persona
-          ? { profileId: null, username: persona.username, avatarUrl: persona.avatar_url, followers: null, isPersona: true }
+          ? {
+              profileId: null,
+              username: persona.username,
+              avatarUrl: persona.avatar_url,
+              followers: null,
+              isPersona: true,
+              isActive: persona.is_active === true,
+            }
           : {
               profileId: owner.id,
               username: owner.username,

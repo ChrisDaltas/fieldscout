@@ -24,6 +24,7 @@ vi.mock('@/hooks/use-auth', () => ({
 }))
 
 import { bigBoardKeys } from '@/hooks/use-big-board'
+import { listsKeys } from '@/hooks/use-lists'
 import { mobileRankingBoardsKey, type BoardPlayerLite, type MyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 
 import type { BoardSourcePlayer } from '@/hooks/use-board-sources'
@@ -536,6 +537,42 @@ describe('an AI expert’s ranking opened from Community (gap list §3 #28)', ()
     expect(t).toContain('Rest of season · RB · PPR')
     expect(t).toContain('AI expert · 4 players')
     expect(html).toMatch(/<button[^>]*>.*Start my ranking from this<\/button>/)
+  })
+
+  it('keeps the Community detail’s Like · Comments · Save · Share, above "Start my ranking from this"', () => {
+    const qc = seeded()
+    qc.setQueryData(listsKeys.detail('e1-rb'), {
+      id: 'e1-rb',
+      owner_id: 'u-ai',
+      ai_persona_id: 'p-e1',
+      slug: 'top-25-rb-ppr',
+      like_count: 3,
+      is_liked: true,
+      is_favorited: false,
+      comments_enabled: true,
+      is_owner: false,
+      players: [],
+      links: [],
+      tags: [],
+    })
+    const html = render(
+      createElement(RankingsHub, { nav: { ...nav, state: { ...nav.state, view: 'hub', src: 'p:e1-rb', pos: 'RB' } } }),
+      qc,
+    )
+    const row = /<div class="flex gap-2" data-list-actions[^>]*>(.*?)<\/div>/.exec(html)
+    expect(row).not.toBeNull()
+    const t = text(row![1]!)
+    expect(row![1]).toMatch(/aria-pressed="true" aria-label="Like · 3 likes"/)
+    expect(row![1]).toMatch(/aria-label="Comments"/)
+    expect(t).toContain('Save')
+    expect(t).toContain('Share')
+    expect(html.indexOf('data-list-actions')).toBeLessThan(html.indexOf('Start my ranking from this'))
+  })
+
+  it('while the ranking’s likes are read, a placeholder — never a guessed count', () => {
+    const html = hub({ src: 'p:e1-rb', pos: 'RB' })
+    expect(html).not.toContain('data-list-actions')
+    expect(html).toMatch(/aria-hidden="true" class="h-9 w-3\/4 animate-pulse rounded-pill bg-m-b2"/)
   })
 
   it('a position board is one position: no chips', () => {

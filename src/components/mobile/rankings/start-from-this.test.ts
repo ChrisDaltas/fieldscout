@@ -10,10 +10,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  *
  * The copy is the editor's `from: "p:<listId>"` start: it reads the expert's
  * board players (`usePersonaBoardPlayers` → `list_players`) and nothing
- * else. Pinned two ways: the read itself, run against a recording client;
- * and the source of every file on the copy path, so a later change can't
- * route it through generation unnoticed.
+ * else. Pinned three ways: the read itself, run against a recording client;
+ * the AI generation modules mocked to throw, then the Rankings screens
+ * imported — so any of them entering the copy path's import graph, however
+ * deep, fails here; and the source of every file on the copy path, so the
+ * route can't be reached by a bare `fetch` either.
  */
+
+// The client pieces of AI list generation (`POST /api/lists/generate`):
+// importing any of them from the copy path throws (see "import graph" below).
+const AI_GENERATION_MODULES = vi.hoisted(() => [
+  '@/hooks/use-ai-list-build',
+  '@/hooks/use-ai-generation-quota',
+  '@/components/mobile/lists/ai-create-sheet',
+  '@/components/lists/generate-ai-modal',
+])
+const reachedAi = (name: string) => {
+  throw new Error(`AI list generation (${name}) is on the "Start my ranking from this" path`)
+}
+vi.mock('@/hooks/use-ai-list-build', () => reachedAi('@/hooks/use-ai-list-build'))
+vi.mock('@/hooks/use-ai-generation-quota', () => reachedAi('@/hooks/use-ai-generation-quota'))
+vi.mock('@/components/mobile/lists/ai-create-sheet', () => reachedAi('@/components/mobile/lists/ai-create-sheet'))
+vi.mock('@/components/lists/generate-ai-modal', () => reachedAi('@/components/lists/generate-ai-modal'))
 
 const seen = vi.hoisted(() => ({
   queries: [] as Array<{ queryKey: unknown; enabled?: boolean; queryFn: () => Promise<unknown> }>,
@@ -80,6 +98,20 @@ describe('"Start my ranking from this" copies the expert’s ranking — no AI g
   })
 })
 
+describe('the copy path never reaches AI list generation (import graph)', () => {
+  it('the trap is armed: each AI generation module fails to import here', async () => {
+    for (const name of AI_GENERATION_MODULES) {
+      await expect(import(/* @vite-ignore */ name), name).rejects.toThrow()
+    }
+  })
+
+  it('the Rankings screens — the author view, the editor that copies — import none of them', async () => {
+    await expect(import('./rankings-hub')).resolves.toHaveProperty('RankingsHub')
+    await expect(import('./ranking-editor')).resolves.toHaveProperty('RankingEditor')
+    await expect(import('@/components/mobile/community/list-actions')).resolves.toHaveProperty('ListActions')
+  })
+})
+
 describe('the copy path never reaches AI list generation (source pins)', () => {
   const read = (file: string) => readFileSync(path.resolve(process.cwd(), file), 'utf8')
   const RANKINGS_DIR = 'src/components/mobile/rankings'
@@ -94,6 +126,7 @@ describe('the copy path never reaches AI list generation (source pins)', () => {
     'src/hooks/use-mobile-rankings-save.ts',
     'src/components/mobile/community/community-cards.tsx',
     'src/components/mobile/community/community-ops.ts',
+    'src/components/mobile/community/list-actions.tsx',
   ]
 
   it('the editor starts a copy from the expert’s board players', () => {
@@ -102,12 +135,28 @@ describe('the copy path never reaches AI list generation (source pins)', () => {
     expect(editor).toContain('usePersonaBoardPlayers(personaListId)')
   })
 
+  /** The route, and every client piece that reaches it (by file and by name). */
+  const AI_GENERATION =
+    /api\/lists\/generate|generate-ai|GenerateAi|ai-build|useGenerate|use-ai-list-build|useAiListBuild|ai-create-sheet|AiCreateSheet|ai-generation-quota|useAiGenerationQuota/
+
+  it('the pattern catches each client piece of generation', () => {
+    for (const piece of [
+      "fetch('/api/lists/generate', { method: 'POST' })",
+      "import { useAiListBuild } from '@/hooks/use-ai-list-build'",
+      "import { AiCreateSheet } from '@/components/mobile/lists/ai-create-sheet'",
+      "import { useAiGenerationQuota } from '@/hooks/use-ai-generation-quota'",
+      "import { GenerateAiModal } from '@/components/lists/generate-ai-modal'",
+      "import { AiBuildStrip } from './ai-build-strip'",
+    ]) {
+      expect(piece).toMatch(AI_GENERATION)
+    }
+  })
+
   it('no file on it names the generation route or its client pieces', () => {
     expect(COPY_PATH.length).toBeGreaterThan(8)
     for (const file of COPY_PATH) {
       const src = read(file)
-      expect(src, file).not.toMatch(/api\/lists\/generate/)
-      expect(src, file).not.toMatch(/generate-ai|GenerateAi|ai-build|useGenerate/)
+      expect(src, file).not.toMatch(AI_GENERATION)
     }
   })
 })

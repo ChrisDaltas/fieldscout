@@ -304,7 +304,7 @@ describe('Community — an AI expert’s ranking opens in Rankings', () => {
     title: 'Top 25 RB — PPR',
     scoringFormat: 'ppr',
     scoring: 'PPR',
-    author: { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true },
+    author: { profileId: null, username: 'bathew-merry-ai', avatarUrl: null, followers: null, isPersona: true, isActive: true },
   }
   const rankingsHref = '/app/weekly-ranks?src=p%3Ab1a2c3d4-0000-4000-8000-000000000001&pos=RB'
 
@@ -330,6 +330,13 @@ describe('Community — an AI expert’s ranking opens in Rankings', () => {
     const person = { ...expert, id: 'r1', author: { ...base.author, isPersona: false } }
     const out = html(createElement(RankingRow, { item: person }))
     expect(out).toContain(`href="${communityDetailHref('r1')}"`)
+    expect(out).not.toContain('/app/weekly-ranks')
+  })
+
+  it('a switched-off AI expert’s ranking keeps the detail (Rankings shows only switched-on experts)', () => {
+    const off = { ...expert, author: { ...expert.author, isActive: false } }
+    const out = html(createElement(RankingRow, { item: off }))
+    expect(out).toContain(`href="${communityDetailHref(expert.id)}"`)
     expect(out).not.toContain('/app/weekly-ranks')
   })
 

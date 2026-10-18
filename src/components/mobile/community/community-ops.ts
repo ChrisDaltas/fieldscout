@@ -771,7 +771,8 @@ export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): 
  * expert's ranking (lr-hub S4, `?src=p:<listId>`), with "Start my ranking
  * from this" — the handoff sends a Community ranking there (m-community §3,
  * "Ranking row" → `#view-<id>`). A person's ranking has no such view yet, so
- * it keeps opening the Community detail (null).
+ * it keeps opening the Community detail (null) — as does a switched-off
+ * AI expert's.
  *
  * Rankings shows one position at a time: a position board opens at its own;
  * an overall board at the position of the player it leads with — the one its
@@ -781,7 +782,10 @@ export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): 
 export function expertRankingHref(
   item: Pick<CommunityItem, 'id' | 'author' | 'positionFilter' | 'heads' | 'scoringFormat'>,
 ): string | null {
-  if (!item.author.isPersona) return null
+  // Rankings opens only a switched-on expert's boards (`useExpertBoards`):
+  // a switched-off one's board, still in Community, keeps the detail rather
+  // than landing on "This ranking isn't available".
+  if (!item.author.isPersona || item.author.isActive !== true) return null
   const pos = fromDbPos(item.positionFilter) ?? fromDbPos(item.heads[0]?.position) ?? 'RB'
   const search = toRankingsSearch({
     src: `p:${item.id}`,

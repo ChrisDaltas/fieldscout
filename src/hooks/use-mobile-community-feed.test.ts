@@ -230,6 +230,41 @@ describe('readCommunityFeed', () => {
     expect(by.person).toMatchObject({ scoringFormat: 'ppr', scoring: 'PPR' })
   })
 
+  it('an AI expert’s switch is read and carried (only a switched-on expert opens in Rankings — gap list §3 #28)', async () => {
+    answer = (call) =>
+      call.table === 'lists' && !isLatest(call)
+        ? {
+            data: [
+              row('on', {
+                is_big_board: false,
+                ai_persona_id: 'p1',
+                persona: { username: 'bathew-merry-ai', avatar_url: null, scoring: 'PPR', is_active: true },
+              }),
+              row('off', {
+                is_big_board: false,
+                ai_persona_id: 'p2',
+                persona: { username: 'wike-mright-ai', avatar_url: null, scoring: 'PPR', is_active: false },
+              }),
+              // Nullable in the schema: only true is on (as `useExpertBoards` filters).
+              row('unset', {
+                is_big_board: false,
+                ai_persona_id: 'p3',
+                persona: { username: 'third-ai', avatar_url: null, scoring: 'PPR', is_active: null },
+              }),
+              row('person'),
+            ],
+            error: null,
+          }
+        : { data: [], error: null }
+    const feed = await readCommunityFeed(NOW)
+    const by = Object.fromEntries(feed.items.map((i) => [i.id, i]))
+    expect(POOL_SELECT).toMatch(/persona:ai_personas[^)]*\bis_active\b/)
+    expect(by.on!.author).toMatchObject({ isPersona: true, isActive: true })
+    expect(by.off!.author).toMatchObject({ isPersona: true, isActive: false })
+    expect(by.unset!.author).toMatchObject({ isPersona: true, isActive: false })
+    expect(by.person!.author.isActive).toBeUndefined()
+  })
+
   it('likes: the whole last 14 days, paged past the 1000-row cap', async () => {
     const page1 = Array.from({ length: 1000 }, (_, i) => ({
       list_id: 'a',

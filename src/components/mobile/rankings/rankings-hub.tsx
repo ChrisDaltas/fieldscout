@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
+import { ListActions } from '@/components/mobile/community/list-actions'
 import { readLastRankPos } from '@/components/mobile/rankings/last-position'
 import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { MyRankingsBody, type MyRankFilter } from '@/components/mobile/rankings/my-rankings'
@@ -50,6 +51,7 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { useList } from '@/hooks/use-lists'
 import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import {
   HUB_CAP,
@@ -850,6 +852,10 @@ function AuthorBody({
 }
 
 function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: string; onCopy: () => void }) {
+  // The ranking's own read — the viewer's like and save, the counts — for
+  // its Like · Comments · Save · Share row: the Community detail's, so a
+  // ranking opened here from Community keeps them (gap list §3 #28).
+  const list = useList(board.id)
   const ago = relativeAgo(board.updated_at)
   const name = board.persona.display_name
   const nameEl = featureFlags.personas ? (
@@ -893,6 +899,19 @@ function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: strin
       {board.description ? (
         <p className="text-pretty text-[13px] font-medium leading-[1.4] text-m-t2">{board.description}</p>
       ) : null}
+      {list.data ? (
+        <ListActions list={list.data} />
+      ) : list.isError ? (
+        <button
+          type="button"
+          onClick={() => void list.refetch()}
+          className="self-start text-[12px] font-semibold text-accent"
+        >
+          Couldn’t load likes and comments · Try again
+        </button>
+      ) : (
+        <span aria-hidden className="h-9 w-3/4 animate-pulse rounded-pill bg-m-b2" />
+      )}
       <button
         type="button"
         onClick={onCopy}
