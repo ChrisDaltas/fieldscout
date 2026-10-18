@@ -15,7 +15,6 @@ import {
   RANK_FILTERS_ALL,
   RANK_POS_CHIPS,
   RANK_SCORING_CHIPS,
-  RANK_TYPE_CHIPS,
   classifyCommunityList,
   closeCommunityDetail,
   communityView,
@@ -28,12 +27,15 @@ import {
   hottestLikedOutside,
   latestPageItems,
   normQuery,
+  nflSeasonOf,
   personaScoring,
   pickLatest,
   playerMeta,
   popularScore,
   postedAgo,
   rankFilterOk,
+  rankTypeChips,
+  rankingThisWeek,
   recentLikeHeat,
   recentUpdates,
   scoringFormatOf,
@@ -81,15 +83,30 @@ function item(over: Partial<CommunityItem> & { id: string }): CommunityItem {
 }
 
 describe('rankings vs lists', () => {
-  it('big board → pre-draft ranking; weekly board slug → weekly ranking; AI expert → ranking; else a list', () => {
-    expect(classifyCommunityList({ is_big_board: true, slug: 'big-board', ai_persona_id: null })).toEqual({ kind: 'rank', rankType: 'pre' })
+  it('big board → season ranking; weekly board slug → that week; AI expert → season ranking; else a list', () => {
+    expect(classifyCommunityList({ is_big_board: true, slug: 'big-board', ai_persona_id: null })).toEqual({
+      kind: 'rank',
+      rankType: 'season',
+      week: null,
+    })
     expect(classifyCommunityList({ is_big_board: false, slug: 'week-3-big-board-1783537316215', ai_persona_id: null })).toEqual({
       kind: 'rank',
       rankType: 'weekly',
+      week: 3,
     })
-    expect(classifyCommunityList({ is_big_board: false, slug: 'wike-mright-ai-qb', ai_persona_id: 'p1' })).toEqual({ kind: 'rank', rankType: null })
+    expect(classifyCommunityList({ is_big_board: false, slug: 'week-12-big-board', ai_persona_id: null }).week).toBe(12)
+    // Every AI expert ranking is season-long (as the Rankings area reads them).
+    expect(classifyCommunityList({ is_big_board: false, slug: 'wike-mright-ai-qb', ai_persona_id: 'p1' })).toEqual({
+      kind: 'rank',
+      rankType: 'season',
+      week: null,
+    })
     // A person's own ordered list is still a list.
-    expect(classifyCommunityList({ is_big_board: false, slug: 'rb-targets', ai_persona_id: null })).toEqual({ kind: 'list', rankType: null })
+    expect(classifyCommunityList({ is_big_board: false, slug: 'rb-targets', ai_persona_id: null })).toEqual({
+      kind: 'list',
+      rankType: null,
+      week: null,
+    })
     expect(classifyCommunityList({ is_big_board: null, slug: 'weekly-sleepers', ai_persona_id: null }).kind).toBe('list')
   })
 
@@ -175,7 +192,7 @@ describe('filters', () => {
   const r2 = item({
     id: 'r2',
     kind: 'rank',
-    rankType: 'pre',
+    rankType: 'season',
     positionFilter: 'WR',
     scoring: 'Standard',
     scoringFormat: 'standard',
@@ -225,11 +242,26 @@ describe('filters', () => {
 
   it('rank chips: type × position × scoring', () => {
     expect(rankFilterOk(r1, RANK_FILTERS_ALL)).toBe(true)
-    expect(rankFilterOk(r1, { ...RANK_FILTERS_ALL, type: 'pre' })).toBe(false)
-    expect(rankFilterOk(r2, { type: 'pre', pos: 'WR', scoring: 'standard' })).toBe(true)
-    // The handoff's rows (Rest of season has no data — left out).
-    expect(RANK_TYPE_CHIPS.map((c) => c.label)).toEqual(['All types', 'Weekly', 'Pre-draft'])
+    expect(rankFilterOk(r1, { ...RANK_FILTERS_ALL, type: 'season' })).toBe(false)
+    expect(rankFilterOk(r2, { type: 'season', pos: 'WR', scoring: 'standard' })).toBe(true)
+    expect(rankFilterOk(r2, { ...RANK_FILTERS_ALL, type: 'weekly' })).toBe(false)
     expect(RANK_POS_CHIPS.map((c) => c.label)).toEqual(['All positions', 'QB', 'RB', 'WR', 'TE', 'K', 'D/ST'])
+  })
+
+  it('type chips (#27): the one season ranking has its own chip, called by the calendar', () => {
+    // In season (any week, the postseason's pinned 18 too): Rest of season.
+    expect(rankTypeChips(7).map((c) => c.label)).toEqual(['All types', 'Weekly', 'Rest of season'])
+    expect(rankTypeChips(1).map((c) => c.label)).toEqual(['All types', 'Weekly', 'Rest of season'])
+    expect(rankTypeChips(18).map((c) => c.label)).toEqual(['All types', 'Weekly', 'Rest of season'])
+    // The offseason: Pre-draft — the same chip.
+    expect(rankTypeChips(0).map((c) => c.label)).toEqual(['All types', 'Weekly', 'Pre-draft'])
+    expect(rankTypeChips(0).map((c) => c.value)).toEqual(rankTypeChips(7).map((c) => c.value))
+    expect(rankTypeChips(7).map((c) => c.value)).toEqual(['all', 'weekly', 'season'])
+    // The chip holds the big board and the AI experts' boards, not a week's board.
+    const { kind, rankType } = classifyCommunityList({ is_big_board: false, slug: 'x', ai_persona_id: 'p' })
+    const ai = item({ id: 'ai2', kind, rankType })
+    expect(rankFilterOk(ai, { ...RANK_FILTERS_ALL, type: 'season' })).toBe(true)
+    expect(rankFilterOk(r1, { ...RANK_FILTERS_ALL, type: 'weekly' })).toBe(true)
   })
 
   it('scoring chips (#36): Any scoring + the four scorings; the saved scoring filters', () => {
@@ -493,7 +525,7 @@ describe('what the screen shows (#35, #27)', () => {
   const latestRows = [freshList]
   const filter = { tab: 'all' as const, topic: null, q: '', followingIds: new Set(['u-ortiz']) }
   const view = (over: Partial<Parameters<typeof communityView>[0]> = {}) =>
-    communityView({ pool, popularExtra: [extra], latestRows, filter, rk: RANK_FILTERS_ALL, ranksOn: true, now, ...over })
+    communityView({ pool, popularExtra: [extra], latestRows, filter, rk: RANK_FILTERS_ALL, ranksOn: true, currentWeek: 7, now, ...over })
   const ids = (items: CommunityItem[]) => items.map((i) => i.id)
 
   it('For you: Latest newest-posted; everything else popular + recent, Latest left out; liked lists outside the pool join', () => {
@@ -547,6 +579,56 @@ describe('what the screen shows (#35, #27)', () => {
     // Following with only rankings matched: nothing shows, so it's the empty state.
     const onlyRanks = view({ ranksOn: false, filter: { ...filter, tab: 'following' } })
     expect(onlyRanks.empty).toBe(true)
+  })
+
+  it('"Rankings this week" (#27): season rankings and this week\'s boards — not another week\'s, not last season\'s', () => {
+    const bigBoard = item({ id: 'bigBoard', kind: 'rank', rankType: 'season', createdAt: daysAgo(200), updatedAt: daysAgo(1) })
+    const expert = item({ id: 'expert', kind: 'rank', rankType: 'season', createdAt: daysAgo(60), updatedAt: daysAgo(4) })
+    const week7 = item({ id: 'week7', kind: 'rank', rankType: 'weekly', rankWeek: 7, createdAt: daysAgo(12), updatedAt: daysAgo(1) })
+    const week6 = item({ id: 'week6', kind: 'rank', rankType: 'weekly', rankWeek: 6, createdAt: daysAgo(20), updatedAt: daysAgo(2) })
+    const week8 = item({ id: 'week8', kind: 'rank', rankType: 'weekly', rankWeek: 8, createdAt: daysAgo(3), updatedAt: daysAgo(3) })
+    // Week 7 of last season: the same week number, a year old.
+    const oldWeek7 = item({ id: 'oldWeek7', kind: 'rank', rankType: 'weekly', rankWeek: 7, createdAt: daysAgo(365), updatedAt: daysAgo(360) })
+    const ranks = [bigBoard, expert, week7, week6, week8, oldWeek7]
+    const v = view({ pool: [...ranks, quietList], popularExtra: [], latestRows: [] })
+    expect(ids(v.shelfRanks).sort()).toEqual(['bigBoard', 'expert', 'week7'])
+    // Latest's own still stay out of it.
+    expect(ids(view({ pool: ranks, popularExtra: [], latestRows: [week7] }).shelfRanks).sort()).toEqual(['bigBoard', 'expert'])
+    // The Rankings tab keeps every ranking — its Weekly chip, every week.
+    const tab = view({ pool: ranks, popularExtra: [], latestRows: [], filter: { ...filter, tab: 'rank' } })
+    expect(ids(tab.ranks).sort()).toEqual(ids(ranks).sort())
+    const weekly = view({ pool: ranks, popularExtra: [], latestRows: [], filter: { ...filter, tab: 'rank' }, rk: { ...RANK_FILTERS_ALL, type: 'weekly' } })
+    expect(ids(weekly.ranks).sort()).toEqual(['oldWeek7', 'week6', 'week7', 'week8'])
+    // Next week, next week's board is this week's.
+    expect(ids(view({ pool: ranks, popularExtra: [], latestRows: [], currentWeek: 8 }).shelfRanks).sort()).toEqual([
+      'bigBoard',
+      'expert',
+      'week8',
+    ])
+  })
+
+  it('this week\'s board: the app\'s week (Week 1 in the offseason), made this NFL season', () => {
+    const at = (iso: string) => Date.parse(iso)
+    const board = (rankWeek: number, createdAt: string) => ({ rankType: 'weekly' as const, rankWeek, createdAt })
+    // Season rankings always count, whatever the week.
+    expect(rankingThisWeek({ rankType: 'season', rankWeek: null, createdAt: '2020-01-01T00:00:00Z' }, 7, now)).toBe(true)
+    expect(rankingThisWeek(board(7, '2026-10-01T00:00:00Z'), 7, now)).toBe(true)
+    expect(rankingThisWeek(board(6, '2026-10-01T00:00:00Z'), 7, now)).toBe(false)
+    expect(rankingThisWeek(board(7, '2025-10-01T00:00:00Z'), 7, now)).toBe(false)
+    // The offseason: Week 1 is this week, and a board made in the summer counts in September.
+    expect(rankingThisWeek(board(1, '2026-06-10T00:00:00Z'), 0, at('2026-08-20T00:00:00Z'))).toBe(true)
+    expect(rankingThisWeek(board(2, '2026-06-10T00:00:00Z'), 0, at('2026-08-20T00:00:00Z'))).toBe(false)
+    expect(rankingThisWeek(board(1, '2026-06-10T00:00:00Z'), 1, at('2026-09-12T00:00:00Z'))).toBe(true)
+    // No readable time: taken at its week number.
+    expect(rankingThisWeek(board(7, ''), 7, now)).toBe(true)
+    // Not a weekly board's week (no number): not this week's.
+    expect(rankingThisWeek({ rankType: 'weekly', rankWeek: null, createdAt: '2026-10-01T00:00:00Z' }, 7, now)).toBe(false)
+    // NFL seasons run March to February: the playoffs belong to the season ending.
+    expect(nflSeasonOf(at('2026-10-15T00:00:00Z'))).toBe(2026)
+    expect(nflSeasonOf(at('2027-01-20T00:00:00Z'))).toBe(2026)
+    expect(nflSeasonOf(at('2027-02-28T23:00:00Z'))).toBe(2026)
+    expect(nflSeasonOf(at('2027-03-01T00:00:00Z'))).toBe(2027)
+    expect(nflSeasonOf(at('2026-06-01T00:00:00Z'))).toBe(2026)
   })
 
   it('the Rankings chips can exclude every ranking — that is its own empty state', () => {

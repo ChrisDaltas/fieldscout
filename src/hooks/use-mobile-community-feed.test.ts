@@ -167,6 +167,29 @@ describe('readCommunityFeed', () => {
     expect(by.board).toMatchObject({ kind: 'rank', numbered: true })
   })
 
+  it('ranking types (#27): the big board and AI experts’ boards are season rankings; a weekly board carries its week', async () => {
+    answer = (call) =>
+      call.table === 'lists'
+        ? isLatest(call)
+          ? { data: [], error: null }
+          : {
+              data: [
+                row('board'),
+                row('wk', { is_big_board: false, slug: 'week-7-big-board-1791000000000' }),
+                row('ai', { is_big_board: false, ai_persona_id: 'p1', persona: { username: 'ai', avatar_url: null, scoring: null } }),
+                row('list', { is_big_board: false }),
+              ],
+              error: null,
+            }
+        : { data: [], error: null }
+    const feed = await readCommunityFeed(NOW)
+    const by = Object.fromEntries(feed.items.map((i) => [i.id, i]))
+    expect(by.board).toMatchObject({ kind: 'rank', rankType: 'season', rankWeek: null })
+    expect(by.wk).toMatchObject({ kind: 'rank', rankType: 'weekly', rankWeek: 7 })
+    expect(by.ai).toMatchObject({ kind: 'rank', rankType: 'season', rankWeek: null })
+    expect(by.list).toMatchObject({ kind: 'list', rankType: null, rankWeek: null })
+  })
+
   it('an AI expert’s board with no saved scoring counts as its persona’s usual scoring — what 190 saves', async () => {
     answer = (call) =>
       call.table === 'lists' && !isLatest(call)
