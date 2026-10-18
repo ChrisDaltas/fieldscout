@@ -28,6 +28,13 @@ vi.mock('@/lib/supabase/client', () => ({
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'user-1' }, profile: { username: 'dev' } }),
 }))
+// The mock dialog's opening draft, swappable per describe (a static render
+// can't click through steps, so a problem is seeded into the opening draft).
+const launchSeed = vi.hoisted(() => ({ draft: null as null | (() => MockLaunchDraft) }))
+vi.mock('@/components/draft/mock-launch-ops', async (importActual) => {
+  const actual = await importActual<typeof import('@/components/draft/mock-launch-ops')>()
+  return { ...actual, initialMockLaunchDraft: () => (launchSeed.draft ?? actual.initialMockLaunchDraft)() }
+})
 vi.mock('@/components/mobile/ui/mobile-sheet', () => ({
   MobileSheet: ({
     open,
@@ -57,6 +64,7 @@ vi.mock('@/components/mobile/ui/mobile-sheet', () => ({
 }))
 
 import { MockLaunchDialog } from '@/components/draft/mock-launch-dialog'
+import { initialMockLaunchDraft, patchMockSettings, type MockLaunchDraft } from '@/components/draft/mock-launch-ops'
 import { AttachListInline } from '@/components/leagues/attach-list-modal'
 import { AuctionConfigFields, PickClockField, SnakeReversalField } from '@/components/leagues/draft-config-fields'
 import { LeagueCreateModal } from '@/components/leagues/league-create-modal'
@@ -68,7 +76,7 @@ import { InlineIssue, SettingsSkin } from '@/components/leagues/settings-form-co
 import { leagueListsKeys, type MyDraftList } from '@/hooks/use-league-lists'
 import { scoringTemplatesKeys } from '@/hooks/use-scoring-templates'
 import { SCORING_TEMPLATES } from '@/lib/leagues/scoring/templates'
-import { LEAGUE_SETTINGS_DEFAULTS } from '@/lib/leagues/settings/league-settings'
+import { DEFAULT_ROSTER_SETTINGS, LEAGUE_SETTINGS_DEFAULTS, type LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
 // ---------------------------------------------------------------------------
 // Rig
@@ -179,6 +187,11 @@ describe('Create a league — a phone sheet, step 1 (Basics)', () => {
     expect(html).not.toMatch(/\bPro\b/)
   })
 
+  it('Continue is off until the league has a name, and says why (prevent, don’t refuse)', () => {
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*data-wizard-primary="true">Continue</)
+    expect(html).toMatch(/role="status">Name your league to continue\.</)
+  })
+
   it('draws in phone tokens only', () => {
     expect(html).not.toMatch(DESKTOP_TOKENS)
   })
@@ -190,6 +203,11 @@ describe('Mock draft — a phone sheet, step 1 (Format)', () => {
   it('is the tall mobile sheet with the step line', () => {
     expect(html).toContain('data-sheet="Mock draft" data-size="tall"')
     expect(html).toContain('Step 1 of 4 · Format')
+  })
+
+  it('a clean draft’s Continue is on, with no reason line', () => {
+    expect(html).toMatch(/<button type="button"(?![^>]*disabled)[^>]*data-wizard-primary="true">Continue</)
+    expect(html).not.toContain('role="status"')
   })
 
   it('draft type is three radio cards, Snake chosen', () => {
@@ -213,6 +231,37 @@ describe('Mock draft — a phone sheet, step 1 (Format)', () => {
 
   it('draws in phone tokens only', () => {
     expect(html).not.toMatch(DESKTOP_TOKENS)
+  })
+})
+
+describe('Mock draft — a settings problem holds the step that owns it (prevent, don’t refuse)', () => {
+  const renderWith = (seed: () => MockLaunchDraft) => {
+    const draft = seed() // built from the real opening draft, before the swap
+    launchSeed.draft = () => draft
+    try {
+      return render(createElement(MockLaunchDialog, { open: true, onOpenChange: noop, onLaunched: noop, layout: 'mobile' }))
+    } finally {
+      launchSeed.draft = null
+    }
+  }
+
+  it('a Format problem (a team count off the catalog) holds Continue on Format, with the contract’s message', () => {
+    const html = renderWith(() => {
+      const d = initialMockLaunchDraft()
+      return { ...d, settings: { ...d.settings, team_count: 9 as unknown as LeagueSettings['team_count'] } }
+    })
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*data-wizard-primary="true">Continue</)
+    expect(html).toMatch(/role="status">Team count must be one of/)
+  })
+
+  it('a Roster problem doesn’t hold Format — it waits for the step whose controls fix it', () => {
+    const html = renderWith(() =>
+      patchMockSettings(initialMockLaunchDraft(), {
+        roster_settings: { ...DEFAULT_ROSTER_SETTINGS, starting_slots: [] },
+      }),
+    )
+    expect(html).toMatch(/<button type="button"(?![^>]*disabled)[^>]*data-wizard-primary="true">Continue</)
+    expect(html).not.toContain('Starting lineup must total')
   })
 })
 
@@ -326,6 +375,63 @@ describe('the create-flow attach offer in the phone skin', () => {
 
   it('draws in phone tokens only', () => {
     expect(html).not.toMatch(DESKTOP_TOKENS)
+  })
+})
+
+describe('one phone attach body — the League tab’s “Add a draft list” sheet draws it too', () => {
+  const framed = phone(
+    createElement(AttachListInline, {
+      leagueId: 'league-1',
+      leagueName: 'Sunday Funday League',
+      scoringSystemId: null,
+      attachedListIds: new Set<string>(),
+      frame: ({ body, attach }) =>
+        createElement('section', null, createElement('div', { 'data-body': '' }, body), attach ? createElement('footer', null, attach) : null),
+    }),
+  )
+  const bodyOf = (html: string) => html.match(/<div data-body="">([\s\S]*)<\/div>(?:<footer>|<\/section>)/)?.[1] ?? ''
+  const footerOf = (html: string) => html.match(/<footer>([\s\S]*)<\/footer>/)?.[1] ?? ''
+
+  it('framed, the body keeps the strip, rows and toggles, and the Attach button moves to the footer', () => {
+    expect(bodyOf(framed)).toContain('Your Big Board fits any draft.')
+    expect(bodyOf(framed)).toContain('Set as my primary board')
+    expect(bodyOf(framed)).not.toContain('>Attach list<')
+    // The wizard footer's button, off until a list is ticked — the same off
+    // state as the inline pill (grey, not faded).
+    expect(footerOf(framed)).toMatch(/<button type="button" disabled=""[^>]*bg-m-b3s text-m-t3"[^>]*data-wizard-primary="true">Attach list</)
+  })
+
+  it('framed while your lists load, there is no button to hand over yet', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(() =>
+          SettingsSkin({
+            layout: 'mobile',
+            children: createElement(AttachListInline, {
+              leagueId: 'league-1',
+              leagueName: 'Sunday Funday League',
+              scoringSystemId: null,
+              attachedListIds: new Set<string>(),
+              frame: ({ body, attach }) => createElement('section', null, body, attach ? createElement('footer', null, attach) : null),
+            }),
+          }),
+        ),
+      ),
+    )
+    expect(html).toContain('aria-label="Loading your lists"')
+    expect(html).not.toContain('<footer>')
+  })
+
+  it('the League tab sheet draws AttachListInline rather than a second copy of it', () => {
+    const src = readFileSync(path.resolve(process.cwd(), 'src/components/mobile/league/league/preseason-parts.tsx'), 'utf8')
+    expect(src).toMatch(/<SettingsSkin layout="mobile">\s*<AttachListInline/)
+    expect(src).toContain('frame={')
+    expect(src).not.toContain('Your Big Board fits any draft.')
+    expect(src).not.toContain('Set as my primary board')
+    expect(src).not.toMatch(/useAttachList\b|attachSuggestion|attachCandidates/)
   })
 })
 

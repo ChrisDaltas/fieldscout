@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
-import { MCheck, MCheckRow } from '@/components/mobile/ui/m-form'
+import { MCheck, MCheckRow, MWizardFooter } from '@/components/mobile/ui/m-form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -126,19 +126,27 @@ interface AttachListInlineProps {
    *  offer passes an empty set (a fresh league has none). */
   attachedListIds: ReadonlySet<string>
   onAttached?: () => void
+  /** Where the Attach button goes. Without it the button sits under the
+   *  toggles; with it the body and the button are handed to the caller —
+   *  the League tab's phone sheet pins the button in its footer (on the
+   *  phone it arrives as the wizard footer). `attach` is null until there
+   *  are lists to pick from (loading, error, none yet). */
+  frame?: (parts: { body: ReactNode; attach: ReactNode | null }) => ReactNode
 }
 
 /** The league-side body: suggestion one-tap + list picker + toggles.
  *  Inline-safe (no Dialog) — the create-flow offer composes it directly.
- *  On the phone (`SettingsSkin` mobile — the create-league sheet's success
- *  step) it draws as the League tab's "Add a draft list" sheet does: the
- *  blue suggestion strip, tick rows and tick toggles. */
+ *  On the phone (`SettingsSkin` mobile) it is the ONE phone attach body:
+ *  the create-league sheet's success step and the League tab's "Add a
+ *  draft list" sheet both draw it — the blue suggestion strip, tick rows
+ *  and tick toggles. */
 export function AttachListInline({
   leagueId,
   leagueName,
   scoringSystemId,
   attachedListIds,
   onAttached,
+  frame,
 }: AttachListInlineProps) {
   const { user } = useAuth()
   const skin = useSettingsSkin()
@@ -184,27 +192,31 @@ export function AttachListInline({
   }
 
   const m = skin === 'mobile'
+  /** Hand the body (and the button, once there is one) to `frame`, or
+   *  return the body as is. */
+  const place = (body: ReactNode, attach: ReactNode | null = null) =>
+    frame ? frame({ body, attach }) : body
   if (myLists.isPending) {
     if (m) {
-      return (
-        <div className="flex flex-col gap-2" aria-busy="true">
+      return place(
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading your lists">
           {Array.from({ length: 3 }).map((_, i) => (
-            <span key={i} className="block h-12 rounded-[12px] bg-m-b1" />
+            <span key={i} className="block h-12 animate-pulse rounded-[14px] bg-m-b1" />
           ))}
-        </div>
+        </div>,
       )
     }
-    return (
+    return place(
       <div className="flex flex-col gap-2">
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-[43px] w-full rounded-lg" />
         ))}
-      </div>
+      </div>,
     )
   }
   if (myLists.isError) {
     if (m) {
-      return (
+      return place(
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <p role="alert" className="text-[13px] font-medium text-m-t3">
             Your lists didn&rsquo;t load.
@@ -216,10 +228,10 @@ export function AttachListInline({
           >
             Try again
           </button>
-        </div>
+        </div>,
       )
     }
-    return (
+    return place(
       <div className="flex flex-col items-start gap-2">
         <p className="text-[11px] font-medium text-n-3" role="alert">
           Your lists didn&rsquo;t load.
@@ -227,22 +239,39 @@ export function AttachListInline({
         <Button variant="stroke" size="sm" onClick={() => void myLists.refetch()}>
           Retry
         </Button>
-      </div>
+      </div>,
     )
   }
   if (candidates.length === 0) {
-    return (
+    return place(
       <p className={m ? 'py-6 text-center text-[13px] font-medium leading-[1.4] text-m-t3' : 'py-3 text-center text-[11px] font-medium text-n-6'}>
         You don&rsquo;t have any lists yet. Build one on the Lists page and it
         will show up here.
-      </p>
+      </p>,
     )
   }
 
   const selected = candidates.find((c) => c.id === selectedId) ?? null
+  const attachLabel = attach.isPending ? 'Attaching…' : 'Attach list'
+  const attachOff = !selected || attach.isPending
+  const attachSelected = () => selected && submit(selected)
 
   if (m) {
-    return (
+    // Inline it is the pill under the toggles; handed to a sheet's footer it
+    // is the wizard footer's full-width button (the same off state).
+    const attachButton = frame ? (
+      <MWizardFooter label={attachLabel} onClick={attachSelected} disabled={attachOff} />
+    ) : (
+      <button
+        type="button"
+        disabled={attachOff}
+        onClick={attachSelected}
+        className="flex h-10 w-fit items-center rounded-pill bg-accent px-[18px] text-[14px] font-semibold text-white active:bg-accent-strong disabled:bg-m-b3s disabled:text-m-t3"
+      >
+        {attachLabel}
+      </button>
+    )
+    return place(
       <div className="flex flex-col gap-3">
         {suggestion && (
           <div className="flex items-center gap-3 rounded-[14px] bg-m-gb px-3 py-2.5">
@@ -294,19 +323,18 @@ export function AttachListInline({
           note="Feeds your draft Targets and autopick for this league (one per league)."
         />
         <MCheckRow on={shared} onChange={setShared} label="Share with the league" note="Every member can open it. Off, it stays visible only to you." />
-        <button
-          type="button"
-          disabled={!selected || attach.isPending}
-          onClick={() => selected && submit(selected)}
-          className="flex h-10 w-fit items-center rounded-pill bg-accent px-[18px] text-[14px] font-semibold text-white active:bg-accent-strong disabled:bg-m-b3s disabled:text-m-t3"
-        >
-          {attach.isPending ? 'Attaching…' : 'Attach list'}
-        </button>
-      </div>
+        {!frame && attachButton}
+      </div>,
+      attachButton,
     )
   }
 
-  return (
+  const desktopAttach = (
+    <Button variant="blue" size="md" className="w-fit" disabled={attachOff} onClick={attachSelected}>
+      {attachLabel}
+    </Button>
+  )
+  return place(
     <div className="flex flex-col gap-3">
       {suggestion && (
         // §7.4 smart suggestion: the one-tap attach (heuristic recorded in
@@ -366,16 +394,9 @@ export function AttachListInline({
         onShared={setShared}
       />
 
-      <Button
-        variant="blue"
-        size="md"
-        className="w-fit"
-        disabled={!selected || attach.isPending}
-        onClick={() => selected && submit(selected)}
-      >
-        {attach.isPending ? 'Attaching…' : 'Attach list'}
-      </Button>
-    </div>
+      {!frame && desktopAttach}
+    </div>,
+    desktopAttach,
   )
 }
 

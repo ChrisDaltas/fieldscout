@@ -21,9 +21,12 @@ import {
 import {
   initialMockLaunchDraft,
   MOCK_DEFAULT_TEAM_COUNT,
+  MOCK_LAUNCH_STEPS,
+  mockIssueStep,
   mockLaunchBlockedReason,
   mockLaunchIssues,
   mockLaunchSettings,
+  mockStepBlockedReason,
   patchMockDraftConfig,
   patchMockSettings,
   toMockLaunchInput,
@@ -253,6 +256,67 @@ describe('pre-flight validation (the contract’s own messages; the server re-ch
     draft.settings = { ...draft.settings, trade_veto_votes: 16, team_count: 8 }
     expect(mockLaunchIssues(draft)).toEqual([])
     expect(mockLaunchBlockedReason(draft)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The phone's Continue (gap list §4 item 2 review): a problem holds the step
+// that owns it — prevent, don't refuse — so Start is never dead on arrival
+// ---------------------------------------------------------------------------
+
+describe('mockStepBlockedReason — a settings problem holds its own step', () => {
+  const [FORMAT, CLOCKS, ROSTER, SCORING] = [0, 1, 2, 3]
+  const emptyLineup = () =>
+    patchMockSettings(initialMockLaunchDraft(), {
+      roster_settings: { ...DEFAULT_ROSTER_SETTINGS, starting_slots: [] },
+    })
+
+  it('the steps are the four the dialog walks, in order', () => {
+    expect(MOCK_LAUNCH_STEPS).toEqual(['Format', 'Clocks', 'Roster', 'Scoring'])
+  })
+
+  it('each field belongs to the step whose controls fix it', () => {
+    expect(mockIssueStep('team_count')).toBe(FORMAT)
+    expect(mockIssueStep('draft.auction_budget')).toBe(CLOCKS)
+    expect(mockIssueStep('roster_settings.starting_slots')).toBe(ROSTER)
+    expect(mockIssueStep('roster_settings.bench')).toBe(ROSTER)
+    expect(mockIssueStep('roster_settings')).toBe(ROSTER)
+  })
+
+  it('a clean draft never holds Continue', () => {
+    for (const step of [FORMAT, CLOCKS, ROSTER]) {
+      expect(mockStepBlockedReason(initialMockLaunchDraft(), step)).toBeNull()
+    }
+  })
+
+  it('an empty lineup lets Format and Clocks through, then holds Roster with the contract’s own message', () => {
+    const draft = emptyLineup()
+    expect(mockStepBlockedReason(draft, FORMAT)).toBeNull()
+    expect(mockStepBlockedReason(draft, CLOCKS)).toBeNull()
+    expect(mockStepBlockedReason(draft, ROSTER)).toBe(
+      'Starting lineup must total between 1 and 20 slots (currently 0).',
+    )
+    // …and it is the same line the launch gate would have shown on step 4.
+    expect(mockStepBlockedReason(draft, ROSTER)).toBe(mockLaunchBlockedReason(draft))
+  })
+
+  it('a problem from an earlier step still holds a later one (nothing slips past)', () => {
+    expect(mockStepBlockedReason(emptyLineup(), SCORING)).toBe(
+      'Starting lineup must total between 1 and 20 slots (currently 0).',
+    )
+    const shortBudget = patchMockDraftConfig(initialMockLaunchDraft(), {
+      draft_type: 'auction',
+      auction_budget: 5,
+    })
+    expect(mockStepBlockedReason(shortBudget, FORMAT)).toBeNull()
+    expect(mockStepBlockedReason(shortBudget, CLOCKS)).toMatch(/^Auction budget \(5\) can't fill/)
+    expect(mockStepBlockedReason(shortBudget, ROSTER)).toMatch(/^Auction budget \(5\) can't fill/)
+  })
+
+  it('a team count off the catalog holds Format', () => {
+    const draft = initialMockLaunchDraft()
+    draft.settings = { ...draft.settings, team_count: 9 as LeagueSettings['team_count'] }
+    expect(mockStepBlockedReason(draft, FORMAT)).toMatch(/^Team count must be one of/)
   })
 })
 

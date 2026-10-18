@@ -74,8 +74,9 @@ import {
  * `layout="mobile"` (the phone's Home, gap list §4 item 2) renders the same
  * draft, steps, create call and success step as a FieldScout Mobile bottom
  * sheet: the step bodies draw in the phone language through `SettingsSkin`,
- * Back / Continue replace the stepper, and the sheet follows the phone's
- * light or dark theme. Creating a league stays free.
+ * Back / Continue replace the stepper (Basics holds Continue until the
+ * league has a name), and the sheet follows the phone's light or dark
+ * theme. Creating a league stays free.
  */
 
 const STEPS = ['Basics', 'Draft & scoring', 'Scoring template'] as const
@@ -328,6 +329,13 @@ export function LeagueCreateModal({
     // The phone (gap list §4 item 2): the same steps in a FieldScout Mobile
     // bottom sheet — the New ranking wizard's progress track and footer
     // (lr-myrank §2.2), Back / Continue in place of the desktop stepper.
+    // Prevent, don't refuse: the phone has only Back, so Basics holds
+    // Continue until the league has a name (the Join sheet's rule) rather
+    // than letting it reach a dead Create button; the last step's check
+    // stays as a backstop.
+    const last = step === STEPS.length - 1
+    const stepBlocked = step === 0 && nameMissing ? 'Name your league to continue.' : null
+    const footerLine = stepBlocked ?? blockedLine
     return (
       <SettingsSkin layout="mobile">
         {created ? (
@@ -362,13 +370,13 @@ export function LeagueCreateModal({
             footer={
               <MWizardFooter
                 onBack={step > 0 && !submitting ? () => setStep(step - 1) : undefined}
-                label={step < STEPS.length - 1 ? 'Continue' : submitting ? 'Creating…' : 'Create league'}
-                onClick={step < STEPS.length - 1 ? () => setStep(step + 1) : handleCreate}
-                disabled={step === STEPS.length - 1 && !canCreate}
+                label={!last ? 'Continue' : submitting ? 'Creating…' : 'Create league'}
+                onClick={!last ? () => setStep(step + 1) : handleCreate}
+                disabled={last ? !canCreate : stepBlocked !== null}
               >
-                {blockedLine && (
+                {footerLine && (
                   <p className="text-center text-[12px] font-medium text-m-t3" role="status">
-                    {blockedLine}
+                    {footerLine}
                   </p>
                 )}
               </MWizardFooter>

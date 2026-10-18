@@ -54,8 +54,10 @@ import type { Draft } from '@/types/database'
 
 import {
   initialMockLaunchDraft,
+  MOCK_LAUNCH_STEPS,
   mockLaunchBlockedReason,
   mockLaunchIssues,
+  mockStepBlockedReason,
   patchMockDraftConfig,
   patchMockSettings,
   toMockLaunchInput,
@@ -106,11 +108,12 @@ import { mockSlotOptions, RANDOM_SLOT, slotFromPickerValue } from './mock-launch
  * `layout="mobile"` (the phone's Home Practice card, gap list §4 item 2) is
  * the SAME dialog — same draft, steps, controls and launch call — drawn as a
  * FieldScout Mobile bottom sheet: the shared controls take the phone
- * language through `SettingsSkin`, Back / Continue replace the stepper, and
- * the sheet follows the phone's light or dark theme.
+ * language through `SettingsSkin`, Back / Continue replace the stepper (a
+ * step with a settings problem holds Continue), and the sheet follows the
+ * phone's light or dark theme.
  */
 
-const STEPS = ['Format', 'Clocks', 'Roster', 'Scoring'] as const
+const STEPS = MOCK_LAUNCH_STEPS
 const CPU_SPEEDS: ReadonlyArray<{ value: CpuSpeed; label: string }> = [
   { value: 'realistic', label: 'Realistic' },
   { value: 'fast', label: 'Fast' },
@@ -389,8 +392,12 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched, layout = 'des
     // bottom sheet — the New ranking wizard's progress track and footer
     // (lr-myrank §2.2), Back / Continue in place of the desktop stepper.
     // The server's refusal and the reason Start is off sit above the
-    // buttons, as R509 places them on desktop.
+    // buttons, as R509 places them on desktop. Prevent, don't refuse: the
+    // phone has only Back, so a step with a settings problem holds Continue
+    // and says why there (`mockStepBlockedReason`), instead of letting it
+    // reach a dead Start button; the last step's check stays as a backstop.
     const last = step === STEPS.length - 1
+    const stepBlocked = last ? null : mockStepBlockedReason(draft, step)
     return (
       <SettingsSkin layout="mobile">
         <MobileSheet
@@ -406,9 +413,14 @@ export function MockLaunchDialog({ open, onOpenChange, onLaunched, layout = 'des
               onBack={step > 0 && !pending ? () => setStep(step - 1) : undefined}
               label={!last ? 'Continue' : pending ? 'Setting up…' : 'Start mock draft'}
               onClick={!last ? () => setStep(step + 1) : handleLaunch}
-              disabled={last && (input === null || pending)}
+              disabled={last ? input === null || pending : stepBlocked !== null}
             >
               {refusal && <InlineIssue tone="error" message={refusal} />}
+              {stepBlocked && (
+                <p className="text-center text-[12px] font-medium text-m-t3" role="status">
+                  {stepBlocked}
+                </p>
+              )}
               {last && !pending && !refusal && blocked && (
                 <p className="text-center text-[12px] font-medium text-m-t3" role="status">
                   {blocked}
