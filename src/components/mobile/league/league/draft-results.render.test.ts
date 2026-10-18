@@ -1,7 +1,8 @@
 /**
  * League Menu › Draft results on the phone (gap list §3 #15; handoff
  * m-community G3): round chips over that round's picks, your own picks'
- * team name in blue. The pure rows/rounds/address helpers, then the screen
+ * team name in blue — and By team, the desktop recap's rosters (yours first;
+ * an auction's spend). The pure rows/rounds/teams/address helpers, then the screen
  * rendered from seeded queries (`renderToStaticMarkup`; effects don't run) —
  * the same reads as the desktop recap (`useCompletedRealDraft` → `useDraft`
  * → `usePlayersByIds`).
@@ -21,13 +22,18 @@ import type { Draft } from '@/types/database'
 import {
   AUCTION_LINE,
   EMPTY_ROUND_COPY,
+  EMPTY_TEAM_COPY,
   MOCK_LINE,
   NO_RESULTS_COPY,
   draftResultRows,
+  draftResultTeams,
   draftRoundCount,
+  draftTeamSpend,
+  resultsSearch,
   roundFromParam,
-  roundSearch,
+  rowsForTeam,
   rowsInRound,
+  teamFromParam,
 } from './draft-results-ops'
 import { MobileDraftResults } from './draft-results-screen'
 
@@ -237,10 +243,55 @@ describe('the round chips and the address', () => {
   })
 
   it('writes the round into the address, keeping ?draft= — Round 1 is the bare address', () => {
-    expect(roundSearch('', 3)).toBe('?round=3')
-    expect(roundSearch('?draft=d1', 2)).toBe('?draft=d1&round=2')
-    expect(roundSearch('?draft=d1&round=2', 1)).toBe('?draft=d1')
-    expect(roundSearch('?round=4', 1)).toBe('')
+    expect(resultsSearch('', { round: 3, team: null })).toBe('?round=3')
+    expect(resultsSearch('?draft=d1', { round: 2, team: null })).toBe('?draft=d1&round=2')
+    expect(resultsSearch('?draft=d1&round=2', { round: 1, team: null })).toBe('?draft=d1')
+    expect(resultsSearch('?round=4', { round: 1, team: null })).toBe('')
+  })
+
+  it('writes the team while By team is open, and drops it for By round', () => {
+    expect(resultsSearch('?draft=d1', { round: 1, team: T2 })).toBe(`?draft=d1&team=${T2}`)
+    expect(resultsSearch('', { round: 2, team: ME })).toBe(`?round=2&team=${ME}`)
+    expect(resultsSearch(`?round=2&team=${ME}`, { round: 2, team: null })).toBe('?round=2')
+  })
+})
+
+describe('By team — the desktop recap’s rosters on the phone', () => {
+  const rows = draftResultRows(PICKS, { auction: false, teamCount: 3, myTeamId: ME })
+
+  it('orders the teams yours first, then the draft order, then any team only in the picks', () => {
+    expect(draftResultTeams([T2, ME, T3], PICKS, ME)).toEqual([ME, T2, T3])
+    expect(draftResultTeams([T2, ME, T3], PICKS, null)).toEqual([T2, ME, T3])
+    expect(draftResultTeams([T2], PICKS, null)).toEqual([T2, ME, T3])
+  })
+
+  it('splits the rows by team, in pick order, without undone picks', () => {
+    expect(rowsForTeam(rows, ME).map((r) => [r.label, r.playerId])).toEqual([
+      ['1.02', 'pl-2'],
+      ['2.02', 'pl-5'],
+    ])
+  })
+
+  it('reads ?team= when it is one of the draft’s teams, else the first chip', () => {
+    const teams = [ME, T2, T3]
+    expect(teamFromParam(T3, teams)).toBe(T3)
+    expect(teamFromParam('team-elsewhere', teams)).toBe(ME)
+    expect(teamFromParam(null, teams)).toBe(ME)
+    expect(teamFromParam(T3, [])).toBeNull()
+  })
+
+  it('an auction team’s spend: the live total and the biggest buy (ties to the earlier nomination)', () => {
+    const buys = [
+      pick(1, ME, 'pl-1', { price: 30, round: null }),
+      pick(2, ME, 'pl-x', { price: 90, round: null, is_undone: true }),
+      pick(3, ME, 'pl-3', { price: 41, round: null }),
+      pick(4, T2, 'pl-4', { price: 70, round: null }),
+      pick(5, ME, 'pl-5', { price: 41, round: null }),
+    ]
+    const spend = draftTeamSpend(buys, ME)
+    expect(spend.total).toBe(112)
+    expect(spend.biggest?.player_id).toBe('pl-3')
+    expect(draftTeamSpend(buys, T3)).toEqual({ total: 0, biggest: null })
   })
 })
 
@@ -304,12 +355,68 @@ describe('the Draft results screen', () => {
     const buys = [pick(1, T2, 'pl-1', { price: 61, round: null }), pick(2, ME, 'pl-2', { price: 45, round: null }), pick(3, T3, 'pl-3', { price: 12, round: null })]
     const html = render(finished({ draft_type: 'auction', total_rounds: null }, buys))
     expect(html).not.toContain('data-draft-rounds')
+    expect(html).toMatch(/aria-pressed="true"[^>]*>All buys</)
     expect(html).toContain(AUCTION_LINE)
     expect(rowsOf(html)).toEqual([
       ['$61', 'Jahmyr Gibbs', 'Gridiron Gurus'],
       ['$45', 'Bijan Robinson', 'Touchdown Tacos'],
       ['$12', 'Josh Allen', 'Waiver Wire Warriors'],
     ])
+  })
+
+  it('a By round / By team switch sits over the chips, By round on', () => {
+    const html = render(finished())
+    expect(html).toMatch(/aria-label="Draft results view"/)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>By round</)
+    expect(html).toMatch(/aria-pressed="false"[^>]*>By team</)
+    expect(html).not.toContain('data-draft-teams')
+  })
+
+  it('By team (?team=): team chips with yours first and in blue, then that team’s picks', () => {
+    search.value = `team=${T3}`
+    const html = render(finished())
+    expect(html).toMatch(/aria-pressed="true"[^>]*>By team</)
+    expect(html).not.toContain('data-draft-rounds')
+    const chips = [...html.matchAll(/<button[^>]*aria-pressed="(true|false)"([^>]*)><span class="truncate">([^<]+)<\/span><\/button>/g)].map((m) => [m[3], m[1], /data-mine/.test(m[0])])
+    expect(chips).toEqual([
+      ['Touchdown Tacos', 'false', true],
+      ['Gridiron Gurus', 'false', false],
+      ['Waiver Wire Warriors', 'true', false],
+    ])
+    expect(html).toMatch(/class="[^"]*bg-m-b2 text-accent[^"]*"><span class="truncate">Touchdown Tacos</)
+    // Waiver Wire Warriors' picks, without the (repeated) team name.
+    const picks = [...html.matchAll(/data-draft-pick="(\d+)"/g)].map((m) => m[1])
+    expect(picks).toEqual(['3', '4'])
+    expect(html).toContain('>Josh Allen<')
+    expect(html).toContain('>Brock Bowers<')
+    expect(html).not.toMatch(/data-draft-pick="\d+"[^>]*>(?:(?!<\/button>).)*Waiver Wire Warriors/)
+    expect(html).not.toContain('data-draft-spend')
+  })
+
+  it('By team opens on your team when the address names none of the draft’s', () => {
+    search.value = 'team=team-elsewhere'
+    const html = render(finished())
+    expect(html).toMatch(/aria-pressed="true"[^>]*><span class="truncate">Touchdown Tacos</)
+    expect([...html.matchAll(/data-draft-pick="(\d+)"/g)].map((m) => m[1])).toEqual(['2', '5'])
+  })
+
+  it('By team on a team with no picks says so', () => {
+    search.value = `team=${T3}`
+    const html = render(finished({}, PICKS.filter((p) => p.team_id !== T3)))
+    expect(html).toContain(EMPTY_TEAM_COPY)
+  })
+
+  it('an auction By team shows what the team spent and its biggest buy', () => {
+    search.value = `team=${ME}`
+    const buys = [pick(1, T2, 'pl-1', { price: 61, round: null }), pick(2, ME, 'pl-2', { price: 45, round: null }), pick(3, ME, 'pl-3', { price: 12, round: null })]
+    const html = render(finished({ draft_type: 'auction', total_rounds: null }, buys))
+    expect(html).toMatch(/aria-pressed="false"[^>]*>All buys</)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>By team</)
+    expect(html).not.toContain(AUCTION_LINE)
+    const spend = /data-draft-spend="true">(.*?)<\/p>/.exec(html)?.[1].replace(/<[^>]+>/g, '')
+    expect(spend).toBe('$57 spent · biggest buy Bijan Robinson $45')
+    expect([...html.matchAll(/data-draft-pick="(\d+)"/g)].map((m) => m[1])).toEqual(['2', '3'])
+    expect(html).toMatch(/data-draft-pick="2"[^>]*>.*?>\$45</)
   })
 
   it('no finished draft yet (or one still running): one plain note', () => {

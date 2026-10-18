@@ -1,18 +1,27 @@
 /**
  * League Menu › Draft results on the phone (handoff m-community G3; gap list
  * §3 #15): the league's finished draft, one round at a time behind round
- * chips, with your own picks' team name in blue. Pure — the screen is
- * `draft-results-screen.tsx`.
+ * chips, with your own picks' team name in blue — or By team, one team's
+ * picks at a time (the desktop recap's rosters, kept on the phone). Pure —
+ * the screen is `draft-results-screen.tsx`.
  *
  * The rows come from the desktop recap's own derivations (`draft-recap-ops`)
  * over the same `draft_picks` read, so the two layouts can never disagree:
  * undone picks never show, a snake/linear pick reads "round.slot", and an
  * AUCTION — which has no rounds (`pick_number` is the nomination order) — is
  * one list of every buy in nomination order with its price, never round
- * chips over a board it doesn't have.
+ * chips over a board it doesn't have. The By team view uses the recap's
+ * team order (yours first) and, on an auction, its per-team spend.
  */
 
-import { recapBuysInOrder, recapPicksByRound } from '@/components/draft/draft-recap-ops'
+import {
+  recapBuysInOrder,
+  recapPicksByRound,
+  recapRostersFromPicks,
+  recapTeamOrder,
+  recapTeamSpend,
+  type RecapSpend,
+} from '@/components/draft/draft-recap-ops'
 import type { DraftPickSummary } from '@/hooks/use-draft'
 
 /** One row of the results list. */
@@ -87,12 +96,49 @@ export function roundFromParam(raw: string | null | undefined, roundCount: numbe
   return Math.min(Math.max(n, 1), Math.max(1, roundCount))
 }
 
-/** The address with this round in it (Round 1 is the bare address), keeping
- *  any other query (`?draft=`). */
-export function roundSearch(search: string, round: number): string {
+/**
+ * The By team chips, in the desktop recap's order: your team (or the
+ * practice seat) first, then the draft order, then any team that only shows
+ * up in the picks — so no team's picks silently drop.
+ */
+export function draftResultTeams(
+  order: readonly string[],
+  picks: readonly DraftPickSummary[],
+  myTeamId: string | null,
+): string[] {
+  return recapTeamOrder(order, recapRostersFromPicks(picks), myTeamId)
+}
+
+/** One team's rows, in pick order. */
+export function rowsForTeam(rows: readonly DraftResultRow[], teamId: string): DraftResultRow[] {
+  return rows.filter((row) => row.teamId === teamId)
+}
+
+/** An auction team's money: what it spent and its biggest buy (the desktop
+ *  recap's `recapTeamSpend` over the same picks). */
+export function draftTeamSpend(picks: readonly DraftPickSummary[], teamId: string): RecapSpend {
+  return recapTeamSpend(picks.filter((pick) => pick.team_id === teamId))
+}
+
+/** The team the address asks for (`?team=`) when it's one of this draft's;
+ *  otherwise the first chip (yours). Null only for a draft with no teams. */
+export function teamFromParam(raw: string | null | undefined, teams: readonly string[]): string | null {
+  if (raw && teams.includes(raw)) return raw
+  return teams[0] ?? null
+}
+
+/**
+ * The address for what's on screen, keeping any other query (`?draft=`):
+ * `?team=` while By team is open (dropped for By round), `?round=` past
+ * Round 1 (Round 1 is the bare address). The round rides along in By team
+ * so switching back lands where you were.
+ */
+export function resultsSearch(search: string, at: { round: number; team: string | null }): string {
   const params = new URLSearchParams(search)
-  if (round <= 1) params.delete('round')
-  else params.set('round', String(round))
+  if (at.round <= 1) params.delete('round')
+  else params.set('round', String(at.round))
+  if (at.team) params.set('team', at.team)
+  else params.delete('team')
   const next = params.toString()
   return next ? `?${next}` : ''
 }
@@ -103,6 +149,9 @@ export const EMPTY_ROUND_COPY = 'No picks in this round.'
 
 /** Said when the league has no finished draft to show yet. */
 export const NO_RESULTS_COPY = 'Results show up here once your draft is done.'
+
+/** Said when a team made no picks on the final board. */
+export const EMPTY_TEAM_COPY = 'No picks for this team.'
 
 /** The line over an auction's list (it has no rounds to chip). */
 export const AUCTION_LINE = 'Every buy, in the order it was nominated.'

@@ -10,6 +10,7 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
+import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useAuth } from '@/hooks/use-auth'
 import { useCompletedRealDraft, useDraft, type DraftPickSummary } from '@/hooks/use-draft'
@@ -22,13 +23,18 @@ import type { Draft } from '@/types/database'
 import {
   AUCTION_LINE,
   EMPTY_ROUND_COPY,
+  EMPTY_TEAM_COPY,
   MOCK_LINE,
   NO_RESULTS_COPY,
   draftResultRows,
+  draftResultTeams,
   draftRoundCount,
+  draftTeamSpend,
+  resultsSearch,
   roundFromParam,
-  roundSearch,
+  rowsForTeam,
   rowsInRound,
+  teamFromParam,
   type DraftResultRow,
 } from './draft-results-ops'
 import { CenteredNote } from './league-bits'
@@ -40,13 +46,19 @@ import { CenteredNote } from './league-bits'
  * headshot, name over position · team, and the team that made it, in blue
  * when it's yours. Tapping a pick opens the player's card.
  *
+ * A By round / By team switch sits over the chips (the design draws only
+ * rounds; By team keeps the desktop recap's rosters on the phone, the way
+ * ESPN and Yahoo offer both): team chips, yours first and in blue, then that
+ * team's picks — and on an auction, what it spent and its biggest buy.
+ *
  * Same reads as the desktop recap (`DraftRecap`): the league's newest
  * completed real draft, or `?draft=<id>` (a practice draft a league-mate
  * opened from a link), and its `draft_picks`. The chips are the draft's own
- * rounds; the round you're on rides `?round=` (no navigation) so a reload or
- * Back reopens it. An auction has no rounds — it lists every buy in
- * nomination order, priced. Back goes to where you came from (the Menu's
- * screen), else the League tab.
+ * rounds; the round (`?round=`) and the team (`?team=`, By team only) ride
+ * the address (no navigation) so a reload or Back reopens them. An auction
+ * has no rounds — its first view lists every buy in nomination order,
+ * priced. Back goes to where you came from (the Menu's screen), else the
+ * League tab.
  */
 export function MobileDraftResults({ leagueId, draftIdParam }: { leagueId: string; draftIdParam?: string }) {
   const { user } = useAuth()
@@ -124,6 +136,8 @@ function DraftResultsBar({ leagueId }: { leagueId: string }) {
   )
 }
 
+type ResultsView = 'round' | 'team'
+
 export function DraftResultsBody({
   leagueId,
   detail,
@@ -142,73 +156,115 @@ export function DraftResultsBody({
   // Yours: your own team — or, on a practice draft, the seat that was played.
   const myTeamId = variant.kind === 'mock' ? variant.humanTeamId : variant.myTeamId
   const auction = draft.draft_type === 'auction'
-  const teamCount = parseDraftOrder(draft.draft_order).length
+  const order = useMemo(() => parseDraftOrder(draft.draft_order), [draft.draft_order])
+  const teamCount = order.length
   const rows = useMemo(() => draftResultRows(picks, { auction, teamCount, myTeamId }), [picks, auction, teamCount, myTeamId])
   const teamNameById = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
   const roundCount = draftRoundCount(draft.total_rounds, rows)
+  const teams = useMemo(() => draftResultTeams(order, picks, myTeamId), [order, picks, myTeamId])
 
   const searchParams = useSearchParams()
+  const [view, setView] = useState<ResultsView>(() => (searchParams?.get('team') && teams.length > 0 ? 'team' : 'round'))
   const [round, setRound] = useState(() => roundFromParam(searchParams?.get('round'), roundCount))
+  const [team, setTeam] = useState(() => teamFromParam(searchParams?.get('team'), teams))
   const shown = Math.min(round, roundCount)
-  const choose = (next: number) => {
+  const shownTeam = team && teams.includes(team) ? team : (teams[0] ?? null)
+  // The address follows the segment and the chips without a navigation
+  // (instant, scroll kept), so a reload or Back reopens what you had open.
+  const remember = (at: { view: ResultsView; round: number; team: string | null }) => {
+    const search = resultsSearch(window.location.search, { round: at.round, team: at.view === 'team' ? at.team : null })
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search}`)
+  }
+  const chooseView = (next: ResultsView) => {
+    setView(next)
+    remember({ view: next, round: shown, team: shownTeam })
+  }
+  const chooseRound = (next: number) => {
     setRound(next)
-    // The address follows the chip without a navigation (instant, scroll
-    // kept), so a reload or Back reopens this round.
-    const url = `${window.location.pathname}${roundSearch(window.location.search, next)}`
-    window.history.replaceState(window.history.state, '', url)
+    remember({ view, round: next, team: shownTeam })
+  }
+  const chooseTeam = (next: string) => {
+    setTeam(next)
+    remember({ view, round: shown, team: next })
   }
 
-  // Opened at a later round: bring its chip into view in the scroller.
+  // Opened at a later round or team: bring its chip into view in the scroller.
   const chips = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const row = chips.current
     const on = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
     if (row && on && on.offsetLeft + on.offsetWidth > row.clientWidth) row.scrollLeft = on.offsetLeft - 16
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on open and on a view switch only
+  }, [view])
 
   const playerIds = useMemo(() => rows.map((r) => r.playerId), [rows])
   const players = usePlayersByIds(playerIds)
   const openPlayer = usePlayerModalStore((s) => s.openPlayerView)
-  const list = auction ? rows : rowsInRound(rows, shown)
+  const byTeam = view === 'team' && shownTeam !== null
+  const list = byTeam ? rowsForTeam(rows, shownTeam) : auction ? rows : rowsInRound(rows, shown)
+  const spend = byTeam && auction ? draftTeamSpend(picks, shownTeam) : null
+  const biggest = spend?.biggest ? players.playerById.get(spend.biggest.player_id) : undefined
 
   return (
     <div className="pb-8" data-draft-results>
-      {auction ? (
-        <p className="px-4 pb-2 pt-3 text-[12px] font-medium text-m-t3">{AUCTION_LINE}</p>
+      <div className="px-4 pt-3">
+        <MSegmented
+          options={auction ? AUCTION_VIEWS : ROUND_VIEWS}
+          value={view}
+          onChange={chooseView}
+          label="Draft results view"
+          className="gap-0 rounded-pill p-[3px]"
+          itemClassName="h-[30px] rounded-pill text-[13px] font-semibold text-m-t1 transition-none"
+          shadow="m-seg-3"
+        />
+      </div>
+      {byTeam ? (
+        <div ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Teams" data-draft-teams>
+          {teams.map((id) => (
+            <ResultsChip key={id} on={id === shownTeam} mine={id === myTeamId} onClick={() => chooseTeam(id)} className="max-w-[180px]">
+              <span className="truncate">{teamNameById.get(id) ?? 'Team'}</span>
+            </ResultsChip>
+          ))}
+        </div>
+      ) : auction ? (
+        <p className="px-4 pb-2 pt-2.5 text-[12px] font-medium text-m-t3">{AUCTION_LINE}</p>
       ) : (
-        <div ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-3 scrollbar-none" role="group" aria-label="Rounds" data-draft-rounds>
+        <div ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Rounds" data-draft-rounds>
           {Array.from({ length: roundCount }, (_, i) => i + 1).map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => choose(r)}
-              aria-pressed={r === shown}
-              className={cn(
-                'flex h-8 flex-none items-center whitespace-nowrap rounded-pill px-3.5 text-[12px] font-semibold',
-                r === shown ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1',
-              )}
-            >
+            <ResultsChip key={r} on={r === shown} onClick={() => chooseRound(r)}>
               Round {r}
-            </button>
+            </ResultsChip>
           ))}
         </div>
       )}
       {draft.is_mock && <p className="px-4 pb-2 text-[12px] font-medium text-m-t3">{MOCK_LINE}</p>}
+      {spend && (
+        <p className="truncate px-4 pb-2 text-[12px] font-medium text-m-t3" data-draft-spend>
+          <span className="font-semibold tabular-nums text-m-t1">${spend.total}</span> spent
+          {spend.biggest && (
+            <>
+              {' · biggest buy '}
+              <span className="font-semibold text-m-t1">{biggest?.full_name ?? 'Player'}</span>{' '}
+              <span className="font-semibold tabular-nums text-m-t1">${spend.biggest.price ?? 0}</span>
+            </>
+          )}
+        </p>
+      )}
       <div className="px-4">
         {playerIds.length > 0 && players.isPending ? (
           <RowsSkeleton />
         ) : players.isError ? (
           <CenteredNote role="alert" message="Couldn’t load the players." action="Try again" onAction={() => void players.refetch()} />
         ) : list.length === 0 ? (
-          <CenteredNote message={EMPTY_ROUND_COPY} />
+          <CenteredNote message={byTeam ? EMPTY_TEAM_COPY : EMPTY_ROUND_COPY} />
         ) : (
           list.map((row) => (
             <PickRow
               key={row.pickNumber}
               row={row}
               player={players.playerById.get(row.playerId)}
-              owner={teamNameById.get(row.teamId) ?? 'Team'}
+              // By team, every row is that team's — the name would only repeat.
+              owner={byTeam ? undefined : (teamNameById.get(row.teamId) ?? 'Team')}
               onOpen={() => openPlayer(row.playerId, leagueId)}
             />
           ))
@@ -218,7 +274,49 @@ export function DraftResultsBody({
   )
 }
 
-function PickRow({ row, player, owner, onOpen }: { row: DraftResultRow; player: PlayerIdentity | undefined; owner: string; onOpen: () => void }) {
+const ROUND_VIEWS: ReadonlyArray<{ value: ResultsView; label: string }> = [
+  { value: 'round', label: 'By round' },
+  { value: 'team', label: 'By team' },
+]
+// An auction has no rounds: its first view is every buy, in order.
+const AUCTION_VIEWS: ReadonlyArray<{ value: ResultsView; label: string }> = [
+  { value: 'round', label: 'All buys' },
+  { value: 'team', label: 'By team' },
+]
+
+/** A G3 chip — white on ink when on, t1 on b2 when off; your own team's
+ *  chip reads blue when it's off, the way your picks do. */
+function ResultsChip({
+  on,
+  mine = false,
+  onClick,
+  className,
+  children,
+}: {
+  on: boolean
+  mine?: boolean
+  onClick: () => void
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      data-mine={mine || undefined}
+      className={cn(
+        'flex h-8 flex-none items-center whitespace-nowrap rounded-pill px-3.5 text-[12px] font-semibold',
+        on ? 'bg-m-ink text-white' : mine ? 'bg-m-b2 text-accent' : 'bg-m-b2 text-m-t1',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PickRow({ row, player, owner, onOpen }: { row: DraftResultRow; player: PlayerIdentity | undefined; owner?: string; onOpen: () => void }) {
   const name = player?.full_name ?? 'Player'
   const pos = player?.position ?? ''
   return (
@@ -234,9 +332,11 @@ function PickRow({ row, player, owner, onOpen }: { row: DraftResultRow; player: 
           {row.auto && <span className="text-m-t3"> · Auto</span>}
         </span>
       </span>
-      <span className={cn('max-w-[120px] flex-none truncate whitespace-nowrap text-[12px]', row.mine ? 'font-semibold text-accent' : 'font-medium text-m-t3')}>
-        {owner}
-      </span>
+      {owner !== undefined && (
+        <span className={cn('max-w-[120px] flex-none truncate whitespace-nowrap text-[12px]', row.mine ? 'font-semibold text-accent' : 'font-medium text-m-t3')}>
+          {owner}
+        </span>
+      )}
     </button>
   )
 }
