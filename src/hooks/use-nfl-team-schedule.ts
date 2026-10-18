@@ -10,8 +10,9 @@ import { createBrowserClient } from '@/lib/supabase/client'
 /**
  * One NFL team's regular-season games (`nfl_games`, world-readable — 001)
  * for the full player page's Schedule tab and its Scout AI matchup read,
- * with where each game stands (the provider's stored score, quarter and
- * clock — the phone profile's this-week card, gap list §3 #19).
+ * with where each game stands (the stored score, quarter and clock — the
+ * phone profile's this-week card, gap list §3 #19; the sync does not write
+ * them yet, so `gameState` reads the 0/0 default as "not on record").
  * ≤ 18 rows. An empty season is a real state (nothing on file yet — the tab
  * says so and the Scout AI band is omitted); a transport error THROWS.
  *

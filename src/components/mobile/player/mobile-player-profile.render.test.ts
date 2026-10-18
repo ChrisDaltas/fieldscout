@@ -199,6 +199,21 @@ describe('mobile player profile — leagues gated off', () => {
     expect(final).not.toMatch(/>(Live|Final)<\/span>/)
   })
 
+  it("this week's card on the row the sync writes (status only, scores at the 0 default): plain Live / Final", () => {
+    const synced = { week: 6, home_team: 'ATL', away_team: 'PHI', kickoff_at: '2026-10-18T17:00:00Z', quarter: null, game_clock: null, home_score: 0, away_score: 0 }
+    const qc = seeded()
+    qc.setQueryData(['nfl-team-schedule', 2026, 'ATL'], [games[0], { ...synced, status: 'live' }])
+    const live = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), qc)
+    expect(live).toMatch(/data-game-week="6" data-current="true"[\s\S]*?>Game<\/span><span class="whitespace-nowrap[^"]*">Live<\/span>/)
+    expect(live).not.toContain('0-0')
+
+    qc.setQueryData(['nfl-team-schedule', 2026, 'ATL'], [games[0], { ...synced, status: 'final' }])
+    qc.setQueryData(['player-core-stats', 'p1', 'espn_standard'], { ...core, week: 6 })
+    const final = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), qc)
+    expect(final).toMatch(/data-game-week="6" data-current="true"[\s\S]*?>Game<\/span><span class="whitespace-nowrap[^"]*">Final<\/span>/)
+    expect(final).not.toContain('0-0')
+  })
+
   it('game log: season chips and the grouped table', () => {
     const qc = seeded()
     const out = html(

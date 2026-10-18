@@ -241,9 +241,10 @@ export function currentWeekOf(games: readonly TeamGame[], calendarWeek: number |
  * The current week before its points are known (P1h, "no points") shows
  * his projection and where his game stands — its kickoff, "Q4 2:00 · 31-7"
  * while it is on, "Final W 31-20" once it is over (his team's score first;
- * gap list §3 #19) — with the box line once he has one. The design's
- * "Points so far" (live partial points) has no source: the core-stats read
- * scores completed weeks only.
+ * gap list §3 #19) — with the box line once he has one. Until the sync
+ * stores a game's clock and score (gap list §2) those read plain "Live" and
+ * "Final" (`gameState`). The design's "Points so far" (live partial points)
+ * has no source: the core-stats read scores completed weeks only.
  */
 export function gameCards(args: {
   /** His NFL team — whose score a live or final game puts first. */
@@ -284,7 +285,8 @@ export function gameCards(args: {
     }
     const kickoff = g && g.status === 'scheduled' ? shortKickoff(g.kickoff_at) : null
     // Live or over: where it stands, from the stored row ("Live" / "Final"
-    // when the clock or score is not on record).
+    // when the clock or score is not on record — the stored 0/0 default is
+    // not a score).
     const state = g && (live || final) ? (args.team ? gameState(args.team, g, () => '') : live ? 'Live' : 'Final') : null
     return {
       week: r.week, bye: false, pill: current ? 'current' : 'upcoming', current, opp, oprk, tone: oprk ? r.tone : null,

@@ -99,8 +99,9 @@ export interface TeamGame {
   away_team: string
   kickoff_at: string
   status: string | null
-  /** Where a game stands — the provider's stored score, quarter and clock
-   *  (the phone profile's this-week card, gap list §3 #19). */
+  /** Where a game stands — the stored score, quarter and clock (the phone
+   *  profile's this-week card, gap list §3 #19). Not written by the sync
+   *  yet: the scores hold 001's 0 default (see `gameState`). */
   home_score?: number | null
   away_score?: number | null
   quarter?: number | null

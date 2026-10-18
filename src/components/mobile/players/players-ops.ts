@@ -500,8 +500,8 @@ export function weekPointsCell(
 // ---------------------------------------------------------------------------
 
 /** A stored `nfl_games` row. The state columns are optional so a read that
- *  selects only the schedule (`useNflTeamSchedule` on desktop) still fits:
- *  a missing score or clock reads as unknown, never as 0. */
+ *  selects only the schedule still fits: a missing score or clock reads as
+ *  unknown, never as 0. */
 export interface GameLike {
   home_team: string
   away_team: string
@@ -523,9 +523,14 @@ export function isLiveStatus(status: string | null | undefined): boolean {
  * Where his team's game stands, without the opponent (spec §5 `game`
  * formats; the player profile's this-week card, gap list §3 #19): "Sun 5:20
  * PM" before kickoff, "Q4 2:19 · 18-28" live (his team's score first, OT
- * from the fifth quarter), "Final W 31-20" after — "Final" alone when the
- * score is not on record. Read from the stored row (the provider's status,
- * quarter, clock and score), never a wall clock.
+ * from the fifth quarter), "Final W 31-20" after. Read from the stored row
+ * (the provider's status, quarter, clock and score), never a wall clock.
+ *
+ * The sync stores only a game's status today (`toGameRow`, ingest-week.ts):
+ * the score columns keep 001's 0/0 default and the quarter and clock stay
+ * null. So a score counts only beside a clock — plain "Live" otherwise —
+ * and a final 0-0 is the default, not a result: plain "Final" (gap list §2,
+ * "A live game's clock and score").
  */
 export function gameState(team: string, g: GameLike, kickoff: (iso: string) => string): string {
   const home = g.home_team === team
@@ -533,12 +538,13 @@ export function gameState(team: string, g: GameLike, kickoff: (iso: string) => s
   const theirs = (home ? g.away_score : g.home_score) ?? null
   const score = mine !== null && theirs !== null ? `${mine}-${theirs}` : null
   if (isLiveStatus(g.status)) {
-    const quarter = g.quarter == null ? null : g.quarter >= 5 ? 'OT' : `Q${g.quarter}`
-    const clock = [quarter, g.game_clock].filter(Boolean).join(' ') || 'Live'
+    const quarter = g.quarter == null || g.quarter < 1 ? null : g.quarter >= 5 ? 'OT' : `Q${g.quarter}`
+    const clock = [quarter, g.game_clock].filter(Boolean).join(' ')
+    if (!clock) return 'Live'
     return score ? `${clock} · ${score}` : clock
   }
   if (g.status === 'final') {
-    if (mine === null || theirs === null) return 'Final'
+    if (mine === null || theirs === null || (mine === 0 && theirs === 0)) return 'Final'
     return `Final ${mine > theirs ? 'W' : mine < theirs ? 'L' : 'T'} ${score}`
   }
   return kickoff(g.kickoff_at)

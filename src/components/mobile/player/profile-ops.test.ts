@@ -281,6 +281,18 @@ describe('games and projections cards', () => {
     expect(card(game(5, 'NO', 'ATL', 'scheduled'), 5).sub?.label).toBe('Kickoff')
   })
 
+  it("this week's card on the row the sync writes: plain Live / Final, never the 0-0 default", () => {
+    const sched = scheduleRows('ATL', 'RB', [game(4, 'LV', 'ATL', 'final'), game(5, 'NO', 'ATL', 'live'), game(6, 'ATL', 'PHI', 'scheduled')], splits, 10)
+    const card = (g: TeamGame) =>
+      gameCards({ team: 'ATL', schedule: sched, games: [g], weekly: [{ week: 5, points: null, proj: 16.03 }], lines: [], position: 'RB', currentWeek: 5 }).find(
+        (x) => x.week === 5,
+      )!
+    // Status only; home_score/away_score at 001's 0 default; no quarter or clock.
+    const synced = { quarter: null, game_clock: null, home_score: 0, away_score: 0 }
+    expect(card(game(5, 'NO', 'ATL', 'live', undefined, synced))).toMatchObject({ pill: 'current', sub: { label: 'Game', value: 'Live' } })
+    expect(card(game(5, 'NO', 'ATL', 'final', undefined, synced))).toMatchObject({ pill: 'current', sub: { label: 'Game', value: 'Final' } })
+  })
+
   it('opens with the week before the current one at the gutter', () => {
     expect(initialCardIndex(cards)).toBe(cards.findIndex((c) => c.week === 5))
     expect(initialCardIndex([])).toBe(0)
