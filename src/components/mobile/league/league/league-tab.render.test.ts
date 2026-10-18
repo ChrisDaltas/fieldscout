@@ -432,7 +432,8 @@ describe('League › Matchups — second-opponent games', () => {
   it('not one of the Match tab’s matchups: the card is no matchup link — each side opens its team', () => {
     expect(html).not.toContain('/matchup/sA')
     expect(html).not.toContain('/matchup/sB')
-    expect(group).toMatch(/<div class="[^"]*rounded-\[16px\] bg-m-b1[^"]*" data-matchup="sB">/)
+    expect(group).toMatch(/<div class="[^"]*rounded-\[16px\][^"]*" data-matchup="sB" data-mine="true">/)
+    expect(group).toMatch(/<div class="[^"]*rounded-\[16px\][^"]*" data-matchup="sA">/)
     const doors = [...group.matchAll(/<a ([^>]*)>/g)].map((m) => m[1]).filter((a) => a.includes('data-team-door="true"')).map((a) => a.match(/href="([^"]+)"/)?.[1])
     expect(doors).toEqual([
       `/app/leagues/league-1/team/${ME}`,
@@ -895,6 +896,113 @@ describe('Before the draft — the app’s pieces in the mobile language', () =>
   })
 })
 
+// Gap list §4 item 11: your own team is a resting state — a blue-tint
+// FILL (the desktop's accent-soft), never a shadow.
+describe('Your own standings row and matchup card are tinted (gap list §4 item 11)', () => {
+  /** The class list of the element carrying `attr="id"`. */
+  const classOf = (html: string, attr: string, id: string) => {
+    const open = html.match(new RegExp(`<[a-z]+ [^>]*${attr}="${id}"[^>]*>`))?.[0] ?? ''
+    return (open.match(/class="([^"]*)"/)?.[1] ?? '').split(' ')
+  }
+  const noShadow = (cls: string[]) => expect(cls.filter((c) => /shadow|ring-/.test(c))).toEqual([])
+
+  it('Matchups: your card on the blue tint, every other card on b1 — no shadow, no ring', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }))
+    const mine = classOf(html, 'data-matchup', 'mB')
+    expect(mine).toEqual(expect.arrayContaining(['bg-m-gb', 'rounded-[16px]']))
+    expect(mine).not.toContain('bg-m-b1')
+    noShadow(mine)
+    expect(html).toMatch(/data-matchup="mB" data-mine="true"/)
+    const theirs = classOf(html, 'data-matchup', 'mA')
+    expect(theirs).toContain('bg-m-b1')
+    expect(theirs).not.toContain('bg-m-gb')
+    expect(html).not.toMatch(/data-matchup="mA" data-mine/)
+  })
+
+  it('Matchups: you as the home team are tinted too', () => {
+    const home: WeekMatchups = {
+      ...WEEK,
+      matchups: WEEK.matchups.map((m) => (m.id === 'mB' ? { ...m, home_team_id: ME, away_team_id: OPP } : m)),
+    }
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }), {}, (qc) =>
+      qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 2), home),
+    )
+    expect(classOf(html, 'data-matchup', 'mB')).toContain('bg-m-gb')
+    expect(classOf(html, 'data-matchup', 'mA')).not.toContain('bg-m-gb')
+  })
+
+  it('Second opponents: your game there is tinted the same', () => {
+    const second: WeekMatchups = {
+      ...WEEK,
+      matchups: [
+        ...WEEK.matchups,
+        { id: 'sA', season: 2099, week: 2, round_type: 'secondary', status: 'live', home_team_id: OPP, away_team_id: T3, home_score: 16.4, away_score: null, result: null, is_overridden: false, updated_at: null },
+        { id: 'sB', season: 2099, week: 2, round_type: 'secondary', status: 'live', home_team_id: T4, away_team_id: ME, home_score: 12.25, away_score: 39.7, result: null, is_overridden: false, updated_at: null },
+      ],
+    }
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }), { second_opponent: true }, (qc) =>
+      qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 2), second),
+    )
+    const mine = classOf(html, 'data-matchup', 'sB')
+    expect(mine).toContain('bg-m-gb')
+    noShadow(mine)
+    expect(classOf(html, 'data-matchup', 'sA')).toContain('bg-m-b1')
+  })
+
+  it('a total-points week: your leaderboard row carries the same tint', () => {
+    const points: WeekMatchups = { ...WEEK, schedule_mode: 'total_points', matchups: [] }
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }), {}, (qc) =>
+      qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 2), points),
+    )
+    const mine = classOf(html, 'data-leaderboard-row', ME)
+    expect(mine).toContain('bg-m-gb')
+    noShadow(mine)
+    for (const team of [OPP, T3, T4]) expect(classOf(html, 'data-leaderboard-row', team)).not.toContain('bg-m-gb')
+  })
+
+  it('a viewer with no team in the league sees no tint anywhere', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }), {}, undefined, {
+      members: detail().members.filter((m) => m.team_id !== ME),
+    })
+    expect(html).not.toContain('bg-m-gb')
+    expect(html).not.toContain('data-mine')
+  })
+
+  it('Standings: your row on the blue tint, rounded, its hairline hidden — the others keep theirs', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }))
+    const mine = classOf(html, 'data-standings-row', ME)
+    expect(mine).toEqual(expect.arrayContaining(['bg-m-gb', 'rounded-[12px]', 'border-b', 'border-transparent']))
+    expect(mine).not.toContain('border-m-b2')
+    noShadow(mine)
+    expect(html).toMatch(new RegExp(`data-standings-row="${ME}" data-mine="true"`))
+    for (const team of [OPP, T4, T3]) {
+      const cls = classOf(html, 'data-standings-row', team)
+      expect(cls).not.toContain('bg-m-gb')
+      expect(html).not.toMatch(new RegExp(`data-standings-row="${team}" data-mine`))
+    }
+    expect(classOf(html, 'data-standings-row', T3)).toEqual(expect.arrayContaining(['border-b', 'border-m-b2', 'px-1']))
+  })
+
+  it('Standings: the tint bleeds 4px and pads 4px more, so its columns line up with the header and the other rows', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }))
+    const mine = classOf(html, 'data-standings-row', ME)
+    expect(mine).toEqual(expect.arrayContaining(['-mx-1', 'px-2']))
+    expect(mine).not.toContain('px-1')
+    expect(classOf(html, 'data-standings-row', OPP)).toContain('px-1')
+    expect(html).toContain('grid-cols-[30px_minmax(0,1fr)_64px_50px]')
+  })
+
+  it('Standings: your row as the last playoff seed keeps the 2px blue cutoff, the tint squared off onto it', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }), { playoff_teams: 4 })
+    const mine = classOf(html, 'data-standings-row', ME)
+    expect(mine).toEqual(expect.arrayContaining(['bg-m-gb', 'border-b-2', 'border-accent', 'rounded-t-[12px]']))
+    expect(mine).not.toContain('rounded-[12px]')
+    expect(mine).not.toContain('border-transparent')
+    const rows = html.match(/<li[^>]*data-standings-row[^>]*>/g) ?? []
+    expect(rows.filter((r) => r.includes('border-b-2')).length).toBe(1)
+  })
+})
+
 describe("Who's online — a team's avatar lights up with its manager (gap list §3 #25)", () => {
   /** The slice of the page from one marker to the next of the same kind. */
   const block = (html: string, attr: string, id: string) => {
@@ -927,7 +1035,9 @@ describe("Who's online — a team's avatar lights up with its manager (gap list 
     const html = online(() => render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' })))
     const mine = block(html, 'data-matchup', 'mB')
     expect(mine.match(/data-online-dot/g)).toHaveLength(1)
-    expect(mine).toMatch(/class="[^"]*\bring-m-b1\b[^"]*" data-online-dot/)
+    // Your own card is tinted (gap list §4 item 11), so the ring is the tint.
+    expect(mine).toMatch(/class="[^"]*\bring-m-gb\b[^"]*" data-online-dot/)
+    expect(mine).not.toContain('ring-m-b1')
     // Gridiron Gurus (OPP) is the right side of your card; the dot follows it.
     expect(mine.indexOf('data-online-dot')).toBeGreaterThan(mine.indexOf('Touchdown Tacos'))
     expect(block(html, 'data-matchup', 'mA')).not.toContain('data-online-dot')
