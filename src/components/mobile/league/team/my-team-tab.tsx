@@ -65,6 +65,10 @@ import { useRowStats } from './use-row-stats'
  * starters set N/N, injured and bye starters named (the desktop check's
  * rules), and the projected score against this week's opponent — stored
  * projections summed by the Match card's rule, display only.
+ *
+ * A failed standings read puts "Couldn’t load the standings." with Try
+ * again in the card's record line (gap list §3 #14) — a failed read never
+ * reads as "No games played yet".
  */
 export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; teamId: string; detail: LeagueDetail }) {
   const team = detail.teams.find((t) => t.id === teamId)!
@@ -144,6 +148,10 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
     : null
   const anyProj = saved.starters.some((r) => r.player && stats.proj(r.player.player_id) !== null)
   const summary = standings.data ? summaryLine(standings.data.standings, teamId) : null
+  // A failed standings read with nothing cached says so, with Try again —
+  // never "No games played yet" (gap list §3 #14). A failed refetch over a
+  // table already on screen keeps showing that table.
+  const standingsFailed = standings.isError && !standings.data
   const seat = rosterTeam ? waiverSeatCopy(detail.settings, rosterTeam, true) : null
 
   const sortedWeeks = useMemo(() => [...new Set(weeks.map((w) => w.week))].sort((a, b) => a - b), [weeks])
@@ -181,9 +189,18 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
             <TeamAvatar teamId={teamId} name={team.name} teamIds={order} myTeamId={teamId} size={44} fontSize={15} />
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[17px] font-semibold tracking-[-0.01em]">{team.name}</span>
-              <span className="truncate text-[12px] font-medium text-m-t3 tabular-nums">
-                {summary ?? (standings.isPending ? ' ' : inSeason ? 'No games played yet' : 'Season hasn’t started')}
-              </span>
+              {standingsFailed ? (
+                <span role="alert" className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-m-t3" data-standings-problem>
+                  <span className="truncate">Couldn’t load the standings.</span>
+                  <button type="button" onClick={() => void standings.refetch()} className="-my-1.5 flex-none py-1.5 font-semibold text-accent">
+                    Try again
+                  </button>
+                </span>
+              ) : (
+                <span className="truncate text-[12px] font-medium text-m-t3 tabular-nums">
+                  {summary ?? (standings.isPending ? ' ' : inSeason ? 'No games played yet' : 'Season hasn’t started')}
+                </span>
+              )}
               {seat && <span className="truncate text-[11px] font-medium text-m-t3">{seat}</span>}
             </div>
             <div className="flex flex-none flex-col items-end">
