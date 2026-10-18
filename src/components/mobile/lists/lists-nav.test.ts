@@ -15,7 +15,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => search,
 }))
 
-import { editorHref, useListsNav } from './lists-nav'
+import { editorHref, returnToOf, savedToast, updateAction, useListsNav } from './lists-nav'
 
 type Nav = ReturnType<typeof useListsNav>
 
@@ -139,5 +139,73 @@ describe('New list’s Next: its editor is step 2 of 2 (gap list §3 #7)', () =>
   it('the marker survives the editor being re-rooted on the List view', () => {
     expect(editorHref('l1', { add: true, created: true, from: 'view' })).toBe('/app/lists?list=l1&edit=1&add=1&new=1&from=view')
     expect(editorHref('l1')).toBe('/app/lists?list=l1&edit=1')
+  })
+})
+
+describe('a list started from Community returns to Community (gap list §3 #8)', () => {
+  /** `entries` app screens behind this one; `go` is history.go. */
+  function behindBy(entries: number) {
+    const go = vi.fn()
+    vi.stubGlobal('window', { navigation: { currentEntry: { index: entries } }, history: { go, length: entries + 1 } })
+    return go
+  }
+
+  it('New list from Community: X goes back there, as every Back does', () => {
+    behind(true)
+    navOn('from=community').closeNew()
+    expect(router.back).toHaveBeenCalledTimes(1)
+  })
+
+  it('its Next hands the marker on to the editor, step 2 of 2, with no grid marker', () => {
+    behind(true)
+    navOn('from=community').createdList('l1')
+    expect(router.replace).toHaveBeenCalledWith('/app/lists?list=l1&edit=1&add=1&new=1&to=community')
+  })
+
+  it('the marker survives the editor being re-rooted on its List view', () => {
+    expect(editorHref('l1', { add: true, created: true, from: 'view', returnTo: 'community' })).toBe(
+      '/app/lists?list=l1&edit=1&add=1&new=1&from=view&to=community',
+    )
+    expect(returnToOf('community')).toBe('community')
+    expect(returnToOf(null)).toBeUndefined()
+    expect(returnToOf('profile')).toBeUndefined()
+  })
+
+  it('New list from Profile or the grid carries no marker', () => {
+    behind(true)
+    navOn('from=back').createdList('l1')
+    navOn('from=grid').createdList('l2')
+    expect(router.replace).toHaveBeenNthCalledWith(1, '/app/lists?list=l1&edit=1&add=1&new=1')
+    expect(router.replace).toHaveBeenNthCalledWith(2, '/app/lists?list=l2&edit=1&add=1&new=1&from=grid')
+  })
+
+  it('saved: two entries back — past the List view that replaced New list — to Community', () => {
+    const go = behindBy(2)
+    navOn('list=l1&edit=1&new=1&from=view&to=community').returnToCommunity()
+    expect(go).toHaveBeenCalledWith(-2)
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(router.back).not.toHaveBeenCalled()
+  })
+
+  it('saved with only its List view behind (a fresh tab): Community, replacing the editor', () => {
+    const go = behindBy(1)
+    navOn('list=l1&edit=1&new=1&from=view&to=community').returnToCommunity()
+    expect(go).not.toHaveBeenCalled()
+    expect(router.replace).toHaveBeenCalledWith('/app/explore')
+  })
+
+  it('Update says "List created" for it, "List updated" for every other list', () => {
+    expect(savedToast('community')).toBe('List created')
+    expect(savedToast(undefined)).toBe('List updated')
+  })
+
+  it('Update with changes saves them, from anywhere', () => {
+    expect(updateAction(true, 'community')).toBe('save')
+    expect(updateAction(true, undefined)).toBe('save')
+  })
+
+  it('Update with nothing changed: back to Community for a list started there (the composer’s Save allows zero players); off for every other list', () => {
+    expect(updateAction(false, 'community')).toBe('leave')
+    expect(updateAction(false, undefined)).toBeNull()
   })
 })

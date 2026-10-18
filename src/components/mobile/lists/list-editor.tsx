@@ -14,8 +14,10 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
+import { useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
+import { refreshCommunity } from '@/components/mobile/community/community-store'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
@@ -58,7 +60,7 @@ import {
   type EdItem,
   type ListDraft,
 } from './lists-model'
-import { useListsNav } from './lists-nav'
+import { savedToast, updateAction, useListsNav, type ReturnTo } from './lists-nav'
 import {
   CenterNote,
   GripIcon,
@@ -130,11 +132,18 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  *   the list is skipped, and an option that would bring in nobody can't be
  *   tapped. The design's Scout AI and Experts sources come later; while
  *   rankings are switched off it reads "Import a list".
+ * - **A list started from Community goes back there** (gap list §3 #8):
+ *   the handoff's composer posts and stays on Community, so Update on that
+ *   list's step 2 of 2 returns to Community — refreshed, on For you — with
+ *   "List created", not to the List view. Like the composer's Save (a name
+ *   is enough, zero players allowed), that Update is live even with nothing
+ *   changed: it then writes nothing and just goes back (`updateAction`).
  */
 export function ListEditor({
   listId,
   autoAdd,
   created = false,
+  returnTo,
   currentWeek = 0,
   promptSeq = 0,
   onDirtyChange,
@@ -145,6 +154,9 @@ export function ListEditor({
   /** A list New list has just made (its Next): the header counts this as
    *  step "2 of 2" after New list's "1 of 2" (gap list §3 #7). */
   created?: boolean
+  /** Where Update returns it, when not the List view: Community, for a list
+   *  started there (gap list §3 #8). */
+  returnTo?: ReturnTo
   /** The NFL week (0 = offseason), for the import sheet's ranking names. */
   currentWeek?: number
   /** Bumped when the OS back gesture tried to leave with changes. */
@@ -155,6 +167,7 @@ export function ListEditor({
   onLeave?: () => void
 }) {
   const nav = useListsNav()
+  const qc = useQueryClient()
   const detail = useList(listId)
   const aiBuild = useAiListBuild(listId)
   const list = detail.data
@@ -162,6 +175,15 @@ export function ListEditor({
   const close = () => {
     onLeave?.()
     nav.closeEdit(listId)
+  }
+  /** Update wrote the draft: say so, then the List view — or, for a list
+   *  Community started, Community, refreshed (gap list §3 #8). */
+  const saved = () => {
+    toast({ title: savedToast(returnTo) })
+    if (returnTo !== 'community') return close()
+    onLeave?.()
+    refreshCommunity(qc)
+    nav.returnToCommunity()
   }
 
   return (
@@ -207,6 +229,8 @@ export function ListEditor({
           promptSeq={promptSeq}
           onDirtyChange={onDirtyChange}
           onClose={close}
+          onSaved={saved}
+          returnTo={returnTo}
         />
       )}
     </div>
@@ -216,7 +240,8 @@ export function ListEditor({
 /**
  * The header: Back, the title, and Update — blue when the draft has changes,
  * greyed (the design's disabled pill, as the ranking editor's) when it has
- * none, "Saving…" while it writes. A list New list has just made also counts
+ * none (a list Community started keeps it blue, `updateAction`), "Saving…"
+ * while it writes. A list New list has just made also counts
  * its step — "2 of 2", New list's 12/600 t3 label, beside Update (the design
  * shows "1 of 2" and never "2 of 2", lr-lists gap 24).
  */
@@ -278,6 +303,8 @@ function EditorBody({
   promptSeq,
   onDirtyChange,
   onClose,
+  onSaved,
+  returnTo,
 }: {
   list: ListWithDetails
   autoAdd: boolean
@@ -285,7 +312,13 @@ function EditorBody({
   currentWeek: number
   promptSeq: number
   onDirtyChange?: (dirty: boolean) => void
+  /** Leave for the List view (Back, Discard). */
   onClose: () => void
+  /** Update wrote the whole draft (or, `updateAction`, had nothing to
+   *  write): confirm it and leave. */
+  onSaved: () => void
+  /** Where Update returns it, when not the List view (gap list §3 #8). */
+  returnTo?: ReturnTo
 }) {
   const commit = useMobileListsCommit(list.id)
   const display = useListDisplay(list.id)
@@ -314,6 +347,7 @@ function EditorBody({
   // elsewhere is not the user's, and a save that landed without its
   // confirmation still leaves "Update again" able to confirm it.
   const dirty = React.useMemo(() => draftChanged(draft), [draft])
+  const updateKind = updateAction(dirty, returnTo)
 
   // The design opens Add players on its own after "Next: add players" (and
   // the List view's empty-state "Add players" lands here the same way).
@@ -450,13 +484,15 @@ function EditorBody({
   // ------------------------------------------------------------- the exits --
 
   const update = () => {
-    if (!dirty || saving) return
+    if (!updateKind || saving) return
+    // A list Community started, unchanged: nothing to write, just back to
+    // Community (gap list §3 #8).
+    if (updateKind === 'leave') return onSaved()
     setSaveError(null)
     commit.mutate(draft, {
       onSuccess: (outcome) => {
         if (outcome.ok) {
-          toast({ title: 'List updated' })
-          onClose()
+          onSaved()
           return
         }
         const note = saveFailureNote(outcome.error, outcome.attempted, outcome.remaining)
@@ -520,7 +556,7 @@ function EditorBody({
         step={step}
         onBack={back}
         onUpdate={update}
-        canUpdate={dirty}
+        canUpdate={updateKind !== null}
         saving={saving}
         titleInput={
           <input

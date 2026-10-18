@@ -11,6 +11,8 @@
  *   - The editor reads "2 of 2" beside Update when its URL carries `new=1`
  *     (New list's Next), loading or loaded, and not when opened from the
  *     List view (the positive/negative pair).
+ *   - Started from Community (`to=community`, gap list §3 #8), its Update is
+ *     live with nothing changed yet; started anywhere else it stays off.
  * The URL that carries the marker is pinned in `lists-nav.test.ts`.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -75,6 +77,9 @@ function renderNew() {
 /** The name field's tag. */
 const nameField = (html: string) => /<input[^>]*aria-label="List name"[^>]*>/.exec(html)?.[0] ?? ''
 
+/** The header's Update button, tag and label. */
+const updateButton = (html: string) => /<button(?:(?!<button)[^])*?>Update<\/button>/.exec(html)?.[0] ?? ''
+
 /** The header's step label (New list's and the editor's: 12/600 t3). */
 const stepLabel = (html: string) => /<span class="[^"]*text-\[12px\] font-semibold text-m-t3">(\d of 2)<\/span>/.exec(html)?.[1]
 
@@ -122,6 +127,26 @@ describe('the editor New list opens: "2 of 2"', () => {
     const step = out.indexOf('2 of 2')
     expect(out.indexOf('aria-label="List name"')).toBeLessThan(step)
     expect(out.indexOf('>Update<')).toBeGreaterThan(step)
+  })
+
+  it('started from Community (`to=community`, gap list §3 #8): the same step 2 of 2, and Update is live with no players yet', () => {
+    const out = renderLists('list=l1&edit=1&add=1&new=1&from=view&to=community')
+    expect(stepLabel(out)).toBe('2 of 2')
+    // Like the composer's Save: a name is enough to go back to Community.
+    const button = updateButton(out)
+    expect(button).toContain('bg-accent')
+    expect(button).not.toContain('disabled')
+  })
+
+  it('started anywhere else, Update stays off until something changes', () => {
+    for (const query of ['list=l1&edit=1&add=1&new=1&from=view', 'list=l1&edit=1&from=view']) {
+      const button = updateButton(renderLists(query))
+      // Positive control: this is the header's Update.
+      expect(button).toContain('>Update<')
+      expect(button).toContain('disabled')
+      expect(button).toContain('bg-m-b2')
+      expect(button).not.toContain('bg-accent')
+    }
   })
 
   it('reads 2 of 2 while the new list loads, too', () => {

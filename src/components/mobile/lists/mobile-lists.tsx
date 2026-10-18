@@ -9,7 +9,7 @@ import { ListEditor } from './list-editor'
 import { ListView } from './list-view'
 import { ListsGrid } from './lists-grid'
 import { compareIdsOf } from './list-tools'
-import { editorHref, listHref } from './lists-nav'
+import { editorHref, listHref, returnToOf, type ReturnTo } from './lists-nav'
 
 /**
  * FieldScout Mobile — Lists (`/app/lists`). One route, five screens chosen by
@@ -31,6 +31,7 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
           listId,
           autoAdd: params.get('add') === '1',
           created: params.get('new') === '1',
+          returnTo: returnToOf(params.get('to')),
           href: `${pathname}?${params.toString()}`,
         }
       : null
@@ -45,6 +46,7 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
         listId={edit.listId}
         autoAdd={edit.autoAdd}
         created={edit.created}
+        returnTo={edit.returnTo}
         currentWeek={currentWeek}
         promptSeq={guard.promptSeq}
         onDirtyChange={guard.setDirty}
@@ -63,6 +65,8 @@ interface EditTarget {
   autoAdd: boolean
   /** Opened by New list's Next: the editor is step 2 of 2. */
   created: boolean
+  /** Where Update returns it, when not the List view (gap list §3 #8). */
+  returnTo: ReturnTo | undefined
   /** The editor's own URL, to put back. */
   href: string
 }
@@ -131,7 +135,7 @@ function useEditorBackGuard(urlEdit: EditTarget | null, from: string | null) {
     window.history.pushState(
       null,
       '',
-      editorHref(urlEdit.listId, { add: urlEdit.autoAdd, created: urlEdit.created, from: 'view' }),
+      editorHref(urlEdit.listId, { add: urlEdit.autoAdd, created: urlEdit.created, from: 'view', returnTo: urlEdit.returnTo }),
     )
     // Mount only: this re-roots the entry the page loaded on.
     // eslint-disable-next-line react-hooks/exhaustive-deps

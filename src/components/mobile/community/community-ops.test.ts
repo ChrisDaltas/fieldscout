@@ -152,8 +152,8 @@ describe('Create sheet destinations', () => {
     expect(new URL(CREATE_RANKING_HREF, 'https://fieldscout.gg').pathname).toBe('/app/weekly-ranks')
     expect(parseRankingsParams(sp, { type: 'w5' }).overlay).toMatchObject({ kind: 'new', step: 1, type: 'w5' })
   })
-  it('List opens the mobile New list screen', () => {
-    expect(CREATE_LIST_HREF).toBe('/app/lists/new?from=back')
+  it('List opens the mobile New list screen, marked as started from Community (gap list §3 #8)', () => {
+    expect(CREATE_LIST_HREF).toBe('/app/lists/new?from=community')
   })
 })
 
