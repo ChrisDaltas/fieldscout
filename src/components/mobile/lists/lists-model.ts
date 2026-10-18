@@ -1,8 +1,8 @@
 import { buildBuckets } from '@/components/lists/v2/list-buckets'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
-import type { PoolPlayer } from '@/hooks/use-mobile-lists-pool'
+import { poolPositions, type PoolPlayer } from '@/hooks/use-mobile-lists-pool'
 import { COVER_COLOR_LABEL, coverColorOf, type CoverColor } from '@/lib/lists/cover-color'
-import { hasTiers } from '@/lib/lists/ranking-mode'
+import { hasTiers, rankingModeOf } from '@/lib/lists/ranking-mode'
 import { DEFAULT_BUDGET } from '@/stores/list-display-store'
 import {
   POSITION_FILTERS,
@@ -427,6 +427,213 @@ export function addToDraft(draft: ListDraft, player: PoolPlayer, listId: string)
 export function removeFromDraft(draft: ListDraft, playerId: string): ListDraft {
   const entries = draft.entries.filter((entry) => entry.player_id !== playerId)
   return entries.length === draft.entries.length ? draft : { ...draft, entries }
+}
+
+// =============================================================================
+// Import a ranking (lr-lists §2.6 / §3 "Import sheet"; gap list §3 #5) —
+// bring in another of the user's lists, or one of their rankings, in order
+// and with its tiers. Like every other edit it lands in the draft; Update
+// writes it (the bulk add skips anyone already on the list).
+// =============================================================================
+
+/** One player a source holds: who, and his position (for the list's
+ *  position group). */
+export interface ImportPick {
+  player_id: string
+  position: string | null
+}
+
+export interface ImportCounts {
+  /** The source's players that fit the list's position group. */
+  fits: number
+  /** Of those, the ones the list doesn't hold yet — what an import adds. */
+  fresh: number
+  /** Skipped: already in the list. */
+  inList: number
+  /** Skipped: outside the list's position group. */
+  outside: number
+}
+
+/**
+ * What importing `source` into a list holding `inList` would do. Each player
+ * appears once per list (CLAUDE.md rule 1), so anyone the list already holds
+ * is skipped; so is anyone outside its position group, as Add players only
+ * offers the group's players. A player the source repeats counts once.
+ */
+export function importCounts(
+  source: readonly ImportPick[],
+  inList: ReadonlySet<string>,
+  positionFilter: string | null | undefined,
+): ImportCounts {
+  const allowed = poolPositions(positionFilter)
+  const seen = new Set<string>()
+  const counts: ImportCounts = { fits: 0, fresh: 0, inList: 0, outside: 0 }
+  for (const pick of source) {
+    if (seen.has(pick.player_id)) continue
+    seen.add(pick.player_id)
+    if (allowed && !allowed.includes(pick.position ?? '')) {
+      counts.outside += 1
+      continue
+    }
+    counts.fits += 1
+    if (inList.has(pick.player_id)) counts.inList += 1
+    else counts.fresh += 1
+  }
+  return counts
+}
+
+/** The list's position group in words, for "aren't QB" / "No QB players". */
+export function groupName(positionFilter: string | null | undefined): string | null {
+  const allowed = poolPositions(positionFilter)
+  if (!allowed) return null
+  const labels = allowed.map((pos) => (pos === 'DEF' ? 'D/ST' : pos))
+  return labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]}`
+}
+
+/**
+ * An import option's sub-line, and whether it can be tapped — the design's
+ * `"<n> players · <status>"`, counting only the players an import can bring
+ * in. An option that would bring in nobody is shown but can't be tapped, with
+ * the reason ("prevent, don't refuse"; the design's "Added 0 players" is a
+ * defect, lr-lists gap list).
+ *
+ * `counts` is null while the source's players are still loading: the line
+ * then shows the source's own count and the option stays tappable (the
+ * import itself checks again).
+ */
+export function importOptionLine(
+  counts: ImportCounts | null,
+  total: number,
+  extra: string | null,
+  positionFilter: string | null | undefined,
+): { sub: string; disabled: boolean } {
+  const join = (...parts: Array<string | null>) => parts.filter(Boolean).join(' · ')
+  if (!counts) return { sub: join(playersLabel(total), extra), disabled: false }
+  if (counts.fresh === 0) {
+    const group = groupName(positionFilter)
+    if (counts.fits === 0) return { sub: group ? `No ${group} players` : 'No players', disabled: true }
+    return { sub: 'All already in this list', disabled: true }
+  }
+  if (counts.inList > 0) return { sub: join(playersLabel(counts.fits), `${counts.inList} already in this list`), disabled: false }
+  return { sub: join(playersLabel(counts.fits), extra), disabled: false }
+}
+
+/**
+ * The toast after an import: the design's "Added <k> players from your
+ * ranking", plus what was skipped and why — never a count that hides a
+ * skip.
+ */
+export function importToast(
+  counts: ImportCounts,
+  from: 'ranking' | 'list',
+  positionFilter: string | null | undefined,
+): { title: string; description?: string } {
+  if (counts.fresh === 0) {
+    const group = groupName(positionFilter)
+    if (counts.fits === 0) return { title: `No ${group ? `${group} ` : ''}players in that ${from}` }
+    return { title: `Everyone in that ${from} is already in this list` }
+  }
+  const title = `Added ${playersLabel(counts.fresh)} from your ${from}`
+  const skipped: string[] = []
+  if (counts.inList > 0) skipped.push(`${counts.inList} already in this list`)
+  if (counts.outside > 0) skipped.push(`${counts.outside} that ${counts.outside === 1 ? 'isn’t' : 'aren’t'} ${groupName(positionFilter)}`)
+  return skipped.length > 0 ? { title, description: `Skipped ${skipped.join(' and ')}.` } : { title }
+}
+
+export interface ImportResult {
+  draft: ListDraft
+  counts: ImportCounts
+}
+
+/**
+ * The draft with a source's players brought in (lr-lists §3 "Import sheet"):
+ *
+ * - **In the source's order, with its tiers**: a tiered source (`sourceTiers`)
+ *   keeps its Tier 1, Tier 2… as tier lines; any other source comes in as one
+ *   run of players.
+ * - **After the list's own players**, below a new tier line, so the import
+ *   starts a tier of its own — or under the tier line the user already added
+ *   at the end (the design adds a second line there, leaving an empty tier).
+ * - **Each player once**: anyone the list holds, or outside its position
+ *   group, is skipped (`importCounts`). Tier lines only ever sit between two
+ *   imported players, so a skipped player never leaves an empty tier.
+ * - **Ranked turns on**, as the design's import does; **Tiers turns on** when
+ *   the import draws a tier line (the design turns it on even for a lone
+ *   tier, which would only add a "Tier 1" heading). `lockMode` (a big board,
+ *   whose grouping isn't the owner's to change) leaves both alone.
+ * - **Six tiers at most** (`MAX_TIERS`): beyond that the last tiers merge,
+ *   as every other tier edit here does (`planCommit`).
+ *
+ * The new players are local entries until Update, carrying the source's
+ * player card and season figures (the rows' Pts / Avg, Auto tiers) but not
+ * its notes — a note belongs to the list it was written in.
+ *
+ * With nothing to bring in, the draft is returned unchanged.
+ */
+export function importIntoDraft(
+  draft: ListDraft,
+  source: readonly ListPlayerWithPlayer[],
+  opts: { listId: string; positionFilter: string | null | undefined; sourceTiers: boolean; lockMode?: boolean },
+): ImportResult {
+  const inList = new Set(draft.entries.map((entry) => entry.player_id))
+  const counts = importCounts(
+    source.map((entry) => ({ player_id: entry.player_id, position: entry.player.position })),
+    inList,
+    opts.positionFilter,
+  )
+  if (counts.fresh === 0) return { draft, counts }
+
+  const allowed = poolPositions(opts.positionFilter)
+  const taken = new Set(inList)
+  const keep = (entry: ListPlayerWithPlayer) => {
+    if (taken.has(entry.player_id)) return false
+    if (allowed && !allowed.includes(entry.player.position ?? '')) return false
+    taken.add(entry.player_id)
+    return true
+  }
+  // The source as it reads: its tier sections in order, or one run.
+  const groups = (opts.sourceTiers ? viewSections(source, true).map((s) => s.entries) : [byPosition(source)])
+    .map((entries) => entries.filter(keep).map((entry) => importedEntry(entry, opts.listId)))
+    .filter((entries) => entries.length > 0)
+
+  const existing = draft.entries.length > 0
+  const drawsLines = existing || groups.length > 1
+  const mode = opts.lockMode ? draft.mode : rankingModeOf({ numbered: true, tiers: hasTiers(draft.mode) || drawsLines })
+  const next: ListDraft = { ...draft, mode, pending: hasTiers(mode) ? draft.pending : 0 }
+
+  if (!hasTiers(mode)) {
+    const items: EdItem[] = [...draftItems(next), ...groups.flat().map((entry) => ({ t: 'p' as const, id: entry.id, entry }))]
+    return { draft: arrangeDraft(next, items), counts }
+  }
+
+  // Tier lines with nobody above them (left after the players were removed)
+  // would only lead with an empty tier.
+  const items: EdItem[] = existing ? draftItems(next) : []
+  groups.forEach((entries, index) => {
+    const last = items[items.length - 1]
+    if ((index > 0 || existing) && last?.t !== 'tier') items.push({ t: 'tier', id: `import-${index}`, pending: false })
+    for (const entry of entries) items.push({ t: 'p', id: entry.id, entry })
+  })
+  return { draft: arrangeDraft(next, items), counts }
+}
+
+function importedEntry(entry: ListPlayerWithPlayer, listId: string): ListPlayerWithPlayer {
+  return {
+    id: `draft-${entry.player_id}`,
+    list_id: listId,
+    player_id: entry.player_id,
+    position: entry.position,
+    overall_rank: entry.position,
+    // The draft's tier lines decide the letter (`arrangeDraft`).
+    tier: null,
+    rank_in_tier: null,
+    notes: null,
+    slot: null,
+    added_at: null,
+    updated_at: null,
+    player: entry.player,
+    stats: entry.stats ?? null,
+  }
 }
 
 /**

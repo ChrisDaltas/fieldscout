@@ -32,6 +32,8 @@ export const L_ICON = {
   videoFrame: 'M2.5 4h11v8h-11zM7 6.3v3.4L9.8 8z',
   autoTiers: 'M3 4h10M3 8h7M3 12h4',
   addTierLine: 'M2.5 8h11M8 5v6',
+  /** Import a ranking (lr-frame §2.13.12). */
+  import: 'M3 3.5h10M3 8h6M3 12.5h4M11 9v5M8.5 11.5L11 14l2.5-2.5',
   dots: 'M3.5 8h.01M8 8h.01M12.5 8h.01',
   folder: 'M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.5H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z',
   share: 'M8 10V2.5M5 5.5L8 2.5l3 3M3 9v4.5h10V9',
