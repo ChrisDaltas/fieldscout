@@ -154,6 +154,30 @@ describe('league switcher (gap list §3 #20)', () => {
   })
 })
 
+describe('league switcher dots (gap list §4 item 7)', () => {
+  it('the "you are here" dash is white in both themes — never the page colour, which turns near-black on the dark card', () => {
+    for (const [path, current] of [
+      ['/app/leagues/A/matchup', 0],
+      ['/app/leagues/C/matchup', 2],
+    ] as const) {
+      try {
+        nav.pathname = path
+        const card = block(html(createElement(MobileDock)), 'data-league-switcher', 'div')
+        const dots = card.match(/<span class="h-1\.5 rounded-pill[^"]*"><\/span>/g) ?? []
+        expect(dots).toHaveLength(LEAGUES.length)
+        dots.forEach((dot, i) => {
+          if (i === current) expect(dot).toMatch(/(?<![\w-])w-3\.5 bg-white(?![\w/-])/)
+          else expect(dot).toMatch(/(?<![\w-])w-1\.5 bg-m-dot(?![\w-])/)
+        })
+        // The theme-flipping page colour (#121212 in dark) never paints a dot.
+        expect(card).not.toMatch(/(?<![\w-])bg-m-b\d/)
+      } finally {
+        nav.pathname = '/app/leagues/A/matchup'
+      }
+    }
+  })
+})
+
 describe('Home league cards before the season (gap list §3 #20)', () => {
   it('a pre-draft card names its draft time; "Pre-draft" only with none set; "Draft live" while drafting', () => {
     const out = html(createElement(HomeMatchups))
