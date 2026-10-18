@@ -124,6 +124,12 @@ describe('the editor New list opens: "2 of 2"', () => {
     expect(out.indexOf('>Update<')).toBeGreaterThan(step)
   })
 
+  it('started from Community (`to=community`, gap list §3 #8): the same step 2 of 2 and Update', () => {
+    const out = renderLists('list=l1&edit=1&add=1&new=1&from=view&to=community')
+    expect(stepLabel(out)).toBe('2 of 2')
+    expect(out).toContain('>Update<')
+  })
+
   it('reads 2 of 2 while the new list loads, too', () => {
     const out = renderLists('list=l1&edit=1&add=1&new=1', false)
     expect(out).toContain('aria-label="Loading list"')

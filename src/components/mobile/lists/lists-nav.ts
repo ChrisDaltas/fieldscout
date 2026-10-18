@@ -37,9 +37,29 @@ import { compareHref } from './list-tools'
  * lives in the entry's URL so it survives a reload and never goes stale the
  * way in-memory flags do when a screen is left by the OS gesture. `from=grid`
  * is handed on to a view that replaces an editor.
+ *
+ * ## A list started from Community (gap list §3 #8)
+ *
+ * Community's Create sheet opens New list with `from=community`. Its Next
+ * hands that on as `to=community` in the editor's URL (which, like `new=1`,
+ * survives the editor being re-rooted on its List view), and the editor's
+ * Update then returns to Community — the handoff's composer posts and stays
+ * on the screen that opened it — with "List created", the feed refreshed and
+ * on For you (`refreshCommunity`). History there is Community, the List view
+ * that replaced New list, then the editor, so it steps back two entries;
+ * with nothing of the app behind it replaces the editor with Community.
  */
 
 type From = 'grid' | 'view'
+/** Where saving a just-created list returns, when not its List view. */
+export type ReturnTo = 'community'
+/** The editor URL's `to=` (gap list §3 #8); anything else is no marker. */
+export const returnToOf = (value: string | null): ReturnTo | undefined =>
+  value === 'community' ? 'community' : undefined
+/** The editor's Update toast: "List created" for a list Community started,
+ *  which goes back there (gap list §3 #8); otherwise "List updated". */
+export const savedToast = (returnTo: ReturnTo | undefined) =>
+  returnTo === 'community' ? 'List created' : 'List updated'
 
 export const listHref = (id: string, from?: From) =>
   `/app/lists?list=${encodeURIComponent(id)}${from ? `&from=${from}` : ''}`
@@ -51,16 +71,22 @@ export interface EditorHrefOptions {
    *  §3 #7). In the URL, like `from`, so a reload keeps it. */
   created?: boolean
   from?: From
+  /** Where Update returns a just-created list: Community, when New list was
+   *  started there (gap list §3 #8). In the URL, like `created`. */
+  returnTo?: ReturnTo
 }
-export const editorHref = (id: string, { add = false, created = false, from }: EditorHrefOptions = {}) =>
-  `/app/lists?list=${encodeURIComponent(id)}&edit=1${add ? '&add=1' : ''}${created ? '&new=1' : ''}${from ? `&from=${from}` : ''}`
+export const editorHref = (id: string, { add = false, created = false, from, returnTo }: EditorHrefOptions = {}) =>
+  `/app/lists?list=${encodeURIComponent(id)}&edit=1${add ? '&add=1' : ''}${created ? '&new=1' : ''}${from ? `&from=${from}` : ''}${returnTo ? `&to=${returnTo}` : ''}`
 export const detailsHref = (id: string, from?: From) =>
   `/app/lists?list=${encodeURIComponent(id)}&details=1${from ? `&from=${from}` : ''}`
 const newHref = (from?: From) => `/app/lists/new${from ? `?from=${from}` : ''}`
-/** New list opened from outside Lists (Profile's "New list", Community's
- *  Create sheet). Its back returns there as every Back does (#27); the
- *  marker only keeps it from reading as opened from the grid. */
+/** New list opened from outside Lists (Profile's "New list"). Its back
+ *  returns there as every Back does (#27); the marker only keeps it from
+ *  reading as opened from the grid. Community's Create sheet opens it with
+ *  `from=community` instead (`CREATE_LIST_HREF`, gap list §3 #8). */
 export const NEW_LIST_FROM_ELSEWHERE_HREF = '/app/lists/new?from=back'
+/** Community's address, where a list started there returns. */
+const COMMUNITY_HREF = '/app/explore'
 
 export function useListsNav() {
   const router = useRouter()
@@ -97,9 +123,23 @@ export function useListsNav() {
       },
       /** A just-created list: the New list entry is replaced by its editor —
        *  step 2 of 2, Add players up — which inherits what was behind New
-       *  list. */
+       *  list, and, when Community started it, returns there once saved. */
       createdList(id: string) {
-        router.replace(editorHref(id, { add: true, created: true, from: from === 'grid' ? 'grid' : undefined }))
+        router.replace(
+          editorHref(id, {
+            add: true,
+            created: true,
+            from: from === 'grid' ? 'grid' : undefined,
+            returnTo: from === 'community' ? 'community' : undefined,
+          }),
+        )
+      },
+      /** A list Community started, saved: back to Community (gap list §3
+       *  #8) — two entries behind the editor, past the List view that
+       *  replaced New list — else Community, replacing the editor. */
+      returnToCommunity() {
+        if (appEntryBehind(2)) window.history.go(-2)
+        else router.replace(COMMUNITY_HREF)
       },
       /** The grid's back: where you came from (normally Profile), else
        *  Profile, Lists' parent (#27). */

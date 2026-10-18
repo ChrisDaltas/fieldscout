@@ -14,16 +14,19 @@ import { useCallback } from 'react'
  */
 
 /**
- * Whether the entry behind this one belongs to the app. The Navigation API
- * lists only same-origin entries, so a current index above 0 means the
- * previous entry is ours; without the API, fall back to a same-origin
- * referrer (a page opened from another site, or in a fresh tab, has none).
+ * Whether the entry behind this one belongs to the app — or, with `depth`,
+ * the `depth` entries behind it (a screen that steps back over more than one,
+ * like a saved New list returning to Community). The Navigation API lists
+ * only same-origin entries, so a current index of at least `depth` means
+ * they are ours; without the API, fall back to a same-origin referrer (a
+ * page opened from another site, or in a fresh tab, has none) and a history
+ * that long.
  */
-export function appEntryBehind(): boolean {
+export function appEntryBehind(depth = 1): boolean {
   if (typeof window === 'undefined') return false
   const nav = (window as Window & { navigation?: { currentEntry?: { index: number } | null } }).navigation
-  if (nav?.currentEntry) return nav.currentEntry.index > 0
-  if (window.history.length <= 1) return false
+  if (nav?.currentEntry) return nav.currentEntry.index >= depth
+  if (window.history.length <= depth) return false
   try {
     return Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin
   } catch {

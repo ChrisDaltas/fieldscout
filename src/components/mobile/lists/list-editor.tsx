@@ -14,8 +14,10 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
+import { useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
+import { refreshCommunity } from '@/components/mobile/community/community-store'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel } from '@/components/mobile/ui/m-pos-chip'
@@ -58,7 +60,7 @@ import {
   type EdItem,
   type ListDraft,
 } from './lists-model'
-import { useListsNav } from './lists-nav'
+import { savedToast, useListsNav, type ReturnTo } from './lists-nav'
 import {
   CenterNote,
   GripIcon,
@@ -130,11 +132,16 @@ import { resolveMobileStats, seasonLine } from './lists-stats'
  *   the list is skipped, and an option that would bring in nobody can't be
  *   tapped. The design's Scout AI and Experts sources come later; while
  *   rankings are switched off it reads "Import a list".
+ * - **A list started from Community goes back there** (gap list §3 #8):
+ *   the handoff's composer posts and stays on Community, so Update on that
+ *   list's step 2 of 2 returns to Community — refreshed, on For you — with
+ *   "List created", not to the List view.
  */
 export function ListEditor({
   listId,
   autoAdd,
   created = false,
+  returnTo,
   currentWeek = 0,
   promptSeq = 0,
   onDirtyChange,
@@ -145,6 +152,9 @@ export function ListEditor({
   /** A list New list has just made (its Next): the header counts this as
    *  step "2 of 2" after New list's "1 of 2" (gap list §3 #7). */
   created?: boolean
+  /** Where Update returns it, when not the List view: Community, for a list
+   *  started there (gap list §3 #8). */
+  returnTo?: ReturnTo
   /** The NFL week (0 = offseason), for the import sheet's ranking names. */
   currentWeek?: number
   /** Bumped when the OS back gesture tried to leave with changes. */
@@ -155,6 +165,7 @@ export function ListEditor({
   onLeave?: () => void
 }) {
   const nav = useListsNav()
+  const qc = useQueryClient()
   const detail = useList(listId)
   const aiBuild = useAiListBuild(listId)
   const list = detail.data
@@ -162,6 +173,15 @@ export function ListEditor({
   const close = () => {
     onLeave?.()
     nav.closeEdit(listId)
+  }
+  /** Update wrote the draft: say so, then the List view — or, for a list
+   *  Community started, Community, refreshed (gap list §3 #8). */
+  const saved = () => {
+    toast({ title: savedToast(returnTo) })
+    if (returnTo !== 'community') return close()
+    onLeave?.()
+    refreshCommunity(qc)
+    nav.returnToCommunity()
   }
 
   return (
@@ -207,6 +227,7 @@ export function ListEditor({
           promptSeq={promptSeq}
           onDirtyChange={onDirtyChange}
           onClose={close}
+          onSaved={saved}
         />
       )}
     </div>
@@ -278,6 +299,7 @@ function EditorBody({
   promptSeq,
   onDirtyChange,
   onClose,
+  onSaved,
 }: {
   list: ListWithDetails
   autoAdd: boolean
@@ -285,7 +307,10 @@ function EditorBody({
   currentWeek: number
   promptSeq: number
   onDirtyChange?: (dirty: boolean) => void
+  /** Leave for the List view (Back, Discard). */
   onClose: () => void
+  /** Update wrote the whole draft: confirm it and leave. */
+  onSaved: () => void
 }) {
   const commit = useMobileListsCommit(list.id)
   const display = useListDisplay(list.id)
@@ -455,8 +480,7 @@ function EditorBody({
     commit.mutate(draft, {
       onSuccess: (outcome) => {
         if (outcome.ok) {
-          toast({ title: 'List updated' })
-          onClose()
+          onSaved()
           return
         }
         const note = saveFailureNote(outcome.error, outcome.attempted, outcome.remaining)

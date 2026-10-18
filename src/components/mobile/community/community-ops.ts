@@ -24,10 +24,14 @@ export const COMMUNITY_TABS: readonly { value: CommunityTab; label: string }[] =
  * Where the Create sheet's rows go (m-community §3, m-composer §3.1).
  * Ranking: the new-ranking wizard (the Rankings area opens it at `?new=1`,
  * on the current week — the handoff's `#new-ranking`). List: the mobile New
- * list screen (lr-lists §2.2, step 1 — the composer's "name your list").
+ * list screen (lr-lists §2.2, step 1 — the composer's "name your list"),
+ * marked as started from Community: its X comes back here as every Back
+ * does, and once its players are saved it returns here too, refreshed, with
+ * "List created" (gap list §3 #8; `lists-nav.ts`). Community's and the
+ * Latest page's "Create a list" open it the same way.
  */
 export const CREATE_RANKING_HREF = '/app/weekly-ranks?new=1'
-export const CREATE_LIST_HREF = '/app/lists/new?from=back'
+export const CREATE_LIST_HREF = '/app/lists/new?from=community'
 
 /**
  * A topic pill: a tag the pool's lists carry, a player they share, or the
