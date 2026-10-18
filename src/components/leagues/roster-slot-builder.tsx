@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 
 import {
-  M_TEXT_FIELD,
+  M_TEXT_FIELD_ON_CARD,
   MNotice,
   MStepper,
   MToggleChip,
@@ -610,6 +610,7 @@ function AddCustomFlex({
           {ROSTER_POSITIONS.map((p) => (
             <MToggleChip
               key={p}
+              onCard
               pressed={selected.includes(p)}
               onPressedChange={(on) => setSelected((cur) => (on ? [...cur, p] : cur.filter((x) => x !== p)))}
             >
@@ -629,7 +630,7 @@ function AddCustomFlex({
           placeholder={suggestion || 'Label (e.g. W/R/T)'}
           aria-label="Flex slot label"
           maxLength={60}
-          className={M_TEXT_FIELD}
+          className={M_TEXT_FIELD_ON_CARD}
         />
         <div className="flex items-center gap-2">
           <button
@@ -811,6 +812,7 @@ function IrSpotRow({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ChoiceSelect
+            onCard
             ariaLabel="IR spot type"
             value={spot.type}
             options={IR_TYPE_OPTIONS}
@@ -840,6 +842,7 @@ function IrSpotRow({
               return (
                 <MToggleChip
                   key={d}
+                  onCard
                   pressed={on}
                   disabled={lastOne}
                   title={lastOne ? 'An IR spot needs at least one eligible designation.' : undefined}

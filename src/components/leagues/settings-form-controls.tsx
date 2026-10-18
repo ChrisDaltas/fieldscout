@@ -185,6 +185,7 @@ export function ChoiceSelect({
   width = 'w-40',
   disabled,
   placeholder,
+  onCard,
 }: {
   id?: string
   ariaLabel?: string
@@ -195,6 +196,8 @@ export function ChoiceSelect({
   disabled?: boolean
   /** Trigger text while nothing is selected (pass value="" for that state). */
   placeholder?: string
+  /** Phone skin only: the field sits inside a b1 card (`MSelect`'s `onCard`). */
+  onCard?: boolean
 }) {
   const skin = useSettingsSkin()
   if (skin === 'mobile') {
@@ -207,6 +210,7 @@ export function ChoiceSelect({
         onValueChange={onValueChange}
         disabled={disabled}
         placeholder={placeholder}
+        onCard={onCard}
       />
     )
   }

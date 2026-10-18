@@ -123,18 +123,24 @@ export function MRadioDot({ on }: { on: boolean }) {
   )
 }
 
-/** A multi-select chip (h30, lr-frame §2.13.11 f's shape): white on ink when on. */
+/**
+ * A multi-select chip (h30, lr-frame §2.13.11 f's shape): white on ink when
+ * on. `onCard` draws the off state on the page colour, so the chip still
+ * reads inside a b1 card (b2 on b1 all but vanishes in light mode).
+ */
 export function MToggleChip({
   pressed,
   onPressedChange,
   disabled,
   title,
+  onCard = false,
   children,
 }: {
   pressed: boolean
   onPressedChange: (next: boolean) => void
   disabled?: boolean
   title?: string
+  onCard?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -146,7 +152,7 @@ export function MToggleChip({
       onClick={() => onPressedChange(!pressed)}
       className={cn(
         'flex h-[30px] items-center rounded-pill px-3 text-[13px] font-semibold disabled:opacity-60',
-        pressed ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1 active:bg-m-b2h',
+        pressed ? 'bg-m-ink text-white' : onCard ? 'bg-m-b0 text-m-t1 active:bg-m-b2' : 'bg-m-b2 text-m-t1 active:bg-m-b2h',
       )}
     >
       {children}
@@ -247,6 +253,10 @@ export function MCheckRow({
 export const M_TEXT_FIELD =
   'h-12 w-full rounded-[12px] border-0 bg-m-b2 px-3.5 font-sans text-[16px] font-semibold text-m-t1 outline-none placeholder:font-medium placeholder:text-m-t3 disabled:opacity-60'
 
+/** The same field inside a b1 card: on the page colour, so its edge shows. */
+export const M_TEXT_FIELD_ON_CARD =
+  'h-12 w-full rounded-[12px] border-0 bg-m-b0 px-3.5 font-sans text-[16px] font-semibold text-m-t1 outline-none placeholder:font-medium placeholder:text-m-t3 disabled:opacity-60'
+
 /** A short number field in a settings row (same fill and type, 36px tall). */
 export const M_NUMBER_FIELD =
   'h-9 w-[84px] rounded-[10px] border-0 bg-m-b2 px-3 text-right font-sans text-[16px] font-semibold tabular-nums text-m-t1 outline-none placeholder:text-m-t3 disabled:opacity-60'
@@ -255,7 +265,8 @@ export const M_NUMBER_FIELD =
  * A choice from a list, as the phone's own picker: a native `<select>` drawn
  * as a b2 field with the value and a chevron. The system wheel / list opens
  * on tap, so no popover is drawn over the sheet. 16px for the same iOS-zoom
- * reason as the text field.
+ * reason as the text field. `onCard` puts the field on the page colour
+ * inside a b1 card (the chip's reason).
  */
 export function MSelect({
   id,
@@ -265,6 +276,7 @@ export function MSelect({
   onValueChange,
   disabled,
   placeholder,
+  onCard = false,
 }: {
   id?: string
   ariaLabel?: string
@@ -273,6 +285,7 @@ export function MSelect({
   onValueChange: (value: string) => void
   disabled?: boolean
   placeholder?: string
+  onCard?: boolean
 }) {
   return (
     <span className="relative flex min-w-0 max-w-full">
@@ -282,7 +295,10 @@ export function MSelect({
         value={value}
         disabled={disabled}
         onChange={(event) => onValueChange(event.target.value)}
-        className="h-9 min-w-0 max-w-full appearance-none truncate rounded-[10px] border-0 bg-m-b2 pl-3 pr-8 font-sans text-[16px] font-semibold text-m-t1 outline-none disabled:opacity-50"
+        className={cn(
+          'h-9 min-w-0 max-w-full appearance-none truncate rounded-[10px] border-0 pl-3 pr-8 font-sans text-[16px] font-semibold text-m-t1 outline-none disabled:opacity-50',
+          onCard ? 'bg-m-b0' : 'bg-m-b2',
+        )}
         data-m-select
       >
         {value === '' && placeholder !== undefined ? (

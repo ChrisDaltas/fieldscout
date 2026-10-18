@@ -322,6 +322,13 @@ describe('the roster builder in the phone skin', () => {
     expect(html).toContain('Add DL spot')
   })
 
+  it('controls inside the b1 IR card sit on the page colour, so they still read in light mode', () => {
+    // b2 on b1 all but vanishes in light mode (242 on 245): the IR type
+    // picker and the off designation chips take b0, like the steppers.
+    expect(html).toMatch(/<select aria-label="IR spot type"[^>]*class="[^"]*bg-m-b0/)
+    expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*class="[^"]*bg-m-b0[^"]*"[^>]*>Doubtful</)
+  })
+
   it('draws in phone tokens only', () => {
     expect(html).not.toMatch(DESKTOP_TOKENS)
   })
