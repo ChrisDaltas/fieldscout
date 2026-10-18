@@ -965,8 +965,7 @@ export function AddPlayersSheet({
           />
         </label>
         <div className="flex gap-1.5">
-          <span className="flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill bg-m-ink px-3 text-[12px] font-semibold text-white"
-          >
+          <span className="flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill bg-m-ink px-3 text-[12px] font-semibold text-white">
             {rankPosLabel(pos)}
           </span>
         </div>
