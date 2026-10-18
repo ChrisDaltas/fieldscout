@@ -43,8 +43,6 @@ import {
   splitRows,
   starterCell,
   teamName,
-  weekBadge,
-  weekNav,
   type StarterCell,
 } from '@/components/leagues/matchup-view-ops'
 import { projectedTotal } from '@/components/leagues/my-team-ops'
@@ -53,7 +51,6 @@ import { LIVE_STATS_DELAYED_COPY, STALE_SCORES_COPY } from '@/components/leagues
 import { problemCopy } from '@/components/leagues/team-page'
 import { MobileLeagueHeader } from '@/components/mobile/league/league/league-header'
 import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/components/mobile/league/streak-ops'
-import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MPosChip, posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { WithOnlineDot } from '@/components/mobile/ui/online-dot'
@@ -77,6 +74,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { nflGameHref } from '@/components/mobile/league/game/game-ops'
+import { WeekStatus, WeekStepper } from '@/components/mobile/league/week-stepper'
 
 import { MobileCorrectionNote } from './match-correction-note'
 import {
@@ -858,66 +856,15 @@ function StartersHeader({
   weeks: readonly Pick<ScheduleWeek, 'week'>[]
   status: string | null
 }) {
-  const nav = weekNav(weeks, week)
   return (
     <div className="flex items-center justify-between gap-2 px-4 pb-1.5 pt-[18px]" data-week-strip>
       <div className="flex min-w-0 items-center gap-2">
         <h2 className="flex-none text-[17px] font-semibold tracking-[-0.01em] text-m-t1">{title}</h2>
         {status && <WeekStatus status={status} />}
       </div>
-      <div className="flex flex-none items-center gap-0.5">
-        <WeekStep leagueId={leagueId} to={nav.prev} dir="prev" />
-        <span className="whitespace-nowrap text-[13px] font-semibold text-accent" data-week={week}>
-          Week {week}
-        </span>
-        <WeekStep leagueId={leagueId} to={nav.next} dir="next" />
-      </div>
+      {/* ‹ / › load that week (the app's ladder, `?week=`). */}
+      <WeekStepper week={week} weeks={weeks} hrefFor={(w) => weekHref(leagueId, w)} />
     </div>
-  )
-}
-
-/** The week's stored status beside the title (app-only; the design's live
- *  red — a 6px dot and 11/600 #FF0028 — for a week being played). The word
- *  brightens to #FF6B6B in phone dark mode; the dot keeps #FF0028, as the
- *  handoff's alert dots do. */
-function WeekStatus({ status }: { status: string }) {
-  const badge = weekBadge(status)
-  if (badge.state === 'live') {
-    return (
-      <span className="flex flex-none items-center gap-1 text-[11px] font-semibold text-m-red" title={badge.title} data-week-badge="live">
-        <span className="size-1.5 rounded-full bg-negative-strong" />
-        {badge.label}
-      </span>
-    )
-  }
-  return (
-    <span className="min-w-0 truncate text-[11px] font-medium text-m-t3" title={badge.title} data-week-badge={badge.state}>
-      {badge.label}
-    </span>
-  )
-}
-
-/** ‹ / › — loads that week (the app's ladder), and rests in t5 at either
- *  end instead of the prototype's silent clamp. */
-function WeekStep({ leagueId, to, dir }: { leagueId: string; to: number | null; dir: 'prev' | 'next' }) {
-  const label = dir === 'prev' ? 'Previous week' : 'Next week'
-  const icon = <MIcon name={dir === 'prev' ? 'back' : 'chevronRight'} size={12} stroke={2.2} />
-  if (to === null) {
-    return (
-      <span className="flex size-[30px] items-center justify-center rounded-full text-m-t5" aria-disabled="true" aria-label={label} role="link">
-        {icon}
-      </span>
-    )
-  }
-  return (
-    <Link
-      href={weekHref(leagueId, to)}
-      scroll={false}
-      aria-label={label}
-      className="flex size-[30px] items-center justify-center rounded-full text-accent active:bg-m-b2"
-    >
-      {icon}
-    </Link>
   )
 }
 

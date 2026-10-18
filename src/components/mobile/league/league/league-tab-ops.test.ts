@@ -14,6 +14,7 @@ import {
   feedStreams,
   filterCount,
   filterLabel,
+  matchupsWeek,
   playoffNote,
   segmentAtPath,
   segmentHref,
@@ -24,6 +25,7 @@ import {
   transactionRow,
   transactionsHref,
   waiverCell,
+  weekToKeep,
   withClaimResults,
   rowPlayerIds,
   type TxRow,
@@ -399,5 +401,37 @@ describe('cells', () => {
     // #9D70E9 / #F75252 / #ECAD48 / #5C7CE5 — the fills, not the position text colours.
     expect(['c', 'd', 'e', 'f'].map((t) => teamAvatarClass(t, ids, 'b'))).toEqual(['bg-pos-wr', 'bg-pos-qb', 'bg-pos-te', 'bg-pos-rb'])
     expect(teamAvatarClass(null, ids, 'b')).toBe('bg-m-t5')
+  })
+})
+
+// Gap list §4 item 9: League › Matchups' week picker.
+describe('matchupsWeek / weekToKeep — which week League › Matchups shows', () => {
+  const ladder = [
+    { week: 1, status: 'final' },
+    { week: 2, status: 'correction_window' },
+    { week: 3, status: 'live' },
+    { week: 4, status: 'upcoming' },
+  ]
+
+  it('nothing kept: the ladder’s current week (the greatest started one); none before the ladder loads', () => {
+    expect(matchupsWeek(undefined, ladder)).toBe(3)
+    expect(matchupsWeek(undefined, undefined)).toBeNull()
+    expect(matchupsWeek(2, undefined)).toBeNull()
+    expect(matchupsWeek(undefined, [])).toBeNull()
+  })
+
+  it('a kept week shows while it is on the ladder — past or future', () => {
+    expect(matchupsWeek(1, ladder)).toBe(1)
+    expect(matchupsWeek(4, ladder)).toBe(4)
+  })
+
+  it('a kept week the ladder does not have falls back to the current week', () => {
+    expect(matchupsWeek(9, ladder)).toBe(3)
+  })
+
+  it('stepping back to the current week keeps nothing, so the default keeps following the season', () => {
+    expect(weekToKeep(3, ladder)).toBeNull()
+    expect(weekToKeep(1, ladder)).toBe(1)
+    expect(weekToKeep(4, ladder)).toBe(4)
   })
 })

@@ -64,8 +64,12 @@ const SMALL_INDICATORS: Record<string, { count: number; why: string }> = {
     why: '8px "needs you" alert dot on a Home league card',
   },
   'src/components/mobile/league/match/mobile-match.tsx': {
-    count: 2,
-    why: '6px live dots beside the red "Live" text (week badge, scoreboard row)',
+    count: 1,
+    why: '6px live dot beside the red "Live" text (scoreboard row)',
+  },
+  'src/components/mobile/league/week-stepper.tsx': {
+    count: 1,
+    why: '6px live dot beside the red "Live" week label (Match tab, League › Matchups)',
   },
   'src/components/mobile/league/game/nfl-game-screen.tsx': {
     count: 1,

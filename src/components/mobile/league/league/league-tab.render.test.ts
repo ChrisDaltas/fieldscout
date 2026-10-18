@@ -58,6 +58,15 @@ vi.mock('@/hooks/use-online', async (importActual) => {
       actual.teamOnlineLookup(members ?? [], presence.online),
   }
 })
+// The kept week (League › Matchups' picker) is a zustand read, and zustand
+// v5 answers a static render with `getInitialState()` — so the read is
+// stubbed with a value the test controls (`undefined` = none kept); the
+// store's own keep / forget is pinned in league-tab-store.test.ts.
+const kept = vi.hoisted(() => ({ week: undefined as number | undefined }))
+vi.mock('./league-tab-store', async (importActual) => {
+  const actual = await importActual<typeof import('./league-tab-store')>()
+  return { ...actual, useKeptWeek: () => [kept.week, () => {}] }
+})
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/leagues/league-1',
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
@@ -226,7 +235,8 @@ function render(
 }
 
 beforeEach(() => {
-  useLeagueTabStore.setState({ segments: {}, filters: {} })
+  useLeagueTabStore.setState({ segments: {}, weeks: {}, filters: {} })
+  kept.week = undefined
 })
 
 describe('League tab — header and segmented control', () => {
@@ -279,6 +289,61 @@ describe('League › Matchups', () => {
     expect(html).toContain('Set lineup')
     expect(html).toContain('data-message-board')
     expect(html).toContain('data-draft-doors')
+  })
+})
+
+// Gap list §4 item 9: a week picker with the week's Live / Final label.
+describe('League › Matchups — the week picker', () => {
+  const WEEK1: WeekMatchups = {
+    ...WEEK,
+    week: 1,
+    league_week: { status: 'final', median_score: 80, finalized_at: '2099-09-17T10:00:00.000Z' },
+    matchups: SCHEDULE.matchups.map((m) => ({ ...m, updated_at: null })),
+  }
+  const tab = () => createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' })
+  const strip = (html: string) => html.match(/<div class="[^"]*" data-week-strip="true">[\s\S]*?<\/div><\/div>/)?.[0] ?? ''
+
+  it('opens on the current week with its Live label, above the cards; › rests at the ladder’s end', () => {
+    const html = render(tab())
+    const picker = strip(html)
+    expect(picker).toContain('data-week="2"')
+    expect(picker).toContain('>Week 2<')
+    expect(picker).toMatch(/data-week-badge="live"><span class="size-1\.5 rounded-full bg-negative-strong"><\/span>Live</)
+    expect(picker).toMatch(/<button type="button" aria-label="Previous week"/)
+    expect(picker).toMatch(/<button type="button" disabled="" aria-label="Next week"/)
+    expect(html.indexOf('data-week-strip')).toBeLessThan(html.indexOf('data-matchup="mB"'))
+  })
+
+  it('a week stepped to shows that week’s own cards and Final label; the Your team card stays on this week', () => {
+    kept.week = 1
+    const html = render(tab(), {}, (qc) => qc.setQueryData(leagueMatchupKeys.week(LEAGUE, 1), WEEK1))
+    const picker = strip(html)
+    expect(picker).toContain('data-week="1"')
+    expect(picker).toMatch(/data-week-badge="final">Final</)
+    expect(picker).toMatch(/<button type="button" disabled="" aria-label="Previous week"/)
+    expect(picker).toMatch(/<button type="button" aria-label="Next week"/)
+    expect(html).toContain('data-matchup="m1A"')
+    expect(html).not.toContain('data-matchup="mB"')
+    expect(html).toContain('90.00')
+    expect(html).toMatch(/data-your-team[\s\S]*Week 2 · /)
+  })
+
+  it('while the week loads, the picker stays and labels it from the ladder', () => {
+    kept.week = 1
+    const html = render(tab())
+    expect(strip(html)).toMatch(/data-week="1"/)
+    expect(strip(html)).toMatch(/data-week-badge="final">Final</)
+    expect(html).not.toContain('data-matchup=')
+  })
+
+  it('a kept week the ladder does not have falls back to the current week', () => {
+    kept.week = 9
+    expect(strip(render(tab()))).toContain('data-week="2"')
+  })
+
+  it('no ladder yet: no picker', () => {
+    const html = render(tab(), {}, (qc) => qc.setQueryData(scheduleKeys.all(LEAGUE), { weeks: [], matchups: [] } satisfies LeagueSchedule))
+    expect(html).not.toContain('data-week-strip')
   })
 })
 
