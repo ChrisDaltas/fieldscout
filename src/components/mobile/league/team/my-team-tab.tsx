@@ -68,7 +68,8 @@ import { useRowStats } from './use-row-stats'
  *
  * A failed standings read puts "Couldn’t load the standings." with Try
  * again in the card's record line (gap list §3 #14) — a failed read never
- * reads as "No games played yet".
+ * reads as "No games played yet". The line holds its height through the
+ * first load and through a retry ("Trying…").
  */
 export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; teamId: string; detail: LeagueDetail }) {
   const team = detail.teams.find((t) => t.id === teamId)!
@@ -150,8 +151,12 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   const summary = standings.data ? summaryLine(standings.data.standings, teamId) : null
   // A failed standings read with nothing cached says so, with Try again —
   // never "No games played yet" (gap list §3 #14). A failed refetch over a
-  // table already on screen keeps showing that table.
-  const standingsFailed = standings.isError && !standings.data
+  // table already on screen keeps showing that table. Try again on an
+  // errored query with no data puts it back to `pending` (React Query v5),
+  // so the retry is read from `errorUpdatedAt`: the problem line stays up,
+  // reading "Trying…", until the retry lands — no blank line, no jump.
+  const standingsRetrying = !standings.data && standings.isPending && standings.errorUpdatedAt > 0
+  const standingsFailed = (standings.isError && !standings.data) || standingsRetrying
   const seat = rosterTeam ? waiverSeatCopy(detail.settings, rosterTeam, true) : null
 
   const sortedWeeks = useMemo(() => [...new Set(weeks.map((w) => w.week))].sort((a, b) => a - b), [weeks])
@@ -192,13 +197,20 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
               {standingsFailed ? (
                 <span role="alert" className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-m-t3" data-standings-problem>
                   <span className="truncate">Couldn’t load the standings.</span>
-                  <button type="button" onClick={() => void standings.refetch()} className="-my-1.5 flex-none py-1.5 font-semibold text-accent">
-                    Try again
+                  <button
+                    type="button"
+                    onClick={() => void standings.refetch()}
+                    disabled={standingsRetrying}
+                    className="-my-1.5 flex-none py-1.5 font-semibold text-accent disabled:text-m-t3"
+                  >
+                    {standingsRetrying ? 'Trying…' : 'Try again'}
                   </button>
                 </span>
               ) : (
+                // The loading placeholder is a NO-BREAK space: a plain one
+                // collapses and the line (and the card under it) loses a row.
                 <span className="truncate text-[12px] font-medium text-m-t3 tabular-nums">
-                  {summary ?? (standings.isPending ? ' ' : inSeason ? 'No games played yet' : 'Season hasn’t started')}
+                  {summary ?? (standings.isPending ? ' ' : inSeason ? 'No games played yet' : 'Season hasn’t started')}
                 </span>
               )}
               {seat && <span className="truncate text-[11px] font-medium text-m-t3">{seat}</span>}

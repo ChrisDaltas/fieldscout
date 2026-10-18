@@ -219,7 +219,17 @@ describe('MyTeamTab (mobile League › Team)', () => {
     const failStandings = (data?: unknown) => (qc: QueryClient) => {
       const q = qc.getQueryCache().find({ queryKey: leagueStandingsKeys.all(LEAGUE) })!
       if (data === undefined) q.setState({ data: undefined, dataUpdatedAt: 0 })
-      q.setState({ status: 'error', error: new Error('standings read failed'), fetchStatus: 'idle' })
+      q.setState({ status: 'error', error: new Error('standings read failed'), errorUpdatedAt: 1, fetchStatus: 'idle' })
+    }
+    // Try again on an errored query with no data: React Query v5 puts it
+    // back to `pending` (error cleared, errorUpdatedAt kept) while it runs.
+    const retryingStandings = (qc: QueryClient) => {
+      const q = qc.getQueryCache().find({ queryKey: leagueStandingsKeys.all(LEAGUE) })!
+      q.setState({ data: undefined, dataUpdatedAt: 0, status: 'pending', error: null, errorUpdatedAt: 1, fetchStatus: 'fetching' })
+    }
+    const firstLoad = (qc: QueryClient) => {
+      const q = qc.getQueryCache().find({ queryKey: leagueStandingsKeys.all(LEAGUE) })!
+      q.setState({ data: undefined, dataUpdatedAt: 0, status: 'pending', error: null, errorUpdatedAt: 0, fetchStatus: 'fetching' })
     }
     const card = (out: string) => out.slice(out.indexOf('data-team-card'), out.indexOf('data-quick-action'))
 
@@ -241,6 +251,20 @@ describe('MyTeamTab (mobile League › Team)', () => {
       const out = card(render(SCHEDULE, detail, failStandings('keep')))
       expect(out).toContain('2-2 · 2nd · PF 2nd · PA 1st')
       expect(out).not.toContain('data-standings-problem')
+    })
+
+    it('Try again keeps the problem line up, reading "Trying…" and disabled, until the retry lands', () => {
+      const out = card(render(SCHEDULE, detail, retryingStandings))
+      expect(out).toMatch(/data-standings-problem[\s\S]*?Couldn’t load the standings\.[\s\S]*?<button type="button" disabled=""[^>]*>Trying…<\/button>/)
+      expect(out).not.toContain('>Try again<')
+      expect(out).not.toContain('No games played yet')
+    })
+
+    it('the first load holds the record line with a no-break space (a plain one collapses the line)', () => {
+      const out = card(render(SCHEDULE, detail, firstLoad))
+      expect(out).not.toContain('data-standings-problem')
+      expect(out).toContain('tabular-nums">\u00a0</span>')
+      expect(out).not.toContain('No games played yet')
     })
 
     it('a table that has loaded never shows the problem line', () => {
