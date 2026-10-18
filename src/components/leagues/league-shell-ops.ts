@@ -103,6 +103,9 @@ export function activeLeagueSection(
     case 'team':
       return myTeamId && second === myTeamId ? 'team' : null
     case 'matchup':
+    // An NFL game's box score (a phone screen opened from a starter's game
+    // line, gap list §3 #17) belongs to the matchup.
+    case 'games':
       return 'matchup'
     case 'players':
       return 'players'

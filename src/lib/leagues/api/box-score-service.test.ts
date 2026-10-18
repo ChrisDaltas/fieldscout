@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { DB_FAILURE_COPY } from './db-failure'
-import { BOX_LINE_COLUMNS, heldFilter, slotInstanceKeys, starterPhase, startingSlotDefs, type BoxGame } from './box-score-service'
+import { BOX_LINE_COLUMNS, heldFilter, slotInstanceKeys, starterPhase, startingSlotDefs, storedBenchOf, type BoxGame } from './box-score-service'
 import { STAT_LINE_COLUMNS } from '../scoring/score-week-worker'
 
 const game = (over: Partial<BoxGame> & Pick<BoxGame, 'id' | 'home_team' | 'away_team'>): BoxGame => ({
@@ -134,5 +134,27 @@ describe('heldFilter — a failed read of the operator marks is a named 500 (F59
     expect(out).toEqual({ status: 500, body: { error: DB_FAILURE_COPY } })
     expect(err).toHaveBeenCalledWith(expect.stringMatching(/^league read failed — player_stats: player_stats read \(line teams/))
     err.mockRestore()
+  })
+})
+
+describe('F567 — a scored week’s bench is the one stored with its lineup', () => {
+  const ir = new Set(['ir'])
+  it('the stored bench ids plus that week’s IR-slot players (IR flagged)', () => {
+    const got = storedBenchOf({ slot_map: { 'qb:0': 'p-qb', 'ir:0': 'p-ir', 'flex:0': '' }, bench: ['p-b1', 'p-b2', 7] }, ir)
+    expect(got).toEqual({ kind: 'stored', ids: ['p-b1', 'p-b2', 'p-ir'], ir: new Set(['p-ir']) })
+  })
+  it('no lineup row, or a row without a bench array, is not_recorded — never today’s roster', () => {
+    expect(storedBenchOf(null, ir)).toEqual({ kind: 'not_recorded' })
+    expect(storedBenchOf({ slot_map: {}, bench: null }, ir)).toEqual({ kind: 'not_recorded' })
+  })
+  it('an empty stored bench is a real, recorded empty bench', () => {
+    expect(storedBenchOf({ slot_map: {}, bench: [] }, ir)).toEqual({ kind: 'stored', ids: [], ir: new Set() })
+  })
+  it('the box read selects the stored bench and passes the source to every readBench site', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('./box-score-service.ts', import.meta.url), 'utf8')
+    expect(src).toContain(".select('slot_map, bench, locked_at, set_at, edited_by_commish')")
+    expect(src.split(", benchSource)").length - 1).toBe(3)
+    expect(src).toContain("scoredWeek ? storedBenchOf(lineupRes.data, irKeysOf(league.roster_settings)) : { kind: 'roster' }")
   })
 })

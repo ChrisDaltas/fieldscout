@@ -20,6 +20,8 @@ import {
   weekTabsLockedReason,
   lineupChecks,
   moveOptions,
+  railDropTarget,
+  railDropTargets,
   moveToastCopy,
   opponentOf,
   oprkOf,
@@ -35,6 +37,10 @@ import {
   type AutosaveStatus,
   type QueuedMove,
   formatSnap,
+  injuredStarters,
+  injuryTag,
+  starterIdsOf,
+  startersOnBye,
 } from './my-team-ops'
 
 function player(over: Partial<RosterPlayer> & Pick<RosterPlayer, 'player_id' | 'position' | 'full_name'>): RosterPlayer {
@@ -194,6 +200,34 @@ describe('projected total + the Lineup check', () => {
   })
 })
 
+describe('the Lineup check’s shared rules (desktop check + the phone’s card)', () => {
+  it('injured: a status tag or an injury designation; named by the tag', () => {
+    const ps = [
+      player({ player_id: 'a', position: 'QB', full_name: 'A', status: 'Questionable' }),
+      player({ player_id: 'b', position: 'RB', full_name: 'B', status: 'PUP' }),
+      player({ player_id: 'c', position: 'WR', full_name: 'C', status: 'Active' }),
+    ]
+    expect(injuredStarters(ps).map((x) => x.player_id)).toEqual(['a', 'b'])
+    expect([injuryTag('Questionable'), injuryTag('out'), injuryTag('IR'), injuryTag('PUP'), injuryTag('Active')]).toEqual(['Q', 'O', 'IR', 'PUP', null])
+  })
+
+  it('on bye: his own bye week, or no game for his team in a week that has games', () => {
+    const ps = [
+      player({ player_id: 'a', position: 'QB', full_name: 'A', bye_week: 5 }),
+      player({ player_id: 'b', position: 'RB', full_name: 'B', nfl_team: 'DAL' }),
+      player({ player_id: 'c', position: 'WR', full_name: 'C' }),
+    ]
+    const games = [{ home_team: 'KC', away_team: 'BUF', kickoff_at: 'x' }]
+    expect(startersOnBye(ps, 5, games).map((x) => x.player_id)).toEqual(['a', 'b'])
+    expect(startersOnBye(ps, 5, []).map((x) => x.player_id)).toEqual(['a'])
+  })
+
+  it('a stored lineup’s starters leave out the IR seats', () => {
+    expect(starterIdsOf({ 'qb:0': 'q', 'ir1:0': 'hurt', 'rb:1': 'r' }, [{ key: 'ir1' }])).toEqual(['q', 'r'])
+    expect(starterIdsOf({}, [{ key: 'ir1' }])).toEqual([])
+  })
+})
+
 describe('the Move menu’s entries', () => {
   const qb = player({ player_id: 'qb', position: 'QB', full_name: 'Q One' })
   const wr1 = player({ player_id: 'wr1', position: 'WR', full_name: 'W One' })
@@ -217,6 +251,34 @@ describe('the Move menu’s entries', () => {
     const seated = moveOptions({ player: qb, placement, slots, players, locked, lockExempt: false })
     expect(seated.at(-1)).toEqual({ target: { kind: 'bench' }, label: 'To bench — leave QB empty', disabledReason: null })
     expect(moveOptions({ player: wrOut, placement, slots, players, locked, lockExempt: false }).some((o) => o.label.startsWith('IR'))).toBe(true)
+  })
+
+  // F570 — a rail drag onto the lineup: the open Move-menu targets only.
+  it('F570: a rostered player takes exactly his open Move entries; a locked one none; a free agent the bench only, own team only', () => {
+    const base = { leagueId: 'L', teamId: 'T', readOnly: false, ownTeam: true, placement, slots, players, locked, lockExempt: false }
+    const drag = (playerId: string, availability: 'free_agent' | 'rostered' = 'rostered') => ({ leagueId: 'L', playerId, availability, teamId: availability === 'rostered' ? 'T' : null })
+    const wr = railDropTargets({ ...base, drag: drag('wr1') })
+    // Eligible WR / flex seats, never QB, never the locked W Two's seat, no IR (not designated), no bench (already there).
+    expect(wr.has('slot:wr:0')).toBe(false)
+    expect([...wr].some((id) => id.startsWith('slot:qb'))).toBe(false)
+    expect([...wr].some((id) => id.startsWith('slot:ir'))).toBe(false)
+    expect(wr.has('bench')).toBe(false)
+    expect([...wr].some((id) => id.startsWith('slot:wr:'))).toBe(true)
+    expect(railDropTargets({ ...base, drag: drag('qb') }).has('bench')).toBe(true)
+    // His own game locks him → nothing accepts him (lock-exempt override does).
+    expect(railDropTargets({ ...base, drag: drag('wr2') }).size).toBe(0)
+    expect(railDropTargets({ ...base, lockExempt: true, drag: drag('wr2') }).size).toBeGreaterThan(0)
+    // A free agent: the bench, through the add's confirm — on the viewer's own team only.
+    expect([...railDropTargets({ ...base, drag: drag('fa', 'free_agent') })]).toEqual(['bench'])
+    expect(railDropTargets({ ...base, ownTeam: false, drag: drag('fa', 'free_agent') }).size).toBe(0)
+    // Another team's player, another league's drag, a read-only lineup, no drag: nothing.
+    expect(railDropTargets({ ...base, drag: { ...drag('x'), teamId: 'OTHER' } }).size).toBe(0)
+    expect(railDropTargets({ ...base, drag: { ...drag('qb'), leagueId: 'L2' } }).size).toBe(0)
+    expect(railDropTargets({ ...base, readOnly: true, drag: drag('qb') }).size).toBe(0)
+    expect(railDropTargets({ ...base, drag: null }).size).toBe(0)
+    expect(railDropTarget('slot:wr:1')).toEqual({ kind: 'slot', key: 'wr:1' })
+    expect(railDropTarget('bench')).toEqual({ kind: 'bench' })
+    expect(railDropTarget('list-drop:x')).toBeNull()
   })
 
   it('two empty seats sharing a label read apart — "RB 1 — Empty" / "RB 2 — Empty"', () => {

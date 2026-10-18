@@ -4,13 +4,15 @@ import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { cn } from '@/lib/utils'
 import { useListDisplay, useListDisplayStore } from '@/stores/list-display-store'
 
-import { MOBILE_STATS, STAT_GROUPS } from './lists-stats'
+import { STAT_GROUPS, offeredStats } from './lists-stats'
 
 /**
  * FieldScout Mobile — Add stats (lr-lists §2.5, state L6): the stat groups as
  * wrapping chips; a tap toggles the column at once and new columns append, so
  * selection order is column order. The chosen columns are the list's
- * session-only display state (D3), shared with desktop.
+ * session-only display state (D3), shared with desktop. A column whose
+ * release switch is off (Users, until community rankings are on) isn't
+ * offered.
  */
 export function AddStatsSheet({
   open,
@@ -23,7 +25,8 @@ export function AddStatsSheet({
 }) {
   const display = useListDisplay(listId)
   const toggleCol = useListDisplayStore((state) => state.toggleCol)
-  const selected = display.cols.filter((id) => MOBILE_STATS.some((stat) => stat.id === id)).length
+  const offered = offeredStats()
+  const selected = display.cols.filter((id) => offered.some((stat) => stat.id === id)).length
 
   return (
     <MobileSheet
@@ -39,7 +42,7 @@ export function AddStatsSheet({
           <div key={group} className="flex flex-col gap-2">
             <span className="text-[13px] font-semibold text-m-t3">{group}</span>
             <div className="flex flex-wrap gap-1.5">
-              {MOBILE_STATS.filter((stat) => stat.group === group).map((stat) => {
+              {offered.filter((stat) => stat.group === group).map((stat) => {
                 const on = display.cols.includes(stat.id)
                 return (
                   <button

@@ -1,12 +1,22 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 
 import { cn } from '@/lib/utils'
 
 /** Open overlays, newest last — only the top one answers Escape. */
 const stack: string[] = []
+
+const noSubscribe = () => () => {}
+
+/** False on the server and while hydrating, true otherwise — so an overlay
+ *  opened by a tap portals in that tap's own commit, and a field inside can
+ *  take focus while the tap is still being handled (the only time iOS
+ *  raises the keyboard for it). */
+function useOnClient(): boolean {
+  return useSyncExternalStore(noSubscribe, () => true, () => false)
+}
 
 /**
  * A FieldScout Mobile full-screen overlay (handoff: Team view, Trade detail,
@@ -28,11 +38,10 @@ export function MOverlay({
   label: string
   className?: string
 }) {
-  const [mounted, setMounted] = useState(false)
+  const mounted = useOnClient()
   const id = useId()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    setMounted(true)
     stack.push(id)
     return () => {
       const i = stack.lastIndexOf(id)
@@ -50,9 +59,10 @@ export function MOverlay({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, id])
-  // Move focus into the overlay when it opens (screen readers, keyboards).
+  // Move focus into the overlay when it opens (screen readers, keyboards) —
+  // unless something inside already took it (the search field).
   useEffect(() => {
-    if (mounted) ref.current?.focus({ preventScroll: true })
+    if (mounted && !ref.current?.contains(document.activeElement)) ref.current?.focus({ preventScroll: true })
   }, [mounted])
   if (!mounted) return null
   return createPortal(

@@ -474,6 +474,24 @@ $o$);
 end
 $un$;
 
+-- Migration 196 (Chris 2026-10-18: team names ≤ 24 everywhere — additive, the
+-- R992 shape): pg_temp.un196 reverses 196's ONE add_placeholder_seat hunk
+-- (the given name's 24-character bound). Applied INNERMOST, so A3 / A4 keep
+-- the literals 169 stored; an identity on every other body (no other body
+-- carries the text).
+create function pg_temp.un196(s text) returns text language plpgsql as $un$
+begin
+  s := replace(s, $r$  -- 196 (Chris 2026-10-18: team names ≤ 24 everywhere): a caller-supplied
+  -- name is at most 24 characters ("Team N" always fits). Before any write.
+  IF char_length(v_name) > 24 THEN
+    RAISE EXCEPTION 'add_placeholder_seat: the team name is % characters — team names can be up to 24 characters', char_length(v_name)
+      USING ERRCODE = '22023';
+  END IF;
+$r$, '');
+  return s;
+end
+$un$;
+
 -- L.E1.42 (migration 176 — additive, the R992 shape): pg_temp.un176 reverses
 -- 176's three remove_manager hunks (verbatim from pgTAP 124). Applied
 -- INNERMOST, so A3 / A4 keep the literals 169 / 173 stored.
@@ -789,7 +807,7 @@ select is(
   || 'update_league_settings:t:search_path="":f:t',
   'A2 the fifteen replaced bodies keep one overload each, their DEFINER / plain posture, search_path empty, anon closed, and authenticated on the fourteen doors only');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un169(pg_temp.un173(pg_temp.un176(p.prosrc)))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un169(pg_temp.un173(pg_temp.un176(pg_temp.un196(p.prosrc))))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in (
      'add_placeholder_seat', 'set_member_role', 'assign_manager', 'remove_manager',
@@ -806,7 +824,7 @@ select is(
   || 'update_league_settings=fa301876833c5cba5fe27ae4455e7a2e',
   'A3 D137: each live body with 169 reversed is its NEWEST definer FILE TEXT (063 / 150 / 062 / 118 / 064 / 059 / 060 / 105 / 157 — stored md5 literals measured on the 168 chain)');
 select is(
-  (select string_agg(p.proname || '=' || md5(pg_temp.un173(pg_temp.un176(p.prosrc))), ' ' order by p.proname)
+  (select string_agg(p.proname || '=' || md5(pg_temp.un173(pg_temp.un176(pg_temp.un196(p.prosrc)))), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in (
      'add_placeholder_seat', 'set_member_role', 'assign_manager', 'remove_manager',
@@ -821,7 +839,7 @@ select is(
   || 'set_lineup_internal=36a62aed801182faf52dcd3f58f1a723 set_member_role=516483c5b214da865a808d26afceff50 '
   || 'soft_delete_league=cdcd56355f0cfc7404436753056729c0 update_league_profile=034aff016a77968b1b4eb4e17bf73098 '
   || 'update_league_settings=0afb6fffbfc688dc96a0fcc5bb4ad9d1',
-  'A4 the fifteen live prosrc md5s — 169 as written (stored literals; remove_manager through pg_temp.un173(pg_temp.un176(…)) since 176, additive)');
+  'A4 the fifteen live prosrc md5s — 169 as written (stored literals; remove_manager through pg_temp.un173(pg_temp.un176(…)) since 176, add_placeholder_seat through pg_temp.un196(…) since 196, additive)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname not in (

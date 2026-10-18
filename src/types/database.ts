@@ -7041,7 +7041,11 @@ export type Database = {
         Args: { t: Database["public"]["Tables"]["teams"]["Row"] }
         Returns: Json
       }
-      team_is_mock_seat: { Args: { p_team_id: string }; Returns: boolean }
+      team_default_name_internal: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
+      team_is_mock_seat:{ Args: { p_team_id: string }; Returns: boolean }
       team_league_id: { Args: { p_team_id: string }; Returns: string }
       team_rename_normalize_internal: {
         Args: { p_name: string; p_verb: string }

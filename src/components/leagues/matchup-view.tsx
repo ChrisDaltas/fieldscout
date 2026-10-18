@@ -25,6 +25,7 @@ import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { BoxStarter, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { PROJ_TEXT } from '@/components/players/projected-points'
+import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/components/mobile/league/streak-ops'
 import { cn } from '@/lib/utils'
 
 import { commishMatchupHref } from './activity-page-ops'
@@ -38,6 +39,10 @@ import {
   BENCH_NOT_COUNTED_COPY,
   EMPTY_BENCH_COPY,
   benchNote,
+  benchUnrecorded,
+  WIN_CHANCE_HOW,
+  WIN_CHANCE_LABEL,
+  winChance,
   benchRows,
   benchSlotLabel,
   type BenchRow,
@@ -348,6 +353,10 @@ function HeadToHeadWeek({
   const settings = { median_game: detail.settings.median_game, second_opponent: detail.settings.second_opponent }
   const isCommish = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   const managers = useMemo(() => managersByTeam(detail.members), [detail.members])
+  // F566: each side's current W/L streak — the one shared count
+  // (`streak-ops`) over the schedule read's stored final results.
+  const schedule = useSchedule(leagueId)
+  const streakOf = (teamId: string) => (schedule.data ? teamStreak(teamId, schedule.data, doc.season) : null)
 
   if (!selected) {
     return <EmptyCard copy={emptyWeekCopy(doc.week, weeks, detail.settings.regular_season_weeks)} data-empty="no-matchups" />
@@ -355,7 +364,18 @@ function HeadToHeadWeek({
 
   return (
     <div className="flex flex-col gap-4" data-variant="h2h">
-      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} managers={managers} />
+      <Scoreboard doc={doc} row={selected} settings={settings} myTeamId={myTeamId} managers={managers} streakOf={streakOf} />
+
+      {selected.away_team_id && (
+        <WinChanceMeter
+          leagueId={leagueId}
+          season={doc.season}
+          week={doc.week}
+          weekStatus={doc.league_week.status}
+          home={{ teamId: selected.home_team_id, name: teamName(doc, selected.home_team_id) }}
+          away={{ teamId: selected.away_team_id, name: teamName(doc, selected.away_team_id) }}
+        />
+      )}
 
       {weekMayHaveCorrections(doc.league_week.status) && (
         // The selected row is always a PRIMARY row (`selectedMatchup` over `splitRows`' primary list) — its game is `matchup` (R1365).
@@ -409,7 +429,8 @@ function HeadToHeadWeek({
  * a crest, the team (a door to its page), its manager, and a big mono score;
  * the week and "vs" between them. A score is muted only while it is pending
  * or once the STORED result says that side lost (the client never compares
- * scores). No win-probability meter: there is no source for one (F566).
+ * scores). Each side carries its current W/L streak (F566); the win-chance
+ * meter sits under the card (`WinChanceMeter`).
  */
 export function Scoreboard({
   doc,
@@ -417,6 +438,7 @@ export function Scoreboard({
   settings,
   myTeamId,
   managers,
+  streakOf,
 }: {
   doc: WeekMatchups
   row: MatchupRow
@@ -424,6 +446,8 @@ export function Scoreboard({
   myTeamId: string | null
   /** team id → manager username (`managersByTeam`). */
   managers?: ReadonlyMap<string, string>
+  /** F566: the team's current streak; null before a decided game. */
+  streakOf?: (teamId: string) => Streak | null
 }) {
   const homeMedian = medianRow(doc, row.home_team_id, settings.median_game)
   const homeSecond = secondChip(doc, row.home_team_id, settings.second_opponent)
@@ -434,7 +458,7 @@ export function Scoreboard({
     <Card className="min-w-0 overflow-hidden" data-matchup={row.id} data-matchup-status={row.status}>
       <CardContent className="flex flex-col gap-3 p-[15px]">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
-          <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers?.get(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
+          <Side doc={doc} row={row} teamId={row.home_team_id} score={row.home_score} manager={managers?.get(row.home_team_id) ?? null} streak={streakOf?.(row.home_team_id) ?? null} mine={row.home_team_id === myTeamId} />
           <div className="flex flex-col items-center gap-1 text-center">
             <span className="whitespace-nowrap text-[10px] font-semibold text-n-6">
               Week <span className="fs-num">{doc.week}</span>
@@ -456,7 +480,7 @@ export function Scoreboard({
             )}
           </div>
           {row.away_team_id ? (
-            <Side doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers?.get(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} mirror />
+            <Side doc={doc} row={row} teamId={row.away_team_id} score={row.away_score} manager={managers?.get(row.away_team_id) ?? null} streak={streakOf?.(row.away_team_id) ?? null} mine={row.away_team_id === myTeamId} mirror />
           ) : (
             <div className="flex min-w-0 flex-col items-end gap-1 text-right" data-side="bye">
               <span className="text-[13px] font-bold text-n-3">Bye</span>
@@ -481,6 +505,7 @@ function Side({
   teamId,
   score,
   manager,
+  streak = null,
   mine,
   mirror = false,
 }: {
@@ -489,6 +514,7 @@ function Side({
   teamId: string
   score: number | null
   manager: string | null
+  streak?: Streak | null
   mine: boolean
   mirror?: boolean
 }) {
@@ -517,6 +543,11 @@ function Side({
             {manager && (
               <span className="truncate text-[10px] font-medium text-n-6">
                 <UsernameLink username={manager} />
+              </span>
+            )}
+            {streak && (
+              <span className={cn('fs-num shrink-0 text-[10px] font-bold', streakToneClass(streak, 'text-n-6'))} title="Current streak" data-streak={streakArrowText(streak)}>
+                {streakArrowText(streak)}
               </span>
             )}
             {h2h.decided && (
@@ -803,7 +834,14 @@ function LineupBoard({
   const awayBench = awaySide && awayData?.bench ? benchRows(awayData.bench, rosterOf(awaySide.teamId)) : null
   const showBench = homeBench !== null || awayBench !== null
   const benchPairs = pairBench(homeBench ?? [], awayBench ?? [])
-  const note = benchNote(weekStatus)
+  // F567: a past week's bench is the one stored with its lineup; a side whose
+  // bench was not recorded is said in words, never filled from today's roster.
+  const benchSides = [
+    ...(homeData ? [{ source: homeData.bench_source, team: home.name }] : []),
+    ...(awaySide && awayData ? [{ source: awayData.bench_source, team: awaySide.name }] : []),
+  ]
+  const note = benchNote(weekStatus, benchSides)
+  const noBenchRecorded = benchUnrecorded(benchSides)
   const live = weekStatus === 'live'
   const loading = homeBox.isPending || (awaySide !== null && awayBox.isPending)
 
@@ -872,7 +910,7 @@ function LineupBoard({
                     {note}
                   </p>
                 )}
-                {benchPairs.length === 0 ? (
+                {benchPairs.length === 0 && noBenchRecorded ? null : benchPairs.length === 0 ? (
                   <p className="py-2 text-center text-[11px] font-medium text-n-6" data-empty="no-bench">
                     {EMPTY_BENCH_COPY}
                   </p>
@@ -944,6 +982,61 @@ function BoxStatus({
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * F566 — the win-chance meter: the plain rule in `winChance` over the same
+ * box reads the board makes (one cache entry each) and the stored
+ * projections. Rendered only while the week is upcoming or live and every
+ * starter still to play has a projection; otherwise nothing (never a guess).
+ * A static bar in page flow — no shadow (CLAUDE.md).
+ */
+function WinChanceMeter({
+  leagueId,
+  season,
+  week,
+  weekStatus,
+  home,
+  away,
+}: {
+  leagueId: string
+  season: number
+  week: number
+  weekStatus: string
+  home: BoardSide
+  away: BoardSide
+}) {
+  const homeBox = useBoxScore(leagueId, week, home.teamId)
+  const awayBox = useBoxScore(leagueId, week, away.teamId)
+  const values = useLeaguePlayerValues(leagueId, season, week)
+  const side = (d: TeamBoxScore | undefined) => (d?.lineup ? { points: d.points, starters: d.starters } : null)
+  const chance = winChance(weekStatus, side(homeBox.data), side(awayBox.data), (id) => values.byPlayer.get(id)?.projected_points ?? null)
+  if (!chance) return null
+  return (
+    <Card className="min-w-0" data-win-chance={`${chance.home}-${chance.away}`}>
+      <CardContent className="flex flex-col gap-1.5 px-[15px] py-2.5">
+        <div className="flex items-center justify-between gap-2 text-[11px] font-semibold">
+          <span className="fs-num text-ink" data-win-chance-home>
+            {chance.home}%
+          </span>
+          <span className="text-[10px] font-bold text-n-6">{WIN_CHANCE_LABEL}</span>
+          <span className="fs-num text-ink" data-win-chance-away>
+            {chance.away}%
+          </span>
+        </div>
+        <div
+          className="flex h-1.5 overflow-hidden rounded-pill bg-surface-control"
+          role="img"
+          aria-label={`${WIN_CHANCE_LABEL}: ${home.name} ${chance.home}%, ${away.name} ${chance.away}%`}
+        >
+          <span className="h-full bg-accent" style={{ width: `${chance.home}%` }} />
+        </div>
+        <p className="text-center text-[10px] font-medium text-n-6" data-win-chance-how>
+          <span className="fs-num">Proj {chance.homeFinal.toFixed(1)} – {chance.awayFinal.toFixed(1)}</span> · {WIN_CHANCE_HOW}
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 

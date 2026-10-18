@@ -2,6 +2,8 @@
 
 import * as React from 'react'
 
+import { budgetShare } from '@/components/lists/v2/list-buckets'
+import { playerCost } from '@/components/lists/v2/list-stats'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -9,21 +11,26 @@ import { posLabel, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAiListBuild } from '@/hooks/use-ai-list-build'
 import { useAuth } from '@/hooks/use-auth'
+import { useDraftMode } from '@/hooks/use-draft-mode'
 import { useList, useLists, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileListsCoverPassed } from '@/hooks/use-mobile-lists-cover-passed'
 import { useMobileListsOwner } from '@/hooks/use-mobile-lists-owner'
 import { rankPoolPositions, useMobileListsPosRanks } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { useMobileListsUsage } from '@/hooks/use-mobile-lists-usage'
+import { useMobileListsUsersRanks } from '@/hooks/use-mobile-lists-users-ranks'
+import { toast } from '@/hooks/use-toast'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
-import { useListDisplay } from '@/stores/list-display-store'
+import { useListDisplay, type ListOrg } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { AiBuildStrip } from './ai-build-strip'
 import { ListActionsSheet } from './list-actions-sheet'
-import { playersLabel, shortName, tierChipClass, updatedLabel, viewSections } from './lists-model'
+import { draftedCount, groupOptions, groupSections, noteOf, notesCount, resolveGroup } from './list-tools'
+import { ComparePickSheet, DraftedBox, GroupBySheet } from './list-tools-sheets'
+import { playersLabel, shortName, tierChipClass, updatedLabel } from './lists-model'
 import { useListsNav } from './lists-nav'
 import {
   CenterNote,
@@ -37,7 +44,7 @@ import {
   VideoCard,
   coverClass,
 } from './lists-parts'
-import { useListScoring, useListTimeFrame } from './lists-session-store'
+import { useListCheckOff, useListNotes, useListScoring, useListTimeFrame } from './lists-session-store'
 import {
   cellTextClass,
   needsLastSeason,
@@ -66,6 +73,14 @@ import { createSidewaysSync } from './sideways-sync'
  * title, ⋯ and Edit at the top, and the column names (Player · the stat
  * columns) stay pinned under it. The bar floats over the page rather than
  * taking a place in it, so nothing moves when it appears.
+ *
+ * Desktop's list tools live in the ⋯ sheet (gap list §3 #3): **Group by**
+ * (Ranked / Tiers / Rounds / Avg cost / Budget %, desktop's buckets),
+ * **Check off drafted** (a tick box on each row — the marks are the
+ * account's, per list, as desktop's; drafted rows are dimmed and struck
+ * through whether or not the boxes show), **Clear drafted**, **Show notes**
+ * (each note under its player; a small mark beside the name otherwise) and
+ * **Side by side**.
  */
 export function ListView({ listId }: { listId: string }) {
   const nav = useListsNav()
@@ -74,7 +89,11 @@ export function ListView({ listId }: { listId: string }) {
   const lists = useLists(1, 50)
   const aiBuild = useAiListBuild(listId)
   const pushHistory = useHistoryStore((state) => state.push)
+  const draft = useDraftMode(listId)
+  const display = useListDisplay(listId)
   const [optionsOpen, setOptionsOpen] = React.useState(false)
+  const [groupOpen, setGroupOpen] = React.useState(false)
+  const [compareOpen, setCompareOpen] = React.useState(false)
   const coverRef = React.useRef<HTMLDivElement>(null)
   const barRef = React.useRef<HTMLDivElement>(null)
 
@@ -87,6 +106,9 @@ export function ListView({ listId }: { listId: string }) {
   const canEdit = Boolean(list?.is_owner) && !aiBuild.building
   const loaded = Boolean(list) && !detail.isError
   const coverOff = useMobileListsCoverPassed(coverRef, barRef, loaded)
+  const marked = draftedCount(list?.players ?? [], draft.drafted)
+  const [checkOff, setCheckOff] = useListCheckOff(listId, marked > 0)
+  const [notesShown, setNotesShown] = useListNotes(listId)
 
   // "Recently viewed" on Home — the desktop panel records the same entry.
   React.useEffect(() => {
@@ -136,6 +158,9 @@ export function ListView({ listId }: { listId: string }) {
   const count = list.players.length
   const videos = list.links.filter((link) => link.kind === 'video')
   const articles = list.links.filter((link) => link.kind === 'article')
+  const options = groupOptions(list)
+  const org = resolveGroup(display.org, list)
+  const notes = notesCount(list.players)
 
   return (
     <MobileScreen className="leading-[normal] tabular-nums">
@@ -227,9 +252,14 @@ export function ListView({ listId }: { listId: string }) {
 
       <PlayersTable
         list={list}
-        tiersOn={tiersOn}
+        org={org}
         ranked={ranked}
         canEdit={canEdit}
+        drafted={draft.drafted}
+        marked={marked}
+        checkOff={checkOff}
+        onTick={(playerId) => draft.toggleDrafted(playerId)}
+        notesShown={notesShown && notes > 0}
         onAddPlayers={() => nav.openEditor(list.id, true)}
       />
 
@@ -242,6 +272,35 @@ export function ListView({ listId }: { listId: string }) {
         viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
         onEditDetails={() => nav.openDetails(list.id)}
         onDeleted={() => nav.closeList()}
+        tools={{
+          group: options.length > 1 ? (options.find((option) => option.id === org)?.label ?? null) : null,
+          onGroupBy: () => setGroupOpen(true),
+          checkOff,
+          onCheckOff: setCheckOff,
+          marked,
+          onClearDrafted: () => {
+            // Guarded in the hook: it refuses (and says why) over marks it
+            // never read, so only a clear that ran is announced. The boxes
+            // stay as they are — a cleared board is usually about to be
+            // ticked again.
+            if (draft.clearDrafted()) {
+              setCheckOff(checkOff)
+              toast({ title: 'Drafted marks cleared' })
+            }
+          },
+          notes,
+          notesShown,
+          onNotes: setNotesShown,
+          onCompare: () => setCompareOpen(true),
+        }}
+      />
+      <GroupBySheet open={groupOpen} onOpenChange={setGroupOpen} listId={list.id} options={options} value={org} />
+      <ComparePickSheet
+        open={compareOpen}
+        onOpenChange={setCompareOpen}
+        initial={[list.id]}
+        anchor={list}
+        onShow={(ids) => nav.openCompare(ids)}
       />
     </MobileScreen>
   )
@@ -362,15 +421,29 @@ function SlimBar({
 
 function PlayersTable({
   list,
-  tiersOn,
+  org,
   ranked,
   canEdit,
+  drafted,
+  marked,
+  checkOff,
+  onTick,
+  notesShown,
   onAddPlayers,
 }: {
   list: ListWithDetails
-  tiersOn: boolean
+  /** The grouping drawn (Group by, `resolveGroup`). */
+  org: ListOrg
   ranked: boolean
   canEdit: boolean
+  /** This viewer's drafted marks on the list (`useDraftMode`). */
+  drafted: ReadonlySet<string>
+  /** How many of the list's players are marked. */
+  marked: number
+  /** Rows show their tick boxes (Check off drafted). */
+  checkOff: boolean
+  onTick: (playerId: string) => void
+  notesShown: boolean
   onAddPlayers: () => void
 }) {
   const display = useListDisplay(list.id)
@@ -402,13 +475,25 @@ function PlayersTable({
     scoring,
   )
   const ranks = pool.data ?? null
+  // The users' consensus rank (gap list §3 #9), only while that column shows:
+  // the Rankings hub's Users read for each position on the list.
+  const users = useMobileListsUsersRanks(
+    list.players.map((entry) => entry.player.position),
+    needsSource(stats, 'users'),
+  )
 
   // A failed read is said out loud — its cells stay blank, never "–" (CLAUDE.md).
-  const failed = [latest, frames, usage, pool].filter((query) => query.isError)
+  const failed = [latest, frames, usage, pool, users].filter((query) => query.isError)
   const latestWeek = latest.data ?? null
-  const sections = React.useMemo(() => viewSections(list.players, tiersOn), [list.players, tiersOn])
-  const lead = hasStats ? 'w-[172px]' : 'w-full'
-  const ready = { frames: frames.isSuccess, usage: usage.isSuccess, ranks: pool.isSuccess }
+  const sections = React.useMemo(
+    () => groupSections(list.players, org, display.budget),
+    [list.players, org, display.budget],
+  )
+  // The tick box takes its own 46px, so the locked column grows to keep the
+  // name's room (172 → 200).
+  const lead = hasStats ? (checkOff ? 'w-[200px]' : 'w-[172px]') : 'w-full'
+  const priced = org === 'cost' || org === 'budget'
+  const ready = { frames: frames.isSuccess, usage: usage.isSuccess, ranks: pool.isSuccess, users: users.isSuccess }
 
   const open = (entry: ListPlayerWithPlayer) =>
     openPlayerView(entry.player_id, null, list.is_owner ? { listId: list.id, listTitle: list.title } : null)
@@ -434,7 +519,12 @@ function PlayersTable({
       {/* The controls wrap under the title when a phone is too narrow for
           the scoring pill and the time frame beside it. */}
       <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 px-4 pb-2 pt-[18px]">
-        <span className="mr-auto whitespace-nowrap text-[16px] font-semibold text-m-t1">Players · {list.players.length}</span>
+        <span className="mr-auto whitespace-nowrap text-[16px] font-semibold text-m-t1">
+          Players · {list.players.length}
+          {marked > 0 && (
+            <span className="text-[13px] font-medium text-m-t3"> · {list.players.length - marked} left</span>
+          )}
+        </span>
         {hasStats && (
           <span className="flex flex-none items-center gap-2">
             {showsPoints(stats) && <ScoringControl value={scoring} onChange={setScoring} />}
@@ -503,9 +593,19 @@ function PlayersTable({
               {sections.map((section, sectionIndex) => (
                 <React.Fragment key={section.label ?? sectionIndex}>
                   {section.label !== null && (
-                    <div className={cn('sticky left-0 pb-1 pl-4 pt-3', hasStats && 'border-r border-m-b3', lead)}>
-                      {/* Desktop's tier palette, as desktop's chip (gap list #10). */}
-                      <span className={tierChipClass(section.tierIndex)}>{section.label}</span>
+                    <div
+                      className={cn(
+                        'sticky left-0 flex items-center gap-1.5 pb-1 pl-4 pt-3',
+                        hasStats && 'border-r border-m-b3',
+                        lead,
+                      )}
+                    >
+                      {/* Desktop's tier palette, as desktop's chip (gap list #10)
+                          — rounds and price bands step through it too. */}
+                      <span className={tierChipClass(section.colorIndex)}>{section.label}</span>
+                      {section.meta ? (
+                        <span className="text-[11px] font-semibold text-m-t3">{section.meta}</span>
+                      ) : null}
                     </div>
                   )}
                   {section.entries.map((entry) => {
@@ -515,6 +615,11 @@ function PlayersTable({
                         key={entry.id}
                         entry={entry}
                         rank={ranked ? n : null}
+                        price={priced ? priceLabel(entry, org, display.budget) : null}
+                        drafted={drafted.has(entry.player_id)}
+                        checkOff={checkOff}
+                        onTick={() => onTick(entry.player_id)}
+                        noteShown={notesShown}
                         stats={stats}
                         ctx={{
                           frames: frames.data?.get(entry.player_id),
@@ -522,6 +627,7 @@ function PlayersTable({
                           scoring,
                           usage: usage.data?.get(entry.player_id),
                           posRank: ranks ? (ranks.get(entry.player_id) ?? null) : undefined,
+                          usersRank: users.data ? (users.data.get(entry.player_id) ?? null) : undefined,
                           ready,
                         }}
                         lead={lead}
@@ -540,9 +646,24 @@ function PlayersTable({
   )
 }
 
+/** A priced grouping's figure on the row: "$45", or "$45 · 23%" by budget. */
+function priceLabel(entry: ListPlayerWithPlayer, org: ListOrg, budget: number): string | null {
+  const cost = playerCost(entry)
+  if (cost === null) return null
+  const money = `$${Math.round(cost)}`
+  if (org !== 'budget') return money
+  const share = budgetShare(entry, budget)
+  return share === null ? money : `${money} · ${share}%`
+}
+
 function PlayerRow({
   entry,
   rank,
+  price,
+  drafted,
+  checkOff,
+  onTick,
+  noteShown,
   stats,
   ctx,
   lead,
@@ -551,6 +672,13 @@ function PlayerRow({
 }: {
   entry: ListPlayerWithPlayer
   rank: number | null
+  /** Avg cost / Budget %: the player's price on the second line. */
+  price: string | null
+  drafted: boolean
+  checkOff: boolean
+  onTick: () => void
+  /** Show notes: the note runs under the row instead of a mark by the name. */
+  noteShown: boolean
   stats: readonly MStat[]
   ctx: ValueCtx
   lead: string
@@ -558,44 +686,105 @@ function PlayerRow({
   onOpen: () => void
 }) {
   const player = entry.player
+  const note = noteOf(entry)
+  // Drafted is a resting look — a recessed fill, the name struck through and
+  // the rest dimmed — never a shadow (CLAUDE.md → Elevation).
+  const fill = drafted ? 'bg-m-b1' : 'bg-m-b0'
   return (
-    <div className="flex h-[52px] items-center border-b border-m-b1">
-      <button
-        type="button"
-        onClick={onOpen}
-        className={cn(
-          'sticky left-0 z-[1] flex h-full flex-none items-center gap-2 bg-m-b0 pl-4 text-left',
-          hasStats && 'border-r border-m-b3',
-          lead,
-        )}
-      >
-        {rank !== null && (
-          <span className="w-[18px] flex-none text-center text-[13px] font-bold tabular-nums text-m-t1">{rank}</span>
-        )}
-        <MHeadshot player={player} size={30} />
-        <span className="flex min-w-0 flex-1 flex-col pr-2">
-          <span className="truncate text-[13px] font-semibold text-m-t1">{shortName(player.full_name, player.position)}</span>
-          <span className={cn('whitespace-nowrap text-[10px] font-semibold', posTextClass(player.position ?? ''))}>
-            {posLabel(player.position ?? '')} <span className="font-medium text-m-t3">{player.team ?? 'FA'}</span>
-          </span>
-        </span>
-      </button>
-      {stats.map((stat) => {
-        const value = stat.value(entry, ctx)
-        return (
-          <div key={stat.id} className="w-[58px] flex-none px-[3px]">
-            <div
-              className={cn(
-                'flex h-[26px] items-center justify-center rounded bg-m-b1 text-[12px] font-semibold tabular-nums',
-                cellTextClass(value),
-              )}
+    <div className={cn('border-b border-m-b1', drafted && 'bg-m-b1')} data-drafted={drafted || undefined}>
+      <div className="flex h-[52px] items-center">
+        <div
+          className={cn(
+            'sticky left-0 z-[1] flex h-full flex-none items-center',
+            fill,
+            hasStats && 'border-r border-m-b3',
+            lead,
+          )}
+        >
+          {checkOff && (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={drafted}
+              aria-label={`Drafted: ${player.full_name}`}
+              onClick={onTick}
+              className="flex h-full w-[46px] flex-none items-center pl-4"
             >
-              {value}
+              <DraftedBox on={drafted} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpen}
+            className={cn('flex h-full min-w-0 flex-1 items-center gap-2 text-left', !checkOff && 'pl-4')}
+          >
+            {rank !== null && (
+              <span className="w-[18px] flex-none text-center text-[13px] font-bold tabular-nums text-m-t1">{rank}</span>
+            )}
+            <span className={cn('flex flex-none', drafted && 'opacity-45')}>
+              <MHeadshot player={player} size={30} />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col pr-2">
+              <span className="flex min-w-0 items-center gap-1">
+                <span
+                  className={cn(
+                    'truncate text-[13px] font-semibold',
+                    drafted ? 'text-m-t3 line-through' : 'text-m-t1',
+                  )}
+                >
+                  {shortName(player.full_name, player.position)}
+                </span>
+                {note && !noteShown ? (
+                  <span className="flex flex-none text-accent">
+                    <LIcon name="note" size={11} stroke={1.8} />
+                    <span className="sr-only">Has a note</span>
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className={cn(
+                  'truncate whitespace-nowrap text-[10px] font-semibold',
+                  posTextClass(player.position ?? ''),
+                  drafted && 'opacity-60',
+                )}
+              >
+                {posLabel(player.position ?? '')} <span className="font-medium text-m-t3">{player.team ?? 'FA'}</span>
+                {price ? <span className="font-medium text-m-t3"> · {price}</span> : null}
+              </span>
+            </span>
+          </button>
+        </div>
+        {stats.map((stat) => {
+          const value = stat.value(entry, ctx)
+          return (
+            <div key={stat.id} className={cn('w-[58px] flex-none px-[3px]', drafted && 'opacity-45')}>
+              <div
+                className={cn(
+                  'flex h-[26px] items-center justify-center rounded text-[12px] font-semibold tabular-nums',
+                  drafted ? 'bg-m-b2' : 'bg-m-b1',
+                  cellTextClass(value),
+                )}
+              >
+                {value}
+              </div>
             </div>
-          </div>
-        )
-      })}
-      {hasStats && <span className="w-3 flex-none" />}
+          )
+        })}
+        {hasStats && <span className="w-3 flex-none" />}
+      </div>
+      {note && noteShown ? (
+        // Pinned to the screen's left edge, so a note reads in full however
+        // far the stat columns are scrolled.
+        <p
+          className={cn(
+            'sticky left-0 w-screen max-w-[100vw] px-4 pb-2.5 text-[12px] font-medium leading-[1.4] text-m-t2 [text-wrap:pretty]',
+            drafted && 'opacity-60',
+          )}
+          data-list-note
+        >
+          {note}
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -105,6 +105,8 @@ const SOURCE_PATHS = [
   'src/lib/scoring/personal-scoring-system.ts',
   'src/utils/**',
   'src/types/database.ts',
+  // Gap list §3 #4: links-service's link cap lives with the other list limits.
+  'src/types/schemas/lists.ts',
   'src/components/draft/auction-budget.ts',
   'src/components/draft/commish-auction-ops.ts',
   'src/components/draft/draft-order.ts',

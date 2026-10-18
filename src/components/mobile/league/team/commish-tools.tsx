@@ -26,6 +26,7 @@ import { useCommishForceAddDrop } from '@/hooks/use-commish-roster'
 import { useCommishRenameTeam } from '@/hooks/use-commish-team'
 import { useDraftPool } from '@/hooks/use-draft-pool'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
+import { TEAM_NAME_MAX } from '@/lib/leagues/team-name'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
@@ -138,7 +139,7 @@ export function MCommishRename({ leagueId, teamId, teamName }: { leagueId: strin
           <input
             id={`${id}-name`}
             value={draft}
-            maxLength={120}
+            maxLength={TEAM_NAME_MAX}
             autoComplete="off"
             disabled={rename.isPending}
             aria-describedby={gate.ok ? undefined : `${id}-gate`}

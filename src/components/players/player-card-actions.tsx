@@ -90,7 +90,7 @@ export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
   return { state: 'ready' as const, view, myTeamId }
 }
 
-export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; leagueId: string }) {
+export function LeagueCardActions({ player, leagueId, confirmOpen }: { player: PoolPlayer; leagueId: string; confirmOpen?: boolean }) {
   const card = useCardLeagueView(player, leagueId)
   // D481: held here so "Added X" survives the card re-deriving him as yours.
   const move = useAddDrop(leagueId)
@@ -98,7 +98,9 @@ export function LeagueCardActions({ player, leagueId }: { player: PoolPlayer; le
   if (card.state === 'error') {
     return <p className="text-[11px] font-medium text-n-3">Couldn’t read this league right now.</p>
   }
-  return <LeagueActionsBody view={card.view} leagueId={leagueId} myTeamId={card.myTeamId} move={move} />
+  // F570: a rail drop onto the lineup opens with the + already pressed — the
+  // same one confirm step (D481(n)), never a one-press add.
+  return <LeagueActionsBody view={card.view} leagueId={leagueId} myTeamId={card.myTeamId} move={move} confirmOpen={confirmOpen} />
 }
 
 /** The rail's "+" (D483): the card's own pickup flow — the same confirm, the

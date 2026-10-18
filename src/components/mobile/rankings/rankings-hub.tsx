@@ -53,6 +53,7 @@ import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import {
   HUB_CAP,
   boardMovement,
+  sourceRankMap,
   useAuthorBoard,
   useExpertBoards,
   useExpertsSource,
@@ -282,10 +283,6 @@ function SourceTabs({
 
 type RankMap = Map<string, number>
 
-function rankMap(rows: readonly HubRow[] | undefined): RankMap {
-  return new Map((rows ?? []).map((r, i) => [r.player.id, i + 1]))
-}
-
 interface CmpSource {
   /** Row label (lr-hub §2.9) and info-line header name (§2.8). */
   short: string
@@ -356,8 +353,8 @@ function SourceBody({
   const mine = useMySeasonRanks(state.pos)
   const isPre = currentWeek === 0
 
-  const expertRanks = useMemo(() => rankMap(experts.data?.rows), [experts.data])
-  const userRanks = useMemo(() => rankMap(users.data), [users.data])
+  const expertRanks = useMemo(() => sourceRankMap(experts.data?.rows), [experts.data])
+  const userRanks = useMemo(() => sourceRankMap(users.data), [users.data])
   const hasExperts = expertRanks.size > 0
   const hasUsers = userRanks.size > 0
 
@@ -711,8 +708,8 @@ function AuthorBody({
   // this position (the rows shown look themselves up).
   const move = useMovementView(useMemo(() => boardMovement(playersQ.data, pos), [playersQ.data, pos]))
 
-  const expertRanks = useMemo(() => rankMap(experts.data?.rows), [experts.data])
-  const authorRanks = useMemo(() => rankMap(rows), [rows])
+  const expertRanks = useMemo(() => sourceRankMap(experts.data?.rows), [experts.data])
+  const authorRanks = useMemo(() => sourceRankMap(rows), [rows])
   const hasExperts = expertRanks.size > 0
   // On an author's ranking Users drops out; the author takes its place (S4).
   const cmp: CmpSource[] = hasExperts ? [{ short: 'Experts', full: 'Experts', ranks: expertRanks }] : []

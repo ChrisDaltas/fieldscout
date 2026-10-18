@@ -31,6 +31,7 @@ export const M_ICON = {
   back: 'M10 3L5 8l5 5',
   chevronRight: 'M6 3l5 5-5 5',
   chevronUp: 'M4 10l4-4 4 4',
+  chevronDown: 'M4 6l4 4 4-4',
   check: 'M3 8.5l3.2 3L13 4.5',
   plus: 'M8 3.5v9M3.5 8h9',
   compose: 'M11 2.5l2.5 2.5L6 12.5H3.5V10zM9.5 4l2.5 2.5',

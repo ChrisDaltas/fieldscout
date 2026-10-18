@@ -12,16 +12,43 @@ import { featureFlags } from '@/lib/feature-flags'
 import { AttachLeagueSheet } from './attach-league-sheet'
 import { CommentsSheet } from './comments-sheet'
 import { FolderPickSheet, SheetRow } from './folder-sheets'
+import { notesLabel } from './list-tools'
 import { LIcon } from './lists-parts'
+
+/**
+ * Desktop's list tools, as the sheet's first group (gap list §3 #3). The
+ * List view owns their state and hands it in — its rows, its drafted marks
+ * and its sheets read the same values.
+ */
+export interface ListToolsProps {
+  /** The grouping's name ("Avg cost"), or null when the list has no other
+   *  grouping to offer (the row then stays out). */
+  group: string | null
+  onGroupBy: () => void
+  /** Check off drafted: the rows' tick boxes are showing. */
+  checkOff: boolean
+  onCheckOff: (on: boolean) => void
+  /** How many of the list's players are marked drafted. */
+  marked: number
+  onClearDrafted: () => void
+  /** How many players carry a note. */
+  notes: number
+  notesShown: boolean
+  onNotes: (on: boolean) => void
+  onCompare: () => void
+}
 
 /**
  * FieldScout Mobile — a list's options (the List view's "⋯" on the cover).
  *
  * The design's List view has only Back and Edit; everything here is an app list
  * feature the design lacks, kept reachable in its row language (the brief:
- * delete nothing): Edit details, visibility, pin / save, folders, attach to a
- * league (leagues test cohort), comments, copy link, duplicate, delete (to the
- * trash, restorable). Every action is the desktop panel's own mutation.
+ * delete nothing). First the list tools — Group by, Check off drafted, Clear
+ * drafted, Show notes, Side by side — then Edit details, visibility, pin /
+ * save, folders, attach to a league (leagues test cohort), comments, copy
+ * link, duplicate, delete (to the trash, restorable). Every action is the
+ * desktop panel's own mutation. The switches flip in place; the rest close
+ * the sheet first.
  */
 export function ListActionsSheet({
   open,
@@ -32,6 +59,7 @@ export function ListActionsSheet({
   viewer,
   onEditDetails,
   onDeleted,
+  tools,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -41,6 +69,7 @@ export function ListActionsSheet({
   viewer: { username: string | null; avatarUrl: string | null }
   onEditDetails: () => void
   onDeleted: () => void
+  tools: ListToolsProps
 }) {
   const update = useUpdateList(list.id)
   const favorite = useToggleFavorite()
@@ -63,6 +92,36 @@ export function ListActionsSheet({
     <>
       <MobileSheet bodyClassName="leading-[normal] tabular-nums" open={open} onOpenChange={onOpenChange} title="List options" subtitle={list.title} showClose>
         <div className="flex flex-col px-3 pb-2">
+          {tools.group !== null && (
+            <SheetRow icon={<LIcon name="group" size={15} />} label="Group by" sub={tools.group} onClick={then(tools.onGroupBy)} />
+          )}
+          {list.players.length > 0 && (
+            <SheetRow
+              icon={<LIcon name="checkOff" size={15} />}
+              label="Check off drafted"
+              switchOn={tools.checkOff}
+              onClick={() => tools.onCheckOff(!tools.checkOff)}
+            />
+          )}
+          {tools.marked > 0 && (
+            <SheetRow
+              icon={<LIcon name="clear" size={15} />}
+              label="Clear drafted"
+              sub={`${tools.marked} marked`}
+              onClick={then(tools.onClearDrafted)}
+            />
+          )}
+          {tools.notes > 0 && (
+            <SheetRow
+              icon={<LIcon name="note" size={15} />}
+              label="Show notes"
+              sub={notesLabel(tools.notes)}
+              switchOn={tools.notesShown}
+              onClick={() => tools.onNotes(!tools.notesShown)}
+            />
+          )}
+          <SheetRow icon={<LIcon name="columns" size={15} />} label="Side by side" onClick={then(tools.onCompare)} />
+          <span aria-hidden className="mx-2 my-1 h-px bg-m-b2" />
           {canEdit && (
             <SheetRow icon={<LIcon name="edit" size={15} />} label="Edit details" onClick={then(onEditDetails)} />
           )}

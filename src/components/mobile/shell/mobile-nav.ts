@@ -65,10 +65,8 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
 const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
   [/^\/settings(\/|$)/, 'League settings'],
   [/^\/schedule(\/|$)/, 'Schedule'],
-  [/^\/draft\/recap(\/|$)/, 'Draft results'],
   [/^\/members(\/|$)/, 'Members'],
   [/^\/commish(\/|$)/, 'Commissioner tools'],
-  [/^\/stats(\/|$)/, 'League stats'],
 ]
 
 /** `false` third entry: the page already owns its h1 (the shell's title

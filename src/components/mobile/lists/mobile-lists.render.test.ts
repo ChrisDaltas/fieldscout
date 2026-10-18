@@ -366,7 +366,7 @@ describe('a video with no title (YouTube would not name it)', () => {
     search = new URLSearchParams('list=l1&details=1')
     const out = render(UNTITLED)
     expect(out).not.toMatch(/youtube video/i)
-    const card = slice(out, '>Video<', 'aria-label="Remove video"')
+    const card = slice(out, 'data-video-row', 'aria-label="Remove video"')
     expect(card).toContain('i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg')
     expect(card).toContain('>https://youtu.be/dQw4w9WgXcQ<')
     expect(card).not.toContain('text-[13px] font-semibold text-m-t1')

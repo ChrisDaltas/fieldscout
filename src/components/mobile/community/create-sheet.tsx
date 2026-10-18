@@ -17,7 +17,8 @@ import { cn } from '@/lib/utils'
  *   the current week — the handoff's `#new-ranking`). Hidden while weekly
  *   rankings are flagged off (that route redirects home).
  * - **List** opens the mobile New list screen (`/app/lists/new`, step 1 —
- *   the composer's "name your list").
+ *   the composer's "name your list"). Once its players are saved it comes
+ *   back here with "List created" (gap list §3 #8).
  * - **Start or sit** is left out: start/sit questions have no backend, and
  *   the design gives that row no "coming next" state.
  */

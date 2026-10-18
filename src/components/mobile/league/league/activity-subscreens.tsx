@@ -22,6 +22,7 @@ import {
   parseActivityRoute,
   type ActivityRoute,
 } from '@/components/leagues/activity-page-ops'
+import { playerParts, type NamedPlayer } from '@/components/players/player-link-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
@@ -34,6 +35,7 @@ import { useLeagueChannel, type LeagueChannelHandlers } from '@/hooks/use-league
 import { LEAGUE_CHANNEL_EVENTS, activityEventInvalidates } from '@/hooks/use-league-channel-ops'
 import { useSchedule } from '@/hooks/use-schedule'
 import { cn } from '@/lib/utils'
+import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { MobileCorrections } from './corrections-list'
 import { CenteredNote, FilterPill, StatusLine } from './league-bits'
@@ -200,7 +202,11 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
                   <span className="whitespace-nowrap">{formatTxDate(line.createdAt)}</span>
                 </div>
                 <p className="text-[13.5px] font-medium leading-[1.4] text-m-t1">
-                  <TextWithUsernames marked={line.marked} linkClassName="font-semibold" />
+                  <TextWithUsernames
+                    marked={line.marked}
+                    linkClassName="font-semibold"
+                    renderText={(t) => <MobilePlayerText text={t} players={line.players} leagueId={leagueId} />}
+                  />
                 </p>
                 {line.reason && <p className="text-[12px] font-medium text-m-t3">Reason: {line.reason}</p>}
               </div>
@@ -293,5 +299,30 @@ function CommishFilterSheet({
         )
       })}
     </MobileSheet>
+  )
+}
+
+/** F563: a player the commissioner-log sentence names is a door — on a phone
+ *  a tap opens his full profile (the mobile rule; desktop opens the mini card). */
+function MobilePlayerText({ text, players, leagueId }: { text: string; players: readonly NamedPlayer[]; leagueId: string }) {
+  const openPlayerView = usePlayerModalStore((s) => s.openPlayerView)
+  return (
+    <>
+      {playerParts(text, players).map((part, i) =>
+        typeof part === 'string' ? (
+          <span key={i}>{part}</span>
+        ) : (
+          <button
+            key={i}
+            type="button"
+            className="font-semibold text-m-t1 underline decoration-transparent underline-offset-2"
+            onClick={() => openPlayerView(part.playerId, leagueId)}
+            data-player-link={part.playerId}
+          >
+            {part.name}
+          </button>
+        ),
+      )}
+    </>
   )
 }

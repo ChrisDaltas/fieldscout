@@ -2,13 +2,14 @@ import { STAT_CATALOG, type StatDef } from '@/components/lists/v2/list-stats'
 import type { FrameTotals, ListScoring, PlayerFrames, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
 import type { ListUsage } from '@/hooks/use-mobile-lists-usage'
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
+import { featureFlags, type FeatureFlag } from '@/lib/feature-flags'
 import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/aggregate-fantasy'
 
 /**
  * FieldScout Mobile — Lists stat columns (lr-lists §2.5, §5).
  *
  * The design's "Add stats" catalogue, limited to the stats the app holds data
- * for. Four sources:
+ * for. Five sources:
  *
  * - the app's own list stats (`STAT_CATALOG` — ADP, Cost PPR, Proj, season
  *   points, Bye, SOS), keyed by the same ids, so a column chosen on desktop
@@ -19,13 +20,18 @@ import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/ag
  * - season usage from `player_usage` (Snap %, Tgt share) —
  *   `use-mobile-lists-usage`;
  * - Pos rk, the player's rank at his position by season points (the editor's
- *   "QB3" rule) over the Add players pool — `use-mobile-lists-pool`.
+ *   "QB3" rule) over the Add players pool — `use-mobile-lists-pool`;
+ * - Users, the player's rank at his position in the users' cred-weighted
+ *   consensus (`consensus_rankings`, Rule 9), read and numbered as the
+ *   Rankings hub's Users tab does — `use-mobile-lists-users-ranks`.
+ *   It is offered only while community rankings are switched on (the
+ *   `consensus` switch, gap list §3 #9); off, its chip isn't in Add stats and
+ *   a chosen column isn't drawn.
  *
  * Left out, with no data source in the app (lr-lists gap list): ECR and Scout
- * AI (no expert or AI rankings are stored), Users (the consensus view is
- * behind the off `consensus` flag), Route % and Rush share (`player_usage`
- * holds snaps and target share only), and YAC, aDOT, YPRR, YCO/att and RYOE
- * (`player_stats.advanced` is empty).
+ * AI (no expert or AI rankings are stored), Route % and Rush share
+ * (`player_usage` holds snaps and target share only), and YAC, aDOT, YPRR,
+ * YCO/att and RYOE (`player_stats.advanced` is empty).
  *
  * ## Scoring (Chris, 2026-10-15, gap list #19)
  *
@@ -44,7 +50,7 @@ import { ASSUMED_TOTAL_GAMES, CURRENT_SEASON, LAST_SEASON } from '@/lib/stats/ag
 export type StatGroup = 'Rankings' | 'Fantasy' | 'Usage' | 'Receiving' | 'Rushing' | 'Passing' | 'Draft' | 'Schedule'
 
 /** Where a column's values come from (each is its own read). */
-export type StatSource = 'app' | 'frames' | 'usage' | 'ranks'
+export type StatSource = 'app' | 'frames' | 'usage' | 'ranks' | 'users'
 
 export interface ValueCtx {
   frames: PlayerFrames | undefined
@@ -54,6 +60,8 @@ export interface ValueCtx {
   usage: ListUsage | undefined
   /** Position rank by season points; `null` = unranked (no games yet). */
   posRank: number | null | undefined
+  /** Position rank in the users' consensus; `null` = not in it. */
+  usersRank: number | null | undefined
   /** Which reads have arrived. A cell whose read is loading or failed is
    *  blank, never "–" (that would claim "no value"). */
   ready: Readonly<Record<Exclude<StatSource, 'app'>, boolean>>
@@ -75,6 +83,9 @@ export interface MStat {
   scored?: boolean
   /** Its value changes with Week N / Last 3 / Season. */
   timeframe: boolean
+  /** The release switch it follows (launch scope): off, the column is
+   *  neither offered nor drawn. */
+  flag?: FeatureFlag
   value: (entry: ListPlayerWithPlayer, ctx: ValueCtx) => string
 }
 
@@ -229,6 +240,23 @@ function usage(id: 'snap' | 'tshare', label: string): MStat {
 }
 
 export const MOBILE_STATS: readonly MStat[] = [
+  // The design's Rankings group order: ECR, Scout AI, Users, Pos rk.
+  {
+    id: 'users',
+    label: 'Users',
+    chip: 'Users',
+    group: 'Rankings',
+    source: 'users',
+    // The users' consensus is season-long and has no scoring.
+    timeframe: false,
+    flag: 'consensus',
+    value: (_entry, ctx) => {
+      if (!ctx.ready.users) return ''
+      // Not in the consensus is "–": it is season-long, so the design's
+      // "Bye" (not in that week's ranking) never applies.
+      return ctx.usersRank ? String(ctx.usersRank) : DASH
+    },
+  },
   {
     id: 'posrk',
     label: 'Pos rk',
@@ -326,11 +354,23 @@ export const STAT_GROUPS: readonly StatGroup[] = [
   'Schedule',
 ]
 
+/** Whether a column's switch is on (a column with none always is). Read at
+ *  call time, so a test can flip a switch. */
+export function statSwitchedOn(stat: MStat): boolean {
+  return !stat.flag || featureFlags[stat.flag] === true
+}
+
+/** The columns Add stats offers: the catalogue less any switched off. */
+export function offeredStats(): MStat[] {
+  return MOBILE_STATS.filter(statSwitchedOn)
+}
+
 const BY_ID = new Map(MOBILE_STATS.map((stat) => [stat.id, stat]))
 
-/** The chosen ids this catalogue can render, in the chosen order. */
+/** The chosen ids this catalogue can render, in the chosen order (a column
+ *  whose switch is off is not drawn). */
 export function resolveMobileStats(ids: readonly string[]): MStat[] {
-  return ids.map((id) => BY_ID.get(id)).filter((stat): stat is MStat => Boolean(stat))
+  return ids.map((id) => BY_ID.get(id)).filter((stat): stat is MStat => stat !== undefined && statSwitchedOn(stat))
 }
 
 /** The read a column needs in this scoring. */

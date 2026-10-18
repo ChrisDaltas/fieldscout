@@ -34,6 +34,7 @@ import {
   type LeagueSettings,
   mintScheduleSeed,
 } from '../settings/league-settings'
+import { teamNameSchema } from '../team-name'
 
 type Supabase = SupabaseClient<Database>
 
@@ -55,12 +56,15 @@ export interface ServiceResult {
  * fields; unknown keys reject — the schema is strict at BOTH levels: the
  * settings blob AND this top-level object (R77 — a plain z.object would
  * silently strip top-level unknown keys instead of rejecting them).
+ * `team_name` is the creator's team and takes the app's one team-name rule
+ * (`teamNameSchema`, ≤ 24 — Chris 2026-10-18); the LEAGUE `name` keeps its
+ * own 100.
  */
 export const createLeagueInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(100),
   season: z.number().int().min(2020).max(2100),
   scoring_system_id: z.uuid(),
-  team_name: z.string().trim().min(1).max(60).optional(),
+  team_name: teamNameSchema.optional(),
   action_id: z.uuid(),
   settings: leagueSettingsSchema,
 })
@@ -70,6 +74,10 @@ export type CreateLeagueInput = z.infer<typeof createLeagueInputSchema>
 const RPC_FIELD_ERRORS: ReadonlyArray<{ marker: string; field: string }> = [
   { marker: 'scoring_system_id', field: 'scoring_system_id' },
   { marker: 'action_id', field: 'action_id' },
+  // 196: the creator's team name over 24 — `teamNameSchema` catches it
+  // first on this path; a direct caller meets the RPC's refusal, which says
+  // the rule in these words and carries no other marker.
+  { marker: 'team names can be up to', field: 'team_name' },
   // The R75 Q10 backstops (range + seam) — validateLeagueSettings catches
   // these first on THIS path, but if the DB refusal ever surfaces (validator
   // drift) it still maps to the same per-field 400 shape.
