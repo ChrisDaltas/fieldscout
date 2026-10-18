@@ -3,9 +3,8 @@
 import { useState } from 'react'
 
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
-import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
-import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
+import { ScoringSheet } from '@/components/mobile/ui/scoring-sheet'
 import type { ThumbnailPlayer } from '@/hooks/use-lists'
 import type { ListScoring, TimeFrame } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { cn } from '@/lib/utils'
@@ -150,8 +149,8 @@ export function TimeFrameControl({
 // Scoring control (gap list #19, Chris 2026-10-15): which scoring the list's
 // points follow — PPR, Half PPR, Quarter PPR or Standard. The design has no
 // such control, so it extends the design language: a 24px pill beside the
-// time frame that names the active scoring, opening a bottom sheet of the
-// four choices.
+// time frame that names the active scoring, opening the shared scoring sheet
+// (`ScoringSheet` — the player profile's chip opens it too) of the four.
 // =============================================================================
 
 export function ScoringControl({
@@ -179,31 +178,14 @@ export function ScoringControl({
         {scoringLabel(value)}
         <LIcon name="chevronDown" size={9} stroke={2.4} />
       </button>
-      <MobileSheet open={open} onOpenChange={setOpen} title="Scoring" subtitle="The points in this list’s stats" showClose>
-        <div className="flex flex-col px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
-          {SCORING_OPTIONS.map((option) => {
-            const on = option.value === value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={on}
-                onClick={() => {
-                  onChange(option.value)
-                  setOpen(false)
-                }}
-                className="flex min-h-[52px] items-center gap-3 border-b border-m-b2 py-2 text-left last:border-b-0"
-              >
-                <span className="flex min-w-0 flex-1 flex-col gap-px">
-                  <span className="text-[15px] font-semibold text-m-t1">{option.label}</span>
-                  <span className="text-[12px] font-medium text-m-t3">{option.sub}</span>
-                </span>
-                {on && <MIcon name="check" size={16} stroke={2.4} className="flex-none text-accent" />}
-              </button>
-            )
-          })}
-        </div>
-      </MobileSheet>
+      <ScoringSheet
+        open={open}
+        onOpenChange={setOpen}
+        subtitle="The points in this list’s stats"
+        options={SCORING_OPTIONS}
+        value={value}
+        onPick={onChange}
+      />
     </>
   )
 }

@@ -7,8 +7,8 @@ import type { DepthChartPlayer } from '@/hooks/use-mobile-pprofile-depth-chart'
 import type { ProfileStatLine } from '@/hooks/use-mobile-pprofile-stat-lines'
 import type { PlayerStatsPlayer } from '@/hooks/use-player-stats'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
-import type { CoreStatsPayload } from '@/lib/players/core-stats-ops'
-import { PPR_SCORING, STANDARD_SCORING } from '@/lib/scoring/default'
+import { resolveChoice, scoredLeagues, type CoreStatsPayload } from '@/lib/players/core-stats-ops'
+import { PPR_SCORING, QUARTER_PPR_SCORING, STANDARD_SCORING } from '@/lib/scoring/default'
 
 import {
   bioLine,
@@ -30,7 +30,11 @@ import {
   ownershipSummary,
   pastSeasonRules,
   playerMoves,
+  PROFILE_SCORING_SYSTEMS,
+  profileScoringOptions,
   rankTone,
+  scoringChipLabel,
+  scoringChipName,
   statLine,
   statusPill,
   stripCells,
@@ -143,6 +147,43 @@ describe('stat strip', () => {
     const cells = stripCells(null, player({ bye_week: null }), 2026, 'D/ST')
     expect(cells.map((c) => c.value)).toEqual(['–', '–', '–'])
     expect(cells[0]!.label).toBe('D/ST rank')
+  })
+})
+
+describe('scoring chip (gap list §3 #18)', () => {
+  const leagues = [{ id: 'L1', name: 'Sunday Funday League' }]
+
+  it('offers PPR · Half PPR · 0.25 PPR · Standard, then your leagues', () => {
+    expect(profileScoringOptions(leagues)).toEqual([
+      { value: 'ppr', label: 'PPR', sub: '1 point per catch' },
+      { value: 'half_ppr', label: 'Half PPR', sub: '0.5 points per catch' },
+      { value: 'quarter_ppr', label: '0.25 PPR', sub: '0.25 points per catch' },
+      { value: 'espn_standard', label: 'Standard', sub: 'No points for a catch' },
+      { value: 'league:L1', label: 'Sunday Funday League', sub: 'Your league’s scoring' },
+    ])
+    expect(PROFILE_SCORING_SYSTEMS).toEqual(['ppr', 'half_ppr', 'quarter_ppr', 'espn_standard'])
+  })
+
+  it('the chip says the preset’s short name, or "League"; its name says which', () => {
+    const options = profileScoringOptions(leagues)
+    expect(scoringChipLabel({ kind: 'system', system: 'espn_standard' })).toBe('Standard')
+    expect(scoringChipLabel({ kind: 'system', system: 'quarter_ppr' })).toBe('0.25 PPR')
+    expect(scoringChipLabel({ kind: 'league', leagueId: 'L1' })).toBe('League')
+    expect(scoringChipName({ kind: 'system', system: 'half_ppr' }, options)).toBe('Scoring: Half PPR')
+    expect(scoringChipName({ kind: 'league', leagueId: 'L1' }, options)).toBe('Scoring: Sunday Funday League')
+  })
+
+  it('a league still before its draft is not offered, and a remembered one falls back to Standard', () => {
+    const mine = [
+      { id: 'L1', name: 'Sunday Funday League', status: 'in_season' },
+      { id: 'L2', name: 'Practice Squad League', status: 'setup' },
+    ]
+    const scored = scoredLeagues(mine)
+    expect(profileScoringOptions(scored).map((o) => o.value)).toEqual(['ppr', 'half_ppr', 'quarter_ppr', 'espn_standard', 'league:L1'])
+    expect(resolveChoice({ picked: null, leagueParam: null, stored: 'league:L2', leagues: scored, systems: PROFILE_SCORING_SYSTEMS })).toEqual({
+      kind: 'system',
+      system: 'espn_standard',
+    })
   })
 })
 
@@ -317,6 +358,7 @@ describe('game log + career tables', () => {
 
   it('past seasons score under the basis preset (league → standard)', () => {
     expect(pastSeasonRules({ kind: 'system', system: 'ppr' })).toBe(PPR_SCORING)
+    expect(pastSeasonRules({ kind: 'system', system: 'quarter_ppr' })).toBe(QUARTER_PPR_SCORING)
     expect(pastSeasonRules({ kind: 'league', leagueId: 'L' })).toBe(STANDARD_SCORING)
   })
 })
