@@ -73,6 +73,21 @@ describe('Admin home', () => {
     expect(lock.slice(0, lock.indexOf('</li>'))).toContain('data-knob="run_now"')
   })
 
+  it('F600: a week stuck past Wednesday is a warning in plain words, ahead of the other lists', () => {
+    const state: OpPlatformState = {
+      ...calm,
+      overdue_weeks: [{ season: 2026, week: 6, ceiling_at: '2026-10-21T07:00:00Z', hours_past_ceiling: 29, holding_games: ['KC @ BUF'] }],
+    }
+    const out = html(createElement(AdminHomeBody, { state, onConfirm: noop }))
+    expect(out).not.toContain('data-admin-empty="attention"')
+    expect(out).toContain('data-overdue-week="2026-6"')
+    expect(out).toContain('role="alert"')
+    expect(out).toContain('Weeks stuck past Wednesday')
+    expect(out).toContain('is 29 hours past it. It is still waiting on this game: KC @ BUF.')
+    // The calm payload (no key — a pre-194 database) shows no warning.
+    expect(html(createElement(AdminHomeBody, { state: calm, onConfirm: noop }))).not.toContain('data-overdue-week=')
+  })
+
   it('overflow: says how many games are not shown', () => {
     const games = [{ game_id: 'g', matchup: 'A @ B', kickoff_at: calm.as_of, status: 'scheduled', operator_hold: 'in_week' as const, holds_week: true, reason: 'x', season: 2026, week: 6 }]
     const out = html(createElement(AdminHomeBody, { state: { ...calm, games, games_total: 240 }, onConfirm: noop }))

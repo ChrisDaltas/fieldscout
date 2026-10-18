@@ -56,8 +56,10 @@ select columns_are('public', 'player_stats',
         'pat_missed', 'def_block', 'def_return_td', 'fumble_recovery_td',
         'return_td', 'def_yards_allowed',
         -- 109's 1 (C59 — §23.5's advanced-stat map; pinned in 057):
-        'advanced'],
-  'exact player_stats column set (pre-057 surface + 057''s 11 + 109''s advanced)');
+        'advanced',
+        -- 194's 1 (F589 — the team the line was played for; pinned in 142 A1):
+        'team'],
+  'exact player_stats column set (pre-057 surface + 057''s 11 + 109''s advanced + 194''s team)');
 
 -- ---------------------------------------------------------------------------
 -- B. Per-column pins for 057's 11: INTEGER DEFAULT 0 (001's convention,

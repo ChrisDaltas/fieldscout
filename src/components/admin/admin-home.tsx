@@ -17,11 +17,11 @@ import {
   when,
   type ConfirmSpec,
 } from './admin-parts'
-import { heldWeeks, markedGames, stalledJobs, stalledWhy, type OpPlatformState } from './admin-console-ops'
+import { heldWeeks, markedGames, overdueWeeks, overdueWords, stalledJobs, stalledWhy, type OpPlatformState } from './admin-console-ops'
 
 /**
  * `/app/admin` — what needs the operator's attention, from `op_platform_state`
- * (186): weeks a game is holding open, paused jobs, stalled jobs and marked
+ * (186; 194 adds weeks stuck past Wednesday, F600): weeks a game is holding open, paused jobs, stalled jobs and marked
  * games; then the every-league job knobs and the scheduler's last runs.
  */
 export function AdminHome() {
@@ -41,10 +41,11 @@ export function AdminHome() {
 
 /** Presentational — exported for the render tests. */
 export function AdminHomeBody({ state, onConfirm }: { state: OpPlatformState; onConfirm: (s: ConfirmSpec) => void }) {
+  const overdue = overdueWeeks(state)
   const held = heldWeeks(state)
   const marked = markedGames(state)
   const stalled = stalledJobs(state.cron)
-  const calm = held.length === 0 && state.pauses.length === 0 && stalled.length === 0 && marked.length === 0
+  const calm = overdue.length === 0 && held.length === 0 && state.pauses.length === 0 && stalled.length === 0 && marked.length === 0
 
   return (
     <>
@@ -54,6 +55,17 @@ export function AdminHomeBody({ state, onConfirm }: { state: OpPlatformState; on
         data-admin-section="attention"
       >
         {calm && <AdminEmpty label="attention">Nothing needs you. Every job ran, nothing is paused and no game is holding a week.</AdminEmpty>}
+
+        {overdue.length > 0 && (
+          <div role="alert" className="flex flex-col gap-1 border border-caution-strong bg-caution-soft px-3 py-2" data-attention="overdue-weeks">
+            <h3 className="text-[12px] font-bold text-caution-strong">Weeks stuck past Wednesday</h3>
+            {overdue.map((w) => (
+              <p key={`${w.season}-${w.week}`} className="text-[11px] font-medium text-ink" data-overdue-week={`${w.season}-${w.week}`}>
+                {overdueWords(w, when(w.ceiling_at))}
+              </p>
+            ))}
+          </div>
+        )}
 
         {held.length > 0 && (
           <div className="flex flex-col gap-1" data-attention="held-weeks">

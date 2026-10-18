@@ -52,8 +52,21 @@ export interface OpPlatformState {
   games_total: number
   games_limit: number
   live_weeks: { season: number; week: number; leagues: number }[]
+  /** F600 (194): live weeks at or past their Wednesday release ceiling that
+   *  games still hold. Absent from a database before 194 (deploy before push). */
+  overdue_weeks?: OverdueWeek[]
   pending: { waiver_claims: number; players_waiting_to_be_rescored: number }
   cron: OpCronRun[]
+}
+
+export interface OverdueWeek {
+  season: number
+  week: number
+  /** The week's release ceiling — Wednesday 00:00 Pacific (153). */
+  ceiling_at: string
+  hours_past_ceiling: number
+  /** The matchups still holding it. */
+  holding_games: string[]
 }
 
 export interface OpReceipt {
@@ -119,6 +132,18 @@ export function heldWeeks(state: Pick<OpPlatformState, 'games'>): HeldWeek[] {
   return [...by.values()].sort((a, b) => a.season - b.season || a.week - b.week)
 }
 
+/** F600: weeks still held past Wednesday (none from a pre-194 database). */
+export function overdueWeeks(state: Pick<OpPlatformState, 'overdue_weeks'>): OverdueWeek[] {
+  return state.overdue_weeks ?? []
+}
+
+/** "2026 week 7 should have finished by Wednesday … and is 27 hours past it …" */
+export function overdueWords(w: OverdueWeek, ceiling: string): string {
+  const past = w.hours_past_ceiling < 1 ? 'is just past it' : `is ${w.hours_past_ceiling} ${w.hours_past_ceiling === 1 ? 'hour' : 'hours'} past it`
+  const games = w.holding_games.length === 1 ? 'this game' : `these ${w.holding_games.length} games`
+  return `${w.season} week ${w.week} should have finished by ${ceiling} and ${past}. It is still waiting on ${games}: ${w.holding_games.join(', ')}.`
+}
+
 /** Games FieldScout has marked (moved / cancelled). */
 export function markedGames(state: Pick<OpPlatformState, 'games'>): OpGame[] {
   return state.games.filter((g) => g.operator_hold !== null)
@@ -135,7 +160,13 @@ export function stalledWhy(c: OpCronRun): string {
 }
 
 export function attentionCount(state: OpPlatformState): number {
-  return heldWeeks(state).length + state.pauses.length + stalledJobs(state.cron).length + markedGames(state).length
+  return (
+    overdueWeeks(state).length +
+    heldWeeks(state).length +
+    state.pauses.length +
+    stalledJobs(state.cron).length +
+    markedGames(state).length
+  )
 }
 
 // ---------------------------------------------------------------------------

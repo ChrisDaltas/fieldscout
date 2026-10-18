@@ -3577,6 +3577,7 @@ export type Database = {
           source: string | null
           stat_type: string
           targets: number | null
+          team: string | null
           two_point_conversions: number | null
           updated_at: string | null
           week: number | null
@@ -3630,6 +3631,7 @@ export type Database = {
           source?: string | null
           stat_type?: string
           targets?: number | null
+          team?: string | null
           two_point_conversions?: number | null
           updated_at?: string | null
           week?: number | null
@@ -3683,6 +3685,7 @@ export type Database = {
           source?: string | null
           stat_type?: string
           targets?: number | null
+          team?: string | null
           two_point_conversions?: number | null
           updated_at?: string | null
           week?: number | null
