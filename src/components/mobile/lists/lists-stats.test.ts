@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// The release switches, flipped per case (read at call time).
+const flags = vi.hoisted(() => ({ consensus: false }))
+vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
 
 import type { ListPlayerWithPlayer } from '@/hooks/use-lists'
 import type { FrameTotals } from '@/hooks/use-mobile-lists-timeframe-stats'
@@ -9,6 +13,7 @@ import {
   STAT_GROUPS,
   needsLastSeason,
   needsSource,
+  offeredStats,
   resolveMobileStats,
   scoringLabel,
   seasonLine,
@@ -24,7 +29,8 @@ const ctx = (over: Partial<ValueCtx> = {}): ValueCtx => ({
   tf: 'week',
   usage: undefined,
   posRank: undefined,
-  ready: { frames: true, usage: true, ranks: true },
+  usersRank: undefined,
+  ready: { frames: true, usage: true, ranks: true, users: true },
   ...over,
 })
 
@@ -35,17 +41,55 @@ const stat = (id: string) => {
 }
 
 describe('Add stats catalogue', () => {
+  afterEach(() => {
+    flags.consensus = false
+  })
+
   it('follows the design’s groups, then the app’s own', () => {
     expect(STAT_GROUPS).toEqual(['Rankings', 'Fantasy', 'Usage', 'Receiving', 'Rushing', 'Passing', 'Draft', 'Schedule'])
-    const chips = (group: string) => MOBILE_STATS.filter((s) => s.group === group).map((s) => s.chip)
+    const chips = (group: string) =>
+      offeredStats()
+        .filter((s) => s.group === group)
+        .map((s) => s.chip)
     expect(chips('Rankings')).toEqual(['Pos rk'])
     expect(chips('Usage')).toEqual(['Snap %', 'Tgt share'])
+  })
+
+  it('gap list §3 #9: Users is offered, before Pos rk, only while community rankings are on', () => {
+    const rankings = () =>
+      offeredStats()
+        .filter((s) => s.group === 'Rankings')
+        .map((s) => s.chip)
+    expect(rankings()).toEqual(['Pos rk'])
+    // A column chosen while it was on isn't drawn once it's off.
+    expect(resolveMobileStats(['users', 'posrk']).map((s) => s.id)).toEqual(['posrk'])
+
+    flags.consensus = true
+    // The design's Rankings order: ECR, Scout AI, Users, Pos rk.
+    expect(rankings()).toEqual(['Users', 'Pos rk'])
+    const cols = resolveMobileStats(['users', 'posrk'])
+    expect(cols.map((s) => s.label)).toEqual(['Users', 'Pos rk'])
+    expect(needsSource(cols, 'users')).toBe(true)
+    expect(needsSource(resolveMobileStats(['posrk']), 'users')).toBe(false)
+  })
+
+  it('Users is his position rank among users, "–" when they haven’t ranked him, blank until it loads', () => {
+    expect(stat('users').value(player('WR'), ctx({ usersRank: 7 }))).toBe('7')
+    expect(stat('users').value(player('K'), ctx({ usersRank: 1 }))).toBe('1')
+    expect(stat('users').value(player('WR'), ctx({ usersRank: null }))).toBe(DASH)
+    expect(
+      stat('users').value(player('WR'), ctx({ usersRank: 7, ready: { frames: true, usage: true, ranks: true, users: false } })),
+    ).toBe('')
+    // Season-long, with no scoring: neither control changes it.
+    expect(stat('users').timeframe).toBe(false)
+    expect(stat('users').scored).toBeFalsy()
+    expect(showsPoints([stat('users')])).toBe(false)
   })
 
   it('Pos rk is the season-points rank, "–" when unranked, blank until the pool lands', () => {
     expect(stat('posrk').value(player('QB'), ctx({ posRank: 3 }))).toBe('3')
     expect(stat('posrk').value(player('QB'), ctx({ posRank: null }))).toBe(DASH)
-    expect(stat('posrk').value(player('QB'), ctx({ ready: { frames: true, usage: true, ranks: false } }))).toBe('')
+    expect(stat('posrk').value(player('QB'), ctx({ ready: { frames: true, usage: true, ranks: false, users: true } }))).toBe('')
   })
 
   it('usage columns: whole percent, "–" where the position has none, blank while loading', () => {
@@ -55,7 +99,7 @@ describe('Add stats catalogue', () => {
     expect(stat('tshare').value(player('QB'), ctx({ usage: { snap: 100, tshare: null } }))).toBe(DASH)
     expect(stat('snap').value(player('K'), ctx())).toBe(DASH)
     expect(stat('snap').value(player('WR'), ctx({ usage: undefined }))).toBe(DASH)
-    expect(stat('snap').value(player('WR'), ctx({ ready: { frames: true, usage: false, ranks: true } }))).toBe('')
+    expect(stat('snap').value(player('WR'), ctx({ ready: { frames: true, usage: false, ranks: true, users: true } }))).toBe('')
   })
 
   it('knows which reads the chosen columns need', () => {
@@ -118,7 +162,7 @@ describe('scoring (gap list #19)', () => {
   })
 
   it('blank (never "–") until the weekly rows land', () => {
-    const loading = ctx({ scoring: 'half', ready: { frames: false, usage: true, ranks: true } })
+    const loading = ctx({ scoring: 'half', ready: { frames: false, usage: true, ranks: true, users: true } })
     expect(stat('proj').value(wr, loading)).toBe('')
     expect(stat('last').value(wr, ctx({ frames: { ...frames, lastSeason: undefined }, scoring: 'half' }))).toBe('')
   })

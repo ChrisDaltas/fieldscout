@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { queryOptions, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 import {
   consensusMovement,
@@ -103,11 +103,15 @@ interface ConsensusRowDb {
 
 /** The users' consensus at a position chip. A position reads its own rank
  *  (`consensus_position_rank`); FLEX reads RB, WR and TE in overall order —
- *  the weighted rank that position rank is cut from. */
-export function useUsersSource(pos: HubPos, enabled = true) {
-  return useQuery({
+ *  the weighted rank that position rank is cut from. Players the view ties
+ *  come in player-id order, so the order (and `sourceRankMap`'s numbers) is
+ *  the same on every read.
+ *
+ *  One query, shared: the hub's Users tab and comparisons, a new ranking
+ *  started from Users and phone Lists' Users column all read this cache. */
+export function usersSourceQuery(pos: HubPos) {
+  return queryOptions({
     queryKey: ['mobile-rankings', 'source', 'users', pos === 'FLEX' ? 'FLEX' : dbPos(pos)],
-    enabled,
     staleTime: STALE,
     queryFn: async (): Promise<HubRow[]> => {
       const supabase = createBrowserClient()
@@ -129,6 +133,17 @@ export function useUsersSource(pos: HubPos, enabled = true) {
       })
     },
   })
+}
+
+export function useUsersSource(pos: HubPos, enabled = true) {
+  return useQuery({ ...usersSourceQuery(pos), enabled })
+}
+
+/** A source's rank of each player: his place in its order (1, 2, 3 — a tie
+ *  is already broken by the order). The one numbering a source's rank gets
+ *  on every phone screen. */
+export function sourceRankMap(rows: readonly HubRow[] | undefined): Map<string, number> {
+  return new Map((rows ?? []).map((r, i) => [r.player.id, i + 1]))
 }
 
 // ---------------------------------------------------------------------------

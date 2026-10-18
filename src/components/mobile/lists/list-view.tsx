@@ -18,6 +18,7 @@ import { useMobileListsOwner } from '@/hooks/use-mobile-lists-owner'
 import { rankPoolPositions, useMobileListsPosRanks } from '@/hooks/use-mobile-lists-pool'
 import { useMobileListsLatestWeek, useMobileListsTimeframeStats } from '@/hooks/use-mobile-lists-timeframe-stats'
 import { useMobileListsUsage } from '@/hooks/use-mobile-lists-usage'
+import { useMobileListsUsersRanks } from '@/hooks/use-mobile-lists-users-ranks'
 import { toast } from '@/hooks/use-toast'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
@@ -474,9 +475,15 @@ function PlayersTable({
     scoring,
   )
   const ranks = pool.data ?? null
+  // The users' consensus rank (gap list §3 #9), only while that column shows:
+  // the Rankings hub's Users read for each position on the list.
+  const users = useMobileListsUsersRanks(
+    list.players.map((entry) => entry.player.position),
+    needsSource(stats, 'users'),
+  )
 
   // A failed read is said out loud — its cells stay blank, never "–" (CLAUDE.md).
-  const failed = [latest, frames, usage, pool].filter((query) => query.isError)
+  const failed = [latest, frames, usage, pool, users].filter((query) => query.isError)
   const latestWeek = latest.data ?? null
   const sections = React.useMemo(
     () => groupSections(list.players, org, display.budget),
@@ -486,7 +493,7 @@ function PlayersTable({
   // name's room (172 → 200).
   const lead = hasStats ? (checkOff ? 'w-[200px]' : 'w-[172px]') : 'w-full'
   const priced = org === 'cost' || org === 'budget'
-  const ready = { frames: frames.isSuccess, usage: usage.isSuccess, ranks: pool.isSuccess }
+  const ready = { frames: frames.isSuccess, usage: usage.isSuccess, ranks: pool.isSuccess, users: users.isSuccess }
 
   const open = (entry: ListPlayerWithPlayer) =>
     openPlayerView(entry.player_id, null, list.is_owner ? { listId: list.id, listTitle: list.title } : null)
@@ -620,6 +627,7 @@ function PlayersTable({
                           scoring,
                           usage: usage.data?.get(entry.player_id),
                           posRank: ranks ? (ranks.get(entry.player_id) ?? null) : undefined,
+                          usersRank: users.data ? (users.data.get(entry.player_id) ?? null) : undefined,
                           ready,
                         }}
                         lead={lead}
