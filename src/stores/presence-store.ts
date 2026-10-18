@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 
+import { leagueIdOfThread } from '@/components/mobile/messages/messages-ops'
 import type { LayoutMode } from '@/hooks/use-layout-mode'
 
 /**
@@ -82,18 +83,29 @@ export function isPresenceLeague(status: string): boolean {
 }
 
 /** Pure: the league id a pathname is under (`/app/leagues/<id>/…`, the
- *  draft room included), or null. */
+ *  draft room included — or a league's message board,
+ *  `/app/messages/league-<id>`, which holds that league's room too), or
+ *  null. */
 export function leagueIdInPath(pathname: string): string | null {
-  return /^\/app\/leagues\/([^/?#]+)/.exec(pathname)?.[1] ?? null
+  const league = /^\/app\/leagues\/([^/?#]+)/.exec(pathname)?.[1]
+  if (league) return league
+  const thread = /^\/app\/messages\/([^/?#]+)/.exec(pathname)?.[1]
+  if (!thread) return null
+  try {
+    return leagueIdOfThread(decodeURIComponent(thread))
+  } catch {
+    return null // a malformed escape names no league
+  }
 }
 
 /**
  * Pure: the ONE league room this session counts you as here in — spec §9.3's
  * "current league", so who's online never costs a channel per league.
  *
- * - On a league's pages (its draft room too) it's that league: the room the
- *   page already holds, so presence opens nothing new. A finished season's
- *   pages hold none.
+ * - On a league's pages (its draft room and its message board too) it's that
+ *   league: the room the page already holds, so presence opens nothing new,
+ *   and the board's "N online" counts that league's people. A finished
+ *   season's pages hold none.
  * - Elsewhere on a phone (Messages, Home, Lists…) it's the league you were
  *   last in this session, else your newest league still in play — so the
  *   dots there are that league's people.

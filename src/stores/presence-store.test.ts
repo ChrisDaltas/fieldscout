@@ -131,6 +131,21 @@ describe('one league room per session — the current league (spec §9.3)', () =
     expect(leagueIdInPath('/app/leagues/abc/draft')).toBe('abc')
     expect(leagueIdInPath('/app/leagues')).toBeNull()
     expect(leagueIdInPath('/app/messages')).toBeNull()
+    // A league's message board is that league's page; a DM thread is not.
+    expect(leagueIdInPath('/app/messages/league-abc')).toBe('abc')
+    expect(leagueIdInPath('/app/messages/league-')).toBeNull()
+    expect(leagueIdInPath('/app/messages/dm-1')).toBeNull()
+    expect(leagueIdInPath('/app/messages/%E0%A4%A')).toBeNull()
+  })
+
+  it('a league’s message board holds that league — the room the board already holds — so its header counts that league', () => {
+    // Opened straight from Messages (no league page first this session), the
+    // board must not leave you counted in your newest league instead.
+    expect(pick('/app/messages/league-L-live', 'mobile')).toBe('L-live')
+    expect(pick('/app/messages/league-L-live', 'mobile', 'L-new')).toBe('L-live')
+    expect(pick('/app/messages/league-L-old', 'mobile', 'L-live')).toBeNull()
+    // A DM thread is off league pages: the league you were last in.
+    expect(pick('/app/messages/dm-1', 'mobile', 'L-live')).toBe('L-live')
   })
 
   it('remembers the last league without re-rendering on a repeat', () => {
