@@ -4,6 +4,7 @@ import {
   MY_RANKINGS_HREF,
   NEW_RANKING_HREF,
   countTitles,
+  credCard,
   filterSsQuestions,
   listKindLabel,
   listRowSub,
@@ -214,5 +215,43 @@ describe('start/sit', () => {
     const local = new Date(2026, 9, 15, 9, 0).getTime()
     expect(ssClosesLabel(new Date(2026, 9, 18, 13, 0).toISOString(), local)).toBe('Sun 1:00 PM')
     expect(ssClosesLabel(new Date(2026, 9, 30, 13, 0).toISOString(), local)).toBe('Oct 30')
+  })
+})
+
+describe('credCard — the slim Cred card (gap list §3 #21)', () => {
+  it('reads the stored cred score through the existing tier table', () => {
+    expect(credCard(340)).toEqual({
+      tier: 'JV',
+      accent: '#3B82F6',
+      level: 'Scout tier 3 of 10',
+      score: '340 cred',
+      next: '260 to Varsity',
+      pct: 13,
+      top: false,
+      barLabel: 'Progress to Varsity',
+    })
+  })
+
+  it('starts a new account on the first tier with an empty bar', () => {
+    expect(credCard(0)).toMatchObject({ tier: 'Freshie', level: 'Scout tier 1 of 10', next: '100 to Sophomore', pct: 0, top: false })
+  })
+
+  it('enters a tier at its threshold with the bar back at zero', () => {
+    expect(credCard(600)).toMatchObject({ tier: 'Varsity', level: 'Scout tier 4 of 10', next: '400 to Rookie', pct: 0 })
+    expect(credCard(599)).toMatchObject({ tier: 'JV', next: '1 to Varsity', pct: 100 })
+  })
+
+  it('groups thousands and stops at the top tier with a full bar', () => {
+    expect(credCard(4500)).toMatchObject({ tier: 'Local Legend', score: '4,500 cred', next: '1,500 to Hall of Famer', pct: 25 })
+    expect(credCard(9400)).toEqual({
+      tier: 'GOAT',
+      accent: '#1DB954',
+      level: 'Scout tier 10 of 10',
+      score: '9,400 cred',
+      next: 'Top tier',
+      pct: 100,
+      top: true,
+      barLabel: 'Top tier reached',
+    })
   })
 })

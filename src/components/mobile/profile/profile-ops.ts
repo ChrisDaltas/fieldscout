@@ -3,6 +3,7 @@
  * Mobile handoff, `m-profile.md`).
  */
 
+import { CRED_TIERS, computeCredRank } from '@/lib/cred-tiers'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
 
 /** Profile › "My stuff" segment (the handoff's `meTab` keys). */
@@ -87,6 +88,45 @@ export function countTitles(
 ): number {
   const myTeam = new Map(myLeagues.map((l) => [l.id, l.my_team_id]))
   return champions.filter((c) => c.champion_team_id !== null && myTeam.get(c.id) === c.champion_team_id).length
+}
+
+/** What the slim Cred card shows (not in the handoff — gap list §3 #21). */
+export interface CredCard {
+  /** Scout tier name, e.g. `JV`. */
+  tier: string
+  /** The tier's dot colour — the same one desktop's tier badge uses. */
+  accent: string
+  /** `Scout tier 3 of 10`. */
+  level: string
+  /** `340 cred`. */
+  score: string
+  /** `260 to Varsity`, or `Top tier` once there is no next tier. */
+  next: string
+  /** Fill of the bar: progress through the current tier toward the next, 0–100. */
+  pct: number
+  /** True on the last tier — the bar is full and nothing is left to earn. */
+  top: boolean
+  /** The bar's accessible name: `Progress to Varsity` / `Top tier reached`. */
+  barLabel: string
+}
+
+/**
+ * The Cred card from the stored `profiles.cred_score` and the existing tier
+ * table (`lib/cred-tiers`, desktop's Cred score / Scout tier tiles and Cred
+ * progress bar) — the same numbers and words desktop shows, no new scoring.
+ */
+export function credCard(credScore: number): CredCard {
+  const rank = computeCredRank(credScore)
+  return {
+    tier: rank.current.name,
+    accent: rank.current.accent,
+    level: `Scout tier ${rank.current.level} of ${CRED_TIERS.length}`,
+    score: `${credScore.toLocaleString('en-US')} cred`,
+    next: rank.next ? `${rank.toNext.toLocaleString('en-US')} to ${rank.next.name}` : 'Top tier',
+    pct: rank.progressPct,
+    top: rank.next === null,
+    barLabel: rank.next ? `Progress to ${rank.next.name}` : 'Top tier reached',
+  }
 }
 
 // ---------------------------------------------------------------------------
