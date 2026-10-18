@@ -60,6 +60,13 @@ export const returnToOf = (value: string | null): ReturnTo | undefined =>
  *  which goes back there (gap list §3 #8); otherwise "List updated". */
 export const savedToast = (returnTo: ReturnTo | undefined) =>
   returnTo === 'community' ? 'List created' : 'List updated'
+/** What the editor's Update does: a changed draft is saved. With nothing
+ *  changed it is off — except on a list Community started, where, like the
+ *  handoff's Save (a name is enough; zero players is allowed, m-composer
+ *  §3.5), it stays live and just goes back to Community with "List created"
+ *  (gap list §3 #8). */
+export const updateAction = (dirty: boolean, returnTo: ReturnTo | undefined): 'save' | 'leave' | null =>
+  dirty ? 'save' : returnTo === 'community' ? 'leave' : null
 
 export const listHref = (id: string, from?: From) =>
   `/app/lists?list=${encodeURIComponent(id)}${from ? `&from=${from}` : ''}`

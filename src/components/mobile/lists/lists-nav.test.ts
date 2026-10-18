@@ -15,7 +15,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => search,
 }))
 
-import { editorHref, returnToOf, savedToast, useListsNav } from './lists-nav'
+import { editorHref, returnToOf, savedToast, updateAction, useListsNav } from './lists-nav'
 
 type Nav = ReturnType<typeof useListsNav>
 
@@ -197,5 +197,15 @@ describe('a list started from Community returns to Community (gap list §3 #8)',
   it('Update says "List created" for it, "List updated" for every other list', () => {
     expect(savedToast('community')).toBe('List created')
     expect(savedToast(undefined)).toBe('List updated')
+  })
+
+  it('Update with changes saves them, from anywhere', () => {
+    expect(updateAction(true, 'community')).toBe('save')
+    expect(updateAction(true, undefined)).toBe('save')
+  })
+
+  it('Update with nothing changed: back to Community for a list started there (the composer’s Save allows zero players); off for every other list', () => {
+    expect(updateAction(false, 'community')).toBe('leave')
+    expect(updateAction(false, undefined)).toBeNull()
   })
 })
