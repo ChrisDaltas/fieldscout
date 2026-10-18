@@ -320,9 +320,13 @@ export function lineupCheckRows(input: MobileLineupCheckInput): CheckRow[] {
 
   if (opponent) {
     const ready = projections === 'ready'
-    const myIds = starters.map((r) => r.player?.player_id ?? null)
+    // Every filled seat counts — a kept (dropped-after-he-played) starter
+    // too, as the Match card's box projection does — so a whole-looking
+    // total is never missing a seat.
+    const myIds = starters.map((r) => r.player?.player_id ?? kept.get(r.slot.key) ?? null)
+    const myFilled = myIds.filter((id) => id !== null).length
     const myTotal = ready ? projectedTotal(myIds, projOf) : null
-    const mine = myTotal ? cardProjection(myTotal, players.length) : null
+    const mine = myTotal ? cardProjection(myTotal, myFilled) : null
     if (opponent.kind === 'bye') {
       const why = projections === 'error' ? 'Couldn’t load the projections' : null
       rows.push({ id: 'proj', label: 'Projected score', value: mine ?? '–', value2: null, sub: 'No opponent this week', note: why, tone: 'neutral', players: [] })
@@ -341,7 +345,7 @@ export function lineupCheckRows(input: MobileLineupCheckInput): CheckRow[] {
               ? null
               : theirIds.length === 0
                 ? 'Their lineup isn’t set yet'
-                : (mine === null && players.length > 0) || theirs === null
+                : (mine === null && myFilled > 0) || theirs === null
                 ? anyProjection
                   ? 'Not every starter has a projection yet'
                   : 'No projections for this week yet'

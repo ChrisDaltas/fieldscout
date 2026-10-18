@@ -85,6 +85,20 @@ describe('lineupCheckRows — the phone’s Lineup check', () => {
     expect(rows({ starters, kept: new Map([[starters[0]!.slot.key, 'gone']]) }).starters).toMatchObject({ value: `${n}/${n}`, tone: 'positive' })
   })
 
+  it('a kept starter counts in your projected score — never a whole-looking total missing a seat', () => {
+    const players = full()
+    const starters = seats([null, ...players.slice(1)])
+    const kept = new Map([[starters[0]!.slot.key, 'gone']])
+    // His stored projection is summed with the rest…
+    expect(rows({ starters, kept, projOf: (id) => (id === 'gone' ? 10 : (PROJ[id] ?? null)) }).proj).toMatchObject({
+      value: (10 * n).toFixed(2),
+      note: null,
+      tone: 'positive',
+    })
+    // …and without one the side reads "–" and says why, like the Match card.
+    expect(rows({ starters, kept }).proj).toMatchObject({ value: '–', value2: (9 * n).toFixed(2), note: 'Not every starter has a projection yet', tone: 'neutral' })
+  })
+
   it('names injured starters with their tag — the desktop check’s rule (Q / D / O / IR and designations)', () => {
     const players = full()
     players[0] = p('p0', 'Bijan Robinson', 'QB', { status: 'Questionable' })
