@@ -298,7 +298,7 @@ describe('By team — the desktop recap’s rosters on the phone', () => {
 describe('the Draft results screen', () => {
   it('draws the handoff’s page: blue Back, "Draft results", the round chips with Round 1 on', () => {
     const html = render(finished())
-    expect(html).toMatch(/<button[^>]*aria-label="Back"[^>]*class="[^"]*text-accent[^"]*"[^>]*data-draft-results-back/)
+    expect(html).toMatch(/<button[^>]*aria-label="Back"[^>]*class="[^"]*text-accent[^"]*"[^>]*data-league-page-back/)
     expect(html).toContain('>Draft results</h1>')
     const chips = [...html.matchAll(/<button[^>]*aria-pressed="(true|false)"[^>]*>Round (\d+)<\/button>/g)].map((m) => [m[2], m[1]])
     expect(chips).toEqual([

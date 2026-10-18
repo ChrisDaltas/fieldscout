@@ -67,7 +67,6 @@ const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
   [/^\/schedule(\/|$)/, 'Schedule'],
   [/^\/members(\/|$)/, 'Members'],
   [/^\/commish(\/|$)/, 'Commissioner tools'],
-  [/^\/stats(\/|$)/, 'League stats'],
 ]
 
 /** `false` third entry: the page already owns its h1 (the shell's title
