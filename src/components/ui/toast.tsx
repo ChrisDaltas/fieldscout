@@ -8,18 +8,23 @@ import { Icon } from "@/components/ui/icon"
 import { cn } from "@/lib/utils"
 
 /**
- * Field Scout toast — bottom-center white card: 1px ink border, near-square
- * corners, hard shadow. Icon + 13px bold message + inline ghost dismiss.
- * Variants recolor the leading icon (success green / caution amber / info
- * accent); `destructive` keeps the DS negative expression — pastel pink fill
- * with ink text. Auto-dismiss defaults to 4.5s (set on the provider in
- * toaster.tsx). No progress bars, no blur.
+ * Field Scout toast — bottom-center ink card, a rounded RECTANGLE
+ * (`rounded-message`, never pill-ended — Chris, 2026-10-18), soft floating
+ * shadow. Icon + 11px semibold message + inline ghost dismiss. Variants
+ * recolor the leading icon (success green / caution amber / info accent).
+ * `destructive` is the SAME ink surface: the bright red is for text and small
+ * icons, never a fill, so an error is told by the small red alert glyph that
+ * leads its title (toaster.tsx), with the title/body white for legibility.
+ * Auto-dismiss defaults to 4.5s (set on the provider in toaster.tsx). No
+ * progress bars, no blur.
  *
  * Mobile layout (FieldScout Mobile handoff §2.9): the design's toast — a 36px
- * dark pill (`m-ink`), 13/500 white text, no icon, no close, no slide, ~2s
+ * dark (`m-ink`, dark in both themes) rounded rectangle (the handoff's pill
+ * shape is overruled, 2026-10-18), 13/500 white text, no icon on a
+ * confirmation (an error keeps its red alert glyph), no close, no slide, ~2s
  * for a short confirmation (toaster.tsx), 16px above whichever bottom bar is
  * showing (`--m-dock-h`, set by the dock) so it never covers the league
- * switcher. Its full-width viewport lets taps through to the page; the pill
+ * switcher. Its full-width viewport lets taps through to the page; the toast
  * itself keeps `pointer-events-auto` (swipe to dismiss).
  */
 const ToastProvider = ToastPrimitives.Provider
@@ -42,7 +47,7 @@ ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 // Elevation exception: a toast floats over the whole app, so it keeps its
 // resting shadow. See CLAUDE.md → "Elevation".
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-auto max-w-[336px] items-center gap-2 overflow-hidden rounded-pill bg-ink py-2 pl-4 pr-2 text-[11px] font-semibold text-white shadow-hard-8 transition-all duration-200 data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[swipe=end]:animate-out mob:min-h-9 mob:max-w-[calc(100vw-32px)] mob:gap-2 mob:bg-m-ink mob:px-4 mob:py-[9px] mob:text-[13px] mob:font-medium mob:shadow-none mob:!animate-none",
+  "group pointer-events-auto relative flex w-auto max-w-[336px] items-center gap-2 overflow-hidden rounded-message bg-ink py-2 pl-4 pr-2 text-[11px] font-semibold text-white shadow-hard-8 transition-all duration-200 data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[swipe=end]:animate-out mob:min-h-9 mob:max-w-[calc(100vw-32px)] mob:gap-2 mob:bg-m-ink mob:px-4 mob:py-[9px] mob:text-[13px] mob:font-medium mob:shadow-none mob:!animate-none",
   {
     variants: {
       variant: {
@@ -50,9 +55,9 @@ const toastVariants = cva(
         success: "",
         info: "",
         caution: "",
-        // Negative = pastel fill + ink text everywhere in the DS (no
-        // readable-on-white strong red exists).
-        destructive: "bg-negative-strong mob:bg-negative-strong",
+        // Same surface as every toast — the red is the leading alert icon
+        // (toaster.tsx), never the fill. CLAUDE.md → "Bright red is ink".
+        destructive: "",
       },
     },
     defaultVariants: {

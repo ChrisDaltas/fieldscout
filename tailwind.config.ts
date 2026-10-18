@@ -99,6 +99,20 @@ const config: Config = {
         // Reserved football semantics: only up/down/caution — never identity.
         // DEFAULT = tinted fill (ink text), soft = wash, strong = text/icon.
         positive: { DEFAULT: '#C8F2D9', soft: '#EAF9F0', strong: '#07A852' },
+        // Error / down / destructive (Chris, 2026-10-18 — "That red is for
+        // text and small icons not backgrounds"; CLAUDE.md → "Bright red is
+        // ink, never paint"):
+        // - strong = THE BRIGHT RED. Text and small icons ONLY — an error's
+        //   words, its alert glyph, a destructive label, and tiny indicators
+        //   (live dot, "needs you" dot, count badge). NEVER a surface fill:
+        //   no toast, banner, button, chip/pill with text, row, sheet or clock
+        //   is `bg-negative-strong`. Pinned by ui/system-message-rule.test.ts.
+        // - soft = the background-safe error surface (inline notices, refusal
+        //   boxes, destructive hover washes) under `text-negative-strong`.
+        // - DEFAULT = the stronger background-safe tint — INK text only; the
+        //   bright red on it is 2.95:1.
+        // The phone's equivalents switch for its dark mode: `m-gr` (tint) and
+        // `m-tr` (red text) below.
         negative: { DEFAULT: '#FFD3D9', soft: '#FFF0F2', strong: '#FF0028' },
         caution: { DEFAULT: '#FFE58A', soft: '#FFF6D6', strong: '#E07B00' },
         // v7 button fills: confirm (start / accept) and warning.
@@ -210,6 +224,10 @@ const config: Config = {
           'mini': 'rgb(var(--m-mini) / <alpha-value>)',
           'gg': 'rgb(var(--m-gg) / <alpha-value>)',
           'tg': 'rgb(var(--m-tg) / <alpha-value>)',
+          // The phone's error pair (light + dark, globals.css): `gr` is the
+          // background-safe error tint (refusal boxes, destructive buttons,
+          // red chips), `tr` the red text/icon that sits on it. The bright
+          // `negative-strong` is never a phone surface fill either.
           'gr': 'rgb(var(--m-gr) / <alpha-value>)',
           'tr': 'rgb(var(--m-tr) / <alpha-value>)',
           'gb': 'rgb(var(--m-gb) / <alpha-value>)',
@@ -260,6 +278,8 @@ const config: Config = {
           DEFAULT: 'hsl(var(--secondary))',
           foreground: 'hsl(var(--secondary-foreground))',
         },
+        // The bright red again (= negative-strong): `text-destructive` only.
+        // No surface is `bg-destructive` — see `negative` above.
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
@@ -313,6 +333,14 @@ const config: Config = {
         xl: '12px',
         '2xl': '14px',
         '3xl': '18px',
+        // Every system message — toast, banner, inline notice/alert, refusal
+        // box — is a rounded RECTANGLE, desktop and phone, however short it
+        // is (Chris, 2026-10-18: "we don't want the ends of a system message
+        // … being rounded on the ends"). New or restyled messages use this
+        // radius; older ones on another rectangle radius already comply.
+        // Never `rounded-pill` / `rounded-full` for a message; buttons and
+        // chips inside one stay pills. Pinned by ui/system-message-rule.test.ts.
+        message: '12px',
         pill: '999px',
         // v13 look — soft rounded geometry (see colors.fs).
         'fs-xs': '5px', // position tags

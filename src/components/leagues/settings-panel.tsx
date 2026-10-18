@@ -883,10 +883,13 @@ function SettingsForm({
           covers everything below it, Draft setup included.
           Elevation exception: this bar is pinned above content that scrolls
           underneath it, so the resting shadow is what makes the overlap
-          legible (a true overlay — v7's white save pill). See CLAUDE.md →
-          "Elevation". */}
+          legible (a true overlay — v7's white save bar). See CLAUDE.md →
+          "Elevation". The bar reports save status, so it is a system
+          message: a rounded rectangle, not v7's pill (Chris, 2026-10-18 —
+          CLAUDE.md → "Bright red is ink, never paint"); the Save button
+          inside stays a pill. */}
       {canEdit && (isFormSection(section) || (plan ? plan.send.length > 0 : dirty) || errorList.length > 0) && (
-        <div className="sticky top-3 z-10 flex min-h-[41px] items-center gap-2.5 rounded-pill bg-white py-1.5 pl-4 pr-1.5 shadow-hard-8">
+        <div className="sticky top-3 z-10 flex min-h-[41px] items-center gap-2.5 rounded-message bg-white py-1.5 pl-4 pr-1.5 shadow-hard-8">
           <span className="min-w-0 text-[11px] font-semibold text-ink" data-save-summary>
             {plan
               ? plan.send.length > 0

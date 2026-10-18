@@ -120,7 +120,9 @@ export function SheetButton({
         tone === 'neutral' && 'bg-m-b2 text-m-t1 active:bg-m-b2h',
         tone === 'add' && 'bg-confirm text-white',
         tone === 'claim' && 'bg-m-gold text-white',
-        tone === 'drop' && 'bg-negative-strong text-white',
+        // The red tint with red text, like the drop sheet's Drop — the bright
+        // red is for text and small icons, never a button fill (2026-10-18).
+        tone === 'drop' && 'bg-m-gr text-m-tr',
       )}
     >
       {children}
