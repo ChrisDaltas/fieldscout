@@ -222,7 +222,7 @@ export function ClaimEditForm({
         <SheetButton tone="neutral" disabled={pending} onClick={onClose}>
           Close
         </SheetButton>
-        <SheetButton tone="claim" disabled={!ready || pending} onClick={() => onSave(claimEditChange(claim, bounds !== null, bid, dropId))}>
+        <SheetButton tone="claim" disabled={!ready || pending} onClick={() => onSave(claimEditChange(bounds !== null, bid, dropId))}>
           {pending ? 'Saving…' : 'Save'}
         </SheetButton>
       </div>

@@ -149,9 +149,15 @@ describe('claimEditState — Save is live only for a real, valid change', () => 
 })
 
 describe('claimEditChange — the body the edit route gets', () => {
-  it('SETS the bid and the drop; a priority claim keeps its $0', () => {
-    expect(claimEditChange(claim('x', { faab_bid: 5 }), true, 8, 'c')).toEqual({ faab_bid: 8, drop_player_id: 'c' })
-    expect(claimEditChange(claim('x', { faab_bid: 0 }), false, 8, null)).toEqual({ faab_bid: 0, drop_player_id: null })
+  it('SETS the bid and the drop in a FAAB league', () => {
+    expect(claimEditChange(true, 8, 'c')).toEqual({ faab_bid: 8, drop_player_id: 'c' })
+  })
+
+  it('a priority league always sends $0 — even when the claim carries a stray bid from its FAAB days', () => {
+    const stray = claim('x', { faab_bid: 12 })
+    const start = claimEditStart(stray, [])
+    expect(start.bid).toBe(12)
+    expect(claimEditChange(false, start.bid, null)).toEqual({ faab_bid: 0, drop_player_id: null })
   })
 })
 

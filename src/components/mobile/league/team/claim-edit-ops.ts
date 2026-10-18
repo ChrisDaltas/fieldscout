@@ -91,10 +91,12 @@ export function claimEditState(input: {
   return { changed, ready: changed && valid }
 }
 
-/** The edit's body for `useEditClaim`: the bid is SET (a priority league's
- *  claim keeps its $0), the drop is SET (null = none). */
-export function claimEditChange(claim: Pick<WaiverClaimView, 'faab_bid'>, faab: boolean, bid: number, dropId: string | null): { faab_bid: number; drop_player_id: string | null } {
-  return { faab_bid: faab ? bid : claim.faab_bid, drop_player_id: dropId }
+/** The edit's body for `useEditClaim`: the bid is SET, the drop is SET
+ *  (null = none). A priority league's bid is always $0 — 150's edit refuses
+ *  anything else there, and a claim can still carry a stray bid from before
+ *  the league switched off FAAB (F432), so it is never sent back as stored. */
+export function claimEditChange(faab: boolean, bid: number, dropId: string | null): { faab_bid: number; drop_player_id: string | null } {
+  return { faab_bid: faab ? bid : 0, drop_player_id: dropId }
 }
 
 // ---------------------------------------------------------------------------
