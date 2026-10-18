@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { leagueBoardQuery } from '@/hooks/use-league-chat'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { useMobileMessagesDms, type MDmConversation } from '@/hooks/use-mobile-messages-dms'
+import { useIsOnline } from '@/hooks/use-online'
 import { featureFlags } from '@/lib/feature-flags'
 
 import { ConversationRow, ConversationRowSkeleton, LeagueBoardRow } from './conversation-row'
@@ -183,8 +184,10 @@ type Conversation =
   | { kind: 'board'; league: MyLeagueRow; /** Its place in your leagues — the mark colour. */ index: number; at: string | null }
   | { kind: 'dm'; conversation: MDmConversation; at: string | null }
 
-/** A direct-message conversation row (DM feed). */
+/** A direct-message conversation row (DM feed), with the person's online
+ *  dot (§2.1 E; gap list §3 #25). */
 function DmRow({ conversation: c, onOpen }: { conversation: MDmConversation; onOpen: (id: string) => void }) {
+  const online = useIsOnline(c.userId)
   return (
     <ConversationRow
       href={threadHref(c.id)}
@@ -199,6 +202,7 @@ function DmRow({ conversation: c, onOpen }: { conversation: MDmConversation; onO
           sizeClass="size-[52px]"
           colorClass={c.colorClass}
           textClass="text-[16px]"
+          online={online}
         />
       }
     />
@@ -207,28 +211,32 @@ function DmRow({ conversation: c, onOpen }: { conversation: MDmConversation; onO
 
 /**
  * The horizontal people row (§2.1 C): one 58px item per direct
- * conversation, 52px avatar and an 11px name. Not filtered by the search.
+ * conversation, 52px avatar (with the online dot) and an 11px name. Not
+ * filtered by the search.
  */
 function PeopleRow({ people, onOpen }: { people: readonly MDmConversation[]; onOpen: (id: string) => void }) {
   return (
     <div className="scrollbar-none flex flex-none gap-3.5 overflow-x-auto px-4 pb-3 pt-1" data-people-row>
       {people.map((p) => (
-        <Link
-          key={p.id}
-          href={threadHref(p.id)}
-          onClick={() => onOpen(p.id)}
-          className="flex w-[58px] flex-none flex-col items-center gap-[5px]"
-        >
-          <MessagesAvatar
-            text={p.initial}
-            src={p.avatarUrl}
-            sizeClass="size-[52px]"
-            colorClass={p.colorClass}
-            textClass="text-[17px]"
-          />
-          <span className="max-w-[58px] truncate text-[11px] font-medium text-m-t2">{p.name}</span>
-        </Link>
+        <PersonItem key={p.id} person={p} onOpen={onOpen} />
       ))}
     </div>
+  )
+}
+
+function PersonItem({ person: p, onOpen }: { person: MDmConversation; onOpen: (id: string) => void }) {
+  const online = useIsOnline(p.userId)
+  return (
+    <Link href={threadHref(p.id)} onClick={() => onOpen(p.id)} className="flex w-[58px] flex-none flex-col items-center gap-[5px]">
+      <MessagesAvatar
+        text={p.initial}
+        src={p.avatarUrl}
+        sizeClass="size-[52px]"
+        colorClass={p.colorClass}
+        textClass="text-[17px]"
+        online={online}
+      />
+      <span className="max-w-[58px] truncate text-[11px] font-medium text-m-t2">{p.name}</span>
+    </Link>
   )
 }

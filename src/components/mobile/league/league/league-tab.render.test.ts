@@ -43,6 +43,21 @@ vi.mock('@/hooks/use-league-channel', () => ({
 vi.mock('@/hooks/use-notifications', () => ({
   useNotifications: () => ({ data: { unreadCount: 3 } }),
 }))
+// Who's online (gap list §3 #25): the presence store is filled by the
+// session's PresenceHost over a live socket, which a static render never has —
+// so the read is stubbed with a set the test controls; the team lookup is the
+// real one.
+const presence = vi.hoisted(() => ({ online: new Set<string>() }))
+vi.mock('@/hooks/use-online', async (importActual) => {
+  const actual = await importActual<typeof import('@/hooks/use-online')>()
+  return {
+    ...actual,
+    useIsOnline: (id: string | null | undefined) => !!id && presence.online.has(id),
+    useOnlineUserIds: () => presence.online,
+    useTeamOnline: (members: Parameters<typeof actual.teamOnlineLookup>[0] | null | undefined) =>
+      actual.teamOnlineLookup(members ?? [], presence.online),
+  }
+})
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/leagues/league-1',
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
@@ -707,5 +722,61 @@ describe('Before the draft — the app’s pieces in the mobile language', () =>
     expect(html).toContain('data-username-link="marcus"')
     expect(html).toContain('Add a draft list')
     expect(html).not.toContain('rounded-xl border border-n-4')
+  })
+})
+
+describe("Who's online — a team's avatar lights up with its manager (gap list §3 #25)", () => {
+  /** The slice of the page from one marker to the next of the same kind. */
+  const block = (html: string, attr: string, id: string) => {
+    const start = html.indexOf(`${attr}="${id}"`)
+    const next = html.indexOf(`${attr}="`, start + 1)
+    return html.slice(start, next === -1 ? undefined : next)
+  }
+  const online = (fn: () => string) => {
+    presence.online = new Set(['user-opp'])
+    try {
+      return fn()
+    } finally {
+      presence.online = new Set()
+    }
+  }
+
+  it('Standings: the online manager’s team has the green dot, yours never does', () => {
+    const html = online(() => render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' })))
+    const opp = block(html, 'data-standings-row', OPP)
+    // The handoff's dot: #07B85A (confirm), ringed in the page colour (b0).
+    expect(opp).toMatch(/class="[^"]*\bbg-confirm\b[^"]*\bring-m-b0\b[^"]*" data-online-dot/)
+    expect(opp).toContain('>Online<')
+    for (const team of [ME, T3, T4]) expect(block(html, 'data-standings-row', team)).not.toContain('data-online-dot')
+    // The dot's frame is positioned, so it lets taps through to the
+    // whole-row link underneath — tapping the avatar still opens the team.
+    expect(opp).toMatch(/<span class="[^"]*\bpointer-events-none\b[^"]*\brelative\b[^"]*" data-online="true">/)
+  })
+
+  it('Matchups: the card shows it on that side only, ringed in the card colour', () => {
+    const html = online(() => render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' })))
+    const mine = block(html, 'data-matchup', 'mB')
+    expect(mine.match(/data-online-dot/g)).toHaveLength(1)
+    expect(mine).toMatch(/class="[^"]*\bring-m-b1\b[^"]*" data-online-dot/)
+    // Gridiron Gurus (OPP) is the right side of your card; the dot follows it.
+    expect(mine.indexOf('data-online-dot')).toBeGreaterThan(mine.indexOf('Touchdown Tacos'))
+    expect(block(html, 'data-matchup', 'mA')).not.toContain('data-online-dot')
+  })
+
+  it('Before the draft: the Managers card lights the claimed seat whose manager is here', () => {
+    const html = online(() =>
+      render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'matchups' }), {}, (qc) => {
+        qc.setQueryData(mockDraftKeys.list(LEAGUE), { active: [], recaps: [] })
+      }, { league: { ...detail().league, status: 'setup' } }),
+    )
+    const card = html.slice(html.indexOf('data-managers-card'))
+    expect(card.match(/data-online-dot/g)).toHaveLength(1)
+    expect(card).toMatch(/class="[^"]*\bring-m-b1\b[^"]*" data-online-dot/)
+  })
+
+  it('nobody online: no dot anywhere, and the avatars keep their place', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }))
+    expect(html).not.toContain('data-online-dot')
+    expect(html).toContain('data-online="false"')
   })
 })

@@ -48,6 +48,21 @@ vi.mock('@/stores/commish-override-store', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@/stores/commish-override-store')>()
   return { ...orig, useOverrideMode: vi.fn(orig.useOverrideMode) }
 })
+// Who's online (gap list §3 #25): the presence store is filled by the
+// session's PresenceHost over a live socket, which a static render never has —
+// so the read is stubbed with a set the test controls; the team lookup is the
+// real one.
+const presence = vi.hoisted(() => ({ online: new Set<string>() }))
+vi.mock('@/hooks/use-online', async (importActual) => {
+  const actual = await importActual<typeof import('@/hooks/use-online')>()
+  return {
+    ...actual,
+    useIsOnline: (id: string | null | undefined) => !!id && presence.online.has(id),
+    useOnlineUserIds: () => presence.online,
+    useTeamOnline: (members: Parameters<typeof actual.teamOnlineLookup>[0] | null | undefined) =>
+      actual.teamOnlineLookup(members ?? [], presence.online),
+  }
+})
 vi.mock('next/navigation', () => ({
   usePathname: () => nav.path,
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
@@ -355,6 +370,26 @@ describe('mobile Match — header and card', () => {
   it('the live week’s yet-to-play line names your positions; the right side its count', () => {
     expect(html).toContain('Yet to play: 1 · QB')
     expect(html).toContain('Yet to play: 2<')
+  })
+})
+
+describe("mobile Match — who's online (gap list §3 #25)", () => {
+  it('your opponent online: the green dot on their side of the card only, ringed in the card colour', () => {
+    presence.online = new Set(['user-opp'])
+    let html: string
+    try {
+      html = render()
+    } finally {
+      presence.online = new Set()
+    }
+    const opp = html.slice(html.indexOf(`data-side="${OPP}"`))
+    const mine = html.slice(html.indexOf(`data-side="${ME}"`), html.indexOf(`data-side="${OPP}"`))
+    expect(opp).toMatch(/class="[^"]*\bring-m-b1\b[^"]*\bsize-2\.5\b[^"]*" data-online-dot/)
+    expect(mine).not.toContain('data-online-dot')
+  })
+
+  it('nobody online: no dot', () => {
+    expect(render()).not.toContain('data-online-dot')
   })
 })
 

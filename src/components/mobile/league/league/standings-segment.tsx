@@ -23,6 +23,7 @@ import { streakArrowText, streakToneClass, teamStreak } from '@/components/mobil
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { UsernameLink } from '@/components/shared/username-link'
 import type { LeagueDetail } from '@/hooks/use-league'
+import { useTeamOnline } from '@/hooks/use-online'
 import { usePlayoffBracketLive } from '@/hooks/use-playoff-bracket'
 import { useScheduleLive } from '@/hooks/use-schedule'
 import { useProjectedStandingsLive, useStandingsLive } from '@/hooks/use-standings'
@@ -92,6 +93,8 @@ export function StandingsSegment({
   const schedule = useScheduleLive(leagueId)
   const bracket = usePlayoffBracketLive(leagueId, showBracket)
   const managers = useMemo(() => managersByTeam(detail.members), [detail.members])
+  // Who's online (gap list §3 #25): a team's avatar lights up with its manager.
+  const teamOnline = useTeamOnline(detail.members)
   const teamIds = useMemo(() => detail.teams.map((t) => t.id), [detail.teams])
   const teamNames = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
   const overridden = useMemo(() => (schedule.data ? overriddenWeeksByTeam(schedule.data.matchups) : null), [schedule.data])
@@ -198,7 +201,7 @@ export function StandingsSegment({
                     <span className="text-[15px] font-semibold tabular-nums text-m-t1">{row.rank}</span>
                   </span>
                   <span className="flex min-w-0 items-center gap-[9px]">
-                    <TeamAvatar name={row.name} size={32} className={teamAvatarClass(row.team_id, teamIds, myTeamId)} />
+                    <TeamAvatar name={row.name} size={32} className={teamAvatarClass(row.team_id, teamIds, myTeamId)} online={teamOnline(row.team_id)} />
                     <span className="flex min-w-0 flex-col gap-px">
                       <span className="flex min-w-0 items-center gap-1">
                         <span className="truncate text-[13.5px] font-semibold text-m-t1">{row.name}</span>

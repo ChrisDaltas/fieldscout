@@ -10,9 +10,12 @@ import {
   LEAGUE_CHANNEL_EVENTS,
   leagueChannelRegistryTopic,
   leagueChannelTopic,
+  presenceUserIds,
   reopenDelayMs,
+  shouldTrackPresence,
   type LeagueBroadcastEnvelope,
   type LeagueChannelEvent,
+  type LeaguePresenceMeta,
 } from './use-league-channel-ops'
 
 /**
@@ -78,8 +81,16 @@ import {
  *   `is_league_member(split_part(topic, ':', 2)::uuid)`, so a non-member's
  *   join is refused by the database, not by this code.
  *
- * No Presence here: §16 gives the league page no presence surface, and
- * tracking one would cost a payload per member per page view for nothing.
+ * **Presence rides the same channel (gap list §3 #25 — who's online
+ * everywhere, not just in the draft room).** Every room joins with the
+ * viewer's user id as its presence key and hears the topic's presence state
+ * (`onPresence`); it TRACKS the viewer only while a subscriber asks for it
+ * (`tracksPresence` — the session's one `PresenceHost`, never a league page
+ * or a row) and the page is in front. No second `.channel(` and no new
+ * policy: 070 already lets members track presence on `league:<id>` and read
+ * it, and nobody else. The cost is honest: the host holds one room per
+ * league you're in for the whole session, so a league page adds nothing
+ * (it joins the room the host already holds), and a dot never opens one.
  */
 
 export type LeagueChannelConnection = 'connecting' | 'live' | 'reconnecting'
@@ -103,6 +114,13 @@ export interface LeagueRoomSubscriber {
   onJoin?: () => void
   onDrop?: () => void
   onConnection?: (connection: LeagueChannelConnection) => void
+  /** Who's here: the user ids tracked on the topic (the viewer's own
+   *  included), on every presence sync. Emptied when the channel drops —
+   *  a dead socket knows nothing, so it claims nobody. */
+  onPresence?: (userIds: ReadonlySet<string>) => void
+  /** Count the viewer as here while this subscriber holds the room (the
+   *  session's presence host). A room tracks while ANY subscriber asks. */
+  tracksPresence?: boolean
 }
 
 interface LeagueRoom {
@@ -115,6 +133,12 @@ interface LeagueRoom {
   failedJoins: number
   connection: LeagueChannelConnection
   disposed: boolean
+  /** The signed-in viewer — the presence key and the tracked meta. */
+  userId: string | null
+  /** The last presence sync's user ids (empty while not live). */
+  online: ReadonlySet<string>
+  /** Whether THIS channel currently tracks the viewer. */
+  tracked: boolean
 }
 
 /** THE registry — one room per topic, for the whole tab. Module-level on
@@ -126,6 +150,48 @@ const leagueRooms = new Map<string, LeagueRoom>()
 function setConnection(room: LeagueRoom, connection: LeagueChannelConnection) {
   room.connection = connection
   for (const subscriber of [...room.subscribers]) subscriber.onConnection?.(connection)
+}
+
+const NOBODY: ReadonlySet<string> = new Set()
+
+function setOnline(room: LeagueRoom, online: ReadonlySet<string>) {
+  room.online = online
+  for (const subscriber of [...room.subscribers]) subscriber.onPresence?.(online)
+}
+
+function pageVisible(): boolean {
+  return typeof document === 'undefined' || document.visibilityState !== 'hidden'
+}
+
+/** Track or untrack the viewer so the room matches `shouldTrackPresence`.
+ *  Idempotent: it only sends when the answer changes. */
+function syncTracking(room: LeagueRoom) {
+  const channel = room.channel
+  if (!channel || room.disposed) return
+  const want = shouldTrackPresence({
+    live: room.connection === 'live',
+    userId: room.userId,
+    wanted: [...room.subscribers].some((s) => s.tracksPresence === true),
+    visible: pageVisible(),
+  })
+  if (want && !room.tracked && room.userId) {
+    room.tracked = true
+    void channel.track({ user_id: room.userId } satisfies LeaguePresenceMeta)
+  } else if (!want && room.tracked) {
+    room.tracked = false
+    void channel.untrack()
+  }
+}
+
+/** One listener for the whole tab: a page sent to the background stops
+ *  counting as here in every room, and counts again when it comes back. */
+let visibilityWired = false
+function wireVisibility() {
+  if (visibilityWired || typeof document === 'undefined') return
+  visibilityWired = true
+  document.addEventListener('visibilitychange', () => {
+    for (const room of leagueRooms.values()) syncTracking(room)
+  })
 }
 
 function scheduleReopen(room: LeagueRoom) {
@@ -161,11 +227,14 @@ async function open(room: LeagueRoom) {
   if (room.disposed) return
   await supabase.realtime.setAuth(data.session?.access_token ?? null)
   if (room.disposed) return
+  room.userId = data.session?.user?.id ?? null
 
+  // Presence is keyed by the viewer, so two tabs are one person (§3 #25).
   const ch = supabase.channel(leagueChannelTopic(room.leagueId), {
-    config: { private: true },
+    config: { private: true, presence: { key: room.userId ?? '' } },
   })
   room.channel = ch
+  room.tracked = false
 
   // Every known event registered ONCE, here, on the ONE channel. Dispatch
   // reads each subscriber's ref, so an event no caller wants — including one
@@ -179,6 +248,12 @@ async function open(room: LeagueRoom) {
     })
   }
 
+  // Who's here — bound before the join, which is what turns Presence on.
+  ch.on('presence', { event: 'sync' }, () => {
+    if (room.disposed || ch !== room.channel) return
+    setOnline(room, presenceUserIds(ch.presenceState()))
+  })
+
   ch.subscribe((status) => {
     if (room.disposed || ch !== room.channel) return
     if (status === 'SUBSCRIBED') {
@@ -189,11 +264,15 @@ async function open(room: LeagueRoom) {
       // §9.3: never depend on missed broadcasts — reconcile on EVERY
       // confirmed join (boot window + reconnect gap alike).
       for (const subscriber of [...room.subscribers]) subscriber.onJoin?.()
+      // A (re)join is a new presence session: count the viewer again.
+      syncTracking(room)
       return
     }
     if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
       room.failedJoins += 1
       setConnection(room, connectionAfterJoinFailure(room.everSubscribed, room.failedJoins))
+      room.tracked = false
+      if (room.online.size > 0) setOnline(room, NOBODY)
       for (const subscriber of [...room.subscribers]) subscriber.onDrop?.()
       scheduleReopen(room)
     }
@@ -225,10 +304,14 @@ export function joinLeagueRoom(
       failedJoins: 0,
       connection: 'connecting',
       disposed: false,
+      userId: null,
+      online: NOBODY,
+      tracked: false,
     }
     leagueRooms.set(topic, room)
     room.subscribers.add(subscriber)
     subscriber.onConnection?.(room.connection)
+    wireVisibility()
     void open(room)
   } else {
     room.subscribers.add(subscriber)
@@ -237,6 +320,8 @@ export function joinLeagueRoom(
     // callback gave everyone else. Its own cache may predate this room.
     subscriber.onConnection?.(room.connection)
     if (room.connection === 'live') subscriber.onJoin?.()
+    if (room.connection === 'live') subscriber.onPresence?.(room.online)
+    syncTracking(room)
   }
 
   const held = room
@@ -246,8 +331,9 @@ export function joinLeagueRoom(
     released = true
     held.subscribers.delete(subscriber)
     // Somebody else still wants this topic — the channel STAYS. This is the
-    // whole point of the refcount (R769).
-    if (held.subscribers.size > 0) return
+    // whole point of the refcount (R769). (If the one who asked to be
+    // counted here left, stop counting.)
+    if (held.subscribers.size > 0) return syncTracking(held)
     held.disposed = true
     if (held.retryTimer) clearTimeout(held.retryTimer)
     held.retryTimer = null

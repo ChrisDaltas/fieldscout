@@ -6,6 +6,7 @@ import { AppDndContext } from '@/components/layout/app-dnd-context'
 import { AppHeader } from '@/components/layout/app-header'
 import { DraftBar } from '@/components/layout/draft-bar'
 import { LayoutModeFrame } from '@/components/layout/layout-mode-frame'
+import { PresenceHost } from '@/components/layout/presence-host'
 import { ResearchRail, useActiveRailTool } from '@/components/layout/rail/research-rail'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopNav } from '@/components/layout/top-nav'
@@ -106,6 +107,9 @@ export function AppShell({ children }: AppShellProps) {
             no window is open — this is the one Round 2 component that mounts on
             every route. */}
         <ListWindowsHost />
+        {/* Who's online (gap list §3 #25): one presence join per league for
+            the session — renders nothing; every green dot reads its store. */}
+        <PresenceHost />
         <CommandPalette />
         <ListFormDialog
           open={createListOpen}
