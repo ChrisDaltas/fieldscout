@@ -28,6 +28,7 @@ import {
   detailsCreateInput,
   detailsPatch,
   maxVideos,
+  nameReturnMovesOn,
   rosterDraftOf,
   rosterValid,
   saveVideoChanges,
@@ -88,6 +89,11 @@ import { CenterNote, CoverImage, LIcon, PillButton, YouTubeBadge, type LIconName
  * title at all — never a placeholder. Edit details carries both too: it
  * shows every attached video, and Done takes off the removed ones before it
  * attaches the new ones.
+ *
+ * **Return** (gap list §3 #7): in the name field it moves on once the list
+ * has a name — New list's Next (to the editor, which reads "2 of 2"), or Edit
+ * details' Done — as the composer's name step does; without a name it does
+ * nothing, like the button.
  *
  * Left out, a lr-lists gap: the "Video frame" thumbnail (only an uploaded
  * image can be stored as a cover). The Next button is disabled until the list
@@ -340,6 +346,15 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
         <input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
+          // Return moves on once the list has a name (gap list §3 #7): the
+          // keyboard's key reads Next on New list and Done in Edit details.
+          enterKeyHint={mode === 'new' ? 'next' : 'done'}
+          onKeyDown={(event) => {
+            const key = { key: event.key, isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode }
+            if (!nameReturnMovesOn(key, valid && !busy)) return
+            event.preventDefault()
+            void submit()
+          }}
           maxLength={MAX_TITLE_LEN}
           placeholder="List name, like My top 5 QBs for Week 6"
           aria-label="List name"

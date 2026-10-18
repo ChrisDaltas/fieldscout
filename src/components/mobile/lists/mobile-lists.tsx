@@ -27,7 +27,12 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
   const listId = params.get('list')
   const urlEdit: EditTarget | null =
     listId && params.get('edit') === '1'
-      ? { listId, autoAdd: params.get('add') === '1', href: `${pathname}?${params.toString()}` }
+      ? {
+          listId,
+          autoAdd: params.get('add') === '1',
+          created: params.get('new') === '1',
+          href: `${pathname}?${params.toString()}`,
+        }
       : null
   const guard = useEditorBackGuard(urlEdit, params.get('from'))
   const compare = compareIdsOf(params.get('compare'))
@@ -39,6 +44,7 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
         key={edit.listId}
         listId={edit.listId}
         autoAdd={edit.autoAdd}
+        created={edit.created}
         currentWeek={currentWeek}
         promptSeq={guard.promptSeq}
         onDirtyChange={guard.setDirty}
@@ -55,6 +61,8 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
 interface EditTarget {
   listId: string
   autoAdd: boolean
+  /** Opened by New list's Next: the editor is step 2 of 2. */
+  created: boolean
   /** The editor's own URL, to put back. */
   href: string
 }
@@ -120,7 +128,11 @@ function useEditorBackGuard(urlEdit: EditTarget | null, from: string | null) {
     rooted.current = true
     if (!urlEdit || from === 'view') return
     window.history.replaceState(null, '', listHref(urlEdit.listId, from === 'grid' ? 'grid' : undefined))
-    window.history.pushState(null, '', editorHref(urlEdit.listId, urlEdit.autoAdd, 'view'))
+    window.history.pushState(
+      null,
+      '',
+      editorHref(urlEdit.listId, { add: urlEdit.autoAdd, created: urlEdit.created, from: 'view' }),
+    )
     // Mount only: this re-roots the entry the page loaded on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
