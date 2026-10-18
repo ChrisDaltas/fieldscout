@@ -193,6 +193,37 @@ async function fetchSleeperWeekStats(
   return (await res.json()) as SleeperWeeklyStatsRow[]
 }
 
+/**
+ * F578 (PROGRESS D539) — usage stats the player view shows, mapped from the
+ * SAME actuals endpoint into canonical keys stored in `player_stats.advanced`
+ * (§23.5's storage rule: a new stat needs no migration; an absent key is
+ * not reported). Context only — never scorable (`scoring_surface:
+ * 'context'`). MEASURED 2026-10-17 on this adapter's endpoint (recorded:
+ * `fixtures/sleeper-usage-keys-2026.json`, whose note carries the counts):
+ * `off_snp` on 34/34 played QBs and 137/146 played WRs (2025 wk 5), the
+ * red-zone keys on the positions that have them, `fgm_lng` on every kicker
+ * who made a field goal. Actuals only — the weekly projections path
+ * (`mapToCanonicalKeys`) does not read these.
+ */
+export const SLEEPER_USAGE_KEY_MAP: Readonly<Record<string, string>> = {
+  off_snp: 'off_snaps',
+  pass_rz_att: 'pass_rz_att',
+  rush_rz_att: 'rush_rz_att',
+  rec_rz_tgt: 'rec_rz_tgt',
+  fgm_lng: 'fg_long',
+}
+
+/** The usage keys present on a Sleeper actuals line (finite numbers only). */
+export function mapUsageKeys(stats: Record<string, number | null> | null): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (!stats) return out
+  for (const [sleeperKey, canonicalKey] of Object.entries(SLEEPER_USAGE_KEY_MAP)) {
+    const value = Number(stats[sleeperKey] ?? NaN)
+    if (Number.isFinite(value)) out[canonicalKey] = value
+  }
+  return out
+}
+
 /** Sleeper stat object → canonical keys (finite numbers only). Exported for
  *  the weekly projections sync (L.E1.19, D373(2)): a projected line takes the
  *  SAME map as the actuals, so the two are commensurable key for key. */
@@ -312,7 +343,9 @@ export class SleeperStatsProvider implements StatsProvider {
           ...(typeof row.team === 'string' && row.team !== '' ? { team: row.team } : {}),
           ...(typeof row.opponent === 'string' && row.opponent !== '' ? { opponent: row.opponent } : {}),
 
-          advanced: {}, // box-score tier — tracking/charted never present here
+          // Box-score tier — tracking/charted never present here; the F578
+          // usage keys (snaps, red zone, FG long) are the only advanced keys.
+          advanced: mapUsageKeys(row.stats),
         })
       }
     }

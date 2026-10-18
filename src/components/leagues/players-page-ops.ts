@@ -181,6 +181,27 @@ export function sortPoolRows(rows: readonly PoolPlayerRow[], cells: (playerId: s
     .map((x) => x.row)
 }
 
+// ---------------------------------------------------------------------------
+// F568 (D538) — the whole pool, filtered and paged on the page
+// ---------------------------------------------------------------------------
+
+/** Rows rendered per "Show more" step. */
+export const POOL_PAGE = 100
+
+/** The whole-pool read narrowed the way the window's server query narrows:
+ *  position exact, name `ilike '%term%'` (case-insensitive substring). */
+export function filterPool<T extends { position: string; full_name: string }>(players: readonly T[], position: string, search: string): T[] {
+  const term = search.trim().toLowerCase()
+  return players.filter((p) => (!position || p.position === position) && (!term || p.full_name.toLowerCase().includes(term)))
+}
+
+/** The count line under the table — the list is never cut short silently.
+ *  `whole` false = the ADP window fallback (no schedule yet, so no values). */
+export function poolCountCopy(shown: number, total: number, whole: boolean, windowSize: number): string {
+  if (!whole && total >= windowSize) return `Showing the top ${windowSize} by ADP — search to find any other player.`
+  return shown >= total ? `${total} ${total === 1 ? 'player' : 'players'}` : `Showing ${shown} of ${total} players`
+}
+
 /** A header click: the same column flips; a new column starts high-to-low. */
 export function nextSort(current: PoolSort, key: PoolSortKey): PoolSort {
   if (current.key === key) return { key, dir: current.dir === 'desc' ? 'asc' : 'desc' }

@@ -285,6 +285,20 @@ export const ADVANCED_KEYS: ReadonlySet<string> = new Set(
   STAT_KEYS.filter((def) => def.storage === 'advanced').map((def) => def.key),
 )
 
+/** R1581 (D539): advanced keys that are display-only (`context` — F578's
+ *  usage keys). Stored, but METADATA to the diff: their arrival or change
+ *  never re-queues a player and never becomes a stat-correction event. */
+export const CONTEXT_ADVANCED_KEYS: ReadonlySet<string> = new Set(
+  STAT_KEYS.filter((def) => def.storage === 'advanced' && def.scoring_surface === 'context').map((def) => def.key),
+)
+
+/** The advanced values that can score (context keys dropped). */
+function scoringAdvanced(a: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(a)) if (!CONTEXT_ADVANCED_KEYS.has(k)) out[k] = v
+  return out
+}
+
 /** One game per §23.6 postponement: a `postponed` game has left the week
  *  (E43) — it never bounds the week's first kickoff or last game end. */
 const IN_WEEK_STATUSES: ReadonlySet<ProviderGame['status']> = new Set([
@@ -564,13 +578,16 @@ export function diffStats(incoming: StatRow[], existing: ReadonlyMap<string, Sta
       continue
     }
     const scoringMoved =
-      !sameNumbers(prior.columns, row.columns) || !sameAdvanced(prior.advanced, row.advanced)
+      !sameNumbers(prior.columns, row.columns) || !sameAdvanced(scoringAdvanced(prior.advanced), scoringAdvanced(row.advanced))
     if (scoringMoved) {
       out.updates.push(row)
       continue
     }
+    // R1581: a context-only advanced move (snaps, red zone, FG long) is
+    // written like is_live / game_id — never enqueued.
     const metaMoved =
       prior.is_live !== row.is_live || prior.game_id !== row.game_id || prior.source !== row.source ||
+      !sameAdvanced(prior.advanced, row.advanced) ||
       (prior.team ?? null) !== (row.team ?? null)
     if (metaMoved) out.metaOnly.push(row)
     else out.unchanged += 1
@@ -611,6 +628,7 @@ export function movedStatKeys(prior: StatRow | undefined, row: StatRow): MovedKe
     if (before !== after) out.push({ stat_key: statKey, column, old: prior === undefined ? null : before, new: after })
   }
   for (const statKey of ADVANCED_KEYS) {
+    if (CONTEXT_ADVANCED_KEYS.has(statKey)) continue // R1581: never a correction
     const before = prior?.advanced[statKey]
     const after = row.advanced[statKey]
     if (before !== after) out.push({ stat_key: statKey, column: null, old: before ?? null, new: after ?? null })

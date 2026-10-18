@@ -50,7 +50,7 @@ async function cleanup() {
 beforeAll(async () => {
   await cleanup()
   const players = await service.from('players').insert([
-    { id: 'pcs-wr1', full_name: 'PCS Wr One', position: 'WR', bye_week: 9 },
+    { id: 'pcs-wr1', full_name: 'PCS Wr One', position: 'WR', bye_week: 9, forty_time: 4.41 }, // F578: a Combine 40
     { id: 'pcs-wr2', full_name: 'PCS Wr Two', position: 'WR' },
     { id: 'pcs-wr3', full_name: 'PCS Wr Three', position: 'WR' },
     { id: 'pcs-wr4', full_name: 'PCS Wr Rookie', position: 'WR' },
@@ -59,8 +59,9 @@ beforeAll(async () => {
   ])
   if (players.error) throw new Error(players.error.message)
   const stats = await service.from('player_stats').insert([
-    { player_id: 'pcs-wr1', season: SEASON, week: 1, receiving_yards: 100, receiving_tds: 1 },
-    { player_id: 'pcs-wr1', season: SEASON, week: 2, receiving_yards: 100, receiving_tds: 1 },
+    // F578: the usage keys in advanced (Sleeper omits a zero — wk2 had no RZ target).
+    { player_id: 'pcs-wr1', season: SEASON, week: 1, receiving_yards: 100, receiving_tds: 1, advanced: { off_snaps: 50, rec_rz_tgt: 2 } },
+    { player_id: 'pcs-wr1', season: SEASON, week: 2, receiving_yards: 100, receiving_tds: 1, advanced: { off_snaps: 45 } },
     { player_id: 'pcs-wr1', season: SEASON, week: 9 }, // his bye — not a game
     { player_id: 'pcs-wr2', season: SEASON, week: 1, receiving_yards: 320 },
     { player_id: 'pcs-wr3', season: SEASON, week: 1, receiving_yards: 50 },
@@ -70,7 +71,7 @@ beforeAll(async () => {
     { player_id: 'pcs-wr5', season: 2078, week: 1, receptions: 5, receiving_yards: 80, receiving_tds: 1 },
     { player_id: 'pcs-wr5', season: 2078, week: 2, receptions: 0, receiving_yards: 0 },
     { player_id: 'pcs-wr5', season: 2078, week: 3, receiving_yards: 30, is_live: true },
-  ])
+  ], { defaultToNull: false }) // rows without `advanced` take its DEFAULT {}
   if (stats.error) throw new Error(stats.error.message)
 })
 
@@ -101,7 +102,12 @@ describe('core stats read — default scoring over the whole pool', () => {
         { week: 2, points: 16, proj: null },
       ],
       // Box columns default to 0 in the schema, so a stored 0 comes back as 0.
-      box: { games: 2, totals: expect.objectContaining({ receiving_yards: 200, receiving_tds: 2, targets: 0 }) },
+      box: {
+        games: 2,
+        totals: expect.objectContaining({ receiving_yards: 200, receiving_tds: 2, targets: 0 }),
+        // F578: snaps summed, an absent RZ key on a delivered line is 0, the 40 from players.
+        extra: { off_snaps: 95, pass_rz_att: 0, rush_rz_att: 0, rec_rz_tgt: 2, forty_time: 4.41 },
+      },
       usage: null,
     })
     const two = await read('pcs-wr2')

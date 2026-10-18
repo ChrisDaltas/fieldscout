@@ -36,7 +36,7 @@ import { forkTemplateDoc } from '../scoring/rules-doc'
 import { SCORING_TEMPLATES } from '../scoring/templates'
 import { mapToCanonicalKeys } from '../stats/sleeper-stats-provider'
 import type { TimeProvider } from '../time/time-provider'
-import { readPoolValues, type PoolValues } from './pool-values-service'
+import { readPoolValues, readWholePoolValues, type PoolValues, type WholePoolValues } from './pool-values-service'
 
 const LOCAL_URL = process.env.SUPABASE_LOCAL_URL ?? 'http://127.0.0.1:54321'
 const LOCAL_ANON_KEY =
@@ -130,8 +130,8 @@ beforeAll(async () => {
       { id: `${P}gibbs`, full_name: 'PVR Gibbs', position: 'RB' },
       { id: `${P}vet`, full_name: 'PVR Vet', position: 'QB' },
       { id: `${P}zero`, full_name: 'PVR Zero', position: 'WR' },
-      { id: `${P}fa-rb`, full_name: 'PVR Free Back', position: 'RB' },
-      { id: `${P}fa-qb`, full_name: 'PVR Free Passer', position: 'QB' },
+      { id: `${P}fa-rb`, full_name: 'PVR Free Back', position: 'RB', team: 'PVR' }, // F568: active (a team)
+      { id: `${P}fa-qb`, full_name: 'PVR Free Passer', position: 'QB', team: 'PVR' },
       { id: `${P}fa-none`, full_name: 'PVR Free Nobody', position: 'WR' },
     ]),
     'players',
@@ -206,5 +206,32 @@ describe('the players page’s value read — free agents scored like the job sc
     expect(byId(res.body).get(`${P}fa-rb`)).toMatchObject({ projected_points: null, projected_missing: 'stale_line' })
     const edge = await readPoolValues(member, leagueId, { week: '3', players: `${P}fa-rb` }, clock('2099-09-24T18:40:00.000Z'))
     expect(byId(edge.body).get(`${P}fa-rb`)).toMatchObject({ projected_points: 22.05, projected_missing: null })
+  })
+})
+
+describe('F568 — the WHOLE pool read (?pool=all): every active player, values included, never capped', () => {
+  it('returns every active player (counted independently), each with the same value the id read gives', async () => {
+    const { count, error } = await service.from('players').select('id', { count: 'exact', head: true }).not('team', 'is', null)
+    expect(error).toBeNull()
+    const res = await readWholePoolValues(member, leagueId, { week: '3', pool: 'all' }, clock(NOW))
+    expect(res.status).toBe(200)
+    const body = res.body as unknown as WholePoolValues
+    expect(body.total).toBe(count)
+    expect(body.players.length).toBe(count)
+    expect(body.values.length).toBe(count)
+    // Ids are unique — paging never duplicated or skipped a row.
+    expect(new Set(body.players.map((p) => p.id)).size).toBe(count)
+    const v = new Map(body.values.map((x) => [x.player_id, x]))
+    expect(v.get(`${P}fa-rb`)).toEqual({ player_id: `${P}fa-rb`, projected_points: 22.05, projected_missing: null, season_points: null, season_games: 0 })
+    expect(v.get(`${P}fa-qb`)).toEqual({ player_id: `${P}fa-qb`, projected_points: null, projected_missing: 'no_line', season_points: 43.55, season_games: 2 })
+    // A player with no team is not in the active pool.
+    expect(v.has(`${P}fa-none`)).toBe(false)
+  })
+
+  it('is gated and validated like the id read: 403 non-member, 404 off-schedule week, 400 malformed', async () => {
+    expect((await readWholePoolValues(outsider, leagueId, { week: '3', pool: 'all' }, clock(NOW))).status).toBe(403)
+    expect((await readWholePoolValues(member, leagueId, { week: '9', pool: 'all' }, clock(NOW))).status).toBe(404)
+    expect((await readWholePoolValues(member, leagueId, { week: '3', pool: 'some' }, clock(NOW))).status).toBe(400)
+    expect((await readWholePoolValues(member, leagueId, { week: '3', pool: 'all', players: 'x' }, clock(NOW))).status).toBe(400)
   })
 })

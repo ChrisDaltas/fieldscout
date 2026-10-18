@@ -16,11 +16,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/hooks/use-auth'
-import { useDraftPool } from '@/hooks/use-draft-pool'
+import { POOL_WINDOW, useDraftPool } from '@/hooks/use-draft-pool'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { useLeaguePoolLive } from '@/hooks/use-league-pool'
 import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
-import { usePoolValues } from '@/hooks/use-pool-values'
+import { useWholePoolValues } from '@/hooks/use-pool-values'
 import { useSchedule } from '@/hooks/use-schedule'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSubmitClaim } from '@/hooks/use-submit-claim'
@@ -45,6 +45,9 @@ import {
   NO_SEAT_COPY,
   ON_WAIVERS_LABEL,
   DEFAULT_POOL_SORT,
+  filterPool,
+  POOL_PAGE,
+  poolCountCopy,
   POSITIONS,
   PROJ_MISSING_TITLE,
   VALUES_PROBLEM_COPY,
@@ -161,7 +164,34 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
 
   const rosters = useRostersLive(leagueId)
   const pool = useLeaguePoolLive(leagueId)
-  const players = useDraftPool(search, position)
+  // League UX batch 5: the value columns — this week's projection and the
+  // season's points under the league's own scoring (the server computes
+  // them; this page only sorts and shows them), and this week's opponent.
+  const schedule = useSchedule(leagueId)
+  const scheduleWeeks = schedule.data?.weeks ?? []
+  const valueWeek = valueWeekOf(scheduleWeeks)
+  // F568 (D538): with a value week the list is the WHOLE active pool with
+  // its values (one read), filtered and paged here — a sort by projection
+  // ranks every player, not a 300-player ADP window. Before the league has
+  // a schedule there are no values, and the draft room's server-searched
+  // ADP window stands in (the count line says so).
+  const whole = useWholePoolValues(leagueId, valueWeek)
+  const wholeMode = valueWeek !== undefined
+  const windowRead = useDraftPool(search, position, !wholeMode)
+  const wholePlayers = whole.data?.players
+  const players = useMemo(
+    () =>
+      wholeMode
+        ? {
+            data: wholePlayers ? filterPool(wholePlayers, position, search) : undefined,
+            isPending: whole.isPending,
+            isError: whole.isError,
+            error: whole.error,
+            refetch: whole.refetch,
+          }
+        : windowRead,
+    [wholeMode, wholePlayers, position, search, whole.isPending, whole.isError, whole.error, whole.refetch, windowRead],
+  )
   const move = useAddDrop(leagueId)
   const claim = useSubmitClaim(leagueId)
   // D481(n) (Chris 2026-10-03, "Always confirm first"): every + opens ONE
@@ -180,14 +210,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const nextRunLocal = waiverWindow?.next_run_at ? formatInstantWithDate(waiverWindow.next_run_at, leagueTimeZone).local : null
   const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, leagueTimeZone).local)
 
-  // League UX batch 5: the value columns — this week's projection and the
-  // season's points under the league's own scoring (the server computes
-  // them; this page only sorts and shows them), and this week's opponent.
-  const schedule = useSchedule(leagueId)
-  const scheduleWeeks = schedule.data?.weeks ?? []
-  const valueWeek = valueWeekOf(scheduleWeeks)
-  const windowIds = useMemo(() => (players.data ?? []).map((p) => p.id), [players.data])
-  const values = usePoolValues(leagueId, valueWeek, windowIds)
+  const values = whole
   const games = useNflWeekGames(detail.league.season, valueWeek)
   const [sort, setSort] = useState<PoolSort>(DEFAULT_POOL_SORT)
 
@@ -195,6 +218,12 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
     const base = poolRows(players.data ?? [], rosters.data, pool.data ?? [], myTeamId, scope)
     return sortPoolRows(base, (id) => valueCells(values.byPlayer.get(id)), sort)
   }, [players.data, rosters.data, pool.data, myTeamId, scope, values.byPlayer, sort])
+  // Paged: POOL_PAGE rows, then "Show more"; any filter or sort change
+  // starts again at the top. The count line always says how many there are.
+  const pageKey = `${search}|${position}|${scope}|${sort.key}:${sort.dir}`
+  const [paging, setPaging] = useState({ key: pageKey, n: POOL_PAGE })
+  const shownCount = Math.min(rows.length, paging.key === pageKey ? paging.n : POOL_PAGE)
+  const visibleRows = useMemo(() => rows.slice(0, shownCount), [rows, shownCount])
   const valueColumns: ValueColumns | null =
     valueWeek === undefined
       ? null
@@ -356,9 +385,10 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           leagueId={leagueId}
         />
       ) : (
+        <>
         <PoolTable
           leagueId={leagueId}
-          rows={rows}
+          rows={visibleRows}
           scope={scope}
           hadSearch={search.trim() !== '' || position !== ''}
           canAct={myTeamId !== null}
@@ -388,6 +418,19 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
             setIntent((i) => ({ ...i, drop: player }))
           }}
         />
+        {rows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <span className="text-[12px] text-n-3" data-pool-count={`${shownCount}/${rows.length}`}>
+              {poolCountCopy(shownCount, rows.length, wholeMode, POOL_WINDOW)}
+            </span>
+            {shownCount < rows.length && (
+              <Button variant="stroke" size="sm" data-pool-more onClick={() => setPaging({ key: pageKey, n: shownCount + POOL_PAGE })}>
+                Show more
+              </Button>
+            )}
+          </div>
+        )}
+        </>
       )}
     </div>
   )

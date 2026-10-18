@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { readPoolValues } from '@/lib/leagues/api/pool-values-service'
+import { readPoolValues, readWholePoolValues } from '@/lib/leagues/api/pool-values-service'
 import { systemTime } from '@/lib/leagues/time/time-provider'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -11,7 +11,7 @@ interface RouteParams {
 
 const idSchema = z.uuid()
 
-/** GET /api/leagues/[id]/player-values?week=&players=a,b,… — league-scored
+/** GET /api/leagues/[id]/player-values?week=&players=a,b,… (or ?week=&pool=all — F568) — league-scored
  *  projection and season-to-date points for up to 300 players (the players
  *  page's window), computed through the league-player-values job's own
  *  code; read-only. Both params required. Reads are RLS-scoped behind the
@@ -37,6 +37,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     if (value !== '') query[key] = value
   }
 
-  const result = await readPoolValues(supabase, id, query, systemTime)
+  // F568: `?pool=all` = every active player with his values (the players
+  // page's whole-pool list); otherwise the id-list read (`players=`).
+  const result = 'pool' in query ? await readWholePoolValues(supabase, id, query, systemTime) : await readPoolValues(supabase, id, query, systemTime)
   return NextResponse.json(result.body, { status: result.status })
 }
