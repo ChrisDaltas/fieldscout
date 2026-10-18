@@ -24,6 +24,7 @@ import { useLeague } from '@/hooks/use-league'
 import { useSubmitClaim } from '@/hooks/use-submit-claim'
 import { toast } from '@/hooks/use-toast'
 import { useAddDrop } from '@/hooks/use-transactions'
+import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
 
 export type MoveSheetKind = 'acquire' | 'drop'
@@ -97,7 +98,8 @@ function Closed({ reason, onClose }: { reason: string; onClose: () => void }) {
   )
 }
 
-function SheetButton({
+/** The sheet's full-width pill — shared by the claim sheets (My moves). */
+export function SheetButton({
   tone,
   disabled,
   onClick,
@@ -126,7 +128,8 @@ function SheetButton({
   )
 }
 
-function Refusal({ error }: { error: unknown }) {
+/** A refusal, verbatim — the verb names the rule it applied. */
+export function Refusal({ error }: { error: unknown }) {
   return (
     <p role="alert" className="rounded-[12px] bg-m-gr px-3 py-2 text-[13px] font-medium leading-[1.4] text-m-tr">
       {error instanceof Error ? error.message : 'The move was refused.'}
@@ -171,7 +174,7 @@ type AvailableView = Extract<CardLeagueView, { kind: 'available' }>
 function AcquireStep({ view, leagueId, teamId, onDone }: { view: AvailableView; leagueId: string; teamId: string; onDone: () => void }) {
   const move = useAddDrop(leagueId)
   const claim = useSubmitClaim(leagueId)
-  const [dropId, setDropId] = useState('')
+  const [dropId, setDropId] = useState<string | null>(null)
   const [bid, setBid] = useState<number>(view.faab?.min ?? 0)
   const choices = useMemo(() => droppable(view.myRoster, (p) => lockBadgeFor(p.game_lock, true).locked), [view.myRoster])
   const acq = view.acquire
@@ -179,11 +182,11 @@ function AcquireStep({ view, leagueId, teamId, onDone }: { view: AvailableView; 
   const name = view.row.player.full_name
   const faab = kind === 'claim' && view.faab ? view.faab : null
   const pending = move.isPending || claim.isPending
-  const ready = !(view.needsDrop && dropId === '') && (faab === null || bidAllowed(bid, faab))
+  const ready = !(view.needsDrop && dropId === null) && (faab === null || bidAllowed(bid, faab))
   const refusal = move.isError ? move.error : claim.isError ? claim.error : null
 
   const send = () => {
-    const drop = dropId || null
+    const drop = dropId
     if (kind === 'add') {
       move
         .submitAsync({ teamId, addPlayerId: view.row.player.id, dropPlayerId: drop })
@@ -212,62 +215,8 @@ function AcquireStep({ view, leagueId, teamId, onDone }: { view: AvailableView; 
       <p className="text-[14px] font-medium leading-[1.45] text-m-t2">
         {acquireConfirmCopy(kind === 'add' ? { kind } : { kind, nextRunLocal: view.nextRunLocal, bid: faab ? bid : null }, name)}
       </p>
-      {view.needsDrop && (
-        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Player to drop">
-          <p className="text-[13px] font-semibold text-m-t1">{ROSTER_FULL_COPY}</p>
-          {choices.map((p) => {
-            const on = dropId === p.player_id
-            return (
-              <button
-                key={p.player_id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => setDropId(on ? '' : p.player_id)}
-                className={cn('flex min-h-[48px] items-center gap-2.5 rounded-[14px] px-3 text-left active:bg-m-b2', on && 'bg-m-b1')}
-              >
-                <MPosChip pos={p.position} />
-                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{p.full_name}</span>
-                {p.nfl_team && <span className="text-[12px] font-medium text-m-t3">{p.nfl_team}</span>}
-                <span className="flex size-[18px] flex-none items-center justify-center text-accent">
-                  {on && <MIcon name="check" size={18} stroke={2.2} />}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-      {faab && (
-        <div className="flex flex-col gap-1.5" data-move-bid>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[13px] font-semibold text-m-t1">Your bid</span>
-            <span className="flex items-center gap-3">
-              <button
-                type="button"
-                aria-label="Lower the bid"
-                onClick={() => setBid((b) => stepBid(b, -1, faab))}
-                className="flex size-9 items-center justify-center rounded-full bg-m-b2 text-m-t1 active:bg-m-b2h"
-              >
-                <MIcon name="drop" size={14} stroke={2.2} />
-              </button>
-              <span className="min-w-[48px] text-center text-[22px] font-bold tabular-nums tracking-[-0.02em]">${bid}</span>
-              <button
-                type="button"
-                aria-label="Raise the bid"
-                onClick={() => setBid((b) => stepBid(b, 1, faab))}
-                className="flex size-9 items-center justify-center rounded-full bg-m-b2 text-m-t1 active:bg-m-b2h"
-              >
-                <MIcon name="add" size={14} stroke={2.2} />
-              </button>
-            </span>
-          </div>
-          {faab.max !== null && (
-            <p className="text-[12px] font-medium text-m-t3">
-              Bids from ${faab.min} to ${faab.max} (your FAAB left).
-            </p>
-          )}
-        </div>
-      )}
+      {view.needsDrop && <DropPicker title={ROSTER_FULL_COPY} choices={choices} value={dropId} onChange={setDropId} />}
+      {faab && <BidStepper bid={bid} bounds={faab} onChange={setBid} />}
       {refusal && <Refusal error={refusal} />}
       {/* Pinned to the sheet's bottom edge: on a full roster the drop picker
           lists every droppable player, and the confirm must stay in reach. */}
@@ -279,6 +228,106 @@ function AcquireStep({ view, leagueId, teamId, onDone }: { view: AvailableView; 
           {pending ? 'Sending…' : acquireConfirmVerb(kind)}
         </SheetButton>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The drop picker: one radio row per player who may be dropped (position
+ * chip, name, NFL team, a check on the chosen one). Tapping the chosen row
+ * again un-picks it. `allowNone` puts a "No drop" row first — the choice
+ * when nothing is picked; without it, nothing picked means "choose one".
+ */
+export function DropPicker({
+  title,
+  note,
+  choices,
+  value,
+  onChange,
+  allowNone = false,
+}: {
+  title: string
+  note?: string
+  choices: readonly Pick<RosterPlayer, 'player_id' | 'full_name' | 'position' | 'nfl_team'>[]
+  value: string | null
+  onChange: (playerId: string | null) => void
+  allowNone?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Player to drop" data-drop-picker>
+      <p className="text-[13px] font-semibold text-m-t1">{title}</p>
+      {note && <p className="-mt-1 text-[12px] font-medium text-m-t3">{note}</p>}
+      {allowNone && <DropChoice on={value === null} onClick={() => onChange(null)} label="No drop" />}
+      {choices.map((p) => {
+        const on = value === p.player_id
+        return (
+          <DropChoice
+            key={p.player_id}
+            on={on}
+            onClick={() => onChange(on ? null : p.player_id)}
+            label={p.full_name}
+            pos={p.position}
+            team={p.nfl_team}
+            id={p.player_id}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function DropChoice({ on, onClick, label, pos, team, id }: { on: boolean; onClick: () => void; label: string; pos?: string; team?: string | null; id?: string }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      onClick={onClick}
+      className={cn('flex min-h-[48px] items-center gap-2.5 rounded-[14px] px-3 text-left active:bg-m-b2', on && 'bg-m-b1')}
+      data-drop-choice={id ?? 'none'}
+    >
+      {pos && <MPosChip pos={pos} />}
+      <span className={cn('min-w-0 flex-1 truncate text-[15px] font-semibold', !pos && 'text-m-t2')}>{label}</span>
+      {team && <span className="text-[12px] font-medium text-m-t3">{team}</span>}
+      <span className="flex size-[18px] flex-none items-center justify-center text-accent">{on && <MIcon name="check" size={18} stroke={2.2} />}</span>
+    </button>
+  )
+}
+
+/** The FAAB bid stepper: − / the bid / +, held inside the bounds
+ *  (`stepBid`), with the range under it when the balance is known. */
+export function BidStepper({ bid, bounds, onChange }: { bid: number; bounds: { min: number; max: number | null }; onChange: (bid: number) => void }) {
+  return (
+    <div className="flex flex-col gap-1.5" data-move-bid>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[13px] font-semibold text-m-t1">Your bid</span>
+        <span className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="Lower the bid"
+            disabled={bid <= bounds.min}
+            onClick={() => onChange(stepBid(bid, -1, bounds))}
+            className="flex size-9 items-center justify-center rounded-full bg-m-b2 text-m-t1 active:bg-m-b2h disabled:opacity-30"
+          >
+            <MIcon name="drop" size={14} stroke={2.2} />
+          </button>
+          <span className="min-w-[48px] text-center text-[22px] font-bold tabular-nums tracking-[-0.02em]">${bid}</span>
+          <button
+            type="button"
+            aria-label="Raise the bid"
+            disabled={bounds.max !== null && bid >= bounds.max}
+            onClick={() => onChange(stepBid(bid, 1, bounds))}
+            className="flex size-9 items-center justify-center rounded-full bg-m-b2 text-m-t1 active:bg-m-b2h disabled:opacity-30"
+          >
+            <MIcon name="add" size={14} stroke={2.2} />
+          </button>
+        </span>
+      </div>
+      {bounds.max !== null && (
+        <p className="text-[12px] font-medium text-m-t3">
+          Bids from ${bounds.min} to ${bounds.max} (your FAAB left).
+        </p>
+      )}
     </div>
   )
 }
