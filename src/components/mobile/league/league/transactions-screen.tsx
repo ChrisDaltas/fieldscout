@@ -12,14 +12,14 @@ import { useLeague, type LeagueDetail } from '@/hooks/use-league'
 import { usePlayersByIds, type PlayerIdentity } from '@/hooks/use-players-by-ids'
 import { toast } from '@/hooks/use-toast'
 import { useWaiverClaims } from '@/hooks/use-waiver-claims'
-import type { WaiverClaimPlayer, WaiverClaimView } from '@/lib/leagues/api/waivers-service'
+import type { WaiverClaimPlayer, WaiverClaimView, WaiverClaimsDocument } from '@/lib/leagues/api/waivers-service'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { LeagueTxFilterSheet } from './activity-segment'
 import { CenteredNote, FilterPill, SkeletonBlocks } from './league-bits'
 import { clearedFilter, filterCount, filterLabel, moveSub, shortName, type TxFilter } from './league-tab-ops'
 import { useTxFilter } from './league-tab-store'
-import { TxFeed } from './tx-feed'
+import { TxFeed, type TxClaimResults } from './tx-feed'
 
 /**
  * The Transactions screen (handoff m-league §2.5): a 52px top bar (close ×,
@@ -35,7 +35,10 @@ import { TxFeed } from './tx-feed'
  *
  * My moves also lists your PENDING waiver claims above the moves, each with
  * Cancel (the app's own team moves panel does — kept; bids are blind, so
- * this is your own team's read only).
+ * this is your own team's read only), and — among the moves, by when the
+ * waiver run settled them — the claims you LOST or that DIDN'T GO THROUGH,
+ * each with the stored reason in plain words (gap list §3 #12; the desktop
+ * panel's Chris 2026-10-05 rule). One read of your claims serves both.
  */
 export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string; mine: boolean; team: string | null }) {
   const goBack = useGoBack()
@@ -59,6 +62,20 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
   const myTeamId = data?.members.find((m) => m.user_id && m.user_id === user?.id)?.team_id ?? null
   const n = filterCount(filter, mine)
 
+  // Your claims, settled ones too (`status=all`) — My moves only.
+  const claimsOn = mine && myTeamId !== null
+  const claims = useWaiverClaims(claimsOn ? leagueId : undefined, { status: 'all' })
+  const claimsDoc = claimsOn ? (claims.data ?? null) : null
+  const { refetch: refetchClaims } = claims
+  const withClaims = showsClaims(filter)
+  const claimResults = useMemo<TxClaimResults | null>(
+    () =>
+      claimsDoc && withClaims
+        ? { claims: claimsDoc.claims, waiverType: claimsDoc.waiver_type, refresh: () => void refetchClaims() }
+        : null,
+    [claimsDoc, withClaims, refetchClaims],
+  )
+
   const header = (
     <>
       <div className="flex h-[52px] items-center gap-2 px-3">
@@ -76,7 +93,7 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
   return (
     <MobileScreen header={header}>
       <div className="px-3 pb-5" data-transactions-screen={mine ? 'mine' : 'league'}>
-        {league.isPending || authLoading ? (
+        {league.isPending || authLoading || (claimsOn && claims.isPending) ? (
           <div className="pt-3">
             <SkeletonBlocks count={5} className="h-[72px]" />
           </div>
@@ -84,7 +101,17 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
           <CenteredNote role="alert" message="Couldn’t load this league." action="Try again" onAction={() => void league.refetch()} />
         ) : (
           <>
-            {mine && myTeamId && showsClaims(filter) && claimsLive(data) && <PendingClaims leagueId={leagueId} />}
+            {claimsOn && withClaims && claims.isError && !claimsDoc && (
+              // Fail loud: a failed read is never "no claims".
+              <CenteredNote
+                role="alert"
+                className="py-4"
+                message="Couldn’t load your waiver claims."
+                action="Try again"
+                onAction={() => void refetchClaims()}
+              />
+            )}
+            {claimsDoc && withClaims && claimsLive(data) && <PendingClaims leagueId={leagueId} doc={claimsDoc} />}
             <TxFeed
               leagueId={leagueId}
               detail={data}
@@ -92,6 +119,7 @@ export function TransactionsScreen({ leagueId, mine, team }: { leagueId: string;
               filter={filter}
               myMoves={mine}
               onClear={() => setFilter(clearedFilter(filter, mine))}
+              claimResults={claimResults}
             />
           </>
         )}
@@ -111,27 +139,14 @@ function claimsLive(detail: LeagueDetail): boolean {
   return detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && detail.waiver_window?.waivers !== false
 }
 
-/** Your pending claims, newest order first as the read gives them, each
- *  with Cancel. Nothing at all when there are none; a failed read says so. */
-function PendingClaims({ leagueId }: { leagueId: string }) {
-  const claims = useWaiverClaims(leagueId, { status: 'pending' })
+/** Your pending claims, in your own order as the read gives them, each
+ *  with Cancel. Nothing at all when there are none. */
+function PendingClaims({ leagueId, doc }: { leagueId: string; doc: WaiverClaimsDocument }) {
   const cancel = useCancelClaim(leagueId)
-  const pending = useMemo(() => (claims.data?.claims ?? []).filter((c) => c.status === 'pending'), [claims.data])
+  const pending = useMemo(() => doc.claims.filter((c) => c.status === 'pending'), [doc])
   const ids = useMemo(() => pending.flatMap((c) => [c.add.player_id, ...(c.drop ? [c.drop.player_id] : [])]), [pending])
   const players = usePlayersByIds(ids)
-  const faab = claims.data?.waiver_type === 'faab'
-  if (claims.isPending) return null
-  if (claims.isError) {
-    return (
-      <CenteredNote
-        role="alert"
-        className="py-4"
-        message="Couldn’t load your pending claims."
-        action="Try again"
-        onAction={() => void claims.refetch()}
-      />
-    )
-  }
+  const faab = doc.waiver_type === 'faab'
   if (pending.length === 0) return null
   return (
     <section aria-label="Pending claims" className="pt-1" data-pending-claims>

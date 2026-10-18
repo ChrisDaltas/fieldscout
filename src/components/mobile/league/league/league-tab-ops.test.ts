@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TransactionActivityItem } from '@/lib/leagues/api/activity-service'
+import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 
 import {
+  claimResultRows,
   clearedFilter,
   commishLogHref,
   correctionsScreenHref,
@@ -22,6 +24,9 @@ import {
   transactionRow,
   transactionsHref,
   waiverCell,
+  withClaimResults,
+  rowPlayerIds,
+  type ClaimResultRow,
 } from './league-tab-ops'
 
 const L = 'league-1'
@@ -212,6 +217,108 @@ describe('transaction rows', () => {
       ['transaction', 't', 'commish'],
       ['post', 's2', 'league'],
     ])
+  })
+})
+
+const claim = (over: Partial<WaiverClaimView>): WaiverClaimView => ({
+  id: 'c1',
+  team_id: 'team-a',
+  add: { player_id: 'p-add', full_name: 'Puka Nacua', position: 'WR', nfl_team: 'LAR' },
+  drop: { player_id: 'p-drop', full_name: 'Jordan Love', position: 'QB', nfl_team: 'GB' },
+  faab_bid: 9,
+  claim_order: 1,
+  status: 'lost',
+  result_reason: 'outbid',
+  process_at: '2026-10-14T07:00:00.000Z',
+  processed_at: '2026-10-14T07:00:05.000Z',
+  created_at: '2026-10-12T19:06:00.000Z',
+  created_by: 'u1',
+  cancelled_at: null,
+  ...over,
+})
+
+describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
+  it('a lost claim: the result, when the run settled it, your bid, both players grey, who won him and why', () => {
+    const [row] = claimResultRows(
+      [claim({ winner_team_id: 'team-b', winner_team_name: 'Gridiron Gurus', winning_bid: 14 })],
+      'faab',
+      who,
+    )
+    expect(row).toMatchObject({ kind: 'claim', id: 'claim:c1', status: 'lost', label: 'Lost', createdAt: '2026-10-14T07:00:05.000Z', bid: 9 })
+    expect(row!.moves.map((m) => [m.playerId, m.tone, m.verb, m.muted])).toEqual([
+      ['p-add', 'add', 'Claim', true],
+      ['p-drop', 'drop', 'Drop', true],
+    ])
+    // The winner is his manager — a door to the profile.
+    expect(row!.reason).toEqual([{ username: 'marcus' }, ' won P. Nacua ($14). Your $9 claim was outbid.'])
+  })
+
+  it('a lost claim on priority, or with no winner found, says so plainly; a priority league shows no bid', () => {
+    const [prio] = claimResultRows(
+      [claim({ result_reason: 'lost_on_priority', winner_team_id: 'team-x', winner_team_name: 'Charlie', winning_bid: null })],
+      'rolling',
+      who,
+    )
+    expect(prio!.bid).toBeNull()
+    // A team with no manager reads as its name.
+    expect(prio!.reason).toEqual(['Charlie', ' won P. Nacua. Your claim was out-prioritized.'])
+    const [unknown] = claimResultRows([claim({ result_reason: 'lost_on_priority' })], 'faab', who)
+    expect(unknown!.reason).toEqual(['Another team with higher waiver priority claimed him.'])
+    const [bid] = claimResultRows([claim({})], 'faab', who)
+    expect(bid!.reason).toEqual(['Another team bid more.'])
+  })
+
+  it('a failed claim: "Didn’t go through" and every stored reason in plain words', () => {
+    const reasonOf = (result_reason: string | null) =>
+      claimResultRows([claim({ status: 'invalid', result_reason, drop: null })], 'faab', who)[0]!
+    const row = reasonOf('roster_full')
+    expect(row.label).toBe('Didn’t go through')
+    expect(row.moves).toHaveLength(1)
+    expect(row.reason).toEqual(['Your roster was full — claim again with a player to drop.'])
+    expect(reasonOf('add_locked').reason).toEqual(['His game had already started.'])
+    expect(reasonOf('add_rostered').reason).toEqual(['He was already on a roster by then.'])
+    expect(reasonOf('drop_gone').reason).toEqual(['The player you’d drop was no longer on your roster.'])
+    expect(reasonOf('drop_locked').reason).toEqual(['The player you’d drop had already played this week.'])
+    expect(reasonOf('cap_reached').reason).toEqual(['You’d used all the adds the league allows.'])
+    expect(reasonOf('insufficient_faab').reason).toEqual(['The bid was more than your FAAB left by then.'])
+    expect(reasonOf('own_claim_won').reason).toEqual(['One of your other claims went through first and made this one impossible.'])
+    expect(reasonOf('no_waivers').reason).toEqual(['The league turned waivers off — he can be picked up directly now.'])
+    expect(reasonOf('team_retired').reason).toEqual(['This team was retired before the run.'])
+    // A reason the app has no words for is still said, never dropped.
+    expect(reasonOf('something_new').reason).toEqual(['Didn’t go through (something new).'])
+    expect(reasonOf('constructor').reason).toEqual(['Didn’t go through (constructor).'])
+    expect(reasonOf(null).reason).toBeNull()
+  })
+
+  it('won, pending and cancelled claims are not rows (a win is already a move)', () => {
+    const rows = claimResultRows(
+      [claim({ id: 'w', status: 'won' }), claim({ id: 'p', status: 'pending' }), claim({ id: 'x', status: 'cancelled' }), claim({ id: 'l' })],
+      'faab',
+      who,
+    )
+    expect(rows.map((r) => r.id)).toEqual(['claim:l'])
+  })
+
+  const post = (id: string, createdAt: string | null) => ({ kind: 'post' as const, id, pill: { label: 'League', tone: 'league' as const }, createdAt, text: id, actorUsername: null, commishActionId: null })
+  const result = (id: string, createdAt: string): ClaimResultRow => ({ ...claimResultRows([claim({ id })], 'faab', who)[0]!, createdAt })
+
+  it('slots each claim in by time, the feed’s own order kept; a claim at the same instant as a move goes first', () => {
+    const rows = [post('a', '2026-10-14T09:00:00.000Z'), post('b', '2026-10-14T07:00:05.000Z'), post('c', '2026-10-10T07:00:00.000Z')]
+    const merged = withClaimResults(rows, [result('old', '2026-10-01T00:00:00.000Z'), result('run', '2026-10-14T07:00:05.000Z')], true)
+    expect(merged.map((r) => r.id)).toEqual(['a', 'claim:run', 'b', 'c', 'claim:old'])
+  })
+
+  it('while older moves are unread, a claim older than the oldest row shown waits for its page', () => {
+    const rows = [post('a', '2026-10-14T09:00:00.000Z'), post('b', '2026-10-12T00:00:00.000Z')]
+    const claims = [result('new', '2026-10-13T00:00:00.000Z'), result('old', '2026-10-01T00:00:00.000Z')]
+    expect(withClaimResults(rows, claims, false).map((r) => r.id)).toEqual(['a', 'claim:new', 'b'])
+    expect(withClaimResults(rows, claims, true).map((r) => r.id)).toEqual(['a', 'claim:new', 'b', 'claim:old'])
+    // Nothing read yet to order against: every claim shows.
+    expect(withClaimResults([], claims, false).map((r) => r.id)).toEqual(['claim:new', 'claim:old'])
+  })
+
+  it('a claim row’s players join the one headshot read', () => {
+    expect(rowPlayerIds([result('l', '2026-10-13T00:00:00.000Z')])).toEqual(['p-add', 'p-drop'])
   })
 })
 

@@ -12,11 +12,10 @@ describe('mobile Notifications row doors (m-home §3, m-dock §2.10)', () => {
     expect(mobileNotificationHref(n('league_trade_proposed', { league_id: 'L1' }))).toBe('/app/leagues/L1/trades')
   })
 
-  it("a waiver result opens the league's transactions — My moves when won", () => {
-    expect(mobileNotificationHref(n('league_waiver_claim', { league_id: 'L1', status: 'won' }))).toBe(
-      '/app/leagues/L1/activity/transactions?mine=1',
-    )
-    expect(mobileNotificationHref(n('league_waiver_claim', { league_id: 'L1', status: 'lost' }))).toBe('/app/leagues/L1/activity/transactions')
+  it('every waiver result opens My moves — won, lost or failed (gap list §3 #12)', () => {
+    for (const status of ['won', 'lost', 'invalid', undefined]) {
+      expect(mobileNotificationHref(n('league_waiver_claim', { league_id: 'L1', status }))).toBe('/app/leagues/L1/activity/transactions?mine=1')
+    }
     // No league id: still nowhere to go.
     expect(mobileNotificationHref(n('league_waiver_claim', { status: 'won' }))).toBeNull()
   })

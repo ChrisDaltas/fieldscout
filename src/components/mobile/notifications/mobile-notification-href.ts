@@ -9,9 +9,10 @@
  *    pending), the design's row-0 door. A row without a trade id keeps the
  *    shared target (the Trades page).
  *  - Waiver results (`league_waiver_claim`, migration 150: `league_id` +
- *    `status` won / lost / failed), which the shared helper leaves inert →
- *    the league's Transactions screen: "My moves" for a won claim (the add
- *    is there); league-wide otherwise, where the claim's winner shows.
+ *    `status` won / lost / invalid), which the shared helper leaves inert →
+ *    the league's Transactions screen, "My moves", whatever the result: a
+ *    won claim is there as the add, a lost or failed one as its own row
+ *    with the reason (gap list §3 #12).
  *  - Everything else: the shared target, or none — including a commissioner
  *    note change (`league_commissioner_note`, migration 192), whose shared
  *    target is the league home: on the phone, the League tab with the note
@@ -33,7 +34,7 @@ export function mobileNotificationHref(n: Pick<NotificationItem, 'type' | 'data'
     if (tradeId) return `/app/leagues/${leagueId}/trades?trade=${encodeURIComponent(tradeId)}`
   }
   if (leagueId && n.type === 'league_waiver_claim') {
-    return transactionsHref(leagueId, { mine: data?.status === 'won' })
+    return transactionsHref(leagueId, { mine: true })
   }
   return notificationHref(n)
 }
