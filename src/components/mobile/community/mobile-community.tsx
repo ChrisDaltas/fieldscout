@@ -18,12 +18,12 @@ import {
   LATEST_HREF,
   RANK_POS_CHIPS,
   RANK_SCORING_CHIPS,
-  RANK_TYPE_CHIPS,
   closeCommunityDetail,
   communityView,
   deriveTopics,
   emptyCopy,
   normQuery,
+  rankTypeChips,
   topicAwaitingServer,
   type CommunityTopic,
 } from '@/components/mobile/community/community-ops'
@@ -61,7 +61,9 @@ import { cn } from '@/lib/utils'
  * (`/app/explore/latest`, Chris 2026-10-16).
  *
  * `currentWeek` is the app's NFL week (0 = offseason) — the Start or sit
- * shelf is titled with the week it's about.
+ * shelf is titled with the week it's about, "Rankings this week" holds that
+ * week's boards and the season rankings, and the season ranking's chip is
+ * called "Rest of season" or "Pre-draft" by it (gap list §3 #27).
  */
 export function MobileCommunity({ currentWeek }: { currentWeek: number }) {
   return (
@@ -170,6 +172,8 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
     rk,
     // Rankings follow their own switch (launch scope), not just the tab bar.
     ranksOn: featureFlags.weeklyRanks,
+    // "Rankings this week": season rankings and this week's boards (#27).
+    currentWeek,
     now,
   })
   const mixed = tab === 'all' || tab === 'following'
@@ -366,7 +370,12 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
               <>
                 {tab === 'rank' && (
                   <div className="mt-3 flex flex-col gap-[6px]">
-                    <ChipRow chips={RANK_TYPE_CHIPS} value={rk.type} onPick={(type) => setRank({ type })} label="Ranking type" />
+                    <ChipRow
+                      chips={rankTypeChips(currentWeek)}
+                      value={rk.type}
+                      onPick={(type) => setRank({ type })}
+                      label="Ranking type"
+                    />
                     <ChipRow chips={RANK_POS_CHIPS} value={rk.pos} onPick={(pos) => setRank({ pos })} label="Position" />
                     <ChipRow
                       chips={RANK_SCORING_CHIPS}

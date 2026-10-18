@@ -128,8 +128,12 @@ export interface CommunityItem {
   slug: string
   description: string | null
   kind: 'rank' | 'list'
-  /** Weekly board / pre-draft big board; null for other rankings. */
+  /** A ranking's type: a weekly board, or a season ranking (the big board,
+   *  an AI expert's board); null for a list. */
   rankType: RankType | null
+  /** A weekly board's NFL week (from its slug); null otherwise. Missing
+   *  reads as no week. */
+  rankWeek?: number | null
   positionFilter: string | null
   /** The owner's chosen cover colour key (migration 188), else null — the
    *  cover then follows the position colour. */
@@ -247,7 +251,7 @@ export function mapCommunityRows(rows: CommunityRow[], recentLikes: ReadonlyMap<
       .filter((l) => l.kind === 'video')
       .sort((a, b) => a.position - b.position)
       .map((l) => ({ url: l.url, title: l.title, duration: l.duration_label, source: l.source_label }))
-    const { kind, rankType } = classifyCommunityList(row)
+    const { kind, rankType, week } = classifyCommunityList(row)
     const scoringFormat = effectiveScoringFormat(scoringFormatOf(row), persona?.scoring)
     return [
       {
@@ -257,6 +261,7 @@ export function mapCommunityRows(rows: CommunityRow[], recentLikes: ReadonlyMap<
         description: row.description,
         kind,
         rankType,
+        rankWeek: week,
         positionFilter: row.position_filter,
         coverColor: row.cover_color ?? null,
         scoring: SCORING_FORMAT_LABEL[scoringFormat],

@@ -1,6 +1,8 @@
 import type { CommunityItem, CommunityPlayer } from '@/hooks/use-mobile-community-feed'
+import { seasonLabel } from '@/components/mobile/rankings/rankings-ops'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { DEFAULT_RANKING_SCORING, personaScoringFormat } from '@/lib/lists/ranking-publish'
+import { activeWeekOf } from '@/lib/rankings/week-window'
 import { handleInitials } from '@/utils/initials'
 
 /**
@@ -46,7 +48,13 @@ export type CommunityTopic =
 
 export const INJURIES_TOPIC: CommunityTopic = { kind: 'injuries', id: 'injuries', label: 'Injuries' }
 
-export type RankType = 'weekly' | 'pre'
+/**
+ * A ranking's type: one NFL week's board, or a season ranking — the big
+ * board, called "Rest of season" in season and "Pre-draft" in the offseason
+ * (`seasonLabel`, the Rankings area's name for it), and an AI expert's board
+ * (every AI expert ranking is season-long, as the Rankings area reads them).
+ */
+export type RankType = 'weekly' | 'season'
 export type CommunityScoring = 'PPR' | 'Half PPR' | '0.25 PPR' | 'Standard'
 
 /**
@@ -108,25 +116,54 @@ export const RANK_FILTERS_ALL: RankFilters = { type: 'all', pos: 'all', scoring:
  *  `week-<n>-big-board-<ts>`; slugs are never regenerated). Who owns which
  *  week (`big_board_weekly`) is owner-only, so the slug is what a viewer
  *  can read. */
-const WEEKLY_BOARD_SLUG = /^week-\d+-big-board(?:-|$)/
+const WEEKLY_BOARD_SLUG = /^week-(\d+)-big-board(?:-|$)/
 
 /**
  * Rankings vs lists. In the handoff a ranking is a ranking product — a week,
  * rest of season or the draft — and a list is a person's own grouping
- * (which may itself be ordered). The app's equivalents: the pre-draft big
+ * (which may itself be ordered). The app's equivalents: the season big
  * board, the weekly boards and the AI experts' boards are rankings; every
  * other list is a list. (`ranking_mode` can't tell them apart — nearly every
- * list is "ranked" by default.)
+ * list is "ranked" by default.) A weekly board's week is in its slug.
  */
 export function classifyCommunityList(list: {
   is_big_board: boolean | null
   slug: string
   ai_persona_id: string | null
-}): { kind: 'rank' | 'list'; rankType: RankType | null } {
-  if (list.is_big_board) return { kind: 'rank', rankType: 'pre' }
-  if (WEEKLY_BOARD_SLUG.test(list.slug)) return { kind: 'rank', rankType: 'weekly' }
-  if (list.ai_persona_id) return { kind: 'rank', rankType: null }
-  return { kind: 'list', rankType: null }
+}): { kind: 'rank' | 'list'; rankType: RankType | null; week: number | null } {
+  if (list.is_big_board) return { kind: 'rank', rankType: 'season', week: null }
+  const weekly = WEEKLY_BOARD_SLUG.exec(list.slug)
+  if (weekly) return { kind: 'rank', rankType: 'weekly', week: Number(weekly[1]) }
+  if (list.ai_persona_id) return { kind: 'rank', rankType: 'season', week: null }
+  return { kind: 'list', rankType: null, week: null }
+}
+
+/**
+ * The NFL season a moment belongs to: March to February — the offseason
+ * counts toward the season it leads into, January and February's playoffs
+ * toward the one ending. (Weekly boards reuse week numbers every season.)
+ */
+export function nflSeasonOf(ms: number): number {
+  const d = new Date(ms)
+  return d.getUTCMonth() < 2 ? d.getUTCFullYear() - 1 : d.getUTCFullYear()
+}
+
+/**
+ * Is it a ranking for "Rankings this week" (gap list §3 #27): a season
+ * ranking, or this week's board — the app's week (`activeWeekOf`: Week 1 in
+ * the offseason), made this season. Another week's board, or a board left
+ * from an earlier season with the same week number, is not. A board whose
+ * time can't be read is taken at its week number.
+ */
+export function rankingThisWeek(
+  item: Pick<CommunityItem, 'rankType' | 'rankWeek' | 'createdAt'>,
+  currentWeek: number,
+  now: number,
+): boolean {
+  if (item.rankType !== 'weekly') return true
+  if (item.rankWeek !== activeWeekOf(currentWeek)) return false
+  const made = Date.parse(item.createdAt)
+  return !Number.isFinite(made) || nflSeasonOf(made) === nflSeasonOf(now)
 }
 
 /** PPR / Half PPR / Standard from a scoring system's points per reception. */
@@ -180,16 +217,21 @@ export const RANK_POS_CHIPS: readonly Chip<RankPosFilter>[] = [
 ]
 
 /**
- * The Rankings chip rows (handoff §2.9: type × position × scoring). Type
- * leaves out "Rest of season": nothing marks a list as one (an m-community
- * gap). Scoring is "Any scoring" plus the four scorings a ranking can be
- * saved for (Chris, 2026-10-15, gap list #36).
+ * The Rankings chip rows (handoff §2.9: type × position × scoring). The
+ * handoff's type row has both "Rest of season" and "Pre-draft"; the app has
+ * one season ranking, so it gets one chip, called by the calendar —
+ * "Rest of season" in season, "Pre-draft" in the offseason (gap list §3 #27;
+ * `currentWeek` is the app's NFL week, 0 = offseason). Scoring is "Any
+ * scoring" plus the four scorings a ranking can be saved for (Chris,
+ * 2026-10-15, gap list #36).
  */
-export const RANK_TYPE_CHIPS: readonly Chip<RankTypeFilter>[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'pre', label: 'Pre-draft' },
-]
+export function rankTypeChips(currentWeek: number): readonly Chip<RankTypeFilter>[] {
+  return [
+    { value: 'all', label: 'All types' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'season', label: seasonLabel(currentWeek) },
+  ]
+}
 export const RANK_SCORING_CHIPS: readonly Chip<RankScoringFilter>[] = [
   { value: 'all', label: 'Any scoring' },
   ...SCORING_FORMATS.map((value) => ({ value, label: SCORING_FORMAT_LABEL[value] })),
@@ -615,6 +657,8 @@ export interface CommunityViewInput {
   rk: RankFilters
   /** Rankings' own switch (launch scope) — off, no ranking shows anywhere. */
   ranksOn: boolean
+  /** The app's NFL week (0 = offseason) — what "Rankings this week" means. */
+  currentWeek: number
   now: number
 }
 
@@ -631,7 +675,9 @@ export interface CommunityView {
   ranksAll: CommunityItem[]
   ranks: CommunityItem[]
   lists: CommunityItem[]
-  /** The shelves under Latest — Latest's own items left out. */
+  /** The shelves under Latest — Latest's own items left out. "Rankings this
+   *  week" holds only season rankings and this week's boards
+   *  (`rankingThisWeek`). */
   shelfRanks: CommunityItem[]
   shelfLists: CommunityItem[]
   /** Any list shows on the shelves page (Latest included). */
@@ -652,7 +698,7 @@ export interface CommunityView {
  * first.
  */
 export function communityView(input: CommunityViewInput): CommunityView {
-  const { filter, rk, ranksOn, now } = input
+  const { filter, rk, ranksOn, currentWeek, now } = input
   const { tab, topic, q, followingIds } = filter
   const forYou = tab === 'all'
   const candidates = forYou ? withoutRepeats([...input.pool, ...input.popularExtra]) : [...input.pool]
@@ -678,7 +724,7 @@ export function communityView(input: CommunityViewInput): CommunityView {
     ranksAll,
     ranks,
     lists,
-    shelfRanks: ranks.filter(notInLatest),
+    shelfRanks: ranks.filter((i) => notInLatest(i) && rankingThisWeek(i, currentWeek, now)),
     shelfLists: lists.filter(notInLatest),
     anyList: lists.length > 0 || latest.some((i) => i.kind === 'list'),
     rankFilteredEmpty,

@@ -126,7 +126,7 @@ describe('readLatestPage', () => {
   it('rankings come back as rankings (the screen drops them while their switch is off)', async () => {
     answer = () => ({ data: [{ ...row('bb', '2026-10-15T00:00:00Z'), is_big_board: true }], error: null })
     const page = await readLatestPage(0)
-    expect(page.items[0]).toMatchObject({ id: 'bb', kind: 'rank', rankType: 'pre', scoring: 'Half PPR' })
+    expect(page.items[0]).toMatchObject({ id: 'bb', kind: 'rank', rankType: 'season', scoring: 'Half PPR' })
   })
 
   it('a failed read throws — never an empty page', async () => {
