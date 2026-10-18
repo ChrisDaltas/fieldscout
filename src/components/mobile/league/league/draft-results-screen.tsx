@@ -189,11 +189,16 @@ export function DraftResultsBody({
   }
 
   // Opened at a later round or team: bring its chip into view in the scroller.
+  // (The round and team scrollers are keyed apart, so neither inherits the
+  // other's scroll position.)
   const chips = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const row = chips.current
     const on = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
-    if (row && on && on.offsetLeft + on.offsetWidth > row.clientWidth) row.scrollLeft = on.offsetLeft - 16
+    if (!row || !on) return
+    const box = row.getBoundingClientRect()
+    const chip = on.getBoundingClientRect()
+    if (chip.left < box.left || chip.right > box.right) row.scrollLeft = Math.max(0, row.scrollLeft + chip.left - box.left - 16)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- on open and on a view switch only
   }, [view])
 
@@ -219,7 +224,7 @@ export function DraftResultsBody({
         />
       </div>
       {byTeam ? (
-        <div ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Teams" data-draft-teams>
+        <div key="teams" ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Teams" data-draft-teams>
           {teams.map((id) => (
             <ResultsChip key={id} on={id === shownTeam} mine={id === myTeamId} onClick={() => chooseTeam(id)} className="max-w-[180px]">
               <span className="truncate">{teamNameById.get(id) ?? 'Team'}</span>
@@ -229,7 +234,7 @@ export function DraftResultsBody({
       ) : auction ? (
         <p className="px-4 pb-2 pt-2.5 text-[12px] font-medium text-m-t3">{AUCTION_LINE}</p>
       ) : (
-        <div ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Rounds" data-draft-rounds>
+        <div key="rounds" ref={chips} className="flex gap-1.5 overflow-x-auto px-4 pb-2 pt-2.5 scrollbar-none" role="group" aria-label="Rounds" data-draft-rounds>
           {Array.from({ length: roundCount }, (_, i) => i + 1).map((r) => (
             <ResultsChip key={r} on={r === shown} onClick={() => chooseRound(r)}>
               Round {r}
