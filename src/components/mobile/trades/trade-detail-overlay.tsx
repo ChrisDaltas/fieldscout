@@ -263,14 +263,14 @@ function DetailBody({
         </div>
         <div className="grid grid-cols-2 overflow-hidden rounded-[14px] bg-m-b1">
           <div className="flex min-w-0 flex-col gap-2 border-r border-m-b3s px-3 pb-3 pt-[10px]">
-            <span className="text-[11px] font-semibold text-positive-strong">Receives</span>
+            <span className="text-[11px] font-semibold text-m-green">Receives</span>
             {receives.map((a) => (
               <Asset key={a.key} a={a} headshot={a.playerId ? (identity.playerById.get(a.playerId)?.headshot_url ?? null) : null} onOpen={a.playerId ? () => openPlayer(a.playerId!, leagueId) : undefined} locked={Boolean(trade.in_flight && a.playerId && lockedIds.has(a.playerId))} />
             ))}
             {receives.length === 0 && <span className="text-[12px] font-medium text-m-t3">Nothing</span>}
           </div>
           <div className="flex min-w-0 flex-col gap-2 px-3 pb-3 pt-[10px]">
-            <span className="text-[11px] font-semibold text-negative-strong">Sends</span>
+            <span className="text-[11px] font-semibold text-m-red">Sends</span>
             {sends.map((a) => (
               <Asset key={a.key} a={a} headshot={a.playerId ? (identity.playerById.get(a.playerId)?.headshot_url ?? null) : null} onOpen={a.playerId ? () => openPlayer(a.playerId!, leagueId) : undefined} locked={Boolean(trade.in_flight && a.playerId && lockedIds.has(a.playerId))} />
             ))}
@@ -414,7 +414,7 @@ function DetailBody({
         ) : (
           <div className="flex flex-col gap-2.5 px-4 pb-[max(30px,env(safe-area-inset-bottom))] pt-[14px]">
             {finished && (
-              <p className={cn('text-center text-[13px] font-semibold', finished.tone === 'positive' ? 'text-positive-strong' : finished.tone === 'negative' ? 'text-m-tr' : 'text-m-t3')}>
+              <p className={cn('text-center text-[13px] font-semibold', finished.tone === 'positive' ? 'text-m-green' : finished.tone === 'negative' ? 'text-m-tr' : 'text-m-t3')}>
                 {finished.text}
               </p>
             )}

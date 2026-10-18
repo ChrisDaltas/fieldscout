@@ -178,7 +178,7 @@ describe('the NFL game screen', () => {
     expect(html).toMatch(/data-game-header="true" data-game-state="live"/)
     expect(html).toMatch(/data-game-side="away">[\s\S]*?>CIN<[\s\S]*?>28</)
     expect(html).toMatch(/data-game-side="home">[\s\S]*?>18<[\s\S]*?>MIA</)
-    expect(html).toMatch(/class="[^"]*text-negative-strong[^"]*" data-game-status="true">[\s\S]*?Q4 2:19/)
+    expect(html).toMatch(/class="[^"]*text-m-red[^"]*" data-game-status="true">[\s\S]*?Q4 2:19/)
   })
 
   it('the box score’s groups: Passing then Receiving, away side first', () => {

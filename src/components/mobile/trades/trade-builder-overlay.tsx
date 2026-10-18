@@ -403,11 +403,11 @@ function BuilderBody({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-[11px] font-semibold text-positive-strong">Receives</span>
+          <span className="text-[11px] font-semibold text-m-green">Receives</span>
           {chips(receives.ids, receives.team, receives.faab)}
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-[11px] font-semibold text-negative-strong">Sends</span>
+          <span className="text-[11px] font-semibold text-m-red">Sends</span>
           {chips(sends.ids, sends.team, sends.faab)}
         </div>
       </div>

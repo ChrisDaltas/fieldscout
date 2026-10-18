@@ -223,9 +223,9 @@ export function oprkSpan(
 
 /** The handoff's rank colours: red #FF0028, orange #FF8A00, green #07A852. */
 export const TONE_TEXT: Record<Tone, string> = {
-  negative: 'text-negative-strong',
+  negative: 'text-m-red',
   caution: 'text-warn',
-  positive: 'text-positive-strong',
+  positive: 'text-m-green',
 }
 
 // ---------------------------------------------------------------------------

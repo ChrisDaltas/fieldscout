@@ -159,8 +159,8 @@ describe('AI expert consensus (the Experts source)', () => {
     )
   })
   it('comparison colour: ±3 or more turns red (ranked lower) or green (higher)', () => {
-    expect(cmpToneClass(9, 5)).toBe('text-negative-strong')
-    expect(cmpToneClass(2, 5)).toBe('text-positive-strong')
+    expect(cmpToneClass(9, 5)).toBe('text-m-red')
+    expect(cmpToneClass(2, 5)).toBe('text-m-green')
     expect(cmpToneClass(7, 5)).toBe('text-m-t1')
     expect(cmpToneClass(undefined, 5)).toBe('text-m-t1')
   })

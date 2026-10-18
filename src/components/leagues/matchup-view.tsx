@@ -25,7 +25,7 @@ import { liveScoringDelay, useStatsDegraded } from '@/hooks/use-stats-degraded'
 import type { BoxStarter, TeamBoxScore } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow, WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import { PROJ_TEXT } from '@/components/players/projected-points'
-import { streakArrowText, streakToneClass, teamStreak, type Streak } from '@/components/mobile/league/streak-ops'
+import { streakArrowText, streakToneClass, teamStreak, type Streak, type StreakTone } from '@/components/mobile/league/streak-ops'
 import { cn } from '@/lib/utils'
 
 import { commishMatchupHref } from './activity-page-ops'
@@ -499,6 +499,9 @@ export function Scoreboard({
   )
 }
 
+/** Desktop's fixed streak green / red (the phone's pair is themed). */
+const STREAK_TONE: StreakTone = { W: 'text-positive-strong', L: 'text-negative-strong' }
+
 function Side({
   doc,
   row,
@@ -546,7 +549,7 @@ function Side({
               </span>
             )}
             {streak && (
-              <span className={cn('fs-num shrink-0 text-[10px] font-bold', streakToneClass(streak, 'text-n-6'))} title="Current streak" data-streak={streakArrowText(streak)}>
+              <span className={cn('fs-num shrink-0 text-[10px] font-bold', streakToneClass(streak, 'text-n-6', STREAK_TONE))} title="Current streak" data-streak={streakArrowText(streak)}>
                 {streakArrowText(streak)}
               </span>
             )}

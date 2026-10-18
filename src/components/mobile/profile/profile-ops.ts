@@ -225,7 +225,7 @@ export function rankingRowSub(
  * Finalized its t4.
  */
 export const RANKING_SUB_CLASS: Record<RankStatus, string> = {
-  Published: 'text-positive-strong',
+  Published: 'text-m-green',
   Finalized: 'text-m-t4',
 }
 

@@ -762,7 +762,7 @@ function CardSide({
           <span
             className={cn(
               'text-[11px] font-semibold',
-              result.tone === 'win' ? 'text-confirm' : result.tone === 'loss' ? 'text-negative-strong' : 'text-m-t3',
+              result.tone === 'win' ? 'text-m-green' : result.tone === 'loss' ? 'text-m-red' : 'text-m-t3',
             )}
             data-result={result.tone}
           >
@@ -877,12 +877,14 @@ function StartersHeader({
 }
 
 /** The week's stored status beside the title (app-only; the design's live
- *  red — a 6px dot and 11/600 #FF0028 — for a week being played). */
+ *  red — a 6px dot and 11/600 #FF0028 — for a week being played). The word
+ *  brightens to #FF6B6B in phone dark mode; the dot keeps #FF0028, as the
+ *  handoff's alert dots do. */
 function WeekStatus({ status }: { status: string }) {
   const badge = weekBadge(status)
   if (badge.state === 'live') {
     return (
-      <span className="flex flex-none items-center gap-1 text-[11px] font-semibold text-negative-strong" title={badge.title} data-week-badge="live">
+      <span className="flex flex-none items-center gap-1 text-[11px] font-semibold text-m-red" title={badge.title} data-week-badge="live">
         <span className="size-1.5 rounded-full bg-negative-strong" />
         {badge.label}
       </span>
@@ -1374,7 +1376,7 @@ function LeaderboardWeek({
                 {r.is_final ? (
                   <span className="w-9 flex-none text-right text-[11px] font-semibold text-m-t3">Final</span>
                 ) : (
-                  <span className="flex w-9 flex-none items-center justify-end gap-1 text-[11px] font-semibold text-negative-strong" title="Provisional — the week has not finalized.">
+                  <span className="flex w-9 flex-none items-center justify-end gap-1 text-[11px] font-semibold text-m-red" title="Provisional — the week has not finalized.">
                     <span className="size-1.5 rounded-full bg-negative-strong" />
                     Live
                   </span>

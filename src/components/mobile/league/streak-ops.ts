@@ -179,8 +179,16 @@ export function streakTileText(s: Streak): string {
   return `${s.kind}${s.count}`
 }
 
-/** The streak's colour: green for a W run (#07A852), red for an L run
- *  (#FF0028); a tie run keeps the text colour it sits in (`tie`). */
-export function streakToneClass(s: Streak, tie: string): string {
-  return s.kind === 'W' ? 'text-positive-strong' : s.kind === 'L' ? 'text-negative-strong' : tie
+/** A W run's and an L run's text colour. */
+export type StreakTone = Readonly<Record<'W' | 'L', string>>
+
+/** The phone's: #07A852 / #FF0028, brightening to #1ED760 / #FF6B6B in phone
+ *  dark mode (gap list §4 item 6). */
+const PHONE_STREAK_TONE: StreakTone = { W: 'text-m-green', L: 'text-m-red' }
+
+/** The streak's colour: green for a W run, red for an L run; a tie run keeps
+ *  the text colour it sits in (`tie`). Desktop's matchup header passes its
+ *  own fixed pair — the phone's tokens are for the phone. */
+export function streakToneClass(s: Streak, tie: string, tone: StreakTone = PHONE_STREAK_TONE): string {
+  return s.kind === 'T' ? tie : tone[s.kind]
 }

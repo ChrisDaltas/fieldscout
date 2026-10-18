@@ -957,6 +957,10 @@ describe('F566 — win chance from the remaining projections, and the W/L streak
     const head = html.slice(html.indexOf('data-matchup="m1"'), html.indexOf('data-board'))
     expect(head).toContain('data-streak="▲2W"')
     expect(head).toContain('data-streak="▼2L"')
+    // Desktop's own green/red, never the phone's themed pair.
+    expect(head).toMatch(/text-positive-strong" title="Current streak" data-streak="▲2W"/)
+    expect(head).toMatch(/text-negative-strong" title="Current streak" data-streak="▼2L"/)
+    expect(head).not.toMatch(/text-m-(?:green|red)/)
     // No decided game → no streak (the default schedule is all live).
     expect(renderMatchups()).not.toContain('data-streak')
   })

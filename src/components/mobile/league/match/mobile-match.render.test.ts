@@ -328,9 +328,9 @@ describe('mobile Match — header and card', () => {
       },
     })
     const me = withStreaks.slice(withStreaks.indexOf(`data-side="${ME}"`))
-    expect(me).toMatch(/@dalton<\/a> · 2-6 <span class="text-negative-strong" data-streak="▼2L">▼2L<\/span>/)
+    expect(me).toMatch(/@dalton<\/a> · 2-6 <span class="text-m-red" data-streak="▼2L">▼2L<\/span>/)
     const opp = withStreaks.slice(withStreaks.indexOf(`data-side="${OPP}"`))
-    expect(opp).toMatch(/8-0 <span class="text-positive-strong" data-streak="▲3W">▲3W<\/span> · <a [^>]*>@marcus</)
+    expect(opp).toMatch(/8-0 <span class="text-m-green" data-streak="▲3W">▲3W<\/span> · <a [^>]*>@marcus</)
   })
 
   it('a median league counts the result against the League Median last in its week: won the game, lost to the median → "▼1L"', () => {

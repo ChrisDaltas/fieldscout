@@ -111,8 +111,8 @@ describe('the numbers as the page prints them', () => {
   })
 
   it('the record is green when winning, red when losing, the text colour when even', () => {
-    expect(recordToneClass({ wins: 3, losses: 2 })).toBe('text-positive-strong')
-    expect(recordToneClass({ wins: 1, losses: 2 })).toBe('text-negative-strong')
+    expect(recordToneClass({ wins: 3, losses: 2 })).toBe('text-m-green')
+    expect(recordToneClass({ wins: 1, losses: 2 })).toBe('text-m-red')
     expect(recordToneClass({ wins: 1, losses: 1 })).toBe('text-m-t1')
     expect(recordToneClass({ wins: 0, losses: 0 })).toBe('text-m-t1')
   })

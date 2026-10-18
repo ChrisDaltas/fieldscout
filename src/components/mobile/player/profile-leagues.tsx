@@ -103,7 +103,7 @@ function LeagueRow({
 
   if (card.state === 'error') {
     sub = 'Couldn’t read this league.'
-    subCls = 'text-negative-strong'
+    subCls = 'text-m-red'
   } else if (card.state === 'ready') {
     const v = card.view
     const a = v.row.availability
@@ -140,7 +140,7 @@ function LeagueRow({
       const waivers = a.kind === 'on_waivers'
       const day = waivers ? clearsDay(a.until) : null
       sub = waivers ? (day ? `On waivers · ${day}` : 'On waivers') : 'Free agent'
-      subCls = waivers ? 'text-m-to' : 'text-positive-strong'
+      subCls = waivers ? 'text-m-to' : 'text-m-green'
       if (v.kind === 'available') {
         const claim = v.acquire.kind === 'claim' || (v.acquire.kind === 'none' && waivers)
         button = {
@@ -247,10 +247,13 @@ export function QueueButton({
 // Transactions (§2.8)
 // ---------------------------------------------------------------------------
 
+/** A red chip is the phone's error pair, `bg-m-gr` + `text-m-tr` (CLAUDE.md
+ *  → "Bright red is ink, never paint"); the green chip keeps the handoff's
+ *  #07A852 words. Both brighten in phone dark mode. */
 const KIND_PILL: Record<MoveKind, string> = {
-  Added: 'bg-m-gg text-positive-strong',
+  Added: 'bg-m-gg text-m-green',
   Drafted: 'bg-m-gb text-accent',
-  Dropped: 'bg-m-gr text-negative-strong',
+  Dropped: 'bg-m-gr text-m-tr',
   Traded: 'bg-m-b2 text-m-t1',
 }
 
@@ -326,7 +329,7 @@ export function TransactionsTab({
       ) : (
         <div className="px-4" data-profile-tx-timeline>
           {failed.map((l) => (
-            <p key={l.id} className="border-b border-m-b2 py-3 text-[13px] font-medium text-negative-strong" role="alert">
+            <p key={l.id} className="border-b border-m-b2 py-3 text-[13px] font-medium text-m-red" role="alert">
               Couldn’t read {l.name}’s moves.
             </p>
           ))}
@@ -392,8 +395,8 @@ function MoveText({ move }: { move: ProfileMove }) {
 // ---------------------------------------------------------------------------
 
 const KIND_TEXT: Record<MoveKind, string> = {
-  Added: 'text-positive-strong',
-  Dropped: 'text-negative-strong',
+  Added: 'text-m-green',
+  Dropped: 'text-m-red',
   Drafted: 'text-accent',
   Traded: 'text-m-t1',
 }
@@ -430,7 +433,7 @@ function LeagueMoveCards({ leagueId, playerId, report }: { leagueId: string; pla
   useEffect(() => report(count), [count, report])
   if (moves.state === 'loading') return <div className="h-[42px] animate-pulse rounded-[12px] bg-m-b1" />
   if (moves.state === 'error') {
-    return <p className="text-[12px] font-medium text-negative-strong">Couldn’t read {moves.leagueName ?? 'this league'}’s moves.</p>
+    return <p className="text-[12px] font-medium text-m-red">Couldn’t read {moves.leagueName ?? 'this league'}’s moves.</p>
   }
   return (
     <>

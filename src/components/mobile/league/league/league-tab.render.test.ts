@@ -367,9 +367,9 @@ describe('League › Standings', () => {
 
   it('the streak is the shared count (gap list #39): the stored final result of each week', () => {
     const t3 = html.slice(html.indexOf(`data-standings-row="${T3}"`))
-    expect(t3).toMatch(/text-negative-strong" data-streak="▼1L">▼1L</)
+    expect(t3).toMatch(/text-m-red" data-streak="▼1L">▼1L</)
     const t4 = html.slice(html.indexOf(`data-standings-row="${T4}"`))
-    expect(t4).toMatch(/text-positive-strong" data-streak="▲1W">▲1W</)
+    expect(t4).toMatch(/text-m-green" data-streak="▲1W">▲1W</)
   })
 
   it('in a median league the result against the League Median counts too, last in its week (Chris, 2026-10-16)', () => {
@@ -378,8 +378,8 @@ describe('League › Standings', () => {
       qc.setQueryData(scheduleKeys.all(LEAGUE), { ...SCHEDULE, median_results: [median(T3, 'win'), median(T4, 'loss')] } satisfies LeagueSchedule),
     )
     // T3 lost the game and beat the median; T4 won the game and lost to it.
-    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T3}"`))).toMatch(/text-positive-strong" data-streak="▲1W">▲1W</)
-    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T4}"`))).toMatch(/text-negative-strong" data-streak="▼1L">▼1L</)
+    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T3}"`))).toMatch(/text-m-green" data-streak="▲1W">▲1W</)
+    expect(withMedian.slice(withMedian.indexOf(`data-standings-row="${T4}"`))).toMatch(/text-m-red" data-streak="▼1L">▼1L</)
   })
 })
 
@@ -629,8 +629,8 @@ describe('My moves — lost and failed waiver claims, with the reason (gap list 
     expect(lost).toContain('J. Dotson')
     expect(lost).toContain('>Drop<')
     // Nothing moved: grey, not green / red.
-    expect(lost).not.toContain('text-positive-strong')
-    expect(lost).not.toContain('text-negative-strong')
+    expect(lost).not.toContain('text-m-green')
+    expect(lost).not.toContain('text-m-red')
     // Who won him is his manager — a door to the profile.
     expect(lost).toContain('data-username-link="marcus"')
     expect(lost).toContain(' won R. Davis ($14). Your $7 claim was outbid.')

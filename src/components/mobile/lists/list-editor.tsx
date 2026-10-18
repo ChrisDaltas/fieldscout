@@ -736,7 +736,7 @@ function EditorBody({
                 setConfirmLeave(false)
                 onClose()
               }}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-negative-strong active:bg-m-b2h"
+              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-m-red active:bg-m-b2h"
             >
               Discard
             </button>

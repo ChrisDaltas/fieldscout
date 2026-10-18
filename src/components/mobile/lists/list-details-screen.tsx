@@ -486,7 +486,7 @@ function DetailsForm({ mode, list }: { mode: 'new' | 'edit'; list: ListWithDetai
             <span className="text-[12px] font-medium text-m-t3">{videosFullNote(videoMax)}</span>
           )}
           {linkProblem && (
-            <span className="text-[11px] font-medium text-negative-strong">{ADD_VIDEO_PROBLEM[linkProblem]}</span>
+            <span className="text-[11px] font-medium text-m-red">{ADD_VIDEO_PROBLEM[linkProblem]}</span>
           )}
           {videos.map((video) => (
             <VideoRow

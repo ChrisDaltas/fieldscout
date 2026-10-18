@@ -26,12 +26,16 @@ export const NOTIF_PATH = {
 
 export type NotifTone = 'blue' | 'purple' | 'green' | 'red' | 'orange' | 'neutral'
 
-/** Circle fill + stroke colour (fill themed, stroke fixed — m-home §6). */
+/** Circle fill + stroke colour. Fills are themed (m-home §6); the green and
+ *  red strokes brighten in dark mode too, as the README asks (gap list §4
+ *  item 6 — m-home §6 had them fixed): green is the phone's bright green,
+ *  red the error pair's `m-tr` on its `m-gr` tint (CLAUDE.md → "Bright red
+ *  is ink, never paint"). */
 export const NOTIF_TONE_CLASS: Record<NotifTone, string> = {
   blue: 'bg-m-gb text-accent',
   purple: 'bg-m-gp text-pos-wr',
-  green: 'bg-m-gg text-positive-strong',
-  red: 'bg-m-gr text-negative-strong',
+  green: 'bg-m-gg text-m-green',
+  red: 'bg-m-gr text-m-tr',
   orange: 'bg-m-go text-warn',
   neutral: 'bg-m-b2 text-m-t3',
 }

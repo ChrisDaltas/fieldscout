@@ -41,7 +41,7 @@ export function LineupCheckCard({ rows, onPlayer }: { rows: readonly CheckRow[];
                         <button type="button" onClick={() => onPlayer(p.id)} className="font-semibold text-m-t2">
                           {p.name}
                         </button>
-                        {p.tag && <span className="ml-1 text-[11px] font-semibold text-negative-strong">{p.tag}</span>}
+                        {p.tag && <span className="ml-1 text-[11px] font-semibold text-m-red">{p.tag}</span>}
                         {i < row.players.length - 1 && ', '}
                       </Fragment>
                     ))}

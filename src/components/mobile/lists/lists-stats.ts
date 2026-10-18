@@ -416,8 +416,8 @@ export function scoringLabel(scoring: ListScoring): string {
 /** The cell colour rule (lr-lists §5): "–" t5, "+…" green, "-…" red, else t1. */
 export function cellTextClass(value: string): string {
   if (value === DASH) return 'text-m-t5'
-  if (value.startsWith('+')) return 'text-positive-strong'
-  if (value.startsWith('-')) return 'text-negative-strong'
+  if (value.startsWith('+')) return 'text-m-green'
+  if (value.startsWith('-')) return 'text-m-red'
   return 'text-m-t1'
 }
 

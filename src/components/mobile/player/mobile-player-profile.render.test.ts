@@ -314,7 +314,7 @@ describe('mobile player profile — leagues gated off', () => {
     })
     const out = html(createElement(ProfileLoaded, { data, target, onClose: () => {} }), qc)
     // Rush yds per game fell (80 → 66.7): ▼ and red.
-    expect(out).toMatch(/data-key-stat="rush_yds"[\s\S]*?text-negative-strong[^>]*data-key-trend="down" data-key-trend-tone="bad"[^>]*>▼ last 3 13\.3</)
+    expect(out).toMatch(/data-key-stat="rush_yds"[\s\S]*?text-m-red[^>]*data-key-trend="down" data-key-trend-tone="bad"[^>]*>▼ last 3 13\.3</)
   })
 
   it('key stats trends (#43): a QB throwing fewer interceptions lately is ▼ and GREEN — the colour follows better, not the arrow', () => {
@@ -345,8 +345,8 @@ describe('mobile player profile — leagues gated off', () => {
     })
     const out = html(createElement(ProfileLoaded, { data: qb, target, onClose: () => {} }), qc)
     const tile = out.match(/data-key-stat="int"[\s\S]*?<\/div>/)?.[0] ?? ''
-    expect(tile).toMatch(/class="[^"]*text-positive-strong[^"]*" data-key-trend="down" data-key-trend-tone="good"[^>]*>▼ last 3 0\.8</)
-    expect(tile).not.toContain('text-negative-strong')
+    expect(tile).toMatch(/class="[^"]*text-m-green[^"]*" data-key-trend="down" data-key-trend-tone="good"[^>]*>▼ last 3 0\.8</)
+    expect(tile).not.toContain('text-m-red')
   })
 })
 

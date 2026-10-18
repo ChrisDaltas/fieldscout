@@ -128,7 +128,7 @@ export function FolderNameSheet({
                 onError: (error) => toast({ title: 'Could not delete the folder', description: error.message }),
               })
             }
-            className="self-start py-1 text-[14px] font-semibold text-negative-strong"
+            className="self-start py-1 text-[14px] font-semibold text-m-red"
           >
             Delete folder
           </button>
@@ -244,7 +244,7 @@ export function SheetRow({
       <span
         className={cn(
           'flex size-8 flex-none items-center justify-center rounded-[9px] bg-m-b2',
-          tone === 'danger' ? 'text-negative-strong' : 'text-m-t1',
+          tone === 'danger' ? 'text-m-red' : 'text-m-t1',
         )}
       >
         {icon}
@@ -252,7 +252,7 @@ export function SheetRow({
       <span
         className={cn(
           'min-w-0 flex-1 truncate text-[15px] font-semibold',
-          tone === 'danger' ? 'text-negative-strong' : 'text-m-t1',
+          tone === 'danger' ? 'text-m-red' : 'text-m-t1',
         )}
       >
         {label}

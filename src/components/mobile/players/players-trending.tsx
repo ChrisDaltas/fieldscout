@@ -92,7 +92,7 @@ export function TrendingSection({
                 <div className="flex items-end gap-2">
                   <div className="flex min-w-0 flex-1 flex-col gap-px">
                     <span className="whitespace-nowrap text-[11px] font-semibold tabular-nums text-m-t1">
-                      <span className={t.delta.up ? 'text-positive-strong' : 'text-negative-strong'}>{t.delta.text}</span> vs last yr
+                      <span className={t.delta.up ? 'text-m-green' : 'text-m-red'}>{t.delta.text}</span> vs last yr
                     </span>
                     <span className="whitespace-nowrap text-[10px] font-medium tabular-nums text-m-t3">Proj {t.proj}</span>
                   </div>

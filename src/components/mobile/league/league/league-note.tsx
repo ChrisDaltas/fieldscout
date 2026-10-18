@@ -237,7 +237,7 @@ export function LeagueNoteEditSheet({
               type="button"
               onClick={() => submit('')}
               disabled={save.isPending}
-              className="flex h-11 w-full items-center justify-center text-[15px] font-semibold text-negative-strong"
+              className="flex h-11 w-full items-center justify-center text-[15px] font-semibold text-m-red"
               data-league-note-clear
             >
               Clear note
@@ -257,7 +257,7 @@ export function LeagueNoteEditSheet({
           className="resize-none rounded-xl bg-m-b1 p-3 text-[15px] font-medium leading-[1.4] text-m-t1 outline-none placeholder:text-m-t3"
         />
         <span
-          className={cn('self-end text-[12px] font-semibold tabular-nums', state.tooLong ? 'text-negative-strong' : 'text-m-t3')}
+          className={cn('self-end text-[12px] font-semibold tabular-nums', state.tooLong ? 'text-m-red' : 'text-m-t3')}
           data-league-note-counter
         >
           {state.tooLong ? `Too long — ${state.counter}` : `${state.counter}`}

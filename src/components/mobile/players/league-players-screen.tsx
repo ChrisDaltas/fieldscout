@@ -96,9 +96,9 @@ const PSTAT: ReadonlyArray<{ value: LeagueStatus; label: string }> = [
 ]
 
 const OPRK_TEXT: Record<Tone, string> = {
-  positive: 'text-positive-strong',
+  positive: 'text-m-green',
   caution: 'text-warn',
-  negative: 'text-negative-strong',
+  negative: 'text-m-red',
 }
 
 /** Trending: Home's risers scanned this deep, my own players dropped, up to

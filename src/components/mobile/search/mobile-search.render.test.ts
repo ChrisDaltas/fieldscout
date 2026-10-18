@@ -272,7 +272,7 @@ describe('inside a league', () => {
     expect(label('Tyler Warren')).toBe('Waivers')
     expect(label('Jake Ferguson')).toBe('Free agent')
     expect(out).toMatch(/text-accent[^"]*">Your team</)
-    expect(out).toMatch(/text-positive-strong[^"]*">Waivers</)
+    expect(out).toMatch(/text-m-green[^"]*">Waivers</)
   })
 
   it('before the draft every player reads Pre-draft', () => {

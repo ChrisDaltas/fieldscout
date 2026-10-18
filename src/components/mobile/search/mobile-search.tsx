@@ -74,7 +74,7 @@ export function MobileSearch({ onClose }: { onClose: () => void }) {
 const TONE: Record<OwnerTone, string> = {
   mine: 'text-accent',
   other: 'text-m-t3',
-  open: 'text-positive-strong',
+  open: 'text-m-green',
   pre: 'text-m-to',
 }
 

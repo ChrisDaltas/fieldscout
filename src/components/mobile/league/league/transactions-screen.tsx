@@ -255,7 +255,7 @@ function ClaimLine({
   const openPlayer = usePlayerModalStore((s) => s.openPlayerView)
   const name = player.full_name ?? identity?.full_name ?? 'Unknown player'
   const verb = tone === 'add' ? 'Claim' : 'Drop'
-  const color = tone === 'add' ? 'text-positive-strong' : 'text-negative-strong'
+  const color = tone === 'add' ? 'text-m-green' : 'text-m-red'
   return (
     <button type="button" onClick={() => openPlayer(player.player_id, leagueId)} className="flex w-full items-center gap-2.5 text-left" aria-label={`${name} — ${verb}`}>
       <span className="flex w-4 flex-none justify-center">

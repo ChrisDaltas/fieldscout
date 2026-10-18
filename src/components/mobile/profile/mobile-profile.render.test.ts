@@ -227,7 +227,7 @@ describe('mobile Profile — My stuff › Rankings rows (gap list §3 #22)', () 
       'Finalized · updated 1d ago',
     ])
     // The design's colours: Submitted green for Published, t4 for Finalized.
-    expect(rows.map((r) => r[3])).toEqual(['text-positive-strong', 'text-positive-strong', 'text-m-t4'])
+    expect(rows.map((r) => r[3])).toEqual(['text-m-green', 'text-m-green', 'text-m-t4'])
     const t = renderRankings(BOARDS)
     expect(t).not.toMatch(/>Saved\b|Saved ·|Draft|Submitted/)
   })
@@ -250,5 +250,37 @@ describe('mobile Profile — My stuff › Rankings rows (gap list §3 #22)', () 
     const loading = renderRankings(null)
     expect(loading).toContain('aria-busy="true"')
     expect(loading).not.toContain('No rankings yet')
+  })
+})
+
+describe('mobile Profile — My stuff › Start/Sit rows brighten in dark mode (gap list §4 item 6)', () => {
+  const player = (id: string, full_name: string) => ({ id, full_name, team: 'SEA', position: 'WR', headshot_url: null })
+  const DAY = 86_400_000
+  const question = (id: string, closesInMs: number) => ({
+    id,
+    note: `Question ${id}`,
+    season: 2099,
+    week: 1,
+    votesA: 3,
+    votesB: 1,
+    closesAt: new Date(Date.now() + closesInMs).toISOString(),
+    resolvedAt: null,
+    createdAt: new Date(Date.now() - DAY).toISOString(),
+    playerA: player(`${id}-a`, 'Marcus Delaney'),
+    playerB: player(`${id}-b`, 'Tre Holloway'),
+  })
+
+  it('an open question’s line is the phone’s themed green, a closed one t3 — never the fixed light green', () => {
+    search.query = 'tab=ss'
+    const html = render((qc) => {
+      qc.setQueryData(['mobile-profile', 'start-sit', 'user-me'], [question('open', DAY), question('closed', -DAY)])
+    })
+    const rows = rankingRows(html)
+    expect(rows.map((r) => [r[1], r[3]])).toEqual([
+      ['Question open', 'text-m-green'],
+      ['Question closed', 'text-m-t3'],
+    ])
+    expect(rows[0]![2]).toMatch(/· Open ·/)
+    expect(html).not.toContain('text-positive-strong')
   })
 })
