@@ -471,7 +471,7 @@ Pts, Avg and Pos rk are **the same regardless of type or scoring**; PPR vs Stand
   - If SD > 2.2: **"Experts disagree on {Short name}. Range #{best} to #{worst} is wider than most at this tier."**
   - Else, if worst − best ≤ 2: **"Experts mostly agree. Every expert has him within two spots."**
   - Else: **"Experts mostly agree. Range #{best} to #{worst}."**
-  - The copy says "him" even for K and D/ST, and even for a one-row list.
+  - The copy says "him" even for K and D/ST, and even for a one-row list. **The app names the player instead:** "Every expert has {Short name} within two spots" (gap list §4 item 16).
 
 **What the sample data actually renders** (checked across all 150 views):
 - **"Experts disagree on …" never renders.** The highest SD is 2.04 (Experts · W5 · PPR · WR, G. Wilson, expert ranks 3, 5, 7, 8, 3).
