@@ -1,10 +1,13 @@
 /**
  * The Top scouts read (desktop's card and the phone's For you shelf). Nothing
- * writes `profiles.cred_score` yet, so every account ties at 0 — the read must
- * carry a fixed tiebreak after cred (earliest account, then id) so the 1–5
- * order can't reshuffle between reads. Pinned on the query the hook sends.
+ * awards cred yet, so every account ties at the starting 7 (migration 197) —
+ * the read must carry a fixed tiebreak after cred (earliest account, then id)
+ * so the 1–5 order can't reshuffle between reads. Pinned on the query the
+ * hook sends.
  */
 import { describe, expect, it } from 'vitest'
+
+import { CRED_START } from '@/lib/cred-tiers'
 
 import { fetchTopScouts, LEADERBOARD_SIZE } from './use-top-scouts'
 
@@ -37,17 +40,20 @@ describe('fetchTopScouts', () => {
     expect(calls.at(-1)).toEqual(['limit', LEADERBOARD_SIZE])
   })
 
-  it('reads a missing cred as 0 and keeps the server order', async () => {
+  it('reads a missing cred as the starting 7, shows a stored cred as stored, and keeps the server order', async () => {
     const { client } = fakeClient({
       data: [
         { id: 'a', username: 'first', avatar_url: null, cred_score: null },
-        { id: 'b', username: 'second', avatar_url: 'x.png', cred_score: 0 },
+        { id: 'b', username: 'second', avatar_url: 'x.png', cred_score: 7 },
+        { id: 'c', username: 'third', avatar_url: null, cred_score: 0 },
       ],
       error: null,
     })
     expect(await fetchTopScouts(client)).toEqual([
-      { id: 'a', username: 'first', avatar_url: null, cred_score: 0 },
-      { id: 'b', username: 'second', avatar_url: 'x.png', cred_score: 0 },
+      { id: 'a', username: 'first', avatar_url: null, cred_score: CRED_START },
+      { id: 'b', username: 'second', avatar_url: 'x.png', cred_score: 7 },
+      // A stored 0 (an account 197 hasn't reached yet) is not dressed up as 7.
+      { id: 'c', username: 'third', avatar_url: null, cred_score: 0 },
     ])
   })
 

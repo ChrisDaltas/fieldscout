@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
+import { credOrStart } from '@/lib/cred-tiers'
 import { featureFlags } from '@/lib/feature-flags'
 
 /**
@@ -90,7 +91,7 @@ export function MyStatsPage() {
           bio={profile.bio}
           avatarUrl={profile.avatar_url}
           isPro={profile.is_pro ?? false}
-          credScore={profile.cred_score ?? 0}
+          credScore={credOrStart(profile.cred_score)}
           followerCount={profile.follower_count ?? 0}
           followingCount={profile.following_count ?? 0}
           isOwn
@@ -104,7 +105,7 @@ export function MyStatsPage() {
           <TwoColumnLayout
             main={
               <ProfileStats
-                credScore={profile.cred_score ?? 0}
+                credScore={credOrStart(profile.cred_score)}
                 followerCount={profile.follower_count ?? 0}
                 followingCount={profile.following_count ?? 0}
                 showInfoPopover
@@ -114,7 +115,7 @@ export function MyStatsPage() {
           />
         ) : (
           <ProfileStats
-            credScore={profile.cred_score ?? 0}
+            credScore={credOrStart(profile.cred_score)}
             followerCount={profile.follower_count ?? 0}
             followingCount={profile.following_count ?? 0}
             showInfoPopover

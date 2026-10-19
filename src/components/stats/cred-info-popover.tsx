@@ -6,7 +6,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { CRED_TIERS } from '@/lib/cred-tiers'
+import { CRED_START, CRED_TIERS } from '@/lib/cred-tiers'
 
 export function CredInfoPopover() {
   return (
@@ -48,9 +48,9 @@ export function CredInfoPopover() {
         </ul>
 
         <p className="mt-3 text-[10px] font-medium text-n-6">
-          Cred decays slowly if you stop participating during the season. New
-          users still influence consensus rankings with a weight of 1 until
-          they earn cred.
+          Cred decays slowly if you stop participating during the season.
+          Everyone starts with {CRED_START} cred, so a new scout&apos;s rankings
+          count toward consensus from day one.
         </p>
 
         <h4 className="mt-4 text-[13px] font-bold tracking-[-0.015em] text-ink">Rank tiers</h4>
