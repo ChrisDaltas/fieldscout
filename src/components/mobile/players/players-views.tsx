@@ -44,12 +44,33 @@ export interface ViewProps {
   onOpen: (row: ViewRow) => void
   onTip: (key: ColKey) => void
   emptyText?: string
+  /** A way out of an empty list (the league search: "Show all players"). */
+  emptyAction?: EmptyAction
+}
+
+export interface EmptyAction {
+  label: string
+  onClick: () => void
 }
 
 const EMPTY = 'No players match these filters'
 
-function Empty({ text }: { text: string }) {
-  return <div className="py-9 text-center text-[13px] font-medium text-m-t3" data-players-empty>{text}</div>
+function Empty({ text, action }: { text: string; action?: EmptyAction }) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-8 py-9 text-center" data-players-empty>
+      <p className="text-[13px] font-medium text-m-t3">{text}</p>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="h-9 rounded-full bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 active:bg-m-b2h"
+          data-players-empty-action
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
+  )
 }
 
 /** Line 1: short name, position (its text colour), team, injury tag. */
@@ -76,7 +97,7 @@ function NameLine({ row, onOpen, nameClass }: { row: ViewRow; onOpen: () => void
 const META = 'truncate text-[11px] font-medium text-m-t3'
 const FADE = { maskImage: 'linear-gradient(90deg,#000 88%,transparent)', WebkitMaskImage: 'linear-gradient(90deg,#000 88%,transparent)' }
 
-export function ListView({ rows, cols, action, onOpen, onTip, emptyText = EMPTY }: ViewProps) {
+export function ListView({ rows, cols, action, onOpen, onTip, emptyText = EMPTY, emptyAction }: ViewProps) {
   return (
     <div className="px-3 pb-5" data-players-view="list">
       {rows.map((row) => (
@@ -110,7 +131,7 @@ export function ListView({ rows, cols, action, onOpen, onTip, emptyText = EMPTY 
           </div>
         </div>
       ))}
-      {rows.length === 0 && <Empty text={emptyText} />}
+      {rows.length === 0 && <Empty text={emptyText} action={emptyAction} />}
     </div>
   )
 }
@@ -121,7 +142,7 @@ const CARDS_INSET = { 1: 'pl-[37px]', 2: 'pl-[69px]' } as const
 /** Sheet locked column: 156px (spec §2.6); a second 22px control adds 26. */
 const SHEET_LEAD = { 1: 156, 2: 182 } as const
 
-export function CardsView({ rows, cols, action, actionSlots = 1, onOpen, onTip, emptyText = EMPTY }: ViewProps) {
+export function CardsView({ rows, cols, action, actionSlots = 1, onOpen, onTip, emptyText = EMPTY, emptyAction }: ViewProps) {
   return (
     <div className="px-3 pb-5" data-players-view="cards">
       {rows.map((row) => (
@@ -148,12 +169,12 @@ export function CardsView({ rows, cols, action, actionSlots = 1, onOpen, onTip, 
           </div>
         </div>
       ))}
-      {rows.length === 0 && <Empty text={emptyText} />}
+      {rows.length === 0 && <Empty text={emptyText} action={emptyAction} />}
     </div>
   )
 }
 
-export function SheetView({ rows, cols, sort, action, actionSlots = 1, onOpen, onTip, emptyText = EMPTY }: ViewProps) {
+export function SheetView({ rows, cols, sort, action, actionSlots = 1, onOpen, onTip, emptyText = EMPTY, emptyAction }: ViewProps) {
   const runs = groupRuns(cols)
   const lead = { width: SHEET_LEAD[action ? actionSlots : 1] }
   return (
@@ -229,7 +250,7 @@ export function SheetView({ rows, cols, sort, action, actionSlots = 1, onOpen, o
           </div>
         ))}
       </div>
-      {rows.length === 0 && <Empty text={emptyText} />}
+      {rows.length === 0 && <Empty text={emptyText} action={emptyAction} />}
     </div>
   )
 }

@@ -1,5 +1,8 @@
 'use client'
 
+import { useRef } from 'react'
+
+import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -60,6 +63,14 @@ export interface FilterPill {
   onReset: () => void
 }
 
+/** The bar's optional search field (the league tab — gap list §4
+ *  "Players"). */
+export interface BarSearch {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+}
+
 /**
  * The sticky filter bar (spec §2.1): background b0, 10px top / 8px bottom
  * padding, 1px b2 divider; a sideways-scrolling row of 30px pills. The
@@ -67,13 +78,28 @@ export interface FilterPill {
  * tap anywhere outside the card only closes it (spec §3 "Filter pill" — the
  * prototype's transparent full-screen backdrop), and it sits 3px under the
  * bar's divider, 12px in from each side, up to 340px tall.
+ *
+ * `search` adds a field above the pills — the handoff's own search field
+ * (global search / the trade picker: 38px b2, radius 12, the 15px t4
+ * magnifier, 15/500 text, the 18px b4 clear circle once there is text).
  */
-export function FilterBar({ pills, open, onOpenChange }: { pills: FilterPill[]; open: string | null; onOpenChange: (key: string | null) => void }) {
+export function FilterBar({
+  pills,
+  open,
+  onOpenChange,
+  search,
+}: {
+  pills: FilterPill[]
+  open: string | null
+  onOpenChange: (key: string | null) => void
+  search?: BarSearch
+}) {
   const menu = pills.find((p) => p.key === open) ?? null
   return (
     <Popover open={menu !== null} onOpenChange={(o) => !o && onOpenChange(null)} modal>
       <PopoverAnchor asChild>
         <div className="border-b border-m-b2 bg-m-b0 pb-2 pt-2.5" data-players-filters>
+          {search && <SearchField search={search} />}
           <div className="flex gap-1.5 overflow-x-auto px-3 scrollbar-none">
             {pills.map((p) => {
               const ring = open === p.key && !p.on
@@ -154,6 +180,51 @@ export function FilterBar({ pills, open, onOpenChange }: { pills: FilterPill[]; 
         </PopoverContent>
       )}
     </Popover>
+  )
+}
+
+function SearchField({ search }: { search: BarSearch }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <form
+      role="search"
+      className="mb-2 px-3"
+      onSubmit={(e) => {
+        // Return closes the keyboard; the list already follows the text.
+        e.preventDefault()
+        inputRef.current?.blur()
+      }}
+    >
+      <label className="flex h-[38px] min-w-0 items-center gap-2 rounded-[12px] bg-m-b2 px-3">
+        <MIcon name="search" size={15} stroke={1.8} className="text-m-t4" />
+        <input
+          ref={inputRef}
+          value={search.value}
+          onChange={(e) => search.onChange(e.target.value)}
+          placeholder={search.placeholder}
+          aria-label={search.placeholder}
+          enterKeyHint="search"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="min-w-0 flex-1 border-0 bg-transparent text-[15px] font-medium text-m-t1 outline-none placeholder:text-m-t3"
+          data-players-search
+        />
+        {search.value !== '' && (
+          <button
+            type="button"
+            onClick={() => {
+              search.onChange('')
+              inputRef.current?.focus({ preventScroll: true })
+            }}
+            aria-label="Clear search"
+            className="flex size-[18px] flex-none items-center justify-center rounded-full bg-m-b4l text-white"
+          >
+            <MIcon name="close" size={8} stroke={3} />
+          </button>
+        )}
+      </label>
+    </form>
   )
 }
 

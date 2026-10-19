@@ -17,8 +17,10 @@ import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { acquireLabel, cardLeagueView, type CardLeagueView } from '@/components/players/player-card-league-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
+import { useDebounced } from '@/hooks/use-debounced'
 import { useDefenseSplits } from '@/hooks/use-defense-splits'
 import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { POOL_WINDOW } from '@/hooks/use-draft-pool'
 import { useLeaguePoolLive } from '@/hooks/use-league-pool'
 import { useMobileHomeTrending } from '@/hooks/use-mobile-home-trending'
 import {
@@ -29,6 +31,7 @@ import {
   useMobilePoolValuesAt,
   useMobileWeekGames,
   type LinesScope,
+  type MobilePoolPlayer,
 } from '@/hooks/use-mobile-players-data'
 import { LEAGUE_DEFAULTS, useMobilePlayersUI, type LeaguePeriod, type LeagueStatus } from '@/hooks/use-mobile-players-ui'
 import { useRostersLive } from '@/hooks/use-rosters'
@@ -36,6 +39,7 @@ import { useSchedule } from '@/hooks/use-schedule'
 import { toast } from '@/hooks/use-toast'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
+import { playerNameMatches } from '@/lib/players/name-search'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 
@@ -66,7 +70,7 @@ import {
 } from './players-ops'
 import { ColumnTip, CustomizeSheet } from './players-overlays'
 import { TrendingSection, type TrendTile } from './players-trending'
-import { PlayersRows, type ViewRow } from './players-views'
+import { PlayersRows, type EmptyAction, type ViewRow } from './players-views'
 
 /**
  * FieldScout Mobile — League › Players tab (spec m-players): the sticky
@@ -84,6 +88,18 @@ import { PlayersRows, type ViewRow } from './players-views'
  * `player_usage`, the week's games and the defense-vs-position ranks.
  * Trending uses the app's one trend signal (Home's). The Ownership columns
  * (Rost% / +/- / Start%) have no source and are not shown.
+ *
+ * Search (gap list §4 "Players" — the quick way to find a deep free agent):
+ * the field above the pills narrows the browse window SERVER-side by name
+ * (`playerNameFilter`), so it reaches the whole active pool, not just the 300
+ * rows a browse loads; the complete by-id sets are matched by the same rule.
+ * It combines with the pills (ESPN's player search does the same). When the
+ * status pill hides every match — counted over the window's search and both
+ * complete sets, whatever the status — the empty list offers "Show all
+ * players"; a Position / Team pill that narrows it is named in the empty
+ * copy. A capped window is always said (never a silent cap), and a cap or an
+ * empty result is claimed only from the search's own answer — while it
+ * reads, the list shows loading, not the previous read's narrowing.
  */
 
 const PSTAT: ReadonlyArray<{ value: LeagueStatus; label: string }> = [
@@ -105,6 +121,19 @@ const OPRK_TEXT: Record<Tone, string> = {
  *  8 tiles (spec §2.2). */
 const TREND_SCAN = 40
 const TREND_TILES = 8
+
+/** The search reads once typing pauses this long. */
+const SEARCH_PAUSE_MS = 250
+
+/** "No {who} match “term”" — the empty list under a search, per status. */
+const SEARCH_EMPTY_WHO: Record<LeagueStatus, string> = {
+  all: 'players',
+  avail: 'available players',
+  fa: 'free agents',
+  w: 'players on waivers',
+  rost: 'rostered players',
+  mine: 'players on your team',
+}
 
 // Instants read in the viewer's own time, the league's time on hover — the
 // app's convention (`formatInstantWithDate`, the desktop availability cell).
@@ -157,10 +186,11 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   const tz = detail.settings.draft.time_zone ?? null
 
   // Home's "Trending players → See all" lands here with ?status=: the status
-  // it names, and Trending expanded (spec §4 "Ways in" 2).
+  // it names, and Trending expanded (spec §4 "Ways in" 2) — so no search left
+  // over from earlier hides it.
   useEffect(() => {
     const status = new URLSearchParams(window.location.search).get('status')
-    if (status && PSTAT.some((s) => s.value === status)) setUi({ status: status as LeagueStatus, trendOpen: true })
+    if (status && PSTAT.some((s) => s.value === status)) setUi({ status: status as LeagueStatus, trendOpen: true, query: '' })
   }, [setUi])
 
   const rosters = useRostersLive(leagueId)
@@ -188,8 +218,12 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   const usesRostered = status === 'all' || rosteredOnly
   const usesWaivers = status === 'all' || status === 'avail' || status === 'w'
   const team = ui.team === 'All' ? null : ui.team
+  // The typed name, once typing pauses — the window's server-side search
+  // and the by-id sets' match both read this one value.
+  const term = useDebounced(ui.query, SEARCH_PAUSE_MS).trim()
+  const searching = term !== ''
 
-  const windowQ = useMobilePlayersWindow(positionsOf(ui.pos), team)
+  const windowQ = useMobilePlayersWindow(positionsOf(ui.pos), team, term)
   // Every rostered player (the rosters document) and every player on
   // waivers (the pool document's `on_waivers` rows), whatever their ADP.
   const { rosteredIds, waiverIds } = useMemo(() => {
@@ -201,22 +235,28 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   const rostered = useMobilePlayersByIds(rosteredIds)
   const waivers = useMobilePlayersByIds(waiverIds)
 
-  const filtered: PoolPlayerRow[] = useMemo(() => {
-    const byId = new Map<string, PoolPlayer>()
-    const keep = (p: PoolPlayer) => posMatches(ui.pos, p.position) && (!team || p.team === team)
-    // A by-id read is used only for the ids it is asked for NOW (its
-    // placeholder may still hold the previous id set's rows).
-    const add = (list: readonly PoolPlayer[] | undefined, only?: ReadonlySet<string>) => {
-      for (const p of list ?? []) if (keep(p) && (!only || only.has(p.id))) byId.set(p.id, p)
+  const { filtered, hiddenByStatus } = useMemo(() => {
+    const keep = (p: MobilePoolPlayer) => posMatches(ui.pos, p.position) && (!team || p.team === team)
+    const named = (p: MobilePoolPlayer) => playerNameMatches(p, term)
+    // Each read's rows that count NOW. A by-id read is used only for the ids
+    // it is asked for now (its placeholder may still hold the previous id
+    // set's rows); the by-id sets are complete, so the search matches them
+    // here. The window is searched by the server — its rows are matched here
+    // only while they are still the previous read's (a placeholder).
+    const waiverSet = new Set(waiverIds)
+    const rosteredSet = new Set(rosteredIds)
+    const fromWindow = (windowQ.data ?? []).filter((p) => keep(p) && (!windowQ.isPlaceholderData || named(p)))
+    const fromWaivers = (waivers.data ?? []).filter((p) => keep(p) && waiverSet.has(p.id) && named(p))
+    const fromRostered = (rostered.data ?? []).filter((p) => keep(p) && rosteredSet.has(p.id) && named(p))
+    const rowsOf = (lists: ReadonlyArray<readonly MobilePoolPlayer[]>) => {
+      const byId = new Map<string, MobilePoolPlayer>()
+      for (const list of lists) for (const p of list) byId.set(p.id, p)
+      const universe = [...byId.values()].sort(
+        (a, b) => (a.adp ?? Infinity) - (b.adp ?? Infinity) || a.full_name.localeCompare(b.full_name) || a.id.localeCompare(b.id),
+      )
+      return poolRows(universe, rosters.data, pool.data ?? [], myTeamId, 'all')
     }
-    if (usesWindow) add(windowQ.data)
-    if (usesWaivers) add(waivers.data, new Set(waiverIds))
-    if (usesRostered) add(rostered.data, new Set(rosteredIds))
-    const universe = [...byId.values()].sort(
-      (a, b) => (a.adp ?? Infinity) - (b.adp ?? Infinity) || a.full_name.localeCompare(b.full_name) || a.id.localeCompare(b.id),
-    )
-    return poolRows(universe, rosters.data, pool.data ?? [], myTeamId, 'all').filter((r) => {
-      const a = r.availability
+    const passes = ({ availability: a }: PoolPlayerRow) => {
       switch (status) {
         case 'all':
           return true
@@ -231,8 +271,32 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
         case 'mine':
           return a.kind === 'rostered' && a.mine
       }
-    })
-  }, [windowQ.data, waivers.data, rostered.data, waiverIds, rosteredIds, rosters.data, pool.data, myTeamId, status, usesWindow, usesWaivers, usesRostered, ui.pos, team])
+    }
+    const shown = rowsOf([usesWindow ? fromWindow : [], usesWaivers ? fromWaivers : [], usesRostered ? fromRostered : []]).filter(passes)
+    // Under a search, every match in all three reads (the window's search is
+    // read under every status) that the status pill leaves out — the empty
+    // list's way out ("Show all players").
+    const hidden = searching && status !== 'all' ? rowsOf([fromWindow, fromWaivers, fromRostered]).filter((r) => !passes(r)).length : 0
+    return { filtered: shown, hiddenByStatus: hidden }
+  }, [
+    windowQ.data,
+    windowQ.isPlaceholderData,
+    waivers.data,
+    rostered.data,
+    waiverIds,
+    rosteredIds,
+    rosters.data,
+    pool.data,
+    myTeamId,
+    status,
+    usesWindow,
+    usesWaivers,
+    usesRostered,
+    ui.pos,
+    team,
+    term,
+    searching,
+  ])
 
   const ids = useMemo(() => filtered.map((r) => r.player.id), [filtered])
   const needs = colNeeds(ui.cols, ui.sort)
@@ -349,7 +413,7 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   }, [filtered, valuesNow.byPlayer, valuesNext.byPlayer, valuesPrev.byPlayer, per, games.data, splits.data, lines.data, usage.data, handleOf, tz])
 
   const sorted = useMemo(() => sortByCell(built, (b) => b.view.cells[ui.sort] ?? BLANK), [built, ui.sort])
-  const filterKey = `${status}|${per}|${ui.pos}|${ui.team}|${ui.sort}`
+  const filterKey = `${status}|${per}|${ui.pos}|${ui.team}|${ui.sort}|${term}`
   useEffect(() => setShown(PAGE), [filterKey])
   const visible = sorted.slice(0, shown)
   const rowById = useMemo(() => new Map(visible.map((b) => [b.view.id, b.row])), [visible])
@@ -421,7 +485,8 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   }
 
   // ---- Trending (spec §2.2) ----
-  const showTrend = (status === 'all' || status === 'avail' || status === 'fa' || status === 'w') && ui.team === 'All'
+  // A search is looking for someone in particular — the list comes first.
+  const showTrend = (status === 'all' || status === 'avail' || status === 'fa' || status === 'w') && ui.team === 'All' && !searching
   const trend = useMobileHomeTrending(TREND_SCAN)
   const trendRows = useMemo(() => {
     const mine = new Set((rosters.data?.teams ?? []).filter((t) => t.team_id === myTeamId).flatMap((t) => t.roster.map((p) => p.player_id)))
@@ -513,7 +578,12 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   // so Proj, points and games would read "–" as if that were the data.
   const scheduleProblem = schedule.isError && !schedule.data
   const noSchedule = schedule.data !== undefined && weeks.length === 0
+  // The window's answer for THIS key hasn't landed: its placeholder is the
+  // previous key's rows, so an empty narrowing of it proves nothing yet —
+  // loading, never "No … match" (a deep name typed from an empty field).
+  const awaitingWindow = usesWindow && windowQ.isPlaceholderData && filtered.length === 0
   const loading =
+    awaitingWindow ||
     (rosters.isPending && !rosters.data) ||
     (pool.isPending && !pool.data) ||
     (schedule.isPending && !schedule.data) ||
@@ -541,11 +611,17 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   const waiverWindow = detail.waiver_window ?? null
   const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, tz).local)
   const truncated = windowQ.full && usesWindow
+  // The Position / Team pills narrow a search too — named, so an empty
+  // result says which pill to reset.
+  const narrowedBy = [ui.pos !== 'All' ? `at ${ui.pos}` : null, team ? `on ${team}` : null].filter(Boolean).join(' ')
+  const emptyText = searching ? `No ${SEARCH_EMPTY_WHO[status]} match “${term}”${narrowedBy ? ` ${narrowedBy}` : ''}` : undefined
+  const emptyAction: EmptyAction | undefined =
+    searching && status !== 'all' && hiddenByStatus > 0 ? { label: 'Show all players', onClick: () => setUi({ status: 'all' }) } : undefined
 
   const header = (
     <>
       <MobileLeagueHeader leagueName={detail.league.name} leagueId={leagueId} />
-      <FilterBar pills={pills} open={menu} onOpenChange={setMenu} />
+      <FilterBar pills={pills} open={menu} onOpenChange={setMenu} search={{ value: ui.query, onChange: (query) => setUi({ query }), placeholder: 'Search players' }} />
     </>
   )
 
@@ -571,6 +647,11 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
       {per === 'prior' && showsPoints && <Notice>League points aren’t kept for {season - 1} — this period shows box stats only.</Notice>}
       {per === 'w' && week !== undefined && !hasWeek(week + 1) && [...ui.cols, ui.sort].includes('tot') && (
         <Notice>Week {week} is the league’s last scheduled week, so its points (Tot) can’t be shown here.</Notice>
+      )}
+      {searching && truncated && (
+        <Notice>
+          Lots of players match — showing the top {POOL_WINDOW} by ADP. Keep typing to narrow it.
+        </Notice>
       )}
 
       {showTrend && rosters.data && pool.data && (
@@ -618,8 +699,16 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
             action={myTeamId ? renderAction : undefined}
             onOpen={(row) => openPlayerView(row.id, leagueId)}
             onTip={setTip}
+            emptyText={emptyText}
+            emptyAction={emptyAction}
           />
           <ShowMore remaining={sorted.length - visible.length} onMore={() => setShown((n) => n + PAGE)} />
+          {/* The browse window's cap, said at its end (never a silent cap). */}
+          {!searching && truncated && visible.length >= sorted.length && (
+            <p className="px-8 pb-5 text-center text-[12px] font-medium text-m-t3" data-players-cap>
+              That’s the top {POOL_WINDOW} by ADP. Search to find anyone else.
+            </p>
+          )}
         </>
       )}
 
