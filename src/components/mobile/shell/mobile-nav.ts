@@ -77,7 +77,6 @@ const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string, boolean?]> = [
   [/^\/app\/mocks\/[^/]+\/report\/?$/, 'Mock draft report'],
   [/^\/app\/nfl\/?$/, 'NFL teams'],
   [/^\/app\/nfl\/[^/]+\/?$/, 'NFL team', false],
-  [/^\/app\/trash\/?$/, 'Trash'],
   [/^\/app\/weekly-ranks\/history\/?$/, 'Ranking history'],
   [/^\/app\/start-or-sit\/new\/?$/, 'Ask a question'],
   [/^\/app\/start-or-sit\/[^/]+\/?$/, 'Start or sit'],
@@ -103,8 +102,9 @@ export function mobileFallback(pathname: string): MobileFallback | null {
 }
 
 /** Where an account page's Back goes when nothing in the app is behind it.
- *  (Settings and its pages draw their own phone screens now, each with its
- *  own parent — gap list §4 item 101 — so every page left here goes Home.) */
+ *  (Settings and its pages — gap list §4 item 101 — and Trash — item 102 —
+ *  draw their own phone screens now, each with its own parent, so every page
+ *  left here goes Home.) */
 const ACCOUNT_FALLBACK_PARENT = '/app'
 
 /** The title alone (league pages), for callers that only need to know the

@@ -52,7 +52,7 @@ const EXCEPTIONS: Record<string, string> = {
   'src/components/mobile/community/community-detail.tsx':
     "FieldScout Mobile list detail — its title over the cover is the screen's h1 (mobile handoff; the shell's AppHeader is desktop-only).",
   'src/components/mobile/ui/mobile-header.tsx':
-    "FieldScout Mobile pages' 52px page bar (`MPageBar`, wrapped by the league pages' `LeaguePageBar`) — its title (“Draft results”, “League history”, “Settings”, “Scoring”) is the screen's h1 (mobile handoff G pages; AppHeader is desktop-only). It replaces the fallback-header h1 these pages had on the phone.",
+    "FieldScout Mobile pages' 52px page bar (`MPageBar`, wrapped by the league pages' `LeaguePageBar`) — its title (“Draft results”, “League history”, “Settings”, “Scoring”, “Trash”) is the screen's h1 (mobile handoff G pages; AppHeader is desktop-only). It replaces the fallback-header h1 these pages had on the phone.",
   'src/components/mobile/league/team/team-view.tsx':
     'FieldScout Mobile team view — a full-screen overlay whose team name is its h1 (mobile handoff; AppHeader is desktop-only).',
   'src/components/mobile/lists/list-view.tsx':
