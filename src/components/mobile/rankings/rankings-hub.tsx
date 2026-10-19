@@ -4,6 +4,12 @@ import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ListActions } from '@/components/mobile/community/list-actions'
+import {
+  DuplicateRankingButton,
+  useDuplicateRankingFlow,
+  type DuplicateRankingFlow,
+} from '@/components/mobile/rankings/duplicate-ranking'
+import type { RankingDuplicate } from '@/components/mobile/rankings/duplicate-ops'
 import { readLastRankPos } from '@/components/mobile/rankings/last-position'
 import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { MyRankingsBody, type MyRankFilter } from '@/components/mobile/rankings/my-rankings'
@@ -49,7 +55,6 @@ import {
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
-import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { useList } from '@/hooks/use-lists'
 import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import {
@@ -683,6 +688,10 @@ function scoringName(v: string | null): string | null {
   return null
 }
 
+/** An AI expert's board is a season ranking: it duplicates into your Rest of
+ *  season / Pre-draft ranking, which can always be ranked. */
+const SEASON_DUPLICATE: RankingDuplicate = { type: 'season', week: 0, blocked: null }
+
 function AuthorBody({
   nav,
   author,
@@ -700,7 +709,16 @@ function AuthorBody({
   const experts = useExpertsSource(pos, author.board !== null)
   const pool = useHubPool(pos, state.scoring)
   const mine = useMySeasonRanks(pos)
-  const [confirm, setConfirm] = useState(false)
+  // Duplicate (Chris, 2026-10-18/19): the expert's ranking at the position
+  // shown becomes your Rest of season / Pre-draft ranking there, and opens
+  // in the editor over this view (Back returns here).
+  const duplicate = useDuplicateRankingFlow({
+    sourceListId: author.board?.id ?? '',
+    dup: SEASON_DUPLICATE,
+    positions: [pos],
+    currentWeek,
+    onOpenMine: (type, p) => nav.open({ kind: 'edit', type, pos: p, from: null }, 'push'),
+  })
 
   const rows = useMemo<HubRow[]>(() => {
     const out: HubRow[] = []
@@ -724,11 +742,6 @@ function AuthorBody({
     sources: [...(hasExperts ? [{ label: 'Experts', ranks: expertRanks }] : []), { label: name, ranks: authorRanks }],
     expertRanks: hasExperts ? (experts.data?.ranks ?? null) : null,
     mine,
-  }
-
-  const startFrom = () => {
-    if (!author.board) return
-    nav.open({ kind: 'edit', type: 'season', pos, from: `p:${author.board.id}` }, 'push')
   }
 
   if (author.isPending) {
@@ -771,7 +784,7 @@ function AuthorBody({
       <AuthorCard
         board={board}
         title={[label, posLabel, scoringName(board.persona.scoring)].filter(Boolean).join(' · ')}
-        onCopy={() => (mine ? setConfirm(true) : startFrom())}
+        duplicate={duplicate}
       />
       {chips.length > 0 && (
         <div role="group" aria-label="Position" className="mt-3 flex gap-1.5 overflow-x-auto px-4 scrollbar-none">
@@ -812,46 +825,11 @@ function AuthorBody({
           />
         </RowsState>
       </div>
-
-      {/* "Start my ranking from this" over a ranking you already have asks
-          first, as New ranking step 1 does (lr-hub Q6). */}
-      <MobileSheet
-        open={confirm}
-        onOpenChange={setConfirm}
-        title={`You already have a ${label} · ${posLabel} ranking`}
-        subtitle={`Starting from ${board.persona.display_name}'s replaces its order when you publish.`}
-        footer={
-          <div className="flex flex-col gap-2 px-4 pb-[30px] pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setConfirm(false)
-                startFrom()
-              }}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-accent text-[15px] font-semibold text-white"
-            >
-              Start from this ranking
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirm(false)
-                nav.open({ kind: 'edit', type: 'season', pos, from: null }, 'push')
-              }}
-              className="flex h-12 items-center justify-center rounded-[14px] bg-m-b2 text-[15px] font-semibold text-m-t1"
-            >
-              Open my ranking
-            </button>
-          </div>
-        }
-      >
-        <span className="sr-only">Choose whether to start over from this ranking or open yours.</span>
-      </MobileSheet>
     </>
   )
 }
 
-function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: string; onCopy: () => void }) {
+function AuthorCard({ board, title, duplicate }: { board: ExpertBoard; title: string; duplicate: DuplicateRankingFlow }) {
   // The ranking's own read — the viewer's like and save, the counts — for
   // its Like · Comments · Save · Share row: the Community detail's, so a
   // ranking opened here from Community keeps them (gap list §3 #28).
@@ -912,14 +890,7 @@ function AuthorCard({ board, title, onCopy }: { board: ExpertBoard; title: strin
       ) : (
         <span aria-hidden className="h-9 w-3/4 animate-pulse rounded-pill bg-m-b2" />
       )}
-      <button
-        type="button"
-        onClick={onCopy}
-        className="flex h-[38px] items-center justify-center gap-1.5 rounded-[12px] bg-m-b0 text-[13px] font-semibold text-m-t1 shadow-m-outline"
-      >
-        <RkIcon d={RK_ICON.copy} size={13} stroke={1.8} />
-        Start my ranking from this
-      </button>
+      <DuplicateRankingButton flow={duplicate} blocked={null} />
     </div>
   )
 }

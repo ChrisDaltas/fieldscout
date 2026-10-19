@@ -23,13 +23,17 @@ import { getCurrentNflWeek } from '@/lib/sports-data/nfl-state'
  * prerender a route whose client tree calls that hook outside a boundary.
  *
  * The NFL week (the weekly-ranks page's own read, cached for an hour) names
- * the rankings the phone editor's Import a ranking sheet offers.
+ * the rankings the phone editor's Import a ranking sheet offers, and says
+ * whether someone else's weekly ranking can be duplicated now (both layouts).
  */
 export default async function ListsPage() {
   const currentWeek = await getCurrentNflWeek()
   return (
     <Suspense>
-      <ByLayout desktop={<ListsPageV2 />} mobile={<MobileLists currentWeek={currentWeek} />} />
+      <ByLayout
+        desktop={<ListsPageV2 currentWeek={currentWeek} />}
+        mobile={<MobileLists currentWeek={currentWeek} />}
+      />
     </Suspense>
   )
 }

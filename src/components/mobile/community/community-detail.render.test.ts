@@ -13,8 +13,12 @@
  *  - 1-2-3 numbers only on a numbered list (`isNumbered`), "Tier N" headings
  *    only on a tiered one (`hasTiers`) — the phone's List view rule;
  *  - the projections are dark blue (D497, gap list §4 item 15), through the
- *    phone's `M_PROJ_TEXT`.
+ *    phone's `M_PROJ_TEXT`;
+ *  - Duplicate on someone else's ranking (Chris, 2026-10-18/19: it becomes
+ *    your ranking) — never on a list or your own ranking, and disabled with
+ *    the reason on a week that can't be ranked now.
  */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement, Fragment, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,6 +27,7 @@ import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import type { ListPlayerWithPlayer, ListWithDetails } from '@/hooks/use-lists'
 
 const h = vi.hoisted(() => ({
+  flags: { personas: false, weeklyRanks: false },
   list: null as unknown,
   meta: {} as Record<string, unknown>,
   metaArg: undefined as unknown,
@@ -52,11 +57,19 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/app/explore',
   useSearchParams: () => new URLSearchParams(),
 }))
-vi.mock('@/lib/feature-flags', () => ({ featureFlags: { personas: false } }))
+vi.mock('@/lib/feature-flags', () => ({ featureFlags: h.flags }))
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({ user: { id: 'u-me' }, profile: { username: 'me', avatar_url: null } }),
 }))
 vi.mock('@/hooks/use-comments', () => ({ useComments: () => h.comments }))
+// Duplicate's "Replace …?" sheet: its question and buttons, in place (closed).
+vi.mock('@/components/mobile/ui/mobile-sheet', async () => {
+  const react = await import('react')
+  return {
+    MobileSheet: ({ open, title, footer }: { open: boolean; title: string; footer?: ReactNode }) =>
+      react.createElement('div', { 'data-sheet': open ? 'open' : 'closed' }, title, footer),
+  }
+})
 vi.mock('@/components/mobile/lists/comments-sheet', () => ({
   CommentsSheet: (props: Record<string, unknown>) => {
     h.sheet = props
@@ -131,7 +144,13 @@ function list(over: Record<string, unknown> = {}): ListWithDetails {
 }
 
 const render = () =>
-  renderToStaticMarkup(createElement(Fragment, null, createElement(CommunityDetail, { listId: 'l1', onBack: () => {} })))
+  renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client: new QueryClient() },
+      createElement(Fragment, null, createElement(CommunityDetail, { listId: 'l1', onBack: () => {}, currentWeek: 6 })),
+    ),
+  )
     .replace(/&#x27;/g, "'")
     .replace(/&quot;/g, '"')
 
@@ -141,6 +160,7 @@ const numbers = (out: string) => [...out.matchAll(/tabular-nums text-m-t3">(\d+)
 const projections = (out: string) => [...out.matchAll(/tabular-nums[^"]*">(\d+\.\d)<\/span>/g)].map((m) => m[1])
 
 beforeEach(() => {
+  h.flags.weeklyRanks = false
   h.list = list()
   h.meta = { data: { ownerUsername: 'kelly', author: PERSON, scoring: null }, isError: false }
   h.metaArg = undefined
@@ -387,5 +407,42 @@ describe('the Community detail — numbers and tiers (isNumbered / hasTiers)', (
     expect(numbers(out)).toEqual([1, 2, 3])
     expect(out).toContain('Tier 1')
     expect(out).toContain('Tier 2')
+  })
+})
+
+describe('the Community detail — Duplicate (Chris, 2026-10-18/19)', () => {
+  /** The Duplicate button's opening tag, or null. */
+  const duplicate = (out: string) =>
+    /<button type="button"([^>]*)>(?:(?!<\/button>).)*?Duplicate<\/button>/.exec(out)?.[1] ?? null
+
+  beforeEach(() => {
+    h.flags.weeklyRanks = true
+  })
+
+  it('someone else’s ranking: Duplicate, under Like · Comments · Save · Share', () => {
+    const out = render()
+    expect(duplicate(out)).not.toBeNull()
+    expect(duplicate(out)).not.toContain('disabled=""')
+    expect(out.indexOf('data-list-actions')).toBeLessThan(out.indexOf('Duplicate</button>'))
+    // Over a ranking you have it asks first — your boards unread here, so it
+    // would ask: every position the ranking ranks, for the same period.
+    expect(out).toContain('Replace your Rest of season WR ranking with this one?')
+  })
+
+  it('a weekly ranking whose week is over: Duplicate disabled, with the reason', () => {
+    h.list = list({ is_big_board: false, slug: 'week-5-big-board-1760000000000' })
+    const out = render()
+    expect(duplicate(out)).toContain('disabled=""')
+    expect(out).toContain('Week 5 is over')
+  })
+
+  it('never on a list, on your own ranking, or with Rankings switched off', () => {
+    h.list = list({ is_big_board: false, slug: 'rb-targets' })
+    expect(duplicate(render())).toBeNull()
+    h.list = list({ is_owner: true })
+    expect(duplicate(render())).toBeNull()
+    h.list = list()
+    h.flags.weeklyRanks = false
+    expect(duplicate(render())).toBeNull()
   })
 })

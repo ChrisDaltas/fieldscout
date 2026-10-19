@@ -193,7 +193,12 @@ interface HeroProps {
   onPopOut: () => void
   onRename: (title: string) => void
   onShare: () => void
+  /** A list's Duplicate makes a list copy; someone else's ranking's makes it
+   *  YOUR ranking (Chris, 2026-10-18/19) — the panel decides which. */
   onDuplicate: () => void
+  /** Why someone else's weekly ranking can't be duplicated now ("Week 5 is
+   *  over"): the item shows disabled, with it. */
+  duplicateBlocked?: string | null
   onSetPrivate: (isPrivate: boolean) => void
   /**
    * The Ranked switch — **Numbers → Ranked / Unranked** (one numbering rule,
@@ -242,6 +247,7 @@ export function ListDetailHero({
   onRename,
   onShare,
   onDuplicate,
+  duplicateBlocked = null,
   onSetPrivate,
   onSetNumbered,
   onClearDrafted,
@@ -349,9 +355,10 @@ export function ListDetailHero({
                 Attach to league
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onSelect={onDuplicate}>
+            <DropdownMenuItem onSelect={onDuplicate} disabled={duplicateBlocked !== null}>
               <Icon name="layers" size={13} />
               Duplicate
+              {duplicateBlocked && <span className="ml-auto text-[10px] font-medium text-n-6">{duplicateBlocked}</span>}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onClearDrafted}>
               <Icon name="reset" size={13} />

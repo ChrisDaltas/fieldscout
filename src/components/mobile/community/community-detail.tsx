@@ -16,6 +16,8 @@ import {
   type CommunityScoring,
 } from '@/components/mobile/community/community-ops'
 import { ListActions } from '@/components/mobile/community/list-actions'
+import { rankingDuplicateOf, rankedPositions, type RankingDuplicate } from '@/components/mobile/rankings/duplicate-ops'
+import { DuplicateRankingButton, useDuplicateRankingFlow } from '@/components/mobile/rankings/duplicate-ranking'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
 import { YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -48,8 +50,22 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  * and screen readers — and on close focus returns to the card that opened it.
  * `onBack` goes back to where you came from (gap list #27 — the feed, or the
  * screen that linked here).
+ *
+ * Someone else's ranking carries Duplicate under Like · Comments · Save ·
+ * Share (Chris, 2026-10-19: "If a user dupes some popular ranking it then
+ * becomes their own"): it publishes the ranking as yours — every position it
+ * ranks, for the same period — and opens yours in Rankings. `currentWeek`
+ * (the app's NFL week) says whether a weekly ranking's week can be ranked.
  */
-export function CommunityDetail({ listId, onBack }: { listId: string; onBack: () => void }) {
+export function CommunityDetail({
+  listId,
+  onBack,
+  currentWeek,
+}: {
+  listId: string
+  onBack: () => void
+  currentWeek: number
+}) {
   const list = useList(listId)
   const backRef = useRef<HTMLButtonElement>(null)
   // What had focus before the page opened (the card, for a keyboard user) —
@@ -90,7 +106,7 @@ export function CommunityDetail({ listId, onBack }: { listId: string; onBack: ()
           {!list.data && <DialogPrimitive.Title className="sr-only">List</DialogPrimitive.Title>}
           <DetailScroll>
             {list.data ? (
-              <DetailBody list={list.data} backRef={backRef} onBack={onBack} />
+              <DetailBody list={list.data} backRef={backRef} onBack={onBack} currentWeek={currentWeek} />
             ) : (
               <>
                 <div className="relative h-[230px] bg-m-b1">
@@ -123,6 +139,24 @@ export function CommunityDetail({ listId, onBack }: { listId: string; onBack: ()
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   )
+}
+
+function DetailDuplicate({
+  list,
+  dup,
+  currentWeek,
+}: {
+  list: ListWithDetails
+  dup: RankingDuplicate
+  currentWeek: number
+}) {
+  const flow = useDuplicateRankingFlow({
+    sourceListId: list.id,
+    dup,
+    positions: rankedPositions(list.players),
+    currentWeek,
+  })
+  return <DuplicateRankingButton flow={flow} blocked={dup.blocked} />
 }
 
 function DetailScroll({ children }: { children: React.ReactNode }) {
@@ -202,10 +236,12 @@ function DetailBody({
   list,
   backRef,
   onBack,
+  currentWeek,
 }: {
   list: ListWithDetails
   backRef: React.Ref<HTMLButtonElement>
   onBack: () => void
+  currentWeek: number
 }) {
   // The kind pill never reads a scoring system (migration 190 doesn't), so
   // none is asked for: the meta's scoring is then just an AI expert's usual
@@ -220,6 +256,8 @@ function DetailBody({
   // Rankings vs lists as the feed draws them (big boards, weekly boards and
   // AI experts' boards are rankings).
   const isRank = classifyCommunityList(list).kind === 'rank'
+  // Someone else's ranking: Duplicate makes it yours (null for a list, or yours).
+  const dup = rankingDuplicateOf(list, { owned: list.is_owner, currentWeek })
   // The scoring the ranking counts as — the feed's label and the scoring
   // chips' answer (`effectiveScoringFormat`): the one saved with it
   // (migration 190; absent from the `select('*')` row until it's pushed);
@@ -307,6 +345,7 @@ function DetailBody({
         ) : null}
 
         <ListActions list={list} />
+        {dup && <DetailDuplicate list={list} dup={dup} currentWeek={currentWeek} />}
       </div>
 
       {videos.length > 0 && (
