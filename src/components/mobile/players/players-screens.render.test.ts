@@ -138,7 +138,8 @@ function seedLeague(over: { detail?: LeagueDetail } = {}): QueryClient {
     weeks: [4, 5, 6].map((week) => ({ id: `w${week}`, season: 2099, week, status: week === 5 ? 'live' : week < 5 ? 'final' : 'upcoming', finalized_at: null, median_score: null })),
     matchups: [],
   })
-  qc.setQueryData(['mobile-players-window', '', ''], windowPlayers)
+  // The browse window's key: positions, NFL team, the searched name.
+  qc.setQueryData(['mobile-players-window', '', '', ''], windowPlayers)
   qc.setQueryData(['mobile-players-by-ids', ['mine', 'theirs']], rosteredPlayers)
   // Every on-waivers player is read by id (whatever his ADP).
   qc.setQueryData(['mobile-players-by-ids', ['fa-waivers']], windowPlayers.filter((p) => p.id === 'fa-waivers'))
@@ -309,9 +310,91 @@ describe('League › Players (mobile)', () => {
   it('an empty filter says so', () => {
     useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, status: 'w', pos: 'K' } })
     const qc = seedLeague()
-    qc.setQueryData(['mobile-players-window', 'K', ''], [])
+    qc.setQueryData(['mobile-players-window', 'K', '', ''], [])
     const html = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
     expect(html).toContain('No players match these filters')
+  })
+})
+
+/** Gap list §4 item 13: the league Players tab's search — the quick way to a
+ *  deep free agent, searched server-side over the whole pool. The stats
+ *  columns are trimmed to OPRK so a test seeds only the player reads. */
+describe('League › Players search (mobile)', () => {
+  const lean = { cols: ['oprk' as const], sort: 'oprk' as const }
+  const order = (html: string) => [...html.matchAll(/data-player-row="([^"]+)"/g)].map((m) => m[1])
+  /** `n` window rows named "Player a<i>", ADP order. */
+  const many = (n: number) => Array.from({ length: n }, (_, i) => pp(`p${String(i).padStart(3, '0')}`, `Player a${i}`, 'WR', 100 + i))
+
+  it('sits above the pills, empty until typed — no clear button, Trending shown', () => {
+    const html = render(seedLeague(), createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(html).toMatch(/<form role="search"[^>]*>.*?placeholder="Search players" aria-label="Search players"[^>]*value=""/)
+    expect(html.indexOf('data-players-search')).toBeLessThan(html.indexOf('data-pill="status"'))
+    expect(html).not.toContain('aria-label="Clear search"')
+    expect(html).toContain('Trending')
+  })
+
+  it('a typed name reads the server’s search — a deep free agent the browse window never loads', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, query: 'Deep' } })
+    const qc = seedLeague()
+    // The server answers the name over the whole pool (ADP 700 — far past
+    // the 300-row browse window).
+    qc.setQueryData(['mobile-players-window', '', '', 'Deep'], [pp('deep-fa', 'Deep Free', 'WR', 700)])
+    const html = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(html).toContain('value="Deep"')
+    expect(html).toContain('aria-label="Clear search"')
+    // The on-waivers player (read by id) doesn't match, so only the search's row.
+    expect(order(html)).toEqual(['deep-fa'])
+    expect(html).toContain('data-players-count="true">1</span>')
+    // Looking for someone in particular: no Trending above the result.
+    expect(html).not.toContain('Trending')
+  })
+
+  it('the complete by-id sets are matched by the same rule (Waivers)', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, status: 'w', query: 'wavy' } })
+    const html = render(seedLeague(), createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(order(html)).toEqual(['fa-waivers'])
+
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, status: 'w', query: 'nobody' } })
+    const none = render(seedLeague(), createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(none).toContain('No players on waivers match “nobody”')
+    // Nothing else matches either — no way out to offer.
+    expect(none).not.toContain('data-players-empty-action')
+  })
+
+  it('a match the status pill hides is said, with "Show all players"', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, query: 'mine' } })
+    const qc = seedLeague()
+    qc.setQueryData(['mobile-players-window', '', '', 'mine'], [pp('mine', 'Mine Guy', 'WR', 40)])
+    const html = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(order(html)).toEqual([])
+    expect(html).toContain('No available players match “mine”')
+    expect(html).toMatch(/data-players-empty-action="true">Show all players</)
+  })
+
+  it('a search that fills the window says so — never a silent cap', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, status: 'fa', query: 'a' } })
+    const qc = seedLeague()
+    qc.setQueryData(['mobile-players-window', '', '', 'a'], many(300))
+    const html = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(html).toContain('Lots of players match — showing the top 300 by ADP. Keep typing to narrow it.')
+    expect(html).toContain('data-players-count="true">300+</span>')
+  })
+
+  it('the browse window’s cap is said at the end of the list', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, status: 'fa' } })
+    const qc = seedLeague()
+    const window = many(300)
+    qc.setQueryData(['mobile-players-window', '', '', ''], window)
+    // All but 10 are on a roster, so every free agent fits on one page.
+    qc.setQueryData(leagueRosterKeys.all(LEAGUE), {
+      ...rosters,
+      teams: [rosters.teams[0]!, { ...rosters.teams[1]!, roster: window.slice(10).map((p) => rp(p.id, p.full_name)) }],
+    })
+    const html = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(order(html)).toHaveLength(10)
+    expect(html).toContain('That’s the top 300 by ADP. Search to find anyone else.')
+    // A search isn't capped by this — the note is the browse window's.
+    expect(html).not.toContain('Lots of players match')
   })
 })
 
@@ -361,6 +444,8 @@ describe('account Players tab (mobile research)', () => {
     qc.setQueryData(['mobile-research-pool', 'ppr'], researchPool)
     const html = render(qc, createElement(ResearchPlayersScreen, {}))
     expect(html).toContain('>Players</h1>')
+    // Its search lives behind the header's magnifier, not above the pills.
+    expect(html).not.toContain('data-players-search')
     expect(html).toMatch(/data-pill="scoring"[^>]*>PPR/)
     expect(html).toMatch(/data-pill="season"[^>]*>2099/)
     expect(html).toContain('data-players-count="true">2</span>')

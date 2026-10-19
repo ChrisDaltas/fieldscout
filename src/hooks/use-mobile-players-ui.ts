@@ -28,6 +28,9 @@ export interface LeaguePlayersUI {
   sort: ColKey
   /** The Trending section's open state (spec §3 — lasts the app session). */
   trendOpen: boolean
+  /** The search field's text (gap list §4 "Players") — a name, searched
+   *  server-side over the whole pool. */
+  query: string
 }
 
 export interface ResearchPlayersUI {
@@ -50,6 +53,7 @@ export const LEAGUE_DEFAULTS: LeaguePlayersUI = {
   cols: DEFAULT_COLS.league,
   sort: 'proj',
   trendOpen: true,
+  query: '',
 }
 
 export const RESEARCH_DEFAULTS: ResearchPlayersUI = {
