@@ -3529,6 +3529,72 @@ export type Database = {
           },
         ]
       }
+      player_news: {
+        Row: {
+          external_id: string
+          fetched_at: string
+          headline: string
+          id: string
+          published_at: string
+          source_key: string
+          source_label: string
+          url: string
+        }
+        Insert: {
+          external_id: string
+          fetched_at?: string
+          headline: string
+          id?: string
+          published_at: string
+          source_key: string
+          source_label: string
+          url: string
+        }
+        Update: {
+          external_id?: string
+          fetched_at?: string
+          headline?: string
+          id?: string
+          published_at?: string
+          source_key?: string
+          source_label?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      player_news_players: {
+        Row: {
+          news_id: string
+          player_id: string
+          rule: string
+        }
+        Insert: {
+          news_id: string
+          player_id: string
+          rule: string
+        }
+        Update: {
+          news_id?: string
+          player_id?: string
+          rule?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_news_players_news_id_fkey"
+            columns: ["news_id"]
+            isOneToOne: false
+            referencedRelation: "player_news"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_news_players_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_stats: {
         Row: {
           advanced: Json

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>RotoWire.com Latest NFL News</title>
+    <copyright>Copyright (c) 2026 Roto Sports, Inc, All rights reserved.</copyright>
+    <description>Fantasy Sports from RotoWire.com</description>
+    <category>Fantasy Sports</category>
+    <language>en-us</language>
+    <ttl>10</ttl>
+    <image>
+      <title>RotoWire.com Fantasy Sports</title>
+      <width>120</width>
+      <height>30</height>
+      <link>https://www.rotowire.com</link>
+      <url>https://assets.rotowire.com/images/logo_roto_small.gif</url>
+    </image>
+    <link>https://www.rotowire.com</link>
+    <item>
+        <guid>nfl643199</guid>
+        <title>Malik Nabers: Huge day despite QB turmoil</title>
+        <link>https://www.rotowire.com//football/player/malik-nabers-17704</link>
+        <description>Nabers caught 12 of 15 targets for 165 yards in Sunday's 34-27 loss to the Saints.
+
+        Visit RotoWire.com for more analysis on this update.</description>
+        <pubDate>Sun, 18 Oct 2026 5:57:00 PM PDT</pubDate>
+    </item>
+    <item>
+        <guid>nfl643195</guid>
+        <title>Quentin Johnston: Just short of TD on 57-yard catch</title>
+        <link>https://www.rotowire.com//football/player/quentin-johnston-16899</link>
+        <description>Johnston caught one of three targets for 57 yards in Sunday's 22-6 loss to the Chiefs.
+
+        Visit RotoWire.com for more analysis on this update.</description>
+        <pubDate>Sun, 18 Oct 2026 5:51:00 PM PDT</pubDate>
+    </item>
+    <item>
+        <guid>nfl643196</guid>
+        <title>Patrick Mahomes: No touchdowns in Week 6</title>
+        <link>https://www.rotowire.com//football/player/patrick-mahomes-11839</link>
+        <description>Mahomes completed 23 of 30 passes for 272 yards, no touchdowns and one interception and rushed five times for 16 yards during Sunday's 22-6 win versus the Chargers.
+
+        Visit RotoWire.com for more analysis on this update.</description>
+        <pubDate>Sun, 18 Oct 2026 5:51:00 PM PDT</pubDate>
+    </item>
+    <item>
+        <guid>nfl643194</guid>
+        <title>Justin Herbert: Fails to produce TD in Week 6 loss</title>
+        <link>https://www.rotowire.com//football/player/justin-herbert-14446</link>
+        <description>Herbert completed 22 of 37 passes for 204 yards, no touchdowns and one interception in Sunday's 22-6 loss to the Chiefs. He also rushed five times for 26 yards.
+
+        Visit RotoWire.com for more analysis on this update.</description>
+        <pubDate>Sun, 18 Oct 2026 5:49:00 PM PDT</pubDate>
+    </item>
+    <item>
+        <guid>nfl643192</guid>
+        <title>Alvin Kamara: Gets into end zone against Giants</title>
+        <link>https://www.rotowire.com//football/player/alvin-kamara-11732</link>
+        <description>Kamara carried the ball seven times for 34 yards and caught two of four targets for 35 yards and a touchdown in Sunday's 34-27 win over the Giants.
+
+        Visit RotoWire.com for more analysis on this update.</description>
+        <pubDate>Sun, 18 Oct 2026 5:48:00 PM PDT</pubDate>
+    </item>
+  </channel>
+</rss>

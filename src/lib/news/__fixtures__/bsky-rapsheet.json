@@ -1,0 +1,431 @@
+{
+ "feed": [
+  {
+   "post": {
+    "uri": "at://did:plc:hlvr2omhnmvdmfnvmcuhyevz/app.bsky.feed.post/3my6rl4l63k2a",
+    "cid": "bafyreidmfkspcfsmisrcfor3bug3crdrbdzjdslhovyqvvzrwtalqbzaue",
+    "author": {
+     "did": "did:plc:hlvr2omhnmvdmfnvmcuhyevz",
+     "handle": "rapsheet.bsky.social",
+     "displayName": "Ian Rapoport",
+     "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreigfqyg46veq74vxajiwot2dbtjkcuzch6tmr52h7errnpbs7loofy",
+     "associated": {
+      "activitySubscription": {
+       "allowSubscriptions": "followers"
+      }
+     },
+     "labels": [],
+     "createdAt": "2024-11-15T15:01:06.234Z",
+     "verification": {
+      "verifications": [
+       {
+        "issuer": "did:plc:z72i7hdynmk6r22z27h6tvur",
+        "issuerDisplayName": "Bluesky",
+        "issuerHandle": "bsky.app",
+        "uri": "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.graph.verification/3lndpqyq5mc2z",
+        "isValid": true,
+        "createdAt": "2025-04-21T10:45:09.683Z"
+       }
+      ],
+      "verifiedStatus": "valid",
+      "trustedVerifierStatus": "none"
+     }
+    },
+    "record": {
+     "$type": "app.bsky.feed.post",
+     "createdAt": "2026-10-18T23:37:41.373Z",
+     "langs": [
+      "en"
+     ],
+     "text": "Giants QB J.J. McCarthy threw for 243 yards in the 4th quarter despite coming off the bench. It\u2019s the most passing yards in a 4th quarter by any player this season and the 2nd-most passing yards in a 4th quarter by any QB who didn't start over the last 25 seasons."
+    },
+    "bookmarkCount": 1,
+    "replyCount": 9,
+    "repostCount": 12,
+    "likeCount": 114,
+    "quoteCount": 9,
+    "indexedAt": "2026-10-18T23:37:41.654Z",
+    "labels": []
+   }
+  },
+  {
+   "post": {
+    "uri": "at://did:plc:hlvr2omhnmvdmfnvmcuhyevz/app.bsky.feed.post/3my6lwavmws2o",
+    "cid": "bafyreih2acsnuh67ttpdop3kspj3rwqy2t52zv2o3x4n4eeglv6g2whsme",
+    "author": {
+     "did": "did:plc:hlvr2omhnmvdmfnvmcuhyevz",
+     "handle": "rapsheet.bsky.social",
+     "displayName": "Ian Rapoport",
+     "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreigfqyg46veq74vxajiwot2dbtjkcuzch6tmr52h7errnpbs7loofy",
+     "associated": {
+      "activitySubscription": {
+       "allowSubscriptions": "followers"
+      }
+     },
+     "labels": [],
+     "createdAt": "2024-11-15T15:01:06.234Z",
+     "verification": {
+      "verifications": [
+       {
+        "issuer": "did:plc:z72i7hdynmk6r22z27h6tvur",
+        "issuerDisplayName": "Bluesky",
+        "issuerHandle": "bsky.app",
+        "uri": "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.graph.verification/3lndpqyq5mc2z",
+        "isValid": true,
+        "createdAt": "2025-04-21T10:45:09.683Z"
+       }
+      ],
+      "verifiedStatus": "valid",
+      "trustedVerifierStatus": "none"
+     }
+    },
+    "record": {
+     "$type": "app.bsky.feed.post",
+     "createdAt": "2026-10-18T21:56:32.558Z",
+     "embed": {
+      "$type": "app.bsky.embed.video",
+      "aspectRatio": {
+       "height": 720,
+       "width": 1280
+      },
+      "presentation": "default",
+      "video": {
+       "$type": "blob",
+       "ref": {
+        "$link": "bafkreigk7hrnu7yqvjhxmf6m37n3nbapdrzri7yacexwrjmvxtoyopwi3m"
+       },
+       "mimeType": "video/mp4",
+       "size": 641156
+      }
+     },
+     "langs": [
+      "en"
+     ],
+     "text": "Bills S CJ Gardner-Johnson has been ejected."
+    },
+    "embed": {
+     "cid": "bafkreigk7hrnu7yqvjhxmf6m37n3nbapdrzri7yacexwrjmvxtoyopwi3m",
+     "playlist": "https://video.bsky.app/watch/did%3Aplc%3Ahlvr2omhnmvdmfnvmcuhyevz/bafkreigk7hrnu7yqvjhxmf6m37n3nbapdrzri7yacexwrjmvxtoyopwi3m/playlist.m3u8",
+     "thumbnail": "https://video.bsky.app/watch/did%3Aplc%3Ahlvr2omhnmvdmfnvmcuhyevz/bafkreigk7hrnu7yqvjhxmf6m37n3nbapdrzri7yacexwrjmvxtoyopwi3m/thumbnail.jpg",
+     "aspectRatio": {
+      "height": 720,
+      "width": 1280
+     },
+     "presentation": "default",
+     "$type": "app.bsky.embed.video#view"
+    },
+    "bookmarkCount": 1,
+    "replyCount": 10,
+    "repostCount": 6,
+    "likeCount": 73,
+    "quoteCount": 8,
+    "indexedAt": "2026-10-18T21:56:33.360Z",
+    "labels": []
+   }
+  },
+  {
+   "post": {
+    "uri": "at://did:plc:hlvr2omhnmvdmfnvmcuhyevz/app.bsky.feed.post/3my6h2sc5w22d",
+    "cid": "bafyreiau7uemvjy57wveefnof3h4ksfxdorgchamt7domcyn7ik5x6z5ju",
+    "author": {
+     "did": "did:plc:hlvr2omhnmvdmfnvmcuhyevz",
+     "handle": "rapsheet.bsky.social",
+     "displayName": "Ian Rapoport",
+     "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreigfqyg46veq74vxajiwot2dbtjkcuzch6tmr52h7errnpbs7loofy",
+     "associated": {
+      "activitySubscription": {
+       "allowSubscriptions": "followers"
+      }
+     },
+     "labels": [],
+     "createdAt": "2024-11-15T15:01:06.234Z",
+     "verification": {
+      "verifications": [
+       {
+        "issuer": "did:plc:z72i7hdynmk6r22z27h6tvur",
+        "issuerDisplayName": "Bluesky",
+        "issuerHandle": "bsky.app",
+        "uri": "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.graph.verification/3lndpqyq5mc2z",
+        "isValid": true,
+        "createdAt": "2025-04-21T10:45:09.683Z"
+       }
+      ],
+      "verifiedStatus": "valid",
+      "trustedVerifierStatus": "none"
+     }
+    },
+    "record": {
+     "$type": "app.bsky.feed.post",
+     "createdAt": "2026-10-18T20:29:36.304Z",
+     "langs": [
+      "en"
+     ],
+     "text": "Unbelievably, new Rams K Blake Grupe, who just replaced Harrison Mevis, is doubtful to return with a knee injury."
+    },
+    "bookmarkCount": 1,
+    "replyCount": 8,
+    "repostCount": 12,
+    "likeCount": 136,
+    "quoteCount": 13,
+    "indexedAt": "2026-10-18T20:29:37.158Z",
+    "labels": []
+   }
+  },
+  {
+   "post": {
+    "uri": "at://did:plc:hlvr2omhnmvdmfnvmcuhyevz/app.bsky.feed.post/3my6chnwqik2a",
+    "cid": "bafyreihfpxwlk2qsidsrtlhpvhnwfwlynktqxx2qhybjp5lxd6xf34nhgu",
+    "author": {
+     "did": "did:plc:hlvr2omhnmvdmfnvmcuhyevz",
+     "handle": "rapsheet.bsky.social",
+     "displayName": "Ian Rapoport",
+     "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreigfqyg46veq74vxajiwot2dbtjkcuzch6tmr52h7errnpbs7loofy",
+     "associated": {
+      "activitySubscription": {
+       "allowSubscriptions": "followers"
+      }
+     },
+     "labels": [],
+     "createdAt": "2024-11-15T15:01:06.234Z",
+     "verification": {
+      "verifications": [
+       {
+        "issuer": "did:plc:z72i7hdynmk6r22z27h6tvur",
+        "issuerDisplayName": "Bluesky",
+        "issuerHandle": "bsky.app",
+        "uri": "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.graph.verification/3lndpqyq5mc2z",
+        "isValid": true,
+        "createdAt": "2025-04-21T10:45:09.683Z"
+       }
+      ],
+      "verifiedStatus": "valid",
+      "trustedVerifierStatus": "none"
+     }
+    },
+    "record": {
+     "$type": "app.bsky.feed.post",
+     "createdAt": "2026-10-18T19:07:19.233Z",
+     "embed": {
+      "$type": "app.bsky.embed.video",
+      "aspectRatio": {
+       "height": 1080,
+       "width": 1920
+      },
+      "presentation": "default",
+      "video": {
+       "$type": "blob",
+       "ref": {
+        "$link": "bafkreifzlbcf24fc6jpcld36i3cwjp7pksah6jnrchx5suwvsz7sneis4u"
+       },
+       "mimeType": "video/mp4",
+       "size": 16755262
+      }
+     },
+     "langs": [
+      "en"
+     ],
+     "text": "Welcome back Omar Cooper Jr."
+    },
+    "embed": {
+     "cid": "bafkreifzlbcf24fc6jpcld36i3cwjp7pksah6jnrchx5suwvsz7sneis4u",
+     "playlist": "https://video.bsky.app/watch/did%3Aplc%3Ahlvr2omhnmvdmfnvmcuhyevz/bafkreifzlbcf24fc6jpcld36i3cwjp7pksah6jnrchx5suwvsz7sneis4u/playlist.m3u8",
+     "thumbnail": "https://video.bsky.app/watch/did%3Aplc%3Ahlvr2omhnmvdmfnvmcuhyevz/bafkreifzlbcf24fc6jpcld36i3cwjp7pksah6jnrchx5suwvsz7sneis4u/thumbnail.jpg",
+     "aspectRatio": {
+      "height": 1080,
+      "width": 1920
+     },
+     "presentation": "default",
+     "$type": "app.bsky.embed.video#view"
+    },
+    "bookmarkCount": 0,
+    "replyCount": 0,
+    "repostCount": 5,
+    "likeCount": 52,
+    "quoteCount": 2,
+    "indexedAt": "2026-10-18T19:07:21.452Z",
+    "labels": []
+   }
+  },
+  {
+   "post": {
+    "uri": "at://did:plc:hlvr2omhnmvdmfnvmcuhyevz/app.bsky.feed.post/3my5zaqzkzs2w",
+    "cid": "bafyreiedu42mhqrz46hliy32j5hcchh4kaw7mqxzspgvv7uxxts4fahkvy",
+    "author": {
+     "did": "did:plc:hlvr2omhnmvdmfnvmcuhyevz",
+     "handle": "rapsheet.bsky.social",
+     "displayName": "Ian Rapoport",
+     "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreigfqyg46veq74vxajiwot2dbtjkcuzch6tmr52h7errnpbs7loofy",
+     "associated": {
+      "activitySubscription": {
+       "allowSubscriptions": "followers"
+      }
+     },
+     "labels": [],
+     "createdAt": "2024-11-15T15:01:06.234Z",
+     "verification": {
+      "verifications": [
+       {
+        "issuer": "did:plc:z72i7hdynmk6r22z27h6tvur",
+        "issuerDisplayName": "Bluesky",
+        "issuerHandle": "bsky.app",
+        "uri": "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.graph.verification/3lndpqyq5mc2z",
+        "isValid": true,
+        "createdAt": "2025-04-21T10:45:09.683Z"
+       }
+      ],
+      "verifiedStatus": "valid",
+      "trustedVerifierStatus": "none"
+     }
+    },
+    "record": {
+     "$type": "app.bsky.feed.post",
+     "createdAt": "2026-10-18T16:22:23.911Z",
+     "embed": {
+      "$type": "app.bsky.embed.images",
+      "images": [
+       {
+        "alt": "",
+        "aspectRatio": {
+         "height": 680,
+         "width": 544
+        },
+        "image": {
+         "$type": "blob",
+         "ref": {
+          "$link": "bafkreieawk3crkdramz52ur5a46fptenaujxlf2xvlfshf7vhptgzbqlyu"
+         },
+         "mimeType": "image/jpeg",
+         "size": 242871
+        }
+       },
+       {
+        "alt": "",
+        "aspectRatio": {
+         "height": 680,
+         "width": 544
+        },
+        "image": {
+         "$type": "blob",
+         "ref": {
+          "$link": "bafkreifdmzfxpolfuv6yyqdlhpvtgwvxjmqrjz2mrf7svmjs2mbr63ekhq"
+         },
+         "mimeType": "image/jpeg",
+         "size": 237985
+        }
+       }
+      ]
+     },
+     "langs": [
+      "en"
+     ],
+     "text": "\ud83d\udc40"
+    },
+    "embed": {
+     "images": [
+      {
+       "thumb": "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreieawk3crkdramz52ur5a46fptenaujxlf2xvlfshf7vhptgzbqlyu",
+       "fullsize": "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreieawk3crkdramz52ur5a46fptenaujxlf2xvlfshf7vhptgzbqlyu",
+       "alt": "",
+       "aspectRatio": {
+        "height": 680,
+        "width": 544
+       }
+      },
+      {
+       "thumb": "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreifdmzfxpolfuv6yyqdlhpvtgwvxjmqrjz2mrf7svmjs2mbr63ekhq",
+       "fullsize": "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreifdmzfxpolfuv6yyqdlhpvtgwvxjmqrjz2mrf7svmjs2mbr63ekhq",
+       "alt": "",
+       "aspectRatio": {
+        "height": 680,
+        "width": 544
+       }
+      }
+     ],
+     "$type": "app.bsky.embed.images#view"
+    },
+    "bookmarkCount": 0,
+    "replyCount": 1,
+    "repostCount": 6,
+    "likeCount": 72,
+    "quoteCount": 5,
+    "indexedAt": "2026-10-18T16:22:27.452Z",
+    "labels": []
+   }
+  },
+  {
+   "post": {
+    "uri": "at://did:plc:hlvr2omhnmvdmfnvmcuhyevz/app.bsky.feed.post/3my5yylppwk2w",
+    "cid": "bafyreigs4lgxbka6r5iehnjbmmlnmur4tjbxy7zmqm74krfer324ftm2ge",
+    "author": {
+     "did": "did:plc:hlvr2omhnmvdmfnvmcuhyevz",
+     "handle": "rapsheet.bsky.social",
+     "displayName": "Ian Rapoport",
+     "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:hlvr2omhnmvdmfnvmcuhyevz/bafkreigfqyg46veq74vxajiwot2dbtjkcuzch6tmr52h7errnpbs7loofy",
+     "associated": {
+      "activitySubscription": {
+       "allowSubscriptions": "followers"
+      }
+     },
+     "labels": [],
+     "createdAt": "2024-11-15T15:01:06.234Z",
+     "verification": {
+      "verifications": [
+       {
+        "issuer": "did:plc:z72i7hdynmk6r22z27h6tvur",
+        "issuerDisplayName": "Bluesky",
+        "issuerHandle": "bsky.app",
+        "uri": "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.graph.verification/3lndpqyq5mc2z",
+        "isValid": true,
+        "createdAt": "2025-04-21T10:45:09.683Z"
+       }
+      ],
+      "verifiedStatus": "valid",
+      "trustedVerifierStatus": "none"
+     }
+    },
+    "record": {
+     "$type": "app.bsky.feed.post",
+     "createdAt": "2026-10-18T16:17:49.912Z",
+     "embed": {
+      "$type": "app.bsky.embed.video",
+      "aspectRatio": {
+       "height": 1080,
+       "width": 1920
+      },
+      "presentation": "default",
+      "video": {
+       "$type": "blob",
+       "ref": {
+        "$link": "bafkreidjo7rsf4asrwou4jzu7rwilvn6indsvc2e3cfeav6ok5cidbpt7a"
+       },
+       "mimeType": "video/mp4",
+       "size": 3869849
+      }
+     },
+     "langs": [
+      "en"
+     ],
+     "text": "Travis Hunter doesn\u2019t even need two shoes."
+    },
+    "embed": {
+     "cid": "bafkreidjo7rsf4asrwou4jzu7rwilvn6indsvc2e3cfeav6ok5cidbpt7a",
+     "playlist": "https://video.bsky.app/watch/did%3Aplc%3Ahlvr2omhnmvdmfnvmcuhyevz/bafkreidjo7rsf4asrwou4jzu7rwilvn6indsvc2e3cfeav6ok5cidbpt7a/playlist.m3u8",
+     "thumbnail": "https://video.bsky.app/watch/did%3Aplc%3Ahlvr2omhnmvdmfnvmcuhyevz/bafkreidjo7rsf4asrwou4jzu7rwilvn6indsvc2e3cfeav6ok5cidbpt7a/thumbnail.jpg",
+     "aspectRatio": {
+      "height": 1080,
+      "width": 1920
+     },
+     "presentation": "default",
+     "$type": "app.bsky.embed.video#view"
+    },
+    "bookmarkCount": 1,
+    "replyCount": 5,
+    "repostCount": 21,
+    "likeCount": 122,
+    "quoteCount": 3,
+    "indexedAt": "2026-10-18T16:17:51.065Z",
+    "labels": []
+   }
+  }
+ ]
+}

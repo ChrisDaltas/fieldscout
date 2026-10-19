@@ -11,6 +11,7 @@
     "sync:players": "npx tsx scripts/sync-players.ts",
     "sync:projections": "npx tsx scripts/sync-projections.ts",
     "sync:weekly-projections": "npx tsx scripts/sync-weekly-projections.ts",
+    "ingest:player-news": "npx tsx scripts/ingest-player-news.ts",
     "sync:byes": "npx tsx scripts/sync-bye-weeks.ts",
     "sync:usage": "npx tsx scripts/sync-season-usage.ts",
     "sync:splits": "npx tsx scripts/sync-splits.ts",

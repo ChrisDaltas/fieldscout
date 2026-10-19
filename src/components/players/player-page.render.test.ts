@@ -434,7 +434,10 @@ describe('player view — the calm default view + progressive disclosure (D486(1
     expect(out).not.toContain('data-section=')
     expect(out).not.toContain('data-core-scoring')
     expect(out).not.toContain('data-draft-value')
-    expect(out).not.toMatch(/>(Overview|Schedule|News)</)
+    expect(out).not.toMatch(/>(Overview|Schedule)</)
+    // F575: News is a collapsed section toggle now, not a tab — its panel is not rendered.
+    expect(out).toContain('data-section-toggle="news"')
+    expect(out).not.toContain('data-news=')
   })
 
   it('a toggle reads open when its section is open', () => {
