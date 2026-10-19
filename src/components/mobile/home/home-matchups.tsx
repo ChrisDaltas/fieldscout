@@ -7,6 +7,7 @@ import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
 import { JoinLeagueDialog } from '@/components/leagues/leagues-index'
 import { LeagueCreateModal } from '@/components/leagues/league-create-modal'
 import { useLeagueTabStore } from '@/components/mobile/league/league/league-tab-store'
+import { leaguesCardSub, leagueStatusPill } from '@/components/mobile/leagues/leagues-ops'
 import { MessagesAvatar } from '@/components/mobile/messages/messages-avatar'
 import { leagueTabHref } from '@/components/mobile/shell/mobile-nav'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
@@ -17,6 +18,7 @@ import { useMobileHomeAlert } from '@/hooks/use-mobile-home-alerts'
 import { useMobileHomeMatchup } from '@/hooks/use-mobile-home-matchup'
 import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'
 import { useSchedule } from '@/hooks/use-schedule'
+import { cn } from '@/lib/utils'
 
 import { seasonInPlay } from './home-ops'
 import { HomeNote, HomeSectionTitle } from './home-section'
@@ -70,12 +72,31 @@ function WeekLabel({ leagues }: { leagues: readonly MyLeagueRow[] }) {
   return <span className="text-[12px] font-medium leading-[15px] text-m-t3">Week {week}</span>
 }
 
-function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
+/**
+ * One league's card. `variant="leagues"` is the phone's Leagues screen
+ * (gap list §4 item 104): the same card, opening the same way, plus what
+ * desktop's Leagues cards say that Home's don't — "Playoffs" or "Complete"
+ * in the pill slot, and "Commissioner" at the end of the sub when you run
+ * the league (`leagues-ops.ts`).
+ */
+export function LeagueCard({
+  league,
+  index,
+  variant = 'home',
+}: {
+  league: MyLeagueRow
+  /** The league's place in the app's league order — its tile colour. */
+  index: number
+  variant?: 'home' | 'leagues'
+}) {
   const card = useMobileHomeMatchup(league)
   const alert = useMobileHomeAlert(league)
   const roomEntry = useRoomEntryTarget()
   const setSegment = useLeagueTabStore((s) => s.setSegment)
   const live = card.live
+  const onLeagues = variant === 'leagues'
+  const sub = onLeagues ? leaguesCardSub(card.sub, league.my_role) : card.sub
+  const status = onLeagues ? leagueStatusPill(league.status) : null
   const cls = 'flex flex-col gap-3 rounded-[18px] bg-m-b1 p-[14px] active:bg-m-b2h'
   const body = (
     <>
@@ -95,7 +116,11 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
         />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[15px] font-semibold leading-[19px] text-m-t1">{league.name}</span>
-          <span className="text-[12px] font-medium leading-[15px] text-m-t3">{card.sub}</span>
+          {/* The Leagues screen's longer sub wraps into even lines, not a
+              lone last word. */}
+          <span className={cn('text-[12px] font-medium leading-[15px] text-m-t3', onLeagues && 'text-balance')}>
+            {sub}
+          </span>
         </span>
         {/* "Draft Aug 28 · 7:00 PM" once a draft time is set, else the
             design's "Pre-draft" (gap list §3 #20). */}
@@ -110,6 +135,19 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
           <span className="flex h-6 flex-none items-center gap-[5px] whitespace-nowrap rounded-pill bg-m-gg px-[10px] text-[11px] font-semibold text-m-tg">
             <span className="size-1.5 rounded-full bg-current motion-safe:animate-pulse" aria-hidden />
             Draft live
+          </span>
+        )}
+        {/* Leagues screen only: desktop's Playoffs / Complete badge in the
+            Pre-draft pill's shape — blue tint, or quiet when it's over. */}
+        {status && (
+          <span
+            className={cn(
+              'flex h-6 flex-none items-center whitespace-nowrap rounded-pill px-[10px] text-[11px] font-semibold',
+              status.tone === 'blue' ? 'bg-m-gb text-m-tb' : 'bg-m-b3s text-m-t2',
+            )}
+            data-league-status={league.status}
+          >
+            {status.label}
           </span>
         )}
         {/* The alert dot (m-home §2A.5 `hasDot`: 8×8, Danger red — the
@@ -192,9 +230,10 @@ function LeagueCard({ league, index }: { league: MyLeagueRow; index: number }) {
  * "Join or create a league" (m-home §2A.6): one outlined button that asks
  * which, then opens the app's own join-by-code and create-league flows as
  * phone sheets (`layout="mobile"`, gap list §4 item 2) — same requests as
- * the desktop dialogs; creating a league stays free.
+ * the desktop dialogs; creating a league stays free. The phone's Leagues
+ * screen (gap list §4 item 104) puts the same button under its cards.
  */
-function JoinOrCreate() {
+export function JoinOrCreate() {
   const [chooser, setChooser] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
