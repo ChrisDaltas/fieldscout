@@ -19,6 +19,7 @@
  * league's own scoring) or the players builder route; this file only sums
  * box-score counting stats, formats, tiers and sorts.
  */
+import { liveClock } from '@/utils/game-clock'
 
 // ---------------------------------------------------------------------------
 // Columns
@@ -538,8 +539,7 @@ export function gameState(team: string, g: GameLike, kickoff: (iso: string) => s
   const theirs = (home ? g.away_score : g.home_score) ?? null
   const score = mine !== null && theirs !== null ? `${mine}-${theirs}` : null
   if (isLiveStatus(g.status)) {
-    const quarter = g.quarter == null || g.quarter < 1 ? null : g.quarter >= 5 ? 'OT' : `Q${g.quarter}`
-    const clock = [quarter, g.game_clock].filter(Boolean).join(' ')
+    const clock = liveClock(g)
     if (!clock) return 'Live'
     return score ? `${clock} · ${score}` : clock
   }

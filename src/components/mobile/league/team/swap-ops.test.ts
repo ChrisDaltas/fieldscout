@@ -225,6 +225,8 @@ describe('team-ops', () => {
     const g = { home_team: 'GB', away_team: 'DET', kickoff_at: '2026-10-11T17:00:00Z', home_score: 20, away_score: 31, quarter: null, game_clock: null }
     expect(gameLine('DET', [{ ...g, status: 'final' }])).toMatchObject({ kind: 'game', text: 'Final W 31-20 @ GB', opp: 'GB' })
     expect(gameLine('GB', [{ ...g, status: 'live', quarter: 4, game_clock: '6:50' }])).toMatchObject({ text: 'Q4 6:50 vs DET' })
+    // Overtime is "OT", like Match — never "Q5" (gap list §4 item 14).
+    expect(gameLine('GB', [{ ...g, status: 'live', quarter: 5, game_clock: '2:31' }])).toMatchObject({ text: 'OT 2:31 vs DET' })
     expect(gameLine('KC', [{ ...g, status: 'final' }])).toEqual({ kind: 'bye', text: 'BYE' })
     expect(gameLine('KC', [])).toEqual({ kind: 'unknown' })
   })
