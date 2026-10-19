@@ -26,6 +26,7 @@ vi.mock('@/lib/supabase/client', () => ({
 
 const me = vi.hoisted(() => ({
   isLoading: false,
+  email: 'dalton@example.test',
   profile: {
     id: 'user-me',
     username: 'dalton',
@@ -36,7 +37,7 @@ const me = vi.hoisted(() => ({
 }))
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({
-    user: { id: 'user-me', email: 'dalton@example.test' },
+    user: { id: 'user-me', email: me.email },
     profile: me.profile,
     isLoading: me.isLoading,
     signOut: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock('@/hooks/use-auth', () => ({
 import { SCORING_PRESETS } from '@/lib/scoring/default'
 import { SCORING_GROUPS } from '@/lib/scoring/scoring-editor'
 
-import { NOTIFICATION_ROWS, PRO_FEATURES } from '@/components/settings/account-settings-ops'
+import { EMAIL_HINT, NOTIFICATION_ROWS, PRO_FEATURES, USERNAME_HINT } from '@/components/settings/account-settings-ops'
 import { MobileAccountSettings } from './mobile-account-settings'
 import { MobileBillingSettings } from './mobile-billing-settings'
 import { MobileScoringSettings, SAVE_NEEDS_CUSTOM } from './mobile-scoring-settings'
@@ -54,6 +55,7 @@ import { MobileScoringSettings, SAVE_NEEDS_CUSTOM } from './mobile-scoring-setti
 const BASE = me.profile ? { ...me.profile } : null
 afterEach(() => {
   me.isLoading = false
+  me.email = 'dalton@example.test'
   me.profile = BASE ? { ...BASE } : null
 })
 
@@ -115,6 +117,29 @@ describe('Settings — the phone screen (gap list §4 item 101)', () => {
     const html = render(createElement(MobileAccountSettings))
     expect(html).toMatch(/<a[^>]*href="\/u\/dalton"[^>]*>@dalton<\/a>/)
     expect(html).toMatch(/data-settings-email[^>]*>dalton@example.test</)
+  })
+
+  it('stacks the email and the @handle under their labels, so a long one never squeezes the hint', () => {
+    // A 45-character address: beside its label it took the row and left the
+    // hint a ~50px column at 360px. Stacked, label → value → hint share the
+    // row's full width, and the value ends in an ellipsis past it.
+    me.email = 'a.very.long.address.for.testing.rows@example.test'
+    const html = render(createElement(MobileAccountSettings))
+    for (const [label, value, hint] of [
+      ['Email', /<span class="([^"]*)" data-settings-email="[^"]*">a\.very\.long\.address\.for\.testing\.rows@example\.test<\/span>/, EMAIL_HINT],
+      ['Username', /<a [^>]*class="([^"]*)"[^>]*>@dalton<\/a>/, USERNAME_HINT],
+    ] as const) {
+      const field = html.match(new RegExp(`<div class="([^"]*)" data-settings-field="${label}">([\\s\\S]*?)</div>`))
+      expect(field, label).not.toBeNull()
+      const [, fieldClass, inner] = field!
+      // One column: the label, then the value, then the hint — no side-by-side row.
+      expect(fieldClass.split(' ')).toEqual(expect.arrayContaining(['flex', 'flex-col']))
+      expect(inner, label).toMatch(new RegExp(`^<span class="[^"]*">${label}</span>`))
+      const valueAt = inner.search(value)
+      expect(valueAt, label).toBeGreaterThan(0)
+      expect(inner.indexOf(hint), label).toBeGreaterThan(valueAt)
+      expect(inner.match(value)![1].split(' ')).toEqual(expect.arrayContaining(['truncate', 'max-w-full']))
+    }
   })
 
   it('keeps Update password off until a matching pair is typed', () => {

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useId, useRef, useState } from 'react'
 
-import { FieldRow, SettingsSkin, ToggleRow } from '@/components/leagues/settings-form-controls'
+import { SettingsSkin, ToggleRow } from '@/components/leagues/settings-form-controls'
 import { CenteredNote } from '@/components/mobile/league/league/league-bits'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { M_TEXT_FIELD, MNotice } from '@/components/mobile/ui/m-form'
@@ -25,7 +25,7 @@ import { useUpdatePassword } from '@/hooks/use-update-password'
 import { cn } from '@/lib/utils'
 import type { Profile } from '@/types/database'
 
-import { SettingsField, SettingsGroup, SettingsSkeleton, settingsButtonClass } from './settings-parts'
+import { SETTINGS_VALUE, SettingsField, SettingsGroup, SettingsSkeleton, settingsButtonClass } from './settings-parts'
 
 /** Where Settings' Back goes when nothing in the app is behind it: Profile,
  *  whose gear opens it. */
@@ -66,9 +66,9 @@ export function MobileAccountSettings() {
           <div className="flex flex-col gap-[18px] px-4 pb-8 pt-6" data-account-settings>
             <PhotoBlock profile={profile} />
             <SettingsGroup title="Profile">
-              <FieldRow label="Username" hint={USERNAME_HINT}>
-                <UsernameLink username={profile.username} className="truncate text-[14px] font-semibold text-m-t1" />
-              </FieldRow>
+              <SettingsField label="Username" hint={USERNAME_HINT}>
+                <UsernameLink username={profile.username} className={SETTINGS_VALUE} />
+              </SettingsField>
             </SettingsGroup>
             <SecurityGroup email={user?.email ?? ''} />
             <NotificationsGroup />
@@ -162,11 +162,11 @@ function SecurityGroup({ email }: { email: string }) {
 
   return (
     <SettingsGroup title="Sign in & security">
-      <FieldRow label="Email" hint={EMAIL_HINT}>
-        <span className="max-w-full truncate text-[14px] font-semibold text-m-t1" data-settings-email>
+      <SettingsField label="Email" hint={EMAIL_HINT}>
+        <span className={SETTINGS_VALUE} data-settings-email>
           {email}
         </span>
-      </FieldRow>
+      </SettingsField>
       <form
         className="flex flex-col"
         onSubmit={(event) => {

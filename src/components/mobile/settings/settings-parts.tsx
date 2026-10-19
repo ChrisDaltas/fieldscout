@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils'
  * (m-community G): 13/600 t3 section titles over rows on the page itself,
  * split by b2 hairlines (the rows are the shared `FieldRow` / `ToggleRow`
  * in their phone skin — `SettingsSkin layout="mobile"`), sections 18px
- * apart; a field is a 14/600 label over the 48px b2 text field; the Scout
- * AI read is a b1 card under the phone's blue-dot "Scout AI" label (Home's
- * AI experts strip). Every colour is an `m-*` token, so the screens follow
+ * apart; a field is a 14/600 label over the 48px b2 text field (or over a
+ * read-only value — your email, your @handle); the Scout AI read is a b1
+ * card under the phone's blue-dot "Scout AI" label (Home's AI experts
+ * strip). Every colour is an `m-*` token, so the screens follow
  * the phone's light and dark themes.
  */
 
@@ -38,8 +39,14 @@ export function SettingsGroup({
   )
 }
 
-/** A field in a section: 14/600 label, the control, an optional t3 hint —
- *  on the rows' hairline rhythm. */
+/**
+ * A field in a section, stacked: the 14/600 label, the control under it, an
+ * optional t3 hint — on the rows' hairline rhythm. Without `htmlFor` it is a
+ * read-only value (your email, your @handle): there is no control to label,
+ * so the label is plain text and the value sits close under it, the full
+ * width of the row — a long email never squeezes the hint into a sliver
+ * beside it.
+ */
 export function SettingsField({
   label,
   htmlFor,
@@ -47,20 +54,36 @@ export function SettingsField({
   children,
 }: {
   label: string
-  htmlFor: string
+  /** The control's id. Omit for a read-only value. */
+  htmlFor?: string
   hint?: string
   children: React.ReactNode
 }) {
+  const labelClass = 'text-[14px] font-semibold text-m-t1'
   return (
-    <div className="flex flex-col gap-2 border-b border-m-b2 py-2.5 last:border-b-0">
-      <label htmlFor={htmlFor} className="text-[14px] font-semibold text-m-t1">
-        {label}
-      </label>
+    <div
+      className={cn(
+        'flex min-w-0 flex-col border-b border-m-b2 py-2.5 last:border-b-0',
+        htmlFor ? 'gap-2' : 'gap-1',
+      )}
+      data-settings-field={label}
+    >
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={labelClass}>
+          {label}
+        </label>
+      ) : (
+        <span className={labelClass}>{label}</span>
+      )}
       {children}
       {hint ? <p className="text-[12px] font-medium leading-[1.35] text-m-t3">{hint}</p> : null}
     </div>
   )
 }
+
+/** The read-only value under a `SettingsField` label: 14/500 t2, one line,
+ *  as wide as the row and no wider (a long one ends in an ellipsis). */
+export const SETTINGS_VALUE = 'max-w-full self-start truncate text-[14px] font-medium text-m-t2'
 
 /** A small chip beside a section title (Free / Pro). */
 export function SettingsChip({ tone, children }: { tone: 'quiet' | 'accent'; children: React.ReactNode }) {
