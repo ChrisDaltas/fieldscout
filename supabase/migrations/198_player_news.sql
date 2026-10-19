@@ -12,8 +12,10 @@
 --                        the rule that matched ('name_team' | 'unique_name').
 --
 -- RLS (tasks-M* §4.2 pattern): SELECT for `authenticated` only; NO write
--- policy for any role, and INSERT/UPDATE/DELETE privileges REVOKEd from anon
--- and authenticated. The only writer is the ingest route as service_role.
+-- policy for any role, so RLS refuses every client write (the house pattern:
+-- the default grants stay, 081 C3). Only TRUNCATE — which RLS does not gate —
+-- is REVOKEd from anon and authenticated (081 A1). The only writer is the
+-- ingest route as service_role.
 --
 -- Scheduling: pg_cron `ingest-player-news-ping` every 30 minutes →
 -- `public.cron_ping_route('/api/cron/ingest-player-news')` (124's vehicle,
@@ -55,8 +57,7 @@ CREATE POLICY player_news_read ON public.player_news
 CREATE POLICY player_news_players_read ON public.player_news_players
   FOR SELECT TO authenticated USING (true);
 
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.player_news, public.player_news_players FROM anon, authenticated;
-REVOKE ALL ON public.player_news, public.player_news_players FROM anon;
+REVOKE TRUNCATE ON public.player_news, public.player_news_players FROM anon, authenticated;
 
 COMMENT ON TABLE public.player_news IS
   'Player news stories (198, F575/D550): headline (plain text), source label, link out, published time — from free public RSS feeds and Bluesky reporters (src/lib/news/sources.ts). UNIQUE (source_key, external_id) is the dedupe key. SELECT for authenticated; written ONLY by /api/cron/ingest-player-news as service_role (pg_cron ingest-player-news-ping, every 30 min); no write policy for any role.';
