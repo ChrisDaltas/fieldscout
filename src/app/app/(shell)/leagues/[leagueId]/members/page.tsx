@@ -1,4 +1,6 @@
 import { MembersPage } from '@/components/leagues/members-page'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileMembers } from '@/components/mobile/league/members/members-screen'
 
 export const metadata = { title: 'Members · FieldScout' }
 
@@ -14,8 +16,11 @@ interface MembersRouteProps {
  * the `(shell)/leagues/layout.tsx` flag gate; the page is a client component
  * (`useLeague` gates membership first). Every commissioner control's verb
  * gates itself on the server; the panel offers them to commissioners only.
+ *
+ * On the phone it is League Menu › Members (gap list §4 item 106): the same
+ * reads and actions in the phone's own screen (`MobileMembers`).
  */
 export default async function LeagueMembersRoute({ params }: MembersRouteProps) {
   const { leagueId } = await params
-  return <MembersPage leagueId={leagueId} />
+  return <ByLayout desktop={<MembersPage leagueId={leagueId} />} mobile={<MobileMembers leagueId={leagueId} />} />
 }
