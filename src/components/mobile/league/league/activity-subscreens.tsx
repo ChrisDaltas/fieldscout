@@ -51,7 +51,9 @@ import { commishLogHref, correctionsScreenHref, formatTxDate } from './league-ta
  * League › Activity only when the screen was opened fresh from a link.
  *  - Commissioner log (`/activity/commissioner`): every change a
  *    commissioner made, filterable by team and week, opened AT an entry by a
- *    ✸ door.
+ *    ✸ door. Every member it names — the commissioner heading a row, the
+ *    people in its sentence — is an @handle, as on the transaction rows
+ *    (gap list §4 item 12).
  *  - Stat corrections (`/activity/corrections`, where `/corrections` and the
  *    desktop `?tab=corrections` land): the corrections list in the mobile
  *    language.
@@ -194,7 +196,7 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
               >
                 <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
                   {line.actorUsername ? (
-                    <UsernameLink username={line.actorUsername} at={false} className="font-semibold text-m-t1" />
+                    <UsernameLink username={line.actorUsername} className="font-semibold text-m-t1" />
                   ) : (
                     <span className="font-semibold text-m-t1">{line.actor}</span>
                   )}
@@ -204,6 +206,7 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
                 <p className="text-[13.5px] font-medium leading-[1.4] text-m-t1">
                   <TextWithUsernames
                     marked={line.marked}
+                    at
                     linkClassName="font-semibold"
                     renderText={(t) => <MobilePlayerText text={t} players={line.players} leagueId={leagueId} />}
                   />

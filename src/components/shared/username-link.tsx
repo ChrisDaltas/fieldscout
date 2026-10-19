@@ -58,11 +58,16 @@ export function UsernameLink({ username, at = true, newTab = false, className }:
  *  one a door, the rest plain text. */
 export function TextWithUsernames({
   marked,
+  at = false,
   newTab,
   linkClassName,
   renderText,
 }: {
   marked: string
+  /** Each name as `@username` — FieldScout Mobile's League tab writes the
+   *  handle with its `@` everywhere, sentences included (gap list §4 item
+   *  12). Default false: the name reads bare inside the sentence. */
+  at?: boolean
   newTab?: boolean
   linkClassName?: string
   /** How a plain stretch renders (F563: the commissioner log passes its
@@ -75,7 +80,7 @@ export function TextWithUsernames({
         typeof part === 'string' ? (
           <Fragment key={i}>{renderText ? renderText(part) : part}</Fragment>
         ) : (
-          <UsernameLink key={i} username={part.username} at={false} newTab={newTab} className={linkClassName} />
+          <UsernameLink key={i} username={part.username} at={at} newTab={newTab} className={linkClassName} />
         ),
       )}
     </>
@@ -87,11 +92,14 @@ export function TextWithUsernames({
 export function TextWithActor({
   text,
   actor,
+  at = false,
   newTab,
   linkClassName,
 }: {
   text: string
   actor: string | null | undefined
+  /** The actor as `@username` (`TextWithUsernames`' `at`). Default false. */
+  at?: boolean
   newTab?: boolean
   linkClassName?: string
 }) {
@@ -100,7 +108,7 @@ export function TextWithActor({
   return (
     <>
       {split.before}
-      <UsernameLink username={split.username} at={false} newTab={newTab} className={linkClassName} />
+      <UsernameLink username={split.username} at={at} newTab={newTab} className={linkClassName} />
       {split.after}
     </>
   )

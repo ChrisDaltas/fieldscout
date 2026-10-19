@@ -60,12 +60,12 @@ const visible = (html: string) => html.replace(/<template data-sheet-closed="[^"
 const closedSheets = (html: string) => (html.match(/data-sheet-closed="Commissioner note"/g) ?? []).length
 
 describe('League tab — the note card', () => {
-  it('shows the note (three lines at most), who pinned it (a profile link) and when; a tap opens it', () => {
+  it('shows the note (three lines at most), who pinned it (an @handle profile link — gap list §4 item 12) and when; a tap opens it', () => {
     const html = render(createElement(LeagueNoteCard, { leagueId: LEAGUE, canEdit: false }), NOTE)
     expect(html).toContain('data-league-note="shown"')
     expect(html).toContain('Commissioner note')
     expect(html).toMatch(/line-clamp-3[^"]*"[^>]*>Trade deadline is Nov 24.\nDues by Friday.</)
-    expect(html).toMatch(/Pinned by <a[^>]*href="\/u\/chris_gm"[^>]*>chris_gm<\/a>/)
+    expect(html).toMatch(/Pinned by <a[^>]*href="\/u\/chris_gm"[^>]*>@chris_gm<\/a>/)
     expect(html).toContain('data-league-note-open')
     // The profile link is not inside the open button (no link in a button).
     expect(html).not.toMatch(/<button[^>]*data-league-note-open[^>]*>(?:(?!<\/button>)[\s\S])*<a /)

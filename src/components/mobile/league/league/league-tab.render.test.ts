@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { LeagueDetail } from '@/hooks/use-league'
+import { commishLogKeys } from '@/hooks/use-commish-log'
 import { leagueActivityKeys } from '@/hooks/use-league-activity'
 import { mockDraftKeys } from '@/hooks/use-mock-drafts'
 import { statCorrectionsKeys } from '@/hooks/use-stat-corrections'
@@ -23,6 +24,7 @@ import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
 import { statsDegradedKeys } from '@/hooks/use-stats-degraded'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
+import type { CommishLogItem } from '@/lib/leagues/api/commish-log-service'
 import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import type { WeekMatchups } from '@/lib/leagues/api/matchups-service'
 import type { LeagueStandings, StandingsRow } from '@/lib/leagues/api/standings-service'
@@ -1058,5 +1060,89 @@ describe("Who's online — a team's avatar lights up with its manager (gap list 
     const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'standings' }))
     expect(html).not.toContain('data-online-dot')
     expect(html).toContain('data-online="false"')
+  })
+})
+
+// Gap list §4 item 12: the League tab writes a manager as his @handle
+// everywhere — at the head of a transaction row and inside its words (the
+// prototype's bare "marcus" is gone), in a post that names its actor, on the
+// note's byline and in the commissioner log — each one still a profile door.
+// (The filter sheet's Teams list, a picker, is pinned in its own suite.)
+describe('League tab — @handle everywhere (gap list §4 item 12)', () => {
+  /** The `<a>` a username renders as: the handle, the profile it opens. */
+  const handleLink = (username: string) => new RegExp(`<a data-username-link="${username}"[^>]*href="/u/${username}">@${username}</a>`)
+
+  it('a trade row: the manager heading it and the one it was with, both @handles and profile doors', () => {
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'activity' }), {}, seedFeed([{}], [TRADE]))
+    const row = html.slice(html.indexOf('data-tx-row="trade1"'))
+    expect(row).toMatch(handleLink('marcus'))
+    expect(row).toMatch(new RegExp(`Trade with ${handleLink('dalton').source}`))
+    expect(row).not.toMatch(/>(marcus|dalton)</)
+  })
+
+  it('a row’s note: the other side’s roster drop, a commissioner’s move from one manager to another', () => {
+    const tradeWithDrop: ActivityItem = {
+      ...TRADE,
+      id: 'trade2',
+      payload: { ...(TRADE as { payload: Record<string, unknown> }).payload, drops: [{ team_id: ME, player_id: 'p10', name: 'Tyler Boyd' }] },
+    }
+    const move: ActivityItem = {
+      ...FEED[0]!,
+      id: 'mv1',
+      type: 'commissioner_move',
+      team_id: null,
+      payload: { moved_player_id: 'p11', from_team_id: OPP, to_team_id: ME },
+    } as ActivityItem
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'activity' }), {}, (qc) => {
+      seedFeed([{}], [tradeWithDrop, move])(qc)
+      qc.setQueryData(['players-by-ids', ['p7', 'p8', 'p10', 'p11']], [])
+    })
+    const trade = html.slice(html.indexOf('data-tx-row="trade2"'), html.indexOf('data-tx-row="mv1"'))
+    expect(trade).toMatch(new RegExp(`${handleLink('dalton').source} · roster drop`))
+    const moved = html.slice(html.indexOf('data-tx-row="mv1"'))
+    expect(moved).toMatch(new RegExp(`${handleLink('marcus').source} → ${handleLink('dalton').source}`))
+  })
+
+  it('a post that names its actor: the actor is an @handle; a notice that names no one stays its words', () => {
+    const post = (id: string, message: string, actor: string | null): ActivityItem =>
+      ({ kind: 'system', id, created_at: '2099-10-11T18:00:00.000Z', context: 'league', message, actor_id: actor, topic: null, week: null, commish_action_id: null }) as ActivityItem
+    const html = render(createElement(MobileLeagueTab, { leagueId: LEAGUE, segment: 'activity' }), {}, (qc) =>
+      seedFeed([{}], [post('p-pause', 'Draft paused by marcus.', 'user-opp'), post('p-sys', 'Week 1 finalized.', null)])(qc),
+    )
+    expect(html).toMatch(new RegExp(`Draft paused by ${handleLink('marcus').source}\\.`))
+    const notice = html.slice(html.indexOf('data-post-row="p-sys"'))
+    expect(notice).toContain('Week 1 finalized.')
+    expect(notice).not.toContain('data-username-link')
+  })
+
+  it('the commissioner log: the commissioner heading a row and the member its sentence names', () => {
+    const item: CommishLogItem = {
+      id: 'ca-1',
+      action_type: 'promote_member',
+      actor: { id: 'user-opp', username: 'marcus' },
+      target_type: 'member',
+      target_id: null,
+      reason: null,
+      before: { role: 'manager' },
+      after: { role: 'co_commissioner' },
+      metadata: { user_id: 'user-me' },
+      acting_as_team_id: null,
+      reverts_action_id: null,
+      created_at: '2099-10-11T18:00:00.000Z',
+    }
+    const html = render(
+      createElement(ActivitySubscreenRoute, { leagueId: LEAGUE, initial: { tab: 'commissioner', week: null, team: null, entry: null } }),
+      {},
+      (qc) =>
+        qc.setQueryData(commishLogKeys.list(LEAGUE, { limit: 50 }), {
+          pages: [{ items: [item], limit: 50, filters: {}, has_more: false, next_cursor: null }],
+          pageParams: [undefined],
+        }),
+    )
+    const line = html.slice(html.indexOf('data-commish-line="ca-1"'))
+    expect(line).toMatch(handleLink('marcus'))
+    // The sentence's plain stretches are spans (its player names are doors too).
+    expect(line).toMatch(new RegExp(`<span>made </span>${handleLink('dalton').source}<span> a co-commissioner</span>`))
+    expect(line).not.toMatch(/>(marcus|dalton)</)
   })
 })
