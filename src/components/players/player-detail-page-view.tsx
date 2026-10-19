@@ -6,6 +6,7 @@ import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { LeagueAvailabilityRow, LeagueCardActions } from '@/components/players/player-card-actions'
 import { PlayerDetailActions, type PlayerListContext } from '@/components/players/player-detail-actions'
 import { PlayerDetailHeader } from '@/components/players/player-detail-header'
+import { PlayerNewsPanel } from '@/components/players/player-news-panel'
 import { GameLogPanel, StatsPanel } from '@/components/players/player-detail-panels'
 import {
   draftValueCells,
@@ -155,10 +156,11 @@ function useScoredStats(player: PlayerStatsPlayer, leagueId: string | null) {
   return { value: choiceValue(choice), options, onPick, stats, label }
 }
 
-export type SectionKey = 'stats' | 'log' | 'scoring' | 'value'
+export type SectionKey = 'stats' | 'log' | 'news' | 'scoring' | 'value'
 export const SECTIONS: Array<{ key: SectionKey; label: string }> = [
   { key: 'stats', label: 'Full stats' },
   { key: 'log', label: 'Game log' },
+  { key: 'news', label: 'News' },
   { key: 'scoring', label: 'Scoring' },
   { key: 'value', label: 'Draft & value' },
 ]
@@ -244,6 +246,7 @@ export function PlayerBody({
             </div>
           )}
           {sec.key === 'log' && <GameLogPanel data={data} />}
+          {sec.key === 'news' && <PlayerNewsPanel playerId={player.id} />}
           {sec.key === 'scoring' && <ScoringPicker scored={scored} />}
           {sec.key === 'value' && <DraftValue player={player} stats={scored.stats.data ?? null} />}
         </section>
