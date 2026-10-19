@@ -30,6 +30,7 @@ import {
   ownershipSummary,
   pastSeasonRules,
   playerMoves,
+  PRESS,
   PROFILE_SCORING_SYSTEMS,
   profileScoringOptions,
   rankTone,
@@ -98,6 +99,24 @@ const game = (week: number, home: string, away: string, status: string, kickoff 
   kickoff_at: kickoff,
   status,
   ...state,
+})
+
+describe('pressed tints (gap list §4 item 18)', () => {
+  it('a background tint per fill — never a shadow, never the bright red', () => {
+    for (const cls of Object.values(PRESS)) {
+      expect(cls).toMatch(/^active:bg-[\w/.-]+$/)
+      expect(cls).not.toMatch(/shadow|negative-strong|m-red/)
+    }
+  })
+
+  it('the handoff’s per-fill presses: page → b2, b1 card → b2h, b2 control → b3s, blue → strong blue', () => {
+    expect(PRESS.page).toBe('active:bg-m-b2')
+    expect(PRESS.card).toBe('active:bg-m-b2h')
+    // Not b2h: phone dark mode draws b2h and b2 the same grey, so the press would vanish.
+    expect(PRESS.control).toBe('active:bg-m-b3s')
+    expect(PRESS.accent).toBe('active:bg-accent-strong')
+    expect(PRESS.confirm).toBe('active:bg-confirm-hover')
+  })
 })
 
 describe('header', () => {
