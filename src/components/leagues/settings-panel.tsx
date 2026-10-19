@@ -2157,7 +2157,10 @@ export function ScheduleDraftGroup({
   // The phone draws the small actions as its own pills and the summary in
   // its t3 line; the selects and rows are the shared skinned controls.
   const phone = useSettingsSkin() === 'mobile'
-  const phonePill = 'flex h-8 flex-none items-center gap-1.5 rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h'
+  // Greys out when the draft group's fieldset closes (the draft is over), so
+  // a pill that can't act never looks tappable.
+  const phonePill =
+    'flex h-8 flex-none items-center gap-1.5 rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h disabled:text-m-t5 disabled:active:bg-m-b2'
 
   return (
     <GroupCard title="Schedule the draft">
