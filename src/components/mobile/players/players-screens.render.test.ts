@@ -40,6 +40,21 @@ vi.mock('@/hooks/use-mobile-players-ui', async (importOriginal) => {
   const hook = Object.assign(<T,>(selector: (s: ReturnType<typeof store.getState>) => T) => selector(store.getState()), store)
   return { ...mod, useMobilePlayersUI: hook }
 })
+// The previous search's answer kept on screen while the typed one reads
+// (what `keepPreviousData` does; a static render has no earlier observer to
+// keep) — `full` by the hook's own rule for a placeholder.
+const kept = vi.hoisted(() => ({ from: null as string | null }))
+vi.mock('@/hooks/use-mobile-players-data', async (importActual) => {
+  const actual = await importActual<typeof import('@/hooks/use-mobile-players-data')>()
+  return {
+    ...actual,
+    useMobilePlayersWindow: (positions: readonly string[] | null, team: string | null, search?: string) => {
+      if (kept.from === null) return actual.useMobilePlayersWindow(positions, team, search)
+      const earlier = actual.useMobilePlayersWindow(positions, team, kept.from)
+      return { ...earlier, isPlaceholderData: true, isFetching: true, full: actual.windowAtCap(earlier.data, true) }
+    },
+  }
+})
 vi.mock('next/navigation', () => ({
   usePathname: () => '/app/leagues/league-1/players',
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, back: () => {} }),
@@ -179,6 +194,7 @@ function seedLeague(over: { detail?: LeagueDetail } = {}): QueryClient {
 
 afterEach(() => {
   viewer = 'user-manager'
+  kept.from = null
   useMobilePlayersUI.setState({ league: LEAGUE_DEFAULTS, research: RESEARCH_DEFAULTS })
 })
 
@@ -359,6 +375,53 @@ describe('League › Players search (mobile)', () => {
     expect(none).toContain('No players on waivers match “nobody”')
     // Nothing else matches either — no way out to offer.
     expect(none).not.toContain('data-players-empty-action')
+  })
+
+  it('Waivers / Rostered: a match on a roster or in the window offers "Show all players"', () => {
+    // On a roster (the complete rostered set), not on waivers.
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, status: 'w', query: 'mine' } })
+    const onRoster = render(seedLeague(), createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(order(onRoster)).toEqual([])
+    expect(onRoster).toContain('No players on waivers match “mine”')
+    expect(onRoster).toMatch(/data-players-empty-action="true">Show all players</)
+
+    // A free agent (the window's search), not on any roster.
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, status: 'rost', query: 'Jordan' } })
+    const qc = seedLeague()
+    qc.setQueryData(['mobile-players-window', '', '', 'Jordan'], [windowPlayers[0]!])
+    const freeAgent = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(order(freeAgent)).toEqual([])
+    expect(freeAgent).toContain('No rostered players match “Jordan”')
+    expect(freeAgent).toMatch(/data-players-empty-action="true">Show all players</)
+  })
+
+  it('a Position or Team pill that narrows the search is named in the empty list', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, pos: 'QB', team: 'KC', query: 'Kelce' } })
+    const qc = seedLeague()
+    qc.setQueryData(['mobile-players-window', 'QB', 'KC', 'Kelce'], [])
+    const html = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(html).toContain('No available players match “Kelce” at QB on KC')
+  })
+
+  it('while the typed name reads, no false "no match" or cap — loading, then the answer', () => {
+    useMobilePlayersUI.setState({ league: { ...LEAGUE_DEFAULTS, ...lean, query: 'Dyami' } })
+    const qc = seedLeague()
+    // The browse window (a full 300) is all that's in hand when "Dyami" is typed.
+    qc.setQueryData(['mobile-players-window', '', '', ''], many(300))
+    kept.from = ''
+    const reading = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(reading).not.toContain('No available players match')
+    expect(reading).not.toContain('Lots of players match')
+    expect(reading).not.toContain('data-players-count')
+    expect(reading).toContain('data-skeleton="players"')
+
+    // The server answers: the deep free agent, counted, no cap.
+    kept.from = null
+    qc.setQueryData(['mobile-players-window', '', '', 'Dyami'], [pp('dyami', 'Dyami Brown', 'WR', 640)])
+    const answered = render(qc, createElement(LeaguePlayersScreen, { leagueId: LEAGUE }))
+    expect(order(answered)).toEqual(['dyami'])
+    expect(answered).toContain('data-players-count="true">1</span>')
+    expect(answered).not.toContain('data-skeleton="players"')
   })
 
   it('a match the status pill hides is said, with "Show all players"', () => {

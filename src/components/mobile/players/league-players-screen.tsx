@@ -93,9 +93,13 @@ import { PlayersRows, type EmptyAction, type ViewRow } from './players-views'
  * the field above the pills narrows the browse window SERVER-side by name
  * (`playerNameFilter`), so it reaches the whole active pool, not just the 300
  * rows a browse loads; the complete by-id sets are matched by the same rule.
- * It combines with the pills (ESPN's player search does the same), and when
- * a status pill hides every match the empty list offers "Show all players".
- * A capped window is always said — never a silent cap.
+ * It combines with the pills (ESPN's player search does the same). When the
+ * status pill hides every match — counted over the window's search and both
+ * complete sets, whatever the status — the empty list offers "Show all
+ * players"; a Position / Team pill that narrows it is named in the empty
+ * copy. A capped window is always said (never a silent cap), and a cap or an
+ * empty result is claimed only from the search's own answer — while it
+ * reads, the list shows loading, not the previous read's narrowing.
  */
 
 const PSTAT: ReadonlyArray<{ value: LeagueStatus; label: string }> = [
@@ -232,27 +236,27 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   const waivers = useMobilePlayersByIds(waiverIds)
 
   const { filtered, hiddenByStatus } = useMemo(() => {
-    const byId = new Map<string, MobilePoolPlayer>()
     const keep = (p: MobilePoolPlayer) => posMatches(ui.pos, p.position) && (!team || p.team === team)
-    // A by-id read is used only for the ids it is asked for NOW (its
-    // placeholder may still hold the previous id set's rows). The by-id sets
-    // are complete, so the search matches them here; the window is searched
-    // by the server — its rows are matched here only while they are still
-    // the previous read's (a placeholder for another term).
-    const add = (list: readonly MobilePoolPlayer[] | undefined, opts: { only?: ReadonlySet<string>; match: boolean }) => {
-      for (const p of list ?? []) {
-        if (keep(p) && (!opts.only || opts.only.has(p.id)) && (!opts.match || playerNameMatches(p, term))) byId.set(p.id, p)
-      }
+    const named = (p: MobilePoolPlayer) => playerNameMatches(p, term)
+    // Each read's rows that count NOW. A by-id read is used only for the ids
+    // it is asked for now (its placeholder may still hold the previous id
+    // set's rows); the by-id sets are complete, so the search matches them
+    // here. The window is searched by the server — its rows are matched here
+    // only while they are still the previous read's (a placeholder).
+    const waiverSet = new Set(waiverIds)
+    const rosteredSet = new Set(rosteredIds)
+    const fromWindow = (windowQ.data ?? []).filter((p) => keep(p) && (!windowQ.isPlaceholderData || named(p)))
+    const fromWaivers = (waivers.data ?? []).filter((p) => keep(p) && waiverSet.has(p.id) && named(p))
+    const fromRostered = (rostered.data ?? []).filter((p) => keep(p) && rosteredSet.has(p.id) && named(p))
+    const rowsOf = (lists: ReadonlyArray<readonly MobilePoolPlayer[]>) => {
+      const byId = new Map<string, MobilePoolPlayer>()
+      for (const list of lists) for (const p of list) byId.set(p.id, p)
+      const universe = [...byId.values()].sort(
+        (a, b) => (a.adp ?? Infinity) - (b.adp ?? Infinity) || a.full_name.localeCompare(b.full_name) || a.id.localeCompare(b.id),
+      )
+      return poolRows(universe, rosters.data, pool.data ?? [], myTeamId, 'all')
     }
-    if (usesWindow) add(windowQ.data, { match: windowQ.isPlaceholderData })
-    if (usesWaivers) add(waivers.data, { only: new Set(waiverIds), match: true })
-    if (usesRostered) add(rostered.data, { only: new Set(rosteredIds), match: true })
-    const universe = [...byId.values()].sort(
-      (a, b) => (a.adp ?? Infinity) - (b.adp ?? Infinity) || a.full_name.localeCompare(b.full_name) || a.id.localeCompare(b.id),
-    )
-    const rows = poolRows(universe, rosters.data, pool.data ?? [], myTeamId, 'all')
-    const shown = rows.filter((r) => {
-      const a = r.availability
+    const passes = ({ availability: a }: PoolPlayerRow) => {
       switch (status) {
         case 'all':
           return true
@@ -267,10 +271,13 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
         case 'mine':
           return a.kind === 'rostered' && a.mine
       }
-    })
-    // Search matches the status pill leaves out (the window holds every
-    // ownership) — the empty list's way out.
-    return { filtered: shown, hiddenByStatus: rows.length - shown.length }
+    }
+    const shown = rowsOf([usesWindow ? fromWindow : [], usesWaivers ? fromWaivers : [], usesRostered ? fromRostered : []]).filter(passes)
+    // Under a search, every match in all three reads (the window's search is
+    // read under every status) that the status pill leaves out — the empty
+    // list's way out ("Show all players").
+    const hidden = searching && status !== 'all' ? rowsOf([fromWindow, fromWaivers, fromRostered]).filter((r) => !passes(r)).length : 0
+    return { filtered: shown, hiddenByStatus: hidden }
   }, [
     windowQ.data,
     windowQ.isPlaceholderData,
@@ -288,6 +295,7 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
     ui.pos,
     team,
     term,
+    searching,
   ])
 
   const ids = useMemo(() => filtered.map((r) => r.player.id), [filtered])
@@ -570,7 +578,12 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   // so Proj, points and games would read "–" as if that were the data.
   const scheduleProblem = schedule.isError && !schedule.data
   const noSchedule = schedule.data !== undefined && weeks.length === 0
+  // The window's answer for THIS key hasn't landed: its placeholder is the
+  // previous key's rows, so an empty narrowing of it proves nothing yet —
+  // loading, never "No … match" (a deep name typed from an empty field).
+  const awaitingWindow = usesWindow && windowQ.isPlaceholderData && filtered.length === 0
   const loading =
+    awaitingWindow ||
     (rosters.isPending && !rosters.data) ||
     (pool.isPending && !pool.data) ||
     (schedule.isPending && !schedule.data) ||
@@ -598,7 +611,10 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
   const waiverWindow = detail.waiver_window ?? null
   const line = windowLine(waiverWindow, detail.settings, (iso) => formatInstantWithDate(iso, tz).local)
   const truncated = windowQ.full && usesWindow
-  const emptyText = searching ? `No ${SEARCH_EMPTY_WHO[status]} match “${term}”` : undefined
+  // The Position / Team pills narrow a search too — named, so an empty
+  // result says which pill to reset.
+  const narrowedBy = [ui.pos !== 'All' ? `at ${ui.pos}` : null, team ? `on ${team}` : null].filter(Boolean).join(' ')
+  const emptyText = searching ? `No ${SEARCH_EMPTY_WHO[status]} match “${term}”${narrowedBy ? ` ${narrowedBy}` : ''}` : undefined
   const emptyAction: EmptyAction | undefined =
     searching && status !== 'all' && hiddenByStatus > 0 ? { label: 'Show all players', onClick: () => setUi({ status: 'all' }) } : undefined
 

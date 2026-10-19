@@ -48,9 +48,35 @@ const PLAYER_SELECT = 'id, full_name, position, team, adp, headshot_url, status,
 /** A Players-tab row: the pool's columns plus Sleeper's run-together name. */
 export type MobilePoolPlayer = PoolPlayer & { search_name?: string | null }
 
-/** The league tab's browse window: ADP order, position(s), NFL team and a
- *  typed name narrowed server-side — a search covers the whole active pool.
- *  `full` = the window came back at its cap (the screen says so). */
+/** The browse window's `players` read: ADP order, position(s), NFL team and
+ *  a typed name (already trimmed; '' = no search) all narrowed SERVER-side,
+ *  so a search covers the whole active pool — never a client filter over the
+ *  rows a browse loaded. Exported so a test pins the filters it sends. */
+export async function fetchPlayersWindow(positions: readonly string[] | null, team: string | null, term: string): Promise<MobilePoolPlayer[]> {
+  const supabase = createBrowserClient()
+  let q = supabase.from('players').select(PLAYER_SELECT).not('team', 'is', null)
+  if (positions && positions.length === 1) q = q.eq('position', positions[0]!)
+  else if (positions && positions.length > 1) q = q.in('position', [...positions])
+  if (team) q = q.eq('team', team)
+  if (term) q = q.or(playerNameFilter(term))
+  const { data, error } = await q
+    .order('adp', { ascending: true, nullsFirst: false })
+    .order('full_name', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(POOL_WINDOW)
+  if (error) throw error
+  return (data ?? []) as MobilePoolPlayer[]
+}
+
+/** The window came back at its cap. Only THIS key's own answer can say so:
+ *  a placeholder (the previous key's rows, kept while this key reads) never
+ *  counts — the browse's 300 rows are no claim about a search still loading. */
+export function windowAtCap(rows: readonly unknown[] | undefined, isPlaceholderData: boolean): boolean {
+  return !isPlaceholderData && (rows?.length ?? 0) >= POOL_WINDOW
+}
+
+/** The league tab's browse window (`fetchPlayersWindow`). `full` = this
+ *  key's answer came back at its cap (the screen says so). */
 export function useMobilePlayersWindow(positions: readonly string[] | null, team: string | null, search = '') {
   const posKey = positions ? positions.join(',') : ''
   const term = search.trim()
@@ -58,23 +84,9 @@ export function useMobilePlayersWindow(positions: readonly string[] | null, team
     queryKey: ['mobile-players-window', posKey, team ?? '', term] as const,
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    queryFn: async (): Promise<MobilePoolPlayer[]> => {
-      const supabase = createBrowserClient()
-      let q = supabase.from('players').select(PLAYER_SELECT).not('team', 'is', null)
-      if (positions && positions.length === 1) q = q.eq('position', positions[0]!)
-      else if (positions && positions.length > 1) q = q.in('position', [...positions])
-      if (team) q = q.eq('team', team)
-      if (term) q = q.or(playerNameFilter(term))
-      const { data, error } = await q
-        .order('adp', { ascending: true, nullsFirst: false })
-        .order('full_name', { ascending: true })
-        .order('id', { ascending: true })
-        .limit(POOL_WINDOW)
-      if (error) throw error
-      return (data ?? []) as MobilePoolPlayer[]
-    },
+    queryFn: () => fetchPlayersWindow(positions, team, term),
   })
-  return { ...query, full: (query.data?.length ?? 0) >= POOL_WINDOW }
+  return { ...query, full: windowAtCap(query.data, query.isPlaceholderData) }
 }
 
 const ID_CHUNK = 100
