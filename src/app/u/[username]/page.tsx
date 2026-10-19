@@ -7,6 +7,7 @@ import { ProfileHeader } from '@/components/profile/profile-header'
 import { ProfileStats } from '@/components/profile/profile-stats'
 import { PublicListCard } from '@/components/lists/public-list-card'
 import { Button } from '@/components/ui/button'
+import { credOrStart } from '@/lib/cred-tiers'
 import { featureFlags } from '@/lib/feature-flags'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -79,14 +80,14 @@ export default async function PublicProfilePage({ params }: PageProps) {
           bio={profile.bio}
           avatarUrl={profile.avatar_url}
           isPro={profile.is_pro}
-          credScore={profile.cred_score}
+          credScore={credOrStart(profile.cred_score)}
           followerCount={profile.follower_count}
           followingCount={profile.following_count}
           isOwn={false}
         />
 
         <ProfileStats
-          credScore={profile.cred_score}
+          credScore={credOrStart(profile.cred_score)}
           followerCount={profile.follower_count}
           followingCount={profile.following_count}
         />

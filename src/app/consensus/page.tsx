@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
 import { PlayerRow } from '@/components/players/player-row'
+import { CRED_START } from '@/lib/cred-tiers'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = {
@@ -147,8 +148,8 @@ export default async function ConsensusPage() {
             </ol>
             <div className="border-t border-n-4 px-card-pad py-2.5">
               <p className="text-[10px] font-medium text-n-6">
-                Weighted rank counts accurate scouts more; new users still
-                contribute with a weight of 1.
+                Weighted rank counts accurate scouts more; everyone starts
+                with {CRED_START} cred, so new users count from day one.
               </p>
             </div>
           </div>

@@ -143,11 +143,18 @@ describe('mobile Profile — bio, Following and the Cred card (gap list §3 #21)
     expect(out.indexOf('data-profile-cred')).toBeLessThan(out.indexOf('My stuff'))
   })
 
-  it('a new account starts at the first tier with an empty bar; no score reads as 0', () => {
+  it('a new account starts at 7 cred on the first tier, 7 of the way to Sophomore (Chris 2026-10-18)', () => {
+    me.profile.cred_score = 7
+    const out = render()
+    expect(textOf(out, 'data-profile-cred')).toBe('Freshie 7 cred Scout tier 1 of 10 93 to Sophomore')
+    expect(bar(out)).toContain('aria-valuenow="7"')
+  })
+
+  it('no stored score reads as the starting 7, never as 0', () => {
     me.profile.cred_score = null
     const out = render()
-    expect(textOf(out, 'data-profile-cred')).toBe('Freshie 0 cred Scout tier 1 of 10 100 to Sophomore')
-    expect(bar(out)).toContain('aria-valuenow="0"')
+    expect(textOf(out, 'data-profile-cred')).toBe('Freshie 7 cred Scout tier 1 of 10 93 to Sophomore')
+    expect(bar(out)).toContain('aria-valuenow="7"')
   })
 
   it('the top tier fills the bar and says so', () => {

@@ -40,6 +40,7 @@ import { useMobileProfileListMeta } from '@/hooks/use-mobile-profile-list-meta'
 import { useMyRankingBoards } from '@/hooks/use-mobile-rankings-boards'
 import { useMobileProfileStartSit } from '@/hooks/use-mobile-profile-start-sit'
 import { useMobileProfileTitles } from '@/hooks/use-mobile-profile-titles'
+import { credOrStart } from '@/lib/cred-tiers'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme-store'
@@ -97,7 +98,7 @@ export function MobileProfile({ currentWeek }: { currentWeek: number }) {
             username={profile.username}
             avatarUrl={profile.avatar_url}
             bio={profile.bio}
-            credScore={profile.cred_score ?? 0}
+            credScore={credOrStart(profile.cred_score)}
             followers={profile.follower_count ?? 0}
             following={profile.following_count ?? 0}
           />
