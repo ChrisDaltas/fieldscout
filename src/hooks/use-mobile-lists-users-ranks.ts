@@ -17,8 +17,8 @@ import { sourceRankMap, usersSourceQuery, type HubRow } from '@/hooks/use-mobile
  *
  * The consensus is the existing `consensus_rankings` view (001), which
  * applies Rule 9: every public, ranked list counts, weighted by its owner's
- * cred score, and a cred of 0 still counts with a weight of 1
- * (`GREATEST(cred_score, 1)`). It is season-long, so the column ignores the
+ * cred score (`GREATEST(cred_score, 1)` — never 0; every account starts at
+ * 7, `CRED_START`, migration 197). It is season-long, so the column ignores the
  * time frame and the scoring.
  *
  * One read per position on the list (as the hub reads one per chip). A

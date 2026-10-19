@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 
 import { FollowButton } from '@/components/explore/follow-button'
-import { AuthorAvatar, ListCover, PlayGlyph } from '@/components/mobile/community/community-cards'
+import { AuthorAvatar, ListCover } from '@/components/mobile/community/community-cards'
 import {
   classifyCommunityList,
   effectiveScoringFormat,
@@ -17,6 +17,7 @@ import {
 } from '@/components/mobile/community/community-ops'
 import { ListActions } from '@/components/mobile/community/list-actions'
 import { tierChipClass, viewSections, youTubeId, youTubeThumb } from '@/components/mobile/lists/lists-model'
+import { YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
@@ -409,9 +410,7 @@ export function VideoCard({ video }: { video: CommunityVideo }) {
           // eslint-disable-next-line @next/next/no-img-element -- remote thumbnail; next/image has no remote hosts configured
           <img src={youTubeThumb(yt)} alt="" className="block h-full w-full object-cover" />
         )}
-        <span className="absolute left-1/2 top-1/2 flex h-7 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[8px] bg-negative-strong text-white">
-          <PlayGlyph size={12} />
-        </span>
+        <YouTubeBadge size="lg" on="media" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
         {video.duration && (
           <span className="absolute bottom-[6px] right-[6px] flex h-[18px] items-center rounded-[4px] bg-black/75 px-[5px] text-[10px] font-semibold text-white">
             {video.duration}

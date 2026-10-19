@@ -96,3 +96,38 @@ describe('ListDetailsTab — a link with no title', () => {
     expect(li).toContain('aria-label="Remove Round 1 walkthrough"')
   })
 })
+
+/**
+ * Chris, 2026-10-18: "ideally youtube logos are white or black depending."
+ * The desktop row has no thumbnail and sits on white, so a video's mark is
+ * BLACK (ink) with a white play — it was a red-tinted (`tier-2`) tile with a
+ * chevron. An article keeps its own tile.
+ */
+describe('ListDetailsTab — a video’s mark is black, never red', () => {
+  const ARTICLE = 'https://example.com/waivers'
+  const out = html(
+    createElement(ListDetailsTab, {
+      list: list([
+        { url: VIDEO, title: 'Round 1 walkthrough' },
+        { url: ARTICLE, title: 'Waiver notes', kind: 'article' },
+      ]),
+      canEdit: false,
+    }),
+  )
+
+  it('the video row: an ink tile with a white play glyph', () => {
+    const li = row(out, VIDEO)
+    const mark = li.match(/<span[^>]*data-video-mark[^>]*>/)?.[0]
+    expect(mark, 'the video mark').toBeDefined()
+    expect(mark).toContain('bg-ink text-white')
+    expect(li).toContain('d="M4.5 2.8v10.4L13 8z"') // the play
+    expect(li).not.toMatch(/tier-2|negative-strong|destructive|m-red/)
+  })
+
+  it('an article row keeps its tinted document tile and no video mark', () => {
+    const li = row(out, ARTICLE)
+    expect(li).not.toContain('data-video-mark')
+    expect(li).toContain('bg-tier-4/50 text-ink')
+    expect(li).not.toContain('d="M4.5 2.8v10.4L13 8z"')
+  })
+})

@@ -28,11 +28,15 @@ const h = vi.hoisted(() => ({
 }))
 
 // The detail is a Radix dialog in a portal, which renders nothing on the
-// server: render its parts in place.
-vi.mock('@radix-ui/react-dialog', async () => {
+// server: render its parts in place. The rest of the module stays real — the
+// detail's YouTube mark comes from `lists-parts`, whose scoring sheet builds
+// on the shared Sheet (Trigger, Close…).
+vi.mock('@radix-ui/react-dialog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@radix-ui/react-dialog')>()
   const react = await import('react')
   const pass = ({ children }: { children?: ReactNode }) => react.createElement(react.Fragment, null, children)
   return {
+    ...actual,
     Root: pass,
     Portal: pass,
     Content: ({ children }: { children?: ReactNode }) => react.createElement('div', { 'data-dialog': '' }, children),

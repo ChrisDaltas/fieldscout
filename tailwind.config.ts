@@ -419,6 +419,11 @@ const config: Config = {
         // Mobile centred tip card (Players column tip) and switch knob.
         'm-tip': '0 12px 32px rgba(0,0,0,.2)',
         'm-knob': '0 1px 2px rgba(0,0,0,.2)',
+        // A white mark over a photo — the YouTube play mark on a video
+        // thumbnail (Chris, 2026-10-18: white or black, never red). A hairline
+        // and a soft dark halo so the white reads on a bright or busy frame.
+        // Not elevation: it is the mark's contrast, part of its shape.
+        'm-on-media': '0 0 0 1px rgba(0,0,0,.08), 0 1px 8px rgba(0,0,0,.45)',
       },
       // v7's heaviest weight is 700: the old extra-heavy weights resolve to
       // bold, so pre-v7 `font-extrabold` / `font-black` read as v7 bold.

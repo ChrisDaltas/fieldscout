@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 
 import { GuestShell } from '@/components/layout/guest-shell'
 import { ProfileListRow } from '@/components/profile/profile-list-row'
+import { credOrStart } from '@/lib/cred-tiers'
 import { createServerClient } from '@/lib/supabase/server'
 import { userProfileHref } from '@/components/shared/username-link-ops'
 
@@ -16,7 +17,7 @@ interface FollowerProfile {
   username: string
   avatar_url: string | null
   bio: string | null
-  cred_score: number
+  cred_score: number | null
   is_pro: boolean
 }
 
@@ -92,7 +93,7 @@ export default async function FollowersPage({ params }: PageProps) {
                     username={p.username}
                     avatarUrl={p.avatar_url}
                     bio={p.bio}
-                    credScore={p.cred_score}
+                    credScore={credOrStart(p.cred_score)}
                     isPro={p.is_pro}
                   />
                 </li>

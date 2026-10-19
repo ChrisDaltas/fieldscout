@@ -17,7 +17,9 @@ import { describe, expect, it } from 'vitest'
  *    `negative-strong` / `--destructive` (#FF0028). A class, arbitrary value,
  *    inline style or SVG fill that paints a surface with it fails — unless the
  *    file is in SMALL_INDICATORS below, with the exact number of hits and why
- *    each is a small indicator (a live dot, a count badge, a logo glyph).
+ *    each is a small indicator (a live dot, a count badge). The YouTube play
+ *    mark is not one any more: it is white or black, never red (Chris,
+ *    2026-10-18) — pinned below and in `mobile/lists/youtube-mark.render.test.ts`.
  *    The count is exact on purpose: a new red fill in an allowlisted file
  *    fails, and so does a removed one, so the list cannot go stale.
  * 2. **The red's raw values live only in its tokens.** `#FF0028`, its rgb
@@ -75,19 +77,10 @@ const SMALL_INDICATORS: Record<string, { count: number; why: string }> = {
     count: 1,
     why: '6px live dot beside the game clock',
   },
-  // The YouTube play mark is a wordless logo glyph, not a surface. Two of the
-  // three are larger than the other indicators here (32×22, 40×28 — over a
-  // video thumbnail); whether they stay red is Chris's call (asked
-  // 2026-10-18). If not: a white play glyph on a `bg-black/75` scrim, or the
-  // mark shrunk to ≤20px.
-  'src/components/mobile/lists/lists-parts.tsx': {
-    count: 2,
-    why: 'the YouTube play mark — a wordless logo glyph: 32×22 over a video thumbnail, and the 20×14 inline badge',
-  },
-  'src/components/mobile/community/community-detail.tsx': {
-    count: 1,
-    why: 'the YouTube play mark — a wordless logo glyph, 40×28 over a video thumbnail',
-  },
+  // No YouTube play mark here: it is monochrome, never red (Chris,
+  // 2026-10-18: "ideally youtube logos are white or black depending") —
+  // white over a thumbnail, black (m-t1) on a plain surface. `lists-parts.tsx`
+  // (`YouTubeBadge`, both video cards use it) must stay off this list.
 }
 
 /** The bright red as a Tailwind fill: `bg-` and gradient stops, any prefix.
@@ -335,6 +328,17 @@ describe('bright red is for text and small icons, never a background', () => {
       ).toEqual([])
     })
   }
+
+  it('the YouTube play mark is no red indicator — its files paint no red at all', () => {
+    // Chris, 2026-10-18: "ideally youtube logos are white or black depending".
+    for (const key of [
+      'src/components/mobile/lists/lists-parts.tsx', // YouTubeBadge + the List view video card
+      'src/components/mobile/community/community-detail.tsx', // the Community detail video card
+    ]) {
+      expect(SMALL_INDICATORS[key], `${key} is back on the red allowlist`).toBeUndefined()
+      expect(redFillsIn(readFileSync(path.join(ROOT, key), 'utf8')), key).toEqual([])
+    }
+  })
 
   it('every allowlisted file still exists', () => {
     const present = new Set(files.map(rel))

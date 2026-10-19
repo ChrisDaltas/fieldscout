@@ -226,7 +226,7 @@ export function coverClass(list: {
 }
 
 // =============================================================================
-// Video card (lr-lists §2.7): 112×63 thumbnail, red play badge, title, source
+// Video card (lr-lists §2.7): 112×63 thumbnail, white YouTube mark, title, source
 // =============================================================================
 
 /**
@@ -253,9 +253,7 @@ export function VideoCard({
     >
       <span className="relative h-[63px] w-[112px] flex-none overflow-hidden rounded-md bg-m-ink">
         {id ? <CoverImage src={youTubeThumb(id)} /> : null}
-        <span className="absolute left-1/2 top-1/2 flex h-[22px] w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded bg-negative-strong text-white">
-          <LIcon name="play" size={10} filled />
-        </span>
+        <YouTubeBadge size="md" on="media" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         {title ? <span className="text-[13px] font-semibold leading-[1.3] [text-wrap:pretty]">{title}</span> : null}
@@ -265,11 +263,51 @@ export function VideoCard({
   )
 }
 
-/** YouTube's red badge with a white play (20×14, radius 4). */
-export function YouTubeBadge() {
+/** The YouTube mark's three sizes — the box and its play glyph. */
+const YOUTUBE_MARK = {
+  /** 20×14, radius 4 — beside the link field (Edit details). */
+  sm: { box: 'h-3.5 w-5 rounded-sm', play: 8 },
+  /** 32×22 — over a list's video thumbnail (List view). */
+  md: { box: 'h-[22px] w-8 rounded', play: 10 },
+  /** 40×28, radius 8 — over the Community detail's video thumbnail. */
+  lg: { box: 'h-7 w-10 rounded-[8px]', play: 12 },
+} as const
+
+/**
+ * The YouTube play mark, in monochrome — never red (Chris, 2026-10-18:
+ * "ideally youtube logos are white or black depending"; the bright red is
+ * ink for words and small icons, CLAUDE.md → Styling).
+ *
+ * - `on="media"` — over a video thumbnail, or the dark box a video without
+ *   one shows: WHITE, its play black, with a soft dark halo
+ *   (`shadow-m-on-media`) so it still reads on a bright or busy frame. Fixed
+ *   colours: a photo does not change with the theme.
+ * - `on="surface"` (default) — on a plain surface with no thumbnail (the
+ *   link field): BLACK (`m-t1`), its play the page colour (`m-b0`). Both are
+ *   phone tokens, so in phone dark mode it flips to a white mark with a dark
+ *   play.
+ */
+export function YouTubeBadge({
+  size = 'sm',
+  on = 'surface',
+  className,
+}: {
+  size?: keyof typeof YOUTUBE_MARK
+  on?: 'surface' | 'media'
+  className?: string
+}) {
+  const mark = YOUTUBE_MARK[size]
   return (
-    <span className="flex h-3.5 w-5 flex-none items-center justify-center rounded-sm bg-negative-strong text-white">
-      <LIcon name="play" size={8} filled />
+    <span
+      data-youtube-mark={on}
+      className={cn(
+        'flex flex-none items-center justify-center',
+        mark.box,
+        on === 'media' ? 'bg-white text-black shadow-m-on-media' : 'bg-m-t1 text-m-b0',
+        className,
+      )}
+    >
+      <LIcon name="play" size={mark.play} filled />
     </span>
   )
 }

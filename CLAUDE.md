@@ -237,7 +237,7 @@ export function ListCard({ list }: ListCardProps) {
 
 8. **Soft deletes.** Never hard-delete lists, teams, or rankings. Set `deleted_at` to current timestamp.
 
-9. **Cred score weighting.** Consensus rankings weight user rankings by cred score. New users (cred = 0) still contribute but with weight of 1.
+9. **Cred score weighting.** Consensus rankings weight user rankings by cred score. Cred starts at 7 for every account (Chris 2026-10-18 — migration 197, `CRED_START` in `src/lib/cred-tiers.ts`), so a new user contributes with weight 7; the weight is the cred, floored at 1, never 0.
 
 ---
 

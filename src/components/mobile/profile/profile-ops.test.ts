@@ -31,6 +31,7 @@ import {
   type SsQuestion,
 } from '@/components/mobile/profile/profile-ops'
 import { parseRankingsParams } from '@/components/mobile/rankings/rankings-ops'
+import { CRED_START } from '@/lib/cred-tiers'
 
 const NOW = new Date('2026-10-15T12:00:00Z').getTime()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
@@ -259,7 +260,18 @@ describe('credCard — the slim Cred card (gap list §3 #21)', () => {
     })
   })
 
-  it('starts a new account on the first tier with an empty bar', () => {
+  it('starts a new account (7 cred) on the first tier, 7 of the way to Sophomore', () => {
+    expect(credCard(CRED_START)).toMatchObject({
+      tier: 'Freshie',
+      level: 'Scout tier 1 of 10',
+      score: '7 cred',
+      next: '93 to Sophomore',
+      pct: 7,
+      top: false,
+    })
+  })
+
+  it('a stored 0 (an account 197 has not reached) still reads on the first tier with an empty bar', () => {
     expect(credCard(0)).toMatchObject({ tier: 'Freshie', level: 'Scout tier 1 of 10', next: '100 to Sophomore', pct: 0, top: false })
   })
 
