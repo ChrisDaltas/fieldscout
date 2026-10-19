@@ -4,7 +4,6 @@ import { useDroppable } from '@dnd-kit/core'
 import * as React from 'react'
 
 import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
-import { rankingDuplicateOf } from '@/components/mobile/rankings/duplicate-ops'
 import { AiBuildBanner } from '@/components/lists/ai-build-banner'
 import { Icon } from '@/components/ui/icon'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -52,7 +51,6 @@ import { useListDropCommit } from './use-list-drop'
 import { ListCommentsTab } from './list-comments-tab'
 import { ListDetailHero, type HeroOwner } from './list-detail-hero'
 import { ListDetailsTab } from './list-details-tab'
-import { RankingDuplicateDialog, type RankingDuplicateTarget } from './ranking-duplicate-dialog'
 import { formatCount, resolveStats } from './list-stats'
 import { AddPlayersPopover, ListToolbar } from './list-toolbar'
 
@@ -112,9 +110,6 @@ interface DetailPanelProps {
   onToggleExpanded: () => void
   onClose: () => void
   onDeleted: () => void
-  /** The app's NFL week (0 = offseason): whether someone else's weekly
-   *  ranking can be duplicated now. */
-  currentWeek: number
 }
 
 export function ListDetailPanel({
@@ -125,15 +120,12 @@ export function ListDetailPanel({
   onToggleExpanded,
   onClose,
   onDeleted,
-  currentWeek,
 }: DetailPanelProps) {
   const { toast } = useToast()
   const [tab, setTab] = React.useState<DetailTab>('list')
   const [addOpen, setAddOpen] = React.useState(false)
   // §7.4 (M2 L.B4.2): the list-side "Attach to league" flow.
   const [attachOpen, setAttachOpen] = React.useState(false)
-  // Duplicate on someone else's ranking: it becomes yours (Chris, 2026-10-18/19).
-  const [rankDuplicate, setRankDuplicate] = React.useState<RankingDuplicateTarget | null>(null)
 
   const detail = useList(listId)
   const comments = useComments(listId)
@@ -438,9 +430,6 @@ export function ListDetailPanel({
   }
 
   const addedIds = new Set(list.players.map((entry) => entry.player_id))
-  // Someone else's ranking duplicates into YOUR ranking, never a list copy;
-  // a list, or a ranking of your own, keeps the list Duplicate.
-  const rankDup = rankingDuplicateOf(list, { owned: list.is_owner, currentWeek })
 
   return (
     <PanelShell banner={aiBanner} dropRef={playerDrop.setNodeRef} dropActive={railDragOver}>
@@ -457,13 +446,10 @@ export function ListDetailPanel({
         onRename={(title) => updateList.mutate({ title })}
         onShare={share}
         onDuplicate={() =>
-          rankDup
-            ? setRankDuplicate({ listId: list.id, dup: rankDup })
-            : duplicateList.mutate(list.id, {
-                onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
-              })
+          duplicateList.mutate(list.id, {
+            onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
+          })
         }
-        duplicateBlocked={rankDup?.blocked ?? null}
         onSetPrivate={(isPrivate) => updateList.mutate({ is_private: isPrivate })}
         // The Ranked switch — owner only, and never the Big Board (always ranked).
         onSetNumbered={canEdit && !list.is_big_board ? setNumbered : undefined}
@@ -527,11 +513,6 @@ export function ListDetailPanel({
         open={attachOpen}
         onOpenChange={setAttachOpen}
         list={{ id: list.id, title: list.title }}
-      />
-      <RankingDuplicateDialog
-        target={rankDuplicate}
-        currentWeek={currentWeek}
-        onClose={() => setRankDuplicate(null)}
       />
 
       {/*

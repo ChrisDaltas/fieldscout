@@ -2,8 +2,7 @@
 
 import * as React from 'react'
 
-import { rankedPositions, rankingDuplicateOf } from '@/components/mobile/rankings/duplicate-ops'
-import { useDuplicateRankingFlow } from '@/components/mobile/rankings/duplicate-ranking'
+import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
 import { useComments } from '@/hooks/use-comments'
@@ -52,10 +51,9 @@ export interface ListToolsProps {
  * desktop panel's own mutation. The switches flip in place; the rest close
  * the sheet first.
  *
- * Duplicate on a saved ranking that isn't yours makes it YOUR ranking, in
- * Rankings › Mine (Chris, 2026-10-18/19) — never a list copy; a list (and a
- * ranking of your own) keeps the list Duplicate. `currentWeek` says whether a
- * weekly ranking's week can be ranked now.
+ * Duplicate (a list copy) is a plain list's only: a ranking — the season
+ * board, a weekly board, an AI expert's board, yours or a saved one — has no
+ * Duplicate row at all (Chris, 2026-10-19; `offersDuplicate`).
  */
 export function ListActionsSheet({
   open,
@@ -66,7 +64,6 @@ export function ListActionsSheet({
   viewer,
   onEditDetails,
   onDeleted,
-  currentWeek = 0,
   tools,
 }: {
   open: boolean
@@ -77,7 +74,6 @@ export function ListActionsSheet({
   viewer: { username: string | null; avatarUrl: string | null }
   onEditDetails: () => void
   onDeleted: () => void
-  currentWeek?: number
   tools: ListToolsProps
 }) {
   const update = useUpdateList(list.id)
@@ -95,14 +91,6 @@ export function ListActionsSheet({
   }
 
   const owned = list.is_owner
-  // Someone else's ranking: Duplicate makes it yours (null for a list, or yours).
-  const rankDup = rankingDuplicateOf(list, { owned, currentWeek })
-  const rankDuplicate = useDuplicateRankingFlow({
-    sourceListId: list.id,
-    dup: rankDup,
-    positions: rankedPositions(list.players),
-    currentWeek,
-  })
   const commentCount = comments.data?.pagination.total
 
   return (
@@ -202,20 +190,18 @@ export function ListActionsSheet({
                 .catch(() => toast({ title: 'Could not copy the link', description: link }))
             })}
           />
-          <SheetRow
-            icon={<LIcon name="copy" size={15} />}
-            label="Duplicate"
-            sub={rankDup?.blocked ?? undefined}
-            disabled={Boolean(rankDup?.blocked) || rankDuplicate.pending}
-            onClick={then(() =>
-              rankDup
-                ? rankDuplicate.start()
-                : duplicate.mutate(list.id, {
-                    onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
-                    onError: (error) => toast({ title: 'Could not duplicate the list', description: error.message }),
-                  }),
-            )}
-          />
+          {offersDuplicate(list) && (
+            <SheetRow
+              icon={<LIcon name="copy" size={15} />}
+              label="Duplicate"
+              onClick={then(() =>
+                duplicate.mutate(list.id, {
+                  onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
+                  onError: (error) => toast({ title: 'Could not duplicate the list', description: error.message }),
+                }),
+              )}
+            />
+          )}
           {canEdit && !list.is_favorites && (
             <SheetRow
               tone="danger"
@@ -235,7 +221,6 @@ export function ListActionsSheet({
         </div>
       </MobileSheet>
 
-      {rankDuplicate.sheet}
       <FolderPickSheet open={folderOpen} onOpenChange={setFolderOpen} list={list} />
       <CommentsSheet
         open={commentsOpen}

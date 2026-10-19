@@ -1,7 +1,7 @@
 /**
- * DELETE /api/lists/[id]/players/bulk — every player a ranking publish (or a
- * Duplicate of someone else's ranking) drops, in ONE request and one
- * statement, instead of one DELETE per player fired at once.
+ * DELETE /api/lists/[id]/players/bulk — every player a ranking publish
+ * drops, in ONE request and one statement, instead of one DELETE per player
+ * fired at once.
  *
  * Pinned:
  *   1. owner only; a bad body is a 400 and nothing is deleted;

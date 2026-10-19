@@ -83,7 +83,7 @@ import { createSidewaysSync } from './sideways-sync'
  * (each note under its player; a small mark beside the name otherwise) and
  * **Side by side**.
  */
-export function ListView({ listId, currentWeek = 0 }: { listId: string; currentWeek?: number }) {
+export function ListView({ listId }: { listId: string }) {
   const nav = useListsNav()
   const { profile } = useAuth()
   const detail = useList(listId)
@@ -273,7 +273,6 @@ export function ListView({ listId, currentWeek = 0 }: { listId: string; currentW
         viewer={{ username: profile?.username ?? null, avatarUrl: profile?.avatar_url ?? null }}
         onEditDetails={() => nav.openDetails(list.id)}
         onDeleted={() => nav.closeList()}
-        currentWeek={currentWeek}
         tools={{
           group: options.length > 1 ? (options.find((option) => option.id === org)?.label ?? null) : null,
           onGroupBy: () => setGroupOpen(true),

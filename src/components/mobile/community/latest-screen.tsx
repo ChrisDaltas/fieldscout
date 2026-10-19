@@ -28,18 +28,17 @@ import { featureFlags } from '@/lib/feature-flags'
  *
  * A row opens the list's detail over this page (`?list=<id>`), so Back
  * returns here exactly as it was. The page's own Back goes where you came
- * from, else to Community (gap list #27). `currentWeek` (the app's NFL week)
- * is the detail's: whether a weekly ranking can be duplicated now.
+ * from, else to Community (gap list #27).
  */
-export function MobileCommunityLatest({ currentWeek }: { currentWeek: number }) {
+export function MobileCommunityLatest() {
   return (
     <Suspense fallback={null}>
-      <LatestScreen currentWeek={currentWeek} />
+      <LatestScreen />
     </Suspense>
   )
 }
 
-function LatestScreen({ currentWeek }: { currentWeek: number }) {
+function LatestScreen() {
   const router = useRouter()
   const goBack = useGoBack()
   const openId = useSearchParams().get('list')
@@ -117,7 +116,7 @@ function LatestScreen({ currentWeek }: { currentWeek: number }) {
         )}
       </div>
 
-      {openId && <CommunityDetail listId={openId} onBack={closeDetail} currentWeek={currentWeek} />}
+      {openId && <CommunityDetail listId={openId} onBack={closeDetail} />}
     </MobileScreen>
   )
 }
