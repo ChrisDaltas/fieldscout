@@ -151,6 +151,18 @@ export function classifyCommunityList(list: {
 }
 
 /**
+ * Does this list offer Duplicate? A plain list does — a list copy, phone and
+ * desktop. A ranking never does (Chris, 2026-10-19: Duplicate is removed from
+ * rankings everywhere): the season board, a weekly board or an AI expert's
+ * board, yours or anyone else's, offers no Duplicate of any kind — each user
+ * keeps their one ranking per position. Every Duplicate control asks this,
+ * so a ranking's menu never falls back to the list copy.
+ */
+export function offersDuplicate(list: { is_big_board: boolean | null; slug: string; ai_persona_id: string | null }): boolean {
+  return classifyCommunityList(list).kind === 'list'
+}
+
+/**
  * The NFL season a moment belongs to: March to February — the offseason
  * counts toward the season it leads into, January and February's playoffs
  * toward the one ending. (Weekly boards reuse week numbers every season.)
@@ -893,12 +905,11 @@ export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): 
 
 /**
  * Where an AI expert's ranking opens (gap list §3 #28): in Rankings, as that
- * expert's ranking (lr-hub S4, `?src=p:<listId>`), with Duplicate (Chris,
- * 2026-10-18/19: it becomes your ranking) — the handoff sends a Community
- * ranking there (m-community §3, "Ranking row" → `#view-<id>`). A person's
- * ranking has no such view yet, so it keeps opening the Community detail
- * (null), which carries the same Duplicate — as does a switched-off AI
- * expert's.
+ * expert's ranking (lr-hub S4, `?src=p:<listId>`), to read — a ranking offers
+ * no Duplicate (Chris, 2026-10-19; `offersDuplicate`) — the handoff sends a
+ * Community ranking there (m-community §3, "Ranking row" → `#view-<id>`). A
+ * person's ranking has no such view yet, so it keeps opening the Community
+ * detail (null) — as does a switched-off AI expert's.
  *
  * Rankings shows one position at a time: a position board opens at its own;
  * an overall board at the position of the player it leads with — the one its

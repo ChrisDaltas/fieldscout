@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 199 — the retire schema is removed, and more league refusals in plain words
 --       (F562; F569 part 3; Chris's go 2026-10-19; FULL rigour — schema
---       removal + 29 function bodies; PROGRESS D560–D561; spec v2.16.100)
+--       removal + 29 function bodies; PROGRESS D560–D561; spec v2.16.101)
 -- ============================================================================
 --
 -- THE RULING (Chris, 2026-10-01): a team is never retired — a manager change
