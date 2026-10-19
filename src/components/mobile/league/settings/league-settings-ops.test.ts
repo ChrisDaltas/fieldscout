@@ -17,6 +17,7 @@ import {
   generalGroupFor,
   generalGroups,
   hoursLine,
+  irRows,
   playoffByes,
   playoffsPage,
   playoffWeekList,
@@ -127,13 +128,29 @@ describe('League settings (G2 general)', () => {
     expect(rows).toMatchObject({
       Starters: 'QB, 2 RB, 3 WR, TE, FLEX, K, D/ST',
       Bench: '6',
-      IR: '1',
+      'Hot Swap': 'Off',
+      IR: '1 · OUT, IR',
       'Roster spots': '17 per team',
       'Lineup lock': 'Each player’s kickoff',
       'Allow illegal lineups': 'On',
       'Auto-sub inactives': 'Off',
       'Stat corrections': 'Until next week’s first game',
     })
+  })
+
+  it('Roster: Hot Swap on, and a DL beside the IR spots — each kind its own row with what it takes and how long a player stays', () => {
+    const base = settings()
+    const roster = {
+      ...base.roster_settings,
+      swap_spots: 1 as const,
+      ir_slots: [
+        { key: 'ir1', type: 'unrestricted' as const, eligible_designations: ['OUT' as const, 'IR' as const] },
+        { key: 'ir2', type: 'unrestricted' as const, eligible_designations: ['OUT' as const, 'IR' as const] },
+        { key: 'dl1', label: 'DL', type: 'restricted' as const, eligible_designations: ['OUT' as const, 'IR' as const, 'Doubtful' as const], min_weeks: 4 },
+      ],
+    }
+    const rows = rowsOf(group(general({ settings: settings({ roster_settings: roster }) }), 'roster'))
+    expect(rows).toMatchObject({ 'Hot Swap': 'On', IR: '2 · OUT, IR', DL: '1 · OUT, IR, Doubtful · stays 4 weeks', 'Roster spots': '19 per team' })
   })
 
   it('Draft: a snake draft’s rows; an unscheduled draft says so; an auction adds its knobs', () => {
@@ -189,15 +206,25 @@ describe('League settings (G2 general)', () => {
 })
 
 describe('the small words', () => {
-  it('starters drop a slot’s eligibility note and count repeats', () => {
+  it('starters count repeats; the standard flex is the handoff’s bare FLEX, a custom flex keeps the positions it takes', () => {
     expect(
       startersLine([
         { key: 'qb', label: 'QB', eligible: ['QB'], count: 1 },
+        { key: 'flex', label: 'FLEX (W/R/T)', eligible: ['WR', 'RB', 'TE'], count: 1 },
         { key: 'sf', label: 'SUPERFLEX (Q/W/R/T)', eligible: ['QB', 'WR', 'RB', 'TE'], count: 2 },
+        { key: 'wt', label: 'FLEX (W/T)', eligible: ['WR', 'TE'], count: 1 },
+        { key: 'wrt', label: 'W/R/T', eligible: ['WR', 'RB', 'TE'], count: 1 },
         { key: 'k', label: 'K', eligible: ['K'], count: 0 },
       ]),
-    ).toBe('QB, 2 SUPERFLEX')
+    ).toBe('QB, FLEX, 2 SUPERFLEX (QB/WR/RB/TE), FLEX (WR/TE), W/R/T')
     expect(startersLine([])).toBe('None')
+  })
+
+  it('IR rows: none says so; an unlabeled restricted spot is "Restricted IR" with its stay', () => {
+    expect(irRows([])).toEqual([{ key: 'ir', label: 'IR', value: 'None' }])
+    expect(irRows([{ key: 'r1', type: 'restricted', eligible_designations: ['IR'], min_weeks: 1 }])).toEqual([
+      { key: 'ir', label: 'Restricted IR', value: '1 · IR · stays 1 week' },
+    ])
   })
 
   it('clocks, zones, waiver runs and free agency in plain words', () => {

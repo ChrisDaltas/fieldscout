@@ -42,7 +42,14 @@ import { PAGE_TITLES, type GeneralGroupId, type SettingsPage } from './league-se
  * what Save will do — or why it can't yet (prevent, don't refuse). Cancel
  * with changes asks first; so does leaving the page by a link or a reload
  * (desktop's `useLeaveGuard`). The custom scoring editor keeps its own Save
- * for its values, as on desktop.
+ * for its values, as on desktop — and its unsaved values count as changes
+ * here too: Cancel and leaving ask, and the bar's Save waits for "Save
+ * scoring" (saving the form closes the editor, which would drop them).
+ *
+ * The editor is keyed on the persisted settings (a save or a scoring fork
+ * re-seeds it by remounting), so the scroll to where it opens is the
+ * parent's once-per-session `takeOpenScroll`, never a mount effect alone —
+ * a remount mid-session keeps the commissioner where they are.
  */
 export function SettingsEditScreen({
   leagueId,
@@ -52,6 +59,7 @@ export function SettingsEditScreen({
   inSeason,
   saving,
   anchor = null,
+  takeOpenScroll,
   onClose,
 }: {
   leagueId: string
@@ -63,24 +71,32 @@ export function SettingsEditScreen({
   saving: boolean
   /** League settings' group to open at (the address named it). */
   anchor?: GeneralGroupId | null
+  /** True once per edit session — the first mount after Edit — and false on
+   *  every later remount (a save or fork re-seeding the editor). */
+  takeOpenScroll: () => boolean
   onClose: () => void
 }) {
   const form = useSettingsForm({ leagueId, detail, canEdit, inSeason })
-  const leave = useLeaveGuard(form.unsaved)
+  // The custom scoring editor's own unsaved values (it saves on its own).
+  const [scoringUnsaved, setScoringUnsaved] = useState(false)
+  const unsaved = form.unsaved || scoringUnsaved
+  const leave = useLeaveGuard(unsaved)
   const [discard, setDiscard] = useState(false)
   const busy = form.isPending || saving
 
   const bodyRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
+    // Once per edit session, as the editor opens — not on a re-seed.
+    if (!takeOpenScroll()) return
     const target = anchor ? document.getElementById(`settings-edit-${anchor}`) : null
     if (target) target.scrollIntoView({ block: 'start' })
     else scrollToTop(bodyRef.current)
-    // Once, as the editor opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const cancel = () => (form.unsaved ? setDiscard(true) : onClose())
+  const cancel = () => (unsaved ? setDiscard(true) : onClose())
   const save = async () => {
+    if (scoringUnsaved) return
     if (await form.handleSave()) onClose()
   }
 
@@ -94,7 +110,7 @@ export function SettingsEditScreen({
         </MPageBarAction>
       }
       action={
-        <MPageBarAction onClick={() => void save()} disabled={!form.canSubmit} data-settings-save>
+        <MPageBarAction onClick={() => void save()} disabled={!form.canSubmit || scoringUnsaved} data-settings-save>
           {busy ? 'Saving…' : 'Save'}
         </MPageBarAction>
       }
@@ -106,7 +122,7 @@ export function SettingsEditScreen({
       <SettingsSkin layout="mobile">
         <div ref={bodyRef} className="flex flex-col gap-[18px] px-4 pb-8 pt-3" data-settings-editing={page}>
           <p className="text-[12px] font-medium leading-[1.4] text-m-t3" role="status" data-save-summary>
-            {saveSummary(form, inSeason !== null)}
+            {saveSummary(form, inSeason !== null, scoringUnsaved)}
           </p>
           <EditNotices form={form} />
           {/* `disabled` closes every control in one place if editing stops
@@ -143,7 +159,7 @@ export function SettingsEditScreen({
               them. */}
           {page === 'scoring' && scoringEditorAccess(detail.my_role, detail.league.status).inEditWindow && (
             <div id={SCORING_EDITOR_ANCHOR_ID} className="scroll-mt-[60px]">
-              <ScoringEditor leagueId={leagueId} />
+              <ScoringEditor leagueId={leagueId} onDirtyChange={setScoringUnsaved} />
             </div>
           )}
         </div>
@@ -152,7 +168,7 @@ export function SettingsEditScreen({
       <ConfirmLeaveSheet
         open={discard}
         title="Discard changes?"
-        subtitle="Your changes to these settings haven’t been saved."
+        subtitle={scoringUnsaved && !form.unsaved ? 'Your scoring values haven’t been saved.' : 'Your changes to these settings haven’t been saved.'}
         leaveLabel="Discard"
         onStay={() => setDiscard(false)}
         onLeave={() => {
@@ -180,8 +196,20 @@ export function scrollToTop(from: Element | null) {
   else window.scrollTo({ top: 0 })
 }
 
-/** The line under the bar: what Save will do, or why it can't yet. */
-export function saveSummary(form: Pick<SettingsFormModel, 'plan' | 'dirty' | 'validation'>, inSeason: boolean): string {
+/** The line under the bar: what Save will do, or why it can't yet.
+ *  `scoringUnsaved`: the custom scoring editor holds values its own "Save
+ *  scoring" hasn't kept — those go first (the bar's Save waits for them). */
+export function saveSummary(
+  form: Pick<SettingsFormModel, 'plan' | 'dirty' | 'validation'>,
+  inSeason: boolean,
+  scoringUnsaved = false,
+): string {
+  if (scoringUnsaved) {
+    const otherChanges = form.plan ? form.plan.send.length > 0 : form.dirty
+    return otherChanges
+      ? 'Unsaved scoring values — tap Save scoring first, then Save.'
+      : 'Unsaved scoring values — tap Save scoring to keep them.'
+  }
   if (form.plan) {
     const n = form.plan.send.length
     if (n > 0) return `${n} setting${n === 1 ? '' : 's'} to save — each is recorded and posted to the league.`

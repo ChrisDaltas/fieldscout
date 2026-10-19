@@ -91,11 +91,14 @@ interface Seed {
   override?: boolean
   scoring?: unknown
   startEditing?: boolean
+  /** The league runs its own copy (a scoring reference no template has). */
+  custom?: boolean
 }
 
 function client(seed: Seed): QueryClient {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
-  const d = detail(seed.status ?? 'in_season', seed.role === undefined ? 'manager' : seed.role)
+  const base = detail(seed.status ?? 'in_season', seed.role === undefined ? 'manager' : seed.role)
+  const d = seed.custom ? { ...base, league: { ...base.league, scoring_system_id: 'custom-1' } } : base
   qc.setQueryData(leaguesKeys.detail(LEAGUE), d)
   qc.setQueryData(scoringTemplatesKeys.all, TEMPLATES)
   qc.setQueryData(auctionPoolKeys.scoring(LEAGUE), seed.scoring === undefined ? ESPN.rules : seed.scoring)
@@ -130,7 +133,7 @@ function renderEdit(page: SettingsPage, seed: Seed = {}): string {
       createElement(
         QueryClientProvider,
         { client: qc },
-        createElement(SettingsEditScreen, { leagueId: LEAGUE, detail: d, page, canEdit: true, inSeason: null, saving: false, onClose: () => {} }),
+        createElement(SettingsEditScreen, { leagueId: LEAGUE, detail: d, page, canEdit: true, inSeason: null, saving: false, takeOpenScroll: () => true, onClose: () => {} }),
       ),
     ),
   )
@@ -267,6 +270,17 @@ describe('Edit: the shared settings groups in the phone skin', () => {
     // Past the draft the values are frozen — the rows on the page show them.
     expect(renderEdit('scoring', { status: 'in_season' })).not.toContain('id="league-custom-scoring-editor"')
   })
+
+  it('Scoring: a custom league’s values each have a sign switch beside a text field on the decimal keypad (iOS’s has no minus key)', () => {
+    const html = renderEdit('scoring', { custom: true })
+    expect(html).toContain('data-custom-scoring')
+    const sign = html.match(/<button[^>]*data-coefficient-sign="[^"]+"[^>]*>/)?.[0] ?? ''
+    expect(sign).toContain('aria-pressed=')
+    expect(sign).toMatch(/aria-label="Negative /)
+    const field = html.match(/<input[^>]*id="scoring-[^"]+"[^>]*>/)?.[0] ?? ''
+    expect(field).toContain('type="text"')
+    expect(field).toContain('inputMode="decimal"')
+  })
 })
 
 describe('the words around Save', () => {
@@ -279,6 +293,11 @@ describe('the words around Save', () => {
     expect(saveSummary({ ...base, plan: { send: [{ key: 'trade_deadline_week', value: 12 }], refused: [] } }, true)).toBe(
       '1 setting to save — each is recorded and posted to the league.',
     )
+  })
+
+  it('unsaved custom scoring values go first — Save scoring before the bar’s Save', () => {
+    expect(saveSummary(base, false, true)).toBe('Unsaved scoring values — tap Save scoring to keep them.')
+    expect(saveSummary({ ...base, dirty: true }, false, true)).toBe('Unsaved scoring values — tap Save scoring first, then Save.')
   })
 
   it('the league name saves only when it changed and fits', () => {

@@ -116,17 +116,54 @@ export function zoneWords(zone: string): string {
   return (zone.split('/').pop() ?? zone).replace(/_/g, ' ')
 }
 
+type StartingSlots = LeagueSettings['roster_settings']['starting_slots']
+
+/** The standard flex — the one the handoff writes as a bare "FLEX". */
+const STANDARD_FLEX = ['RB', 'TE', 'WR']
+
+/** A starting slot's name in the starters line. A one-position slot is its
+ *  name; the standard RB/WR/TE flex is the handoff's bare "FLEX"; any other
+ *  flex says which positions it takes — from the slot's own eligible set,
+ *  never the commissioner's free-text note — unless its name already is
+ *  that list ("W/R/T"). */
+function slotName(slot: StartingSlots[number]): string {
+  const name = slot.label.replace(/\s*\(.*\)\s*$/, '')
+  if (slot.eligible.length < 2 || name.includes('/')) return name
+  const standard = [...slot.eligible].sort().join() === STANDARD_FLEX.join() && /^flex$/i.test(name)
+  return standard ? name : `${name} (${slot.eligible.join('/')})`
+}
+
 /** "QB, 2 RB, 2 WR, TE, FLEX, K, D/ST" — the starting slots, as the
- *  handoff writes them (a slot's eligibility note in brackets is left off:
- *  "FLEX (W/R/T)" reads "FLEX"). */
-export function startersLine(slots: LeagueSettings['roster_settings']['starting_slots']): string {
+ *  handoff writes them; a custom flex keeps its positions ("SUPERFLEX
+ *  (QB/WR/RB/TE)"). */
+export function startersLine(slots: StartingSlots): string {
   const parts = slots
     .filter((slot) => slot.count > 0)
     .map((slot) => {
-      const name = slot.label.replace(/\s*\(.*\)\s*$/, '')
+      const name = slotName(slot)
       return slot.count > 1 ? `${slot.count} ${name}` : name
     })
   return parts.length > 0 ? parts.join(', ') : 'None'
+}
+
+/**
+ * The IR rows: one per kind of spot (identical spots share a row and a
+ * count), each saying which designations it takes and — for a restricted
+ * spot (DL) — how long a player stays. "IR · 1 · OUT, IR"; "DL · 1 · OUT,
+ * IR, Doubtful · stays 4 weeks". No spots is one "IR: None" row.
+ */
+export function irRows(spots: LeagueSettings['roster_settings']['ir_slots']): SettingsRow[] {
+  if (spots.length === 0) return [{ key: 'ir', label: 'IR', value: 'None' }]
+  const kinds: Array<{ label: string; detail: string; count: number }> = []
+  for (const spot of spots) {
+    const label = spot.label ?? (spot.type === 'restricted' ? 'Restricted IR' : 'IR')
+    const stay = spot.type === 'restricted' ? ` · stays ${plural(spot.min_weeks, 'week')}` : ''
+    const detail = `${spot.eligible_designations.join(', ')}${stay}`
+    const same = kinds.find((k) => k.label === label && k.detail === detail)
+    if (same) same.count += 1
+    else kinds.push({ label, detail, count: 1 })
+  }
+  return kinds.map((k, i) => ({ key: i === 0 ? 'ir' : `ir-${i}`, label: k.label, value: `${k.count} · ${k.detail}` }))
 }
 
 const WAIVER_TYPE: Record<LeagueSettings['waiver_type'], string> = {
@@ -235,7 +272,8 @@ export function generalGroups(input: GeneralInput): SettingsGroup<GeneralGroupId
   const roster: SettingsRow[] = [
     { key: 'starters', label: 'Starters', value: startersLine(r.starting_slots) },
     { key: 'bench', label: 'Bench', value: String(r.bench) },
-    { key: 'ir', label: 'IR', value: String(r.ir_slots.length) },
+    { key: 'hotswap', label: 'Hot Swap', value: onOff(r.swap_spots === 1) },
+    ...irRows(r.ir_slots),
     { key: 'size', label: 'Roster spots', value: `${deriveRosterSize(r)} per team` },
     { key: 'lock', label: 'Lineup lock', value: 'Each player’s kickoff' },
     { key: 'illegal', label: 'Allow illegal lineups', value: onOff(s.allow_illegal_lineups) },

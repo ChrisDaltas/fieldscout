@@ -2,7 +2,9 @@
 
 import {
   DndContext,
+  MouseSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -127,15 +129,19 @@ function ManualOrderList({
   onChange: (next: string[]) => void
   canEdit: boolean
 }) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const phone = useSettingsSkin() === 'mobile'
+  const pointer = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  const mouse = useSensor(MouseSensor, { activationConstraint: { distance: 6 } })
+  // The phone list editor's pattern: a long press lifts a row, a quick
+  // swipe over the rows still scrolls the page.
+  const touch = useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } })
+  const sensors = useSensors(phone ? mouse : pointer, phone ? touch : null)
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
     onChange(reorderIds(ids, String(active.id), String(over.id)))
   }
-
-  const phone = useSettingsSkin() === 'mobile'
 
   if (ids.length === 0) {
     return (
@@ -148,7 +154,7 @@ function ManualOrderList({
   if (phone) {
     return (
       <div className="flex flex-col gap-2 py-2.5" data-draft-order="manual">
-        <p className={M_NOTE}>Drag to set pick 1 → {ids.length}. Saved with your other changes.</p>
+        <p className={M_NOTE}>Hold a team, then drag to set pick 1 → {ids.length}. Saved with your other changes.</p>
         {canEdit && !stored && (
           <div className="flex flex-col gap-1.5">
             <button type="button" className={M_PILL} onClick={() => onChange(ids)}>
@@ -231,7 +237,9 @@ function OrderRow({
         style={{ transform: CSS.Transform.toString(transform), transition }}
         className={cn(
           M_ORDER_ROW,
-          !disabled && 'touch-none',
+          // Pan and zoom stay the browser's (the touch sensor waits for a
+          // long press); no text selection or callout under the press.
+          !disabled && 'cursor-grab touch-manipulation select-none [-webkit-touch-callout:none]',
           // Drag ghost = a true overlay while held — the one sanctioned
           // resting shadow (CLAUDE.md elevation rule, the my-queue precedent).
           isDragging && 'relative z-10 rounded-[10px] shadow-m-menu',

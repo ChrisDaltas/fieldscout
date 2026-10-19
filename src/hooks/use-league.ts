@@ -347,10 +347,15 @@ export function useLeagueProfile(leagueId: string) {
  * invalidation"* while an EXISTING writer was missed). Measured across the
  * service layer: `scoring_fork_template` and `scoring_update_rules` (SE.6's
  * two verbs, below), `update_league_settings` via `useUpdateLeagueSettings`
- * (`leagues-service.ts` passes `p_scoring_system_id`), and `create_league` —
+ * (`leagues-service.ts` passes `p_scoring_system_id`), `commish_change_setting`
+ * via `useCommishChangeSetting` (`use-commish-setting.ts` — its
+ * `scoring_system_id` key repoints the league AND re-freezes
+ * `scoring_rules_snapshot` in one statement, 149), and `create_league` —
  * which mints the league, so it can have no stale prior entry. The first three
- * route their `onSuccess` through `invalidateLeagueScoring`; the fourth needs
- * nothing. Adding a fifth writer means adding it here.
+ * route their `onSuccess` through `invalidateLeagueScoring`; the fourth walks
+ * this same list when its key is `scoring_system_id` (on both answers, as it
+ * re-reads everything); the fifth needs nothing. Adding a sixth writer means
+ * adding it here.
  *
  * **What the shared factory does and does not guarantee** (R669). It fixes the
  * key's SHAPE — `auctionPoolKeys.scoring` is imported from the reader's own

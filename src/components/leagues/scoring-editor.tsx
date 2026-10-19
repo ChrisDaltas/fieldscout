@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import { M_NUMBER_FIELD, SwitchTrack } from '@/components/mobile/ui/m-form'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -116,7 +116,18 @@ const M_NOTE = 'text-[12px] font-medium leading-[1.35] text-m-t3'
  * (it cannot produce `{}`), and a structurally empty document that arrives
  * anyway renders honestly as "not scored" fields.
  */
-export function ScoringEditor({ leagueId, className }: { leagueId: string; className?: string }) {
+export function ScoringEditor({
+  leagueId,
+  className,
+  onDirtyChange,
+}: {
+  leagueId: string
+  className?: string
+  /** Told whenever the editor starts or stops holding values that aren't
+   *  saved (and `false` as it goes away) — so a page that can close the
+   *  editor (the phone's Cancel) can ask first. Pass a stable function. */
+  onDirtyChange?: (dirty: boolean) => void
+}) {
   const leagueQuery = useLeague(leagueId)
   const templatesQuery = useScoringTemplates()
   const scoringQuery = useLeagueScoringFamily(leagueId)
@@ -193,6 +204,7 @@ export function ScoringEditor({ leagueId, className }: { leagueId: string; class
       <ScoringEditorBody
         className={className}
         leagueId={leagueId}
+        onDirtyChange={onDirtyChange}
         mode={{ kind: 'readonly', view: format1View(doc), doc }}
         notices={[
           ...(staleDegraded ? [STALE_NOTICE] : []),
@@ -228,6 +240,7 @@ export function ScoringEditor({ leagueId, className }: { leagueId: string; class
       key={canonicalDocJson(doc)}
       className={className}
       leagueId={leagueId}
+      onDirtyChange={onDirtyChange}
       mode={editable ? { kind: 'edit', doc } : { kind: 'readonly', view: doc, doc }}
       notices={[...(staleDegraded ? [STALE_NOTICE] : []), ...accessNotices(access)]}
     />
@@ -410,11 +423,13 @@ function ScoringEditorBody({
   leagueId,
   mode,
   notices,
+  onDirtyChange,
 }: {
   className?: string
   leagueId: string
   mode: EditorMode
   notices: EditorNotice[]
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   // F191: the working copy SURVIVES mode changes. The parent's remount key is
   // content-only, so a status/editable flip (a failed refetch, the draft
@@ -450,6 +465,16 @@ function ScoringEditorBody({
   // What the sample line and tier tables score: the doc-as-edited when
   // editing, the persisted doc otherwise (matching the grid's values).
   const activeDoc: ScoringRulesDoc = mode.kind === 'edit' ? (working ?? mode.doc) : mode.doc
+
+  // Values that would be lost if this editor went away — typed edits, or
+  // ones kept from before it turned read-only. Reported up (and cleared as
+  // the body unmounts) so a page with a Cancel can ask first.
+  const holdsUnsaved = dirty || retainedUnsaved
+  useEffect(() => {
+    if (!onDirtyChange) return
+    onDirtyChange(holdsUnsaved)
+    return () => onDirtyChange(false)
+  }, [holdsUnsaved, onDirtyChange])
 
   const position = STEPPER_POSITIONS[stepIndex] ?? 'QB'
   const sections = sectionsForPosition(position)
@@ -1064,6 +1089,7 @@ function CoefficientCell({
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const shown = draft ?? (field.value === undefined ? '' : String(field.value))
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
   function handleChange(raw: string) {
     setDraft(raw)
@@ -1083,10 +1109,30 @@ function CoefficientCell({
     setDraft(null)
   }
 
+  /** The phone's sign switch — the iOS decimal keypad has no minus key, so
+   *  a negative value (interceptions, fumbles, a points-allowed tier) is
+   *  typed as digits and flipped here. The flipped text goes through the
+   *  same parse/clamp as a keystroke; a bare "−" waits in the field for the
+   *  digits. */
+  function flipSign() {
+    const current = shown.trim()
+    const next = current.startsWith('-') ? current.slice(1) : `-${current}`
+    const parsed = parseCoefficientInput(next)
+    if (parsed.kind === 'value') {
+      onCommit(parsed.value, parsed.adjusted)
+      setDraft(null)
+    } else {
+      setDraft(next)
+      inputRef.current?.focus()
+    }
+  }
+
   if (useSettingsSkin() === 'mobile') {
     // The phone row (the G-page rows): label and notes on the left, the
-    // "Custom" chip and the phone number field on the right; the sample's
-    // tier row carries the blue tint (a resting state = fill, never a lift).
+    // "Custom" chip, the sign switch and the phone number field on the
+    // right; the sample's tier row carries the blue tint (a resting state =
+    // fill, never a lift).
+    const negative = shown.trim().startsWith('-')
     return (
       <div
         className={cn(
@@ -1110,17 +1156,35 @@ function CoefficientCell({
         {field.overridden && (
           <span className="flex h-5 flex-none items-center rounded-pill bg-m-gb px-2 text-[11px] font-semibold text-m-tb">Custom</span>
         )}
+        <button
+          type="button"
+          onClick={flipSign}
+          disabled={disabled}
+          aria-label={`Negative ${sentenceCase(field.label).toLowerCase()}`}
+          aria-pressed={negative}
+          className={cn(
+            'flex h-9 w-9 flex-none items-center justify-center rounded-[10px] text-[16px] font-semibold disabled:opacity-60',
+            negative ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1 active:bg-m-b2h',
+          )}
+          data-coefficient-sign={field.key}
+        >
+          ±
+        </button>
+        {/* Text, not `type="number"`: a number field throws away a lone
+            "-" (and a decimal comma), so the sign switch couldn't leave one
+            waiting for digits. The decimal keypad still opens; the same
+            parse and clamp run on every keystroke and on blur. */}
         <input
+          ref={inputRef}
           id={`scoring-${field.key}`}
-          type="number"
+          type="text"
           inputMode="decimal"
-          step={COEFFICIENT_INPUT_STEP}
-          min={-COEFFICIENT_INPUT_MAX}
-          max={COEFFICIENT_INPUT_MAX}
+          autoComplete="off"
+          enterKeyHint="done"
           value={shown}
           placeholder="—"
           disabled={disabled}
-          onChange={(e) => handleChange(e.target.value)}
+          onChange={(e) => handleChange(e.target.value.replace(',', '.'))}
           onBlur={handleBlur}
           className={cn(M_NUMBER_FIELD, 'flex-none')}
         />

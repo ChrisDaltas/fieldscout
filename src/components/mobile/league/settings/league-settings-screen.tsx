@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { membersPageHref } from '@/components/leagues/invite-panel-ops'
 import { isCustomScoringReference } from '@/components/leagues/scoring-editor-ops'
@@ -136,6 +136,16 @@ function SettingsScreen({
    *  mid-season table is still being read (prevent, don't refuse). */
   const showEdit = isCommish && (!pastScheduled || inSeasonOverride)
   const [editing, setEditing] = useState(() => startEditing && canEdit)
+  // The editor scrolls to where it opens once per edit session — set as
+  // Edit opens it, taken by its first mount. The editor remounts whenever
+  // the persisted settings change under it (a save, a scoring fork); those
+  // remounts find this false and leave the scroll alone.
+  const openScroll = useRef(startEditing)
+  const takeOpenScroll = () => {
+    const take = openScroll.current
+    openScroll.current = false
+    return take
+  }
   // Leaving override mode (from the strip, or another screen) closes the
   // editor; a save in flight finishes first.
   if (editing && !saving && isCommish && pastScheduled && !storeMode) setEditing(false)
@@ -154,6 +164,7 @@ function SettingsScreen({
         inSeason={inSeasonOverride && policies.data !== undefined ? { policies: policies.data, saving, onSave: saveInSeason } : null}
         saving={saving}
         anchor={page === 'general' ? generalGroupFor(section) : null}
+        takeOpenScroll={takeOpenScroll}
         onClose={() => {
           setEditing(false)
           // The read page opens at its top — where a mid-season save's
@@ -173,6 +184,7 @@ function SettingsScreen({
           <MPageBarAction
             onClick={() => {
               setResults([])
+              openScroll.current = true
               setEditing(true)
             }}
             disabled={!canEdit}
