@@ -83,7 +83,7 @@ function setFeed(over: Record<string, unknown>) {
 }
 
 const render = () =>
-  renderToStaticMarkup(createElement(MobileCommunityLatest)).replace(/&#x27;/g, "'").replace(/&quot;/g, '"')
+  renderToStaticMarkup(createElement(MobileCommunityLatest, { currentWeek: 6 })).replace(/&#x27;/g, "'").replace(/&quot;/g, '"')
 
 beforeEach(() => {
   h.flags.weeklyRanks = true

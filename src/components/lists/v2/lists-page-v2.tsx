@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/app-header'
 import { AttachListToLeagueModal } from '@/components/leagues/attach-list-modal'
 import { FolderFormDialog } from '@/components/lists/folder-form-dialog'
 import { GenerateAiButton } from '@/components/lists/generate-ai-button'
+import { rankingDuplicateOf } from '@/components/mobile/rankings/duplicate-ops'
 import { Button } from '@/components/ui/button'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { Segment, SegmentItem } from '@/components/ui/tabs'
@@ -28,6 +29,7 @@ import type { ListFolder } from '@/types/database'
 
 import { ListGalleryCard, NewListTile } from './list-gallery-card'
 import { ListDetailPanel } from './list-detail-panel'
+import { RankingDuplicateDialog, type RankingDuplicateTarget } from './ranking-duplicate-dialog'
 import { FolderScopeCrumb, ListFoldersSection } from './lists-folders'
 import { ListsRail } from './lists-rail'
 import { SideBySideColumns } from './side-by-side-columns'
@@ -67,7 +69,12 @@ const MODES: ReadonlyArray<{ id: PageMode; label: string; icon: IconName }> = [
   { id: 'compare', label: 'Side by side', icon: 'table' },
 ]
 
-export function ListsPageV2() {
+/**
+ * `currentWeek` — the app's NFL week (0 = offseason), from the page: whether
+ * a saved weekly ranking can be duplicated now. Duplicate on someone else's
+ * ranking makes it YOUR ranking (Chris, 2026-10-18/19), never a list copy.
+ */
+export function ListsPageV2({ currentWeek = 0 }: { currentWeek?: number }) {
   const { toast } = useToast()
   const { profile } = useAuth()
   const openCreateList = useUIStore((state) => state.setCreateListOpen)
@@ -116,6 +123,8 @@ export function ListsPageV2() {
   const [editFolder, setEditFolder] = React.useState<ListFolder | null>(null)
   // §7.4 (M2 L.B4.2): the gallery card's "Attach to league" target.
   const [attachList, setAttachList] = React.useState<ListWithTags | null>(null)
+  // A card's Duplicate on someone else's ranking: it becomes yours.
+  const [rankDuplicate, setRankDuplicate] = React.useState<RankingDuplicateTarget | null>(null)
   const tabSeededRef = React.useRef(false)
 
   const lists = useLists(1, 50)
@@ -459,6 +468,7 @@ export function ListsPageV2() {
               listId={openedId}
               summary={summaryById.get(openedId)}
               viewer={viewer}
+              currentWeek={currentWeek}
               expanded
               onToggleExpanded={() => setOpenedId(null)}
               onClose={() => setOpenedId(null)}
@@ -479,11 +489,16 @@ export function ListsPageV2() {
               setOpenedId(list.id)
             }}
             onShare={shareList}
-            onDuplicate={(list) =>
-              duplicateList.mutate(list.id, {
-                onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
-              })
-            }
+            currentWeek={currentWeek}
+            onDuplicate={(list) => {
+              // `owner` is set only on a list someone else owns (Saved).
+              const dup = rankingDuplicateOf(list, { owned: !list.owner, currentWeek })
+              if (dup) setRankDuplicate({ listId: list.id, dup })
+              else
+                duplicateList.mutate(list.id, {
+                  onSuccess: (copy) => toast({ title: `“${copy.title}” created` }),
+                })
+            }}
             onDelete={(list) =>
               deleteList.mutate(list.id, {
                 onSuccess: () => toast({ title: `“${list.title}” moved to trash` }),
@@ -530,6 +545,7 @@ export function ListsPageV2() {
                 listId={detailId}
                 summary={summaryById.get(detailId)}
                 viewer={viewer}
+                currentWeek={currentWeek}
                 expanded={expanded}
                 onToggleExpanded={() => setExpanded((value) => !value)}
                 onClose={() => {
@@ -547,6 +563,12 @@ export function ListsPageV2() {
           </div>
         </div>
       )}
+
+      <RankingDuplicateDialog
+        target={rankDuplicate}
+        currentWeek={currentWeek}
+        onClose={() => setRankDuplicate(null)}
+      />
 
       {/* §7.4 (M2 L.B4.2): the card entry's league picker. */}
       {attachList && (
@@ -592,6 +614,7 @@ function Gallery({
   onTogglePin,
   onMoveToFolder,
   onAttachToLeague,
+  currentWeek,
 }: {
   lists: ListWithTags[]
   loading: boolean
@@ -607,6 +630,7 @@ function Gallery({
   onMoveToFolder: (list: ListWithTags, folderId: string | null) => void
   /** §7.4 card entry (M2 L.B4.2) — undefined when the leagues flag is off. */
   onAttachToLeague?: (list: ListWithTags) => void
+  currentWeek: number
 }) {
   if (loading) {
     return (
@@ -652,6 +676,7 @@ function Gallery({
           onOpenComments={() => onOpen(list)}
           onShare={() => onShare(list)}
           onDuplicate={() => onDuplicate(list)}
+          duplicateBlocked={rankingDuplicateOf(list, { owned: !list.owner, currentWeek })?.blocked ?? null}
           onDelete={() => onDelete(list)}
           folders={folders}
           onTogglePin={() => onTogglePin(list)}

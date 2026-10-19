@@ -46,6 +46,7 @@ export function ListGalleryCard({
   onOpen,
   onShare,
   onDuplicate,
+  duplicateBlocked = null,
   onDelete,
   onOpenComments,
   onTogglePin,
@@ -59,6 +60,9 @@ export function ListGalleryCard({
   onOpen: () => void
   onShare: () => void
   onDuplicate: () => void
+  /** Why someone else's weekly ranking can't be duplicated now ("Week 5 is
+   *  over"): the item shows disabled, with it. */
+  duplicateBlocked?: string | null
   onDelete: () => void
   onOpenComments: () => void
   onTogglePin: () => void
@@ -143,9 +147,10 @@ export function ListGalleryCard({
                   Attach to league
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={onDuplicate}>
+              <DropdownMenuItem onSelect={onDuplicate} disabled={duplicateBlocked !== null}>
                 <Icon name="layers" size={13} />
                 Duplicate
+                {duplicateBlocked && <span className="ml-auto text-[10px] font-medium text-n-6">{duplicateBlocked}</span>}
               </DropdownMenuItem>
               {!list.is_favorites && !list.owner && (
                 <>

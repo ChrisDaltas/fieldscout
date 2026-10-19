@@ -249,7 +249,7 @@ Most impact first. Launch-scope screens come before leagues, and leagues come be
 |---|---|---|
 | 26 | Like (with a count) and Comments on the list page. Top scouts and trending tags as For you shelves. These exist on desktop. | M |
 | 27 | The season ranking is called Rest of season or Pre-draft by the calendar, with its own chip. "Rankings this week" shows only this week's and season rankings. | S |
-| 28 | Tapping an AI expert's ranking opens it in Rankings, with "Start my ranking from this". | S |
+| 28 | Tapping an AI expert's ranking opens it in Rankings, with Duplicate: someone else's ranking becomes your ranking (Chris, 2026-10-18/19 — replaced "Start my ranking from this"). | S |
 | 29 | Label projections "Season proj" until weekly ones exist. | S |
 | 30 | Search and filters cover every public list, not just the newest 100. There are 51 today, so this is needed before 100. | M |
 
