@@ -71,14 +71,21 @@ describe('custom scoring is open to everyone while Pro is on hold', () => {
   })
 
   it('the settings page reads the same switch for every control', () => {
-    const page = readFileSync(
-      path.resolve(process.cwd(), 'src/app/app/(shell)/settings/scoring/page.tsx'),
-      'utf8',
-    )
-    expect(page).toContain('canCustomizeScoring(isPro)')
-    // No control is gated on is_pro directly any more.
-    expect(page).not.toMatch(/disabled=\{!isPro/)
-    expect(page).not.toMatch(/\{isPro && \(/)
-    expect(page).not.toMatch(/\{!isPro && \(/)
+    const read = (file: string) => readFileSync(path.resolve(process.cwd(), file), 'utf8')
+    // The switch is read once, in the editor hook both layouts share
+    // (gap list §4 item 101 moved it out of the page).
+    const hook = read('src/hooks/use-scoring-editor.ts')
+    expect(hook).toContain('canCustomizeScoring(isPro)')
+    for (const file of [
+      'src/app/app/(shell)/settings/scoring/page.tsx',
+      'src/components/mobile/settings/mobile-scoring-settings.tsx',
+    ]) {
+      const screen = read(file)
+      expect(screen).toContain('useScoringEditor')
+      // No control is gated on is_pro directly any more.
+      expect(screen).not.toMatch(/disabled=\{!isPro/)
+      expect(screen).not.toMatch(/\{isPro && \(/)
+      expect(screen).not.toMatch(/\{!isPro && \(/)
+    }
   })
 })

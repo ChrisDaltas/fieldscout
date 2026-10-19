@@ -72,9 +72,6 @@ const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
 /** `false` third entry: the page already owns its h1 (the shell's title
  *  renders as plain text there). */
 const ACCOUNT_FALLBACK_TITLES: ReadonlyArray<[RegExp, string, boolean?]> = [
-  [/^\/app\/settings\/scoring\/?$/, 'Scoring'],
-  [/^\/app\/settings\/billing\/?$/, 'Billing'],
-  [/^\/app\/settings\/?$/, 'Settings'],
   [/^\/app\/leagues\/?$/, 'Leagues'],
   [/^\/app\/mocks\/?$/, 'Mock drafts'],
   [/^\/app\/mocks\/[^/]+\/report\/?$/, 'Mock draft report'],
@@ -100,17 +97,15 @@ export function mobileFallback(pathname: string): MobileFallback | null {
     return null
   }
   for (const [re, title, heading] of ACCOUNT_FALLBACK_TITLES) {
-    if (re.test(pathname)) return { kind: 'account', title, parent: fallbackParent(pathname), heading: heading !== false }
+    if (re.test(pathname)) return { kind: 'account', title, parent: ACCOUNT_FALLBACK_PARENT, heading: heading !== false }
   }
   return null
 }
 
-/** Where an account page's Back goes when nothing in the app is behind it. */
-function fallbackParent(pathname: string): string {
-  if (/^\/app\/settings\/.+/.test(pathname)) return '/app/settings'
-  if (pathname.startsWith('/app/settings')) return '/app/profile'
-  return '/app'
-}
+/** Where an account page's Back goes when nothing in the app is behind it.
+ *  (Settings and its pages draw their own phone screens now, each with its
+ *  own parent — gap list §4 item 101 — so every page left here goes Home.) */
+const ACCOUNT_FALLBACK_PARENT = '/app'
 
 /** The title alone (league pages), for callers that only need to know the
  *  shell titles the page. */

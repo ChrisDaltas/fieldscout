@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 
 import { MobileOverrideStrip } from '@/components/mobile/league/override-strip'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
-import { MIcon } from '@/components/mobile/ui/m-icon'
+import { MPageBar } from '@/components/mobile/ui/mobile-header'
 import { WithOnlineDot } from '@/components/mobile/ui/online-dot'
 import { cn } from '@/lib/utils'
 
@@ -29,19 +29,7 @@ export function LeaguePageBar({ leagueId, title }: { leagueId: string; title: st
   const goBack = useGoBack()
   return (
     <>
-      <div className="flex h-[52px] items-center gap-2 border-b border-m-b3 px-3">
-        <button
-          type="button"
-          onClick={() => goBack(`/app/leagues/${leagueId}`)}
-          aria-label="Back"
-          className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
-          data-league-page-back
-        >
-          <MIcon name="back" size={18} stroke={2} />
-        </button>
-        <h1 className="flex-1 text-center text-[16px] font-semibold text-m-t1">{title}</h1>
-        <span className="w-9 flex-none" aria-hidden />
-      </div>
+      <MPageBar title={title} onBack={() => goBack(`/app/leagues/${leagueId}`)} />
       <MobileOverrideStrip leagueId={leagueId} className="mb-1.5" />
     </>
   )

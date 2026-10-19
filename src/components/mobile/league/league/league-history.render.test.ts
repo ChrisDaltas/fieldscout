@@ -123,7 +123,7 @@ beforeEach(() => {
 describe('the League history screen', () => {
   it('draws the handoff’s page: blue Back, "League history", the season chip on', () => {
     const html = render(detailWith(), SCHEDULE)
-    expect(html).toMatch(/<button[^>]*aria-label="Back"[^>]*class="[^"]*text-accent[^"]*"[^>]*data-league-page-back/)
+    expect(html).toMatch(/<button[^>]*aria-label="Back"[^>]*class="[^"]*text-accent[^"]*"[^>]*data-page-back/)
     expect(html).toContain('>League history</h1>')
     expect(html).toMatch(/data-history-seasons="true">.*?aria-pressed="true" class="[^"]*bg-m-ink text-white[^"]*">2099</)
   })

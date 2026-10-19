@@ -5,7 +5,16 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileAccountSettings } from '@/components/mobile/settings/mobile-account-settings'
 import { EditableUserAvatar } from '@/components/profile/editable-user-avatar'
+import {
+  EMAIL_HINT,
+  NOTIFICATION_ROWS,
+  USERNAME_HINT,
+  defaultNotificationPrefs,
+  passwordProblem,
+} from '@/components/settings/account-settings-ops'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
@@ -15,17 +24,26 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
-import { createBrowserClient } from '@/lib/supabase/client'
+import { useUpdatePassword } from '@/hooks/use-update-password'
 import { cn } from '@/lib/utils'
 import type { Profile } from '@/types/database'
 
 /**
- * Account settings — the model for "outside the nav" pages: no nav item is
- * active and the content leads with a quiet Back button. v7 Account
+ * Account settings. The phone draws its own screen on the same data and
+ * actions (`MobileAccountSettings`, gap list §4 item 101); desktop is
+ * unchanged.
+ */
+export default function SettingsPage() {
+  return <ByLayout desktop={<DesktopSettings />} mobile={<MobileAccountSettings />} />
+}
+
+/**
+ * Desktop account settings — the model for "outside the nav" pages: no nav
+ * item is active and the content leads with a quiet Back button. v7 Account
  * settings: one 612px column of grouped sections — a 14px bold title over a
  * hairline-bordered group of label/field rows.
  */
-export default function SettingsPage() {
+function DesktopSettings() {
   const router = useRouter()
   const { user, profile, isLoading, signOut } = useAuth()
 
@@ -85,7 +103,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
 
       <FieldRow
         label={<FieldLabel htmlFor="settings-username">Username</FieldLabel>}
-        hint="Usernames are permanent. This is the only name FieldScout shows — on your lists, rankings, and comments."
+        hint={USERNAME_HINT}
       >
         <Input
           id="settings-username"
@@ -101,47 +119,39 @@ function ProfileCard({ profile }: { profile: Profile }) {
 /* -------------------------- Sign in & security -------------------------- */
 
 function SecurityCard({ email }: { email: string }) {
-  const supabase = createBrowserClient()
   const { toast } = useToast()
+  const update = useUpdatePassword()
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
+  const isSaving = update.isPending
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
+  const handleUpdatePassword = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
+    const problem = passwordProblem(password, confirmPassword)
+    if (problem) {
+      setError(problem)
       return
     }
 
-    setIsSaving(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-
-    if (updateError) {
-      setError(updateError.message)
-      setIsSaving(false)
-      return
-    }
-
-    setPassword('')
-    setConfirmPassword('')
-    setIsSaving(false)
-    toast({ title: 'Password updated' })
+    update.mutate(password, {
+      onSuccess: () => {
+        setPassword('')
+        setConfirmPassword('')
+        toast({ title: 'Password updated' })
+      },
+      onError: (updateError) => setError(updateError.message),
+    })
   }
 
   return (
     <SettingsSection title="Sign in & security">
       <FieldRow
         label={<FieldLabel htmlFor="settings-email">Email</FieldLabel>}
-        hint="Used to sign in and recover your account — never shown to other scouts."
+        hint={EMAIL_HINT}
       >
         <Input id="settings-email" type="email" value={email} disabled />
       </FieldRow>
@@ -199,60 +209,10 @@ function SecurityCard({ email }: { email: string }) {
 
 /* ----------------------------- Notifications ---------------------------- */
 
-interface NotificationRow {
-  key: string
-  title: string
-  description: string
-  defaultOn: boolean
-}
-
-// TODO(notif-prefs): there is no notification-preferences backend yet — the
-// only real notification type today is `list_updated` (lists you follow).
-// These toggles are local-only mock state; persist them once a prefs table
-// or profile column ships.
-const NOTIFICATION_ROWS: NotificationRow[] = [
-  {
-    key: 'list_updates',
-    title: 'List updates',
-    description: 'When a list you follow gets reworked',
-    defaultOn: true,
-  },
-  {
-    key: 'trades',
-    title: 'Trade offers',
-    description: 'When a GM sends or updates a trade',
-    defaultOn: true,
-  },
-  {
-    key: 'waivers',
-    title: 'Waiver results',
-    description: 'Claims processed, players added or dropped',
-    defaultOn: true,
-  },
-  {
-    key: 'injuries',
-    title: 'Injury news',
-    description: 'Status changes for players on your rosters',
-    defaultOn: true,
-  },
-  {
-    key: 'draft',
-    title: 'Draft reminders',
-    description: "Start times, and when you're on the clock",
-    defaultOn: true,
-  },
-  {
-    key: 'ai',
-    title: 'Scout AI insights',
-    description: 'Weekly lineup recommendations',
-    defaultOn: false,
-  },
-]
-
 function NotificationsCard() {
-  const [prefs, setPrefs] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(NOTIFICATION_ROWS.map((r) => [r.key, r.defaultOn])),
-  )
+  // Local-only until a preferences backend ships (TODO(notif-prefs) in
+  // account-settings-ops.ts).
+  const [prefs, setPrefs] = useState<Record<string, boolean>>(defaultNotificationPrefs)
 
   return (
     <SettingsSection title="Notifications">
