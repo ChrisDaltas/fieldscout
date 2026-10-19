@@ -99,6 +99,9 @@ export const listsKeys = {
     [...LISTS_KEY, 'collection', page, pageSize] as const,
   detail: (id: string) => [...LISTS_KEY, 'detail', id] as const,
   bigBoard: () => [...LISTS_KEY, 'big-board'] as const,
+  /** Your soft-deleted lists (Trash). Under `all`, so a delete or a restore
+   *  — both invalidate `all` — refreshes it too. */
+  trash: () => [...LISTS_KEY, 'trash'] as const,
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -187,6 +190,22 @@ export function useBigBoard() {
   })
 }
 
+/**
+ * Trash — your soft-deleted lists, most recently deleted first
+ * (`/api/lists/trash`). Deletes stay soft (CLAUDE.md rule 8), so the one
+ * thing to do with a row here is restore it ({@link useRestoreList}). A
+ * failed read throws — an error, never an empty Trash.
+ */
+export function useTrashedLists() {
+  return useQuery({
+    queryKey: listsKeys.trash(),
+    queryFn: () =>
+      fetch('/api/lists/trash')
+        .then(jsonOrThrow<{ lists?: List[] }>)
+        .then((body) => body.lists ?? []),
+  })
+}
+
 // =============================================================================
 // MUTATIONS
 // =============================================================================
@@ -233,6 +252,33 @@ export function useDeleteList() {
       qc.invalidateQueries({ queryKey: listsKeys.all })
     },
   })
+}
+
+/**
+ * Restore a list from Trash (`POST /api/lists/[id]/restore`, which clears
+ * `deleted_at` — deletes stay soft, CLAUDE.md rule 8). On success it leaves
+ * the Trash cache at once and every list read refreshes; a failure changes
+ * nothing. The handlers are the hook's own, not per call, so restoring two
+ * lists at once settles both (callers `mutateAsync` per row).
+ * `useRestoreList` is this plus `useMutation`; tests drive it through a
+ * `MutationObserver`.
+ */
+export function restoreListMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: (id: string) =>
+      fetch(`/api/lists/${id}/restore`, { method: 'POST' }).then(
+        jsonOrThrow<{ ok: boolean; alreadyRestored?: boolean }>,
+      ),
+    onSuccess: (_data: { ok: boolean; alreadyRestored?: boolean }, id: string) => {
+      qc.setQueryData<List[]>(listsKeys.trash(), (cur) => cur?.filter((l) => l.id !== id))
+      void qc.invalidateQueries({ queryKey: listsKeys.all })
+    },
+  }
+}
+
+export function useRestoreList() {
+  const qc = useQueryClient()
+  return useMutation(restoreListMutationOptions(qc))
 }
 
 export function useDuplicateList() {

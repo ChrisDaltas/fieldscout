@@ -1,15 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileTrash } from '@/components/mobile/lists/mobile-trash'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Skeleton } from '@/components/ui/skeleton'
-import { listsKeys } from '@/hooks/use-lists'
+import { useRestoreList, useTrashedLists } from '@/hooks/use-lists'
 import { useToast } from '@/hooks/use-toast'
 
 import type { List } from '@/types/database'
@@ -18,44 +19,30 @@ import type { List } from '@/types/database'
  * Trash — soft-deleted lists with restore. Deletes stay soft platform-wide
  * (business rule: never hard-delete), so restore is the only action here;
  * there is deliberately no "delete forever".
+ *
+ * The phone draws its own screen on the same data and action
+ * (`MobileTrash`, gap list §4 item 102); desktop is unchanged.
  */
 export default function TrashPage() {
-  const qc = useQueryClient()
+  return <ByLayout desktop={<DesktopTrash />} mobile={<MobileTrash />} />
+}
+
+function DesktopTrash() {
   const { toast } = useToast()
-  const [lists, setLists] = useState<List[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const trash = useTrashedLists()
+  const restoreList = useRestoreList()
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const reload = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/lists/trash')
-      const body = (await res.json()) as { lists?: List[]; error?: string }
-      if (!res.ok) throw new Error(body.error ?? `Failed (${res.status})`)
-      setLists(body.lists ?? [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void reload()
-  }, [])
+  const loading = trash.isPending
+  const error = trash.error ? trash.error.message : null
+  const lists = trash.data ?? []
 
   const restore = async (list: List) => {
     if (busyId) return
     setBusyId(list.id)
     try {
-      const res = await fetch(`/api/lists/${list.id}/restore`, { method: 'POST' })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(body.error ?? `Restore failed (${res.status})`)
+      await restoreList.mutateAsync(list.id)
       toast({ title: 'List restored', description: list.title })
-      qc.invalidateQueries({ queryKey: listsKeys.all })
-      setLists((cur) => cur.filter((l) => l.id !== list.id))
     } catch (err) {
       toast({
         title: 'Could not restore',

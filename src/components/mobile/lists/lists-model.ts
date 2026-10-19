@@ -57,6 +57,20 @@ export function updatedLabel(iso: string | null | undefined, now: number = Date.
   return date.toLocaleDateString('en-US', opts)
 }
 
+/**
+ * A Trash row's line (gap list §4 item 102): when it was deleted, in the
+ * Lists copy format, then its size — "Deleted 2d ago · 12 players". A row
+ * whose deletion time can't be read says only its size.
+ */
+export function trashRowSub(
+  list: { deleted_at: string | null; player_count: number | null },
+  now: number = Date.now(),
+): string {
+  const when = updatedLabel(list.deleted_at, now)
+  const size = playersLabel(list.player_count ?? 0)
+  return when ? `Deleted ${when} · ${size}` : size
+}
+
 // =============================================================================
 // Cover colour (lr-lists §2.1/§2.2). The owner's chosen swatch wins
 // (`lists.cover_color`, migration 188 — Chris, 2026-10-15); with none chosen

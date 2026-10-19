@@ -25,6 +25,7 @@ import {
   saveFailureNote,
   setDraftMode,
   trailingMarkers,
+  trashRowSub,
   updatedLabel,
   youTubeId,
   type EdItem,
@@ -61,6 +62,15 @@ describe('copy formats', () => {
     expect(updatedLabel(new Date(now - 20_000).toISOString(), now)).toBe('just now')
     expect(updatedLabel(new Date(now - 3 * 3_600_000).toISOString(), now)).toBe('3h ago')
     expect(updatedLabel(new Date(now - 2 * 86_400_000).toISOString(), now)).toBe('2d ago')
+  })
+  it('a Trash row says when the list was deleted, then its size (gap list §4 item 102)', () => {
+    const now = Date.UTC(2026, 9, 15, 12)
+    const ago = (ms: number) => new Date(now - ms).toISOString()
+    expect(trashRowSub({ deleted_at: ago(2 * 86_400_000), player_count: 12 }, now)).toBe('Deleted 2d ago · 12 players')
+    expect(trashRowSub({ deleted_at: ago(20_000), player_count: 1 }, now)).toBe('Deleted just now · 1 player')
+    expect(trashRowSub({ deleted_at: '2026-08-20T12:00:00Z', player_count: null }, now)).toBe('Deleted Aug 20 · 0 players')
+    // An unreadable time never prints "Deleted  ·".
+    expect(trashRowSub({ deleted_at: null, player_count: 3 }, now)).toBe('3 players')
   })
 })
 
