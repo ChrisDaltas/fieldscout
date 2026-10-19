@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
+import { credOrStart } from '@/lib/cred-tiers'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 // "Top ranked scouts" leaderboard (package screen 08, right column; the
@@ -9,11 +10,13 @@ import { createBrowserClient } from '@/lib/supabase/client'
 // same weighting consensus rankings use. Reads profiles directly through the
 // browser client (anon-readable under RLS, same as public profile pages).
 //
-// NOTHING WRITES `cred_score` YET: it is only defined (default 0) in
-// migration 001 — no job, trigger or route updates it, so every account
-// everywhere ties at 0. The fixed tiebreak (earliest account first, then id)
-// keeps the 1–5 order stable between reads instead of whatever order Postgres
-// happens to return the tie in. It is not a merit order.
+// NOTHING AWARDS cred YET: every account starts at 7 (migration 197,
+// `CRED_START` — Chris 2026-10-18) and no job, trigger or route changes it,
+// so every account everywhere ties at 7 (at 0 where 197 isn't pushed yet). A
+// missing cred reads as the start. The fixed tiebreak (earliest account
+// first, then id) keeps the 1–5 order stable between reads instead of
+// whatever order Postgres happens to return the tie in. It is not a merit
+// order.
 
 export interface TopScout {
   id: string
@@ -40,7 +43,7 @@ export async function fetchTopScouts(supabase: BrowserClient): Promise<TopScout[
     id: row.id,
     username: row.username,
     avatar_url: row.avatar_url,
-    cred_score: row.cred_score ?? 0,
+    cred_score: credOrStart(row.cred_score),
   }))
 }
 

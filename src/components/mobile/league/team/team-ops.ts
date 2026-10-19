@@ -22,6 +22,7 @@ import {
 } from '@/components/leagues/my-team-ops'
 import { cardProjection, teamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import { positionFillClass } from '@/components/players/position-badge'
+import { liveClock } from '@/utils/game-clock'
 
 // ---------------------------------------------------------------------------
 // Names and numbers
@@ -158,7 +159,8 @@ export function summaryLine(rows: readonly StandingsRow[], teamId: string): stri
 }
 
 // ---------------------------------------------------------------------------
-// The game line — "Sun 1:00 PM vs DET", "Q4 6:50 @ DEN", "Final W 31-20 @ GB"
+// The game line — "Sun 1:00 PM vs DET", "Q4 6:50 @ DEN" ("OT 2:31" in
+// overtime — the shared `liveClock`), "Final W 31-20 @ GB"
 // ---------------------------------------------------------------------------
 
 export interface GameLineGame {
@@ -202,8 +204,7 @@ export function gameLine(nflTeam: string | null | undefined, games: readonly Gam
     return { kind: 'game', text: `Final ${wl} ${mine}-${theirs} ${where}`, opp, started: true, gameId }
   }
   if (g.status === 'live') {
-    const clock = [g.quarter !== null ? `Q${g.quarter}` : null, g.game_clock].filter(Boolean).join(' ')
-    return { kind: 'game', text: `${clock || 'Live'} ${where}`, opp, started: true, gameId }
+    return { kind: 'game', text: `${liveClock(g) ?? 'Live'} ${where}`, opp, started: true, gameId }
   }
   const k = kickoffText(g.kickoff_at)
   return { kind: 'game', text: k ? `${k} ${where}` : where, opp, started: false, gameId }

@@ -316,7 +316,7 @@ Cred is earned through three distinct activities, each tracked separately as acc
 | **Start or Sit votes** | Cred proportional to accuracy, with a contrarian bonus for correct minority votes |
 
 - Cred decays slowly if a user stops participating during the season
-- New users start at 0 cred and still contribute to consensus rankings with a weight of 1 until they earn cred
+- New users start at 7 cred (Chris 2026-10-18: "7 is lucky" — migration 197) and contribute to consensus rankings with that weight from day one
 
 **Rank tier progression:**
 Cred accumulates into a visible rank tier displayed on a user's profile. Tiers from lowest to highest:

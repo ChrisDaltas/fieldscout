@@ -368,14 +368,19 @@ function LinksSection({
             const meta = [link.source_label, link.duration_label].filter(Boolean).join(' · ') || link.url
             return (
               <li key={link.id} className="flex items-center gap-2.5 rounded-xl border border-n-4 bg-white p-2">
+                {/* A video's mark is black with a white play — on this white
+                    row there is no thumbnail, and a YouTube mark is white or
+                    black, never red (Chris, 2026-10-18: "ideally youtube
+                    logos are white or black depending"). */}
                 <span
                   aria-hidden="true"
+                  data-video-mark={link.kind === 'video' ? '' : undefined}
                   className={cn(
-                    'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-md text-ink',
-                    link.kind === 'video' ? 'bg-tier-2/50' : 'bg-tier-4/50',
+                    'inline-flex h-[37px] w-[50px] shrink-0 items-center justify-center rounded-md',
+                    link.kind === 'video' ? 'bg-ink text-white' : 'bg-tier-4/50 text-ink',
                   )}
                 >
-                  <Icon name={link.kind === 'video' ? 'arrow-next' : 'document'} size={13} />
+                  <Icon name={link.kind === 'video' ? 'play' : 'document'} size={13} />
                 </span>
 
                 {/* A video YouTube would not name has NO title (Chris,

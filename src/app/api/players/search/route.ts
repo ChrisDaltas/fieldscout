@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { playerNameFilter } from '@/lib/players/name-search'
 import { createServerClient } from '@/lib/supabase/server'
 
 const querySchema = z.object({
@@ -22,15 +23,6 @@ const querySchema = z.object({
  *  user typed reaches the filter string but A–Z. */
 const TEAM_CODE = /^[A-Za-z]{2,3}$/
 
-/** One value in a PostgREST `or=(…)` filter, double-quoted so a comma or
- *  bracket the user typed ("Smith, J") stays inside the value instead of
- *  splitting the filter (which PostgREST refuses, and this route would
- *  answer 500 for good). Inside the quotes a backslash escapes the next
- *  character, so `\` and `"` each get one. */
-function orValue(v: string): string {
-  return `"${v.replace(/[\\"]/g, (m) => `\\${m}`)}"`
-}
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const parsed = querySchema.safeParse({
@@ -48,15 +40,14 @@ export async function GET(request: Request) {
   const { q, position, limit, activeOnly, matchTeam } = parsed.data
   const supabase = await createServerClient()
 
-  const escaped = q.replace(/[%_\\]/g, (m) => `\\${m}`)
-  const collapsed = escaped.replace(/\s+/g, '')
-
   const team = matchTeam && TEAM_CODE.test(q) ? `,team.eq.${q.toUpperCase()}` : ''
 
   let query = supabase
     .from('players')
     .select('id, sleeper_id, full_name, position, team, headshot_url, status, adp')
-    .or(`full_name.ilike.${orValue(`%${escaped}%`)},search_name.ilike.${orValue(`%${collapsed}%`)}${team}`)
+    // The typed text is a quoted value: a comma or bracket ("Smith, J") can't
+    // split the filter (PostgREST refused it, and this route answered 500).
+    .or(`${playerNameFilter(q)}${team}`)
     .order('adp', { ascending: true, nullsFirst: false })
     .order('full_name', { ascending: true })
     .limit(limit)

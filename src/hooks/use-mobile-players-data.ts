@@ -9,6 +9,7 @@ import { POOL_WINDOW } from '@/hooks/use-draft-pool'
 import { poolValueKeys } from '@/hooks/use-pool-values'
 import { sendLeagueAction } from '@/lib/leagues/api/client-fetch'
 import type { PoolPlayerValue, PoolValues } from '@/lib/leagues/api/pool-values-service'
+import { playerNameFilter } from '@/lib/players/name-search'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
 
@@ -28,6 +29,11 @@ import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
  *   - the account tab's `/api/players/builder` (the research table's read).
  * Every read THROWS on a transport error (loud failure, never an empty list).
  *
+ * The league tab's SEARCH is the window's own `players` read with the app's
+ * name rule (`playerNameFilter`) applied server-side — so it runs over the
+ * WHOLE active pool, not the 300 rows already loaded; the by-id sets are
+ * complete, so the caller matches them with the same rule on the client.
+ *
  * Placeholders: the browse reads keep the previous rows while a new filter
  * loads. A PERIOD-dependent read (lines, usage) keeps its previous data only
  * while the period is unchanged — the same numbers for the players both id
@@ -35,32 +41,52 @@ import { pageAll, type PageResponse } from '@/lib/supabase/page-all'
  * the old period's stats under the new pill.
  */
 
-const PLAYER_SELECT = 'id, full_name, position, team, adp, headshot_url, status'
+/** `search_name` rides along so a search can match rows in hand by the same
+ *  rule the server applies (`playerNameMatches`). */
+const PLAYER_SELECT = 'id, full_name, position, team, adp, headshot_url, status, search_name'
 
-/** The league tab's browse window: ADP order, position(s) and NFL team
- *  narrowed server-side. `full` = the window came back at its cap. */
-export function useMobilePlayersWindow(positions: readonly string[] | null, team: string | null) {
+/** A Players-tab row: the pool's columns plus Sleeper's run-together name. */
+export type MobilePoolPlayer = PoolPlayer & { search_name?: string | null }
+
+/** The browse window's `players` read: ADP order, position(s), NFL team and
+ *  a typed name (already trimmed; '' = no search) all narrowed SERVER-side,
+ *  so a search covers the whole active pool — never a client filter over the
+ *  rows a browse loaded. Exported so a test pins the filters it sends. */
+export async function fetchPlayersWindow(positions: readonly string[] | null, team: string | null, term: string): Promise<MobilePoolPlayer[]> {
+  const supabase = createBrowserClient()
+  let q = supabase.from('players').select(PLAYER_SELECT).not('team', 'is', null)
+  if (positions && positions.length === 1) q = q.eq('position', positions[0]!)
+  else if (positions && positions.length > 1) q = q.in('position', [...positions])
+  if (team) q = q.eq('team', team)
+  if (term) q = q.or(playerNameFilter(term))
+  const { data, error } = await q
+    .order('adp', { ascending: true, nullsFirst: false })
+    .order('full_name', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(POOL_WINDOW)
+  if (error) throw error
+  return (data ?? []) as MobilePoolPlayer[]
+}
+
+/** The window came back at its cap. Only THIS key's own answer can say so:
+ *  a placeholder (the previous key's rows, kept while this key reads) never
+ *  counts — the browse's 300 rows are no claim about a search still loading. */
+export function windowAtCap(rows: readonly unknown[] | undefined, isPlaceholderData: boolean): boolean {
+  return !isPlaceholderData && (rows?.length ?? 0) >= POOL_WINDOW
+}
+
+/** The league tab's browse window (`fetchPlayersWindow`). `full` = this
+ *  key's answer came back at its cap (the screen says so). */
+export function useMobilePlayersWindow(positions: readonly string[] | null, team: string | null, search = '') {
   const posKey = positions ? positions.join(',') : ''
+  const term = search.trim()
   const query = useQuery({
-    queryKey: ['mobile-players-window', posKey, team ?? ''] as const,
+    queryKey: ['mobile-players-window', posKey, team ?? '', term] as const,
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    queryFn: async (): Promise<PoolPlayer[]> => {
-      const supabase = createBrowserClient()
-      let q = supabase.from('players').select(PLAYER_SELECT).not('team', 'is', null)
-      if (positions && positions.length === 1) q = q.eq('position', positions[0]!)
-      else if (positions && positions.length > 1) q = q.in('position', [...positions])
-      if (team) q = q.eq('team', team)
-      const { data, error } = await q
-        .order('adp', { ascending: true, nullsFirst: false })
-        .order('full_name', { ascending: true })
-        .order('id', { ascending: true })
-        .limit(POOL_WINDOW)
-      if (error) throw error
-      return (data ?? []) as PoolPlayer[]
-    },
+    queryFn: () => fetchPlayersWindow(positions, team, term),
   })
-  return { ...query, full: (query.data?.length ?? 0) >= POOL_WINDOW }
+  return { ...query, full: windowAtCap(query.data, query.isPlaceholderData) }
 }
 
 const ID_CHUNK = 100
@@ -80,13 +106,13 @@ export function useMobilePlayersByIds(ids: readonly string[]) {
     enabled: sorted.length > 0,
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    queryFn: async (): Promise<PoolPlayer[]> => {
+    queryFn: async (): Promise<MobilePoolPlayer[]> => {
       const supabase = createBrowserClient()
       const parts = await Promise.all(
         chunk(sorted, ID_CHUNK).map(async (ids) => {
           const { data, error } = await supabase.from('players').select(PLAYER_SELECT).in('id', ids)
           if (error) throw error
-          return (data ?? []) as PoolPlayer[]
+          return (data ?? []) as MobilePoolPlayer[]
         }),
       )
       return parts.flat()

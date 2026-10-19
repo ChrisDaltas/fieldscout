@@ -48,7 +48,7 @@ Users submit their rankings for real evaluation against actual NFL results, earn
 ## Consensus Rankings
 
 - Materialized view of all user Big Boards weighted by cred score
-- New users (cred = 0) contribute with a weight of 1
+- New users start at 7 cred (Chris 2026-10-18, migration 197) and contribute with a weight of 7 (the weight is the cred, floored at 1)
 - Public page: `fieldscout.gg/consensus`
 - Refreshed via scheduled cron
 - "My rank vs. consensus" side-by-side comparison view on list pages

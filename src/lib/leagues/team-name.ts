@@ -17,6 +17,11 @@
  * A name set before the rule (up to 100 characters) still reads and shows;
  * the limit applies to a name being written.
  *
+ * The automatic name a team gets on create or join is the server's
+ * (`team_default_name_internal`, 196): "<username>'s Team" where it fits in
+ * 24, and the username alone where it would not (usernames of 18–20) — ruled
+ * by Chris 2026-10-18, Sleeper's default (PROGRESS §3 Resolved, D545).
+ *
  * Counting: JS `length` counts UTF-16 units and Postgres `char_length` counts
  * code points, so this side is never looser than the server (an emoji counts
  * two here, one there). JS `trim()` strips a superset of the server's class.

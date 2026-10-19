@@ -213,6 +213,16 @@ describe('MyTeamTab (mobile League › Team)', () => {
     for (const c of ['pt-0.5', '-mt-0.5', 'pb-3', '-mb-3']) expect(link).toContain(c)
   })
 
+  it('a game in overtime reads "OT", like Match — never "Q5" (gap list §4 item 14)', () => {
+    const ot = render(SCHEDULE, detail, (qc) =>
+      qc.setQueryData(['mobile-team-games', 2099, 5], [
+        { id: 'g1', home_team: 'ATL', away_team: 'PHI', kickoff_at: '2099-10-11T17:00:00Z', status: 'live', home_score: 17, away_score: 17, quarter: 5, game_clock: '2:31' },
+      ]),
+    )
+    expect(ot).toContain('OT 2:31 vs PHI')
+    expect(ot).not.toContain('Q5')
+  })
+
   it('lists the bench with its empty seats (bench size minus bench players)', () => {
     expect(html).toContain('Kendrick Bourne')
     const benchChips = html.match(/>BN</g) ?? []

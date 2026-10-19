@@ -113,6 +113,8 @@ const ICON_PATHS = {
     'M9.0 0.6H15.4V7.0L12.9 4.5L10.9 6.5L9.5 5.1L11.5 3.1ZM4.5 12.9L6.5 10.9L5.1 9.5L3.1 11.5L0.6 9.0V15.4H7.0Z',
   collapse:
     'M8.6 1.4V7.4H14.6L12.2 5.0L15.6 1.6L14.4 0.4L11.0 3.8ZM7.4 14.6V8.6H1.4L3.8 11.0L0.4 14.4L1.6 15.6L5.0 12.2Z',
+  // A filled play triangle — a video's mark (the phone's `L_ICON.play`).
+  play: 'M4.5 2.8v10.4L13 8z',
 } as const
 
 export type IconName = keyof typeof ICON_PATHS

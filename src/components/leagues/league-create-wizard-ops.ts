@@ -95,7 +95,8 @@ export function initialWizardDraft(): WizardDraft {
  * Null (rows not loaded, or a seed without that Scout row) degrades to the
  * pre-SC.3 explicit-only gate.
  *
- * `team_name` is omitted when blank — the RPC derives "<username>'s Team"
+ * `team_name` is omitted when blank — the RPC derives "<username>'s Team",
+ * or the username alone where that would pass 24 (`team-name.ts`)
  * (leagues-service treats ''/whitespace as absent).
  */
 export interface WizardCreateInput {

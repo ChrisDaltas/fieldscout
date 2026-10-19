@@ -1,7 +1,25 @@
 /**
+ * Every account's cred starts at 7 — "everyone should start with 7 because 7
+ * is lucky" (Chris 2026-10-18). Migration 197 made it `profiles.cred_score`'s
+ * default and raised every 0/NULL account to it; this is the same number for
+ * the app. A missing cred (NULL) reads as this start, never as 0.
+ *
+ * A stored 0 is shown as stored: until 197 reaches production every account
+ * there still reads 0, and once anything can lower cred a real 0 must not
+ * be dressed up as 7.
+ */
+export const CRED_START = 7
+
+/** The cred to show for a stored value — `CRED_START` when there is none. */
+export function credOrStart(stored: number | null | undefined): number {
+  return stored ?? CRED_START
+}
+
+/**
  * Cred rank tiers from PRD F5. Thresholds are first-pass numbers — they're
  * what the dashboard uses to compute progress to next rank. Tweak as the
- * cred system matures.
+ * cred system matures. A new account (`CRED_START`) sits inside Freshie,
+ * part-way to Sophomore — the bar opens at 7 / 100, not empty.
  */
 export interface CredTier {
   level: number
