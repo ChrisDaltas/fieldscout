@@ -7,8 +7,9 @@ import { type NewsItem, parseBluesky, parseRss } from './parse'
 import { BLUESKY_APPVIEW, NEWS_SOURCES, type NewsSource } from './sources'
 
 /**
- * The player-news ingest (F575; D550). Fetches every source (plain fetch),
- * keeps only items that match a player by the ruled rules, and stores them
+ * The player-news ingest (F575; D550). Fetches every source at once (plain
+ * fetch; 15 s per source, 45 s for the whole run, bodies capped at 5 MB —
+ * R1590/R1592), keeps only items that match a player by the ruled rules, and stores them
  * idempotently: `player_news` is unique on (source_key, external_id) and
  * `player_news_players` on (news_id, player_id), so a re-run inserts nothing
  * new. One failing source is reported, never fatal to the others.
@@ -21,6 +22,9 @@ export interface IngestDeps {
   time: TimeProvider
   fetch?: FetchLike
   sources?: readonly NewsSource[]
+  /** Total fetch budget for ALL sources together (default 45 s — fits the
+   *  route's maxDuration 60 and the 55 s pg_net ping, R1590). */
+  budgetMs?: number
 }
 
 export interface IngestReport {
@@ -35,7 +39,37 @@ const UA = 'FieldScoutBot/0.1 (+https://fieldscout.gg)'
 const TIMEOUT_MS = 15_000
 const MAX_BYTES = 5_000_000
 
-async function readSource(source: NewsSource, f: FetchLike): Promise<NewsItem[]> {
+const FETCH_BUDGET_MS = 45_000
+
+/** Read at most MAX_BYTES of the body: a declared length over the cap is
+ *  refused before reading, and a stream is cut off at the cap (R1592). */
+export async function readCapped(res: Response, max = MAX_BYTES): Promise<string> {
+  const declared = Number(res.headers.get('content-length') ?? '')
+  if (Number.isFinite(declared) && declared > max) throw new Error('response too large')
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      await reader.cancel().catch(() => {})
+      throw new Error('response too large')
+    }
+    chunks.push(value)
+  }
+  const buf = new Uint8Array(total)
+  let off = 0
+  for (const c of chunks) {
+    buf.set(c, off)
+    off += c.byteLength
+  }
+  return new TextDecoder().decode(buf)
+}
+
+async function readSource(source: NewsSource, f: FetchLike, budget: AbortSignal): Promise<NewsItem[]> {
   const url =
     source.kind === 'rss'
       ? source.url
@@ -45,13 +79,18 @@ async function readSource(source: NewsSource, f: FetchLike): Promise<NewsItem[]>
       'user-agent': UA,
       accept: source.kind === 'rss' ? 'application/rss+xml, application/xml, text/xml' : 'application/json',
     },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    // Per-source timeout AND the shared run budget; the signal also covers the body read.
+    signal: AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), budget]),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const body = await res.text()
-  if (body.length > MAX_BYTES) throw new Error('response too large')
+  const body = await readCapped(res)
   if (source.kind === 'rss') return parseRss(body, source)
   return parseBluesky(JSON.parse(body) as unknown, source)
+}
+
+function errorText(err: unknown): string {
+  if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) return 'timed out'
+  return err instanceof Error ? err.message : String(err)
 }
 
 /** Every rostered, non-team-defense player, paged past PostgREST's 1000 cap. */
@@ -82,15 +121,19 @@ export async function ingestPlayerNews(deps: IngestDeps): Promise<IngestReport> 
   const fetchedAt = deps.time.now().toISOString()
 
   const report: IngestReport = { sources: [], players: players.length, itemsUpserted: 0, linksInserted: 0, ok: true }
-  for (const source of deps.sources ?? NEWS_SOURCES) {
-    let items: NewsItem[]
-    try {
-      items = await readSource(source, f)
-    } catch (err) {
+  // R1590: every source is fetched at once under ONE budget; the writes
+  // below stay sequential.
+  const sources = deps.sources ?? NEWS_SOURCES
+  const budget = AbortSignal.timeout(deps.budgetMs ?? FETCH_BUDGET_MS)
+  const settled = await Promise.allSettled(sources.map((s) => readSource(s, f, budget)))
+  for (const [i, source] of sources.entries()) {
+    const result = settled[i]
+    if (result.status === 'rejected') {
       report.ok = false
-      report.sources.push({ key: source.key, fetched: 0, matched: 0, error: err instanceof Error ? err.message : String(err) })
+      report.sources.push({ key: source.key, fetched: 0, matched: 0, error: errorText(result.reason) })
       continue
     }
+    const items = result.value
     // A feed repeating one id would make the upsert touch a row twice (21000).
     const seen = new Set<string>()
     const unique = items.filter((i) => !seen.has(i.external_id) && seen.add(i.external_id))

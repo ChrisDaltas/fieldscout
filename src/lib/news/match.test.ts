@@ -20,7 +20,7 @@ const ids = (text: string, players = pool) => matchPlayers(text, buildIndex(play
 
 describe('normalize / nameKey', () => {
   it('folds punctuation, accents and suffixes', () => {
-    expect(normalize("J.J. McCarthy's")).toBe('jj mccarthys')
+    expect(normalize("J.J. McCarthy's")).toBe('jj mccarthy')
     expect(nameKey('Omar Cooper Jr.')).toBe('omar cooper')
     expect(nameKey('Zoë Señor III')).toBe('zoe senor')
   })
@@ -39,6 +39,13 @@ describe('matchPlayers — name + team', () => {
 
   it('a shared name with BOTH teams named is ambiguous → nobody', () => {
     expect(ids('Bills vs. Jaguars: Josh Allen leads the way')).toEqual([])
+  })
+
+  it('R1593: a shared city needs its nickname — "Los Angeles Rams" is not the Chargers', () => {
+    const la = [P('kupp-lac', 'Quentin Johnston', 'LAC'), P('kupp-lar', 'Quentin Johnston', 'LAR')]
+    expect(ids('Quentin Johnston catches TD for the Los Angeles Rams', la)).toEqual(['kupp-lar'])
+    expect(ids('Quentin Johnston catches TD in Los Angeles', la)).toEqual([])
+    expect(ids('Mike Williams catches TD in New York')).toEqual([])
   })
 
   it('city alone counts as the team; abbreviation is case-sensitive', () => {
@@ -71,6 +78,25 @@ describe('matchPlayers — unique name', () => {
 
   it('a name embedded in a longer word sequence still needs whole words', () => {
     expect(ids('Jordan Lovely wins the award')).toEqual([])
+  })
+
+  it('R1591: another team right before the name blocks BOTH rules', () => {
+    const buf = [P('allen-buf', 'Josh Allen', 'BUF')]
+    // name_team would fire (Bills named) — the guard must run first.
+    expect(ids('Jaguars LB Josh Allen strip-sacks Bills QB in the fourth', buf)).toEqual([])
+    expect(ids("Jacksonville's Josh Allen records two sacks", buf)).toEqual([])
+    expect(ids('Jacksonville LB Josh Allen records two sacks', buf)).toEqual([])
+    expect(ids('JAX edge Josh Allen dominates', buf)).toEqual([])
+    // His own team before his name is fine.
+    expect(ids('Bills QB Josh Allen throws three TDs', buf)).toEqual(['allen-buf'])
+    // An English-word abbreviation ("was") is not a team.
+    expect(ids('Who was Josh Allen throwing to?', buf)).toEqual(['allen-buf'])
+  })
+
+  it('R1591: a shared city before the name only blocks with its nickname', () => {
+    const lac = [P('herbert', 'Justin Herbert', 'LAC')]
+    expect(ids('Los Angeles QB Justin Herbert sharp in win', lac)).toEqual(['herbert'])
+    expect(ids('Los Angeles Rams star Justin Herbert?', lac)).toEqual([])
   })
 
   it('a single-word name is never matched', () => {

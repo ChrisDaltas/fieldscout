@@ -12,7 +12,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
  * the public Bluesky AppView; stores only items that match a player;
  * idempotent (unique source item + unique link).
  *
- * 200 = every source read; 207 = some source failed (named in the body);
+ * Sources are fetched concurrently under a 45 s budget, inside maxDuration
+ * 60 and the ping's 55 s pg_net timeout (R1590).
+ * 200 = every source read; 207 = some source failed or timed out (named in
+ * the body);
  * 500 = nothing could run (e.g. no players read).
  */
 
