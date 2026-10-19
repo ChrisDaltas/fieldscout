@@ -50,7 +50,6 @@ import {
   scoringLabel,
   seasonLabel,
   seasonSub,
-  shortName,
   weekOf,
   weekStatus,
   weeklySub,
@@ -77,6 +76,7 @@ import {
 import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 /**
  * Ranking editor (lr-myrank §2.3) on a real board: one position's slice of
@@ -845,7 +845,7 @@ function PlayerLine({
       <span className="w-[22px] flex-none text-center text-[14px] font-bold">{rank}</span>
       <MHeadshot player={player} size={26} />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[14px] font-semibold text-m-t1">{shortName(player.full_name, player.position)}</span>
+        <span className="truncate text-[14px] font-semibold text-m-t1">{shortPlayerName(player.full_name, player.position)}</span>
         <span className="flex min-w-0 items-center gap-[5px] overflow-hidden whitespace-nowrap text-[11px] font-medium text-m-t3">
           <MPosChip pos={player.position} className="h-4 min-w-0 rounded-[4px] px-[5px] text-[9.5px]" />
           {sub}

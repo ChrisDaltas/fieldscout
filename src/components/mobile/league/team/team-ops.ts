@@ -44,17 +44,6 @@ export function ord(n: number): string {
   }
 }
 
-/** "B. Robinson" (handoff `short`). Unchanged when the first word already
- *  has a "." ("A.J. Brown"), for a team defense, or for a one-word name. */
-export function shortName(full: string, position?: string | null): string {
-  const name = full.trim()
-  if (position === 'DEF' || position === 'DST' || /D\/ST$/.test(name)) return name
-  const parts = name.split(/\s+/)
-  if (parts.length < 2) return name
-  if (parts[0].includes('.')) return name
-  return `${parts[0][0]}. ${parts.slice(1).join(' ')}`
-}
-
 /** A projection with 2 decimals ("19.71"), or the en dash. */
 export function proj2(n: number | null | undefined): string {
   return n === null || n === undefined || !Number.isFinite(n) ? '–' : n.toFixed(2)

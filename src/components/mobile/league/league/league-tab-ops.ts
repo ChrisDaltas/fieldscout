@@ -19,6 +19,7 @@ import { lostClaimWinner } from '@/components/leagues/team-transactions-ops'
 import { claimOutcome, claimReasonWords } from '@/components/leagues/waiver-claims-ops'
 import type { WaiverClaimPlayer, WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import { TIEBREAKERS } from '@/lib/leagues/settings/league-settings'
+import { shortPlayerName } from '@/utils/format-name'
 
 // ---------------------------------------------------------------------------
 // Segments (spec §2.1) — Matchups / Standings / Activity
@@ -493,7 +494,7 @@ function claimLine(player: WaiverClaimPlayer, tone: 'add' | 'drop', key: string)
 function claimReason(claim: WaiverClaimView, waiverType: string | null, who: WhoOf): TextPart[] | null {
   const winner = lostClaimWinner(claim, waiverType)
   if (winner) {
-    const name = claim.add.full_name ? shortName(claim.add.full_name, claim.add.position) : 'him'
+    const name = claim.add.full_name ? shortPlayerName(claim.add.full_name, claim.add.position) : 'him'
     return [who(winner.winnerTeamId) ?? winner.winnerTeamName, ` won ${name}${winner.priceSuffix} ${winner.reason}`]
   }
   if (claim.status === 'invalid') {
@@ -572,17 +573,6 @@ export function rowPlayerIds(rows: readonly FeedRow[]): string[] {
   const ids = new Set<string>()
   for (const r of rows) if (r.kind === 'transaction') for (const m of r.moves) if (m.playerId) ids.add(m.playerId)
   return [...ids]
-}
-
-/** `short(n)`: "Kendrick Bourne" → "K. Bourne". A team defense, or a name
- *  whose first word already has a period, stays as written. */
-export function shortName(name: string, position: string | null): string {
-  const trimmed = name.trim()
-  if (!trimmed) return trimmed
-  if (/D\/ST$/.test(trimmed) || position === 'DEF' || position === 'DST') return trimmed
-  const [first, ...rest] = trimmed.split(/\s+/)
-  if (!first || rest.length === 0 || first.includes('.')) return trimmed
-  return `${first[0]}. ${rest.join(' ')}`
 }
 
 /** "WR · ARI" (D/ST for a defense). */

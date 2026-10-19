@@ -46,7 +46,8 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
 import { TeamAvatar } from '@/components/mobile/league/team/team-avatar'
-import { posCode, shortName, sinceText, teamOrder } from '@/components/mobile/league/team/team-ops'
+import { posCode, sinceText, teamOrder } from '@/components/mobile/league/team/team-ops'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { MOverlay, MOverlayScroll, MSwitch } from './m-overlay'
 import { CloseButton, FaabDisc, StatusPill } from './trade-ui'
@@ -351,7 +352,7 @@ function DetailBody({
                       <span className={cn('text-[10px] font-semibold', posTextClass(p.position))}>
                         {posCode(p.position)} · {p.nfl_team ?? 'FA'}
                       </span>
-                      <span className="truncate text-[14px] font-semibold">{shortName(p.full_name, p.position)}</span>
+                      <span className="truncate text-[14px] font-semibold">{shortPlayerName(p.full_name, p.position)}</span>
                     </button>
                   )
                 })}
@@ -497,7 +498,7 @@ function Asset({ a, headshot, onOpen, locked }: { a: TradeAsset; headshot: strin
         <FaabDisc size={36} />
       )}
       <span className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className="truncate text-[13px] font-semibold">{a.playerId ? shortName(a.name, a.position) : a.name}</span>
+        <span className="truncate text-[13px] font-semibold">{a.playerId ? shortPlayerName(a.name, a.position) : a.name}</span>
         <span className={cn('whitespace-nowrap text-[10px] font-semibold', a.position ? posTextClass(a.position) : 'text-m-t3')}>
           {a.playerId ? `${posCode(a.position)} · ${a.nflTeam ?? 'FA'}${locked ? ' · Locked' : ''}` : 'FAAB'}
         </span>

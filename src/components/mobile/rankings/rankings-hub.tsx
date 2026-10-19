@@ -42,7 +42,6 @@ import {
   scoringLabel,
   seasonLabel,
   seasonSub,
-  shortName,
   tierBreaks,
   tierChipClassFor,
   updatedLabel,
@@ -79,6 +78,7 @@ import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { computeInitials } from '@/utils/initials'
+import { shortPlayerName } from '@/utils/format-name'
 
 /**
  * The ONE Rankings screen (lr-hub.md; Chris, 2026-10-15, gap list #28) on
@@ -589,7 +589,7 @@ function HubPlayerRow({
   onToggle: () => void
   onOpenPlayer: () => void
 }) {
-  const short = shortName(player.full_name, player.position)
+  const short = shortPlayerName(player.full_name, player.position)
   return (
     <div className="relative flex min-h-[54px] w-full items-center gap-2.5 border-b border-m-b2 py-1.5">
       {/* The whole row toggles "Compare sources" (lr-hub §3.4); the headshot
@@ -671,7 +671,7 @@ function BreakdownPanel({ player, breakdown }: { player: HubPlayer; breakdown: B
       </div>
       {spread && (
         <p className="text-pretty text-[11px] font-medium leading-[1.4] text-m-t2">
-          {agreementNote(shortName(player.full_name, player.position), spread)}
+          {agreementNote(shortPlayerName(player.full_name, player.position), spread)}
         </p>
       )}
     </div>

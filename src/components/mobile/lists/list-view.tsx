@@ -25,12 +25,13 @@ import { cn } from '@/lib/utils'
 import { useHistoryStore } from '@/stores/history-store'
 import { useListDisplay, type ListOrg } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { AiBuildStrip } from './ai-build-strip'
 import { ListActionsSheet } from './list-actions-sheet'
 import { draftedCount, groupOptions, groupSections, noteOf, notesCount, resolveGroup } from './list-tools'
 import { ComparePickSheet, DraftedBox, GroupBySheet } from './list-tools-sheets'
-import { playersLabel, shortName, tierChipClass, updatedLabel } from './lists-model'
+import { playersLabel, tierChipClass, updatedLabel } from './lists-model'
 import { useListsNav } from './lists-nav'
 import {
   CenterNote,
@@ -733,7 +734,7 @@ function PlayerRow({
                     drafted ? 'text-m-t3 line-through' : 'text-m-t1',
                   )}
                 >
-                  {shortName(player.full_name, player.position)}
+                  {shortPlayerName(player.full_name, player.position)}
                 </span>
                 {note && !noteShown ? (
                   <span className="flex flex-none text-accent">

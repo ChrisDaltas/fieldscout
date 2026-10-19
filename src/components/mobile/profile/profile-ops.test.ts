@@ -16,7 +16,6 @@ import {
   relativeAgo,
   resolveMeTab,
   shortDate,
-  shortName,
   sortRankingRows,
   sortSsQuestions,
   ssClosesLabel,
@@ -221,9 +220,6 @@ describe('start/sit', () => {
   })
 
   it('copy: title, footer, preview sub', () => {
-    expect(shortName('Isiah Pacheco')).toBe('I. Pacheco')
-    expect(shortName('A.J. Brown')).toBe('A.J. Brown')
-    expect(shortName('Chiefs D/ST')).toBe('Chiefs D/ST')
     expect(ssTitle(open1)).toBe('I. Pacheco or T. Allgeier?')
     expect(ssTitle({ ...open1, note: ' FLEX spot: who starts? ' })).toBe('FLEX spot: who starts?')
     expect(ssFooter(open1, NOW)).toBe('58 votes · crowd leans T. Allgeier')

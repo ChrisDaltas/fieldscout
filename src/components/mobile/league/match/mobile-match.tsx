@@ -75,6 +75,7 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
 
 import { nflGameHref } from '@/components/mobile/league/game/game-ops'
 import { WeekStatus, WeekStepper } from '@/components/mobile/league/week-stepper'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { MobileCorrectionNote } from './match-correction-note'
 import {
@@ -88,7 +89,6 @@ import {
   pointsDisplay,
   resultWord,
   routeMatchupId,
-  shortName,
   sideScore,
   sidesOf,
   slotChipPos,
@@ -1153,7 +1153,7 @@ function PlayerHalf({
   const team = metaTeam(player.nflTeam, bye)
   const nameCol = (
     <span className="flex min-w-0 flex-1 flex-col gap-px">
-      <span className="truncate text-[14px] font-semibold">{shortName(player.fullName, player.position)}</span>
+      <span className="truncate text-[14px] font-semibold">{shortPlayerName(player.fullName, player.position)}</span>
       <span className="truncate whitespace-nowrap text-[11px] font-medium text-m-t3">
         <span className={cn('font-semibold', posTextClass(player.position))}>{posLabel(player.position)}</span>
         {team ? ` · ${team}` : ''}

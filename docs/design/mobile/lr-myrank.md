@@ -609,6 +609,7 @@ The editor-only `fromBy` (a community author handle) is **not** saved to the rec
 **Short name.** First character + ". " + every word after the first. D/ST names stay whole ("Broncos D/ST").
 - "Amon-Ra St. Brown" → "A. St. Brown".
 - It produces collisions and odd forms: "A.J. Brown" → "A. Brown" (listed next to "A. St. Brown"), "DK Metcalf" → "D. Metcalf", "De'Von Achane" → "D. Achane".
+  - **The app keeps a first name that is already initials:** "A.J. Brown", "DK Metcalf", "CJ Stroud" (gap list §4 item 17; `shortPlayerName` in `src/utils/format-name.ts`).
 - The pick sheet uses full names.
 
 **Editor row data.**

@@ -142,16 +142,6 @@ export function cardProjection(total: { total: number; missing: number } | null,
 // Starter rows
 // ---------------------------------------------------------------------------
 
-/** "J. Chase" (handoff `short(n)`): unchanged for a D/ST, a single word, or a
- *  first token that already holds a dot ("A.J. Brown"). */
-export function shortName(fullName: string, position: string | null | undefined): string {
-  const name = fullName.trim()
-  if (position === 'DEF' || position === 'DST' || /D\/ST$/.test(name)) return name
-  const parts = name.split(/\s+/)
-  if (parts.length < 2 || parts[0]!.includes('.')) return name
-  return `${parts[0]![0]}. ${parts.slice(1).join(' ')}`
-}
-
 /** "QB · CLE (9)" — the bye week from the roster read when known. */
 export function metaTeam(nflTeam: string | null, bye: number | null | undefined): string | null {
   if (!nflTeam) return null

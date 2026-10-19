@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { formatInstantWithDate, lockBadgeFor } from '@/components/leagues/lineup-editor-ops'
 import { CLAIM_ORDER_LABEL } from '@/components/leagues/team-transactions-ops'
 import { claimSettlesCopy } from '@/components/leagues/waiver-claims-ops'
-import { moveSub, shortName } from '@/components/mobile/league/league/league-tab-ops'
+import { moveSub } from '@/components/mobile/league/league/league-tab-ops'
 import { BidStepper, DropPicker, Refusal, SheetButton } from '@/components/mobile/player/player-move-sheet'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
@@ -20,6 +20,7 @@ import { toast } from '@/hooks/use-toast'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { WaiverClaimPlayer, WaiverClaimView, WaiverClaimsDocument } from '@/lib/leagues/api/waivers-service'
 import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
+import { shortPlayerName } from '@/utils/format-name'
 
 import {
   CLAIM_UPDATED_COPY,
@@ -329,8 +330,8 @@ export function ClaimOrderList({
               size={36}
             />
             <span className="flex min-w-0 flex-1 flex-col gap-px">
-              <span className="truncate text-[14px] font-semibold text-m-t1">{shortName(name, claim.add.position)}</span>
-              <span className="truncate text-[11px] font-semibold text-m-t3">{claimOrderMeta(claim, faab, shortName)}</span>
+              <span className="truncate text-[14px] font-semibold text-m-t1">{shortPlayerName(name, claim.add.position)}</span>
+              <span className="truncate text-[11px] font-semibold text-m-t3">{claimOrderMeta(claim, faab, shortPlayerName)}</span>
             </span>
             <OrderArrow dir="up" off={up === null} label={`Move ${name} up`} onClick={() => move(up)} />
             <OrderArrow dir="down" off={down === null} label={`Move ${name} down`} onClick={() => move(down)} />

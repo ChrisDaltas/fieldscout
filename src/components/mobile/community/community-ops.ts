@@ -8,6 +8,7 @@ import {
 import { authorAvatarClass } from '@/components/mobile/ui/avatar-colors'
 import { DEFAULT_RANKING_SCORING, personaScoringFormat } from '@/lib/lists/ranking-publish'
 import { activeWeekOf } from '@/lib/rankings/week-window'
+import { shortPlayerName } from '@/utils/format-name'
 import { handleInitials } from '@/utils/initials'
 
 /**
@@ -248,16 +249,6 @@ export const RANK_SCORING_CHIPS: readonly Chip<RankScoringFilter>[] = [
   ...SCORING_FORMATS.map((value) => ({ value, label: SCORING_FORMAT_LABEL[value] })),
 ]
 
-/** Handoff `short(n)`: "DK Metcalf" → "D. Metcalf"; "A.J. Brown" and team
- *  defenses are left whole. */
-export function shortName(name: string, position?: string | null): string {
-  const pos = (position ?? '').toUpperCase()
-  if (pos === 'DEF' || pos === 'DST' || / D\/ST$/.test(name)) return name
-  const parts = name.trim().split(/\s+/)
-  if (parts.length < 2 || parts[0]!.includes('.')) return name.trim()
-  return `${parts[0]![0]}. ${parts.slice(1).join(' ')}`
-}
-
 /** Player meta line "WR · PHI" (D/ST for team defenses). */
 export function playerMeta(p: Pick<CommunityPlayer, 'position' | 'team'>): string {
   const pos = (p.position ?? '').toUpperCase()
@@ -272,8 +263,8 @@ export function playerMeta(p: Pick<CommunityPlayer, 'position' | 'team'>): strin
  *  K. Williams". */
 export function topLine(heads: CommunityPlayer[], numbered = true): string {
   const top = heads.slice(0, 3)
-  if (!numbered) return top.map((p) => shortName(p.full_name, p.position)).join(' · ')
-  return top.map((p, i) => `${i + 1}. ${shortName(p.full_name, p.position)}`).join(' ')
+  if (!numbered) return top.map((p) => shortPlayerName(p.full_name, p.position)).join(' · ')
+  return top.map((p, i) => `${i + 1}. ${shortPlayerName(p.full_name, p.position)}`).join(' ')
 }
 
 /** "12k follows", "8.4k follows", "640 follows", "1 follow". */

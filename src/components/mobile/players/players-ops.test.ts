@@ -11,7 +11,6 @@ import {
   isLiveStatus,
   ordinal,
   posMatches,
-  shortName,
   sortAfterToggle,
   sortByCell,
   statCells,
@@ -99,12 +98,6 @@ describe('players-ops — cells', () => {
 })
 
 describe('players-ops — text', () => {
-  it('shortens names the way the prototype does', () => {
-    expect(shortName('Michael Penix Jr.', 'QB')).toBe('M. Penix Jr.')
-    expect(shortName('A.J. Brown', 'WR')).toBe('A.J. Brown')
-    expect(shortName('Philadelphia Eagles', 'DEF')).toBe('Philadelphia Eagles')
-  })
-
   it('writes ordinals', () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 23].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '23rd'])
   })

@@ -24,7 +24,6 @@ import {
   removeFromDraft,
   saveFailureNote,
   setDraftMode,
-  shortName,
   trailingMarkers,
   updatedLabel,
   youTubeId,
@@ -56,13 +55,6 @@ describe('copy formats', () => {
   it('singular player', () => {
     expect(playersLabel(1)).toBe('1 player')
     expect(playersLabel(0)).toBe('0 players')
-  })
-  it('short names', () => {
-    expect(shortName('Josh Allen')).toBe('J. Allen')
-    expect(shortName('Amon-Ra St. Brown')).toBe('A. St. Brown')
-    expect(shortName('A.J. Brown')).toBe('A. Brown')
-    expect(shortName('Broncos D/ST')).toBe('Broncos D/ST')
-    expect(shortName('Denver Broncos', 'DEF')).toBe('Denver Broncos')
   })
   it('updated label', () => {
     const now = Date.UTC(2026, 9, 15, 12)

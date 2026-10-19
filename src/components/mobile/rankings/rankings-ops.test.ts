@@ -41,13 +41,13 @@ import {
   rankingScoring,
   scoringChanged,
   scoringLabel,
-  shortName,
   tierBreaks,
   toRankingsSearch,
   weekStatus,
   weeklySub,
 } from '@/components/mobile/rankings/rankings-ops'
 import { DEFAULT_RANKING_SCORING } from '@/lib/lists/ranking-publish'
+import { shortPlayerName } from '@/utils/format-name'
 
 describe('tierBreaks (handoff breaks, lr-frame §2.13.8)', () => {
   it('breaks where a gap beats 1.55 × the mean, keeping ≥ 2 per tier', () => {
@@ -192,10 +192,10 @@ describe('AI expert consensus (the Experts source)', () => {
         expect(agreementNote(short, s)).not.toMatch(/\b(him|his|he)\b/i)
       }
     }
-    expect(agreementNote(shortName('Broncos D/ST', 'DEF'), tight)).toBe(
+    expect(agreementNote(shortPlayerName('Broncos D/ST', 'DEF'), tight)).toBe(
       'Experts mostly agree. Every expert has Broncos D/ST within two spots.',
     )
-    expect(agreementNote(shortName('Brandon Aubrey', 'K'), tight)).toBe(
+    expect(agreementNote(shortPlayerName('Brandon Aubrey', 'K'), tight)).toBe(
       'Experts mostly agree. Every expert has B. Aubrey within two spots.',
     )
   })
@@ -225,10 +225,6 @@ describe('moveItem lands where the drop line shows', () => {
 })
 
 describe('names and sublines', () => {
-  it('short names keep defenses whole', () => {
-    expect(shortName('Amon-Ra St. Brown', 'WR')).toBe('A. St. Brown')
-    expect(shortName('Denver Broncos', 'DEF')).toBe('Denver Broncos')
-  })
   it('weekly subline reads the real schedule, with byes', () => {
     const games = [{ home_team: 'BAL', away_team: 'PHI' }]
     expect(weeklySub('PHI', games)).toBe('PHI @ BAL')
