@@ -5,7 +5,6 @@
  * explore layout's Community launch flag gates it with the rest of
  * Community — pinned below.)
  */
-import { Suspense } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 class RedirectSignal extends Error {
@@ -15,7 +14,6 @@ class RedirectSignal extends Error {
 }
 const flags = vi.hoisted(() => ({ community: true }))
 vi.mock('@/lib/feature-flags', () => ({ featureFlags: flags }))
-vi.mock('@/lib/sports-data/nfl-state', () => ({ getCurrentNflWeek: async () => 7 }))
 vi.mock('next/navigation', () => ({
   redirect: (to: string) => {
     throw new RedirectSignal(to)
@@ -33,21 +31,13 @@ import CommunityGate from '../layout'
 import CommunityLatestPage from './page'
 
 describe('/app/explore/latest', () => {
-  it('phone: the Latest page, with the NFL week; desktop: sent to Community', async () => {
+  it('phone: the Latest page; desktop: sent to Community', () => {
     const page = CommunityLatestPage() as unknown as {
       type: unknown
-      props: {
-        desktop: { type: unknown; props: unknown }
-        mobile: { type: unknown; props: { children: { type: () => Promise<{ type: unknown; props: unknown }> } } }
-      }
+      props: { desktop: { type: unknown; props: unknown }; mobile: { type: unknown } }
     }
     expect(page.type).toBe(ByLayout)
-    // The phone's page streams on its own (Suspense) and reads the NFL week —
-    // a weekly ranking's Duplicate in the detail needs it.
-    expect(page.props.mobile.type).toBe(Suspense)
-    const latest = await page.props.mobile.props.children.type()
-    expect(latest.type).toBe(MobileCommunityLatest)
-    expect(latest.props).toStrictEqual({ currentWeek: 7 })
+    expect(page.props.mobile.type).toBe(MobileCommunityLatest)
     expect(page.props.desktop.type).toBe(DesktopRedirect)
     expect(page.props.desktop.props).toStrictEqual({ href: '/app/explore' })
   })

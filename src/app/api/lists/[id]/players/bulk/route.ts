@@ -96,11 +96,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 
 /**
  * Remove several players in ONE request and one statement — a ranking
- * publish (the phone's "Publish" / "Publish updates") and a Duplicate of
- * someone else's ranking drop every player the new order leaves out, which
- * can be a hundred or more; one DELETE per player made each of those a
- * separate call (and a separate follower notification) that could fail
- * half-way.
+ * publish (the phone editor's "Publish" / "Publish updates",
+ * `publish-board.ts`) drops every player the new order leaves out; one
+ * DELETE per player made each of those a separate call (and a separate
+ * follower notification) that could fail half-way.
  *
  * A player who is already off the list is fine (the end state holds). One
  * the delete didn't remove but who is STILL on the list is a failure, never

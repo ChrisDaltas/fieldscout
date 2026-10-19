@@ -20,10 +20,10 @@ import { createBrowserClient } from '@/lib/supabase/client'
  * Publish one position's slice of a board from the mobile ranking editor.
  * On the phone, Publish IS the save (Chris, 2026-10-15: no "save without
  * publishing"; a saved ranking is the one that counts), through the routes
- * desktop uses — the requests in `publish-board.ts`, which Duplicate makes
- * too: read the board fresh (a week's board is created by its first
- * publish), bulk-add new players and bulk-drop removed ones, then write this
- * position's order into its own slots. Each step throws on a non-OK
+ * desktop uses — the requests in `publish-board.ts`: read the board fresh
+ * (a week's board is created by its first publish), bulk-add new players
+ * and bulk-drop removed ones, then write this position's order into its own
+ * slots. Each step throws on a non-OK
  * response — a failed step is never reported as a publish.
  *
  * The order write also carries what migration 190 records at publish (Chris,

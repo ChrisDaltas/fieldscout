@@ -4,12 +4,6 @@ import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ListActions } from '@/components/mobile/community/list-actions'
-import {
-  DuplicateRankingButton,
-  useDuplicateRankingFlow,
-  type DuplicateRankingFlow,
-} from '@/components/mobile/rankings/duplicate-ranking'
-import type { RankingDuplicate } from '@/components/mobile/rankings/duplicate-ops'
 import { readLastRankPos } from '@/components/mobile/rankings/last-position'
 import { useShowMovement } from '@/components/mobile/rankings/movement-pref'
 import { MyRankingsBody, type MyRankFilter } from '@/components/mobile/rankings/my-rankings'
@@ -688,10 +682,6 @@ function scoringName(v: string | null): string | null {
   return null
 }
 
-/** An AI expert's board is a season ranking: it duplicates into your Rest of
- *  season / Pre-draft ranking, which can always be ranked. */
-const SEASON_DUPLICATE: RankingDuplicate = { type: 'season', week: 0, blocked: null }
-
 function AuthorBody({
   nav,
   author,
@@ -709,16 +699,6 @@ function AuthorBody({
   const experts = useExpertsSource(pos, author.board !== null)
   const pool = useHubPool(pos, state.scoring)
   const mine = useMySeasonRanks(pos)
-  // Duplicate (Chris, 2026-10-18/19): the expert's ranking at the position
-  // shown becomes your Rest of season / Pre-draft ranking there, and opens
-  // in the editor over this view (Back returns here).
-  const duplicate = useDuplicateRankingFlow({
-    sourceListId: author.board?.id ?? '',
-    dup: SEASON_DUPLICATE,
-    positions: [pos],
-    currentWeek,
-    onOpenMine: (type, p) => nav.open({ kind: 'edit', type, pos: p, from: null }, 'push'),
-  })
 
   const rows = useMemo<HubRow[]>(() => {
     const out: HubRow[] = []
@@ -784,7 +764,6 @@ function AuthorBody({
       <AuthorCard
         board={board}
         title={[label, posLabel, scoringName(board.persona.scoring)].filter(Boolean).join(' · ')}
-        duplicate={duplicate}
       />
       {chips.length > 0 && (
         <div role="group" aria-label="Position" className="mt-3 flex gap-1.5 overflow-x-auto px-4 scrollbar-none">
@@ -829,7 +808,13 @@ function AuthorBody({
   )
 }
 
-function AuthorCard({ board, title, duplicate }: { board: ExpertBoard; title: string; duplicate: DuplicateRankingFlow }) {
+/**
+ * The AI expert's ranking, to read (gap list §3 #28). It offers no Duplicate
+ * and no start-your-ranking-from-it (Chris, 2026-10-19: Duplicate is removed
+ * from rankings everywhere) — only the Like · Comments · Save · Share row a
+ * Community ranking has.
+ */
+function AuthorCard({ board, title }: { board: ExpertBoard; title: string }) {
   // The ranking's own read — the viewer's like and save, the counts — for
   // its Like · Comments · Save · Share row: the Community detail's, so a
   // ranking opened here from Community keeps them (gap list §3 #28).
@@ -890,7 +875,6 @@ function AuthorCard({ board, title, duplicate }: { board: ExpertBoard; title: st
       ) : (
         <span aria-hidden className="h-9 w-3/4 animate-pulse rounded-pill bg-m-b2" />
       )}
-      <DuplicateRankingButton flow={duplicate} blocked={null} />
     </div>
   )
 }

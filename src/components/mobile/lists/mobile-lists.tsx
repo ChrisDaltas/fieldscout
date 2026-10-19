@@ -19,8 +19,7 @@ import { editorHref, listHref, returnToOf, type ReturnTo } from './lists-nav'
  *
  * `currentWeek` (the NFL week, 0 = offseason — the server's) names the
  * rankings the editor's Import a ranking sheet offers ("Week 5 · RB",
- * "Rest of season" or "Pre-draft"), and whether a saved weekly ranking can
- * be duplicated now (List options → Duplicate).
+ * "Rest of season" or "Pre-draft").
  */
 export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
   const params = useSearchParams()
@@ -57,7 +56,7 @@ export function MobileLists({ currentWeek = 0 }: { currentWeek?: number }) {
   }
   if (compare.length > 0) return <CompareScreen ids={compare} />
   if (listId && params.get('details') === '1') return <ListDetailsScreen key={listId} listId={listId} />
-  if (listId) return <ListView key={listId} listId={listId} currentWeek={currentWeek} />
+  if (listId) return <ListView key={listId} listId={listId} />
   return <ListsGrid tab={params.get('tab') === 'saved' ? 'saved' : 'mine'} />
 }
 

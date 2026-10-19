@@ -54,9 +54,9 @@ function openDetail(e: React.MouseEvent<HTMLAnchorElement>, id: string, from: st
 }
 
 /**
- * A card's one tap target. An AI expert's ranking opens in Rankings, with
- * Duplicate (gap list §3 #28; `expertRankingHref`; Chris 2026-10-18/19) — a
- * page of its own, whose Back returns here. Everything else opens the detail
+ * A card's one tap target. An AI expert's ranking opens in Rankings (gap
+ * list §3 #28; `expertRankingHref`) — a page of its own, whose Back returns
+ * here. Everything else opens the detail
  * over this screen (`from`). Rankings exist only while their switch is on;
  * with it off a ranking keeps the detail.
  */

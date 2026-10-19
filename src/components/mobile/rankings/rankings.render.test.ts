@@ -502,11 +502,10 @@ describe('the scoring a ranking is published for (Chris, 2026-10-15, #36)', () =
 
 /**
  * Gap list §3 #28: Community opens an AI expert's ranking here — the author
- * view (lr-hub S4). Its action is Duplicate (Chris, 2026-10-18/19: "If a
- * user dupes some popular ranking it then becomes their own") — the old
- * "Start my ranking from this" is gone. A ranking is one position; an
- * overall board ranks several, so it gets a chip per position it ranks
- * anyone at.
+ * view (lr-hub S4), to read. It offers no Duplicate (Chris, 2026-10-19:
+ * Duplicate is removed from rankings everywhere), and the old "Start my
+ * ranking from this" stays gone. A ranking is one position; an overall
+ * board ranks several, so it gets a chip per position it ranks anyone at.
  */
 describe('an AI expert’s ranking opened from Community (gap list §3 #28)', () => {
   const persona = { username: 'e1', display_name: 'Expert One', avatar_url: null, scoring: 'PPR' }
@@ -549,20 +548,17 @@ describe('an AI expert’s ranking opened from Community (gap list §3 #28)', ()
   const hub = (state: Partial<RankingsUrlState>) =>
     render(createElement(RankingsHub, { nav: { ...nav, state: { ...nav.state, view: 'hub', ...state } } }), seeded())
 
-  it('shows the expert’s ranking with Duplicate — never "Start my ranking from this"', () => {
+  it('shows the expert’s ranking — no Duplicate, never "Start my ranking from this"', () => {
     const html = hub({ src: 'p:e1-rb', pos: 'RB' })
     const t = text(html)
     expect(html).toMatch(/aria-selected="true"[^>]*>Expert One/)
     expect(t).toContain('Rest of season · RB · PPR')
     expect(t).toContain('AI expert · 4 players')
-    // An AI expert's board is a season ranking: always open to duplicate.
-    const button = /<button type="button"([^>]*)>(?:(?!<\/button>).)*Duplicate<\/button>/.exec(html)
-    expect(button).not.toBeNull()
-    expect(button![1]).not.toContain('disabled=""')
+    expect(t).not.toMatch(/Duplicat/)
     expect(t).not.toMatch(/Start my ranking|Start from this/)
   })
 
-  it('keeps the Community detail’s Like · Comments · Save · Share, above Duplicate', () => {
+  it('keeps the Community detail’s Like · Comments · Save · Share — and still no Duplicate', () => {
     const qc = seeded()
     qc.setQueryData(listsKeys.detail('e1-rb'), {
       id: 'e1-rb',
@@ -589,7 +585,7 @@ describe('an AI expert’s ranking opened from Community (gap list §3 #28)', ()
     expect(row![1]).toMatch(/aria-label="Comments"/)
     expect(t).toContain('Save')
     expect(t).toContain('Share')
-    expect(html.indexOf('data-list-actions')).toBeLessThan(html.indexOf('Duplicate</button>'))
+    expect(text(html)).not.toMatch(/Duplicat/)
   })
 
   it('while the ranking’s likes are read, a placeholder — never a guessed count', () => {

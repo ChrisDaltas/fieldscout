@@ -112,7 +112,7 @@ import { shortPlayerName } from '@/utils/format-name'
  * "Publish" vs "Publish updates" is about whether a ranking already exists
  * at the position, not where the draft started: starting from the experts
  * over a ranking you have publishes updates to it. (Someone else's ranking
- * is never a start: Duplicate publishes it as yours, then opens it here.)
+ * is never a start.)
  *
  * A NEW ranking (from New ranking step 2, or a week that has no board yet)
  * exists only on the phone until Publish (C1):

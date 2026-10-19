@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 
+import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { Button } from '@/components/ui/button'
 import {
@@ -193,12 +194,10 @@ interface HeroProps {
   onPopOut: () => void
   onRename: (title: string) => void
   onShare: () => void
-  /** A list's Duplicate makes a list copy; someone else's ranking's makes it
-   *  YOUR ranking (Chris, 2026-10-18/19) — the panel decides which. */
+  /** Duplicate — a list copy, a plain list's only: a ranking (the season
+   *  board, a weekly board, an AI expert's board) has no Duplicate item at
+   *  all (Chris, 2026-10-19; `offersDuplicate`). */
   onDuplicate: () => void
-  /** Why someone else's weekly ranking can't be duplicated now ("Week 5 is
-   *  over"): the item shows disabled, with it. */
-  duplicateBlocked?: string | null
   onSetPrivate: (isPrivate: boolean) => void
   /**
    * The Ranked switch — **Numbers → Ranked / Unranked** (one numbering rule,
@@ -247,7 +246,6 @@ export function ListDetailHero({
   onRename,
   onShare,
   onDuplicate,
-  duplicateBlocked = null,
   onSetPrivate,
   onSetNumbered,
   onClearDrafted,
@@ -355,11 +353,12 @@ export function ListDetailHero({
                 Attach to league
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onSelect={onDuplicate} disabled={duplicateBlocked !== null}>
-              <Icon name="layers" size={13} />
-              Duplicate
-              {duplicateBlocked && <span className="ml-auto text-[10px] font-medium text-n-6">{duplicateBlocked}</span>}
-            </DropdownMenuItem>
+            {offersDuplicate(list) && (
+              <DropdownMenuItem onSelect={onDuplicate}>
+                <Icon name="layers" size={13} />
+                Duplicate
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={onClearDrafted}>
               <Icon name="reset" size={13} />
               Clear drafted
