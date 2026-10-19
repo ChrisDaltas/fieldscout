@@ -39,6 +39,21 @@ import { MobileBracket } from './mobile-bracket'
 // name on a 375px phone, cutting the @manager and the extra records.
 const GRID = 'grid grid-cols-[30px_minmax(0,1fr)_64px_50px] gap-2'
 
+// Your own row (gap list §4 item 11): a resting blue-tint FILL — the
+// desktop table's accent-soft, never a shadow — rounded like the v7
+// league-home rows, its own divider hidden. The tint reaches 4px past the
+// other rows' edges and pads 4px more inside, so every column still lines
+// up with the header and the rows around it.
+const MINE_ROW = '-mx-1 bg-m-gb px-2'
+
+/** The rule under a standings row: the 2px blue playoff cutoff under the
+ *  last seed (kept under your own row too — the tint then squares off its
+ *  bottom onto the line), a hairline between the rest, none under yours. */
+function standingsRowRule(cutoff: boolean, mine: boolean): string {
+  if (cutoff) return cn('border-b-2 border-accent', mine && 'rounded-t-[12px]')
+  return mine ? 'rounded-[12px] border-b border-transparent' : 'border-b border-m-b2'
+}
+
 type StandingsView = 'final' | 'projected'
 const VIEWS: ReadonlyArray<{ value: StandingsView; label: string }> = [
   { value: 'final', label: 'Final' },
@@ -185,23 +200,31 @@ export function StandingsSegment({
               const streak = schedule.data ? teamStreak(row.team_id, schedule.data, doc.season) : null
               const extraParts = extraRecords(row, extras)
               const cutoff = playoffTeams > 0 && i + 1 === playoffTeams
+              const mine = row.team_id === myTeamId
               const adjustedWeeks = overridden?.get(row.team_id) ?? null
               return (
                 <li
                   key={row.team_id}
-                  className={cn(GRID, 'relative items-center px-1 py-2.5', cutoff ? 'border-b-2 border-accent' : 'border-b border-m-b2')}
+                  className={cn(GRID, 'relative items-center py-2.5', mine ? MINE_ROW : 'px-1', standingsRowRule(cutoff, mine))}
                   data-standings-row={row.team_id}
+                  data-mine={mine || undefined}
                 >
                   <Link
                     href={teamPageHref(leagueId, row.team_id)}
-                    aria-label={row.team_id === myTeamId ? `${row.name} — your team` : row.name}
+                    aria-label={mine ? `${row.name} — your team` : row.name}
                     className="absolute inset-0"
                   />
                   <span className="flex flex-col items-center">
                     <span className="text-[15px] font-semibold tabular-nums text-m-t1">{row.rank}</span>
                   </span>
                   <span className="flex min-w-0 items-center gap-[9px]">
-                    <TeamAvatar name={row.name} size={32} className={teamAvatarClass(row.team_id, teamIds, myTeamId)} online={teamOnline(row.team_id)} />
+                    <TeamAvatar
+                      name={row.name}
+                      size={32}
+                      className={teamAvatarClass(row.team_id, teamIds, myTeamId)}
+                      online={teamOnline(row.team_id)}
+                      onlineRingClass={mine ? 'ring-m-gb' : undefined}
+                    />
                     <span className="flex min-w-0 flex-col gap-px">
                       <span className="flex min-w-0 items-center gap-1">
                         <span className="truncate text-[13.5px] font-semibold text-m-t1">{row.name}</span>

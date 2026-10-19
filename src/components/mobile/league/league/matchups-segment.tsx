@@ -239,7 +239,7 @@ function WeekCards({
   av: Av
   online: Online
 }) {
-  if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} av={av} online={online} />
+  if (doc.schedule_mode === 'total_points') return <Leaderboard leagueId={leagueId} doc={doc} myTeamId={myTeamId} av={av} online={online} />
   const { primary, secondary } = matchupGroups(doc.matchups, myTeamId)
   // The empty copy reads the week SHOWN, not the league's state: a playoff
   // week stepped to in the regular season says its pairings come later
@@ -323,8 +323,13 @@ function MatchupCard({
   myTeamId: string | null
   door?: 'matchup' | 'teams'
 }) {
-  // Your own matchup puts you on the left (the design's team A), home or away.
+  // Your own matchup puts you on the left (the design's team A), home or away,
+  // and is tinted (gap list §4 item 11): a resting blue-tint FILL — the
+  // desktop matchup page's accent-soft — never a shadow. The online dot's
+  // ring follows the card colour.
   const flip = myTeamId !== null && row.away_team_id === myTeamId
+  const mine = flip || (myTeamId !== null && row.home_team_id === myTeamId)
+  const ring = mine ? 'ring-m-gb' : 'ring-m-b1'
   const left = flip ? { id: row.away_team_id!, score: row.away_score } : { id: row.home_team_id, score: row.home_score }
   const right = flip ? { id: row.home_team_id, score: row.home_score } : row.away_team_id ? { id: row.away_team_id, score: row.away_score } : null
   const teamDoor = (id: string) => (door === 'teams' ? teamPageHref(leagueId, id) : undefined)
@@ -337,6 +342,7 @@ function MatchupCard({
         record={records.get(left.id) ?? null}
         avClass={av(left.id)}
         online={online(left.id)}
+        ring={ring}
         href={teamDoor(left.id)}
       />
       <span className="flex flex-col items-center gap-0.5 text-center text-[11px] font-semibold text-m-t4">
@@ -355,6 +361,7 @@ function MatchupCard({
           record={records.get(right.id) ?? null}
           avClass={av(right.id)}
           online={online(right.id)}
+          ring={ring}
           href={teamDoor(right.id)}
           end
         />
@@ -365,16 +372,16 @@ function MatchupCard({
       )}
     </>
   )
-  const className = 'grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] bg-m-b1 p-3'
+  const className = cn('grid grid-cols-[minmax(0,1fr)_26px_minmax(0,1fr)] items-center gap-2 rounded-[16px] p-3', mine ? 'bg-m-gb' : 'bg-m-b1')
   if (door === 'teams') {
     return (
-      <div className={className} data-matchup={row.id}>
+      <div className={className} data-matchup={row.id} data-mine={mine || undefined}>
         {body}
       </div>
     )
   }
   return (
-    <Link href={`/app/leagues/${leagueId}/matchup/${row.id}`} className={className} data-matchup={row.id}>
+    <Link href={`/app/leagues/${leagueId}/matchup/${row.id}`} className={className} data-matchup={row.id} data-mine={mine || undefined}>
       {body}
     </Link>
   )
@@ -387,6 +394,7 @@ function Side({
   record,
   avClass,
   online,
+  ring,
   href,
   end = false,
 }: {
@@ -396,6 +404,8 @@ function Side({
   record: string | null
   avClass: string
   online: boolean
+  /** The online dot's ring — the card's own colour. */
+  ring: string
   /** The side's own door (that team's page) — only on a card that is not
    *  itself a link (an <a> inside an <a> is invalid HTML). */
   href?: string
@@ -406,7 +416,7 @@ function Side({
   const body = (
     <>
       <div className={cn('flex items-center gap-2', end && 'flex-row-reverse')}>
-        <TeamAvatar name={name} className={avClass} online={online} onlineRingClass="ring-m-b1" />
+        <TeamAvatar name={name} className={avClass} online={online} onlineRingClass={ring} />
         <span className="flex-1" />
         <span
           className={cn(
@@ -432,25 +442,47 @@ function Side({
 }
 
 /** A total-points league's week: the stored leaderboard, ranked by the ops
- *  (absence is pending, never 0). */
-function Leaderboard({ leagueId, doc, av, online }: { leagueId: string; doc: WeekMatchups; av: Av; online: Online }) {
+ *  (absence is pending, never 0). Your own row carries your matchup card's
+ *  resting tint (gap list §4 item 11). */
+function Leaderboard({
+  leagueId,
+  doc,
+  myTeamId,
+  av,
+  online,
+}: {
+  leagueId: string
+  doc: WeekMatchups
+  myTeamId: string | null
+  av: Av
+  online: Online
+}) {
   const rows = leaderboardRows(doc)
   return (
     <section className="overflow-hidden rounded-[16px] bg-m-b1" aria-label={LEADERBOARD_TITLE}>
       <p className="px-3 pb-1 pt-3 text-[12px] font-semibold text-m-t3">{LEADERBOARD_TITLE}</p>
       {rows.length === 0 && <p className="px-3 pb-3 text-[13px] font-medium text-m-t3">No scores yet this week.</p>}
-      {rows.map((r) => (
-        <Link key={r.team_id} href={teamPageHref(leagueId, r.team_id)} className="flex h-12 items-center gap-2.5 border-t border-m-b3 px-3">
-          <span className="w-5 flex-none text-[13px] font-semibold tabular-nums text-m-t3">{r.rank ?? '—'}</span>
-          <TeamAvatar name={r.name} className={av(r.team_id)} online={online(r.team_id)} onlineRingClass="ring-m-b1" />
-          <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-m-t1">{r.name}</span>
-          {r.points !== null ? (
-            <span className="text-[14px] font-semibold tabular-nums text-m-t1">{formatPoints(r.points)}</span>
-          ) : (
-            <span className="text-[12px] font-medium text-m-t3">pending</span>
-          )}
-        </Link>
-      ))}
+      {rows.map((r) => {
+        const mine = r.team_id === myTeamId
+        return (
+          <Link
+            key={r.team_id}
+            href={teamPageHref(leagueId, r.team_id)}
+            className={cn('flex h-12 items-center gap-2.5 border-t border-m-b3 px-3', mine && 'bg-m-gb')}
+            data-leaderboard-row={r.team_id}
+            data-mine={mine || undefined}
+          >
+            <span className="w-5 flex-none text-[13px] font-semibold tabular-nums text-m-t3">{r.rank ?? '—'}</span>
+            <TeamAvatar name={r.name} className={av(r.team_id)} online={online(r.team_id)} onlineRingClass={mine ? 'ring-m-gb' : 'ring-m-b1'} />
+            <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-m-t1">{r.name}</span>
+            {r.points !== null ? (
+              <span className="text-[14px] font-semibold tabular-nums text-m-t1">{formatPoints(r.points)}</span>
+            ) : (
+              <span className="text-[12px] font-medium text-m-t3">pending</span>
+            )}
+          </Link>
+        )
+      })}
     </section>
   )
 }
