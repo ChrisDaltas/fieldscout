@@ -42,7 +42,7 @@ function Byline({ note, className }: { note: ShownNote; className?: string }) {
     <p className={cn('text-[12px] font-medium text-m-t3', className)} data-league-note-byline>
       {by.username ? (
         <>
-          Pinned by <UsernameLink username={by.username} at={false} className="font-semibold text-m-t2" />
+          Pinned by <UsernameLink username={by.username} className="font-semibold text-m-t2" />
         </>
       ) : (
         'Pinned'

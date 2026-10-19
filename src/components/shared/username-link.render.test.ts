@@ -113,6 +113,12 @@ describe('splitActorName — where a stored post names its actor', () => {
     expect(html(createElement(TextWithActor, { text: 'Draft paused by chris.', actor: 'chris' }))).toMatch(/^Draft paused by <a [^>]*href="\/u\/chris">chris<\/a>\.$/)
     expect(html(createElement(TextWithActor, { text: 'Week 3 finalized.', actor: null }))).toBe('Week 3 finalized.')
   })
+  it('`at` writes the names as @handles (the phone’s League tab — gap list §4 item 12); bare by default', () => {
+    expect(html(createElement(TextWithActor, { text: 'Draft paused by chris.', actor: 'chris', at: true }))).toMatch(/^Draft paused by <a [^>]*href="\/u\/chris">@chris<\/a>\.$/)
+    const marked = `made ${markUsername('dana')} a co-commissioner`
+    expect(html(createElement(TextWithUsernames, { marked, at: true }))).toMatch(/^made <a [^>]*href="\/u\/dana">@dana<\/a> a co-commissioner$/)
+    expect(html(createElement(TextWithUsernames, { marked }))).toMatch(/^made <a [^>]*href="\/u\/dana">dana<\/a> a co-commissioner$/)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -320,6 +326,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/components/mobile/search/mobile-search.tsx', contains: '`@${list.owner_username}`', why: 'phone search Posts row byline: the row is one link that opens the list (as the Community cards), so the handle sits inside it' },
   { file: 'src/components/mobile/search/search-ops.ts', contains: '`@${m.username} ${managerSub(m.teamName)}`', why: 'the search match text for a league manager — matched against the query, never rendered' },
   { file: 'src/components/mobile/lists/list-tools-sheets.tsx', contains: "list.owner ? `@${list.owner.username}`", why: 'the Side by side picker’s saved-list byline: inside a pick-list a tap ticks the row (ruling #42), so the owner’s handle is plain text there' },
+  { file: 'src/components/mobile/league/league/tx-filter-sheet.tsx', contains: 'label={handle ? `@${handle}` : t.name}', why: 'the Transaction filters Teams list: inside a pick-list a tap ticks the team (ruling #42), so the manager’s @handle (gap list §4 item 12) is plain text there' },
   { file: 'src/components/mobile/messages/messages-ops.ts', contains: 'return handle ? `@${handle}` : FORMER_MEMBER', why: 'the messages sender label: the conversation preview, inside its row’s link (and a league trade offer’s name, which nothing renders since Messages lost its Trades tab — ruling #22); the thread’s sender line is a UsernameLink' },
 ]
 

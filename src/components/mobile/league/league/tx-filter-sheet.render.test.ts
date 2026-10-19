@@ -3,9 +3,10 @@
  * Chris, 2026-10-15): tapping a row, the manager's name included, ticks
  * that team; the name is not a profile link there. Chris's explicit
  * exception to "usernames always link to profile" (2026-09-30), which holds
- * everywhere a name is not inside a pick-list. (The handoff draws the names
- * as bare handles, so `username-link.render.test.ts`'s `@`-handle census
- * has nothing to flag here.)
+ * everywhere a name is not inside a pick-list. Each name is the manager's
+ * @handle (gap list §4 item 12 — the League tab's one handle format; the
+ * handoff drew bare handles), plain text, so it sits on the census allowlist
+ * in `username-link.render.test.ts` with that reason.
  */
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -24,6 +25,7 @@ vi.mock('@/components/mobile/ui/mobile-sheet', () => ({
 const TEAMS = [
   { id: 't1', name: 'Gridiron Gurus' },
   { id: 't2', name: 'Touchdown Tacos' },
+  { id: 't3', name: 'Hail Marys' },
 ]
 const MANAGERS = new Map([
   ['t1', 'marcus'],
@@ -55,10 +57,18 @@ function elementsNamed(node: ReactNode, name: string, out: ReactElement<Record<s
 }
 
 describe('Transaction filters — the Teams list is a picker (gap list #42)', () => {
+  it('each team reads as its manager’s @handle; a team with no manager, as its name (gap list §4 item 12)', () => {
+    const html = renderToStaticMarkup(createElement(TxFilterSheet, props({ type: 'All', teams: [] })))
+    const names = [...html.matchAll(/<span class="min-w-0 flex-1 truncate[^"]*">([^<]*)<\/span>/g)].map((m) => m[1])
+    expect(names).toEqual(['All teams', '@marcus', '@dalton', 'Hail Marys'])
+    // Never the prototype's bare handle.
+    expect(html).not.toMatch(/>(marcus|dalton)</)
+  })
+
   it('each manager’s row is one tick button; the name is not a profile link inside it', () => {
     const html = renderToStaticMarkup(createElement(TxFilterSheet, props({ type: 'All', teams: ['t1'] })))
-    expect(html).toMatch(/<button type="button" aria-pressed="true"[^>]*>(?:(?!<\/button>)[\s\S])*>marcus<\/span>/)
-    expect(html).toMatch(/<button type="button" aria-pressed="false"[^>]*>(?:(?!<\/button>)[\s\S])*>dalton<\/span>/)
+    expect(html).toMatch(/<button type="button" aria-pressed="true"[^>]*>(?:(?!<\/button>)[\s\S])*>@marcus<\/span>/)
+    expect(html).toMatch(/<button type="button" aria-pressed="false"[^>]*>(?:(?!<\/button>)[\s\S])*>@dalton<\/span>/)
     expect(html).not.toContain('<a ')
     expect(html).not.toContain('data-username-link')
     expect(html).not.toContain('/u/')
@@ -67,7 +77,7 @@ describe('Transaction filters — the Teams list is a picker (gap list #42)', ()
   it('tapping a row ticks (or unticks) its team; All teams clears the list', () => {
     const onChange = vi.fn()
     const rows = elementsNamed(TxFilterSheet(props({ type: 'All', teams: ['t1'] }, onChange)), 'TeamRow')
-    expect(rows.map((r) => r.props.label)).toEqual(['All teams', 'marcus', 'dalton'])
+    expect(rows.map((r) => r.props.label)).toEqual(['All teams', '@marcus', '@dalton', 'Hail Marys'])
     ;(rows[2]!.props.onClick as () => void)()
     expect(onChange).toHaveBeenLastCalledWith({ teams: ['t1', 't2'] })
     ;(rows[1]!.props.onClick as () => void)()

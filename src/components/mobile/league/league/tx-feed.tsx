@@ -59,9 +59,11 @@ export interface TxClaimResults {
  * commissioner's posts are rows too (the feed is the league's whole
  * activity). Shared by League › Activity and the Transactions screen.
  *
- * Project rules over the prototype: a manager's name — at the head of a
- * row or inside its words ("Trade with marcus") — is a door to his profile,
- * and a player line opens that player's profile. A filtered-to-teams list
+ * Project rules over the prototype: a manager — at the head of a row or
+ * inside its words ("Trade with @marcus") — is his @handle (the prototype's
+ * bare "marcus" is gone: one handle format across the League tab, gap list
+ * §4 item 12) and a door to his profile, and a player line opens that
+ * player's profile. A filtered-to-teams list
  * tells each trade from the selected team's side. "No … match" is said only
  * once the feed is read to its end.
  */
@@ -225,7 +227,8 @@ function TypePill({ pill, href }: { pill: Pill; href?: string | null }) {
   )
 }
 
-/** Words with managers in them — each manager a door to his profile. */
+/** Words with managers in them — each manager an @handle and a door to his
+ *  profile (gap list §4 item 12). */
 function Parts({ parts, linkClassName }: { parts: readonly TextPart[]; linkClassName?: string }) {
   return (
     <>
@@ -233,7 +236,7 @@ function Parts({ parts, linkClassName }: { parts: readonly TextPart[]; linkClass
         typeof part === 'string' ? (
           <Fragment key={i}>{part}</Fragment>
         ) : (
-          <UsernameLink key={i} username={part.username} at={false} className={linkClassName} />
+          <UsernameLink key={i} username={part.username} className={linkClassName} />
         ),
       )}
     </>
@@ -257,7 +260,7 @@ function TxRowView({
     <div className="flex flex-col gap-2 border-b border-m-b2 px-1 py-3" data-tx-row={row.id} data-claim-result={row.result?.status}>
       <div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
         {head && typeof head !== 'string' ? (
-          <UsernameLink username={head.username} at={false} className="min-w-0 truncate font-semibold text-m-t1" />
+          <UsernameLink username={head.username} className="min-w-0 truncate font-semibold text-m-t1" />
         ) : (
           <span className="min-w-0 truncate font-semibold text-m-t1">{head ?? 'Commissioner'}</span>
         )}
@@ -341,7 +344,7 @@ function PostRowView({ leagueId, row }: { leagueId: string; row: PostRow }) {
         <span className="whitespace-nowrap">{formatTxDate(row.createdAt)}</span>
       </div>
       <p className="text-[13.5px] font-medium leading-[1.4] text-m-t1">
-        <TextWithActor text={row.text} actor={row.actorUsername} linkClassName="font-semibold" />
+        <TextWithActor text={row.text} actor={row.actorUsername} at linkClassName="font-semibold" />
       </p>
     </div>
   )

@@ -10,6 +10,11 @@ import { TYPE_CHIPS, teamAvatarClass, teamInitial, type TxFilter } from './leagu
  * (single choice, applied live) and — except on My moves — a Teams list
  * (any number; "All teams" clears it and is checked exactly when nothing
  * is). Done, the backdrop or Escape closes it.
+ *
+ * Each team row reads as its manager's @handle (the team's name when the
+ * seat is empty) — the League tab's one handle format, where the prototype
+ * dropped the @ (gap list §4 item 12). The handle is plain text: this list
+ * is a picker, so tapping the name ticks the team (ruling #42).
  */
 export function TxFilterSheet({
   open,
@@ -88,16 +93,19 @@ export function TxFilterSheet({
               on={filter.teams.length === 0}
               onClick={() => onChange({ teams: [] })}
             />
-            {teams.map((t) => (
-              <TeamRow
-                key={t.id}
-                label={managerOf(t.id) ?? t.name}
-                glyph={teamInitial(t.name)}
-                avClass={teamAvatarClass(t.id, teamIds, myTeamId)}
-                on={filter.teams.includes(t.id)}
-                onClick={() => toggle(t.id)}
-              />
-            ))}
+            {teams.map((t) => {
+              const handle = managerOf(t.id)
+              return (
+                <TeamRow
+                  key={t.id}
+                  label={handle ? `@${handle}` : t.name}
+                  glyph={teamInitial(t.name)}
+                  avClass={teamAvatarClass(t.id, teamIds, myTeamId)}
+                  on={filter.teams.includes(t.id)}
+                  onClick={() => toggle(t.id)}
+                />
+              )
+            })}
           </div>
         </>
       )}
