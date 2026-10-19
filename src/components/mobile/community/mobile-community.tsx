@@ -46,6 +46,7 @@ import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { HeaderIconButton, LogoLockup, MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useCommunityOlder } from '@/hooks/use-community-older'
+import { useDebounced } from '@/hooks/use-debounced'
 import { useFollowingIds } from '@/hooks/use-follows'
 import {
   useCommunityInjuryMatches,
@@ -91,15 +92,6 @@ export function MobileCommunity({ currentWeek }: { currentWeek: number }) {
 }
 
 const NO_IDS: ReadonlySet<string> = new Set()
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [v, setV] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms)
-    return () => clearTimeout(t)
-  }, [value, ms])
-  return v
-}
 
 function CommunityScreen({ currentWeek }: { currentWeek: number }) {
   const router = useRouter()
