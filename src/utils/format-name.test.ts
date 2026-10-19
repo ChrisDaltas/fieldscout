@@ -70,4 +70,18 @@ describe('the phone shortens player names in one place', () => {
     }
     expect(offenders).toEqual([])
   })
+
+  it('the draft room’s phone-only “Recent picks” ticker uses the same rule', () => {
+    // The room has no phone version: below `lg` it shows this ticker instead
+    // of the board, so a phone draft reads names through it.
+    const room = readFileSync(
+      path.join(process.cwd(), 'src', 'components', 'draft', 'draft-room.tsx'),
+      'utf8',
+    )
+    const start = room.indexOf('aria-label="Recent picks"')
+    expect(start).toBeGreaterThan(-1)
+    const ticker = room.slice(start, room.indexOf('No picks yet.', start))
+    expect(ticker).toContain('shortPlayerName(player.full_name, player.position)')
+    expect(ticker).not.toContain('abbreviateName(')
+  })
 })

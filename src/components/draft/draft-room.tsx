@@ -34,6 +34,7 @@ import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { usePlayerWindowsStore } from '@/stores/player-windows-store'
 import type { Draft } from '@/types/database'
+import { shortPlayerName } from '@/utils/format-name'
 
 import type { ActingAsControl } from './acting-as-picker'
 import { ActingAsPicker } from './acting-as-picker'
@@ -1531,7 +1532,11 @@ function DraftRoomLive({
                   pick={pick.pick_number}
                   label={pickLabel(pick.pick_number, teamCount)}
                   playerId={pick.player_id}
-                  playerName={player ? abbreviateName(player.full_name) : pick.player_id}
+                  // The phone's one short-name rule (gap list §4 item 17):
+                  // keeps A.J. Brown apart from A. St. Brown, DK as DK.
+                  playerName={
+                    player ? shortPlayerName(player.full_name, player.position) : pick.player_id
+                  }
                   position={player?.position}
                   team={player?.team ?? '—'}
                   byManager={teamsById.get(pick.team_id)?.name ?? null}
