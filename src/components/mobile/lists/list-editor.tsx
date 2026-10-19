@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils'
 import { useListDisplay, useListDisplayStore } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
 import { listTitleSchema, type RankingMode } from '@/types/schemas/lists'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { AddPlayersSheet } from './add-players-sheet'
 import { AddStatsSheet } from './add-stats-sheet'
@@ -53,7 +54,6 @@ import {
   removeFromDraft,
   saveFailureNote,
   setDraftMode,
-  shortName,
   tierCount,
   tierChipClass,
   tierFillClass,
@@ -987,7 +987,7 @@ function PlayerRowBody({
       {number !== null && <span className="w-[22px] flex-none text-center text-[14px] font-bold tabular-nums">{number}</span>}
       <MHeadshot player={player} size={26} />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-[14px] font-semibold text-m-t1">{shortName(player.full_name, player.position)}</span>
+        <span className="truncate text-[14px] font-semibold text-m-t1">{shortPlayerName(player.full_name, player.position)}</span>
         <span className="flex min-w-0 items-center gap-[5px] overflow-hidden whitespace-nowrap text-[11px] font-medium text-m-t3">
           <MPosChip pos={player.position ?? ''} className="h-4 min-w-0 flex-none rounded-[4px] px-[5px] text-[9.5px]" />
           {sub}

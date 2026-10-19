@@ -592,14 +592,6 @@ export function sortByCell<T>(rows: readonly T[], cellOf: (row: T) => Cell): T[]
 // Names, positions, filters
 // ---------------------------------------------------------------------------
 
-/** "F. Last …" — D/ST and dotted first names ("A.J. Brown") kept whole. */
-export function shortName(full: string, position: string): string {
-  if (position === 'DEF' || position === 'DST' || /D\/ST$/.test(full)) return full
-  const parts = full.trim().split(/\s+/)
-  if (parts.length < 2 || parts[0]!.includes('.')) return full
-  return `${parts[0]![0]}. ${parts.slice(1).join(' ')}`
-}
-
 export type MPos = 'All' | 'QB' | 'RB' | 'WR' | 'TE' | 'FLEX' | 'K' | 'D/ST'
 export const POS_OPTIONS: readonly MPos[] = ['All', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'D/ST']
 

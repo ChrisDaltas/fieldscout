@@ -13,7 +13,6 @@ import {
   rankableWeeks,
   rankingTitle,
   seasonLabel,
-  shortName,
   weekOf,
   type RankFrom,
   type RankPos,
@@ -24,6 +23,7 @@ import { NFL_SEASON, latestSaved, useMyRankingBoards, type MyBoard } from '@/hoo
 import { sourceDraft, useExpertsSource, useUsersSource } from '@/hooks/use-mobile-rankings-sources'
 import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
 import { cn } from '@/lib/utils'
+import { shortPlayerName } from '@/utils/format-name'
 
 /**
  * New ranking (lr-myrank §2.2) for the types the app supports: a weekly
@@ -66,7 +66,7 @@ export function carryBoard(data: { season: MyBoard | null; weeks: MyBoard[] } | 
 function top3(players: ReadonlyArray<{ full_name: string; position: string }>): string | null {
   const s = players
     .slice(0, 3)
-    .map((p, i) => `${i + 1}. ${shortName(p.full_name, p.position)}`)
+    .map((p, i) => `${i + 1}. ${shortPlayerName(p.full_name, p.position)}`)
     .join(' ')
   return s || null
 }

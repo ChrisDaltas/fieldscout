@@ -212,6 +212,7 @@ Row: `display:flex; align-items:center; gap:8px; padding:10px 16px 4px`. It sits
 - **Name block** (flex 1, min-width 0, column, gap 2):
   - **Name:** 14px / 600, `white-space:nowrap; overflow:hidden; text-overflow:ellipsis`.
     - Uses the short form: first initial + ". " + the rest. Examples: "S. Barkley", "A. St. Brown", and "A. Brown" for A.J. Brown.
+    - **The app keeps a first name that is already initials:** "A.J. Brown", "DK Metcalf", "CJ Stroud", so A.J. Brown no longer reads like "A. St. Brown" (gap list §4 item 17). One rule for the whole phone: `shortPlayerName` in `src/utils/format-name.ts`.
     - D/ST names are kept whole, e.g. "Broncos D/ST".
   - **Subline:** `display:flex; align-items:center; gap:5px; min-width:0; overflow:hidden`, 11px / 500, t3, nowrap. **No ellipsis**: overflow is hard-clipped.
     - Weekly: **"{TEAM} {vs|@} {OPP}"**, e.g. "PHI @ BAL", "DET vs NYG".
@@ -679,7 +680,7 @@ The app has no unified Rankings hub. Three separate surfaces sit closest to it, 
 | ROS / Pre subline "CIN · Bye 10" | new-ui-on-existing-data | `players.bye_week` (`lib/sync/bye-weeks.ts`) | Real data. |
 | Weekly bye exclusion | new-ui-on-existing-data | `players.bye_week` | An author's player who is on bye drops out silently (see questions). |
 | Headshot: 36px, team-colour ring, initials fallback, scaled crop | restyle-only | `players/player-image.tsx` PlayerAvatarImage, `lib/nfl-team-colors.ts` | Colours already match. The app shows a team logo for D/ST where the prototype shows the initial "B". It adds the WSH alias. |
-| Short names ("S. Barkley", "A. Brown") | restyle-only | `draft/draft-board-ops.ts` abbreviateName (`utils/format-name.ts` abbreviates differently) | The name column gets about 67px, so about 17 of 54 names ellipsise (see questions). |
+| Short names ("S. Barkley", "A.J. Brown") | restyle-only | `utils/format-name.ts` shortPlayerName — the phone's one rule (gap list §4 item 17) | The name column gets about 67px, so about 17 of 54 names ellipsise (see questions). |
 | Rank number column | restyle-only | `big-board/board-row.tsx`, `players/player-row.tsx` | |
 | **TIERING** | | | |
 | Auto-tiers by score gaps (gap > 1.55 × mean, at least 2 per tier, at most 8 tiers) | new-ui-on-existing-data | `big-board-dashboard.tsx` tierBands (fixed proportional cuts, a different algorithm); list tiers are manual | A pure util, but it needs a numeric score from each source: a projection for Scout AI, an average rank for Users. The choice of score depends on the backend. |

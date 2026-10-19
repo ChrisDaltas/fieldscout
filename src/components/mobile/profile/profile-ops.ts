@@ -15,6 +15,7 @@ import {
 } from '@/components/mobile/rankings/rankings-ops'
 import { CRED_TIERS, computeCredRank } from '@/lib/cred-tiers'
 import { hasTiers, isNumbered } from '@/lib/lists/ranking-mode'
+import { shortPlayerName } from '@/utils/format-name'
 
 /** Profile › "My stuff" segment (the handoff's `meTab` keys). */
 export type MeTab = 'rankings' | 'lists' | 'ss'
@@ -335,19 +336,12 @@ export function ssResults(q: Pick<SsQuestion, 'votesA' | 'votesB'>): SsResults {
   return { total, pcts, top, lean }
 }
 
-/** `Isiah Pacheco` → `I. Pacheco`; D/ST names and initialled first names stay. */
-export function shortName(name: string): string {
-  const words = name.trim().split(/\s+/)
-  if (words.length < 2 || /D\/ST$/.test(name) || words[0].includes('.')) return name.trim()
-  return `${words[0][0]}. ${words.slice(1).join(' ')}`
-}
-
 export const SS_MODE_LABEL = 'Start 1 of 2'
 
 /** The question's own words, or its matchup when the poster wrote none. */
 export function ssTitle(q: Pick<SsQuestion, 'note' | 'playerA' | 'playerB'>): string {
   const note = q.note?.trim()
-  return note || `${shortName(q.playerA.full_name)} or ${shortName(q.playerB.full_name)}?`
+  return note || `${shortPlayerName(q.playerA.full_name)} or ${shortPlayerName(q.playerB.full_name)}?`
 }
 
 /** Card meta: `Just now`, `12m`, `1h`, then the posting date (`Sep 28`). */
@@ -376,7 +370,7 @@ export function ssFooter(q: SsQuestion, now: number): string {
   const r = ssResults(q)
   const parts = [plural(r.total, 'vote', 'votes')]
   if (ssIsOpen(q, now) && r.lean !== null) {
-    parts.push(`crowd leans ${shortName((r.lean === 0 ? q.playerA : q.playerB).full_name)}`)
+    parts.push(`crowd leans ${shortPlayerName((r.lean === 0 ? q.playerA : q.playerB).full_name)}`)
   }
   return parts.join(' · ')
 }

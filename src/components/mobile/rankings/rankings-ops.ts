@@ -278,14 +278,6 @@ export function cmpToneClass(other: number | null | undefined, mine: number): st
 // Names, sublines, numbers
 // ---------------------------------------------------------------------------
 
-/** "Saquon Barkley" → "S. Barkley"; team defenses stay whole. */
-export function shortName(fullName: string, position?: string | null): string {
-  if (position === 'DEF' || position === 'DST') return fullName
-  const parts = fullName.trim().split(/\s+/)
-  if (parts.length < 2) return fullName
-  return `${parts[0]![0]}. ${parts.slice(1).join(' ')}`
-}
-
 export interface WeekGameLite {
   home_team: string
   away_team: string

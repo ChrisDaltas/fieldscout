@@ -33,8 +33,9 @@ import {
   type SlotInstance,
 } from '@/components/leagues/lineup-editor-ops'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
+import { shortPlayerName } from '@/utils/format-name'
 
-import { shortName, slotCode } from './team-ops'
+import { slotCode } from './team-ops'
 
 export type SwapSelection =
   /** A starting or IR seat, filled or empty. */
@@ -89,7 +90,7 @@ function stintHolds(p: RosterPlayer | null, currentWeek: number | null): boolean
 }
 
 function short(p: RosterPlayer): string {
-  return shortName(p.full_name, p.position)
+  return shortPlayerName(p.full_name, p.position)
 }
 
 function lockedMessage(p: RosterPlayer): string {

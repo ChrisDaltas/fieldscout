@@ -13,6 +13,7 @@ import { usePlayersByIds, type PlayerIdentity } from '@/hooks/use-players-by-ids
 import type { WaiverClaimView } from '@/lib/leagues/api/waivers-service'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { CenteredNote, StatusLine } from './league-bits'
 import {
@@ -24,7 +25,6 @@ import {
   formatTxDate,
   moveSub,
   rowPlayerIds,
-  shortName,
   withClaimResults,
   type MoveLine,
   type Pill,
@@ -313,7 +313,7 @@ function MoveLineView({ leagueId, move, player }: { leagueId: string; move: Move
         size={32}
       />
       <span className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className="truncate text-[14px] font-semibold text-m-t1">{shortName(name, position)}</span>
+        <span className="truncate text-[14px] font-semibold text-m-t1">{shortPlayerName(name, position)}</span>
         {(sub || move.note) && (
           <span className="truncate text-[11px] font-medium text-m-t3">
             {sub}

@@ -42,6 +42,7 @@ import { deriveRosterSize } from '@/lib/leagues/settings/league-settings'
 import { playerNameMatches } from '@/lib/players/name-search'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { ActionCircle, type ActionDoor } from './players-actions'
 import { FilterBar, ListHeader, Notice, ProblemState, RowsSkeleton, ShowMore, type FilterPill } from './players-chrome'
@@ -58,7 +59,6 @@ import {
   POS_OPTIONS,
   posMatches,
   positionsOf,
-  shortName,
   sortAfterToggle,
   sortByCell,
   statCells,
@@ -394,7 +394,7 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
         view: {
           id: p.id,
           player: p,
-          short: shortName(p.full_name, p.position),
+          short: shortPlayerName(p.full_name, p.position),
           status: statusTag(p.status),
           line2: own,
           line3: gameNode,
@@ -507,7 +507,7 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
     return {
       id: p.id,
       player: p,
-      short: shortName(p.full_name, p.position),
+      short: shortPlayerName(p.full_name, p.position),
       teamLine: [p.team, g?.text].filter(Boolean).join(' · '),
       delta: { text: signedDelta(delta), up: delta >= 0 },
       proj: week !== undefined && trendValues.isPending ? '…' : num1(projected).text,

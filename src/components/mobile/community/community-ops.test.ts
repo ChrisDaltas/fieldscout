@@ -43,7 +43,6 @@ import {
   recentUpdates,
   scoringFormatOf,
   scoringLabel,
-  shortName,
   sortPopular,
   topLine,
   topicAwaitingServer,
@@ -127,12 +126,11 @@ describe('rankings vs lists', () => {
 })
 
 describe('formats', () => {
-  it('short names follow the handoff', () => {
-    expect(shortName('DK Metcalf')).toBe('D. Metcalf')
-    expect(shortName('A.J. Brown')).toBe('A.J. Brown')
-    expect(shortName('Amon-Ra St. Brown')).toBe('A. St. Brown')
-    expect(shortName('Steelers D/ST')).toBe('Steelers D/ST')
-    expect(shortName('Pittsburgh Steelers', 'DEF')).toBe('Pittsburgh Steelers')
+  it('the top line keeps A.J., DK and CJ whole (gap list §4 item 17)', () => {
+    expect(topLine([player('1', 'A.J. Brown'), player('2', 'Amon-Ra St. Brown'), player('3', 'DK Metcalf')])).toBe(
+      '1. A.J. Brown 2. A. St. Brown 3. DK Metcalf',
+    )
+    expect(topLine([player('1', 'CJ Stroud', 'QB'), player('2', 'Steelers D/ST', 'DEF')], false)).toBe('CJ Stroud · Steelers D/ST')
   })
   it('top line is single-spaced', () => {
     expect(topLine([player('1', 'Bijan Robinson'), player('2', 'Jonathan Taylor'), player('3', 'Kyren Williams'), player('4', 'X Y')])).toBe(

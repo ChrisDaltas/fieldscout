@@ -6,8 +6,9 @@ import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import type { SlotInstance } from '@/components/leagues/lineup-editor-ops'
 import type { RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import { cn } from '@/lib/utils'
+import { shortPlayerName } from '@/utils/format-name'
 
-import { BENCH_CHIP_CLASS, posCode, shortName, slotChipClass, slotCode, TONE_TEXT, type GameLine } from './team-ops'
+import { BENCH_CHIP_CLASS, posCode, slotChipClass, slotCode, TONE_TEXT, type GameLine } from './team-ops'
 
 /**
  * The lineup rows of the mobile Team tab, the Team view and the Swap player
@@ -215,7 +216,7 @@ export function SheetRow({
       {player ? <MHeadshot player={{ id: player.player_id, full_name: player.full_name, team: player.nfl_team, position: player.position, headshot_url: stats.headshot(player.player_id) }} size={34} /> : <EmptyAvatar size={34} />}
       <span className="flex min-w-0 flex-1 flex-col gap-px">
         <span className={cn('truncate text-[14px] font-semibold', player ? 'text-m-t1' : 'text-m-t5')}>
-          {player ? shortName(player.full_name, player.position) : 'Empty'}
+          {player ? shortPlayerName(player.full_name, player.position) : 'Empty'}
           {player && <span className="text-[11px] font-medium text-m-t3"> {metaText(player)}</span>}
         </span>
         {player && (

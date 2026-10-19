@@ -128,6 +128,23 @@ describe('one Rankings screen (Chris, 2026-10-15: #27, #28, #30, #31, #34)', () 
     const html = hub({ view: 'hub', src: 'users', pos: 'RB' }, qc)
     expect(html.match(/, compare sources"/g)?.length).toBe(36)
   })
+
+  it('short names keep A.J. and DK, so A.J. Brown no longer reads like Amon-Ra St. Brown (gap list §4 item 17)', () => {
+    const qc = client()
+    const wr = (id: string, full_name: string, score: number): HubRow => ({
+      player: { id, full_name, position: 'WR', team: 'PHI', headshot_url: null, bye_week: 9 },
+      score,
+    })
+    qc.setQueryData(['mobile-rankings', 'source', 'users', 'WR'], [
+      wr('ajb', 'A.J. Brown', 3),
+      wr('asb', 'Amon-Ra St. Brown', 2),
+      wr('dkm', 'DK Metcalf', 1),
+    ])
+    const html = hub({ view: 'hub', src: 'users', pos: 'WR' }, qc)
+    const rows = [...html.matchAll(/aria-label="([^"]+), compare sources"/g)].map((m) => m[1])
+    expect(rows).toEqual(['A.J. Brown', 'A. St. Brown', 'DK Metcalf'])
+    expect(text(html)).not.toMatch(/\bA\. Brown\b|D\. Metcalf/)
+  })
 })
 
 describe('My rankings — periods and the published wording', () => {

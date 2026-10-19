@@ -929,7 +929,7 @@ None of these use the HTML `disabled` state:
 - **Short name**: `short(n)` = the first character + ". " + every remaining word.
   - "Josh Allen" → "J. Allen"
   - "Amon-Ra St. Brown" → "A. St. Brown"
-  - "A.J. Brown" → "A. Brown" (the "J." is lost)
+  - "A.J. Brown" → "A. Brown" (the "J." is lost). **The app keeps initials whole:** "A.J. Brown", "DK Metcalf", "CJ Stroud" (gap list §4 item 17; `shortPlayerName` in `src/utils/format-name.ts`).
   - "Ka'imi Fairbairn" → "K. Fairbairn"
   - Names ending in "D/ST" are unchanged.
 - **Stat columns** (`fstats`):
