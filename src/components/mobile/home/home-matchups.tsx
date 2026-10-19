@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 
 import { currentWeekOf } from '@/components/leagues/lineup-editor-ops'
 import { JoinLeagueDialog } from '@/components/leagues/leagues-index'
@@ -95,7 +95,7 @@ export function LeagueCard({
   const setSegment = useLeagueTabStore((s) => s.setSegment)
   const live = card.live
   const onLeagues = variant === 'leagues'
-  const sub = onLeagues ? leaguesCardSub(card.sub, league.my_role) : card.sub
+  const subParts = onLeagues ? leaguesCardSub(card.sub, league.my_role) : null
   const status = onLeagues ? leagueStatusPill(league.status) : null
   const cls = 'flex flex-col gap-3 rounded-[18px] bg-m-b1 p-[14px] active:bg-m-b2h'
   const body = (
@@ -116,10 +116,21 @@ export function LeagueCard({
         />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-[15px] font-semibold leading-[19px] text-m-t1">{league.name}</span>
-          {/* The Leagues screen's longer sub wraps into even lines, not a
-              lone last word. */}
-          <span className={cn('text-[12px] font-medium leading-[15px] text-m-t3', onLeagues && 'text-balance')}>
-            {sub}
+          {/* The Leagues screen's longer sub wraps into even lines, and
+              only between its parts: each part (with the "·" after it)
+              stays on one line, so "Week 1" or "Co-commissioner" never
+              splits at its space or hyphen. */}
+          <span className={cn('text-[12px] font-medium leading-[15px] text-m-t3', subParts && 'text-balance')}>
+            {subParts
+              ? subParts.map((part, i) => (
+                  <Fragment key={`${i}-${part}`}>
+                    {i > 0 && ' '}
+                    <span className="whitespace-nowrap" data-sub-part>
+                      {i < subParts.length - 1 ? `${part} ·` : part}
+                    </span>
+                  </Fragment>
+                ))
+              : card.sub}
           </span>
         </span>
         {/* "Draft Aug 28 · 7:00 PM" once a draft time is set, else the

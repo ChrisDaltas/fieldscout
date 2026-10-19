@@ -125,6 +125,17 @@ function card(out: string, id: string): string {
   return out.slice(start, out.indexOf('</a>', at) + 4)
 }
 
+/** A card's sub, as the one-line parts it renders (each a nowrap span). */
+function subParts(cardHtml: string): string[] {
+  return [...cardHtml.matchAll(/<span class="whitespace-nowrap" data-sub-part="[^"]*">([^<]*)<\/span>/g)].map((m) => m[1])
+}
+
+/** The sub's whole line: its parts with the spaces between them. */
+function subLine(cardHtml: string): string {
+  const m = cardHtml.match(/<span class="[^"]*text-balance[^"]*">((?:<span class="whitespace-nowrap"[^>]*>[^<]*<\/span> ?)+)<\/span>/)
+  return (m?.[1] ?? '').replace(/<[^>]+>/g, '')
+}
+
 /** Desktop colour tokens: fixed light colours that don't follow phone dark
  *  mode (the phone draws in `m-*`). The one exception is the gold league
  *  tile's dark letters (`leagueAvClass`, ruling #38), fixed on a fixed fill. */
@@ -167,7 +178,8 @@ describe('Leagues — the phone screen (gap list §4 item 104)', () => {
   it('in season: size and scoring, the week, the role, and the week’s stored scores and records', () => {
     const a = card(out, 'A')
     expect(a).toContain('>Sunday Funday League<')
-    expect(a).toContain('>8-team PPR · Week 1 · Commissioner<')
+    expect(subLine(a)).toBe('8-team PPR · Week 1 · Commissioner')
+    expect(subParts(a)).toEqual(['8-team PPR ·', 'Week 1 ·', 'Commissioner'])
     expect(a).toContain('Fourth & Long (3-1)')
     expect(a).toContain('Hail Mary Heroes (1-3)')
     expect(a.indexOf('41.20')).toBeLessThan(a.indexOf('17.50'))
@@ -176,10 +188,10 @@ describe('Leagues — the phone screen (gap list §4 item 104)', () => {
 
   it('before and during the draft: the draft pill, the season, and the role when you run it', () => {
     const b = card(out, 'B')
-    expect(b).toContain('>12-team standard · 2026<')
+    expect(subParts(b)).toEqual(['12-team standard ·', '2026'])
     expect(b).toContain('Pre-draft')
     const c = card(out, 'C')
-    expect(c).toContain('>10-team half PPR · 2026 · Co-commissioner<')
+    expect(subParts(c)).toEqual(['10-team half PPR ·', '2026 ·', 'Co-commissioner'])
     expect(c).toContain('Draft live')
     expect(c).not.toContain('Pre-draft')
   })
@@ -191,6 +203,31 @@ describe('Leagues — the phone screen (gap list §4 item 104)', () => {
     expect(e).toMatch(/<span class="[^"]*rounded-pill[^"]*bg-m-b3s text-m-t2[^"]*" data-league-status="complete">Complete<\/span>/)
     // A manager's card names no role.
     expect(d).not.toMatch(/Manager|Commissioner/)
+  })
+
+  it('the sub wraps only between its parts — “Week 1” and “Co-commissioner” never split', () => {
+    // The finding's case: a playoffs league you co-run, where the pill and
+    // the dot leave the sub too little room for one line at 390px.
+    const playoffs = league('F', { name: 'Bench Mob', status: 'playoffs', team_count: 8, my_role: 'co_commissioner' })
+    const f = card(
+      render((qc) => {
+        seeded([playoffs])(qc)
+        qc.setQueryData(auctionPoolKeys.scoring('F'), { receptions: 0 })
+        qc.setQueryData(scheduleKeys.all('F'), {
+          weeks: [{ id: 'f1', season: 2026, week: 1, status: 'live', finalized_at: null, median_score: null }],
+          matchups: [],
+        })
+      }),
+      'F',
+    )
+    expect(f).toContain('data-league-status="playoffs"')
+    expect(subLine(f)).toBe('8-team standard · Week 1 · Co-commissioner')
+    const parts = subParts(f)
+    expect(parts).toEqual(['8-team standard ·', 'Week 1 ·', 'Co-commissioner'])
+    expect(parts.filter((p) => p.includes('Week 1'))).toHaveLength(1)
+    expect(parts.filter((p) => p.includes('Co-commissioner'))).toHaveLength(1)
+    // Still balanced, so the lines break evenly between parts.
+    expect(f).toMatch(/class="[^"]*text-balance[^"]*"><span class="whitespace-nowrap"/)
   })
 
   it('ends with Home’s “Join or create a league” — the free join and create doors', () => {
@@ -235,6 +272,9 @@ describe('Home keeps its own card', () => {
     const out = html(createElement(LeagueCard, { league: league('D', { status: 'playoffs', my_role: 'commissioner' }), index: 0 }), seeded())
     expect(out).not.toContain('data-league-status')
     expect(out).not.toContain('Commissioner')
+    // Home's sub stays one plain line, as before.
+    expect(out).not.toContain('data-sub-part')
+    expect(out).not.toContain('text-balance')
   })
 })
 

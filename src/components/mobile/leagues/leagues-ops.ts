@@ -48,9 +48,17 @@ export function commishRole(role: string): string | null {
   return null
 }
 
-/** The card's sub on the Leagues screen: Home's ("8-team PPR · Week 5"),
- *  then the role when you run the league ("… · Commissioner"). */
-export function leaguesCardSub(sub: string, role: string): string {
+/** Home's sub's separator ("8-team PPR · Week 5", `leagueSub`). */
+const SUB_SEPARATOR = ' · '
+
+/**
+ * The card's sub on the Leagues screen, as its "·"-separated parts: Home's
+ * ("8-team PPR", "Week 5"), then the role when you run the league
+ * ("Commissioner"). The card keeps each part on one line, so a wrap falls
+ * between parts — never inside "Week 1", "12-team" or "Co-commissioner".
+ */
+export function leaguesCardSub(sub: string, role: string): string[] {
+  const parts = sub.split(SUB_SEPARATOR).filter(Boolean)
   const named = commishRole(role)
-  return named ? `${sub} · ${named}` : sub
+  return named ? [...parts, named] : parts
 }

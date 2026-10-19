@@ -20,10 +20,10 @@ describe('the role on a Leagues card', () => {
     expect(commishRole('co_commissioner')).toBe('Co-commissioner')
     expect(commishRole('manager')).toBeNull()
   })
-  it('ends Home’s sub with it', () => {
-    expect(leaguesCardSub('8-team PPR · Week 5', 'commissioner')).toBe('8-team PPR · Week 5 · Commissioner')
-    expect(leaguesCardSub('12-team half PPR · 2026', 'co_commissioner')).toBe('12-team half PPR · 2026 · Co-commissioner')
-    expect(leaguesCardSub('8-team PPR · Week 5', 'manager')).toBe('8-team PPR · Week 5')
+  it('ends Home’s sub with it, as the sub’s parts (each kept on one line)', () => {
+    expect(leaguesCardSub('8-team PPR · Week 5', 'commissioner')).toEqual(['8-team PPR', 'Week 5', 'Commissioner'])
+    expect(leaguesCardSub('12-team half PPR · 2026', 'co_commissioner')).toEqual(['12-team half PPR', '2026', 'Co-commissioner'])
+    expect(leaguesCardSub('8-team PPR · Week 5', 'manager')).toEqual(['8-team PPR', 'Week 5'])
   })
 })
 
