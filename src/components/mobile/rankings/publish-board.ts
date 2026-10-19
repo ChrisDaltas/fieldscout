@@ -10,7 +10,8 @@ import type { ScoringFormat } from '@/lib/lists/ranking-publish'
  *   1. read the board fresh (`readRankingBoard`) — the weekly GET creates a
  *      week's board the first time (seeded from your latest ranking, as on
  *      desktop), so a new week only comes into being when it is published;
- *   2. drop removed players, bulk-add new ones (`writeRankingBoard`);
+ *   2. bulk-add the new players, then drop the removed ones in one bulk
+ *      request (`writeRankingBoard`);
  *   3. write the new order into its own slots — the season board through
  *      `/api/big-board/save` (which also records a history snapshot), a week
  *      through the list reorder route — with the scoring the ranking is
@@ -18,7 +19,14 @@ import type { ScoringFormat } from '@/lib/lists/ranking-publish'
  *      every other position keeps its place and its saved date.
  *
  * Each step throws on a non-OK response — a failed step is never reported
- * as a publish.
+ * as a publish. The steps are separate requests (no migration — there is no
+ * one-call publish), so they run in the order that loses least when one
+ * fails: adds first (a failure there changes nothing), then every removal in
+ * ONE request and one statement (`DELETE …/players/bulk` — a Duplicate can
+ * drop a hundred or more; one call per player could fail half-way), so a
+ * failure there leaves extra players on your board, never fewer. The order
+ * write comes last because the season board's save records a history
+ * snapshot of the board as it stands.
  */
 
 export async function ok(res: Response): Promise<void> {
@@ -51,6 +59,9 @@ export function boardRows(board: BoardRead): BoardRowLite[] {
   return board.players.map((r) => ({ playerId: r.player_id, slot: r.position, pos: fromDbPos(r.player?.position) }))
 }
 
+/** `…/players/bulk`'s per-call limit (its body schema's `max`). */
+export const BULK_MAX = 500
+
 interface OrderWriteBody {
   scoring?: 'saved' | 'unsupported'
   scoringError?: string
@@ -70,17 +81,19 @@ export async function writeRankingBoard(args: {
   scoringFormat: ScoringFormat
 }): Promise<{ scoringError?: string }> {
   const { week, listId, plan, fresh, scoringFormat } = args
-  await Promise.all(
-    plan.remove.map((id) =>
-      fetch(`/api/lists/${listId}/players/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(ok),
-    ),
-  )
-  if (plan.add.length > 0) {
-    await fetch(`/api/lists/${listId}/players/bulk`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ player_ids: plan.add }),
-    }).then(ok)
+  // The bulk route takes up to BULK_MAX players a call; a board past that
+  // goes in turns, never in parallel.
+  for (const [method, ids] of [
+    ['POST', plan.add],
+    ['DELETE', plan.remove],
+  ] as const) {
+    for (let i = 0; i < ids.length; i += BULK_MAX) {
+      await fetch(`/api/lists/${listId}/players/bulk`, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ player_ids: ids.slice(i, i + BULK_MAX) }),
+      }).then(ok)
+    }
   }
   if (plan.positions.length === 0) return {}
   const body = JSON.stringify({ positions: publishEntries(plan.positions, fresh, false), scoringFormat })

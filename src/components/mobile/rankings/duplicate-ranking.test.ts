@@ -50,8 +50,10 @@ import {
   myRankingDesktopHref,
   myRankingEditorHref,
   rankingDuplicateOf,
+  REPLACE_DETAIL,
   replaceQuestion,
 } from './duplicate-ops'
+import { BULK_MAX } from './publish-board'
 
 // ---------------------------------------------------------------------------
 // 1. Which lists, which of your rankings
@@ -112,6 +114,12 @@ describe('what Duplicate says', () => {
       'Replace your Rest of season RB and WR rankings with this one?',
     )
     expect(duplicateQuestion('w8', ['TE'], 6)).toBe('Duplicate this as your Week 8 TE ranking?')
+  })
+
+  it('the Replace prompt says the copy is exact: players it doesn’t rank leave yours', () => {
+    expect(REPLACE_DETAIL).toBe(
+      'Its order replaces yours. Players you ranked that it doesn’t rank will leave your ranking. You can edit it after.',
+    )
   })
 
   it('the toast: it’s your ranking now — and when your own scoring was kept over another, so', () => {
@@ -212,9 +220,10 @@ describe('the requests a Duplicate makes', () => {
     expect(net.calls).toEqual([
       { method: 'GET', url: '/api/lists/e1-all' },
       { method: 'GET', url: '/api/lists/big-board' },
-      // Yours at RB that the copy doesn't rank leave it.
-      { method: 'DELETE', url: '/api/lists/season/players/r9' },
+      // Adds first — a failure after them leaves extra players, never fewer.
       { method: 'POST', url: '/api/lists/season/players/bulk', body: { player_ids: ['r2'] } },
+      // Yours at RB that the copy doesn't rank leave it — in one request.
+      { method: 'DELETE', url: '/api/lists/season/players/bulk', body: { player_ids: ['r9'] } },
       // The season board's publish route; only RB's own slots are sent.
       {
         method: 'POST',
@@ -261,11 +270,13 @@ describe('the requests a Duplicate makes', () => {
     expect(res.openAt).toBe('RB')
     expect(res.scoring).toEqual({ format: 'standard', keptYours: false, original: 'standard' })
     const writes = net.calls.slice(2)
-    expect(writes.filter((c) => c.method === 'DELETE').map((c) => c.url)).toEqual([
-      '/api/lists/my-w7/players/q8',
-      '/api/lists/my-w7/players/r8',
+    // The seeded QB and RB the copy doesn't rank: one removal request.
+    expect(writes.filter((c) => c.method === 'DELETE')).toEqual([
+      { method: 'DELETE', url: '/api/lists/my-w7/players/bulk', body: { player_ids: ['q8', 'r8'] } },
     ])
-    expect(writes.find((c) => c.url.endsWith('/bulk'))?.body).toEqual({ player_ids: ['r1', 'q1', 'r2'] })
+    expect(writes.find((c) => c.method === 'POST' && c.url.endsWith('/bulk'))?.body).toEqual({
+      player_ids: ['r1', 'q1', 'r2'],
+    })
     // A week's board publishes through the reorder route; its first version
     // has no previous positions (#33). The K it was seeded with stays.
     expect(writes[writes.length - 1]).toEqual({
@@ -295,9 +306,33 @@ describe('the requests a Duplicate makes', () => {
     net.routes.set('GET /api/lists/big-board', () =>
       json({ list: { id: 'season', scoring_format: 'half' }, players: [row('r9', 'RB', 1)] }),
     )
-    net.routes.set('DELETE /api/lists/season/players/r9', () => json({ error: 'Forbidden' }, 403))
+    net.routes.set('DELETE /api/lists/season/players/bulk', () => json({ error: 'Forbidden' }, 403))
     await expect(duplicateRanking({ sourceListId: 'e1-rb', week: 0, positions: ['RB'] })).rejects.toThrow('Forbidden')
     expect(net.calls.some((c) => c.url === '/api/big-board/save')).toBe(false)
+  })
+
+  it('a failed add removes nothing of yours', async () => {
+    net.routes.set('GET /api/lists/e1-rb', () => json({ players: [row('r1', 'RB')] }))
+    net.routes.set('GET /api/lists/big-board', () =>
+      json({ list: { id: 'season', scoring_format: 'half' }, players: [row('r9', 'RB', 1)] }),
+    )
+    net.routes.set('POST /api/lists/season/players/bulk', () => json({ error: 'Too many requests' }, 429))
+    await expect(duplicateRanking({ sourceListId: 'e1-rb', week: 0, positions: ['RB'] })).rejects.toThrow(
+      'Too many requests',
+    )
+    expect(net.calls.map((c) => c.method)).toEqual(['GET', 'GET', 'POST'])
+  })
+
+  it('a removal past the bulk route’s limit goes in turns, one request per batch', async () => {
+    const mine = Array.from({ length: BULK_MAX + 3 }, (_, i) => row(`r${i + 100}`, 'RB', i + 1))
+    net.routes.set('GET /api/lists/e1-rb', () => json({ players: [row('r1', 'RB')] }))
+    net.routes.set('GET /api/lists/big-board', () => json({ list: { id: 'season' }, players: mine }))
+    await duplicateRanking({ sourceListId: 'e1-rb', week: 0, positions: ['RB'] })
+    const deletes = net.calls.filter((c) => c.method === 'DELETE') as Array<Call & { body: { player_ids: string[] } }>
+    expect(deletes.map((c) => [c.url, c.body.player_ids.length])).toEqual([
+      ['/api/lists/season/players/bulk', BULK_MAX],
+      ['/api/lists/season/players/bulk', 3],
+    ])
   })
 
   it('never calls AI list generation', async () => {

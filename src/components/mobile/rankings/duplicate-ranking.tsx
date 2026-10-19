@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react'
 import {
   hasRankingAt,
   myRankingEditorHref,
+  REPLACE_DETAIL,
   replaceQuestion,
   type RankingDuplicate,
 } from '@/components/mobile/rankings/duplicate-ops'
@@ -88,7 +89,7 @@ export function useDuplicateRankingFlow({
       open={asking}
       onOpenChange={setAsking}
       title={replaceQuestion(dup.type, positions, currentWeek)}
-      subtitle="This ranking's order replaces yours. You can edit it after."
+      subtitle={REPLACE_DETAIL}
       footer={
         <div className="flex flex-col gap-2 px-4 pb-[30px] pt-1">
           <button

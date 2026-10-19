@@ -7,6 +7,7 @@ import {
   hasRankingAt,
   myRankingDesktopHref,
   rankedPositions,
+  REPLACE_DETAIL,
   replaceQuestion,
   type RankingDuplicate,
 } from '@/components/mobile/rankings/duplicate-ops'
@@ -94,7 +95,7 @@ export function RankingDuplicateDialog({
             {source.isError
               ? 'Couldn’t load this ranking.'
               : replacing
-                ? 'Its order replaces yours at those positions. It becomes your ranking — you can edit it after.'
+                ? REPLACE_DETAIL
                 : 'It becomes your ranking — you can edit it after.'}
           </DialogDescription>
         </DialogHeader>

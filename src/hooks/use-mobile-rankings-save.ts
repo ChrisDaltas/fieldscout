@@ -22,7 +22,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
  * publishing"; a saved ranking is the one that counts), through the routes
  * desktop uses — the requests in `publish-board.ts`, which Duplicate makes
  * too: read the board fresh (a week's board is created by its first
- * publish), drop removed players and bulk-add new ones, then write this
+ * publish), bulk-add new players and bulk-drop removed ones, then write this
  * position's order into its own slots. Each step throws on a non-OK
  * response — a failed step is never reported as a publish.
  *

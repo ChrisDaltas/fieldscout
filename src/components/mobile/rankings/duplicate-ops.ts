@@ -141,6 +141,15 @@ export function replaceQuestion(type: RankType, positions: readonly RankPos[], c
   return `Replace your ${typeLabel(type, currentWeek)} ${positionsLabel(positions)} ranking${many ? 's' : ''} with this one?`
 }
 
+/**
+ * What a Replace does, said before it happens. The copy is exact: at the
+ * positions it copies, your ranking becomes the original's order, so a
+ * player you ranked there that it doesn't rank leaves your ranking (and, on
+ * the season board, your Big Board). Every other position is untouched.
+ */
+export const REPLACE_DETAIL =
+  'Its order replaces yours. Players you ranked that it doesn’t rank will leave your ranking. You can edit it after.'
+
 /** The question when there's nothing to replace (desktop always asks). */
 export function duplicateQuestion(type: RankType, positions: readonly RankPos[], currentWeek: number): string {
   const many = positions.length > 1
