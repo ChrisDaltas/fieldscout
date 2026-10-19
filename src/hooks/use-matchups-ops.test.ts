@@ -345,10 +345,10 @@ describe('event-driven freshness (D298): a synthetic scores_updated through the 
     registry[0].statusCallback?.('SUBSCRIBED')
     expect(registry[0].bindings.has('teams')).toBe(true)
 
-    // 120 §4's envelope: the seal statement, one event, the sealed row.
+    // 199's envelope (R1608): a vacate, one event, the row as {id, name, status}.
     fire('teams', {
       operation: 'UPDATE',
-      record: { count: 1, teams: [{ id: 't1', name: 'RS A', status: 'retired', retired_at_week: 5, successor_team_id: 't5' }] },
+      record: { count: 1, teams: [{ id: 't1', name: 'RS A', status: 'orphaned' }] },
     })
     expect(standings).toHaveBeenCalledTimes(1)
     expect(detail).toHaveBeenCalledTimes(1)

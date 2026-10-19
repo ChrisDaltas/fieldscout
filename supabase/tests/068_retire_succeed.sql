@@ -97,9 +97,12 @@
 --     (production held none — measured 2026-10-19). What stays is §A, the
 --     shape that is still live (A11b re-worded for the narrower diff).
 --     pgTAP 149 pins 199: the columns and CHECK arms gone, the lineage
---     reads replaced by 117/118's own, the `teams` broadcast diffing name /
---     status only with a {id, name, status} record (over a real vacate), and
---     the takeover / vacate arms (124 §D keeps their behaviour).
+--     reads replaced by 117/118's own, and the `teams` broadcast over this
+--     suite's realtime harness (149 §E — R1605): an updated_at-only
+--     statement and a takeover of a MANAGED team emit no event, a real
+--     vacate emits exactly one whose record row is {id, name, status} (§J0's
+--     non-retire cells, carried over). The takeover / vacate arms themselves
+--     are 124 §D's.
 --
 -- (199: the fixture calendar and §B–§J are gone — see above.)
 -- ============================================================================
