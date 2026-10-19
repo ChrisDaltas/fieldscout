@@ -7,6 +7,7 @@ import type { CommishChangeSettingResult } from '@/lib/leagues/api/commish-setti
 import type { Json } from '@/types/database'
 
 import { commishLogKeys } from './use-commish-log'
+import { leagueScoringInvalidationKeys } from './use-league'
 import { leagueActivityKeys } from './use-league-activity'
 import { leaguesKeys } from './use-leagues'
 import { leagueStandingsKeys } from './use-standings'
@@ -23,7 +24,12 @@ import { leagueStandingsKeys } from './use-standings'
  * the league detail (where `settings` lives), the activity feed, the audit
  * log — and the STANDINGS only when `rescore` was asked for (129's rescore
  * arm rebuilds `team_week_results`; without it nothing scored moved and a
- * blanket re-read would say otherwise).
+ * blanket re-read would say otherwise). A `scoring_system_id` change also
+ * re-reads the league's scoring document (`leagueScoringInvalidationKeys`):
+ * 149's `scoring_system_id` arm re-freezes `leagues.scoring_rules_snapshot`
+ * in the same statement, and `useLeagueScoringFamily` (the phone Scoring
+ * page, the draft room) would otherwise go on showing the old rulebook's
+ * values under the new rulebook's name.
  *
  * Which keys may change is 129's policy table — a refused key comes back as
  * a 409 with 129's copy verbatim, and L.E1.13 renders it as such.
@@ -51,9 +57,14 @@ export function commishChangeSettingMutationOptions(
   queryClient: QueryClient,
   leagueId: string,
 ): UseMutationOptions<CommishChangeSettingResult, Error, CommishChangeSettingVariables> {
-  const reread = (rescore: boolean) => {
+  const reread = (variables: CommishChangeSettingVariables) => {
     void queryClient.invalidateQueries({ queryKey: leaguesKeys.detail(leagueId) })
-    if (rescore) {
+    if (variables.key === 'scoring_system_id') {
+      for (const queryKey of leagueScoringInvalidationKeys(leagueId)) {
+        void queryClient.invalidateQueries({ queryKey })
+      }
+    }
+    if (variables.rescore === true) {
       void queryClient.invalidateQueries({ queryKey: leagueStandingsKeys.all(leagueId) })
     }
     void queryClient.invalidateQueries({ queryKey: leagueActivityKeys.all(leagueId) })
@@ -63,8 +74,8 @@ export function commishChangeSettingMutationOptions(
     retry: false,
     mutationFn: (variables: CommishChangeSettingVariables) =>
       sendLeagueAction<CommishChangeSettingResult>(`/api/leagues/${leagueId}/commish/setting`, jsonInit('POST', variables)),
-    onSuccess: (_result, variables) => reread(variables.rescore === true),
-    onError: (_error, variables) => reread(variables.rescore === true),
+    onSuccess: (_result, variables) => reread(variables),
+    onError: (_error, variables) => reread(variables),
   }
 }
 

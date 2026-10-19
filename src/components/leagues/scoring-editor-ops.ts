@@ -61,6 +61,13 @@ import { LeaguePatchError } from '@/hooks/use-league'
  */
 export const STEPPER_POSITIONS: readonly ScoringPosition[] = SCORING_POSITIONS
 
+/** A registry label in sentence case, for the phone (the mobile handoff
+ *  writes "Passing yards", not "Passing Yards"): every capitalised word
+ *  after the first is lowered; acronyms — TD, FG, PAT, D/ST — are kept. */
+export function sentenceCase(label: string): string {
+  return label.replace(/([\s(/-])([A-Z])(?=[a-z])/g, (_, sep: string, c: string) => `${sep}${c.toLowerCase()}`)
+}
+
 /** Display name for a stepper position — the engine spells `DST`, the spec
  *  prints "D/ST" (§7.3.3.1's stepper bullet). */
 export function positionLabel(position: ScoringPosition): string {

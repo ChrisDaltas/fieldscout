@@ -1,11 +1,11 @@
 'use client'
 
+import { MToggleChip } from '@/components/mobile/ui/m-form'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import type { LeagueSettings } from '@/lib/leagues/settings/league-settings'
 import { WAIVER_PRESETS, WEEKDAYS, describeWaiverSchedule, matchWaiverPreset, type Weekday } from '@/lib/leagues/time/waiver-schedule'
 
-import { ChoiceSelect, FieldRow } from './settings-form-controls'
+import { ChoiceSelect, FieldRow, TimeField, useSettingsSkin } from './settings-form-controls'
 import {
   FREE_AGENCY_OPTIONS,
   WEEKDAY_SHORT,
@@ -38,8 +38,9 @@ export function WaiverScheduleFields({
 }) {
   const matched = matchWaiverPreset(s)
   const showDetail = detail && s.waiver_type !== 'none_fcfs'
+  const phone = useSettingsSkin() === 'mobile'
   return (
-    <div className="flex flex-col gap-2.5 [.settings-rows_&]:gap-0" data-waiver-schedule-fields>
+    <div className={phone ? 'flex flex-col' : 'flex flex-col gap-2.5 [.settings-rows_&]:gap-0'} data-waiver-schedule-fields>
       <FieldRow label="Schedule" htmlFor={`${idPrefix}-waiver-schedule`} hint={describeWaiverSchedule(s)}>
         <ChoiceSelect
           id={`${idPrefix}-waiver-schedule`}
@@ -60,9 +61,18 @@ export function WaiverScheduleFields({
       {showDetail && (
         <>
           <FieldRow label="Waivers run on" hint="Pick one or more days.">
-            <div className="flex flex-wrap gap-1" role="group" aria-label="Waiver run days" data-run-days={s.waiver_run_days.join(',')}>
+            <div className={phone ? 'flex flex-wrap gap-1.5' : 'flex flex-wrap gap-1'} role="group" aria-label="Waiver run days" data-run-days={s.waiver_run_days.join(',')}>
               {WEEKDAYS.map((d: Weekday) => {
                 const on = s.waiver_run_days.includes(d)
+                // The phone's day chips (white on ink when on) — the same
+                // toggle, the same patch.
+                if (phone) {
+                  return (
+                    <MToggleChip key={d} pressed={on} onPressedChange={() => onSettings({ waiver_run_days: toggleRunDay(s.waiver_run_days, d) })}>
+                      {WEEKDAY_SHORT[d]}
+                    </MToggleChip>
+                  )
+                }
                 return (
                   <Button
                     key={d}
@@ -81,13 +91,11 @@ export function WaiverScheduleFields({
           </FieldRow>
           <FieldRow label="At" htmlFor={`${idPrefix}-waiver-time`}>
             <span className="flex items-center gap-2">
-              <Input
+              <TimeField
                 id={`${idPrefix}-waiver-time`}
-                type="time"
                 step={60}
                 value={s.waiver_run_time}
                 onChange={(e) => e.target.value && onSettings({ waiver_run_time: e.target.value.slice(0, 5) })}
-                className="w-28"
               />
               <ChoiceSelect
                 ariaLabel="Waiver time zone"
@@ -119,13 +127,11 @@ export function WaiverScheduleFields({
                   options={WEEKDAYS.map((d) => ({ value: d, label: WEEKDAY_SHORT[d] }))}
                   onValueChange={(v) => onSettings({ free_agency_open_day: v as Weekday })}
                 />
-                <Input
+                <TimeField
                   aria-label="Free agency opening time"
-                  type="time"
                   step={60}
                   value={s.free_agency_open_time}
                   onChange={(e) => e.target.value && onSettings({ free_agency_open_time: e.target.value.slice(0, 5) })}
-                  className="w-28"
                 />
               </span>
             </FieldRow>

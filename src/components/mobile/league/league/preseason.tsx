@@ -81,11 +81,14 @@ function PracticeLink({ leagueId }: { leagueId: string }) {
   )
 }
 
-function checklistHref(key: ChecklistItem['key'], leagueId: string): string {
+/** Where a checklist row goes: the scoring and draft-time rows open League
+ *  settings' editor at that setting (`&edit=1`), the settings row the
+ *  league's settings, the seats row the managers card. */
+export function checklistHref(key: ChecklistItem['key'], leagueId: string): string {
   const settings = `/app/leagues/${leagueId}/settings`
   if (key === 'seats') return '#invites'
-  if (key === 'scoring') return `${settings}?section=scoring`
-  if (key === 'schedule') return `${settings}?section=draft`
+  if (key === 'scoring') return `${settings}?section=scoring&edit=1`
+  if (key === 'schedule') return `${settings}?section=draft&edit=1`
   return settings
 }
 

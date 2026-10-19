@@ -218,10 +218,11 @@ export function useAuctionPlayersByIds(ids: readonly string[]) {
  * nothing in `src/` invalidated it, so a commissioner's fork or save left an
  * already-open room serving the PRE-EDIT document with no error and no empty
  * state — the "nothing happened means it worked" shape CLAUDE.md names. **All
- * three writers of the document now route through that list** (the two SE.6
- * verbs and `useUpdateLeagueSettings`, whose PATCH carries
- * `scoring_system_id`); `create_league` mints the league and needs none. A
- * fourth writer must be added there — the enumeration lives in that function's
+ * four writers of the document now route through that list** (the two SE.6
+ * verbs, `useUpdateLeagueSettings`, whose PATCH carries `scoring_system_id`,
+ * and `useCommishChangeSetting` when its key is `scoring_system_id`);
+ * `create_league` mints the league and needs none. A fifth writer must be
+ * added there — the enumeration lives in that function's
  * docblock, because "any future writer owes it" was a sentence that missed an
  * existing one (R666).
  *

@@ -154,22 +154,74 @@ export function RoundNavButton({
  * team): a 52px row with the blue back chevron, the title centred as the
  * screen's h1 and a spacer, over a b3 hairline. `onBack` decides where Back
  * goes (`useGoBack` — where you came from, else the page's parent).
+ *
+ * Where the design draws the spacer a page may put one text action
+ * (`action` — League settings' blue "Edit" / "Save", `MPageBarAction`), and
+ * an editing page may put its "Cancel" where Back sits (`leading`). Both
+ * ends keep the same width so the title stays centred.
  */
-export function MPageBar({ title, onBack }: { title: string; onBack: () => void }) {
+export function MPageBar({
+  title,
+  onBack,
+  action,
+  leading,
+}: {
+  title: string
+  onBack: () => void
+  action?: React.ReactNode
+  leading?: React.ReactNode
+}) {
+  const wide = action !== undefined || leading !== undefined
   return (
     <div className="flex h-[52px] items-center gap-2 border-b border-m-b3 px-3">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Back"
-        className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
-        data-page-back
-      >
-        <MIcon name="back" size={18} stroke={2} />
-      </button>
-      <h1 className="flex-1 text-center text-[16px] font-semibold text-m-t1">{title}</h1>
-      <span className="w-9 flex-none" aria-hidden />
+      <span className={cn('flex flex-none items-center', wide ? 'w-16' : 'w-9')}>
+        {leading ?? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
+            data-page-back
+          >
+            <MIcon name="back" size={18} stroke={2} />
+          </button>
+        )}
+      </span>
+      <h1 className="min-w-0 flex-1 truncate text-center text-[16px] font-semibold text-m-t1">{title}</h1>
+      <span className={cn('flex flex-none items-center justify-end', wide ? 'w-16' : 'w-9')} aria-hidden={action === undefined || undefined}>
+        {action}
+      </span>
     </div>
+  )
+}
+
+/** A page bar's text action (iOS's Edit / Save / Cancel): 15/600 blue, a
+ *  quiet t3 when it can't go — a disabled one never fires. */
+export function MPageBarAction({
+  children,
+  onClick,
+  disabled = false,
+  tone = 'accent',
+  ...rest
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  tone?: 'accent' | 'quiet'
+} & Omit<React.ComponentProps<'button'>, 'onClick' | 'disabled' | 'children'>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'flex h-9 items-center rounded-pill px-1.5 text-[15px] font-semibold active:bg-m-b2 disabled:text-m-t5 disabled:active:bg-transparent',
+        tone === 'accent' ? 'text-accent' : 'text-m-t1',
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
   )
 }
 

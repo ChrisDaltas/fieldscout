@@ -19,7 +19,8 @@
  *      controls (another week, another league, an untouched surface) so a
  *      blanket `invalidateQueries()` cannot pass. All three re-read the
  *      activity feed AND the audit log (`commishLogKeys.all`); the setting
- *      hook re-reads standings ONLY when `rescore` was asked for; the
+ *      hook re-reads standings ONLY when `rescore` was asked for, and the
+ *      league's scoring document ONLY when the key is `scoring_system_id`; the
  *      schedule hook keeps `week` OFF the wire (the route schema is strict).
  */
 import { MutationObserver, QueryClient } from '@tanstack/react-query'
@@ -30,6 +31,7 @@ import { commishLogKeys, commishLogSearchParams } from './use-commish-log'
 import { commishEditScheduleMutationOptions } from './use-commish-schedule'
 import { commishChangeSettingMutationOptions } from './use-commish-setting'
 import { commishRenameTeamMutationOptions } from './use-commish-team'
+import { auctionPoolKeys } from './use-draft-pool'
 import { leagueActivityKeys } from './use-league-activity'
 import { leaguePoolKeys } from './use-league-pool'
 import { leaguesKeys } from './use-leagues'
@@ -57,6 +59,7 @@ const SEEDED = {
   lineupA: { team_id: TEAM_A, slot_map: {} },
   activity: { league_id: LEAGUE, items: [] },
   log: { league_id: LEAGUE, items: [] },
+  scoring: { base: { receptions: 1 } },
 }
 
 /** A client whose MUTATION default is adversarial (`retry: 3`). */
@@ -73,6 +76,7 @@ function seededClient() {
   client.setQueryData(teamLineupKeys.all(TEAM_A), SEEDED.lineupA)
   client.setQueryData(leagueActivityKeys.all(LEAGUE), SEEDED.activity)
   client.setQueryData(commishLogKeys.all(LEAGUE), SEEDED.log)
+  client.setQueryData(auctionPoolKeys.scoring(LEAGUE), SEEDED.scoring)
   // Negative controls.
   client.setQueryData(leaguesKeys.detail(OTHER_LEAGUE), null)
   client.setQueryData(leagueMatchupKeys.week(LEAGUE, WEEK + 1), null)
@@ -82,6 +86,7 @@ function seededClient() {
   client.setQueryData(leagueRosterKeys.all(OTHER_LEAGUE), null)
   client.setQueryData(commishLogKeys.all(OTHER_LEAGUE), null)
   client.setQueryData(leagueActivityKeys.all(OTHER_LEAGUE), null)
+  client.setQueryData(auctionPoolKeys.scoring(OTHER_LEAGUE), null)
   return client
 }
 
@@ -108,6 +113,7 @@ function expectCacheUntouched(client: QueryClient) {
   expect(client.getQueryData(leagueStandingsKeys.all(LEAGUE))).toStrictEqual(SEEDED.standings)
   expect(client.getQueryData(leagueRosterKeys.all(LEAGUE))).toStrictEqual(SEEDED.rosters)
   expect(client.getQueryData(commishLogKeys.all(LEAGUE))).toStrictEqual(SEEDED.log)
+  expect(client.getQueryData(auctionPoolKeys.scoring(LEAGUE))).toStrictEqual(SEEDED.scoring)
 }
 
 const expectKeys = (client: QueryClient, on: ReadonlyArray<readonly unknown[]>, off: ReadonlyArray<readonly unknown[]>) => {
@@ -178,9 +184,9 @@ describe('useCommishSetAutopilot — /commish/autopilot', () => {
 describe('useCommishChangeSetting — /commish/setting', () => {
   const variables = { key: 'waiver_period_hours', value: 72, action_id: ACTION }
   const ON = [leaguesKeys.detail(LEAGUE), leagueActivityKeys.all(LEAGUE), commishLogKeys.all(LEAGUE)]
-  const OFF = [leagueStandingsKeys.all(LEAGUE), leaguesKeys.detail(OTHER_LEAGUE), leagueRosterKeys.all(LEAGUE), leagueMatchupKeys.week(LEAGUE, WEEK), commishLogKeys.all(OTHER_LEAGUE)]
+  const OFF = [leagueStandingsKeys.all(LEAGUE), leaguesKeys.detail(OTHER_LEAGUE), leagueRosterKeys.all(LEAGUE), leagueMatchupKeys.week(LEAGUE, WEEK), commishLogKeys.all(OTHER_LEAGUE), auctionPoolKeys.scoring(LEAGUE)]
 
-  it('a 200 WITHOUT rescore re-reads the league detail + activity + log — and NOT the standings (nothing scored moved)', async () => {
+  it('a 200 WITHOUT rescore re-reads the league detail + activity + log — and NOT the standings (nothing scored moved) nor the scoring document (not a scoring key)', async () => {
     const client = seededClient()
     const calls = stubFetch({ ok: true, status: 200, body: { verb: 'commish_change_setting', rescore_performed: false } })
     await new MutationObserver(client, commishChangeSettingMutationOptions(client, LEAGUE)).mutate(variables)
@@ -198,6 +204,24 @@ describe('useCommishChangeSetting — /commish/setting', () => {
     await new MutationObserver(client, commishChangeSettingMutationOptions(client, LEAGUE)).mutate(withRescore)
     expect(JSON.parse(String(calls[0].init.body))).toStrictEqual(withRescore)
     expectKeys(client, [...ON, leagueStandingsKeys.all(LEAGUE)], [leagueStandingsKeys.all(OTHER_LEAGUE), leagueRosterKeys.all(LEAGUE)])
+  })
+
+  it('a `scoring_system_id` change ALSO re-reads the league’s scoring document (149 re-freezes `scoring_rules_snapshot` with the reference) — on a 200 AND on a 409, with or without rescore; never another league’s', async () => {
+    const scoringOn = [...ON, auctionPoolKeys.scoring(LEAGUE)]
+    const scoringOff = [auctionPoolKeys.scoring(OTHER_LEAGUE), leagueStandingsKeys.all(LEAGUE), leaguesKeys.detail(OTHER_LEAGUE)]
+    const change = { ...variables, key: 'scoring_system_id', value: 'ab000000-0000-4000-8000-000000000001' }
+
+    const ok = seededClient()
+    stubFetch({ ok: true, status: 200, body: { verb: 'commish_change_setting', rescore_performed: false } })
+    await new MutationObserver(ok, commishChangeSettingMutationOptions(ok, LEAGUE)).mutate(change)
+    expectKeys(ok, scoringOn, scoringOff)
+    expectCacheUntouched(ok)
+
+    const refused = seededClient()
+    stubFetch({ ok: false, status: 409, body: { error: 'commish_change_setting: refused' } })
+    await new MutationObserver(refused, commishChangeSettingMutationOptions(refused, LEAGUE)).mutate(change).catch((e: unknown) => e)
+    expectKeys(refused, scoringOn, scoringOff)
+    expectCacheUntouched(refused)
   })
 
   it('a 409 (a REFUSED-in-season key, 129’s copy) is sent EXACTLY ONCE, mutates no cache, and invalidates the same keys', async () => {
