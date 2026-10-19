@@ -18,11 +18,12 @@ import { isNumbered } from '@/lib/lists/ranking-mode'
 import { cn } from '@/lib/utils'
 import { resolveOrg, useListDisplay } from '@/stores/list-display-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { SheetRow } from './folder-sheets'
 import { groupOptions, groupSections, leftLabel, resolveGroup } from './list-tools'
 import { ComparePickSheet, DraftedBox, GroupBySheet } from './list-tools-sheets'
-import { shortName, tierChipClass } from './lists-model'
+import { tierChipClass } from './lists-model'
 import { useListsNav } from './lists-nav'
 import { CenterNote, LIcon, PillButton } from './lists-parts'
 
@@ -280,7 +281,7 @@ function CompareRow({
   onOpen: () => void
 }) {
   const player = entry.player
-  const name = shortName(player.full_name, player.position)
+  const name = shortPlayerName(player.full_name, player.position)
   return (
     <div className={cn('flex h-11 items-center rounded-lg pr-2', drafted && 'bg-m-b1')} data-drafted={drafted || undefined}>
       <button

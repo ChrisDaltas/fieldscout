@@ -17,10 +17,11 @@ import { toast } from '@/hooks/use-toast'
 import { useWaiverClaims } from '@/hooks/use-waiver-claims'
 import type { WaiverClaimPlayer, WaiverClaimView, WaiverClaimsDocument } from '@/lib/leagues/api/waivers-service'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { LeagueTxFilterSheet } from './activity-segment'
 import { CenteredNote, FilterPill, SkeletonBlocks } from './league-bits'
-import { clearedFilter, filterCount, filterLabel, moveSub, shortName, type TxFilter } from './league-tab-ops'
+import { clearedFilter, filterCount, filterLabel, moveSub, type TxFilter } from './league-tab-ops'
 import { useTxFilter } from './league-tab-store'
 import { TxFeed, type TxClaimResults } from './tx-feed'
 
@@ -265,7 +266,7 @@ function ClaimLine({
       </span>
       <MHeadshot player={{ id: player.player_id, full_name: name, team: player.nfl_team, position: player.position, headshot_url: identity?.headshot_url ?? null }} size={32} />
       <span className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className="truncate text-[14px] font-semibold text-m-t1">{shortName(name, player.position)}</span>
+        <span className="truncate text-[14px] font-semibold text-m-t1">{shortPlayerName(name, player.position)}</span>
         {moveSub(player.position, player.nfl_team) && (
           <span className="truncate text-[11px] font-medium text-m-t3">{moveSub(player.position, player.nfl_team)}</span>
         )}

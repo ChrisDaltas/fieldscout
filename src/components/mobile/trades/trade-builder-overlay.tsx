@@ -41,7 +41,8 @@ import type { TradeView } from '@/lib/leagues/api/trades-service'
 import { cn } from '@/lib/utils'
 
 import { TeamAvatar } from '@/components/mobile/league/team/team-avatar'
-import { ageOn, byPositionOrder, ord, posCode, recordText, shortName, teamOrder } from '@/components/mobile/league/team/team-ops'
+import { ageOn, byPositionOrder, ord, posCode, recordText, teamOrder } from '@/components/mobile/league/team/team-ops'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { MOverlay, MOverlayScroll, MSwitch } from './m-overlay'
 import { CloseButton, FaabDisc, ToggleRow } from './trade-ui'
@@ -376,7 +377,7 @@ function BuilderBody({
           <div key={id} className="flex min-w-0 items-center gap-2 rounded-[12px] bg-m-b1 p-2">
             <MHeadshot player={{ id, full_name: p.full_name, team: p.nfl_team, position: p.position, headshot_url: identity.playerById.get(id)?.headshot_url ?? null }} size={30} />
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[13px] font-semibold">{shortName(p.full_name, p.position)}</span>
+              <span className="truncate text-[13px] font-semibold">{shortPlayerName(p.full_name, p.position)}</span>
               <span className={cn('text-[10px] font-semibold', posTextClass(p.position))}>
                 {posCode(p.position)} · {p.nfl_team ?? 'FA'}
               </span>
@@ -525,7 +526,7 @@ function Tile({ p, on, age, onToggle, compact = false }: { p: RosterPlayer; on: 
         {p.bye_week !== null ? ` (${p.bye_week})` : ''}
         {lock.locked ? ' · Locked' : ''}
       </span>
-      <span className="truncate pr-[22px] text-[14px] font-semibold">{shortName(p.full_name, p.position)}</span>
+      <span className="truncate pr-[22px] text-[14px] font-semibold">{shortPlayerName(p.full_name, p.position)}</span>
       {!compact && (isDef || age !== null) && <span className="text-[10px] font-medium text-m-t3">{isDef ? 'Defense' : `Age ${age}`}</span>}
       <span
         aria-hidden

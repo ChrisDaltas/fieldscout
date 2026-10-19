@@ -20,7 +20,6 @@ import {
   playoffNote,
   segmentAtPath,
   segmentHref,
-  shortName,
   standingsHref,
   teamAvatarClass,
   tiebreakNote,
@@ -336,13 +335,6 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
 })
 
 describe('cells', () => {
-  it('short names', () => {
-    expect(shortName('Kendrick Bourne', 'WR')).toBe('K. Bourne')
-    expect(shortName('Efton Chism III', 'WR')).toBe('E. Chism III')
-    expect(shortName('Patriots D/ST', 'DEF')).toBe('Patriots D/ST')
-    expect(shortName('New England Patriots', 'DEF')).toBe('New England Patriots')
-    expect(shortName('A.J. Brown', 'WR')).toBe('A.J. Brown')
-  })
   it('the waiver column: FAAB (priority), priority alone, or a dash', () => {
     expect(waiverCell({ faab_balance: 103, waiver_priority: 10 }, 'faab')).toBe('$103 (10)')
     expect(waiverCell({ faab_balance: null, waiver_priority: 3 }, 'rolling_priority')).toBe('#3')

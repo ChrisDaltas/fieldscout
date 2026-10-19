@@ -11,7 +11,6 @@ import {
   pointsDisplay,
   resultWord,
   routeMatchupId,
-  shortName,
   sidesOf,
   slotChipPos,
   slotChipText,
@@ -122,15 +121,6 @@ describe('mobile Match — the card', () => {
 })
 
 describe('mobile Match — starter rows', () => {
-  it('shortens names like the handoff', () => {
-    expect(shortName("Ja'Marr Chase", 'WR')).toBe('J. Chase')
-    expect(shortName('DK Metcalf', 'WR')).toBe('D. Metcalf')
-    expect(shortName('A.J. Brown', 'WR')).toBe('A.J. Brown')
-    expect(shortName('Amon-Ra St. Brown', 'WR')).toBe('A. St. Brown')
-    expect(shortName('Steelers D/ST', 'DEF')).toBe('Steelers D/ST')
-    expect(shortName('Pittsburgh Steelers', 'DEF')).toBe('Pittsburgh Steelers')
-    expect(shortName('Cher', 'QB')).toBe('Cher')
-  })
   it('writes the team with its bye week', () => {
     expect(metaTeam('CLE', 9)).toBe('CLE (9)')
     expect(metaTeam('CLE', null)).toBe('CLE')

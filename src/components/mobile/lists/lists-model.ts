@@ -39,15 +39,6 @@ export function playersLabel(n: number): string {
   return `${n} ${n === 1 ? 'player' : 'players'}`
 }
 
-/** "J. Allen" — first initial + every later word; D/ST names unchanged. */
-export function shortName(full: string, position?: string | null): string {
-  const name = full.trim()
-  if (position === 'DEF' || position === 'DST' || /D\/ST$/.test(name)) return name
-  const parts = name.split(/\s+/)
-  if (parts.length < 2) return name
-  return `${parts[0][0]}. ${parts.slice(1).join(' ')}`
-}
-
 /** "just now", "12m ago", "3h ago", "2d ago", then "Aug 20" / "Nov 9, 2025". */
 export function updatedLabel(iso: string | null | undefined, now: number = Date.now()): string {
   if (!iso) return ''

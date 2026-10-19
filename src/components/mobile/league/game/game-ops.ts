@@ -9,9 +9,10 @@
  * and team stat totals"): the Team stats table, records, possession, down &
  * distance, the field strip and Play by play.
  */
-import { shortName } from '@/components/mobile/league/match/match-ops'
+
 import { isZeroingHold } from '@/lib/leagues/scoring/held-games'
 import { isOvertime, liveClock } from '@/utils/game-clock'
+import { shortPlayerName } from '@/utils/format-name'
 
 /** The stored columns the box prints (a display subset of `player_stats`). */
 export const GAME_BOX_COLUMNS = [
@@ -266,7 +267,7 @@ export function boxGroups(game: NflGameRow, players: readonly GameBoxPlayer[], l
       .filter(({ line, p }) => g.has(line, p))
       .sort((x, y) => side(x.p) - side(y.p) || g.rank(y.line) - g.rank(x.line) || x.p.full_name.localeCompare(y.p.full_name))
       .map(({ line, p }) => {
-        const short = shortName(p.full_name, p.position)
+        const short = shortPlayerName(p.full_name, p.position)
         const team = p.team ?? ''
         const cells = g.cells(line)
         return {

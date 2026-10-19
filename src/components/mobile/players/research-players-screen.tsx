@@ -12,6 +12,7 @@ import { RESEARCH_DEFAULTS, useMobilePlayersUI, type ResearchScoring, type Resea
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
+import { shortPlayerName } from '@/utils/format-name'
 
 import { FilterBar, ListHeader, Notice, PathIcon, ProblemState, RowsSkeleton, ShowMore, type FilterPill } from './players-chrome'
 import {
@@ -23,7 +24,6 @@ import {
   POS_OPTIONS,
   posMatches,
   rankCell,
-  shortName,
   sortAfterToggle,
   sortByCell,
   STAT_FIELDS,
@@ -153,7 +153,7 @@ export function ResearchPlayersScreen({ initialPosition = null }: { initialPosit
           return {
             id: p.id,
             player: p,
-            short: shortName(p.full_name, p.position),
+            short: shortPlayerName(p.full_name, p.position),
             status: statusTag(p.status),
             line2: meta,
             line3: null,

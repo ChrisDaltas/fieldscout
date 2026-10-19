@@ -14,7 +14,7 @@ import { swapIsEmpty, swapOptions, type SwapOptions, type SwapSelection } from '
 import { teamAvatarClass } from '@/components/mobile/league/match/match-ops'
 import type { ActivityItem } from '@/lib/leagues/api/activity-service'
 
-import { ageOn, gameLine, monthDay, ord, recentMoveRows, shortName, sinceText, summaryLine, teamAvClass, teamOrder } from './team-ops'
+import { ageOn, gameLine, monthDay, ord, recentMoveRows, sinceText, summaryLine, teamAvClass, teamOrder } from './team-ops'
 
 const SETTINGS: RosterSettings = {
   starting_slots: [
@@ -212,13 +212,6 @@ describe('swapOptions never weakens a rule', () => {
 describe('team-ops', () => {
   it('ord', () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23].map(ord)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd'])
-  })
-
-  it('shortName', () => {
-    expect(shortName('Bijan Robinson')).toBe('B. Robinson')
-    expect(shortName('A.J. Brown')).toBe('A.J. Brown')
-    expect(shortName('Steelers D/ST')).toBe('Steelers D/ST')
-    expect(shortName('Pittsburgh Steelers', 'DEF')).toBe('Pittsburgh Steelers')
   })
 
   it('gameLine reads the stored game state, never a clock', () => {
