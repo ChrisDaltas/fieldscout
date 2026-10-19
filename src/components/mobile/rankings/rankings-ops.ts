@@ -253,12 +253,15 @@ export function expertSpread(ranks: readonly number[]): ExpertSpread | null {
   return { best: Math.min(...ranks), worst: Math.max(...ranks), sd }
 }
 
-/** The breakdown's agreement note (lr-hub §5.4), copy as designed. */
+/** The breakdown's agreement note (lr-hub §5.4), copy as designed except
+ *  the design's "has him within two spots", which misreads for a D/ST and
+ *  is gendered for everyone: the note names the player instead, like the
+ *  "disagree" line does (gap list §4 item 16). */
 export function agreementNote(short: string, s: ExpertSpread): string {
   if (s.sd > 2.2) {
     return `Experts disagree on ${short}. Range #${s.best} to #${s.worst} is wider than most at this tier.`
   }
-  if (s.worst - s.best <= 2) return 'Experts mostly agree. Every expert has him within two spots.'
+  if (s.worst - s.best <= 2) return `Experts mostly agree. Every expert has ${short} within two spots.`
   return `Experts mostly agree. Range #${s.best} to #${s.worst}.`
 }
 

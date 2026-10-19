@@ -152,10 +152,24 @@ describe('AI expert consensus (the Experts source)', () => {
     expect(expertSpread([])).toBeNull()
     const tight = expertSpread([3, 5, 4])!
     expect([tight.best, tight.worst]).toEqual([3, 5])
-    expect(agreementNote('S. Barkley', tight)).toBe('Experts mostly agree. Every expert has him within two spots.')
+    expect(agreementNote('S. Barkley', tight)).toBe('Experts mostly agree. Every expert has S. Barkley within two spots.')
     expect(agreementNote('S. Barkley', expertSpread([3, 6, 4])!)).toBe('Experts mostly agree. Range #3 to #6.')
     expect(agreementNote('G. Wilson', expertSpread([1, 9, 2, 10])!)).toBe(
       'Experts disagree on G. Wilson. Range #1 to #10 is wider than most at this tier.',
+    )
+  })
+  it('the agreement note never says "him" — a kicker or a D/ST reads by name (gap list §4 item 16)', () => {
+    const tight = expertSpread([1, 1, 2])!
+    for (const short of ['Broncos D/ST', 'B. Aubrey', 'S. Barkley']) {
+      for (const s of [tight, expertSpread([3, 6, 4])!, expertSpread([1, 9, 2, 10])!]) {
+        expect(agreementNote(short, s)).not.toMatch(/\b(him|his|he)\b/i)
+      }
+    }
+    expect(agreementNote(shortName('Broncos D/ST', 'DEF'), tight)).toBe(
+      'Experts mostly agree. Every expert has Broncos D/ST within two spots.',
+    )
+    expect(agreementNote(shortName('Brandon Aubrey', 'K'), tight)).toBe(
+      'Experts mostly agree. Every expert has B. Aubrey within two spots.',
     )
   })
   it('comparison colour: ±3 or more turns red (ranked lower) or green (higher)', () => {
