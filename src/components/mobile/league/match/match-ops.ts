@@ -9,6 +9,7 @@ import type { BoxGame, BoxStarter } from '@/lib/leagues/api/box-score-service'
 import type { MatchupRow } from '@/lib/leagues/api/matchups-service'
 import type { StarterCell } from '@/components/leagues/matchup-view-ops'
 import { posLabel } from '@/components/mobile/ui/m-pos-chip'
+import { liveClock } from '@/utils/game-clock'
 
 // ---------------------------------------------------------------------------
 // Routes — the swiped matchup lives in the URL (`/matchup/[mid]`)
@@ -182,9 +183,7 @@ export function gameLine(
   const opp = opponentOf(nflTeam, game)
   const tail = opp ? ` ${opp}` : ''
   if (game.status === 'live') {
-    const q = game.quarter === null ? null : game.quarter >= 5 ? 'OT' : `Q${game.quarter}`
-    const clock = [q, game.game_clock].filter(Boolean).join(' ')
-    return `${clock || 'Live'}${tail}`
+    return `${liveClock(game) ?? 'Live'}${tail}`
   }
   if (game.status === 'final') {
     const home = game.home_team === nflTeam

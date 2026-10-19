@@ -11,6 +11,7 @@
  */
 import { shortName } from '@/components/mobile/league/match/match-ops'
 import { isZeroingHold } from '@/lib/leagues/scoring/held-games'
+import { isOvertime, liveClock } from '@/utils/game-clock'
 
 /** The stored columns the box prints (a display subset of `player_stats`). */
 export const GAME_BOX_COLUMNS = [
@@ -108,20 +109,14 @@ export interface GameStatus {
   started: boolean
 }
 
-function quarterText(quarter: number | null): string | null {
-  if (quarter === null) return null
-  return quarter >= 5 ? 'OT' : `Q${quarter}`
-}
-
 export function gameStatus(game: Pick<NflGameRow, 'status' | 'quarter' | 'game_clock' | 'operator_hold'>, kickoffLocal: string): GameStatus {
   if (isZeroingHold(game.operator_hold)) {
     return { state: 'held', text: game.operator_hold === 'cancelled' ? 'Cancelled' : 'Moved out of the week', started: false }
   }
   if (game.status === 'live') {
-    const clock = [quarterText(game.quarter), game.game_clock].filter(Boolean).join(' ')
-    return { state: 'live', text: clock || 'Live', started: true }
+    return { state: 'live', text: liveClock(game) ?? 'Live', started: true }
   }
-  if (game.status === 'final') return { state: 'final', text: game.quarter !== null && game.quarter >= 5 ? 'Final/OT' : 'Final', started: true }
+  if (game.status === 'final') return { state: 'final', text: isOvertime(game.quarter) ? 'Final/OT' : 'Final', started: true }
   if (game.status === 'postponed') return { state: 'postponed', text: 'Postponed', started: false }
   return { state: 'scheduled', text: kickoffLocal, started: false }
 }
