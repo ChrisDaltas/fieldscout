@@ -2,12 +2,14 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileNflTeam } from '@/components/mobile/nfl/mobile-nfl'
 import { TeamRoster, type RosterPlayer } from '@/components/teams/team-roster'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { getTeamColors } from '@/lib/nfl-team-colors'
-import { getNflTeam } from '@/lib/nfl-teams'
+import { getNflTeam, type NflTeamInfo } from '@/lib/nfl-teams'
 import { createServerClient } from '@/lib/supabase/server'
 
 interface NflTeamPageProps {
@@ -41,11 +43,30 @@ export default async function NflTeamPage({ params }: NflTeamPageProps) {
   }
 
   const roster = (players ?? []) as RosterPlayer[]
-  const colors = getTeamColors(info.abbr)
   // The bye week lives on player rows, not a teams table — read it off any
   // roster member.
   const byeWeek = roster.find((p) => p.bye_week != null)?.bye_week ?? null
 
+  // The phone draws its own screen on the same read (`MobileNflTeam`, gap
+  // list §4 item 103); desktop is unchanged.
+  return (
+    <ByLayout
+      desktop={<DesktopNflTeam info={info} roster={roster} byeWeek={byeWeek} />}
+      mobile={<MobileNflTeam team={info} roster={roster} byeWeek={byeWeek} />}
+    />
+  )
+}
+
+function DesktopNflTeam({
+  info,
+  roster,
+  byeWeek,
+}: {
+  info: NflTeamInfo
+  roster: RosterPlayer[]
+  byeWeek: number | null
+}) {
+  const colors = getTeamColors(info.abbr)
   return (
     <div className="space-y-[19px]">
       {/* The app's standard header (D486(12) audit): title + a ghost back

@@ -70,7 +70,6 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
     expect(mobileFallback('/app/mocks')).toEqual({ kind: 'account', title: 'Mock drafts', parent: '/app', heading: true })
     expect(mobileFallback('/app/mocks/m1/report')?.title).toBe('Mock draft report')
     expect(mobileFallback('/app/leagues')?.title).toBe('Leagues')
-    expect(mobileFallback('/app/nfl/BUF')).toMatchObject({ title: 'NFL team', heading: false })
     expect(mobileFallback('/app/weekly-ranks/history')?.title).toBe('Ranking history')
   })
   it('leaves screens with their own mobile header alone', () => {
@@ -85,6 +84,11 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
   })
   it('leaves Trash to its own phone screen (gap list §4 item 102)', () => {
     for (const path of ['/app/trash', '/app/trash/']) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
+  })
+  it('leaves the NFL team pages to their own phone screens (gap list §4 item 103)', () => {
+    for (const path of ['/app/nfl', '/app/nfl/', '/app/nfl/BUF', '/app/nfl/BUF/']) {
       expect(mobileFallback(path), path).toBeNull()
     }
   })

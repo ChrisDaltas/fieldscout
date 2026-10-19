@@ -1,6 +1,8 @@
 import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileNflTeams } from '@/components/mobile/nfl/mobile-nfl'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { getTeamColors } from '@/lib/nfl-team-colors'
 import { NFL_DIVISIONS, teamsInDivision } from '@/lib/nfl-teams'
@@ -11,8 +13,15 @@ export const metadata = { title: 'NFL teams · FieldScout' }
  * NFL teams index — one v7 card per division, flush team rows with
  * rounded-square team-color crests. Batch E surface: extends the design language,
  * no prototype screen to match.
+ *
+ * The phone draws its own screen on the same team table (`MobileNflTeams`,
+ * gap list §4 item 103); desktop is unchanged.
  */
 export default function NflTeamsPage() {
+  return <ByLayout desktop={<DesktopNflTeams />} mobile={<MobileNflTeams />} />
+}
+
+function DesktopNflTeams() {
   return (
     <div className="grid grid-cols-1 gap-[19px] md:grid-cols-2">
       {/* Explicit title on the standard header (F577, D487). */}
