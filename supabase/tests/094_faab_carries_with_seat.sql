@@ -232,8 +232,8 @@ select set_config('request.jwt.claims', '{"sub": "94000000-0000-4000-8000-000000
 select throws_ok(
   $$ select public.remove_manager('b4000000-0000-4000-8000-000000000004', 'd4000000-0000-4000-8000-000000000045',
                                   'retire', null, 'pgtap retire', 'a4000000-0000-4000-8000-000000000045') $$,
-  'P0001', 'remove_manager: a team can''t be retired — seat a new manager or leave it vacant (§7.2.1)',
-  'D6 RE-CUT (176): retiring the team is refused BY NAME (was: the seat row fronted a minted successor with 40)');
+  '22023', 'remove_manager: mode must be takeover or vacate (§7.2.1)',   -- 199 (F562): retire is no mode at all
+  'D6 RE-CUT (176, 199): retiring the team is refused — retire is no mode at all since 199 (was: the seat row fronted a minted successor with 40)');
 reset role;
 select results_eq(
   $$ select lm.user_id is not null, lm.is_placeholder, lm.faab_balance
@@ -242,7 +242,7 @@ select results_eq(
   'D7 RE-CUT (176): …the seat keeps its manager and its 40 (was: the successor manager inherited 40)');
 select is(
   (select count(*)::int from teams t where t.league_id = 'b4000000-0000-4000-8000-000000000004'
-     and (t.status = 'retired' or t.successor_team_id is not null)),
+     and t.status not in ('active', 'orphaned')),   -- 199: no successor column any more
   0,
   'D8 RE-CUT (176): …and no team was sealed or succeeded (was: the payload named the FAAB inheritance)');
 

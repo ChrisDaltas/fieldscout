@@ -4735,10 +4735,8 @@ export type Database = {
           losses: number | null
           name: string
           owner_id: string
-          retired_at_week: number | null
           scoring_system_id: string | null
           status: string
-          successor_team_id: string | null
           total_points: number | null
           updated_at: string | null
           wins: number | null
@@ -4751,10 +4749,8 @@ export type Database = {
           losses?: number | null
           name: string
           owner_id: string
-          retired_at_week?: number | null
           scoring_system_id?: string | null
           status?: string
-          successor_team_id?: string | null
           total_points?: number | null
           updated_at?: string | null
           wins?: number | null
@@ -4767,10 +4763,8 @@ export type Database = {
           losses?: number | null
           name?: string
           owner_id?: string
-          retired_at_week?: number | null
           scoring_system_id?: string | null
           status?: string
-          successor_team_id?: string | null
           total_points?: number | null
           updated_at?: string | null
           wins?: number | null
@@ -4802,13 +4796,6 @@ export type Database = {
             columns: ["scoring_system_id"]
             isOneToOne: false
             referencedRelation: "scoring_systems"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "teams_successor_team_id_fkey"
-            columns: ["successor_team_id"]
-            isOneToOne: false
-            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]

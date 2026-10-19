@@ -37,10 +37,9 @@
  *      until `league_week_advance` opens it — named every drain).
  *   5. AFFECTED TEAMS — through the WEEK'S `team_lineups` rows, never the
  *      current roster (F262(d)): the team whose stored `slot_map` STARTS
- *      the player owns the delta. A retired franchise's past-week row keeps
- *      its id (120 re-points only weeks ≥ `retired_at_week`), so a past-week
- *      correction lands on the predecessor's book and a successor is never
- *      minted a row for a week it did not play. A rostered player no lineup
+ *      the player owns the delta (199 / F562: a team is never retired, so a
+ *      week's row always belongs to the team that played it — there is no
+ *      lineage to walk). A rostered player no lineup
  *      starts is bench — no recompute (§22.2's incremental rule). Bench and
  *      IR slots are excluded; the roster's `ir_slots` keys say which.
  *      (5b) PLUS every team whose week lineup carries `edited_by_commish`
@@ -544,35 +543,13 @@ export function playerPointsRows(slots: ReadonlyArray<{ slot: string; player_id:
   })
 }
 
-// ── Lineage (F262(d)) ──────────────────────────────────────────────────────
+// ── The league's teams ─────────────────────────────────────────────────────
+// 199 / F562: the retire lineage (F262(d)'s `bookOwnerForWeek` over
+// `retired_at_week` / `successor_team_id`) is gone with those columns — a team
+// is never retired, so every week's book is the team's own.
 
 export interface TeamRow {
   id: string
-  status: string
-  retired_at_week: number | null
-  successor_team_id: string | null
-}
-
-/**
- * The franchise whose BOOK a week belongs to, for a seated team: walk
- * `successor_team_id` backward while the predecessor's `retired_at_week`
- * lies beyond the week (its weeks before the seal are its own — E49; 120
- * re-points only weeks ≥ `retired_at_week`). Depth-capped like 120's walk.
- */
-export function bookOwnerForWeek(teamId: string, week: number, teams: ReadonlyMap<string, TeamRow>): string {
-  let owner = teamId
-  for (let depth = 0; depth < 64; depth++) {
-    let predecessor: TeamRow | undefined
-    for (const t of teams.values()) {
-      if (t.successor_team_id === owner && t.status === 'retired') {
-        predecessor = t
-        break
-      }
-    }
-    if (!predecessor || predecessor.retired_at_week === null || predecessor.retired_at_week <= week) return owner
-    owner = predecessor.id
-  }
-  return owner
 }
 
 // ── The drain ──────────────────────────────────────────────────────────────
@@ -1220,7 +1197,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
 
   // (5) Teams + the WEEK's lineups.
   const teamRows = must(
-    await db.from('teams').select('id, status, retired_at_week, successor_team_id').eq('league_id', league.id),
+    await db.from('teams').select('id').eq('league_id', league.id),
     'teams read',
   )
   const teams = new Map<string, TeamRow>(teamRows.map((t) => [t.id, t]))
@@ -1297,8 +1274,7 @@ async function scoreLeagueWeek(db: ScoreWorkerClient, time: TimeProvider, input:
     const haveRow = new Set(existing.map((r) => r.team_id))
     const provisional = new Set<string>()
     for (const t of teams.values()) {
-      if (t.status === 'retired') continue
-      const owner = bookOwnerForWeek(t.id, week, teams)
+      const owner = t.id
       if (haveRow.has(owner) || toCompute.has(owner)) continue
       if (!startersByTeam.has(owner)) {
         report.problems.push(`team ${owner}: no team_lineups row for week ${week} — no provisional row written (the week is held by name until one exists, F241(b))`)

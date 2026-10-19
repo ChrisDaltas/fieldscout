@@ -176,18 +176,19 @@ insert into leagues (id, owner_id, name, season, status, team_count, scoring_sys
 -- did NOT move" (G11) both compare now() with now(), and both cells would pass
 -- whatever the code did (§4 rule 14 — no cell may pass on a fixture that
 -- cannot distinguish the outcomes).
-insert into teams (id, owner_id, name, league_id, list_id, status, successor_team_id, created_at, updated_at) values
- ('cf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'CR Commish',   'bf000000-0000-4000-8000-000000000001', null, 'active',   null, now() - interval '10 days', now() - interval '10 days'),
- ('cf000000-0000-4000-8000-000000000002', '9f000000-0000-4000-8000-000000000002', 'CR Alpha',     'bf000000-0000-4000-8000-000000000001', null, 'active',   null, now() - interval '10 days', now() - interval '10 days'),
- ('cf000000-0000-4000-8000-000000000003', '9f000000-0000-4000-8000-000000000003', 'CR Bravo',     'bf000000-0000-4000-8000-000000000001', null, 'active',   null, now() - interval '10 days', now() - interval '10 days'),
- ('cf000000-0000-4000-8000-000000000005', '9f000000-0000-4000-8000-000000000001', 'CR Successor', 'bf000000-0000-4000-8000-000000000001', null, 'orphaned', null, now() - interval '10 days', now() - interval '10 days'),
- ('cf000000-0000-4000-8000-000000000004', '9f000000-0000-4000-8000-000000000001', 'CR Sealed',    'bf000000-0000-4000-8000-000000000001', null, 'retired',  'cf000000-0000-4000-8000-000000000005', now() - interval '10 days', now() - interval '10 days'),
+insert into teams (id, owner_id, name, league_id, list_id, status, created_at, updated_at) values
+ ('cf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'CR Commish',   'bf000000-0000-4000-8000-000000000001', null, 'active',   now() - interval '10 days', now() - interval '10 days'),
+ ('cf000000-0000-4000-8000-000000000002', '9f000000-0000-4000-8000-000000000002', 'CR Alpha',     'bf000000-0000-4000-8000-000000000001', null, 'active',   now() - interval '10 days', now() - interval '10 days'),
+ ('cf000000-0000-4000-8000-000000000003', '9f000000-0000-4000-8000-000000000003', 'CR Bravo',     'bf000000-0000-4000-8000-000000000001', null, 'active',   now() - interval '10 days', now() - interval '10 days'),
+ ('cf000000-0000-4000-8000-000000000005', '9f000000-0000-4000-8000-000000000001', 'CR Successor', 'bf000000-0000-4000-8000-000000000001', null, 'orphaned', now() - interval '10 days', now() - interval '10 days'),
+ ('cf000000-0000-4000-8000-000000000004', '9f000000-0000-4000-8000-000000000001', 'CR Sealed',    'bf000000-0000-4000-8000-000000000001', null, 'orphaned', now() - interval '10 days', now() - interval '10 days'),
  -- u2's STANDALONE team: league_id IS NULL, so 095:636-639's UPDATE policy
  -- DOES match it. §C3's positive control and nothing else.
- ('cf000000-0000-4000-8000-000000000006', '9f000000-0000-4000-8000-000000000002', 'Solo Squad',   null, null, 'active', null, now() - interval '10 days', now() - interval '10 days'),
- -- T6: RETIRED and still SEATED by u6 (R1029's fixture). No successor on
- -- purpose, so F11 also pins the 'none recorded' arm of the message.
- ('cf000000-0000-4000-8000-000000000007', '9f000000-0000-4000-8000-000000000006', 'CR Sealed Seated', 'bf000000-0000-4000-8000-000000000001', null, 'retired', null, now() - interval '10 days', now() - interval '10 days');
+ ('cf000000-0000-4000-8000-000000000006', '9f000000-0000-4000-8000-000000000002', 'Solo Squad',   null, null, 'active', now() - interval '10 days', now() - interval '10 days'),
+ -- T6: was RETIRED and still SEATED by u6 (R1029's fixture). RE-CUT BY 199
+ -- (F562 — a team is never retired): T4 is an empty orphaned team, T6 an
+ -- ordinary seated one, and the successor column is gone.
+ ('cf000000-0000-4000-8000-000000000007', '9f000000-0000-4000-8000-000000000006', 'CR Sealed Seated', 'bf000000-0000-4000-8000-000000000001', null, 'active', now() - interval '10 days', now() - interval '10 days');
 
 insert into league_members (league_id, user_id, team_id, role, is_placeholder) values
  ('bf000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001', 'cf000000-0000-4000-8000-000000000001', 'commissioner', false),
@@ -207,7 +208,7 @@ select is((select count(*)::int from league_members
              and team_id = 'cf000000-0000-4000-8000-000000000004'),
   0, 'B1 PREMISE for §F7: T4, the RETIRED franchise with NO seat, carries NO league_members row — the shape 120:565-570 leaves behind — so F7''s 42501 is the AUTH gate answering first. (This is a fixture premise, NOT a proof that the state is unreachable: R1029 showed it is reachable, and §F10-F12 prove the guard on the seated case)');
 select is((select status from teams where id = 'cf000000-0000-4000-8000-000000000004'),
-  'retired', 'B2 PREMISE for §I: T4 really is `retired` — the §I refusal is about a state that exists in the fixture, not a spelling');
+  'orphaned', 'B2 PREMISE for §I (re-cut by 199 / F562): T4 is an ordinary orphaned team — a team is never retired, so the §I seal has no subject');
 select is((select count(*)::int from commissioner_actions
            where league_id = 'bf000000-0000-4000-8000-000000000001'),
   0, 'B3 PREMISE: this league starts with ZERO commissioner_actions rows, so every "a receipt was written" cell below counts something this suite caused');
@@ -347,7 +348,7 @@ select throws_ok(
 select throws_ok(
   $$ select public.rename_own_team('cf000000-0000-4000-8000-000000000004', 'Unseal Me') $$,
   '42501', 'rename_own_team: not the manager of this team',
-  'F7 a RETIRED franchise with NO seat (T4 — the shape 120:565-570 leaves behind, B1) is answered by the AUTH 42501, because auth runs BEFORE the retired guard: a stranger probing a sealed franchise learns nothing. This cell proves the ORDER of the two gates, not that the guard is unnecessary — the first cut claimed the seated state was unreachable and R1029 disproved it; F10-F12 prove the guard itself');
+  'F7 a team with NO seat (T4, an empty orphaned team since 199 re-cut it from RETIRED) is answered by the AUTH 42501 — a stranger learns nothing');
 select throws_ok(
   $$ select public.rename_own_team('00000000-0000-4000-8000-0000000000bb', 'Ghost') $$,
   '42501', 'rename_own_team: not the manager of this team',
@@ -355,7 +356,7 @@ select throws_ok(
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 select throws_like(
   $$ select public.rename_own_team('cf000000-0000-4000-8000-000000000006', 'Solo Renamed') $$,
-  '%STANDALONE team%095:636-639%',
+  '%is not a league team, so it is not renamed here%',   -- 199 (F569 part 3): plain words
   'F9 a STANDALONE team the caller owns is ROUTED, not handled twice: it already has a working door (095:636-639''s UPDATE policy, proven live by C3), so this verb refuses by name and says which one — rather than becoming a second writer for a surface that is not broken');
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -369,17 +370,17 @@ update teams set name = 'CR Bravo' where id = 'cf000000-0000-4000-8000-000000000
 select is((select count(*)::int from league_members
            where team_id = 'cf000000-0000-4000-8000-000000000007'
              and user_id = '9f000000-0000-4000-8000-000000000006'),
-  1, 'F10 PREMISE: T6 is RETIRED *and* u6 holds a seated league_members row on it — so the call below passes the AUTH gate and REACHES the retired guard. Without this premise F11 could pass on the auth 42501 and prove nothing about the guard');
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.rename_own_team('cf000000-0000-4000-8000-000000000007', 'Unsealed By Manager') $$,
-  '%its name is FROZEN%NO VERB UN-RETIRES A FRANCHISE TODAY (F354)%SUCCESSOR franchise (none recorded)%',
-  'F11 A SEATED MANAGER CANNOT RENAME HIS OWN RETIRED FRANCHISE: spec:183 freezes the name for everyone, not only against the commissioner. The pattern pins the FROZEN wording, the F354 honesty and the successor arm (here "none recorded") — the SAME message shape as I1, so a reworded or softened refusal reds this cell rather than passing on a substring');
+  1, 'F10 PREMISE: u6 holds a seated league_members row on T6 (199: T6 was RETIRED, now an ordinary team)');
+-- RE-CUT BY 199 (F562): a team cannot be retired at all, so the manager arm's
+-- retired guard is gone; F11 pins that the state it guarded cannot be made.
+select throws_ok(
+  $$ update teams set status = 'retired' where id = 'cf000000-0000-4000-8000-000000000007' $$,
+  '23514', null,
+  'F11 RE-CUT BY 199 (F562): a team cannot be RETIRED at all — the status CHECK refuses it, so the manager arm''s retired guard has nothing to guard');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000007'),
-  'CR Sealed Seated', 'F12 …and the sealed franchise still carries its sealed name — the refusal wrote nothing');
+  'CR Sealed Seated', 'F12 …and T6 still carries its name — nothing wrote to it');
 
 -- THE LOCK-ORDER PINS (R1036 / R1037, the second fix round of PR #298). The
 -- guard F11 proves is only as good as the row it reads: the first fix round
@@ -396,10 +397,10 @@ select is((select name from teams where id = 'cf000000-0000-4000-8000-0000000000
 -- race window"). ***THE R1036 BREAK PROBE'S TARGET.***
 select ok(
   (select strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE') > 0
-      and strpos(p.prosrc, 'v_team.status = ''retired''') > strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE')
+      and strpos(p.prosrc, 'v_team.status = ''retired''') = 0
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'rename_own_team_internal'),
-  'F13 LOCK ORDER (R1036): in rename_own_team_internal''s prosrc the FIRST `v_team.status = ''retired''` occurs AFTER the `WHERE t.id = p_team_id FOR UPDATE` re-read — the guard reads the LOCKED row, the commissioner arm''s shape (128 §3 steps 5 → 6). Moved back above the lock, a retire committed while this call waits on the league lock is invisible to it and the rename lands on a sealed franchise');
+  'F13 LOCK ORDER (R1036): rename_own_team_internal still re-reads the team row `FOR UPDATE`; the retired guard that read it is gone (199 / F562)');
 select ok(
   (select strpos(p.prosrc, 'm.user_id = auth.uid()') > 0
       and strpos(p.prosrc, 'm.user_id = auth.uid()') > strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE')
@@ -575,25 +576,25 @@ update teams set name = 'CR Bravo' where id = 'cf000000-0000-4000-8000-000000000
 -- I. THE SEALED FRANCHISE — the one refusal, and it is the spec's own.
 --    ***THE BREAK PROBE'S TARGET.***
 -- ---------------------------------------------------------------------------
+-- RE-CUT BY 199 (F562): a team is never retired, so the commissioner arm's
+-- seal is gone too; I1 pins that the sealed state cannot be made at all.
+select throws_ok(
+  $$ update teams set status = 'retired' where id = 'cf000000-0000-4000-8000-000000000004' $$,
+  '23514', null,
+  'I1 RE-CUT BY 199 (F562): a team cannot be RETIRED at all, so the commissioner arm''s seal has no subject');
+select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000004'),
+  'CR Sealed', 'I2 …and T4 still carries its name');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9f000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
-       'cf000000-0000-4000-8000-000000000004', 'Unsealed', 'the commissioner tries anyway',
-       '0f000000-0000-4000-8000-000000000040'::uuid) $$,
-  '%its name is FROZEN%NO VERB UN-RETIRES A FRANCHISE TODAY (F354)%rename the SUCCESSOR franchise (cf000000-0000-4000-8000-000000000005)%',
-  'I1 A RETIRED FRANCHISE''S NAME IS FROZEN (spec:183, §7.2.1(b)) and the refusal binds the COMMISSIONER too — a sealed franchise is the record History Mode shows under its last manager, so this is a LEGALITY gate, not a timing one (PROGRESS standing rule (i)). The pattern pins the FROZEN wording, the F354 honesty (no "un-retire first", which R1020 had to correct once in 127) AND the successor it offers instead, so a reworded or softened refusal reds this cell rather than passing on a substring');
-select is((select name from teams where id = 'cf000000-0000-4000-8000-000000000004'),
-  'CR Sealed', 'I2 …and the sealed franchise still carries its sealed name');
 select is((select count(*)::int from commish_team_actions
            where action_id = '0f000000-0000-4000-8000-000000000040'), 0,
-  'I3 …and a refusal consumes NO ledger row: the whole statement rolled back, so the same action_id is still usable once the request is lawful');
+  'I3 …and the action id is unused: nothing called the verb with it');
 -- The SUCCESSOR is renameable, which is what makes I1's offer a real route.
 select is(
   (select public.commish_rename_team('bf000000-0000-4000-8000-000000000001',
      'cf000000-0000-4000-8000-000000000005', 'Phoenix', 'the successor gets a real name',
      '0f000000-0000-4000-8000-000000000041'::uuid) ->> 'name'),
-  'Phoenix', 'I4 POSITIVE CONTROL for I1: the SUCCESSOR franchise (orphaned, unclaimed) renames fine — so I1''s zero is the `retired` predicate and not "this suite cannot rename anything in §I"');
+  'Phoenix', 'I4 the orphaned, unclaimed team renames fine (199: was I1''s positive control)');
 reset role;
 select set_config('request.jwt.claims', '', true);
 

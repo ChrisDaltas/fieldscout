@@ -26,14 +26,12 @@ import {
   ADVANCED_KEYS,
   applicableKeys,
   assertSnapshotScorable,
-  bookOwnerForWeek,
   computeTeamWeek,
   cutsOf,
   irKeysOf,
   normalizePosition,
   scoreStarter,
   startersOf,
-  type TeamRow,
   weekScoringRules,
 } from './score-week-worker'
 import { forkTemplateDoc, resolveRules } from './rules-doc'
@@ -377,22 +375,6 @@ describe('lineups — starters from the canonical slot_map; IR and bench exclude
     expect(startersOf([], ir)).toBeNull()
     expect(startersOf({}, ir)).toEqual([])
     expect([...irKeysOf(null)]).toEqual([])
-  })
-})
-
-describe('F262(d) — the book owner of a week walks the lineage backward', () => {
-  const teams = new Map<string, TeamRow>([
-    ['P', { id: 'P', status: 'retired', retired_at_week: 3, successor_team_id: 'S' }],
-    ['S', { id: 'S', status: 'orphaned', retired_at_week: null, successor_team_id: null }],
-    ['Q', { id: 'Q', status: 'active', retired_at_week: null, successor_team_id: null }],
-    ['PP', { id: 'PP', status: 'retired', retired_at_week: 2, successor_team_id: 'P' }],
-  ])
-  it('P retired at week 3: weeks 1–2 are P’s book (and week 1 is PP’s, two seals back); week 3 on is S’s', () => {
-    expect(bookOwnerForWeek('S', 1, teams)).toBe('PP')
-    expect(bookOwnerForWeek('S', 2, teams)).toBe('P')
-    expect(bookOwnerForWeek('S', 3, teams)).toBe('S')
-    expect(bookOwnerForWeek('S', 9, teams)).toBe('S')
-    expect(bookOwnerForWeek('Q', 1, teams)).toBe('Q')
   })
 })
 

@@ -155,11 +155,20 @@ insert into leagues (id, owner_id, name, season, status, team_count, regular_sea
 insert into teams (id, owner_id, name, league_id)
 select ('ce000000-0000-4000-8000-0000000000' || lpad(i::text, 2, '0'))::uuid, '9e000000-0000-4000-8000-000000000001', 'EB ' || chr(64 + i), 'be000000-0000-4000-8000-000000000001'
 from generate_series(1, 8) i;
-update teams set status = 'retired' where id = 'ce000000-0000-4000-8000-000000000008';
+-- RE-CUT BY 199 (F562 — a team is never retired): 066's H (and L3's twin)
+-- was kept out of the bracket by status 'retired', which is gone; each is
+-- parked in a league of its own instead — the one shape left where a
+-- league's results name a team it does not seat. Goldens unchanged.
+insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
+                     scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings)
+select 'be000000-0000-4000-8000-0000000000ff', owner_id, 'pgtap-eb-parking', season, 'complete', team_count, regular_season_weeks,
+       playoff_teams, playoff_start_week, scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings
+from leagues where id = 'be000000-0000-4000-8000-000000000001';
+update teams set league_id = 'be000000-0000-4000-8000-0000000000ff' where id = 'ce000000-0000-4000-8000-000000000008';
 insert into teams (id, owner_id, name, league_id)
 select ('ce000000-0000-4000-8000-0000000000' || (30 + i)::text)::uuid, '9e000000-0000-4000-8000-000000000001', 'EB3 ' || chr(64 + i), 'be000000-0000-4000-8000-000000000003'
 from generate_series(1, 8) i;
-update teams set status = 'retired' where id = 'ce000000-0000-4000-8000-000000000038';
+update teams set league_id = 'be000000-0000-4000-8000-0000000000ff' where id = 'ce000000-0000-4000-8000-000000000038';   -- 199: parked (see above)
 insert into teams (id, owner_id, name, league_id) values
  ('ce000000-0000-4000-8000-000000000021', '9e000000-0000-4000-8000-000000000001', 'EB W', 'be000000-0000-4000-8000-000000000002'),
  ('ce000000-0000-4000-8000-000000000022', '9e000000-0000-4000-8000-000000000001', 'EB X', 'be000000-0000-4000-8000-000000000002');

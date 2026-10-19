@@ -132,7 +132,6 @@ insert into teams (id, owner_id, name, league_id, status) values
  ('c9600000-0000-4000-8000-000000000003', '99600000-0000-4000-8000-000000000003', 'TR Alpha',   'b9600000-0000-4000-8000-000000000001', 'active'),
  ('c9600000-0000-4000-8000-000000000004', '99600000-0000-4000-8000-000000000004', 'TR Bravo',   'b9600000-0000-4000-8000-000000000001', 'active'),
  ('c9600000-0000-4000-8000-000000000005', '99600000-0000-4000-8000-000000000001', 'TR Open',    'b9600000-0000-4000-8000-000000000001', 'active'),
- ('c9600000-0000-4000-8000-000000000006', '99600000-0000-4000-8000-000000000001', 'TR Retired', 'b9600000-0000-4000-8000-000000000001', 'retired'),
  ('c9600000-0000-4000-8000-000000000007', '99600000-0000-4000-8000-000000000006', 'TR Delta',   'b9600000-0000-4000-8000-000000000001', 'active'),
  ('c9600000-0000-4000-8000-000000000008', '99600000-0000-4000-8000-000000000007', 'TR Echo',    'b9600000-0000-4000-8000-000000000001', 'active'),
  ('c9600000-0000-4000-8000-000000000009', '99600000-0000-4000-8000-000000000008', 'TR Foxtrot', 'b9600000-0000-4000-8000-000000000001', 'active'),
@@ -149,7 +148,6 @@ insert into league_members (league_id, user_id, team_id, role, is_placeholder, f
  ('b9600000-0000-4000-8000-000000000001', '99600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000003', 'manager',         false, 40),
  ('b9600000-0000-4000-8000-000000000001', '99600000-0000-4000-8000-000000000004', 'c9600000-0000-4000-8000-000000000004', 'manager',         false, 100),
  ('b9600000-0000-4000-8000-000000000001', null,                                   'c9600000-0000-4000-8000-000000000005', 'manager',         true,  25),
- ('b9600000-0000-4000-8000-000000000001', null,                                   'c9600000-0000-4000-8000-000000000006', 'manager',         true,  100),
  ('b9600000-0000-4000-8000-000000000001', '99600000-0000-4000-8000-000000000006', 'c9600000-0000-4000-8000-000000000007', 'manager',         false, 100),
  ('b9600000-0000-4000-8000-000000000001', '99600000-0000-4000-8000-000000000007', 'c9600000-0000-4000-8000-000000000008', 'manager',         false, 100),
  ('b9600000-0000-4000-8000-000000000001', '99600000-0000-4000-8000-000000000008', 'c9600000-0000-4000-8000-000000000009', 'manager',         false, 100),
@@ -265,47 +263,47 @@ select throws_ok(
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-b1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000011') $$,
-  'P0001', 'trade_propose: TR B One (tr-b1) is on TR Bravo''s roster, not TR Alpha''s — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)',
+  'P0001', 'trade_propose: TR B One is on TR Bravo''s roster, not TR Alpha''s — a trade can only move a player from the team that has him',
   'C11 EXCLUSIVITY: offering another team''s player as your own is refused BY NAME, naming who has him');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-f1", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000012') $$,
-  'P0001', 'trade_propose: TR Free One (tr-f1) is not on any roster in this league — only a rostered player can be traded (§13.3)',
+  'P0001', 'trade_propose: TR Free One isn''t on any team in this league — only a player on a roster can be traded',
   'C12 EXCLUSIVITY: a player nobody rosters cannot be traded');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-b1", "from_team_id": "c9600000-0000-4000-8000-000000000004"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000013') $$,
-  'P0001', 'trade_propose: TR Alpha''s roster would hold 4 players after this trade — 1 more than its 3 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)',
+  'P0001', 'trade_propose: TR Alpha''s roster would hold 4 players after this trade — 1 more than its 3 spots: name 1 more drop(s) as part of the trade',
   'C13 E36 BOUNDARY: a 1-for-2 into a full roster (4 players, 3 spots) is refused naming ONE more drop');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-b1", "from_team_id": "c9600000-0000-4000-8000-000000000004"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', array['tr-b3'], null, 'a9600000-0000-4000-8000-000000000014') $$,
-  'P0001', 'trade_propose: TR B Three (tr-b3) is not on TR Alpha''s roster — a team can only drop its own players to make room (E36)',
+  'P0001', 'trade_propose: TR B Three is not on TR Alpha''s roster — a team can only drop its own players to make room',
   'C14 a drop of another team''s player is refused by name');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-b1", "from_team_id": "c9600000-0000-4000-8000-000000000004"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', array['tr-a1'], null, 'a9600000-0000-4000-8000-000000000015') $$,
-  'P0001', 'trade_propose: TR A One (tr-a1) is already leaving TR Alpha in this trade — he cannot also be one of its drops',
+  'P0001', 'trade_propose: TR A One is already leaving TR Alpha in this trade, so he can''t also be one of its drops',
   'C15 a player already leaving in the trade cannot also be a drop');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}]', null, null, 'a9600000-0000-4000-8000-000000000016') $$,
-  'P0001', 'trade_propose: TR Bravo gives nothing in this trade — this league does not allow future considerations (allow_future_considerations is off, §7.3.5), so each team gives at least one player or FAAB',
+  'P0001', 'trade_propose: TR Bravo gives nothing in this trade — this league doesn''t allow future considerations, so each team gives at least one player or FAAB',
   'C16 a one-sided trade is refused when allow_future_considerations is off');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000004',
        '[{"faab_amount": 41, "from_team_id": "c9600000-0000-4000-8000-000000000003"}, {"player_id": "tr-b1", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', array['tr-a3'], null, 'a9600000-0000-4000-8000-000000000017') $$,
-  'P0001', 'trade_propose: TR Alpha cannot give $41 of FAAB — its balance is $40 (§13.3)',
+  'P0001', 'trade_propose: TR Alpha cannot give $41 of FAAB — its balance is $40',
   'C17 FAAB BOUNDARY: $41 against a $40 balance is refused (and $40 lands, D4)');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000002', 'c9600000-0000-4000-8000-000000000021', 'c9600000-0000-4000-8000-000000000020',
        '[{"faab_amount": 5, "from_team_id": "c9600000-0000-4000-8000-000000000021"}, {"player_id": "tr-x1", "from_team_id": "c9600000-0000-4000-8000-000000000020"}]', null, null, 'a9600000-0000-4000-8000-000000000018') $$,
-  'P0001', 'trade_propose: this league decides waivers by priority (rolling_priority), not FAAB — there is no FAAB to trade (§7.3.4)',
+  'P0001', 'trade_propose: this league doesn''t use FAAB for waivers, so there is no FAAB to trade',
   'C18 a FAAB leg in a priority-waiver league is refused by name');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000004', 'c9600000-0000-4000-8000-000000000041', 'c9600000-0000-4000-8000-000000000040',
        '[{"faab_amount": 5, "from_team_id": "c9600000-0000-4000-8000-000000000041"}, {"player_id": "tr-z1", "from_team_id": "c9600000-0000-4000-8000-000000000040"}]', null, null, 'a9600000-0000-4000-8000-000000000019') $$,
-  'P0001', 'trade_propose: FAAB cannot be traded in this league (allow_faab_in_trades is off, §7.3.5)',
+  'P0001', 'trade_propose: FAAB can''t be traded in this league',
   'C19 a FAAB leg is refused when allow_faab_in_trades is off');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000031', 'c9600000-0000-4000-8000-000000000030',
@@ -315,8 +313,8 @@ select throws_ok(
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000006',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}]', null, null, 'a9600000-0000-4000-8000-000000000021') $$,
-  'P0001', 'trade_propose: TR Retired is retired — a sealed franchise makes no trades (§7.2.1)',
-  'C21 a retired franchise cannot be traded with');
+  'P0001', null,
+  'C21 RE-CUT BY 199 (F562 — a team is never retired): the RETIRED franchise is gone from the fixture; its old id is no team of the league and is refused like one');
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000003', 'c9600000-0000-4000-8000-000000000003',
        '[{"player_id": "tr-a1", "from_team_id": "c9600000-0000-4000-8000-000000000003"}]', null, null, 'a9600000-0000-4000-8000-000000000022') $$,
@@ -449,11 +447,11 @@ select throws_ok(
   'E4 the RECEIVING team cannot cancel — refused by name, naming its move');
 select throws_ok(
   format($$ select public.trade_respond('b9600000-0000-4000-8000-000000000001', '%s', 'accept', null, null, null, 'a9600000-0000-4000-8000-000000000205') $$, pg_temp.tid('P3')),
-  'P0001', 'trade_respond: TR Bravo''s roster would hold 4 players after this trade — 1 more than its 3 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)',
+  'P0001', 'trade_respond: TR Bravo''s roster would hold 4 players after this trade — 1 more than its 3 spots: name 1 more drop(s) as part of the trade',
   'E5 E36: accepting a 2-for-1 into a full roster WITHOUT a drop is refused, naming one more drop');
 select throws_ok(
   format($$ select public.trade_respond('b9600000-0000-4000-8000-000000000001', '%s', 'accept', array['tr-b1'], null, null, 'a9600000-0000-4000-8000-000000000206') $$, pg_temp.tid('P3')),
-  'P0001', 'trade_respond: TR B One (tr-b1) is already leaving TR Bravo in this trade — he cannot also be one of its drops',
+  'P0001', 'trade_respond: TR B One is already leaving TR Bravo in this trade, so he can''t also be one of its drops',
   'E6 …and a drop of a player already leaving in the trade does not count');
 insert into r96 select 'E7', public.trade_respond('b9600000-0000-4000-8000-000000000001', pg_temp.tid('P3'), 'accept', array['tr-b3'], null, null, 'a9600000-0000-4000-8000-000000000207');
 select throws_ok(
@@ -579,7 +577,7 @@ select throws_ok(
 select throws_ok(
   $$ select public.trade_propose('b9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000001', 'c9600000-0000-4000-8000-000000000004',
        '[{"player_id": "tr-b3", "from_team_id": "c9600000-0000-4000-8000-000000000001"}, {"player_id": "tr-b2", "from_team_id": "c9600000-0000-4000-8000-000000000004"}]', null, null, 'a9600000-0000-4000-8000-000000000303') $$,
-  'P0001', 'trade_propose: TR B Three (tr-b3) is on TR Bravo''s roster, not TR Commish''s — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)',
+  'P0001', 'trade_propose: TR B Three is on TR Bravo''s roster, not TR Commish''s — a trade can only move a player from the team that has him',
   'F3 RE-CUT (174): as the manager of HIS OWN team the commissioner is BOUND by exclusivity (standing rule (i)) — refused by name like anyone');
 -- F4: the CO-commissioner (TR CoCommish, not in E15) tries to cancel TR Bravo's counter FOR TR Bravo
 select set_config('request.jwt.claims', '{"sub": "99600000-0000-4000-8000-000000000002", "role": "authenticated"}', true);

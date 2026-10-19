@@ -553,11 +553,11 @@ select is(
   'F1 one tick: two trades execute, two fail AT EXECUTION (both passed every check when accepted)');
 select is(
   pg_temp.st('X2') || ' $' || pg_temp.faab('TX Romeo'),
-  'invalid|the trade could not go through: TX Romeo cannot give $15 of FAAB — its balance is $10 (§13.3) $10',
+  'invalid|the trade could not go through: TX Romeo cannot give $15 of FAAB — its balance is $10 $10',
   'F2 F413 (c): the second FAAB leg is re-checked against the balance the first one left — refused, never overdrawn');
 select is(
   pg_temp.st('X4') || ' ' || pg_temp.roster('TX Uniform'),
-  'invalid|the trade could not go through: TX Uniform''s roster would hold 4 players after this trade — 1 more than its 3 spots (§7.3.2 roster_size): it has added players since the trade was agreed, so the trade cannot go through as agreed (E36) x-t1,x-u1,x-u2',
+  'invalid|the trade could not go through: TX Uniform''s roster would hold 4 players after this trade — 1 more than its 3 spots: it has added players since the trade was agreed, so the trade can''t go through as agreed x-t1,x-u1,x-u2',
   'F3 F413 (c): the second trade would overflow the roster the first one filled — refused with words that fit execution (F414)');
 select is(
   format('%s|%s|%s|%s', pg_temp.faab('TX Sierra'), pg_temp.faab('TX Uniform'), pg_temp.faab('TX Tango'),
@@ -591,7 +591,7 @@ alter table league_rosters enable always trigger trg_trade_invalidate_on_roster_
 insert into r99 select 'F7', public.trade_tick('2026-10-25 17:10:00+00', pg_temp.lg(4));
 select is(
   pg_temp.st('X8') || ' ' || pg_temp.roster('TX4 Commish'),
-  'invalid|the trade could not go through: TX W Three (x-w3) is not on any roster in this league — only a rostered player can be traded (§13.3) x-c4a,x-c4b',
+  'invalid|the trade could not go through: TX W Three isn''t on any team in this league — only a player on a roster can be traded x-c4a,x-c4b',
   'F7 E37 AT EXECUTE: a player gone from the roster is caught by the executor''s re-validation — invalid WITH the reason, nothing moved, never a silent failure');
 select is(
   (select string_agg(n.user_id::text, ',' order by n.user_id) from notifications n
@@ -606,7 +606,7 @@ select throws_ok(
   format($$ select public.trade_respond_internal('%s', '%s', 'accept', null, null, null, '%s', '2026-10-26 09:05:00+00', null) $$,
          pg_temp.lg(4), pg_temp.tid('X7'), pg_temp.act(55)),
   'P0001',
-  'trade_respond: TX Victor''s roster would hold 4 players after this trade — 1 more than its 3 spots (§7.3.2 roster_size): name 1 more drop(s) as part of the trade (E36)',
+  'trade_respond: TX Victor''s roster would hold 4 players after this trade — 1 more than its 3 spots: name 1 more drop(s) as part of the trade',
   'F9 E36: the receiving team''s own overflow keeps its words — name a drop');
 select pg_temp.resp('X7a', 4, 7, pg_temp.tid('X7'), 'accept', array['x-v2'], '2026-10-26 09:10:00+00', 56);
 select set_config('request.jwt.claims', '', true);
@@ -621,17 +621,22 @@ select is(
     || ' ' || (select x.payload #>> '{drops,0,to_state}' from transactions x where x.type = 'trade' and x.payload ->> 'trade_id' = pg_temp.tid('X7')::text),
   'on_waivers|t on_waivers',
   'F11 TD13: the dropped player goes on waivers until the next scheduled run (Wed 03:00 New York = 07:00Z), exactly as an add/drop drop');
--- F413 (e): a RETIRED party at execution (the executor called directly).
+-- F413 (e): a party that can no longer pay its FAAB side at execution (the
+-- executor called directly). RE-CUT BY 199 (F562 — a team is never retired):
+-- this cell used to retire TX Sierra before execution; the retired status
+-- is gone, so the FAAB-only side is made unpayable instead, and the stored
+-- reason is trade_check's plain sentence (F569 part 3).
 select pg_temp.prop('X9', 4, 1, 'TX4 Commish', 'TX Sierra', jsonb_build_array(pg_temp.leg('x-c4b', 'TX4 Commish'), pg_temp.cash(5, 'TX Sierra')), null, '2026-10-27 10:00:00+00', 57);
 select pg_temp.resp('X9a', 4, 3, pg_temp.tid('X9'), 'accept', null, '2026-10-27 10:10:00+00', 58);
 select set_config('request.jwt.claims', '', true);
-update teams set status = 'retired' where id = pg_temp.team('TX Sierra');
+create temp table f12_bal as select m.faab_balance from league_members m where m.team_id = pg_temp.team('TX Sierra');
+update league_members set faab_balance = 2 where team_id = pg_temp.team('TX Sierra');
 insert into r99 select 'F12', public.trade_execute_internal(pg_temp.tid('X9'), '2026-10-27 12:00:00+00', 'pgtap');
-update teams set status = 'active' where id = pg_temp.team('TX Sierra');
+update league_members set faab_balance = (select faab_balance from f12_bal) where team_id = pg_temp.team('TX Sierra');
 select is(
   (select r ->> 'outcome' from r99 where tag = 'F12') || ' ' || pg_temp.st('X9'),
-  'invalid invalid|the trade could not go through: TX Sierra is retired and can''t make trades',  -- 180
-  'F12 F413 (e): a party that retired before execution — the trade is invalid by name (its FAAB-only side has no player for E37 to see)');
+  'invalid invalid|the trade could not go through: TX Sierra cannot give $5 of FAAB — its balance is $2',  -- 199
+  'F12 F413 (e): a party whose FAAB side can no longer be paid at execution — the trade is invalid by name (its FAAB-only side has no player for E37 to see; 199 re-cut, was a retired party)');
 select is(
   (select r ->> 'outcome' from (select public.trade_execute_internal(pg_temp.tid('X9'), '2026-10-27 12:01:00+00', 'pgtap') as r) q),
   'not_in_flight',
@@ -646,7 +651,7 @@ select throws_ok(
   format($$ select public.trade_respond_internal('%s', '%s', 'accept', null, null, null, '%s', '2026-10-27 13:10:00+00', null) $$,
          pg_temp.lg(4), pg_temp.tid('X10'), pg_temp.act(60)),
   'P0001',
-  'trade_respond: TX Tango''s roster no longer fits this offer — it would hold 4 players after the trade, 1 more than its 3 spots (§7.3.2 roster_size), because it has added players since proposing; only TX Tango can fix that, so ask them to cancel and re-propose with drops (E36)',
+  'trade_respond: TX Tango''s roster no longer fits this offer — it would hold 4 players after the trade, 1 more than its 3 spots, because it has added players since proposing; only TX Tango can fix that, so ask them to cancel and send it again with drops',
   'F14 F414: the proposer''s own roster growth is refused in words that name the proposer as the one to fix it');
 select set_config('request.jwt.claims', '', true);
 

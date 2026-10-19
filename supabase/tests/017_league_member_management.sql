@@ -856,8 +856,8 @@ select throws_ok(
         where lm.league_id = (select l1 from _ids)
           and lm.user_id = '98000000-0000-4000-8000-000000000004'),
        'retire') $$,
-  'P0001', null,
-  'retire is a friendly refusal before the draft (D42 — retire-and-succeed lands with the in-season milestone, F31)');
+  '22023', 'remove_manager: mode must be takeover or vacate (§7.2.1)',
+  'retire is not a mode at all (199 / F562 — a team is never retired; was D42''s friendly pre-draft refusal)');
 reset role;
 select is(
   (select count(*)::int from public.team_managers tm

@@ -214,7 +214,7 @@ select ok(
 --      TC  c7…01 u1's (commissioner)      TCO c7…02 u2's (co_commissioner)
 --      TM  c7…03 u3's (manager)           TO  c7…04 UNMANAGED — the OFF subject
 --      TV  c7…05 UNMANAGED, NO lineup row TN  c7…06 NO league_members row
---      TR  c7…07 RETIRED (placeholder row) TW  c7…08 UNMANAGED — the co-commish flip
+--      (TR c7…07 RETIRED — removed by 199 / F562) TW  c7…08 UNMANAGED — the co-commish flip
 --      TF  c7…09 UNMANAGED — F392's chooser cell (the chooser is called directly)
 --      TX  c7…10 u5's (manager) — a stored ON survives the claim, resumes on vacate
 --    L2 `b7…02` total_points, week 3 LIVE — D354's measurement (TP c7…22,
@@ -271,7 +271,6 @@ insert into teams (id, owner_id, name, league_id, status) values
  ('c7000000-0000-4000-8000-000000000004', '9c000000-0000-4000-8000-000000000001', 'SW Off Seat',    'b7000000-0000-4000-8000-000000000001', 'active'),
  ('c7000000-0000-4000-8000-000000000005', '9c000000-0000-4000-8000-000000000001', 'SW No Row',      'b7000000-0000-4000-8000-000000000001', 'active'),
  ('c7000000-0000-4000-8000-000000000006', '9c000000-0000-4000-8000-000000000001', 'SW No Member',   'b7000000-0000-4000-8000-000000000001', 'active'),
- ('c7000000-0000-4000-8000-000000000007', '9c000000-0000-4000-8000-000000000001', 'SW Retired',     'b7000000-0000-4000-8000-000000000001', 'retired'),
  ('c7000000-0000-4000-8000-000000000008', '9c000000-0000-4000-8000-000000000001', 'SW Co Flip',     'b7000000-0000-4000-8000-000000000001', 'active'),
  ('c7000000-0000-4000-8000-000000000009', '9c000000-0000-4000-8000-000000000001', 'SW F392',        'b7000000-0000-4000-8000-000000000001', 'active'),
  ('c7000000-0000-4000-8000-000000000010', '9c000000-0000-4000-8000-000000000005', 'SW Claimed',     'b7000000-0000-4000-8000-000000000001', 'active'),
@@ -287,7 +286,6 @@ insert into league_members (league_id, user_id, team_id, role, is_placeholder) v
  ('b7000000-0000-4000-8000-000000000001', '9c000000-0000-4000-8000-000000000003', 'c7000000-0000-4000-8000-000000000003', 'manager', false),
  ('b7000000-0000-4000-8000-000000000001', null, 'c7000000-0000-4000-8000-000000000004', 'manager', true),
  ('b7000000-0000-4000-8000-000000000001', null, 'c7000000-0000-4000-8000-000000000005', 'manager', true),
- ('b7000000-0000-4000-8000-000000000001', null, 'c7000000-0000-4000-8000-000000000007', 'manager', true),
  ('b7000000-0000-4000-8000-000000000001', null, 'c7000000-0000-4000-8000-000000000008', 'manager', true),
  ('b7000000-0000-4000-8000-000000000001', null, 'c7000000-0000-4000-8000-000000000009', 'manager', true),
  ('b7000000-0000-4000-8000-000000000001', '9c000000-0000-4000-8000-000000000005', 'c7000000-0000-4000-8000-000000000010', 'manager', false),
@@ -356,7 +354,7 @@ select is(
             || case when t.status = 'retired' then '+retired' else '' end), ' ' order by t.id)
    from teams t left join league_members m on m.team_id = t.id
    where t.league_id = 'b7000000-0000-4000-8000-000000000001'),
-  '01=managed 02=managed 03=managed 04=unmanaged 05=unmanaged 06=no_member_row 07=unmanaged+retired 08=unmanaged 09=unmanaged 10=managed',
+  '01=managed 02=managed 03=managed 04=unmanaged 05=unmanaged 06=no_member_row 08=unmanaged 09=unmanaged 10=managed',
   'B1 SEATING PREMISE (L1): every seat''s shape, read the way arm (c) reads it (D339 — league_members, never teams.status)');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "9c000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
@@ -427,7 +425,7 @@ select throws_ok(
   'P0001', null, 'C9 ON on a team with NO league_members row is refused (D339''s unsafe direction — arm (c) would decline it anyway)');
 select throws_ok(
   $$ select public.commish_set_autopilot('b7000000-0000-4000-8000-000000000001', 'c7000000-0000-4000-8000-000000000007', true, null, 'a7000000-0000-4000-8000-000000000009') $$,
-  'P0001', null, 'C10 ON on a RETIRED franchise is refused (it plays no more weeks — its successor is the seat to switch)');
+  'P0001', null, 'C10 RE-CUT BY 199 (F562 — a team is never retired): the RETIRED franchise TR is gone from the fixture; its old id is no team of the league and is refused like one');
 reset role;
 select set_config('request.jwt.claims', '', true);
 select is(
@@ -570,7 +568,7 @@ select is(
 select is(
   (select string_agg(right(e ->> 'team_id', 2), ',' order by e ->> 'team_id') from r87, jsonb_array_elements(r -> 'commissioner_managed') e where tag = 'T1'),
   '04,05,09',
-  'E6b commissioner_managed[] names EXACTLY the three OFF unmanaged seats (TO, TV, TF) — not the managed ones, not the declined member-row-less TN, not the retired TR');
+  'E6b commissioner_managed[] names EXACTLY the three OFF unmanaged seats (TO, TV, TF) — not the managed ones, not the declined member-row-less TN');
 
 -- THE SAME SEAT, SWITCHED ON THROUGH THE VERB, AT THE SAME INSTANT.
 set local role authenticated;

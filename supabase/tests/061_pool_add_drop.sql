@@ -1180,12 +1180,11 @@ select throws_like(
        'ab000000-0000-4000-8000-000000000091', now()) $$,
   '%league % is scheduled — rosters change through add/drop only while in_season or in playoffs%', 'L a league not in season (L4) refuses by name');
 select set_config('request.jwt.claims', '{"sub": "9d000000-0000-4000-8000-000000000003", "role": "authenticated"}', true);
-update teams set status = 'retired' where id = 'cd000000-0000-4000-8000-000000000003';
-select throws_like(
-  $$ select public.roster_add_drop_internal('bd000000-0000-4000-8000-000000000001', 'cd000000-0000-4000-8000-000000000003', 'pd-fa1', null,
-       'ab000000-0000-4000-8000-000000000091', now()) $$,
-  '%team % is retired — a sealed franchise makes no moves%', 'L a retired team refuses by name');
-update teams set status = 'active' where id = 'cd000000-0000-4000-8000-000000000003';
+-- RE-CUT BY 199 (F562): a team is never retired — the status CHECK refuses
+-- the fixture this cell used to build.
+select throws_ok(
+  $$ update teams set status = 'retired' where id = 'cd000000-0000-4000-8000-000000000003' $$,
+  '23514', null, 'L a team cannot be retired at all any more (199 / F562; was: a retired team refuses by name)');
 -- A broken mirror refuses loudly (D294: asserted, never healed): a rostered pool row with no roster row.
 insert into league_player_pool (league_id, player_id, state) values ('bd000000-0000-4000-8000-000000000001', 'pd-fa1', 'rostered');
 select throws_like(

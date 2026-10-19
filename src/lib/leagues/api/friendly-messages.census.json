@@ -105,7 +105,7 @@
   "text": "draft_nominate: an opening bid of $% is over your max bid of $% — you have $% for % open roster spots at a $% per-slot reserve (§8.6.7(a))"
  },
  {
-  "loc": "095_standalone_mock.sql:3572",
+  "loc": "199_remove_retire_schema.sql:4590",
   "fn": "draft_team_budget",
   "text": "draft_team_budget: draft % has no roster capacity (total_rounds is %) — budgets are underivable"
  },
@@ -280,47 +280,47 @@
   "text": "playoff_round_pairs: bracket % with % entrants gives % byes and % game slots — not a bracket (§7.3.1 playoff_byes: byes = bracket − playoff_teams to the top seeds)"
  },
  {
-  "loc": "118_playoffs.sql:2278",
+  "loc": "196_team_name_24.sql:189",
   "fn": "create_league",
   "text": "create_league: this action_id was already used by another account"
  },
  {
-  "loc": "118_playoffs.sql:2309",
+  "loc": "196_team_name_24.sql:220",
   "fn": "create_league",
   "text": "create_league: scoring_system_id must reference one of the v1 scoring templates — personal scoring systems cannot be attached to a league in v1"
  },
  {
-  "loc": "118_playoffs.sql:2322",
+  "loc": "196_team_name_24.sql:233",
   "fn": "create_league",
   "text": "create_league: playoff_start_week must be between 13 and 16 (currently week %) (§7.3.1, Q10/v2.8.6)"
  },
  {
-  "loc": "118_playoffs.sql:2327",
+  "loc": "196_team_name_24.sql:238",
   "fn": "create_league",
   "text": "create_league: playoff_start_week must be the week after the regular season ends — week % for a %-week regular season (currently week %) (§7.3.8, Q10/v2.8.6)"
  },
  {
-  "loc": "118_playoffs.sql:2340",
+  "loc": "196_team_name_24.sql:251",
   "fn": "create_league",
   "text": "create_league: playoff_teams must be 0 for a total-points league — the season-long points race is its playoff and there is no bracket; set playoff teams to 0 or switch to head-to-head (§11.7, Q39 (C))"
  },
  {
-  "loc": "118_playoffs.sql:2383",
+  "loc": "196_team_name_24.sql:302",
   "fn": "create_league",
   "text": "create_league: this action_id was already used by another account"
  },
  {
-  "loc": "120_retire_succeed.sql:761",
+  "loc": "199_remove_retire_schema.sql:218",
   "fn": "league_standings_internal",
   "text": "league_standings: league % has schedule_mode % — expected h2h or total_points"
  },
  {
-  "loc": "120_retire_succeed.sql:775",
+  "loc": "199_remove_retire_schema.sql:232",
   "fn": "league_standings_internal",
   "text": "league_standings: league % stores an unknown tiebreaker % (§7.3.7: win_pct, points_for, head_to_head, points_against, division_record, coin_flip)"
  },
  {
-  "loc": "120_retire_succeed.sql:779",
+  "loc": "199_remove_retire_schema.sql:236",
   "fn": "league_standings_internal",
   "text": "league_standings: league % stores the tiebreaker % twice (§7.3.7: entries are unique)"
  },
@@ -360,14 +360,9 @@
   "text": "commish_roster_lineup_sync: after the week-% sync % is not exactly once on the bench and off every slot of team % (F350 — a duplicate here would double-count in the scoring worker) — refusing"
  },
  {
-  "loc": "128_team_rename.sql:742",
+  "loc": "199_remove_retire_schema.sql:1243",
   "fn": "rename_own_team_internal",
-  "text": "rename_own_team: team % is a STANDALONE team, not a league franchise — rename it with a direct UPDATE, which its own RLS policy already allows (095:636-639, USING (auth.uid() = owner_id AND league_id IS NULL)). This verb exists because a LEAGUE franchise matches no UPDATE poli"
- },
- {
-  "loc": "128_team_rename.sql:806",
-  "fn": "rename_own_team_internal",
-  "text": "rename_own_team: franchise % is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b)). This is a legality gate and it binds everyone, commissioner and manager alike. NO VERB UN-RETIRES A FRANCHISE"
+  "text": "rename_own_team: team % is not a league team, so it is not renamed here"
  },
  {
   "loc": "130_commish_edit_schedule.sql:383",
@@ -580,19 +575,14 @@
   "text": "commish_matchup_override: %: team % is not a side of matchup % (home %, away %). To record a TIE, use the score arm (commish_edit_score) with equal scores — a winner id cannot express one (§15.4:1693; F351)"
  },
  {
-  "loc": "139_autopilot_switch.sql:377",
-  "fn": "commish_set_autopilot_internal",
-  "text": "commish_set_autopilot: franchise % is RETIRED — a sealed franchise plays no more weeks (spec:183, §7.2.1(b)) and autopilot never runs for it; put its successor (%) on autopilot instead"
- },
- {
-  "loc": "139_autopilot_switch.sql:383",
+  "loc": "199_remove_retire_schema.sql:1084",
   "fn": "commish_set_autopilot_internal",
   "text": "commish_set_autopilot: team % has a manager — autopilot is for a seat with NO manager (§7.2.1(c)); to set this team's lineup, use the lineup override"
  },
  {
-  "loc": "139_autopilot_switch.sql:389",
+  "loc": "199_remove_retire_schema.sql:1090",
   "fn": "commish_set_autopilot_internal",
-  "text": "commish_set_autopilot: team % has no league_members row — it is not proven unmanaged, and autopilot declines such a seat rather than risk seizing a human's team (D339); seat it first"
+  "text": "commish_set_autopilot: team % has no seat in this league, so autopilot can't be sure nobody manages it — seat it first"
  },
  {
   "loc": "144_per_week_scoring_rules.sql:299",
@@ -615,17 +605,12 @@
   "text": "waiver_claim_cancel: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "146_faab_carries_with_seat.sql:856",
+  "loc": "196_team_name_24.sql:454",
   "fn": "seat_league_member_internal",
   "text": "seat_league_member: franchise % has no seat row in league % — its FAAB balance cannot be carried, and a fresh budget is never minted once the draft has started (§12.2 / C72); repair the seat before seating a manager"
  },
  {
-  "loc": "147_commish_edit_faab.sql:234",
-  "fn": "commish_edit_faab_internal",
-  "text": "commish_edit_faab: franchise % is RETIRED — its seat, and the FAAB balance with it, carried to its successor (%) (§7.2.1(b)); edit that team's balance instead"
- },
- {
-  "loc": "147_commish_edit_faab.sql:239",
+  "loc": "199_remove_retire_schema.sql:620",
   "fn": "commish_edit_faab_internal",
   "text": "commish_edit_faab: team % has no seat in league % — a FAAB balance lives on the team's seat (league_members), and this team has none, so there is no balance to edit"
  },
@@ -645,24 +630,24 @@
   "text": "waiver_claim_reorder: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "150_waiver_processor.sql:2858",
+  "loc": "199_remove_retire_schema.sql:7861",
   "fn": "waiver_claim_edit_internal",
   "text": "waiver_claim_edit: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "150_waiver_processor.sql:2895",
+  "loc": "199_remove_retire_schema.sql:7894",
   "fn": "waiver_claim_edit_internal",
   "text": "waiver_claim_edit: this league has no waivers (waiver type \"none_fcfs\") — every unowned player is first come, first served: add him directly"
  },
  {
-  "loc": "150_waiver_processor.sql:2928",
+  "loc": "199_remove_retire_schema.sql:7927",
   "fn": "waiver_claim_edit_internal",
   "text": "waiver_claim_edit: a bid of $% is below this league's minimum bid of $% (faab_min_bid, §7.3.4)"
  },
  {
-  "loc": "150_waiver_processor.sql:2932",
+  "loc": "199_remove_retire_schema.sql:7931",
   "fn": "waiver_claim_edit_internal",
-  "text": "waiver_claim_edit: % has no FAAB balance on record (its league_members seat %) — refusing to accept a bid against money that is not recorded"
+  "text": "waiver_claim_edit: % has no FAAB balance on record, so it can't bid — ask the commissioner to set the team's FAAB"
  },
  {
   "loc": "151_trade_execution.sql:455",
@@ -675,42 +660,42 @@
   "text": "team_lineups_one_start_per_week: % (%) is already in %'s starting lineup for week % (slot \"%\") — a player starts for at most one team per league-week, so % cannot start him at \"%\" (§7.3.3 / §11.2; PROGRESS F441 / F445): that start stays, and so do its points"
  },
  {
-  "loc": "155_trade_league_vote.sql:336",
+  "loc": "199_remove_retire_schema.sql:7631",
   "fn": "trade_vote_internal",
   "text": "trade_vote: %"
  },
  {
-  "loc": "155_trade_league_vote.sql:353",
+  "loc": "199_remove_retire_schema.sql:7687",
   "fn": "trade_vote_internal",
   "text": "trade_vote: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "155_trade_league_vote.sql:363",
+  "loc": "199_remove_retire_schema.sql:7697",
   "fn": "trade_vote_internal",
   "text": "trade_vote: your team is in this trade — the two teams in a trade do not vote on it; every other manager may (§13.3 / Q77)"
  },
  {
-  "loc": "155_trade_league_vote.sql:376",
+  "loc": "199_remove_retire_schema.sql:7705",
   "fn": "trade_vote_internal",
   "text": "trade_vote: this league's trades are %, not by a league vote (trade_review %, §7.3.5)"
  },
  {
-  "loc": "155_trade_league_vote.sql:400",
+  "loc": "199_remove_retire_schema.sql:7729",
   "fn": "trade_vote_internal",
   "text": "trade_vote: voting on this trade closed at % — the review period is over (§13.3 / Q77)"
  },
  {
-  "loc": "156_commish_force_or_reverse_trade.sql:300",
+  "loc": "199_remove_retire_schema.sql:6368",
   "fn": "trade_execute_internal",
-  "text": "trade_execute: the league is % — a trade goes through only while the league is in season or in the playoffs (§7.1 / §13.3)"
+  "text": "trade_execute: the league is % — trades only go through during the season and the playoffs"
  },
  {
-  "loc": "156_commish_force_or_reverse_trade.sql:592",
+  "loc": "199_remove_retire_schema.sql:6655",
   "fn": "trade_execute_internal",
   "text": "trade_execute: the pool mirror for % is not rostered after the trade (D294) — refusing"
  },
  {
-  "loc": "156_commish_force_or_reverse_trade.sql:609",
+  "loc": "199_remove_retire_schema.sql:6672",
   "fn": "trade_execute_internal",
   "text": "trade_execute: team % holds % players after the trade, expected % (roster_size %) — refusing"
  },
@@ -725,129 +710,129 @@
   "text": "commish_trade_rescore: a starter left week % but no lineup row of teams % could be flagged for the re-score — refusing (D346)"
  },
  {
-  "loc": "157_played_lock.sql:1836",
+  "loc": "199_remove_retire_schema.sql:5139",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: action_id % already names a % transaction in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "157_played_lock.sql:1842",
+  "loc": "199_remove_retire_schema.sql:5145",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: action_id % belongs to another team's move in this league — an action_id identifies ONE submit (R732)"
  },
  {
-  "loc": "157_played_lock.sql:1852",
+  "loc": "199_remove_retire_schema.sql:5155",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: league % is % — rosters change through add/drop only while in_season or in playoffs"
  },
  {
-  "loc": "157_played_lock.sql:1868",
+  "loc": "199_remove_retire_schema.sql:5167",
   "fn": "roster_add_drop_internal",
-  "text": "roster_add_drop: league % has no league_weeks rows — no season calendar to evaluate locks and caps against"
+  "text": "roster_add_drop: league % has no season schedule yet, so there is no week to check game-day locks and pickup limits against"
  },
  {
-  "loc": "157_played_lock.sql:1938",
+  "loc": "199_remove_retire_schema.sql:5237",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % (%) is locked for drops — kicked off at % (%); week % clears at % (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no dropping a player mid-game"
  },
  {
-  "loc": "157_played_lock.sql:1973",
+  "loc": "199_remove_retire_schema.sql:5272",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % (%) is already on %'s roster in this league — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)"
  },
  {
-  "loc": "157_played_lock.sql:1992",
+  "loc": "199_remove_retire_schema.sql:5291",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: league_player_pool says % (%) is rostered in league % but league_rosters has no row — the pool mirror is broken; refusing until reconciliation (L.D2.3) repairs it (D294)"
  },
  {
-  "loc": "157_played_lock.sql:2005",
+  "loc": "199_remove_retire_schema.sql:5304",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % (%) is locked for adds — kicked off at % (%); week % clears at % (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no in-game pickups"
  },
  {
-  "loc": "157_played_lock.sql:2026",
+  "loc": "199_remove_retire_schema.sql:5325",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % (%) is on waivers until the waiver run at % (%) — put in a waiver claim; he is not an instant pickup until that run has been processed (§7.3.4/§13.1)"
  },
  {
-  "loc": "157_played_lock.sql:2033",
+  "loc": "199_remove_retire_schema.sql:5332",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % (%) is claim-only right now — %; put in a waiver claim instead: claims settle at the next waiver run, % (%) (§7.3.4/§13.1)"
  },
  {
-  "loc": "157_played_lock.sql:2053",
+  "loc": "199_remove_retire_schema.sql:5352",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: %'s roster is full (% of % — §7.3.2 roster_size) — include a drop in the same move"
  },
  {
-  "loc": "157_played_lock.sql:2061",
+  "loc": "199_remove_retire_schema.sql:5360",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % has used % of % acquisitions in week % (acquisitions_per_week, §7.3.4) — no more adds this week"
  },
  {
-  "loc": "157_played_lock.sql:2067",
+  "loc": "199_remove_retire_schema.sql:5366",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % has used % of % acquisitions this season (acquisitions_per_season, §7.3.4) — no more adds this season"
  },
  {
-  "loc": "157_played_lock.sql:2101",
+  "loc": "199_remove_retire_schema.sql:5400",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % (%) was rostered by another team in this league a moment ago — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)"
  },
  {
-  "loc": "157_played_lock.sql:2195",
+  "loc": "199_remove_retire_schema.sql:5494",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: the pool mirror for % is not rostered after the add (D294) — refusing"
  },
  {
-  "loc": "157_played_lock.sql:2205",
+  "loc": "199_remove_retire_schema.sql:5504",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: the pool mirror for % is not % after the drop (D294) — refusing"
  },
  {
-  "loc": "157_played_lock.sql:2212",
+  "loc": "199_remove_retire_schema.sql:5511",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
  },
  {
-  "loc": "157_played_lock.sql:2376",
+  "loc": "199_remove_retire_schema.sql:8129",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "157_played_lock.sql:2411",
+  "loc": "199_remove_retire_schema.sql:8160",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: this league has no waivers (waiver type \"none_fcfs\") — every unowned player is first come, first served: add him directly"
  },
  {
-  "loc": "157_played_lock.sql:2416",
+  "loc": "199_remove_retire_schema.sql:8165",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: league % has waiver type \"%\", which is not one of faab / rolling_priority / reverse_standings / none_fcfs (§7.3.4) — refusing rather than guessing how its claims are decided"
  },
  {
-  "loc": "157_played_lock.sql:2432",
+  "loc": "199_remove_retire_schema.sql:8181",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: % (%) is already on % — a player is on ONE roster per league (player exclusivity, §13.2); only an unowned player can be claimed"
  },
  {
-  "loc": "157_played_lock.sql:2449",
+  "loc": "199_remove_retire_schema.sql:8198",
   "fn": "waiver_claim_submit_internal",
-  "text": "waiver_claim_submit: league % has no league_weeks rows — no season calendar to evaluate the game-day lock against"
+  "text": "waiver_claim_submit: league % has no season schedule yet, so there is no week to check the game-day lock against"
  },
  {
-  "loc": "157_played_lock.sql:2456",
+  "loc": "199_remove_retire_schema.sql:8205",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: % (%) is locked for adds — kicked off at % (%); week % clears at % (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no in-game pickups"
  },
  {
-  "loc": "157_played_lock.sql:2488",
+  "loc": "199_remove_retire_schema.sql:8237",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: a bid of $% is below this league's minimum bid of $% (faab_min_bid, §7.3.4)"
  },
  {
-  "loc": "157_played_lock.sql:2492",
+  "loc": "199_remove_retire_schema.sql:8241",
   "fn": "waiver_claim_submit_internal",
-  "text": "waiver_claim_submit: % has no FAAB balance on record (its league_members seat %) — refusing to accept a bid against money that is not recorded"
+  "text": "waiver_claim_submit: % has no FAAB balance on record, so it can't bid — ask the commissioner to set the team's FAAB"
  },
  {
   "loc": "157_played_lock.sql:3190",
@@ -870,44 +855,44 @@
   "text": "league_week_player_points_lock: week_locked — league % week % is final; its stored per-player points never change (F405: a later stat correction updates player_stats, never a locked week — the commissioner's audited score override is the one change to a final week, §11.4)"
  },
  {
-  "loc": "162_trade_preview.sql:165",
+  "loc": "199_remove_retire_schema.sql:8415",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: % (%) is on %'s roster, not %'s — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)"
+  "text": "trade_check: %: % is on %'s roster, not %'s — a trade can only move a player from the team that has him"
  },
  {
-  "loc": "162_trade_preview.sql:182",
+  "loc": "199_remove_retire_schema.sql:8432",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: % gives nothing in this trade — this league does not allow future considerations (allow_future_considerations is off, §7.3.5), so each team gives at least one player or FAAB"
+  "text": "trade_check: %: % gives nothing in this trade — this league doesn't allow future considerations, so each team gives at least one player or FAAB"
  },
  {
-  "loc": "162_trade_preview.sql:197",
+  "loc": "199_remove_retire_schema.sql:8447",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: FAAB cannot be traded in this league (allow_faab_in_trades is off, §7.3.5)"
+  "text": "trade_check: %: FAAB can't be traded in this league"
  },
  {
-  "loc": "162_trade_preview.sql:212",
+  "loc": "199_remove_retire_schema.sql:8462",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: % has no FAAB balance on record (its league_members seat %) — refusing to trade money that is not recorded"
+  "text": "trade_check: %: % has no FAAB balance on record, so it can't trade FAAB"
  },
  {
-  "loc": "162_trade_preview.sql:251",
+  "loc": "199_remove_retire_schema.sql:8500",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: % (%) is not on %'s roster — a team can only drop its own players to make room (E36)"
+  "text": "trade_check: %: % is not on %'s roster — a team can only drop its own players to make room"
  },
  {
-  "loc": "162_trade_preview.sql:281",
+  "loc": "199_remove_retire_schema.sql:8530",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: %'s roster would hold % players after this trade — % more than its % spots (§7.3.2 roster_size): it has added players since the trade was agreed, so the trade cannot go through as agreed (E36)"
+  "text": "trade_check: %: %'s roster would hold % players after this trade — % more than its % spots: it has added players since the trade was agreed, so the trade can't go through as agreed"
  },
  {
-  "loc": "162_trade_preview.sql:286",
+  "loc": "199_remove_retire_schema.sql:8535",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: %'s roster no longer fits this offer — it would hold % players after the trade, % more than its % spots (§7.3.2 roster_size), because it has added players since proposing; only % can fix that, so ask them to cancel and re-propose with drops (E36)"
+  "text": "trade_check: %: %'s roster no longer fits this offer — it would hold % players after the trade, % more than its % spots, because it has added players since proposing; only % can fix that, so ask them to cancel and send it again with drops"
  },
  {
-  "loc": "162_trade_preview.sql:291",
+  "loc": "199_remove_retire_schema.sql:8540",
   "fn": "trade_check_internal",
-  "text": "trade_check: %: %'s roster would hold % players after this trade — % more than its % spots (§7.3.2 roster_size): name % more drop(s) as part of the trade (E36)"
+  "text": "trade_check: %: %'s roster would hold % players after this trade — % more than its % spots: name % more drop(s) as part of the trade"
  },
  {
   "loc": "168_draft_room_receipts.sql:260",
@@ -1140,34 +1125,34 @@
   "text": "draft_start: league % cannot start an auction — % has $% for % draftable roster spots at a $% per-slot reserve (§8.6.8 solvency). The league's $% auction budget clears that floor, so the shortfall is this franchise's own: clear its commissioner budget adjustment (§8.7), or"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:303",
+  "loc": "196_team_name_24.sql:548",
   "fn": "add_placeholder_seat",
   "text": "add_placeholder_seat: this league already has all % seats — raise team_count first"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:600",
+  "loc": "199_remove_retire_schema.sql:2457",
   "fn": "assign_manager",
   "text": "assign_manager: that franchise already has a manager — remove them first (§7.2.1 takeover/vacate)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:1231",
+  "loc": "199_remove_retire_schema.sql:4406",
   "fn": "create_league_invite",
-  "text": "create_league_invite: identity-restricted invites are single-use — max_uses must be 1"
+  "text": "create_league_invite: an invite for a named person or email can be used once — set its uses to 1"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:1235",
+  "loc": "199_remove_retire_schema.sql:4410",
   "fn": "create_league_invite",
-  "text": "create_league_invite: invited_email must be a valid email address"
+  "text": "create_league_invite: that email address doesn't look right"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:1246",
+  "loc": "199_remove_retire_schema.sql:4421",
   "fn": "create_league_invite",
   "text": "create_league_invite: no FieldScout account with the username \"%\" — username invites require an existing account (§7.2); use an email invite instead"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:1258",
+  "loc": "199_remove_retire_schema.sql:4432",
   "fn": "create_league_invite",
-  "text": "create_league_invite: target_team_id is not a franchise of this league"
+  "text": "create_league_invite: that team isn't in this league"
  },
  {
   "loc": "169_membership_setup_receipts.sql:1515",
@@ -1255,87 +1240,87 @@
   "text": "scoring_update_rules: league % references scoring system %, which is not this league's own forked custom row — only a system forked by this league's commissioner can be edited here (§7.3.3.1, §12.25)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2368",
+  "loc": "199_remove_retire_schema.sql:5692",
   "fn": "set_lineup_internal",
   "text": "set_lineup: league % is % — lineups are set only while in_season or in playoffs"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2386",
+  "loc": "199_remove_retire_schema.sql:5706",
   "fn": "set_lineup_internal",
-  "text": "set_lineup: league % has no league_weeks rows — no season calendar to set a lineup against"
+  "text": "set_lineup: league % has no season schedule yet, so there is no week to set a lineup in"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2395",
+  "loc": "199_remove_retire_schema.sql:5715",
   "fn": "set_lineup_internal",
-  "text": "set_lineup: week % is not on league %'s calendar (season %; league_weeks holds weeks %–%)"
+  "text": "set_lineup: week % is not on league %'s schedule for season % (it runs weeks %–%)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2403",
+  "loc": "199_remove_retire_schema.sql:5723",
   "fn": "set_lineup_internal",
   "text": "set_lineup: week % is in the past (the current week is %) — a past week's lineup changes only through the audited commissioner override (§11.2, M6)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2409",
+  "loc": "199_remove_retire_schema.sql:5729",
   "fn": "set_lineup_internal",
   "text": "set_lineup: week % of league % is % — a closed week's lineup changes only through the audited commissioner override (§11.2, M6)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2541",
+  "loc": "199_remove_retire_schema.sql:5861",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % already played this week — his start stays (slot \"%\": his game kicked off at % (%); he has left %'s roster since, and a played starter is stuck in the lineup for the week — §11.2, Q32; the week is scored from this lineup, §7.3.3)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2546",
+  "loc": "199_remove_retire_schema.sql:5866",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % is held in this week's lineup — his start stays (slot \"%\": %; he has left %'s roster since, and no move changes the start he holds this week — §11.2, Q32, D412(5); the week is scored from this lineup, §7.3.3)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2579",
+  "loc": "199_remove_retire_schema.sql:5899",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % (%) appears at both \"%\" and \"%\" — each player fills exactly one slot (E16)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2633",
+  "loc": "199_remove_retire_schema.sql:5953",
   "fn": "set_lineup_internal",
   "text": "set_lineup: slot % is locked — % kicked off at % (%) and a locked slot's player never moves (§11.2, lineup_lock = per_player_kickoff); every other unlocked slot stays editable"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2647",
+  "loc": "199_remove_retire_schema.sql:5967",
   "fn": "set_lineup_internal",
   "text": "set_lineup: %'s game kicked off at % (%) — a player whose game has started cannot enter or move slots (§11.2, lineup_lock = per_player_kickoff); wanted \"%\""
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2676",
+  "loc": "199_remove_retire_schema.sql:5996",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % (%) cannot be placed — no legal arrangement of the started players fills the slots (E16): \"%\" accepts % and every slot % could take is held by a player with nowhere else to go (unplaced: %)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2700",
+  "loc": "199_remove_retire_schema.sql:6020",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % entered restricted IR spot % in week % and may not leave it before week % (min_weeks stint, §11.2/§7.3.2) — the current week is %; commissioner override is M6's"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2706",
+  "loc": "199_remove_retire_schema.sql:6026",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % holds designation % — IR spot % accepts only % (§7.3.2 IR slot rules)"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2742",
+  "loc": "199_remove_retire_schema.sql:6062",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % entered restricted IR spot % in week % and may not leave it before week % (min_weeks stint, §11.2/§7.3.2) — the current week is %; commissioner override is M6's"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2788",
+  "loc": "199_remove_retire_schema.sql:6108",
   "fn": "set_lineup_internal",
   "text": "set_lineup: % is % for week % and allow_illegal_lineups is off — slot \"%\" is blocked at submit (§7.3.6); bench him or start someone who plays"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2890",
+  "loc": "199_remove_retire_schema.sql:6210",
   "fn": "set_lineup_internal",
   "text": "set_lineup: wrote slot_key for % starters, expected %"
  },
  {
-  "loc": "169_membership_setup_receipts.sql:2899",
+  "loc": "199_remove_retire_schema.sql:6219",
   "fn": "set_lineup_internal",
   "text": "set_lineup: wrote slot_key = bn for % players, expected %"
  },
@@ -1350,134 +1335,124 @@
   "text": "commish_action_pointer_guard: %.% on row % was written % → % with app.commish_action_id %: a pointer at the commissioner log is set only by the audited verb that wrote that receipt in this transaction (log_commissioner_action_internal holds its id in app.commish_action_id) — a write outsid"
  },
  {
-  "loc": "170_commish_backstop.sql:476",
+  "loc": "199_remove_retire_schema.sql:2629",
   "fn": "commish_edit_lineup_internal",
-  "text": "commish_edit_lineup: league % has no league_weeks rows — no season calendar to set a lineup against"
+  "text": "commish_edit_lineup: league % has no season schedule yet, so there is no week to set a lineup in"
  },
  {
-  "loc": "170_commish_backstop.sql:485",
+  "loc": "199_remove_retire_schema.sql:2638",
   "fn": "commish_edit_lineup_internal",
-  "text": "commish_edit_lineup: week % is not on league %'s calendar (season %; league_weeks holds weeks %–%)"
+  "text": "commish_edit_lineup: week % is not on league %'s schedule for season % (it runs weeks %–%)"
  },
  {
-  "loc": "170_commish_backstop.sql:625",
+  "loc": "199_remove_retire_schema.sql:2778",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: % has left %'s roster — an IR spot holds only a rostered player (§11.2); his week-% start at \"%\" can stay, move or be removed, never go to IR"
  },
  {
-  "loc": "170_commish_backstop.sql:663",
+  "loc": "199_remove_retire_schema.sql:2816",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: % (%) appears at both \"%\" and \"%\" — each player fills exactly one slot (E16)"
  },
  {
-  "loc": "170_commish_backstop.sql:793",
+  "loc": "199_remove_retire_schema.sql:2946",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: % (%) cannot be placed — no legal arrangement fills the slots (E16): \"%\" accepts % and every slot % could take is held by a player with nowhere else to go (unplaced: %)"
  },
  {
-  "loc": "170_commish_backstop.sql:821",
+  "loc": "199_remove_retire_schema.sql:2974",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: % holds designation % — IR spot % accepts only % (§7.3.2 IR slot rules)"
  },
  {
-  "loc": "170_commish_backstop.sql:921",
+  "loc": "199_remove_retire_schema.sql:3074",
   "fn": "commish_edit_lineup_internal",
-  "text": "commish_edit_lineup: % is % for week % and allow_illegal_lineups is off — slot \"%\" is blocked at submit (§7.3.6); bench him, start someone who plays, or turn the setting on"
+  "text": "commish_edit_lineup: % is % for week % and this league doesn't allow illegal lineups — slot \"%\" can't be saved like this; bench him, start someone who plays, or turn on illegal lineups in the league settings"
  },
  {
-  "loc": "170_commish_backstop.sql:1136",
+  "loc": "199_remove_retire_schema.sql:3289",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: wrote slot_key for % starters, expected %"
  },
  {
-  "loc": "170_commish_backstop.sql:1145",
+  "loc": "199_remove_retire_schema.sql:3298",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: wrote slot_key = bn for % players, expected %"
  },
  {
-  "loc": "170_commish_backstop.sql:1383",
+  "loc": "199_remove_retire_schema.sql:3537",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: action_id % already names a \"%\" transaction in this league — an action_id identifies ONE submit of ONE verb (R732/R1017). Mint a new action_id for this override, or retry the verb that owns that one"
  },
  {
-  "loc": "170_commish_backstop.sql:1408",
+  "loc": "199_remove_retire_schema.sql:3562",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: league % is % — rosters change only while in_season or in playoffs"
  },
  {
-  "loc": "170_commish_backstop.sql:1449",
+  "loc": "199_remove_retire_schema.sql:3583",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: a retired franchise is sealed — its roster and record are frozen (§7.2.1, spec:183). This is a legality gate and it binds the commissioner too (PROGRESS standing rule (i), F352). The franchise would have to be un-retired first, and NO VERB DOES THAT TODAY —"
+  "text": "commish_roster_override: %: league % has no season schedule yet, so there is no week to place the move in"
  },
  {
-  "loc": "170_commish_backstop.sql:1456",
+  "loc": "199_remove_retire_schema.sql:3594",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: league % has no league_weeks rows — no season calendar to place the move on"
+  "text": "commish_roster_override: %: league % has no schedule row for season % week % — the schedule changed while this move was being made; try again"
  },
  {
-  "loc": "170_commish_backstop.sql:1467",
+  "loc": "199_remove_retire_schema.sql:3658",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: league % has no league_weeks row for season % week % — the calendar moved under this transaction"
+  "text": "commish_roster_override: %: % isn't on any roster in this league — a move needs a team to move him from; to bring in a free agent, add him to a roster instead"
  },
  {
-  "loc": "170_commish_backstop.sql:1531",
+  "loc": "199_remove_retire_schema.sql:3691",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: % (%) is on no roster in league % — a move needs a source roster; to bring a free agent in, use commish_force_add_drop (§15.4:1695)"
+  "text": "commish_roster_override: %: % is on %'s roster, not %'s — pick the team he is actually on, or move him from there"
  },
  {
-  "loc": "170_commish_backstop.sql:1564",
+  "loc": "199_remove_retire_schema.sql:3715",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: % (%) is on %'s roster, not %'s — name the roster he is actually on, or move him with commish_move_player (§15.4:1694)"
+  "text": "commish_roster_override: %: % is already on %'s roster — a player can be on only one team in a league, and that applies to the commissioner too. To take him off % and put him on %, move him instead"
  },
  {
-  "loc": "170_commish_backstop.sql:1588",
-  "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: % (%) is already on %'s roster in this league — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7), and that binds a commissioner too: it is the shape of the game, not its timing (PROGRESS standing rule (i)). To take him off"
- },
- {
-  "loc": "170_commish_backstop.sql:1672",
+  "loc": "199_remove_retire_schema.sql:3799",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: league_player_pool says % (%) is rostered in league % but league_rosters has no row — the pool mirror is broken; refusing until reconciliation (L.D2.3) repairs it (D294)"
  },
  {
-  "loc": "170_commish_backstop.sql:1714",
+  "loc": "199_remove_retire_schema.sql:3841",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: %'s roster is full (% of % — §7.3.2 roster_size) — free a spot with commish_force_add_drop first. A roster over its own league's size is a shape the rules do not have, so this gate binds the commissioner too (PROGRESS standing rule (i))"
+  "text": "commish_roster_override: %: %'s roster is full (% of %) — drop a player from it first. A roster can't go over the league's roster size, and that applies to the commissioner too"
  },
  {
-  "loc": "170_commish_backstop.sql:1721",
+  "loc": "199_remove_retire_schema.sql:3848",
   "fn": "commish_roster_override_internal",
-  "text": "commish_roster_override: %: %'s roster is full (% of % — §7.3.2 roster_size) — include a drop in the same move (§13.1). A roster over its own league's size is a shape the rules do not have, so this gate binds the commissioner too (PROGRESS standing rule (i))"
+  "text": "commish_roster_override: %: %'s roster is full (% of %) — include a drop in the same move. A roster can't go over the league's roster size, and that applies to the commissioner too"
  },
  {
-  "loc": "170_commish_backstop.sql:1810",
+  "loc": "199_remove_retire_schema.sql:3937",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: % (%) was rostered by another team in this league a moment ago — a player is on ONE roster per league (player exclusivity, §12.7 / CLAUDE.md rule 7)"
  },
  {
-  "loc": "170_commish_backstop.sql:1870",
+  "loc": "199_remove_retire_schema.sql:3997",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: the pool mirror for % is not rostered after the write (D294) — refusing"
  },
  {
-  "loc": "170_commish_backstop.sql:1881",
+  "loc": "199_remove_retire_schema.sql:4008",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: the pool mirror for % is not % after the drop (D294) — refusing"
  },
  {
-  "loc": "170_commish_backstop.sql:1888",
+  "loc": "199_remove_retire_schema.sql:4015",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
  },
  {
-  "loc": "170_commish_backstop.sql:1896",
+  "loc": "199_remove_retire_schema.sql:4023",
   "fn": "commish_roster_override_internal",
   "text": "commish_roster_override: %: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
- },
- {
-  "loc": "170_commish_backstop.sql:2332",
-  "fn": "commish_rename_team_internal",
-  "text": "commish_rename_team: franchise % is RETIRED — its name is FROZEN, because a sealed franchise is the record History Mode shows under its last manager (spec:183, §7.2.1(b)). This is a legality gate and it binds the commissioner too (PROGRESS standing rule (i)). NO VERB UN-RETIRES A"
  },
  {
   "loc": "171_commish_draft_doors.sql:234",
@@ -1500,27 +1475,27 @@
   "text": "trade_propose: the trade deadline has passed — trades could be proposed until week % began (%; trade_deadline_week %, §13.3 / Q76)"
  },
  {
-  "loc": "174_commish_trade_powers.sql:452",
+  "loc": "199_remove_retire_schema.sql:7332",
   "fn": "trade_respond_internal",
   "text": "trade_respond: %"
  },
  {
-  "loc": "174_commish_trade_powers.sql:467",
+  "loc": "199_remove_retire_schema.sql:7206",
   "fn": "trade_respond_internal",
   "text": "trade_respond: action_id % already names a % for another request in this league — an action_id identifies ONE submit of ONE verb (R732)"
  },
  {
-  "loc": "174_commish_trade_powers.sql:485",
+  "loc": "199_remove_retire_schema.sql:7141",
   "fn": "trade_respond_internal",
   "text": "trade_respond: %"
  },
  {
-  "loc": "174_commish_trade_powers.sql:516",
+  "loc": "199_remove_retire_schema.sql:7255",
   "fn": "trade_respond_internal",
   "text": "trade_respond: league % is % — a trade is accepted or countered only while the league is in season or in the playoffs (§7.1 / §13.3)"
  },
  {
-  "loc": "174_commish_trade_powers.sql:526",
+  "loc": "199_remove_retire_schema.sql:7265",
   "fn": "trade_respond_internal",
   "text": "trade_respond: the trade deadline has passed — trades could be accepted until week % began (%; trade_deadline_week %, §13.3 / Q76); this offer can no longer be %"
  },

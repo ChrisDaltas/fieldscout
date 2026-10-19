@@ -112,7 +112,11 @@ describe('LEAGUE_SETTINGS_DEFAULTS (§7.3 "D" columns)', () => {
       .filter((f) => /CREATE OR REPLACE FUNCTION (public\.)?process_waivers_internal\(/.test(readFileSync(join(dir, f), 'utf8')))
       .pop()
     expect(newest, 'some migration must define process_waivers_internal').toBeDefined()
-    const sql = readFileSync(join(dir, newest as string), 'utf8')
+    // 199 replaced several bodies in one file (waiver_priority_seed_internal
+    // shares the fallback), so read process_waivers_internal's own body only.
+    const file = readFileSync(join(dir, newest as string), 'utf8')
+    const start = file.search(/CREATE OR REPLACE FUNCTION (public\.)?process_waivers_internal\(/)
+    const sql = file.slice(start, file.indexOf('$$;', file.indexOf('AS $$', start) + 5))
     const fallbacks = [...sql.matchAll(/COALESCE\(v_league\.settings ->> 'faab_tiebreaker', '([a-z_]+)'\)/g)].map((m) => m[1])
     expect(fallbacks).toStrictEqual(['rolling_priority'])
     expect(LEAGUE_SETTINGS_DEFAULTS.faab_tiebreaker).toBe('rolling_priority')

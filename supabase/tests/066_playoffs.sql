@@ -293,8 +293,17 @@ insert into teams (id, owner_id, name, league_id) values
  ('c8000000-0000-4000-8000-000000000052', '98000000-0000-4000-8000-000000000001', 'PB R', 'b8000000-0000-4000-8000-000000000005'),
  ('c8000000-0000-4000-8000-000000000053', '98000000-0000-4000-8000-000000000001', 'PB Q', 'b8000000-0000-4000-8000-000000000005'),
  ('c8000000-0000-4000-8000-000000000054', '98000000-0000-4000-8000-000000000001', 'PB S', 'b8000000-0000-4000-8000-000000000005');
--- H is RETIRED (rider (v)): its rows stand for history, it is never seeded.
-update teams set status = 'retired' where id = 'c8000000-0000-4000-8000-000000000008';
+-- H is NOT SEATED in P1 (rider (v)): its rows stand for history, it is never
+-- seeded. RE-CUT BY 199 (F562 — a team is never retired, so the 'retired'
+-- status that kept H out is gone): H is parked in a league of its own, the
+-- one shape left where P1's results name a team P1 does not seat. Every
+-- golden below is unchanged.
+insert into leagues (id, owner_id, name, season, status, team_count, regular_season_weeks, playoff_teams, playoff_start_week,
+                     scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings)
+select 'b8000000-0000-4000-8000-0000000000ff', owner_id, 'pgtap-pb-parking', season, 'complete', team_count, regular_season_weeks,
+       playoff_teams, playoff_start_week, scoring_system_id, scoring_rules_snapshot, lineup_lock, settings, roster_settings
+from leagues where id = 'b8000000-0000-4000-8000-000000000001';
+update teams set league_id = 'b8000000-0000-4000-8000-0000000000ff' where id = 'c8000000-0000-4000-8000-000000000008';
 
 insert into league_members (league_id, user_id, team_id, role) values
  ('b8000000-0000-4000-8000-000000000001', '98000000-0000-4000-8000-000000000001', 'c8000000-0000-4000-8000-000000000001', 'commissioner'),

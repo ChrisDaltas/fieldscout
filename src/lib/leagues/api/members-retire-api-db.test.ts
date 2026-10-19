@@ -215,8 +215,9 @@ describe('DELETE …/members/[mid] mode retire — refused by the route in plain
     }
     expect(RETIRE_REMOVED_MESSAGE).toBe('A team can’t be retired — seat a new manager or leave it vacant.')
     expect(await trail()).toEqual({ receipts: [], ledger: 0, posts: [] })
-    const { data: team } = await service.from('teams').select('status, retired_at_week, successor_team_id').eq('id', teamA).single()
-    expect(team).toEqual({ status: 'active', retired_at_week: null, successor_team_id: null })
+    // 199 / F562: the retired-week and successor columns are gone.
+    const { data: team } = await service.from('teams').select('status').eq('id', teamA).single()
+    expect(team).toEqual({ status: 'active' })
     const { data: seat } = await service.from('league_members').select('user_id, team_id').eq('id', mid).single()
     expect(seat).toEqual({ user_id: ids.a, team_id: teamA })
   })
@@ -236,13 +237,13 @@ describe('DELETE …/members/[mid] mode retire — refused by the route in plain
     expect(errorText(res)).toContain('action_id')
   })
 
-  it('migration 176: the verb itself, called straight over PostgREST, refuses retire by name — nothing written', async () => {
+  it('migrations 176 / 199: the verb itself, called straight over PostgREST, refuses retire — since 199 it is no mode at all — nothing written', async () => {
     const mid = await memberIdOf(leagueId, ids.a)
     const { data, error } = await commishClient.rpc('remove_manager', {
       p_league_id: leagueId, p_member_id: mid, p_mode: 'retire', p_action_id: ACTION.retireA,
     })
     expect(data).toBeNull()
-    expect([error?.code, error?.message]).toEqual(['P0001', 'remove_manager: a team can\'t be retired — seat a new manager or leave it vacant (§7.2.1)'])
+    expect([error?.code, error?.message]).toEqual(['22023', 'remove_manager: mode must be takeover or vacate (§7.2.1)'])
     expect(await trail()).toEqual({ receipts: [], ledger: 0, posts: [] })
   })
 })

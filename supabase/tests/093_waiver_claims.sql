@@ -124,7 +124,6 @@ insert into teams (id, owner_id, name, league_id, status) values
  ('c9300000-0000-4000-8000-000000000003', '99300000-0000-4000-8000-000000000003', 'WC Alpha',    'b9300000-0000-4000-8000-000000000001', 'active'),
  ('c9300000-0000-4000-8000-000000000004', '99300000-0000-4000-8000-000000000004', 'WC Bravo',    'b9300000-0000-4000-8000-000000000001', 'active'),
  ('c9300000-0000-4000-8000-000000000005', '99300000-0000-4000-8000-000000000001', 'WC Open Seat','b9300000-0000-4000-8000-000000000001', 'active'),
- ('c9300000-0000-4000-8000-000000000006', '99300000-0000-4000-8000-000000000001', 'WC Retired',  'b9300000-0000-4000-8000-000000000001', 'retired'),
  ('c9300000-0000-4000-8000-000000000007', '99300000-0000-4000-8000-000000000006', 'WC Delta',    'b9300000-0000-4000-8000-000000000001', 'active'),
  ('c9300000-0000-4000-8000-000000000020', '99300000-0000-4000-8000-000000000001', 'WC L2 C',     'b9300000-0000-4000-8000-000000000002', 'active'),
  ('c9300000-0000-4000-8000-000000000021', '99300000-0000-4000-8000-000000000003', 'WC L2 A',     'b9300000-0000-4000-8000-000000000002', 'active'),
@@ -138,7 +137,6 @@ insert into league_members (league_id, user_id, team_id, role, is_placeholder, f
  ('b9300000-0000-4000-8000-000000000001', '99300000-0000-4000-8000-000000000003', 'c9300000-0000-4000-8000-000000000003', 'manager',         false, 40),
  ('b9300000-0000-4000-8000-000000000001', '99300000-0000-4000-8000-000000000004', 'c9300000-0000-4000-8000-000000000004', 'manager',         false, 100),
  ('b9300000-0000-4000-8000-000000000001', null,                                   'c9300000-0000-4000-8000-000000000005', 'manager',         true,  25),
- ('b9300000-0000-4000-8000-000000000001', null,                                   'c9300000-0000-4000-8000-000000000006', 'manager',         true,  100),
  ('b9300000-0000-4000-8000-000000000001', '99300000-0000-4000-8000-000000000006', 'c9300000-0000-4000-8000-000000000007', 'manager',         false, 100),
  ('b9300000-0000-4000-8000-000000000002', '99300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000020', 'commissioner',    false, 100),
  ('b9300000-0000-4000-8000-000000000002', '99300000-0000-4000-8000-000000000003', 'c9300000-0000-4000-8000-000000000021', 'manager',         false, 100),
@@ -253,8 +251,8 @@ select throws_ok(
   'C18 a league not in season / playoffs is refused by name');
 select throws_ok(
   $$ select public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000006', 'wc-f1', null, 5, 'a9300000-0000-4000-8000-000000000018') $$,
-  'P0001', 'waiver_claim_submit: WC Retired is retired — a sealed franchise makes no claims (§7.2.1)',
-  'C19 a retired franchise is refused by name — even for the commissioner');
+  'P0001', 'waiver_claim_submit: team c9300000-0000-4000-8000-000000000006 is not a franchise of league b9300000-0000-4000-8000-000000000001',
+  'C19 RE-CUT BY 199 (F562 — a team is never retired): the RETIRED franchise is gone from the fixture; its old id is no team of the league and is refused by name like one');
 select throws_ok(
   $$ select public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000005', 'wc-f1', null, 26, 'a9300000-0000-4000-8000-000000000019') $$,
   'P0001', 'waiver_claim_submit: a bid of $26 is more than WC Open Seat''s FAAB balance of $25 (§13.2)',
@@ -589,7 +587,7 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub": "99300000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
 select throws_ok(
   $$ select public.waiver_claim_submit('b9300000-0000-4000-8000-000000000001', 'c9300000-0000-4000-8000-000000000007', 'wc-f2', null, 1, 'a9300000-0000-4000-8000-000000000403') $$,
-  'P0001', 'waiver_claim_submit: WC Delta has no FAAB balance on record (its league_members seat holds NULL) — refusing to accept a bid against money that is not recorded (§12.2)',
+  'P0001', 'waiver_claim_submit: WC Delta has no FAAB balance on record, so it can''t bid — ask the commissioner to set the team''s FAAB',
   'H5 LOUD, never "nothing happened": a FAAB bid against a NULL balance is refused by name, never read as $0 or as unlimited');
 reset role;
 select set_config('request.jwt.claims', '', true);

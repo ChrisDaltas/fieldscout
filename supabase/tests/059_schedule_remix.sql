@@ -906,17 +906,11 @@ select throws_ok(
        (select h from sr_w5 where k = 2), (select a from sr_w5 where k = 1), null, 'a0000000-0000-4000-8000-000000000024') $$,
   'P0002', null, 'a matchup id that is not this league''s refuses P0002');
 reset role;
-savepoint h_retired;
-update teams set status = 'retired' where id = (select a from sr_w5 where k = 1);
-set local role authenticated;
-select set_config('request.jwt.claims',
-  '{"sub": "92000000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.schedule_edit_matchup('b2000000-0000-4000-8000-000000000009', (select id from sr_w5 where k = 2),
-       (select h from sr_w5 where k = 2), (select a from sr_w5 where k = 1), null, 'a0000000-0000-4000-8000-000000000025') $$,
-  '%not a seated franchise%', 'a RETIRED team of this league refuses BY NAME too');
-reset role;
-rollback to savepoint h_retired;
+-- RE-CUT BY 199 (F562): a team is never retired — the status CHECK refuses
+-- the fixture this cell used to build (a RETIRED team refused BY NAME).
+select throws_ok(
+  $$ update teams set status = 'retired' where id = (select a from sr_w5 where k = 1) $$,
+  '23514', null, 'a team cannot be RETIRED at all any more (199 / F562; was: a retired team refuses BY NAME)');
 
 -- H7. Status law: a live matchup, a live sibling, a non-upcoming week, a
 -- playoff row, the parking type in use (postgres arranges, u01 tries).

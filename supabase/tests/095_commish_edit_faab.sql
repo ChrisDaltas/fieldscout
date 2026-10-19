@@ -86,8 +86,8 @@ select ok(
 --   target manager · u4 another manager · u5 commissioner of ANOTHER league
 --   (L4) and nothing in L1.
 --   L1 in_season, budget 100: K1 commish 100 · K2 co 100 · K3 target 40
---   (spent 60) · K4 other 100 · K5 open seat (no manager) 70 · K6 retired
---   (its seat went to K5) · K7 no seat row at all.
+--   (spent 60) · K4 other 100 · K5 open seat (no manager) 70 · K6 no seat
+--   (199: was retired, its seat went to K5) · K7 no seat row at all.
 --   L2 scheduled · L3 drafting (live draft) · L4 in_season (u5's) ·
 --   L5 drafting (live draft, the F412 control).
 -- ---------------------------------------------------------------------------
@@ -126,9 +126,8 @@ select ('c9500000-0000-4000-8000-0000000000' || f.n || f.k)::uuid,
        'FE' || f.n || ' ' || f.label,
        ('b9500000-0000-4000-8000-00000000000' || f.n)::uuid
 from _fx f;
-update teams set status = 'retired', retired_at_week = 2,
-                 successor_team_id = 'c9500000-0000-4000-8000-000000000015'
-where id = 'c9500000-0000-4000-8000-000000000016';
+-- K6 was RETIRED with its seat moved to K5 (120). RE-CUT BY 199 (F562 — a
+-- team is never retired): K6 is now just a team with no seat row.
 insert into league_members (id, league_id, user_id, team_id, role, is_placeholder, faab_balance)
 select ('d9500000-0000-4000-8000-0000000000' || f.n || f.k)::uuid,
        ('b9500000-0000-4000-8000-00000000000' || f.n)::uuid,
@@ -371,8 +370,8 @@ select throws_ok(
   'J4 a team of ANOTHER league is refused by name');
 select throws_ok(
   $$ select public.commish_edit_faab('b9500000-0000-4000-8000-000000000001', 'c9500000-0000-4000-8000-000000000016', 5, null, 'a9500000-0000-4000-8000-000000000033') $$,
-  'P0001', 'commish_edit_faab: franchise c9500000-0000-4000-8000-000000000016 is RETIRED — its seat, and the FAAB balance with it, carried to its successor (c9500000-0000-4000-8000-000000000015) (§7.2.1(b)); edit that team''s balance instead',
-  'J5 a RETIRED franchise is refused by name, naming its successor');
+  'P0001', 'commish_edit_faab: team c9500000-0000-4000-8000-000000000016 has no seat in league b9500000-0000-4000-8000-000000000001 — a FAAB balance lives on the team''s seat (league_members), and this team has none, so there is no balance to edit',
+  'J5 RE-CUT BY 199 (F562): the RETIRED arm is gone — K6, a team with no seat row, is refused like K7 (was: a retired franchise refused by name, naming its successor)');
 select throws_ok(
   $$ select public.commish_edit_faab('b9500000-0000-4000-8000-000000000001', 'c9500000-0000-4000-8000-000000000017', 5, null, 'a9500000-0000-4000-8000-000000000034') $$,
   'P0001', 'commish_edit_faab: team c9500000-0000-4000-8000-000000000017 has no seat in league b9500000-0000-4000-8000-000000000001 — a FAAB balance lives on the team''s seat (league_members), and this team has none, so there is no balance to edit',

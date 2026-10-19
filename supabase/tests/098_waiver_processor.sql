@@ -141,8 +141,10 @@ select throws_ok(
 --   u1 commissioner of every league; u2 / u3 / u6 managers; u5 outsider.
 --   LF b98…01 FAAB, daily 12:00 UTC, after_waiver_run; roster 1 QB + 4 bench.
 --     TA c98…01 (u2)  TB c98…02 (u3)  TC c98…03 (u1)  TS c98…05 (u6)
---     TR c98…04 RETIRED, succeeded by TS (its seat moved there — 120).
---     draft_order [TA, TB, TC, TR] ⇒ reverse draft order [TS, TC, TB, TA].
+--     draft_order [TA, TB, TC, TS] ⇒ reverse draft order [TS, TC, TB, TA].
+--     (RE-CUT BY 199 / F562 — a team is never retired: TR c98…04, RETIRED
+--     and succeeded by TS in TS's draft slot, and its claim 06 are gone; TS
+--     holds the slot itself, so every order below is unchanged.)
 --   LR b98…02 rolling_priority (RA u2, RB u3, RC u1), draft [RA, RB, RC].
 --   LN b98…03 none_fcfs with a claim left pending (NA u2).
 --   LU b98…04 FAAB, the catalog schedule, UNTRACKED (NULL next run) (UA u2).
@@ -203,7 +205,6 @@ insert into teams (id, owner_id, name, league_id, status) values
  ('c9800000-0000-4000-8000-000000000001', '99800000-0000-4000-8000-000000000002', 'WP Alpha',   'b9800000-0000-4000-8000-000000000001', 'active'),
  ('c9800000-0000-4000-8000-000000000002', '99800000-0000-4000-8000-000000000003', 'WP Bravo',   'b9800000-0000-4000-8000-000000000001', 'active'),
  ('c9800000-0000-4000-8000-000000000003', '99800000-0000-4000-8000-000000000001', 'WP Charlie', 'b9800000-0000-4000-8000-000000000001', 'active'),
- ('c9800000-0000-4000-8000-000000000004', '99800000-0000-4000-8000-000000000001', 'WP Retired', 'b9800000-0000-4000-8000-000000000001', 'retired'),
  ('c9800000-0000-4000-8000-000000000005', '99800000-0000-4000-8000-000000000006', 'WP Successor', 'b9800000-0000-4000-8000-000000000001', 'active'),
  ('c9800000-0000-4000-8000-000000000011', '99800000-0000-4000-8000-000000000002', 'WP RA', 'b9800000-0000-4000-8000-000000000002', 'active'),
  ('c9800000-0000-4000-8000-000000000012', '99800000-0000-4000-8000-000000000003', 'WP RB', 'b9800000-0000-4000-8000-000000000002', 'active'),
@@ -218,7 +219,6 @@ insert into teams (id, owner_id, name, league_id, status) values
  ('c9800000-0000-4000-8000-000000000062', '99800000-0000-4000-8000-000000000002', 'WP VA', 'b9800000-0000-4000-8000-000000000007', 'active'),
  ('c9800000-0000-4000-8000-000000000063', '99800000-0000-4000-8000-000000000003', 'WP VB', 'b9800000-0000-4000-8000-000000000007', 'active'),
  ('c9800000-0000-4000-8000-000000000071', '99800000-0000-4000-8000-000000000001', 'WP DC', 'b9800000-0000-4000-8000-000000000008', 'active');
-update teams set successor_team_id = 'c9800000-0000-4000-8000-000000000005' where id = 'c9800000-0000-4000-8000-000000000004';
 
 insert into league_members (league_id, user_id, team_id, role, is_placeholder, faab_balance) values
  ('b9800000-0000-4000-8000-000000000001', '99800000-0000-4000-8000-000000000002', 'c9800000-0000-4000-8000-000000000001', 'manager',      false, 100),
@@ -244,7 +244,7 @@ select l.id, 2026, g from leagues l, generate_series(1, 14) g where l.name like 
 
 insert into drafts (league_id, status, completed_at, draft_order) values
  ('b9800000-0000-4000-8000-000000000001', 'complete', '2026-09-06 06:00:00+00',
-  '["c9800000-0000-4000-8000-000000000001", "c9800000-0000-4000-8000-000000000002", "c9800000-0000-4000-8000-000000000003", "c9800000-0000-4000-8000-000000000004"]'),
+  '["c9800000-0000-4000-8000-000000000001", "c9800000-0000-4000-8000-000000000002", "c9800000-0000-4000-8000-000000000003", "c9800000-0000-4000-8000-000000000005"]'),
  ('b9800000-0000-4000-8000-000000000002', 'complete', '2026-09-06 06:00:00+00',
   '["c9800000-0000-4000-8000-000000000011", "c9800000-0000-4000-8000-000000000012", "c9800000-0000-4000-8000-000000000013"]'),
  ('b9800000-0000-4000-8000-000000000005', 'complete', '2026-09-06 06:00:00+00', '["c9800000-0000-4000-8000-000000000041"]');
@@ -288,7 +288,6 @@ insert into waiver_claims (id, league_id, team_id, add_player_id, drop_player_id
  ('d9800000-0000-4000-8000-000000000003', 'b9800000-0000-4000-8000-000000000001', 'c9800000-0000-4000-8000-000000000002', 'wp-x', null,      30, 1, 'a9800000-0000-4000-8000-000000000103', '99800000-0000-4000-8000-000000000003'),
  ('d9800000-0000-4000-8000-000000000004', 'b9800000-0000-4000-8000-000000000001', 'c9800000-0000-4000-8000-000000000003', 'wp-y', 'wp-cold', 12, 1, 'a9800000-0000-4000-8000-000000000104', '99800000-0000-4000-8000-000000000001'),
  ('d9800000-0000-4000-8000-000000000005', 'b9800000-0000-4000-8000-000000000001', 'c9800000-0000-4000-8000-000000000003', 'wp-k', null,      5,  2, 'a9800000-0000-4000-8000-000000000105', '99800000-0000-4000-8000-000000000001'),
- ('d9800000-0000-4000-8000-000000000006', 'b9800000-0000-4000-8000-000000000001', 'c9800000-0000-4000-8000-000000000004', 'wp-z', null,      50, 1, 'a9800000-0000-4000-8000-000000000106', '99800000-0000-4000-8000-000000000001'),
  ('d9800000-0000-4000-8000-000000000007', 'b9800000-0000-4000-8000-000000000001', 'c9800000-0000-4000-8000-000000000005', 'wp-z', 'wp-kd',   1,  1, 'a9800000-0000-4000-8000-000000000107', '99800000-0000-4000-8000-000000000006'),
  -- LR (rolling priority)
  ('d9800000-0000-4000-8000-000000000011', 'b9800000-0000-4000-8000-000000000002', 'c9800000-0000-4000-8000-000000000011', 'wp-r1', null, 0, 1, 'a9800000-0000-4000-8000-000000000111', '99800000-0000-4000-8000-000000000002'),
@@ -426,9 +425,9 @@ select is(
 -- ---------------------------------------------------------------------------
 -- F. THE RUN — league LF at R (FAAB, reverse-draft-order tiebreak)
 --   pending: 01 A X $30 · 02 A Y $10 · 03 B X $30 · 04 C Y $12 drop Cold ·
---            05 C Kay $5 (Kay kicked off) · 06 RETIRED Z $50 · 07 S Z $1 drop
+--            05 C Kay $5 (Kay kicked off) · 07 S Z $1 drop
 --            Kay Drop (kicked off). Order [S, C, B, A].
---   by hand: step 1 fails 05 add_locked, 06 team_retired, 07 drop_locked;
+--   by hand: step 1 fails 05 add_locked, 07 drop_locked (06 — a retired team's — is gone, 199);
 --   X at $30 is a tie A/B — B ahead ⇒ 03 won, 01 lost_on_priority, B to the
 --   back; Y: 04 ($12) beats 02 ($10) ⇒ 04 won, 02 outbid, C to the back.
 -- ---------------------------------------------------------------------------
@@ -439,19 +438,19 @@ select is(
   'no_league_due — no in-season league had a waiver run due, an untracked schedule, or claims left under no waivers',
   'F1 BOUNDARY: at R − 1s the run is not due — the tick says why and decides nothing');
 select is(pg_temp.claims('b9800000-0000-4000-8000-000000000001'),
-  '01:pending 02:pending 03:pending 04:pending 05:pending 06:pending 07:pending', 'F2 …every claim still pending');
+  '01:pending 02:pending 03:pending 04:pending 05:pending 07:pending', 'F2 …every claim still pending');
 insert into r98 select 'F3', public.waiver_tick('2026-11-01 12:00:00+00', 'b9800000-0000-4000-8000-000000000001');
 select is(
   (select format('%s|%s|%s|%s|%s|%s|%s', s ->> 'status', s ->> 'claims', s ->> 'won', s ->> 'lost', s ->> 'invalid', s ->> 'faab_spent', s ->> 'notified')
    from r98, jsonb_array_elements(r -> 'settled') s where tag = 'F3'),
-  'settled|7|2|2|3|42|7', 'F3 AT R the tick settles LF: 7 claims — 2 won, 2 lost, 3 invalid, $42 spent, 7 owners told');
+  'settled|6|2|2|2|42|6', 'F3 AT R the tick settles LF: 6 claims — 2 won, 2 lost, 2 invalid, $42 spent, 6 owners told (199: the retired team''s claim is gone)');
 select is(pg_temp.claims('b9800000-0000-4000-8000-000000000001'),
-  '01:lost:lost_on_priority 02:lost:outbid 03:won 04:won 05:invalid:add_locked 06:invalid:team_retired 07:invalid:drop_locked',
-  'F4 E7 + Q71 + Q73 + Q74 + F408: the tie to the better priority, the higher bid, the locked add, the locked drop, the retired team');
+  '01:lost:lost_on_priority 02:lost:outbid 03:won 04:won 05:invalid:add_locked 07:invalid:drop_locked',
+  'F4 E7 + Q71 + Q73 + Q74: the tie to the better priority, the higher bid, the locked add, the locked drop (199: the retired-team claim, F408, is gone)');
 select is(
   (select string_agg(format('%s:%s', right(t.id::text, 2), coalesce(m.faab_balance::text, '-')), ' ' order by t.id)
    from teams t left join league_members m on m.team_id = t.id where t.league_id = 'b9800000-0000-4000-8000-000000000001'),
-  '01:100 02:70 03:88 04:- 05:100', 'F5 money: the winners paid exactly their bids ($30, $12); nobody else paid a cent');
+  '01:100 02:70 03:88 05:100', 'F5 money: the winners paid exactly their bids ($30, $12); nobody else paid a cent');
 select is(
   (select string_agg(format('%s:%s:%s', right(r.team_id::text, 2), r.player_id, r.acquisition_type), ' ' order by r.team_id, r.player_id)
    from league_rosters r where r.league_id = 'b9800000-0000-4000-8000-000000000001'),
@@ -478,8 +477,8 @@ select is(
 select is(
   (select string_agg(format('%s:%s', right(n.user_id::text, 1), n.data ->> 'claim_id'), ' ' order by n.data ->> 'claim_id')
    from notifications n where n.type = 'league_waiver_claim' and n.data ->> 'league_id' = 'b9800000-0000-4000-8000-000000000001'),
-  '2:d9800000-0000-4000-8000-000000000001 2:d9800000-0000-4000-8000-000000000002 3:d9800000-0000-4000-8000-000000000003 1:d9800000-0000-4000-8000-000000000004 1:d9800000-0000-4000-8000-000000000005 6:d9800000-0000-4000-8000-000000000006 6:d9800000-0000-4000-8000-000000000007',
-  'F11 TD16: every owner is told privately — and the RETIRED team''s claim is reported to its successor''s manager (F408)');
+  '2:d9800000-0000-4000-8000-000000000001 2:d9800000-0000-4000-8000-000000000002 3:d9800000-0000-4000-8000-000000000003 1:d9800000-0000-4000-8000-000000000004 1:d9800000-0000-4000-8000-000000000005 6:d9800000-0000-4000-8000-000000000007',
+  'F11 TD16: every owner is told privately (199: the retired team''s claim, reported to its successor''s manager under F408, is gone)');
 select is(
   (select n.body from notifications n where n.type = 'league_waiver_claim' and n.data ->> 'claim_id' = 'd9800000-0000-4000-8000-000000000001'),
   'WP Ex went to WP Bravo at the same bid of $30, on waiver priority. Nothing was spent.',
@@ -492,7 +491,7 @@ select is(
   (select format('%s|%s|%s|%s', w.status, w.attempts, w.result #>> '{priority,source}', w.result #> '{priority,after}')
    from waiver_runs w where w.league_id = 'b9800000-0000-4000-8000-000000000001'),
   'settled|1|reverse_draft_order|["c9800000-0000-4000-8000-000000000005", "c9800000-0000-4000-8000-000000000001", "c9800000-0000-4000-8000-000000000002", "c9800000-0000-4000-8000-000000000003"]',
-  'F14 the run is logged once; before week 1 is final the order is reverse draft order with the retired team''s slot held by its successor (Q72 / F421(b)), rolled by the two wins');
+  'F14 the run is logged once; before week 1 is final the order is reverse draft order (Q72 / F421(b)), rolled by the two wins');
 select is(
   (select public.waiver_resolve_run_internal(w.input) = w.result from waiver_runs w where w.league_id = 'b9800000-0000-4000-8000-000000000001'),
   true, 'F15 the stored result is exactly what the twin gives the stored input (the parity suite compares that input with the TS resolver)');
@@ -525,8 +524,8 @@ select is(
   (select string_agg(right(id::text, 2) || ':' || status || ':' || faab_bid, ' ' order by id) from waiver_claims where league_id = 'b9800000-0000-4000-8000-000000000001'),
   '01:lost:30 02:lost:10', 'G5 the owner (Alpha) sees his own settled claims with their reasons');
 select set_config('request.jwt.claims', '{"sub": "99800000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
-select is((select count(*)::int from waiver_claims where league_id = 'b9800000-0000-4000-8000-000000000001'), 7,
-  'G6 the commissioner sees every claim');
+select is((select count(*)::int from waiver_claims where league_id = 'b9800000-0000-4000-8000-000000000001'), 6,
+  'G6 the commissioner sees every claim (6 — 199 removed the retired team''s)');
 select is((select count(*)::int from waiver_runs), 0, 'G7 …but not the run log (it is the processor''s alone)');
 select throws_ok(
   $$ insert into waiver_runs (league_id, run_at, status) values ('b9800000-0000-4000-8000-000000000001', '2030-01-01', 'refused') $$,
