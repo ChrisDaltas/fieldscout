@@ -27,6 +27,7 @@ import {
   opensInWeek,
   orderChanged,
   parseRankingsParams,
+  planPositionsSave,
   planSliceSave,
   positionInUse,
   publishButtonLabel,
@@ -106,6 +107,32 @@ describe('planSliceSave writes only the edited position', () => {
       { playerId: 'k1', position: 1 },
       { playerId: 'k2', position: 2 },
     ])
+  })
+})
+
+describe('planPositionsSave — a Duplicate of a ranking that ranks several positions', () => {
+  const rows = [
+    { playerId: 'qb1', slot: 1, pos: 'QB' as const },
+    { playerId: 'rb1', slot: 2, pos: 'RB' as const },
+    { playerId: 'wr1', slot: 4, pos: 'WR' as const },
+    { playerId: 'rb2', slot: 5, pos: 'RB' as const },
+    { playerId: 'te1', slot: 7, pos: 'TE' as const },
+  ]
+  it('the copied positions take their own slots in the copy’s order; the rest stay put', () => {
+    // The copy ranks RB and WR, interleaved its own way.
+    expect(planPositionsSave(rows, ['RB', 'WR'], ['wr1', 'rb2', 'wr7', 'rb1'])).toEqual({
+      remove: [],
+      add: ['wr7'],
+      positions: [
+        { playerId: 'wr1', position: 2 },
+        { playerId: 'rb2', position: 4 },
+        { playerId: 'wr7', position: 5 },
+        { playerId: 'rb1', position: 8 },
+      ],
+    })
+  })
+  it('one position is exactly planSliceSave', () => {
+    expect(planPositionsSave(rows, ['RB'], ['rb2', 'rb9'])).toEqual(planSliceSave(rows, 'RB', ['rb2', 'rb9']))
   })
 })
 

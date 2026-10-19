@@ -287,7 +287,7 @@ describe('Community — the Latest shelf', () => {
 
 /**
  * Gap list §3 #28: tapping an AI expert's ranking opens it in Rankings — that
- * expert's ranking, with "Start my ranking from this" — the way the handoff
+ * expert's ranking, with Duplicate (Chris, 2026-10-18/19) — the way the handoff
  * sends every Community ranking (m-community §3 → `#view-<id>`). A person's
  * ranking has no such view yet and keeps the detail.
  */

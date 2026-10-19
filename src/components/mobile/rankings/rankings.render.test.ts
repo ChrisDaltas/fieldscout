@@ -228,7 +228,7 @@ describe('Ranking editor — Publish and the week rules', () => {
   it('starting from a source over a ranking you have is an update, not a new ranking', () => {
     // The season board and this week's board already hold these positions,
     // so neither reads "Publish" — the draft's edits will publish updates.
-    for (const html of [editor('season', client(), 'RB', 'experts'), editor('w6', client(), 'WR', 'p:persona-1')]) {
+    for (const html of [editor('season', client(), 'RB', 'experts'), editor('w6', client(), 'WR', 'users')]) {
       expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Published<\/button>/)
       expect(html).not.toMatch(/>Publish<\/button>/)
     }
@@ -485,9 +485,11 @@ describe('the scoring a ranking is published for (Chris, 2026-10-15, #36)', () =
 
 /**
  * Gap list §3 #28: Community opens an AI expert's ranking here — the author
- * view (lr-hub S4) with "Start my ranking from this". A ranking is one
- * position; an overall board ranks several, so it gets a chip per position
- * it ranks anyone at.
+ * view (lr-hub S4). Its action is Duplicate (Chris, 2026-10-18/19: "If a
+ * user dupes some popular ranking it then becomes their own") — the old
+ * "Start my ranking from this" is gone. A ranking is one position; an
+ * overall board ranks several, so it gets a chip per position it ranks
+ * anyone at.
  */
 describe('an AI expert’s ranking opened from Community (gap list §3 #28)', () => {
   const persona = { username: 'e1', display_name: 'Expert One', avatar_url: null, scoring: 'PPR' }
@@ -530,16 +532,20 @@ describe('an AI expert’s ranking opened from Community (gap list §3 #28)', ()
   const hub = (state: Partial<RankingsUrlState>) =>
     render(createElement(RankingsHub, { nav: { ...nav, state: { ...nav.state, view: 'hub', ...state } } }), seeded())
 
-  it('shows the expert’s ranking with "Start my ranking from this"', () => {
+  it('shows the expert’s ranking with Duplicate — never "Start my ranking from this"', () => {
     const html = hub({ src: 'p:e1-rb', pos: 'RB' })
     const t = text(html)
     expect(html).toMatch(/aria-selected="true"[^>]*>Expert One/)
     expect(t).toContain('Rest of season · RB · PPR')
     expect(t).toContain('AI expert · 4 players')
-    expect(html).toMatch(/<button[^>]*>.*Start my ranking from this<\/button>/)
+    // An AI expert's board is a season ranking: always open to duplicate.
+    const button = /<button type="button"([^>]*)>(?:(?!<\/button>).)*Duplicate<\/button>/.exec(html)
+    expect(button).not.toBeNull()
+    expect(button![1]).not.toContain('disabled=""')
+    expect(t).not.toMatch(/Start my ranking|Start from this/)
   })
 
-  it('keeps the Community detail’s Like · Comments · Save · Share, above "Start my ranking from this"', () => {
+  it('keeps the Community detail’s Like · Comments · Save · Share, above Duplicate', () => {
     const qc = seeded()
     qc.setQueryData(listsKeys.detail('e1-rb'), {
       id: 'e1-rb',
@@ -566,7 +572,7 @@ describe('an AI expert’s ranking opened from Community (gap list §3 #28)', ()
     expect(row![1]).toMatch(/aria-label="Comments"/)
     expect(t).toContain('Save')
     expect(t).toContain('Share')
-    expect(html.indexOf('data-list-actions')).toBeLessThan(html.indexOf('Start my ranking from this'))
+    expect(html.indexOf('data-list-actions')).toBeLessThan(html.indexOf('Duplicate</button>'))
   })
 
   it('while the ranking’s likes are read, a placeholder — never a guessed count', () => {

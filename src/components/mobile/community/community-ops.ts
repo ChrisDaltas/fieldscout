@@ -902,11 +902,12 @@ export function communityDetailHref(id: string, from: string = COMMUNITY_HREF): 
 
 /**
  * Where an AI expert's ranking opens (gap list §3 #28): in Rankings, as that
- * expert's ranking (lr-hub S4, `?src=p:<listId>`), with "Start my ranking
- * from this" — the handoff sends a Community ranking there (m-community §3,
- * "Ranking row" → `#view-<id>`). A person's ranking has no such view yet, so
- * it keeps opening the Community detail (null) — as does a switched-off
- * AI expert's.
+ * expert's ranking (lr-hub S4, `?src=p:<listId>`), with Duplicate (Chris,
+ * 2026-10-18/19: it becomes your ranking) — the handoff sends a Community
+ * ranking there (m-community §3, "Ranking row" → `#view-<id>`). A person's
+ * ranking has no such view yet, so it keeps opening the Community detail
+ * (null), which carries the same Duplicate — as does a switched-off AI
+ * expert's.
  *
  * Rankings shows one position at a time: a position board opens at its own;
  * an overall board at the position of the player it leads with — the one its

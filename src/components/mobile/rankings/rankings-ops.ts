@@ -596,8 +596,24 @@ export interface SlicePlan {
  * `updated_at` on each row it is sent).
  */
 export function planSliceSave(rows: readonly BoardRowLite[], pos: RankPos, next: readonly string[]): SlicePlan {
+  return planPositionsSave(rows, [pos], next)
+}
+
+/**
+ * `planSliceSave` over several positions at once — a Duplicate of a ranking
+ * that ranks more than one (an overall board): `next` is their players in
+ * the copied ranking's own order, and it takes those positions' slots in
+ * order, so the copied positions interleave as the original does while
+ * every position NOT copied keeps its place and its saved date.
+ */
+export function planPositionsSave(
+  rows: readonly BoardRowLite[],
+  positions: readonly RankPos[],
+  next: readonly string[],
+): SlicePlan {
+  const copied = new Set(positions)
   const order = Array.from(new Set(next))
-  const slice = rows.filter((r) => r.pos === pos).sort((a, b) => a.slot - b.slot)
+  const slice = rows.filter((r) => r.pos !== null && copied.has(r.pos)).sort((a, b) => a.slot - b.slot)
   const keep = new Set(order)
   const onBoard = new Set(rows.map((r) => r.playerId))
   const slots = slice.map((r) => r.slot)
@@ -725,8 +741,10 @@ export function scoringChanged(s: {
   return s.hasRanking && s.savable && s.picked !== null && s.picked !== (s.saved ?? DEFAULT_RANK_SCORING)
 }
 
-/** Where a new (unsaved) ranking starts from (lr-myrank §2.2 step 2). */
-export type RankFrom = 'experts' | 'users' | 'carry' | 'blank' | `p:${string}`
+/** Where a new (unsaved) ranking starts from (lr-myrank §2.2 step 2). Someone
+ *  else's ranking is never a start: it is Duplicated — published as yours —
+ *  and the editor then opens yours (Chris, 2026-10-18/19). */
+export type RankFrom = 'experts' | 'users' | 'carry' | 'blank'
 
 export type RankOverlay =
   | { kind: 'new'; step: 1 | 2; type: RankType; pos: RankPos }
@@ -756,7 +774,7 @@ function isSourceKey(v: string | null): v is SourceKey {
 }
 
 export function isRankFrom(v: string | null): v is RankFrom {
-  return v === 'experts' || v === 'users' || v === 'carry' || v === 'blank' || (!!v && PERSONA_KEY.test(v))
+  return v === 'experts' || v === 'users' || v === 'carry' || v === 'blank'
 }
 
 export function parseRankingsParams(

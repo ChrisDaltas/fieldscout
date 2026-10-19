@@ -64,13 +64,11 @@ import {
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MPosChip, posTextClass } from '@/components/mobile/ui/m-pos-chip'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
-import { usePersonaBoardPlayers } from '@/hooks/use-board-sources'
 import { useWeeklyBigBoard } from '@/hooks/use-big-board'
 import { NFL_SEASON, latestSaved, useMyRankingBoards, useSeasonBoard } from '@/hooks/use-mobile-rankings-boards'
 import { useSaveRankingSlice } from '@/hooks/use-mobile-rankings-save'
 import {
   sourceDraft,
-  useExpertBoards,
   useExpertsSource,
   usePositionPool,
   useUsersSource,
@@ -113,10 +111,11 @@ import { usePlayerModalStore } from '@/stores/player-modal-store'
  *
  * "Publish" vs "Publish updates" is about whether a ranking already exists
  * at the position, not where the draft started: starting from the experts
- * (or an AI expert's board) over a ranking you have publishes updates to it.
+ * over a ranking you have publishes updates to it. (Someone else's ranking
+ * is never a start: Duplicate publishes it as yours, then opens it here.)
  *
- * A NEW ranking (from New ranking step 2, "Start my ranking from this", or a
- * week that has no board yet) exists only on the phone until Publish (C1):
+ * A NEW ranking (from New ranking step 2, or a week that has no board yet)
+ * exists only on the phone until Publish (C1):
  * nothing is created by opening it, Publish is blue from the start, and
  * backing out drops it. A week's board is only created by its first Publish.
  *
@@ -223,10 +222,6 @@ export function RankingEditor({
   const games = useNflWeekGames(weeklyGames ? NFL_SEASON : undefined, weeklyGames ? week : undefined)
   const experts = useExpertsSource(pos, effFrom === 'experts')
   const users = useUsersSource(pos, effFrom === 'users')
-  const personaListId = effFrom?.startsWith('p:') ? effFrom.slice(2) : null
-  const personaQ = usePersonaBoardPlayers(personaListId)
-  const expertBoards = useExpertBoards()
-  const persona = personaListId ? (expertBoards.data?.find((b) => b.id === personaListId) ?? null) : null
 
   const saveSlice = useSaveRankingSlice()
   const saving = saveSlice.isPending
@@ -264,9 +259,7 @@ export function RankingEditor({
           ? true
           : effFrom === 'experts'
             ? Boolean(experts.data) && (isSeason || !games.isPending)
-            : effFrom === 'users'
-              ? Boolean(users.data) && (isSeason || !games.isPending)
-              : Boolean(personaQ.data) && boards.data !== undefined && !expertBoards.isPending
+            : Boolean(users.data) && (isSeason || !games.isPending)
   const ready = !locked && known && sourcesReady
 
   useEffect(() => {
@@ -289,30 +282,18 @@ export function RankingEditor({
       label = carry && carry.week > 0 ? `your Week ${carry.week} ranking` : `your ${seasonLabel(currentWeek).toLowerCase()} ranking`
     } else if (effFrom === 'blank') {
       label = 'blank'
-    } else if (effFrom === 'experts' || effFrom === 'users') {
+    } else {
       const draft = sourceDraft(effFrom === 'experts' ? experts.data?.rows : users.data, !isSeason, games.data)
       for (const p of draft) extras.set(p.id, asEditorPlayer(p))
       seq = draft.map((p) => p.id)
       label = effFrom === 'experts' ? 'Experts' : 'Users'
-    } else {
-      // "Start my ranking from this": the expert's order first, then the
-      // rest of your own ranking (so nothing you had is dropped).
-      const expert = (personaQ.data ?? []).filter((p) => fromDbPos(p.position) === pos)
-      for (const p of expert) extras.set(p.id, asEditorPlayer(p))
-      const inExpert = new Set(expert.map((p) => p.id))
-      const mine = (boardFor(boards.data, type)?.players ?? []).filter(
-        (r) => fromDbPos(r.player.position) === pos && !inExpert.has(r.player_id),
-      )
-      for (const r of mine) if (!extras.has(r.player_id)) extras.set(r.player_id, asEditorPlayer(r.player))
-      seq = [...expert.map((p) => p.id), ...mine.map((r) => r.player_id)]
-      label = persona?.persona.display_name ?? 'an AI expert'
     }
 
     setExtra(extras)
     setItems(seq)
     setSavedSeq(effFrom === null ? seq : [])
     setStartedFrom(label)
-  }, [ready, effFrom, boardEntries, boards.data, week, pos, type, currentWeek, isSeason, experts.data, users.data, games.data, personaQ.data, persona])
+  }, [ready, effFrom, boardEntries, boards.data, week, pos, currentWeek, isSeason, experts.data, users.data, games.data])
 
   const seq = useMemo(() => items ?? [], [items])
   const orderDirty = !readOnly && items !== null && orderChanged(seq, savedSeq)
@@ -526,14 +507,13 @@ export function RankingEditor({
 
   const loadError =
     !locked &&
-    ((boards.isError && (!isSeason || personaListId !== null)) ||
-      boardQ.isError || (effFrom === 'experts' && experts.isError) || (effFrom === 'users' && users.isError) || (personaListId !== null && personaQ.isError))
+    ((boards.isError && !isSeason) ||
+      boardQ.isError || (effFrom === 'experts' && experts.isError) || (effFrom === 'users' && users.isError))
   const retry = () => {
     if (boards.isError) void boards.refetch()
     if (boardQ.isError) void boardQ.refetch()
     if (experts.isError) experts.refetch()
     if (users.isError) void users.refetch()
-    if (personaQ.isError) void personaQ.refetch()
   }
   const loading = !locked && !missingPast && items === null
   const dragPlayer = dragId ? playerOf(dragId) : undefined
