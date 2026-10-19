@@ -150,6 +150,30 @@ export function RoundNavButton({
 }
 
 /**
+ * A page's bar (the handoff's G pages — League settings, Draft results, My
+ * team): a 52px row with the blue back chevron, the title centred as the
+ * screen's h1 and a spacer, over a b3 hairline. `onBack` decides where Back
+ * goes (`useGoBack` — where you came from, else the page's parent).
+ */
+export function MPageBar({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="flex h-[52px] items-center gap-2 border-b border-m-b3 px-3">
+      <button
+        type="button"
+        onClick={onBack}
+        aria-label="Back"
+        className="flex size-9 flex-none items-center justify-center rounded-full text-accent active:bg-m-b2"
+        data-page-back
+      >
+        <MIcon name="back" size={18} stroke={2} />
+      </button>
+      <h1 className="flex-1 text-center text-[16px] font-semibold text-m-t1">{title}</h1>
+      <span className="w-9 flex-none" aria-hidden />
+    </div>
+  )
+}
+
+/**
  * A mobile screen: a sticky header over the scrolling body, edge to edge
  * (it undoes the shell's gutter) and clear of the bottom dock.
  */

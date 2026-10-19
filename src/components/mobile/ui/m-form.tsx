@@ -325,37 +325,76 @@ export function MSelect({
 /**
  * − value + (extends the design: round 28px buttons on the page colour, so
  * the stepper reads on a b1 card). `tile` spreads the buttons across a slot
- * tile with a bigger count; `pill` packs them on a page-colour track.
+ * tile with a bigger count; `pill` packs them on a page-colour track;
+ * `field` packs them on a b2 track, for a row on the page itself (where the
+ * page-colour track would vanish — the number field's fill).
+ *
+ * `step` (default 1) and `format` (default the plain number) let it carry a
+ * decimal value — a scoring setting's "+0.04"; `min` / `max` default to no
+ * bound, and `disabled` turns both buttons off.
  */
 export function MStepper({
   value,
-  min,
-  max,
+  min = Number.NEGATIVE_INFINITY,
+  max = Number.POSITIVE_INFINITY,
+  step = 1,
+  format = String,
   onStep,
   ariaLabel,
   appearance = 'pill',
+  disabled = false,
+  valueClassName,
 }: {
   value: number
-  min: number
-  max: number
+  min?: number
+  max?: number
+  step?: number
+  format?: (value: number) => string
   onStep: (next: number) => void
   ariaLabel: string
-  appearance?: 'pill' | 'tile'
+  appearance?: 'pill' | 'tile' | 'field'
+  disabled?: boolean
+  /** The count's colour / width, when the caller's value needs one. */
+  valueClassName?: string
 }) {
   const tile = appearance === 'tile'
+  const field = appearance === 'field'
   const button = cn(
     'flex size-7 flex-none items-center justify-center rounded-full text-m-t1 disabled:opacity-35',
-    tile ? 'bg-m-b0 active:bg-m-b2' : 'active:bg-m-b2',
+    tile ? 'bg-m-b0 active:bg-m-b2' : field ? 'active:bg-m-b2h' : 'active:bg-m-b2',
   )
   return (
-    <span className={cn('flex items-center', tile ? 'justify-between gap-1' : 'gap-0.5 rounded-pill bg-m-b0 p-[3px]')}>
-      <button type="button" className={button} aria-label={`Fewer: ${ariaLabel}`} disabled={value <= min} onClick={() => onStep(value - 1)}>
+    <span
+      className={cn(
+        'flex items-center',
+        tile ? 'justify-between gap-1' : cn('gap-0.5 rounded-pill p-[3px]', field ? 'bg-m-b2' : 'bg-m-b0'),
+      )}
+    >
+      <button
+        type="button"
+        className={button}
+        aria-label={`Fewer: ${ariaLabel}`}
+        disabled={disabled || value <= min}
+        onClick={() => onStep(value - step)}
+      >
         <MIcon name="drop" size={12} stroke={2.2} />
       </button>
-      <span className={cn('text-center font-semibold tabular-nums text-m-t1', tile ? 'min-w-5 text-[16px]' : 'min-w-[30px] text-[14px]')}>
-        {value}
+      <span
+        className={cn(
+          'text-center font-semibold tabular-nums',
+          tile ? 'min-w-5 text-[16px]' : 'min-w-[30px] text-[14px]',
+          valueClassName ?? 'text-m-t1',
+        )}
+      >
+        {format(value)}
       </span>
-      <button type="button" className={button} aria-label={`More: ${ariaLabel}`} disabled={value >= max} onClick={() => onStep(value + 1)}>
+      <button
+        type="button"
+        className={button}
+        aria-label={`More: ${ariaLabel}`}
+        disabled={disabled || value >= max}
+        onClick={() => onStep(value + step)}
+      >
         <MIcon name="plus" size={12} stroke={2.2} />
       </button>
     </span>

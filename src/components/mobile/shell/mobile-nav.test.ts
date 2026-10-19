@@ -66,9 +66,7 @@ describe('leagueTabHref', () => {
 })
 
 describe('mobileFallback — account pages with no mobile screen yet', () => {
-  it('titles them, with Settings returning to Profile, its sub-pages to Settings and the rest to Home', () => {
-    expect(mobileFallback('/app/settings')).toEqual({ kind: 'account', title: 'Settings', parent: '/app/profile', heading: true })
-    expect(mobileFallback('/app/settings/scoring')).toEqual({ kind: 'account', title: 'Scoring', parent: '/app/settings', heading: true })
+  it('titles them, each returning Home', () => {
     expect(mobileFallback('/app/mocks')).toEqual({ kind: 'account', title: 'Mock drafts', parent: '/app', heading: true })
     expect(mobileFallback('/app/mocks/m1/report')?.title).toBe('Mock draft report')
     expect(mobileFallback('/app/leagues')?.title).toBe('Leagues')
@@ -78,6 +76,11 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
   })
   it('leaves screens with their own mobile header alone', () => {
     for (const path of ['/app', '/app/profile', '/app/lists', '/app/lists/new', '/app/weekly-ranks', '/app/start-or-sit', '/app/research', '/app/messages', '/app/notifications', '/app/mocks/m1', '/app/explore', '/app/explore/latest']) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
+  })
+  it('leaves Settings and its pages to their own phone screens (gap list §4 item 101)', () => {
+    for (const path of ['/app/settings', '/app/settings/', '/app/settings/scoring', '/app/settings/billing']) {
       expect(mobileFallback(path), path).toBeNull()
     }
   })

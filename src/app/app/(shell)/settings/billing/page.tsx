@@ -3,6 +3,14 @@
 import { useRouter } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileBillingSettings } from '@/components/mobile/settings/mobile-billing-settings'
+import {
+  CHECKOUT_SOON_TOAST,
+  PRO_FEATURES,
+  PRO_PLAN_COPY,
+  proStatusLine,
+} from '@/components/settings/account-settings-ops'
 import { AIInsight } from '@/components/ui/ai-insight'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,23 +19,22 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 
-// Private lists are unlimited for everyone (Chris, 2026-10-15 — Pro rules
-// suspended), so they are no longer listed as a Pro perk.
-const PRO_FEATURES = [
-  'Unlimited teams',
-  'Rank every position, every week',
-  'Leagues — create and join',
-  'Custom scoring systems',
-]
-
 /**
- * Pro subscription — outside-the-nav settings page, in the v7 Account
- * settings language (14px bold section title over a hairline-bordered
- * group). The upgrade CTA is an accent-blue Pro moment in the Scout AI
- * voice. Pro is suspended for launch — restyled only; copy and gating
- * unchanged.
+ * Pro subscription. The phone draws its own screen on the same data
+ * (`MobileBillingSettings`, gap list §4 item 101); desktop is unchanged.
  */
 export default function BillingSettingsPage() {
+  return <ByLayout desktop={<DesktopBillingSettings />} mobile={<MobileBillingSettings />} />
+}
+
+/**
+ * Desktop Pro subscription — outside-the-nav settings page, in the v7
+ * Account settings language (14px bold section title over a
+ * hairline-bordered group). The upgrade CTA is an accent-blue Pro moment in
+ * the Scout AI voice. Pro is suspended for launch — restyled only; copy and
+ * gating unchanged.
+ */
+function DesktopBillingSettings() {
   const router = useRouter()
   const { profile, isLoading } = useAuth()
   const { toast } = useToast()
@@ -51,12 +58,10 @@ export default function BillingSettingsPage() {
         <PlanSection badge={<Badge variant="accent">Pro</Badge>}>
           <div className="px-3.5 py-3">
             <p className="text-[12px] font-bold leading-tight text-ink">
-              You&apos;re on FieldScout Pro
+              {PRO_PLAN_COPY.proTitle}
             </p>
             <p className="mt-0.5 text-[10px] font-medium text-n-6">
-              {profile.subscription_status
-                ? `Subscription status: ${profile.subscription_status}`
-                : 'Every scouting tool is unlocked.'}
+              {proStatusLine(profile.subscription_status)}
             </p>
           </div>
           <ul className="space-y-2 border-t border-n-4 px-3.5 py-3">
@@ -74,19 +79,15 @@ export default function BillingSettingsPage() {
               </li>
             ))}
           </ul>
-          {/* TODO(stripe): link the Stripe customer portal once billing
-              management ships. */}
           <p className="border-t border-n-4 px-3.5 py-3 text-[10px] font-medium text-n-6">
-            Billing management is on the way — invoices and plan changes will
-            live here.
+            {PRO_PLAN_COPY.proBillingSoon}
           </p>
         </PlanSection>
       ) : (
         <PlanSection badge={<Badge variant="stroke">Free</Badge>}>
           <div className="px-3.5 py-3">
-            <AIInsight heading="Go Pro — unlock the full scouting department.">
-              Unlimited teams, every weekly position, leagues, and scoring
-              built your way.
+            <AIInsight heading={PRO_PLAN_COPY.freeHeading}>
+              {PRO_PLAN_COPY.freeBody}
             </AIInsight>
 
             <ul className="mt-3 space-y-2">
@@ -110,13 +111,7 @@ export default function BillingSettingsPage() {
                 Checkout here when billing ships. */}
             <Button
               variant="blue"
-              onClick={() =>
-                toast({
-                  title: 'Checkout is almost ready',
-                  description:
-                    'Pro upgrades open soon — your scouting file is safe with us.',
-                })
-              }
+              onClick={() => toast(CHECKOUT_SOON_TOAST)}
             >
               <Icon name="star" size={14} />
               Upgrade to Pro
