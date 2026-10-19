@@ -12,6 +12,7 @@ import {
   ownershipNeedsRosters,
   ownershipSummary,
   preDraftFor,
+  PRESS,
   type GameCard,
   type LeagueOwnership,
 } from '@/components/mobile/player/profile-ops'
@@ -32,6 +33,8 @@ import { cn } from '@/lib/utils'
 
 /** One card (200) plus the gap (8) — the prev / next step (§3). */
 const CARD_STEP = 208
+/** The Games prev / next buttons. */
+const STEP = 'flex size-[26px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1'
 
 /**
  * Summary (m-pprofile §2.5): the ownership row, Key stats and Games and
@@ -142,7 +145,9 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 /** A collapsible section's header row (§2.5b): the whole row toggles; the
- *  title is the accessible button. */
+ *  title is the accessible button. Pressed, the row tints (8px past its
+ *  edges, the layout unmoved) — but not while a button of its own (Games'
+ *  prev / next, `data-row-own`) is the one pressed. */
 function SectionHead({
   title,
   sub,
@@ -159,7 +164,15 @@ function SectionHead({
   return (
     // The row is the touch target (as in the design); the title button
     // carries the keyboard and screen-reader semantics.
-    <div className="flex cursor-pointer items-center gap-2" onClick={onToggle}>
+    <div
+      className={cn(
+        '-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1',
+        PRESS.page,
+        'has-[[data-row-own]:active]:bg-transparent',
+      )}
+      onClick={onToggle}
+      data-profile-section-head
+    >
       <button type="button" aria-expanded={open} className="flex-1 text-left text-[15px] font-semibold">
         {title}
       </button>
@@ -187,7 +200,7 @@ function OwnershipRow({ pool, ctx, onOpen }: { pool: PoolPlayer; ctx: ReturnType
       <button
         type="button"
         onClick={onOpen}
-        className="flex items-center gap-2.5 rounded-[12px] bg-m-b1 px-3 py-2.5 text-left"
+        className={cn('flex items-center gap-2.5 rounded-[12px] bg-m-b1 px-3 py-2.5 text-left', PRESS.card)}
         data-profile-ownership
       >
         {ctx.leagueId ? (
@@ -300,10 +313,10 @@ function GamesSection({
   return (
     <section className="flex flex-col gap-2.5" data-profile-section="games">
       <SectionHead title="Games and projections" open={open} onToggle={() => onToggle(section)}>
-        <button type="button" aria-label="Earlier weeks" onClick={step(-1)} className="flex size-[26px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1">
+        <button type="button" aria-label="Earlier weeks" onClick={step(-1)} className={cn(STEP, PRESS.control)} data-row-own>
           <MIcon name="back" size={10} stroke={2.4} />
         </button>
-        <button type="button" aria-label="Later weeks" onClick={step(1)} className="flex size-[26px] flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1">
+        <button type="button" aria-label="Later weeks" onClick={step(1)} className={cn(STEP, PRESS.control)} data-row-own>
           <MIcon name="chevronRight" size={10} stroke={2.4} />
         </button>
       </SectionHead>

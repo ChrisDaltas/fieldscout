@@ -41,6 +41,37 @@ import {
 export const DASH = '–'
 
 // ---------------------------------------------------------------------------
+// Pressed tints (gap list §4 item 18)
+// ---------------------------------------------------------------------------
+
+/**
+ * What every tappable thing on the profile turns while pressed — the spec's
+ * open question ("should profile buttons and rows get the standard pressed
+ * state?", m-pprofile §3) answered yes. The prototype's own `style-active`
+ * per fill, which its profile markup never declared:
+ * - on the page (tabs, section rows, a depth-chart name): b2 (`#F2F2F4`)
+ * - a b1 card (the ownership row): b2h (`#EDEDF0`, its tiles and cards)
+ * - a b2 control (pills, chips, round buttons): b3s (`#E5E5EA`, its sheet
+ *   close; v7's `surface.pressed`). Not b2h: that equals b2 in phone dark
+ *   mode, so the press would not show there.
+ * - blue: accent-strong (`#0074DB`); green: confirm-hover (v7's buttons)
+ * - gold, ink and the red tint have no darker token: the fill thins to 70%.
+ * A tint, never a shadow (elevation is hover-only). A selected chip has none —
+ * tapping it changes nothing; a dimmed (closed) pill keeps its tint, since
+ * tapping it says why.
+ */
+export const PRESS = {
+  page: 'active:bg-m-b2',
+  card: 'active:bg-m-b2h',
+  control: 'active:bg-m-b3s',
+  accent: 'active:bg-accent-strong',
+  confirm: 'active:bg-confirm-hover',
+  gold: 'active:bg-m-gold/70',
+  ink: 'active:bg-m-ink/70',
+  danger: 'active:bg-m-gr/70',
+} as const
+
+// ---------------------------------------------------------------------------
 // Header (§2.1)
 // ---------------------------------------------------------------------------
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import type { MoveSheetKind } from '@/components/mobile/player/player-move-sheet'
-import { clearsDay, movesTimeline, preDraftFor, shortDate, type MoveKind, type ProfileMove } from '@/components/mobile/player/profile-ops'
+import { clearsDay, movesTimeline, preDraftFor, PRESS, shortDate, type MoveKind, type ProfileMove } from '@/components/mobile/player/profile-ops'
 import { useProfileUiStore } from '@/components/mobile/player/profile-ui-store'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { useCardLeagueView } from '@/components/players/player-card-actions'
@@ -130,7 +130,7 @@ function LeagueRow({
         const trade = v.trade
         button = {
           label: 'Trade',
-          cls: 'bg-accent',
+          cls: cn('bg-accent', PRESS.accent),
           open: trade.open,
           reason: trade.open ? undefined : trade.reason,
           run: () => onTrade(league.id, v.teamId),
@@ -145,7 +145,7 @@ function LeagueRow({
         const claim = v.acquire.kind === 'claim' || (v.acquire.kind === 'none' && waivers)
         button = {
           label: claim ? 'Claim' : 'Add',
-          cls: claim ? 'bg-m-gold' : 'bg-confirm',
+          cls: claim ? cn('bg-m-gold', PRESS.gold) : cn('bg-confirm', PRESS.confirm),
           open: !v.acquire.disabled,
           reason: v.acquire.disabled ? v.acquire.title : undefined,
           run: () => onMove('acquire', league.id),
@@ -234,7 +234,8 @@ export function QueueButton({
       className={cn(
         'flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill px-3.5 font-semibold disabled:cursor-default',
         header ? 'text-[13px]' : 'text-[12px]',
-        queued ? 'bg-m-b2 text-m-t3' : 'bg-m-ink text-white disabled:opacity-40',
+        // Pressed: the ink thins (no darker ink token); queued, it is disabled.
+        queued ? 'bg-m-b2 text-m-t3' : cn('bg-m-ink text-white disabled:opacity-40', PRESS.ink),
       )}
       data-profile-queue={variant}
     >
@@ -313,7 +314,7 @@ export function TransactionsTab({
             onClick={() => setFilter(c.id)}
             className={cn(
               'flex h-[30px] flex-none items-center whitespace-nowrap rounded-pill px-3 text-[12px] font-semibold',
-              filter === c.id ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1',
+              filter === c.id ? 'bg-m-ink text-white' : cn('bg-m-b2 text-m-t1', PRESS.control),
             )}
           >
             {c.name}

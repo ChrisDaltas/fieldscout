@@ -13,6 +13,7 @@ import {
   bioLine,
   currentWeekOf,
   headerColors,
+  PRESS,
   scoringChipLabel,
   scoringChipName,
   statusPill,
@@ -196,7 +197,7 @@ function ProfileBody({
               type="button"
               disabled={isFetching}
               onClick={() => void refetch()}
-              className="mt-3 h-9 rounded-pill bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 disabled:opacity-40"
+              className={cn('mt-3 h-9 rounded-pill bg-m-b2 px-4 text-[13px] font-semibold text-m-t1 disabled:opacity-40', PRESS.control)}
             >
               Try again
             </button>
@@ -212,7 +213,7 @@ function PlainHeader({ nav, title }: { nav: ProfileNav; title: string }) {
   return (
     <div className="flex flex-none items-center gap-1.5 bg-m-b1 px-4 pb-3 pt-2">
       <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
-      <NavButton nav={nav} className="bg-m-b2 text-m-t1" />
+      <NavButton nav={nav} className={cn('bg-m-b2 text-m-t1', PRESS.control)} />
     </div>
   )
 }
@@ -239,7 +240,7 @@ function ProfileLoading({ nav }: { nav: ProfileNav }) {
     <div aria-busy="true" className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-none flex-col gap-2.5 bg-m-b1 px-4 pb-3 pt-2">
         <DialogPrimitive.Title className="sr-only">Loading player</DialogPrimitive.Title>
-        <NavButton nav={nav} className="bg-m-b2 text-m-t1" />
+        <NavButton nav={nav} className={cn('bg-m-b2 text-m-t1', PRESS.control)} />
         <div className="flex items-center gap-3">
           <span className="size-16 flex-none animate-pulse rounded-full bg-m-b2" />
           <span className="flex flex-1 flex-col gap-2">
@@ -378,10 +379,13 @@ export function ProfileLoaded({
               aria-controls={on ? panelId : undefined}
               tabIndex={on ? 0 : -1}
               onClick={() => pick(t.key)}
-              className={cn('relative flex h-10 flex-none items-center whitespace-nowrap text-[13px] font-semibold', on ? 'text-m-t1' : 'text-m-t3')}
+              className={cn('group relative flex h-10 flex-none items-center whitespace-nowrap text-[13px] font-semibold', on ? 'text-m-t1' : 'text-m-t3')}
               data-profile-tab={t.key}
             >
-              {t.label}
+              {/* Pressed: a soft pill behind the word, 8px past it each side
+                  (the strip's 18px gap keeps neighbours apart); the word and
+                  its underline do not move. */}
+              <span className="-mx-2 flex h-7 items-center rounded-pill px-2 group-active:bg-m-b2">{t.label}</span>
               {on && <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-m-ink" />}
             </button>
           )
@@ -601,7 +605,8 @@ function ProfileHeader({
       data-profile-header
     >
       <div className="flex items-center gap-1.5">
-        <NavButton nav={nav} className={light ? 'bg-black/[.08]' : 'bg-white/[.16]'} />
+        {/* On the team colour: the same see-through fill, twice as strong when pressed. */}
+        <NavButton nav={nav} className={light ? 'bg-black/[.08] active:bg-black/[.16]' : 'bg-white/[.16] active:bg-white/[.28]'} />
         {draft ? (
           <QueueButton
             variant="header"
@@ -619,7 +624,7 @@ function ProfileHeader({
           onClick={onList}
           title="Add to list"
           aria-label={`Add ${player.full_name} to a list`}
-          className="flex h-[30px] flex-none items-center gap-[5px] rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-m-t1"
+          className={cn('flex h-[30px] flex-none items-center gap-[5px] rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-m-t1', PRESS.control)}
           data-profile-list
         >
           <MIcon name="add" size={11} stroke={2.4} />
@@ -631,7 +636,7 @@ function ProfileHeader({
             onClick={removal.remove}
             disabled={removal.pending}
             aria-label={`Remove ${player.full_name} from the list`}
-            className="flex h-[30px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-m-red disabled:opacity-40"
+            className={cn('flex h-[30px] flex-none items-center rounded-pill bg-m-b2 px-3 text-[13px] font-semibold text-m-red disabled:opacity-40', PRESS.control)}
             data-profile-remove
           >
             {removal.pending ? 'Removing…' : 'Remove'}
@@ -709,14 +714,14 @@ function HeaderAction({
       {label}
     </button>
   )
-  if (v.kind === 'mine') return pill('Drop', 'bg-m-gr text-m-tr', v.drop.open, v.drop.open ? undefined : v.drop.reason, () => onMove('drop', leagueId))
+  if (v.kind === 'mine') return pill('Drop', cn('bg-m-gr text-m-tr', PRESS.danger), v.drop.open, v.drop.open ? undefined : v.drop.reason, () => onMove('drop', leagueId))
   if (v.kind === 'theirs') {
-    return pill('Propose trade', 'bg-accent text-white', v.trade.open, v.trade.open ? undefined : v.trade.reason, () => onTrade(leagueId, v.teamId))
+    return pill('Propose trade', cn('bg-accent text-white', PRESS.accent), v.trade.open, v.trade.open ? undefined : v.trade.reason, () => onTrade(leagueId, v.teamId))
   }
   const claim = v.acquire.kind === 'claim' || (v.acquire.kind === 'none' && v.row.availability.kind === 'on_waivers')
   return pill(
     claim ? 'Claim off waivers' : 'Add',
-    claim ? 'bg-m-gold text-white' : 'bg-confirm text-white',
+    claim ? cn('bg-m-gold text-white', PRESS.gold) : cn('bg-confirm text-white', PRESS.confirm),
     !v.acquire.disabled,
     v.acquire.disabled ? v.acquire.title : undefined,
     () => onMove('acquire', leagueId),
@@ -774,7 +779,7 @@ function StatStrip({
               data-profile-scoring={scoring.value}
             >
               {/* 20px drawn, 18px of layout: its label sits on the numbers' label line. */}
-              <span className="-my-px flex h-5 items-center gap-[3px] whitespace-nowrap rounded-pill bg-m-b2 pl-2 pr-1.5 text-[11px] font-semibold text-m-t1 group-active:bg-m-b2h">
+              <span className="-my-px flex h-5 items-center gap-[3px] whitespace-nowrap rounded-pill bg-m-b2 pl-2 pr-1.5 text-[11px] font-semibold text-m-t1 group-active:bg-m-b3s">
                 {scoringChipLabel(scoring.choice)}
                 <MIcon name="chevronDown" size={8} stroke={2.4} />
               </span>

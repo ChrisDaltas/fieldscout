@@ -35,7 +35,7 @@ import type { CoreStatsPayload } from '@/lib/players/core-stats-ops'
 import { ProfileLoaded } from './mobile-player-profile'
 import { useProfileUiStore } from './profile-ui-store'
 import { HistoryTab, GameLogTab, TeamTab } from './profile-stats-tabs'
-import { LeaguesTab, QueueButton } from './profile-leagues'
+import { LeaguesTab, QueueButton, TransactionsTab } from './profile-leagues'
 
 const html = (el: ReactElement, qc: QueryClient) =>
   renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(DialogPrimitive.Root, { open: true }, el)))
@@ -115,6 +115,17 @@ function seeded(): QueryClient {
 }
 
 const target = { playerId: 'p1', leagueId: null, listContext: null }
+
+/** Every button in the markup that can be tapped to do something — not a
+ *  selected chip (tapping it changes nothing) and not a disabled one — with
+ *  its opening tag and whether it tints when pressed (gap list §4 item 18):
+ *  itself, the label inside it, or the tappable row it opens (a section
+ *  row's title button). */
+function pressables(out: string): Array<{ tag: string; tints: boolean }> {
+  return [...out.matchAll(/(<div class="[^"]*\bactive:bg-[^"]*"[^>]*>)?(<button\b[^>]*>)([\s\S]*?)<\/button>/g)]
+    .filter(([, , tag]) => !/aria-pressed="true"|disabled=""/.test(tag!))
+    .map(([, row, tag, inner]) => ({ tag: tag!, tints: !!row || /\bactive:bg-/.test(tag!) || /\bgroup-active:bg-/.test(inner!) }))
+}
 
 describe('mobile player profile — leagues gated off', () => {
   beforeEach(() => {
@@ -471,5 +482,114 @@ describe('mobile player profile — leagues on', () => {
     expect(html(createElement(QueueButton, props), qc)).toMatch(/disabled=""[^>]*data-profile-queue="header"[^>]*>In your queue</)
     // No read yet: the pill waits rather than treating the queue as empty.
     expect(html(createElement(QueueButton, { ...props, draftId: 'd2' }), qc)).toMatch(/disabled=""[^>]*>Add to queue</)
+  })
+
+  describe('pressed tints (gap list §4 item 18)', () => {
+    const pool = { id: 'p1', full_name: 'Bijan Robinson', position: 'RB', team: 'ATL', adp: 3, headshot_url: null, status: null }
+    const theirs = () => {
+      const qc = inLeague()
+      qc.setQueryData(['league-rosters', 'L1'], {
+        league_id: 'L1',
+        season: 2026,
+        teams: [
+          { team_id: 't1', name: 'Touchdown Tacos', owner_id: 'u1', status: 'active', manager_user_id: 'u1', autopilot: false, faab_balance: null, waiver_priority: 1, roster: [] },
+          { team_id: 't2', name: 'Gridiron Gurus', owner_id: 'u2', status: 'active', manager_user_id: 'u2', autopilot: false, faab_balance: null, waiver_priority: 2, roster: [rosterPlayer] },
+        ],
+      })
+      return qc
+    }
+
+    it('header: Close, + List and the Drop pill tint; the tabs and the scoring chip tint behind their words', () => {
+      const out = html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), inLeague())
+      // ATL's red takes white text: the see-through close fill doubles when pressed.
+      expect(out).toMatch(/<button[^>]*class="[^"]*bg-white\/\[\.16\][^"]*active:bg-white\/\[\.28\][^"]*"[^>]*data-profile-close/)
+      // A b2 control presses to b3s — b2h would not show in phone dark mode (b2h = b2 there).
+      expect(out).toMatch(/class="[^"]*bg-m-b2 [^"]*active:bg-m-b3s[^"]*"[^>]*data-profile-list/)
+      expect(out).toMatch(/class="[^"]*bg-m-gr text-m-tr active:bg-m-gr\/70[^"]*"[^>]*data-profile-action="mine"/)
+      for (const tab of ['summary', 'log', 'leagues', 'tx', 'team', 'history']) {
+        expect(out).toMatch(new RegExp(`class="group [^"]*"[^>]*data-profile-tab="${tab}"><span class="[^"]*rounded-pill[^"]*group-active:bg-m-b2"`))
+      }
+      expect(out).toMatch(/data-profile-scoring="league:L1"><span class="[^"]*bg-m-b2 [^"]*group-active:bg-m-b3s"/)
+    })
+
+    it('summary: the ownership row, the section rows (not under their own buttons) and Games’ prev / next', () => {
+      const out = html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), inLeague())
+      expect(out).toMatch(/class="[^"]*bg-m-b1 [^"]*active:bg-m-b2h"[^>]*data-profile-ownership/)
+      const heads = [...out.matchAll(/<div class="([^"]*)" data-profile-section-head/g)].map((m) => m[1]!)
+      expect(heads).toHaveLength(2)
+      for (const cls of heads) {
+        expect(cls).toContain('active:bg-m-b2')
+        // Pressing prev / next presses the row too (:active climbs): the row stays clear.
+        expect(cls).toContain('has-[[data-row-own]:active]:bg-transparent')
+      }
+      expect([...out.matchAll(/aria-label="(Earlier|Later) weeks" class="[^"]*bg-m-b2 [^"]*active:bg-m-b3s"[^>]*data-row-own/g)]).toHaveLength(2)
+    })
+
+    it('another team’s player: Propose trade presses to the strong blue', () => {
+      const out = html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), theirs())
+      expect(out).toMatch(/class="[^"]*bg-accent text-white active:bg-accent-strong[^"]*"[^>]*data-profile-action="theirs"/)
+    })
+
+    it('season chips: the others tint, the chosen one does not (tapping it changes nothing)', () => {
+      const out = html(
+        createElement(GameLogTab, {
+          player,
+          season: 2026,
+          year: 2026,
+          onYear: () => {},
+          choice: { kind: 'system', system: 'espn_standard' },
+          core,
+          schedule: [],
+          lines,
+          linesState: 'ready',
+        }),
+        seeded(),
+      )
+      expect(out).toMatch(/aria-pressed="false" class="[^"]*bg-m-b2 text-m-t1 active:bg-m-b3s"[^>]*>2025</)
+      const chosen = out.match(/<button[^>]*aria-pressed="true"[^>]*>2026</)?.[0] ?? ''
+      expect(chosen).toContain('bg-m-ink')
+      expect(chosen).not.toContain('active:')
+    })
+
+    it('league rows: Trade, and the league filter chips', () => {
+      const leagues = html(
+        createElement(LeaguesTab, { player, pool, leagues: [league], pending: false, error: false, onMove: () => {}, onTrade: () => {} }),
+        theirs(),
+      )
+      expect(leagues).toMatch(/class="[^"]*bg-accent active:bg-accent-strong[^"]*">Trade</)
+      const tx = html(createElement(TransactionsTab, { playerId: 'p1', leagues: [league], pending: false, error: false }), inLeague())
+      expect(tx).toMatch(/aria-pressed="true" class="[^"]*bg-m-ink text-white"[^>]*>All leagues</)
+      expect(tx).toMatch(/aria-pressed="false" class="[^"]*bg-m-b2 text-m-t1 active:bg-m-b3s"[^>]*>Sunday Funday League</)
+    })
+
+    it('Add to queue: the ink thins when pressed', () => {
+      const qc = inLeague()
+      qc.setQueryData(draftQueueKeys.queue('d1', 't1'), [])
+      const out = html(createElement(QueueButton, { leagueId: 'L1', leagueName: 'Sunday Funday League', draftId: 'd1', teamId: 't1', playerId: 'p1' }), qc)
+      expect(out).toMatch(/class="[^"]*bg-m-ink text-white [^"]*active:bg-m-ink\/70[^"]*"[^>]*>Add to queue</)
+    })
+
+    it('census: every button the profile can tap tints when pressed — and none lifts', () => {
+      const qc = inLeague()
+      qc.setQueryData(['mobile-pprofile-depth-chart', 'ATL'], [
+        { id: 'p1', full_name: 'Bijan Robinson', first_name: 'Bijan', last_name: 'Robinson', position: 'RB', birth_date: '2002-01-30', depth_chart_position: 'RB', depth_chart_order: 1 },
+        { id: 'p2', full_name: 'Tyler Allgeier', first_name: 'Tyler', last_name: 'Allgeier', position: 'RB', birth_date: '2000-04-15', depth_chart_position: 'RB', depth_chart_order: 2 },
+      ])
+      const outs = [
+        html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), qc),
+        html(createElement(ProfileLoaded, { data, target: { ...target, leagueId: 'L1' }, onClose: () => {} }), theirs()),
+        html(
+          createElement(GameLogTab, { player, season: 2026, year: 2026, onYear: () => {}, choice: { kind: 'system', system: 'espn_standard' }, core, schedule: [], lines, linesState: 'ready' }),
+          qc,
+        ),
+        html(createElement(LeaguesTab, { player, pool, leagues: [league], pending: false, error: false, onMove: () => {}, onTrade: () => {} }), theirs()),
+        html(createElement(TransactionsTab, { playerId: 'p1', leagues: [league], pending: false, error: false }), qc),
+        html(createElement(TeamTab, { player, onOpenPlayer: () => {} }), qc),
+      ]
+      const all = outs.flatMap(pressables)
+      expect(all.length).toBeGreaterThan(20)
+      expect(all.filter((b) => !b.tints).map((b) => b.tag)).toEqual([])
+      for (const out of outs) expect(out).not.toMatch(/active:shadow|hover:shadow/)
+    })
   })
 })

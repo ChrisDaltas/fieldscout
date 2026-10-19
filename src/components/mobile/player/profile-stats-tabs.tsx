@@ -8,6 +8,7 @@ import {
   depthChart,
   gameLogTable,
   pastSeasonRules,
+  PRESS,
   seasonsWithLines,
   type CellKind,
   type StatsTable,
@@ -80,7 +81,10 @@ export function GameLogTab({
             type="button"
             aria-pressed={y === year}
             onClick={() => onYear(y)}
-            className={cn('flex h-[30px] items-center rounded-pill px-3.5 text-[12px] font-semibold', y === year ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1')}
+            className={cn(
+              'flex h-[30px] items-center rounded-pill px-3.5 text-[12px] font-semibold',
+              y === year ? 'bg-m-ink text-white' : cn('bg-m-b2 text-m-t1', PRESS.control),
+            )}
           >
             {y}
           </button>
@@ -297,7 +301,7 @@ export function TeamTab({ player, onOpenPlayer }: { player: PlayerStatsPlayer; o
                       type="button"
                       onClick={() => onOpenPlayer(c.playerId)}
                       aria-label={`Open ${c.name}`}
-                      className="-mx-1 -my-0.5 flex min-w-0 flex-col rounded-[6px] px-1 py-0.5 text-left active:bg-m-b2"
+                      className={cn('-mx-1 -my-0.5 flex min-w-0 flex-col rounded-[6px] px-1 py-0.5 text-left', PRESS.page)}
                       data-depth-player={c.playerId}
                     >
                       <span className="w-full truncate text-[10px] font-medium leading-3 text-m-t3">{c.first}</span>
