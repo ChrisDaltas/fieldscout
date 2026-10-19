@@ -9,12 +9,24 @@
 
 ---
 
-## Active: **M8 — Platform Admin Console** *(breakdown APPROVED by Chris 2026-10-08 with rulings on Q95–Q102; PR #394)*
+## Active: **M7 — Hardening & GA** *(breakdown APPROVED by Chris 2026-10-19 — "do M7 next", after M8 — with his 2026-10-02/03 rulings on Q88–Q94; PR #391)*
+
+- **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M7-hardening-ga.md` §6 (+ its APPROVED note and §11 rulings — Q88 (a) 2026 size now, GA size before launch; Q89 (a) a separate hosted test project; Q90 (c) internal review now, outside before launch; Q91 none until launch, refined by Q102 — M8's `job_pauses` is the one mechanism, M7 adds only the automatic / alert side at launch; Q92 (a) the 2026 test leagues count; Q93 none of the Phase F extras; Q94 M8 first). **Memory:** `docs/specs/PROGRESS-leagues.md` (§2 M7 checklist). **Task-id prefix:** `L.F*` (`L.F1.*` Phase F polish, `L.F2.*` hardening / GA).
+- **NEXT TAKEABLE TASKS (per breakdown §7):** DB lane **`L.F2.6`** (rate limits) → L.F2.3 → L.F2.8 → L.F2.12; parallel lane (no local DB) **`L.F2.1`** (k6 scripts), **`L.F2.7`** (internal security review), **`L.F1.1`**, **`L.F1.4`**, **`L.F2.9`**, **`L.F2.11`**; test-project lane L.F2.2 → L.F2.10 (waits on C1). *(L.F2.0 landed 2026-10-19 — spec v2.16.100, PR #506.)*
+- **Blocked on Chris (outside the repo — breakdown §12):** **C1, the hosted test project** — blocks L.F2.2, L.F2.10 and L.F2.1's smoke run (and M8's L.G2.1). Do not take them until Chris says it is ready.
+- **Pre-launch window — NOT takeable until Chris opens it (TD9):** L.F2.4 (alerts), L.F2.5 (automatic trips on `job_pauses`), L.F2.13 (GA-size load), L.F2.14 (outside security review), L.F2.15 (launch gate re-run).
+- **Process:** unchanged — the lighter pre-launch rule (Chris 2026-09-27): FULL rigour for scoring / standings / permissions / production writes; ONE PASS for UI / API / docs / e2e; no second re-review after a small fix round unless it touched scoring or permissions.
+
+---
+
+## Previous: **M8 — Platform Admin Console** *(breakdown APPROVED by Chris 2026-10-08 with rulings on Q95–Q102; PR #394)* — **superseded as the active build 2026-10-19 (Chris: "do M7 next").** *(As of 2026-10-19 PROGRESS §2 shows L.G2.1 (the postponed-game drill — needs the M7 C1 test project) and L.G2.2 (the M8 gate) unticked, and the L.G1.1 box unticked though D511 records it built.)*
 
 - **LAW:** `docs/specs/spec-redraft-leagues.md` (the version on main). **Task text:** `docs/specs/tasks-M8-admin-console.md` §6 (+ its APPROVED note and §11 rulings — Q95 `is_admin`, Chris the only admin; Q96 `/app/admin`, 404 to non-admins; Q97 three audiences, in-app bell only, email/push as future checkboxes; Q98 pause/resume/run-now for waivers, week advance, week finalize — lineup lock run-now only, no pause; drafts and stat sync no buttons; Q99 (a) no forced finalize, no `finalized_by`; Q100 three game statuses + `operator_hold`, answers Q37 / F243; Q101 (a) activity line signed "FieldScout"; Q102 manual buttons now, M7 adds the automatic side). **Memory:** `docs/specs/PROGRESS-leagues.md`. **Task-id prefix:** `L.G*` (`L.G1.*` operator tools, `L.G2.*` drill + gate).
-- **NEXT TAKEABLE TASK: `L.G1.0`** — spec fold-back of the M8 rulings (docs only, ONE PASS). Then L.G1.1 → L.G1.3 → L.G1.4 → L.G1.2 → L.G1.5 → L.G1.6 → L.G2.1 → L.G2.2 (breakdown §7).
+- ~~**NEXT TAKEABLE TASK: `L.G1.0`** — spec fold-back of the M8 rulings (docs only, ONE PASS). Then L.G1.1 → L.G1.3 → L.G1.4 → L.G1.2 → L.G1.5 → L.G1.6 → L.G2.1 → L.G2.2 (breakdown §7).~~ *(L.G1.0–L.G1.6 built; see the note in this heading.)*
 - **Process:** unchanged — the lighter pre-launch rule (Chris 2026-09-27): FULL rigour for scoring / standings / permissions / production writes; ONE PASS for UI / API / docs / e2e; no second re-review after a small fix round unless it touched scoring or permissions.
 - *(Carried from the previous "no active build" header: M6 closed 2026-10-02 — D473. Production at **177** (pushed 2026-10-02 by the orchestrator; live `score_write_week_batch` md5 = `3ea8ee6417852e5d46dc79e8093a1daf`). Push debt: **178** (F525 + F524, D474); post-push check: live `draft_queue_replace` md5 = `69d64cbdfb4e9cbbab15f6a46fead4a7` and `draft_queue_for_team` md5 = `ceba0b5ec0d9e5bedaa0ab22f1a77099` (pgTAP 126 A2), and both `draft_queues` policies name `league_members`, no `owner_id` (126 A5).)*)*
+
+
 
 
 ---
