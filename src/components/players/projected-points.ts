@@ -9,3 +9,12 @@
  * import.
  */
 export const PROJ_TEXT = 'text-fs-blue-deep'
+
+/**
+ * The same rule on the phone (gap list §4 item 15): the phone layout has a
+ * dark mode, where the fixed #0060C0 would sit dim on the #121212 page. The
+ * themed `m-proj` token is that same #0060C0 in light and the README's dark
+ * blue text (#6FB5FF) in dark (globals.css). Phone components apply this one,
+ * desktop ones `PROJ_TEXT`; neither class is written at a call site.
+ */
+export const M_PROJ_TEXT = 'text-m-proj'

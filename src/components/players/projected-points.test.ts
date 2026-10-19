@@ -1,12 +1,15 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
+import postcss, { type Declaration, type Rule } from 'postcss'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PlayerRow } from './player-row'
-import { PROJ_TEXT } from './projected-points'
+import { M_PROJ_TEXT, PROJ_TEXT } from './projected-points'
+
+import tailwindConfig from '../../../tailwind.config'
 
 /**
  * Projected points are ALWAYS dark blue (`fs-blue-deep`), site-wide, through
@@ -72,5 +75,106 @@ describe('projected points are dark blue, one mechanism (D497)', () => {
     )
     expect(html).toMatch(/text-fs-blue-deep[^>]*>12\.0</)
     expect(html).toMatch(/text-ink[^>]*>200</)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The phone (gap list §4 item 15)
+// ---------------------------------------------------------------------------
+
+/**
+ * The phone layout has a dark mode, so its projections take the themed
+ * `m-proj` token through `M_PROJ_TEXT`: D497's #0060C0 in light, the README's
+ * dark blue text #6FB5FF in dark (globals.css).
+ */
+const PHONE_SURFACES = [
+  'src/components/mobile/community/community-detail.tsx', // Community list detail: each player's projection
+]
+
+const ROOT = process.cwd()
+const css = postcss.parse(readFileSync(path.join(ROOT, 'src/app/globals.css'), 'utf8'))
+const LIGHT = ':root'
+const DARK = "html[data-theme='dark']"
+/** A page with no phone screen yet stays light in phone dark mode. */
+const LIGHT_RESET = "html[data-theme='dark'] main[data-app-main]:not(:has([data-by-layout]))"
+
+/** `--prop`'s value inside the rule whose selector is exactly `selector`. */
+function varIn(selector: string, prop: string): string | undefined {
+  let value: string | undefined
+  css.walkDecls(prop, (d: Declaration) => {
+    if ((d.parent as Rule).selector === selector) value = d.value
+  })
+  return value
+}
+
+/** `0 96 192` → `#0060C0`. */
+const hexOf = (channels: string) =>
+  `#${channels
+    .trim()
+    .split(/\s+/)
+    .map((c) => Number(c).toString(16).padStart(2, '0'))
+    .join('')}`.toUpperCase()
+
+/** WCAG relative luminance of a `r g b` channel triple. */
+function luminance(channels: string): number {
+  const [r, g, b] = channels
+    .trim()
+    .split(/\s+/)
+    .map((c) => {
+      const v = Number(c) / 255
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    })
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+}
+
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi! + 0.05) / (lo! + 0.05)
+}
+
+const colors = (tailwindConfig.theme?.extend as { colors: Record<string, Record<string, unknown>> }).colors
+
+describe('projected points are dark blue on the phone too, one mechanism (gap list §4 item 15)', () => {
+  it('M_PROJ_TEXT is the phone’s themed m-proj token', () => {
+    expect(M_PROJ_TEXT).toBe('text-m-proj')
+    expect(colors.m!.proj).toBe('rgb(var(--m-proj) / <alpha-value>)')
+  })
+
+  it('light = D497’s dark blue, desktop’s fs-blue-deep (#0060C0)', () => {
+    expect(hexOf(varIn(LIGHT, '--m-proj')!)).toBe('#0060C0')
+    expect(hexOf(varIn(LIGHT, '--m-proj')!)).toBe(String((colors.fs!.blue as { deep: string }).deep).toUpperCase())
+  })
+
+  it('dark = the README’s dark blue text (#6FB5FF, the dark m-tb), readable on the page and its cards (AA)', () => {
+    expect(hexOf(varIn(DARK, '--m-proj')!)).toBe('#6FB5FF')
+    expect(varIn(DARK, '--m-proj')).toBe(varIn(DARK, '--m-tb'))
+    for (const surface of ['--m-b0', '--m-b1']) {
+      expect(contrast(varIn(DARK, '--m-proj')!, varIn(DARK, surface)!), surface).toBeGreaterThanOrEqual(4.5)
+    }
+    for (const surface of ['--m-b0', '--m-b1']) {
+      expect(contrast(varIn(LIGHT, '--m-proj')!, varIn(LIGHT, surface)!), surface).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('a page with no phone screen yet keeps the light value in dark mode', () => {
+    expect(varIn(LIGHT_RESET, '--m-proj')).toBe(varIn(LIGHT, '--m-proj'))
+  })
+
+  it('every phone projected-points surface takes its colour from M_PROJ_TEXT', () => {
+    for (const rel of PHONE_SURFACES) {
+      const src = readFileSync(path.join(ROOT, rel), 'utf8')
+      expect(src, rel).toMatch(/import \{ M_PROJ_TEXT \} from '@\/components\/players\/projected-points'/)
+      expect(src, rel).toMatch(/M_PROJ_TEXT\)/)
+      // The desktop's fixed blue would stay dim in phone dark mode.
+      expect(src, rel).not.toMatch(/\bPROJ_TEXT\b/)
+    }
+  })
+
+  it('the phone’s colour class is never hand-written at a call site', () => {
+    const offenders = walk(path.join(ROOT, 'src'))
+      .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
+      .filter((rel) => rel !== 'src/components/players/projected-points.ts')
+      .filter((rel) => /text-m-proj(?![\w-])/.test(readFileSync(path.join(ROOT, rel), 'utf8')))
+    expect(offenders).toEqual([])
   })
 })

@@ -342,7 +342,14 @@
    `positive-strong` / `negative-strong`) and the README's dark values
    (#1ED760 / #FF6B6B) in dark, so green and red words brighten on the dark
    page instead of staying the light page's shade. Text and small icons only,
-   never a fill. */
+   never a fill.
+
+   The phone's PROJECTION BLUE (gap list §4 item 15): `--m-proj` is the D497
+   "projected points are dark blue" colour — desktop's `fs-blue-deep`
+   (#0060C0) in light — and the README's dark blue text (#6FB5FF, the same as
+   the dark `--m-tb`) in dark, so a projection never reads as points scored
+   and still reads on the dark page. Applied only through `M_PROJ_TEXT`
+   (players/projected-points.ts). */
 @layer base {
   :root {
     --m-t1: 29 29 31;
@@ -368,6 +375,7 @@
     --m-tr: 200 0 28; /* error text/icon on --m-gr */
     --m-green: 7 168 82; /* bright green text — #07A852 */
     --m-red: 255 0 40; /* bright red text — #FF0028 */
+    --m-proj: 0 96 192; /* projected points — #0060C0 (fs-blue-deep, D497) */
     --m-gb: 230 242 255;
     --m-tb: 0 116 219;
     --m-go: 255 243 230;
@@ -401,6 +409,7 @@
     --m-tr: 255 107 107; /* error text/icon on --m-gr */
     --m-green: 30 215 96; /* README dark success — #1ED760 */
     --m-red: 255 107 107; /* README dark danger text — #FF6B6B */
+    --m-proj: 111 181 255; /* projected points — README dark blue text #6FB5FF */
     --m-gb: 18 38 63;
     --m-tb: 111 181 255;
     --m-go: 58 42 20;
@@ -439,6 +448,7 @@
     --m-tr: 200 0 28;
     --m-green: 7 168 82;
     --m-red: 255 0 40;
+    --m-proj: 0 96 192;
     --m-gb: 230 242 255;
     --m-tb: 0 116 219;
     --m-go: 255 243 230;

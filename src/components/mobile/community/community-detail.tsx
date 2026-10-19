@@ -21,6 +21,7 @@ import { YouTubeBadge } from '@/components/mobile/lists/lists-parts'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { posTextClass } from '@/components/mobile/ui/m-pos-chip'
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useList, type ListPlayerWithPlayer, type ListWithDetails } from '@/hooks/use-lists'
 import { useMobileCommunityListMeta } from '@/hooks/use-mobile-community-detail'
@@ -366,7 +367,10 @@ function DetailBody({
                     {proj !== null && (
                       <>
                         <span className="sr-only">{PROJ_LABEL}</span>
-                        <span className="flex-none text-[13px] font-semibold tabular-nums">{proj.toFixed(1)}</span>
+                        {/* Projections are dark blue, never the ink of points scored (D497). */}
+                        <span className={cn('flex-none text-[13px] font-semibold tabular-nums', M_PROJ_TEXT)}>
+                          {proj.toFixed(1)}
+                        </span>
                       </>
                     )}
                   </button>

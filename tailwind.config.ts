@@ -241,6 +241,10 @@ const config: Config = {
           // (ui/system-message-rule.test.ts).
           'green': 'rgb(var(--m-green) / <alpha-value>)',
           'red': 'rgb(var(--m-red) / <alpha-value>)',
+          // The phone's projected-points blue (D497, gap list §4 item 15):
+          // `fs-blue-deep` #0060C0 in light, the README's #6FB5FF in dark.
+          // Applied only through `M_PROJ_TEXT` (players/projected-points.ts).
+          'proj': 'rgb(var(--m-proj) / <alpha-value>)',
           'gb': 'rgb(var(--m-gb) / <alpha-value>)',
           'tb': 'rgb(var(--m-tb) / <alpha-value>)',
           'go': 'rgb(var(--m-go) / <alpha-value>)',

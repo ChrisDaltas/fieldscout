@@ -11,12 +11,15 @@
  *    migration 190 saves) — just "Ranking" until that is read;
  *  - the pill never asks for a scoring system;
  *  - 1-2-3 numbers only on a numbered list (`isNumbered`), "Tier N" headings
- *    only on a tiered one (`hasTiers`) — the phone's List view rule.
+ *    only on a tiered one (`hasTiers`) — the phone's List view rule;
+ *  - the projections are dark blue (D497, gap list §4 item 15), through the
+ *    phone's `M_PROJ_TEXT`.
  */
 import { createElement, Fragment, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { M_PROJ_TEXT } from '@/components/players/projected-points'
 import type { ListPlayerWithPlayer, ListWithDetails } from '@/hooks/use-lists'
 
 const h = vi.hoisted(() => ({
@@ -135,7 +138,7 @@ const render = () =>
 /** The row numbers, in order (the 13px tabular figure before each headshot). */
 const numbers = (out: string) => [...out.matchAll(/tabular-nums text-m-t3">(\d+)<\/span>/g)].map((m) => Number(m[1]))
 /** The projections, in order. */
-const projections = (out: string) => [...out.matchAll(/tabular-nums">(\d+\.\d)<\/span>/g)].map((m) => m[1])
+const projections = (out: string) => [...out.matchAll(/tabular-nums[^"]*">(\d+\.\d)<\/span>/g)].map((m) => m[1])
 
 beforeEach(() => {
   h.list = list()
@@ -261,7 +264,7 @@ describe('the Community detail — "Season proj" (gap list §3 #29)', () => {
   const label = (out: string) => out.match(/<span[^>]*data-proj-label[^>]*>([^<]*)<\/span>/)
   /** Each row button's screen-reader label before its projection. */
   const rowLabels = (out: string) =>
-    [...out.matchAll(/<span class="sr-only">([^<]*)<\/span><span class="[^"]*tabular-nums">\d+\.\d<\/span>/g)].map((m) => m[1])
+    [...out.matchAll(/<span class="sr-only">([^<]*)<\/span><span class="[^"]*tabular-nums[^"]*">\d+\.\d<\/span>/g)].map((m) => m[1])
 
   it('the projections are labelled "Season proj" — once, on the players heading row', () => {
     const out = render()
@@ -314,6 +317,36 @@ describe('the Community detail — "Season proj" (gap list §3 #29)', () => {
     expect(label(out)?.[1]).toBe('Season proj')
     expect(projections(out)).toEqual(['16.0'])
     expect(rowLabels(out)).toEqual(['Season proj'])
+  })
+})
+
+describe('the Community detail — projections are dark blue (D497; gap list §4 item 15)', () => {
+  /** Each projection's class list, in order. */
+  const projClasses = (out: string) => [...out.matchAll(/<span class="([^"]*tabular-nums[^"]*)">\d+\.\d<\/span>/g)].map((m) => m[1]!)
+
+  it('every projection is the phone’s projection blue (M_PROJ_TEXT), never the ink of points scored', () => {
+    h.list = list({ is_big_board: false, slug: 'rb-targets', ranking_mode: 'ranked' })
+    const classes = projClasses(render())
+    expect(classes).toHaveLength(3)
+    for (const c of classes) {
+      expect(c.split(' ')).toContain(M_PROJ_TEXT)
+      expect(c).not.toMatch(/(?<![\w-])text-(?:m-t\d|m-ink|ink)(?![\w-])/)
+    }
+  })
+
+  it('…on a tiered list and an unnumbered one too; the row numbers and the label stay grey', () => {
+    h.list = list({ is_big_board: false, slug: 'tiers', ranking_mode: 'tier_only', players: [entry(1, 'S'), entry(2, 'A')] })
+    let out = render()
+    expect(projClasses(out).map((c) => c.split(' ').includes(M_PROJ_TEXT))).toEqual([true, true])
+    h.list = list({ is_big_board: false, slug: 'rb-targets', ranking_mode: 'unranked' })
+    out = render()
+    expect(projClasses(out).map((c) => c.split(' ').includes(M_PROJ_TEXT))).toEqual([true, true, true])
+
+    h.list = list({ is_big_board: false, slug: 'rb-targets', ranking_mode: 'ranked' })
+    out = render()
+    expect(out).toMatch(/tabular-nums text-m-t3">1<\/span>/)
+    expect(out).toMatch(/data-proj-label="true" class="[^"]*text-m-t3[^"]*">Season proj</)
+    expect(out).not.toMatch(/text-m-proj[^>]*>(?:\d+|Season proj)</)
   })
 })
 
