@@ -469,7 +469,7 @@ function CommunityScreen({ currentWeek }: { currentWeek: number }) {
       </div>
 
       <CreateSheet open={createOpen} onOpenChange={setCreateOpen} />
-      {openId && <CommunityDetail listId={openId} onBack={closeDetail} currentWeek={currentWeek} />}
+      {openId && <CommunityDetail listId={openId} onBack={closeDetail} />}
     </MobileScreen>
   )
 }

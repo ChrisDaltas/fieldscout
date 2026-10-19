@@ -1,5 +1,6 @@
 'use client'
 
+import { offersDuplicate } from '@/components/mobile/community/community-ops'
 import { PositionBadge } from '@/components/players/position-badge'
 import {
   DropdownMenu,
@@ -46,7 +47,6 @@ export function ListGalleryCard({
   onOpen,
   onShare,
   onDuplicate,
-  duplicateBlocked = null,
   onDelete,
   onOpenComments,
   onTogglePin,
@@ -59,10 +59,9 @@ export function ListGalleryCard({
   folders: ListFolder[]
   onOpen: () => void
   onShare: () => void
+  /** Duplicate — a list copy, a plain list's only: a ranking's card has no
+   *  Duplicate item (Chris, 2026-10-19; `offersDuplicate`). */
   onDuplicate: () => void
-  /** Why someone else's weekly ranking can't be duplicated now ("Week 5 is
-   *  over"): the item shows disabled, with it. */
-  duplicateBlocked?: string | null
   onDelete: () => void
   onOpenComments: () => void
   onTogglePin: () => void
@@ -147,11 +146,12 @@ export function ListGalleryCard({
                   Attach to league
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={onDuplicate} disabled={duplicateBlocked !== null}>
-                <Icon name="layers" size={13} />
-                Duplicate
-                {duplicateBlocked && <span className="ml-auto text-[10px] font-medium text-n-6">{duplicateBlocked}</span>}
-              </DropdownMenuItem>
+              {offersDuplicate(list) && (
+                <DropdownMenuItem onSelect={onDuplicate}>
+                  <Icon name="layers" size={13} />
+                  Duplicate
+                </DropdownMenuItem>
+              )}
               {!list.is_favorites && !list.owner && (
                 <>
                   <DropdownMenuSeparator />

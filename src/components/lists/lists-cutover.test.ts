@@ -97,8 +97,7 @@ describe('the retired Lists surfaces are deleted, not dormant (LV.7)', () => {
 describe('every Lists URL still resolves (LV.7)', () => {
   it('/app/lists serves the rebuilt page, unconditionally', () => {
     const source = read(LISTS_ROUTE)
-    // It takes the NFL week (a saved weekly ranking's Duplicate needs it).
-    expect(source).toContain('<ListsPageV2 currentWeek={currentWeek} />')
+    expect(source).toContain('<ListsPageV2 />')
     // `ListsPageV2` reads `?list=` with `useSearchParams`, which Next refuses to
     // prerender outside a boundary. Losing this makes the route fail to build,
     // not fail at runtime — so it is pinned where it is cheap to notice.
