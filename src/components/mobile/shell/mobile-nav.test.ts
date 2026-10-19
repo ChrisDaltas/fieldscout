@@ -43,14 +43,13 @@ describe('mobileRoute — which bar and which lit tab (navigation §(c))', () =>
 
 describe('leagueFallbackTitle — league pages with no mobile screen yet', () => {
   it('names the pages the Menu opens', () => {
-    expect(leagueFallbackTitle(`${L}/settings`)).toBe('League settings')
     expect(leagueFallbackTitle(`${L}/schedule`)).toBe('Schedule')
     expect(leagueFallbackTitle(`${L}/members`)).toBe('Members')
     expect(leagueFallbackTitle(`${L}/commish`)).toBe('Commissioner tools')
   })
 
   it('is null where the route draws its own mobile screen', () => {
-    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats']) {
+    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats', '/settings']) {
       expect(leagueFallbackTitle(`${L}${rest}`), rest).toBeNull()
     }
     expect(leagueFallbackTitle('/app/settings')).toBeNull()
@@ -93,6 +92,11 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
   })
   it('leaves the NFL team pages to their own phone screens (gap list §4 item 103)', () => {
     for (const path of ['/app/nfl', '/app/nfl/', '/app/nfl/BUF', '/app/nfl/BUF/']) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
+  })
+  it('leaves League settings, Scoring and Playoffs to their own phone screens (gap list §4 item 105)', () => {
+    for (const path of [`${L}/settings`, `${L}/settings/`]) {
       expect(mobileFallback(path), path).toBeNull()
     }
   })

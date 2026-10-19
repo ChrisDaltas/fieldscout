@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { MIcon } from '@/components/mobile/ui/m-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardTitle } from '@/components/ui/card'
@@ -68,9 +69,11 @@ import {
   clampInt,
   FieldRow,
   InlineIssue,
+  NumberField,
   numOptions,
   SectionLabel,
   ToggleRow,
+  useSettingsSkin,
 } from './settings-form-controls'
 import {
   RESCORE_TOGGLE_HINT,
@@ -182,32 +185,8 @@ function SettingsPanelBody({ leagueId, data, section }: { leagueId: string; data
   const inSeasonOverride = isCommish && pastScheduled && storeMode
   const policyKeys = useMemo(() => settingPolicyKeys(data.settings), [data.settings])
   const policies = useCommishSettingPolicies(policyKeys, inSeasonOverride)
-  const change = useCommishChangeSetting(leagueId)
-  const [saving, setSaving] = useState(false)
-  const [results, setResults] = useState<SettingSaveResult[]>([])
+  const { saving, results, setResults, saveInSeason } = useInSeasonSettingsSave(leagueId)
   const canEdit = isCommish && (!pastScheduled || (inSeasonOverride && policies.data !== undefined && !saving))
-
-  /** ONE `commish_change_setting` call per changed key, IN ORDER, never in
-   *  parallel (each call re-reads the league and re-seeds the form; 129 locks
-   *  the league row per call). A refusal stops nothing — every key gets its
-   *  own line, and the keys after it are still attempted. Lives HERE, above
-   *  the form, because the form remounts on every landed key. */
-  async function saveInSeason(changes: readonly InSeasonChange[], rescore: boolean) {
-    if (saving || changes.length === 0) return
-    setSaving(true)
-    setResults([])
-    const out: SettingSaveResult[] = []
-    for (const { key, value } of changes) {
-      try {
-        const doc = await change.submitAsync({ key, value, ...(key === SCORING_SYSTEM_KEY ? { rescore } : {}) })
-        out.push({ key, ok: true, outcome: settingOutcome(doc), bypassed: doc.bypassed ?? [] })
-      } catch (cause) {
-        out.push({ key, ok: false, refusal: cause instanceof Error ? cause.message : 'The change could not be saved.' })
-      }
-      setResults([...out])
-    }
-    setSaving(false)
-  }
 
   // Re-seed the form from the persisted baseline whenever it changes — a
   // successful save invalidates the detail query, the refetched settings
@@ -294,9 +273,42 @@ function SettingsPanelBody({ leagueId, data, section }: { leagueId: string; data
   )
 }
 
+/**
+ * The in-season Save — ONE `commish_change_setting` call per changed key,
+ * IN ORDER, never in parallel (each call re-reads the league and re-seeds the
+ * form; 129 locks the league row per call). A refusal stops nothing — every
+ * key gets its own line, and the keys after it are still attempted. Lives
+ * ABOVE the form (desktop's panel, the phone's settings screen), because the
+ * form remounts on every landed key.
+ */
+export function useInSeasonSettingsSave(leagueId: string) {
+  const change = useCommishChangeSetting(leagueId)
+  const [saving, setSaving] = useState(false)
+  const [results, setResults] = useState<SettingSaveResult[]>([])
+
+  async function saveInSeason(changes: readonly InSeasonChange[], rescore: boolean) {
+    if (saving || changes.length === 0) return
+    setSaving(true)
+    setResults([])
+    const out: SettingSaveResult[] = []
+    for (const { key, value } of changes) {
+      try {
+        const doc = await change.submitAsync({ key, value, ...(key === SCORING_SYSTEM_KEY ? { rescore } : {}) })
+        out.push({ key, ok: true, outcome: settingOutcome(doc), bypassed: doc.bypassed ?? [] })
+      } catch (cause) {
+        out.push({ key, ok: false, refusal: cause instanceof Error ? cause.message : 'The change could not be saved.' })
+      }
+      setResults([...out])
+    }
+    setSaving(false)
+  }
+
+  return { saving, results, setResults, saveInSeason }
+}
+
 /** SE.9: the Customize fork's scroll target — the editor section below the
  *  form. A module constant so the fork handler and the mount cannot drift. */
-const SCORING_EDITOR_ANCHOR_ID = 'league-custom-scoring-editor'
+export const SCORING_EDITOR_ANCHOR_ID = 'league-custom-scoring-editor'
 
 // ---------------------------------------------------------------------------
 // League profile — rename + avatar (migration 064; top of the page)
@@ -651,7 +663,7 @@ const SETTINGS_ROW_LINK =
 
 /** The draft instant as a short local date and time (display only — the
  *  stored value is an ISO instant). */
-function formatDraftInstant(iso: string): string {
+export function formatDraftInstant(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return 'scheduled'
   return d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -701,29 +713,31 @@ function SettingsPanelSkeleton() {
 
 /** The in-season (override-mode) arm of the form: 129's policy table, and
  *  the per-key save that lives above the form (it remounts per landed key). */
-interface InSeasonArm {
+export interface InSeasonArm {
   policies: SettingPolicies
   saving: boolean
-  onSave: (changes: readonly InSeasonChange[], rescore: boolean) => void
+  onSave: (changes: readonly InSeasonChange[], rescore: boolean) => void | Promise<void>
 }
 
-function SettingsForm({
+/**
+ * The settings form's model — the working copy, its reconcile and
+ * validation, the in-season per-key plan, the one Save, and the scoring
+ * Customize fork — shared by desktop's grouped form (`SettingsForm`) and the
+ * phone's edit screens (`MobileLeagueSettings`). ONE model, two layouts:
+ * the phone draws the same groups in its own skin and saves through the
+ * same PATCH / `commish_change_setting` path, never a second copy of this
+ * logic. Seeded from the persisted baseline; the caller remounts it (a
+ * `key` on the baseline) after a save re-reads the league.
+ */
+export function useSettingsForm({
   leagueId,
   detail,
   canEdit,
-  section,
   inSeason,
-  renderIndex,
 }: {
   leagueId: string
   detail: LeagueDetail
   canEdit: boolean
-  /** The index renders INSIDE the form so its rows can mark the sections
-   *  that hold a current error (R1495) — the working copy lives here. */
-  renderIndex: (errorSections: ReadonlySet<SettingsSection>) => React.ReactNode
-  /** Which section's groups to render; null / 'teams' render no groups
-   *  (the form still holds any unsaved edits from another section). */
-  section: SettingsSection | null
   inSeason: InSeasonArm | null
 }) {
   const initialSettings = detail.settings
@@ -787,18 +801,22 @@ function SettingsForm({
 
   // R1497: unsaved edits never vanish silently — reload/close asks (the
   // browser's own prompt), and leaving the settings page in-app asks first.
+  // (The layout owns the guard: desktop's `useLeaveGuard` dialog, the
+  // phone's discard sheet.)
   const unsaved = canEdit && (plan ? plan.send.length > 0 : dirty)
-  const leave = useLeaveGuard(unsaved)
 
   const canSubmit = inSeason
     ? canEdit && validation.valid && plan !== null && plan.send.length > 0 && !inSeason.saving
     : canEdit && dirty && validation.valid && !isPending
 
-  async function handleSave() {
-    if (!canSubmit) return
+  /** The one Save. Resolves `true` once the change went through (the
+   *  in-season arm: once every key has its result line), `false` when
+   *  nothing was sent or the save was refused. */
+  async function handleSave(): Promise<boolean> {
+    if (!canSubmit) return false
     if (inSeason && plan) {
-      inSeason.onSave(plan.send, rescore)
-      return
+      await inSeason.onSave(plan.send, rescore)
+      return true
     }
     setServerError(null)
     const body: UpdateLeagueSettingsBody = { settings: working }
@@ -810,6 +828,7 @@ function SettingsForm({
       toast({ title: 'Settings saved', description: 'Your league settings are up to date.' })
       // The detail query invalidates → SettingsPanel remounts this form on the
       // fresh baseline, so `working` and `dirty` reset to the persisted state.
+      return true
     } catch (cause) {
       if (cause instanceof LeaguePatchError) {
         setServerError(cause)
@@ -822,6 +841,7 @@ function SettingsForm({
           description: cause instanceof Error ? cause.message : 'Please try again.',
         })
       }
+      return false
     }
   }
 
@@ -876,6 +896,78 @@ function SettingsForm({
       setForkPendingTemplateId(null)
     }
   }
+
+  return {
+    working,
+    scoringId,
+    setScoringId,
+    updateSettings,
+    setRoster,
+    setDraftConfig,
+    validation,
+    errorsFor,
+    refusedFor,
+    draftRefusal,
+    settingsDirty,
+    dirty,
+    plan,
+    errorList,
+    errorSections,
+    unsaved,
+    canSubmit,
+    isPending,
+    serverError,
+    customized,
+    templateIds,
+    initialScoringId,
+    scoringChanged,
+    rescore,
+    setRescore,
+    handleSave,
+    handleCustomize,
+    forkPendingTemplateId,
+    forkError,
+  }
+}
+
+export type SettingsFormModel = ReturnType<typeof useSettingsForm>
+
+function SettingsForm({
+  leagueId,
+  detail,
+  canEdit,
+  section,
+  inSeason,
+  renderIndex,
+}: {
+  leagueId: string
+  detail: LeagueDetail
+  canEdit: boolean
+  /** The index renders INSIDE the form so its rows can mark the sections
+   *  that hold a current error (R1495) — the working copy lives here. */
+  renderIndex: (errorSections: ReadonlySet<SettingsSection>) => React.ReactNode
+  /** Which section's groups to render; null / 'teams' render no groups
+   *  (the form still holds any unsaved edits from another section). */
+  section: SettingsSection | null
+  inSeason: InSeasonArm | null
+}) {
+  const form = useSettingsForm({ leagueId, detail, canEdit, inSeason })
+  const {
+    working,
+    updateSettings,
+    validation,
+    errorsFor,
+    refusedFor,
+    dirty,
+    plan,
+    errorList,
+    errorSections,
+    canSubmit,
+    isPending,
+    serverError,
+    handleSave,
+  } = form
+  const leave = useLeaveGuard(form.unsaved)
 
   return (
     <div className="flex flex-col gap-5">
@@ -961,35 +1053,7 @@ function SettingsForm({
         data-settings-fieldset={canEdit ? 'open' : 'closed'}
         data-settings-section={section}
       >
-        {section === 'draft' && (
-          <>
-        {draftRefusal !== null && (
-          <div data-refused-key="draft">
-            <InlineIssue tone="warning" message={draftRefusal} />
-          </div>
-        )}
-        {/* A nested fieldset: 129 refuses the whole `draft` block in-season, so
-            its two groups close as one (a disabled ancestor cannot be re-enabled
-            by a child — this only ever CLOSES more). */}
-        <fieldset disabled={draftRefusal !== null} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0" data-draft-fieldset={draftRefusal !== null ? 'closed' : 'open'}>
-        <ScheduleDraftGroup
-          value={working.draft.draft_scheduled_at}
-          year={detail.league.season}
-          onChange={(draft_scheduled_at) => setDraftConfig({ draft_scheduled_at })}
-          timeZone={working.draft.time_zone}
-          onTimeZone={(time_zone) => setDraftConfig({ time_zone })}
-        />
-        <DraftGroup
-          s={working}
-          onDraft={setDraftConfig}
-          errorsFor={errorsFor}
-          leagueId={leagueId}
-          detail={detail}
-          canEdit={canEdit && draftRefusal === null}
-        />
-        </fieldset>
-          </>
-        )}
+        {section === 'draft' && <DraftSettingsGroups form={form} leagueId={leagueId} detail={detail} canEdit={canEdit} />}
 
         {section === 'league' && (
           <>
@@ -998,85 +1062,9 @@ function SettingsForm({
           </>
         )}
 
-        {section === 'roster' && (
-          <>
-            <GroupCard title="Roster & lineup slots">
-              <RosterSlotBuilder
-                value={working.roster_settings}
-                onChange={setRoster}
-                teamCount={working.team_count}
-                className="pb-3.5"
-              />
-            </GroupCard>
-            <LineupsGroup s={working} onSettings={updateSettings} />
-          </>
-        )}
+        {section === 'roster' && <RosterSettingsGroups form={form} />}
 
-        {section === 'scoring' && (
-        <GroupCard title="Scoring">
-          {/* SE.9 designed copy (§16.5.4): a customized league's fork id
-              matches no card, so without this line the picker would read as
-              "nothing selected" with no explanation. */}
-          {customized && (
-            <p className="pb-2.5 text-[11px] font-medium text-n-3">
-              This league scores with its own custom copy — values are edited
-              in the Custom scoring section below. Picking a template here
-              switches back to that shared rulebook.
-            </p>
-          )}
-          <div className={cn('pb-3', !canEdit && 'pointer-events-none opacity-95')}>
-            <ScoringTemplatePicker
-              value={scoringId}
-              onChange={setScoringId}
-              // SE.9/D170: THE league-context mount — the only one of the
-              // picker's three mounts that passes `customize`. Role + status
-              // ride along so the picker itself hides the affordance from
-              // members and out-of-window leagues (the RPC enforces; the UI
-              // states it).
-              customize={{
-                myRole: detail.my_role,
-                leagueStatus: detail.league.status,
-                onCustomize: handleCustomize,
-                pendingTemplateId: forkPendingTemplateId,
-                disabledReason: settingsDirty
-                  ? 'Save or discard your settings changes first — customizing scoring reloads this page.'
-                  : null,
-              }}
-            />
-          </div>
-          {/* §12.25 orphan-hygiene copy at the decision point: re-picking a
-              template detaches the fork by repointing; the fork row stays. */}
-          {customized &&
-            scoringId !== null &&
-            scoringId !== initialScoringId &&
-            templateIds?.includes(scoringId) && (
-              <InlineIssue
-                tone="warning"
-                message="Saving switches this league back to the shared template — your previous customizations remain saved but unattached."
-              />
-            )}
-          {/* Q64 / D360(8): `rescore` is asked for BY NAME, only for a scoring
-              change, only in-season — never a silent default either way. */}
-          {inSeason && scoringChanged && (
-            <div data-rescore-toggle>
-              <ToggleRow id="set-rescore" label={RESCORE_TOGGLE_LABEL} hint={RESCORE_TOGGLE_HINT} checked={rescore} onCheckedChange={setRescore} />
-            </div>
-          )}
-          {forkError && (
-            <InlineIssue
-              tone="error"
-              message={
-                forkError.fieldErrors
-                  ? Object.values(forkError.fieldErrors).flat().join(' ') || forkError.message
-                  : forkError.message
-              }
-            />
-          )}
-          {errorsFor('scoring_system_id').map((e) => (
-            <InlineIssue key={e.message} tone="error" message={e.message} />
-          ))}
-        </GroupCard>
-        )}
+        {section === 'scoring' && <ScoringPickGroup form={form} detail={detail} canEdit={canEdit} inSeason={inSeason} />}
 
         {section === 'waivers' && (
           <>
@@ -1092,6 +1080,173 @@ function SettingsForm({
 }
 
 /**
+ * The Draft section's groups — the in-season refusal for the whole `draft`
+ * block, then Schedule the draft and Draft configuration inside one nested
+ * fieldset. Desktop's Draft section and the phone's League settings edit
+ * screen mount the same block.
+ */
+export function DraftSettingsGroups({
+  form,
+  leagueId,
+  detail,
+  canEdit,
+}: {
+  form: SettingsFormModel
+  leagueId: string
+  detail: LeagueDetail
+  canEdit: boolean
+}) {
+  const { working, setDraftConfig, errorsFor, draftRefusal } = form
+  return (
+    <>
+      {draftRefusal !== null && (
+        <div data-refused-key="draft">
+          <InlineIssue tone="warning" message={draftRefusal} />
+        </div>
+      )}
+      {/* A nested fieldset: 129 refuses the whole `draft` block in-season, so
+          its two groups close as one (a disabled ancestor cannot be re-enabled
+          by a child — this only ever CLOSES more). */}
+      <fieldset disabled={draftRefusal !== null} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0" data-draft-fieldset={draftRefusal !== null ? 'closed' : 'open'}>
+        <ScheduleDraftGroup
+          value={working.draft.draft_scheduled_at}
+          year={detail.league.season}
+          onChange={(draft_scheduled_at) => setDraftConfig({ draft_scheduled_at })}
+          timeZone={working.draft.time_zone}
+          onTimeZone={(time_zone) => setDraftConfig({ time_zone })}
+        />
+        <DraftGroup
+          s={working}
+          onDraft={setDraftConfig}
+          errorsFor={errorsFor}
+          leagueId={leagueId}
+          detail={detail}
+          canEdit={canEdit && draftRefusal === null}
+        />
+      </fieldset>
+    </>
+  )
+}
+
+/** The Roster section's groups — the slot builder, then Lineups & lock. */
+export function RosterSettingsGroups({ form }: { form: SettingsFormModel }) {
+  const { working, setRoster, updateSettings } = form
+  return (
+    <>
+      <GroupCard title="Roster & lineup slots">
+        <RosterSlotBuilder
+          value={working.roster_settings}
+          onChange={setRoster}
+          teamCount={working.team_count}
+          className="pb-3.5"
+        />
+      </GroupCard>
+      <LineupsGroup s={working} onSettings={updateSettings} />
+    </>
+  )
+}
+
+/**
+ * The Scoring group — the template picker (THE league-context mount, with
+ * Customize), the customized / detach copy, the in-season rescore question
+ * and the fork's refusal. Drawn by desktop's Scoring section and by the
+ * phone's Scoring edit screen (in its skin), over the one form model.
+ */
+export function ScoringPickGroup({
+  form,
+  detail,
+  canEdit,
+  inSeason,
+}: {
+  form: SettingsFormModel
+  detail: LeagueDetail
+  canEdit: boolean
+  inSeason: InSeasonArm | null
+}) {
+  const {
+    customized,
+    scoringId,
+    setScoringId,
+    handleCustomize,
+    forkPendingTemplateId,
+    settingsDirty,
+    initialScoringId,
+    templateIds,
+    scoringChanged,
+    rescore,
+    setRescore,
+    forkError,
+    errorsFor,
+  } = form
+  const phone = useSettingsSkin() === 'mobile'
+  return (
+    <GroupCard title="Scoring">
+      {/* SE.9 designed copy (§16.5.4): a customized league's fork id
+          matches no card, so without this line the picker would read as
+          "nothing selected" with no explanation. */}
+      {customized && (
+        <p className={phone ? 'pb-2.5 text-[12px] font-medium leading-[1.35] text-m-t3' : 'pb-2.5 text-[11px] font-medium text-n-3'}>
+          This league scores with its own custom copy — values are edited
+          in the Custom scoring section below. Picking a template here
+          switches back to that shared rulebook.
+        </p>
+      )}
+      <div className={cn('pb-3', !canEdit && 'pointer-events-none opacity-95')}>
+        <ScoringTemplatePicker
+          value={scoringId}
+          onChange={setScoringId}
+          // SE.9/D170: THE league-context mount — the only one of the
+          // picker's three mounts that passes `customize`. Role + status
+          // ride along so the picker itself hides the affordance from
+          // members and out-of-window leagues (the RPC enforces; the UI
+          // states it).
+          customize={{
+            myRole: detail.my_role,
+            leagueStatus: detail.league.status,
+            onCustomize: handleCustomize,
+            pendingTemplateId: forkPendingTemplateId,
+            disabledReason: settingsDirty
+              ? 'Save or discard your settings changes first — customizing scoring reloads this page.'
+              : null,
+          }}
+        />
+      </div>
+      {/* §12.25 orphan-hygiene copy at the decision point: re-picking a
+          template detaches the fork by repointing; the fork row stays. */}
+      {customized &&
+        scoringId !== null &&
+        scoringId !== initialScoringId &&
+        templateIds?.includes(scoringId) && (
+          <InlineIssue
+            tone="warning"
+            message="Saving switches this league back to the shared template — your previous customizations remain saved but unattached."
+          />
+        )}
+      {/* Q64 / D360(8): `rescore` is asked for BY NAME, only for a scoring
+          change, only in-season — never a silent default either way. */}
+      {inSeason && scoringChanged && (
+        <div data-rescore-toggle>
+          <ToggleRow id="set-rescore" label={RESCORE_TOGGLE_LABEL} hint={RESCORE_TOGGLE_HINT} checked={rescore} onCheckedChange={setRescore} />
+        </div>
+      )}
+      {forkError && (
+        <InlineIssue
+          tone="error"
+          message={
+            forkError.fieldErrors
+              ? Object.values(forkError.fieldErrors).flat().join(' ') || forkError.message
+              : forkError.message
+          }
+        />
+      )}
+      {errorsFor('scoring_system_id').map((e) => (
+        <InlineIssue key={e.message} tone="error" message={e.message} />
+      ))}
+    </GroupCard>
+  )
+}
+
+/**
  * R1497: while `active`, the browser's own prompt guards reload/close, and
  * any in-page link that leaves the settings page (the Commissioner tools
  * row, the Members link, the shell and league nav) is held for a confirm.
@@ -1099,7 +1254,7 @@ function SettingsForm({
  * Next's Link skips navigation when the click is already default-prevented.
  * Section links (?section=) stay on the page and never ask.
  */
-function useLeaveGuard(active: boolean) {
+export function useLeaveGuard(active: boolean) {
   const router = useRouter()
   const pathname = usePathname()
   const [pendingHref, setPendingHref] = useState<string | null>(null)
@@ -1169,7 +1324,18 @@ function LeaveSettingsDialog({ href, onStay, onLeave }: { href: string | null; o
  * section) is now what makes the page read as a short list of names, so a
  * section's groups show in full once it is opened.
  */
-function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
+export function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
+  // The phone (`SettingsSkin` mobile): the handoff's G-page section — a
+  // 13/600 t3 title over rows on the page itself, split by b2 hairlines
+  // (the shared rows draw those in their phone skin).
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <section className="flex flex-col" data-settings-group={title}>
+        <h2 className="pb-1 pt-2.5 text-[13px] font-semibold text-m-t3">{title}</h2>
+        {children}
+      </section>
+    )
+  }
   // v7 commissioner section: a hairline card, the section title on top and
   // every row under it split by a hairline (`settings-rows` turns that on for
   // the shared FieldRow / ToggleRow / InlineIssue — settings-form-controls).
@@ -1189,119 +1355,142 @@ function GroupCard({ title, children }: { title: string; children: React.ReactNo
 // §7.3.1 — Format & structure
 // ---------------------------------------------------------------------------
 
-function FormatGroup({
+/**
+ * §7.3.1's format group. Desktop draws it whole (`part="all"`): "Basic
+ * settings" with its Season & playoffs and Scoring format sub-sections. The
+ * phone splits the same rows between its two pages — `basics` (teams, the
+ * season, the schedule and its extra games) on League settings, `playoffs`
+ * (the bracket and its options) on Playoffs — with the same controls,
+ * hints and refusals.
+ */
+export function FormatGroup({
   s,
   onSettings,
   errorsFor,
   refusedFor,
+  part = 'all',
 }: {
   s: LeagueSettings
   onSettings: (patch: Partial<LeagueSettings>) => void
   errorsFor: (field: string) => FieldIssue[]
   /** In-season: 129's refusal copy for a key, VERBATIM, or null (L.E1.13). */
   refusedFor: (key: string) => string | null
+  part?: 'all' | 'basics' | 'playoffs'
 }) {
   const playoffTeamOptions = PLAYOFF_TEAMS_OPTIONS.filter((n) => n <= s.team_count)
   /** A refused key's control is closed and its hint IS the refusal copy. */
   const closed = (key: string) => refusedFor(key) !== null
   const hintFor = (key: string, hint?: string) => refusedFor(key) ?? hint
+  const phone = useSettingsSkin() === 'mobile'
+  const issues = (fields: readonly string[]) =>
+    fields.flatMap((field) => errorsFor(field).map((e) => <InlineIssue key={e.message} tone="error" message={e.message} />))
 
-  return (
-    <GroupCard title="Basic settings">
-      <FieldRow label="Teams" htmlFor="set-teams" hint={hintFor('team_count', 'Even counts 8–16 (v1).')}>
-        <ChoiceSelect
-          id="set-teams"
-          ariaLabel="Number of teams"
-          value={String(s.team_count)}
-          options={numOptions([8, 10, 12, 14, 16])}
-          onValueChange={(v) => onSettings({ team_count: Number(v) as LeagueSettings['team_count'] })}
-          width="w-28"
-          disabled={closed('team_count')}
-        />
-      </FieldRow>
+  const teams = (
+    <FieldRow label="Teams" htmlFor="set-teams" hint={hintFor('team_count', 'Even counts 8–16 (v1).')}>
+      <ChoiceSelect
+        id="set-teams"
+        ariaLabel="Number of teams"
+        value={String(s.team_count)}
+        options={numOptions([8, 10, 12, 14, 16])}
+        onValueChange={(v) => onSettings({ team_count: Number(v) as LeagueSettings['team_count'] })}
+        width="w-28"
+        disabled={closed('team_count')}
+      />
+    </FieldRow>
+  )
 
-      <FieldRow label="Divisions" htmlFor="set-divisions" hint={hintFor('divisions')}>
-        <ChoiceSelect
-          id="set-divisions"
-          ariaLabel="Divisions"
-          value={String(s.divisions)}
-          options={divisionSelectOptions()} // v2.16.12 (Q30 (d)): ONE option — divisions are cut from v1; settings-panel-ops is the pin's home
-          onValueChange={(v) => onSettings({ divisions: Number(v) })}
-          width="w-28"
-          disabled={closed('divisions')}
-        />
-      </FieldRow>
+  const divisions = (
+    <FieldRow label="Divisions" htmlFor="set-divisions" hint={hintFor('divisions')}>
+      <ChoiceSelect
+        id="set-divisions"
+        ariaLabel="Divisions"
+        value={String(s.divisions)}
+        options={divisionSelectOptions()} // v2.16.12 (Q30 (d)): ONE option — divisions are cut from v1; settings-panel-ops is the pin's home
+        onValueChange={(v) => onSettings({ divisions: Number(v) })}
+        width="w-28"
+        disabled={closed('divisions')}
+      />
+    </FieldRow>
+  )
 
-      <SectionLabel>Season &amp; playoffs</SectionLabel>
+  const regularSeason = (
+    <FieldRow label="Regular season weeks" htmlFor="set-rsw" hint={hintFor('regular_season_weeks')}>
+      <ChoiceSelect
+        id="set-rsw"
+        ariaLabel="Regular season weeks"
+        value={String(s.regular_season_weeks)}
+        options={numOptions([12, 13, 14, 15])}
+        onValueChange={(v) => onSettings({ regular_season_weeks: Number(v) })}
+        width="w-28"
+        disabled={closed('regular_season_weeks')}
+      />
+    </FieldRow>
+  )
 
-      <FieldRow label="Regular season weeks" htmlFor="set-rsw" hint={hintFor('regular_season_weeks')}>
-        <ChoiceSelect
-          id="set-rsw"
-          ariaLabel="Regular season weeks"
-          value={String(s.regular_season_weeks)}
-          options={numOptions([12, 13, 14, 15])}
-          onValueChange={(v) => onSettings({ regular_season_weeks: Number(v) })}
-          width="w-28"
-          disabled={closed('regular_season_weeks')}
-        />
-      </FieldRow>
-
-      {/* F27 (Q10/v2.8.6): playoff_start_week is READ-ONLY derived =
-          regular_season_weeks + 1 — rendered exactly as the wizard does. */}
-      <FieldRow label="Playoffs start" hint="The week after the regular season ends (derived).">
+  const playoffsStart = (
+    // F27 (Q10/v2.8.6): playoff_start_week is READ-ONLY derived =
+    // regular_season_weeks + 1 — rendered exactly as the wizard does.
+    <FieldRow label="Playoffs start" hint="The week after the regular season ends (derived).">
+      {phone ? (
+        <span className="text-[14px] font-semibold tabular-nums text-m-t1">Week {s.playoff_start_week}</span>
+      ) : (
         <Badge variant="stroke">
           Week&nbsp;<span className="fs-num">{s.playoff_start_week}</span>
         </Badge>
-      </FieldRow>
-
-      <FieldRow label="Playoff teams" htmlFor="set-playoff-teams" hint={hintFor('playoff_teams', playoffTeamsControl(s.schedule_mode).hint)}>
-        <ChoiceSelect
-          id="set-playoff-teams"
-          ariaLabel="Playoff teams"
-          value={String(s.playoff_teams)}
-          options={numOptions(playoffTeamOptions)}
-          onValueChange={(v) => onSettings({ playoff_teams: Number(v) as LeagueSettings['playoff_teams'] })}
-          width="w-28"
-          disabled={playoffTeamsControl(s.schedule_mode).disabled || closed('playoff_teams')} // Q39 (C): no bracket in a total-points league — settings-panel-ops is the pin's home
-        />
-      </FieldRow>
-
-      <FieldRow label="Weeks per playoff round" htmlFor="set-ppr" hint={hintFor('playoff_weeks_per_round')}>
-        <ChoiceSelect
-          id="set-ppr"
-          ariaLabel="Weeks per playoff round"
-          value={String(s.playoff_weeks_per_round)}
-          options={[
-            { value: '1', label: '1 week' },
-            { value: '2', label: '2 weeks' },
-          ]}
-          onValueChange={(v) =>
-            onSettings({ playoff_weeks_per_round: Number(v) as LeagueSettings['playoff_weeks_per_round'] })
-          }
-          disabled={closed('playoff_weeks_per_round')}
-        />
-      </FieldRow>
-
-      {['playoff_start_week', 'playoff_teams', 'team_count'].flatMap((field) =>
-        errorsFor(field).map((e) => <InlineIssue key={e.message} tone="error" message={e.message} />),
       )}
+    </FieldRow>
+  )
 
-      <SectionLabel>Scoring format</SectionLabel>
+  const playoffTeams = (
+    <FieldRow label="Playoff teams" htmlFor="set-playoff-teams" hint={hintFor('playoff_teams', playoffTeamsControl(s.schedule_mode).hint)}>
+      <ChoiceSelect
+        id="set-playoff-teams"
+        ariaLabel="Playoff teams"
+        value={String(s.playoff_teams)}
+        options={numOptions(playoffTeamOptions)}
+        onValueChange={(v) => onSettings({ playoff_teams: Number(v) as LeagueSettings['playoff_teams'] })}
+        width="w-28"
+        disabled={playoffTeamsControl(s.schedule_mode).disabled || closed('playoff_teams')} // Q39 (C): no bracket in a total-points league — settings-panel-ops is the pin's home
+      />
+    </FieldRow>
+  )
 
-      <FieldRow label="Schedule" htmlFor="set-schedule" hint={hintFor('schedule_mode', 'Total-points has no matchups.')}>
-        <ChoiceSelect
-          id="set-schedule"
-          ariaLabel="Schedule mode"
-          value={s.schedule_mode}
-          options={[
-            { value: 'h2h', label: 'Head-to-head' },
-            { value: 'total_points', label: 'Total points' },
-          ]}
-          onValueChange={(v) => onSettings(scheduleModePatch(v as LeagueSettings['schedule_mode']))} // Q39 (C): total-points carries playoff_teams 0
-          disabled={closed('schedule_mode')}
-        />
-      </FieldRow>
+  const weeksPerRound = (
+    <FieldRow label="Weeks per playoff round" htmlFor="set-ppr" hint={hintFor('playoff_weeks_per_round')}>
+      <ChoiceSelect
+        id="set-ppr"
+        ariaLabel="Weeks per playoff round"
+        value={String(s.playoff_weeks_per_round)}
+        options={[
+          { value: '1', label: '1 week' },
+          { value: '2', label: '2 weeks' },
+        ]}
+        onValueChange={(v) =>
+          onSettings({ playoff_weeks_per_round: Number(v) as LeagueSettings['playoff_weeks_per_round'] })
+        }
+        disabled={closed('playoff_weeks_per_round')}
+      />
+    </FieldRow>
+  )
 
+  const schedule = (
+    <FieldRow label="Schedule" htmlFor="set-schedule" hint={hintFor('schedule_mode', 'Total-points has no matchups.')}>
+      <ChoiceSelect
+        id="set-schedule"
+        ariaLabel="Schedule mode"
+        value={s.schedule_mode}
+        options={[
+          { value: 'h2h', label: 'Head-to-head' },
+          { value: 'total_points', label: 'Total points' },
+        ]}
+        onValueChange={(v) => onSettings(scheduleModePatch(v as LeagueSettings['schedule_mode']))} // Q39 (C): total-points carries playoff_teams 0
+        disabled={closed('schedule_mode')}
+      />
+    </FieldRow>
+  )
+
+  const extraGames = (
+    <>
       <ToggleRow
         id="set-median"
         label="Median game"
@@ -1318,6 +1507,11 @@ function FormatGroup({
         checked={s.second_opponent}
         onCheckedChange={(second_opponent) => onSettings({ second_opponent })}
       />
+    </>
+  )
+
+  const bracketOptions = (
+    <>
       <ToggleRow
         id="set-reseed"
         label="Reseed playoffs"
@@ -1342,6 +1536,53 @@ function FormatGroup({
         checked={s.third_place_game}
         onCheckedChange={(third_place_game) => onSettings({ third_place_game })}
       />
+    </>
+  )
+
+  if (part === 'basics') {
+    return (
+      <GroupCard title="League">
+        {teams}
+        {divisions}
+        {regularSeason}
+        {schedule}
+        {extraGames}
+        {issues(['team_count'])}
+      </GroupCard>
+    )
+  }
+
+  if (part === 'playoffs') {
+    return (
+      <GroupCard title="Playoffs">
+        {playoffTeams}
+        {playoffsStart}
+        {weeksPerRound}
+        {issues(['playoff_start_week', 'playoff_teams'])}
+        {bracketOptions}
+      </GroupCard>
+    )
+  }
+
+  return (
+    <GroupCard title="Basic settings">
+      {teams}
+      {divisions}
+
+      <SectionLabel>Season &amp; playoffs</SectionLabel>
+
+      {regularSeason}
+      {playoffsStart}
+      {playoffTeams}
+      {weeksPerRound}
+
+      {issues(['playoff_start_week', 'playoff_teams', 'team_count'])}
+
+      <SectionLabel>Scoring format</SectionLabel>
+
+      {schedule}
+      {extraGames}
+      {bracketOptions}
     </GroupCard>
   )
 }
@@ -1350,7 +1591,7 @@ function FormatGroup({
 // §7.3.4 — Waivers & free agency
 // ---------------------------------------------------------------------------
 
-function WaiversGroup({
+export function WaiversGroup({
   s,
   onSettings,
 }: {
@@ -1378,25 +1619,23 @@ function WaiversGroup({
       {s.waiver_type === 'faab' && (
         <>
           <FieldRow label="FAAB budget" htmlFor="set-faab-budget" hint="Season-long blind-bid pool.">
-            <Input
+            <NumberField
               id="set-faab-budget"
               type="number"
               min={0}
               max={1000}
               value={s.faab_budget}
               onChange={(e) => onSettings({ faab_budget: clampInt(e.target.value, 0, 1000, s.faab_budget) })}
-              className="w-24"
             />
           </FieldRow>
           <FieldRow label="Minimum bid" htmlFor="set-faab-min">
-            <Input
+            <NumberField
               id="set-faab-min"
               type="number"
               min={0}
               max={10}
               value={s.faab_min_bid}
               onChange={(e) => onSettings({ faab_min_bid: clampInt(e.target.value, 0, 10, s.faab_min_bid) })}
-              className="w-24"
             />
           </FieldRow>
           {/* v2.16.69 (L.D2.17 — Chris 2026-09-29): rolling priority is the default tiebreaker. */}
@@ -1447,14 +1686,13 @@ function WaiversGroup({
       />
 
       <FieldRow label="FA hold" htmlFor="set-fa-hold" hint="Hours before a new add is droppable.">
-        <Input
+        <NumberField
           id="set-fa-hold"
           type="number"
           min={0}
           max={48}
           value={s.fa_hold_hours}
           onChange={(e) => onSettings({ fa_hold_hours: clampInt(e.target.value, 0, 48, s.fa_hold_hours) })}
-          className="w-24"
         />
       </FieldRow>
 
@@ -1486,7 +1724,7 @@ function UnlimitedOrNumber({
     <FieldRow label={label} htmlFor={id}>
       <div className="flex items-center gap-2">
         {!unlimited && (
-          <Input
+          <NumberField
             id={id}
             type="number"
             min={0}
@@ -1515,7 +1753,7 @@ function UnlimitedOrNumber({
 // §7.3.5 — Trades
 // ---------------------------------------------------------------------------
 
-function TradesGroup({
+export function TradesGroup({
   s,
   onSettings,
   errorsFor,
@@ -1550,7 +1788,7 @@ function TradesGroup({
 
       {s.trade_review === 'league_vote' && (
         <FieldRow label="Veto votes" htmlFor="set-veto" hint={`1–${s.team_count} to veto a trade.`}>
-          <Input
+          <NumberField
             id="set-veto"
             type="number"
             min={1}
@@ -1561,13 +1799,12 @@ function TradesGroup({
               // R109 fix, correct here from the start.
               onSettings({ trade_veto_votes: clampInt(e.target.value, 1, s.team_count, s.trade_veto_votes) })
             }
-            className="w-24"
           />
         </FieldRow>
       )}
 
       <FieldRow label="Review period" htmlFor="set-trade-hours" hint="Hours before a trade executes.">
-        <Input
+        <NumberField
           id="set-trade-hours"
           type="number"
           min={0}
@@ -1576,7 +1813,6 @@ function TradesGroup({
           onChange={(e) =>
             onSettings({ trade_review_period_hours: clampInt(e.target.value, 0, 96, s.trade_review_period_hours) })
           }
-          className="w-24"
         />
       </FieldRow>
 
@@ -1630,13 +1866,15 @@ function TradesGroup({
 // §7.3.6 — Lineups & lock
 // ---------------------------------------------------------------------------
 
-function LineupsGroup({
+export function LineupsGroup({
   s,
   onSettings,
 }: {
   s: LeagueSettings
   onSettings: (patch: Partial<LeagueSettings>) => void
 }) {
+  // A fixed rule reads as a value: v7's small grey text, the phone's row value.
+  const ruleText = useSettingsSkin() === 'mobile' ? 'text-[14px] font-semibold text-m-t1' : 'text-[11px] font-medium text-n-3'
   return (
     <GroupCard title="Lineups & lock">
       {/* v2.16.20 (Q34(A), Chris 2026-09-05; migration 114): the lineup lock has ONE value —
@@ -1644,7 +1882,7 @@ function LineupsGroup({
           itself stays visible as a static line (redesign: clarity over density — a commissioner
           reading this group should still learn WHEN lineups lock). */}
       <FieldRow label="Lineup lock" hint="Each player locks at his own kickoff. There is no league-wide lock.">
-        <span className="text-[11px] font-medium text-n-3">Per-player kickoff</span>
+        <span className={ruleText}>Per-player kickoff</span>
       </FieldRow>
 
       <ToggleRow
@@ -1667,7 +1905,7 @@ function LineupsGroup({
           custom-hours control changed nothing (no job reads `stat_correction_window`; since 158 the
           window is the next week's first kickoff), so it is gone; the stored value is untouched. */}
       <FieldRow label="Stat corrections" hint={`${STAT_FIX_RULE_COPY}. The same rule for every league this season.`}>
-        <span className="text-[11px] font-medium text-n-3" data-stat-fix-rule>
+        <span className={ruleText} data-stat-fix-rule>
           Next week’s first game
         </span>
       </FieldRow>
@@ -1688,7 +1926,7 @@ const TIEBREAKER_LABELS: Record<Tiebreaker, string> = {
   coin_flip: 'Coin flip (deterministic)',
 }
 
-function TiebreakersGroup({
+export function TiebreakersGroup({
   s,
   onSettings,
 }: {
@@ -1703,6 +1941,44 @@ function TiebreakersGroup({
     if (target < 0 || target >= next.length) return
     ;[next[index], next[target]] = [next[target], next[index]]
     onSettings({ tiebreakers: next })
+  }
+
+  if (useSettingsSkin() === 'mobile') {
+    // The phone: one row per tiebreaker on the page's b2 hairlines — its
+    // place, its name, and round up / down buttons (the same move).
+    return (
+      <GroupCard title="Tiebreakers">
+        <p className="pb-1.5 text-[12px] font-medium leading-[1.35] text-m-t3">
+          Applied in order whenever teams tie — standings and playoff seeding share this one order.
+        </p>
+        <ol className="flex flex-col">
+          {chain.map((entry, i) => (
+            <li key={entry} className="flex min-h-[44px] items-center gap-3 border-b border-m-b2 last:border-b-0">
+              <span className="w-5 flex-none text-[13px] font-semibold tabular-nums text-m-t3">{i + 1}</span>
+              <span className="min-w-0 flex-1 text-[14px] font-semibold text-m-t1">{TIEBREAKER_LABELS[entry] ?? entry}</span>
+              <button
+                type="button"
+                aria-label={`Move ${TIEBREAKER_LABELS[entry]} up`}
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+                className="flex size-8 flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1 active:bg-m-b2h disabled:opacity-35"
+              >
+                <MIcon name="chevronUp" size={14} stroke={2.2} />
+              </button>
+              <button
+                type="button"
+                aria-label={`Move ${TIEBREAKER_LABELS[entry]} down`}
+                disabled={i === chain.length - 1}
+                onClick={() => move(i, 1)}
+                className="flex size-8 flex-none items-center justify-center rounded-full bg-m-b2 text-m-t1 active:bg-m-b2h disabled:opacity-35"
+              >
+                <MIcon name="chevronDown" size={14} stroke={2.2} />
+              </button>
+            </li>
+          ))}
+        </ol>
+      </GroupCard>
+    )
   }
 
   return (
@@ -1803,7 +2079,7 @@ const COMMON_ZONES: ReadonlyArray<{ value: string; label: string }> = [
  * authoritative instant, with the scheduler's own zone as the one-tap
  * default.
  */
-function ScheduleDraftGroup({
+export function ScheduleDraftGroup({
   value,
   year,
   onChange,
@@ -1878,6 +2154,11 @@ function ScheduleDraftGroup({
     onChange(null)
   }
 
+  // The phone draws the small actions as its own pills and the summary in
+  // its t3 line; the selects and rows are the shared skinned controls.
+  const phone = useSettingsSkin() === 'mobile'
+  const phonePill = 'flex h-8 flex-none items-center gap-1.5 rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h'
+
   return (
     <GroupCard title="Schedule the draft">
       <FieldRow
@@ -1913,11 +2194,16 @@ function ScheduleDraftGroup({
             disabled={!month || !day}
             width="w-28"
           />
-          {value && (
-            <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
-              Clear
-            </Button>
-          )}
+          {value &&
+            (phone ? (
+              <button type="button" className={phonePill} onClick={handleClear}>
+                Clear
+              </button>
+            ) : (
+              <Button type="button" variant="ghost" size="sm" onClick={handleClear}>
+                Clear
+              </Button>
+            ))}
         </div>
       </FieldRow>
 
@@ -1939,25 +2225,36 @@ function ScheduleDraftGroup({
             onValueChange={(v) => onTimeZone(v)}
             width="w-52"
           />
-          {!timeZone && myZone && (
-            <Button type="button" variant="stroke" size="sm" onClick={() => onTimeZone(myZone)}>
-              <Icon name="marker" size={13} />
-              Use my zone
-            </Button>
-          )}
-          {timeZone && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onTimeZone(null)}>
-              Clear
-            </Button>
-          )}
+          {!timeZone &&
+            myZone &&
+            (phone ? (
+              <button type="button" className={phonePill} onClick={() => onTimeZone(myZone)}>
+                Use my zone
+              </button>
+            ) : (
+              <Button type="button" variant="stroke" size="sm" onClick={() => onTimeZone(myZone)}>
+                <Icon name="marker" size={13} />
+                Use my zone
+              </Button>
+            ))}
+          {timeZone &&
+            (phone ? (
+              <button type="button" className={phonePill} onClick={() => onTimeZone(null)}>
+                Clear
+              </button>
+            ) : (
+              <Button type="button" variant="ghost" size="sm" onClick={() => onTimeZone(null)}>
+                Clear
+              </Button>
+            ))}
         </div>
       </FieldRow>
 
-      <p className="border-t border-n-4 py-2.5 text-[11px] font-medium text-n-3">
+      <p className={phone ? 'py-2.5 text-[12px] font-medium leading-[1.35] text-m-t3' : 'border-t border-n-4 py-2.5 text-[11px] font-medium text-n-3'}>
         {value ? (
           <>
             Drafting{' '}
-            <span className="fs-num text-ink">
+            <span className={phone ? 'font-semibold tabular-nums text-m-t1' : 'fs-num text-ink'}>
               {new Date(value).toLocaleString(undefined, {
                 weekday: 'short',
                 month: 'short',
@@ -1982,7 +2279,7 @@ function ScheduleDraftGroup({
 // ---------------------------------------------------------------------------
 
 
-function DraftGroup({
+export function DraftGroup({
   s,
   onDraft,
   errorsFor,

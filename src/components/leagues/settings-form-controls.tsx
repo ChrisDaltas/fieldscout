@@ -2,7 +2,8 @@
 
 import { createContext, useContext } from 'react'
 
-import { MNotice, MSelect, SwitchTrack } from '@/components/mobile/ui/m-form'
+import { M_NUMBER_FIELD, MNotice, MSelect, SwitchTrack } from '@/components/mobile/ui/m-form'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -94,9 +95,12 @@ export function FieldRow({
 }) {
   const skin = useSettingsSkin()
   if (skin === 'mobile') {
+    // The label keeps at least 40% of the row, so a control wider than the
+    // rest (the draft's month / day / time, a long choice) wraps under it
+    // instead of squeezing the label into a column of single words.
     return (
       <div className={M_ROW}>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-[40%] flex-1 flex-col gap-0.5">
           <label htmlFor={htmlFor} className={M_ROW_LABEL}>
             {label}
           </label>
@@ -231,11 +235,34 @@ export function ChoiceSelect({
 }
 
 /** A sub-section title inside a settings group (the next row's hairline
- *  sits under it). */
+ *  sits under it). On the phone it is the handoff's G-page section title
+ *  (13/600 t3), so a group's sub-sections read like the pages' own. */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
+  const skin = useSettingsSkin()
+  if (skin === 'mobile') return <div className="pb-1 pt-4 text-[13px] font-semibold text-m-t3">{children}</div>
   return (
     <div className="pb-2 pt-5 text-[13px] font-bold tracking-[-0.01em] text-ink">{children}</div>
   )
+}
+
+/**
+ * A settings number field: the v7 input on desktop (`className` sizes it,
+ * `w-24` by default); on the phone a plain field in the phone's fill and
+ * type with the number keypad (`M_NUMBER_FIELD`). One field for every
+ * settings form (the draft knobs, waivers, trades), never a forked input.
+ */
+export function NumberField({ className = 'w-24', ...props }: React.ComponentProps<'input'>) {
+  if (useSettingsSkin() === 'mobile') return <input {...props} inputMode={props.inputMode ?? 'numeric'} className={M_NUMBER_FIELD} />
+  return <Input {...props} className={className} />
+}
+
+/**
+ * A clock field (`type="time"`): the v7 input on desktop, the phone's
+ * filled field on the phone (the system's own time wheel opens on tap).
+ */
+export function TimeField({ className = 'w-28', ...props }: React.ComponentProps<'input'>) {
+  if (useSettingsSkin() === 'mobile') return <input {...props} type="time" className={cn(M_NUMBER_FIELD, 'w-[136px] text-left')} />
+  return <Input {...props} type="time" className={className} />
 }
 
 /** {value,label} option list from numbers, with an optional unit suffix. */

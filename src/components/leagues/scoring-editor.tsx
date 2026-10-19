@@ -2,6 +2,8 @@
 
 import { useId, useRef, useState } from 'react'
 
+import { M_NUMBER_FIELD, SwitchTrack } from '@/components/mobile/ui/m-form'
+import { MIcon } from '@/components/mobile/ui/m-icon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardTitle } from '@/components/ui/card'
@@ -43,6 +45,7 @@ import {
   scoringEditorAccess,
   sectionFieldStates,
   sectionsForPosition,
+  sentenceCase,
   STEPPER_POSITIONS,
   type ScoringDocView,
   type ScoringEditorAccess,
@@ -50,7 +53,17 @@ import {
   type ScoringFieldState,
   type SaveRefusal,
 } from './scoring-editor-ops'
-import { InlineIssue } from './settings-form-controls'
+import { InlineIssue, useSettingsSkin } from './settings-form-controls'
+
+/**
+ * The phone skin (`SettingsSkin` mobile — the League settings Scoring
+ * page's edit screen): the same editor, states and save drawn in the
+ * FieldScout Mobile language — the G-page section titles, rows on b2
+ * hairlines, the position chips, the phone's number field and the 48px
+ * Save pill. Every colour is an `m-*` token, so phone dark mode follows.
+ */
+const M_SECTION_TITLE = 'pb-1 pt-2.5 text-[13px] font-semibold text-m-t3'
+const M_NOTE = 'text-[12px] font-medium leading-[1.35] text-m-t3'
 
 /**
  * Custom scoring editor — the shell (SE.7; spec §7.3.3.1 product shape,
@@ -261,6 +274,16 @@ function accessNotices(access: ScoringEditorAccess): EditorNotice[] {
 // ---------------------------------------------------------------------------
 
 function ScoringEditorSkeleton({ className }: { className?: string }) {
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <div className={cn('flex flex-col gap-2.5 pt-2.5', className)} aria-busy="true" aria-label="Loading custom scoring">
+        <span className="h-4 w-32 rounded-md bg-m-b1" />
+        <span className="h-8 w-full rounded-pill bg-m-b1" />
+        <span className="h-28 w-full rounded-[14px] bg-m-b1" />
+        <span className="h-28 w-full rounded-[14px] bg-m-b1" />
+      </div>
+    )
+  }
   return (
     <Card className={className} aria-busy="true" aria-label="Loading custom scoring">
       <CardContent className="flex flex-col gap-3 p-4">
@@ -284,6 +307,21 @@ function ScoringEditorLoadError({
   className?: string
   onRetry: () => void
 }) {
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <div role="alert" className={cn('flex flex-col items-start gap-1 rounded-message bg-m-gr px-3.5 py-3', className)}>
+        <p className="text-[13px] font-semibold text-m-tr">Couldn&apos;t load this league&apos;s custom scoring.</p>
+        <p className="text-[12px] font-medium leading-[1.4] text-m-t2">Check your connection and try again — nothing was changed.</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-1.5 flex h-8 items-center rounded-pill bg-m-b0 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
   return (
     <Card className={cn('border-0 bg-negative-soft', className)}>
       <CardContent className="flex flex-col items-start gap-1.5 p-4">
@@ -320,11 +358,9 @@ function ScoringEditorEmpty({
    *  at the caller — F194: passed down, never re-derived here). */
   inEditWindow: boolean
 }) {
-  return (
-    <Card className={className}>
-      <CardContent className="flex flex-col gap-1.5 p-4">
-        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">Custom scoring</CardTitle>
-        <p className="text-[11px] font-medium text-n-3">
+  const phone = useSettingsSkin() === 'mobile'
+  const copy = (
+        <p className={phone ? M_NOTE : 'text-[11px] font-medium text-n-3'}>
           {templateName
             ? `This league scores with the ${templateName} template — one shared rulebook, unedited.`
             : 'This league scores with a shared template — one rulebook, unedited.'}{' '}
@@ -342,6 +378,20 @@ function ScoringEditorEmpty({
             SCORING_LOCKED_MESSAGE
           )}
         </p>
+  )
+  if (phone) {
+    return (
+      <section className={cn('flex flex-col', className)}>
+        <h2 className={M_SECTION_TITLE}>Custom scoring</h2>
+        {copy}
+      </section>
+    )
+  }
+  return (
+    <Card className={className}>
+      <CardContent className="flex flex-col gap-1.5 p-4">
+        <CardTitle className="text-[15px] font-bold tracking-[-0.02em]">Custom scoring</CardTitle>
+        {copy}
       </CardContent>
     </Card>
   )
@@ -488,6 +538,214 @@ function ScoringEditorBody({
     tabRefs.current[next]?.focus()
   }
 
+  const phone = useSettingsSkin() === 'mobile'
+
+  // The position page — the same sections, tier tables and sample line in
+  // either skin (only their containers differ).
+  const tabPanel = (
+    <div
+      role="tabpanel"
+      id={panelId}
+      aria-labelledby={`${idBase}-scoring-tab-${position}`}
+      className={phone ? 'flex flex-col gap-[18px]' : 'flex flex-col gap-2.5'}
+    >
+      {sections.map((section) => {
+        const derivedOn = allPositionsOn(view, section.id)
+        const switchOn = derivedOn && customizing[section.id] !== true
+        const fields = sectionFieldStates(view, section.id, position)
+        // K and D/ST are single-position pages (Q12): their sections
+        // carry no All-Positions switch — guardrail 3 scopes their keys
+        // to that one position, so "apply to every position" has nothing
+        // legal to mean. Their edits write `base`, exactly where a
+        // template fork carries them.
+        const multiPosition = section.positions.length > 1
+        const scope: 'all' | ScoringPosition = multiPosition && !switchOn ? position : 'all'
+        const allLabel = `${section.title}: same values for all positions`
+        const perPositionNote = (
+          <>
+            Setting {positionLabel(position)} values — other positions keep the
+            shared values. Set a value to 0 to switch a category off for{' '}
+            {positionLabel(position)} only.
+          </>
+        )
+        const cells = fields.map((field) => (
+          <CoefficientCell
+            key={`${position}-${field.key}`}
+            field={field}
+            disabled={!editable}
+            onCommit={(value, adjusted) =>
+              commitEdit(section.id, field.key, field.label, scope, value, adjusted)
+            }
+          />
+        ))
+        if (phone) {
+          return (
+            <section key={section.id} aria-label={`${section.title} scoring`} className="flex flex-col">
+              <div className="flex items-center justify-between gap-3 pb-1 pt-2.5">
+                <h3 className="text-[13px] font-semibold text-m-t3">{sentenceCase(section.title)}</h3>
+                {multiPosition && (
+                  <label className="flex items-center gap-2 text-[12px] font-semibold text-m-t3">
+                    All positions
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={switchOn}
+                      aria-label={allLabel}
+                      disabled={!editable}
+                      onClick={() => toggleAllPositions(section.id, !switchOn)}
+                      className="flex-none disabled:opacity-40"
+                    >
+                      <SwitchTrack on={switchOn} />
+                    </button>
+                  </label>
+                )}
+              </div>
+              {multiPosition && !switchOn && <p className={cn(M_NOTE, 'pb-1')}>{perPositionNote}</p>}
+              {cells}
+            </section>
+          )
+        }
+        return (
+          <section key={section.id} aria-label={`${section.title} scoring`}>
+            <div className="flex flex-col gap-2.5 rounded-xl bg-surface-sunken p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-[13px] font-bold tracking-[-0.01em]">{section.title}</h3>
+                {multiPosition && (
+                  <label className="flex items-center gap-2 text-[10px] font-semibold text-n-3">
+                    All positions
+                    <Switch
+                      checked={switchOn}
+                      disabled={!editable}
+                      onCheckedChange={(next) => toggleAllPositions(section.id, next)}
+                      aria-label={allLabel}
+                    />
+                  </label>
+                )}
+              </div>
+              {multiPosition && !switchOn && (
+                <p className="text-[10px] font-medium text-n-6">{perPositionNote}</p>
+              )}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">{cells}</div>
+            </div>
+          </section>
+        )
+      })}
+
+      {/* The D/ST tier tables — PA + YA payouts over the doc's OWN
+          tier cut list, boundaries read-only (SE.8; §7.3.3.1(b), F178). */}
+      {position === 'DST' && (
+        <DstTierTables doc={activeDoc} disabled={!editable} onCommit={commitTierEdit} />
+      )}
+
+      {/* The live sample line — this position's fixed §7.3.3.1 player
+          through the REAL pipeline, recomputed keystroke-by-keystroke
+          from the doc-as-edited (SE.8; D171, F178). */}
+      <SampleLine position={position} doc={activeDoc} />
+    </div>
+  )
+
+  const noticeList = (
+    <>
+      {notices.map((notice) => (
+        <InlineIssue key={notice.message} tone={notice.tone} message={notice.message} />
+      ))}
+
+      {retainedUnsaved && (
+        <InlineIssue
+          tone="warning"
+          message="You have unsaved scoring edits from this session — they're kept on this page but haven't been saved."
+        />
+      )}
+
+      {refusal && <SaveRefusalNotice refusal={refusal} />}
+    </>
+  )
+
+  if (phone) {
+    // The stepper as the phone's chips (G3's round chips: white on ink when
+    // on) — the same roving tablist; Back / Next under the page, then the
+    // 48px Save pill (handoff G1's) for an editable document.
+    const chip = (on: boolean) =>
+      cn('flex h-8 flex-none items-center rounded-pill px-3.5 text-[12px] font-semibold', on ? 'bg-m-ink text-white' : 'bg-m-b2 text-m-t1')
+    return (
+      <section className={cn('flex flex-col gap-2.5', className)} aria-label="Custom scoring" data-custom-scoring>
+        <div className="flex items-center justify-between gap-3 pt-2.5">
+          <h2 className="text-[13px] font-semibold text-m-t3">Custom scoring</h2>
+          {mode.kind === 'edit' && (
+            <span className="text-[12px] font-medium text-m-t3">{dirty ? 'Unsaved changes' : 'All changes saved'}</span>
+          )}
+        </div>
+        {noticeList}
+        <div
+          role="tablist"
+          aria-label="Scoring position"
+          className="-mx-4 flex gap-1.5 overflow-x-auto px-4 scrollbar-none"
+          onKeyDown={handleStepperKeyDown}
+        >
+          {STEPPER_POSITIONS.map((p, index) => (
+            <button
+              key={p}
+              ref={(el) => {
+                tabRefs.current[index] = el
+              }}
+              type="button"
+              role="tab"
+              id={`${idBase}-scoring-tab-${p}`}
+              aria-selected={index === stepIndex}
+              aria-controls={panelId}
+              tabIndex={index === stepIndex ? 0 : -1}
+              className={chip(index === stepIndex)}
+              onClick={() => setStepIndex(index)}
+            >
+              {positionLabel(p)}
+            </button>
+          ))}
+        </div>
+        {adjustedNote && (
+          <p role="status" className={M_NOTE}>
+            {adjustedNote}
+          </p>
+        )}
+        {tabPanel}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <button
+            type="button"
+            disabled={stepIndex === 0}
+            onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+            className="flex h-8 items-center gap-1 rounded-pill bg-m-b2 pl-2.5 pr-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h disabled:opacity-40"
+          >
+            <MIcon name="back" size={12} stroke={2.2} /> Back
+          </button>
+          <span className="text-[12px] font-semibold tabular-nums text-m-t3">
+            {stepIndex + 1} / {STEPPER_POSITIONS.length}
+          </span>
+          <button
+            type="button"
+            disabled={stepIndex === STEPPER_POSITIONS.length - 1}
+            onClick={() => setStepIndex((i) => Math.min(STEPPER_POSITIONS.length - 1, i + 1))}
+            className="flex h-8 items-center gap-1 rounded-pill bg-m-b2 pl-3.5 pr-2.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h disabled:opacity-40"
+          >
+            Next <MIcon name="chevronRight" size={12} stroke={2.2} />
+          </button>
+        </div>
+        {mode.kind === 'edit' && (
+          <button
+            type="button"
+            disabled={!dirty || isSaving}
+            onClick={handleSave}
+            className={cn(
+              'mt-1.5 flex h-12 w-full items-center justify-center rounded-pill text-[15px] font-semibold',
+              dirty && !isSaving ? 'bg-accent text-white active:bg-accent-strong' : 'bg-m-b3s text-m-t3',
+            )}
+            data-scoring-values-save
+          >
+            {isSaving ? 'Saving…' : 'Save scoring'}
+          </button>
+        )}
+      </section>
+    )
+  }
+
   return (
     <Card className={className}>
       <CardContent className="flex flex-col gap-3.5 p-4">
@@ -520,18 +778,7 @@ function ScoringEditorBody({
           )}
         </div>
 
-        {notices.map((notice) => (
-          <InlineIssue key={notice.message} tone={notice.tone} message={notice.message} />
-        ))}
-
-        {retainedUnsaved && (
-          <InlineIssue
-            tone="warning"
-            message="You have unsaved scoring edits from this session — they're kept on this page but haven't been saved."
-          />
-        )}
-
-        {refusal && <SaveRefusalNotice refusal={refusal} />}
+        {noticeList}
 
         {/* The stepper — §7.3.3.1's literal order, one page per position.
             R682: roving tabindex + arrow-key selection; every tab controls
@@ -575,75 +822,7 @@ function ScoringEditorBody({
           </p>
         )}
 
-        <div
-          role="tabpanel"
-          id={panelId}
-          aria-labelledby={`${idBase}-scoring-tab-${position}`}
-          className="flex flex-col gap-2.5"
-        >
-          {sections.map((section) => {
-            const derivedOn = allPositionsOn(view, section.id)
-            const switchOn = derivedOn && customizing[section.id] !== true
-            const fields = sectionFieldStates(view, section.id, position)
-            // K and D/ST are single-position pages (Q12): their sections
-            // carry no All-Positions switch — guardrail 3 scopes their keys
-            // to that one position, so "apply to every position" has nothing
-            // legal to mean. Their edits write `base`, exactly where a
-            // template fork carries them.
-            const multiPosition = section.positions.length > 1
-            const scope: 'all' | ScoringPosition = multiPosition && !switchOn ? position : 'all'
-            return (
-              <section key={section.id} aria-label={`${section.title} scoring`}>
-                <div className="flex flex-col gap-2.5 rounded-xl bg-surface-sunken p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-[13px] font-bold tracking-[-0.01em]">{section.title}</h3>
-                    {multiPosition && (
-                      <label className="flex items-center gap-2 text-[10px] font-semibold text-n-3">
-                        All positions
-                        <Switch
-                          checked={switchOn}
-                          disabled={!editable}
-                          onCheckedChange={(next) => toggleAllPositions(section.id, next)}
-                          aria-label={`${section.title}: same values for all positions`}
-                        />
-                      </label>
-                    )}
-                  </div>
-                  {multiPosition && !switchOn && (
-                    <p className="text-[10px] font-medium text-n-6">
-                      Setting {positionLabel(position)} values — other positions keep the
-                      shared values. Set a value to 0 to switch a category off for{' '}
-                      {positionLabel(position)} only.
-                    </p>
-                  )}
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {fields.map((field) => (
-                      <CoefficientCell
-                        key={`${position}-${field.key}`}
-                        field={field}
-                        disabled={!editable}
-                        onCommit={(value, adjusted) =>
-                          commitEdit(section.id, field.key, field.label, scope, value, adjusted)
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
-              </section>
-            )
-          })}
-
-          {/* The D/ST tier tables — PA + YA payouts over the doc's OWN
-              tier cut list, boundaries read-only (SE.8; §7.3.3.1(b), F178). */}
-          {position === 'DST' && (
-            <DstTierTables doc={activeDoc} disabled={!editable} onCommit={commitTierEdit} />
-          )}
-
-          {/* The live sample line — this position's fixed §7.3.3.1 player
-              through the REAL pipeline, recomputed keystroke-by-keystroke
-              from the doc-as-edited (SE.8; D171, F178). */}
-          <SampleLine position={position} doc={activeDoc} />
-        </div>
+        {tabPanel}
 
         <div className="flex items-center justify-between gap-2">
           <Button
@@ -687,6 +866,22 @@ function ScoringEditorBody({
 function SampleLine({ position, doc }: { position: ScoringPosition; doc: ScoringRulesDoc }) {
   const sample = SAMPLE_PLAYERS[position]
   const total = sampleLineTotal(doc, position)
+  if (useSettingsSkin() === 'mobile') {
+    return (
+      <div className="flex flex-col gap-1 rounded-[14px] bg-m-b1 px-3.5 py-3" data-sample-line>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <p className="text-[13px] font-semibold text-m-t1">
+            Sample week — {sample.name} <span className="font-medium text-m-t3">({positionLabel(position)})</span>
+          </p>
+          <p aria-live="polite" className="text-[15px] font-semibold text-m-t1">
+            <span className="tabular-nums">{total.toFixed(2)}</span>{' '}
+            <span className="text-[12px] font-medium text-m-t3">pts</span>
+          </p>
+        </div>
+        <p className={M_NOTE}>{sample.line}</p>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-n-4 p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -726,19 +921,20 @@ function DstTierTables({
   onCommit: (key: string, label: string, value: number, adjusted: 'clamped' | 'rounded' | null) => void
 }) {
   const tables = dstTierTables(doc)
+  const phone = useSettingsSkin() === 'mobile'
   if (tables.length === 0) return null
   return (
     <>
       {tables.map((table) => (
-        <section key={table.family} aria-label={`${table.title} tier scoring`}>
-          <div className="flex flex-col gap-2.5 rounded-xl bg-surface-sunken p-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <h3 className="text-[13px] font-bold tracking-[-0.01em]">{table.title}</h3>
-              <p className="text-[10px] font-medium text-n-6">
+        <section key={table.family} aria-label={`${table.title} tier scoring`} className={phone ? 'flex flex-col' : undefined}>
+          <div className={phone ? 'contents' : 'flex flex-col gap-2.5 rounded-xl bg-surface-sunken p-3'}>
+            <div className={phone ? 'flex flex-col gap-0.5 pb-1 pt-2.5' : 'flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5'}>
+              <h3 className={phone ? 'text-[13px] font-semibold text-m-t3' : 'text-[13px] font-bold tracking-[-0.01em]'}>{table.title}</h3>
+              <p className={phone ? M_NOTE : 'text-[10px] font-medium text-n-6'}>
                 Ranges come with the league&apos;s scoring — only the points are editable.
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <div className={phone ? 'contents' : 'grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3'}>
               {table.rows.map((row) => (
                 <CoefficientCell
                   key={row.key}
@@ -786,27 +982,7 @@ function DstTierTables({
 function SaveRefusalNotice({ refusal }: { refusal: SaveRefusal }) {
   if (refusal.kind === 'validation') {
     const entries = Object.entries(refusal.fieldErrors)
-    return (
-      <div
-        role="alert"
-        className="flex flex-col gap-1 rounded-xl bg-negative-soft px-3.5 py-2.5"
-      >
-        <p className="text-[11px] font-bold">
-          The server refused these values — nothing was changed.
-        </p>
-        {entries.length === 0 ? (
-          <p className="text-[11px] font-medium text-n-3">{refusal.message}</p>
-        ) : (
-          <ul className="flex flex-col gap-0.5">
-            {entries.map(([path, messages]) => (
-              <li key={path} className="text-[11px] font-medium text-n-3">
-                <span className="fs-num font-bold text-ink">{path}</span>: {messages.join(' · ')}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    )
+    return <ValidationRefusal message={refusal.message} entries={entries} />
   }
   if (refusal.kind === 'refused') {
     return <InlineIssue tone="error" message={`${refusal.message} Nothing was changed.`} />
@@ -824,6 +1000,33 @@ function SaveRefusalNotice({ refusal }: { refusal: SaveRefusal }) {
       tone="error"
       message="Couldn't reach FieldScout — the save may not have gone through. Your edits are still here; check your connection and try again."
     />
+  )
+}
+
+/** The guardrail 400's per-field list — desktop's tinted box, or the
+ *  phone's soft error tint (m-gr / m-tr: the bright red is ink only). */
+function ValidationRefusal({ message, entries }: { message: string; entries: Array<[string, string[]]> }) {
+  const phone = useSettingsSkin() === 'mobile'
+  return (
+    <div
+      role="alert"
+      className={phone ? 'flex flex-col gap-1 rounded-message bg-m-gr px-3 py-2.5' : 'flex flex-col gap-1 rounded-xl bg-negative-soft px-3.5 py-2.5'}
+    >
+      <p className={phone ? 'text-[13px] font-semibold text-m-tr' : 'text-[11px] font-bold'}>
+        The server refused these values — nothing was changed.
+      </p>
+      {entries.length === 0 ? (
+        <p className={phone ? 'text-[12px] font-medium text-m-t2' : 'text-[11px] font-medium text-n-3'}>{message}</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {entries.map(([path, messages]) => (
+            <li key={path} className={phone ? 'text-[12px] font-medium text-m-t2' : 'text-[11px] font-medium text-n-3'}>
+              <span className={phone ? 'font-semibold tabular-nums text-m-t1' : 'fs-num font-bold text-ink'}>{path}</span>: {messages.join(' · ')}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -878,6 +1081,51 @@ function CoefficientCell({
     // 'invalid' (or a refused clear): nothing commits — the cell falls back
     // to the last good value.
     setDraft(null)
+  }
+
+  if (useSettingsSkin() === 'mobile') {
+    // The phone row (the G-page rows): label and notes on the left, the
+    // "Custom" chip and the phone number field on the right; the sample's
+    // tier row carries the blue tint (a resting state = fill, never a lift).
+    return (
+      <div
+        className={cn(
+          'flex min-h-[48px] items-center gap-3 border-b border-m-b2 py-2 last:border-b-0',
+          highlight && '-mx-2 rounded-[10px] border-b-0 bg-m-gb px-2',
+        )}
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <label htmlFor={`scoring-${field.key}`} className="text-[14px] font-semibold text-m-t1">
+            {sentenceCase(field.label)}
+          </label>
+          {hint ? <p className={M_NOTE}>{hint}</p> : null}
+          {field.overridden ? (
+            <p className={M_NOTE}>
+              All positions: <span className="tabular-nums">{field.baseValue === undefined ? 'not scored' : field.baseValue}</span>
+            </p>
+          ) : field.value === undefined ? (
+            <p className={M_NOTE}>Not scored</p>
+          ) : null}
+        </div>
+        {field.overridden && (
+          <span className="flex h-5 flex-none items-center rounded-pill bg-m-gb px-2 text-[11px] font-semibold text-m-tb">Custom</span>
+        )}
+        <input
+          id={`scoring-${field.key}`}
+          type="number"
+          inputMode="decimal"
+          step={COEFFICIENT_INPUT_STEP}
+          min={-COEFFICIENT_INPUT_MAX}
+          max={COEFFICIENT_INPUT_MAX}
+          value={shown}
+          placeholder="—"
+          disabled={disabled}
+          onChange={(e) => handleChange(e.target.value)}
+          onBlur={handleBlur}
+          className={cn(M_NUMBER_FIELD, 'flex-none')}
+        />
+      </div>
+    )
   }
 
   return (

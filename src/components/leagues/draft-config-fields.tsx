@@ -1,7 +1,5 @@
 'use client'
 
-import { M_NUMBER_FIELD } from '@/components/mobile/ui/m-form'
-import { Input } from '@/components/ui/input'
 import type { FieldIssue, LeagueSettings } from '@/lib/leagues/settings/league-settings'
 
 import {
@@ -13,8 +11,8 @@ import {
   clampInt,
   FieldRow,
   InlineIssue,
+  NumberField,
   ToggleRow,
-  useSettingsSkin,
 } from './settings-form-controls'
 
 export { DRAFT_FIELD_BOUNDS, PICK_TIMER_LABELS, pickTimerOptions } from './draft-config-fields-ops'
@@ -110,16 +108,6 @@ export interface AuctionConfigFieldsProps extends DraftFieldsProps {
   /** Field-level §7.3.8 violations to render under the group — the
    *  contract's own messages (`validateLeagueSettings`), never re-worded. */
   issues?: FieldIssue[]
-}
-
-/**
- * The auction knobs' number field: the v7 input on desktop; on the phone
- * (`SettingsSkin` mobile) a plain field in the phone's fill and type with
- * the number keypad.
- */
-function NumberField(props: React.ComponentProps<'input'>) {
-  if (useSettingsSkin() === 'mobile') return <input {...props} inputMode="numeric" className={M_NUMBER_FIELD} />
-  return <Input {...props} className="w-24" />
 }
 
 /** The six §7.3.8 auction knobs. Mounted only when `draft_type === 'auction'`. */

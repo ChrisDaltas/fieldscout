@@ -25,11 +25,23 @@ import { teamInitial } from './league-tab-ops'
  * chevron, the title centred and a spacer — then the commissioner-override
  * strip when it's on. Back goes to where you came from, else the League tab.
  */
-export function LeaguePageBar({ leagueId, title }: { leagueId: string; title: string }) {
+export function LeaguePageBar({
+  leagueId,
+  title,
+  action,
+  leading,
+}: {
+  leagueId: string
+  title: string
+  /** The bar's right-hand text action (`MPageBar`'s). */
+  action?: React.ReactNode
+  /** Replaces Back (an editing page's Cancel). */
+  leading?: React.ReactNode
+}) {
   const goBack = useGoBack()
   return (
     <>
-      <MPageBar title={title} onBack={() => goBack(`/app/leagues/${leagueId}`)} />
+      <MPageBar title={title} onBack={() => goBack(`/app/leagues/${leagueId}`)} action={action} leading={leading} />
       <MobileOverrideStrip leagueId={leagueId} className="mb-1.5" />
     </>
   )

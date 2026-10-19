@@ -15,6 +15,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useMemo } from 'react'
 
+import { GripIcon } from '@/components/mobile/lists/lists-parts'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/ui/icon'
@@ -29,6 +30,13 @@ import { reorderIds } from '@/components/draft/my-queue-ops'
 import { parseDraftOrder } from '@/components/draft/draft-board-ops'
 
 import { reconcileDraftOrder } from './draft-order-editor-ops'
+import { useSettingsSkin } from './settings-form-controls'
+
+/** The phone skin's parts (`SettingsSkin` mobile): the G-page note, a quiet
+ *  pill, and one order row on the page's b2 hairlines. */
+const M_NOTE = 'text-[12px] font-medium leading-[1.35] text-m-t3'
+const M_PILL = 'flex h-8 w-fit flex-none items-center gap-1.5 rounded-pill bg-m-b2 px-3.5 text-[13px] font-semibold text-m-t1 active:bg-m-b2h disabled:opacity-50'
+const M_ORDER_ROW = 'flex min-h-[44px] items-center gap-3 border-b border-m-b2 bg-m-b0 text-[14px] font-semibold text-m-t1 last:border-b-0'
 
 interface DraftOrderEditorProps {
   leagueId: string
@@ -127,11 +135,38 @@ function ManualOrderList({
     onChange(reorderIds(ids, String(active.id), String(over.id)))
   }
 
+  const phone = useSettingsSkin() === 'mobile'
+
   if (ids.length === 0) {
     return (
-      <p className="pb-2.5 text-[11px] font-medium text-n-6">
+      <p className={phone ? cn(M_NOTE, 'py-2.5') : 'pb-2.5 text-[11px] font-medium text-n-6'}>
         No franchises yet — seats appear here as the league fills.
       </p>
+    )
+  }
+
+  if (phone) {
+    return (
+      <div className="flex flex-col gap-2 py-2.5" data-draft-order="manual">
+        <p className={M_NOTE}>Drag to set pick 1 → {ids.length}. Saved with your other changes.</p>
+        {canEdit && !stored && (
+          <div className="flex flex-col gap-1.5">
+            <button type="button" className={M_PILL} onClick={() => onChange(ids)}>
+              Use this order
+            </button>
+            <p className={M_NOTE}>This order isn&apos;t stored yet — use it (or drag), then save.</p>
+          </div>
+        )}
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            <ol className="flex flex-col">
+              {ids.map((teamId, i) => (
+                <OrderRow key={teamId} teamId={teamId} ordinal={i + 1} name={teamNameById.get(teamId) ?? 'Team'} disabled={!canEdit} phone />
+              ))}
+            </ol>
+          </SortableContext>
+        </DndContext>
+      </div>
     )
   }
 
@@ -175,16 +210,41 @@ function OrderRow({
   ordinal,
   name,
   disabled,
+  phone = false,
 }: {
   teamId: string
   ordinal: number
   name: string
   disabled: boolean
+  /** The phone skin's row (the caller reads the skin once for the list). */
+  phone?: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: teamId,
     disabled,
   })
+
+  if (phone) {
+    return (
+      <li
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition }}
+        className={cn(
+          M_ORDER_ROW,
+          !disabled && 'touch-none',
+          // Drag ghost = a true overlay while held — the one sanctioned
+          // resting shadow (CLAUDE.md elevation rule, the my-queue precedent).
+          isDragging && 'relative z-10 rounded-[10px] shadow-m-menu',
+        )}
+        {...attributes}
+        {...listeners}
+      >
+        <span className="w-6 flex-none text-right text-[13px] font-semibold tabular-nums text-m-t3">{ordinal}</span>
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {!disabled && <GripIcon className="text-m-t5" />}
+      </li>
+    )
+  }
 
   return (
     <li
@@ -235,6 +295,7 @@ function RandomizeRow({
   // Post-start the order is the commissioner panel's E31 dispatch — the
   // setup surface only acts pre-start.
   const postStart = activeDraft != null && activeDraft.status !== 'scheduled'
+  const phone = useSettingsSkin() === 'mobile'
 
   const handleRandomize = async () => {
     try {
@@ -254,6 +315,39 @@ function RandomizeRow({
         variant: 'destructive',
       })
     }
+  }
+
+  if (phone) {
+    return (
+      <div className="flex flex-col gap-2 py-2.5" data-draft-order="random">
+        {canEdit && !postStart && (
+          <div className="flex flex-col gap-1.5">
+            <button type="button" className={M_PILL} disabled={busy} onClick={() => void handleRandomize()}>
+              {busy ? 'Randomizing…' : storedOrder.length > 0 ? 'Re-randomize' : 'Randomize now'}
+            </button>
+            <p className={M_NOTE}>Instant — the result is written immediately and shown to the league.</p>
+          </div>
+        )}
+        {storedOrder.length > 0 ? (
+          <div className="flex flex-col gap-1.5">
+            <span className="flex h-5 w-fit items-center rounded-pill bg-m-gg px-2 text-[11px] font-semibold text-m-tg">Order locked in</span>
+            <ol className="flex flex-col">
+              {storedOrder.map((teamId, i) => (
+                <li key={teamId} className={M_ORDER_ROW}>
+                  <span className="w-6 flex-none text-right text-[13px] font-semibold tabular-nums text-m-t3">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate">{teamNameById.get(teamId) ?? 'Team'}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : (
+          <p className={M_NOTE}>
+            No order stored yet — it randomizes automatically when the draft starts
+            {canEdit && !postStart ? ', or randomize it now' : ''}.
+          </p>
+        )}
+      </div>
+    )
   }
 
   return (
