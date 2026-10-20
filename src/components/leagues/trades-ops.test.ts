@@ -83,6 +83,14 @@ describe('the legality “preview” is the server’s answer: dropsNeeded reads
     expect(userFacingMessage(OVERFLOW_PROPOSE)).toBe('Alpha would be 1 over the roster limit — pick 1 more player to drop.')
     expect(dropsNeeded(OVERFLOW_ACCEPT_TWO)).toEqual({ teamName: 'Bravo', more: 2 })
   })
+  it('199 (F569 part 3): the plain sentence reads the same — no citations, same shape (R1608)', () => {
+    const plain = "trade_propose: Alpha's roster would hold 17 players after this trade — 1 more than its 16 spots: name 1 more drop(s) as part of the trade"
+    expect(dropsNeeded(plain)).toEqual({ teamName: 'Alpha', more: 1 })
+    expect(dropsNeeded("trade_respond: Bravo's roster would hold 18 players after this trade — 2 more than its 16 spots: name 2 more drop(s) as part of the trade")).toEqual({ teamName: 'Bravo', more: 2 })
+    expect(userFacingMessage(plain)).toBe('Alpha would be 1 over the roster limit — pick 1 more player to drop.')
+    expect(dropsNeeded("trade_execute: Alpha's roster would hold 17 players after this trade — 1 more than its 16 spots: it has added players since the trade was agreed, so the trade can't go through as agreed")).toBeNull()
+    expect(dropsNeeded("trade_respond: Alpha's roster no longer fits this offer — it would hold 17 players after the trade, 1 more than its 16 spots, because it has added players since proposing; only Alpha can fix that, so ask them to cancel and send it again with drops")).toBeNull()
+  })
   it('the proposer outgrew the offer (only HE can fix it) → no picker; any other sentence → none', () => {
     expect(dropsNeeded(NO_LONGER_FITS)).toBeNull()
     expect(dropsNeeded(DEADLINE)).toBeNull()

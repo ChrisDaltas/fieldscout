@@ -687,7 +687,7 @@ select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000
 select throws_like(
   $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
        'cr-t3a', null, 'grabbing him', 'af000000-0000-4000-8000-000000000005'::uuid) $$,
-  '%is already on CR T3''s roster in this league%player exclusivity%use commish_move_player%',
+  '%is already on CR T3''s roster — a player can be on only one team in a league, and that applies to the commissioner too%move him instead%',   -- 199 (F569 part 3): plain words, same route
   'E1 a force-ADD of a player rostered on ANOTHER team in this league is REFUSED BY NAME — exclusivity is the SHAPE of the game, not its timing, so standing rule (i) makes it bind the commissioner too. The message NAMES the lawful route (commish_move_player), the F351 posture');
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -1050,13 +1050,13 @@ select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000
 select throws_like(
   $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000004',
        'cr-fa2', null, 'squeeze him in', 'af000000-0000-4000-8000-00000000000b'::uuid) $$,
-  '%CR T4''s roster is full (8 of 8%include a drop in the same move%binds the commissioner too%',
+  '%CR T4''s roster is full (8 of 8)%include a drop in the same move%applies to the commissioner too%',   -- 199 (F569 part 3): plain words
   'N1 ROSTER SIZE BINDS: a roster over its own league''s size is a shape the rules do not have, so the refusal binds the commissioner and NAMES the remedy (§7.3.2; standing rule (i))');
 select throws_like(
   $$ select public.commish_move_player('be000000-0000-4000-8000-000000000001', 'cr-t3a',
        'ce000000-0000-4000-8000-000000000003', 'ce000000-0000-4000-8000-000000000004',
        'over there', 'af000000-0000-4000-8000-00000000000c'::uuid) $$,
-  '%CR T4''s roster is full (8 of 8%free a spot with commish_force_add_drop first%',
+  '%CR T4''s roster is full (8 of 8)%drop a player from it first%',   -- 199 (F569 part 3): plain words, same remedy
   'N1b …and a MOVE onto a full roster is refused the same way, naming the verb that frees a spot');
 select throws_like(
   $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000001', 'ce000000-0000-4000-8000-000000000002',
@@ -1066,15 +1066,12 @@ select throws_like(
 reset role;
 select set_config('request.jwt.claims', '', true);
 
--- A RETIRED franchise is sealed (spec:183; F352).
-update teams set status = 'retired', retired_at_week = 2 where id = 'ce000000-0000-4000-8000-000000000006';
-set local role authenticated;
-select set_config('request.jwt.claims', '{"sub": "9e000000-0000-4000-8000-000000000006", "role": "authenticated"}', true);
-select throws_like(
-  $$ select public.commish_force_add_drop('be000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000006',
-       null, 'cr-l2a', 'clearing him out', 'af000000-0000-4000-8000-00000000000e'::uuid) $$,
-  '%a retired franchise is sealed%NO VERB DOES THAT TODAY%F354%',
-  'N2 A RETIRED FRANCHISE IS SEALED: its roster and record are frozen (spec:183, §7.2.1), so a roster move has nowhere to land. Recorded as F352 so the next reader finds a decision and not an oversight. THE PATTERN PINS THE CORRECTED WORDING (R1026): the first cut said "Un-retire the franchise first", which routed the commissioner to a door that does not exist, and a pattern of ''%sealed%F352%'' stayed green on it');
+-- A RETIRED franchise was sealed (spec:183; F352). RE-CUT BY 199 (F562 — a
+-- team is never retired): the status is gone, so the seal has no subject.
+select throws_ok(
+  $$ update teams set status = 'retired' where id = 'ce000000-0000-4000-8000-000000000006' $$,
+  '23514', null,
+  'N2 RE-CUT BY 199 (F562): a team cannot be RETIRED at all, so no roster move can meet a sealed franchise (was F352''s seal, R1026''s wording)');
 reset role;
 select set_config('request.jwt.claims', '', true);
 
@@ -1152,7 +1149,7 @@ select throws_ok(
 select throws_like(
   $$ select public.commish_move_player('be000000-0000-4000-8000-000000000001', 'cr-fa2',
        'ce000000-0000-4000-8000-000000000002', 'ce000000-0000-4000-8000-000000000003', 'a free agent', 'af000000-0000-4000-8000-000000000025'::uuid) $$,
-  '%is on no roster in league%use commish_force_add_drop%',
+  '%isn''t on any roster in this league%to bring in a free agent, add him to a roster instead%',   -- 199 (F569 part 3): plain words, same route
   'M7 a MOVE of a player on no roster is refused and NAMES the verb that brings a free agent in — a capability gap that is routed, not left (the F351 posture)');
 select throws_like(
   $$ select public.commish_move_player('be000000-0000-4000-8000-000000000001', 'cr-t3a',

@@ -163,8 +163,8 @@ select ok(
 --        so this shape is constructible here): the start backstop refuses
 --    LF  8-team $50/min-3 — legal at the settings floor (16 × 3 = 48 ≤ 50)
 --    LG  8-team roster of THREE draftable slots, $3/min-1 — E25/§8.6.7(d)
---    LH  ZERO ACTIVE franchises (one RETIRED seat) + a hand-built auction
---        draft — the empty-set trap AND the R321 retired-seat arm
+--    LH  ZERO franchises (199: was one RETIRED seat) + a hand-built auction
+--        draft — the empty-set trap AND the R321 not-a-team arm
 --    LI  one franchise + a hand-built draft with NULL total_rounds
 --    LJ  one franchise, no draft row — the D96 capacity gate on an auction
 --    LN  8-team $200/min-1 (settings-LEGAL) whose pre-created drafts row
@@ -327,13 +327,10 @@ select ('c5000000-0000-4000-8000-00e7000000' || lpad(i::text, 2, '0'))::uuid,
        '8c000000-0000-4000-8000-000000000001', 'pgtap-as-LN-t' || i,
        'a5000000-0000-4000-8000-0000000000e7'
 from generate_series(2, 8) i;
--- LH's ONE seat is RETIRED (R321): it keeps the league's ACTIVE franchise
--- set empty (so the empty-set trap below still fires — and now proves the
--- retired filter is what empties it), and it is the subject of the
--- retired-seat loudness pin in §G.
-insert into teams (id, owner_id, name, league_id, status) values
-  ('c5000000-0000-4000-8000-00e300000001', '8c000000-0000-4000-8000-000000000001',
-   'pgtap-as-LH-retired', 'a5000000-0000-4000-8000-0000000000e3', 'retired');
+-- LH has NO franchise at all. Until 199 its one seat was RETIRED (R321);
+-- 199 (F562) removed the retired status — a team is never retired — so the
+-- empty-set trap below fires over a league with no teams, and the §G
+-- loudness pin asks about a team id that is no team of the league.
 
 insert into league_members (league_id, user_id, team_id, role) values
   ('a5000000-0000-4000-8000-0000000000aa', '8c000000-0000-4000-8000-000000000001',
@@ -762,7 +759,7 @@ select throws_ok(
   $$ select * from public.draft_team_budget(
        'e5000000-0000-4000-8000-0000000000e3', 'c5000000-0000-4000-8000-00e300000001') $$,
   'P0002', null,
-  '…and a RETIRED seat RAISES exactly like a foreign one (R321): it sits OUTSIDE draft_auction_solvent''s team set, so a plausible full budget for it would be an answer the invariant never checks');
+  '…and a team id that is no team of the league RAISES exactly like a foreign one (R321; 199 re-cut — the retired seat it named is gone): a plausible full budget for it would be an answer the invariant never checks');
 select throws_ok(
   $$ select * from public.draft_team_budget(
        'e5000000-0000-4000-8000-0000000000e6', 'c5000000-0000-4000-8000-00e400000001') $$,
@@ -780,7 +777,7 @@ select throws_ok(
   $$ select public.draft_auction_solvent('e5000000-0000-4000-8000-0000000000e3') $$,
   'P0001',
   'draft_auction_solvent: draft e5000000-0000-4000-8000-0000000000e3 has no active franchises to check — refusing to report solvency over an empty set',
-  'THE EMPTY-SET TRAP: an auction whose only seat is RETIRED RAISES — the retired filter is what empties the set, bool_and over no rows is NULL, and `IF NOT solvent` would sail straight past it');
+  'THE EMPTY-SET TRAP: an auction with no franchise RAISES (199 re-cut — its seat was retired before) — bool_and over no rows is NULL, and `IF NOT solvent` would sail straight past it');
 select throws_ok(
   $$ select * from public.draft_team_budget(
        'e5000000-0000-4000-8000-0000000000e4', 'c5000000-0000-4000-8000-00e400000001') $$,

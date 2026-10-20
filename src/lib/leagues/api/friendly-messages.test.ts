@@ -113,6 +113,28 @@ const CASES: ReadonlyArray<readonly [string, string, string]> = [
   ['min-bid',
     "waiver_claim_submit: a bid of $0 is below this league's minimum bid of $1 (faab_min_bid, §7.3.4)",
     'The minimum bid is $1.'],
+  // 199 (F569 part 3): trade_check's sentences reworded — the 198 rows above
+  // still read (a client deployed before the push meets the old text), and
+  // these are the new ones, as the executor stores them after "the trade
+  // could not go through: " or the verbs raise them.
+  ['trade-overflow',
+    "trade_propose: Alpha's roster would hold 18 players after this trade — 2 more than its 16 spots: name 2 more drop(s) as part of the trade",
+    'Alpha would be 2 over the roster limit — pick 2 more players to drop.'],
+  ['trade-wrong-team',
+    "trade_propose: TR B One is on TR Bravo's roster, not TR Alpha's — a trade can only move a player from the team that has him",
+    'TR B One is on TR Bravo’s roster, not TR Alpha’s.'],
+  ['trade-wrong-team',
+    "trade_propose: TR B One (tr-b1) is on TR Bravo's roster, not TR Alpha's — a trade can only move a player from the team that has him (player exclusivity, §13.3 / CLAUDE.md rule 7)",
+    'TR B One is on TR Bravo’s roster, not TR Alpha’s.'],
+  ['trade-drop-not-own',
+    "trade_propose: TR B Three is not on TR Alpha's roster — a team can only drop its own players to make room",
+    'TR B Three isn’t on TR Alpha’s roster, so he can’t be dropped.'],
+  ['trade-no-faab',
+    "trade_propose: FAAB can't be traded in this league",
+    'This league doesn’t allow FAAB in trades.'],
+  ['trade-no-faab',
+    'trade_propose: FAAB cannot be traded in this league (allow_faab_in_trades is off, §7.3.5)',
+    'This league doesn’t allow FAAB in trades.'],
 ]
 
 describe('phrase map — renders the member’s sentence from the server’s own values', () => {
@@ -182,10 +204,10 @@ describe('never empty (R1485)', () => {
   })
 })
 
-describe('census — the 315 P0001 refusals of the survey come out code-free', () => {
+describe('census — the 310 P0001 refusals of the survey (re-cut through 199, D561) come out code-free', () => {
   const rows = census as Array<{ loc: string; fn: string; text: string }>
   it('the fixture is the survey’s full P0001 list', () => {
-    expect(rows).toHaveLength(315)
+    expect(rows).toHaveLength(310)   // 315 until 199 removed the five retired-team refusals
   })
   it('no § remains in any of them, and none comes out empty', () => {
     const left = rows.map((r) => ({ loc: r.loc, out: friendlyMessage(r.text) })).filter((r) => JARGON.section.test(r.out) || !r.out)
@@ -206,7 +228,7 @@ describe('census — the 315 P0001 refusals of the survey come out code-free', (
       .map((r) => ({ loc: r.loc, clause: explainingClause(r.text.replace(/^[a-z0-9_]+: /, ''))?.trim() }))
       .filter((r): r is { loc: string; clause: string } => !!r.clause)
     expect(cuts).toEqual(reviewed.clauseCuts)
-    expect(cuts).toHaveLength(34)
+    expect(cuts).toHaveLength(33)   // 34 until 180 / 199 left 156:300's sentence with no clause
   })
   it('the phrase map takes the survey’s hand-rewritten rows', () => {
     const mapped = rows.filter((r) => matchPhrase(r.text) !== null).length

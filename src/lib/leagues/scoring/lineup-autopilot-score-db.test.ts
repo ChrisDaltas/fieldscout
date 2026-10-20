@@ -132,7 +132,6 @@ async function cleanup(): Promise<void> {
     ] as const) {
       await must(service.from(table).delete().in('league_id', ids), `cleanup ${table}`)
     }
-    await must(service.from('teams').update({ successor_team_id: null }).in('league_id', ids), 'cleanup teams lineage')
     await must(service.from('teams').delete().in('league_id', ids), 'cleanup teams')
     await must(service.from('leagues').delete().in('id', ids), 'cleanup leagues')
   }

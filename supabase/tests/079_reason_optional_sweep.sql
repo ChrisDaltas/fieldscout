@@ -168,12 +168,14 @@ select is(
 -- The retired guard (128) and the scored-cell guard (126) — the two the
 -- manual TOCTOU re-run exercises — still sit AFTER their locks (076 F13's
 -- shape).
+-- RE-CUT BY 199 (F562): a team is never retired, so the retired guard is
+-- gone; the row lock it read under stays.
 select ok(
   (select strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE') > 0
-      and strpos(p.prosrc, 'v_team.status = ''retired''') > strpos(p.prosrc, 'WHERE t.id = p_team_id FOR UPDATE')
+      and strpos(p.prosrc, 'v_team.status = ''retired''') = 0
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'commish_rename_team_internal'),
-  'B2 commish_rename_team_internal: the retired guard still reads the row LOCKED by `teams … FOR UPDATE` (R1036''s order, byte-preserved by the extraction)');
+  'B2 commish_rename_team_internal: the row is still LOCKED by `teams … FOR UPDATE`; the retired guard that read it is gone (199 / F562)');
 select ok(
   (select strpos(p.prosrc, 'FOR UPDATE') > 0
       and strpos(p.prosrc, 'is_overridden') > strpos(p.prosrc, 'FOR UPDATE')

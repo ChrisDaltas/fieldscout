@@ -50,13 +50,13 @@ export const LEAGUE_CHANNEL_EVENTS = [
   'league_player_pool',
   // Landed with 120 (L.D1.10's #266 fix round, R856; F42 discharged for
   // teams): `teams` UPDATE — a per-STATEMENT, diff-aware summary
-  // (`{count, teams: [{id, name, status, retired_at_week,
-  // successor_team_id}]}`; one event per league per statement that changed
-  // one of those four columns — a retirement's seal, a vacate, a claim of an
-  // orphaned seat, a rename; never owner_id / manager identity). Its first
-  // subscribers are `use-standings` (a retirement flips the standings order
-  // and the row set, and nothing else on this wire invalidates them) and,
-  // through the same hook, the league detail's teams list.
+  // (`{count, teams: [{id, name, status}]}` since 199 / F562 — before it
+  // the record also carried retired_at_week / successor_team_id; one event
+  // per league per statement that changed name or status — a vacate, a
+  // claim of an orphaned seat, a rename; never owner_id / manager identity).
+  // Its first subscribers are `use-standings` and, through the same hook,
+  // the league detail's teams list — both re-read on the event and read no
+  // key of the record, so either record shape works.
   'teams',
   // Landed with 148 (M5 L.D3.2, D386(10)): `trades` INSERT / UPDATE OF status
   // broadcasts `{operation, record: {id, status, status_reason,

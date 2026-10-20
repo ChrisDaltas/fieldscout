@@ -411,14 +411,17 @@ set roster_settings = '{"starting_slots": [{"key": "rb", "label": "RB", "eligibl
 where id::text like 'b1190000-0000-4000-8000-00000000000%';
 
 -- LA: t1 u1's seat, t2 u2's franchise, t3–t6 placeholders owned by u1 (169's
--- add_placeholder_seat stamps the commissioner as owner), t7 retired (owned
--- by the outsider u4, so no owner arm reaches it for u1).
+-- add_placeholder_seat stamps the commissioner as owner), t7 (199: was retired — now
+-- LO's, owned by the outsider u4, so no owner arm reaches it for u1).
 insert into teams (id, owner_id, name, league_id)
 select ('c1190001-0000-4000-8000-00000000000' || i)::uuid, '99119000-0000-4000-8000-000000000001',
        'x119-t' || i, 'b1190000-0000-4000-8000-000000000001'
 from generate_series(1, 7) i;
 update teams set owner_id = '99119000-0000-4000-8000-000000000002' where id = 'c1190001-0000-4000-8000-000000000002';
-update teams set owner_id = '99119000-0000-4000-8000-000000000004', status = 'retired' where id = 'c1190001-0000-4000-8000-000000000007';
+-- RE-CUT BY 199 (F562 — a team is never retired): t7 was RETIRED in LA; it
+-- is now a team of the other league LO, still owned by the outsider u4 — a
+-- team outside LA, which is what every cell below asked of it.
+update teams set owner_id = '99119000-0000-4000-8000-000000000004', league_id = 'b1190000-0000-4000-8000-000000000002' where id = 'c1190001-0000-4000-8000-000000000007';
 insert into teams (id, owner_id, name, league_id) values
   ('c1190002-0000-4000-8000-000000000001', '99119000-0000-4000-8000-000000000005', 'x119-o1', 'b1190000-0000-4000-8000-000000000002');
 insert into league_members (league_id, user_id, team_id, role, is_placeholder)
@@ -565,7 +568,7 @@ select throws_ok(
   $$ select public.draft_place_bid('e1190000-0000-4000-8000-000000000001', 3, 'a1190000-0000-4000-8000-0000000000a7',
        4, 'x119-p01', 'c1190001-0000-4000-8000-000000000007') $$,
   'P0002', 'draft_place_bid: team c1190001-0000-4000-8000-000000000007 is not an active franchise of this league',
-  'V7 a retired franchise has no seat in the auction — refused by name');
+  'V7 a team outside the league has no seat in the auction — refused by name (199: was a retired franchise)');
 select throws_ok(
   $$ select public.draft_place_bid('e1190000-0000-4000-8000-000000000001', 3, 'a1190000-0000-4000-8000-0000000000a8',
        4, 'x119-p01', 'c1190002-0000-4000-8000-000000000001') $$,
@@ -732,7 +735,7 @@ select throws_ok(
 select throws_ok(
   $$ select public.draft_queue_replace('e1190000-0000-4000-8000-000000000001', 'c1190001-0000-4000-8000-000000000007',
        array['x119-p16']) $$,
-  '42501', 'You do not manage this queue.', 'Q16 a retired franchise is outside his door (no-leak 42501)');
+  '42501', 'You do not manage this queue.', 'Q16 a team outside his league is outside his door (no-leak 42501; 199: was a retired franchise)');
 select throws_ok(
   $$ select public.draft_queue_replace('e1190000-0000-4000-8000-000000000001', 'c1190002-0000-4000-8000-000000000001',
        array['x119-p16']) $$,

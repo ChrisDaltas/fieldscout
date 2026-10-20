@@ -310,7 +310,7 @@ select throws_ok(
        (select (r->>'league_id')::uuid from _l1), null,
        'x@y.zz', null, 3) $$,
   'P0001',
-  'create_league_invite: identity-restricted invites are single-use — max_uses must be 1 (§7.2)',
+  'create_league_invite: an invite for a named person or email can be used once — set its uses to 1',   -- 199 (F569 part 3): plain words
   'identity-restricted multi-use refuses');
 select throws_ok(
   $$ select public.create_league_invite(
@@ -323,7 +323,7 @@ select throws_ok(
        (select t.id from teams t where t.league_id = (select (r->>'league_id')::uuid from _l2) limit 1),
        null, null, 1) $$,
   'P0001',
-  'create_league_invite: target_team_id is not a franchise of this league',
+  'create_league_invite: that team isn''t in this league',   -- 199 (F569 part 3): plain words
   'a target team from ANOTHER league refuses (cross-league seat forgery)');
 
 -- Remaining fixtures for the claim matrix (all general L1 invites).

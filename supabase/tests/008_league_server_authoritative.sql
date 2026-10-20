@@ -38,10 +38,11 @@ select ok(
   exists (select 1 from pg_constraint
           where conname = 'teams_status_valid' and conrelid = 'public.teams'::regclass),
   'teams_status_valid CHECK exists (R43)');
+-- RE-CUT BY 199 (F562): the successor column and its not-self CHECK are gone.
 select ok(
-  exists (select 1 from pg_constraint
-          where conname = 'teams_successor_not_self' and conrelid = 'public.teams'::regclass),
-  'teams_successor_not_self CHECK exists (R40)');
+  not exists (select 1 from pg_constraint
+              where conname = 'teams_successor_not_self' and conrelid = 'public.teams'::regclass),
+  'teams_successor_not_self CHECK is gone with successor_team_id (199 / F562; was R40)');
 select has_index('public', 'team_managers', 'idx_team_managers_league',
   'team_managers.league_id indexed (R39 — SELECT-policy argument + history queries)');
 select has_index('public', 'team_managers', 'idx_team_managers_team',
@@ -100,14 +101,15 @@ select lives_ok(
   $$ update teams set status = 'orphaned'
      where id = 'c4000000-0000-4000-8000-000000000001' $$,
   $$status 'orphaned' accepted$$);
-select lives_ok(
-  $$ update teams set status = 'retired', retired_at_week = 3,
-       successor_team_id = 'c4000000-0000-4000-8000-000000000002'
+-- RE-CUT BY 199 (F562 — a team is never retired): 'retired' is outside the
+-- enum now; 'active' still lands.
+select throws_ok(
+  $$ update teams set status = 'retired'
      where id = 'c4000000-0000-4000-8000-000000000001' $$,
-  $$status 'retired' + a REAL successor accepted — a CHECK rejecting all non-NULL successors fails here$$);
+  '23514', null,
+  $$status 'retired' rejected (199 / F562 — was accepted with a real successor)$$);
 select lives_ok(
-  $$ update teams set status = 'active', retired_at_week = null,
-       successor_team_id = null
+  $$ update teams set status = 'active'
      where id = 'c4000000-0000-4000-8000-000000000001' $$,
   $$status 'active' accepted (fixture restored)$$);
 select throws_ok(
@@ -118,8 +120,8 @@ select throws_ok(
 select throws_ok(
   $$ update teams set successor_team_id = id
      where id = 'c4000000-0000-4000-8000-000000000001' $$,
-  '23514', null,
-  'a team as its OWN successor rejected (R40 — accepted pre-054, live-proven in review)');
+  '42703', null,
+  'a successor cannot be written at all — the column is gone (199 / F562; was R40''s own-successor refusal)');
 
 -- R46: the one-open-stint invariant on the UPDATE path — reopening the
 -- closed u1 stint on T1 while u2's stint is open throws (the partial unique

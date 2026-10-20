@@ -768,7 +768,7 @@ update players set status = 'Active' where id = 'lu-wr5';
 select throws_like(
   $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 9,
        '{"qb:0": "lu-qb2"}', 'a3000000-0000-4000-8000-000000000021', now()) $$,
-  '%week 9 is not on league %''s calendar (season 2026; league_weeks holds weeks 1–8)%',
+  '%week 9 is not on league %''s schedule for season 2026 (it runs weeks 1–8)%',   -- 199 (F569 part 3): plain words
   'G a week off the league''s calendar refuses by name');
 select throws_like(
   $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000001', 'c3000000-0000-4000-8000-000000000002', 2,

@@ -38,17 +38,24 @@ select plan(67);
 select columns_are('public', 'teams',
   array['id', 'owner_id', 'list_id', 'name', 'scoring_system_id', 'league_id',
         'total_points', 'wins', 'losses', 'created_at', 'updated_at',
-        'status', 'retired_at_week', 'successor_team_id'],
-  'teams column set = 001 + exactly the three §12.22 franchise columns');
+        'status'],
+  'teams column set = 001 + the §12.22 status column (199 / F562 dropped retired_at_week and successor_team_id)');
 select col_type_is('public', 'teams', 'status', 'text', 'status is TEXT');
 select col_not_null('public', 'teams', 'status', 'status NOT NULL');
 select col_default_is('public', 'teams', 'status', 'active', $$status defaults to 'active'$$);
-select col_type_is('public', 'teams', 'retired_at_week', 'integer', 'retired_at_week is INTEGER');
-select col_is_null('public', 'teams', 'retired_at_week', 'retired_at_week nullable');
-select col_type_is('public', 'teams', 'successor_team_id', 'uuid', 'successor_team_id is UUID');
-select col_is_null('public', 'teams', 'successor_team_id', 'successor_team_id nullable');
-select fk_ok('public', 'teams', 'successor_team_id', 'public', 'teams', 'id',
-  'successor_team_id → teams (self-FK: retired franchise → its successor)');
+-- RE-CUT BY 199 (F562 — a team is never retired, Chris 2026-10-01): the two
+-- retire columns and their self-FK are gone; each cell keeps its place.
+select hasnt_column('public', 'teams', 'retired_at_week', '199: retired_at_week is gone');
+select hasnt_column('public', 'teams', 'successor_team_id', '199: successor_team_id is gone');
+select is((select count(*)::int from pg_constraint where conrelid = 'public.teams'::regclass and contype = 'f'
+             and confrelid = 'public.teams'::regclass),
+  0, '199: teams has no self-FK any more (was successor_team_id → teams)');
+select is((select pg_get_constraintdef(oid) from pg_constraint where conname = 'teams_status_valid'),
+  'CHECK ((status = ANY (ARRAY[''active''::text, ''orphaned''::text])))',
+  '199: the status CHECK is active | orphaned (retired is gone)');
+select is((select pg_get_constraintdef(oid) from pg_constraint where conname = 'team_managers_end_reason_valid'),
+  'CHECK (((end_reason IS NULL) OR (end_reason = ANY (ARRAY[''kicked''::text, ''left''::text, ''replaced''::text]))))',
+  '199: a stint ends kicked | left | replaced (seat_retired is gone)');
 select col_is_null('public', 'teams', 'list_id',
   'list_id is now nullable (D35a — league franchises carry no backing list)');
 

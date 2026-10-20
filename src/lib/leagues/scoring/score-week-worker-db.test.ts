@@ -18,10 +18,11 @@
  *       38-point RB on IR (must not count) and a bench WR with a queue row
  *       (must not recompute). T2 is the MANAGER's (the wire cell's member).
  *       Week 2 `upcoming` (the `week_not_open` hold).
- *   L2  total_points, ESPN Standard — 068's L2 shape: P RETIRED at week 2
- *       with successor S (orphaned), Q, R; week 1 `correction_window` with
- *       provisional rows for P/Q/R, week 2 `live` with none. F262(d) +
- *       F241(b).
+ *   L2  total_points, ESPN Standard — P, Q, R, S (S orphaned); P's QB
+ *       moved to S after week 1 (199 / F562: this was 068's retire-and-succeed
+ *       shape — a team is never retired now, so the player simply changed
+ *       teams); week 1 `correction_window` with provisional rows for all
+ *       four, week 2 `live` with none. F262(d) + F241(b).
  *   L3  h2h, a POISONED snapshot (`pass_yards: "corrupt"`) — the
  *       quarantine; U1 starts L1's QB (the same queue row scores L1 and
  *       fails L3 BY NAME in one drain).
@@ -405,8 +406,6 @@ async function cleanup(): Promise<void> {
     for (const table of ['transactions', 'team_week_results', 'matchups', 'league_weeks', 'league_player_pool', 'league_rosters', 'league_chat', 'league_members'] as const) {
       await must(service.from(table).delete().in('league_id', ids), `cleanup ${table}`)
     }
-    // A successor FK: clear the lineage before the rows go.
-    await must(service.from('teams').update({ successor_team_id: null }).in('league_id', ids), 'cleanup teams lineage')
     // F406's order (170 / D451): commish_edit_lineup's receipt now names the
     // team it acted for (commissioner_actions.acting_as_team_id — an FK with
     // no ON DELETE on an immutable log, cleared only by the league's
@@ -659,20 +658,24 @@ beforeAll(async () => {
   await lineup(t3, 1, { 'wr:0': P.wr3 })
   await lineup(t4, 1, { 'rb:0': P.rb4 })
 
-  // ── L2: total_points — P retired at week 2 → S; Q; R ──
+  // ── L2: total_points — P's QB moved to S after week 1; Q; R ──
+  // 199 / F562: this was "P retired at week 2 → S" (the lineage walk); a team
+  // is never retired now, so the same player simply changed teams.
   const l2 = await createLeague(`${PREFIX}-tp`, ACTION.l2, ESPN, 'total_points', 4)
   const [p, q, r, s] = l2.teams
-  await must(service.from('teams').update({ name: 'RS P', status: 'retired', retired_at_week: 2, successor_team_id: s }).eq('id', p), 'P retired')
+  await must(service.from('teams').update({ name: 'RS P' }).eq('id', p), 'P named')
   await must(service.from('teams').update({ name: 'Team 4', status: 'orphaned' }).eq('id', s), 'S orphaned')
   await setWeek(l2.id, 1, 'correction_window')
   await setWeek(l2.id, 2, 'live')
-  await roster(l2.id, s, [P.p1]) // re-pointed WHOLE to the successor (120)
+  await roster(l2.id, s, [P.p1]) // p1 is S's NOW
   await roster(l2.id, q, [P.q1])
   await roster(l2.id, r, [P.r1])
-  await lineup(p, 1, { 'qb:0': P.p1 }) // week 1 stays P's (E49)
+  await lineup(p, 1, { 'qb:0': P.p1 }) // week 1: P started him
   await lineup(q, 1, { 'rb:0': P.q1 })
   await lineup(r, 1, { 'wr:0': P.r1 })
-  await lineup(s, 2, { 'qb:0': P.p1 }) // week 2 is S's
+  await lineup(s, 1, {})
+  await lineup(p, 2, {})
+  await lineup(s, 2, { 'qb:0': P.p1 }) // week 2: S starts him
   await lineup(q, 2, { 'rb:0': P.q1 })
   await lineup(r, 2, { 'wr:0': P.r1 })
   await must(
@@ -680,6 +683,7 @@ beforeAll(async () => {
       { league_id: l2.id, team_id: p, season: SEASON, week: 1, points: 40, is_final: false },
       { league_id: l2.id, team_id: q, season: SEASON, week: 1, points: 30, is_final: false },
       { league_id: l2.id, team_id: r, season: SEASON, week: 1, points: 20, is_final: false },
+      { league_id: l2.id, team_id: s, season: SEASON, week: 1, points: 0, is_final: false },
     ]),
     'L2 week-1 provisional rows',
   )
@@ -953,53 +957,57 @@ describe('the score-league-week worker over the real stack (L.D2.2)', () => {
     expect(league(report, fx.l1, 1).outcome).toBe('no_change')
   })
 
-  it('F262(d) — a PAST-week correction attributes through THAT week’s lineup row: P’s week-1 row moves, no (S, week 1) row is minted, the successor’s folded PF counts week 1 once', async () => {
+  it('F262(d) — a PAST-week correction attributes through THAT week’s lineup row: P’s week-1 row moves, S’s week-1 row does not (S rosters him now)', async () => {
     // The correction: P's QB week-1 line 100 → 150 yds (8.00 → 10.00). p1 is
-    // rostered by S NOW (120 re-pointed the roster whole).
+    // rostered by S NOW — the week-1 lineup, not the roster, decides.
     await plantLine(P.p1, 1, { pass_yards: 150, pass_tds: 1 }, STAMP_LATER)
     await enqueue([P.p1], 1, STAMP_LATER)
     const report = await drain()
     const l2 = league(report, fx.l2, 1)
     expect(l2.mode).toBe('total_points')
     expect(l2.outcome).toBe('written')
-    expect(l2.affected_team_ids).toEqual([fx.p]) // the RETIRED franchise's book, via its week-1 lineup row
-    expect(l2.provisional_team_ids).toEqual([]) // S's week 1 is P's — nothing seeded for S
+    expect(l2.affected_team_ids).toEqual([fx.p]) // P's book, via its week-1 lineup row
+    expect(l2.provisional_team_ids).toEqual([]) // every team already has its week-1 row
     expect(l2.teams.map((t) => [t.team_id, t.points])).toEqual([[fx.p, 10]])
     expect(await results(fx.l2, 1)).toEqual([
       { team_id: fx.p, points: 10, is_final: false },
       { team_id: fx.q, points: 30, is_final: false },
       { team_id: fx.r, points: 20, is_final: false },
+      { team_id: fx.s, points: 0, is_final: false },
     ].sort((a, b) => (a.team_id < b.team_id ? -1 : 1)))
     expect(rpcCalls.filter((c) => c.league === fx.l2)).toHaveLength(1)
   })
 
-  it('F241(b) — the FIRST batch of a total_points week writes a provisional row for EVERY seated team (the successor included, the retired predecessor not); the folded PF reads week 1 once', async () => {
+  it('F241(b) — the FIRST batch of a total_points week writes a provisional row for EVERY seated team; S’s PF reads its own weeks only', async () => {
     await enqueue([P.q1], 2, STAMP)
     const report = await drain()
     const l2 = league(report, fx.l2, 2)
     expect(l2.outcome).toBe('written')
     expect(l2.affected_team_ids).toEqual([fx.q])
-    expect(l2.provisional_team_ids).toEqual([fx.r, fx.s].sort())
+    expect(l2.provisional_team_ids).toEqual([fx.p, fx.r, fx.s].sort())
     expect(l2.teams.map((t) => [t.team_id, t.points]).sort()).toEqual(
       [
+        [fx.p, 0], // an empty week-2 lineup
         [fx.q, 5], // 50 × 0.1
         [fx.r, 3], // 2 × 0 + 30 × 0.1
-        [fx.s, 12], // 200 × 0.04 + 4 — S's book (week 2 ≥ retired_at_week 2)
+        [fx.s, 12], // 200 × 0.04 + 4 — S starts p1 in week 2
       ].sort(),
     )
-    expect(l2.door).toMatchObject({ written: 3, writable: 3, reason: null })
+    expect(l2.door).toMatchObject({ written: 4, writable: 4, reason: null })
     expect(await results(fx.l2, 2)).toEqual(
       [
+        { team_id: fx.p, points: 0, is_final: false },
         { team_id: fx.q, points: 5, is_final: false },
         { team_id: fx.r, points: 3, is_final: false },
         { team_id: fx.s, points: 12, is_final: false },
       ].sort((a, b) => (a.team_id < b.team_id ? -1 : 1)),
     )
-    // The projected standings fold P's week 1 (10.00) into "Team 4" ONCE: 10 + 12 = 22.00.
+    // The projected standings read S's own rows only: week 1 (0) + week 2 (12) = 12.00 — P's week 1 stays P's (199: no lineage fold).
     const { data, error } = await commishClient.rpc('league_standings_projected', { p_league_id: fx.l2 })
     if (error) throw new Error(`league_standings_projected: ${error.message}`)
     const rows = (data as { standings: Array<{ team_id: string; points_for: unknown }> }).standings
-    expect(Number(rows.find((r) => r.team_id === fx.s)?.points_for)).toBe(22)
+    expect(Number(rows.find((r) => r.team_id === fx.s)?.points_for)).toBe(12)
+    expect(Number(rows.find((r) => r.team_id === fx.p)?.points_for)).toBe(10)
     // A second drain of the same row: no_change, and no re-seeding.
     await enqueue([P.q1], 2, STAMP)
     const again = await drain()
