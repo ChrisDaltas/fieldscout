@@ -99,6 +99,11 @@ describe('the phone font file', () => {
     expect(licence).toMatch(/PERMISSION & CONDITIONS[\s\S]*TERMINATION[\s\S]*DISCLAIMER/)
   })
 
+  it('stays subset (L.F1.4): the full 367 KB build cost a phone ~1.8 s of first paint; the subset is 114,940 bytes', () => {
+    // A re-export of the full build (every script, 2,937 glyphs) fails here.
+    expect(statSync(path.join(ROOT, 'src/app/fonts/inter-variable.woff2')).size).toBeLessThanOrEqual(120_000)
+  })
+
   it('layout.tsx loads it as --font-inter-phone without a preload, so desktop never downloads it', () => {
     const layout = readFileSync(path.join(ROOT, 'src/app/layout.tsx'), 'utf8')
     const call = /localFont\(\{([\s\S]*?)\}\)/.exec(layout)?.[1] ?? ''
