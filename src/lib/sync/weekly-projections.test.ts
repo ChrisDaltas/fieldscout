@@ -799,6 +799,25 @@ describe('syncWeeklyProjections — injury tags in the run (D592)', () => {
     expect(report.failures).toEqual(['injuries: players update wrote 1 row(s) for 2 named (Active) — refusing to call that done'])
   })
 
+  it('a LATER update coming back short keeps the earlier, already-written changes counted and named', async () => {
+    // Value sets go out as Active [4984, 3957] → NA [13300] → Doubtful [9493];
+    // the SECOND update reports a short count.
+    let call = 0
+    const { db, updates } = fakeDb(CAL, [], { update: (n) => (++call === 2 ? n - 1 : n) }, PLAYERS)
+    const report = await syncWeeklyProjections(
+      { db, time: T, knownPlayerIds: async () => new Set(ALL_IDS), fetchWeek: recordedWeek4 },
+      { season: 2026, weeks: [4] },
+    )
+    expect(report.ok).toBe(false)
+    expect(report.failures).toEqual(['injuries: players update wrote 0 row(s) for 1 named (NA) — refusing to call that done'])
+    expect(updates.map((u) => u.ids)).toEqual([['4984', '3957'], ['13300']]) // stopped at the short one
+    expect(report.counts).toMatchObject({ injuryChecked: 6, injuryTagged: 0, injuryCleared: 2, injuryDetail: 0 })
+    expect(report.injuryChanges).toEqual([
+      { player_id: '4984', kind: 'cleared', from: 'Out', to: 'Active' },
+      { player_id: '3957', kind: 'cleared', from: 'Questionable', to: 'Active' },
+    ])
+  })
+
   it('a feed whose rows carry NO injury field at all fails loudly (a silent stale-again is the bug)', async () => {
     const { db, updates } = fakeDb(CAL, [], {}, PLAYERS)
     const report = await syncWeeklyProjections(

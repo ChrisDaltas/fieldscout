@@ -59,8 +59,10 @@
  *      A tag in the feed is written; no tag in the feed clears ONLY an
  *      injury tag (Q / D / Out / IR / PUP / NFI / Sus / Suspended) back to
  *      `Active`; a player absent from the feed, or a row with no injury
- *      field at all, is left as stored. Every change is counted and named;
- *      every update asserts its row count; a feed with NO tag at all while
+ *      field at all, is left as stored. Every change written is counted
+ *      and named as its update is confirmed (a later update's failure keeps
+ *      the earlier ones in the report); every update asserts its row
+ *      count; a feed with NO tag at all while
  *      several stored players carry one clears nothing (a degraded
  *      response, named). Player data stays sync-only: this IS a sync.
  *
@@ -665,27 +667,37 @@ async function storedInjuryFields(db: SyncClient, ids: readonly string[]): Promi
  * Write the planned changes: one UPDATE per identical value set (a run's
  * clears share one), ids chunked, each asserting it touched exactly the
  * players it named — a short update is never "done". `updated_at` is the
- * run's injected instant (D3).
+ * run's injected instant (D3). `onWritten` receives each chunk's changes
+ * the moment its update is confirmed, so the changes already written are
+ * counted and named even when a later update throws (a short report is the
+ * "nothing happened" lie in another form).
  */
-async function writeInjuryChanges(db: SyncClient, changes: readonly InjuryChange[], at: string): Promise<void> {
-  const groups = new Map<string, { fields: InjuryFields; ids: string[] }>()
+async function writeInjuryChanges(
+  db: SyncClient,
+  changes: readonly InjuryChange[],
+  at: string,
+  onWritten: (written: readonly InjuryChange[]) => void,
+): Promise<void> {
+  const groups = new Map<string, InjuryChange[]>()
   for (const c of changes) {
     const key = JSON.stringify(c.fields)
-    const g = groups.get(key) ?? { fields: c.fields, ids: [] }
-    g.ids.push(c.player_id)
-    groups.set(key, g)
+    const g = groups.get(key)
+    if (g) g.push(c)
+    else groups.set(key, [c])
   }
-  for (const { fields, ids } of groups.values()) {
-    for (let i = 0; i < ids.length; i += INJURY_CHUNK) {
-      const chunk = ids.slice(i, i + INJURY_CHUNK)
+  for (const group of groups.values()) {
+    const { fields } = group[0]
+    for (let i = 0; i < group.length; i += INJURY_CHUNK) {
+      const chunk = group.slice(i, i + INJURY_CHUNK)
       const { error, count } = await db
         .from('players')
         .update({ ...fields, updated_at: at }, { count: 'exact' })
-        .in('id', chunk)
+        .in('id', chunk.map((c) => c.player_id))
       if (error) throw new Error(`injuries: players update failed: ${error.message}`)
       if (count !== chunk.length) {
         throw new Error(`injuries: players update wrote ${String(count)} row(s) for ${chunk.length} named (${fields.status}) — refusing to call that done`)
       }
+      onWritten(chunk)
     }
   }
 }
@@ -838,13 +850,16 @@ export async function syncWeeklyProjections(
       const planned = planInjuryChanges(injuryReports, stored)
       report.counts.injuryChecked = planned.checked
       if (planned.guard) report.failures.push(planned.guard)
-      await writeInjuryChanges(db, planned.changes, now.toISOString())
-      for (const c of planned.changes) {
-        if (c.kind === 'tagged') report.counts.injuryTagged++
-        else if (c.kind === 'cleared') report.counts.injuryCleared++
-        else report.counts.injuryDetail++
-        report.injuryChanges.push({ player_id: c.player_id, kind: c.kind, from: c.from, to: c.to })
-      }
+      // Counted per confirmed update: a later update's failure leaves the
+      // earlier, already-written changes in the report.
+      await writeInjuryChanges(db, planned.changes, now.toISOString(), (written) => {
+        for (const c of written) {
+          if (c.kind === 'tagged') report.counts.injuryTagged++
+          else if (c.kind === 'cleared') report.counts.injuryCleared++
+          else report.counts.injuryDetail++
+          report.injuryChanges.push({ player_id: c.player_id, kind: c.kind, from: c.from, to: c.to })
+        }
+      })
     } catch (err) {
       report.failures.push(err instanceof Error ? err.message : String(err))
     }
