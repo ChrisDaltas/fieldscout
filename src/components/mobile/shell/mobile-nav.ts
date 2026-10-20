@@ -63,10 +63,11 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
  * page's existing layout. Null = the route draws its own mobile screen.
  */
 const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
-  // League settings / Scoring / Playoffs (`/settings` — gap list §4 item
-  // 105), Members (`/members` — item 106) and Schedule (`/schedule` — item
-  // 107) draw their own phone screens now.
-  [/^\/commish(\/|$)/, 'Commissioner tools'],
+  // Every league page draws its own phone screen now — the last were League
+  // settings / Scoring / Playoffs (`/settings` — gap list §4 item 105),
+  // Members (`/members` — item 106), Schedule (`/schedule` — item 107) and
+  // Commissioner tools (`/commish` — item 109). A league page added without
+  // one goes here, titled, until it gets its own.
 ]
 
 /** `false` third entry: the page already owns its h1 (the shell's title
