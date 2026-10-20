@@ -45,6 +45,9 @@ export const M_ICON = {
   moon: 'M13.5 9.6A5.5 5.5 0 0 1 6.4 2.5a5.5 5.5 0 1 0 7.1 7.1z',
   sun: 'M8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1',
   sendUp: 'M8 13V3M3.5 7.5L8 3l4.5 4.5',
+  // Not in the handoff: three dots (the handoff's own `h.01` dot), for a
+  // row's "more" control — Members' per-team sheet. Draw at stroke ≥ 2.4.
+  more: 'M3.5 8h.01M8 8h.01M12.5 8h.01',
   // Not in the handoff: a phone, for Settings › Sessions' "This device" row.
   device: 'M5 1.5h6a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM7 12h2',
 } as const

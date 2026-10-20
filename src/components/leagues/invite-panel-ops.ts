@@ -584,6 +584,10 @@ export function leaveLeagueCopy(phase: MembersPhase, teamName: string, leagueNam
   }
 }
 
+/** Only the SITTING commissioner must hand the role over before leaving
+ *  (§7.2.1:192); said where Leave is greyed out. */
+export const LEAVE_BLOCKED_NOTE = 'Transfer the commissioner role to another member before you can leave.'
+
 /** §7.2's anti-coup rule (169: `set_member_role` :442, `remove_manager`
  *  :787): a co-commissioner cannot change or remove the league CREATOR's
  *  seat (keyed on `leagues.owner_id`, never on role). */

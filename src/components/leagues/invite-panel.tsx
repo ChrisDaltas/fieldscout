@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,53 +19,49 @@ import { Label } from '@/components/ui/label'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
-import {
-  useCreateInvite,
-  useLeagueInvites,
-  useRevokeInvite,
-  useRotateInviteCode,
-  useSetInviteSlug,
-} from '@/hooks/use-league-invites'
-import {
-  useAddPlaceholderSeat,
-  useAssignManager,
-  useLeaveLeague,
-  useRemoveManager,
-  useSetMemberRole,
-  type MemberRole,
-  type RemoveMode,
-} from '@/hooks/use-league-members'
-import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
-import { createBrowserClient } from '@/lib/supabase/client'
+import { useLeagueInvites } from '@/hooks/use-league-invites'
+import type { MemberRole, RemoveMode } from '@/hooks/use-league-members'
 import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 import { InlineIssue } from './settings-form-controls'
 import { Crest, TeamNameLink } from './league-cells'
 import {
+  ROLE_LABELS,
+  copyByHandToast,
+  copyWithToast,
+  fillAllLabel,
+  useFillSeats,
+  useLeaveSeat,
+  useRemoveSeat,
+  useRevokeSeatInvite,
+  useRoleChange,
+  useRotateLink,
+  useSeatInvite,
+  useSlugActions,
+  useTransferCommish,
+  type SeatInviteMode,
+} from './invite-panel-actions'
+import {
   CREATOR_SEAT_NOTE,
+  LEAVE_BLOCKED_NOTE,
   buildJoinLink,
   creatorSeatBlocked,
   defaultRemoveMode,
   deriveSeats,
-  fillOutcome,
   inviteState,
-  isAlreadyFullRefusal,
   leaveConfirms,
   leaveLeagueCopy,
   nextLeaveStep,
   memberControls,
   preferredShareCode,
-  readSeatCounts,
   removeOptionCopy,
-  validateSlug,
   type LeaveCopy,
   type LeaveStep,
   type MemberControls,
   type MembersPhase,
   type PendingInviteInput,
   type Seat,
-  type SeatCounts,
 } from './invite-panel-ops'
 
 /**
@@ -90,6 +85,10 @@ import {
  * THIS state (`memberControls`, measured per verb in `invite-panel-ops.ts`):
  * the share link and new seats before the draft only; seat invites, assign,
  * roles, takeover / vacate and leave in every state.
+ *
+ * Every action (and its toast) is `invite-panel-actions.ts`'s, shared with
+ * the phone's Members screen (gap list §4 item 106) — one set of handlers,
+ * two layouts.
  *
  * THE PRIVACY INVARIANT (§7.2/§12.23): the seat identity comes from
  * `deriveSeats` — a claimed seat renders *Team — @username* and
@@ -223,35 +222,21 @@ function ShareLinkCard({
 function SlugEditor({ leagueId, inviteSlug }: { leagueId: string; inviteSlug: string | null }) {
   const [value, setValue] = useState(inviteSlug ?? '')
   const [error, setError] = useState<string | null>(null)
-  const setSlug = useSetInviteSlug(leagueId)
+  const slug = useSlugActions(leagueId)
 
   const trimmed = value.trim()
   const dirty = trimmed !== (inviteSlug ?? '')
 
   async function save() {
-    const clientError = validateSlug(trimmed)
-    if (clientError) {
-      setError(clientError)
-      return
-    }
     setError(null)
-    try {
-      await setSlug.mutateAsync(trimmed.toLowerCase())
-      toast({ title: 'Custom link saved', description: `/join/${trimmed.toLowerCase()}` })
-    } catch (cause) {
-      setError(messageOf(cause))
-    }
+    setError(await slug.save(trimmed))
   }
 
   async function clear() {
     setError(null)
-    try {
-      await setSlug.mutateAsync(null)
-      setValue('')
-      toast({ title: 'Custom link cleared', description: 'The random share code is active again.' })
-    } catch (cause) {
-      setError(messageOf(cause))
-    }
+    const problem = await slug.clear()
+    if (problem) setError(problem)
+    else setValue('')
   }
 
   return (
@@ -275,13 +260,13 @@ function SlugEditor({ leagueId, inviteSlug }: { leagueId: string; inviteSlug: st
           type="button"
           variant="stroke"
           size="sm"
-          disabled={!dirty || setSlug.isPending}
+          disabled={!dirty || slug.pending}
           onClick={save}
         >
           <Icon name="save" size={13} /> Save
         </Button>
         {inviteSlug && (
-          <Button type="button" variant="ghost" size="sm" disabled={setSlug.isPending} onClick={clear}>
+          <Button type="button" variant="ghost" size="sm" disabled={slug.pending} onClick={clear}>
             Clear
           </Button>
         )}
@@ -298,19 +283,10 @@ function SlugEditor({ leagueId, inviteSlug }: { leagueId: string; inviteSlug: st
  *  working). Confirm dialog per §22.5; the custom slug survives. */
 function RotateLinkButton({ leagueId }: { leagueId: string }) {
   const [open, setOpen] = useState(false)
-  const rotate = useRotateInviteCode(leagueId)
+  const rotate = useRotateLink(leagueId)
 
   async function confirm() {
-    try {
-      await rotate.mutateAsync()
-      setOpen(false)
-      toast({
-        title: 'Invite link rotated',
-        description: 'The old share code no longer works. Your custom link still does.',
-      })
-    } catch (cause) {
-      toast({ title: "Couldn't rotate the link", description: messageOf(cause) })
-    }
+    if (await rotate.rotate()) setOpen(false)
   }
 
   return (
@@ -336,10 +312,10 @@ function RotateLinkButton({ leagueId }: { leagueId: string }) {
               type="button"
               variant="destructive"
               size="sm"
-              disabled={rotate.isPending}
+              disabled={rotate.pending}
               onClick={confirm}
             >
-              {rotate.isPending ? 'Rotating…' : 'Rotate link'}
+              {rotate.pending ? 'Rotating…' : 'Rotate link'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -427,64 +403,9 @@ function SeatsCard({
 }
 
 function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: number }) {
-  const addSeat = useAddPlaceholderSeat(leagueId)
-  const [fill, setFill] = useState<{ done: number; target: number } | null>(null)
-  const busy = addSeat.isPending || fill !== null
-
-  async function add() {
-    try {
-      const seats = readSeatCounts(await addSeat.mutateAsync(undefined))
-      toast(fillOutcome(seats, 1, 1))
-    } catch (cause) {
-      toast({ title: "Couldn't add a seat", description: messageOf(cause) })
-    }
-  }
-
-  // Fill every remaining slot in one press. §7.2/D96 requires every franchise
-  // to EXIST before the draft can start, so a solo commissioner opening a
-  // 12-team league otherwise has to press "Add an open seat" eleven times
-  // before start_draft will accept — the failure Chris hit on 2026-09-09.
-  //
-  // Sequential, never parallel: add_placeholder_seat re-reads capacity under
-  // the league lock (063/R93) and raises once full, so overlapping requests
-  // would race on the final seat.
-  async function fillAll() {
-    const requested = openCount
-    setFill({ done: 0, target: requested })
-    let added = 0
-    let seats: SeatCounts | null = null
-    try {
-      for (let i = 0; i < requested; i += 1) {
-        seats = readSeatCounts(await addSeat.mutateAsync(undefined))
-        added += 1
-        setFill({ done: added, target: requested })
-        // THE SERVER'S POSTCONDITION ENDS THE LOOP, never the client's count
-        // (R958). `openCount` comes from a cached league document with no
-        // window-focus refetch and no realtime on members, so it can be stale
-        // HIGH — and one call past capacity turns 063:446's already-full
-        // refusal into a "failure" report on a league that is seated and
-        // draft-ready, whose own remediation text ("raise team_count first")
-        // would turn a correct 12-team league into a 13-team one.
-        if (seats && seats.filled >= seats.total) break
-      }
-      toast(fillOutcome(seats, added, requested))
-    } catch (cause) {
-      const message = messageOf(cause)
-      // A refusal BECAUSE the league is already full is completion, not
-      // failure — reachable when someone claims the last seat mid-loop.
-      // Asserting the reason instead of inferring failure from the raise.
-      if (isAlreadyFullRefusal(message)) {
-        toast(fillOutcome(seats ? { ...seats, filled: seats.total } : null, added, requested))
-      } else {
-        toast({
-          title: added > 0 ? `Stopped after ${added} of ${requested}` : "Couldn't add the seats",
-          description: message,
-        })
-      }
-    } finally {
-      setFill(null)
-    }
-  }
+  // The add / fill loop (its R958 server-postcondition stop) is shared with
+  // the phone's Members screen.
+  const { add, fillAll, fill, busy } = useFillSeats(leagueId)
 
   return (
     <div className="flex flex-wrap items-center gap-2.5">
@@ -497,11 +418,8 @@ function AddSeatButton({ leagueId, openCount }: { leagueId: string; openCount: n
           the live count alone unmounts the progress at exactly the moment the
           commissioner starts wondering whether it hung (R961). */}
       {(openCount > 1 || fill !== null) && (
-        <Button type="button" variant="dark" size="sm" disabled={busy} onClick={fillAll}>
-          <Icon name="plus" size={13} />{' '}
-          {fill
-            ? `Adding ${Math.min(fill.done + 1, fill.target)} of ${fill.target}\u2026`
-            : `Fill all ${openCount} seats`}
+        <Button type="button" variant="dark" size="sm" disabled={busy} onClick={() => void fillAll(openCount)}>
+          <Icon name="plus" size={13} /> {fillAllLabel(fill, openCount)}
         </Button>
       )}
       <span className="text-[10px] font-medium text-n-6">
@@ -620,12 +538,6 @@ function SeatSubline({ seat, newTab }: { seat: Seat; newTab: boolean }) {
   return <div className="text-[10px] font-medium leading-tight text-n-6">Waiting to be filled</div>
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  commissioner: 'Commissioner',
-  co_commissioner: 'Co-commissioner',
-  manager: 'Manager',
-}
-
 function SeatStatusBadge({ seat }: { seat: Seat }) {
   const map: Record<Seat['status'], { label: string; variant: 'green' | 'accent' | 'stroke' | 'outline' }> = {
     claimed: { label: 'Claimed', variant: 'green' },
@@ -677,17 +589,11 @@ function ClaimedSeatControls({
 }
 
 function RoleControls({ seat, leagueId, myRole }: { seat: Seat; leagueId: string; myRole: string | null }) {
-  const setRole = useSetMemberRole(leagueId)
+  const roles = useRoleChange(leagueId)
   const isSittingCommish = myRole === 'commissioner'
 
   async function change(role: MemberRole) {
-    if (!seat.memberId) return
-    try {
-      await setRole.mutateAsync({ memberId: seat.memberId, role })
-      toast({ title: 'Role updated', description: `${seat.teamName} is now ${ROLE_LABELS[role]}.` })
-    } catch (cause) {
-      toast({ title: "Couldn't change the role", description: messageOf(cause) })
-    }
+    await roles.change(seat, role)
   }
 
   return (
@@ -697,7 +603,7 @@ function RoleControls({ seat, leagueId, myRole }: { seat: Seat; leagueId: string
           type="button"
           variant="ghost"
           size="sm"
-          disabled={setRole.isPending}
+          disabled={roles.pending}
           onClick={() => change('co_commissioner')}
         >
           <Icon name="arrow-up" size={13} /> Make co-commish
@@ -708,7 +614,7 @@ function RoleControls({ seat, leagueId, myRole }: { seat: Seat; leagueId: string
           type="button"
           variant="ghost"
           size="sm"
-          disabled={setRole.isPending}
+          disabled={roles.pending}
           onClick={() => change('manager')}
         >
           <Icon name="arrow-bottom" size={13} /> Make manager
@@ -725,20 +631,10 @@ function RoleControls({ seat, leagueId, myRole }: { seat: Seat; leagueId: string
  *  co-commissioner. Only the sitting commissioner may do it; confirm first. */
 function TransferCommishButton({ seat, leagueId }: { seat: Seat; leagueId: string }) {
   const [open, setOpen] = useState(false)
-  const setRole = useSetMemberRole(leagueId)
+  const role = useTransferCommish(leagueId)
 
   async function confirm() {
-    if (!seat.memberId) return
-    try {
-      await setRole.mutateAsync({ memberId: seat.memberId, role: 'commissioner' })
-      setOpen(false)
-      toast({
-        title: 'Commissioner role transferred',
-        description: `${seat.teamName} is now the commissioner. You're a co-commissioner.`,
-      })
-    } catch (cause) {
-      toast({ title: "Couldn't transfer the role", description: messageOf(cause) })
-    }
+    if (await role.transfer(seat)) setOpen(false)
   }
 
   return (
@@ -759,8 +655,8 @@ function TransferCommishButton({ seat, leagueId }: { seat: Seat; leagueId: strin
             <Button type="button" variant="stroke" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" variant="blue" size="sm" disabled={setRole.isPending} onClick={confirm}>
-              {setRole.isPending ? 'Transferring…' : 'Transfer role'}
+            <Button type="button" variant="blue" size="sm" disabled={role.pending} onClick={confirm}>
+              {role.pending ? 'Transferring…' : 'Transfer role'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -821,27 +717,14 @@ function RemoveManagerDialog({
   const [successorHandle, setSuccessorHandle] = useState('')
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const remove = useRemoveManager(leagueId)
+  const remove = useRemoveSeat(leagueId)
 
   async function confirm() {
     if (!seat.memberId) return
     setError(null)
-    try {
-      let successorUserId: string | undefined
-      if (mode === 'takeover') {
-        successorUserId = await resolveUsername(successorHandle)
-      }
-      await remove.mutateAsync({
-        memberId: seat.memberId,
-        mode,
-        successorUserId,
-        reason: reason.trim() || undefined,
-      })
-      onClose()
-      toast(removeToast(mode, seat.teamName))
-    } catch (cause) {
-      setError(messageOf(cause))
-    }
+    const problem = await remove.remove(seat, { mode, successorHandle, reason })
+    if (problem) setError(problem)
+    else onClose()
   }
 
   const takeoverReady = mode !== 'takeover' || successorHandle.trim().length > 0
@@ -911,21 +794,15 @@ function RemoveManagerDialog({
             type="button"
             variant="destructive"
             size="sm"
-            disabled={remove.isPending || !takeoverReady}
+            disabled={remove.pending || !takeoverReady}
             onClick={confirm}
           >
-            {remove.isPending ? 'Removing…' : 'Remove manager'}
+            {remove.pending ? 'Removing…' : 'Remove manager'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
-}
-
-/** The toast after a removal. */
-function removeToast(mode: RemoveMode, teamName: string): { title: string; description: string } {
-  if (mode === 'takeover') return { title: 'Team handed over', description: `${teamName} has a new manager.` }
-  return { title: 'Seat opened', description: `${teamName} is now an open seat — invite a replacement.` }
 }
 
 function ModeOption({
@@ -979,7 +856,7 @@ function InvitedSeatControls({
   canManage: boolean
   nowMs: number
 }) {
-  const revoke = useRevokeInvite(leagueId)
+  const revoke = useRevokeSeatInvite(leagueId)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const state = inviteState(invite, nowMs)
   const expires = new Date(invite.expires_at).toLocaleDateString(undefined, {
@@ -988,12 +865,7 @@ function InvitedSeatControls({
   })
 
   async function doRevoke() {
-    try {
-      await revoke.mutateAsync(invite.id)
-      toast({ title: 'Invite revoked', description: 'That link no longer works.' })
-    } catch (cause) {
-      toast({ title: "Couldn't revoke the invite", description: messageOf(cause) })
-    }
+    await revoke.revoke(invite.id)
   }
 
   return (
@@ -1010,7 +882,7 @@ function InvitedSeatControls({
             ariaLabel="Copy this seat's invite link"
             withLabel="Copy link"
           />
-          <Button type="button" variant="ghost" size="sm" disabled={revoke.isPending} onClick={doRevoke}>
+          <Button type="button" variant="ghost" size="sm" disabled={revoke.pending} onClick={doRevoke}>
             <Icon name="remove" size={13} /> Revoke
           </Button>
         </>
@@ -1023,63 +895,27 @@ function InvitedSeatControls({
 // Placeholder seat — email-first invite (+ username / assign / copyable link)
 // ---------------------------------------------------------------------------
 
-type InviteMode = 'email' | 'username' | 'assign'
-
 function SeatInviteForm({ leagueId, teamId }: { leagueId: string; teamId: string }) {
-  const [mode, setMode] = useState<InviteMode>('email')
+  const [mode, setMode] = useState<SeatInviteMode>('email')
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const createInvite = useCreateInvite(leagueId)
-  const assignManager = useAssignManager(leagueId)
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-
-  const busy = createInvite.isPending || assignManager.isPending
+  const invite = useSeatInvite(leagueId, teamId)
+  const busy = invite.busy
 
   async function submit() {
     setError(null)
-    const entry = value.trim()
-    if (!entry) {
-      setError(mode === 'email' ? 'Enter an email address.' : 'Enter a username.')
-      return
-    }
-    try {
-      if (mode === 'email') {
-        const result = await createInvite.mutateAsync({ target_team_id: teamId, invited_email: entry })
-        setValue('')
-        toast({
-          title: result.email_sent ? 'Invite emailed' : 'Invite created',
-          description: result.email_sent
-            ? `We sent ${entry} a claim link.`
-            : `Share the seat link with ${entry}.`,
-        })
-      } else if (mode === 'username') {
-        await createInvite.mutateAsync({
-          target_team_id: teamId,
-          invited_username: entry.replace(/^@/, ''),
-        })
-        setValue('')
-        toast({ title: 'Invite sent', description: `@${entry.replace(/^@/, '')} was notified.` })
-      } else {
-        const userId = await resolveUsername(entry)
-        await assignManager.mutateAsync({ teamId, userId })
-        setValue('')
-        toast({ title: 'Manager seated', description: `@${entry.replace(/^@/, '')} now runs this seat.` })
-      }
-    } catch (cause) {
-      setError(messageOf(cause))
-    }
+    const problem = await invite.submit(mode, value)
+    if (problem) setError(problem)
+    else setValue('')
   }
 
   async function copySeatLink() {
     setError(null)
-    try {
-      const result = await createInvite.mutateAsync({ target_team_id: teamId })
-      const link = buildJoinLink(origin, result.token)
-      await copyToClipboard(link)
-      toast({ title: 'Seat link copied', description: 'Anyone with it claims this exact seat.' })
-    } catch (cause) {
-      setError(messageOf(cause))
-    }
+    const result = await invite.copySeatLink()
+    if (result.status === 'error') setError(result.message)
+    // The clipboard refused: the link, to copy by hand (the seat's row now
+    // also offers its own Copy link).
+    else if (result.status === 'uncopied') toast(copyByHandToast(result.link))
   }
 
   return (
@@ -1168,8 +1004,7 @@ function SelfSeatControls({
   leagueName: string
 }) {
   const [step, setStep] = useState<LeaveStep>('closed')
-  const router = useRouter()
-  const leave = useLeaveLeague(leagueId)
+  const leave = useLeaveSeat(leagueId)
   // Only the SITTING commissioner must transfer first (§7.2.1:192); a
   // co-commissioner leaves freely.
   const mustTransferFirst = myRole === 'commissioner'
@@ -1178,14 +1013,7 @@ function SelfSeatControls({
   async function confirm() {
     // L.E1.41: only the SECOND confirmation leaves (Chris 2026-09-30).
     if (!seat.memberId || !leaveConfirms(step)) return
-    try {
-      await leave.mutateAsync(seat.memberId)
-      setStep('closed')
-      toast({ title: 'You left the league', description: `${seat.teamName} no longer has you as its manager.` })
-      router.push('/app/leagues')
-    } catch (cause) {
-      toast({ title: "Couldn't leave the league", description: messageOf(cause) })
-    }
+    if (await leave.leave(seat)) setStep('closed')
   }
 
   return (
@@ -1202,16 +1030,14 @@ function SelfSeatControls({
         <Icon name="transfer" size={13} /> Leave league
       </Button>
       {mustTransferFirst && (
-        <span className="text-[10px] font-medium text-n-6">
-          Transfer the commissioner role to another member before you can leave.
-        </span>
+        <span className="text-[10px] font-medium text-n-6">{LEAVE_BLOCKED_NOTE}</span>
       )}
       <Dialog open={step !== 'closed'} onOpenChange={(open) => !open && setStep('closed')}>
         <DialogContent>
           <LeaveLeagueSteps
             step={step}
             copy={copy}
-            pending={leave.isPending}
+            pending={leave.pending}
             onStep={(event) => setStep((s) => nextLeaveStep(s, event))}
             onConfirm={confirm}
           />
@@ -1301,8 +1127,7 @@ function CopyButton({
 }) {
   async function copy() {
     if (!text) return
-    const ok = await copyToClipboard(text)
-    toast(ok ? { title: label } : { title: 'Copy it manually', description: text })
+    await copyWithToast(text, label)
   }
   return (
     <Button
@@ -1317,35 +1142,4 @@ function CopyButton({
       {withLabel ?? 'Copy'}
     </Button>
   )
-}
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Resolve a public @username to its profile id (§7.2 usernames are public;
- *  profiles are world-readable). Throws a friendly LeagueActionError. */
-async function resolveUsername(raw: string): Promise<string> {
-  const handle = raw.trim().replace(/^@/, '').toLowerCase()
-  if (!handle) throw new LeagueActionError(400, 'Enter a username.')
-  const supabase = createBrowserClient()
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('username', handle)
-    .maybeSingle()
-  if (error) throw new LeagueActionError(500, 'Could not look up that username.')
-  if (!data) throw new LeagueActionError(404, `No FieldScout account @${handle}.`)
-  return data.id
-}
-
-function messageOf(cause: unknown): string {
-  if (cause instanceof LeagueActionError) return cause.message
-  if (cause instanceof Error) return cause.message
-  return 'Something went wrong. Please try again.'
 }

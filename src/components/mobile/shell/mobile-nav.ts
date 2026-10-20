@@ -63,10 +63,9 @@ export function mobileRoute(pathname: string, myTeamId: string | null): MobileRo
  * page's existing layout. Null = the route draws its own mobile screen.
  */
 const LEAGUE_FALLBACK_TITLES: ReadonlyArray<[RegExp, string]> = [
-  // League settings / Scoring / Playoffs draw their own phone screens now
-  // (`/settings` — gap list §4 item 105).
+  // League settings / Scoring / Playoffs (`/settings` — gap list §4 item
+  // 105) and Members (`/members` — item 106) draw their own phone screens now.
   [/^\/schedule(\/|$)/, 'Schedule'],
-  [/^\/members(\/|$)/, 'Members'],
   [/^\/commish(\/|$)/, 'Commissioner tools'],
 ]
 

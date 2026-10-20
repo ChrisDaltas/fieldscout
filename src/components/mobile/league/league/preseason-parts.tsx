@@ -5,12 +5,10 @@ import { useMemo, useState } from 'react'
 
 import { mockIdentityLabel, mockProgressLabel } from '@/components/draft/mock-launcher-ops'
 import { AttachListInline } from '@/components/leagues/attach-list-modal'
-import { buildJoinLink, deriveSeats, memberControls, membersPageHref, preferredShareCode, type Seat } from '@/components/leagues/invite-panel-ops'
-import { teamPageHref } from '@/components/leagues/league-cells'
+import { deriveSeats, memberControls, membersPageHref } from '@/components/leagues/invite-panel-ops'
 import { SettingsSkin } from '@/components/leagues/settings-form-controls'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
-import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueInvites } from '@/hooks/use-league-invites'
@@ -22,7 +20,8 @@ import { toast } from '@/hooks/use-toast'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { cn } from '@/lib/utils'
 
-import { TeamAvatar } from './league-bits'
+import { SeatRow, ShareLinkCard } from '../members/seat-parts'
+
 import { teamAvatarClass } from './league-tab-ops'
 
 /**
@@ -52,13 +51,6 @@ function messageOf(cause: unknown): string {
 // ---------------------------------------------------------------------------
 // Managers
 // ---------------------------------------------------------------------------
-
-const SEAT_PILL: Record<Seat['status'], { label: string; cls: string }> = {
-  claimed: { label: 'Claimed', cls: 'bg-m-gg text-m-tg' },
-  invited: { label: 'Invited', cls: 'bg-m-gb text-m-tb' },
-  placeholder: { label: 'Open', cls: 'bg-m-b2 text-m-t3' },
-  open: { label: 'Open', cls: 'bg-m-b2 text-m-t3' },
-}
 
 export function ManagersCard({ leagueId, detail }: { leagueId: string; detail: LeagueDetail }) {
   const { user } = useAuth()
@@ -94,41 +86,20 @@ export function ManagersCard({ leagueId, detail }: { leagueId: string; detail: L
         </span>
       </div>
 
-      {canManage && controls.shareLink && <ShareLink inviteCode={detail.league.invite_code} inviteSlug={detail.league.invite_slug} />}
+      {canManage && controls.shareLink && <ShareLinkCard inviteCode={detail.league.invite_code} inviteSlug={detail.league.invite_slug} />}
       {canManage && controls.linkClosedNote && <p className={cn(NOTE, 'px-1')}>{controls.linkClosedNote}</p>}
 
       <ul className="flex flex-col rounded-[16px] bg-m-b1 px-3.5" aria-label="Seats">
         {model.seats.map((seat) => (
-          <li key={seat.key} className="flex min-h-[56px] items-center gap-3 border-b border-m-b3 py-2 last:border-b-0" data-seat={seat.status}>
-            {seat.status === 'open' || !seat.teamId ? (
-              <span aria-hidden="true" className="flex size-8 flex-none items-center justify-center rounded-full bg-m-t5 text-[11px] font-semibold text-white">
-                •
-              </span>
-            ) : (
-              <TeamAvatar
-                name={seat.teamName}
-                size={32}
-                className={teamAvatarClass(seat.teamId, teamIds, myTeamId)}
-                online={teamOnline(seat.teamId)}
-                onlineRingClass="ring-m-b1"
-              />
-            )}
-            <span className="flex min-w-0 flex-1 flex-col gap-px">
-              {seat.teamId && seat.status !== 'open' ? (
-                <Link href={teamPageHref(leagueId, seat.teamId)} className="truncate text-[14px] font-semibold text-m-t1">
-                  {seat.teamName}
-                </Link>
-              ) : (
-                <span className="truncate text-[14px] font-semibold text-m-t1">Open seat</span>
-              )}
-              <span className="truncate text-[12px] font-medium text-m-t3">
-                <SeatLine seat={seat} />
-              </span>
-            </span>
-            <span className={cn('flex h-[20px] flex-none items-center rounded-pill px-2 text-[11px] font-semibold', SEAT_PILL[seat.status].cls)}>
-              {SEAT_PILL[seat.status].label}
-            </span>
-          </li>
+          <SeatRow
+            key={seat.key}
+            seat={seat}
+            leagueId={leagueId}
+            avatarClass={teamAvatarClass(seat.teamId, teamIds, myTeamId)}
+            online={teamOnline(seat.teamId)}
+            ringClass="ring-m-b1"
+            className="border-b border-m-b3 last:border-b-0"
+          />
         ))}
         {canManage && invites.isPending && <li className={cn(NOTE, 'py-2')}>Loading invites…</li>}
       </ul>
@@ -147,64 +118,6 @@ export function ManagersCard({ leagueId, detail }: { leagueId: string; detail: L
         <MIcon name="chevronRight" size={12} stroke={2} className="text-m-t5" />
       </Link>
     </section>
-  )
-}
-
-function SeatLine({ seat }: { seat: Seat }) {
-  const role = seat.role === 'commissioner' ? 'Commissioner' : seat.role === 'co_commissioner' ? 'Co-commissioner' : null
-  if (seat.status === 'claimed') {
-    return (
-      <>
-        {seat.username ? <UsernameLink username={seat.username} /> : seat.identity}
-        {seat.isSelf && ' · you'}
-        {role && ` · ${role}`}
-      </>
-    )
-  }
-  if (seat.status === 'invited') {
-    return (
-      <>
-        Invited{' '}
-        {seat.emailTarget ?? (seat.usernameTarget ? <UsernameLink username={seat.usernameTarget} /> : 'by a shared link')}
-      </>
-    )
-  }
-  if (seat.status === 'placeholder') return <>No manager yet</>
-  return <>Waiting to be filled</>
-}
-
-function ShareLink({ inviteCode, inviteSlug }: { inviteCode: string | null; inviteSlug: string | null }) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const code = preferredShareCode(inviteSlug, inviteCode)
-  const link = code ? buildJoinLink(origin, code) : null
-  const copy = async () => {
-    if (!link) return
-    try {
-      await navigator.clipboard.writeText(link)
-      toast({ title: 'Invite link copied' })
-    } catch {
-      toast({ title: 'Copy it manually', description: link })
-    }
-  }
-  return (
-    <div className="flex flex-col gap-2 rounded-[16px] bg-m-b1 p-3.5" data-share-link>
-      <div className="flex items-center gap-3">
-        <span className="flex min-w-0 flex-1 flex-col gap-px">
-          <span className="text-[14px] font-semibold text-m-t1">Invite link</span>
-          <span className="truncate text-[12px] font-medium text-m-t3">{link ?? 'No link yet'}</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => void copy()}
-          disabled={!link}
-          aria-label="Copy the league share link"
-          className={cn(PILL, 'h-8 bg-m-b0 px-3.5 text-m-t1 active:bg-m-b2 disabled:opacity-50')}
-        >
-          Copy
-        </button>
-      </div>
-      <p className={NOTE}>Anyone with this link can claim an open seat — paste it into any chat or email.</p>
-    </div>
   )
 }
 

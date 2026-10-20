@@ -298,7 +298,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string; line
   { file: 'src/hooks/use-draft-chat-ops.ts', contains: '— @${member.profiles.username}', why: 'the chat author LABEL; ChatAuthor links its handle (proved above)' },
   { file: 'src/components/draft/my-lists-panel-ops.ts', contains: 'ownerLabel: mine ? null : username ? `@${username}`', why: 'the row label; the panel renders ownerUsername as a UsernameLink' },
   { file: 'src/components/leagues/invite-panel-ops.ts', contains: 'return `@${profile.username}`', why: 'the seat identity string for confirm-dialog sentences; the seat row renders `username` as a UsernameLink (invite-panel.render.test)' },
-  { file: 'src/components/leagues/invite-panel.tsx', contains: 'No FieldScout account @${handle}.', why: 'an error message about a username that has no account — there is no profile to open' },
+  { file: 'src/components/leagues/invite-panel-actions.ts', contains: 'No FieldScout account @${handle}.', why: 'an error message about a username that has no account — there is no profile to open' },
   { file: 'src/components/lists/public-list-card.tsx', contains: '`@${owner.username}`', why: 'the unlinked arm: the owner’s own profile page, or an AI persona (its page is /personas/…)' },
   { file: 'src/components/explore/explore-feed.tsx', contains: '· @${item.author.handle}', why: 'an AI persona’s handle — its page is /personas/…, not a person’s profile' },
   { file: 'src/components/layout/account-menu.tsx', contains: 'const handle = `@${profile.username}`', why: 'the viewer’s own handle on the account-menu trigger button (the menu holds the profile link)' },
