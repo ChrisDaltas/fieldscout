@@ -4,6 +4,8 @@
 
 ## Summary
 
+*19 Oct 2026: all 31 "Can build now" items (section 3, PRs #447–#479) and all 18 restyles (section 4, PRs #480–#516) are done and merged to main. Each item below shows its PR. Not every PR in those ranges is a gap-list item. The decisions, backend gaps and FYI sections haven't changed.*
+
 1. **Built:** all eight areas of the handoff are built on real data, with phone-only dark mode. That closes 232 designed items (section 6).
 2. **Still open:** 225 findings from the areas plus 5 from my own check. After removing duplicates: **48 decisions**, **45 that need new data or server work**, **31 we can build now**, **18 restyles** and **11 prototype bugs we didn't copy**.
 3. **Biggest gaps that need new data:** live scoring and win probability, player news and rostered/started %, direct messages, start-or-sit polls, and the full rankings loop (Scout AI, experts, submitting, grading).
@@ -189,74 +191,76 @@
 
 ## 3. Can build now on data we already have
 
+**All 31 done** (19 Oct 2026), PR numbers in the Done column. #6 needed no build: the Back rule (ruling 27) covers it.
+
 Most impact first. Launch-scope screens come before leagues, and leagues come before switched-off features.
 
 **Everywhere**
-| # | What | Size |
-|---|---|---|
-| 1 | Full-screen search: All / Players / People / Posts chips, recent searches kept on the phone, trending from Risers. Inside a league it also finds managers (opens their team) and labels players Your team / Waivers / Free agent. For now Posts searches public lists. | M |
-| 2 | A "Your mocks" link on Home's Practice card. Past mock drafts are otherwise only reachable from a league's pre-draft screen. | S |
+| # | What | Size | Done |
+|---|---|---|---|
+| 1 | Full-screen search: All / Players / People / Posts chips, recent searches kept on the phone, trending from Risers. Inside a league it also finds managers (opens their team) and labels players Your team / Waivers / Free agent. For now Posts searches public lists. | M | #447 |
+| 2 | A "Your mocks" link on Home's Practice card. Past mock drafts are otherwise only reachable from a league's pre-draft screen. | S | #448 |
 
 **Lists**
-| # | What | Size |
-|---|---|---|
-| 3 | Desktop list tools in the list's ⋯ sheet: position group and team lists (this also fixes the all-blue covers), drafted check-off and Clear drafted, player notes, side-by-side compare, and round/cost groups. | M |
-| 4 | New list: a Public switch, and up to 10 videos instead of one. | M |
-| 5 | Import into a list from My lists or My rankings. Scout AI and Experts come later. | M |
-| 6 | Back from a list opened on Profile goes straight to Profile. | S |
-| 7 | Return on the keyboard moves on once the list has a name, and the editor shows "2 of 2". | S |
-| 8 | A list started from Community returns you to Community, refreshed, with "List created". | S |
-| 9 | "Users" rank stat column, once community rankings are switched on. | S |
+| # | What | Size | Done |
+|---|---|---|---|
+| 3 | Desktop list tools in the list's ⋯ sheet: position group and team lists (this also fixes the all-blue covers), drafted check-off and Clear drafted, player notes, side-by-side compare, and round/cost groups. | M | #449 |
+| 4 | New list: a Public switch, and up to 10 videos instead of one. | M | #450 |
+| 5 | Import into a list from My lists or My rankings. Scout AI and Experts come later. | M | #451 |
+| 6 | Back from a list opened on Profile goes straight to Profile. | S | Done (Back rule, ruling 27) |
+| 7 | Return on the keyboard moves on once the list has a name, and the editor shows "2 of 2". | S | #452 |
+| 8 | A list started from Community returns you to Community, refreshed, with "List created". | S | #453 |
+| 9 | "Users" rank stat column, once community rankings are switched on. | S | #454 |
 
 **League (test cohort)**
-| # | What | Size |
-|---|---|---|
-| 10 | Rename your own team from Menu › My team (desktop already can). Drop "and avatar" from the card. | S |
-| 11 | Lineup check card above Starters: starters set N/N, injured or bye starters named, projected score vs your opponent. | S |
-| 12 | Lost and failed waiver claims, with the reason, in Transactions › My moves. Every waiver notification opens there. | M |
-| 13 | Edit a pending claim: bid, drop and claim order. | M |
-| 14 | When standings fail to load, the Team card says "Couldn't load the standings" with Try again (today it says "No games played yet"). | S |
-| 15 | Draft results by round: round chips, with your picks in blue. | M |
-| 16 | League history for this season: head-to-head with record, PF and PA. | M |
-| 17 | NFL game screen with a box score, opened from a starter's game line. It doesn't need play-by-play. | L |
+| # | What | Size | Done |
+|---|---|---|---|
+| 10 | Rename your own team from Menu › My team (desktop already can). Drop "and avatar" from the card. | S | #455 |
+| 11 | Lineup check card above Starters: starters set N/N, injured or bye starters named, projected score vs your opponent. | S | #456 |
+| 12 | Lost and failed waiver claims, with the reason, in Transactions › My moves. Every waiver notification opens there. | M | #457 |
+| 13 | Edit a pending claim: bid, drop and claim order. | M | #458 |
+| 14 | When standings fail to load, the Team card says "Couldn't load the standings" with Try again (today it says "No games played yet"). | S | #459 |
+| 15 | Draft results by round: round chips, with your picks in blue. | M | #460 |
+| 16 | League history for this season: head-to-head with record, PF and PA. | M | #461 |
+| 17 | NFL game screen with a box score, opened from a starter's game line. It doesn't need play-by-play. | L | #462 |
 
 **Player profile**
-| # | What | Size |
-|---|---|---|
-| 18 | A scoring chip in the stat strip. Desktop has this picker, phones don't. | S |
-| 19 | This week's card shows "Q4 2:00 · 31-7" or "Final W 31-20", not just Live/Final. | S |
+| # | What | Size | Done |
+|---|---|---|---|
+| 18 | A scoring chip in the stat strip. Desktop has this picker, phones don't. | S | #464 |
+| 19 | This week's card shows "Q4 2:00 · 31-7" or "Final W 31-20", not just Live/Final. | S | #465 |
 
 **Home and league switcher**
-| # | What | Size |
-|---|---|---|
-| 20 | Pre-draft cards and the switcher show "Draft Aug 28 · 7:00 PM" or "Draft live". Today they say "Pre-draft" even during a live draft, or show a stray 0-0. Also: scoring in the Switch league sheet ("12-team PPR"), your team name in "Switched to…", and the league photo when one is uploaded. | S |
+| # | What | Size | Done |
+|---|---|---|---|
+| 20 | Pre-draft cards and the switcher show "Draft Aug 28 · 7:00 PM" or "Draft live". Today they say "Pre-draft" even during a live draft, or show a stray 0-0. Also: scoring in the Switch league sheet ("12-team PPR"), your team name in "Switched to…", and the league photo when one is uploaded. | S | #467 |
 
 **Profile**
-| # | What | Size |
-|---|---|---|
-| 21 | Bio under the handle, a slim Cred card (Scout tier and progress bar), and Following kept beside Followers. | S |
-| 22 | Ranking rows show one row per position ranking, marked Saved or Finalized, and open the ranking you tap. | S |
+| # | What | Size | Done |
+|---|---|---|---|
+| 21 | Bio under the handle, a slim Cred card (Scout tier and progress bar), and Following kept beside Followers. | S | #468 |
+| 22 | Ranking rows show one row per position ranking, marked Saved or Finalized, and open the ranking you tap. | S | #469 |
 
 **Messages**
-| # | What | Size |
-|---|---|---|
-| 23 | Older league board posts load as you scroll up. Only the latest 30 load today. | S |
-| 24 | Conversations sorted by latest message. | S |
-| 25 | Who's online (green dot, "Active now") everywhere, not just in the draft room. | M |
+| # | What | Size | Done |
+|---|---|---|---|
+| 23 | Older league board posts load as you scroll up. Only the latest 30 load today. | S | #470 |
+| 24 | Conversations sorted by latest message. | S | #471 |
+| 25 | Who's online (green dot, "Active now") everywhere, not just in the draft room. | M | #472 |
 
 **Community (off at launch)**
-| # | What | Size |
-|---|---|---|
-| 26 | Like (with a count) and Comments on the list page. Top scouts and trending tags as For you shelves. These exist on desktop. | M |
-| 27 | The season ranking is called Rest of season or Pre-draft by the calendar, with its own chip. "Rankings this week" shows only this week's and season rankings. | S |
-| 28 | Tapping an AI expert's ranking opens it in Rankings, to read. No Duplicate and no "Start my ranking from this": a ranking offers no Duplicate anywhere, phone or desktop, and each user keeps their one ranking per position (Chris, 2026-10-19 — removed the ranking Duplicate of 2026-10-18/19). Plain lists keep their Duplicate. | S |
-| 29 | Label projections "Season proj" until weekly ones exist. | S |
-| 30 | Search and filters cover every public list, not just the newest 100. There are 51 today, so this is needed before 100. | M |
+| # | What | Size | Done |
+|---|---|---|---|
+| 26 | Like (with a count) and Comments on the list page. Top scouts and trending tags as For you shelves. These exist on desktop. | M | #473 |
+| 27 | The season ranking is called Rest of season or Pre-draft by the calendar, with its own chip. "Rankings this week" shows only this week's and season rankings. | S | #474 |
+| 28 | Tapping an AI expert's ranking opens it in Rankings, to read. No Duplicate and no "Start my ranking from this": a ranking offers no Duplicate anywhere, phone or desktop, and each user keeps their one ranking per position (Chris, 2026-10-19 — removed the ranking Duplicate of 2026-10-18/19). Plain lists keep their Duplicate. | S | #475 |
+| 29 | Label projections "Season proj" until weekly ones exist. | S | #476 |
+| 30 | Search and filters cover every public list, not just the newest 100. There are 51 today, so this is needed before 100. | M | #478 |
 
 **Rankings (off at launch)**
-| # | What | Size |
-|---|---|---|
-| 31 | Add players marks who's on bye that week and drops the redundant "All" chip. | S |
+| # | What | Size | Done |
+|---|---|---|---|
+| 31 | Add players marks who's on bye that week and drops the redundant "All" chip. | S | #479 |
 
 ---
 
@@ -264,43 +268,59 @@ Most impact first. Launch-scope screens come before leagues, and leagues come be
 
 This also covers desktop features the design left out, which we bring back in the phone look.
 
+**All 18 done** (19 Oct 2026). Each item shows its PR.
+
 **Everywhere**
-- **Pages with no phone screen** show the desktop layout and stay light in dark mode. **(M, then L)**
-  - **League pages:** League settings / Scoring / Playoffs, Draft results, Schedule, Members, League stats and Commissioner tools. These have a phone close-and-title bar.
-  - **Other pages:** account Settings, Leagues list, Mock drafts and reports, NFL teams, Trash, Rankings history and Start-or-sit question pages. **Done:** these now have a back-and-title bar too.
+- **Pages with no phone screen** show the desktop layout and stay light in dark mode. **(M, then L)** **Done:** every page below now has its own phone screen, in light and dark. Desktop is unchanged.
+  - **League pages:**
+    - League settings / Scoring / Playoffs: #510
+    - Draft results: #460 (built as section 3 #15)
+    - Schedule: #512
+    - Members: #511
+    - League stats: #461 (built as League history, section 3 #16), so nothing was left to build
+    - Commissioner tools: #513
+  - **Other pages:**
+    - account Settings (with Scoring and Pro subscription): #503
+    - Leagues list: #507
+    - Mock drafts and reports: #514
+    - NFL teams: #505
+    - Trash: #504
+    - Rankings history: #515
+    - Start-or-sit question pages: #516
   - ~~**Step 1:** give them the same close-and-title bar.~~ Done.
-  - **Step 2:** restyle each page in the phone look. Start with League settings / Scoring / Playoffs and Draft results (the design draws these), then account Settings.
-- **Join league, Create league and Mock draft pop-ups** from Home are still the old desktop dialogs and stay light in dark mode. Rebuild them as phone sheets. **(M)**
-- **Bottom sheets:** add an optional blue Done / Cancel / Submit pill in the header (Lists and Rankings sheets), slide up, and swipe down to close. **(S)**
-- **Number columns don't line up.** Use even-width digits and Inter's single-storey "a" across the phone layout. **(S)**
-- **Seahawks headshot ring** is lime. Make it navy (this changes desktop too). **(S)**
-- **Green and red text doesn't brighten in dark mode** on the Profile start/sit rows, the Lists video-link error and the Tier 3 label. **(S)**
+  - ~~**Step 2:** restyle each page in the phone look.~~ Done (the PRs above).
+  - Not on this list: the old Teams pages (`/app/teams`) and admin Posts still show the desktop layout under the back-and-title bar.
+- **Join league, Create league and Mock draft pop-ups** from Home are still the old desktop dialogs and stay light in dark mode. Rebuild them as phone sheets. **(M)** **Done:** #480.
+- **Bottom sheets:** add an optional blue Done / Cancel / Submit pill in the header (Lists and Rankings sheets), slide up, and swipe down to close. **(S)** **Done:** #481.
+- **Number columns don't line up.** Use even-width digits and Inter's single-storey "a" across the phone layout. **(S)** **Done:** #482.
+- **Seahawks headshot ring** is lime. Make it navy (this changes desktop too). **(S)** **Done:** #483.
+- **Green and red text doesn't brighten in dark mode** on the Profile start/sit rows, the Lists video-link error and the Tier 3 label. **(S)** **Done:** #484.
 
 **League switcher**
-- The "you are here" dash disappears in dark mode. Make it white in both themes. **(S)**
-- Two quick swipes move only one league and show the message twice. Queue the swipes. **(S)**
+- The "you are here" dash disappears in dark mode. Make it white in both themes. **(S)** **Done:** #485.
+- Two quick swipes move only one league and show the message twice. Queue the swipes. **(S)** **Done:** #486.
 
 **League tab**
-- Add a week picker with a Live/Final label on Matchups. **(S)**
-- Show second-opponent games in their own group. **(S)**
-- Tint your own standings row and matchup card. **(S)**
-- Use @handle everywhere. Transaction rows and the filter list drop the @ today. **(S)**
+- Add a week picker with a Live/Final label on Matchups. **(S)** **Done:** #487.
+- Show second-opponent games in their own group. **(S)** **Done:** #488.
+- Tint your own standings row and matchup card. **(S)** **Done:** #489.
+- Use @handle everywhere. Transaction rows and the filter list drop the @ today. **(S)** **Done:** #490.
 
 **Players**
-- Add a search field to the league Players tab. It's the quick way to find a deep free agent. **(S)**
+- Add a search field to the league Players tab. It's the quick way to find a deep free agent. **(S)** **Done:** #491.
 
 **Team**
-- Overtime shows "Q5 2:31" on Team rows. Make it "OT" like Match. **(S)**
+- Overtime shows "Q5 2:31" on Team rows. Make it "OT" like Match. **(S)** **Done:** #495.
 
 **Community**
-- Projected points are black. Make them dark blue, per your D497 ruling. **(S)**
+- Projected points are black. Make them dark blue, per your D497 ruling. **(S)** **Done:** #498.
 
 **Rankings**
-- The compare note says "him" for kickers and defenses. Use neutral wording. **(S)**
-- Short names clash: A.J. Brown shows as "A. Brown" next to "A. St. Brown", and DK becomes "D. Metcalf". Keep A.J., DK and CJ. **(S)**
+- The compare note says "him" for kickers and defenses. Use neutral wording. **(S)** **Done:** #499.
+- Short names clash: A.J. Brown shows as "A. Brown" next to "A. St. Brown", and DK becomes "D. Metcalf". Keep A.J., DK and CJ. **(S)** **Done:** #500.
 
 **Player profile**
-- Pills, tabs, season chips and league rows don't change when pressed. Add the pressed tint. **(S)**
+- Pills, tabs, season chips and league rows don't change when pressed. Add the pressed tint. **(S)** **Done:** #502.
 
 ---
 
