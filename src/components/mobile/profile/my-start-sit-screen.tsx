@@ -18,6 +18,7 @@ import {
   ssVotesReceived,
   type SsFilter,
   type SsQuestion,
+  type SsQuestionMeta,
 } from '@/components/mobile/profile/profile-ops'
 import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
@@ -140,7 +141,7 @@ export interface SsCardAuthor {
   username: string
   avatarUrl: string | null
   /** The author row's right-hand meta (`ssQuestionMeta`: `PPR · Week 5`). */
-  meta: string
+  meta: SsQuestionMeta
 }
 
 /**
@@ -169,7 +170,18 @@ export function QuestionCard({ q, now, author }: { q: SsQuestion; now: number; a
             <UsernameLink username={author.username} />
             {posted && <span className="font-medium text-m-t3"> · {posted}</span>}
           </span>
-          <span className="flex-none whitespace-nowrap text-[10px] font-semibold text-m-t3">{author.meta}</span>
+          {/* At most half the row, so a long scoring name can't push the
+              @handle (the door to the asker's profile) off the card: the
+              scoring name cuts off with an ellipsis, the week always shows. */}
+          <span className="flex min-w-0 max-w-[50%] whitespace-nowrap text-[10px] font-semibold text-m-t3" data-ss-meta>
+            {author.meta.scoring && (
+              <>
+                <span className="min-w-0 truncate">{author.meta.scoring}</span>
+                <span className="flex-none whitespace-pre"> · </span>
+              </>
+            )}
+            <span className="flex-none">{author.meta.week}</span>
+          </span>
         </div>
       )}
       <div className="flex items-center gap-1.5">

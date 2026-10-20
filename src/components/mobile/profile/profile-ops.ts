@@ -286,12 +286,17 @@ export interface SsQuestionDetail extends SsQuestion {
   scoringName: string | null
 }
 
-/** The right-hand meta on a question's author row: `ESPN Full PPR · Week 5`,
- *  or `Week 5` without a readable scoring name. */
-export function ssQuestionMeta(q: Pick<SsQuestionDetail, 'week' | 'scoringName'>): string {
-  const week = `Week ${q.week}`
-  const scoring = q.scoringName?.trim()
-  return scoring ? `${scoring} · ${week}` : week
+/** The right-hand meta on a question's author row, drawn
+ *  `ESPN Full PPR · Week 5` — or `Week 5` without a readable scoring name.
+ *  Kept in its two parts so a long scoring name (up to 80 characters; a
+ *  league's is "<league name> Custom") is what cuts off, never the week. */
+export interface SsQuestionMeta {
+  scoring: string | null
+  week: string
+}
+
+export function ssQuestionMeta(q: Pick<SsQuestionDetail, 'week' | 'scoringName'>): SsQuestionMeta {
+  return { scoring: q.scoringName?.trim() || null, week: `Week ${q.week}` }
 }
 
 const time = (iso: string | null | undefined) => {

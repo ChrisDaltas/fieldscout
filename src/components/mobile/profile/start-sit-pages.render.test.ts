@@ -207,7 +207,7 @@ describe('a question — the phone screen (gap list §4 item 112)', () => {
     const author = markup.match(/<div[^>]*data-ss-author[^>]*>([\s\S]*?)<\/div><div/)?.[1] ?? ''
     expect(author).toMatch(/<a(?=[^>]*\bhref="\/u\/devpro")(?=[^>]*\bdata-username-link="devpro")[^>]*>@devpro<\/a>/)
     expect(author).toContain('> · 2h<')
-    expect(author).toContain('>Scout PPR · Week 7<')
+    expect(author).toMatch(/>Scout PPR<\/span><span[^>]*> · <\/span><span[^>]*>Week 7<\/span>/)
     // The posting time moved up into the author row — the pills row doesn't repeat it.
     expect(markup.match(/>2h</g) ?? []).toHaveLength(0)
     expect(markup.match(/2h/g)).toHaveLength(1)
@@ -219,9 +219,28 @@ describe('a question — the phone screen (gap list §4 item 112)', () => {
       isError: false,
     }
     const markup = question()
-    expect(markup).toContain('>Week 7<')
+    const meta = markup.match(/<span[^>]*data-ss-meta[^>]*>([\s\S]*?)<\/span><\/div>/)?.[1] ?? ''
+    expect(meta).toBe('<span class="flex-none">Week 7</span>')
     expect(markup).toContain('>Closed<')
     expect(markup).not.toContain('crowd leans')
+  })
+
+  it('a long scoring name cuts off and never pushes the @handle off the card; the week still shows', () => {
+    // Scoring names run to 80 characters; a league's is "<league name> Custom".
+    const scoringName = 'The Extremely Long Sunday Funday Fantasy Football League Of Champions Custom'
+    read.state = { data: { ...QUESTION, scoringName }, isError: false }
+    const markup = question()
+    const author = markup.match(/<div[^>]*data-ss-author[^>]*>([\s\S]*?)<\/div><div/)?.[1] ?? ''
+    // The handle is still there, in a part that may shrink but keeps its share of the row.
+    expect(author).toMatch(/<span class="min-w-0 flex-1 truncate[^"]*"><a[^>]*href="\/u\/devpro"[^>]*>@devpro<\/a>/)
+    // The right-hand side shrinks (min-w-0) and is capped at half the row …
+    const metaTag = author.match(/<span[^>]*data-ss-meta[^>]*>/)?.[0] ?? ''
+    expect(metaTag).toMatch(/class="[^"]*\bmin-w-0\b/)
+    expect(metaTag).toMatch(/class="[^"]*\bmax-w-\[50%\]/)
+    expect(metaTag).not.toMatch(/\bflex-none\b/)
+    // … the scoring name is what cuts off, with an ellipsis; the week never does.
+    expect(author).toContain(`<span class="min-w-0 truncate">${scoringName}</span>`)
+    expect(author).toMatch(/<span class="flex-none">Week 7<\/span><\/span>$/)
   })
 
   it('offers no vote — the app can’t take one yet — so the card’s only door is the asker’s profile', () => {

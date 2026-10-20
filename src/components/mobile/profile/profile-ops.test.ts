@@ -243,10 +243,10 @@ describe('start/sit', () => {
   })
 
   it('a question page’s author-row meta: the scoring it was asked under and the week, or just the week (gap list §4 item 112)', () => {
-    expect(ssQuestionMeta({ week: 7, scoringName: 'Scout PPR' })).toBe('Scout PPR · Week 7')
+    expect(ssQuestionMeta({ week: 7, scoringName: ' Scout PPR ' })).toEqual({ scoring: 'Scout PPR', week: 'Week 7' })
     // A member's own scoring system can't be read by anyone else: just the week.
-    expect(ssQuestionMeta({ week: 7, scoringName: null })).toBe('Week 7')
-    expect(ssQuestionMeta({ week: 12, scoringName: '  ' })).toBe('Week 12')
+    expect(ssQuestionMeta({ week: 7, scoringName: null })).toEqual({ scoring: null, week: 'Week 7' })
+    expect(ssQuestionMeta({ week: 12, scoringName: '  ' })).toEqual({ scoring: null, week: 'Week 12' })
   })
 })
 
