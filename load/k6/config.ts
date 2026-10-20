@@ -197,7 +197,7 @@ export function sizeBanner(profile: LoadProfile): string {
 // ---------------------------------------------------------------------------
 
 /** §22.6 (1): p95 pick→broadcast < 500 ms. */
-export const PICK_TO_BROADCAST_P95_MS = 5 // PROBE — deliberate break, reverted next commit
+export const PICK_TO_BROADCAST_P95_MS = 500
 /** §22.6 (3): scoring lag p95 < 15 s behind ingestion. */
 export const SCORING_LAG_P95_MS = 15_000
 
