@@ -185,6 +185,10 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(html).toContain('data-quick-action="moves" href="/app/leagues/league-1/activity/transactions?mine=1"')
   })
 
+  it('Schedule opens the league schedule on your team (gap list §4 item 107)', () => {
+    expect(html).toContain(`data-quick-action="schedule" href="/app/leagues/league-1/schedule?team=${ME}"`)
+  })
+
   it('the team card avatar is your team’s accent blue — even when yours isn’t the league’s oldest team', () => {
     const newer = render(SCHEDULE, { ...detail, teams: [...detail.teams].reverse() })
     expect(newer).toMatch(new RegExp(`class="[^"]*bg-accent[^"]*"[^>]*data-team-avatar="${ME}"`))
