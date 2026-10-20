@@ -14,9 +14,9 @@
  *
  * TD2 — WHERE IT RUNS. The hosted TEST project (Q89 (a)), never production,
  * never the shared local DB for a load run. `assertSafeTarget` refuses the
- * production project BY NAME — the name is never written in this repo (it is
- * public; standing rule (c)): the Node side reads it at run time from the
- * repo's own `supabase link` file (`supabase/.temp/project-ref`, gitignored —
+ * production project BY NAME — and this harness never writes that name into
+ * the repo (it is public; standing rule (c)): the Node side reads it at run
+ * time from the repo's own `supabase link` file (`supabase/.temp/project-ref`, gitignored —
  * the repo is linked to production and never to the test project, standing
  * rule (i)) and from `.env.local`'s hosted URL, and hands it to k6 as
  * `FS_LOAD_DENY`. With no deny name available a non-local target is refused

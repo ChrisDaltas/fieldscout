@@ -7,7 +7,7 @@ decisions are PROGRESS D570 / D571 and D600–D606.
 
 **Never production.** Every entry point refuses the production project by
 name. The name is read at run time from this machine (the repo's
-`supabase link` file and `.env.local`) and is never written in the repo. A
+`supabase link` file and `.env.local`); the harness never writes it down. A
 test target is refused outright when no production name can be read.
 
 ## Layout
