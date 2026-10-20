@@ -24,6 +24,7 @@ import {
   ssIsOpen,
   ssPostedLabel,
   ssPreviewSub,
+  ssQuestionMeta,
   ssResults,
   ssTitle,
   ssVotesReceived,
@@ -239,6 +240,13 @@ describe('start/sit', () => {
     const local = new Date(2026, 9, 15, 9, 0).getTime()
     expect(ssClosesLabel(new Date(2026, 9, 18, 13, 0).toISOString(), local)).toBe('Sun 1:00 PM')
     expect(ssClosesLabel(new Date(2026, 9, 30, 13, 0).toISOString(), local)).toBe('Oct 30')
+  })
+
+  it('a question page’s author-row meta: the scoring it was asked under and the week, or just the week (gap list §4 item 112)', () => {
+    expect(ssQuestionMeta({ week: 7, scoringName: ' Scout PPR ' })).toEqual({ scoring: 'Scout PPR', week: 'Week 7' })
+    // A member's own scoring system can't be read by anyone else: just the week.
+    expect(ssQuestionMeta({ week: 7, scoringName: null })).toEqual({ scoring: null, week: 'Week 7' })
+    expect(ssQuestionMeta({ week: 12, scoringName: '  ' })).toEqual({ scoring: null, week: 'Week 12' })
   })
 })
 
