@@ -1,10 +1,12 @@
 /**
  * Ranking history on the phone (gap list §4 item 111):
  * `/app/weekly-ranks/history` draws its own FieldScout Mobile screen — the
- * 52px page bar (blue back chevron, "Ranking history" as the h1) over
- * desktop's honest "No submissions yet" (there are no submission records
- * yet), in `m-*` tokens only so the phone's dark mode follows, instead of
- * the borrowed desktop layout. Desktop keeps its page.
+ * 52px page bar (blue back chevron, "Ranking history" as the h1) over a
+ * note pointing to where past rankings already live on the phone (Finalized
+ * in My rankings — the phone has no separate submission step, so desktop's
+ * "No submissions yet" would be false here), in `m-*` tokens only so the
+ * phone's dark mode follows, instead of the borrowed desktop layout. Desktop
+ * keeps its page.
  *
  * The screen renders statically (effects don't run). Its two ways out are
  * fired from its element tree against mocked Back helpers — how those
@@ -82,11 +84,23 @@ describe('Ranking history — the phone screen (gap list §4 item 111)', () => {
     expect(html).toContain('data-mobile-screen')
   })
 
-  it('says there are no submissions yet — desktop’s empty state, without the big board the phone can’t open', () => {
+  it('points to where past rankings live — Finalized in My rankings — without the big board the phone can’t open', () => {
+    expect(RANKING_HISTORY_COPY.emptyTitle).toBe('Past rankings live in My rankings')
+    expect(RANKING_HISTORY_COPY.emptyBody).toBe(
+      'Weekly rankings finalize once their week is played. Find them under Finalized in My rankings.',
+    )
     const html = render()
     expect(html).toContain(`>${RANKING_HISTORY_COPY.emptyTitle}<`)
     expect(html).toContain(`>${RANKING_HISTORY_COPY.emptyBody}<`)
     expect(html).not.toMatch(/big board/i)
+  })
+
+  it('speaks the phone’s vocabulary: Publish is the only save, so it never mentions a submission or a step still to open', () => {
+    const html = render()
+    for (const copy of [html, ...Object.values(RANKING_HISTORY_COPY)]) {
+      expect(copy).not.toMatch(/submission|submit/i)
+      expect(copy).not.toMatch(/\bopen\b(?! my rankings)/i)
+    }
   })
 
   it('offers one blue pill to your rankings, and Back — nothing else', () => {

@@ -12,16 +12,19 @@ export const RANKING_HISTORY_PARENT = MY_RANKINGS_HREF
 /** Copy shared by the screen and its tests. */
 export const RANKING_HISTORY_COPY = {
   title: 'Ranking history',
-  emptyTitle: 'No submissions yet',
-  emptyBody: 'Your locked weekly rankings will show here once weekly submissions open.',
+  emptyTitle: 'Past rankings live in My rankings',
+  emptyBody: 'Weekly rankings finalize once their week is played. Find them under Finalized in My rankings.',
   openRankings: 'Open my rankings',
 } as const
 
 /**
  * Ranking history on the phone (`/app/weekly-ranks/history`, gap list §4
- * item 111) — the same page as desktop's: there are no submission records
- * yet (no submissions table or API), so it is desktop's honest empty state,
- * "No submissions yet", in the phone's language.
+ * item 111) — the same page as desktop's, which has no history records to
+ * list (no submissions table or API). Desktop's "No submissions yet" would be
+ * false here: on the phone Publish is the only save (no separate submission
+ * step, ruled 2026-10-15), and a ranking whose week has been played is
+ * already kept, read-only, under Finalized in My rankings (the Rankings
+ * screen's Mine tab). So the phone's copy points there, in its own words.
  *
  * The handoff draws no ranking history, so it extends the G pages: the page
  * bar (blue back, "Ranking history") over the Lists-style centred note.
