@@ -60,8 +60,8 @@ describe('leagueTabHref', () => {
 
 describe('mobileFallback — account pages with no mobile screen yet', () => {
   it('titles them, each returning Home', () => {
-    expect(mobileFallback('/app/weekly-ranks/history')).toEqual({ kind: 'account', title: 'Ranking history', parent: '/app', heading: true })
-    expect(mobileFallback('/app/start-or-sit/new')?.title).toBe('Ask a question')
+    expect(mobileFallback('/app/start-or-sit/new')).toEqual({ kind: 'account', title: 'Ask a question', parent: '/app', heading: true })
+    expect(mobileFallback('/app/start-or-sit/q1')?.title).toBe('Start or sit')
   })
   it('leaves screens with their own mobile header alone', () => {
     for (const path of ['/app', '/app/profile', '/app/lists', '/app/lists/new', '/app/weekly-ranks', '/app/start-or-sit', '/app/research', '/app/messages', '/app/notifications', '/app/mocks/m1', '/app/explore', '/app/explore/latest']) {
@@ -75,6 +75,11 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
   })
   it('leaves Trash to its own phone screen (gap list §4 item 102)', () => {
     for (const path of ['/app/trash', '/app/trash/']) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
+  })
+  it('leaves Ranking history to its own phone screen (gap list §4 item 111)', () => {
+    for (const path of ['/app/weekly-ranks/history', '/app/weekly-ranks/history/']) {
       expect(mobileFallback(path), path).toBeNull()
     }
   })
