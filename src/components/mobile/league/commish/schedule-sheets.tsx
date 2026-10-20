@@ -94,7 +94,8 @@ function ReasonField({ id, value, onChange, placeholder, disabled }: { id: strin
   )
 }
 
-/** Close unless a save is in flight (its answer must land on screen). */
+/** Close unless a save is in flight (its answer must land on screen). The
+ *  header's X, a swipe down and a backdrop tap all come through here. */
 function guardClose(pending: boolean, onOpenChange: (open: boolean) => void) {
   return (open: boolean) => {
     if (!open && pending) return
@@ -138,6 +139,7 @@ export function EditMatchupSheet({
       open={open}
       onOpenChange={guardClose(edit.isPending, onOpenChange)}
       title={EDIT_SHEET_TITLE}
+      showClose
       subtitle={`Week ${week}`}
       footer={
         <div className="flex flex-col gap-2 px-4 pt-2.5">
@@ -223,6 +225,7 @@ export function RemixSheet({
       open={open}
       onOpenChange={guardClose(confirm.isPending, onOpenChange)}
       title={REMIX_ROW_LABEL}
+      showClose
       subtitle="Nothing changes until you confirm."
       size="tall"
       footer={
@@ -409,6 +412,7 @@ export function RepairSheet({
       open={open}
       onOpenChange={guardClose(edit.isPending, onOpenChange)}
       title={REPAIR_TITLE}
+      showClose
       subtitle="Recorded and posted to the league."
       footer={
         <div className="flex flex-col gap-2 px-4 pt-2.5">

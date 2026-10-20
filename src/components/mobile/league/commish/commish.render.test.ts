@@ -52,9 +52,16 @@ vi.mock('@/hooks/use-auth', () => ({
 vi.mock('@/hooks/use-league-channel', () => ({
   useLeagueChannel: vi.fn(() => ({ connection: 'live' })),
 }))
+// The last sheet's `onOpenChange` — what its X (and a swipe or backdrop tap) calls.
+const lastSheet = vi.hoisted(() => ({ onOpenChange: ((): void => {}) as (open: boolean) => void }))
 vi.mock('@/components/mobile/ui/mobile-sheet', () => ({
-  MobileSheet: ({ open, title, subtitle, children, footer }: { open: boolean; title: string; subtitle?: string; children: ReactNode; footer?: ReactNode }) =>
-    open ? createElement('section', { 'data-sheet': title, 'data-sub': subtitle }, children, footer) : null,
+  // `showClose` draws the header's X (the real sheet's 32px close button).
+  MobileSheet: ({ open, onOpenChange, title, subtitle, showClose, children, footer }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; subtitle?: string; showClose?: boolean; children: ReactNode; footer?: ReactNode }) => {
+    lastSheet.onOpenChange = onOpenChange
+    return open
+      ? createElement('section', { 'data-sheet': title, 'data-sub': subtitle }, showClose ? createElement('button', { type: 'button', 'aria-label': 'Close', 'data-sheet-close': '' }) : null, children, footer)
+      : null
+  },
 }))
 // zustand answers its INITIAL state to a server render, so the mode is
 // observed through the hook (the desktop console rig's shape).
@@ -525,6 +532,19 @@ describe('Change matchup sheet', () => {
     expect(html).toContain('Reason (optional)')
   })
 
+  it('has the header X — a way out without saving; it can’t close the sheet while the save runs', () => {
+    const onOpenChange = vi.fn()
+    const render = () => renderSheet(createElement(EditMatchupSheet, { open: true, onOpenChange, leagueId: LEAGUE, week: 3, row, teams }))
+    expect(render()).toContain('data-sheet-close')
+    lastSheet.onOpenChange(false)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    onOpenChange.mockClear()
+    vi.mocked(useEditMatchup).mockReturnValue({ ...idle, isPending: true } as unknown as Mocked<typeof useEditMatchup>)
+    render()
+    lastSheet.onOpenChange(false)
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
   it('a refusal shows word for word; a change shows what changed and the chat post', () => {
     vi.mocked(useEditMatchup).mockReturnValue({ ...idle, isError: true, error: new Error('Week 3 has already started.') } as unknown as Mocked<typeof useEditMatchup>)
     expect(sheet()).toContain('Week 3 has already started.')
@@ -602,6 +622,11 @@ describe('Remix schedule sheet', () => {
     expect(html).toContain(NO_CHANGES_COPY)
   })
 
+  it('has the header X — a way out without confirming (its footer is only Roll again and Confirm)', () => {
+    preview(plan())
+    expect(sheet()).toContain('data-sheet-close')
+  })
+
   it('a failed preview offers Try again; a refused confirm shows the refusal word for word; a confirm shows the server’s result', () => {
     preview(undefined, { isError: true, error: new Error('league is not in season') })
     expect(sheet()).toContain('Couldn’t preview a remix. league is not in season')
@@ -627,6 +652,7 @@ describe('Re-pair a matchup sheet', () => {
     expect(html).toMatch(/<select id="repair-matchup"[^>]*disabled=""/)
     expect(html).not.toContain('id="repair-home"')
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-repair-save/)
+    expect(html).toContain('data-sheet-close')
   })
 
   it('a re-pair that went through says the new pairing; one that changed nothing says why, on a neutral note', () => {
