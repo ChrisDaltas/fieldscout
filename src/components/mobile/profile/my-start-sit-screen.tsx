@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { AuthorAvatar } from '@/components/mobile/community/community-cards'
 import {
   SS_FILTERS,
   SS_MODE_LABEL,
@@ -22,6 +23,7 @@ import { useGoBack } from '@/components/mobile/ui/back-nav'
 import { MHeadshot } from '@/components/mobile/ui/m-headshot'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
+import { UsernameLink } from '@/components/shared/username-link'
 import { useAuth } from '@/hooks/use-auth'
 import { useMobileProfileStartSit } from '@/hooks/use-mobile-profile-start-sit'
 import { cn } from '@/lib/utils'
@@ -132,14 +134,44 @@ function Stat({ value, label }: { value: string; label: string }) {
   )
 }
 
-/** Outlined card (§2 S0.5): mode + status pills, title, result rows, footer. */
-function QuestionCard({ q, now }: { q: SsQuestion; now: number }) {
+/** Who asked a question, for a card shown outside My start/sit. */
+export interface SsCardAuthor {
+  profileId: string
+  username: string
+  avatarUrl: string | null
+  /** The author row's right-hand meta (`ssQuestionMeta`: `PPR · Week 5`). */
+  meta: string
+}
+
+/**
+ * Outlined card (§2 S0.5): mode + status pills, title, result rows, footer.
+ *
+ * On a question's own page (`author`) it opens with Community's poll-card
+ * author row (m-community §2.8 item 1) — the asker's avatar, @handle (a door
+ * to their profile) and when they asked, with the week on the right — so the
+ * posting time moves there from the pills row.
+ */
+export function QuestionCard({ q, now, author }: { q: SsQuestion; now: number; author?: SsCardAuthor }) {
   const open = ssIsOpen(q, now)
   const r = ssResults(q)
   const options = [q.playerA, q.playerB] as const
+  const posted = ssPostedLabel(q.createdAt, now)
 
   return (
     <article className="flex flex-col gap-2.5 rounded-[18px] p-[14px] shadow-m-outline">
+      {author && (
+        <div className="flex items-center gap-2" data-ss-author>
+          <AuthorAvatar
+            author={{ profileId: author.profileId, username: author.username, avatarUrl: author.avatarUrl, followers: null, isPersona: false }}
+            size={26}
+          />
+          <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
+            <UsernameLink username={author.username} />
+            {posted && <span className="font-medium text-m-t3"> · {posted}</span>}
+          </span>
+          <span className="flex-none whitespace-nowrap text-[10px] font-semibold text-m-t3">{author.meta}</span>
+        </div>
+      )}
       <div className="flex items-center gap-1.5">
         <span className="flex h-[22px] items-center whitespace-nowrap rounded-pill bg-confirm px-[9px] text-[11px] font-bold text-white">
           {SS_MODE_LABEL}
@@ -154,8 +186,12 @@ function QuestionCard({ q, now }: { q: SsQuestion; now: number }) {
             Closed
           </span>
         )}
-        <span className="flex-1" />
-        <span className="whitespace-nowrap text-[11px] font-medium text-m-t3">{ssPostedLabel(q.createdAt, now)}</span>
+        {!author && (
+          <>
+            <span className="flex-1" />
+            <span className="whitespace-nowrap text-[11px] font-medium text-m-t3">{posted}</span>
+          </>
+        )}
       </div>
 
       <p className="text-pretty text-[15px] font-semibold leading-[1.3]">{ssTitle(q)}</p>

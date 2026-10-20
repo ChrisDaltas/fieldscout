@@ -275,6 +275,25 @@ export interface SsQuestion {
   playerB: SsPlayer
 }
 
+/**
+ * A question on its own page (`/app/start-or-sit/[id]`): the question, who
+ * asked it, and the scoring it was asked under — the name only when this
+ * viewer can read that scoring system (a member's own system is private to
+ * them), else null and the page just says the week.
+ */
+export interface SsQuestionDetail extends SsQuestion {
+  poster: { id: string; username: string; avatarUrl: string | null }
+  scoringName: string | null
+}
+
+/** The right-hand meta on a question's author row: `ESPN Full PPR · Week 5`,
+ *  or `Week 5` without a readable scoring name. */
+export function ssQuestionMeta(q: Pick<SsQuestionDetail, 'week' | 'scoringName'>): string {
+  const week = `Week ${q.week}`
+  const scoring = q.scoringName?.trim()
+  return scoring ? `${scoring} · ${week}` : week
+}
+
 const time = (iso: string | null | undefined) => {
   const t = iso ? new Date(iso).getTime() : NaN
   return Number.isNaN(t) ? 0 : t
