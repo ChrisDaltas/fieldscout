@@ -1,4 +1,6 @@
 import { ScheduleView } from '@/components/leagues/schedule-view'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileSchedule } from '@/components/mobile/league/schedule/schedule-screen'
 
 export const metadata = { title: 'Schedule · FieldScout' }
 
@@ -13,8 +15,11 @@ interface ScheduleRouteProps {
  * (`useLeague` gates membership first — D316(4)). The Remix modal and the
  * edit affordances render for a commissioner only, and the routes refuse
  * anyone else by name regardless.
+ *
+ * On the phone it is League Menu › Schedule (gap list §4 item 107): the same
+ * reads in the phone's own screen (`MobileSchedule`).
  */
 export default async function LeagueScheduleRoute({ params }: ScheduleRouteProps) {
   const { leagueId } = await params
-  return <ScheduleView leagueId={leagueId} />
+  return <ByLayout desktop={<ScheduleView leagueId={leagueId} />} mobile={<MobileSchedule leagueId={leagueId} />} />
 }

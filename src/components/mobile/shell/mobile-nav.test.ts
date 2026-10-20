@@ -43,12 +43,11 @@ describe('mobileRoute — which bar and which lit tab (navigation §(c))', () =>
 
 describe('leagueFallbackTitle — league pages with no mobile screen yet', () => {
   it('names the pages the Menu opens', () => {
-    expect(leagueFallbackTitle(`${L}/schedule`)).toBe('Schedule')
     expect(leagueFallbackTitle(`${L}/commish`)).toBe('Commissioner tools')
   })
 
   it('is null where the route draws its own mobile screen', () => {
-    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats', '/settings', '/members']) {
+    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats', '/settings', '/members', '/schedule']) {
       expect(leagueFallbackTitle(`${L}${rest}`), rest).toBeNull()
     }
     expect(leagueFallbackTitle('/app/settings')).toBeNull()
@@ -104,8 +103,13 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
       expect(mobileFallback(path), path).toBeNull()
     }
   })
+  it('leaves Schedule to its own phone screen (gap list §4 item 107)', () => {
+    for (const path of [`${L}/schedule`, `${L}/schedule/`]) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
+  })
   it('names the league for a league page', () => {
-    expect(mobileFallback('/app/leagues/lg1/schedule')).toEqual({ kind: 'league', title: 'Schedule', leagueId: 'lg1', heading: true })
+    expect(mobileFallback('/app/leagues/lg1/commish')).toEqual({ kind: 'league', title: 'Commissioner tools', leagueId: 'lg1', heading: true })
   })
 })
 
