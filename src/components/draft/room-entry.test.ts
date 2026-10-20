@@ -158,8 +158,9 @@ describe('every room-entry URL in src/ is enumerated with a disposition', () => 
       ['src/components/leagues/league-home-states.tsx', 3], // 2 literals SPLIT + the practice CTA's helper call, in place
       ['src/components/mobile/home/home-matchups.tsx', 1], // FieldScout Mobile Home's "Draft live" league card — SPLIT (Link spreads roomEntry)
       ['src/components/mobile/home/home-practice.tsx', 1], // mobile Home's practice card — router.push after the MockLaunchDialog POST, in place like home-quick-actions (R536)
-      ['src/components/mobile/league/league/preseason-parts.tsx', 1], // mobile League tab's league-mock Rejoin row — SPLIT (roomEntry passed down from preseason.tsx)
       ['src/components/mobile/league/league/preseason.tsx', 3], // mobile League tab pre-draft: 2 /draft literals SPLIT + the practice door's launcher helper, in place (as league-home-season-ops)
+      ['src/components/mobile/mocks/mobile-mocks.tsx', 1], // the phone's practice home (gap list §4 item 110) — router.push after the MockLaunchDialog POST, in place like home-practice (R536)
+      ['src/components/mobile/mocks/practice-row.tsx', 2], // the phone's practice row (League tab pre-draft + the phone's practice home): Rejoin / Resume via mockRoomHref / leagueMockRoomHref — SPLIT (each mount passes roomEntry)
     ])
   })
 })
@@ -183,6 +184,16 @@ describe('the split sites carry the entry-target spread on a real anchor', () =>
     const source = code('src/components/mobile/league/commish/commish-screen.tsx')
     expect(source).toContain('...(door.room ? roomEntry : {})')
     expect(source).toContain("import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'")
+  })
+
+  it('the phone practice row spreads roomEntry on its room Link, and both phone mounts pass the real hook’s (gap list §4 item 110)', () => {
+    const row = code('src/components/mobile/mocks/practice-row.tsx')
+    expect(row).toMatch(/<Link href=\{roomHref\} \{\.\.\.roomEntry\}/)
+    for (const rel of ['src/components/mobile/league/league/preseason.tsx', 'src/components/mobile/mocks/mobile-mocks.tsx']) {
+      const source = code(rel)
+      expect(source, rel).toContain("import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'")
+      expect(source, rel).toMatch(/<PracticeRow[\s\S]*?roomEntry=\{roomEntry\}/)
+    }
   })
 
   it("the DraftBar's Join spreads roomEntry on its Link", () => {

@@ -196,7 +196,9 @@ export function MPageBar({
 }
 
 /** A page bar's text action (iOS's Edit / Save / Cancel): 15/600 blue, a
- *  quiet t3 when it can't go — a disabled one never fires. */
+ *  quiet t3 when it can't go — a disabled one never fires. `danger` is a
+ *  red word for a page's one destructive action (the mock draft report's
+ *  Delete), which then asks before it does anything. */
 export function MPageBarAction({
   children,
   onClick,
@@ -207,7 +209,7 @@ export function MPageBarAction({
   children: React.ReactNode
   onClick: () => void
   disabled?: boolean
-  tone?: 'accent' | 'quiet'
+  tone?: 'accent' | 'quiet' | 'danger'
 } & Omit<React.ComponentProps<'button'>, 'onClick' | 'disabled' | 'children'>) {
   return (
     <button
@@ -216,7 +218,7 @@ export function MPageBarAction({
       disabled={disabled}
       className={cn(
         'flex h-9 items-center rounded-pill px-1.5 text-[15px] font-semibold active:bg-m-b2 disabled:text-m-t5 disabled:active:bg-transparent',
-        tone === 'accent' ? 'text-accent' : 'text-m-t1',
+        tone === 'accent' ? 'text-accent' : tone === 'danger' ? 'text-m-red' : 'text-m-t1',
       )}
       {...rest}
     >

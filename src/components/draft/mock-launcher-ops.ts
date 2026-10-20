@@ -290,6 +290,35 @@ export function leagueMockOpenBlocked(
   return mockDraftsEnabled ? null : MOCK_REPORT_HIDDEN_NOTE
 }
 
+/** Why an unfinished league mock can't be rejoined from the practice home
+ *  while leagues are hidden. */
+export const MOCK_LEAGUE_HIDDEN_NOTE = 'This league is hidden right now.'
+
+/**
+ * Why a row on the PRACTICE HOME (`/app/mocks`, desktop and phone) cannot be
+ * opened, or null — the mirror of `leagueMockOpenBlocked` for the other
+ * mount family, lifted out of `mocks-home.tsx` when the phone screen (gap
+ * list §4 item 110) became its second caller.
+ *
+ * A standalone row is never blocked: its room (`/app/mocks/[id]`) and its
+ * report both live under the practice gate this page is already inside.
+ * A finished LEAGUE row isn't either — *View report* goes to
+ * `/app/mocks/[id]/report` for every mock (D230(4)). What is left is an
+ * UNFINISHED league row while the leagues flag is off: its *Rejoin* walks
+ * into `/app/leagues/…`, which silently redirects to `/app`.
+ *
+ * The flag is an argument, read by each mount at its own call site (§4 rule
+ * 13 / D231(4)), so this stays a pure function with a truth table.
+ */
+export function practiceHomeOpenBlocked(
+  row: Pick<MockDraftSummary, 'status' | 'league_id'>,
+  leaguesEnabled: boolean,
+): string | null {
+  if (row.league_id === null) return null
+  if (!leaguesEnabled && row.status !== 'complete') return MOCK_LEAGUE_HIDDEN_NOTE
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // The row's OWN identity (MP.10 — the launch-facing pass)
 // ---------------------------------------------------------------------------

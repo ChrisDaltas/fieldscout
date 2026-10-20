@@ -11,7 +11,7 @@ import { MSegmented } from '@/components/mobile/ui/m-segmented'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useAuth } from '@/hooks/use-auth'
 import { useCompletedRealDraft, useDraft, type DraftPickSummary } from '@/hooks/use-draft'
-import { useLeague, type LeagueDetail } from '@/hooks/use-league'
+import { useLeague } from '@/hooks/use-league'
 import { usePlayersByIds, type PlayerIdentity } from '@/hooks/use-players-by-ids'
 import { cn } from '@/lib/utils'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
@@ -103,29 +103,53 @@ export function MobileDraftResults({ leagueId, draftIdParam }: { leagueId: strin
       </MobileScreen>
     )
   }
+  const userId = user?.id ?? null
   return (
     <MobileScreen header={header}>
-      <DraftResultsBody leagueId={leagueId} detail={detail.data} draft={draft} picks={room.data?.picks ?? []} userId={user?.id ?? null} />
+      <DraftResultsBody
+        leagueId={leagueId}
+        teamNameById={new Map(detail.data.teams.map((t) => [t.id, t.name]))}
+        myMemberTeamId={userId ? (detail.data.members.find((m) => m.user_id === userId)?.team_id ?? null) : null}
+        note={draft.is_mock ? MOCK_LINE : null}
+        draft={draft}
+        picks={room.data?.picks ?? []}
+        userId={userId}
+      />
     </MobileScreen>
   )
 }
 
 type ResultsView = 'round' | 'team'
 
+/**
+ * The results list itself — the segment, the round or team chips and the
+ * picks — for any finished draft. Two mounts: this league screen, and the
+ * phone's mock draft report (`/app/mocks/[id]/report`, gap list §4 item
+ * 110), which has no league to read: each passes its seats' names, the
+ * viewer's own team (a practice draft marks the seat that was played
+ * instead) and the line, if any, to say under the chips.
+ */
 export function DraftResultsBody({
   leagueId,
-  detail,
+  teamNameById,
+  myMemberTeamId,
+  note,
   draft,
   picks,
   userId,
 }: {
-  leagueId: string
-  detail: LeagueDetail
+  /** The league a tapped player's card opens in; null opens it with none. */
+  leagueId: string | null
+  /** Each seat's name by team id ("Team" where one is missing). */
+  teamNameById: ReadonlyMap<string, string>
+  /** The viewer's own team in the league, or null. */
+  myMemberTeamId: string | null
+  /** A line under the chips (a practice draft's note), or null. */
+  note: string | null
   draft: Draft
   picks: DraftPickSummary[]
   userId: string | null
 }) {
-  const myMemberTeamId = userId ? (detail.members.find((m) => m.user_id === userId)?.team_id ?? null) : null
   const variant = recapVariant(draft, userId, myMemberTeamId)
   // Yours: your own team — or, on a practice draft, the seat that was played.
   const myTeamId = variant.kind === 'mock' ? variant.humanTeamId : variant.myTeamId
@@ -133,7 +157,6 @@ export function DraftResultsBody({
   const order = useMemo(() => parseDraftOrder(draft.draft_order), [draft.draft_order])
   const teamCount = order.length
   const rows = useMemo(() => draftResultRows(picks, { auction, teamCount, myTeamId }), [picks, auction, teamCount, myTeamId])
-  const teamNameById = useMemo(() => new Map(detail.teams.map((t) => [t.id, t.name])), [detail.teams])
   const roundCount = draftRoundCount(draft.total_rounds, rows)
   const teams = useMemo(() => draftResultTeams(order, picks, myTeamId), [order, picks, myTeamId])
 
@@ -207,7 +230,7 @@ export function DraftResultsBody({
           ))}
         </div>
       )}
-      {draft.is_mock && <p className="px-4 pb-2 text-[12px] font-medium text-m-t3">{MOCK_LINE}</p>}
+      {note && <p className="px-4 pb-2 text-[12px] font-medium text-m-t3">{note}</p>}
       {spend && (
         <p className="truncate px-4 pb-2 text-[12px] font-medium text-m-t3" data-draft-spend>
           <span className="font-semibold tabular-nums text-m-t1">${spend.total}</span> spent
@@ -279,7 +302,8 @@ function PickRow({ row, player, owner, onOpen }: { row: DraftResultRow; player: 
   )
 }
 
-function RowsSkeleton() {
+/** Pick rows while they read (also the mock draft report's). */
+export function RowsSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading">
       {Array.from({ length: 8 }, (_, i) => (

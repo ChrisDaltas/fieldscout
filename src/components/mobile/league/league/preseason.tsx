@@ -13,6 +13,7 @@ import {
   draftCountdown,
   type ChecklistItem,
 } from '@/components/leagues/league-home-states-ops'
+import { PracticeRow } from '@/components/mobile/mocks/practice-row'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { toast } from '@/hooks/use-toast'
 import { LeaguePatchError, useSetLeagueStatus, type LeagueDetail } from '@/hooks/use-league'
@@ -23,7 +24,7 @@ import { useScoringTemplates } from '@/hooks/use-scoring-templates'
 import { featureFlags } from '@/lib/feature-flags'
 import { cn } from '@/lib/utils'
 
-import { DraftListButton, ManagersCard, PracticeRow } from './preseason-parts'
+import { DraftListButton, ManagersCard } from './preseason-parts'
 
 /**
  * League › Matchups before the draft: there are no matchups yet, so the

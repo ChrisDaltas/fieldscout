@@ -398,6 +398,9 @@ describe('practice is released on its OWN flag (E79 / D231)', () => {
       'src/app/app/(shell)/mocks/layout.tsx',
       'src/app/app/(shell)/mocks/page.tsx',
       'src/components/draft/mocks-home.tsx',
+      // The phone's practice home (gap list §4 item 110) reads the flag for
+      // the same disabled Rejoin and nothing else.
+      'src/components/mobile/mocks/mobile-mocks.tsx',
     ]) {
       const source = code(rel)
       for (const [at, line] of source.split('\n').entries()) {

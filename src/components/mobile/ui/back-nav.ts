@@ -13,6 +13,15 @@ import { useCallback } from 'react'
  * then it REPLACES, so the OS back gesture doesn't bounce you back here.
  */
 
+/** The slice of the Navigation API these helpers read (absent in some
+ *  browsers, so every part is optional). */
+interface NavigationLike {
+  currentEntry?: { index: number } | null
+  entries?: () => ReadonlyArray<{ url: string | null }>
+}
+
+const navigationApi = (): NavigationLike | undefined => (window as Window & { navigation?: NavigationLike }).navigation
+
 /**
  * Whether the entry behind this one belongs to the app — or, with `depth`,
  * the `depth` entries behind it (a screen that steps back over more than one,
@@ -24,7 +33,7 @@ import { useCallback } from 'react'
  */
 export function appEntryBehind(depth = 1): boolean {
   if (typeof window === 'undefined') return false
-  const nav = (window as Window & { navigation?: { currentEntry?: { index: number } | null } }).navigation
+  const nav = navigationApi()
   if (nav?.currentEntry) return nav.currentEntry.index >= depth
   if (window.history.length <= depth) return false
   try {
@@ -41,6 +50,48 @@ export function useGoBack() {
     (parent: string) => {
       if (appEntryBehind()) router.back()
       else router.replace(parent)
+    },
+    [router],
+  )
+}
+
+/**
+ * The path of the app screen directly behind this one, when the browser can
+ * say (the Navigation API lists same-origin entries with their URLs); `null`
+ * when it can't, or nothing of the app is behind.
+ */
+export function pathBehind(): string | null {
+  if (typeof window === 'undefined') return null
+  const nav = navigationApi()
+  const index = nav?.currentEntry?.index
+  if (index === undefined || index < 1 || typeof nav?.entries !== 'function') return null
+  const url = nav.entries()[index - 1]?.url
+  if (!url) return null
+  try {
+    return new URL(url).pathname
+  } catch {
+    return null
+  }
+}
+
+/**
+ * How leaving this screen for `href` goes, so the screen left doesn't stay
+ * in history (a report just deleted, an empty one): step `'back'` when
+ * `href` is the screen right behind — no second copy of it, and Back from
+ * there still goes where it went before — otherwise `'replace'` this screen
+ * with it. Only the path is compared: the screen behind keeps its own query.
+ */
+export function leaveVia(href: string): 'back' | 'replace' {
+  return pathBehind() === href.split(/[?#]/)[0] ? 'back' : 'replace'
+}
+
+/** `leaveTo(href)`: leave this screen for `href` (`leaveVia`). */
+export function useLeaveTo() {
+  const router = useRouter()
+  return useCallback(
+    (href: string) => {
+      if (leaveVia(href) === 'back') router.back()
+      else router.replace(href)
     },
     [router],
   )

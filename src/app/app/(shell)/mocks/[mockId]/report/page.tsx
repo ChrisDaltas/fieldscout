@@ -1,4 +1,6 @@
 import { MockDraftReport, MockReportMissing } from '@/components/draft/mock-report'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileMockReport, MobileMockReportMissing } from '@/components/mobile/mocks/mobile-mock-report'
 import { listMyMockDrafts } from '@/lib/leagues/api/draft-service'
 import { createServerClient } from '@/lib/supabase/server'
 import type { MockDraftLists, MockDraftSummary } from '@/hooks/use-mock-drafts'
@@ -69,7 +71,11 @@ export default async function MockReportPage({ params }: MockReportPageProps) {
   // always comes from a read that actually answered**, and a read that could
   // not answer at all errs loudly — the component's error arm, with a retry —
   // instead of being silently reported as "nothing here".
-  if (!failed && mock === null) return <MockReportMissing />
+  //
+  // The phone draws its own screens for both answers (gap list §4 item
+  // 110) — the same empty state and the same report reads; desktop is
+  // unchanged.
+  if (!failed && mock === null) return <ByLayout desktop={<MockReportMissing />} mobile={<MobileMockReportMissing />} />
 
-  return <MockDraftReport mockId={mockId} />
+  return <ByLayout desktop={<MockDraftReport mockId={mockId} />} mobile={<MobileMockReport mockId={mockId} />} />
 }
