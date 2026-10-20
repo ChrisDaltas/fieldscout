@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { mockIdentityLabel, mockProgressLabel } from '@/components/draft/mock-launcher-ops'
 import { AttachListInline } from '@/components/leagues/attach-list-modal'
 import { deriveSeats, memberControls, membersPageHref } from '@/components/leagues/invite-panel-ops'
 import { SettingsSkin } from '@/components/leagues/settings-form-controls'
@@ -13,11 +12,7 @@ import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueInvites } from '@/hooks/use-league-invites'
 import { useLeagueLists } from '@/hooks/use-league-lists'
-import { useDeleteMockDraft, type MockDraftSummary } from '@/hooks/use-mock-drafts'
 import { useTeamOnline } from '@/hooks/use-online'
-import type { RoomEntryTargetProps } from '@/hooks/use-room-entry-target-ops'
-import { toast } from '@/hooks/use-toast'
-import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { cn } from '@/lib/utils'
 
 import { SeatRow, ShareLinkCard } from '../members/seat-parts'
@@ -35,18 +30,12 @@ import { teamAvatarClass } from './league-tab-ops'
  *    to Members for invites, seats, roles, removal and leaving.
  *  - `DraftListButton` — "Add a draft list": a sheet over your own lists
  *    (the one-tap suggestion, the picker, primary-board / share toggles).
- *  - `PracticeRow` — one practice draft: status, what it was, progress,
- *    Resume / Rejoin / View report, Delete.
+ * The practice drafts' rows are `PracticeRow` (`mobile/mocks/practice-row`),
+ * shared with the phone's practice home.
  */
 
 const PILL = 'flex h-9 flex-none items-center gap-1.5 rounded-pill px-4 text-[13px] font-semibold'
 const NOTE = 'text-[12px] font-medium leading-[1.35] text-m-t3'
-
-function messageOf(cause: unknown): string {
-  if (cause instanceof LeagueActionError) return cause.message
-  if (cause instanceof Error) return cause.message
-  return 'Something went wrong. Please try again.'
-}
 
 // ---------------------------------------------------------------------------
 // Managers
@@ -194,85 +183,5 @@ function DraftListSheet({
         )}
       />
     </SettingsSkin>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// One practice draft
-// ---------------------------------------------------------------------------
-
-export function PracticeRow({
-  leagueId,
-  row,
-  seatCount,
-  openBlocked,
-  roomEntry,
-}: {
-  leagueId: string
-  row: MockDraftSummary
-  seatCount: number | null
-  /** Why it can't be opened yet, or null. */
-  openBlocked: string | null
-  roomEntry: RoomEntryTargetProps
-}) {
-  const deleteMock = useDeleteMockDraft(leagueId)
-  const complete = row.status === 'complete'
-  const openLabel = complete ? 'View report' : row.status === 'paused' ? 'Resume' : 'Rejoin'
-  const status = complete
-    ? { label: 'Report', cls: 'bg-m-b2 text-m-t3' }
-    : row.status === 'paused'
-      ? { label: 'Paused', cls: 'bg-m-go text-m-to' }
-      : { label: 'Live', cls: 'bg-m-gg text-m-tg' }
-  const progress = complete
-    ? row.completed_at
-      ? `Finished ${new Date(row.completed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
-      : 'Finished'
-    : mockProgressLabel(row, seatCount)
-  const remove = () => {
-    deleteMock.mutateAsync(row.id).catch((error: unknown) => {
-      toast({
-        title: complete ? 'Couldn’t delete the report' : 'Couldn’t delete the practice draft',
-        description: messageOf(error),
-        variant: 'destructive',
-      })
-    })
-  }
-  return (
-    <div className="flex flex-col gap-2.5 border-b border-m-b3 py-3 last:border-b-0" data-practice-row={row.id}>
-      <div className="flex min-w-0 items-center gap-2">
-        <span className={cn('flex h-[20px] flex-none items-center rounded-pill px-2 text-[11px] font-semibold', status.cls)}>{status.label}</span>
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-m-t1">{mockIdentityLabel(row, seatCount)}</span>
-      </div>
-      <p className={NOTE}>{progress}</p>
-      {openBlocked && (
-        <p className={NOTE} role="status">
-          {openBlocked}
-        </p>
-      )}
-      <div className="flex items-center gap-2">
-        {openBlocked ? (
-          <span className={cn(PILL, 'h-8 bg-m-b0 px-3.5 text-m-t4')} aria-disabled="true">
-            {openLabel}
-          </span>
-        ) : complete ? (
-          <Link href={`/app/mocks/${row.id}/report`} className={cn(PILL, 'h-8 bg-m-b0 px-3.5 text-m-t1 active:bg-m-b2')}>
-            {openLabel}
-          </Link>
-        ) : (
-          <Link href={`/app/leagues/${leagueId}/draft?draft=${row.id}`} {...roomEntry} className={cn(PILL, 'h-8 bg-accent px-3.5 text-white active:bg-accent-strong')}>
-            {openLabel}
-          </Link>
-        )}
-        <button
-          type="button"
-          onClick={remove}
-          disabled={deleteMock.isPending}
-          aria-label={complete ? 'Delete report' : 'Delete practice draft'}
-          className={cn(PILL, 'h-8 bg-m-gr px-3.5 text-m-tr disabled:opacity-50')}
-        >
-          {deleteMock.isPending ? 'Deleting…' : 'Delete'}
-        </button>
-      </div>
-    </div>
   )
 }

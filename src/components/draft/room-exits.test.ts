@@ -407,7 +407,15 @@ describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
     expect(home).toContain('openBlocked={openBlockedReason(row)}')
     const start = home.indexOf('function openBlockedReason')
     expect(start, 'openBlockedReason found').toBeGreaterThan(-1)
-    const body = home.slice(start)
+    // Gap list §4 item 110: the rule moved into `practiceHomeOpenBlocked`
+    // (mock-launcher-ops) when the phone's practice home became its second
+    // caller. The page still reads the flag and passes it; the conditions
+    // below are pinned where they now live.
+    expect(home.slice(start)).toMatch(/return practiceHomeOpenBlocked\(row, featureFlags\.leagues\)/)
+    const ops = code('src/components/draft/mock-launcher-ops.ts')
+    const opsStart = ops.indexOf('export function practiceHomeOpenBlocked')
+    expect(opsStart, 'practiceHomeOpenBlocked found').toBeGreaterThan(-1)
+    const body = ops.slice(opsStart)
     // **F119 IS DISCHARGED — and the pin now says so in the form that keeps
     // it honest.** MP.6c cleared the ROOM half and MP.8 the REPORT half, so
     // a STANDALONE row is not blocked at all: it must return null outright,
@@ -419,8 +427,8 @@ describe('the standalone arm never offers a league exit (MP.5 / E79)', () => {
     // the control it is true of: a FINISHED league mock's *View report* goes
     // to `/app/mocks/…`, which the leagues flag does not gate, so blocking
     // it would be a lie in the other direction. The status conjunct is the
-    // pin — an unconditional `!featureFlags.leagues` here fails.
-    expect(body).toMatch(/!featureFlags\.leagues && row\.status !== 'complete'/)
+    // pin — an unconditional `!leaguesEnabled` here fails.
+    expect(body).toMatch(/!leaguesEnabled && row\.status !== 'complete'/)
 
     // …and the row honours it by disabling rather than by hiding: a hidden
     // control is a second dead end (nothing to press, nothing explained).

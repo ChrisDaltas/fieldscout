@@ -11,7 +11,9 @@ import type { MockDraftSummary } from '@/hooks/use-mock-drafts'
 import {
   defaultMockSeatId,
   leagueMockOpenBlocked,
+  MOCK_LEAGUE_HIDDEN_NOTE,
   MOCK_REPORT_HIDDEN_NOTE,
+  practiceHomeOpenBlocked,
   launchDisabledReason,
   MOCK_ACTIVE_CAP,
   MOCK_CAP_NOTE,
@@ -146,6 +148,29 @@ describe('leagueMockOpenBlocked — the leagues ON / mockDrafts OFF cell (MP.8 /
 
   it('the reason says what is hidden, not what a mock draft is (§4 rule 16)', () => {
     expect(MOCK_REPORT_HIDDEN_NOTE).toBe('Practice drafts are hidden right now.')
+  })
+})
+
+describe('practiceHomeOpenBlocked — the practice home’s one blocked row (R519; gap list §4 item 110)', () => {
+  // Shared by `/app/mocks` on desktop and on the phone, so both disable the
+  // same control for the same reason.
+  const row = (status: MockDraftSummary['status'], league_id: string | null) => ({ status, league_id })
+
+  it('a STANDALONE row is never blocked — its room and report live under the practice gate', () => {
+    for (const status of ['live', 'paused', 'complete'] as const) {
+      for (const enabled of [true, false]) expect(practiceHomeOpenBlocked(row(status, null), enabled)).toBeNull()
+    }
+  })
+
+  it('an UNFINISHED league row is blocked while leagues are hidden — its Rejoin would bounce to Home', () => {
+    expect(practiceHomeOpenBlocked(row('live', 'lg1'), false)).toBe(MOCK_LEAGUE_HIDDEN_NOTE)
+    expect(practiceHomeOpenBlocked(row('paused', 'lg1'), false)).toBe(MOCK_LEAGUE_HIDDEN_NOTE)
+    expect(practiceHomeOpenBlocked(row('live', 'lg1'), true)).toBeNull()
+  })
+
+  it('a FINISHED league row is not — View report goes to /app/mocks, which the leagues flag does not gate', () => {
+    expect(practiceHomeOpenBlocked(row('complete', 'lg1'), false)).toBeNull()
+    expect(MOCK_LEAGUE_HIDDEN_NOTE).toBe('This league is hidden right now.')
   })
 })
 

@@ -18,6 +18,7 @@ import {
   MOCK_CAP_NOTE,
   MOCK_PAUSED_EXPIRY_NOTE,
   mockSeatCount,
+  practiceHomeOpenBlocked,
 } from './mock-launcher-ops'
 
 /**
@@ -222,20 +223,8 @@ function MockSection({
  * it disappears the day the leagues flag is on.
  */
 function openBlockedReason(row: MockDraftSummary): string | null {
-  // **F119 is fully discharged.** MP.6c cleared the ROOM half
-  // (`/app/mocks/[mockId]` mounts the real room), and MP.8 clears the REPORT
-  // half by building `/app/mocks/[mockId]/report` — the reason is removed
-  // rather than the link changed, exactly as D242 set it up. A standalone
-  // row now has nowhere left to dead-end, so it has no reason at all.
-  if (row.league_id === null) return null
-  // A LEAGUE-attached row keeps ONE reason, and MP.8 narrowed it to the
-  // control it is actually true of. *View report* now goes to
-  // `/app/mocks/[mockId]/report` for EVERY mock (D230(4)), and that route is
-  // gated on `mockDrafts` — the leagues flag cannot hide it. Only the
-  // unfinished row's *Rejoin* / *Resume* still walks into `/app/leagues/…`,
-  // which silently redirects to `/app` with the flag off.
-  if (!featureFlags.leagues && row.status !== 'complete') {
-    return 'This league is hidden right now.'
-  }
-  return null
+  // The rule itself is `practiceHomeOpenBlocked` (shared with the phone's
+  // practice home, gap list §4 item 110); the flag read stays HERE, in the
+  // page that knows which flags it renders under.
+  return practiceHomeOpenBlocked(row, featureFlags.leagues)
 }
