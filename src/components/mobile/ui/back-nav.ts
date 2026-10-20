@@ -13,15 +13,6 @@ import { useCallback } from 'react'
  * then it REPLACES, so the OS back gesture doesn't bounce you back here.
  */
 
-/**
- * Whether the entry behind this one belongs to the app — or, with `depth`,
- * the `depth` entries behind it (a screen that steps back over more than one,
- * like a saved New list returning to Community). The Navigation API lists
- * only same-origin entries, so a current index of at least `depth` means
- * they are ours; without the API, fall back to a same-origin referrer (a
- * page opened from another site, or in a fresh tab, has none) and a history
- * that long.
- */
 /** The slice of the Navigation API these helpers read (absent in some
  *  browsers, so every part is optional). */
 interface NavigationLike {
@@ -31,6 +22,15 @@ interface NavigationLike {
 
 const navigationApi = (): NavigationLike | undefined => (window as Window & { navigation?: NavigationLike }).navigation
 
+/**
+ * Whether the entry behind this one belongs to the app — or, with `depth`,
+ * the `depth` entries behind it (a screen that steps back over more than one,
+ * like a saved New list returning to Community). The Navigation API lists
+ * only same-origin entries, so a current index of at least `depth` means
+ * they are ours; without the API, fall back to a same-origin referrer (a
+ * page opened from another site, or in a fresh tab, has none) and a history
+ * that long.
+ */
 export function appEntryBehind(depth = 1): boolean {
   if (typeof window === 'undefined') return false
   const nav = navigationApi()
