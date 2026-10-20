@@ -27,7 +27,7 @@ Each rung runs **at least one real draft and at least two scored weekends** befo
 
 | Rung | Leagues | Who | Enter when | Leave when (all recorded, §3) |
 |---|---|---|---|---|
-| **1 — Staff** | 1 | Chris's own test league | now | ≥1 real draft complete · ≥2 weeks final · no open S0/S1 from it |
+| **1 — Staff** | 1 | Chris's own test league | now | ≥1 real draft complete · ≥2 weeks final (open S0/S1 from it is recorded, §3 — Chris weighs it) |
 | **2 — Friends & family** | up to 5 (Chris's included) | friends Chris invites | Rung 1 left; Chris says go | the same, across every rung-2 league |
 | **3 — The cohort** | whatever number it reaches (Q92 (a)) | further invites | Rung 2 left; Chris says go | the live draft weekend recorded per §4 and **Chris rules on it** |
 | *GA canary (2027)* | *25, feature-flagged* | — | *not a 2026 rung — needs F760 and the pre-launch window (TD9)* | — |
@@ -48,7 +48,7 @@ One block per rung, appended to §6 of this file. Counts only (see the banner).
 - Operator actions (platform_operator_actions) in the rung: <n by verb>
 - Commissioner log rows in the rung: <n by type>, each classed LEAGUE CHOICE or FIX (see §4.3)
 - Job pauses opened / still open: <n> / <n>
-- F-rows filed from the rung: <F-ids with S0/S1/S2/S3>
+- F-rows filed from the rung: <F-ids with S0/S1/S2/S3>   open S0/S1 from the rung: <n>
 - Feedback themes (auction, custom scoring — the 2026 focus): <one line each, no names>
 - Ruling: <Chris's words + date, or "awaiting Chris">
 ```
@@ -62,18 +62,18 @@ The numbers come from the SELECTs in §5, run over the rung's dates.
 Criterion 4 is *"the beta completes a live draft weekend without a page."* There are no pages in 2026 (Q91), so the record says what happened and Chris rules.
 
 ### 4.1 The window
-Pick the weekend when the rung-3 leagues draft. The window runs **from Friday 00:00 Pacific before the first cohort draft to the Tuesday 00:00 Pacific after the last one** (Tuesday 00:00 PT is the §11.2 week-close floor, so the week's scoring is inside it). Write the exact start and end in the record.
+Pick the weekend when the rung-3 leagues draft. The window runs **from Friday 00:00 Pacific before the first cohort draft until the draft week's scoring is final** in every cohort league — and it never ends before the **Wednesday 00:00 Pacific** after that week (the §11.2 ceiling). Write the exact start and end in the record.
 
 ### 4.2 The evidence (all of it, in the record)
 1. **Drafts in the window** — how many started, how many completed, any that ended paused, any that sat past their pick deadline with no tick (a stuck draft).
 2. **`platform_operator_actions`** in the window — every row, by verb.
 3. **The commissioner log** in the window — `commissioner_actions` plus the per-verb `commish_*_actions` tables, by type.
-4. **Admin Home at the end of the window** (`/app/admin`, M8) — stuck weeks (`overdue_weeks`), job pauses, last cron runs — as counts.
+4. **Admin Home when the window ends** (`/app/admin`, M8 — taken at the end point of §4.1, not before) — stuck weeks (`overdue_weeks`), job pauses, last cron runs — as counts.
 5. **Cron failures** in the window — `cron.job_run_details` rows with status `failed`. *Caveat:* the `*-ping` jobs call the app over HTTP; a ping that ran but whose call failed shows as `succeeded` here. Check the app's logs for those routes over the window as well and say so in the record.
 6. **Every F-row filed** from anything seen in the window, with its TD6 severity (S0 = wrong score / standing / result, data loss or a permission breach; S1 = a draft or scoring weekend could not finish without operator help).
 
 ### 4.3 How a row is classed
-Every row from 4.2 items 2 and 3 is classed **FIX** (someone acted because the system got something wrong — a stuck draft restarted, a week re-scored for our bug, a job paused because it misbehaved) or **LEAGUE CHOICE** (a commissioner doing the league's business — a lineup set for an absent manager, a setting changed). Write one line per FIX saying what the fault was. When unsure, write it down as unsure and let Chris class it — never resolve it in favour of "without a page".
+Every row from 4.2 items 2 and 3 is classed **FIX** (someone acted because the system got something wrong — a stuck draft restarted, a week re-scored for our bug, a job paused because it misbehaved) or **LEAGUE CHOICE** (a commissioner doing the league's business — a lineup set for an absent manager, a setting changed). Items 4 and 5 are classed too: **every cron failure, every job pause and every stuck week is a FIX** unless the record says why it is not (e.g. a pause Chris opened on purpose for a reason outside the system) — even when no person acted on it. Write one line per FIX saying what the fault was. When unsure, write it down as unsure and let Chris class it — never resolve it in favour of "without a page".
 
 ### 4.4 The statement
 The record ends with exactly one of:
@@ -93,19 +93,23 @@ Run against production through the Supabase MCP or the dashboard SQL editor as r
 WITH w AS (SELECT timestamptz '2026-01-01 08:00+00' AS s, timestamptz '2026-01-01 08:00+00' AS e)
 SELECT
   (SELECT count(*) FROM leagues WHERE deleted_at IS NULL)                                   AS leagues_live,
-  (SELECT count(*) FROM league_members WHERE NOT is_placeholder)                            AS human_seats,
-  (SELECT count(*) FROM league_members WHERE is_placeholder)                                AS placeholder_seats,
+  (SELECT count(*) FROM league_members m JOIN leagues l ON l.id = m.league_id
+      WHERE l.deleted_at IS NULL AND NOT m.is_placeholder)                                  AS human_seats,
+  (SELECT count(*) FROM league_members m JOIN leagues l ON l.id = m.league_id
+      WHERE l.deleted_at IS NULL AND m.is_placeholder)                                      AS placeholder_seats,
   (SELECT count(*) FROM drafts, w WHERE NOT is_mock AND started_at   BETWEEN w.s AND w.e)   AS drafts_started,
   (SELECT count(*) FROM drafts, w WHERE NOT is_mock AND completed_at BETWEEN w.s AND w.e)   AS drafts_completed,
   (SELECT count(*) FROM drafts WHERE NOT is_mock AND status IN ('live','paused')
                                  AND current_deadline < now())                              AS drafts_stuck_now,
+  (SELECT count(*) FROM drafts WHERE NOT is_mock AND status = 'paused')                     AS drafts_paused_now,
   (SELECT json_object_agg(verb, n) FROM (SELECT verb, count(*) n FROM platform_operator_actions, w
       WHERE created_at BETWEEN w.s AND w.e GROUP BY verb) x)                                AS operator_actions,
   (SELECT json_object_agg(action_type, n) FROM (SELECT action_type, count(*) n FROM commissioner_actions, w
       WHERE created_at BETWEEN w.s AND w.e GROUP BY action_type) x)                         AS commissioner_actions,
   (SELECT count(*) FROM job_pauses, w WHERE paused_at BETWEEN w.s AND w.e)                  AS pauses_opened,
   (SELECT count(*) FROM job_pauses WHERE resumed_at IS NULL)                                AS pauses_open_now,
-  (SELECT json_object_agg(status, n) FROM (SELECT status, count(*) n FROM league_weeks GROUP BY status) x) AS weeks_by_status,
+  (SELECT json_object_agg(status, n) FROM (SELECT wk.status, count(*) n FROM league_weeks wk
+      JOIN leagues l ON l.id = wk.league_id WHERE l.deleted_at IS NULL GROUP BY wk.status) x) AS weeks_by_status,
   (SELECT count(*) FROM cron.job_run_details d, w
       WHERE d.status = 'failed' AND d.start_time BETWEEN w.s AND w.e)                        AS cron_failed_runs;
 
@@ -138,6 +142,7 @@ To class a row (§4.3) read its `reason` and `metadata` in the dashboard, not in
 - Operator actions: **0**. Job pauses: **0** opened, **0** open.
 - Commissioner log: `commissioner_actions` 7 (5 `edit_lineup`, 2 `rescore_final_week`); `commish_lineup_actions` 5; every other `commish_*` table 0. The five lineup edits are **unclassed** — Chris to class (§4.3).
 - Cron, last 7 days: 13 jobs, **0 failed runs** (ping caveat, §4.2 item 5).
+- **§5 re-run after review (R1613, 2026-10-20)** — the edited SELECTs ran on production as written: seats and weeks unchanged (no deleted leagues exist), `drafts_paused_now` 0.
 - **§5 dry-run** over the draft's window (2026-09-04 → 2026-09-15 07:00 UTC): both SELECTs ran as written. 1 draft started and completed; 0 operator actions; 5 `edit_lineup`; 0 pauses; **2 failed cron runs**, both 2026-09-11 14:50 UTC in the same minute (`score-week-ping`, `sync-live-ping`: the cron secret was not yet set up; no other failed run in the window). That is a system fault that left **no** operator or commissioner row — the shape §4.2 item 5 exists to catch, and the weekend record must list it as a FIX.
 - Against §2's leave condition: ≥1 draft ✓ · ≥2 weeks final ✓ · open S0/S1 from it — none known to this record. **Leaving rung 1 and inviting rung 2 is Chris's call.**
 - Ruling: **awaiting Chris.**
