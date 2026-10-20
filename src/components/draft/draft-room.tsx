@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { AddDraftListModal } from '@/components/leagues/attach-list-modal'
@@ -49,8 +49,10 @@ import { CommishDraftPanel } from './commish-draft-panel'
 import { canUseCommishPanel } from './commish-panel-ops'
 import { DraftCommandBar } from './draft-command-bar'
 import { DraftDock } from './draft-dock'
+import { dockTabButtonId } from './draft-dock-ops'
 import { type DraftOptionsSectionId } from './draft-options-ops'
 import { DraftStatusStrip } from './draft-status-strip'
+import { RoomAnnouncer, type AnnouncedPick } from './room-announcer'
 import { DraftBoardGrid } from './draft-board-grid'
 import { DraftLobby } from './draft-lobby'
 import { DraftChat } from './draft-chat'
@@ -753,6 +755,26 @@ function DraftRoomLive({
   // every width, and its own open/closed state lives inside `DraftDock`.
   const [overlay, setOverlay] = useState<PoolOverlaySelection | null>(null)
   const [addListOpen, setAddListOpen] = useState(false)
+  // L.F1.1 (F55's R391 member, D622): where focus goes back to when the
+  // Add-list modal closes. The modal is controlled and trigger-less (it is
+  // mounted at room level, D119(6)), so Radix had nothing to return focus to
+  // and it landed on BODY — where the dock's scoped Escape cannot hear it.
+  // The opener is remembered at open; if attaching re-rendered it away (the
+  // empty state's button), the dock's Lists tab is the next-nearest place.
+  const addListReturnRef = useRef<HTMLElement | null>(null)
+  const openAddList = () => {
+    addListReturnRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setAddListOpen(true)
+  }
+  const returnFocusFromAddList = (event: Event) => {
+    const opener = addListReturnRef.current
+    const target =
+      opener && opener.isConnected ? opener : document.getElementById(dockTabButtonId('lists'))
+    if (!target) return
+    event.preventDefault()
+    target.focus()
+  }
   // §16.4's mobile board-zone rule, unchanged by the reconciliation: the
   // full grid stays ONE TAP away (it was the Segment's "Full board" pane;
   // the dock's five tabs are the five panels, so the tap lives in the
@@ -1167,6 +1189,31 @@ function DraftRoomLive({
   const ticker = useMemo(() => recentPicks(livePicks, 6), [livePicks])
   const teamCount = seatIds.length
 
+  // L.F1.1 (§16.3 live-region announcements for picks; F55, D620): the
+  // newest live pick as the announcer's sentence inputs. Ready only once
+  // the player's identity has resolved — the announcer waits rather than
+  // reading a player id aloud.
+  const newestPick = useMemo(
+    () =>
+      livePicks.reduce<DraftPickSummary | null>(
+        (newest, p) => (newest === null || p.pick_number > newest.pick_number ? p : newest),
+        null,
+      ),
+    [livePicks],
+  )
+  const newestPlayer = newestPick ? playerById.get(newestPick.player_id) : undefined
+  const announcedPick: AnnouncedPick | null = newestPick
+    ? {
+        key: `${newestPick.pick_number}:${newestPick.player_id}`,
+        pickLabel: pickLabel(newestPick.pick_number, teamCount),
+        teamName: teamsById.get(newestPick.team_id)?.name ?? 'A team',
+        playerName: newestPlayer?.full_name ?? newestPick.player_id,
+        position: newestPlayer?.position ?? null,
+        price: newestPick.price,
+        isAuction,
+      }
+    : null
+
   // In an auction the pool's primary row action is NOMINATE, not Draft —
   // the same component with a different verb (CLAUDE.md: add a prop, never
   // fork a near-duplicate). It SELECTS the player into the board zone's
@@ -1301,7 +1348,7 @@ function DraftRoomLive({
       // §8.9's Add-a-draft-list attaches a list to a LEAGUE, so a standalone
       // practice room does not offer it (F122: the panel offers what the
       // verb accepts — the caller's OWN lists — and nothing else).
-      onAddList={scope.leagueId === null ? null : () => setAddListOpen(true)}
+      onAddList={scope.leagueId === null ? null : openAddList}
       inlineCheatSheet
     />
   )
@@ -1441,6 +1488,27 @@ function DraftRoomLive({
         onOpenDraftOptions={openDraftOptionsAt}
         onDeletePractice={handleDeletePractice}
         deletePending={deleteMock.isPending}
+      />
+
+      {/* L.F1.1: the room's announcer — visually hidden live regions for
+          picks and the clock (§16.3). Renders nothing visible. */}
+      <RoomAnnouncer
+        latestPick={announcedPick}
+        latestPickReady={newestPick === null || newestPlayer !== undefined}
+        youAreOnClock={youAreOnClock}
+        onClockKey={
+          draft.on_clock_team_id
+            ? `${draft.current_pick_number ?? ''}:${draft.on_clock_team_id}`
+            : null
+        }
+        onClockTeamName={onClockTeam?.name ?? null}
+        isAuction={isAuction}
+        clock={{
+          status: draft.status,
+          current_deadline: draft.current_deadline,
+          deadline_remaining_ms: draft.deadline_remaining_ms,
+        }}
+        offsetMs={offsetMs}
       />
 
       {/* DR.4 (D149's second band): the status strip, DIRECTLY under the
@@ -1647,6 +1715,7 @@ function DraftRoomLive({
         <AddDraftListModal
           open={addListOpen}
           onOpenChange={setAddListOpen}
+          onCloseAutoFocus={returnFocusFromAddList}
           leagueId={scope.leagueId}
           leagueName={scope.league.league.name}
           scoringSystemId={scope.league.league.scoring_system_id}

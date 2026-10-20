@@ -62,3 +62,34 @@ export function appendId(ids: readonly string[], id: string): string[] {
 export function removeId(ids: readonly string[], id: string): string[] {
   return ids.filter((existing) => existing !== id)
 }
+
+/**
+ * Screen-reader sentences for a Targets reorder (M7 L.F1.1, F73/F55; D621).
+ * dnd-kit's default announcements name the DRAGGABLE ID — here a player id —
+ * so a keyboard or screen-reader user heard "Picked up draggable item
+ * 00-0036…". These name the player and the 1-based place in the list.
+ * `position` is null when the pointer is over nothing.
+ */
+export function targetsDragSentence(
+  event: 'start' | 'over' | 'end' | 'cancel',
+  name: string,
+  position: number | null,
+  total: number,
+): string {
+  switch (event) {
+    case 'start':
+      return position === null
+        ? `Picked up ${name}.`
+        : `Picked up ${name}, Target ${position} of ${total}.`
+    case 'over':
+      return position === null
+        ? `${name} is not over a Target.`
+        : `${name} moved to Target ${position} of ${total}.`
+    case 'end':
+      return position === null
+        ? `${name} dropped. Your Targets order is unchanged.`
+        : `${name} dropped at Target ${position} of ${total}.`
+    case 'cancel':
+      return `Move cancelled. ${name} stays where it was.`
+  }
+}

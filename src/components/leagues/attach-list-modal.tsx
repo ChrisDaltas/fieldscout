@@ -407,6 +407,10 @@ interface AddDraftListModalProps {
   leagueName: string
   scoringSystemId: string | null
   attachedListIds: ReadonlySet<string>
+  /** Where focus returns on close, for a CONTROLLED mount with no trigger
+   *  (the draft room's room-level mount — L.F1.1, D622). Radix's default is
+   *  the trigger, and with none it is BODY. */
+  onCloseAutoFocus?: (event: Event) => void
 }
 
 /** The league-side modal ("Add a draft list" — §7.4's reverse entry). */
@@ -417,10 +421,14 @@ export function AddDraftListModal({
   leagueName,
   scoringSystemId,
   attachedListIds,
+  onCloseAutoFocus,
 }: AddDraftListModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-md flex-col gap-3.5 overflow-y-auto">
+      <DialogContent
+        className="flex max-h-[85vh] max-w-md flex-col gap-3.5 overflow-y-auto"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle>Add a draft list</DialogTitle>
           <DialogDescription>

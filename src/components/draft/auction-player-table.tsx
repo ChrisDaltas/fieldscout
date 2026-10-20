@@ -459,6 +459,18 @@ export function AuctionPlayerTable({
         )}
       </div>
 
+      {/* L.F1.1 (F55 L.C3.3 (c)): the RESULT of a filter is announced, not
+          only the chip's pressed state. Always mounted (a live region that
+          mounts with its text announces nothing), empty while loading or
+          failed — the error arm carries its own `role="alert"`. */}
+      <p className="sr-only" role="status">
+        {loading || failure !== null
+          ? ''
+          : shown.length === 0
+            ? 'No players shown'
+            : `${shown.length} ${shown.length === 1 ? 'player' : 'players'} shown`}
+      </p>
+
       {/* ---- §16.5.4 states: skeleton · error-with-retry · empty ---- */}
       {loading ? (
         <div className="flex flex-col gap-1.5">
@@ -535,13 +547,22 @@ export function AuctionPlayerTable({
           </div>
 
           <Table>
+            {/* L.F1.1 (F55 L.C3.3 (a)): the table names itself and every
+                header cell scopes its column. There is no `aria-sort`: the
+                pool has no sortable column (its order is the projection
+                order, fixed), and `aria-sort` on an unsortable header would
+                promise a control that does not exist. */}
+            <caption className="sr-only">Players available to nominate</caption>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-6 px-1" />
-                <TableHead className="px-1.5 lg:px-2">Player</TableHead>
+                <TableHead scope="col" className="w-6 px-1">
+                  <span className="sr-only">Details</span>
+                </TableHead>
+                <TableHead scope="col" className="px-1.5 lg:px-2">Player</TableHead>
                 {columns.map((column) => (
                   <TableHead
                     key={column.key}
+                    scope="col"
                     className={cn(
                       'px-1.5 text-right lg:px-2',
                       column.essential ? null : 'hidden lg:table-cell',
@@ -554,7 +575,7 @@ export function AuctionPlayerTable({
                     {columnHeaderLabel(column, availability)}
                   </TableHead>
                 ))}
-                <TableHead className="px-1.5 text-right lg:px-2">Actions</TableHead>
+                <TableHead scope="col" className="px-1.5 text-right lg:px-2">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -629,6 +650,10 @@ function AuctionPlayerRows({
   submitting,
 }: RowProps) {
   const winner = row.wonByTeamId ? teamNameById.get(row.wonByTeamId) : null
+  // L.F1.1 (F55 L.C3.3 (b)): the expander names what it opens, the DR.5
+  // dock's wiring. The id is derived from the player id (stable, unique in
+  // the pool) — `useId` would also do, but a readable id is easier to find.
+  const detailsId = `auction-row-details-${row.id}`
   return (
     <>
       <TableRow
@@ -645,6 +670,7 @@ function AuctionPlayerRows({
             variant="ghost"
             size="icon-sm"
             aria-expanded={expanded}
+            aria-controls={expanded ? detailsId : undefined}
             aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.full_name}`}
             onClick={onToggleExpand}
           >
@@ -731,7 +757,7 @@ function AuctionPlayerRows({
       </TableRow>
 
       {expanded && (
-        <TableRow className="hover:bg-transparent">
+        <TableRow id={detailsId} className="hover:bg-transparent">
           <TableCell colSpan={columns.length + 3} className="px-1.5 pb-3 lg:px-2">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl bg-surface-sunken px-3 py-2.5 sm:grid-cols-3 lg:grid-cols-4">
               {offerable.map((column) => (

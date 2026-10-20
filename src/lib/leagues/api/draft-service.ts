@@ -648,6 +648,27 @@ export async function readTeamQueue(
   }
 }
 
+/**
+ * F78 (M7 L.F1.1, D624): the Targets vocabulary at the API boundary. D140
+ * renamed "queue" to "Targets" in every user-facing string, but three of
+ * `draft_queue_replace`'s RAISE texts still say "queue", and they reach a
+ * manager verbatim as room toasts (the 22023 → 400 friendly mapping). The
+ * RAISE texts live in released migrations (082 → 171 → 178) and are pinned
+ * verbatim by pgTAP, so this UI-only pass translates them HERE, where the
+ * service turns a refusal into product copy — the database keeps its
+ * literals (PROGRESS F730 holds the in-SQL rename for the next migration
+ * that replaces the function). Unknown messages pass through unchanged.
+ */
+export const TARGETS_REFUSAL_COPY: Readonly<Record<string, string>> = {
+  'You do not manage this queue.': 'You do not manage these Targets.',
+  'A player can appear in the queue only once.': 'A player can appear in your Targets only once.',
+  'A queue can hold at most 500 players.': 'Your Targets can hold at most 500 players.',
+}
+
+export function targetsRefusalCopy(message: string): string {
+  return TARGETS_REFUSAL_COPY[message] ?? message
+}
+
 /** Read back the (draft, team) queue in rank order — the response truth. */
 async function readQueue(
   supabase: Supabase,
@@ -660,7 +681,7 @@ async function readQueue(
     .eq('draft_id', draftId)
     .eq('team_id', teamId)
     .order('rank', { ascending: true })
-  if (error) throw new Error(`queue read failed: ${error.message}`)
+  if (error) throw new Error(`Targets read failed: ${error.message}`)
   return (data ?? []) as QueueRow[]
 }
 
@@ -683,9 +704,14 @@ async function replaceQueue(
     p_players: players,
   })
   if (error) {
-    const mapped = mapDraftRpcError(error, 'You do not manage this queue.')
     // P0002/404 is unreachable here (the draft was resolved above) — the
     // 42501/22023/500 mapping is what this surface can actually answer.
+    // The 42501 arm's text is the fallback above; the 22023 arm passes the
+    // RAISE text through, so it is translated to the Targets words (F78).
+    const mapped = mapDraftRpcError(
+      { code: error.code, message: targetsRefusalCopy(error.message) },
+      'You do not manage these Targets.',
+    )
     return { failure: mapped }
   }
   return { rows: (data ?? []) as unknown as QueueRow[] }
@@ -985,7 +1011,7 @@ export const upsertQueueInputSchema = z
     team_id: z.uuid().optional(),
   })
   .refine((body) => new Set(body.players).size === body.players.length, {
-    message: 'A player can appear in the queue only once.',
+    message: 'A player can appear in your Targets only once.',
     path: ['players'],
   })
 
