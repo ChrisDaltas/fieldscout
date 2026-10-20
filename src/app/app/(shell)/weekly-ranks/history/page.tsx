@@ -1,11 +1,19 @@
 import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/app-header'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileRankingHistory } from '@/components/mobile/rankings/ranking-history'
 import { Button } from '@/components/ui/button'
 
 // Submission records don't exist yet (no submissions table/API) — this page
-// is an honest empty state in the workspace language until they land.
+// is an honest empty state in the workspace language until they land. The
+// phone draws its own screen of the same empty state (`MobileRankingHistory`,
+// gap list §4 item 111); desktop is unchanged.
 export default function WeeklyRanksHistoryPage() {
+  return <ByLayout desktop={<DesktopRankingHistory />} mobile={<MobileRankingHistory />} />
+}
+
+function DesktopRankingHistory() {
   return (
     <>
       <PageHeader title="Rankings" />
