@@ -48,6 +48,21 @@
  *      named, duplicates counted, every failure named; `ok` is false when
  *      any planned week failed or nothing was planned for a reason other
  *      than the season being over.
+ *   7. INJURY TAGS (PROGRESS D592; spec §14 — Chris 2026-10-18: "Injuries
+ *      should not block roster moves and users are not required to remove
+ *      injured players from their lineups."): every row of the feed —
+ *      projected AND filler — carries Sleeper's current `player.injury_*`,
+ *      so the hourly run also keeps `players`' injury fields fresh for the
+ *      players we already have (before this only the Tuesday player sync
+ *      wrote them, so a tag stuck all week). Only rows of weeks whose
+ *      projections WROTE count (a refused response is trusted for nothing).
+ *      A tag in the feed is written; no tag in the feed clears ONLY an
+ *      injury tag (Q / D / Out / IR / PUP / NFI / Sus / Suspended) back to
+ *      `Active`; a player absent from the feed, or a row with no injury
+ *      field at all, is left as stored. Every change is counted and named;
+ *      every update asserts its row count; a feed with NO tag at all while
+ *      several stored players carry one clears nothing (a degraded
+ *      response, named). Player data stays sync-only: this IS a sync.
  *
  * Time only via the injected TimeProvider (D3 — this file is under the
  * ESLint time guard); the fetch is injectable so tests make ZERO external
@@ -69,6 +84,8 @@ export const WEEKLY_PROJECTIONS_TABLE = 'player_weekly_projections'
 /** Upsert / delete chunk sizes (PostgREST bodies and `in.(…)` URLs stay small). */
 const UPSERT_CHUNK = 500
 const DELETE_CHUNK = 200
+/** D592: ids per `players` injury read / update (`in.(…)` URLs stay small). */
+const INJURY_CHUNK = 200
 /** How many unknown ids a warning names before it summarises the rest. */
 const UNKNOWN_NAMED = 10
 
@@ -185,7 +202,17 @@ interface SleeperWeeklyRow {
   week?: unknown
   stats?: unknown
   updated_at?: unknown
-  player?: { first_name?: unknown; last_name?: unknown; position?: unknown; team?: unknown } | null
+  player?: {
+    first_name?: unknown
+    last_name?: unknown
+    position?: unknown
+    team?: unknown
+    /** Sleeper's current injury fields (D592) — on every row, filler included. */
+    injury_status?: unknown
+    injury_body_part?: unknown
+    injury_notes?: unknown
+    injury_start_date?: unknown
+  } | null
 }
 
 export interface WeeklyProjectionRow {
@@ -316,6 +343,165 @@ export function parseWeeklyProjections(input: {
   return out
 }
 
+// ── Injury tags (D592, pure) ───────────────────────────────────────────────
+
+/**
+ * The stored `players.status` values a "no tag in the feed" clears, compared
+ * trimmed and lower-cased: the Q / D tags `statusTag` reads and the
+ * designations 112's `lineup_designation_internal` maps (Out, IR, Doubtful,
+ * PUP, NFI, Sus / Suspended). Anything else stored — Active, Inactive, NA,
+ * DNR, … — is not an injury tag, and the full player sync owns it.
+ */
+export const CLEARABLE_INJURY_TAGS: ReadonlySet<string> = new Set([
+  'questionable',
+  'doubtful',
+  'out',
+  'ir',
+  'pup',
+  'nfi',
+  'sus',
+  'suspended',
+])
+
+/** What a cleared tag becomes — `mapSleeperPlayerToDb`'s own default. */
+export const INJURY_CLEARED_STATUS = 'Active'
+
+/**
+ * The degraded-feed guard's floor: a feed that carries NO injury tag for any
+ * player while at least this many of its players are stored with one clears
+ * nothing. A real in-season feed always tags dozens (measured locally on
+ * 2026-10-20: 189 of 943 players hold Q / D / Out / IR / PUP), so a feed with
+ * none reads as a broken response, not a healthy league.
+ */
+export const INJURY_CLEAR_GUARD_MIN = 5
+
+export function isClearableInjuryTag(status: string | null | undefined): boolean {
+  return CLEARABLE_INJURY_TAGS.has((status ?? '').trim().toLowerCase())
+}
+
+/** The four `players` columns the hourly run keeps fresh. */
+export interface InjuryFields {
+  status: string | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+}
+
+/** What one feed row says about its player: `tag` null = the feed carries the
+ *  field and it is empty (healthy). */
+export interface InjuryReport {
+  tag: string | null
+  injury_body_part: string | null
+  injury_notes: string | null
+  injury_start_date: string | null
+}
+
+export interface InjuryChange {
+  player_id: string
+  /** tagged = a new or different tag; cleared = an injury tag back to Active;
+   *  detail = the same tag with a new body part / note / start date. */
+  kind: 'tagged' | 'cleared' | 'detail'
+  from: string | null
+  to: string
+  fields: InjuryFields
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+/** A date column: Sleeper's `YYYY-MM-DD…` cut to the date, anything else none. */
+function dateOnly(value: unknown): string | null {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value.trim()) ? value.trim().slice(0, 10) : null
+}
+
+/**
+ * Every injury report one week's responses carry for KNOWN players — projected
+ * and filler rows alike (a player ruled out drops to filler, and his tag is
+ * exactly the news). A row whose `player` has no `injury_status` key, or a
+ * non-string one, says nothing and is counted in `noField`.
+ */
+export function injuryReportsOf(
+  responses: Record<WeeklyProjectionPosition, unknown>,
+  known: ReadonlySet<string>,
+): { reports: Map<string, InjuryReport>; noField: number } {
+  const reports = new Map<string, InjuryReport>()
+  let noField = 0
+  for (const position of WEEKLY_PROJECTION_POSITIONS) {
+    const body = responses[position]
+    if (!Array.isArray(body)) continue
+    for (const raw of body as SleeperWeeklyRow[]) {
+      if (!isRecord(raw) || typeof raw.player_id !== 'string' || !known.has(raw.player_id)) continue
+      const p = raw.player
+      if (!isRecord(p) || !('injury_status' in p) || (p.injury_status !== null && typeof p.injury_status !== 'string')) {
+        noField++
+        continue
+      }
+      reports.set(raw.player_id, {
+        tag: text(p.injury_status),
+        injury_body_part: text(p.injury_body_part),
+        injury_notes: text(p.injury_notes),
+        injury_start_date: dateOnly(p.injury_start_date),
+      })
+    }
+  }
+  return { reports, noField }
+}
+
+function sameFields(a: InjuryFields, b: InjuryFields): boolean {
+  return (
+    a.status === b.status &&
+    a.injury_body_part === b.injury_body_part &&
+    a.injury_notes === b.injury_notes &&
+    dateOnly(a.injury_start_date) === dateOnly(b.injury_start_date)
+  )
+}
+
+/**
+ * The changes the feed asks for, against what is stored. A tag ⇒ write the
+ * tag and its details. No tag ⇒ clear ONLY a clearable injury tag back to
+ * Active (with the feed's details); any other stored status is left. A
+ * player not stored, or not reported, is left. `guard` is set — and NO clear
+ * is planned — when the feed tags nobody while at least
+ * INJURY_CLEAR_GUARD_MIN reported players are stored with a clearable tag.
+ */
+export function planInjuryChanges(
+  reports: ReadonlyMap<string, InjuryReport>,
+  stored: ReadonlyMap<string, InjuryFields>,
+): { checked: number; changes: InjuryChange[]; guard: string | null } {
+  const changes: InjuryChange[] = []
+  let checked = 0
+  let tagged = 0
+  for (const [player_id, r] of reports) {
+    const s = stored.get(player_id)
+    if (!s) continue
+    checked++
+    if (r.tag !== null) {
+      tagged++
+      const fields: InjuryFields = { status: r.tag, injury_body_part: r.injury_body_part, injury_notes: r.injury_notes, injury_start_date: r.injury_start_date }
+      if (sameFields(s, fields)) continue
+      changes.push({ player_id, kind: s.status === r.tag ? 'detail' : 'tagged', from: s.status, to: r.tag, fields })
+    } else if (isClearableInjuryTag(s.status)) {
+      const fields: InjuryFields = {
+        status: INJURY_CLEARED_STATUS,
+        injury_body_part: r.injury_body_part,
+        injury_notes: r.injury_notes,
+        injury_start_date: r.injury_start_date,
+      }
+      changes.push({ player_id, kind: 'cleared', from: s.status, to: INJURY_CLEARED_STATUS, fields })
+    }
+  }
+  const clears = changes.filter((c) => c.kind === 'cleared').length
+  if (tagged === 0 && clears >= INJURY_CLEAR_GUARD_MIN) {
+    return {
+      checked,
+      changes: changes.filter((c) => c.kind !== 'cleared'),
+      guard: `injuries: the feed tags none of its ${checked} stored player(s) while ${clears} of them are stored with an injury tag — read as a degraded response, not a healthy league; nothing cleared`,
+    }
+  }
+  return { checked, changes, guard: null }
+}
+
 // ── The run ────────────────────────────────────────────────────────────────
 
 export interface WeekReport {
@@ -338,6 +524,8 @@ export interface WeeklyProjectionsReport extends SyncSummary {
   /** False when any planned week failed, or nothing was planned for any reason but a completed season. */
   ok: boolean
   fetched_at: string
+  /** D592: every injury-field change this run wrote, named (empty when none). */
+  injuryChanges: Array<Pick<InjuryChange, 'player_id' | 'kind' | 'from' | 'to'>>
 }
 
 export interface WeeklyProjectionsDeps {
@@ -453,6 +641,55 @@ async function writeWeek(
   return { stored, removed }
 }
 
+/** The stored injury fields of `ids` (chunked `in.(…)` reads, each well under
+ *  the 1000-row cap — one row per id at most, asserted). */
+async function storedInjuryFields(db: SyncClient, ids: readonly string[]): Promise<Map<string, InjuryFields>> {
+  const out = new Map<string, InjuryFields>()
+  for (let i = 0; i < ids.length; i += INJURY_CHUNK) {
+    const chunk = ids.slice(i, i + INJURY_CHUNK)
+    const { data, error } = await db
+      .from('players')
+      .select('id, status, injury_body_part, injury_notes, injury_start_date')
+      .in('id', chunk)
+    if (error) throw new Error(`injuries: players read failed: ${error.message}`)
+    const rows = (data ?? []) as Array<InjuryFields & { id: string }>
+    if (rows.length > chunk.length) {
+      throw new Error(`injuries: players read returned ${rows.length} row(s) for ${chunk.length} id(s) — refusing to compare`)
+    }
+    for (const { id, ...fields } of rows) out.set(id, fields)
+  }
+  return out
+}
+
+/**
+ * Write the planned changes: one UPDATE per identical value set (a run's
+ * clears share one), ids chunked, each asserting it touched exactly the
+ * players it named — a short update is never "done". `updated_at` is the
+ * run's injected instant (D3).
+ */
+async function writeInjuryChanges(db: SyncClient, changes: readonly InjuryChange[], at: string): Promise<void> {
+  const groups = new Map<string, { fields: InjuryFields; ids: string[] }>()
+  for (const c of changes) {
+    const key = JSON.stringify(c.fields)
+    const g = groups.get(key) ?? { fields: c.fields, ids: [] }
+    g.ids.push(c.player_id)
+    groups.set(key, g)
+  }
+  for (const { fields, ids } of groups.values()) {
+    for (let i = 0; i < ids.length; i += INJURY_CHUNK) {
+      const chunk = ids.slice(i, i + INJURY_CHUNK)
+      const { error, count } = await db
+        .from('players')
+        .update({ ...fields, updated_at: at }, { count: 'exact' })
+        .in('id', chunk)
+      if (error) throw new Error(`injuries: players update failed: ${error.message}`)
+      if (count !== chunk.length) {
+        throw new Error(`injuries: players update wrote ${String(count)} row(s) for ${chunk.length} named (${fields.status}) — refusing to call that done`)
+      }
+    }
+  }
+}
+
 function namedUnknown(week: number, unknown: WeekParse['unknown']): string {
   const shown = unknown.slice(0, UNKNOWN_NAMED).map((u) => u.label)
   const rest = unknown.length - shown.length
@@ -492,10 +729,23 @@ export async function syncWeeklyProjections(
     plan,
     weeks: [],
     failures: [],
-    counts: { weeks: 0, projected: 0, stored: 0, removed: 0, unknownPlayer: 0, duplicates: 0, failedWeeks: 0 },
+    counts: {
+      weeks: 0,
+      projected: 0,
+      stored: 0,
+      removed: 0,
+      unknownPlayer: 0,
+      duplicates: 0,
+      failedWeeks: 0,
+      injuryChecked: 0,
+      injuryTagged: 0,
+      injuryCleared: 0,
+      injuryDetail: 0,
+    },
     warnings: [],
     ok: true,
     fetched_at: now.toISOString(),
+    injuryChanges: [],
   }
 
   for (const w of missing) {
@@ -510,6 +760,11 @@ export async function syncWeeklyProjections(
     report.failures.push('players is EMPTY — every projection would be an unknown id; run sync:players first (nothing fetched, nothing written)')
     return finish(report)
   }
+
+  // D592: injury reports from every week whose projections WROTE; a later
+  // week's report of the same player (fetched later) replaces the earlier.
+  const injuryReports = new Map<string, InjuryReport>()
+  let injuryNoField = 0
 
   for (const week of plan.weeks) {
     const fetchedAt = time.now().toISOString()
@@ -558,6 +813,9 @@ export async function syncWeeklyProjections(
           const written = await writeWeek(db, opts.season, week, parsed.rows, before)
           wr.stored = written.stored
           wr.removed = written.removed
+          const seen = injuryReportsOf(responses, known)
+          for (const [id, r] of seen.reports) injuryReports.set(id, r)
+          injuryNoField += seen.noField
         }
       } catch (err) {
         wr.ok = false
@@ -565,6 +823,31 @@ export async function syncWeeklyProjections(
       }
     }
     report.weeks.push(wr)
+  }
+
+  if (injuryNoField > 0 && injuryReports.size === 0) {
+    // Not one row said anything about injuries: the feed changed shape, and
+    // every tag would silently go stale again — loud, never a quiet zero.
+    report.failures.push(`injuries: none of the ${injuryNoField} feed row(s) for known players carried an injury field — no tag refreshed`)
+  } else if (injuryNoField > 0) {
+    report.warnings.push(`injuries: ${injuryNoField} feed row(s) for known players carried no injury field — those players were left as stored`)
+  }
+  if (injuryReports.size > 0) {
+    try {
+      const stored = await storedInjuryFields(db, [...injuryReports.keys()])
+      const planned = planInjuryChanges(injuryReports, stored)
+      report.counts.injuryChecked = planned.checked
+      if (planned.guard) report.failures.push(planned.guard)
+      await writeInjuryChanges(db, planned.changes, now.toISOString())
+      for (const c of planned.changes) {
+        if (c.kind === 'tagged') report.counts.injuryTagged++
+        else if (c.kind === 'cleared') report.counts.injuryCleared++
+        else report.counts.injuryDetail++
+        report.injuryChanges.push({ player_id: c.player_id, kind: c.kind, from: c.from, to: c.to })
+      }
+    } catch (err) {
+      report.failures.push(err instanceof Error ? err.message : String(err))
+    }
   }
   return finish(report)
 }
