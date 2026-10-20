@@ -14,6 +14,7 @@ runbook through does not count as rehearsing it.
 | [commissioner-locked-out.md](commissioner-locked-out.md) | A commissioner can't reach their league's commissioner tools |
 | [restore-league-from-pitr.md](restore-league-from-pitr.md) | One league's data is lost or damaged and nothing smaller fixes it |
 | [postponed-game.md](postponed-game.md) | An NFL game is postponed or cancelled |
+| [beta-ladder.md](beta-ladder.md) | Running the 2026 test-league beta ladder, rung by rung (L.F2.11) |
 
 ## The tools these pages use
 
@@ -37,7 +38,10 @@ runbook through does not count as rehearsing it.
 - **Scripts** (run from a checkout; they read `.env.local`, which names the
   hosted project. A write needs `--confirm-target`):
   - `npm run reconcile -- <season> [--league <id>]`: read-only check of
-    stored scores against stats. Exits 1 on any alert.
+    stored scores against stats. It prints a JSON summary. Clean means
+    `"alerts": 0` **and** `"reason": null` **and** `"cells"` above 0.
+    `"cells": 0` or a non-null `reason` means it compared nothing. Exits 1
+    on any alert.
   - `npm run sync:reingest -- --season <yyyy> --weeks <n-m> --confirm-target <host>`:
     re-pulls stats for weeks that have already been played. Safe to repeat.
   - `npm run rescore:final-weeks` is **retired**: it refuses to run (F489).

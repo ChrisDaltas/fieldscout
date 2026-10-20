@@ -62,7 +62,10 @@ If one of these works, stop here.
 
 ## Steps
 
-1. **Freeze the league.** Stop new writes while you work.
+1. **Freeze the league, as far as you can.** This freeze is **partial**.
+   It stops the scheduled jobs and asks people to hold off, but members can
+   still make moves (lineups, claims, trade offers, chat), and lineup
+   locking keeps running. That is why step 6 re-checks before copying.
    - **Admin → Leagues → the league** (`/app/admin/leagues/[id]`) →
      **Jobs**: **Pause** Waivers, Week advance and Week finalize. Lineup
      locking can't be paused. That's fine: it only locks players at kickoff.
@@ -103,27 +106,57 @@ If one of these works, stop here.
 
 6. **Copy back, in one transaction, parents before children.** With Chris's
    go-ahead:
+   - **Redo the step 5 comparison first, just before copying.** The freeze
+     is partial, so production may have moved since. If anything new
+     appears, show Chris again before going on.
    - Put back missing rows, and correct changed ones, in the non-audit
      tables, starting with `leagues`, then teams, then everything else.
    - Add missing audit rows. Never update or delete an existing one.
-   - **Three tables refuse any rewrite**, even with replication-mode
-     tricks: `commissioner_actions`, `platform_operator_actions`, and
-     `league_week_player_points` for a week that is final. Plan for them
-     before you start:
+   - **Triggers that stay on even in replication mode.** These triggers
+     are switched on ALWAYS, so `session_replication_role = replica` does
+     not get past them. Measured from the migrations on 2026-10-20 —
+     **re-measure before use** (`grep -rn "ENABLE ALWAYS TRIGGER"
+     supabase/migrations`):
+     - audit logs, which refuse any update, delete or truncate:
+       `commissioner_actions` (123, plus 179's revert check) and
+       `platform_operator_actions` (182);
+     - `league_week_player_points`: the stored points of a final week are
+       locked (158);
+     - pointers at the commissioner log (170): `matchups`
+       (`override_action_id`, `pairing_set_by_action_id`), `transactions`
+       (`related_action_id`) and `league_weeks` (`reopened_by_action_id`,
+       `scoring_rules_action_id`);
+     - `matchups`' override guard (126); `league_weeks`' scoring-rules
+       guards (144); `team_lineups`' one-start-per-week rule (154);
+       `league_rosters`' trade invalidation (148); `team_managers`' trade
+       rescind on a closed stint (151); `leagues`' scoring-rules and waiver
+       order guards (104, 163).
+
+     Plan for them before you start:
      - the two audit tables: insert only the rows that are missing. Rows
        added after the restore moment stay. They are the true record of
        what happened, including this repair.
-     - final-week player points: they cannot be changed. If the restored
-       copy differs for a final week, stop and take it to Chris. Do not try
-       to work round the lock.
+     - final-week player points cannot be changed. If the restored copy
+       differs for a final week, stop and take it to Chris.
+     - **A row that points at the commissioner log cannot be copied back
+       with plain SQL.** Only the audited commissioner action that wrote
+       that log entry, in the same transaction, may set the pointer. If any
+       row you need carries one of the pointers above, stop and take it to
+       Chris. **Never set `app.commish_action_id` (or any `app.*`
+       setting) by hand** to get a row past the guard.
+     - The other guards check the row is valid. A row the restored copy
+       holds should pass them. If one refuses, stop. Do not work round it.
    - Touch **only** rows for this league. Every statement filters on the
      league id, or on ids that belong to it.
    - If anything refuses (a trigger, a constraint), roll back the whole
      transaction and stop. Do not switch triggers off to get past it.
 
 7. **Check the league.**
-   - `npm run reconcile -- <season> --league <league id>` reports no
-     alerts. It only reads. It exits 1 on any alert.
+   - `npm run reconcile -- <season> --league <league id>`. It only reads.
+     It prints a JSON summary. A clean result needs **all three**:
+     `"alerts": 0`, `"reason": null`, and `"cells"` above 0. A `reason` of
+     `"no_leagues_in_scope"` or `"no_league_weeks_started"`, or `"cells": 0`,
+     means it compared nothing. That is not a pass. It exits 1 on any alert.
    - The admin league page **Now** section shows the weeks you expect.
    - Open the league as a member: standings, rosters and the activity read
      right.

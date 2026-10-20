@@ -28,9 +28,10 @@ gone from their screens.
   (§24.4). Support reads the record and never goes around it.
 - Do not edit `league_members` or any league row in the database to "give
   the role back".
-- **Do not delete the commissioner's account to start them fresh.**
-  Deleting the account of the person who **created** a league deletes that
-  league and everything in it (F756).
+- **Do not delete anyone's account to start them fresh.** Deleting any
+  member's account deletes the teams they own. Deleting the account of the
+  person who **created** a league deletes that whole league and everything
+  in it (F756).
 
 ## Steps
 

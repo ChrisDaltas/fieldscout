@@ -51,9 +51,14 @@ stops running, every timed draft stops at its next deadline.
      on the clock, and resuming restores it exactly. A clock that had
      already run out resumes already run out, so the next tick makes the
      auto-pick.
-   - **Draft Options**: **Clock & timers**, **Undo picks**, **Fix a pick**,
-     **Pick for a manager**, **Reset draft**, and **End draft** (auction
-     drafts only).
+   - **Draft Options**. The menu depends on the draft type:
+     - snake / linear draft: **Clock & timers**, **Undo picks**, **Fix a
+       pick**, **Pick for a manager**, **Draft order**, **Autopick**,
+       **Reassign a seat**, **Reset draft**;
+     - auction draft: **Clock & timers**, **Undo nominations**, **Manual
+       Edit Mode**, **Edit current nomination**, **Team budgets**,
+       **Nominate for a manager**, **Nomination order**, **Autopick**,
+       **Reassign a seat**, **Reset draft**, **End draft**.
 
    These actions are recorded in the league's commissioner log
    (League → Activity → Commissioner).
@@ -77,8 +82,15 @@ stops running, every timed draft stops at its next deadline.
      in a migration. If it is missing or broken, that is a fix-forward
      migration, pushed with `npx supabase db push`, never a dashboard edit.
    - While `draft-tick` is down the clock sits at 0:00 and no auto-pick
-     happens: only the tick makes auto-picks. A commissioner who wants to
-     keep going can use **Pick for a manager** for each team on the clock.
+     happens: only the tick makes auto-picks.
+     - **Snake / linear:** a commissioner who wants to keep going can use
+       **Pick for a manager** for each team on the clock.
+     - **Auction:** nothing the commissioner presses closes a lot. Only the
+       tick ends a bid clock and awards the player. **Nominate for a
+       manager** only starts a lot. **Manual Edit Mode** only edits players
+       already won. **End draft** ends the whole auction. So an auction
+       commissioner should **Pause** and wait for the tick to come back
+       (F751).
    - When **Scheduler** shows `draft-tick` running again, ask the
      commissioners to **Resume**, and send a second notice.
 

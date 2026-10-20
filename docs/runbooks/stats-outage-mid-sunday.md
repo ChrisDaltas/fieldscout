@@ -76,9 +76,12 @@ banner **"Live stats delayed — scores show the last update we received."**
      `--confirm-target` matches that target. Running it twice is safe.
      The scripts do not refuse production by name (F755): read the target
      line before you confirm it.
-   - Then run `npm run reconcile -- <season>`. It only reads. "No alerts"
-     means stored scores match the stats. Any alert (it exits 1) goes to
-     Chris. Do not fix scores by hand.
+   - Then run `npm run reconcile -- <season>`. It only reads. It prints a
+     JSON summary. Stored scores match the stats only when **all three**
+     hold: `"alerts": 0`, `"reason": null`, and `"cells"` above 0. A
+     `reason` such as `"no_league_weeks_started"`, or `"cells": 0`, means it
+     compared nothing: not a pass. Any alert (it exits 1) goes to Chris. Do
+     not fix scores by hand.
    - If one league's result is wrong after all this, its commissioner
      fixes it with their commissioner tools.
 
