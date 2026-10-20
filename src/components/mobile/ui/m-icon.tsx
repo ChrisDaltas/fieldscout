@@ -49,7 +49,7 @@ export const M_ICON = {
   // row's "more" control — Members' per-team sheet. Draw at stroke ≥ 2.4.
   more: 'M3.5 8h.01M8 8h.01M12.5 8h.01',
   // Not in the handoff: a phone, for Settings › Sessions' "This device" row.
-  device:'M5 1.5h6a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM7 12h2',
+  device: 'M5 1.5h6a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM7 12h2',
 } as const
 
 export type MIconName = keyof typeof M_ICON
