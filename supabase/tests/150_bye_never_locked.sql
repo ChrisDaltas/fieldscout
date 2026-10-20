@@ -27,6 +27,12 @@
 -- CONTROLS that must not move: a RELEASED player (no team) who played
 -- Thursday stays locked; a Thursday player stays locked; a Sunday player
 -- whose game is still ahead stays unlocked.
+-- REAL LINES (review R1 — team BY India, §S): a bye-team player whose stat
+-- line names a game of this week that has kicked off is still LOCKED
+-- (F447): i-z1 / i-z2 / FA i-z3 have a STALE stored team (YC — traded to YS
+-- after the Tuesday player sync; their line is the production shape,
+-- game_id NULL with 194's team YS); i-q1 played Thursday for YA (his line
+-- names by-g6a) and was then moved to YC.
 --
 --   §A  FORM and D137: both helpers PLAIN, STABLE, search_path '', closed;
 --       un200 gives back 157's FILE TEXT (the literals 112 A6 / 113 / 114
@@ -39,27 +45,35 @@
 --       at once — not deferred), §W waiver claims (submit's add lock and
 --       the run's add AND drop checks), §T the per-minute tick (stale saved
 --       kickoffs cleared, stale pool locks cleared, controls kept), §K the
---       controls end to end.
+--       controls end to end, §S a real line still locks a bye-team player
+--       (no add, start, bench or drop after his kickoff; the tick keeps his
+--       real saved kickoff), the clean bye player still free at 20:00.
 --
 -- BREAK PROBES (measured 2026-10-20 on the local DB, 200 applied), each a
--- CREATE OR REPLACE of one helper from pg_temp.un200(prosrc) — 157's body —
--- injected right after the fixture inside this transaction:
+-- CREATE OR REPLACE injected right after the fixture inside this
+-- transaction — (1)–(3) from pg_temp.un200(prosrc), 157's body:
 --   (1) lineup_played_internal put back ⇒ B1 B2 B3 C1 C2 L1 L2 L3 P1 P2 F1
---       F2 W1 W2 W3 T2 K3 K4 red (K3 / K4: Hotel's stat-row bye starter in
---       qb:0 is "locked" again, so the refusal names him and the bench
---       fails);
+--       F2 W1 W2 W3 T2 K3 K4 S1 S2 red (K3 / K4: Hotel's stat-row bye
+--       starter in qb:0 is "locked" again, so the refusal names him and the
+--       bench fails; S1 / S2: the stray-row control reads played);
 --   (2) lineup_record_kicked_off_internal put back ⇒ B4 T1 red (the other
 --       paths stay green — (1)'s guard already answers them; (2) is what
 --       makes the tick heal a stale saved kickoff);
---   both ⇒ the union. The controls B5 T3 K1 K2 K5 are green under every
---   probe (F447's cases never depended on the change).
+--   (3) both ⇒ the union, 22 of 37 red (the bug reproduced);
+--   (4) 200 AS FIRST WRITTEN (the broad guard — any bye-team player "not
+--       played", real line or not; review R1) ⇒ S1 S2 S3 S4 S6 S7 red: the
+--       stale-team free agent is added and started three hours after his
+--       kickoff, the Thursday-then-bye starter is benched or dropped, and
+--       the tick erases his real saved kickoff.
+--   The controls B5 T3 K1 K2 K5 S5 are green under every probe, and S3 S4
+--   S6 S7 under (1)–(3) (157 locked those cases; only (4) opened them).
 -- ============================================================================
 begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(30);
+select plan(37);
 
 -- pg_temp.un200 — migration 200's inserted lines removed (each ends
 -- `-- 200 / D590`); an identity on every other body.
@@ -95,8 +109,8 @@ select is(
   (select string_agg(p.proname || '=' || md5(p.prosrc) || '/' || (length(p.prosrc) - length(replace(p.prosrc, '   -- 200 / D590', ''))) / length('   -- 200 / D590'), ' ' order by p.proname)
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname in ('lineup_record_kicked_off_internal', 'lineup_played_internal')),
-  'lineup_played_internal=e22f4ddc9907d0633e8fbcd7029b1055/10 lineup_record_kicked_off_internal=90c5abfa40345e9ad42e53d1cc6a1ab8/5',
-  'A4 the two live prosrc md5s — 200 as written (stored literals) — and the inserted lines (10 / 5, one hunk each)');
+  'lineup_played_internal=284f29a85d704c581d123cf282c19517/21 lineup_record_kicked_off_internal=9e10022136fad7c3f4c67a5acae9f98e/15',
+  'A4 the two live prosrc md5s — 200 as written (stored literals) — and the inserted lines (21 / 15, one hunk each)');
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname not in ('lineup_record_kicked_off_internal', 'lineup_played_internal')
@@ -124,7 +138,7 @@ insert into auth.users
 select '00000000-0000-0000-0000-000000000000', ('92000000-0000-4000-8000-00000000000' || i)::uuid,
   'authenticated', 'authenticated', 'pgtap-by' || i || '@fieldscout.local', 'x', now(),
   '{"provider": "email", "providers": ["email"]}', json_build_object('username', 'by_user' || i)::jsonb, now(), now()
-from generate_series(1, 8) i;
+from generate_series(1, 9) i;
 
 -- LB: instant pickups (none_fcfs), trades with no review — §C §L §P §F §T §K.
 -- LW: FAAB, a run every day at 16:00 UTC, the next one Sunday 16:00Z — §W.
@@ -151,6 +165,7 @@ from (values
  ('c2000000-0000-4000-8000-000000000013', 3, 'BY Bravo', 1),   ('c2000000-0000-4000-8000-000000000014', 4, 'BY Charlie', 1),
  ('c2000000-0000-4000-8000-000000000015', 5, 'BY Echo', 1),    ('c2000000-0000-4000-8000-000000000016', 6, 'BY Foxtrot', 1),
  ('c2000000-0000-4000-8000-000000000017', 7, 'BY Golf', 1),    ('c2000000-0000-4000-8000-000000000018', 8, 'BY Hotel', 1),
+ ('c2000000-0000-4000-8000-000000000019', 9, 'BY India', 1),
  ('c2000000-0000-4000-8000-000000000021', 1, 'BW Commish', 2), ('c2000000-0000-4000-8000-000000000022', 2, 'BW Whiskey', 2)
 ) as t(id, u, nm, lg);
 
@@ -188,7 +203,9 @@ from (values
  ('by-h-b1', 'BY H One (bye, stat row)', 'YC', 100), ('by-h-b2', 'BY H Two (bye, saved Thu)', 'YC', 100), ('by-h-b3', 'BY H Three (bye)', 'YC', 100),
  ('by-h-t1', 'BY H Thu', 'YA', 100), ('by-h-r1', 'BY H Released', 'YA', 100), ('by-h-s1', 'BY H Sun', 'YS', 100),
  ('by-w-b1', 'BY W One (bye, stat row)', 'YC', 100), ('by-w-b2', 'BY W Two (bye, saved Thu)', 'YC', 100), ('by-w-b3', 'BY W Three (bye)', 'YC', 100),
- ('by-w-f1', 'BY WF One (bye, stat row)', 'YC', 100), ('by-w-f2', 'BY WF Two (bye, saved Thu)', 'YC', 100), ('by-w-f3', 'BY WF Three (bye)', 'YC', 100)
+ ('by-w-f1', 'BY WF One (bye, stat row)', 'YC', 100), ('by-w-f2', 'BY WF Two (bye, saved Thu)', 'YC', 100), ('by-w-f3', 'BY WF Three (bye)', 'YC', 100),
+ ('by-i-z1', 'BY I Stale One', 'YC', 100), ('by-i-z2', 'BY I Stale Two', 'YC', 100), ('by-i-z3', 'BY I Stale FA', 'YC', 100),
+ ('by-i-q1', 'BY I Thu then bye', 'YA', 100), ('by-i-b3', 'BY I Three (bye)', 'YC', 100)
 ) as p(id, nm, nfl, adp);
 
 insert into league_rosters (league_id, team_id, player_id, slot_key)
@@ -201,11 +218,12 @@ from (values
  ('BY Foxtrot', 'by-x-s1'), ('BY Foxtrot', 'by-x-s2'), ('BY Foxtrot', 'by-x-s3'),
  ('BY Golf', 'by-g-b1'), ('BY Golf', 'by-g-b2'), ('BY Golf', 'by-g-b3'), ('BY Golf', 'by-g-s1'), ('BY Golf', 'by-g-s2'), ('BY Golf', 'by-g-s3'), ('BY Golf', 'by-g-s4'),
  ('BY Hotel', 'by-h-b1'), ('BY Hotel', 'by-h-b2'), ('BY Hotel', 'by-h-b3'), ('BY Hotel', 'by-h-t1'), ('BY Hotel', 'by-h-r1'), ('BY Hotel', 'by-h-s1'),
- ('BW Whiskey', 'by-w-b1'), ('BW Whiskey', 'by-w-b2'), ('BW Whiskey', 'by-w-b3')
+ ('BW Whiskey', 'by-w-b1'), ('BW Whiskey', 'by-w-b2'), ('BW Whiskey', 'by-w-b3'),
+ ('BY India', 'by-i-z1'), ('BY India', 'by-i-z2'), ('BY India', 'by-i-q1'), ('BY India', 'by-i-b3')
 ) as r(team, pid)
 join teams t on t.name = r.team and t.id::text like 'c2000000-%';
 insert into league_player_pool (league_id, player_id, state)
-select 'b2000000-0000-4000-8000-000000000001', p, 'free_agent' from unnest(array['by-f-b1', 'by-f-b2', 'by-f-b3']) p;
+select 'b2000000-0000-4000-8000-000000000001', p, 'free_agent' from unnest(array['by-f-b1', 'by-f-b2', 'by-f-b3', 'by-i-z3']) p;
 insert into league_player_pool (league_id, player_id, state)
 select 'b2000000-0000-4000-8000-000000000001', r.player_id, 'rostered' from league_rosters r where r.league_id = 'b2000000-0000-4000-8000-000000000001';
 -- The live screen's symptom: a STALE lock on the pool view of Hotel's bye
@@ -238,7 +256,8 @@ from (values
  ('BY Golf',     '["by-g-b1", "by-g-b2", "by-g-b3", null]',            '[null, "2026-10-16T00:15:00+00:00", null, null]', '["by-g-s1", "by-g-s2", "by-g-s3", "by-g-s4"]'),
  ('BY Hotel',    '["by-h-b1", "by-h-b2", "by-h-t1", "by-h-r1"]',       '[null, "2026-10-16T00:15:00+00:00", "2026-10-16T00:15:00+00:00", "2026-10-16T00:15:00+00:00"]', '["by-h-b3", "by-h-s1"]'),
  ('BW Commish',  '["by-w-f2", null, null, null]',                      '["2026-10-16T00:15:00+00:00", null, null, null]', '[]'),
- ('BW Whiskey',  '["by-w-b1", "by-w-b2", "by-w-b3", null]',            '[null, "2026-10-16T00:15:00+00:00", null, null]', '[]')
+ ('BW Whiskey',  '["by-w-b1", "by-w-b2", "by-w-b3", null]',            '[null, "2026-10-16T00:15:00+00:00", null, null]', '[]'),
+ ('BY India',    '["by-i-z1", "by-i-q1", null, null]',                   '[null, "2026-10-16T00:15:00+00:00", null, null]', '["by-i-z2", "by-i-b3"]')
 ) as t(team, q, k, bench);
 
 -- STAT ROWS for week 6: every *-b1 / *-f1 bye player has one that names NO
@@ -248,8 +267,19 @@ insert into player_stats (player_id, season, week, stat_type, game_id, updated_a
 select p, 2026, 6, 'weekly', case when p in ('by-h-t1', 'by-h-r1') then 'by-g6a' end, '2026-10-16 03:30:00+00'
 from unnest(array['by-a-b1', 'by-b-b1', 'by-f-b1', 'by-e-b1', 'by-g-b1', 'by-h-b1', 'by-w-b1', 'by-w-f1', 'by-h-t1', 'by-h-r1']) p;
 
--- THE NFL RELEASES h-r1 after the Thursday game (no team — F447's case).
+-- REAL LINES on a bye-team player (review R1 — §S): i-z1 / i-z2 / FA i-z3
+-- were traded YC -> YS after the Tuesday player sync, so their STORED team
+-- is stale (YC, on a bye); the live ingest writes their Sunday line the
+-- production way — game_id NULL, 194's line team YS. i-q1's line names the
+-- Thursday game he played for YA before the NFL moved him to YC.
+insert into player_stats (player_id, season, week, stat_type, game_id, team, updated_at) values
+ ('by-i-z1', 2026, 6, 'weekly', null, 'YS', '2026-10-18 17:30:00+00'), ('by-i-z2', 2026, 6, 'weekly', null, 'YS', '2026-10-18 17:30:00+00'),
+ ('by-i-z3', 2026, 6, 'weekly', null, 'YS', '2026-10-18 17:30:00+00'), ('by-i-q1', 2026, 6, 'weekly', 'by-g6a', 'YA', '2026-10-16 03:30:00+00');
+
+-- THE NFL RELEASES h-r1 after the Thursday game (no team — F447's case),
+-- and moves i-q1 to YC — a team on its bye (plan Q4's case).
 update players set team = null where id = 'by-h-r1';
+update players set team = 'YC' where id = 'by-i-q1';
 
 -- Post-reset race guard (067's): today's + tomorrow's realtime.messages partitions.
 do $part$
@@ -498,6 +528,52 @@ select is(
   || ' | ' || pg_temp.roster_of('by-h-s1'),
   'ok | (none)',
   'K5 a Sunday player whose game is still ahead is droppable at Sunday 12:10 (positive control)');
+
+-- ---------------------------------------------------------------------------
+-- S. A REAL LINE STILL LOCKS a bye-team player (review R1 — F447 kept). Only
+--    a stray row (no game, no team) or a saved kickoff ALONE is ignored; a
+--    line naming a game of this week that has kicked off is evidence.
+-- ---------------------------------------------------------------------------
+select is(
+  (select string_agg(format('%s@%s=%s/%s', x.p, to_char(x.at at time zone 'UTC', 'HH24:MI'), y.played, coalesce(y.datum_arm, '-')), ' ' order by x.p, x.at)
+   from (values ('by-i-z1', '2026-10-18 16:00:00+00'::timestamptz), ('by-i-z1', '2026-10-18 20:00:00+00'), ('by-i-q1', '2026-10-18 16:00:00+00'),
+                ('by-h-b1', '2026-10-18 20:00:00+00'), ('by-i-b3', '2026-10-18 20:00:00+00')) x(p, at)
+   cross join lateral public.lineup_played_internal(pg_temp.lg(1), 2026, 6, x.p, x.at) y),
+  'by-h-b1@20:00=f/- by-i-b3@20:00=f/- by-i-q1@16:00=t/lineup_record by-i-z1@16:00=f/- by-i-z1@20:00=t/stat_line',
+  'S1 THE JUDGMENT: a stale-team player (stored YC on a bye, his line for YS) has played once the game his line names has kicked off (20:00 — not at 16:00, before it); the Thursday player moved to a bye team has played (his line names Thursday''s game); the stray-row and clean bye players have not, even after Sunday''s kickoff');
+select is(
+  pg_temp.locks(array['by-i-z1', 'by-i-z2', 'by-i-z3', 'by-i-q1', 'by-i-b3', 'by-h-b1'], '2026-10-18 20:00:00+00'),
+  'by-h-b1=false/bye by-i-b3=false/bye by-i-q1=true/lineup_record by-i-z1=true/stat_line by-i-z2=true/stat_line by-i-z3=true/stat_line',
+  'S2 …so the lock every add / drop / claim / trade reads HOLDS all four at Sunday 20:00 (the stale-team three and the Thursday-then-bye player) and stays open for the bye players with no real line');
+select is(
+  pg_temp.ok('S3', $$ select pg_temp.ad('S3', 4, 'BY Charlie', 'by-i-z3', null, '2026-10-18 20:00:00+00', 61) $$),
+  'P0001: roster_add_drop: BY I Stale FA (by-i-z3) is locked for adds — kicked off at 2026-10-16T00:15:00+00:00 (stat_line); week 6 clears at 2026-10-20T03:30:00+00:00 (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no in-game pickups',
+  'S3 NO IN-GAME PICKUP: Charlie cannot add the stale-team free agent three hours after his game kicked off (before review R1: added, then started for points already on the board)');
+select is(
+  format('%s || %s || %s',
+         pg_temp.ok('S4a', $$ select pg_temp.sl('S4a', 9, 'BY India', '{"qb:1": "by-i-q1", "qb:2": "by-i-b3"}', '2026-10-18 20:00:01+00', 62) $$),
+         pg_temp.ok('S4b', $$ select pg_temp.sl('S4b', 9, 'BY India', '{"qb:0": "by-i-z1", "qb:1": "by-i-q1", "qb:2": "by-i-z2"}', '2026-10-18 20:00:02+00', 63) $$),
+         pg_temp.ok('S4c', $$ select pg_temp.sl('S4c', 9, 'BY India', '{"qb:0": "by-i-z1", "qb:2": "by-i-b3"}', '2026-10-18 20:00:03+00', 64) $$)),
+  'P0001: set_lineup: slot qb:0 is locked — BY I Stale One kicked off at 2026-10-16T00:15:00+00:00 (stat_line) and a locked slot''s player never moves (§11.2, lineup_lock = per_player_kickoff); every other unlocked slot stays editable || P0001: set_lineup: BY I Stale Two''s game kicked off at 2026-10-16T00:15:00+00:00 (stat_line) — a player whose game has started cannot enter or move slots (§11.2, lineup_lock = per_player_kickoff); wanted "qb:2" || P0001: set_lineup: slot qb:1 is locked — BY I Thu then bye kicked off at 2026-10-16T00:15:00+00:00 (lineup_record) and a locked slot''s player never moves (§11.2, lineup_lock = per_player_kickoff); every other unlocked slot stays editable',
+  'S4 NO AFTER-THE-FACT LINEUP MOVES: India cannot bench the stale-team starter (qb:0), start the stale-team bench player, or bench the Thursday-then-bye starter (qb:1) — §11.2');
+select is(
+  pg_temp.ok('S5', $$ select pg_temp.sl('S5', 9, 'BY India', '{"qb:0": "by-i-z1", "qb:1": "by-i-q1", "qb:2": "by-i-b3"}', '2026-10-18 20:00:04+00', 65) $$)
+  || ' || ' || pg_temp.lu('BY India'),
+  'ok || {"qb:0": "by-i-z1", "qb:1": "by-i-q1", "qb:2": "by-i-b3"} | ["by-i-z2"]',
+  'S5 …while the same lineup starts its clean bye player around the two held slots (the ruling still holds at 20:00)');
+select is(
+  format('%s || %s',
+         pg_temp.ok('S6a', $$ select pg_temp.ad('S6a', 9, 'BY India', null, 'by-i-q1', '2026-10-18 20:00:05+00', 66) $$),
+         pg_temp.ok('S6b', $$ select pg_temp.ad('S6b', 9, 'BY India', null, 'by-i-z1', '2026-10-18 20:00:06+00', 67) $$)),
+  'P0001: roster_add_drop: BY I Thu then bye (by-i-q1) is locked for drops — kicked off at 2026-10-16T00:15:00+00:00 (lineup_record); week 6 clears at 2026-10-20T03:30:00+00:00 (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no dropping a player mid-game || P0001: roster_add_drop: BY I Stale One (by-i-z1) is locked for drops — kicked off at 2026-10-16T00:15:00+00:00 (lineup_record); week 6 clears at 2026-10-20T03:30:00+00:00 (when its last game ends — §13.1/E32, Q34(B): the lock binds regardless of settings): no dropping a player mid-game',
+  'S6 NO DROP: the Thursday-then-bye starter and the stale-team starter cannot be dropped (so no other team can add and start them for points already scored)');
+select set_config('pgtap.t2', public.lineup_lock_tick('2026-10-18 20:01:00+00', pg_temp.lg(1))::text, true);
+select is(
+  format('%s|%s || %s', pg_temp.rec('BY India', 'by-i-q1'), pg_temp.rec('BY India', 'by-i-z1'),
+         (select string_agg(pp.player_id || '=' || pp.state || ':' || coalesce(pp.locked_until::text, 'null'), ' ' order by pp.player_id)
+          from league_player_pool pp where pp.league_id = pg_temp.lg(1) and pp.player_id in ('by-i-z1', 'by-i-z2', 'by-i-z3', 'by-i-q1', 'by-i-b3'))),
+  '2026-10-16T00:15:00+00:00|2026-10-16T00:15:00+00:00 || by-i-b3=rostered:null by-i-q1=rostered:2026-10-20 03:30:00+00 by-i-z1=rostered:2026-10-20 03:30:00+00 by-i-z2=rostered:2026-10-20 03:30:00+00 by-i-z3=locked_in_game:2026-10-20 03:30:00+00',
+  'S7 THE TICK keeps the Thursday-then-bye starter''s REAL saved kickoff (before review R1 it erased it; the stale-team starter''s is the one S5''s save recorded — his line names no game, so 157 dates it from the week''s first kickoff) and locks the four on the pool view until week 6''s end; the clean bye player stays open');
 
 select * from finish();
 rollback;
