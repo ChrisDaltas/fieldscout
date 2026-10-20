@@ -506,6 +506,12 @@ describe('the routes draw them on the phone (ByLayout), desktop unchanged', () =
     expect(read('src/app/app/(shell)/mocks/page.tsx')).toContain('<ByLayout desktop={<MocksHome />} mobile={<MobileMocks />} />')
   })
 
+  it('a delete, and the empty state’s “Back to practice drafts”, leave the report via useLeaveTo — never a second Mock drafts in history', () => {
+    const source = read('src/components/mobile/mocks/mobile-mock-report.tsx')
+    expect(source.match(/leaveTo\(PRACTICE_HOME_HREF\)/g)).toHaveLength(2)
+    expect(source).not.toMatch(/router\.(?:push|replace)\(/)
+  })
+
   it('/app/mocks/[id]/report: both answers — the report and the route’s own “not here”', () => {
     const page = read('src/app/app/(shell)/mocks/[mockId]/report/page.tsx')
     expect(page).toContain('<ByLayout desktop={<MockReportMissing />} mobile={<MobileMockReportMissing />} />')

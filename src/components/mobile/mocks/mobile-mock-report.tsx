@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 
 import { parseDraftOrder } from '@/components/draft/draft-board-ops'
@@ -10,7 +9,7 @@ import { PRACTICE_HOME_HREF } from '@/components/draft/room-scope'
 import { DraftResultsBody, RowsSkeleton } from '@/components/mobile/league/league/draft-results-screen'
 import { MOCK_LINE } from '@/components/mobile/league/league/draft-results-ops'
 import { CenterNote, PillButton } from '@/components/mobile/lists/lists-parts'
-import { useGoBack } from '@/components/mobile/ui/back-nav'
+import { useGoBack, useLeaveTo } from '@/components/mobile/ui/back-nav'
 import { MNotice } from '@/components/mobile/ui/m-form'
 import { MobileScreen, MPageBar, MPageBarAction } from '@/components/mobile/ui/mobile-header'
 import { MobileSheet } from '@/components/mobile/ui/mobile-sheet'
@@ -38,7 +37,8 @@ import { MOCK_REPORT_COPY, MOCK_REPORT_PARENT, mockFinishedLabel, mockReportStat
  *    you came from, else the practice home (never a league — F119). The
  *    launcher's Delete sits at the bar's end as a red word, and asks first
  *    in a sheet (desktop's words; "Keep it" first); a delete lands on the
- *    practice home, as desktop's does;
+ *    practice home, as desktop's does — stepping back to it when it is the
+ *    screen behind, so no second copy of it stays in history (`useLeaveTo`);
  *  - what the run was ("Snake · 8 teams", "Finished Oct 12") over
  *    desktop's two totals tiles (Picks · Rounds, or Buys · Spent);
  *  - Draft results' list (`DraftResultsBody`, shared): By round with round
@@ -101,14 +101,16 @@ function ReportFrame({ action, children }: { action?: React.ReactNode; children:
  * its own launcher-scoped lookup already found nothing.
  */
 export function MobileMockReportMissing() {
-  const router = useRouter()
+  // "Back to practice drafts": back to it when it is the screen behind,
+  // else in this empty screen's place (`useLeaveTo`).
+  const leaveTo = useLeaveTo()
   return (
     <ReportFrame>
       <div data-mock-report="missing">
         <CenterNote
           title={MOCK_REPORT_COPY.missingTitle}
           body={MOCK_REPORT_COPY.missingBody}
-          action={<PillButton onClick={() => router.push(PRACTICE_HOME_HREF)}>{MOCK_REPORT_COPY.backToMocks}</PillButton>}
+          action={<PillButton onClick={() => leaveTo(PRACTICE_HOME_HREF)}>{MOCK_REPORT_COPY.backToMocks}</PillButton>}
           className="py-16"
         />
       </div>
@@ -220,7 +222,7 @@ function DeleteReportSheet({
   draftId: string
   leagueId: string | null
 }) {
-  const router = useRouter()
+  const leaveTo = useLeaveTo()
   // `null` ⇒ the standalone door (`DELETE /api/mocks/[id]`); a league id ⇒
   // the league's. One hook, the shipped branch — no new route.
   const deleteMock = useDeleteMockDraft(leagueId)
@@ -230,9 +232,10 @@ function DeleteReportSheet({
     setError(null)
     deleteMock
       .mutateAsync(draftId)
-      // The report is gone: land on the practice home, in its place (Back
-      // must never return to a report that no longer exists).
-      .then(() => router.replace(PRACTICE_HOME_HREF))
+      // The report is gone: land on the practice home — back to it when it
+      // is the screen behind (no second copy of it in history), else in the
+      // report's place. Back never returns to a report that no longer exists.
+      .then(() => leaveTo(PRACTICE_HOME_HREF))
       .catch((cause: unknown) => setError(cause instanceof LeagueActionError || cause instanceof Error ? cause.message : 'Something went wrong. Please try again.'))
   }
 
