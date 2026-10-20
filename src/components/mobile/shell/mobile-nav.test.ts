@@ -42,12 +42,8 @@ describe('mobileRoute — which bar and which lit tab (navigation §(c))', () =>
 })
 
 describe('leagueFallbackTitle — league pages with no mobile screen yet', () => {
-  it('names the pages the Menu opens', () => {
-    expect(leagueFallbackTitle(`${L}/commish`)).toBe('Commissioner tools')
-  })
-
-  it('is null where the route draws its own mobile screen', () => {
-    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats', '/settings', '/members', '/schedule']) {
+  it('is null everywhere: every league page draws its own mobile screen (gap list §4 item 109 was the last)', () => {
+    for (const rest of ['', '/standings', '/activity', '/activity/transactions', '/players', '/team/t1', '/matchup', '/trades', '/draft/recap', '/stats', '/settings', '/members', '/schedule', '/commish']) {
       expect(leagueFallbackTitle(`${L}${rest}`), rest).toBeNull()
     }
     expect(leagueFallbackTitle('/app/settings')).toBeNull()
@@ -108,8 +104,10 @@ describe('mobileFallback — account pages with no mobile screen yet', () => {
       expect(mobileFallback(path), path).toBeNull()
     }
   })
-  it('names the league for a league page', () => {
-    expect(mobileFallback('/app/leagues/lg1/commish')).toEqual({ kind: 'league', title: 'Commissioner tools', leagueId: 'lg1', heading: true })
+  it('leaves Commissioner tools to its own phone screen (gap list §4 item 109)', () => {
+    for (const path of [`${L}/commish`, `${L}/commish/`]) {
+      expect(mobileFallback(path), path).toBeNull()
+    }
   })
 })
 

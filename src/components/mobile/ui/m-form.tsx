@@ -266,7 +266,9 @@ export const M_NUMBER_FIELD =
  * as a b2 field with the value and a chevron. The system wheel / list opens
  * on tap, so no popover is drawn over the sheet. 16px for the same iOS-zoom
  * reason as the text field. `onCard` puts the field on the page colour
- * inside a b1 card (the chip's reason).
+ * inside a b1 card (the chip's reason). `full` draws it as a form's own
+ * field — the full width at the text field's 48px — instead of a settings
+ * row's compact picker.
  */
 export function MSelect({
   id,
@@ -277,18 +279,22 @@ export function MSelect({
   disabled,
   placeholder,
   onCard = false,
+  full = false,
 }: {
   id?: string
   ariaLabel?: string
   value: string
-  options: ReadonlyArray<{ value: string; label: string }>
+  /** `disabled` greys one choice out (prevent, don't refuse — a choice
+   *  the verb would refuse is shown but can't be picked). */
+  options: ReadonlyArray<{ value: string; label: string; disabled?: boolean }>
   onValueChange: (value: string) => void
   disabled?: boolean
   placeholder?: string
   onCard?: boolean
+  full?: boolean
 }) {
   return (
-    <span className="relative flex min-w-0 max-w-full">
+    <span className={cn('relative flex min-w-0 max-w-full', full && 'w-full')}>
       <select
         id={id}
         aria-label={ariaLabel}
@@ -296,7 +302,8 @@ export function MSelect({
         disabled={disabled}
         onChange={(event) => onValueChange(event.target.value)}
         className={cn(
-          'h-9 min-w-0 max-w-full appearance-none truncate rounded-[10px] border-0 pl-3 pr-8 font-sans text-[16px] font-semibold text-m-t1 outline-none disabled:opacity-50',
+          'min-w-0 max-w-full appearance-none truncate border-0 pr-8 font-sans text-[16px] font-semibold text-m-t1 outline-none disabled:opacity-50',
+          full ? 'h-12 w-full rounded-[12px] pl-3.5' : 'h-9 rounded-[10px] pl-3',
           onCard ? 'bg-m-b0' : 'bg-m-b2',
         )}
         data-m-select
@@ -307,7 +314,7 @@ export function MSelect({
           </option>
         ) : null}
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}

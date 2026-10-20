@@ -153,7 +153,7 @@ describe('every room-entry URL in src/ is enumerated with a disposition', () => 
       ['src/components/draft/mock-launcher-entry.ts', 3], // launcher entry + the league mock room's URL (R521) + mockRoomHref, all in place
       ['src/components/home/home-quick-actions.tsx', 1], // MP.7's Home chip — router.push after a POST, no anchor to split (R536)
       ['src/components/layout/draft-bar-ops.ts', 1], // SPLIT via draft-bar.tsx
-      ['src/components/leagues/commish-console-ops.ts', 1], // M6 L.E1.33's draft-room doors (`draftRoomDoor`, one spelling) — SPLIT via commish-console.tsx's ConsoleDoorLink (`door.room`)
+      ['src/components/leagues/commish-console-ops.ts', 1], // M6 L.E1.33's draft-room doors (`draftRoomDoor`, one spelling) — SPLIT via commish-console.tsx's ConsoleDoorLink and the phone console's doors (`door.room`)
       ['src/components/leagues/league-home-season-ops.ts', 1], // L.D5.4's practice DOOR (F46/R281) — the launcher helper, in place: post-draft the launcher is the resume/recap LIST surface (071 refuses a launch), never the room
       ['src/components/leagues/league-home-states.tsx', 3], // 2 literals SPLIT + the practice CTA's helper call, in place
       ['src/components/mobile/home/home-matchups.tsx', 1], // FieldScout Mobile Home's "Draft live" league card — SPLIT (Link spreads roomEntry)
@@ -176,6 +176,12 @@ describe('the split sites carry the entry-target spread on a real anchor', () =>
   it('the Commissioner Console’s draft-room doors spread roomEntry on their Link (M6 L.E1.33)', () => {
     const source = code('src/components/leagues/commish-console.tsx')
     expect(source).toContain('{...(door.room ? roomEntry : {})}')
+    expect(source).toContain("import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'")
+  })
+
+  it('the phone Commissioner tools’ draft-room doors spread roomEntry on their Link (gap list §4 item 109)', () => {
+    const source = code('src/components/mobile/league/commish/commish-screen.tsx')
+    expect(source).toContain('...(door.room ? roomEntry : {})')
     expect(source).toContain("import { useRoomEntryTarget } from '@/hooks/use-room-entry-target'")
   })
 

@@ -30,6 +30,8 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { CommishConsole } from '@/components/leagues/commish-console'
+import { ByLayout } from '@/components/mobile/by-layout'
+import { MobileCommishConsole } from '@/components/mobile/league/commish/commish-screen'
 import { readCommishConsoleGate } from '@/lib/leagues/api/commish-console-gate'
 
 import CommishConsolePage from './page'
@@ -58,14 +60,22 @@ describe('the Commissioner Console page — commissioners only, decided on the s
     expect(rpc).toHaveBeenCalledWith('is_league_commish', { p_league_id: LEAGUE })
   })
 
-  it('a commissioner (or co-commissioner — the same predicate) gets the console', async () => {
+  it('a commissioner (or co-commissioner — the same predicate) gets the console — on a phone, its phone screen (gap list §4 item 109)', async () => {
     rpc.mockResolvedValue({ data: true, error: null })
     const outcome = await open(LEAGUE)
     expect('rendered' in outcome).toBe(true)
     const element = (outcome as { rendered: unknown }).rendered
     expect(isValidElement(element)).toBe(true)
-    expect((element as { type: unknown }).type).toBe(CommishConsole)
-    expect((element as { props: { leagueId: string } }).props.leagueId).toBe(LEAGUE)
+    expect((element as { type: unknown }).type).toBe(ByLayout)
+    const { desktop, mobile } = (element as { props: { desktop: unknown; mobile: unknown } }).props
+    for (const [branch, type] of [
+      [desktop, CommishConsole],
+      [mobile, MobileCommishConsole],
+    ] as const) {
+      expect(isValidElement(branch)).toBe(true)
+      expect((branch as { type: unknown }).type).toBe(type)
+      expect((branch as { props: { leagueId: string } }).props.leagueId).toBe(LEAGUE)
+    }
   })
 
   it('a non-member / unknown league gets the same answer as a manager (no leak) — and a non-UUID id asks nothing', async () => {

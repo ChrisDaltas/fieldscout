@@ -9,6 +9,7 @@ import {
   commishLogLines,
   groupCommishLogLines,
   memberNamesOf,
+  type CommishLogLine,
 } from '@/components/leagues/activity-feed-ops'
 import {
   ALL_TEAMS_LABEL,
@@ -188,31 +189,13 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
           groups.map(({ line, entries }) => {
             const hit = route.entry !== null && entries.some((l) => l.id === route.entry)
             return (
-              <div
+              <CommishLogRow
                 key={line.id}
                 ref={hit ? highlighted : undefined}
-                className={cn('flex flex-col gap-1 border-b border-m-b2 px-1 py-3', hit && 'rounded-[12px] border-transparent bg-m-gb px-3')}
-                data-commish-line={line.id}
-              >
-                <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
-                  {line.actorUsername ? (
-                    <UsernameLink username={line.actorUsername} className="font-semibold text-m-t1" />
-                  ) : (
-                    <span className="font-semibold text-m-t1">{line.actor}</span>
-                  )}
-                  <span className="flex h-[18px] items-center rounded-pill bg-m-gp px-[7px] text-[10.5px] font-semibold text-m-pos-wr">✸ Commissioner</span>
-                  <span className="whitespace-nowrap">{formatTxDate(line.createdAt)}</span>
-                </div>
-                <p className="text-[13.5px] font-medium leading-[1.4] text-m-t1">
-                  <TextWithUsernames
-                    marked={line.marked}
-                    at
-                    linkClassName="font-semibold"
-                    renderText={(t) => <MobilePlayerText text={t} players={line.players} leagueId={leagueId} />}
-                  />
-                </p>
-                {line.reason && <p className="text-[12px] font-medium text-m-t3">Reason: {line.reason}</p>}
-              </div>
+                leagueId={leagueId}
+                line={line}
+                className={cn('border-b border-m-b2 px-1', hit && 'rounded-[12px] border-transparent bg-m-gb px-3')}
+              />
             )
           })
         )}
@@ -231,6 +214,49 @@ export function CommishLogScreen({ leagueId, detail, route }: { leagueId: string
       </div>
       <CommishFilterSheet open={sheet} onOpenChange={setSheet} leagueId={leagueId} detail={detail} route={route} onRoute={go} />
     </MobileScreen>
+  )
+}
+
+/**
+ * One commissioner action as the phone reads it: who (an @handle, a door to
+ * the profile), the ✸ Commissioner tag and when, then the sentence — every
+ * member it names an @handle, every player a door to his profile — and the
+ * reason when one was given. The log screen's row, and the Commissioner
+ * tools' Recent actions (gap list §4 item 109) — one row for both.
+ * `className` sets the row's frame (its divider, its highlight).
+ */
+export function CommishLogRow({
+  leagueId,
+  line,
+  className,
+  ref,
+}: {
+  leagueId: string
+  line: CommishLogLine
+  className?: string
+  ref?: React.Ref<HTMLDivElement>
+}) {
+  return (
+    <div ref={ref} className={cn('flex flex-col gap-1 py-3', className)} data-commish-line={line.id}>
+      <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-m-t3">
+        {line.actorUsername ? (
+          <UsernameLink username={line.actorUsername} className="font-semibold text-m-t1" />
+        ) : (
+          <span className="font-semibold text-m-t1">{line.actor}</span>
+        )}
+        <span className="flex h-[18px] items-center rounded-pill bg-m-gp px-[7px] text-[10.5px] font-semibold text-m-pos-wr">✸ Commissioner</span>
+        <span className="whitespace-nowrap">{formatTxDate(line.createdAt)}</span>
+      </div>
+      <p className="text-[13.5px] font-medium leading-[1.4] text-m-t1">
+        <TextWithUsernames
+          marked={line.marked}
+          at
+          linkClassName="font-semibold"
+          renderText={(t) => <MobilePlayerText text={t} players={line.players} leagueId={leagueId} />}
+        />
+      </p>
+      {line.reason && <p className="text-[12px] font-medium text-m-t3">Reason: {line.reason}</p>}
+    </div>
   )
 }
 
