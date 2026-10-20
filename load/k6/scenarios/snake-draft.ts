@@ -9,8 +9,8 @@
  * latency sample is measured on the picker's OWN clock: RPC sent → its own
  * pick's `draft_picks` broadcast received on its own socket (one machine,
  * one clock; no cross-host skew). A pick whose broadcast never arrives is
- * counted (`pick_broadcast_missing` — the F311 silent-drop class), never
- * folded into the latency as a fast sample.
+ * counted (`pick_broadcast_missing` — the F311 silent-drop class), enters
+ * p95 at the full wait window, and fails the run (R1642).
  *
  * Duplicates are judged by the verify step from the STORED board, not from
  * what the bots believe (`checks.duplicatePicks`).
@@ -41,7 +41,7 @@ interface DraftRecord {
   on_clock_team_id?: string | null
 }
 
-const BROADCAST_WAIT_MS = 5_000
+export const BROADCAST_WAIT_MS = 5_000
 const REST_RESYNC_MS = 5_000
 
 export async function snakeVu(input: SnakeVuInput): Promise<void> {
@@ -124,7 +124,13 @@ export async function snakeVu(input: SnakeVuInput): Promise<void> {
           t.metrics.count('picks_made')
           const waitStart = t.nowMs()
           while (!pending.seen && t.nowMs() - waitStart < BROADCAST_WAIT_MS) await t.sleep(10)
-          if (!pending.seen) t.metrics.count('pick_broadcast_missing')
+          if (!pending.seen) {
+            // R1642: a pick whose broadcast never came is the WORST sample,
+            // never an absent one — it enters p95 at the full wait window
+            // and is counted (the assert also requires the count be 0).
+            t.metrics.count('pick_broadcast_missing')
+            t.metrics.trend('pick_to_broadcast_ms', BROADCAST_WAIT_MS)
+          }
           break
         }
         if (res.failed) {
@@ -183,9 +189,9 @@ export function snakeAsserts(latencies: readonly number[], verify: SnakeVerifyRe
   const p95 = percentile(latencies, 95)
   return [
     {
-      name: `§22.6 (1) p95 pick→broadcast < ${PICK_TO_BROADCAST_P95_MS} ms`,
-      pass: p95 !== null && p95 < PICK_TO_BROADCAST_P95_MS,
-      detail: describeTrend(latencies),
+      name: `§22.6 (1) p95 pick→broadcast < ${PICK_TO_BROADCAST_P95_MS} ms (a missing broadcast enters at the ${BROADCAST_WAIT_MS} ms window)`,
+      pass: p95 !== null && p95 < PICK_TO_BROADCAST_P95_MS && missing === 0,
+      detail: `${describeTrend(latencies)} · ${missing} missing`,
     },
     {
       name: '§22.6 (1) zero duplicate picks',
@@ -198,10 +204,9 @@ export function snakeAsserts(latencies: readonly number[], verify: SnakeVerifyRe
       detail: verify.unfinished.length === 0 ? 'all complete' : `${verify.unfinished.length} unfinished`,
     },
     {
-      name: 'picks whose own broadcast never arrived (F311 class — a measurement, not a §22.6 number)',
-      pass: true,
-      info: true,
-      detail: `${missing}`,
+      name: 'every pick\u2019s own broadcast arrived (the F311 silent-drop class — R1642)',
+      pass: missing === 0,
+      detail: `${missing} missing`,
     },
   ]
 }

@@ -27,7 +27,7 @@ import { auctionAsserts, auctionVerify, auctionVu } from '../../load/k6/scenario
 import { soakAsserts, soakLeakProbe, soakVu, sundayViewerVu } from '../../load/k6/scenarios/league-viewers'
 import { snakeAsserts, snakeVerify, snakeVu } from '../../load/k6/scenarios/snake-draft'
 import { nodeTransport } from './node-transport'
-import { manifestPath } from './seed-staging'
+import { manifestPath } from './paths'
 import { loadRecording, replayAsserts, runSundayReplay } from './sunday-replay'
 import { resolveTarget } from './target'
 

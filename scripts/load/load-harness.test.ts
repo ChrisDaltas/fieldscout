@@ -3,7 +3,7 @@
  * production names, the seeder's lineup builder and argument hygiene, and
  * the Sunday feeder's remap / alert split. Pure — no stack.
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -13,7 +13,8 @@ import { LOAD_GAME_PREFIX, LOAD_SEASON, LOAD_WEEK } from '../../load/k6/config'
 import type { FixtureRecording } from '@/lib/leagues/stats/fixtures/fixture-format'
 import type { StatsProvider } from '@/lib/leagues/stats/stats-provider'
 import { firstCompletePoll } from './recording'
-import { buildLineups, parseArgs } from './seed-staging'
+import { manifestPath, REPO_ROOT } from './paths'
+import { buildLineups, isLoadBotEmail, likePrefix, parseArgs } from './seed-staging'
 import { LoadSeasonProvider, shiftFor, splitAlerts } from './sunday-replay'
 import { parseEnvFile, productionNames, resolveTarget } from './target'
 
@@ -39,7 +40,11 @@ describe('target — production names are read at run time (TD2)', () => {
   it('collects the linked ref, the hosted .env.local host and FS_LOAD_DENY — never a local host', () => {
     const hosted = checkout({ 'supabase/.temp/project-ref': 'RefFromLink\n', '.env.local': 'NEXT_PUBLIC_SUPABASE_URL=https://hosted-prod.example.co\n' })
     const local = checkout({ '.env.local': 'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n' })
-    expect(productionNames([hosted, local], 'Extra-One, ')).toEqual(['reffromlink', 'hosted-prod.example.co', 'extra-one'])
+    expect(productionNames([hosted, local], 'Extra-One, ')).toEqual({
+      derived: ['reffromlink', 'hosted-prod.example.co'],
+      extra: ['extra-one'],
+      linkRoots: [hosted],
+    })
   })
 
   it('resolveTarget(test) refuses the linked production ref, reading the TEST values from .env.test-project.local', () => {
@@ -69,6 +74,24 @@ describe('target — production names are read at run time (TD2)', () => {
     expect([t.kind, t.url, t.anonKey, t.serviceKey]).toEqual(['test', 'https://some-test.supabase.co', 'a', 's'])
   })
 
+  it('R1641: FS_LOAD_DENY alone does not let a test target through', () => {
+    const dir = checkout({ '.env.test-project.local': 'FS_LOAD_URL=https://some-test.supabase.co\nFS_LOAD_ANON_KEY=a\nFS_LOAD_SERVICE_KEY=s\n' })
+    delete process.env.FS_LOAD_URL
+    process.env.FS_LOAD_DENY = 'anything,at-all'
+    expect(() => resolveTarget('test', dir)).toThrow(/fails closed/)
+  })
+
+  it('R1640: an encoded production URL in the test-project file is refused, and the accepted URL is the normalized origin', () => {
+    const dir = checkout({
+      'supabase/.temp/project-ref': 'prodrefprodrefprodre',
+      '.env.test-project.local': 'FS_LOAD_URL=https://%70rodrefprodrefprodre.supabase.co\nFS_LOAD_ANON_KEY=a\nFS_LOAD_SERVICE_KEY=s\n',
+    })
+    delete process.env.FS_LOAD_URL
+    expect(() => resolveTarget('test', dir)).toThrow(/refused/)
+    process.env.FS_LOAD_URL = 'HTTPS://Some-Test.supabase.co/'
+    expect(resolveTarget('test', dir).url).toBe('https://some-test.supabase.co')
+  })
+
   it('there is no default target', () => {
     expect(() => resolveTarget(undefined)).toThrow(/--target is required/)
   })
@@ -78,6 +101,22 @@ describe('seed-staging', () => {
   it('refuses an unknown argument rather than ignoring it', () => {
     expect(() => parseArgs(['--target', 'local', '--yolo'])).toThrow(/refused, never ignored/)
     expect(parseArgs(['--target', 'local', '--cleanup'])).toMatchObject({ target: 'local', cleanup: true })
+  })
+
+  it('R1643: LIKE patterns match the prefix literally; only the load domain is a load bot', () => {
+    expect(likePrefix('load_f21_')).toBe('load\\_f21\\_%')
+    expect(likePrefix('a%b\\c')).toBe('a\\%b\\\\c%')
+    expect(likePrefix('load-f21 ')).toBe('load-f21 %')
+    expect(isLoadBotEmail('load_f21_01.ab12cd34@load.fieldscout.test')).toBe(true)
+    expect(isLoadBotEmail('LOAD_F21_01.x@LOAD.FIELDSCOUT.TEST')).toBe(true)
+    expect(isLoadBotEmail('load_f21_01@gmail.com')).toBe(false)
+    expect(isLoadBotEmail('x@evil-load.fieldscout.test.example')).toBe(false)
+    expect(isLoadBotEmail(undefined)).toBe(false)
+  })
+
+  it('R1644: the manifest path is the repo root\u2019s, whatever the cwd', () => {
+    expect(manifestPath('snake')).toBe(join(REPO_ROOT, 'load', '.out', 'snake.manifest.json'))
+    expect(existsSync(join(REPO_ROOT, 'load', 'k6', 'config.ts'))).toBe(true)
   })
 
   it('buildLineups fills every slot it can, never seats a player twice in one league', () => {

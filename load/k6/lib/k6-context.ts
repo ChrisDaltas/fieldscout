@@ -8,15 +8,24 @@
  *   FS_LOAD_URL          the Supabase API base URL
  *   FS_LOAD_ANON_KEY     the target's anon key
  *   FS_LOAD_SERVICE_KEY  the target's service-role key (verify reads only)
- *   FS_LOAD_DENY         comma list naming PRODUCTION (read by the wrapper
- *                        from the repo's link file — never typed, never
- *                        committed); empty ⇒ a test target is refused
+ *   FS_LOAD_REPO_ROOTS   checkout roots holding the repo's `supabase link`
+ *                        file (the wrapper passes where it found it — a
+ *                        worktree's lives in the main checkout)
+ *   FS_LOAD_DENY         extra production names — ADDITIONS ONLY (R1641)
  *   FS_LOAD_PROFILE      smoke | y2026 | ga
  *   FS_LOAD_MANIFEST     the seeder's manifest path
- * The guard runs in the INIT context, so a refused target never sends a
- * single request.
+ * THE DENY NAME IS DERIVED HERE, NOT TRUSTED FROM THE ENVIRONMENT (R1641):
+ * the init context `open()`s `supabase/.temp/project-ref` itself (relative to
+ * this script's checkout, then under each FS_LOAD_REPO_ROOTS root). With no
+ * link file readable, a test target is refused — FS_LOAD_DENY can add names
+ * but never stands in for the derived one. (`.env.local` is NOT opened here:
+ * `open()` bundles what it reads into any `k6 archive`, and that file holds
+ * secrets — the wrapper adds its host through FS_LOAD_DENY instead.) The
+ * guard runs in the INIT context, so a refused target never sends a single
+ * request. Never `k6 archive` / `k6 cloud` this harness (the link file would
+ * travel with it).
  */
-import { assertSafeTarget, realtimeSocketUrl, resolveProfile, type LoadProfile, type TargetKind } from '../config'
+import { assertSafeTarget, derivedDenyNames, realtimeSocketUrl, resolveProfile, type LoadProfile, type TargetKind } from '../config'
 import { parseManifest, type LoadManifest, type SeedScenario } from './manifest'
 import { k6Json } from './k6-transport'
 import type { Endpoint } from './supa'
@@ -35,12 +44,29 @@ function env(name: string): string {
   return v
 }
 
+function openIf(path: string): string | null {
+  try {
+    return open(path)
+  } catch {
+    return null
+  }
+}
+
+/** The production names k6 derives from the link file itself (R1641). */
+function derivedInK6(): string[] {
+  const roots = ['../..', ...(__ENV.FS_LOAD_REPO_ROOTS ?? '').split(',').map((r) => r.trim()).filter((r) => r.length > 0)]
+  const names = new Set<string>()
+  for (const root of roots) for (const n of derivedDenyNames(openIf(`${root}/supabase/.temp/project-ref`), null)) names.add(n)
+  return [...names]
+}
+
 export function loadK6Context(expected: SeedScenario): K6Context {
   const kind = env('FS_LOAD_TARGET') as TargetKind
   const url = assertSafeTarget({
     kind,
     url: env('FS_LOAD_URL'),
-    deny: (__ENV.FS_LOAD_DENY ?? '').split(','),
+    derivedDeny: kind === 'test' ? derivedInK6() : [],
+    extraDeny: (__ENV.FS_LOAD_DENY ?? '').split(','),
   })
   const profile = resolveProfile(__ENV.FS_LOAD_PROFILE)
   const manifest = parseManifest(open(env('FS_LOAD_MANIFEST')))

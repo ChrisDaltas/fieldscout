@@ -25,6 +25,7 @@ export const options = {
     pick_to_broadcast_ms: [`p(95)<${PICK_TO_BROADCAST_P95_MS}`],
     duplicate_picks: ['count==0'],
     drafts_unfinished: ['count==0'],
+    pick_broadcast_missing: ['count==0'], // R1642
   },
 }
 
@@ -39,6 +40,7 @@ export default async function vu(data: { tokens: Record<number, string> }): Prom
   const t = k6Transport()
   t.metrics.count('duplicate_picks', 0)
   t.metrics.count('drafts_unfinished', 0)
+  t.metrics.count('pick_broadcast_missing', 0)
   const v = exec.vu.idInTest - 1
   const draft = ctx.manifest.drafts[Math.floor(v / seats)]!
   const seat = draft.seats[v % seats]!

@@ -20,15 +20,19 @@
  *      PRODUCTION (never to the test project, rule (i)); looked up in this
  *      checkout and in the main checkout a worktree belongs to;
  *   2. the host of `.env.local`'s NEXT_PUBLIC_SUPABASE_URL when it is hosted;
- *   3. FS_LOAD_DENY (comma list), if the operator adds more.
+ *   3. FS_LOAD_DENY (comma list) — operator ADDITIONS only (R1641): they add
+ *      refusals and never count toward the fail-closed check.
  * `assertSafeTarget` (load/k6/config.ts) refuses a test target that names
- * any of them, and refuses ANY test target when none could be read.
+ * any of them, and refuses ANY test target when 1–2 yielded nothing. The URL
+ * it returns is the normalized origin; every client gets that, never the raw
+ * string (R1640). Paths resolve against the repo root, not the cwd (R1644).
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
-import { assertSafeTarget, type TargetKind } from '../../load/k6/config'
+import { assertSafeTarget, derivedDenyNames, parseEnvText, type TargetKind } from '../../load/k6/config'
+import { REPO_ROOT } from './paths'
 
 /** The Supabase CLI's PUBLIC demo keys for the local stack (the same
  *  literals `scripts/dev-seed-inseason-league.ts` carries) — not secrets. */
@@ -43,28 +47,20 @@ export const TEST_PROJECT_ENV_FILE = '.env.test-project.local'
 
 export interface ResolvedTarget {
   kind: TargetKind
+  /** The guard's NORMALIZED origin — the only URL any client is handed. */
   url: string
   anonKey: string
   serviceKey: string
-  /** Production names, for handing to k6 (FS_LOAD_DENY). Never log this. */
+  /** Every production name (derived + operator additions), for handing to
+   *  k6 as FS_LOAD_DENY — which k6 treats as ADDITIONS only. Never log this. */
   deny: string[]
+  /** Checkout roots holding the `supabase link` file, for k6's own `open()`
+   *  of it (FS_LOAD_REPO_ROOTS). */
+  linkRoots: string[]
 }
 
-/** Parse `KEY=value` lines (no interpolation; quotes stripped). */
-export function parseEnvFile(text: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (line.length === 0 || line.startsWith('#')) continue
-    const eq = line.indexOf('=')
-    if (eq <= 0) continue
-    const key = line.slice(0, eq).trim()
-    let value = line.slice(eq + 1).trim()
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1)
-    out[key] = value
-  }
-  return out
-}
+/** Parse `KEY=value` lines — the pure parser in load/k6/config.ts. */
+export const parseEnvFile = parseEnvText
 
 function readIf(path: string): string | null {
   try {
@@ -75,7 +71,7 @@ function readIf(path: string): string | null {
 }
 
 /** This checkout's root and, for a worktree, the main checkout's root. */
-export function checkoutRoots(cwd: string = process.cwd()): string[] {
+export function checkoutRoots(cwd: string = REPO_ROOT): string[] {
   const roots = [cwd]
   try {
     const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -87,37 +83,42 @@ export function checkoutRoots(cwd: string = process.cwd()): string[] {
   return roots
 }
 
-function hostOf(url: string): string | null {
-  const m = /^[a-z]+:\/\/([^/:?#]+)/i.exec(url.trim())
-  return m ? m[1]!.toLowerCase() : null
+export interface ProductionNames {
+  /** From the checkouts' own files — the only names that satisfy fail-closed. */
+  derived: string[]
+  /** FS_LOAD_DENY — additions only (R1641). */
+  extra: string[]
+  /** Roots where a `supabase/.temp/project-ref` was found. */
+  linkRoots: string[]
 }
 
 /** Every production name readable from this machine (see the header). */
-export function productionNames(roots: readonly string[], extra: string | undefined): string[] {
-  const names = new Set<string>()
+export function productionNames(roots: readonly string[], extra: string | undefined): ProductionNames {
+  const derived = new Set<string>()
+  const linkRoots: string[] = []
   for (const root of roots) {
-    const ref = readIf(resolve(root, 'supabase/.temp/project-ref'))?.trim()
-    if (ref) names.add(ref.toLowerCase())
-    const envLocal = readIf(resolve(root, '.env.local'))
-    if (envLocal) {
-      const url = parseEnvFile(envLocal).NEXT_PUBLIC_SUPABASE_URL
-      const host = url ? hostOf(url) : null
-      if (host && host !== '127.0.0.1' && host !== 'localhost') names.add(host)
-    }
+    const link = readIf(resolve(root, 'supabase/.temp/project-ref'))
+    if (link?.trim()) linkRoots.push(root)
+    for (const name of derivedDenyNames(link, readIf(resolve(root, '.env.local')))) derived.add(name)
   }
-  for (const name of (extra ?? '').split(',')) if (name.trim()) names.add(name.trim().toLowerCase())
-  return [...names]
+  const extras = (extra ?? '')
+    .split(',')
+    .map((n) => n.trim().toLowerCase())
+    .filter((n) => n.length > 0)
+  return { derived: [...derived], extra: extras, linkRoots }
 }
 
-export function resolveTarget(kind: string | undefined, cwd: string = process.cwd()): ResolvedTarget {
+export function resolveTarget(kind: string | undefined, cwd: string = REPO_ROOT): ResolvedTarget {
   if (kind !== 'local' && kind !== 'test') {
     throw new Error("--target is required: 'local' (the local stack, smoke only) or 'test' (the hosted test project)")
   }
   const roots = checkoutRoots(cwd)
-  const deny = productionNames(roots, process.env.FS_LOAD_DENY)
+  const names = productionNames(roots, process.env.FS_LOAD_DENY)
+  const deny = [...new Set([...names.derived, ...names.extra])]
+  const guard = { derivedDeny: names.derived, extraDeny: names.extra }
   if (kind === 'local') {
-    const url = assertSafeTarget({ kind, url: process.env.FS_LOAD_LOCAL_URL ?? LOCAL_URL, deny })
-    return { kind, url, anonKey: LOCAL_ANON_KEY, serviceKey: LOCAL_SERVICE_KEY, deny }
+    const url = assertSafeTarget({ kind, url: process.env.FS_LOAD_LOCAL_URL ?? LOCAL_URL, ...guard })
+    return { kind, url, anonKey: LOCAL_ANON_KEY, serviceKey: LOCAL_SERVICE_KEY, deny, linkRoots: names.linkRoots }
   }
   const file = readIf(resolve(cwd, TEST_PROJECT_ENV_FILE))
   const fromFile = file ? parseEnvFile(file) : {}
@@ -128,12 +129,13 @@ export function resolveTarget(kind: string | undefined, cwd: string = process.cw
     }
     return v
   }
-  const url = assertSafeTarget({ kind, url: pick('FS_LOAD_URL', 'NEXT_PUBLIC_SUPABASE_URL'), deny })
+  const url = assertSafeTarget({ kind, url: pick('FS_LOAD_URL', 'NEXT_PUBLIC_SUPABASE_URL'), ...guard })
   return {
     kind,
     url,
     anonKey: pick('FS_LOAD_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     serviceKey: pick('FS_LOAD_SERVICE_KEY', 'SUPABASE_SERVICE_ROLE_KEY'),
     deny,
+    linkRoots: names.linkRoots,
   }
 }

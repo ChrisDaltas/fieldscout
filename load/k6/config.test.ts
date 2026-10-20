@@ -6,6 +6,8 @@ import {
   PICK_TO_BROADCAST_P95_MS,
   SCORING_LAG_P95_MS,
   assertSafeTarget,
+  derivedDenyNames,
+  normalizeTarget,
   realtimeSocketUrl,
   resolveProfile,
   seatsPerDraft,
@@ -58,39 +60,88 @@ describe('load profiles (TD1 / D570 — sizes are parameters, two certifying pro
 })
 
 describe('assertSafeTarget (TD2 / D571 — refuses production by name)', () => {
-  const deny = ['abcdefghijklmnopqrst', 'prod-host.example.co']
+  const derivedDeny = ['abcdefghijklmnopqrst', 'prod-host.example.co']
 
   it('accepts the local stack for a local target', () => {
-    expect(assertSafeTarget({ kind: 'local', url: 'http://127.0.0.1:54321/', deny })).toBe('http://127.0.0.1:54321')
+    expect(assertSafeTarget({ kind: 'local', url: 'http://127.0.0.1:54321/', derivedDeny })).toBe('http://127.0.0.1:54321')
   })
 
   it('refuses a hosted URL given as local', () => {
-    expect(() => assertSafeTarget({ kind: 'local', url: 'https://test-proj.supabase.co', deny })).toThrow(/local stack URL/)
+    expect(() => assertSafeTarget({ kind: 'local', url: 'https://test-proj.supabase.co', derivedDeny })).toThrow(/local stack URL/)
   })
 
   it('refuses a test target that names production — by ref or by host, any case', () => {
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://abcdefghijklmnopqrst.supabase.co', deny })).toThrow(/PRODUCTION/)
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://ABCDEFGHIJKLMNOPQRST.supabase.co', deny })).toThrow(/PRODUCTION/)
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://prod-host.example.co', deny })).toThrow(/PRODUCTION/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://abcdefghijklmnopqrst.supabase.co', derivedDeny })).toThrow(/PRODUCTION/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://ABCDEFGHIJKLMNOPQRST.supabase.co', derivedDeny })).toThrow(/PRODUCTION/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://prod-host.example.co', derivedDeny })).toThrow(/PRODUCTION/)
   })
 
   it('refuses the production app domain whatever the deny list says', () => {
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://fieldscout.gg', deny: [] })).toThrow(/production app domain/)
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://api.fieldscout.gg', deny })).toThrow(/production app domain/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://fieldscout.gg', derivedDeny: [] })).toThrow(/production app domain/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://api.fieldscout.gg', derivedDeny })).toThrow(/production app domain/)
   })
 
   it('FAILS CLOSED: with no production name to check against, a test target is refused', () => {
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co', deny: [] })).toThrow(/fails closed/)
-    expect(() => assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co', deny: ['', '  '] })).toThrow(/fails closed/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co', derivedDeny: [] })).toThrow(/fails closed/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co', derivedDeny: ['', '  '] })).toThrow(/fails closed/)
   })
 
   it('refuses the local stack as a test target, and plain http', () => {
-    expect(() => assertSafeTarget({ kind: 'test', url: 'http://localhost:54321', deny })).toThrow(/use --target local/)
-    expect(() => assertSafeTarget({ kind: 'test', url: 'http://test-proj.supabase.co', deny })).toThrow(/https/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'http://localhost:54321', derivedDeny })).toThrow(/use --target local/)
+    expect(() => assertSafeTarget({ kind: 'test', url: 'http://test-proj.supabase.co', derivedDeny })).toThrow(/https/)
   })
 
   it('accepts a hosted test project that names no production identity', () => {
-    expect(assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co/', deny })).toBe('https://test-proj.supabase.co')
+    expect(assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co/', derivedDeny })).toBe('https://test-proj.supabase.co')
+  })
+})
+
+describe('R1640 — the guard judges the host a client would reach, and hands out only the normalized origin', () => {
+  const derivedDeny = ['abcdefghijklmnopqrst']
+  const PROD = 'abcdefghijklmnopqrst'
+
+  it.each([
+    ['percent-encoded letter (%61 = a)', `https://%61bcdefghijklmnopqrst.supabase.co`],
+    ['percent-encoded whole ref', `https://${[...PROD].map((c) => '%' + c.charCodeAt(0).toString(16)).join('')}.supabase.co`],
+    ['soft hyphen inside the ref', `https://abcdefghij\u00ADklmnopqrst.supabase.co`],
+    ['fullwidth letters', `https://\uFF41\uFF42\uFF43defghijklmnopqrst.supabase.co`],
+    ['fieldscout%2egg', 'https://fieldscout%2egg'],
+    ['fullwidth app domain', 'https://\uFF46ieldscout.gg'],
+    ['userinfo before the host', `https://user@${PROD}.supabase.co`],
+    ['a path after the host', 'https://test-proj.supabase.co/rest/v1'],
+    ['a trailing-dot-free empty label', 'https://test-proj..supabase.co'],
+  ])('refuses %s', (_label, url) => {
+    expect(() => assertSafeTarget({ kind: 'test', url, derivedDeny })).toThrow(/refused/)
+  })
+
+  it('the URL parser would have decoded them — which is why the raw string is judged', () => {
+    expect(new URL('https://%61bcdefghijklmnopqrst.supabase.co').hostname).toBe(`${PROD}.supabase.co`)
+    expect(new URL('https://fieldscout%2egg').hostname).toBe('fieldscout.gg')
+    expect(new URL('https://\uFF41\uFF42\uFF43defghijklmnopqrst.supabase.co').hostname).toBe(`${PROD}.supabase.co`)
+    expect(new URL(`https://abcdefghij\u00ADklmnopqrst.supabase.co`).hostname).toBe(`${PROD}.supabase.co`)
+  })
+
+  it('returns the normalized origin (lower-cased, no slash) — never the raw string', () => {
+    expect(assertSafeTarget({ kind: 'test', url: '  HTTPS://Test-Proj.Supabase.CO/  ', derivedDeny })).toBe('https://test-proj.supabase.co')
+    expect(normalizeTarget('http://LOCALHOST:54321')).toEqual({ scheme: 'http', host: 'localhost', origin: 'http://localhost:54321' })
+  })
+})
+
+describe('R1641 — FS_LOAD_DENY only adds names', () => {
+  it('extra names add refusals', () => {
+    expect(() =>
+      assertSafeTarget({ kind: 'test', url: 'https://other-prod.supabase.co', derivedDeny: ['zzzz'], extraDeny: ['other-prod'] }),
+    ).toThrow(/PRODUCTION/)
+  })
+  it('extra names never satisfy the fail-closed check', () => {
+    expect(() =>
+      assertSafeTarget({ kind: 'test', url: 'https://test-proj.supabase.co', derivedDeny: [], extraDeny: ['something'] }),
+    ).toThrow(/fails closed/)
+  })
+  it('derivedDenyNames reads the link ref and a hosted .env.local host, never a local one', () => {
+    expect(derivedDenyNames(' RefX \n', 'NEXT_PUBLIC_SUPABASE_URL=https://Prod-Host.example.co/\n')).toEqual(['refx', 'prod-host.example.co'])
+    expect(derivedDenyNames(null, 'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321')).toEqual([])
+    expect(derivedDenyNames(null, 'NEXT_PUBLIC_SUPABASE_URL=https://we%69rd.example.co')).toEqual(['we%69rd.example.co'])
   })
 })
 

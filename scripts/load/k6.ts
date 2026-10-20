@@ -3,10 +3,12 @@
  *
  *   npx tsx scripts/load/k6.ts s1|s2|s3|s4 --target test --profile y2026 [--minutes N] [-- <extra k6 args>]
  *
- * It resolves the target (refusing production by name — target.ts), reads
- * the production names from this machine and hands them to k6 as
- * FS_LOAD_DENY (k6's init context re-checks them, so `k6 run` by hand with a
- * production URL is refused too), points k6 at the seeder's manifest, and
+ * It resolves the target (refusing production by name — target.ts), tells
+ * k6 where the repo's link file is (FS_LOAD_REPO_ROOTS — k6's init context
+ * opens it and derives the production name ITSELF, so `k6 run` by hand
+ * against production is refused too, and refused outright with no link file;
+ * R1641), adds the other names as FS_LOAD_DENY (additions only), points k6
+ * at the seeder's manifest, and
  * runs the entry. Keys and names travel in the child's environment only —
  * nothing is printed, nothing is written.
  *
@@ -17,7 +19,7 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 import { resolveProfile } from '../../load/k6/config'
-import { manifestPath } from './seed-staging'
+import { REPO_ROOT, manifestPath } from './paths'
 import { resolveTarget } from './target'
 
 const ENTRIES: Record<string, { file: string; seed: 'snake' | 'auction' | 'leagues' }> = {
@@ -62,11 +64,12 @@ function main(): number {
     FS_LOAD_ANON_KEY: target.anonKey,
     FS_LOAD_SERVICE_KEY: target.serviceKey,
     FS_LOAD_DENY: target.deny.join(','),
+    FS_LOAD_REPO_ROOTS: target.linkRoots.join(','),
     FS_LOAD_PROFILE: profile.name,
     FS_LOAD_MANIFEST: manifestPath(entry.seed),
     ...(flag('--minutes') ? { FS_LOAD_MINUTES: flag('--minutes') } : {}),
   }
-  const run = spawnSync('k6', ['run', ...passthrough, resolve(process.cwd(), entry.file)], { stdio: 'inherit', env })
+  const run = spawnSync('k6', ['run', ...passthrough, resolve(REPO_ROOT, entry.file)], { stdio: 'inherit', env })
   return run.status ?? 1
 }
 

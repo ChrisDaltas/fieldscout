@@ -68,7 +68,7 @@ import { LOAD_GAME_PREFIX, LOAD_SEASON, LOAD_WEEK, SCORING_LAG_P95_MS, resolvePr
 import { describeTrend, percentile, renderAsserts, allPass, type AssertLine } from '../../load/k6/lib/checks'
 import { parseManifest } from '../../load/k6/lib/manifest'
 import { firstCompletePoll, loadRecording } from './recording'
-import { manifestPath } from './seed-staging'
+import { manifestPath } from './paths'
 import { resolveTarget } from './target'
 
 type Supabase = SupabaseClient<Database>

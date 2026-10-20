@@ -60,6 +60,7 @@ import {
   type LoadProfile,
 } from '../../load/k6/config'
 import type { LoadBot, LoadManifest, SeedScenario } from '../../load/k6/lib/manifest'
+import { OUT_DIR, REPO_ROOT, manifestPath } from './paths'
 import { loadRecording } from './recording'
 import { resolveTarget, type ResolvedTarget } from './target'
 
@@ -67,7 +68,6 @@ type Supabase = SupabaseClient<Database>
 
 const FAR_FUTURE_DRAFT = '2069-09-01T17:00:00+00:00' // never auto-starts before the run starts it
 const CHUNK = 200
-export const OUT_DIR = 'load/.out'
 
 function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
   const out: T[][] = []
@@ -90,9 +90,6 @@ function randomPassword(): string {
   return `load-${crypto.randomUUID()}`
 }
 
-export function manifestPath(scenario: SeedScenario): string {
-  return resolve(process.cwd(), OUT_DIR, `${scenario}.manifest.json`)
-}
 
 // ---------------------------------------------------------------------------
 // Bots
@@ -395,6 +392,17 @@ async function seedLoadSeason(service: Supabase): Promise<void> {
 // Cleanup + census
 // ---------------------------------------------------------------------------
 
+/** A LIKE pattern matching `prefix` LITERALLY (R1643: `_` and `%` are
+ *  wildcards; `load_f21_` unescaped would also match `loadXf21Y…`). */
+export function likePrefix(prefix: string): string {
+  return `${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+}
+
+/** A load bot's account — the seeder's own reserved test domain only. */
+export function isLoadBotEmail(email: string | null | undefined): boolean {
+  return typeof email === 'string' && email.toLowerCase().endsWith(`@${LOAD_EMAIL_DOMAIN}`)
+}
+
 export interface CensusCell {
   what: string
   count: number
@@ -408,12 +416,12 @@ export async function census(service: Supabase): Promise<CensusCell[]> {
   }
   const head = { count: 'exact' as const, head: true }
   return Promise.all([
-    count('leagues', service.from('leagues').select('id', head).like('name', `${LOAD_LEAGUE_PREFIX}%`)),
-    count('profiles', service.from('profiles').select('id', head).like('username', `${LOAD_USERNAME_PREFIX}%`)),
+    count('leagues', service.from('leagues').select('id', head).like('name', likePrefix(LOAD_LEAGUE_PREFIX))),
+    count('profiles', service.from('profiles').select('id', head).like('username', likePrefix(LOAD_USERNAME_PREFIX))),
     count('player_stats', service.from('player_stats').select('player_id', head).eq('season', LOAD_SEASON)),
     count('score_fanout', service.from('score_fanout').select('player_id', head).eq('season', LOAD_SEASON)),
     count('stat_correction_events', service.from('stat_correction_events').select('id', head).eq('season', LOAD_SEASON)),
-    count('nfl_games', service.from('nfl_games').select('id', head).like('id', `${LOAD_GAME_PREFIX}%`)),
+    count('nfl_games', service.from('nfl_games').select('id', head).like('id', likePrefix(LOAD_GAME_PREFIX))),
     count('nfl_games(season)', service.from('nfl_games').select('id', head).eq('season', LOAD_SEASON)),
     count('nfl_weeks', service.from('nfl_weeks').select('week', head).eq('season', LOAD_SEASON)),
   ])
@@ -427,7 +435,7 @@ export function censusLine(cells: readonly CensusCell[]): string {
 /** Sweep everything a load run made, in the sim's recorded FK order. */
 export async function cleanup(service: Supabase): Promise<string> {
   const leagueRows = await pageAll<{ id: string }>((from, to) =>
-    service.from('leagues').select('id', { count: 'exact' }).like('name', `${LOAD_LEAGUE_PREFIX}%`).order('id').range(from, to),
+    service.from('leagues').select('id', { count: 'exact' }).like('name', likePrefix(LOAD_LEAGUE_PREFIX)).order('id').range(from, to),
   )
   const ids = leagueRows.map((r) => r.id)
   if (ids.length > 0) {
@@ -463,15 +471,27 @@ export async function cleanup(service: Supabase): Promise<string> {
   must(await service.from('stat_correction_events').delete().eq('season', LOAD_SEASON), 'stat_correction_events delete')
   must(await service.from('player_stats').delete().eq('season', LOAD_SEASON), 'player_stats delete')
   must(await service.from('nfl_games').delete().eq('season', LOAD_SEASON), 'nfl_games delete (season)')
-  must(await service.from('nfl_games').delete().like('id', `${LOAD_GAME_PREFIX}%`), 'nfl_games delete (prefix)')
+  must(await service.from('nfl_games').delete().like('id', likePrefix(LOAD_GAME_PREFIX)), 'nfl_games delete (prefix)')
   must(await service.from('nfl_weeks').delete().eq('season', LOAD_SEASON), 'nfl_weeks delete')
   const profiles = must(
-    await service.from('profiles').select('id, username').like('username', `${LOAD_USERNAME_PREFIX}%`),
+    await service.from('profiles').select('id, username').like('username', likePrefix(LOAD_USERNAME_PREFIX)),
     'load-bot lookup',
   )
+  // R1643: the username prefix alone is not proof — every account is checked
+  // against the load bots' own email domain BEFORE any is deleted, and a
+  // prefix match on any other domain stops the sweep loudly.
+  const verified: string[] = []
   for (const row of profiles ?? []) {
-    const { error } = await service.auth.admin.deleteUser(row.id as string)
-    if (error) throw new Error(`deleteUser ${row.username as string} failed: ${error.message}`)
+    const { data, error } = await service.auth.admin.getUserById(row.id as string)
+    if (error) throw new Error(`getUserById ${row.username as string} failed: ${error.message}`)
+    if (!isLoadBotEmail(data.user?.email)) {
+      throw new Error(`cleanup refused: profile '${row.username as string}' matches the load-bot prefix but is not on the load-bot domain — not deleting anything`)
+    }
+    verified.push(row.id as string)
+  }
+  for (const id of verified) {
+    const { error } = await service.auth.admin.deleteUser(id)
+    if (error) throw new Error(`deleteUser ${id} failed: ${error.message}`)
   }
   const cells = await census(service)
   const line = censusLine(cells)
@@ -538,7 +558,7 @@ export async function seed(target: ResolvedTarget, args: Args): Promise<LoadMani
     console.error(`  ${await cleanup(service)}`)
     throw e
   }
-  mkdirSync(resolve(process.cwd(), OUT_DIR), { recursive: true })
+  mkdirSync(resolve(REPO_ROOT, OUT_DIR), { recursive: true })
   writeFileSync(manifestPath(scenario), JSON.stringify(m, null, 2))
   console.log(`  manifest → ${OUT_DIR}/${scenario}.manifest.json (gitignored: it holds this run's bot passwords)`)
   return m

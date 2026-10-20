@@ -7,8 +7,13 @@ decisions are PROGRESS D570 / D571 and D600–D606.
 
 **Never production.** Every entry point refuses the production project by
 name. The name is read at run time from this machine (the repo's
-`supabase link` file and `.env.local`); the harness never writes it down. A
-test target is refused outright when no production name can be read.
+`supabase link` file and `.env.local`; k6 opens the link file itself); the
+harness never writes it down. A test target is refused outright when no
+production name can be derived from those files — `FS_LOAD_DENY` only adds
+names. A target URL must be a plain-ASCII origin (no percent-encoding,
+lookalike characters, path or credentials), and clients are handed only the
+normalized origin. Never `k6 archive` / `k6 cloud` this harness: the link
+file would travel with it.
 
 ## Layout
 
