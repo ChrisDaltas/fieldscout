@@ -1205,6 +1205,7 @@ function DraftRoomLive({
   const announcedPick: AnnouncedPick | null = newestPick
     ? {
         key: `${newestPick.pick_number}:${newestPick.player_id}`,
+        pickNumber: newestPick.pick_number,
         pickLabel: pickLabel(newestPick.pick_number, teamCount),
         teamName: teamsById.get(newestPick.team_id)?.name ?? 'A team',
         playerName: newestPlayer?.full_name ?? newestPick.player_id,
@@ -1503,6 +1504,9 @@ function DraftRoomLive({
         }
         onClockTeamName={onClockTeam?.name ?? null}
         isAuction={isAuction}
+        // R1630: an auction's deadline is the BID window while a nomination
+        // is up — not the viewer's own clock — so no own-clock warning runs.
+        nominationLive={isAuction && liveNomination !== null}
         clock={{
           status: draft.status,
           current_deadline: draft.current_deadline,

@@ -35,7 +35,9 @@ import {
   orderedIdsForSave,
   removeId,
   reorderIds,
+  startsOnInteractiveChild,
   targetsDragSentence,
+  type GuardNode,
   type QueueViewRow,
 } from './my-queue-ops'
 
@@ -59,6 +61,33 @@ class RowKeyboardSensor extends KeyboardSensor {
         baseKeyboardActivator.handler(event, options, context),
     },
   ]
+}
+
+/**
+ * R1632: the pointer half of the same guard. A press (mouse or touch) that
+ * starts on the name button or Remove belongs to that control — a
+ * press-and-hold on a name must not lift the row out from under the finger.
+ * `startsOnInteractiveChild` walks from the target to the row root.
+ */
+function guardedActivators<
+  A extends { eventName: string; handler: (event: never, ...rest: never[]) => boolean | undefined },
+>(activators: readonly A[]): A[] {
+  return activators.map((activator) => ({
+    ...activator,
+    handler: (event: React.SyntheticEvent, ...rest: unknown[]) =>
+      !startsOnInteractiveChild(
+        event.target as unknown as GuardNode,
+        event.currentTarget as unknown as GuardNode,
+      ) && (activator.handler as (e: unknown, ...r: unknown[]) => boolean)(event, ...rest),
+  })) as unknown as A[]
+}
+
+export class RowMouseSensor extends MouseSensor {
+  static activators = guardedActivators(MouseSensor.activators)
+}
+
+export class RowTouchSensor extends TouchSensor {
+  static activators = guardedActivators(TouchSensor.activators)
 }
 
 interface MyQueueProps {
@@ -122,8 +151,8 @@ export function MyQueue({
   // (lineup editor, lists v2, draft-order editor): Mouse for a mouse, Touch
   // with a press-and-hold so a plain swipe still scrolls the Targets list.
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
+    useSensor(RowMouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(RowTouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
     useSensor(RowKeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 

@@ -163,6 +163,7 @@ describe('the room announcer mounts two EMPTY polite regions', () => {
       createElement(RoomAnnouncer, {
         latestPick: {
           key: '7:p1',
+          pickNumber: 7,
           pickLabel: '1.07',
           teamName: 'Team 1',
           playerName: 'Bid Player',
@@ -175,6 +176,7 @@ describe('the room announcer mounts two EMPTY polite regions', () => {
         onClockKey: '8:team-1',
         onClockTeamName: 'Team 1',
         isAuction: false,
+        nominationLive: false,
         clock: { status: 'live', current_deadline: null, deadline_remaining_ms: null },
         offsetMs: 0,
       }),

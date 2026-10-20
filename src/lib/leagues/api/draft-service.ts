@@ -706,8 +706,9 @@ async function replaceQueue(
   if (error) {
     // P0002/404 is unreachable here (the draft was resolved above) — the
     // 42501/22023/500 mapping is what this surface can actually answer.
-    // The 42501 arm's text is the fallback above; the 22023 arm passes the
-    // RAISE text through, so it is translated to the Targets words (F78).
+    // The 42501 arm answers with the fallback passed as the second argument
+    // below; the 22023 arm passes the RAISE text through, so that text is
+    // translated to the Targets words first (F78).
     const mapped = mapDraftRpcError(
       { code: error.code, message: targetsRefusalCopy(error.message) },
       'You do not manage these Targets.',
