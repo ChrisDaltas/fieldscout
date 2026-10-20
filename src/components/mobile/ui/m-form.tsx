@@ -408,19 +408,34 @@ export function MStepper({
 /**
  * A system message on the phone: a rounded rectangle on a soft tint, never a
  * pill and never a bright-red fill (CLAUDE.md, 2026-10-18). `error` is the
- * phone's error pair (m-gr / m-tr), `warning` the orange tint.
+ * phone's error pair (m-gr / m-tr), `warning` the orange tint. `action` puts
+ * one word-button at its end (a failed read's "Try again").
  */
-export function MNotice({ tone, children }: { tone: 'error' | 'warning'; children: React.ReactNode }) {
+export function MNotice({
+  tone,
+  children,
+  action,
+}: {
+  tone: 'error' | 'warning'
+  children: React.ReactNode
+  action?: { label: string; onClick: () => void }
+}) {
+  const role = tone === 'error' ? 'alert' : 'status'
+  const tint = tone === 'error' ? 'bg-m-gr text-m-tr' : 'bg-m-go text-m-to'
+  if (!action) {
+    return <p role={role} className={cn('rounded-message px-3 py-2.5 text-[13px] font-medium leading-[1.4]', tint)}>{children}</p>
+  }
   return (
-    <p
-      role={tone === 'error' ? 'alert' : 'status'}
-      className={cn(
-        'rounded-message px-3 py-2.5 text-[13px] font-medium leading-[1.4]',
-        tone === 'error' ? 'bg-m-gr text-m-tr' : 'bg-m-go text-m-to',
-      )}
-    >
-      {children}
-    </p>
+    <div role={role} className={cn('flex items-center gap-2 rounded-message py-1.5 pl-3 pr-1.5', tint)}>
+      <span className="min-w-0 flex-1 text-[13px] font-medium leading-[1.4] [text-wrap:pretty]">{children}</span>
+      <button
+        type="button"
+        onClick={action.onClick}
+        className="flex h-[30px] flex-none items-center whitespace-nowrap rounded-message px-2.5 text-[13px] font-semibold underline underline-offset-2 active:opacity-70"
+      >
+        {action.label}
+      </button>
+    </div>
   )
 }
 

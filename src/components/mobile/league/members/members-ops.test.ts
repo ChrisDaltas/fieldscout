@@ -27,7 +27,7 @@ function seat(over: Partial<Seat>): Seat {
   }
 }
 
-const COMMISH = { canManage: true, myRole: 'commissioner', seatUserId: 'user-jason', leagueOwnerId: 'user-owner' }
+const COMMISH = { canManage: true, myRole: 'commissioner', seatUserId: 'user-jason', leagueOwnerId: 'user-owner', invitesLoaded: true }
 const INVITE = {
   id: 'inv-1',
   target_team_id: 't4',
@@ -65,10 +65,17 @@ describe('seatAction — what a seat row offers (desktop’s per-row rules)', ()
   })
 
   it('§7.2 anti-coup: a co-commissioner on the league creator’s seat is told why — never offered and refused', () => {
-    const co = { canManage: true, myRole: 'co_commissioner', seatUserId: 'user-owner', leagueOwnerId: 'user-owner' }
+    const co = { canManage: true, myRole: 'co_commissioner', seatUserId: 'user-owner', leagueOwnerId: 'user-owner', invitesLoaded: true }
     expect(seatAction(seat({}), co)).toEqual({ kind: 'none', note: CREATOR_SEAT_NOTE })
     // The sitting commissioner may change it.
     expect(seatAction(seat({}), { ...co, myRole: 'commissioner' })).toEqual({ kind: 'manage' })
+  })
+
+  it('until the invite rows have loaded, a team with no manager and an invite that’s out offer nothing — seated managers still do', () => {
+    const waiting = { ...COMMISH, invitesLoaded: false }
+    expect(seatAction(seat({ status: 'placeholder', username: null, identity: null }), waiting)).toEqual({ kind: 'none', note: null })
+    expect(seatAction(seat({ status: 'invited', username: null, identity: null, invite: INVITE }), waiting)).toEqual({ kind: 'none', note: null })
+    expect(seatAction(seat({}), waiting)).toEqual({ kind: 'manage' })
   })
 
   it('the control is said for a screen reader, by team', () => {

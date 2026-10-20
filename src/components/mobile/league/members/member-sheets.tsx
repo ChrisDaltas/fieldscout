@@ -285,6 +285,8 @@ export function InviteBody({ leagueId, teamId, onDone }: { leagueId: string; tea
   const [mode, setMode] = useState<SeatInviteMode>('email')
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // The team's link once it's made but the clipboard refused it.
+  const [madeLink, setMadeLink] = useState<string | null>(null)
   const invite = useSeatInvite(leagueId, teamId)
   const copy = INVITE_MODES[mode]
 
@@ -297,10 +299,15 @@ export function InviteBody({ leagueId, teamId, onDone }: { leagueId: string; tea
 
   async function copyLink() {
     setError(null)
-    const problem = await invite.copySeatLink()
-    if (problem) setError(problem)
+    const result = await invite.copySeatLink()
+    if (result.status === 'error') setError(result.message)
+    else if (result.status === 'uncopied') setMadeLink(result.link)
     else onDone()
   }
+
+  // The team now has its invite out — the form goes, so a second one can't
+  // be started; only the link and its Copy stay.
+  if (madeLink) return <SeatLinkReady link={madeLink} onCopied={onDone} />
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-1" data-seat-sheet="invite">
@@ -353,6 +360,36 @@ export function InviteBody({ leagueId, teamId, onDone }: { leagueId: string; tea
         </button>
         <p className={cn(HINT, 'px-1 text-center')}>Anyone with it can claim this team.</p>
       </div>
+    </div>
+  )
+}
+
+/** The team's new link when the clipboard refused it (iPhone Safari drops a
+ *  copy that lands after the invite's network wait): the link itself, and a
+ *  Copy that runs in this fresh tap. Never "copied" when it wasn't. */
+export function SeatLinkReady({ link, onCopied }: { link: string; onCopied: () => void }) {
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-1" data-seat-sheet="link-ready">
+      <p className={cn(BODY, 'px-1')}>Your link for this team is ready. Copy it to share it.</p>
+      <input
+        readOnly
+        value={link}
+        aria-label="Link for this team"
+        onFocus={(e) => e.currentTarget.select()}
+        className={cn(M_TEXT_FIELD, 'font-medium')}
+        data-made-link
+      />
+      <button
+        type="button"
+        onClick={async () => {
+          if (await copyWithToast(link, 'Seat link copied')) onCopied()
+        }}
+        className={cn(ACTION, PRIMARY)}
+        data-copy-made-link
+      >
+        Copy link
+      </button>
+      <p className={cn(HINT, 'px-1 text-center')}>Anyone with it can claim this team.</p>
     </div>
   )
 }

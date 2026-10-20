@@ -31,7 +31,7 @@ import { leagueInvitesKeys } from '@/hooks/use-league-invites'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
 
-import { InviteBody, LeaveStepBody, ManageBody, PendingBody, RemoveBody, TransferBody } from './member-sheets'
+import { InviteBody, LeaveStepBody, ManageBody, PendingBody, RemoveBody, SeatLinkReady, TransferBody } from './member-sheets'
 import { MobileMembers } from './members-screen'
 
 const auth = vi.hoisted(() => ({ userId: 'user-commish' }))
@@ -121,7 +121,9 @@ function client(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } })
 }
 
-function renderScreen(seed: { detail?: LeagueDetail | 'missing' | 'error'; viewer?: string } = {}): string {
+function renderScreen(
+  seed: { detail?: LeagueDetail | 'missing' | 'error'; viewer?: string; invites?: 'loaded' | 'pending' | 'error' } = {},
+): string {
   auth.userId = seed.viewer ?? 'user-commish'
   const qc = client()
   const detail = seed.detail ?? detailWith('in_season')
@@ -132,7 +134,14 @@ function renderScreen(seed: { detail?: LeagueDetail | 'missing' | 'error'; viewe
     qc.setQueryData(leaguesKeys.detail(LEAGUE), detail)
     // The invite rows are commissioner-only over RLS (§12.23) — seeded only
     // for a commissioner viewer, as the database would answer.
-    if (detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner') qc.setQueryData(leagueInvitesKeys.all(LEAGUE), INVITES)
+    if (detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner') {
+      const invites = seed.invites ?? 'loaded'
+      if (invites === 'loaded') qc.setQueryData(leagueInvitesKeys.all(LEAGUE), INVITES)
+      if (invites === 'error') {
+        const query = qc.getQueryCache().build(qc, { queryKey: leagueInvitesKeys.all(LEAGUE) })
+        query.setState({ status: 'error', error: new Error('invite read failed'), fetchStatus: 'idle' })
+      }
+    }
   }
   return unescape(renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(MobileMembers, { leagueId: LEAGUE }))))
 }
@@ -212,6 +221,38 @@ describe('Members on the phone — the commissioner, after the draft', () => {
     expect(html).toContain(`${LINK_CLOSED_NOTE} ${LINK_CLOSED_INVITE_HINT}`)
     expect(html).not.toContain('data-add-seats')
     expect(html).toContain('Open seat')
+    expect(html.match(/data-seat-more=/g)).toHaveLength(4)
+  })
+})
+
+describe('Members on the phone — the commissioner’s invite rows (loud failure)', () => {
+  it('a failed invite read is said in the Teams card, with Try again — and no seat can be invited to', () => {
+    const html = renderScreen({ detail: detailWith('setup'), invites: 'error' })
+    expect(html).toContain('data-invites-error')
+    expect(html).toMatch(/role="alert"[^>]*bg-m-gr text-m-tr[^>]*>.*Couldn’t load invites\..*>Try again<\/button>/)
+    // Delta's invite is out, but unread it would look like a team to invite
+    // to — neither it nor Echo is offered anything until the rows load.
+    expect(row(html, 'Delta')).not.toContain('data-seat-more')
+    expect(row(html, 'Echo')).not.toContain('data-seat-more')
+    // Seated managers are still managed.
+    expect(row(html, 'Bravo')).toContain('data-seat-more="manage"')
+    expect(row(html, 'Charlie')).toContain('data-seat-more="manage"')
+    expect(html.match(/data-seat-more=/g)).toHaveLength(2)
+  })
+
+  it('while the rows load: said, and the invite controls wait', () => {
+    const html = renderScreen({ detail: detailWith('setup'), invites: 'pending' })
+    expect(html).toContain('Loading invites…')
+    expect(html).not.toContain('data-invites-error')
+    expect(row(html, 'Delta')).not.toContain('data-seat-more')
+    expect(row(html, 'Echo')).not.toContain('data-seat-more')
+    expect(html.match(/data-seat-more=/g)).toHaveLength(2)
+  })
+
+  it('loaded: no notice, and every seat’s control is offered', () => {
+    const html = renderScreen({ detail: detailWith('setup') })
+    expect(html).not.toContain('data-invites-error')
+    expect(html).not.toContain('Loading invites…')
     expect(html.match(/data-seat-more=/g)).toHaveLength(4)
   })
 })
@@ -372,6 +413,22 @@ describe('a team with no manager — invite', () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-invite-submit="email">Send invite</)
     expect(html).toContain('data-copy-seat-link')
     expect(html).toContain('Copy a link for this team')
+  })
+})
+
+describe('a team’s link the clipboard refused (iPhone Safari, after the invite’s network wait)', () => {
+  it('the link itself, selectable, and a Copy that runs in a fresh tap — nothing claims it was copied', () => {
+    const html = renderBody(createElement(SeatLinkReady, { link: 'https://fieldscout.test/join/seat-token-9', onCopied: noop }))
+    expect(html).toContain('data-seat-sheet="link-ready"')
+    expect(html).toMatch(/<input[^>]*readOnly=""[^>]*value="https:\/\/fieldscout.test\/join\/seat-token-9"/)
+    expect(html).toContain('data-copy-made-link="true">Copy link</button>')
+    expect(html).not.toMatch(/copied/i)
+  })
+  it('the invite sheet keeps the link and drops its form when the copy didn’t land (source pin)', () => {
+    const src = readFileSync(path.join(__dirname, 'member-sheets.tsx'), 'utf8')
+    const body = src.slice(src.indexOf('export function InviteBody('), src.indexOf('export function SeatLinkReady('))
+    expect(body).toContain("else if (result.status === 'uncopied') setMadeLink(result.link)")
+    expect(body).toContain('if (madeLink) return <SeatLinkReady link={madeLink} onCopied={onDone} />')
   })
 })
 

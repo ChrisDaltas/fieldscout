@@ -25,10 +25,15 @@ export type SeatAction =
  * only Leave (at the foot of the screen); the sitting commissioner's seat is
  * nobody's to change; a co-commissioner is told he can't touch the league
  * creator's seat (§7.2 anti-coup) instead of being refused.
+ *
+ * A team with no manager and an invite that's out are told apart only by
+ * the invite rows — so until those have loaded (`invitesLoaded`) neither is
+ * offered anything: a team whose invite is already out must not read as one
+ * to invite to (no second invite started by mistake).
  */
 export function seatAction(
   seat: Seat,
-  ctx: { canManage: boolean; myRole: string | null; seatUserId: string | null; leagueOwnerId: string },
+  ctx: { canManage: boolean; myRole: string | null; seatUserId: string | null; leagueOwnerId: string; invitesLoaded: boolean },
 ): SeatAction {
   if (!ctx.canManage || seat.isSelf) return { kind: 'none', note: null }
   if (seat.status === 'claimed') {
@@ -38,6 +43,7 @@ export function seatAction(
     }
     return { kind: 'manage' }
   }
+  if (!ctx.invitesLoaded) return { kind: 'none', note: null }
   if (seat.status === 'invited' && seat.invite) return { kind: 'pending' }
   if (seat.status === 'placeholder' && seat.teamId) return { kind: 'invite' }
   return { kind: 'none', note: null }

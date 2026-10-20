@@ -57,10 +57,17 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-/** Copy, then say so — or show the text to copy by hand. */
-export async function copyWithToast(text: string, label: string): Promise<void> {
+/** The toast when the clipboard refused: the text, to copy by hand. */
+export function copyByHandToast(text: string): { title: string; description: string } {
+  return { title: 'Copy it manually', description: text }
+}
+
+/** Copy, then say so — or show the text to copy by hand. Answers whether
+ *  it was copied. */
+export async function copyWithToast(text: string, label: string): Promise<boolean> {
   const ok = await copyToClipboard(text)
-  toast(ok ? { title: label } : { title: 'Copy it manually', description: text })
+  toast(ok ? { title: label } : copyByHandToast(text))
+  return ok
 }
 
 /** Resolve a public @username to its profile id (§7.2 usernames are public;
@@ -226,6 +233,13 @@ export function fillAllLabel(fill: { done: number; target: number } | null, open
 
 export type SeatInviteMode = 'email' | 'username' | 'assign'
 
+/** A seat link's outcome: copied; made but not copied (the clipboard
+ *  refused — here is the link); or the invite wasn't made. */
+export type SeatLinkResult =
+  | { status: 'copied' }
+  | { status: 'uncopied'; link: string }
+  | { status: 'error'; message: string }
+
 export function useSeatInvite(leagueId: string, teamId: string) {
   const createInvite = useCreateInvite(leagueId)
   const assignManager = useAssignManager(leagueId)
@@ -261,18 +275,23 @@ export function useSeatInvite(leagueId: string, teamId: string) {
     }
   }
 
-  /** A fresh seat-targeted link, copied. Answers an error, or null. */
-  async function copySeatLink(): Promise<string | null> {
+  /** A fresh seat-targeted link, then copied. The copy lands after the
+   *  invite's network wait, and iPhone Safari usually refuses a clipboard
+   *  write by then (the tap's permission has run out) — so "copied" is said
+   *  only when it was; otherwise the link comes back for the caller to show
+   *  with a Copy that runs in a fresh tap. */
+  async function copySeatLink(): Promise<SeatLinkResult> {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    let link: string
     try {
       const result = await createInvite.mutateAsync({ target_team_id: teamId })
-      const link = buildJoinLink(origin, result.token)
-      await copyToClipboard(link)
-      toast({ title: 'Seat link copied', description: 'Anyone with it claims this exact seat.' })
-      return null
+      link = buildJoinLink(origin, result.token)
     } catch (cause) {
-      return messageOf(cause)
+      return { status: 'error', message: messageOf(cause) }
     }
+    if (!(await copyToClipboard(link))) return { status: 'uncopied', link }
+    toast({ title: 'Seat link copied', description: 'Anyone with it claims this exact seat.' })
+    return { status: 'copied' }
   }
 
   return { submit, copySeatLink, busy }

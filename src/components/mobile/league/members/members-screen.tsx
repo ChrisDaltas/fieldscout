@@ -16,6 +16,7 @@ import {
 } from '@/components/leagues/invite-panel-ops'
 import { CenteredNote, LeaguePageBar, SkeletonBlocks } from '@/components/mobile/league/league/league-bits'
 import { teamAvatarClass } from '@/components/mobile/league/league/league-tab-ops'
+import { MNotice } from '@/components/mobile/ui/m-form'
 import { MIcon } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import { useAuth } from '@/hooks/use-auth'
@@ -78,6 +79,10 @@ function MembersScreen({ leagueId, detail, header }: { leagueId: string; detail:
   const canManage = detail.my_role === 'commissioner' || detail.my_role === 'co_commissioner'
   // Only a commissioner may read the invite rows (RLS §12.23).
   const invites = useLeagueInvites(leagueId, canManage)
+  // Until they've loaded, a team with an invite out reads as one with no
+  // manager — so its invite / pending control waits (`seatAction`), and a
+  // failed read is said, never an empty list.
+  const invitesLoaded = invites.isSuccess
   // A stable "now" for invite expiry (14-day invites need no ticking clock).
   const [nowMs] = useState(() => Date.now())
   const model = deriveSeats(
@@ -111,6 +116,7 @@ function MembersScreen({ leagueId, detail, header }: { leagueId: string; detail:
       myRole: detail.my_role,
       seatUserId: detail.members.find((m) => m.id === seat.memberId)?.user_id ?? null,
       leagueOwnerId: detail.league.owner_id,
+      invitesLoaded,
     })
   // The sheet keeps the kind it opened as (it closes once its action went
   // through — the row shows the result), and the live seat while it's there.
@@ -150,6 +156,13 @@ function MembersScreen({ leagueId, detail, header }: { leagueId: string; detail:
             <p className={cn(NOTE, 'px-1 pb-2')} data-link-closed>
               {controls.linkClosedNote}
             </p>
+          )}
+          {canManage && invites.isError && (
+            <div className="pb-2" data-invites-error>
+              <MNotice tone="error" action={{ label: 'Try again', onClick: () => void invites.refetch() }}>
+                Couldn’t load invites.
+              </MNotice>
+            </div>
           )}
           <ul className="flex flex-col rounded-[16px] bg-m-b1 px-3.5" aria-label="Seats">
             {model.seats.map((seat) => {

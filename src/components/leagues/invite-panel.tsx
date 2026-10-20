@@ -21,12 +21,14 @@ import { useAuth } from '@/hooks/use-auth'
 import type { LeagueDetail } from '@/hooks/use-league'
 import { useLeagueInvites } from '@/hooks/use-league-invites'
 import type { MemberRole, RemoveMode } from '@/hooks/use-league-members'
+import { toast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
 import { InlineIssue } from './settings-form-controls'
 import { Crest, TeamNameLink } from './league-cells'
 import {
   ROLE_LABELS,
+  copyByHandToast,
   copyWithToast,
   fillAllLabel,
   useFillSeats,
@@ -909,7 +911,11 @@ function SeatInviteForm({ leagueId, teamId }: { leagueId: string; teamId: string
 
   async function copySeatLink() {
     setError(null)
-    setError(await invite.copySeatLink())
+    const result = await invite.copySeatLink()
+    if (result.status === 'error') setError(result.message)
+    // The clipboard refused: the link, to copy by hand (the seat's row now
+    // also offers its own Copy link).
+    else if (result.status === 'uncopied') toast(copyByHandToast(result.link))
   }
 
   return (
