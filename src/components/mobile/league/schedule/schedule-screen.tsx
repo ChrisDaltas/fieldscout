@@ -69,8 +69,10 @@ import {
  *   edit and the remix live there — F580 / D493), with the desktop's hint
  *   once Week 1 has started — once there is a schedule to change.
  * - States: a skeleton while it reads, "Couldn’t load…" with Try again, the
- *   no-schedule copy before the draft, the reconnecting and not-refreshing
- *   lines over cards already on screen.
+ *   no-schedule copy before the draft. The reconnecting and not-refreshing
+ *   lines sit in the sticky header under the chips, not in the list — the
+ *   page opens scrolled to the current week, so a line at the top of the
+ *   list would be off screen while the scores it warns about are on it.
  *
  * No clock: the current week is the ladder's (`currentWeekOf`). Back goes
  * to where you came from (the Menu's or Team tab's screen), else the League
@@ -159,6 +161,8 @@ function ScheduleScreen({ leagueId, detail }: { leagueId: string; detail: League
   }, [ready, target, teamId])
 
   const hint = isCommish ? reasonHint(schedule.data?.weeks ?? []) : null
+  const reconnecting = schedule.connection === 'reconnecting'
+  const stale = schedule.isError && !!schedule.data
   const header = (
     <>
       <LeaguePageBar leagueId={leagueId} title={SCHEDULE_TITLE} />
@@ -174,15 +178,23 @@ function ScheduleScreen({ leagueId, detail }: { leagueId: string; detail: League
           ))}
         </div>
       )}
+      {/* In the sticky header, so they stay in view at any scroll — the page
+          opens at the current week, far below the top of the list. */}
+      {(reconnecting || stale) && (
+        <div className={cn('flex flex-col gap-1.5 px-4 pb-2.5', !showChips && 'pt-1')} data-schedule-status>
+          {reconnecting && <StatusLine>Reconnecting — syncing this league…</StatusLine>}
+          {stale && <StatusLine>{STALE_LEAGUE_COPY}</StatusLine>}
+        </div>
+      )}
     </>
   )
 
+  // No scroll anchoring on the list: a status line appearing in the sticky
+  // header should push the cards down with it, not slide the header over
+  // the current week's title (the browser holding the card in place).
   return (
     <MobileScreen header={header}>
-      <div ref={listRef} className="flex flex-col gap-2.5 px-4 pb-8 pt-3" data-schedule-screen>
-        {schedule.connection === 'reconnecting' && <StatusLine>Reconnecting — syncing this league…</StatusLine>}
-        {schedule.isError && schedule.data && <StatusLine>{STALE_LEAGUE_COPY}</StatusLine>}
-
+      <div ref={listRef} className="flex flex-col gap-2.5 px-4 pb-8 pt-3 [overflow-anchor:none]" data-schedule-screen>
         {/* Only once there is a schedule to change — before the draft the
             console has nothing to edit or remix. */}
         {isCommish && weeks.length > 0 && (

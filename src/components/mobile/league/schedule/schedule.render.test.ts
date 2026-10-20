@@ -18,6 +18,7 @@ import { REASON_HINT_COPY, scheduleConsoleHref } from '@/components/leagues/sche
 import { NAMES, SCHEDULE } from '@/components/leagues/standings-schedule.fixtures'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
 import type { LeagueDetail } from '@/hooks/use-league'
+import { useLeagueChannel } from '@/hooks/use-league-channel'
 import { leaguesKeys } from '@/hooks/use-leagues'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -96,7 +97,19 @@ function rowSides(html: string, id: string): Array<[string, string]> {
 
 beforeEach(() => {
   search.value = ''
+  vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
 })
+
+/** The sticky header's markup (bar, chips, status lines) — everything
+ *  before the scrolling list. */
+function stickyHeader(html: string): string {
+  return /<div class="sticky top-0[^"]*">(.*?)<div[^>]*data-schedule-screen/.exec(html)?.[1] ?? ''
+}
+
+/** The scrolling list's markup. */
+function list(html: string): string {
+  return html.slice(html.indexOf('data-schedule-screen'))
+}
 
 describe('the Schedule screen', () => {
   it('is a phone page: blue Back and the "Schedule" title', () => {
@@ -238,6 +251,28 @@ describe('the Schedule screen', () => {
     const html = render(detailWith(), { stale: SCHEDULE })
     expect(html).toContain(STALE_LEAGUE_COPY)
     expect([...html.matchAll(/<section aria-label="Week/g)]).toHaveLength(4)
+  })
+
+  it('the reconnecting and not-refreshing lines sit in the sticky header under the chips — in view at the current week, not atop the list', () => {
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'reconnecting' })
+    const html = render(detailWith({ role: 'commissioner' }), { stale: SCHEDULE })
+    const header = stickyHeader(html)
+    const status = /data-schedule-status="true">(.*?)<\/div>/.exec(header)?.[1] ?? ''
+    expect(status).toContain('Reconnecting — syncing this league…')
+    expect(status).toContain(STALE_LEAGUE_COPY)
+    // Under the chip row, not above it.
+    expect(header.indexOf('data-schedule-teams')).toBeGreaterThan(-1)
+    expect(header.indexOf('data-schedule-status')).toBeGreaterThan(header.indexOf('data-schedule-teams'))
+    // Not in the scrolling list (which leads with the commissioner door).
+    expect(list(html)).not.toContain('Reconnecting')
+    expect(list(html)).not.toContain(STALE_LEAGUE_COPY)
+    // The list opts out of scroll anchoring, so a line appearing pushes the
+    // cards down with the header instead of the header sliding over the
+    // current week's title.
+    expect(html).toMatch(/class="[^"]*\[overflow-anchor:none\][^"]*" data-schedule-screen/)
+    // A healthy page shows neither.
+    vi.mocked(useLeagueChannel).mockReturnValue({ connection: 'live' })
+    expect(render(detailWith(), SCHEDULE)).not.toContain('data-schedule-status')
   })
 
   it('rests flat: no shadow anywhere on the page', () => {
