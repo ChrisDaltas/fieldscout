@@ -42,17 +42,17 @@ describe('target — production names are read at run time (TD2)', () => {
     expect(productionNames([hosted, local], 'Extra-One, ')).toEqual(['reffromlink', 'hosted-prod.example.co', 'extra-one'])
   })
 
-  it('resolveTarget(test) refuses the linked production ref, reading the TEST values from .env.load.local', () => {
+  it('resolveTarget(test) refuses the linked production ref, reading the TEST values from .env.test-project.local', () => {
     const dir = checkout({
       'supabase/.temp/project-ref': 'prodrefprodrefprodre',
-      '.env.load.local': 'FS_LOAD_URL=https://prodrefprodrefprodre.supabase.co\nFS_LOAD_ANON_KEY=a\nFS_LOAD_SERVICE_KEY=s\n',
+      '.env.test-project.local': 'NEXT_PUBLIC_SUPABASE_URL=https://prodrefprodrefprodre.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=a\nSUPABASE_SERVICE_ROLE_KEY=s\n',
     })
     delete process.env.FS_LOAD_URL
     expect(() => resolveTarget('test', dir)).toThrow(/PRODUCTION/)
   })
 
   it('resolveTarget(test) with no readable production name fails closed', () => {
-    const dir = checkout({ '.env.load.local': 'FS_LOAD_URL=https://some-test.supabase.co\nFS_LOAD_ANON_KEY=a\nFS_LOAD_SERVICE_KEY=s\n' })
+    const dir = checkout({ '.env.test-project.local': 'FS_LOAD_URL=https://some-test.supabase.co\nFS_LOAD_ANON_KEY=a\nFS_LOAD_SERVICE_KEY=s\n' })
     delete process.env.FS_LOAD_URL
     delete process.env.FS_LOAD_DENY
     expect(() => resolveTarget('test', dir)).toThrow(/fails closed/)
@@ -61,8 +61,8 @@ describe('target — production names are read at run time (TD2)', () => {
   it('resolveTarget(test) accepts a test project that is not production, and never reads .env.local for keys', () => {
     const dir = checkout({
       'supabase/.temp/project-ref': 'prodrefprodrefprodre',
-      '.env.local': 'FS_LOAD_URL=https://WRONG.supabase.co\n',
-      '.env.load.local': 'FS_LOAD_URL=https://some-test.supabase.co\nFS_LOAD_ANON_KEY=a\nFS_LOAD_SERVICE_KEY=s\n',
+      '.env.local': 'FS_LOAD_URL=https://WRONG.supabase.co\nSUPABASE_SERVICE_ROLE_KEY=WRONG\n',
+      '.env.test-project.local': 'NEXT_PUBLIC_SUPABASE_URL=https://some-test.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=a\nSUPABASE_SERVICE_ROLE_KEY=s\n',
     })
     delete process.env.FS_LOAD_URL
     const t = resolveTarget('test', dir)
@@ -146,7 +146,7 @@ describe('sunday-replay — the recorded week lands on the harness week', () => 
     expect(firstCompletePoll(rec)).toBe(Date.parse('2026-01-01T00:00:00.500Z'))
   })
 
-  it("splitAlerts asserts score alerts only — the harness calendar and other leagues' queue rows are reported", () => {
+  it("splitAlerts asserts score alerts only — the harness calendar and unrostered players' queue rows are reported", () => {
     const split = splitAlerts(
       [
         { kind: 'drift', severity: 'alert' },

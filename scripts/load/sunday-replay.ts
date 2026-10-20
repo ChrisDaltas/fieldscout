@@ -187,7 +187,7 @@ export interface ReplayResult {
   correctionEventsStored: number
   /** Alerts that judge this replay's scores, by kind. */
   reconcileAlerts: Record<string, number>
-  /** Alerts that do not (calendar; other leagues' queue rows), by kind. */
+  /** Alerts that do not (calendar; unrostered players' queue rows), by kind. */
   reconcileOther: Record<string, number>
   reconcileCells: number
   reconcileReason: string | null
@@ -198,8 +198,11 @@ export interface ReplayResult {
  * Queue rows stamped at or before `polledAt` for players the LOAD leagues
  * roster. Scoped to those players on purpose: the feeder's worker is scoped
  * to the load leagues (it must never write another league's cells on a
- * shared database), so a row whose player only OTHER leagues roster is
- * released `out_of_scope` and stays queued — it is not this run's lag.
+ * shared database), and a SCOPED drain never consumes a row no league in its
+ * scope rosters — it releases it (`out_of_scope`, `score-week-worker.ts`'s
+ * "a scoped drain consumes only what it scores"), where the unscoped
+ * production drain would consume it as `unmapped`. Those rows stay queued
+ * and are not this run's lag (measured locally: 260 of 384 rows each run).
  */
 async function queuedAtOrBefore(service: Supabase, polledAt: string, players: readonly string[]): Promise<number> {
   let total = 0
@@ -240,7 +243,8 @@ export const CALENDAR_KINDS: ReadonlySet<string> = new Set(['no_game_rows', 'all
  * Split reconcile's alerts into the ones that judge this replay's scores
  * (asserted) and the rest (reported): calendar findings — the harness seeds
  * a whole season but replays one week — and `stuck_queue` rows for players
- * no load league rosters (see `queuedAtOrBefore`).
+ * no load league rosters, which a scoped drain leaves queued by design (see
+ * `queuedAtOrBefore`).
  */
 export function splitAlerts(
   findings: ReadonlyArray<{ kind: string; severity: string; player_id?: string }>,
@@ -435,7 +439,7 @@ export function replayAsserts(r: ReplayResult, speed: number, leagues: number): 
         `corrections: ${r.correctionsDetected} detected, ${r.correctionsRecorded} recorded, ${r.correctionEventsStored} stored`,
     },
     {
-      name: 'reconcile alerts that do not judge this replay (the harness calendar; other leagues\u2019 queue rows)',
+      name: 'reconcile alerts that do not judge this replay (the harness calendar; queue rows for players no load league rosters)',
       pass: true,
       info: true,
       detail: kindsLine(r.reconcileOther),

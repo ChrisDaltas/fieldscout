@@ -30,9 +30,11 @@ test target is refused outright when no production name can be read.
    the repo to it.
 2. Its `players` table is synced (`sync:players` pointed at it). The seeder
    never writes players.
-3. `.env.load.local` at the repo root (gitignored) holds `FS_LOAD_URL`,
-   `FS_LOAD_ANON_KEY` and `FS_LOAD_SERVICE_KEY` for the test project.
-4. k6 v1.x is installed on the machine that runs the load.
+3. `.env.test-project.local` at the repo root (gitignored; breakdown §12
+   C1 (b)) holds the test project's `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`
+   (`FS_LOAD_URL` / `FS_LOAD_ANON_KEY` / `FS_LOAD_SERVICE_KEY` also work).
+4. k6 v1.x is installed on the machine that runs the load (PROGRESS F702).
 5. Scenario 3 needs a recording taken during a real Sunday (PROGRESS F700).
 
 ## Running

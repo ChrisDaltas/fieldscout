@@ -4,10 +4,14 @@
  *
  *   --target local   the local stack (127.0.0.1:54321, the CLI's public demo
  *                    keys) — for exercising the harness at smoke size only;
- *   --target test    the hosted TEST project, read from `.env.load.local`
- *                    (gitignored by `.env*.local`; it lives only on Chris's
- *                    machine): FS_LOAD_URL, FS_LOAD_ANON_KEY,
- *                    FS_LOAD_SERVICE_KEY.
+ *   --target test    the hosted TEST project, read from
+ *                    `.env.test-project.local` — the file breakdown §12
+ *                    C1 (b) tells Chris to create (gitignored by
+ *                    `.env*.local`; it lives only on his machine). Keys: the
+ *                    app's own names (NEXT_PUBLIC_SUPABASE_URL,
+ *                    NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)
+ *                    or FS_LOAD_URL / FS_LOAD_ANON_KEY / FS_LOAD_SERVICE_KEY;
+ *                    the process environment overrides the file.
  * There is no default and no fallback to `.env.local` — that file targets
  * production (the reconcile CLI's own header records the hazard).
  *
@@ -33,6 +37,9 @@ const LOCAL_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
 const LOCAL_SERVICE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU'
+
+/** Breakdown §12 C1 (b): the test project's details, on Chris's machine only. */
+export const TEST_PROJECT_ENV_FILE = '.env.test-project.local'
 
 export interface ResolvedTarget {
   kind: TargetKind
@@ -112,13 +119,21 @@ export function resolveTarget(kind: string | undefined, cwd: string = process.cw
     const url = assertSafeTarget({ kind, url: process.env.FS_LOAD_LOCAL_URL ?? LOCAL_URL, deny })
     return { kind, url, anonKey: LOCAL_ANON_KEY, serviceKey: LOCAL_SERVICE_KEY, deny }
   }
-  const file = readIf(resolve(cwd, '.env.load.local'))
+  const file = readIf(resolve(cwd, TEST_PROJECT_ENV_FILE))
   const fromFile = file ? parseEnvFile(file) : {}
-  const pick = (k: string): string => {
-    const v = process.env[k] ?? fromFile[k]
-    if (!v) throw new Error(`${k} is not set (put the TEST project's values in .env.load.local — gitignored; never .env.local)`)
+  const pick = (own: string, appName: string): string => {
+    const v = process.env[own] ?? fromFile[own] ?? fromFile[appName]
+    if (!v) {
+      throw new Error(`${own} is not set (put the TEST project's ${appName} in ${TEST_PROJECT_ENV_FILE} — gitignored; never .env.local)`)
+    }
     return v
   }
-  const url = assertSafeTarget({ kind, url: pick('FS_LOAD_URL'), deny })
-  return { kind, url, anonKey: pick('FS_LOAD_ANON_KEY'), serviceKey: pick('FS_LOAD_SERVICE_KEY'), deny }
+  const url = assertSafeTarget({ kind, url: pick('FS_LOAD_URL', 'NEXT_PUBLIC_SUPABASE_URL'), deny })
+  return {
+    kind,
+    url,
+    anonKey: pick('FS_LOAD_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+    serviceKey: pick('FS_LOAD_SERVICE_KEY', 'SUPABASE_SERVICE_ROLE_KEY'),
+    deny,
+  }
 }
