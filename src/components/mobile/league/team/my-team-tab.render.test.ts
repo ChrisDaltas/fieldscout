@@ -21,6 +21,7 @@ import { leaguePlayerValueKeys } from '@/hooks/use-league-player-values'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
+import { waiverClaimKeys } from '@/hooks/use-waiver-claims'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -163,6 +164,84 @@ function render(schedule: LeagueSchedule = SCHEDULE, d: LeagueDetail = detail, s
 
 describe('MyTeamTab (mobile League › Team)', () => {
   const html = render()
+
+  it('D593: a healthy man left in my IR spot — the notice names him and the two ways out (soft tint, never a red fill); none when he still fits', () => {
+    const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
+    const withIr = (status: string) => (qc: QueryClient) => {
+      qc.setQueryData(leagueRosterKeys.all(LEAGUE), {
+        ...ROSTERS,
+        teams: [{ ...ROSTERS.teams[0]!, roster: [...ROSTER, { ...p('irm', 'Nick Chubb', 'RB', 'HOU'), status, slot_key: spot, ir_placed_week: 3 }] }, ROSTERS.teams[1]!],
+      })
+      qc.setQueryData(teamLineupKeys.week(ME, 5), { ...LINEUP, slot_map: { ...LINEUP.slot_map, [spot]: 'irm' } })
+    }
+    const blocked = render(SCHEDULE, detail, withIr('Active'))
+    expect(blocked).toContain('data-healthy-ir-notice')
+    // Chris 2026-10-21: the headline is exactly his sentence; the name is the line under it.
+    expect(blocked).toContain('<span class="block font-semibold">You have an ineligible player in your IR spot.</span>')
+    expect(blocked).toContain('Nick Chubb is healthy.')
+    expect(blocked).toContain('Move him to your bench — drop someone too if your roster is full.')
+    expect(blocked).toContain('Or swap another IR-eligible player into the spot.')
+    expect(blocked).toContain('Lineup moves, drops and trades still work as usual.')
+    expect(blocked).toMatch(/rounded-message[^"]*bg-m-gr|bg-m-gr[^"]*rounded-message/)
+    expect(render(SCHEDULE, detail, withIr('Out'))).not.toContain('data-healthy-ir-notice')
+    expect(html).not.toContain('data-healthy-ir-notice')
+    // A Questionable man is named as listed, never "healthy".
+    const questionable = render(SCHEDULE, detail, withIr('Questionable'))
+    expect(questionable).toContain('Nick Chubb is listed Questionable.')
+    expect(questionable).not.toContain('Nick Chubb is healthy')
+    // F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it.
+    expect(blocked).not.toContain('data-healthy-ir-claims')
+    const withClaim = render(SCHEDULE, detail, (qc) => {
+      withIr('Active')(qc)
+      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'pending'), {
+        league_id: LEAGUE,
+        team_id: ME,
+        status: 'pending',
+        waiver_type: 'faab',
+        faab_budget: 100,
+        faab_min_bid: 1,
+        faab_balance: 80,
+        waiver_priority: null,
+        claims: [
+          {
+            id: 'claim-1',
+            team_id: ME,
+            add: { player_id: 'fa-1', full_name: 'Claimed Receiver', position: 'WR', nfl_team: 'AAA' },
+            drop: null,
+            faab_bid: 12,
+            claim_order: 1,
+            status: 'pending',
+            result_reason: null,
+            process_at: null,
+            processed_at: null,
+            created_at: '2099-10-08T12:00:00.000Z',
+            created_by: 'user-me',
+            cancelled_at: null,
+          },
+        ],
+      })
+    })
+    expect(withClaim).toContain('data-healthy-ir-claims')
+    expect(withClaim).toContain('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
+  })
+
+  it('F690: the week’s games are over and he played — the notice says a drop works now and the move waits for next week (never the locked move)', () => {
+    const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
+    const seed = (qc: QueryClient) => {
+      qc.setQueryData(leagueRosterKeys.all(LEAGUE), {
+        ...ROSTERS,
+        teams: [{ ...ROSTERS.teams[0]!, roster: [...ROSTER, { ...p('irm', 'Nick Chubb', 'RB', 'HOU'), status: 'Active', slot_key: spot, ir_placed_week: 3 }] }, ROSTERS.teams[1]!],
+      })
+      qc.setQueryData(teamLineupKeys.week(ME, 5), { ...LINEUP, slot_map: { ...LINEUP.slot_map, [spot]: 'irm' } })
+    }
+    const over: LeagueSchedule = { ...SCHEDULE, weeks: SCHEDULE.weeks.map((w) => (w.week === 5 ? { ...w, status: 'correction_window' } : w)) }
+    const out = render(over, detail, seed)
+    expect(out).toContain('You have an ineligible player in your IR spot.')
+    expect(out).toContain('Nick Chubb is healthy — he can’t leave the spot until next week, so adds stay closed unless you drop him.')
+    expect(out).toContain('You can drop him now.')
+    expect(out).toContain('Or move him out of the spot once next week starts.')
+    expect(out).not.toContain('Move him to your bench — drop someone too if your roster is full.')
+  })
 
   it('renders the league header and the team card from real reads', () => {
     expect(html).toContain('Sunday Funday League')

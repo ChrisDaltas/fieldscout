@@ -35,7 +35,8 @@ import { cn } from '@/lib/utils'
 import { ClaimDialog } from './claim-dialog'
 
 import { LockTag, TeamNameLink, LeaguePageTitle } from './league-cells'
-import { formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
+import { currentWeekGamesOver, healthyIrAddTitle, healthyIrBlockers, healthyIrHeadline } from './healthy-ir-ops'
+import { currentWeekOf, formatInstantWithDate, lockBadgeFor } from './lineup-editor-ops'
 import { opponentOf } from './my-team-ops'
 import {
   FREE_AGENT_LABEL,
@@ -237,6 +238,12 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
   const myRosterTeam = rosters.data?.teams.find((t) => t.team_id === myTeamId)
   const myRoster = myRosterTeam?.roster
   const fill = rosterFill(myRoster, deriveRosterSize(detail.settings.roster_settings))
+  // D593 (migration 205): a player who isn't IR-eligible in one of my IR
+  // spots closes every + until he leaves it — said once above the table.
+  const irWeek = currentWeekOf(scheduleWeeks)
+  const irBlockers = healthyIrBlockers(myRoster ?? [], detail.settings.roster_settings.ir_slots, irWeek, currentWeekGamesOver(scheduleWeeks, irWeek))
+  const irBlockTitle = healthyIrAddTitle(irBlockers)
+  const irHeadline = healthyIrHeadline(irBlockers)
 
   const rostersProblem = rosters.isError ? rosters.error : null
   const poolProblem = pool.isError ? pool.error : null
@@ -279,6 +286,18 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
       {line && (
         <StatusBanner tone={line.tone}>
           <span data-waiver-window={waiverWindow?.why ?? ''}>{line.text}</span>
+        </StatusBanner>
+      )}
+      {irHeadline && (
+        <StatusBanner tone="negative">
+          <span data-healthy-ir>
+            <span className="text-negative-strong">{irHeadline}</span>{' '}
+            {myTeamId && (
+              <Link href={`/app/leagues/${leagueId}/team/${myTeamId}`} className="font-semibold underline underline-offset-2">
+                Fix it on your team
+              </Link>
+            )}
+          </span>
         </StatusBanner>
       )}
 
@@ -399,6 +418,7 @@ function PlayersContent({ leagueId, detail }: { leagueId: string; detail: League
           nextRunLocal={nextRunLocal}
           claimsLive={claimsLive}
           tradesClosed={tradesClosed}
+          irBlockTitle={irBlockTitle}
           faHoldHours={detail.settings.fa_hold_hours}
           values={valueColumns}
           pending={claim.isPending || move.isPending}
@@ -587,6 +607,7 @@ export function PoolTable({
   nextRunLocal = null,
   claimsLive = true,
   tradesClosed = false,
+  irBlockTitle = null,
   faHoldHours = 0,
   values = null,
   pending = false,
@@ -609,6 +630,8 @@ export function PoolTable({
   claimsLive?: boolean
   /** L.D3.12: the trade deadline has passed (the server's word) — no Trade door. */
   tradesClosed?: boolean
+  /** D593: my team has a player who isn't IR-eligible in an IR spot — every + is closed with this reason. */
+  irBlockTitle?: string | null
   faHoldHours?: number
   /** League UX batch 5: the value columns (null = no schedule yet — hidden). */
   values?: ValueColumns | null
@@ -701,6 +724,7 @@ export function PoolTable({
                       nextRunLocal={nextRunLocal}
                       claimsLive={claimsLive}
                       tradesClosed={tradesClosed}
+                      irBlockTitle={irBlockTitle}
                       pending={pending}
                       onAdd={onAdd}
                       onDrop={onDrop}
@@ -834,6 +858,7 @@ function MoveButton({
   nextRunLocal,
   claimsLive,
   tradesClosed,
+  irBlockTitle,
   pending,
   onAdd,
   onDrop,
@@ -847,6 +872,7 @@ function MoveButton({
   nextRunLocal: string | null
   claimsLive: boolean
   tradesClosed: boolean
+  irBlockTitle: string | null
   pending: boolean
   onAdd: (row: PoolPlayerRow) => void
   onDrop: (player: RosterPlayer) => void
@@ -868,14 +894,18 @@ function MoveButton({
         </Button>
       )
     }
+    // F692 (Chris 2026-10-21): "Drop" while he is droppable — not while he is
+    // locked for the week (the tick's lock view, the server's drop lock): no
+    // Drop then; the row's lock badge says why. Soft red tint, red words.
+    if (row.lock.locked) return null
     return (
-      <Button variant="stroke" size="sm" disabled={row.lock.locked} title={row.lock.locked ? LOCKED_DROP_TITLE : undefined} onClick={() => onDrop(rosterPlayerOf(row))} data-action="drop">
+      <Button variant="destructive" size="sm" className="bg-negative-soft" onClick={() => onDrop(rosterPlayerOf(row))} data-action="drop">
         Drop
       </Button>
     )
   }
   const waiversTitle = a.kind === 'on_waivers' ? waiversAddTitle(formatInstantWithDate(a.until, leagueTimeZone).local) : undefined
-  const actions = pickupActions(row, { waiverType, window: waiverWindow, addTitle: waiversTitle, lockedAddTitle: LOCKED_ADD_TITLE, nextRunLocal, claimsLive })
+  const actions = pickupActions(row, { waiverType, window: waiverWindow, addTitle: waiversTitle, lockedAddTitle: LOCKED_ADD_TITLE, nextRunLocal, claimsLive, irBlockTitle })
   // D481 (Chris 2026-10-03): ONE "+" — it runs the add or the claim the
   // league's rules allow right now; closed, it says why (supersedes R1220's
   // live-Add-with-a-title here).

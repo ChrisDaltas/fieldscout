@@ -164,6 +164,12 @@ const pick = (msg: string, re: RegExp, fill: (m: RegExpExecArray) => string): st
 const s = (n: string) => (n === '1' ? '' : 's')
 
 const GAME_STARTED_ADD = 'That player’s game has started — you can pick him up after the week’s games end.'
+/** D593 (migration 205): a healthy-IR refusal leads with the team screen's headline (Chris 2026-10-21, verbatim:
+ *  "Change that message to say "You have an ineligible player in your IR spot."" — `HEALTHY_IR_HEADLINE`), then the
+ *  ways out — the two Chris named, and dropping him (F692, ruled 2026-10-21: "the user can click on the player and
+ *  drop them directly"). */
+const HEALTHY_IR_LEAD = 'You have an ineligible player in your IR spot.'
+const HEALTHY_IR_FIX = 'move him to your bench, swap another IR-eligible player into the spot, or drop him.'
 
 export const PHRASES: Phrase[] = [
   // Lineup (set_lineup_internal / commish_edit_lineup_internal — newest definer 201, D591)
@@ -246,108 +252,123 @@ export const PHRASES: Phrase[] = [
     render: () => null,
     generic: 'Lineups open once the season starts.',
   },
-  // Adds, drops and claims (roster_add_drop_internal / waiver_claim_submit_internal, 157)
+  // Adds, drops and claims (roster_add_drop_internal / waiver_claim_submit_internal — newest definer 205, D593;
+  // a sentence the commissioner's roster override, the claim edit or the trade verbs also raise names 199 too)
+  {
+    id: 'add-healthy-ir',
+    migration: '205_healthy_ir_blocks_adds.sql',
+    fragments: ['and still in', "'s IR spot — no adds while a player who isn't IR-eligible holds an IR spot"],
+    render: (m) => pick(m, at('(.+?) is (healthy|listed \\S+) and still in'), (x) => `${HEALTHY_IR_LEAD} ${x[1]} is ${x[2]} — ${HEALTHY_IR_FIX}`),
+    generic: `${HEALTHY_IR_LEAD} Move him to your bench, swap another IR-eligible player into the spot, or drop him.`,
+  },
+  {
+    id: 'claim-healthy-ir',
+    migration: '205_healthy_ir_blocks_adds.sql',
+    fragments: ['and still in', "'s IR spot — no claims while a player who isn't IR-eligible holds an IR spot"],
+    render: (m) => pick(m, at('(.+?) is (healthy|listed \\S+) and still in'), (x) => `${HEALTHY_IR_LEAD} ${x[1]} is ${x[2]} — ${HEALTHY_IR_FIX}`),
+    generic: `${HEALTHY_IR_LEAD} Move him to your bench, swap another IR-eligible player into the spot, or drop him.`,
+  },
   {
     id: 'add-locked',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['is locked for adds — kicked off at', 'no in-game pickups'],
     render: (m) => pick(m, at(`${NAME_ID} is locked for adds`), (x) => `${x[1]}’s game has started — you can pick him up after the week’s games end.`),
     generic: GAME_STARTED_ADD,
   },
   {
     id: 'drop-locked',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['is locked for drops — kicked off at', 'no dropping a player mid-game'],
     render: (m) => pick(m, at(`${NAME_ID} is locked for drops`), (x) => `${x[1]}’s game has started — you can’t drop him until the week’s games end.`),
     generic: 'That player’s game has started — you can’t drop him until the week’s games end.',
   },
   {
     id: 'roster-full',
-    migration: '199_remove_retire_schema.sql',
+    migration: ['199_remove_retire_schema.sql', '205_healthy_ir_blocks_adds.sql'],
     fragments: ["'s roster is full (", 'include a drop in the same move'],
     render: (m) => pick(m, /roster is full \((\d+) of (\d+)/, (x) => `Your roster is full (${x[1]}/${x[2]}). Pick a player to drop.`),
     generic: 'Your roster is full. Pick a player to drop.',
   },
   {
     id: 'on-waivers-until',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['is on waivers until the waiver run at', 'put in a waiver claim'],
     render: (m) => pick(m, at(`${NAME_ID} is on waivers until the waiver run at [^()]*? \\(([^()]+)\\)`), (x) => `${x[1]} is on waivers until ${x[2]}. Put in a claim instead.`),
     generic: 'That player is on waivers. Put in a claim instead.',
   },
   {
     id: 'claim-only',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['is claim-only right now', 'put in a waiver claim instead'],
     render: (m) => pick(m, at(`${NAME_ID} is claim-only right now`), (x) => `${x[1]} is on waivers right now. Put in a claim instead.`),
     generic: 'That player is on waivers right now. Put in a claim instead.',
   },
   {
     id: 'already-rostered',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['is already on', "'s roster in this league — a player is on ONE roster per league"],
     render: (m) => pick(m, at(`${NAME_ID} is already on (.+?)'s roster in this league`), (x) => `${x[1]} is already on ${x[2]}.`),
     generic: 'That player is already on a team in this league.',
   },
   {
     id: 'claim-already-rostered',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['only an unowned player can be claimed'],
     render: (m) => pick(m, at(`${NAME_ID} is already on (.+?) — a player`), (x) => `${x[1]} is already on ${x[2]}. You can only claim free agents.`),
     generic: 'That player is already on a team. You can only claim free agents.',
   },
   {
     id: 'rostered-moment-ago',
-    migration: '199_remove_retire_schema.sql',
+    migration: ['199_remove_retire_schema.sql', '205_healthy_ir_blocks_adds.sql'],
     fragments: ['was rostered by another team in this league a moment ago'],
     render: (m) => pick(m, at(`${NAME_ID} was rostered by another team`), (x) => `${x[1]} was just picked up by another team.`),
     generic: 'That player was just picked up by another team.',
   },
   {
     id: 'week-pickup-cap',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['acquisitions in week', 'no more adds this week'],
     render: (m) => pick(m, /has used \d+ of (\d+) acquisitions in week (\d+)/, (x) => `You’ve used all ${x[1]} pickup${s(x[1])} for week ${x[2]}.`),
     generic: 'You’ve used all your pickups for this week.',
   },
   {
     id: 'season-pickup-cap',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['acquisitions this season', 'no more adds this season'],
     render: (m) => pick(m, /has used \d+ of (\d+) acquisitions this season/, (x) => `You’ve used all ${x[1]} pickup${s(x[1])} for the season.`),
     generic: 'You’ve used all your pickups for the season.',
   },
   {
     id: 'move-already-submitted',
-    migration: '199_remove_retire_schema.sql',
+    migration: ['199_remove_retire_schema.sql', '205_healthy_ir_blocks_adds.sql'],
     fragments: ['already names a', 'transaction in this league'],
     render: () => null,
     generic: 'That move was already submitted.',
   },
   {
     id: 'claim-already-submitted',
-    migration: '199_remove_retire_schema.sql',
+    migration: ['199_remove_retire_schema.sql', '205_healthy_ir_blocks_adds.sql'],
     fragments: ['already names a', 'for another request in this league'],
     render: () => null,
     generic: 'That claim was already submitted.',
   },
   {
     id: 'adds-not-in-season',
-    migration: '199_remove_retire_schema.sql',
+    migration: '205_healthy_ir_blocks_adds.sql',
     fragments: ['rosters change through add/drop only while in_season or in playoffs'],
     render: () => null,
     generic: 'Adds and drops open once the season starts.',
   },
   {
     id: 'no-waivers',
-    migration: '199_remove_retire_schema.sql',
+    migration: ['199_remove_retire_schema.sql', '205_healthy_ir_blocks_adds.sql'],
     fragments: ['this league has no waivers (waiver type "none_fcfs")'],
     render: () => null,
     generic: 'This league has no waivers — just add him.',
   },
   {
     id: 'min-bid',
-    migration: '199_remove_retire_schema.sql',
+    migration: ['199_remove_retire_schema.sql', '205_healthy_ir_blocks_adds.sql'],
     fragments: ["is below this league's minimum bid of $"],
     render: (m) => pick(m, /minimum bid of \$(\d+)/, (x) => `The minimum bid is $${x[1]}.`),
     generic: 'That bid is below the league’s minimum.',

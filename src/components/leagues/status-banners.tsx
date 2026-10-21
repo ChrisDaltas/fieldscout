@@ -15,12 +15,15 @@ import { cn } from '@/lib/utils'
  * strip on a white page needs an edge.
  */
 
-type BannerTone = 'caution' | 'accent' | 'neutral'
+type BannerTone = 'caution' | 'accent' | 'neutral' | 'negative'
 
 const TONE_CLASSES: Record<BannerTone, string> = {
   caution: 'border-transparent bg-caution-soft',
   accent: 'border-transparent bg-accent-soft',
   neutral: 'border-n-4 bg-white',
+  // Something is blocked until the member fixes it (D593's healthy-IR notice):
+  // the SOFT red tint — the bright red is for its words only, never the fill.
+  negative: 'border-transparent bg-negative-soft',
 }
 
 interface StatusBannerProps {
