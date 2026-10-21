@@ -39,6 +39,156 @@ set local search_path = public, extensions;
 
 select plan(76);
 
+-- pg_temp.un201 — migration 201's pairs reversed (derive_201.py; pgTAP 151
+-- pins it). RE-PINNED BY D591 ("Allow illegal lineups" retired:
+-- set_lineup_internal, commish_edit_lineup_internal, lineup_autopilot_internal
+-- and commish_setting_policy changed; an identity on every other body —
+-- additive, R992). Applied INNERMOST.
+create function pg_temp.un201(s text) returns text language plpgsql as $un201$
+begin
+  -- set_lineup_internal
+  s := replace(s, $n201$      -- The bye / OUT refusal that stood here is RETIRED with the setting: a bye or   -- 201 / D591
+      -- injured starter, or an empty slot, never refuses a save. He keeps his flag (above)   -- 201 / D591
+      -- and scores what he scores — 0 if he does not play. What still refuses a lineup:   -- 201 / D591
+      -- the position fit (8), the kickoff locks (7), one start per week, and IR (9).   -- 201 / D591
+$n201$,
+                 $o201$      -- §7.3.6 allow_illegal_lineups = FALSE: a bye/OUT starter in an
+      -- UNLOCKED slot blocks the submit by name.
+      -- (a locked slot's bye/OUT player is not the manager's to change:
+      --  exempt when the stored player's own game has kicked off, R739.)
+      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0
+         AND NOT ((v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
+                  AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at
+                  AND (v_stored ->> v_key) = v_pid)
+         AND NOT (v_gone_kick ? v_pid) THEN   -- 154 / F445: a kept off-roster starter is not the manager's to change
+        RAISE EXCEPTION
+          'set_lineup: % is % for week % and allow_illegal_lineups is off — slot "%" is blocked at submit (§7.3.6); bench him or start someone who plays',
+          v_p ->> 'name', CASE WHEN v_pflags ? 'bye' THEN 'on bye' ELSE 'OUT (' || (v_p ->> 'designation') || ')' END,
+          p_week, v_key
+          USING ERRCODE = 'P0001';
+      END IF;
+$o201$);
+  s := replace(s, $n201$  -- "Allow illegal lineups" is RETIRED (§7.3.6; Chris 2026-10-20: "That shouldn't be blocking   -- 201 / D591
+  -- anyone from doing anything."): the stored value is ignored, and the result's   -- 201 / D591
+  -- allow_illegal_lineups key stays for its readers, always TRUE.   -- 201 / D591
+  v_allow := TRUE;   -- 201 / D591
+$n201$,
+                 $o201$  v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
+$o201$);
+  -- commish_edit_lineup_internal
+  s := replace(s, $n201$      -- The bye / OUT refusal that stood here is RETIRED with the setting (it refused the   -- 201 / D591
+      -- commissioner too — spec §7.3.6 / §11.1 said he is never refused): a bye or injured   -- 201 / D591
+      -- starter, or an empty slot, never refuses a save. He keeps his flag (above) and   -- 201 / D591
+      -- scores what he scores. The position fit (8) and one start per week still bind.   -- 201 / D591
+$n201$,
+                 $o201$      -- §7.3.6 allow_illegal_lineups = FALSE. KEPT (see WHAT IS NOT LIFTED).
+      -- 166 / F500: R739's exemption, carried exactly as set_lineup_internal
+      -- step (10) has it (157): a STORED starter whose own game has kicked
+      -- off (his per-player datum, step (6)) and who stays at his stored key
+      -- is not blocked — his game is under way or over, so keeping him where
+      -- he stands is the week as it happened, not a submit. 123 dropped the
+      -- clause as meaningless for a verb with no lock; without it a starter
+      -- who played Thursday and was put on IR before Sunday refused every
+      -- commissioner fix to that week unless he benched him (changing the
+      -- score) — a save the manager may make: a TIMING refusal of the
+      -- commissioner (standing rule (g)). Putting a bye / OUT player at any
+      -- key he is not stored at (moving him, or starting one from the
+      -- bench) is still refused by name, as it is for the manager. The
+      -- stored-occupant test is spelled NULL-SAFE here: set_lineup's `=`
+      -- yields NULL for a key that was empty, which cannot reach its gate
+      -- (step (7b) refuses a kicked-off player entering a slot first) but
+      -- would reach this one (no lock) and let a moved OUT starter through.
+      -- The kept-start clause below (154 / F441) is spelled the same way
+      -- (F503): its `=` let a kept OFF-ROSTER starter, now OUT, be moved
+      -- into an empty key without the refusal.
+      IF NOT v_allow AND jsonb_array_length(v_pflags) > 0
+         AND NOT ((v_kick -> v_pid ->> 'kickoff_at') IS NOT NULL
+                  AND (v_kick -> v_pid ->> 'kickoff_at')::timestamptz <= p_at
+                  AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid)   -- 166 / F500: R739, as set_lineup (null-safe)
+         AND NOT (v_gone_kick ? v_pid AND (v_stored ->> v_key) IS NOT DISTINCT FROM v_pid) THEN   -- 154 / F441: a kept start where it stands is the week's record, not a submit (166 / F503: null-safe too — an empty key must not exempt a moved kept start)
+        RAISE EXCEPTION
+          'commish_edit_lineup: % is % for week % and this league doesn''t allow illegal lineups — slot "%" can''t be saved like this; bench him, start someone who plays, or turn on illegal lineups in the league settings',
+          v_p ->> 'name', CASE WHEN v_pflags ? 'bye' THEN 'on bye' ELSE 'OUT (' || (v_p ->> 'designation') || ')' END,
+          p_week, v_key
+          USING ERRCODE = 'P0001';
+      END IF;
+$o201$);
+  s := replace(s, $n201$  -- "Allow illegal lineups" is RETIRED (§7.3.6; Chris 2026-10-20: "That shouldn't be blocking   -- 201 / D591
+  -- anyone from doing anything."): the stored value is ignored, and the result's   -- 201 / D591
+  -- allow_illegal_lineups key stays for its readers, always TRUE.   -- 201 / D591
+  v_allow := TRUE;   -- 201 / D591
+$n201$,
+                 $o201$  v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
+$o201$);
+  -- lineup_autopilot_internal
+  s := replace(s, $n201$  -- `v_tail`. An IR-held man, a seated (fixed) starter and a locked man are   -- 201 / D591
+  -- never ordered by this pass, so they   -- 201 / D591
+$n201$,
+                 $o201$  -- `v_tail`. An IR-held man, a seated (fixed) starter, a locked man and one
+  -- the allow = FALSE filter refused are never ordered by this pass, so they
+$o201$);
+  s := replace(s, $n201$          -- (the "league forbids illegal lineups" reason is retired with the setting)   -- 201 / D591
+$n201$,
+                 $o201$          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_filtered) x WHERE v_elig ? (x ->> 'position'))
+            THEN 'no healthy eligible player at ' || upper(v_e ->> 'slot') || '; league forbids illegal lineups'
+$o201$);
+  s := replace(s, $n201$  -- remaining slots are offered to the unhealthy tail — the Doubtful men first, then   -- 201 / D591
+  -- the blocked men — so a slot any unlocked eligible man could take is filled.   -- 201 / D591
+$n201$,
+                 $o201$  -- remaining slots are offered to the unhealthy tail — which, when the
+  -- league forbids illegal lineups, holds only the Doubtful men (138), so a
+  -- slot only a BLOCKED man could take stays `unfillable`.
+$o201$);
+  s := replace(s, $n201$      ELSE   -- a blocked man is always the tail: the allow = FALSE hard filter is retired   -- 201 / D591
+        -- A PREFERENCE, not a filter: seated LAST, never left out, because an
+        -- empty slot is the zero this task exists to remove (item 4c).
+        v_tail := v_tail || jsonb_build_object(
+          'player_id', v_pid, 'position', v_e ->> 'position', 'wanted', NULL, 'fixed', FALSE);
+      END IF;
+$n201$,
+                 $o201$      ELSIF v_allow THEN
+        -- A PREFERENCE, not a filter: seated LAST, never left out, because an
+        -- empty slot is the zero this task exists to remove (item 4c).
+        v_tail := v_tail || jsonb_build_object(
+          'player_id', v_pid, 'position', v_e ->> 'position', 'wanted', NULL, 'fixed', FALSE);
+      ELSE
+        v_filtered := v_filtered || jsonb_build_object(
+          'player_id', v_pid, 'position', v_e ->> 'position');
+      END IF;
+$o201$);
+  s := replace(s, $n201$  -- §7.3.6's "Allow illegal lineups" is RETIRED (Chris 2026-10-20): the stored value is   -- 201 / D591
+  -- ignored. A blocked man (bye / OUT / IR / PUP / NFI / Suspended) is always the TAIL —   -- 201 / D591
+  -- seated LAST, behind every healthy and Doubtful candidate, never filtered out — and   -- 201 / D591
+  -- the result's allow_illegal_lineups key stays for its readers, always TRUE.   -- 201 / D591
+  v_allow := TRUE;   -- 201 / D591
+$n201$,
+                 $o201$  -- §7.3.6's per-league setting, read the way `set_lineup` reads it
+  -- (`114:307`): absent ⇒ TRUE.
+  v_allow := COALESCE((v_league.settings ->> 'allow_illegal_lineups')::boolean, TRUE);
+$o201$);
+  s := replace(s, $n201$  v_locked_out  JSONB := '[]'::jsonb;        -- skipped_locked[]
+  -- (v_filtered — the allow = FALSE hard filter's refusals — is gone with the setting)   -- 201 / D591
+$n201$,
+                 $o201$  v_locked_out  JSONB := '[]'::jsonb;        -- skipped_locked[]
+  v_filtered    JSONB := '[]'::jsonb;        -- refused by the allow = FALSE hard filter
+$o201$);
+  -- commish_setting_policy
+  s := replace(s, $n201$                                  'This setting has been retired: a waiver claim always fails if the player you''d drop has already played this week, just like a regular drop.')
+    -- Chris 2026-10-20: "You can always start a player on a buy [bye]. … That shouldn't be blocking anyone   -- 201 / D591
+    -- from doing anything." A lineup save is never refused over a bye or injured starter, or an empty   -- 201 / D591
+    -- slot; a value already stored is simply ignored (no data rewrite, no CHECK).   -- 201 / D591
+    WHEN p_key IN ('allow_illegal_lineups') THEN jsonb_build_object('storage', 'blob', 'class', 'refused', 'refused_why',   -- 201 / D591
+                                  'This setting has been retired: a lineup always saves, even with a player who is on a bye or injured — he scores only if he plays.')   -- 201 / D591
+$n201$,
+                 $o201$                                  'This setting has been retired: a waiver claim always fails if the player you''d drop has already played this week, just like a regular drop.')
+$o201$);
+  s := replace(s, $n201$         'auto_sub_inactives', 'stat_correction_window',   -- 201 / D591: allow_illegal_lineups is retired, refused below
+$n201$,
+                 $o201$         'allow_illegal_lineups', 'auto_sub_inactives', 'stat_correction_window',
+$o201$);
+  return s;
+end
+$un201$;
 -- pg_temp.un181 — migration 181's one tick hunk removed (pgTAP 129 pins it);
 -- an identity on every other body. Applied INNERMOST.
 create function pg_temp.un181(p_src text) returns text language sql as $un181$
@@ -128,12 +278,12 @@ select ok(
        where n.nspname = 'public' and p.proname in ('commish_set_autopilot', 'commish_set_autopilot_internal')) = 2,
   'A6 the door is SECURITY DEFINER with search_path='''', REVOKEd from anon, EXECUTE for authenticated (the in-body gate is the authorization), one overload each');
 select is(
-  (select md5(pg_temp.un157(pg_temp.un181(p.prosrc))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(pg_temp.un157(pg_temp.un181(pg_temp.un201(p.prosrc)))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'lineup_lock_tick'),
   '540946257b7f6b2f2739e4d27f5cf584',
   'A7 lineup_lock_tick is 139''s FILE TEXT (prosrc md5, a stored literal)');
 select is(
-  (select md5(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(p.prosrc)),
+  (select md5(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(pg_temp.un201(p.prosrc))),
   E'  -- 139 (L.E1.22, Q63 RULED): the per-team switch. An unmanaged seat whose\n  -- switch is OFF — the DEFAULT — is COMMISSIONER-MANAGED: materialized (D354)\n  -- but never filled, and NAMED here rather than read as a quiet zero.\n  v_ap_cm          INTEGER := 0;   -- unmanaged seats left alone because the switch is OFF\n  v_ap_cm_list     JSONB := \'[]\'::jsonb;\n',
   E''),
   E'                   EXISTS (SELECT 1 FROM public.league_members m WHERE m.team_id = t.id) AS has_member,\n                   -- 139 (L.E1.22, Q63): the commissioner\'s per-team switch —\n                   -- NO ROW IS OFF (the ruled default; no backfill).\n                   COALESCE((SELECT sw.is_on FROM public.team_autopilot sw WHERE sw.team_id = t.id), FALSE) AS autopilot_on\n',
@@ -159,7 +309,7 @@ select is(
 -- RE-PINNED BY L.D2.15 (migration 154 — additive, the R992 shape): 154's
 -- substitutions are reversed INNERMOST first, so this chain proves what it did.
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(p.prosrc)), E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\') AND x ? \'started_by\')\n            THEN \'no eligible player at \' || upper(v_e ->> \'slot\') || \' free to start — another team of the league already starts him this week (F441 / F445)\'\n          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \'', E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \''), E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n    -- 154 / F441 · F445: ONE START PER PLAYER PER LEAGUE-WEEK. A candidate\n    -- another team of this league already STARTS this week (a start kept\n    -- after he left that team — D411 / D412(5)) is never offered: the write\n    -- would be refused by name (team_lineups\' trigger) and fail the league\'s\n    -- tick. Named in skipped_locked[] (the tick reports it), never silently\n    -- dropped (§4 rule 15).\n    v_else := public.lineup_started_elsewhere_internal(p_league_id, p_team_id, p_season, p_week, v_pid);\n    IF v_else IS NOT NULL THEN\n      v_locked_out := v_locked_out || jsonb_build_object(\n        \'player_id\', v_pid, \'name\', v_e ->> \'name\', \'position\', v_e ->> \'position\',\n        \'kickoff_at\', v_kick -> v_pid ->> \'kickoff_at\',\n        \'started_by\', v_else ->> \'team_id\',\n        \'reason\', \'already in \' || (v_else ->> \'team_name\') || \'\'\'s starting lineup for week \' || p_week\n                  || \' — a player starts for at most one team per league-week (F441 / F445)\');\n      CONTINUE;\n    END IF;\n', E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n'), E'    IF v_locked OR NOT v_unhealthy OR v_pid = ANY (v_kept) THEN   -- 154: a kept off-roster starter stays, unconditionally\n      v_seated := v_seated || v_pid;\n', E'    IF v_locked OR NOT v_unhealthy THEN\n      v_seated := v_seated || v_pid;\n'), E'    -- 154 / F441 · F442 · F445: the ONE shared judgment (set_lineup (4b)\'s and\n    -- the commissioner\'s editor\'s): he played (his current team\'s game, this\n    -- lineup\'s record of the slot, or a stat line for the week), or the week\n    -- closed to moves before he left and he has a game this week. A KEPT\n    -- starter is seated whatever his health or kickoff (the classification\n    -- below) — his start is the week\'s record, never autopilot\'s to change.\n    SELECT * INTO v_k FROM public.lineup_kept_starter_internal(p_season, p_week, v_pid, v_key, v_row.starters, p_at);\n    CONTINUE WHEN NOT v_k.kept;   -- a bye / a game gone from the week: the slot stays OPEN\n    v_kept := v_kept || v_pid;\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n', E'    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot stays OPEN\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n'), E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\n  -- 154 / F441 · F445: stored off-roster starters KEPT for the week, and the\n  -- team (if any) that already starts a candidate this league-week.\n  v_kept        TEXT[] := ARRAY[]::text[];\n  v_else        JSONB;\nBEGIN\n', E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\nBEGIN\n'),
+  (select md5(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(pg_temp.un201(p.prosrc))), E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\') AND x ? \'started_by\')\n            THEN \'no eligible player at \' || upper(v_e ->> \'slot\') || \' free to start — another team of the league already starts him this week (F441 / F445)\'\n          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \'', E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \''), E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n    -- 154 / F441 · F445: ONE START PER PLAYER PER LEAGUE-WEEK. A candidate\n    -- another team of this league already STARTS this week (a start kept\n    -- after he left that team — D411 / D412(5)) is never offered: the write\n    -- would be refused by name (team_lineups\' trigger) and fail the league\'s\n    -- tick. Named in skipped_locked[] (the tick reports it), never silently\n    -- dropped (§4 rule 15).\n    v_else := public.lineup_started_elsewhere_internal(p_league_id, p_team_id, p_season, p_week, v_pid);\n    IF v_else IS NOT NULL THEN\n      v_locked_out := v_locked_out || jsonb_build_object(\n        \'player_id\', v_pid, \'name\', v_e ->> \'name\', \'position\', v_e ->> \'position\',\n        \'kickoff_at\', v_kick -> v_pid ->> \'kickoff_at\',\n        \'started_by\', v_else ->> \'team_id\',\n        \'reason\', \'already in \' || (v_else ->> \'team_name\') || \'\'\'s starting lineup for week \' || p_week\n                  || \' — a player starts for at most one team per league-week (F441 / F445)\');\n      CONTINUE;\n    END IF;\n', E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n'), E'    IF v_locked OR NOT v_unhealthy OR v_pid = ANY (v_kept) THEN   -- 154: a kept off-roster starter stays, unconditionally\n      v_seated := v_seated || v_pid;\n', E'    IF v_locked OR NOT v_unhealthy THEN\n      v_seated := v_seated || v_pid;\n'), E'    -- 154 / F441 · F442 · F445: the ONE shared judgment (set_lineup (4b)\'s and\n    -- the commissioner\'s editor\'s): he played (his current team\'s game, this\n    -- lineup\'s record of the slot, or a stat line for the week), or the week\n    -- closed to moves before he left and he has a game this week. A KEPT\n    -- starter is seated whatever his health or kickoff (the classification\n    -- below) — his start is the week\'s record, never autopilot\'s to change.\n    SELECT * INTO v_k FROM public.lineup_kept_starter_internal(p_season, p_week, v_pid, v_key, v_row.starters, p_at);\n    CONTINUE WHEN NOT v_k.kept;   -- a bye / a game gone from the week: the slot stays OPEN\n    v_kept := v_kept || v_pid;\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n', E'    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot stays OPEN\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n'), E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\n  -- 154 / F441 · F445: stored off-roster starters KEPT for the week, and the\n  -- team (if any) that already starts a candidate this league-week.\n  v_kept        TEXT[] := ARRAY[]::text[];\n  v_else        JSONB;\nBEGIN\n', E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\nBEGIN\n'),
   E'    v_kick := v_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n  END LOOP;\n\n  -- 152 / R1206 (Q32\'s amendment, verbatim: "if they are in the lineup they\n  -- are stuck in the lineup"; D411): A PLAYED STARTER STAYS EVEN AFTER HE\n  -- LEAVES THE ROSTER. After a week\'s last game a starter who played can be\n  -- dropped, claimed away or traded while the week is still current, and 152\n  -- keeps his start in that week\'s slot_map (the week is scored from it). A\n  -- stored STARTING slot whose player is off this roster and whose OWN game\n  -- for p_week has kicked off is his, not OPEN: he joins v_by_pid / v_kick\n  -- (never v_roster — he is nobody\'s candidate and on no bench), so the\n  -- classification below seats him as the locked starter he is (D338) and the\n  -- fit keeps him fixed at his key. One whose game has not kicked off (a bye)\n  -- did not play: his slot is OPEN, as before.\n  FOR v_key, v_val IN SELECT * FROM jsonb_each(v_stored) LOOP\n    v_pid := v_val #>> \'{}\';\n    CONTINUE WHEN v_by_pid ? v_pid;\n    CONTINUE WHEN NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_slots) s WHERE s ->> \'key\' = v_key);\n    SELECT jsonb_build_object(\n             \'player_id\',   p.id,\n             \'name\',        p.full_name,\n             \'position\',    CASE WHEN p.position = \'DEF\' THEN \'DST\' ELSE p.position END,\n             \'designation\', public.lineup_designation_internal(p.status),\n             \'nfl_team\',    p.team,\n             \'off_roster\',  TRUE)\n    INTO v_e\n    FROM public.players p WHERE p.id = v_pid;\n    CONTINUE WHEN v_e IS NULL;\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot stays OPEN\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n    v_kick := v_kick || jsonb_build_object(v_pid, jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n  END LOOP;\n',
   E'    v_kick := v_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n  END LOOP;\n'),
   E'  --   · empty (or holding a player who has since left the roster WITHOUT\n  --     having played — 152 / R1206: a played one is in v_by_pid, locked) ⇒ OPEN;\n',
@@ -179,7 +329,7 @@ select is(
 -- RE-PINNED BY L.D2.15 (migration 154 — additive, the R992 shape): 154's
 -- substitutions are reversed INNERMOST first, so this chain proves what it did.
 select is(
-  (select md5(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(p.prosrc)), E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\') AND x ? \'started_by\')\n            THEN \'no eligible player at \' || upper(v_e ->> \'slot\') || \' free to start — another team of the league already starts him this week (F441 / F445)\'\n          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \'', E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \''), E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n    -- 154 / F441 · F445: ONE START PER PLAYER PER LEAGUE-WEEK. A candidate\n    -- another team of this league already STARTS this week (a start kept\n    -- after he left that team — D411 / D412(5)) is never offered: the write\n    -- would be refused by name (team_lineups\' trigger) and fail the league\'s\n    -- tick. Named in skipped_locked[] (the tick reports it), never silently\n    -- dropped (§4 rule 15).\n    v_else := public.lineup_started_elsewhere_internal(p_league_id, p_team_id, p_season, p_week, v_pid);\n    IF v_else IS NOT NULL THEN\n      v_locked_out := v_locked_out || jsonb_build_object(\n        \'player_id\', v_pid, \'name\', v_e ->> \'name\', \'position\', v_e ->> \'position\',\n        \'kickoff_at\', v_kick -> v_pid ->> \'kickoff_at\',\n        \'started_by\', v_else ->> \'team_id\',\n        \'reason\', \'already in \' || (v_else ->> \'team_name\') || \'\'\'s starting lineup for week \' || p_week\n                  || \' — a player starts for at most one team per league-week (F441 / F445)\');\n      CONTINUE;\n    END IF;\n', E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n'), E'    IF v_locked OR NOT v_unhealthy OR v_pid = ANY (v_kept) THEN   -- 154: a kept off-roster starter stays, unconditionally\n      v_seated := v_seated || v_pid;\n', E'    IF v_locked OR NOT v_unhealthy THEN\n      v_seated := v_seated || v_pid;\n'), E'    -- 154 / F441 · F442 · F445: the ONE shared judgment (set_lineup (4b)\'s and\n    -- the commissioner\'s editor\'s): he played (his current team\'s game, this\n    -- lineup\'s record of the slot, or a stat line for the week), or the week\n    -- closed to moves before he left and he has a game this week. A KEPT\n    -- starter is seated whatever his health or kickoff (the classification\n    -- below) — his start is the week\'s record, never autopilot\'s to change.\n    SELECT * INTO v_k FROM public.lineup_kept_starter_internal(p_season, p_week, v_pid, v_key, v_row.starters, p_at);\n    CONTINUE WHEN NOT v_k.kept;   -- a bye / a game gone from the week: the slot stays OPEN\n    v_kept := v_kept || v_pid;\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n', E'    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot stays OPEN\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n'), E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\n  -- 154 / F441 · F445: stored off-roster starters KEPT for the week, and the\n  -- team (if any) that already starts a candidate this league-week.\n  v_kept        TEXT[] := ARRAY[]::text[];\n  v_else        JSONB;\nBEGIN\n', E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\nBEGIN\n'),
+  (select md5(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(pg_temp.un157(pg_temp.un181(pg_temp.un201(p.prosrc))), E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\') AND x ? \'started_by\')\n            THEN \'no eligible player at \' || upper(v_e ->> \'slot\') || \' free to start — another team of the league already starts him this week (F441 / F445)\'\n          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \'', E'          WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(v_locked_out) x WHERE v_elig ? (x ->> \'position\'))\n            THEN \'no unlocked eligible player at \''), E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n    -- 154 / F441 · F445: ONE START PER PLAYER PER LEAGUE-WEEK. A candidate\n    -- another team of this league already STARTS this week (a start kept\n    -- after he left that team — D411 / D412(5)) is never offered: the write\n    -- would be refused by name (team_lineups\' trigger) and fail the league\'s\n    -- tick. Named in skipped_locked[] (the tick reports it), never silently\n    -- dropped (§4 rule 15).\n    v_else := public.lineup_started_elsewhere_internal(p_league_id, p_team_id, p_season, p_week, v_pid);\n    IF v_else IS NOT NULL THEN\n      v_locked_out := v_locked_out || jsonb_build_object(\n        \'player_id\', v_pid, \'name\', v_e ->> \'name\', \'position\', v_e ->> \'position\',\n        \'kickoff_at\', v_kick -> v_pid ->> \'kickoff_at\',\n        \'started_by\', v_else ->> \'team_id\',\n        \'reason\', \'already in \' || (v_else ->> \'team_name\') || \'\'\'s starting lineup for week \' || p_week\n                  || \' — a player starts for at most one team per league-week (F441 / F445)\');\n      CONTINUE;\n    END IF;\n', E'        \'reason\', \'his game had already kicked off at the tick instant (§11.2, lineup_lock = per_player_kickoff) — autopilot does not inherit the commissioner\'\'s exemption (D338)\');\n      CONTINUE;\n    END IF;\n'), E'    IF v_locked OR NOT v_unhealthy OR v_pid = ANY (v_kept) THEN   -- 154: a kept off-roster starter stays, unconditionally\n      v_seated := v_seated || v_pid;\n', E'    IF v_locked OR NOT v_unhealthy THEN\n      v_seated := v_seated || v_pid;\n'), E'    -- 154 / F441 · F442 · F445: the ONE shared judgment (set_lineup (4b)\'s and\n    -- the commissioner\'s editor\'s): he played (his current team\'s game, this\n    -- lineup\'s record of the slot, or a stat line for the week), or the week\n    -- closed to moves before he left and he has a game this week. A KEPT\n    -- starter is seated whatever his health or kickoff (the classification\n    -- below) — his start is the week\'s record, never autopilot\'s to change.\n    SELECT * INTO v_k FROM public.lineup_kept_starter_internal(p_season, p_week, v_pid, v_key, v_row.starters, p_at);\n    CONTINUE WHEN NOT v_k.kept;   -- a bye / a game gone from the week: the slot stays OPEN\n    v_kept := v_kept || v_pid;\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n', E'    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot stays OPEN\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n'), E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\n  -- 154 / F441 · F445: stored off-roster starters KEPT for the week, and the\n  -- team (if any) that already starts a candidate this league-week.\n  v_kept        TEXT[] := ARRAY[]::text[];\n  v_else        JSONB;\nBEGIN\n', E'  v_d_in        TEXT[] := ARRAY[]::text[];   -- Doubtful men pass 1b seated (fixed in pass 2)\nBEGIN\n'),
   E'    v_kick := v_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n  END LOOP;\n\n  -- 152 / R1206 (Q32\'s amendment, verbatim: "if they are in the lineup they\n  -- are stuck in the lineup"; D411): A PLAYED STARTER STAYS EVEN AFTER HE\n  -- LEAVES THE ROSTER. After a week\'s last game a starter who played can be\n  -- dropped, claimed away or traded while the week is still current, and 152\n  -- keeps his start in that week\'s slot_map (the week is scored from it). A\n  -- stored STARTING slot whose player is off this roster and whose OWN game\n  -- for p_week has kicked off is his, not OPEN: he joins v_by_pid / v_kick\n  -- (never v_roster — he is nobody\'s candidate and on no bench), so the\n  -- classification below seats him as the locked starter he is (D338) and the\n  -- fit keeps him fixed at his key. One whose game has not kicked off (a bye)\n  -- did not play: his slot is OPEN, as before.\n  FOR v_key, v_val IN SELECT * FROM jsonb_each(v_stored) LOOP\n    v_pid := v_val #>> \'{}\';\n    CONTINUE WHEN v_by_pid ? v_pid;\n    CONTINUE WHEN NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_slots) s WHERE s ->> \'key\' = v_key);\n    SELECT jsonb_build_object(\n             \'player_id\',   p.id,\n             \'name\',        p.full_name,\n             \'position\',    CASE WHEN p.position = \'DEF\' THEN \'DST\' ELSE p.position END,\n             \'designation\', public.lineup_designation_internal(p.status),\n             \'nfl_team\',    p.team,\n             \'off_roster\',  TRUE)\n    INTO v_e\n    FROM public.players p WHERE p.id = v_pid;\n    CONTINUE WHEN v_e IS NULL;\n    SELECT * INTO v_k FROM public.lineup_kickoff_internal(p_season, p_week, v_e ->> \'nfl_team\', p_at);\n    CONTINUE WHEN v_k.kickoff_at IS NULL OR v_k.kickoff_at > p_at;   -- has not played: the slot stays OPEN\n    v_by_pid := v_by_pid || jsonb_build_object(v_pid, v_e);\n    v_kick := v_kick || jsonb_build_object(v_pid, jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n  END LOOP;\n',
   E'    v_kick := v_kick || jsonb_build_object(v_e ->> \'player_id\', jsonb_build_object(\n      \'kickoff_at\', v_k.kickoff_at, \'datum_arm\', v_k.datum_arm, \'on_bye\', v_k.on_bye));\n  END LOOP;\n'),
   E'  --   · empty (or holding a player who has since left the roster WITHOUT\n  --     having played — 152 / R1206: a played one is in v_by_pid, locked) ⇒ OPEN;\n',
