@@ -79,7 +79,7 @@ describe('phoneWeeks', () => {
     expect(w3.secondary.map((r) => r.id)).toEqual(['m7', 'm8'])
   })
 
-  it('puts your game first, you on top and tinted — home or away', () => {
+  it('puts your game first, you on top and marked yours — home or away', () => {
     const w1 = phoneWeeks(GRID, { ...base, myTeamId: 't4' })[0]!
     expect(w1.primary.map((r) => r.id)).toEqual(['m2', 'm1'])
     expect([w1.primary[0]!.top.id, w1.primary[0]!.bottom?.id, w1.primary[0]!.mine]).toEqual(['t4', 't3', true])
@@ -91,11 +91,11 @@ describe('phoneWeeks', () => {
     expect(weeks[0]!.primary.map((r) => [r.id, r.top.id])).toEqual([['m1', 't2']])
     expect(weeks[2]!.primary.map((r) => [r.id, r.top.id])).toEqual([['m6', 't2']])
     expect(weeks[2]!.secondary.map((r) => [r.id, r.top.id])).toEqual([['m7', 't2']])
-    // Their game against you is still yours: tinted.
+    // Their game against you is still yours.
     expect(weeks[0]!.primary[0]!.mine).toBe(true)
   })
 
-  it('your own chip doesn’t tint every row', () => {
+  it('your own chip doesn’t mark every row yours', () => {
     const weeks = phoneWeeks(GRID, { ...base, teamId: 't1', myTeamId: 't1' })
     expect(weeks.flatMap((w) => [...w.primary, ...w.secondary]).some((r) => r.mine)).toBe(false)
   })

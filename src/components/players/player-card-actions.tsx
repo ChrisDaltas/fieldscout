@@ -6,7 +6,8 @@ import { useMemo, useState } from 'react'
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { Crest } from '@/components/leagues/league-cells'
 import { DropConfirm } from '@/components/leagues/drop-player-dialog'
-import { formatInstantWithDate, lockBadgeFor } from '@/components/leagues/lineup-editor-ops'
+import { currentWeekGamesOver } from '@/components/leagues/healthy-ir-ops'
+import { currentWeekOf, formatInstantWithDate, lockBadgeFor } from '@/components/leagues/lineup-editor-ops'
 import { moveReadout, poolRows } from '@/components/leagues/players-page-ops'
 import { tradesHref } from '@/components/leagues/trades-ops'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import { useLeague } from '@/hooks/use-league'
 import { useLeaguePool } from '@/hooks/use-league-pool'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { useRosters } from '@/hooks/use-rosters'
+import { useSchedule } from '@/hooks/use-schedule'
 import { useSubmitClaim } from '@/hooks/use-submit-claim'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { useAddDrop } from '@/hooks/use-transactions'
@@ -33,6 +35,7 @@ import {
   bidAllowed,
   cardLeagueView,
   claimPlacedCopy,
+  dropOffered,
   droppable,
   leagueRowStatus,
   ROSTER_FULL_COPY,
@@ -63,6 +66,9 @@ export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
   const rosters = useRosters(leagueId)
   const pool = useLeaguePool(leagueId)
   const deadline = useTradeDeadline(leagueId)
+  // D593: the current week decides whether a Restricted IR stint still runs
+  // (a stint that does blocks nothing); unknown while it loads — the server decides.
+  const schedule = useSchedule(leagueId)
   const detail = league.data
   if (league.isPending || (rosters.isPending && !rosters.data) || (pool.isPending && !pool.data)) {
     return { state: 'loading' as const }
@@ -86,6 +92,9 @@ export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
     minBid: detail.settings.faab_min_bid,
     nextRunLocal: nextRun ? formatInstantWithDate(nextRun, tz).local : null,
     formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
+    irSlots: detail.settings.roster_settings.ir_slots,
+    currentWeek: currentWeekOf(schedule.data?.weeks ?? []),
+    weekGamesOver: currentWeekGamesOver(schedule.data?.weeks ?? [], currentWeekOf(schedule.data?.weeks ?? [])),
   })
   return { state: 'ready' as const, view, myTeamId }
 }
@@ -168,17 +177,15 @@ function ClosedReason({ children }: { children: React.ReactNode }) {
   )
 }
 
+/** One of YOUR players: Drop while he is droppable (F692 — `dropOffered`),
+ *  through the one drop confirm (`DropConfirm`, plain words, the same verb as
+ *  the team page and the phone). Locked (or moves closed) there is NO Drop —
+ *  only why. The button is the soft red tint with red words: the bright red is
+ *  for text and small icons, never a fill (2026-10-18). */
 function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView, { kind: 'mine' }>; leagueId: string; teamId: string }) {
   const [confirming, setConfirming] = useState(false)
-  if (!view.drop.open) {
-    return (
-      <span className="flex flex-wrap items-center gap-2">
-        <Button variant="stroke" size="sm" disabled data-card-action="drop">
-          Drop
-        </Button>
-        <ClosedReason>{view.drop.reason}</ClosedReason>
-      </span>
-    )
+  if (!dropOffered(view)) {
+    return <ClosedReason>{view.drop.open ? null : view.drop.reason}</ClosedReason>
   }
   if (confirming) {
     return (
@@ -192,7 +199,7 @@ function MineActions({ view, leagueId, teamId }: { view: Extract<CardLeagueView,
   }
   return (
     <span>
-      <Button variant="stroke" size="sm" onClick={() => setConfirming(true)} data-card-action="drop">
+      <Button variant="destructive" size="sm" className="bg-negative-soft" onClick={() => setConfirming(true)} data-card-action="drop">
         Drop
       </Button>
     </span>

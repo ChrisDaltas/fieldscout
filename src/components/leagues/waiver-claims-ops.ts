@@ -99,6 +99,12 @@ const INVALID_WORDS: Record<string, string> = {
   insufficient_faab: 'the bid was more than your FAAB left by then.',
   own_claim_won: 'one of your other claims went through first and made this one impossible.',
   no_waivers: 'the league turned waivers off — he can be picked up directly now.',
+  // D593 / F693 (migration 205; Chris 2026-10-21: "they should fail when
+  // waivers run"): the team still had an ineligible player in an IR spot at
+  // the run, so the claim failed before the decision. The words lead with
+  // the ruled headline ("You have an ineligible player in your IR spot."),
+  // said of the run.
+  healthy_in_ir: 'you had an ineligible player in your IR spot when waivers ran.',
   seat_vacated: 'the team’s manager left the seat, so its claims were cancelled.',
   manager_left: 'the team’s manager left the league, so its claims were cancelled.',
 }
@@ -215,6 +221,10 @@ export function claimOnlyAddTitle(nextRunLocal: string | null): string {
  * next run) renders verbatim. With no window (a failed read) both stay live.
  * `claimsLive: false` — a database without claims (pre-149, R1219) — means
  * no Claim at all. Locks come from the tick's view only (`row.lock`).
+ * `irBlockTitle` (D593, migration 205): the viewer's team has a player who
+ * isn't IR-eligible in an IR spot (`healthyIrAddTitle`) — every Add and Claim
+ * is disabled with that reason, whatever the window or the lock says: the
+ * server refuses them all until he leaves the spot.
  */
 export function pickupActions(
   row: Pick<PoolPlayerRow, 'availability' | 'lock'>,
@@ -225,9 +235,16 @@ export function pickupActions(
     lockedAddTitle: string
     nextRunLocal: string | null
     claimsLive?: boolean
+    irBlockTitle?: string | null
   },
 ): { add: ActionState; claim: ActionState } {
   const noWaivers = ctx.waiverType === 'none_fcfs' || ctx.window?.waivers === false || ctx.claimsLive === false
+  if (ctx.irBlockTitle) {
+    return {
+      add: { show: true, disabled: true, title: ctx.irBlockTitle },
+      claim: noWaivers ? { show: false } : { show: true, disabled: true, title: ctx.irBlockTitle },
+    }
+  }
   if (row.lock.locked) {
     return {
       add: { show: true, disabled: true, title: ctx.lockedAddTitle },

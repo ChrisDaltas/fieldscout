@@ -100,6 +100,7 @@ export interface CommishEditLineupResult {
   current_week: number
   action_id: string
   lineup_lock: 'per_player_kickoff'
+  /** Always `true` since migration 201 (D591 — the setting is retired). */
   allow_illegal_lineups: boolean
   /** Chris's one condition, as a field: a no-op wrote NOTHING — no audit row,
    *  no chat post, no enqueue — and says so rather than being inferred. */

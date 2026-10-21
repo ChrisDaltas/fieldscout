@@ -58,7 +58,9 @@ import {
  * - **A card per week**: "Week N", Playoffs / Current tags and the week's
  *   Live / Final / Upcoming word, the stored league median when there is
  *   one, then its games — two lines each, your team (or the picked one) on
- *   top, the stored scores with the loser's greyed; your own game tinted.
+ *   top, the stored scores with the loser's greyed. Your own game is drawn
+ *   like the rest — the handoff never tints "you" (m-league §2.2, §2.3);
+ *   your blue avatar marks you.
  *   A game opens on the Match tab; a second-opponent game sits in its own
  *   group and each side opens that team (the Match tab swipes the week's
  *   matchups only — League › Matchups' rule). Consolation and third-place
@@ -340,7 +342,7 @@ function GameRow({
   const tags = row.tag !== null || row.tie || row.overridden
   return (
     <li
-      className={cn('relative flex flex-col gap-0.5 px-3.5 py-2', row.mine && 'bg-m-gb')}
+      className="relative flex flex-col gap-0.5 px-3.5 py-2"
       data-matchup={row.id}
       data-mine={row.mine || undefined}
       data-round-type={row.roundType}

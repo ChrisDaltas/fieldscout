@@ -525,6 +525,19 @@ describe('mobile Match — other states', () => {
     expect(html).toContain('>Week leaderboard<')
   })
 
+  it('a total-points week: the picked team (yours to start) wears the handoff’s selected look — tint AND ring, never the tint alone', () => {
+    const html = render({ week: weekDoc({ schedule_mode: 'total_points', matchups: [] }) })
+    const rowClass = (id: string) => (html.match(new RegExp(`<button [^>]*class="([^"]*)"[^>]*data-leaderboard-row="${id}"`))?.[1] ?? '').split(' ')
+    // m-match §2.3 selected game card: bg gb + inset 1.5px #0088FF.
+    expect(rowClass(ME)).toEqual(expect.arrayContaining(['bg-m-gb', 'ring-[1.5px]', 'ring-inset', 'ring-accent']))
+    expect(html).toMatch(new RegExp(`aria-pressed="true"[^>]*data-leaderboard-row="${ME}"`))
+    for (const team of [OPP, T3]) {
+      const cls = rowClass(team)
+      expect(cls.length).toBeGreaterThan(1)
+      expect(cls.filter((c) => /m-gb|ring-/.test(c))).toEqual([])
+    }
+  })
+
   it('a league that will not load says so with a retry', () => {
     const html = render({ detail: 'error' })
     expect(html).toContain('Couldn’t load this league.')

@@ -8,6 +8,7 @@ import { clearsDay, movesTimeline, preDraftFor, PRESS, shortDate, type MoveKind,
 import { useProfileUiStore } from '@/components/mobile/player/profile-ui-store'
 import { initials, leagueAvClass } from '@/components/mobile/shell/use-league-card'
 import { useCardLeagueView } from '@/components/players/player-card-actions'
+import { dropOffered } from '@/components/players/player-card-league-ops'
 import { formatAdp } from '@/components/players/player-page-ops'
 import { UsernameLink } from '@/components/shared/username-link'
 import { useDraftQueue, useUpdateDraftQueue } from '@/hooks/use-draft-queue'
@@ -76,7 +77,12 @@ function RowsSkeleton() {
   )
 }
 
+/** `cls` carries the pill's fill AND its words' colour. */
 type RowButton = { label: string; cls: string; open: boolean; reason?: string; run: () => void }
+
+/** The Drop pill's tint (F692): red words on the phone's red tint — the bright
+ *  red is for text and small icons, never a fill (2026-10-18). */
+const DROP_PILL = cn('bg-m-gr text-m-tr', PRESS.danger)
 
 function LeagueRow({
   league,
@@ -117,6 +123,11 @@ function LeagueRow({
     } else if (a.kind === 'rostered' && a.mine) {
       sub = `On your team · ${a.teamName}`
       subCls = 'text-accent'
+      // F692 (Chris 2026-10-21): "Drop" as an option while he is droppable —
+      // not while he is locked for the week (`dropOffered`).
+      if (dropOffered(v)) {
+        button = { label: 'Drop', cls: DROP_PILL, open: true, run: () => onMove('drop', league.id) }
+      }
     } else if (a.kind === 'rostered') {
       const mgr = detail.data?.members.find((m) => m.team_id === a.teamId)?.profiles?.username
       sub = mgr ? (
@@ -130,7 +141,7 @@ function LeagueRow({
         const trade = v.trade
         button = {
           label: 'Trade',
-          cls: cn('bg-accent', PRESS.accent),
+          cls: cn('text-white bg-accent', PRESS.accent),
           open: trade.open,
           reason: trade.open ? undefined : trade.reason,
           run: () => onTrade(league.id, v.teamId),
@@ -145,7 +156,7 @@ function LeagueRow({
         const claim = v.acquire.kind === 'claim' || (v.acquire.kind === 'none' && waivers)
         button = {
           label: claim ? 'Claim' : 'Add',
-          cls: claim ? cn('bg-m-gold', PRESS.gold) : cn('bg-confirm', PRESS.confirm),
+          cls: claim ? cn('text-white bg-m-gold', PRESS.gold) : cn('text-white bg-confirm', PRESS.confirm),
           open: !v.acquire.disabled,
           reason: v.acquire.disabled ? v.acquire.title : undefined,
           run: () => onMove('acquire', league.id),
@@ -174,7 +185,8 @@ function LeagueRow({
             type="button"
             aria-disabled={!button.open || undefined}
             onClick={() => (button.open ? button.run() : toast({ title: button.reason ?? 'Not available right now.' }))}
-            className={cn('flex h-[30px] flex-none items-center rounded-pill px-3.5 text-[12px] font-semibold text-white', button.cls, !button.open && 'opacity-40')}
+            data-profile-league-action={button.label}
+            className={cn('flex h-[30px] flex-none items-center rounded-pill px-3.5 text-[12px] font-semibold', button.cls, !button.open && 'opacity-40')}
           >
             {button.label}
           </button>

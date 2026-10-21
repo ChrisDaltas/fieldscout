@@ -87,7 +87,8 @@ export interface PhoneRow {
   top: PhoneSide
   /** null = a bye. */
   bottom: PhoneSide | null
-  /** Your game — tinted, unless the filter is already your team. */
+  /** Your game (`data-mine`; never tinted — m-league §2.2), unless the
+   *  filter is already your team. */
   mine: boolean
   tie: boolean
   overridden: boolean

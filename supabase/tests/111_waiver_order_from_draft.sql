@@ -277,6 +277,15 @@ $o199$);
 end
 $un199$;
 
+-- pg_temp.un205 — migration 205's inserted lines removed (each ends
+-- `-- 205 / D593`; 205 changes no line of 199's text); an identity on every
+-- other body (pgTAP 155 A5). RE-PINNED by D593: applied INNERMOST in the cells
+-- that fingerprint roster_add_drop / waiver_claim_submit / process_waivers /
+-- waiver_claim_notify, so they pin exactly what they pinned (additive, R992).
+create function pg_temp.un205(p_src text) returns text language sql as $un205$
+  select regexp_replace(p_src, E'\n[^\n]*   -- 205 / D593', '', 'g')
+$un205$;
+
 -- ---------------------------------------------------------------------------
 -- A. Form pins — 163 replaces nothing
 -- ---------------------------------------------------------------------------
@@ -302,7 +311,7 @@ select is(
   'A|CREATE TRIGGER trg_leagues_waiver_priority_seed AFTER UPDATE OF status, waiver_type, settings ON public.leagues FOR EACH ROW WHEN (((new.status = ANY (ARRAY[''in_season''::text, ''playoffs''::text])) AND (new.deleted_at IS NULL))) EXECUTE FUNCTION leagues_waiver_priority_seed_trg()',
   'A3 the trigger: AFTER UPDATE OF status, waiver_type, settings on leagues, in season or playoffs only, ENABLE ALWAYS');
 select is(
-  (select md5(pg_temp.un199(p.prosrc)) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(pg_temp.un199(pg_temp.un205(p.prosrc))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'process_waivers_internal'),
   '18723b8cd3309b483b5765e6c841c786',
   'A4 the processor is untouched — prosrc md5 is 160 as written (the stored literal 108 A4 pins); it already continues from a stored order');

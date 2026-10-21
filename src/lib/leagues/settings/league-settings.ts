@@ -463,6 +463,10 @@ export const leagueSettingsSchema = z.strictObject({
   // v2.16.20 (Q34(A), Chris 2026-09-05; migration 114): `first_game_of_week` is RETIRED — a player's
   // slot locks at his own kickoff and nothing else; this is the only value and the DB CHECK agrees.
   lineup_lock: z.enum(['per_player_kickoff']).default('per_player_kickoff'),
+  // D591 (Chris 2026-10-20; migration 201): RETIRED — a lineup always saves with a bye / injured
+  // starter or an empty slot ("That shouldn't be blocking anyone from doing anything."). The key
+  // stays PARSEABLE because every league already stores it (the strict object would otherwise
+  // refuse those rows); nothing reads it, no screen sets it, and the in-season verb refuses it.
   allow_illegal_lineups: z.boolean().default(true),
   auto_sub_inactives: z.boolean().default(false),
   stat_correction_window: z
