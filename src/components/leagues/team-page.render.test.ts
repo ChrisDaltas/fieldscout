@@ -450,7 +450,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 1,
@@ -494,7 +493,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 1,
@@ -717,7 +715,7 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
     expect(qb).toContain('Empty')
   })
 
-  it('bye starter: the server flag chip under allow_illegal_lineups = true is caution copy', () => {
+  it('bye starter: the server flag chip is caution copy, never a refusal (D591 — the setting is retired)', () => {
     const html = renderTeamPage()
     const wr = html.slice(html.indexOf('data-slot="wr:0"'), html.indexOf('data-bench'))
     expect(wr).toContain('Bye — scores 0')
@@ -758,7 +756,6 @@ describe('the editor renders the FETCHED lock, the record as a record, and the c
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 2,
@@ -1041,7 +1038,6 @@ describe('L.D2.13 — the FAAB balance on the team page; a dropped-but-played st
               teamId: TEAM,
               week: 1,
               settings: settings.roster_settings,
-              allowIllegal: true,
               roster,
               stored,
               currentWeek,
@@ -1164,7 +1160,6 @@ describe('My Team (League UX batch 3) — stats, checks, matchup, read-only', ()
             teamId: TEAM,
             week: 1,
             settings: settings.roster_settings,
-            allowIllegal: true,
             roster,
             stored: lineupRow,
             currentWeek: 1,

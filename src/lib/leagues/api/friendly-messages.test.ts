@@ -204,10 +204,12 @@ describe('never empty (R1485)', () => {
   })
 })
 
-describe('census — the 310 P0001 refusals of the survey (re-cut through 199, D561) come out code-free', () => {
+describe('census — the 308 P0001 refusals of the survey (re-cut through 201, D561 / D591) come out code-free', () => {
   const rows = census as Array<{ loc: string; fn: string; text: string }>
   it('the fixture is the survey’s full P0001 list', () => {
-    expect(rows).toHaveLength(310)   // 315 until 199 removed the five retired-team refusals
+    // 315 until 199 removed the five retired-team refusals; 310 until 201 (D591) removed the two
+    // "illegal lineup" refusals (set_lineup / commish_edit_lineup) with the retired setting.
+    expect(rows).toHaveLength(308)
   })
   it('no § remains in any of them, and none comes out empty', () => {
     const left = rows.map((r) => ({ loc: r.loc, out: friendlyMessage(r.text) })).filter((r) => JARGON.section.test(r.out) || !r.out)

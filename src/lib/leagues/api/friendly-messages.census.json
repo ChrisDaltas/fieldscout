@@ -1310,11 +1310,6 @@
   "text": "set_lineup: % entered restricted IR spot % in week % and may not leave it before week % (min_weeks stint, §11.2/§7.3.2) — the current week is %; commissioner override is M6's"
  },
  {
-  "loc": "199_remove_retire_schema.sql:6108",
-  "fn": "set_lineup_internal",
-  "text": "set_lineup: % is % for week % and allow_illegal_lineups is off — slot \"%\" is blocked at submit (§7.3.6); bench him or start someone who plays"
- },
- {
   "loc": "199_remove_retire_schema.sql:6210",
   "fn": "set_lineup_internal",
   "text": "set_lineup: wrote slot_key for % starters, expected %"
@@ -1363,11 +1358,6 @@
   "loc": "199_remove_retire_schema.sql:2974",
   "fn": "commish_edit_lineup_internal",
   "text": "commish_edit_lineup: % holds designation % — IR spot % accepts only % (§7.3.2 IR slot rules)"
- },
- {
-  "loc": "199_remove_retire_schema.sql:3074",
-  "fn": "commish_edit_lineup_internal",
-  "text": "commish_edit_lineup: % is % for week % and this league doesn't allow illegal lineups — slot \"%\" can't be saved like this; bench him, start someone who plays, or turn on illegal lineups in the league settings"
  },
  {
   "loc": "199_remove_retire_schema.sql:3289",

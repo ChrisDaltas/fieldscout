@@ -369,9 +369,10 @@ export function designationOf(status: string | null | undefined): string | null 
  * Plan a move of `playerId` to `target` over `placement`. Refusals here are
  * the ones the CLIENT can see without the server (a locked player, a
  * position the slot does not take, a Restricted IR stint still running) —
- * copy the manager reads before a submit; every other law (E16's fit,
- * bye/OUT under `allow_illegal_lineups`, the kickoff read at transaction
- * time) is 112's and arrives as its verbatim refusal after the submit.
+ * copy the manager reads before a submit; every other law (E16's fit, the
+ * kickoff read at transaction time) is 112's and arrives as its verbatim
+ * refusal after the submit. A bye / OUT starter or an empty slot never
+ * refuses a save (D591, migration 201 — "Allow illegal lineups" is retired).
  */
 export function planMove(
   placement: Placement,
@@ -486,30 +487,32 @@ export interface StarterHint {
   text: string
 }
 
-/** The PRE-submit hint for a placed starter (bye / designation) — the
- *  `allow_illegal_lineups` messaging (§7.3.6/D293): TRUE means the player
- *  starts and scores 0, flagged; FALSE means the submit will be refused. */
+/** The PRE-submit hint for a placed starter (bye / designation) — a caution,
+ *  never a refusal. D591 (Chris 2026-10-20, retiring "Allow illegal lineups":
+ *  "You can always start a player on a buy [bye]. That's not against any
+ *  rules. That's just not a good idea."): the save always goes through. A bye
+ *  man has no game, so he scores 0; an injured one scores only if he plays —
+ *  never "scores 0" for an OUT / Doubtful tag, which can be wrong. */
 export function starterHint(
   player: Pick<RosterPlayer, 'bye_week' | 'status' | 'full_name'>,
   week: number,
-  allowIllegal: boolean,
 ): StarterHint | null {
   const onBye = player.bye_week !== null && player.bye_week === week
+  if (onBye) return { tone: 'caution', text: 'on bye — starts and scores 0 this week' }
   const designation = designationOf(player.status)
-  if (!onBye && !designation) return null
-  const what = onBye ? 'on bye' : `${designation}`
-  return allowIllegal
-    ? { tone: 'caution', text: `${what} — starts and scores 0 this week` }
-    : { tone: 'negative', text: `${what} — this league blocks it; the save will be refused` }
+  if (!designation) return null
+  return { tone: 'caution', text: `${designation} — scores only if he plays` }
 }
 
 /** The server's OWN flags on a stored starter (112 writes `bye` / `out` /
- *  `empty` / `ir_ineligible`) — rendered after a set, verbatim in spirit. */
-export function starterFlagChips(flags: readonly string[], allowIllegal: boolean): StarterHint[] {
+ *  `empty` / `ir_ineligible`) — rendered after a set, verbatim in spirit.
+ *  A bye / OUT flag is a caution (D591: it never blocks a save); an IR man
+ *  who is no longer eligible stays the one negative. */
+export function starterFlagChips(flags: readonly string[]): StarterHint[] {
   const out: StarterHint[] = []
   for (const f of flags) {
-    if (f === 'bye') out.push({ tone: allowIllegal ? 'caution' : 'negative', text: 'Bye — scores 0' })
-    else if (f === 'out') out.push({ tone: allowIllegal ? 'caution' : 'negative', text: 'OUT — scores 0' })
+    if (f === 'bye') out.push({ tone: 'caution', text: 'Bye — scores 0' })
+    else if (f === 'out') out.push({ tone: 'caution', text: 'OUT — may not play' })
     else if (f === 'ir_ineligible') out.push({ tone: 'negative', text: 'IR spot — no longer eligible' })
   }
   return out

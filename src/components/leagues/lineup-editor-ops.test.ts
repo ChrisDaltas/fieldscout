@@ -265,7 +265,7 @@ describe('moves', () => {
   })
 })
 
-describe('hints and chips (§7.3.6 allow_illegal_lineups; §16.5.4 flags)', () => {
+describe('hints and chips (§16.5.4 flags; D591 — "Allow illegal lineups" retired)', () => {
   it('112’s designation bridge, mirrored', () => {
     expect(designationOf('Out')).toBe('OUT')
     expect(designationOf(' sus ')).toBe('Suspended')
@@ -273,17 +273,23 @@ describe('hints and chips (§7.3.6 allow_illegal_lineups; §16.5.4 flags)', () =
     expect(designationOf(null)).toBeNull()
   })
 
-  it('bye/OUT hints read the setting: TRUE scores 0 flagged, FALSE will be refused', () => {
+  it('bye / injured hints are cautions, never "the save will be refused" — and an injury tag never reads "scores 0" (D591)', () => {
     const bye = { bye_week: 7, status: 'Active', full_name: 'X' }
-    expect(starterHint(bye, 7, true)).toEqual({ tone: 'caution', text: 'on bye — starts and scores 0 this week' })
-    expect(starterHint(bye, 7, false)).toEqual({ tone: 'negative', text: 'on bye — this league blocks it; the save will be refused' })
-    expect(starterHint(bye, 8, true)).toBeNull()
-    expect(starterHint({ bye_week: null, status: 'Out', full_name: 'X' }, 1, true)?.text).toBe('OUT — starts and scores 0 this week')
-    expect(starterFlagChips(['bye', 'ir_ineligible'], true)).toEqual([
+    expect(starterHint(bye, 7)).toEqual({ tone: 'caution', text: 'on bye — starts and scores 0 this week' })
+    expect(starterHint(bye, 8)).toBeNull()
+    expect(starterHint({ bye_week: null, status: 'Out', full_name: 'X' }, 1)).toEqual({ tone: 'caution', text: 'OUT — scores only if he plays' })
+    expect(starterHint({ bye_week: null, status: 'Doubtful', full_name: 'X' }, 1)).toEqual({ tone: 'caution', text: 'Doubtful — scores only if he plays' })
+    expect(starterHint({ bye_week: null, status: 'Questionable', full_name: 'X' }, 1)).toBeNull()
+    expect(starterFlagChips(['bye', 'ir_ineligible'])).toEqual([
       { tone: 'caution', text: 'Bye — scores 0' },
       { tone: 'negative', text: 'IR spot — no longer eligible' },
     ])
-    expect(starterFlagChips(['out'], false)[0]?.tone).toBe('negative')
+    expect(starterFlagChips(['out'])).toEqual([{ tone: 'caution', text: 'OUT — may not play' }])
+    for (const status of ['Out', 'Doubtful', 'IR', 'Suspended']) {
+      const hint = starterHint({ bye_week: null, status, full_name: 'X' }, 1)
+      expect(hint?.tone).toBe('caution')
+      expect(hint?.text).not.toMatch(/refused|blocks|scores 0/)
+    }
   })
 
   it('the save outcome names no_changes, re-seats with their moves, and a flagged save (R779)', () => {

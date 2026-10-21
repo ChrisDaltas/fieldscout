@@ -5,7 +5,7 @@
  * clients (the `transactions-api-db.test.ts` shape).
  *
  * pgTAP 060/062 cover `set_lineup`'s LAW DB-side at injected instants (E16,
- * the per-player lock, IR, both `allow_illegal_lineups` settings);
+ * the per-player lock, IR; pgTAP 151 the retired `allow_illegal_lineups`);
  * `lineups-db.test.ts` covers the raw verb over the wire. What THIS suite
  * proves is the layer those two do not touch:
  *
@@ -158,7 +158,17 @@ const ACTION = {
   /** R809's fixtures: the IR placement and the IR removal. */
   irPlace: 'afa00000-0000-4000-8000-00000000001c',
   irRemove: 'afa00000-0000-4000-8000-00000000001d',
+  /** D591's fixtures (Chris's case, the setting stored FALSE). */
+  outStart: 'afa00000-0000-4000-8000-000000000030',
+  chrisCase: 'afa00000-0000-4000-8000-000000000031',
+  chrisResave: 'afa00000-0000-4000-8000-000000000032',
 } as const
+/** D591: an OUT running back whose OWN game (`vitest-la-out`, 2099) is still
+ *  ahead — OUT only, never a bye and never locked (the lock cells move LAD's
+ *  game into the past). Added by the D591 block, not in PLAYERS, so every
+ *  earlier cell's roster is unchanged. */
+const RB_OUT = { id: 'vitest-la-rb-out', full_name: 'Vitest LA RB Out', position: 'RB', team: 'LAK', status: 'Out' }
+const GAME_OUT_ID = 'vitest-la-out'
 
 const service = createClient<Database>(LOCAL_URL, LOCAL_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -205,15 +215,12 @@ async function cleanup(): Promise<void> {
     const { error: teamsError } = await service.from('teams').delete().in('id', teamIds)
     if (teamsError) throw new Error(`cleanup teams: ${teamsError.message}`)
   }
-  const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID])
+  const { error: gamesError } = await service.from('nfl_games').delete().in('id', [GAME_LOCKED_ID, GAME_OPEN_ID, GAME_OUT_ID])
   if (gamesError) throw new Error(`cleanup nfl_games: ${gamesError.message}`)
   const { error: playersError } = await service
     .from('players')
     .delete()
-    .in(
-      'id',
-      PLAYERS.map((p) => p.id),
-    )
+    .in('id', [...PLAYERS.map((p) => p.id), RB_OUT.id])
   if (playersError) throw new Error(`cleanup players: ${playersError.message}`)
   for (const u of [COMMISH, MANAGER, FELLOW, OUTSIDER]) {
     await deleteUserByUsername(u.username)
@@ -773,5 +780,69 @@ describe('IR placement + removal through the route (F224(e) — an absent IR key
     const again = await setLineup(managerClient, leagueId, managerTeamId, body(submitted, ACTION.irRemove))
     expect(JSON.stringify(again)).toBe(JSON.stringify(result))
     expect(await storedSlotMap()).toStrictEqual(submitted)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D591 (migration 201) — CHRIS'S CASE OVER THE WIRE. The league stores
+// `allow_illegal_lineups = false` (as SuperLeague v0.1 does); an OUT starter
+// sits untouched at rb:0 and the manager moves a bench RB into the EMPTY
+// rb:1. Before 201 every save was refused ("… is OUT … and
+// allow_illegal_lineups is off"), even one that changed nothing. Chris
+// 2026-10-18: "Injuries should not block roster moves and users are not
+// required to remove injured players from their lineups."
+// ---------------------------------------------------------------------------
+describe('D591 — a lineup save is never refused over an OUT starter (the setting stored FALSE is ignored)', () => {
+  beforeAll(async () => {
+    const { data: league, error: readError } = await service.from('leagues').select('settings').eq('id', leagueId).single()
+    if (readError) throw new Error(`leagues read: ${readError.message}`)
+    const { error: settingsError } = await service
+      .from('leagues')
+      .update({ settings: { ...(league.settings as Record<string, unknown>), allow_illegal_lineups: false } })
+      .eq('id', leagueId)
+    if (settingsError) throw new Error(`leagues settings: ${settingsError.message}`)
+    const { error: gameError } = await service.from('nfl_games').insert({
+      id: GAME_OUT_ID, season: SYNTHETIC_SEASON, week: 1, home_team: RB_OUT.team, away_team: 'ZZX', kickoff_at: KICKOFF_FUTURE,
+    })
+    if (gameError) throw new Error(`nfl_games insert (rb-out): ${gameError.message}`)
+    const { error: playerError } = await service.from('players').upsert([RB_OUT])
+    if (playerError) throw new Error(`players upsert (rb-out): ${playerError.message}`)
+    const { error: rosterError } = await service
+      .from('league_rosters')
+      .insert({ league_id: leagueId, team_id: managerTeamId, player_id: RB_OUT.id })
+    if (rosterError) throw new Error(`league_rosters insert (rb-out): ${rosterError.message}`)
+  })
+
+  it('starting an OUT player saves (200), flagged out — and the result key reads TRUE whatever is stored', async () => {
+    const map: SlotMap = { ...baseMap(), 'rb:0': RB_OUT.id }
+    const result = await setLineup(managerClient, leagueId, managerTeamId, body(map, ACTION.outStart))
+    expect(result.status, errorText(result)).toBe(200)
+    const doc = result.body as unknown as SetLineupResult
+    expect(doc.slot_map).toStrictEqual(map)
+    expect(doc.flags.out).toStrictEqual([RB_OUT.id])
+    expect(doc.flags.empty).toContain('rb:1')
+    expect(doc.allow_illegal_lineups).toBe(true)
+    expect(doc.bench).toContain(rbOpen)
+  })
+
+  it("CHRIS'S CASE: the OUT starter untouched, a bench RB moved into the empty spot — 200, written, flagged", async () => {
+    const map: SlotMap = { ...baseMap(), 'rb:0': RB_OUT.id, 'rb:1': rbOpen }
+    const result = await setLineup(managerClient, leagueId, managerTeamId, body(map, ACTION.chrisCase))
+    expect(result.status, errorText(result)).toBe(200)
+    const doc = result.body as unknown as SetLineupResult
+    expect(doc.no_changes).toBe(false)
+    expect(doc.slot_map).toStrictEqual(map)
+    expect(doc.flags.out).toStrictEqual([RB_OUT.id])
+    expect(doc.flags.empty).not.toContain('rb:1')
+    expect(await storedSlotMap()).toStrictEqual(map)
+  })
+
+  it('an identical re-save is no_changes (200) — never "blocked at submit"; the stored FALSE is untouched', async () => {
+    const map: SlotMap = { ...baseMap(), 'rb:0': RB_OUT.id, 'rb:1': rbOpen }
+    const result = await setLineup(managerClient, leagueId, managerTeamId, body(map, ACTION.chrisResave))
+    expect(result.status, errorText(result)).toBe(200)
+    expect((result.body as unknown as SetLineupResult).no_changes).toBe(true)
+    const { data: league } = await service.from('leagues').select('settings').eq('id', leagueId).single()
+    expect((league?.settings as Record<string, unknown>).allow_illegal_lineups).toBe(false)
   })
 })

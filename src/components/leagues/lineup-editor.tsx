@@ -157,7 +157,6 @@ export interface LineupEditorProps {
   teamId: string
   week: number
   settings: RosterSettings
-  allowIllegal: boolean
   roster: readonly RosterPlayer[]
   /** The stored row for the week, or null (nothing set yet — D293/D313). */
   stored: TeamLineupRow | null
@@ -196,7 +195,6 @@ export function LineupEditor({
   teamId,
   week,
   settings,
-  allowIllegal,
   roster,
   stored,
   currentWeek,
@@ -383,7 +381,6 @@ export function LineupEditor({
     currentWeek,
     leagueTimeZone,
     week,
-    allowIllegal,
     columns,
     stats,
     headshot: (id) => identity.playerById.get(id)?.headshot_url ?? null,
@@ -723,7 +720,6 @@ interface RowContext {
   currentWeek: number | null
   leagueTimeZone: string | null
   week: number
-  allowIllegal: boolean
   columns: readonly StatColumnId[]
   stats: LineupStats
   headshot: (id: string) => string | null
@@ -861,8 +857,8 @@ function StarterRow({
   const isLocked = player ? ctx.locked.has(player.player_id) : kept !== null
   const frozen = isLocked && !ctx.lockExempt
   const droppable = useDroppable({ id: `slot:${slot.key}`, disabled: ctx.readOnly || frozen })
-  const hint = player ? starterHint(player, ctx.week, ctx.allowIllegal) : null
-  const flags = storedStarter && player && storedStarter.player_id === player.player_id ? starterFlagChips(storedStarter.flags, ctx.allowIllegal) : []
+  const hint = player ? starterHint(player, ctx.week) : null
+  const flags = storedStarter && player && storedStarter.player_id === player.player_id ? starterFlagChips(storedStarter.flags) : []
   const hints = [...(hint ? [hint] : []), ...flags]
   const rail = railTargetProps(ctx, `slot:${slot.key}`)
   return (

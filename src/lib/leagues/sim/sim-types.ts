@@ -91,8 +91,9 @@ export interface LeaguePlan {
  *   - "strict/lax locks" cannot be `lineup_lock`: Q34(A) / migration 114
  *     retired `first_game_of_week` and the enum is now single-valued
  *     (`league-settings.ts:430`), and Q35 / migration 115 retired
- *     `player_game_lock` (the strict Zod object refuses the key). The only
- *     surviving lock axis is `allow_illegal_lineups`.
+ *     `player_game_lock` (the strict Zod object refuses the key). The last
+ *     one, `allow_illegal_lineups`, was retired by D591 / migration 201 (a
+ *     bye / OUT starter never refuses a save), so no lock axis survives.
  *   - "divisions 1/2" was cut to 1 by Q30 (d): the select renders one option
  *     and the engine ignores the value (`league-settings.ts:368`).
  *
@@ -104,8 +105,6 @@ export interface SeasonLeaguePlan {
   scheduleMode: 'h2h' | 'total_points'
   medianGame: boolean
   secondOpponent: boolean
-  /** The surviving lock axis (§7.3.6; default true). */
-  allowIllegalLineups: boolean
   regularSeasonWeeks: number
   /** 0 in a `total_points` league — the coupling above. */
   playoffTeams: number
@@ -338,13 +337,8 @@ export interface SeasonLeagueResult {
   leagueId: string
   teamCount: number
   scheduleMode: 'h2h' | 'total_points'
-  /** `settings.allow_illegal_lineups` as stored — FALSE is D299's legality
-   *  arm, the league §7.3.6 actually polices (F286 / D328). */
-  allowIllegalLineups: boolean
-  /** Week-1 lineups the SERVER accepted for this league. The number that
-   *  matters in an `allow_illegal_lineups = false` league: a green run whose
-   *  OFF league seats nothing is decorative coverage (D267), so the count is
-   *  reported per league rather than as one run-wide total. */
+  /** Week-1 lineups the SERVER accepted for this league — reported per
+   *  league rather than as one run-wide total (D267). */
   lineupsSeated: number
   /** Week-1 lineups the server REFUSED (each is also a run `problem`). */
   lineupsRefused: number
@@ -358,9 +352,6 @@ export interface SeasonLeagueResult {
    *  the draft's ADP reach) from one team's odd board, and the difference is
    *  the whole finding. */
   lineupEmptySlotKeys: Record<string, number>
-  /** Players passed over because §7.3.6 would refuse the DESIGNATION
-   *  (OUT/IR/PUP/NFI/Suspended). Only ever non-zero in an OFF league. */
-  benchedForLegality: number
   /** Seats with NO manager (`league_members`, D339). The harness sets none of
    *  their lineups (M6A L.E1.14 / F335) — the server's autopilot does. */
   unmanagedSeats: number
@@ -496,8 +487,6 @@ export interface SeasonRunReport {
    * override the run injected on a final cell, or null. null with a finalized
    * week is a run PROBLEM (the arm asserted nothing).
    */
-  /** R1266 (D423(10)): the synthetic §7.3.6 designations the run planted. */
-  legalityPlants: Array<{ leagueLabel: string; teamId: string; playerId: string; position: string; offHolders: number }>
   lawfulOverride: {
     leagueLabel: string
     leagueId: string

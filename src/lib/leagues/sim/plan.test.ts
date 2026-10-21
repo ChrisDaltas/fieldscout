@@ -238,7 +238,7 @@ describe('the season matrix (D299) — drawn on its own stream, guaranteed by co
     }
   })
 
-  it('median on / second on / illegal-lineups off each appear at their thresholds — over seeds 1..200', () => {
+  it('median on / second on each appear at their thresholds — over seeds 1..200 (D591 retired the illegal-lineups axis)', () => {
     for (const seed of SEED_RANGE) {
       const at3 = buildRunPlan({ ...cfg, leagues: 3, seed, season: true })
       expect(at3.leagues.some((l) => l.season!.medianGame), `median at 3 leagues, seed=${seed}`).toBe(true)
@@ -248,9 +248,7 @@ describe('the season matrix (D299) — drawn on its own stream, guaranteed by co
       const at6 = buildRunPlan({ ...cfg, leagues: 6, seed, season: true })
       expect(at6.leagues.some((l) => l.season!.medianGame), `median at 6 leagues, seed=${seed}`).toBe(true)
       expect(at6.leagues.some((l) => l.season!.secondOpponent), `second at 6 leagues, seed=${seed}`).toBe(true)
-      expect(at6.leagues.some((l) => !l.season!.allowIllegalLineups), `illegal-off at 6 leagues, seed=${seed}`).toBe(
-        true,
-      )
+      expect(at6.leagues.every((l) => !('allowIllegalLineups' in l.season!)), `no legality axis, seed=${seed}`).toBe(true)
     }
   })
 
@@ -289,7 +287,7 @@ describe('the season matrix (D299) — drawn on its own stream, guaranteed by co
     }
   })
 
-  it('the LOCK AXIS is `allow_illegal_lineups` alone — Q34(A)/114 and Q35/115 retired the other two', () => {
+  it('NO lock axis is left — Q34(A)/114 and Q35/115 retired two, D591/201 retired `allow_illegal_lineups`', () => {
     // A pin, not a comment: the schema's `lineup_lock` enum is single-valued
     // and `player_game_lock` is refused by the strict object. If either
     // returns, this test is where the matrix gains an arm.
@@ -320,7 +318,7 @@ describe('the season matrix (D299) — drawn on its own stream, guaranteed by co
     expect(line).toMatch(/h2h|total_points/)
     expect(line).toContain('median ')
     expect(line).toContain('second ')
-    expect(line).toContain('illegal-lineups ')
+    expect(line).not.toContain('illegal-lineups')
     expect(line).toContain('regular weeks')
     expect(line).toContain('playoff_teams')
   })

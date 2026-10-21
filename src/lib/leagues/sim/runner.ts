@@ -498,7 +498,6 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
           schedule_mode: season.scheduleMode,
           median_game: season.medianGame,
           second_opponent: season.secondOpponent,
-          allow_illegal_lineups: season.allowIllegalLineups,
           regular_season_weeks: season.regularSeasonWeeks,
           playoff_teams: season.playoffTeams as (typeof settings)['playoff_teams'],
           playoff_start_week: season.playoffStartWeek,
@@ -654,33 +653,23 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
   }
 
   // The league's pool view: real players, ADP ascending (068's walk head).
-  // `position`/`status` join the projection for season mode's need-aware
-  // personas (F288) — a draft-only run reads them and never consults them,
-  // so its decision stream is unchanged.
+  // `position` joins the projection for season mode's need-aware personas
+  // (F288) — a draft-only run reads it and never consults it, so its decision
+  // stream is unchanged. (`status` left with D591: no league refuses a
+  // starter over a designation any more.)
   const { data: poolRows, error: poolError } = await limit(() =>
     commish.client
       .from('players')
-      .select('id, adp, position, status')
+      .select('id, adp, position')
       .order('adp', { ascending: true, nullsFirst: false })
       .limit(POOL_WINDOW),
   )
   throwIfError(poolError, `${label}: pool read`)
   const poolByAdp = (poolRows ?? []).map((p) => p.id as string)
   const positionById = new Map<string, string>()
-  const statusById = new Map<string, string | null>()
   for (const row of poolRows ?? []) {
     const raw = String(row.position ?? '').toUpperCase()
     positionById.set(row.id as string, raw === 'DEF' ? 'DST' : raw)
-    statusById.set(row.id as string, (row.status ?? null) as string | null)
-  }
-  // §7.3.6 refuses a STARTER carrying a blocking designation only where the
-  // league polices legality; where it does not, an OUT starter is lawful and
-  // seating him is coverage of that arm (season-runner's `chooseStarterSlots`
-  // makes the same distinction, from the same list).
-  const blockedAsStarter = (playerId: string): boolean => {
-    if (season === undefined || season.allowIllegalLineups) return false
-    const designation = simDesignation(statusById.get(playerId) ?? null)
-    return designation !== null && BLOCKING_DESIGNATIONS.has(designation)
   }
   const seasonSlots = SEASON_ROSTER.starting_slots.flatMap((sl) =>
     Array.from({ length: sl.count }, (_, i) => ({
@@ -806,7 +795,6 @@ async function driveLeague(args: DriveLeagueArgs): Promise<LeagueResult> {
               rosterPlayerIds: rosterByTeam.get(seat.teamId) ?? [],
               rounds: totalRounds,
               positionOf: (id: string) => positionById.get(id) ?? null,
-              blockedAsStarter,
             },
           }),
     }
@@ -2181,6 +2169,9 @@ function chunked<T>(items: readonly T[]): T[][] {
  * counts any left behind, so an aborted run's mask is loud and healed by the
  * next sweep. Doubtful / Questionable are NOT masked: they do not block a
  * starter. Nothing else about a player is touched.
+ * (D591 / migration 201 retired `allow_illegal_lineups`, so no league refuses
+ * an OUT starter any more; the mask stays because autopilot still PREFERS a
+ * healthy man, and the sim's world must not move with the day's injury news.)
  */
 export const SIM_WORLD_STATUS_PREFIX = 'sim-world:'
 
@@ -2254,6 +2245,10 @@ export async function restoreMaskedStatuses(service: Supabase): Promise<number> 
  * `cleanupSweep` runs it BEFORE the mask restore (a plant may sit on a masked
  * player, whose recorded status is the mask), and `simCensus` counts any
  * plant left behind.
+ * D591 (migration 201): the season runner PLANTS NOTHING now — the legality
+ * arm went with the retired setting. `plantDesignations` stays for the
+ * sim-world round-trip suite, and the restore keeps healing any plant a
+ * pre-201 run left behind.
  */
 export const SIM_WORLD_PLANT_PREFIX = 'sim-world-plant:'
 export const SIM_PLANTED_STATUS = 'Out'
