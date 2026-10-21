@@ -18,24 +18,38 @@
 --   "The only time you can't move a player between your bench and your
 --   starting lineup is because they've locked, because their game has
 --   started for the week."
+-- AND (Chris, 2026-10-21, verbatim — his answers to F690 / F692 / F693):
+--   "1. Nothing changes if the player is locked. that's tough luck. but
+--   that's why we have ai roster automations coming. 2. Yes the user can
+--   click on the player and drop them directly. the player detail page, mini
+--   modal or card should have "Drop" as an option if they are droppable. Not
+--   if they are locked for the week though. 3. No, if the player is no longer
+--   IR eligible the claims are cancelled."
 --
 -- THE RULE. While one of a team's IR spots holds a player whose designation
 -- is no longer one THAT spot takes (he got healthy, or his tag changed to one
 -- the spot doesn't list — a DL spot takes Doubtful, a plain IR spot doesn't),
--- the team ADDS NOBODY: no free-agent add (alone or as an add + drop) and no
--- waiver claim — a new claim is refused when it is placed, and a claim already
--- pending fails at the waiver run with the reason `healthy_in_ir` (its owner
--- is told; nothing is spent; its waiver priority doesn't move). What stays
--- open — the ways out Chris names: a plain DROP (room on a full roster), and
--- every lineup / bench move, moving him out of the IR spot to the bench and
--- swapping an IR-eligible player into the spot included (set_lineup is not
--- touched — its kickoff locks stand). NOT blocked: trades (Chris: roster moves
--- "mean adds and drops"), and the commissioner's own roster tools (his
--- override verbs, untouched here — commissioner powers fix). A RESTRICTED-IR
--- spot whose stint still forbids moving him out does not block: the manager
--- can't fix it, so nothing is asked of him (spec §7.3.2 says so).
--- Judged at action time from the player's designation NOW
--- (`players.status` through 112's bridge) — no new job, no stored flag.
+-- the team ADDS NOBODY: no free-agent add (alone, or with a drop of anyone
+-- but him) and no waiver claim — a new claim is refused when it is placed,
+-- and every claim already pending is CANCELLED (F693 as ruled: status
+-- `cancelled`, reason `healthy_in_ir`, nothing spent, its waiver priority
+-- unmoved, its owner told ONCE per team) — as soon as we know (the hourly
+-- injury-tag refresh and the daily player sync call
+-- `waiver_claims_cancel_healthy_ir` right after they write), and at the waiver
+-- run as the backstop. What stays open — the ways out Chris names: a plain
+-- DROP (room on a full roster — or of him: "the user can click on the player
+-- and drop them directly"), an add + drop whose DROP IS HIM (F692 as ruled:
+-- dropping him clears the block in the same move), and every lineup / bench
+-- move, moving him out of the IR spot to the bench and swapping an
+-- IR-eligible player into the spot included (set_lineup is not touched — its
+-- kickoff locks stand). F690 as ruled: "Nothing changes if the player is
+-- locked" — the block stands while his game has him locked in the spot.
+-- NOT blocked: trades (Chris: roster moves "mean adds and drops"), and the
+-- commissioner's own roster tools (his override verbs, untouched here —
+-- commissioner powers fix). A RESTRICTED-IR spot whose stint still forbids
+-- moving him out does not block: the manager can't fix it, so nothing is
+-- asked of him (spec §7.3.2 says so). Judged from the player's designation
+-- NOW (`players.status` through 112's bridge) — no stored flag.
 --
 -- THE CHECK — ONE helper, `ir_healthy_blockers_internal(league, team,
 -- current week)` (new, §1): the team's roster rows on an IR spot
@@ -48,62 +62,78 @@
 --
 -- THE BODIES — each CREATE OR REPLACE against its NEWEST defining migration's
 -- FILE TEXT (D137; `grep -l -i -E "function[[:space:]]+(public[.])?<name>
--- [[:space:]]*[(]"` over 001–201: 199 for all four — 200 and 201 define none
+-- [[:space:]]*[(]"` over 001–201: 199 for all three — 200 and 201 define none
 -- of them; each file body's md5 equals the live prosrc on the local DB, head
--- 201), derived by derive_205.py. EVERY change is an INSERTED line ending
+-- 201), derived by derive_205.py and then edited in place (the 2026-10-21
+-- rulings) under the same rule. EVERY change is an INSERTED line ending
 -- `-- 205 / D593` (no line of 199's text is altered or removed), so
 -- pgTAP 155's pg_temp.un205 — drop every line carrying the tag — gives each
--- source back byte for byte and is an identity on every other body:
---   roster_add_drop_internal     199:5041-5577  md5 635060c5… → 2 hunks (+13)
---   waiver_claim_submit_internal 199:8040-8348  md5 382e6aec… → 2 hunks (+13)
---   process_waivers_internal     199:1345-1893  md5 9e3aecda… → 4 hunks (+34)
---   waiver_claim_notify_internal 199:1898-1987  md5 75f0fb9a… → 1 hunk  (+3)
+-- source back byte for byte and is an identity on every other body (the two
+-- new functions below carry no tagged line):
+--   roster_add_drop_internal     199:5041-5577  md5 635060c5… → 2 hunks (+23)
+--   waiver_claim_submit_internal 199:8040-8348  md5 382e6aec… → 2 hunks (+14)
+--   process_waivers_internal     199:1345-1893  md5 9e3aecda… → 4 hunks (+17)
 --   1. roster_add_drop_internal: in THE ADD, right after the player is known,
---      a team with a healthy IR occupant is refused by name in plain words.
---      The drop side is untouched — a plain drop is never blocked.
+--      a team with a healthy IR occupant is refused by name in plain words —
+--      unless the move's own DROP is that occupant (F692 as ruled; his drop
+--      lock was already judged on the drop side, so a locked one is still
+--      refused there). The drop side is untouched — a drop is never blocked.
 --   2. waiver_claim_submit_internal: the same refusal, after the current week
 --      is read and before the pickup lock — both arms (the manager, and a
---      commissioner acting for the team: the run would fail the claim; his
---      own roster tools stay open).
+--      commissioner acting for the team: the claim would be cancelled; his
+--      own roster tools stay open). A claim is refused whatever it drops
+--      (F693 as ruled: "the claims are cancelled").
 --   3. process_waivers_internal: right after the pending claims are locked
---      and BEFORE the input is built, every pending claim of a blocked team
---      settles invalid / healthy_in_ir (asserted one row each), its owner
---      notified — so the resolver (and its TS twin) never see it and the
---      player goes to the next claim in line; the resolver pair is not
---      touched. The run's summary counts them in `claims` and `invalid` and
---      names them in a new `healthy_in_ir` key; the input / result logs hold
---      only what the resolver decided.
---   4. waiver_claim_notify_internal: the notice for `healthy_in_ir`, in plain
---      words, names the IR player and why he no longer fits (the run passes
---      the helper's `name` / `why` as `ir_player` / `ir_why`).
+--      and BEFORE the input is built, `waiver_claims_cancel_healthy_ir_internal`
+--      (§1b) cancels every pending claim of a blocked team — so the resolver
+--      (and its TS twin) never see it and the player goes to the next claim
+--      in line; the resolver pair is not touched. The run's summary counts
+--      them in `claims` and names them in its `healthy_in_ir` key (they are
+--      cancelled, not `invalid`); the input / result logs hold only what the
+--      resolver decided. (waiver_claim_notify_internal is NOT redefined here:
+--      the one notice per team is §1b's.)
+-- NEW: §1b `waiver_claims_cancel_healthy_ir_internal(league, week, at,
+-- source)` — the ONE cancel, shared by the run and §1c — and §1c the job door
+-- `waiver_claims_cancel_healthy_ir(p_now)` the injury syncs call (service
+-- role) right after they write; and §1a the column `waiver_claims.result_detail`
+-- (who and why, so My moves can say "Cancelled — <Player> is healthy and
+-- still in your IR spot").
 --
 -- WHAT IS UNCHANGED, STATED. IR placement (only a player holding one of the
 -- spot's designations moves INTO it), Restricted-IR stints, per-player kickoff
 -- locks (an IR man whose own game this week has kicked off can't leave the
 -- spot until the NEXT week starts — set_lineup's IR-timing gate clears when
 -- the current week flips, Wednesday 00:00 ET — and can't be dropped until the
--- week's last game ends; the block stands meanwhile, so from his kickoff to
--- the games' end the team can't add at all and from then to the new week only
--- a plain drop of him clears it — measured, PROGRESS F690, Chris's call),
--- position fit, one start per player per week, bye players never locked
--- (200), lineup saves never refused (201), set_lineup / commish_edit_lineup /
--- autopilot, the trade verbs and executor, commish_roster_override, every
--- other message. pgTAP 151 B3–B8 (lineup saves with a since-healthy IR man)
--- stay green: lineup moves are not blocked.
+-- week's last game ends; the block stands meanwhile — F690, ruled: "Nothing
+-- changes if the player is locked"), position fit, one start per player per
+-- week, bye players never locked (200), lineup saves never refused (201),
+-- set_lineup / commish_edit_lineup / autopilot, the trade verbs and executor,
+-- commish_roster_override, waiver_claim_notify_internal (199's), every other
+-- message. pgTAP 151 B3–B8 (lineup saves with a since-healthy IR man) stay
+-- green: lineup moves are not blocked.
 --
--- DEPLOY BEFORE PUSH. SQL only: one new PLAIN helper, four bodies, one column
--- comment; no signature, table, column, policy, index, grant, trigger,
--- realtime or cron change. The app ships the notice and disabled Adds first
--- (it computes the same rule from the rosters it already reads); until
--- Chris's `db push` production simply doesn't refuse yet.
+-- DEPLOY BEFORE PUSH. One new nullable column (no default, no backfill, no
+-- constraint), one new PLAIN helper, one new internal, one new job door,
+-- three bodies, two column comments; no signature, policy, index, trigger,
+-- realtime or cron change. The app ships first and works on the older schema:
+-- it computes the notice and the closed Adds from the rosters it already
+-- reads; the claims read re-runs without `result_detail` on exactly that
+-- column's 42703; the syncs read the door's PGRST202 (not pushed yet) as a
+-- named warning, never a failure. Until Chris's `db push` production simply
+-- doesn't refuse or cancel yet.
 --
 -- MIGRATION CHECKLIST (tasks-M* §4.4): the helper is LANGUAGE sql, STABLE,
 -- SECURITY INVOKER, search_path '', EXECUTE revoked from PUBLIC / anon /
--- authenticated (service_role / postgres as every internal), COMMENTed. The
--- four bodies keep their signatures, LANGUAGE plpgsql, VOLATILE, SECURITY
--- INVOKER (none is DEFINER — the `roster_add_drop` / `waiver_claim_submit` /
--- `waiver_tick` doors are, untouched), search_path '' and ACLs (REVOKEs
--- restated). No backfill. Typegen: unchanged (the helper is not exposed).
+-- authenticated (service_role / postgres as every internal), COMMENTed; the
+-- new internal the same, plpgsql VOLATILE; the door SECURITY DEFINER,
+-- search_path '', refuses a JWT-bearing caller in-body (a job RPC, the
+-- waiver_tick shape), EXECUTE revoked from PUBLIC / anon / authenticated,
+-- COMMENTed. The three bodies keep their signatures, LANGUAGE plpgsql,
+-- VOLATILE, SECURITY INVOKER (none is DEFINER — the `roster_add_drop` /
+-- `waiver_claim_submit` / `waiver_tick` doors are, untouched), search_path ''
+-- and ACLs (REVOKEs restated). The column rides waiver_claims' one SELECT
+-- policy (own team or commissioner) and no write policy (C73) — written only
+-- by §1b. No backfill. Typegen: the column and the door, by hand.
 -- pgTAP 155_healthy_ir_blocks_adds.sql.
 -- ============================================================================
 
@@ -146,11 +176,259 @@ AS $$
 $$;
 REVOKE EXECUTE ON FUNCTION ir_healthy_blockers_internal(public.leagues, UUID, INTEGER) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION ir_healthy_blockers_internal(public.leagues, UUID, INTEGER) IS
-  'D593 / spec §7.3.2 (migration 205): the team''s IR occupants who no longer hold one of their spot''s eligible designations (healthy again, or tagged with one the spot does not take) — less any whose Restricted stint still runs at p_current — as a JSON array; empty = the team may add. While it is non-empty roster_add_drop refuses an add, waiver_claim_submit refuses a claim and the waiver run fails the team''s pending claims (healthy_in_ir). Drops, lineup moves, trades and the commissioner''s roster tools are not blocked.';
+  'D593 / spec §7.3.2 (migration 205): the team''s IR occupants who no longer hold one of their spot''s eligible designations (healthy again, or tagged with one the spot does not take) — less any whose Restricted stint still runs at p_current — as a JSON array; empty = the team may add. While it is non-empty roster_add_drop refuses an add (unless the move drops that occupant — F692), waiver_claim_submit refuses a claim, and waiver_claims_cancel_healthy_ir_internal cancels the team''s pending claims (healthy_in_ir — F693; called by the injury syncs and the waiver run). Drops, lineup moves, trades and the commissioner''s roster tools are not blocked.';
 
 -- ---------------------------------------------------------------------------
--- 2. roster_add_drop_internal — 199:5041-5577 FILE TEXT (D137), 2 hunks (+13 / -0):
---    no add while a healthy player holds an IR spot.
+-- 1a. waiver_claims.result_detail — who and why, for a claim the rule closed
+-- ---------------------------------------------------------------------------
+-- Nullable, no default, no backfill: NULL on every claim but one §1b
+-- cancelled. It rides the table's one SELECT policy (own team or
+-- commissioner) and its zero write policies (C73) — written only by §1b.
+ALTER TABLE waiver_claims ADD COLUMN IF NOT EXISTS result_detail JSONB;
+COMMENT ON COLUMN waiver_claims.result_detail IS
+  'What a claim''s result is about when it is not the add or the drop (205 / D593 / F693): for status cancelled / result_reason healthy_in_ir, {ir_player_id, ir_player, why ("healthy" | "listed <tag>"), spot, source ("injury_sync" | "waiver_run")} — the player whose IR spot no longer fit him when the claim was cancelled (Transactions › My moves names him). NULL otherwise. Written only by waiver_claims_cancel_healthy_ir_internal.';
+
+-- ---------------------------------------------------------------------------
+-- 1b. waiver_claims_cancel_healthy_ir_internal — the ONE cancel (new; F693)
+-- ---------------------------------------------------------------------------
+-- Chris, 2026-10-21, verbatim: "No, if the player is no longer IR eligible
+-- the claims are cancelled." For every team of the league with a pending
+-- claim and a blocker (§1) at p_current: ALL its pending claims become
+-- cancelled / healthy_in_ir in one asserted UPDATE (cancelled_at = p_at;
+-- cancelled_by = the claim's own author — the waiver run's precedent for a
+-- system settlement, transactions.initiated_by = the claim's created_by; the
+-- reason, not the actor, says the rule closed it), result_detail naming the
+-- first blocker, and the team's manager gets ONE notice for all of them. It
+-- re-reads `pending`, so a second call — the next hourly sync, or the run
+-- after the sync — finds nothing and sends nothing: idempotent, and the
+-- notice is never repeated. Nothing is spent (no FAAB moved), no waiver
+-- priority moves, the claimed players stay where they are. THE CALLER HOLDS
+-- THE LEAGUE ROW LOCK (process_waivers_internal step 1; the §1c door) — every
+-- claim writer serializes there (D294).
+CREATE OR REPLACE FUNCTION waiver_claims_cancel_healthy_ir_internal(
+  p_league  public.leagues,
+  p_current INTEGER,
+  p_at      TIMESTAMPTZ,
+  p_source  TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_team     RECORD;
+  v_block    JSONB;
+  v_ir       JSONB;
+  v_ids      UUID[];
+  v_add_ids  TEXT[];
+  v_adds     TEXT[];
+  v_n        INTEGER;
+  v_cnt      INTEGER;
+  v_user     UUID;
+  v_detail   JSONB;
+  v_list     TEXT;
+  v_title    TEXT;
+  v_body     TEXT;
+  v_teams    JSONB := '[]'::jsonb;
+  v_total    INTEGER := 0;
+  v_notified INTEGER := 0;
+BEGIN
+  IF p_league.id IS NULL OR p_current IS NULL OR p_at IS NULL OR p_source IS NULL THEN
+    RAISE EXCEPTION 'waiver_claims_cancel_healthy_ir: the league, its current week, the instant and the source are all required (p_at is the TimeProvider seam — no clock is read here)'
+      USING ERRCODE = '22023';
+  END IF;
+
+  FOR v_team IN
+    SELECT c.team_id
+    FROM public.waiver_claims c
+    WHERE c.league_id = p_league.id AND c.status = 'pending'
+    GROUP BY c.team_id
+    ORDER BY c.team_id
+  LOOP
+    v_block := public.ir_healthy_blockers_internal(p_league, v_team.team_id, p_current);
+    CONTINUE WHEN jsonb_array_length(v_block) = 0;
+    v_ir := v_block -> 0;
+
+    -- the team's pending claims, locked, in its own order
+    SELECT array_agg(x.id ORDER BY x.claim_order, x.id),
+           array_agg(x.add_player_id ORDER BY x.claim_order, x.id),
+           array_agg(x.add_name ORDER BY x.claim_order, x.id)
+    INTO v_ids, v_add_ids, v_adds
+    FROM (SELECT c.id, c.claim_order, c.add_player_id, COALESCE(p.full_name, c.add_player_id) AS add_name
+          FROM public.waiver_claims c
+          LEFT JOIN public.players p ON p.id = c.add_player_id
+          WHERE c.league_id = p_league.id AND c.team_id = v_team.team_id AND c.status = 'pending'
+          FOR UPDATE OF c) x;
+    v_n := COALESCE(cardinality(v_ids), 0);
+    CONTINUE WHEN v_n = 0;
+
+    v_detail := jsonb_build_object(
+      'ir_player_id', v_ir ->> 'player_id',
+      'ir_player',    v_ir ->> 'name',
+      'why',          v_ir ->> 'why',
+      'spot',         v_ir ->> 'label',
+      'source',       p_source);
+    UPDATE public.waiver_claims c
+    SET status = 'cancelled', result_reason = 'healthy_in_ir', result_detail = v_detail,
+        cancelled_at = p_at, cancelled_by = c.created_by
+    WHERE c.id = ANY (v_ids) AND c.status = 'pending';
+    GET DIAGNOSTICS v_cnt = ROW_COUNT;
+    IF v_cnt <> v_n THEN
+      RAISE EXCEPTION 'waiver_claims_cancel_healthy_ir: cancelling team %''s % pending claim(s) touched % row(s) — refusing',
+        v_team.team_id, v_n, v_cnt
+        USING ERRCODE = 'P0001';
+    END IF;
+    v_total := v_total + v_cnt;
+
+    -- ONE notice to the team's manager, in plain words, for all of them.
+    v_user := NULL;
+    SELECT m.user_id INTO v_user
+    FROM public.league_members m
+    WHERE m.league_id = p_league.id AND m.team_id = v_team.team_id AND m.user_id IS NOT NULL;
+    v_list := CASE WHEN v_n = 1 THEN v_adds[1]
+                   ELSE array_to_string(v_adds[1:v_n - 1], ', ') || ' and ' || v_adds[v_n] END;
+    v_title := CASE WHEN v_n = 1 THEN 'Waiver claim cancelled: ' || v_adds[1]
+                    ELSE v_n || ' waiver claims cancelled' END;
+    v_body := (v_ir ->> 'name')
+      || CASE WHEN v_ir ->> 'why' = 'healthy' THEN ' is healthy and still in your IR spot'
+              ELSE ' is ' || (v_ir ->> 'why') || ', which your IR spot doesn''t take, and is still in it' END
+      || ', so your claim' || CASE WHEN v_n = 1 THEN '' ELSE 's' END || ' for ' || v_list
+      || CASE WHEN v_n = 1 THEN ' was' ELSE ' were' END
+      || ' cancelled. Nothing was spent. To add players again, move him to your bench, swap an IR-eligible player into his spot, or drop him.';
+    IF v_user IS NOT NULL THEN
+      PERFORM public.notify_league_member_internal(
+        v_user, 'league_waiver_claim', v_title, v_body,
+        jsonb_build_object(
+          'league_id',      p_league.id,
+          'team_id',        v_team.team_id,
+          'status',         'cancelled',
+          'reason',         'healthy_in_ir',
+          'claim_ids',      to_jsonb(v_ids),
+          'add_player_ids', to_jsonb(v_add_ids),
+          'ir_player_id',   v_ir ->> 'player_id',
+          'source',         p_source));
+      v_notified := v_notified + 1;
+    END IF;
+    v_teams := v_teams || jsonb_build_array(jsonb_build_object(
+      'team_id',      v_team.team_id,
+      'cancelled',    v_cnt,
+      'claim_ids',    to_jsonb(v_ids),
+      'ir_player_id', v_ir ->> 'player_id',
+      'why',          v_ir ->> 'why',
+      'notified',     v_user IS NOT NULL));
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'league_id',    p_league.id,
+    'week',         p_current,
+    'source',       p_source,
+    'teams',        jsonb_array_length(v_teams),
+    'cancelled',    v_total,
+    'notified',     v_notified,
+    'by_team',      v_teams,
+    'evaluated_at', p_at);
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION waiver_claims_cancel_healthy_ir_internal(public.leagues, INTEGER, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION waiver_claims_cancel_healthy_ir_internal(public.leagues, INTEGER, TIMESTAMPTZ, TEXT) IS
+  'F693 / D593 (migration 205; Chris 2026-10-21: "No, if the player is no longer IR eligible the claims are cancelled."): cancels every pending claim of every team of the league that has a player who isn''t IR-eligible in an IR spot at p_current (ir_healthy_blockers_internal) — status cancelled, result_reason healthy_in_ir, result_detail naming him, cancelled_by the claim''s author — and sends each such team''s manager ONE notice. Re-reads pending, so a repeat call cancels and sends nothing (idempotent). The caller holds the league row lock. Called by process_waivers_internal (source waiver_run) and the waiver_claims_cancel_healthy_ir door (source injury_sync). Returns the counts per team.';
+
+-- ---------------------------------------------------------------------------
+-- 1c. waiver_claims_cancel_healthy_ir(p_now, p_league_id) — the job door (new; F693)
+-- ---------------------------------------------------------------------------
+-- "As soon as we know": the hourly `sync-weekly-projections` run (which keeps
+-- injury tags fresh — D592) and the daily `sync-players` run call this with
+-- the service role right after they write `players`. A job RPC (the
+-- waiver_tick shape): a JWT-bearing caller is refused in-body. Every league in
+-- season with a pending claim, each under its league row lock in turn, at
+-- its own current week; a league with no week at p_now is skipped BY NAME
+-- (its run decides). The `waivers_paused` kill switch (122) is honoured as
+-- the run honours it — while set, nothing is cancelled and the report says
+-- so. Idempotent (§1b); the report names every league that cancelled.
+CREATE OR REPLACE FUNCTION waiver_claims_cancel_healthy_ir(
+  p_now       TIMESTAMPTZ DEFAULT now(),
+  p_league_id UUID        DEFAULT NULL   -- scope (waiver_tick's shape): NULL = every league
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_paused    BOOLEAN;
+  v_lg        RECORD;
+  v_league    public.leagues;
+  v_current   INTEGER;
+  v_r         JSONB;
+  v_done      JSONB := '[]'::jsonb;
+  v_skipped   JSONB := '[]'::jsonb;
+  v_checked   INTEGER := 0;
+  v_cancelled INTEGER := 0;
+  v_notified  INTEGER := 0;
+BEGIN
+  IF auth.uid() IS NOT NULL THEN
+    RAISE EXCEPTION 'waiver_claims_cancel_healthy_ir: a job RPC is run by the injury syncs (the service role), never by a signed-in user'
+      USING ERRCODE = '42501';
+  END IF;
+  IF p_now IS NULL THEN
+    RAISE EXCEPTION 'waiver_claims_cancel_healthy_ir: p_now is required (the TimeProvider seam)' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT COALESCE((f.value ->> 'paused')::boolean, FALSE) INTO v_paused
+  FROM public.system_flags f WHERE f.key = 'waivers_paused';
+  IF COALESCE(v_paused, FALSE) THEN
+    RETURN jsonb_build_object('at', p_now, 'scope', p_league_id, 'paused', TRUE,
+      'why', 'paused_by_system_flag:waivers_paused — no claim was cancelled; pending claims stay pending until the flag is lifted (the waiver run cancels them then)',
+      'leagues_checked', 0, 'cancelled', 0, 'notified', 0, 'leagues', '[]'::jsonb, 'skipped', '[]'::jsonb);
+  END IF;
+
+  FOR v_lg IN
+    SELECT l.id
+    FROM public.leagues l
+    WHERE l.status IN ('in_season', 'playoffs')
+      AND l.deleted_at IS NULL
+      AND (p_league_id IS NULL OR l.id = p_league_id)
+      AND EXISTS (SELECT 1 FROM public.waiver_claims c WHERE c.league_id = l.id AND c.status = 'pending')
+    ORDER BY l.id
+  LOOP
+    SELECT l.* INTO v_league
+    FROM public.leagues l
+    WHERE l.id = v_lg.id AND l.deleted_at IS NULL
+    FOR UPDATE;
+    CONTINUE WHEN NOT FOUND;
+    v_checked := v_checked + 1;
+    v_current := public.lineup_current_week_internal(v_league.id, p_now);
+    IF v_current IS NULL THEN
+      v_skipped := v_skipped || jsonb_build_array(jsonb_build_object('league_id', v_league.id,
+        'why', 'no_week — the league has no week at this instant, so a Restricted IR stint can''t be judged; its waiver run decides'));
+      CONTINUE;
+    END IF;
+    v_r := public.waiver_claims_cancel_healthy_ir_internal(v_league, v_current, p_now, 'injury_sync');
+    v_cancelled := v_cancelled + (v_r ->> 'cancelled')::int;
+    v_notified := v_notified + (v_r ->> 'notified')::int;
+    IF (v_r ->> 'cancelled')::int > 0 THEN
+      v_done := v_done || jsonb_build_array(v_r);
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'at',              p_now,
+    'scope',           p_league_id,
+    'paused',          FALSE,
+    'leagues_checked', v_checked,
+    'cancelled',       v_cancelled,
+    'notified',        v_notified,
+    'leagues',         v_done,
+    'skipped',         v_skipped,
+    'why', CASE WHEN v_checked = 0 THEN 'no_pending_claims — no league in season has a pending claim'
+                WHEN v_cancelled = 0 THEN 'none_blocked — no team with a pending claim has a player who isn''t IR-eligible in an IR spot' END);
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION waiver_claims_cancel_healthy_ir(TIMESTAMPTZ, UUID) FROM PUBLIC, anon, authenticated;
+COMMENT ON FUNCTION waiver_claims_cancel_healthy_ir(TIMESTAMPTZ, UUID) IS
+  'F693 / D593 (migration 205): the job door the injury syncs (sync-weekly-projections hourly, sync-players daily — service role) call with p_now alone right after writing players (p_league_id scopes one league, as waiver_tick''s does), so a team whose IR man turned healthy has its pending claims cancelled as soon as we know, not at the run. Refuses a JWT-bearing caller (42501). Locks each in-season league with a pending claim in turn and runs waiver_claims_cancel_healthy_ir_internal at its current week (a league with no week is skipped by name); honours system_flags.waivers_paused. Idempotent. Returns {leagues_checked, cancelled, notified, leagues[], skipped[], why}.';
+
+-- ---------------------------------------------------------------------------
+-- 2. roster_add_drop_internal — 199:5041-5577 FILE TEXT (D137), 2 hunks (+23 / -0):
+--    no add while a healthy player holds an IR spot — unless the move drops him (F692).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION roster_add_drop_internal(
   p_league_id UUID,
@@ -385,9 +663,19 @@ BEGIN
     -- room on a full roster and is never blocked), or swapped for an IR-eligible   -- 205 / D593
     -- player. A Restricted stint still running does not block (he cannot leave).   -- 205 / D593
     v_ir_block := public.ir_healthy_blockers_internal(v_league, p_team_id, v_current);   -- 205 / D593
+    -- F692 (Chris 2026-10-21: "Yes the user can click on the player and drop   -- 205 / D593
+    -- them directly"): a move whose DROP is the blocker himself clears him in   -- 205 / D593
+    -- the same move, so he does not count. His drop lock was judged in (5): a   -- 205 / D593
+    -- locked one never gets here (F690, ruled: "Nothing changes if the player   -- 205 / D593
+    -- is locked"). Any OTHER blocker still refuses the add.   -- 205 / D593
+    IF p_drop IS NOT NULL THEN   -- 205 / D593
+      SELECT COALESCE(jsonb_agg(x.b ORDER BY x.o), '[]'::jsonb) INTO v_ir_block   -- 205 / D593
+      FROM jsonb_array_elements(v_ir_block) WITH ORDINALITY AS x(b, o)   -- 205 / D593
+      WHERE (x.b ->> 'player_id') IS DISTINCT FROM p_drop;   -- 205 / D593
+    END IF;   -- 205 / D593
     IF jsonb_array_length(v_ir_block) > 0 THEN   -- 205 / D593
       RAISE EXCEPTION   -- 205 / D593
-        'roster_add_drop: % is % and still in %''s IR spot — no adds while a player who isn''t IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)',   -- 205 / D593
+        'roster_add_drop: % is % and still in %''s IR spot — no adds while a player who isn''t IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)',   -- 205 / D593
         v_ir_block -> 0 ->> 'name', v_ir_block -> 0 ->> 'why', v_team.name   -- 205 / D593
         USING ERRCODE = 'P0001';   -- 205 / D593
     END IF;   -- 205 / D593
@@ -705,7 +993,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION roster_add_drop_internal(UUID, UUID, TEXT, TEXT, UUID, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 3. waiver_claim_submit_internal — 199:8040-8348 FILE TEXT (D137), 2 hunks (+13 / -0):
+-- 3. waiver_claim_submit_internal — 199:8040-8348 FILE TEXT (D137), 2 hunks (+14 / -0):
 --    no new claim while a healthy player holds an IR spot.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION waiver_claim_submit_internal(
@@ -874,13 +1162,14 @@ BEGIN
   END IF;
   -- D593 (Chris 2026-10-20): no new claim while a player who is healthy again   -- 205 / D593
   -- holds one of this team's IR spots — for the manager and for a commissioner   -- 205 / D593
-  -- acting for the team alike (the run would fail it; the commissioner's own   -- 205 / D593
-  -- roster tools are not blocked). A Restricted stint still running does not   -- 205 / D593
-  -- block. A claim already pending fails at the run instead (healthy_in_ir).   -- 205 / D593
+  -- acting for the team alike (it would be cancelled; the commissioner's own   -- 205 / D593
+  -- roster tools are not blocked), whatever the claim drops (F693, ruled: "the   -- 205 / D593
+  -- claims are cancelled"). A Restricted stint still running does not block.   -- 205 / D593
+  -- A claim already pending is cancelled instead (healthy_in_ir, §1b).   -- 205 / D593
   v_ir_block := public.ir_healthy_blockers_internal(v_league, p_team_id, v_current);   -- 205 / D593
   IF jsonb_array_length(v_ir_block) > 0 THEN   -- 205 / D593
     RAISE EXCEPTION   -- 205 / D593
-      'waiver_claim_submit: % is % and still in %''s IR spot — no claims while a player who isn''t IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)',   -- 205 / D593
+      'waiver_claim_submit: % is % and still in %''s IR spot — no claims while a player who isn''t IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)',   -- 205 / D593
       v_ir_block -> 0 ->> 'name', v_ir_block -> 0 ->> 'why', v_team.name   -- 205 / D593
       USING ERRCODE = 'P0001';   -- 205 / D593
   END IF;   -- 205 / D593
@@ -1033,8 +1322,8 @@ $$;
 REVOKE EXECUTE ON FUNCTION waiver_claim_submit_internal(UUID, UUID, TEXT, TEXT, INTEGER, UUID, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 4. process_waivers_internal — 199:1345-1893 FILE TEXT (D137), 4 hunks (+34 / -0):
---    a blocked team's pending claims fail before the decision.
+-- 4. process_waivers_internal — 199:1345-1893 FILE TEXT (D137), 4 hunks (+17 / -0):
+--    a blocked team's pending claims are cancelled before the decision (F693).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION process_waivers_internal(p_league_id UUID, p_at TIMESTAMPTZ)
 RETURNS JSONB
@@ -1100,8 +1389,8 @@ DECLARE
   v_notified    INTEGER := 0;
   v_run_id      UUID;
   v_summary     JSONB;
-  v_ir_block    JSONB;   -- 205 / D593
-  v_ir_failed   INTEGER := 0;   -- 205 / D593
+  v_ir_cancel   JSONB;   -- 205 / D593
+  v_ir_cancelled INTEGER := 0;   -- 205 / D593
 BEGIN
   IF p_league_id IS NULL OR p_at IS NULL THEN
     RAISE EXCEPTION 'process_waivers: p_league_id and p_at are required (p_at is the TimeProvider seam — no clock is read here)'
@@ -1214,34 +1503,17 @@ BEGIN
 
   PERFORM 1 FROM public.waiver_claims c WHERE c.league_id = p_league_id AND c.status = 'pending' FOR UPDATE;
    -- 205 / D593
-  -- D593 (Chris 2026-10-20): a team with a player who is healthy again in one   -- 205 / D593
-  -- of its IR spots gets nobody at this run. Each of its pending claims fails   -- 205 / D593
-  -- HERE, before the decision — invalid / healthy_in_ir, nothing spent, its   -- 205 / D593
-  -- owner told, its waiver priority unmoved — so the player goes to the next   -- 205 / D593
-  -- claim in line. Judged from each designation now; a Restricted stint still   -- 205 / D593
-  -- running does not block.   -- 205 / D593
-  FOR v_claim IN   -- 205 / D593
-    SELECT c.* FROM public.waiver_claims c   -- 205 / D593
-    WHERE c.league_id = p_league_id AND c.status = 'pending'   -- 205 / D593
-    ORDER BY c.team_id, c.claim_order, c.id   -- 205 / D593
-  LOOP   -- 205 / D593
-    v_ir_block := public.ir_healthy_blockers_internal(v_league, v_claim.team_id, v_current);   -- 205 / D593
-    CONTINUE WHEN jsonb_array_length(v_ir_block) = 0;   -- 205 / D593
-    UPDATE public.waiver_claims c   -- 205 / D593
-    SET status = 'invalid', result_reason = 'healthy_in_ir', processed_at = p_at, process_at = v_run_at   -- 205 / D593
-    WHERE c.id = v_claim.id AND c.status = 'pending';   -- 205 / D593
-    GET DIAGNOSTICS v_cnt = ROW_COUNT;   -- 205 / D593
-    IF v_cnt <> 1 THEN   -- 205 / D593
-      RAISE EXCEPTION 'process_waivers: failing claim % (a healthy player in an IR spot) touched % rows, expected 1', v_claim.id, v_cnt   -- 205 / D593
-        USING ERRCODE = 'P0001';   -- 205 / D593
-    END IF;   -- 205 / D593
-    v_ir_failed := v_ir_failed + 1;   -- 205 / D593
-    v_invalid := v_invalid + 1;   -- 205 / D593
-    IF public.waiver_claim_notify_internal(v_league, v_claim, 'invalid', 'healthy_in_ir',   -- 205 / D593
-         jsonb_build_object('run_at', v_run_at, 'ir_player', v_ir_block -> 0 ->> 'name', 'ir_why', v_ir_block -> 0 ->> 'why')) IS NOT NULL THEN   -- 205 / D593
-      v_notified := v_notified + 1;   -- 205 / D593
-    END IF;   -- 205 / D593
-  END LOOP;   -- 205 / D593
+  -- D593 (Chris 2026-10-20) / F693 (ruled 2026-10-21: "No, if the player is   -- 205 / D593
+  -- no longer IR eligible the claims are cancelled."): a team with a player   -- 205 / D593
+  -- who isn't IR-eligible in one of its IR spots gets nobody at this run —   -- 205 / D593
+  -- every pending claim of its is CANCELLED here, before the decision   -- 205 / D593
+  -- (cancelled / healthy_in_ir, nothing spent, its waiver priority unmoved,   -- 205 / D593
+  -- its owner told once), so the player goes to the next claim in line. The   -- 205 / D593
+  -- one cancel the injury syncs call too (§1b) — usually they got there first   -- 205 / D593
+  -- and this finds nothing. A Restricted stint still running does not block.   -- 205 / D593
+  v_ir_cancel := public.waiver_claims_cancel_healthy_ir_internal(v_league, v_current, p_at, 'waiver_run');   -- 205 / D593
+  v_ir_cancelled := (v_ir_cancel ->> 'cancelled')::int;   -- 205 / D593
+  v_notified := v_notified + (v_ir_cancel ->> 'notified')::int;   -- 205 / D593
 
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
            'teamId', t.id::text,
@@ -1544,8 +1816,8 @@ BEGIN
     RAISE EXCEPTION 'process_waivers: the run decided % of % pending claims — every claim is decided exactly once; refusing', v_n, jsonb_array_length(v_claims)
       USING ERRCODE = 'P0001';
   END IF;
-  -- D593: the claims failed before the decision count in the run too.   -- 205 / D593
-  v_n := v_n + v_ir_failed;   -- 205 / D593
+  -- D593 / F693: the claims cancelled before the decision count in the run too.   -- 205 / D593
+  v_n := v_n + v_ir_cancelled;   -- 205 / D593
 
   -- the persisting order (F421(d)): 1-based, every active seat
   IF (v_result #>> '{priority,persists}')::boolean THEN
@@ -1597,7 +1869,7 @@ BEGIN
     'won',          v_won,
     'lost',         v_lost,
     'invalid',      v_invalid,
-    'healthy_in_ir', v_ir_failed,   -- 205 / D593
+    'healthy_in_ir', v_ir_cancelled,   -- 205 / D593
     'faab_spent',   v_faab_spent,
     'notified',     v_notified,
     'priority',     jsonb_build_object('source', v_result #> '{priority,source}', 'persists', v_result #> '{priority,persists}'),
@@ -1622,106 +1894,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION process_waivers_internal(UUID, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. waiver_claim_notify_internal — 199:1898-1987 FILE TEXT (D137), 1 hunk (+3 / -0):
---    the healthy_in_ir notice.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION waiver_claim_notify_internal(
-  p_league public.leagues,
-  p_claim  public.waiver_claims,
-  p_status TEXT,
-  p_reason TEXT,
-  p_extra  JSONB    -- {winner_team_id, winning_bid, faab_before, faab_after, transaction_id, run_at}
-) RETURNS UUID
-LANGUAGE plpgsql
-SET search_path = ''
-AS $$
-DECLARE
-  v_team      public.teams;
-  v_live      public.teams;
-  v_user      UUID;
-  v_add       TEXT;
-  v_drop      TEXT;
-  v_winner    TEXT;
-  v_faab      BOOLEAN := COALESCE(p_league.waiver_type, 'faab') = 'faab';
-  v_title     TEXT;
-  v_body      TEXT;
-BEGIN
-  SELECT t.* INTO v_team FROM public.teams t WHERE t.id = p_claim.team_id;
-  v_live := v_team;
-  SELECT m.user_id INTO v_user
-  FROM public.league_members m
-  WHERE m.league_id = p_league.id AND m.team_id = v_live.id AND m.user_id IS NOT NULL;
-  IF v_user IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  SELECT p.full_name INTO v_add FROM public.players p WHERE p.id = p_claim.add_player_id;
-  v_add := COALESCE(v_add, p_claim.add_player_id);
-  IF p_claim.drop_player_id IS NOT NULL THEN
-    SELECT p.full_name INTO v_drop FROM public.players p WHERE p.id = p_claim.drop_player_id;
-    v_drop := COALESCE(v_drop, p_claim.drop_player_id);
-  END IF;
-  SELECT t.name INTO v_winner FROM public.teams t WHERE t.id = (p_extra ->> 'winner_team_id')::uuid;
-
-  IF p_status = 'won' THEN
-    v_title := 'Waiver claim won: ' || v_add;
-    v_body := 'You claimed ' || v_add
-      || CASE WHEN v_faab THEN ' for $' || p_claim.faab_bid ELSE '' END
-      || CASE WHEN v_drop IS NOT NULL THEN ', dropping ' || v_drop ELSE '' END
-      || '. He is on your bench.'
-      || CASE WHEN v_faab THEN ' FAAB left: $' || (p_extra ->> 'faab_after') || '.' ELSE '' END;
-  ELSIF p_status = 'lost' THEN
-    v_title := 'Waiver claim lost: ' || v_add;
-    v_body := v_add || ' went to ' || COALESCE(v_winner, 'another team')
-      || CASE WHEN p_reason = 'outbid' THEN
-                CASE WHEN v_faab THEN ' for $' || (p_extra ->> 'winning_bid') || ' — you bid $' || p_claim.faab_bid ELSE '' END
-              ELSE CASE WHEN v_faab THEN ' at the same bid of $' || p_claim.faab_bid || ', on waiver priority' ELSE ' on waiver priority' END
-         END
-      || '. Nothing was spent.';
-  ELSE
-    v_title := 'Waiver claim didn''t go through: ' || v_add;
-    v_body := CASE p_reason
-      WHEN 'team_retired'      THEN v_team.name || ' was retired before waivers ran, so its claim for ' || v_add
-                                    || ' was dropped. Put in a new claim for ' || v_live.name || ' if you still want him.'
-      WHEN 'add_rostered'      THEN v_add || ' was already on a roster when waivers ran.'
-      WHEN 'add_locked'        THEN v_add || '''s game had already started when waivers ran — a player is locked from kickoff until the week''s last game ends.'
-      WHEN 'drop_gone'         THEN v_drop || ' was no longer on your roster when waivers ran, so the claim for ' || v_add || ' could not drop him.'
-      WHEN 'drop_locked'       THEN v_drop || '''s game had already started when waivers ran — a player who has kicked off can''t be dropped, so the claim for ' || v_add || ' failed.'
-      WHEN 'roster_full'       THEN 'Your roster was full when the claim for ' || v_add || ' came up — add a drop to the claim next time.'
-      WHEN 'cap_reached'       THEN 'You had used all your pickups allowed (the league''s acquisition limit) when the claim for ' || v_add || ' came up.'
-      WHEN 'insufficient_faab' THEN 'Your bid of $' || p_claim.faab_bid || ' for ' || v_add || ' was more than the FAAB you had left when it came up ($'
-                                    || COALESCE(p_extra ->> 'faab_before', '?') || ').'
-      WHEN 'own_claim_won'     THEN 'You won ' || v_add || ' with another of your claims, so this one wasn''t needed.'
-      WHEN 'no_waivers'        THEN 'This league switched to no waivers, so pending claims were closed. ' || v_add || ' can be added directly if he is still available.'
-      WHEN 'healthy_in_ir'     THEN COALESCE(p_extra ->> 'ir_player', 'A player') || ' was ' || COALESCE(p_extra ->> 'ir_why', 'healthy')   -- 205 / D593
-                                    || ' and still in your IR spot when waivers ran, so the claim for ' || v_add   -- 205 / D593
-                                    || ' didn''t go through — move him to your bench or swap an IR-eligible player into his spot before adding players.'   -- 205 / D593
-      ELSE 'The claim for ' || v_add || ' could not go through (' || COALESCE(p_reason, 'unknown') || ').'
-    END || ' Nothing was spent.';
-  END IF;
-
-  PERFORM public.notify_league_member_internal(
-    v_user, 'league_waiver_claim', v_title, v_body,
-    jsonb_build_object(
-      'league_id',      p_league.id,
-      'team_id',        p_claim.team_id,
-      'claim_id',       p_claim.id,
-      'status',         p_status,
-      'reason',         p_reason,
-      'add_player_id',  p_claim.add_player_id,
-      'drop_player_id', p_claim.drop_player_id,
-      'faab_bid',       CASE WHEN v_faab THEN p_claim.faab_bid END,
-      'run_at',         p_extra -> 'run_at',
-      'transaction_id', p_extra -> 'transaction_id',
-      'winner_team_id', p_extra -> 'winner_team_id',
-      'winning_bid',    CASE WHEN v_faab THEN p_extra -> 'winning_bid' END));
-  RETURN v_user;
-END;
-$$;
-REVOKE EXECUTE ON FUNCTION waiver_claim_notify_internal(public.leagues, public.waiver_claims, TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
-
--- ---------------------------------------------------------------------------
--- 6. the stored-reason vocabulary learns healthy_in_ir (150's comment, restated)
+-- 5. the stored-reason vocabulary learns healthy_in_ir (150's comment, restated)
 -- ---------------------------------------------------------------------------
 COMMENT ON COLUMN waiver_claims.result_reason IS
-  'Why a claim did not go through, or how it closed (145 / 150 / 205): lost = outbid | lost_on_priority; invalid = team_retired | add_rostered | add_locked | drop_gone | drop_locked | roster_full | cap_reached | insufficient_faab | own_claim_won (the resolver''s vocabulary, FAIL_CHECK_ORDER) | no_waivers (the league switched to none_fcfs — F421(e)) | healthy_in_ir (205 / D593: the team still had a healthy player in an IR spot when the run came — failed before the decision); cancelled = cancelled (the verb) | seat_vacated | manager_left (F411). NULL for a pending or won claim.';
+  'Why a claim did not go through, or how it closed (145 / 150 / 205): lost = outbid | lost_on_priority; invalid = team_retired | add_rostered | add_locked | drop_gone | drop_locked | roster_full | cap_reached | insufficient_faab | own_claim_won (the resolver''s vocabulary, FAIL_CHECK_ORDER) | no_waivers (the league switched to none_fcfs — F421(e)); cancelled = cancelled (the verb) | seat_vacated | manager_left (F411) | healthy_in_ir (205 / D593 / F693: the team had a player who isn''t IR-eligible in an IR spot — cancelled by the injury sync or at the run, before the decision; result_detail names him). NULL for a pending or won claim.';

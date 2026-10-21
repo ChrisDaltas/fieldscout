@@ -30,9 +30,12 @@ select plan(94);
 -- ---------------------------------------------------------------------------
 -- A. Form pins
 -- ---------------------------------------------------------------------------
+-- RE-PINNED by D593 / F693 (migration 205 adds `result_detail`, a nullable
+-- jsonb — pgTAP 155 A8 pins it): left out here, so this cell pins exactly
+-- what it pinned (additive, R992).
 select is(
   (select string_agg(format('%s:%s:%s', column_name, data_type, is_nullable), ' ' order by ordinal_position)
-   from information_schema.columns where table_schema = 'public' and table_name = 'waiver_claims'),
+   from information_schema.columns where table_schema = 'public' and table_name = 'waiver_claims' and column_name <> 'result_detail'),
   'id:uuid:NO league_id:uuid:NO team_id:uuid:NO add_player_id:text:NO drop_player_id:text:YES faab_bid:integer:NO priority:integer:YES claim_order:integer:NO status:text:NO result_reason:text:YES process_at:timestamp with time zone:YES processed_at:timestamp with time zone:YES action_id:uuid:NO created_by:uuid:NO cancelled_at:timestamp with time zone:YES cancelled_by:uuid:YES created_at:timestamp with time zone:NO',
   'A1 waiver_claims is spec 12.10 plus action_id / result_reason / created_by / cancelled_at / cancelled_by (tasks-M5 section 5)');
 select ok(
