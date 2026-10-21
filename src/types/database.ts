@@ -7070,6 +7070,10 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_league: { Args: { p_league_id: string }; Returns: undefined }
+      start_sit_question_vote_exists: {
+        Args: { p_question_id: string }
+        Returns: boolean
+      }
       stat_correction_backfill_applied_internal: {
         Args: never
         Returns: number

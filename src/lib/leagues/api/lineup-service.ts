@@ -14,7 +14,7 @@
  * **The whole verb is the RPC's** (server-authoritative — CLAUDE.md). This
  * layer computes nothing about slots, eligibility, locks or IR: the bipartite
  * fit (E16), the per-player kickoff lock read from `nfl_games` at transaction
- * `now()` (E42/§23.3), `allow_illegal_lineups`, the IR stint law and the
+ * `now()` (E42/§23.3), the IR placement / stint law and the
  * commissioner arm's reason are all 112/114's, inside one transaction under
  * the league row lock. What this layer owns is the wire shape, the
  * idempotency stamp, and making the refusal READABLE.
@@ -166,6 +166,9 @@ export interface SetLineupResult {
   current_week: number
   action_id: string
   lineup_lock: 'per_player_kickoff'
+  /** Always `true` since migration 201 (D591 — the setting is retired; a
+   *  bye / OUT starter or an empty slot never refuses a save). Kept on the
+   *  wire for the result shape; nothing reads it. */
   allow_illegal_lineups: boolean
   /** R779: a NO-OP is its own state — the canonical map equalled the stored
    *  one and no IR move happened; nothing was written but the ledger row. */

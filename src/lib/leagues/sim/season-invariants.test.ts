@@ -35,7 +35,6 @@ import {
   type AuditAutopilotPick,
   AUTOPILOT_UNFILLABLE_REASONS,
   FINAL_CELL_LICENSING_ACTION_TYPES,
-  isForbidsIllegalReason,
   parseRenderedCell,
   type AuditCommissionerAction,
   SEASON_INVARIANTS,
@@ -131,7 +130,6 @@ function greenAudit(): SeasonAudit {
       },
     ],
     commissionerActions: [],
-    allowIllegalLineups: true,
     startingSlots: [
       { key: 'qb:0', eligible: ['QB'] },
       { key: 'rb:0', eligible: ['RB'] },
@@ -710,48 +708,33 @@ describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/
     expect(checkUnmanagedSeatsAutopiloted(a)).toEqual([])
   })
 
+  // D591 (migration 201): "Allow illegal lineups" is retired, so invariant 8
+  // has NO excuse left. FORBIDS is the reason 125 gave under the stored-FALSE
+  // hard filter — kept here only to prove a stale one excuses nothing.
   const FORBIDS = 'no healthy eligible player at RB; league forbids illegal lineups'
   const LOCKED_OUT = "no unlocked eligible player at RB; every candidate's game had kicked off"
   const NOBODY = 'no eligible player at RB on the roster'
 
-  it('the ONE excuse needs BOTH halves — the league forbids illegal lineups AND the tick named the slot', () => {
-    const shortfall = (): SeasonAudit => {
-      const a = greenAudit()
-      a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
-      return a
-    }
-    const namedOnly = shortfall()
-    namedOnly.autopilotUnfillable = [{ team_id: 'C', week: 1, slot: 'rb:0', reason: FORBIDS }]
-    expect(checkUnmanagedSeatsAutopiloted(namedOnly)).toHaveLength(1) // allow_illegal_lineups is TRUE: no excuse exists
-
-    const offOnly = shortfall()
-    offOnly.allowIllegalLineups = false
-    const offFailures = checkUnmanagedSeatsAutopiloted(offOnly)
-    expect(offFailures).toHaveLength(1) // the server said nothing about the slot
-    expect(offFailures[0]!.detail).toContain('never named them in autopilot_unfillable[]')
-
-    const both = shortfall()
-    both.allowIllegalLineups = false
-    both.autopilotUnfillable = [{ team_id: 'C', week: 1, slot: 'rb:0', reason: FORBIDS }]
-    expect(checkUnmanagedSeatsAutopiloted(both)).toEqual([])
-
-    const wrongWeek = shortfall()
-    wrongWeek.allowIllegalLineups = false
-    wrongWeek.autopilotUnfillable = [{ team_id: 'C', week: 2, slot: 'rb:0', reason: FORBIDS }]
-    expect(checkUnmanagedSeatsAutopiloted(wrongWeek)).toHaveLength(1)
-  })
-
-  // ── R1076: the excuse is the REASON, not merely being named ───────────────
-  const offShortfall = (reason: string): SeasonAudit => {
+  // ── R1076 / D591: no reason is an excuse ──────────────────────────────────
+  const namedShortfall = (reason: string): SeasonAudit => {
     const a = greenAudit()
     a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
-    a.allowIllegalLineups = false
     a.autopilotUnfillable = [{ team_id: 'C', week: 1, slot: 'rb:0', reason }]
     return a
   }
 
-  it('R1076 — a LOCKED-OUT slot in an OFF league is NOT excused (the harness ticks before any kickoff)', () => {
-    const failures = checkUnmanagedSeatsAutopiloted(offShortfall(LOCKED_OUT))
+  it('D591 — an empty slot beside a bench witness FAILS whatever the tick said; the retired "forbids illegal lineups" reason excuses nothing', () => {
+    const unnamed = greenAudit()
+    unnamed.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+    expect(checkUnmanagedSeatsAutopiloted(unnamed)).toHaveLength(1) // the server said nothing about the slot
+    const failures = checkUnmanagedSeatsAutopiloted(namedShortfall(FORBIDS))
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.detail).toContain('excuses NOTHING')
+    expect(failures[0]!.detail).toContain(FORBIDS)
+  })
+
+  it('R1076 — a LOCKED-OUT slot is NOT excused (the harness ticks before any kickoff)', () => {
+    const failures = checkUnmanagedSeatsAutopiloted(namedShortfall(LOCKED_OUT))
     expect(failures).toHaveLength(1)
     expect(failures[0]!.detail).toContain('rb:0')
     expect(failures[0]!.detail).toContain('excuses NOTHING')
@@ -759,24 +742,18 @@ describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/
   })
 
   it("R1076 — a 'no eligible player' reason beside a bench witness is NOT excused (the witness refutes it)", () => {
-    const failures = checkUnmanagedSeatsAutopiloted(offShortfall(NOBODY))
+    const failures = checkUnmanagedSeatsAutopiloted(namedShortfall(NOBODY))
     expect(failures).toHaveLength(1)
     expect(failures[0]!.detail).toContain(NOBODY)
-    // …and the control: the SAME audit with the one lawful reason is green.
-    expect(checkUnmanagedSeatsAutopiloted(offShortfall(FORBIDS))).toEqual([])
   })
 
-  it('R1076 — the reason is matched on BOTH ends: a look-alike, a bare prefix and an empty reason excuse nothing', () => {
-    for (const reason of ['no healthy eligible player at RB', '; league forbids illegal lineups', '', '(no reason given)']) {
-      expect(isForbidsIllegalReason(reason), reason).toBe(false)
-      expect(checkUnmanagedSeatsAutopiloted(offShortfall(reason)), reason).toHaveLength(1)
+  it('R1076 / D591 — look-alikes, a bare prefix and an empty reason excuse nothing either', () => {
+    for (const reason of ['no healthy eligible player at RB', '; league forbids illegal lineups', '', '(no reason given)', FORBIDS]) {
+      expect(checkUnmanagedSeatsAutopiloted(namedShortfall(reason)), reason).toHaveLength(1)
     }
-    expect(isForbidsIllegalReason(FORBIDS)).toBe(true)
-    expect(isForbidsIllegalReason(LOCKED_OUT)).toBe(false)
-    expect(isForbidsIllegalReason(NOBODY)).toBe(false)
   })
 
-  it("R1076 — the chooser's four reason strings (125's three + 154's) and the tick's three 'evaluated nothing' reasons are pinned to the MIGRATION'S FILE TEXT", () => {
+  it("R1076 — the chooser's three reason strings (125's two + 154's; D591 removed the fourth) and the tick's three 'evaluated nothing' reasons are pinned to the MIGRATION'S FILE TEXT", () => {
     // The NEWEST migration that defines each function — a later CREATE OR
     // REPLACE that rewords a reason must red THIS cell, not silently
     // un-excuse (or over-excuse) a slot.
@@ -794,41 +771,41 @@ describe('8 — unmanaged seats are seated by the SERVER (§7.2.1(c); 125; F334/
     for (const arm of Object.values(AUTOPILOT_UNFILLABLE_REASONS)) {
       expect(chooser, arm.prefix).toContain(`${sql(arm.prefix)} || upper(v_e ->> 'slot') || ${sql(arm.suffix)}`)
     }
-    // Exactly four reason arms exist (154 added the started-elsewhere arm) —
-    // a FIFTH would be unclassified here.
-    expect(chooser.match(/\|\| upper\(v_e ->> 'slot'\) \|\|/g)).toHaveLength(4)
+    // Exactly three reason arms exist (154 added the started-elsewhere arm;
+    // 201 / D591 removed "league forbids illegal lineups") — a FOURTH would
+    // be unclassified here.
+    expect(chooser.match(/\|\| upper\(v_e ->> 'slot'\) \|\|/g)).toHaveLength(3)
+    expect(chooser).not.toContain(`|| '; league forbids illegal lineups'`)
     const tick = newestDefining('lineup_lock_tick')
     for (const reason of AUTOPILOT_PASS_EVALUATED_NOTHING) expect(tick, reason).toContain(`'${reason}'`)
   })
 
-  it('R1076 — a slot named at pass N and ABSENT at pass N+1 is no longer excused (the absorb REPLACES a team-week wholesale)', () => {
+  it('R1076 — the absorb REPLACES a team-week wholesale: a slot named at pass N and ABSENT at pass N+1 leaves the record', () => {
     const league = {
       leagueId: 'L1',
       teams: [{ id: 'C' }],
       autopilotUnfillable: new Map(),
       autopilotedSeatWeeks: new Set<string>(),
     } as unknown as LeagueState
-    const audit = (): SeasonAudit => {
-      const a = greenAudit()
-      a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
-      a.allowIllegalLineups = false
-      a.autopilotUnfillable = [...league.autopilotUnfillable.values()]
-      return a
-    }
-    // pass N: named with the lawful reason ⇒ excused.
-    absorbAutopilotReport({ autopilot_unfillable: [{ team_id: 'C', slot: 'rb:0', reason: FORBIDS }], autopilot_reason: 'nothing_fillable' }, league, 1)
-    expect(checkUnmanagedSeatsAutopiloted(audit())).toEqual([])
+    const reasons = () => [...league.autopilotUnfillable.values()].map((u: { slot: string; week: number }) => `${u.week}:${u.slot}`)
+    // pass N names rb:0.
+    absorbAutopilotReport({ autopilot_unfillable: [{ team_id: 'C', slot: 'rb:0', reason: NOBODY }], autopilot_reason: 'nothing_fillable' }, league, 1)
+    expect(reasons()).toEqual(['1:rb:0'])
     // a pass that evaluated NOTHING (the week closed out of 'live') says
     // nothing about any slot: its empty array is "I did not look".
     absorbAutopilotReport({ autopilot_unfillable: [], autopilot_reason: 'no_unmanaged_seats_in_a_live_current_week' }, league, 1)
-    expect(checkUnmanagedSeatsAutopiloted(audit())).toEqual([])
+    expect(reasons()).toEqual(['1:rb:0'])
     // a pass over ANOTHER week does not touch week 1's record.
     absorbAutopilotReport({ autopilot_unfillable: [], autopilot_reason: null }, league, 2)
-    expect(checkUnmanagedSeatsAutopiloted(audit())).toEqual([])
-    // pass N+1 EVALUATED the seat and no longer names the slot ⇒ not excused.
+    expect(reasons()).toEqual(['1:rb:0'])
+    // pass N+1 EVALUATED the seat and no longer names the slot ⇒ the record goes.
     absorbAutopilotReport({ autopilot_unfillable: [], autopilot_reason: null }, league, 1)
     expect(league.autopilotUnfillable.size).toBe(0)
-    const failures = checkUnmanagedSeatsAutopiloted(audit())
+    // …and either way the empty slot beside a witness fails (D591: no excuse exists).
+    const a = greenAudit()
+    a.lineups[2]!.slot_map = { 'qb:0': 'p5' }
+    a.autopilotUnfillable = [...league.autopilotUnfillable.values()]
+    const failures = checkUnmanagedSeatsAutopiloted(a)
     expect(failures).toHaveLength(1)
     expect(failures[0]!.detail).toContain('rb:0')
   })
@@ -1024,20 +1001,14 @@ describe('7 — the door\'s no_matchup_row skip is a NOTE in a bracket week and 
 })
 
 // ---------------------------------------------------------------------------
-// chooseStarterSlots — F286's residual necessary condition (D328).
+// chooseStarterSlots — the harness's greedy seating (D328).
 //
-// The full slate removes §7.3.6's `on_bye` arm outright. What survives is the
-// DESIGNATION arm (114:596): an OUT/IR/PUP/NFI/Suspended starter is refused in
-// a league with `allow_illegal_lineups = false`. These pins are the
-// falsifiability for that arm. R927 (#274 review) corrects the number that
-// used to sit here: the 400-ROW pool window holds FOURTEEN blocking-status
-// players (IR 10, PUP 4); the "five" were those whose ADP VALUE is under 400.
-// The load-bearing fact is structural, not probabilistic: the earliest
-// blocking-status player sits at ADP rank ~120 while the OFF league drafts at
-// most 112 picks (16 x 7), so the designation arm is out of reach by ~8 ranks
-// at every configuration the sim runs — see F289, whose discharge is L.D6.3's.
+// D591 (migration 201): F286's residual necessary condition is GONE with the
+// retired `allow_illegal_lineups` — no league refuses an OUT / IR / PUP / NFI /
+// Suspended starter, so the chooser passes nobody over and the server flags
+// him. The full slate still removes the bye arm outright.
 // ---------------------------------------------------------------------------
-describe('chooseStarterSlots — the seating a league that POLICES legality will accept', () => {
+describe('chooseStarterSlots — greedy first fit; nobody passed over for a designation (D591)', () => {
   const SLOTS = [
     { key: 'qb:0', eligible: ['QB'] },
     { key: 'rb:0', eligible: ['RB'] },
@@ -1046,50 +1017,18 @@ describe('chooseStarterSlots — the seating a league that POLICES legality will
   const active = (id: string, position: string) => ({ id, position, status: 'Active' })
 
   it('greedy first fit by eligibility, in the caller\'s order (best ADP first)', () => {
-    const seat = chooseStarterSlots([active('q1', 'QB'), active('r1', 'RB'), active('w1', 'WR')], SLOTS, {
-      allowIllegalLineups: true,
-    })
+    const seat = chooseStarterSlots([active('q1', 'QB'), active('r1', 'RB'), active('w1', 'WR')], SLOTS)
     expect(seat.slotMap).toEqual({ 'qb:0': 'q1', 'rb:0': 'r1', 'wr:0': 'w1' })
     expect(seat.emptySlots).toEqual([])
-    expect(seat.benchedForLegality).toEqual([])
   })
 
-  it('an OUT-designated player is PASSED OVER where §7.3.6 is enforced, and the next man takes the slot', () => {
-    const roster = [{ id: 'r1', position: 'RB', status: 'IR' }, active('r2', 'RB')]
-    const seat = chooseStarterSlots(roster, SLOTS, { allowIllegalLineups: false })
-    expect(seat.slotMap['rb:0']).toBe('r2')
-    expect(seat.benchedForLegality).toEqual(['r1 (IR)'])
-  })
-
-  it('with NO legal alternative the slot is left EMPTY and NAMED — lawful (114:585-588), never a 409', () => {
-    const seat = chooseStarterSlots([{ id: 'r1', position: 'RB', status: 'PUP' }], SLOTS, {
-      allowIllegalLineups: false,
-    })
-    expect(seat.slotMap).toEqual({})
-    expect(seat.emptySlots).toEqual(['qb:0', 'rb:0', 'wr:0'])
-    expect(seat.benchedForLegality).toEqual(['r1 (PUP)'])
-  })
-
-  // THE NEGATIVE CONTROL — the coverage this skip must not cost. A league that
-  // ALLOWS illegal lineups exercises that arm by seating the OUT player.
-  it('where illegal lineups are ALLOWED nothing is passed over — that arm is coverage, not a bug', () => {
-    const roster = [{ id: 'r1', position: 'RB', status: 'IR' }, active('r2', 'RB')]
-    const seat = chooseStarterSlots(roster, SLOTS, { allowIllegalLineups: true })
-    expect(seat.slotMap['rb:0']).toBe('r1')
-    expect(seat.benchedForLegality).toEqual([])
-  })
-
-  it('every blocking designation is passed over, and ONLY those five', () => {
-    for (const status of ['out', 'IR', 'pup', 'NFI', 'Sus', 'suspended']) {
-      const seat = chooseStarterSlots([{ id: 'x', position: 'QB', status }], SLOTS, { allowIllegalLineups: false })
-      expect(seat.slotMap, status).toEqual({})
-    }
-    // Doubtful and Questionable are NOT blocked by 114:596 — starting them is
-    // lawful even where legality is enforced.
-    for (const status of ['Doubtful', 'Questionable', 'Active', null]) {
-      const seat = chooseStarterSlots([{ id: 'x', position: 'QB', status }], SLOTS, { allowIllegalLineups: false })
+  it('an OUT / IR / PUP / NFI / Suspended player is SEATED like anyone else — the save never refuses him (D591)', () => {
+    for (const status of ['out', 'IR', 'pup', 'NFI', 'Sus', 'suspended', 'Doubtful', 'Questionable', 'Active', null]) {
+      const seat = chooseStarterSlots([{ id: 'x', position: 'QB', status }], SLOTS)
       expect(seat.slotMap, String(status)).toEqual({ 'qb:0': 'x' })
     }
+    const seat = chooseStarterSlots([{ id: 'r1', position: 'RB', status: 'IR' }, active('r2', 'RB')], SLOTS)
+    expect(seat.slotMap['rb:0']).toBe('r1')
   })
 
   it('simDesignation is 112:337-353\'s bridge, case- and space-insensitive', () => {
@@ -1101,10 +1040,9 @@ describe('chooseStarterSlots — the seating a league that POLICES legality will
     expect([...BLOCKING_DESIGNATIONS].sort()).toEqual(['IR', 'NFI', 'OUT', 'PUP', 'Suspended'])
   })
 
-  it('a player with no eligible slot is simply unseated (not an error, not a legality skip)', () => {
-    const seat = chooseStarterSlots([active('k1', 'K')], SLOTS, { allowIllegalLineups: false })
+  it('a player with no eligible slot is simply unseated (not an error)', () => {
+    const seat = chooseStarterSlots([active('k1', 'K')], SLOTS)
     expect(seat.slotMap).toEqual({})
-    expect(seat.benchedForLegality).toEqual([])
     expect(seat.emptySlots).toEqual(['qb:0', 'rb:0', 'wr:0'])
   })
 })

@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { preconnect } from 'react-dom'
 
 import { PLACEHOLDER_USERNAME_REGEX } from '@/lib/auth/username-contract'
 import { createServerClient } from '@/lib/supabase/server'
@@ -23,6 +24,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Every signed-in screen reads Supabase straight from the browser once it
+  // hydrates; open that connection while the page is still loading (L.F1.4 —
+  // Lighthouse put it at ~150 ms on a phone). `anonymous` because supabase-js
+  // fetches cross-origin without credentials, and the browser only reuses a
+  // preconnected socket for requests of the same credentials mode.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (supabaseUrl) preconnect(supabaseUrl, { crossOrigin: 'anonymous' })
+
   const supabase = await createServerClient()
   const {
     data: { user },

@@ -132,7 +132,6 @@ describe('League settings (G2 general)', () => {
       IR: '1 · OUT, IR',
       'Roster spots': '17 per team',
       'Lineup lock': 'Each player’s kickoff',
-      'Allow illegal lineups': 'On',
       'Auto-sub inactives': 'Off',
       'Stat corrections': 'Until next week’s first game',
     })

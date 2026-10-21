@@ -71,9 +71,11 @@ describe('settingPolicyKeys / inSeasonChangePlan — one working draft → ONE C
   })
 
   it('two changed keys are two calls, each carrying THAT key’s whole new value, in key order — never the whole document', () => {
-    const working = { ...baseline, waiver_run_time: '09:00', allow_illegal_lineups: !baseline.allow_illegal_lineups }
+    // D591: auto_sub_inactives stands in for allow_illegal_lineups (retired by
+    // migration 201 — no toggle sends it any more).
+    const working = { ...baseline, waiver_run_time: '09:00', auto_sub_inactives: !baseline.auto_sub_inactives }
     expect(plan({ working }).send).toEqual([
-      { key: 'allow_illegal_lineups', value: !baseline.allow_illegal_lineups },
+      { key: 'auto_sub_inactives', value: !baseline.auto_sub_inactives },
       { key: 'waiver_run_time', value: '09:00' },
     ])
   })

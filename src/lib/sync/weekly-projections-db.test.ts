@@ -22,6 +22,12 @@
  *      200 that projects 3 — `ok: false`, the position named with both
  *      counts, and every stored line BYTE-IDENTICAL afterwards (no upsert,
  *      no delete).
+ *   7. INJURY TAGS STAY FRESH (D592 — the SuperLeague v0.1 week-6 bug: a
+ *      player cleared after Tuesday's sync still read OUT all week): through
+ *      the service role, a stale Out and a stale IR (a filler row) clear
+ *      back to Active, two new tags are written, an unchanged tag, a
+ *      non-injury status and a player the feed does not carry are left —
+ *      read back by value, `updated_at` moved only on the changed rows.
  *
  * Season 2099 (the synthetic calendar, seeded idempotently); requires the
  * local stack (001–136) — D59(5); FAILS loudly when the stack is down.
@@ -113,7 +119,11 @@ describe('weekly projections — the service-role write path (stack)', () => {
     )
     expect(report.failures).toEqual([])
     expect(report.ok).toBe(true)
-    expect(report.counts).toEqual({ weeks: 1, projected: 17, stored: 17, removed: 0, unknownPlayer: 0, duplicates: 0, failedWeeks: 0 })
+    // D592: the fixture players were born `active`; the feed tags three of them.
+    expect(report.counts).toEqual({
+      weeks: 1, projected: 17, stored: 17, removed: 0, unknownPlayer: 0, duplicates: 0, failedWeeks: 0,
+      injuryChecked: 23, injuryTagged: 3, injuryCleared: 0, injuryDetail: 0,
+    })
 
     const lines = await linesFor(4)
     expect(lines).toHaveLength(17)
@@ -248,5 +258,78 @@ describe('weekly projections — the service-role write path (stack)', () => {
     ])
     expect(bad.counts).toMatchObject({ stored: 0, removed: 0, failedWeeks: 1 })
     expect(await linesFor(7)).toEqual(before)
+  })
+})
+
+describe('injury tags — the service-role write to players (stack, D592)', () => {
+  const OLD = '2099-01-01T00:00:00+00:00'
+  type Injury = { id: string; status: string | null; injury_body_part: string | null; injury_notes: string | null; injury_start_date: string | null; updated_at: string | null }
+
+  async function plant(id: string, fields: Partial<Omit<Injury, 'id'>>): Promise<void> {
+    const { error, count } = await service.from('players').update({ ...fields, updated_at: OLD }, { count: 'exact' }).eq('id', id)
+    if (error) throw new Error(`plant ${id}: ${error.message}`)
+    expect(count).toBe(1)
+  }
+
+  async function injuryOf(ids: string[]): Promise<Map<string, Omit<Injury, 'id'>>> {
+    const { data, error } = await service
+      .from('players')
+      .select('id, status, injury_body_part, injury_notes, injury_start_date, updated_at')
+      .in('id', ids)
+    if (error) throw new Error(error.message)
+    return new Map(
+      (data ?? []).map(({ id, updated_at, ...rest }) => [id, { ...rest, updated_at: updated_at ? new Date(updated_at).toISOString() : null }]),
+    )
+  }
+
+  it('7. a stale Out / IR clears, new tags land, the rest is left — by value, updated_at only where it changed', async () => {
+    // Baseline: every fixture player healthy, stamped OLD.
+    const base = await service
+      .from('players')
+      .update({ status: 'Active', injury_body_part: null, injury_notes: null, injury_start_date: null, updated_at: OLD }, { count: 'exact' })
+      .like('id', `${P}%`)
+    if (base.error) throw new Error(base.error.message)
+    const absent = await service.from('players').insert({ id: `${P}absent`, full_name: 'WPJ absent', position: 'WR', status: 'Out', updated_at: OLD })
+    if (absent.error) throw new Error(absent.error.message)
+    await plant(`${P}4984`, { status: 'Out', injury_body_part: 'Ankle', injury_notes: 'Sprain', injury_start_date: '2099-10-01' }) // healthy in the feed
+    await plant(`${P}3957`, { status: 'IR' }) // a FILLER row, healthy in the feed
+    await plant(`${P}9221`, { status: 'Inactive' }) // healthy in the feed, not an injury tag
+    await plant(`${P}11604`, { status: 'Questionable', injury_body_part: 'Knee - Meniscus', injury_notes: 'Surgery' }) // same as the feed
+
+    const report = await syncWeeklyProjections(
+      { db: service, time: clock('2099-10-27T15:40:00.000Z'), fetchWeek: async (_s, w, p) => recorded(w, p) },
+      { season: SEASON, weeks: [8] },
+    )
+    expect(report.failures).toEqual([])
+    expect(report.ok).toBe(true)
+    expect(report.counts).toMatchObject({ stored: 17, injuryChecked: 23, injuryTagged: 2, injuryCleared: 2, injuryDetail: 0 })
+    expect(report.injuryChanges).toEqual([
+      { player_id: `${P}4984`, kind: 'cleared', from: 'Out', to: 'Active' },
+      { player_id: `${P}3957`, kind: 'cleared', from: 'IR', to: 'Active' },
+      { player_id: `${P}13300`, kind: 'tagged', from: 'Active', to: 'NA' },
+      { player_id: `${P}9493`, kind: 'tagged', from: 'Active', to: 'Doubtful' },
+    ])
+
+    const RUN = '2099-10-27T15:40:00.000Z'
+    const old = new Date(OLD).toISOString()
+    const after = await injuryOf([`${P}4984`, `${P}3957`, `${P}13300`, `${P}9493`, `${P}11604`, `${P}9221`, `${P}absent`])
+    expect(Object.fromEntries(after)).toEqual({
+      [`${P}4984`]: { status: 'Active', injury_body_part: null, injury_notes: null, injury_start_date: null, updated_at: RUN },
+      [`${P}3957`]: { status: 'Active', injury_body_part: null, injury_notes: null, injury_start_date: null, updated_at: RUN },
+      [`${P}13300`]: { status: 'NA', injury_body_part: 'Undisclosed', injury_notes: null, injury_start_date: null, updated_at: RUN },
+      [`${P}9493`]: { status: 'Doubtful', injury_body_part: 'Hip', injury_notes: 'Soreness', injury_start_date: null, updated_at: RUN },
+      [`${P}11604`]: { status: 'Questionable', injury_body_part: 'Knee - Meniscus', injury_notes: 'Surgery', injury_start_date: null, updated_at: old },
+      [`${P}9221`]: { status: 'Inactive', injury_body_part: null, injury_notes: null, injury_start_date: null, updated_at: old },
+      [`${P}absent`]: { status: 'Out', injury_body_part: null, injury_notes: null, injury_start_date: null, updated_at: old },
+    })
+
+    // The next hour over the same feed changes nothing.
+    const again = await syncWeeklyProjections(
+      { db: service, time: clock('2099-10-27T16:40:00.000Z'), fetchWeek: async (_s, w, p) => recorded(w, p) },
+      { season: SEASON, weeks: [8] },
+    )
+    expect(again.ok).toBe(true)
+    expect(again.counts).toMatchObject({ injuryTagged: 0, injuryCleared: 0, injuryDetail: 0 })
+    expect(again.injuryChanges).toEqual([])
   })
 })

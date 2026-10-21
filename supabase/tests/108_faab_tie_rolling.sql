@@ -101,6 +101,15 @@ begin
 end
 $un199$;
 
+-- pg_temp.un205 — migration 205's inserted lines removed (each ends
+-- `-- 205 / D593`; 205 changes no line of 199's text); an identity on every
+-- other body (pgTAP 155 A5). RE-PINNED by D593: applied INNERMOST in the cells
+-- that fingerprint roster_add_drop / waiver_claim_submit / process_waivers /
+-- waiver_claim_notify, so they pin exactly what they pinned (additive, R992).
+create function pg_temp.un205(p_src text) returns text language sql as $un205$
+  select regexp_replace(p_src, E'\n[^\n]*   -- 205 / D593', '', 'g')
+$un205$;
+
 -- pg_temp.un160 reverses 160's one substitution (the same helper 101 / 105
 -- apply innermost).
 create function pg_temp.un160(p_src text) returns text language sql as $un160$
@@ -128,12 +137,12 @@ select ok(
       and p.proname in ('process_waivers_internal', 'faab_tiebreaker_old_default_rewrite_internal')),
   'A2 PUBLIC holds EXECUTE on neither (REVOKEs restated)');
 select is(
-  (select md5(pg_temp.un160(pg_temp.un199(p.prosrc))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(pg_temp.un160(pg_temp.un199(pg_temp.un205(p.prosrc)))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'process_waivers_internal'),
   '440a595061f1bdd26715ee381b5d6afa',
   'A3 D137: the live processor with the one substitution reversed is 157:2610-3165 FILE TEXT (the stored literal 105 A5 pins)');
 select is(
-  (select md5(pg_temp.un199(p.prosrc)) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  (select md5(pg_temp.un199(pg_temp.un205(p.prosrc))) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'process_waivers_internal'),
   '18723b8cd3309b483b5765e6c841c786',
   'A4 the live processor prosrc md5 — 160 as written (a stored literal)');
