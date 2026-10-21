@@ -228,17 +228,17 @@ export interface AuditCommissionerAction {
 export const FINAL_CELL_LICENSING_ACTION_TYPES: readonly string[] = ['edit_score', 'set_result']
 
 /**
- * The four REASON strings `lineup_autopilot_internal` emits into
- * `unfillable[]` (`125:637-643`; the fourth since 154), as `prefix +
- * UPPER(slot) + suffix`. Pinned
- * against the migration's FILE TEXT by `season-invariants.test.ts`, so a
- * wording change in a later migration reds a test instead of silently
- * un-excusing — or over-excusing — a slot (R1076).
+ * The three REASON strings `lineup_autopilot_internal` emits into
+ * `unfillable[]` (`125:637-643`; the started-elsewhere arm since 154), as
+ * `prefix + UPPER(slot) + suffix`. Pinned against the migration's FILE TEXT
+ * by `season-invariants.test.ts`, so a wording change in a later migration
+ * reds a test instead of silently mis-reading a slot (R1076). The fourth arm —
+ * "no healthy eligible player at …; league forbids illegal lineups", the ONE
+ * reason invariant 8 used to excuse — is gone: D591 / migration 201 retired
+ * `allow_illegal_lineups`, so autopilot always seats a blocked man last and
+ * invariant 8 excuses NOTHING.
  */
 export const AUTOPILOT_UNFILLABLE_REASONS = {
-  /** THE ONLY ARM INVARIANT 8 EXCUSES: a healthy candidate does not exist and
-   *  the league forbids seating an unhealthy one. */
-  forbidsIllegal: { prefix: 'no healthy eligible player at ', suffix: '; league forbids illegal lineups' },
   /** Never excused: the harness ticks before any kickoff. */
   lockedOut: { prefix: 'no unlocked eligible player at ', suffix: "; every candidate's game had kicked off" },
   /** Never excused beside a bench witness: the witness refutes it. */
@@ -252,11 +252,6 @@ export const AUTOPILOT_UNFILLABLE_REASONS = {
   },
 } as const
 
-/** True iff `reason` is 125's "league forbids illegal lineups" arm. */
-export function isForbidsIllegalReason(reason: string): boolean {
-  const { prefix, suffix } = AUTOPILOT_UNFILLABLE_REASONS.forbidsIllegal
-  return reason.startsWith(prefix) && reason.endsWith(suffix) && reason.length > prefix.length + suffix.length
-}
 
 /**
  * The matchup columns of a cell rendering (`season-runner.ts` `renderCells`:
@@ -431,8 +426,6 @@ export interface SeasonAudit {
   finalCells: readonly AuditFinalCell[]
   /** Every `commissioner_actions` row of the league (invariant 6's ledger). */
   commissionerActions: readonly AuditCommissionerAction[]
-  /** `settings.allow_illegal_lineups` AS STORED (invariant 8's one excuse). */
-  allowIllegalLineups: boolean
   /** The league's starting-slot instances (invariant 8). */
   startingSlots: readonly AuditStartingSlot[]
   /** Seats with no manager — read from `league_members`, never from
@@ -548,9 +541,9 @@ export function checkExclusivity(a: SeasonAudit): SeasonInvariantFailure[] {
  * service role over the STORED map and the league's own starting slots; a
  * green fit re-places every started player where he already sits.
  *
- * Legality here is slot ELIGIBILITY, not availability: `allow_illegal_lineups`
- * (default true) legally starts a bye/OUT player, who scores 0 and is
- * FLAGGED — that is a §11.3 concern and is deliberately not asserted.
+ * Legality here is slot ELIGIBILITY, not availability: a bye / OUT starter is
+ * always lawful (D591 / migration 201 retired `allow_illegal_lineups`) — he is
+ * FLAGGED and scores what he scores, which is deliberately not asserted.
  *
  * RECORDED, NOT FIXED (M6A L.E1.14 item 3; PROGRESS Q59 / F324): this check
  * has the SAME provenance blindness invariant 6 had before D345 — an
@@ -558,8 +551,9 @@ export function checkExclusivity(a: SeasonAudit): SeasonInvariantFailure[] {
  * a lawful `commish_edit_lineup` and a corrupt write are indistinguishable
  * here. It is harmless TODAY only because Q59 ruled that a commissioner may
  * lift TIMING and never positional LEGALITY, so every lawful map is still its
- * own fit. If F324's legality half is ever ruled the other way, this check
- * must be TAUGHT (a licence per lineup row), never exempted.
+ * own fit (F324 discharged by D591: Q59 binds the commissioner to the fit, and
+ * the bye / OUT half was retired outright). If Q59 is ever ruled the other
+ * way, this check must be TAUGHT (a licence per lineup row), never exempted.
  */
 export function checkLineupLegality(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
@@ -1041,29 +1035,23 @@ export function checkNoWorkerErrors(a: SeasonAudit): SeasonInvariantFailure[] {
  *     length-one augmenting path, so no maximum matching leaves it — and
  *     nothing here says WHICH player should start where.
  *
- * THE ONE EXCUSE, and it needs ALL THREE halves: the league stores
- * `allow_illegal_lineups = false` (125 item 4c — a blocking designation or a
- * bye is a HARD filter on seating someone new), the tick's LATEST pass over
- * that team-week NAMED that slot in `autopilot_unfillable[]`, AND the reason
- * it gave is 125's "no healthy eligible player …; league forbids illegal
- * lineups" arm (`isForbidsIllegalReason` — R1076). The other two reasons
- * (locked out / nobody eligible) excuse nothing. A league that allows
- * illegal lineups has no excuse at all (125 seats the unhealthy tail LAST
- * rather than leave a zero), and a slot the server never named is never
- * excused — "nothing happened" is not "it worked".
+ * NO EXCUSE. Until D591 a league storing `allow_illegal_lineups = false`
+ * excused a slot the tick named with 125's "…; league forbids illegal
+ * lineups" reason (125 item 4c's hard filter). Migration 201 retired the
+ * setting: autopilot seats the unhealthy tail LAST in every league rather than
+ * leave a zero, so no reason the tick gives (locked out / nobody eligible /
+ * started elsewhere) excuses an empty slot beside a bench witness — each is
+ * QUOTED in the failure — and a slot the server never named is never excused:
+ * "nothing happened" is not "it worked".
  *
  * A seat that is empty because every candidate's game had already kicked off
  * FAILS here on purpose: the harness ticks at the week's open instant, before
  * any kickoff, so a locked-out seat in a sim run means the tick did not run
  * when it should have.
  *
- * KNOWN LIMIT (F376, measured): 125 tests a candidate's LOCK before his
- * health (`125:549-557`), so the slot it named "forbids illegal lineups" at
- * the week-open pass is re-worded "every candidate's game had kicked off" at
- * every pass after that kickoff — and the latest evaluating pass is the one
- * judged. An OFF league whose seat has a blocked ONLY-candidate is therefore
- * red here after kickoff. That world is F374's (the live pool's
- * `players.status` leaking into the sim); it is REPORTED, not excused.
+ * (F376's known limit — an OFF league's slot re-worded from "forbids illegal
+ * lineups" to "every candidate's game had kicked off" after the kickoff — went
+ * with the setting: D591.)
  *
  * NO WITNESS IS NOT A PASS (R1078): an unmanaged seat with an EMPTY roster,
  * or one carrying a player whose position the audit could not resolve (`''`),
@@ -1088,14 +1076,10 @@ export function checkNoWorkerErrors(a: SeasonAudit): SeasonInvariantFailure[] {
 export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantFailure[] {
   const out: SeasonInvariantFailure[] = []
   const openedWeeks = openedDrivenWeeks(a)
-  // R1076: ONLY the "league forbids illegal lineups" arm is an excuse.
-  const named = new Set(
-    a.autopilotUnfillable.filter((u) => isForbidsIllegalReason(u.reason)).map((u) => `${u.team_id}|${u.week}|${u.slot}`),
-  )
+  // R1076 / D591: NO reason is an excuse (the one that was went with the
+  // retired setting) — a named slot's reason is quoted in its failure.
   const namedOtherwise = new Map(
-    a.autopilotUnfillable
-      .filter((u) => !isForbidsIllegalReason(u.reason))
-      .map((u) => [`${u.team_id}|${u.week}|${u.slot}`, u.reason] as const),
+    a.autopilotUnfillable.map((u) => [`${u.team_id}|${u.week}|${u.slot}`, u.reason] as const),
   )
   for (const seat of a.unmanagedSeats.filter((s) => s.shape === 'no_member_row' || s.autopilot)) {
     const shapeNote =
@@ -1144,7 +1128,6 @@ export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantF
         if (typeof occupant === 'string' && occupant.length > 0) continue
         const witnesses = bench.filter((p) => slot.eligible.includes(p.position))
         if (witnesses.length === 0) continue // nobody on the roster could take it — lawful; F288's run PROBLEM names the key
-        if (!a.allowIllegalLineups && named.has(`${seat.team_id}|${week}|${slot.key}`)) continue
         const other = namedOtherwise.get(`${seat.team_id}|${week}|${slot.key}`)
         shortfall.push(
           `${slot.key} (eligible and unstarted: ${witnesses.map((p) => p.player_id).join(', ')}` +
@@ -1161,8 +1144,7 @@ export function checkUnmanagedSeatsAutopiloted(a: SeasonAudit): SeasonInvariantF
             ? `unmanaged team ${seat.team_id} week ${week}: the starting map is EMPTY — nobody seated this seat, so it ` +
                 `scores a zero (spec:185; F334). Unfilled: ${shortfall.join('; ')}${shapeNote}`
             : `unmanaged team ${seat.team_id} week ${week}: starting slot(s) left empty that the roster could fill — ` +
-                `${shortfall.join('; ')}` +
-                `${a.allowIllegalLineups ? '' : " — and the tick's latest pass never named them in autopilot_unfillable[] with the 'league forbids illegal lineups' reason"}${shapeNote}`,
+                `${shortfall.join('; ')}${shapeNote}`,
         ),
       )
     }

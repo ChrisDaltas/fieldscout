@@ -58,7 +58,9 @@
 --     lock timing; IR + starter in one map refuses ("exactly one slot").
 --   * allow_illegal_lineups BOTH settings: TRUE accepts bye/OUT starters
 --     and flags them (literal flag arrays); FALSE refuses by name and the
---     same submit with the player benched succeeds.
+--     same submit with the player benched succeeds. RE-CUT BY D591
+--     (migration 201 retires the setting): a stored FALSE is ignored — the
+--     I4 cells now pin that the bye / OUT starter SAVES, flagged.
 --   * LOUD EMPTINESS (rule 10): `no_changes = true` BY NAME with the row's
 --     set_at and the roster digest unchanged; a week off the calendar, a
 --     past week, an empty roster, an unknown slot key, an unrostered
@@ -1029,20 +1031,24 @@ select lives_ok(
        '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000038', now()) $$,
   'R736 …and the removal one second before his kickoff lands');
 update nfl_games set kickoff_at = now() - interval '1 second' where id = 'lu-w3-a';   -- restore KC kicked off
--- allow_illegal_lineups FALSE: bye / OUT starters are blocked at submit by
--- name. DAL/PHI back to kickoff−1s so the OUT cell's rb → flex move is a
--- legality question, not a lock question.
+-- allow_illegal_lineups FALSE STORED: until 201 bye / OUT starters were
+-- blocked at submit by name. RE-CUT BY D591 (migration 201; Chris 2026-10-20:
+-- "That shouldn't be blocking anyone from doing anything."): the setting is
+-- retired, so each SAVES and is flagged. DAL/PHI back to kickoff−1s so the
+-- OUT cell's rb → flex move is a legality question, not a lock question.
 update nfl_games set kickoff_at = now() + interval '1 second' where id = 'lu-w3-b';
-select throws_like(
-  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
-       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr", "flex:0": "lu-s-bye"}', 'a3000000-0000-4000-8000-000000000034', now()) $$,
-  '%LU S BYE is on bye for week 3 and allow_illegal_lineups is off — slot "flex:0" is blocked at submit (§7.3.6)%',
-  'I4 allow_illegal FALSE: a BYE starter is blocked at submit by name');
-select throws_like(
-  $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
-       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-out", "wr:0": "lu-s-wr", "flex:0": "lu-s-rb"}', 'a3000000-0000-4000-8000-000000000034', now()) $$,
-  '%LU S OUT is OUT (OUT) for week 3 and allow_illegal_lineups is off — slot "rb:0" is blocked at submit (§7.3.6)%',
-  'I4 allow_illegal FALSE: an OUT starter is blocked at submit by name');
+select is(
+  (select format('no_changes=%s bye=%s out=%s illegal=%s', r ->> 'no_changes', r -> 'flags' -> 'bye', r -> 'flags' -> 'out', r -> 'flags' ->> 'illegal')
+   from (select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr", "flex:0": "lu-s-bye"}', 'a3000000-0000-4000-8000-000000000034', now()) r) x),
+  'no_changes=false bye=["lu-s-bye"] out=[] illegal=true',
+  'I4 allow_illegal FALSE stored: a BYE starter SAVES, flagged bye (201 / D591 — the setting is retired)');
+select is(
+  (select format('no_changes=%s bye=%s out=%s illegal=%s', r ->> 'no_changes', r -> 'flags' -> 'bye', r -> 'flags' -> 'out', r -> 'flags' ->> 'illegal')
+   from (select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
+       '{"qb:0": "lu-s-qb", "rb:0": "lu-s-out", "wr:0": "lu-s-wr", "flex:0": "lu-s-rb"}', 'a3000000-0000-4000-8000-000000000041', now()) r) x),
+  'no_changes=false bye=[] out=["lu-s-out"] illegal=true',
+  'I4 allow_illegal FALSE stored: an OUT starter SAVES, flagged out (201 / D591)');
 select lives_ok(
   $$ select public.set_lineup_internal('b3000000-0000-4000-8000-000000000002', 'c3000000-0000-4000-8000-000000000011', 3,
        '{"qb:0": "lu-s-qb", "rb:0": "lu-s-rb", "wr:0": "lu-s-wr"}', 'a3000000-0000-4000-8000-000000000035', now()) $$,

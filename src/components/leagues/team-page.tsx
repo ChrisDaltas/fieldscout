@@ -413,7 +413,6 @@ function TeamPageContent({
             teamId={teamId}
             week={week}
             settings={detail.settings.roster_settings}
-            allowIllegal={detail.settings.allow_illegal_lineups}
             roster={rosterTeam.roster}
             stored={lineup.data ?? null}
             currentWeek={currentWeek}

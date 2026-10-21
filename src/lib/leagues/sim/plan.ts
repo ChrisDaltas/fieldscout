@@ -286,8 +286,9 @@ export function buildRunPlan(input: BuildPlanInput): RunPlan {
  * Coverage is BY CONSTRUCTION, not by seed luck (the `plan.ts:96-112`
  * discipline): with ≥2 leagues the run carries at least one of each
  * `schedule_mode`; with ≥3 at least one `median_game` on; with ≥4 at least
- * one `second_opponent` on; with ≥5 at least one `allow_illegal_lineups` OFF.
- * Everything else is seeded.
+ * one `second_opponent` on. Everything else is seeded. (The ≥5 "one
+ * `allow_illegal_lineups` OFF" axis is gone: D591 / migration 201 retired the
+ * setting — a lineup with a bye / OUT starter always saves.)
  *
  * The two coupled facts the schema enforces and this respects:
  *   - `total_points` ⇒ `playoff_teams = 0` (v2.16.25 / Q39 (C)).
@@ -316,7 +317,9 @@ export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
   const h2hIndex = n >= 2 ? (totalPointsIndex + 1 + Math.floor(rng() * (n - 1))) % n : 0
   const medianIndex = n >= 3 ? pickOther(rng, n, [totalPointsIndex]) : -1
   const secondIndex = n >= 4 ? pickOther(rng, n, [totalPointsIndex, medianIndex]) : -1
-  const illegalOffIndex = n >= 5 ? pickOther(rng, n, [totalPointsIndex]) : -1
+  // D591: the retired legality axis's draw is KEPT (and discarded) so every
+  // seed's later axes — the template rotation and the fork — stay put.
+  if (n >= 5) pickOther(rng, n, [totalPointsIndex])
   // The parity-template axis: a seeded ROTATION, so at n >= 8 every shipped
   // template appears by construction and below 8 the sample still moves with
   // the seed. `forkIndex` carries D299's §7.3.3.1 custom-fork arm.
@@ -341,7 +344,6 @@ export function applySeasonMatrix(leagues: LeaguePlan[], seed: number): void {
       // scores every team against the field (§11.7); keep it off there.
       medianGame: scheduleMode === 'h2h' && (i === medianIndex || rng() < 0.4),
       secondOpponent: scheduleMode === 'h2h' && (i === secondIndex || rng() < 0.3),
-      allowIllegalLineups: i !== illegalOffIndex,
       regularSeasonWeeks,
       playoffTeams,
       playoffStartWeek: regularSeasonWeeks + 1,
@@ -366,7 +368,7 @@ export function seasonPlanLines(plan: RunPlan): string[] {
     if (s === undefined) return `${l.name}: (no season plan)`
     return (
       `${l.name}: ${l.teamCount} teams · ${s.scheduleMode} · median ${s.medianGame ? 'on' : 'off'} · ` +
-      `second ${s.secondOpponent ? 'on' : 'off'} · illegal-lineups ${s.allowIllegalLineups ? 'on' : 'off'} · ` +
+      `second ${s.secondOpponent ? 'on' : 'off'} · ` +
       `${s.regularSeasonWeeks} regular weeks · playoff_teams ${s.playoffTeams} · ` +
       `scoring ${s.scoringTemplate}${s.forkScoring ? ' (FORKED + edited — §7.3.3.1)' : ''} · ` +
       `${l.rounds} rounds · humans ${l.humanSeats.length}/${l.teamCount}`

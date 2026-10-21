@@ -56,7 +56,7 @@
 --     (added in the #295 fix round — R1000 found two enumerated and asserted
 --     by nothing): `disabled_by_system_flag:autopilot_disabled` §F1b ·
 --     `no_unmanaged_seats_in_a_live_current_week` §I3b · `nothing_fillable`
---     §E1b/§H1b · `every_candidate_locked` §J2 ·
+--     §E1b (§H1b too until D591 retired the setting) · `every_candidate_locked` §J2 ·
 --     `every_unmanaged_looking_seat_declined_no_league_members_row` §K2/§K4 ·
 --     `no_row_and_no_materialize` §L2 · NULL (work happened) §D10/§F2b.
 --   * ONE CELL USES FAULT INJECTION AND SAYS SO (§L). `no_row_and_no_materialize`
@@ -187,6 +187,8 @@ select ok(auth.uid() is null, 'A15 the claim is reset — the rest of the suite 
 --                   at all (§D9 — D354's materialize-then-fill)
 --    AL2 `ba…0002` — allow_illegal_lineups FALSE, one seat: §G, both halves
 --    AL3 `ba…0003` — allow_illegal_lineups FALSE, one OUT player: §H
+--    (D591 / migration 201 retired the setting: AL2 / AL3 keep their stored
+--    FALSE, and §G / §H now pin that it is IGNORED.)
 --    AL4 `ba…0004` — week 3 in `correction_window`: §I, with the live
 --                    positive control at the SAME instant
 --    AL5 `ba…0005` — T50 `ca…0050`: every slot full, one UNLOCKED OUT starter,
@@ -739,16 +741,21 @@ select is(current_setting('pgtap.r')::jsonb -> 'autopilot_reason', 'null'::jsonb
 -- G. `allow_illegal_lineups` — THE SPLIT, BOTH SIDES (item 4c). The same
 --    fixture league is run twice: FALSE first, then TRUE, so the cell tests
 --    the split rather than one side of it.
+--    RE-CUT BY D591 (migration 201 — the setting is RETIRED; Chris
+--    2026-10-20: "That shouldn't be blocking anyone from doing anything."):
+--    there is no split any more. The stored FALSE is ignored, so G1 / G1b
+--    now pin the SAME lineup G2 pins — the blocked man seated LAST, behind
+--    the healthy WR, never filtered out and never named unfillable.
 -- ---------------------------------------------------------------------------
 select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000002')::text, true);
 select is((select slot_map from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000020' and week = 3),
-  '{"qb:0": "ap-f-qb", "flex:0": "ap-f-ok"}'::jsonb,
-  'G1 allow_illegal_lineups = FALSE: the top-of-order candidate (adp 1.0) carrying a BLOCKING designation is NOT seated, and the next-best WR (adp 2.0) IS — naming both (§7.3.6, the split 114:603-616 takes)');
+  '{"qb:0": "ap-f-qb", "flex:0": "ap-f-ok", "flex:1": "ap-f-out"}'::jsonb,
+  'G1 allow_illegal_lineups stored FALSE (retired — 201 / D591): the healthy next-best WR (adp 2.0) takes flex:0 and the top-of-order man (adp 1.0) carrying a BLOCKING designation is seated LAST, at flex:1 — the stored value changes nothing');
 select is(
-  (select x ->> 'reason' from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'autopilot_unfillable') x
+  (select count(*)::int from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'autopilot_unfillable') x
    where x ->> 'team_id' = 'ca000000-0000-4000-8000-000000000020' and x ->> 'slot' = 'flex:1'),
-  'no healthy eligible player at FLEX; league forbids illegal lineups',
-  'G1b …and the slot the filtered man would have taken is named in autopilot_unfillable WITH THE LEAGUE SETTING as its reason — never left as a short map');
+  0,
+  'G1b …and flex:1 is not named unfillable — the "league forbids illegal lineups" reason no longer exists');
 update leagues set settings = jsonb_set(settings, '{allow_illegal_lineups}', 'true'::jsonb)
  where id = 'ba000000-0000-4000-8000-000000000002';
 update team_lineups set slot_map = '{}'::jsonb
@@ -770,18 +777,22 @@ select is(
 -- ---------------------------------------------------------------------------
 -- H. NOTHING HEALTHY AT ALL in an allow_illegal_lineups = FALSE league: the
 --    reason is the league setting, and the pass SAYS it wrote nothing.
+--    RE-CUT BY D591 (migration 201 — the setting is retired, the stored
+--    FALSE ignored): the one OUT man is the only candidate, so he is SEATED
+--    (last, flagged) at flex:0; every slot nobody on the roster can take is
+--    still named, each with the reason that applies to IT.
 -- ---------------------------------------------------------------------------
 select set_config('pgtap.r', public.lineup_lock_tick('2026-09-25 00:15:01+00', 'ba000000-0000-4000-8000-000000000003')::text, true);
 select is(
   (select string_agg(x ->> 'slot' || '=' || (x ->> 'reason'), ' | ' order by x ->> 'slot')
    from jsonb_array_elements(current_setting('pgtap.r')::jsonb -> 'autopilot_unfillable') x),
-  'flex:0=no healthy eligible player at FLEX; league forbids illegal lineups | flex:1=no healthy eligible player at FLEX; league forbids illegal lineups | qb:0=no eligible player at QB on the roster | te:0=no eligible player at TE on the roster',
-  'H1 every slot is named with the reason that actually applies to IT — the league setting where a filtered candidate was eligible, an empty roster where none was (never one blanket string)');
-select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', 'nothing_fillable',
-  'H1b …and autopilot_reason is NOT the empty/absent value on a pass that filled nothing (item 4c''s closing clause)');
+  'flex:1=no eligible player at FLEX on the roster | qb:0=no eligible player at QB on the roster | te:0=no eligible player at TE on the roster',
+  'H1 every slot nobody can fill is named with the reason that actually applies to IT (an empty roster at the position) — never one blanket string, and no "league forbids illegal lineups" (201 / D591)');
+select is(current_setting('pgtap.r')::jsonb ->> 'autopilot_reason', null,
+  'H1b …and autopilot_reason is NULL: work happened (the OUT man was seated) — 201 / D591');
 select is((select slot_map from team_lineups where team_id = 'ca000000-0000-4000-8000-000000000030' and week = 3),
-  '{}'::jsonb,
-  'H1c …and the row is untouched — a refused slot is never written as a partial map');
+  '{"flex:0": "ap-u-out"}'::jsonb,
+  'H1c …and the row holds him at flex:0 — a blocked man is seated LAST rather than left out, whatever the league stored (201 / D591)');
 
 -- ---------------------------------------------------------------------------
 -- I. THE WEEK MUST BE LIVE (D354's `lw.status = 'live'` clause), with the

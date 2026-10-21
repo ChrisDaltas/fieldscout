@@ -120,8 +120,6 @@ export interface TransactLeague {
   label: string
   leagueId: string
   ownerId: string | null
-  /** FALSE = the league refuses a bye/OUT starter (§7.3.6): a traded-in player must be startable. */
-  allowIllegalLineups: boolean
   autopilotedSeatWeeks: ReadonlySet<string>
 }
 
@@ -242,33 +240,30 @@ const MOVE_POSITIONS = ['WR', 'RB', 'TE', 'QB'] as const
  * The harness's model of one league's rosters for CHOOSING moves (never for
  * judging them — the sweep reads the database). Every move is like-for-like
  * so each roster keeps its count at every position; a player is used once;
- * bridged players are never touched. `strict` = the league forbids illegal
- * lineups, so a player traded IN must be startable there (§7.3.6).
+ * bridged players are never touched. (D591: the `strict` mode — a league
+ * that forbade illegal lineups, where a traded-in player had to be startable —
+ * went with the retired `allow_illegal_lineups` setting.)
  */
 class LeagueWorld {
   readonly roster = new Map<string, RosterPlayer[]>()
   readonly used = new Set<string>()
   readonly freeAgents = new Map<string, RosterPlayer[]>()
 
-  constructor(
-    private readonly bridged: ReadonlySet<string>,
-    private readonly strict: boolean,
-  ) {}
+  constructor(private readonly bridged: ReadonlySet<string>) {}
 
-  private movable(teamId: string, position: string, forTrade: boolean): RosterPlayer[] {
+  private movable(teamId: string, position: string): RosterPlayer[] {
     return (this.roster.get(teamId) ?? [])
       .filter((p) => p.position === position && !this.bridged.has(p.id) && !this.used.has(p.id))
       .filter((p) => p.team !== null && NFL_CLUBS.includes(p.team))
-      .filter((p) => !forTrade || !this.strict || startable(p))
       .sort(worstFirst)
   }
 
-  canGive(teamId: string, position: string, forTrade = false): boolean {
-    return this.movable(teamId, position, forTrade).length > 0
+  canGive(teamId: string, position: string): boolean {
+    return this.movable(teamId, position).length > 0
   }
 
-  take(teamId: string, position: string, forTrade = false): RosterPlayer {
-    const pick = this.movable(teamId, position, forTrade)[0]
+  take(teamId: string, position: string): RosterPlayer {
+    const pick = this.movable(teamId, position)[0]
     if (pick === undefined) throw new StepError(`team ${teamId} has no movable ${position} — ${this.depth([teamId])}`)
     this.used.add(pick.id)
     return pick
@@ -300,9 +295,9 @@ class LeagueWorld {
     for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) pairs.push([pool[i]!, pool[j]!])
     const fresh = (x: [T, T]): boolean => !avoid.has(x[0].teamId) && !avoid.has(x[1].teamId)
     for (const [a, b] of [...pairs.filter(fresh), ...pairs.filter((x) => !fresh(x))]) {
-      const position = MOVE_POSITIONS.find((p) => this.canGive(a.teamId, p, true) && this.canGive(b.teamId, p, true))
+      const position = MOVE_POSITIONS.find((p) => this.canGive(a.teamId, p) && this.canGive(b.teamId, p))
       if (position === undefined) continue
-      return { a, b, pa: this.take(a.teamId, position, true), pb: this.take(b.teamId, position, true) }
+      return { a, b, pa: this.take(a.teamId, position), pb: this.take(b.teamId, position) }
     }
     throw new StepError(`no two seats share a position with a movable player each — ${this.depth(pool.map((s) => s.teamId))}`)
   }
@@ -322,8 +317,8 @@ class LeagueWorld {
   }
 }
 
-async function readWorld(service: Supabase, leagueId: string, bridged: ReadonlySet<string>, strict: boolean): Promise<LeagueWorld> {
-  const world = new LeagueWorld(bridged, strict)
+async function readWorld(service: Supabase, leagueId: string, bridged: ReadonlySet<string>): Promise<LeagueWorld> {
+  const world = new LeagueWorld(bridged)
   const rows = must(
     'roster read',
     await service
@@ -514,7 +509,7 @@ async function driveLeague(
     .sort((a, b) => (a.team_id! < b.team_id! ? -1 : 1))
   if (seats.length < 6) throw new StepError(`only ${seats.length} bot-managed seats besides the commissioner's — the script needs 6`)
   const N = seats.map((s) => ({ teamId: s.team_id!, userId: s.user_id!, memberId: s.id, client: bots.get(s.user_id!)! }))
-  const world = await readWorld(service, league.leagueId, deps.bridged, !league.allowIllegalLineups)
+  const world = await readWorld(service, league.leagueId, deps.bridged)
   const note = (line: string): void => {
     state.lines.push(line)
   }

@@ -716,8 +716,8 @@ select is(pg_temp.r('D8') -> 'slot_map', '{"qb:0": "q62-d8-qb", "flex:0": "q62-d
 select is(pg_temp.r('D20') -> 'slot_map', '{"qb:0": "q62-d20-qb", "flex:0": "q62-d20-dbt"}'::jsonb,
   'D4 …AND UNDER allow_illegal_lineups = FALSE: Doubtful is a PREFERENCE, never the hard filter (break probe: route him into the filtered set ⇒ red)');
 select is(format('allow=%s unfillable=%s', pg_temp.r('D20') ->> 'allow_illegal_lineups', pg_temp.r('D20') -> 'unfillable'),
-  'allow=false unfillable=[]',
-  'D4b …in the league that forbids illegal lineups, with NOTHING named unfillable — no "league forbids illegal lineups" slot on a Doubtful man''s account');
+  'allow=true unfillable=[]',
+  'D4b …in the league that stores allow_illegal_lineups = FALSE, with NOTHING named unfillable — RE-CUT BY D591 (201): the setting is retired, so the result key reads TRUE whatever is stored');
 select is(format('%s/%s', pg_temp.r('Q9') -> 'slot_map', pg_temp.r('Q9') ->> 'reason'),
   '{"qb:0": "q62-q9-qb", "flex:0": "q62-q9-q"}/no_empty_slot_and_no_unhealthy_unlocked_starter',
   'D5 QUESTIONABLE IS HEALTHY: a seated Questionable starter (3.00 projected) stays although a healthy 30.00 sits on the bench — never replaced on value (Q63) — and the short-circuit says why');
@@ -743,8 +743,8 @@ select is(
          (select jsonb_agg(s -> 'flags' order by s ->> 'slot') from jsonb_array_elements(pg_temp.r('X10F') -> 'starters') s),
          (select jsonb_agg(x ->> 'out' || '>' || (x ->> 'in')) from jsonb_array_elements(pg_temp.r('X10F') -> 'substituted') x),
          pg_temp.r('X10F') -> 'restored', pg_temp.r('X10F') -> 'unfillable'),
-  'allow=false flags=[[], []] substituted=["q62-x10f-out>q62-x10f-dbt"] restored=[] unfillable=[]',
-  'D7d …and the lineup''s FLAGS CLEAR: no starter carries `out` (a Doubtful start is legal, 114:596), the swap is named, nothing restored, nothing unfillable');
+  'allow=true flags=[[], []] substituted=["q62-x10f-out>q62-x10f-dbt"] restored=[] unfillable=[]',
+  'D7d …and the lineup''s FLAGS CLEAR: no starter carries `out` (a Doubtful start is legal, 114:596), the swap is named, nothing restored, nothing unfillable (allow=true: the setting is retired since 201 — D591 — whatever AL2 stores)');
 select is(pg_temp.r('O11') -> 'slot_map' -> 'flex:0', '"q62-o11-dbt"'::jsonb,
   'D8 THE TAIL ORDER (D375(4)): for an empty slot with no healthy candidate, the Doubtful man (2.00) is seated ahead of the OUT man (30.00) — where Doubtful stood relative to a blocked man before 138');
 

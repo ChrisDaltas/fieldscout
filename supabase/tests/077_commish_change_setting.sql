@@ -819,9 +819,9 @@ select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.
 -- ---------------------------------------------------------------------------
 select is((select string_agg(k || ':' || (commish_setting_policy(k) ->> 'class'), ',' order by k)
            from unnest(array['faab_budget', 'waiver_type', 'trade_review', 'trade_deadline_week', 'roster_settings',
-                             'trade_review_period_hours', 'tiebreakers', 'playoff_reseed', 'allow_illegal_lineups']) k),
-  'allow_illegal_lineups:free,faab_budget:free,playoff_reseed:free,roster_settings:free,tiebreakers:free,trade_deadline_week:free,trade_review:free,trade_review_period_hours:free,waiver_type:free',
-  'L1 FREE keys');
+                             'trade_review_period_hours', 'tiebreakers', 'playoff_reseed', 'auto_sub_inactives']) k),
+  'auto_sub_inactives:free,faab_budget:free,playoff_reseed:free,roster_settings:free,tiebreakers:free,trade_deadline_week:free,trade_review:free,trade_review_period_hours:free,waiver_type:free',
+  'L1 FREE keys (RE-CUT BY D591: allow_illegal_lineups left this list — migration 201 retired it, refused by name; pgTAP 151 pins that — so auto_sub_inactives stands in for the ninth key)');
 select is(commish_setting_policy('scoring_system_id') ->> 'class', 'rescore', 'L2 scoring_system_id is the ONE rescore key');
 select is((select string_agg(k || ':' || (commish_setting_policy(k) ->> 'class'), ',' order by k)
            from unnest(array['playoff_teams', 'playoff_weeks_per_round', 'consolation_bracket', 'third_place_game']) k),

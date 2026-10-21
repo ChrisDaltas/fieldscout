@@ -166,87 +166,82 @@ const s = (n: string) => (n === '1' ? '' : 's')
 const GAME_STARTED_ADD = 'That player’s game has started — you can pick him up after the week’s games end.'
 
 export const PHRASES: Phrase[] = [
-  // Lineup (set_lineup_internal, 169)
+  // Lineup (set_lineup_internal / commish_edit_lineup_internal — newest definer 201, D591)
   {
     id: 'lineup-kicked-off',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['a player whose game has started cannot enter or move slots'],
     render: (m) => pick(m, at(`(.+?)'s game kicked off at`), (x) => `${x[1]}’s game has started — he’s locked and can’t be moved into or out of your lineup.`),
     generic: 'That player’s game has started — he’s locked and can’t be moved into or out of your lineup.',
   },
   {
     id: 'lineup-slot-locked',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ["and a locked slot's player never moves"],
     render: (m) => pick(m, at(`slot \\S+ is locked — (.+?) kicked off at`), (x) => `That spot is locked — ${x[1]}’s game has started.`),
     generic: 'That spot is locked — its player’s game has started.',
   },
   {
     id: 'lineup-played-starter',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['a played starter is stuck in the lineup for the week'],
     render: (m) => pick(m, at('(.+?) already played this week'), (x) => `${x[1]} already played this week, so he stays in your lineup until the week ends.`),
     generic: 'That player already played this week, so he stays in your lineup until the week ends.',
   },
   {
     id: 'lineup-held',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ["is held in this week's lineup — his start stays"],
     render: (m) => pick(m, at("(.+?) is held in this week's lineup"), (x) => `${x[1]} is locked into this week’s lineup.`),
     generic: 'That player is locked into this week’s lineup.',
   },
   {
     id: 'lineup-two-slots',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['each player fills exactly one slot'],
     render: (m) => pick(m, at(`${NAME_ID} appears at both`), (x) => `${x[1]} is in two lineup spots. Each player can fill only one.`),
     generic: 'A player is in two lineup spots. Each player can fill only one.',
   },
   {
     id: 'lineup-cannot-place',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['no legal arrangement of the started players fills the slots'],
     render: (m) => pick(m, at(`${NAME_ID} cannot be placed`), (x) => `${x[1]} doesn’t fit — every spot he can play is held by a locked player.`),
     generic: 'That player doesn’t fit — every spot he can play is held by a locked player.',
   },
   {
     id: 'lineup-ir-stint',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['and may not leave it before week'],
     render: (m) => pick(m, at('(.+?) entered restricted IR spot \\S+ in week \\d+ and may not leave it before week (\\d+)'), (x) => `${x[1]} must stay on IR until week ${x[2]}.`),
     generic: 'That player must stay on IR a little longer.',
   },
   {
     id: 'lineup-ir-designation',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['holds designation', 'accepts only'],
     render: (m) => pick(m, at('(.+?) holds designation (\\S+) — IR spot \\S+ accepts only (.+?) \\('), (x) => `${x[1]} isn’t IR-eligible (${x[2]}). This IR spot takes ${x[3]} players only.`),
     generic: 'That player isn’t eligible for this IR spot.',
   },
-  {
-    id: 'lineup-bye-or-out',
-    migration: '199_remove_retire_schema.sql',
-    fragments: ['is blocked at submit', 'bench him or start someone who plays'],
-    render: (m) => pick(m, at('(.+?) is (on bye|OUT \\([^()]*\\)) for week (\\d+)'), (x) => `${x[1]} is ${x[2]} in week ${x[3]}. Bench him or start someone who’s playing.`),
-    generic: 'A starter isn’t playing this week. Bench him or start someone who’s playing.',
-  },
+  // D591 (migration 201): 'lineup-bye-or-out' is gone with the refusal it read — a bye / OUT
+  // starter or an empty slot never refuses a save now ("Allow illegal lineups" is retired).
   {
     id: 'lineup-past-week',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ["a past week's lineup changes only through the audited commissioner override"],
     render: () => null,
     generic: 'That week is over. Only the commissioner can change a past lineup.',
   },
   {
     id: 'lineup-closed-week',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ["a closed week's lineup changes only through the audited commissioner override"],
     render: () => null,
     generic: 'That week is over. Only the commissioner can change a past lineup.',
   },
   {
     id: 'lineup-not-in-season',
-    migration: '199_remove_retire_schema.sql',
+    migration: '201_lineup_saves_never_refused.sql',
     fragments: ['lineups are set only while in_season or in playoffs'],
     render: () => null,
     generic: 'Lineups open once the season starts.',
