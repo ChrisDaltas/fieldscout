@@ -62,8 +62,12 @@ export interface HealthyIrBlocker {
   full_name: string
   /** The spot's label ("IR", "DL"). */
   label: string
-  /** His designation now — null when he is healthy. */
+  /** His designation now (112's bridge) — null when he is healthy, and also
+   *  for a status the bridge maps to none (Questionable, Inactive, NA, DNR). */
   designation: string | null
+  /** His raw injury status as the sync wrote it ("Active", "Questionable", …)
+   *  — what the copy names when the bridge gives no designation. */
+  status: string | null
   /** His game has started this week, so the move out (and for a while the
    *  drop) is refused too — null when nothing stops the fix. */
   stuck: HealthyIrStuck | null
@@ -106,6 +110,7 @@ export function healthyIrBlockers(
         full_name: p.full_name,
         label: spot.label ?? 'IR',
         designation,
+        status: p.status,
         stuck: stuckOf(p, currentWeek, weekGamesOver),
       })
     }
@@ -113,9 +118,14 @@ export function healthyIrBlockers(
   return out
 }
 
-/** "is healthy" — or, for a tag his spot doesn't take, "is listed Doubtful". */
+/** "is healthy" (a blank or Active status only) — or, for a tag his spot
+ *  doesn't take, "is listed Doubtful"; a status with no designation is named
+ *  as listed too ("is listed Questionable"), never "healthy". 205's helper
+ *  `why` says the same. */
 function standing(b: HealthyIrBlocker): string {
-  return b.designation === null ? 'is healthy' : `is listed ${b.designation}`
+  if (b.designation !== null) return `is listed ${b.designation}`
+  const raw = (b.status ?? '').trim()
+  return raw === '' || raw.toLowerCase() === 'active' ? 'is healthy' : `is listed ${raw}`
 }
 
 /** "A One, B Two and C Three". */
@@ -185,6 +195,22 @@ export function healthyIrWays(blockers: readonly HealthyIrBlocker[], formatInsta
 
 /** The line under the ways: what still works while he is there. */
 export const HEALTHY_IR_STILL_OPEN = 'Lineup moves, drops and trades still work as usual.'
+
+/** F693 as ruled (Chris 2026-10-21, verbatim: "no the claims are not
+ *  cancelled, they should fail when waivers run."): a claim placed before he
+ *  turned ineligible stays pending — nothing touches it until the run, which
+ *  fails it if he is still in the spot then (205). So while the viewer has a
+ *  pending claim the notice says so, under the ways out, before the failure
+ *  notices are the first he hears of it. "When waivers run", not "the next
+ *  run": a claim on a player whose waiver period ends later is decided at a
+ *  later run. Null with no blocker or no pending claim. Only the headline's
+ *  words were ruled — this line's wording is Chris's call. */
+export function healthyIrClaimsLine(blockers: readonly HealthyIrBlocker[], pendingClaims: number): string | null {
+  if (blockers.length === 0 || pendingClaims <= 0) return null
+  const claims = pendingClaims === 1 ? 'Your pending claim' : 'Your pending claims'
+  const out = blockers.length === 1 ? 'he’s out of the spot' : 'they’re all out of your IR spots'
+  return `${claims} will fail when waivers run unless ${out} by then.`
+}
 
 /** The disabled Add / Claim's reason (its title / the card's closed line):
  *  the headline sentence, then the short fix. It opens with "You…", never his

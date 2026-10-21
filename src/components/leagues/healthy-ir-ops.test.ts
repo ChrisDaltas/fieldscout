@@ -19,6 +19,7 @@ import {
   currentWeekGamesOver,
   healthyIrAddTitle,
   healthyIrBlockers,
+  healthyIrClaimsLine,
   healthyIrHeadline,
   healthyIrWays,
   type HealthyIrBlocker,
@@ -59,22 +60,28 @@ const free = (b: Omit<HealthyIrBlocker, 'stuck'>): HealthyIrBlocker => ({ ...b, 
 describe('who blocks — 205’s rule, mirrored', () => {
   it('a HEALTHY man in an IR spot blocks; a still-eligible one does not', () => {
     expect(healthyIrBlockers([row('a', 'Active', 'ir:0', 5)], SPOTS, 6)).toEqual([
-      { player_id: 'a', full_name: 'P a', label: 'IR', designation: null, stuck: null },
+      { player_id: 'a', full_name: 'P a', label: 'IR', designation: null, status: 'Active', stuck: null },
     ])
     expect(healthyIrBlockers([row('b', 'Out', 'ir:0', 5), row('c', 'IR', 'ir:0', 5)], SPOTS, 6)).toEqual([])
     // The feed's spellings bridge as 112 does (Sus → Suspended is not in this spot's list).
     expect(healthyIrBlockers([row('d', 'Sus', 'ir:0', 5)], SPOTS, 6).map((b) => b.designation)).toEqual(['Suspended'])
   })
+  it('a Questionable (or Inactive) man blocks too — no spot takes a status with no designation — and carries the status the copy names', () => {
+    expect(healthyIrBlockers([row('q', 'Questionable', 'ir:0', 5)], SPOTS, 6)).toEqual([
+      { player_id: 'q', full_name: 'P q', label: 'IR', designation: null, status: 'Questionable', stuck: null },
+    ])
+    expect(healthyIrBlockers([row('i', 'Inactive', 'dl:0', 2, 6)], SPOTS, 6).map((b) => b.status)).toEqual(['Inactive'])
+  })
   it('PER-SPOT designations: Doubtful fits the DL spot, not the plain IR spot', () => {
     expect(healthyIrBlockers([row('d', 'Doubtful', 'dl:0', 5, 9)], SPOTS, 12)).toEqual([])
     expect(healthyIrBlockers([row('d', 'Doubtful', 'ir:0', 5)], SPOTS, 6)).toEqual([
-      { player_id: 'd', full_name: 'P d', label: 'IR', designation: 'Doubtful', stuck: null },
+      { player_id: 'd', full_name: 'P d', label: 'IR', designation: 'Doubtful', status: 'Doubtful', stuck: null },
     ])
   })
   it('a RESTRICTED stint still running blocks nothing (he can’t leave); from its last week on he blocks', () => {
     const r = [row('h', 'Active', 'dl:0', 5, 9)]
     expect(healthyIrBlockers(r, SPOTS, 8)).toEqual([])
-    expect(healthyIrBlockers(r, SPOTS, 9)).toEqual([{ player_id: 'h', full_name: 'P h', label: 'DL', designation: null, stuck: null }])
+    expect(healthyIrBlockers(r, SPOTS, 9)).toEqual([{ player_id: 'h', full_name: 'P h', label: 'DL', designation: null, status: 'Active', stuck: null }])
     // Week unknown (the schedule still loading): not counted — the server decides.
     expect(healthyIrBlockers(r, SPOTS, null)).toEqual([])
   })
@@ -90,15 +97,24 @@ describe('the words', () => {
     // Chris, 2026-10-21, verbatim: "Change that message to say "You have an ineligible player in your IR spot.""
     expect(HEALTHY_IR_HEADLINE).toBe('You have an ineligible player in your IR spot.')
     const fmt = (iso: string) => iso
-    const hurts = free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })
+    const hurts = free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active' })
     expect(healthyIrHeadline([hurts])).toBe(HEALTHY_IR_HEADLINE)
     expect(healthyIrWays([hurts], fmt)).toEqual(['Jalen Hurts is healthy.', ...HEALTHY_IR_WAYS])
-    const doubtful = free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful' })
+    const doubtful = free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful', status: 'Doubtful' })
     expect(healthyIrHeadline([doubtful])).toBe(HEALTHY_IR_HEADLINE)
     expect(healthyIrWays([doubtful], fmt)).toEqual(['Jalen Hurts is listed Doubtful.', ...HEALTHY_IR_WAYS])
+    // 155 B5's twin: "healthy" is a blank or Active status only — Questionable / Inactive are named as listed.
+    for (const [status, said] of [
+      ['Questionable', 'Jalen Hurts is listed Questionable.'],
+      ['Inactive', 'Jalen Hurts is listed Inactive.'],
+      [null, 'Jalen Hurts is healthy.'],
+      [' active ', 'Jalen Hurts is healthy.'],
+    ] as const) {
+      expect(healthyIrWays([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status })], fmt)[0]).toBe(said)
+    }
     const two = [
-      free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null }),
-      free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null }),
+      free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null, status: 'Active' }),
+      free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, status: 'Active' }),
     ]
     // The same sentence for two, word for word — the names are the line under it.
     expect(healthyIrHeadline(two)).toBe(HEALTHY_IR_HEADLINE)
@@ -112,23 +128,32 @@ describe('the words', () => {
     ])
     expect(HEALTHY_IR_STILL_OPEN).toBe('Lineup moves, drops and trades still work as usual.')
   })
+  it('F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it while he is still there; none without one', () => {
+    const one = [free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active' })]
+    const two = [...one, free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, status: 'Active' })]
+    expect(healthyIrClaimsLine(one, 1)).toBe('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
+    expect(healthyIrClaimsLine(one, 3)).toBe('Your pending claims will fail when waivers run unless he’s out of the spot by then.')
+    expect(healthyIrClaimsLine(two, 2)).toBe('Your pending claims will fail when waivers run unless they’re all out of your IR spots by then.')
+    expect(healthyIrClaimsLine(one, 0)).toBeNull()
+    expect(healthyIrClaimsLine([], 2)).toBeNull()
+  })
   it('the closed Add / Claim leads with the headline, then the short fix', () => {
-    expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })])).toBe(
+    expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active' })])).toBe(
       'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot, or drop him, to add players.',
     )
-    expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful' })])).toBe(
+    expect(healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: 'Doubtful', status: 'Doubtful' })])).toBe(
       'You have an ineligible player in your IR spot. Move Jalen Hurts out of the spot, or drop him, to add players.',
     )
     expect(
       healthyIrAddTitle([
-        free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null }),
-        free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null }),
+        free({ player_id: 'a', full_name: 'A One', label: 'IR', designation: null, status: 'Active' }),
+        free({ player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, status: 'Active' }),
       ]),
     ).toBe('You have an ineligible player in your IR spot. Move A One and B Two out of your IR spots, or drop them, to add players.')
     expect(healthyIrAddTitle([])).toBeNull()
   })
   it('the + door’s name keeps his name capitalised (acquireLabel lower-cases only the reason’s first word)', () => {
-    const title = healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null })])!
+    const title = healthyIrAddTitle([free({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active' })])!
     expect(acquireLabel('none', 'Puka Nacua', title)).toBe(
       'Can’t pick up Puka Nacua — you have an ineligible player in your IR spot. Move Jalen Hurts out of the spot, or drop him, to add players',
     )
@@ -166,7 +191,7 @@ describe('F690 — when his game has started, the way out is locked too (the cop
     expect(currentWeekGamesOver(weeks, null)).toBe(false)
     expect(currentWeekGamesOver([], 6)).toBe(false)
   })
-  const hurts = (stuck: HealthyIrBlocker['stuck']): HealthyIrBlocker => ({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, stuck })
+  const hurts = (stuck: HealthyIrBlocker['stuck']): HealthyIrBlocker => ({ player_id: 'a', full_name: 'Jalen Hurts', label: 'IR', designation: null, status: 'Active', stuck })
   const fmt = (iso: string) => `<${iso}>`
   it('the notice while he is in his game: no move, no drop yet — when the drop opens, and that the move waits for next week', () => {
     const b = [hurts({ kind: 'in_game', dropsOpenAt: UNTIL })]
@@ -196,7 +221,7 @@ describe('F690 — when his game has started, the way out is locked too (the cop
     expect(healthyIrWays([], fmt)).toEqual([])
   })
   it('two blockers, one locked: a line each, saying what works for him', () => {
-    const b = [hurts({ kind: 'in_game', dropsOpenAt: null }), { player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, stuck: null }]
+    const b = [hurts({ kind: 'in_game', dropsOpenAt: null }), { player_id: 'b', full_name: 'B Two', label: 'DL', designation: null, status: 'Active', stuck: null }]
     expect(healthyIrHeadline(b)).toBe(HEALTHY_IR_HEADLINE)
     expect(healthyIrWays(b, fmt)).toEqual([
       'Jalen Hurts and B Two can’t stay in your IR spots — adds stay closed until they leave them.',

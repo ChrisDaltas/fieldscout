@@ -365,6 +365,24 @@ describe('D593 — a healthy man left in my IR spot: the notice above the lineup
     expect(html).toContain(HEALTHY_IR_MOVE_NEXT_WEEK)
     for (const way of HEALTHY_IR_WAYS) expect(html).not.toContain(way)
   })
+  it('F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it while he is still there; none without one', () => {
+    const one = renderTeamPage({ ...withIr('Active'), claims: 'one' })
+    expect(one).toContain('data-healthy-ir-claims')
+    expect(one).toContain('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
+    expect(renderTeamPage({ ...withIr('Active'), claims: 'two' })).toContain('Your pending claims will fail when waivers run unless he’s out of the spot by then.')
+    // Settled claims only (lost / cancelled), none at all, or the read still loading: no line.
+    for (const claims of ['lost', 'empty', undefined] as const) {
+      expect(renderTeamPage({ ...withIr('Active'), claims })).not.toContain('data-healthy-ir-claims')
+    }
+    // A pending claim with nothing in the IR spot: no notice, so no line.
+    expect(renderTeamPage({ claims: 'one' })).not.toContain('data-healthy-ir-claims')
+  })
+  it('a Questionable man in the spot is named as listed, never "healthy"', () => {
+    const html = renderTeamPage(withIr('Questionable'))
+    expect(html).toContain(HEALTHY_IR_HEADLINE)
+    expect(html).toContain('Render IR Man is listed Questionable.')
+    expect(html).not.toContain('Render IR Man is healthy')
+  })
   it('none while he still fits the spot, and none before the season', () => {
     expect(renderTeamPage(withIr('Out'))).not.toContain('data-healthy-ir-notice')
     expect(renderTeamPage()).not.toContain('data-healthy-ir-notice')

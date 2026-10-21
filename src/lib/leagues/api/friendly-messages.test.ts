@@ -144,6 +144,10 @@ const CASES: ReadonlyArray<readonly [string, string, string]> = [
   ['claim-healthy-ir',
     "waiver_claim_submit: Jalen Hurts is listed Doubtful and still in Alpha's IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)",
     'You have an ineligible player in your IR spot. Jalen Hurts is listed Doubtful — move him to your bench, swap another IR-eligible player into the spot, or drop him.'],
+  // A status with no designation (Questionable) is named as listed — 205's `why` — never "healthy".
+  ['add-healthy-ir',
+    "roster_add_drop: Jalen Hurts is listed Questionable and still in Alpha's IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)",
+    'You have an ineligible player in your IR spot. Jalen Hurts is listed Questionable — move him to your bench, swap another IR-eligible player into the spot, or drop him.'],
 ]
 
 describe('phrase map — renders the member’s sentence from the server’s own values', () => {

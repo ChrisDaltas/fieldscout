@@ -21,6 +21,7 @@ import { leaguePlayerValueKeys } from '@/hooks/use-league-player-values'
 import { leagueRosterKeys } from '@/hooks/use-rosters'
 import { scheduleKeys, type LeagueSchedule } from '@/hooks/use-schedule'
 import { leagueStandingsKeys } from '@/hooks/use-standings'
+import { waiverClaimKeys } from '@/hooks/use-waiver-claims'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
 import type { LeagueStandings } from '@/lib/leagues/api/standings-service'
 import { defaultsForTeamCount } from '@/lib/leagues/settings/league-settings'
@@ -184,6 +185,44 @@ describe('MyTeamTab (mobile League › Team)', () => {
     expect(blocked).toMatch(/rounded-message[^"]*bg-m-gr|bg-m-gr[^"]*rounded-message/)
     expect(render(SCHEDULE, detail, withIr('Out'))).not.toContain('data-healthy-ir-notice')
     expect(html).not.toContain('data-healthy-ir-notice')
+    // A Questionable man is named as listed, never "healthy".
+    const questionable = render(SCHEDULE, detail, withIr('Questionable'))
+    expect(questionable).toContain('Nick Chubb is listed Questionable.')
+    expect(questionable).not.toContain('Nick Chubb is healthy')
+    // F693 as ruled ("they should fail when waivers run"): with a pending claim the notice says the run will fail it.
+    expect(blocked).not.toContain('data-healthy-ir-claims')
+    const withClaim = render(SCHEDULE, detail, (qc) => {
+      withIr('Active')(qc)
+      qc.setQueryData(waiverClaimKeys.team(LEAGUE, null, 'pending'), {
+        league_id: LEAGUE,
+        team_id: ME,
+        status: 'pending',
+        waiver_type: 'faab',
+        faab_budget: 100,
+        faab_min_bid: 1,
+        faab_balance: 80,
+        waiver_priority: null,
+        claims: [
+          {
+            id: 'claim-1',
+            team_id: ME,
+            add: { player_id: 'fa-1', full_name: 'Claimed Receiver', position: 'WR', nfl_team: 'AAA' },
+            drop: null,
+            faab_bid: 12,
+            claim_order: 1,
+            status: 'pending',
+            result_reason: null,
+            process_at: null,
+            processed_at: null,
+            created_at: '2099-10-08T12:00:00.000Z',
+            created_by: 'user-me',
+            cancelled_at: null,
+          },
+        ],
+      })
+    })
+    expect(withClaim).toContain('data-healthy-ir-claims')
+    expect(withClaim).toContain('Your pending claim will fail when waivers run unless he’s out of the spot by then.')
   })
 
   it('F690: the week’s games are over and he played — the notice says a drop works now and the move waits for next week (never the locked move)', () => {

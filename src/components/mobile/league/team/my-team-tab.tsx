@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
-import { HEALTHY_IR_STILL_OPEN, currentWeekGamesOver, healthyIrBlockers, healthyIrHeadline, healthyIrWays } from '@/components/leagues/healthy-ir-ops'
+import { HEALTHY_IR_STILL_OPEN, currentWeekGamesOver, healthyIrBlockers, healthyIrClaimsLine, healthyIrHeadline, healthyIrWays } from '@/components/leagues/healthy-ir-ops'
 import {
   buildEditorModel,
   currentWeekOf,
@@ -16,6 +16,7 @@ import {
 import { projectedTotal, starterIdsOf } from '@/components/leagues/my-team-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
 import { problemCopy } from '@/components/leagues/team-page'
+import { pendingClaimCount } from '@/components/leagues/team-transactions-ops'
 import { DEADLINE_PASSED_TITLE, NOT_IN_SEASON_TRADE_COPY } from '@/components/leagues/trades-ops'
 import { waiverSeatCopy } from '@/components/leagues/waiver-claims-ops'
 import { movesGate } from '@/components/players/player-card-league-ops'
@@ -36,6 +37,7 @@ import { useSchedule } from '@/hooks/use-schedule'
 import { useStandings } from '@/hooks/use-standings'
 import { toast } from '@/hooks/use-toast'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
+import { useWaiverClaims } from '@/hooks/use-waiver-claims'
 import { cn } from '@/lib/utils'
 import { useCommishOverrideStore, useOverrideMode } from '@/stores/commish-override-store'
 import { usePlayerModalStore } from '@/stores/player-modal-store'
@@ -120,6 +122,11 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   const irWays = healthyIrWays(irBlockers, (iso) => formatInstantWithDate(iso, detail.settings.draft.time_zone ?? null).local)
   const waiverWindow = detail.waiver_window ?? null
   const claimsLive = detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && waiverWindow?.waivers !== false
+  // F693 as ruled (Chris 2026-10-21: "they should fail when waivers run"): the
+  // notice says when the run will fail his pending claims — PendingClaims' own
+  // read below (same key, so one fetch).
+  const myClaims = useWaiverClaims(claimsLive ? leagueId : undefined, { status: 'pending' })
+  const irClaimsLine = healthyIrClaimsLine(irBlockers, pendingClaimCount(myClaims.data?.claims ?? []))
   const [builder, setBuilder] = useState(false)
 
   // The card's projected total: the SAVED starters (the server's arrangement).
@@ -284,6 +291,11 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
                     {w}
                   </span>
                 ))}
+                {irClaimsLine && (
+                  <span className="block text-m-t1" data-healthy-ir-claims>
+                    {irClaimsLine}
+                  </span>
+                )}
                 <span className="block text-m-t2">{HEALTHY_IR_STILL_OPEN}</span>
               </MNotice>
             </div>

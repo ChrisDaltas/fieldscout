@@ -65,7 +65,9 @@
 --       retired cancel build is on the database (no cancel function, no
 --       result_detail column).
 --   §B  the check itself (the helper): per team, per spot's designations,
---       the Restricted stint.
+--       the Restricted stint; `why` says "healthy" only for a blank / Active
+--       status — a Questionable or Inactive man (no designation, so no spot
+--       takes him) blocks too and is named "listed Questionable" (B5).
 --   §C  adds (roster_add_drop): a healthy IR occupant refuses an add alone
 --       and an add + drop of someone else by name; a plain drop lands; the
 --       Doubtful man in the plain IR spot refuses; still-fitting occupants and
@@ -92,7 +94,7 @@
 -- BREAK PROBES (measured 2026-10-21 on the local DB, 205 applied; each
 -- inserted right after the fixture, inside this transaction):
 --   (a) the four bodies put back from pg_temp.un205(prosrc) — 199's text ⇒
---       18 of 42 red — C1 C2 C2b C4 C7 C8 C9 D3 D5 E4 W1 W2 W3 W5 W6 W7 W8
+--       18 of 43 red — C1 C2 C2b C4 C7 C8 C9 D3 D5 E4 W1 W2 W3 W5 W6 W7 W8
 --       W9: every add and claim of a blocked team goes through, and at the
 --       run W Alpha's claims win (C8 C9 D3 D5 W3 W9 follow: the moves they
 --       repeat or count already went through). Green under it by design: §A
@@ -100,7 +102,7 @@
 --       drop lock is 199's), W4 (a lineup move), and every way out — the
 --       drop, the lineup moves, the trade, the commissioner's force-add.
 --   (b) process_waivers_internal alone put back (199's run; the submit still
---       205's) ⇒ 4 of 42 red — W5 W6 W7 W8: the still-blocked team's claims
+--       205's) ⇒ 4 of 43 red — W5 W6 W7 W8: the still-blocked team's claims
 --       go to the decision and win, nobody is told of a failure. W3 stays
 --       green under it: nothing but the run ever touches a pending claim.
 -- ============================================================================
@@ -109,7 +111,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(42);
+select plan(43);
 
 -- pg_temp.un205 — migration 205's inserted lines removed (each ends
 -- `-- 205 / D593`; 205 alters no line of 199's text); an identity on every
@@ -165,7 +167,7 @@ select is(
                        like '%| no_waivers (the league switched to none_fcfs — F421(e)) | healthy_in_ir (205 / D593 / F693:%; cancelled = cancelled (the verb) | seat_vacated | manager_left (F411). NULL%')::text
    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'ir_healthy_blockers_internal'),
-  '576758f5e60480e80172f053fadc2a2c | true | true',
+  '78c1a8fd8ba0a0a9079cfc450794a46a | true | true',
   'A6 the helper as written (a stored literal) with its comment; the stored-reason vocabulary names healthy_in_ir among the INVALID (failed) reasons — not the cancelled ones');
 select is(
   format('cancel functions=%s | result_detail column=%s',
@@ -365,6 +367,24 @@ select is(
   'B3 …each blocker carries his name, spot, label, designation, the spot''s designations and why he no longer fits — "healthy" or "listed <tag>" (what a message or a screen names)');
 select is(pg_temp.blk('HI Foxtrot', 6), 'hi-f-dlh,hi-f-irh',
   'B4 TWO BLOCKERS: Foxtrot''s healthy IR man, and his healthy DL man whose stint ended (current 6 is not before 6 — he may leave, so he must)');
+-- B5: Alpha's IR man as the injury sync lists him — Active, then Questionable, Inactive, blank — and back to Active.
+create function pg_temp.why(p_team text) returns text language sql as $$
+  select coalesce(string_agg(x ->> 'player_id' || '=' || (x ->> 'why'), ',' order by x ->> 'player_id'), '-')
+  from leagues l, jsonb_array_elements(public.ir_healthy_blockers_internal(l, pg_temp.team(p_team), 6)) x
+  where l.id = (select t.league_id from teams t where t.id = pg_temp.team(p_team)) $$;
+create temp table why155 (n int primary key, v text not null);
+insert into why155 values (1, pg_temp.why('HI Alpha'));
+update players set status = 'Questionable' where id = 'hi-a-irh';
+insert into why155 values (2, pg_temp.why('HI Alpha'));
+update players set status = 'Inactive' where id = 'hi-a-irh';
+insert into why155 values (3, pg_temp.why('HI Alpha'));
+update players set status = null where id = 'hi-a-irh';
+insert into why155 values (4, pg_temp.why('HI Alpha'));
+update players set status = 'Active' where id = 'hi-a-irh';
+select is(
+  (select string_agg(v, ' | ' order by n) from why155),
+  'hi-a-irh=healthy | hi-a-irh=listed Questionable | hi-a-irh=listed Inactive | hi-a-irh=healthy',
+  'B5 a Questionable (or Inactive) man in the IR spot blocks — no spot takes a status the bridge maps to no designation — and is named as he is listed, never "healthy"; "healthy" is a blank or Active status only');
 
 -- ---------------------------------------------------------------------------
 -- C. ADDS — roster_add_drop_internal (LA, no waivers), at P

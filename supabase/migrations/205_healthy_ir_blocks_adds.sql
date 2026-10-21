@@ -65,7 +65,10 @@
 -- less any whose Restricted stint still runs (`current < ir_lock_until_week`)
 -- — exactly set_lineup's `ir_ineligible` test (112 / 201), at the roster
 -- level. Returns them as a JSON array (empty = not blocked); each carries
--- `why` — "healthy", or "listed <designation>" — for the plain message.
+-- `why` — "healthy" (a blank or Active status), or "listed <designation>" —
+-- for the plain message. A status the bridge maps to no designation
+-- (Questionable, Inactive, NA, DNR) blocks like a healthy one (no spot takes
+-- it) but is named as it is listed — "listed Questionable" — never "healthy".
 --
 -- THE BODIES — each CREATE OR REPLACE against its NEWEST defining migration's
 -- FILE TEXT (D137; `grep -l -i -E "function[[:space:]]+(public[.])?<name>
@@ -155,8 +158,10 @@ AS $$
            'label',              COALESCE(sp.spot ->> 'label', 'IR'),
            'type',               sp.spot ->> 'type',
            'designation',        public.lineup_designation_internal(p.status),
-           'why',                CASE WHEN public.lineup_designation_internal(p.status) IS NULL THEN 'healthy'
-                                      ELSE 'listed ' || public.lineup_designation_internal(p.status) END,
+           -- "healthy" only for a blank / Active status: a status the bridge maps to no
+           -- designation (Questionable, Inactive, NA, DNR) is named as listed, not healthy.
+           'why',                CASE WHEN lower(btrim(COALESCE(p.status, ''))) IN ('', 'active') THEN 'healthy'
+                                      ELSE 'listed ' || COALESCE(public.lineup_designation_internal(p.status), btrim(p.status)) END,
            'eligible',           sp.spot -> 'eligible_designations',
            'ir_placed_week',     r.ir_placed_week,
            'ir_lock_until_week', r.ir_lock_until_week)
@@ -175,7 +180,7 @@ AS $$
 $$;
 REVOKE EXECUTE ON FUNCTION ir_healthy_blockers_internal(public.leagues, UUID, INTEGER) FROM PUBLIC, anon, authenticated;
 COMMENT ON FUNCTION ir_healthy_blockers_internal(public.leagues, UUID, INTEGER) IS
-  'D593 / spec §7.3.2 (migration 205): the team''s IR occupants who no longer hold one of their spot''s eligible designations (healthy again, or tagged with one the spot does not take) — less any whose Restricted stint still runs at p_current — as a JSON array; empty = the team may add. While it is non-empty roster_add_drop refuses an add (unless the move drops that occupant — F692), waiver_claim_submit refuses a claim, and the waiver run fails the team''s pending claims (invalid / healthy_in_ir — F693: "they should fail when waivers run"). Drops, lineup moves, trades and the commissioner''s roster tools are not blocked.';
+  'D593 / spec §7.3.2 (migration 205): the team''s IR occupants who no longer hold one of their spot''s eligible designations (healthy again; listed with a status that gives no designation, such as Questionable, which no spot takes; or tagged with one the spot does not take — `why` says "healthy" for a blank or Active status, else "listed <tag>") — less any whose Restricted stint still runs at p_current — as a JSON array; empty = the team may add. While it is non-empty roster_add_drop refuses an add (unless the move drops that occupant — F692), waiver_claim_submit refuses a claim, and the waiver run fails the team''s pending claims (invalid / healthy_in_ir — F693: "they should fail when waivers run"). Drops, lineup moves, trades and the commissioner''s roster tools are not blocked.';
 
 -- ---------------------------------------------------------------------------
 -- 2. roster_add_drop_internal — 199:5041-5577 FILE TEXT (D137), 2 hunks (+23 / -0):

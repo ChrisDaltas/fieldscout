@@ -795,7 +795,7 @@
   "text": "roster_add_drop: %'s roster holds % players after the move, expected % (roster_size %) — refusing"
  },
  {
-  "loc": "205_healthy_ir_blocks_adds.sql:428",
+  "loc": "205_healthy_ir_blocks_adds.sql:433",
   "fn": "roster_add_drop_internal",
   "text": "roster_add_drop: % is % and still in %'s IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)"
  },
@@ -840,7 +840,7 @@
   "text": "waiver_claim_submit: % has no FAAB balance on record, so it can't bid — ask the commissioner to set the team's FAAB"
  },
  {
-  "loc": "205_healthy_ir_blocks_adds.sql:923",
+  "loc": "205_healthy_ir_blocks_adds.sql:928",
   "fn": "waiver_claim_submit_internal",
   "text": "waiver_claim_submit: % is % and still in %'s IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), swap an IR-eligible player into his spot, or drop him (§7.3.2)"
  },
