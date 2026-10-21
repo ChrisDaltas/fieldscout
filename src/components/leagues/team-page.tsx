@@ -22,7 +22,6 @@ import { useNflWeekGames } from '@/hooks/use-nfl-week-games'
 import { usePlayerUsage } from '@/hooks/use-player-usage'
 import { useRostersLive } from '@/hooks/use-rosters'
 import { useSchedule } from '@/hooks/use-schedule'
-import { useWaiverClaims } from '@/hooks/use-waiver-claims'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { LeagueActionError } from '@/lib/leagues/api/client-fetch'
 import { INSEASON_LEAGUE_GONE_MESSAGE, INSEASON_READ_FORBIDDEN_MESSAGE } from '@/lib/leagues/api/inseason-reads'
@@ -33,7 +32,7 @@ import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
 import { LineupEditor, type LineupOpponent, type LineupStats } from './lineup-editor'
-import { HEALTHY_IR_STILL_OPEN, currentWeekGamesOver, healthyIrBlockers, healthyIrClaimsLine, healthyIrHeadline, healthyIrWays } from './healthy-ir-ops'
+import { HEALTHY_IR_BLOCKED_LINE, HEALTHY_IR_STILL_OPEN, currentWeekGamesOver, healthyIrBlockers, healthyIrHeadline, healthyIrWays } from './healthy-ir-ops'
 import { currentWeekOf, defaultLineupWeek, formatInstantWithDate, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { projectedTotal, starterIdsOf } from './my-team-ops'
 import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } from './status-banners'
@@ -48,7 +47,6 @@ import {
 import { TeamAutopilotSwitch, TeamCommishTools, TeamFaabEdit, TeamRename } from './team-commish-tools'
 import { tradesHref } from './trades-ops'
 import { waiverSeatCopy } from './waiver-claims-ops'
-import { pendingClaimCount } from './team-transactions-ops'
 import { TeamTransactionsPanel } from './team-transactions-panel'
 
 /**
@@ -212,8 +210,6 @@ function TeamPageContent({
   // F693 as ruled (Chris 2026-10-21: "they should fail when waivers run"): the
   // notice says when the run will fail his pending claims — the Transactions
   // panel's own read (same key, so one fetch).
-  const myClaims = useWaiverClaims(isOwnTeam && claimsLive ? leagueId : undefined, { status: 'all' })
-  const irClaimsLine = healthyIrClaimsLine(irBlockers, pendingClaimCount(myClaims.data?.claims ?? []))
 
   const rosterProblem = rosters.isError ? (rosters.error instanceof Error ? rosters.error : new Error(String(rosters.error))) : null
 
@@ -425,7 +421,7 @@ function TeamPageContent({
               Nothing set for week <span className="fs-num">{week}</span> yet — the week opens with last week’s legal lineup carried over; until then every seat is open here.
             </p>
           )}
-          {irHeadline && <HealthyIrNotice headline={irHeadline} ways={irWays} claimsLine={irClaimsLine} />}
+          {irHeadline && <HealthyIrNotice headline={irHeadline} ways={irWays} />}
           <LineupEditor
             // R1467: one saver per team-week — a week switch remounts it.
             key={`${teamId}:${week}`}
@@ -493,24 +489,20 @@ function TeamPageContent({
   )
 }
 
-/** D593: "You have an ineligible player in your IR spot." (Chris
- *  2026-10-21), who he is and the ways out that work now (`healthyIrWays` —
+/** D593: "You have an ineligible player in your IR spot. Player adds and
+ *  waiver claims will be blocked until that is fixed." (Chris 2026-10-21 —
+ *  `HEALTHY_IR_HEADLINE` + `HEALTHY_IR_BLOCKED_LINE`), who he is and the ways out that work now (`healthyIrWays` —
  *  the two Chris named, or, while his game has him locked, the drop and when
- *  the move opens), what the run will do to his pending claims
- *  (`healthyIrClaimsLine` — F693, only while he has one), and
- *  what still works — a soft-red system message (the bright red is its
+ *  the move opens), and what still works — a soft-red system message (the bright red is its
  *  headline's words only). Exported for the render test. */
-export function HealthyIrNotice({ headline, ways, claimsLine = null }: { headline: string; ways: readonly string[]; claimsLine?: string | null }) {
+export function HealthyIrNotice({ headline, ways }: { headline: string; ways: readonly string[] }) {
   return (
     <StatusBanner tone="negative" className="items-start">
       <span className="flex flex-col gap-1" data-healthy-ir-notice>
-        <span className="text-negative-strong">{headline}</span>
+        <span className="text-negative-strong">
+          {headline} <span data-healthy-ir-blocked>{HEALTHY_IR_BLOCKED_LINE}</span>
+        </span>
         <span className="font-medium text-ink">{ways.join(' ')}</span>
-        {claimsLine && (
-          <span className="font-medium text-ink" data-healthy-ir-claims>
-            {claimsLine}
-          </span>
-        )}
         <span className="font-medium text-n-3">{HEALTHY_IR_STILL_OPEN}</span>
       </span>
     </StatusBanner>

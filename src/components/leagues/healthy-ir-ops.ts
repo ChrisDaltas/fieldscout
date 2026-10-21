@@ -196,21 +196,12 @@ export function healthyIrWays(blockers: readonly HealthyIrBlocker[], formatInsta
 /** The line under the ways: what still works while he is there. */
 export const HEALTHY_IR_STILL_OPEN = 'Lineup moves, drops and trades still work as usual.'
 
-/** F693 as ruled (Chris 2026-10-21, verbatim: "no the claims are not
- *  cancelled, they should fail when waivers run."): a claim placed before he
- *  turned ineligible stays pending — nothing touches it until the run, which
- *  fails it if he is still in the spot then (205). So while the viewer has a
- *  pending claim the notice says so, under the ways out, before the failure
- *  notices are the first he hears of it. "When waivers run", not "the next
- *  run": a claim on a player whose waiver period ends later is decided at a
- *  later run. Null with no blocker or no pending claim. Only the headline's
- *  words were ruled — this line's wording is Chris's call. */
-export function healthyIrClaimsLine(blockers: readonly HealthyIrBlocker[], pendingClaims: number): string | null {
-  if (blockers.length === 0 || pendingClaims <= 0) return null
-  const claims = pendingClaims === 1 ? 'Your pending claim' : 'Your pending claims'
-  const out = blockers.length === 1 ? 'he’s out of the spot' : 'they’re all out of your IR spots'
-  return `${claims} will fail when waivers run unless ${out} by then.`
-}
+/** The line straight under the headline, always shown with it — Chris,
+ *  2026-10-21, verbatim: change the line to read, "You have an ineligible
+ *  player in your IR spot. Player adds and waiver claims will be blocked until
+ *  that is fixed." (It replaced a line shown only with pending claims; those
+ *  claims still fail at the waiver run if he is still there — F693.) */
+export const HEALTHY_IR_BLOCKED_LINE = 'Player adds and waiver claims will be blocked until that is fixed.'
 
 /** The disabled Add / Claim's reason (its title / the card's closed line):
  *  the headline sentence, then the short fix. It opens with "You…", never his
