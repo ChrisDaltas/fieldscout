@@ -99,6 +99,8 @@ const INVALID_WORDS: Record<string, string> = {
   insufficient_faab: 'the bid was more than your FAAB left by then.',
   own_claim_won: 'one of your other claims went through first and made this one impossible.',
   no_waivers: 'the league turned waivers off — he can be picked up directly now.',
+  // D593 (migration 205): failed at the run, before the decision.
+  healthy_in_ir: 'a player who isn’t IR-eligible was still in your IR spot — move him out of it to add players.',
   seat_vacated: 'the team’s manager left the seat, so its claims were cancelled.',
   manager_left: 'the team’s manager left the league, so its claims were cancelled.',
 }
@@ -215,6 +217,10 @@ export function claimOnlyAddTitle(nextRunLocal: string | null): string {
  * next run) renders verbatim. With no window (a failed read) both stay live.
  * `claimsLive: false` — a database without claims (pre-149, R1219) — means
  * no Claim at all. Locks come from the tick's view only (`row.lock`).
+ * `irBlockTitle` (D593, migration 205): the viewer's team has a player who
+ * isn't IR-eligible in an IR spot (`healthyIrAddTitle`) — every Add and Claim
+ * is disabled with that reason, whatever the window or the lock says: the
+ * server refuses them all until he leaves the spot.
  */
 export function pickupActions(
   row: Pick<PoolPlayerRow, 'availability' | 'lock'>,
@@ -225,9 +231,16 @@ export function pickupActions(
     lockedAddTitle: string
     nextRunLocal: string | null
     claimsLive?: boolean
+    irBlockTitle?: string | null
   },
 ): { add: ActionState; claim: ActionState } {
   const noWaivers = ctx.waiverType === 'none_fcfs' || ctx.window?.waivers === false || ctx.claimsLive === false
+  if (ctx.irBlockTitle) {
+    return {
+      add: { show: true, disabled: true, title: ctx.irBlockTitle },
+      claim: noWaivers ? { show: false } : { show: true, disabled: true, title: ctx.irBlockTitle },
+    }
+  }
   if (row.lock.locked) {
     return {
       add: { show: true, disabled: true, title: ctx.lockedAddTitle },

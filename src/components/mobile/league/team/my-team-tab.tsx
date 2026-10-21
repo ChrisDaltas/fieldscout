@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
+import { HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS, healthyIrBlockers, healthyIrHeadline } from '@/components/leagues/healthy-ir-ops'
 import {
   buildEditorModel,
   currentWeekOf,
@@ -21,6 +22,7 @@ import { MobileLeagueHeader } from '@/components/mobile/league/league/league-hea
 import { transactionsHref } from '@/components/mobile/league/league/league-tab-ops'
 import { scheduleHref } from '@/components/mobile/league/schedule/schedule-ops'
 import { TradeBuilderOverlay } from '@/components/mobile/trades/trade-builder-overlay'
+import { MNotice } from '@/components/mobile/ui/m-form'
 import { MIcon, type MIconName } from '@/components/mobile/ui/m-icon'
 import { MobileScreen } from '@/components/mobile/ui/mobile-header'
 import type { LeagueDetail } from '@/hooks/use-league'
@@ -105,6 +107,10 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
   const tradesClosed = tradeDeadlinePassed(deadline.data)
   const editability = weekEditability(weeks, week, currentWeek)
   const movesState = movesGate(detail.league.status)
+  // D593 (migration 205): a player who isn't IR-eligible left in one of your
+  // IR spots blocks every add and claim until he leaves it — said above the
+  // lineup with the two ways out (the + doors elsewhere are closed too).
+  const irHeadline = movesState.open ? healthyIrHeadline(healthyIrBlockers(roster, detail.settings.roster_settings.ir_slots, currentWeek)) : null
   const waiverWindow = detail.waiver_window ?? null
   const claimsLive = detail.waivers_live !== false && detail.settings.waiver_type !== 'none_fcfs' && waiverWindow?.waivers !== false
   const [builder, setBuilder] = useState(false)
@@ -262,6 +268,19 @@ export function MyTeamTab({ leagueId, teamId, detail }: { leagueId: string; team
         <Problem title="This team has no roster on record." detail="Every team carries a roster once it is seated — none came back for this one." onRetry={() => void rosters.refetch()} />
       ) : (
         <>
+          {irHeadline && (
+            <div className="px-3 pt-3" data-healthy-ir-notice>
+              <MNotice tone="error">
+                <span className="block font-semibold">{irHeadline}</span>
+                {HEALTHY_IR_WAYS.map((w) => (
+                  <span key={w} className="block text-m-t1">
+                    {w}
+                  </span>
+                ))}
+                <span className="block text-m-t2">{HEALTHY_IR_STILL_OPEN}</span>
+              </MNotice>
+            </div>
+          )}
           {checkRows && <LineupCheckCard rows={checkRows} onPlayer={(id) => openPlayer(id, leagueId)} />}
           <LineupSection
             key={`${teamId}:${week}`}

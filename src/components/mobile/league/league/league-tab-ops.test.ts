@@ -296,6 +296,8 @@ describe('lost and failed waiver claims in My moves (gap list §3 #12)', () => {
     expect(reasonOf('own_claim_won').text).toEqual(['One of your other claims went through first and made this one impossible.'])
     expect(reasonOf('no_waivers').text).toEqual(['The league turned waivers off — he can be picked up directly now.'])
     expect(reasonOf('team_retired').text).toEqual(['This team was retired before the run.'])
+    // D593 (migration 205): failed at the run while a player who isn't IR-eligible held an IR spot.
+    expect(reasonOf('healthy_in_ir').text).toEqual(['A player who isn’t IR-eligible was still in your IR spot — move him out of it to add players.'])
     // A reason the app has no words for is still said, never dropped.
     expect(reasonOf('something_new').text).toEqual(['Didn’t go through (something new).'])
     expect(reasonOf('constructor').text).toEqual(['Didn’t go through (constructor).'])

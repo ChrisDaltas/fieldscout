@@ -32,9 +32,10 @@ import { MEMBERS_NAV_LABEL, membersPageHref } from './invite-panel-ops'
 import { Crest, LeaguePageTitle } from './league-cells'
 import { DropPlayerDialog, type DropTarget } from './drop-player-dialog'
 import { LineupEditor, type LineupOpponent, type LineupStats } from './lineup-editor'
+import { HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS, healthyIrBlockers, healthyIrHeadline } from './healthy-ir-ops'
 import { currentWeekOf, defaultLineupWeek, formatInstantWithDate, formatKickoff, locksAtCopy, weekEditability } from './lineup-editor-ops'
 import { projectedTotal, starterIdsOf } from './my-team-ops'
-import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner } from './status-banners'
+import { ReconnectingBanner, STALE_LEAGUE_COPY, StaleDataBanner, StatusBanner } from './status-banners'
 import {
   COMMISH_CHANGED_BADGE,
   COMMISH_CHANGED_TITLE,
@@ -184,6 +185,13 @@ function TeamPageContent({
   const [dropping, setDropping] = useState<DropTarget | null>(null)
   const movesState = movesGate(detail.league.status)
   const movesClosed = movesState.open ? null : movesState.reason
+  // D593 (migration 205): a player who isn't IR-eligible left in one of MY IR
+  // spots blocks every add and claim until he leaves it — said here, with the
+  // two ways out, before anyone tries (the Adds elsewhere are disabled too).
+  const irHeadline =
+    isOwnTeam && movesState.open && rosterTeam
+      ? healthyIrHeadline(healthyIrBlockers(rosterTeam.roster, detail.settings.roster_settings.ir_slots, currentWeek))
+      : null
   const editability = weekEditability(weeks, week, currentWeek)
   const leagueTimeZone = detail.settings.draft.time_zone ?? null
   // Chris 2026-10-04: the manager's Transactions (pending waiver claims, adds
@@ -406,6 +414,7 @@ function TeamPageContent({
               Nothing set for week <span className="fs-num">{week}</span> yet — the week opens with last week’s legal lineup carried over; until then every seat is open here.
             </p>
           )}
+          {irHeadline && <HealthyIrNotice headline={irHeadline} />}
           <LineupEditor
             // R1467: one saver per team-week — a week switch remounts it.
             key={`${teamId}:${week}`}
@@ -470,6 +479,21 @@ function TeamPageContent({
         </>
       )}
     </div>
+  )
+}
+
+/** D593: "<Player> is healthy — move him out of your IR spot to add players",
+ *  the two ways out, and what still works — a soft-red system message (the
+ *  bright red is its headline's words only). Exported for the render test. */
+export function HealthyIrNotice({ headline }: { headline: string }) {
+  return (
+    <StatusBanner tone="negative" className="items-start">
+      <span className="flex flex-col gap-1" data-healthy-ir-notice>
+        <span className="text-negative-strong">{headline}</span>
+        <span className="font-medium text-ink">{HEALTHY_IR_WAYS.join(' ')}</span>
+        <span className="font-medium text-n-3">{HEALTHY_IR_STILL_OPEN}</span>
+      </span>
+    </StatusBanner>
   )
 }
 

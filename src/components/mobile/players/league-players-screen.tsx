@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
-import { formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
+import { currentWeekOf, formatInstantWithDate } from '@/components/leagues/lineup-editor-ops'
 import { oprkOf, oprkRankedCount, oprkTone, statusTag, type Tone } from '@/components/leagues/my-team-ops'
 import { NO_SEAT_COPY, VALUES_PROBLEM_COPY, poolRows, valueCells, valueWeekOf, type PoolPlayerRow } from '@/components/leagues/players-page-ops'
 import { STALE_LEAGUE_COPY } from '@/components/leagues/status-banners'
@@ -440,6 +440,9 @@ function LeaguePlayersBody({ leagueId, detail }: { leagueId: string; detail: Lea
       minBid: detail.settings.faab_min_bid,
       nextRunLocal: nextRun ? formatInstantWithDate(nextRun, tz).local : null,
       formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
+      // D593: a player who isn't IR-eligible in an IR spot closes every + door.
+      irSlots: detail.settings.roster_settings.ir_slots,
+      currentWeek: currentWeekOf(weeks),
     })
 
   const say = (reason: string | undefined) => toast({ title: reason ?? 'Not available right now.' })

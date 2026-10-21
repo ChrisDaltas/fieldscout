@@ -18,13 +18,18 @@
  *     roster_size = starters + bench + IR slots, counted over every row);
  *   - a FAAB bid is whole dollars from the league minimum to the balance;
  *   - no trade past the deadline, and none toward a team with no manager
- *     (174 — nobody could answer the offer).
+ *     (174 — nobody could answer the offer);
+ *   - no add or claim while the viewer's team has a player who isn't
+ *     IR-eligible in an IR spot (205 / D593 — `healthyIrBlockers`; drops and
+ *     trades stay open).
  */
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { LOCKED_ADD_TITLE, LOCKED_DROP_TITLE, poolRows, type PoolPlayerRow } from '@/components/leagues/players-page-ops'
+import { healthyIrAddTitle, healthyIrBlockers } from '@/components/leagues/healthy-ir-ops'
 import { pickupActions, type ActionState } from '@/components/leagues/waiver-claims-ops'
 import type { PoolRow } from '@/hooks/use-league-pool'
 import type { LeagueRosters, RosterPlayer } from '@/lib/leagues/api/rosters-service'
+import type { IrSlot } from '@/lib/leagues/settings/league-settings'
 import type { WaiverWindowView } from '@/lib/leagues/waivers/waiver-window-view'
 
 export type Gate = { open: true } | { open: false; reason: string }
@@ -59,6 +64,10 @@ export interface CardLeagueInput {
   nextRunLocal: string | null
   /** Formats the on-waivers instant for the Add's title. */
   formatInstant: (iso: string) => string
+  /** The league's IR spots and current week — a player who isn't IR-eligible
+   *  in one of the viewer's IR spots closes every Add / Claim (D593). */
+  irSlots?: readonly IrSlot[]
+  currentWeek?: number | null
 }
 
 export type CardLeagueView =
@@ -115,6 +124,7 @@ export function cardLeagueView(input: CardLeagueInput): CardLeagueView {
 
   const myTeam = input.rosters?.teams.find((t) => t.team_id === input.myTeamId)
   const myRoster = myTeam?.roster ?? []
+  const irBlockTitle = healthyIrAddTitle(healthyIrBlockers(myRoster, input.irSlots ?? [], input.currentWeek ?? null))
   let { add, claim } = pickupActions(row, {
     waiverType: input.waiverType,
     window: input.waiverWindow,
@@ -122,6 +132,7 @@ export function cardLeagueView(input: CardLeagueInput): CardLeagueView {
     lockedAddTitle: LOCKED_ADD_TITLE,
     nextRunLocal: input.nextRunLocal,
     claimsLive: input.claimsLive,
+    irBlockTitle,
   })
   if (!moves.open) {
     add = add.show ? { show: true, disabled: true, title: moves.reason } : add

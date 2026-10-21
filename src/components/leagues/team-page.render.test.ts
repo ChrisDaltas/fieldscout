@@ -36,6 +36,7 @@ import { useOverrideMode } from '@/stores/commish-override-store'
 
 import { LineupEditor, railTargetProps, type LineupStats } from './lineup-editor'
 import { KEPT_STARTER_COPY, KEPT_STARTER_OTHER_WEEK_COPY, LOCK_RELEASE_UNRECORDED_COPY, PAST_WEEK_COPY, type WeekEditability } from './lineup-editor-ops'
+import { HEALTHY_IR_STILL_OPEN, HEALTHY_IR_WAYS } from './healthy-ir-ops'
 import { STALE_LEAGUE_COPY } from './status-banners'
 import { AUTOPILOT_SWITCH_LABEL, COMMISH_CHANGED_BADGE, COMMISH_CHANGED_TITLE, NO_SEAT_ROW_AUTOPILOT_COPY } from './team-commish-ops'
 import { TeamPage } from './team-page'
@@ -332,6 +333,35 @@ function unescapeHtml(html: string): string {
 // ---------------------------------------------------------------------------
 // The states checklist (§16.5.4)
 // ---------------------------------------------------------------------------
+
+describe('D593 — a healthy man left in my IR spot: the notice above the lineup', () => {
+  const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
+  const withIr = (status: string): Seed => ({
+    rosters: {
+      ...rosters,
+      teams: [
+        { ...rosters.teams[0]!, roster: [...roster, player({ player_id: 'ir-man', position: 'RB', full_name: 'Render IR Man', status, slot_key: spot, ir_placed_week: 1 })] },
+        rosters.teams[1]!,
+      ],
+    },
+    lineup: { ...lineupRow, slot_map: { ...lineupRow.slot_map, [spot]: 'ir-man' } },
+  })
+  it('names him and the two ways out, on the soft red tint (the bright red is the headline’s words only)', () => {
+    const html = renderTeamPage(withIr('Active'))
+    expect(html).toContain('data-healthy-ir-notice')
+    expect(html).toContain('Render IR Man is healthy — move him out of your IR spot to add players')
+    for (const way of HEALTHY_IR_WAYS) expect(html).toContain(way)
+    expect(html).toContain(HEALTHY_IR_STILL_OPEN)
+    expect(html).toContain('bg-negative-soft')
+    expect(html).not.toMatch(/bg-negative-strong|bg-destructive/)
+  })
+  it('none while he still fits the spot, and none before the season', () => {
+    expect(renderTeamPage(withIr('Out'))).not.toContain('data-healthy-ir-notice')
+    expect(renderTeamPage()).not.toContain('data-healthy-ir-notice')
+    const preseason = { ...detail, league: { ...detail.league, status: 'drafting' } }
+    expect(renderTeamPage({ ...withIr('Active'), detail: preseason })).not.toContain('data-healthy-ir-notice')
+  })
+})
 
 describe('team page — the four required states per surface', () => {
   it('skeleton while the league loads; skeleton for the editor while the roster loads', () => {

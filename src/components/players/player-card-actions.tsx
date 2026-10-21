@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react'
 import type { PoolPlayer } from '@/components/draft/available-players-ops'
 import { Crest } from '@/components/leagues/league-cells'
 import { DropConfirm } from '@/components/leagues/drop-player-dialog'
-import { formatInstantWithDate, lockBadgeFor } from '@/components/leagues/lineup-editor-ops'
+import { currentWeekOf, formatInstantWithDate, lockBadgeFor } from '@/components/leagues/lineup-editor-ops'
 import { moveReadout, poolRows } from '@/components/leagues/players-page-ops'
 import { tradesHref } from '@/components/leagues/trades-ops'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import { useLeague } from '@/hooks/use-league'
 import { useLeaguePool } from '@/hooks/use-league-pool'
 import { useLeagues, type MyLeagueRow } from '@/hooks/use-leagues'
 import { useRosters } from '@/hooks/use-rosters'
+import { useSchedule } from '@/hooks/use-schedule'
 import { useSubmitClaim } from '@/hooks/use-submit-claim'
 import { tradeDeadlinePassed, useTradeDeadline } from '@/hooks/use-trade-deadline'
 import { useAddDrop } from '@/hooks/use-transactions'
@@ -63,6 +64,9 @@ export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
   const rosters = useRosters(leagueId)
   const pool = useLeaguePool(leagueId)
   const deadline = useTradeDeadline(leagueId)
+  // D593: the current week decides whether a Restricted IR stint still runs
+  // (a stint that does blocks nothing); unknown while it loads — the server decides.
+  const schedule = useSchedule(leagueId)
   const detail = league.data
   if (league.isPending || (rosters.isPending && !rosters.data) || (pool.isPending && !pool.data)) {
     return { state: 'loading' as const }
@@ -86,6 +90,8 @@ export function useCardLeagueView(player: PoolPlayer, leagueId: string) {
     minBid: detail.settings.faab_min_bid,
     nextRunLocal: nextRun ? formatInstantWithDate(nextRun, tz).local : null,
     formatInstant: (iso) => formatInstantWithDate(iso, tz).local,
+    irSlots: detail.settings.roster_settings.ir_slots,
+    currentWeek: currentWeekOf(schedule.data?.weeks ?? []),
   })
   return { state: 'ready' as const, view, myTeamId }
 }

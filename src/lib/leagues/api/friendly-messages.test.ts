@@ -135,6 +135,13 @@ const CASES: ReadonlyArray<readonly [string, string, string]> = [
   ['trade-no-faab',
     'trade_propose: FAAB cannot be traded in this league (allow_faab_in_trades is off, §7.3.5)',
     'This league doesn’t allow FAAB in trades.'],
+  // 205 / D593: a player who isn't IR-eligible left in an IR spot blocks adds and claims.
+  ['add-healthy-ir',
+    "roster_add_drop: Jalen Hurts is healthy and still in Alpha's IR spot — no adds while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)",
+    'Jalen Hurts is healthy — move him out of your IR spot to add players: move him to your bench, or swap another IR-eligible player into the spot.'],
+  ['claim-healthy-ir',
+    "waiver_claim_submit: Jalen Hurts is listed Doubtful and still in Alpha's IR spot — no claims while a player who isn't IR-eligible holds an IR spot: move him to the bench (drop someone first if the roster is full), or swap an IR-eligible player into his spot (§7.3.2)",
+    'Jalen Hurts is listed Doubtful — move him out of your IR spot to add players: move him to your bench, or swap another IR-eligible player into the spot.'],
 ]
 
 describe('phrase map — renders the member’s sentence from the server’s own values', () => {
@@ -204,12 +211,13 @@ describe('never empty (R1485)', () => {
   })
 })
 
-describe('census — the 308 P0001 refusals of the survey (re-cut through 201, D561 / D591) come out code-free', () => {
+describe('census — the 310 P0001 refusals of the survey (re-cut through 205, D561 / D591 / D593) come out code-free', () => {
   const rows = census as Array<{ loc: string; fn: string; text: string }>
   it('the fixture is the survey’s full P0001 list', () => {
     // 315 until 199 removed the five retired-team refusals; 310 until 201 (D591) removed the two
-    // "illegal lineup" refusals (set_lineup / commish_edit_lineup) with the retired setting.
-    expect(rows).toHaveLength(308)
+    // "illegal lineup" refusals (set_lineup / commish_edit_lineup) with the retired setting; 205
+    // (D593) added the two healthy-IR refusals (roster_add_drop / waiver_claim_submit).
+    expect(rows).toHaveLength(310)
   })
   it('no § remains in any of them, and none comes out empty', () => {
     const left = rows.map((r) => ({ loc: r.loc, out: friendlyMessage(r.text) })).filter((r) => JARGON.section.test(r.out) || !r.out)

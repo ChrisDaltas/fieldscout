@@ -99,7 +99,7 @@ describe('claim results in plain words — every stored reason', () => {
     expect(claimOutcome(claim('l', 0, 1, { status: 'lost', result_reason: 'lost_on_priority' }), 'rolling_priority').detail).toMatch(/higher waiver priority/)
   })
   it('every invalid reason the resolver and the processor write reads as a sentence — no raw code', () => {
-    for (const reason of [...WAIVER_INVALID_REASONS, 'no_waivers', 'seat_vacated', 'manager_left']) {
+    for (const reason of [...WAIVER_INVALID_REASONS, 'no_waivers', 'healthy_in_ir', 'seat_vacated', 'manager_left']) {
       const out = claimOutcome(claim('i', 1, 1, { status: 'invalid', result_reason: reason }), 'faab')
       expect(out.label, reason).toBe('Didn’t go through')
       expect(out.detail, reason).toMatch(/^Didn’t go through — /)
@@ -174,6 +174,23 @@ describe('F425 — Claim beside Add, as the server’s window allows', () => {
       add: { show: true, disabled: true, title: 'LOCKED' },
       claim: { show: true, disabled: true, title: LOCKED_CLAIM_TITLE },
     })
+  })
+  it('D593: a player who isn’t IR-eligible in my IR spot closes Add AND Claim with his reason — whatever the window or the lock', () => {
+    const irBlockTitle = 'Jalen Hurts is healthy — move him out of your IR spot to add players.'
+    for (const window of [WINDOW, { ...WINDOW, free_agency_open: true, why: 'open' as const }, null]) {
+      expect(pickupActions(free, { ...ctx(window), irBlockTitle })).toEqual({
+        add: { show: true, disabled: true, title: irBlockTitle },
+        claim: { show: true, disabled: true, title: irBlockTitle },
+      })
+    }
+    expect(pickupActions(locked, { ...ctx(WINDOW), irBlockTitle }).add).toEqual({ show: true, disabled: true, title: irBlockTitle })
+    // No waivers: the Add closes, still no Claim.
+    expect(pickupActions(free, { ...ctx(null, 'none_fcfs'), irBlockTitle })).toEqual({
+      add: { show: true, disabled: true, title: irBlockTitle },
+      claim: { show: false },
+    })
+    // Not blocked: exactly as before.
+    expect(pickupActions(free, { ...ctx(WINDOW), irBlockTitle: null })).toEqual(pickupActions(free, ctx(WINDOW)))
   })
 })
 

@@ -224,6 +224,29 @@ describe('cardLeagueView — where he is, and the one move that fits', () => {
   it('no seat: a free agent shows where he is and no move', () => {
     expect(cardLeagueView(input({ myTeamId: null })).kind).toBe('no_seat')
   })
+  it('D593: a healthy man in MY IR spot closes the + with his reason; my drops and trades stay open; a running Restricted stint blocks nothing', () => {
+    const irSlots = [
+      { key: 'ir', type: 'unrestricted' as const, eligible_designations: ['OUT' as const, 'IR' as const] },
+      { key: 'dl', label: 'DL', type: 'restricted' as const, eligible_designations: ['OUT' as const, 'IR' as const, 'Doubtful' as const], min_weeks: 4 },
+    ]
+    const blocked = { teams: [team('mine', [rp('p-mine'), rp('p-irh', { full_name: 'Jalen Hurts', slot_key: 'ir:0', ir_placed_week: 5 })]), team('them', [rp('p-theirs')])] }
+    const v = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6 }))
+    if (v.kind !== 'available') throw new Error('kind')
+    const why = 'Your IR spot still holds Jalen Hurts, who is healthy — move him out of it to add players.'
+    expect(v.add).toEqual({ show: true, disabled: true, title: why })
+    expect(v.acquire).toEqual({ kind: 'none', disabled: true, title: why })
+    const drop = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, player: player('p-mine') }))
+    expect(drop.kind === 'mine' && drop.drop).toEqual({ open: true })
+    const trade = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, player: player('p-theirs') }))
+    expect(trade.kind === 'theirs' && trade.trade).toEqual({ open: true })
+    // Out of season the league's reason wins, as for every pickup.
+    const drafting = cardLeagueView(input({ rosters: blocked, irSlots, currentWeek: 6, leagueStatus: 'drafting' }))
+    expect(drafting.kind === 'available' && drafting.add).toEqual({ show: true, disabled: true, title: MOVES_BEFORE_SEASON_COPY })
+    // A healthy man in the DL spot mid-stint: the + stays open.
+    const stint = { teams: [team('mine', [rp('p-dl', { slot_key: 'dl:0', ir_placed_week: 5, ir_lock_until_week: 9 })]), team('them', [])] }
+    const open = cardLeagueView(input({ rosters: stint, irSlots, currentWeek: 6 }))
+    expect(open.kind === 'available' && open.acquire).toEqual({ kind: 'add', disabled: false })
+  })
 })
 
 // D481 (Chris 2026-10-03, "just make it a plus button instead of claim vs

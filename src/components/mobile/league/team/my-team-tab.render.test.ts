@@ -164,6 +164,26 @@ function render(schedule: LeagueSchedule = SCHEDULE, d: LeagueDetail = detail, s
 describe('MyTeamTab (mobile League › Team)', () => {
   const html = render()
 
+  it('D593: a healthy man left in my IR spot — the notice names him and the two ways out (soft tint, never a red fill); none when he still fits', () => {
+    const spot = `${settings.roster_settings.ir_slots[0]!.key}:0`
+    const withIr = (status: string) => (qc: QueryClient) => {
+      qc.setQueryData(leagueRosterKeys.all(LEAGUE), {
+        ...ROSTERS,
+        teams: [{ ...ROSTERS.teams[0]!, roster: [...ROSTER, { ...p('irm', 'Nick Chubb', 'RB', 'HOU'), status, slot_key: spot, ir_placed_week: 3 }] }, ROSTERS.teams[1]!],
+      })
+      qc.setQueryData(teamLineupKeys.week(ME, 5), { ...LINEUP, slot_map: { ...LINEUP.slot_map, [spot]: 'irm' } })
+    }
+    const blocked = render(SCHEDULE, detail, withIr('Active'))
+    expect(blocked).toContain('data-healthy-ir-notice')
+    expect(blocked).toContain('Nick Chubb is healthy — move him out of your IR spot to add players')
+    expect(blocked).toContain('Move him to your bench — drop someone too if your roster is full.')
+    expect(blocked).toContain('Or swap another IR-eligible player into the spot.')
+    expect(blocked).toContain('Lineup moves, drops and trades still work as usual.')
+    expect(blocked).toMatch(/rounded-message[^"]*bg-m-gr|bg-m-gr[^"]*rounded-message/)
+    expect(render(SCHEDULE, detail, withIr('Out'))).not.toContain('data-healthy-ir-notice')
+    expect(html).not.toContain('data-healthy-ir-notice')
+  })
+
   it('renders the league header and the team card from real reads', () => {
     expect(html).toContain('Sunday Funday League')
     expect(html).toContain('Touchdown Tacos')
