@@ -1,11 +1,13 @@
 import { isPlaceholderUsername } from '@/lib/auth/username-contract'
 import { createServerClient } from '@/lib/supabase/server'
+import { safeRedirectPath } from '@/utils/safe-redirect-path'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/app'
+  // Same-origin paths only (validated, normalized); anything else → /app.
+  const next = safeRedirectPath(searchParams.get('next'))
 
   if (code) {
     const supabase = await createServerClient()
