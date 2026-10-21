@@ -95,7 +95,7 @@ export function AdminLeaguePage({ leagueId }: { leagueId: string }) {
       {q.isLoading && <AdminLoading rows={5} label="league" />}
       {q.error && <AdminError error={q.error} onRetry={() => q.refetch()} what="this league" />}
       {q.data && <AdminLeagueBody state={q.data} onConfirm={setConfirm} />}
-      <AdminLeagueDetailSections leagueId={leagueId} />
+      <AdminLeagueDetailSections leagueId={leagueId} onConfirm={setConfirm} />
       <ConfirmActionDialog spec={confirm} onClose={() => setConfirm(null)} />
     </div>
   )
