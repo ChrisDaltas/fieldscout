@@ -83,6 +83,17 @@ export async function middleware(request: NextRequest) {
     return redirectPreservingAuthCookies(appUrl, supabaseResponse)
   }
 
+  // Signed-in visitors skip the public landing page and go to the app (F744).
+  // This lives here, not in `src/app/page.tsx`, so the landing page reads no
+  // cookies and builds as a static page — a page that renders per request has
+  // its <title> and meta description streamed into <body>, after </head>.
+  if (pathname === '/' && user) {
+    const appUrl = request.nextUrl.clone()
+    appUrl.pathname = '/app'
+    appUrl.search = ''
+    return redirectPreservingAuthCookies(appUrl, supabaseResponse)
+  }
+
   return supabaseResponse
 }
 
