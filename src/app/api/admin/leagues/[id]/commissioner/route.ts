@@ -20,7 +20,7 @@ import { requireAdminUser } from '@/lib/auth/require-admin'
  * member (P0002 → 404 with its words) and an empty seat (22023 → 400), is
  * idempotent on `action_id`, and answers `changed: false` with why for a
  * member who already is the commissioner. The old commissioner becomes a
- * manager and keeps his team.
+ * co-commissioner and keeps his team (F790).
  */
 
 const bodySchema = z.object({

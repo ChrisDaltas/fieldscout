@@ -64,7 +64,7 @@ gone from their screens.
    the member the league wants in **Members**, and press **Make
    commissioner** (F750, migration 208). Check the dialog's Now / After,
    add a reason if you like, and confirm. The old commissioner becomes a
-   manager and keeps their team; the league sees "FieldScout made X the
+   co-commissioner and keeps their team; the league sees "FieldScout made X the
    commissioner." Only a member who has joined can be picked — an empty
    seat has no button. Get the members' agreement on who it should be
    first; if they disagree, give it to Chris to rule. Do not improvise.

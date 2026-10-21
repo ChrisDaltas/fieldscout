@@ -29,10 +29,9 @@
 --   THE CHANGE — the same two-statement shape as the commissioner's own
 --   transfer (169:453-465, set_member_role's newest definer, D137): DEMOTE
 --   the sitting commissioner first, then PROMOTE the new one, so
---   `one_commissioner_per_league` (063:327) never sees two rows. ONE
---   difference, by the ruling: the old commissioner becomes a regular
---   MANAGER (role 'manager'), not a co-commissioner — he is the person who
---   went missing, so he keeps his team and nothing else. A league with NO
+--   `one_commissioner_per_league` (063:327) never sees two rows. The SAME
+--   end state (F790, ruled by Chris 2026-10-21): the old commissioner
+--   becomes a CO-COMMISSIONER and keeps his seat and team. A league with NO
 --   commissioner row (his account was deleted: league_members.user_id →
 --   profiles ON DELETE CASCADE, 052:66) skips the demote and just promotes.
 --   set_member_role itself is NOT replaced.
@@ -46,7 +45,7 @@
 --   THE RECORD: ONE `platform_operator_actions` receipt (scope 'league';
 --   before / after name both member ids and user ids) and ONE "FieldScout"
 --   league line through 183's `op_league_line_internal` (Q101 (a)):
---   "FieldScout made <new> the commissioner. <old> is now a manager."
+--   "FieldScout made <new> the commissioner. <old> is now a co-commissioner."
 --
 --   NO `commissioner_actions` ROW (D671). The commissioner's own transfer
 --   writes one (169's receipt, actor = auth.uid()). Here auth.uid() is the
@@ -153,23 +152,23 @@ BEGIN
 
   -- 169:459-465's shape: demote FIRST, then promote — the unique index
   -- (063:327) never sees two commissioners. The old commissioner keeps his
-  -- seat and team as a regular manager (the ruling; D670).
+  -- seat and team as a co-commissioner (F790, ruled 2026-10-21; D670).
   IF v_old.id IS NOT NULL THEN
-    UPDATE public.league_members SET role = 'manager' WHERE id = v_old.id;
+    UPDATE public.league_members SET role = 'co_commissioner' WHERE id = v_old.id;
     v_old_name := COALESCE(v_old.username,
       (SELECT t.name FROM public.teams t WHERE t.id = v_old.team_id), 'The previous commissioner');
   END IF;
   UPDATE public.league_members SET role = 'commissioner' WHERE id = p_new_member_id;
 
   v_text := 'FieldScout made ' || v_new_name || ' the commissioner.'
-    || CASE WHEN v_old.id IS NOT NULL THEN ' ' || v_old_name || ' is now a manager.' ELSE '' END;
+    || CASE WHEN v_old.id IS NOT NULL THEN ' ' || v_old_name || ' is now a co-commissioner.' ELSE '' END;
   PERFORM public.op_league_line_internal(p_league_id, v_text);
 
   v_after := jsonb_build_object('changed', TRUE,
     'league_id', p_league_id,
     'new_member_id', p_new_member_id, 'new_user_id', v_new.user_id,
     'previous_member_id', v_old.id, 'previous_user_id', v_old.user_id,
-    'previous_role_now', CASE WHEN v_old.id IS NOT NULL THEN 'manager' END,
+    'previous_role_now', CASE WHEN v_old.id IS NOT NULL THEN 'co_commissioner' END,
     'set_at', p_at);
   PERFORM public.log_operator_action_internal(p_action_id, v_actor, 'set_commissioner',
     'league', p_league_id, p_reason, v_before, v_after);
@@ -197,4 +196,4 @@ $$;
 REVOKE ALL ON FUNCTION op_set_commissioner(UUID, UUID, UUID, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION op_set_commissioner(UUID, UUID, UUID, TEXT) TO authenticated;
 COMMENT ON FUNCTION op_set_commissioner(UUID, UUID, UUID, TEXT) IS
-  'F750 / spec §24.4 v2.16.106 (migration 208): make a league member (a person, not an empty seat) the commissioner when the sitting one is missing. Operators only (in-body gate); idempotent on p_action_id; already the commissioner = no-op, nothing written. The old commissioner becomes a manager and keeps his team. One league receipt in platform_operator_actions + a "FieldScout" league line; no commissioner_actions row (the admin is never named to the league).';
+  'F750 / spec §24.4 v2.16.106 (migration 208): make a league member (a person, not an empty seat) the commissioner when the sitting one is missing. Operators only (in-body gate); idempotent on p_action_id; already the commissioner = no-op, nothing written. The old commissioner becomes a co-commissioner and keeps his team. One league receipt in platform_operator_actions + a "FieldScout" league line; no commissioner_actions row (the admin is never named to the league).';

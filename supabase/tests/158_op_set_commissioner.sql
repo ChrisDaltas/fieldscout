@@ -11,11 +11,11 @@
 --       co-commissioner are all refused 42501 (a co-commissioner cannot take
 --       the role); nothing moved. The internal is closed to authenticated.
 --   §T  THE TRANSFER — the operator makes a manager the commissioner: the
---       old commissioner is a MANAGER with his seat and team; exactly one
+--       old commissioner is a CO-COMMISSIONER with his seat and team (F790); exactly one
 --       commissioner; ONE league receipt (golden after); ONE "FieldScout" line
 --       with no actor (golden text); NO commissioner_actions row. The new
---       commissioner holds the power (set_member_role works for him and is
---       refused to the old one).
+--       commissioner holds the power (set_member_role works for him; the old
+--       one cannot transfer the role).
 --   §R  REPLAY — the same action id returns the receipt and writes nothing; the
 --       same action id for a different member is 22023.
 --   §N  NO-OP + REFUSALS — already the commissioner: changed false, nothing
@@ -23,9 +23,9 @@
 --       P0002; a placeholder seat 22023; no action id / a blank reason 22023.
 --   §H  A HEADLESS LEAGUE (the commissioner's account was deleted) — the
 --       operator promotes a co-commissioner; the line has no "is now a
---       manager" clause.
+--       co-commissioner" clause.
 -- Break probes (§4.3, shown in the PR, reverted): (1) drop the door's in-body
--- gate ⇒ K2–K4 red; (2) demote to 'co_commissioner' instead of 'manager' ⇒
+-- gate ⇒ K2–K4 red; (2) demote to 'manager' instead of 'co_commissioner' ⇒
 -- T2 red.
 -- World (season 2097): u1 commissioner of L1, u2 manager of L1, u3
 -- co-commissioner of L1, u4 OPERATOR (in no league), u5 plain user, u6
@@ -189,11 +189,11 @@ insert into r158 select 'T', op_set_commissioner('b1580000-0000-4000-8000-000000
 reset role;
 
 select is((select r - 'set_at' from r158 where tag = 'T'),
-  '{"changed": true, "league_id": "b1580000-0000-4000-8000-000000000001", "new_member_id": "d1580000-0000-4000-8000-000000000002", "new_user_id": "99158000-0000-4000-8000-000000000002", "previous_member_id": "d1580000-0000-4000-8000-000000000001", "previous_user_id": "99158000-0000-4000-8000-000000000001", "previous_role_now": "manager"}'::jsonb,
+  '{"changed": true, "league_id": "b1580000-0000-4000-8000-000000000001", "new_member_id": "d1580000-0000-4000-8000-000000000002", "new_user_id": "99158000-0000-4000-8000-000000000002", "previous_member_id": "d1580000-0000-4000-8000-000000000001", "previous_user_id": "99158000-0000-4000-8000-000000000001", "previous_role_now": "co_commissioner"}'::jsonb,
   'T1 the result (golden)');
 select is(pg_temp.roles('b1580000-0000-4000-8000-000000000001'),
-  '01=manager:01 02=commissioner:02 03=co_commissioner:03 04=manager:04',
-  'T2 u2 is the commissioner; u1 is a MANAGER and keeps his seat and team; the co-commissioner and the placeholder are untouched');
+  '01=co_commissioner:01 02=commissioner:02 03=co_commissioner:03 04=manager:04',
+  'T2 u2 is the commissioner; u1 is a CO-COMMISSIONER (F790) and keeps his seat and team; the other co-commissioner and the placeholder are untouched');
 select is((select owner_id from teams where id = 'c1580000-0000-4000-8000-000000000001'),
   '99158000-0000-4000-8000-000000000001'::uuid, 'T3 u1 still owns his team');
 select is((select count(*)::int from league_members where league_id = 'b1580000-0000-4000-8000-000000000001' and role = 'commissioner'),
@@ -210,7 +210,7 @@ select is((select (after - 'set_at') = (select r - 'set_at' from r158 where tag 
 select is(
   (select string_agg(format('%s|%s|%s|%s', c.message, c.user_id, c.is_system, c.context), ' / ')
    from league_chat c where c.league_id = 'b1580000-0000-4000-8000-000000000001'),
-  'FieldScout made x158_user2 the commissioner. x158_user1 is now a manager.||t|league',
+  'FieldScout made x158_user2 the commissioner. x158_user1 is now a co-commissioner.||t|league',
   'T8 ONE league line, signed FieldScout, no actor (golden)');
 select is(pg_temp.writes(), 'ops=1 lines=1 commish=0', 'T9 one receipt, one line, NO commissioner_actions row (the admin is never named to the league — D671)');
 select is((select (r ->> 'set_at')::timestamptz <= now() + interval '1 second' and (r ->> 'set_at')::timestamptz >= now() - interval '1 minute' from r158 where tag = 'T'),
@@ -220,15 +220,15 @@ select is((select (r ->> 'set_at')::timestamptz <= now() + interval '1 second' a
 select set_config('request.jwt.claims', '{"sub": "99158000-0000-4000-8000-000000000001", "role": "authenticated"}', true);
 set local role authenticated;
 select alike(pg_temp.err($$select set_member_role('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000003', 'commissioner')$$),
-  '42501:%not a commissioner of this league%', 'T11 the old commissioner can no longer transfer the role (he is a manager)');
+  '42501:%only the sitting commissioner can transfer the commissioner role%', 'T11 the old commissioner can no longer transfer the role (he is a co-commissioner)');
 reset role;
 select set_config('request.jwt.claims', '{"sub": "99158000-0000-4000-8000-000000000002", "role": "authenticated"}', true);
 set local role authenticated;
-select is((select (set_member_role('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000001', 'co_commissioner')) ->> 'role'),
-  'co_commissioner', 'T12 the new commissioner can use his own tools (makes u1 a co-commissioner)');
+select is((select (set_member_role('b1580000-0000-4000-8000-000000000001', 'd1580000-0000-4000-8000-000000000001', 'manager')) ->> 'role'),
+  'manager', 'T12 the new commissioner can use his own tools (makes u1 a manager)');
 reset role;
 select is(pg_temp.roles('b1580000-0000-4000-8000-000000000001'),
-  '01=co_commissioner:01 02=commissioner:02 03=co_commissioner:03 04=manager:04', 'T13 his change landed');
+  '01=manager:01 02=commissioner:02 03=co_commissioner:03 04=manager:04', 'T13 his change landed');
 
 -- ---------------------------------------------------------------------------
 -- R. Replay
@@ -244,7 +244,7 @@ select is((select (r ->> 'replayed')::boolean and r ->> 'new_member_id' = 'd1580
   true, 'R2 a replay returns the receipt, marked replayed');
 select is(pg_temp.writes(), 'ops=1 lines=1 commish=0', 'R3 the replay wrote nothing');
 select is(pg_temp.roles('b1580000-0000-4000-8000-000000000001'),
-  '01=co_commissioner:01 02=commissioner:02 03=co_commissioner:03 04=manager:04', 'R4 the replay moved nothing (it did not re-demote u1)');
+  '01=manager:01 02=commissioner:02 03=co_commissioner:03 04=manager:04', 'R4 the replay moved nothing (it did not re-demote u1)');
 
 -- ---------------------------------------------------------------------------
 -- N. No-op and refusals
@@ -275,7 +275,7 @@ select is(pg_temp.writes(), 'ops=1 lines=1 commish=0', 'N9 the no-op and every r
 select is(pg_temp.roles('b1580000-0000-4000-8000-0000000000dd'),
   'd1=commissioner:- d2=manager:-', 'N10 the deleted league''s roles did not move');
 select is(pg_temp.roles('b1580000-0000-4000-8000-000000000001'),
-  '01=co_commissioner:01 02=commissioner:02 03=co_commissioner:03 04=manager:04', 'N11 L1 did not move');
+  '01=manager:01 02=commissioner:02 03=co_commissioner:03 04=manager:04', 'N11 L1 did not move');
 
 -- ---------------------------------------------------------------------------
 -- H. A headless league — the operator promotes a co-commissioner
@@ -290,7 +290,7 @@ select is(pg_temp.roles('b1580000-0000-4000-8000-0000000000ee'),
 select is((select format('%s|%s|%s', r ->> 'previous_member_id', r ->> 'previous_role_now', r ->> 'changed') from r158 where tag = 'H'),
   '||true', 'H2 no previous commissioner is named');
 select is((select string_agg(c.message, ' / ') from league_chat c where c.league_id = 'b1580000-0000-4000-8000-0000000000ee'),
-  'FieldScout made x158_user7 the commissioner.', 'H3 the line has no "is now a manager" clause (golden)');
+  'FieldScout made x158_user7 the commissioner.', 'H3 the line has no "is now a co-commissioner" clause (golden)');
 select is((select reason is null from platform_operator_actions where action_id = 'a1580000-0000-4000-8000-000000000009'),
   true, 'H4 no reason given = NULL reason (optional)');
 select is(pg_temp.writes(), 'ops=2 lines=2 commish=0', 'H5 one more receipt and line; still no commissioner_actions row');

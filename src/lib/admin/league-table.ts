@@ -158,7 +158,7 @@ export function commissionerBeforeAfter(
   const old = memberName(sitting)
   return {
     before: `${old} is the commissioner. ${now}`,
-    after: `${name} is the commissioner. ${old} is a manager and keeps their team. The league sees “FieldScout made ${name} the commissioner.”`,
+    after: `${name} is the commissioner. ${old} is a co-commissioner and keeps their team. The league sees “FieldScout made ${name} the commissioner.”`,
   }
 }
 
